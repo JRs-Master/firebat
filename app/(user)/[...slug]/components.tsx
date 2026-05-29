@@ -2127,7 +2127,7 @@ function MapComp({
                 strokeWeight: 0,
                 strokeOpacity: 0,
                 fillColor: coneColor,
-                fillOpacity: 0.15,
+                fillOpacity: 0.09,
               }).setMap(map);
             }
           }
@@ -2318,7 +2318,7 @@ function MapComp({
               const coneColor = colorHex(cn.color, '#6366f1');
               // 볼록 조각 union MultiPolygon — 단일 ring envelope 의 stray 박스/fold 없음 + 외접선이라 구슬 없음.
               map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } } });
-              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.16 } });
+              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.09 } });
             }
           });
           // circles = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만. 점선 [4,3].
