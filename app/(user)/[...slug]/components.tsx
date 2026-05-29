@@ -1901,20 +1901,19 @@ function typhoonGradeNum(ws?: number | null): string | null {
   return 'T'; // 열대저압부
 }
 
-/** 태풍 현재 위치 — 동심원 + 소용돌이 + 중앙 강도 번호 (grade). 색 = 강도 단계. data URI 반환. */
+// mdi-weather-hurricane glyph (24×24 viewBox) — Material Design 태풍 소용돌이. 강도색 채움.
+const HURRICANE_PATH = 'M15,6.79C16.86,7.86 18,9.85 18,12C18,22 6,22 6,22C7.25,21.06 8.38,19.95 9.34,18.71C9.38,18.66 9.41,18.61 9.44,18.55C9.69,18.06 9.5,17.46 9,17.21C7.14,16.14 6,14.15 6,12C6,2 18,2 18,2C16.75,2.94 15.62,4.05 14.66,5.29C14.62,5.34 14.59,5.39 14.56,5.45C14.31,5.94 14.5,6.54 15,6.79Z';
+
+/** 태풍 마커 — mdi 허리케인 glyph (강도색 채움 + 흰 외곽) + 중앙 강도 번호. data URI 반환. */
 function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = null): string {
   const c = size / 2;
-  // 강도 번호 있으면 중앙 흰 원판 + 색 숫자, 없으면 작은 흰 눈.
-  // 강도 번호 있으면 중앙 흰 원판 + 색 숫자 (정중앙 — central baseline + dy 보정), 없으면 작은 흰 눈.
+  const k = size / 24; // 24 viewBox → 마커 크기 스케일
+  // 중앙 강도 번호 — 흰 원판 + 색 숫자 (glyph 눈 자리에 얹음). 정중앙 (central + dy 보정).
   const center = grade
-    ? `<circle cx="${c}" cy="${c}" r="${size * 0.26}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" dy="0.04em" fill="${color}" font-size="${size * 0.34}" font-weight="800" font-family="sans-serif">${grade}</text>`
-    : `<circle cx="${c}" cy="${c}" r="${size * 0.06}" fill="white"/>`;
-  // 태풍 나선 — 중심에서 바깥으로 휘감는 2팔 (회전 대칭, cubic). 옛 Q호 2개 = 레몬 모양이라 교체.
+    ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" dy="0.04em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
+    : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.15" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/>`
-    + `<circle cx="${c}" cy="${c}" r="${c * 0.62}" fill="${color}"/>`
-    + `<path d="M${c} ${c} C ${c} ${c * 0.48} ${c * 1.5} ${c * 0.62} ${c * 1.32} ${c}" stroke="white" stroke-width="${size * 0.08}" fill="none" stroke-linecap="round"/>`
-    + `<path d="M${c} ${c} C ${c} ${c * 1.52} ${c * 0.5} ${c * 1.38} ${c * 0.68} ${c}" stroke="white" stroke-width="${size * 0.08}" fill="none" stroke-linecap="round"/>`
+    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.6" stroke-linejoin="round"/></g>`
     + center
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
