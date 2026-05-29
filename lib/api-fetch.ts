@@ -83,7 +83,7 @@ async function apiFetch<T>(url: string, opts: ApiFetchOpts = {}): Promise<T> {
   return parsed as T;
 }
 
-/** GET — query string 은 lib/util/url.ts::buildPath 또는 직접 URL 박기. */
+/** GET — query string 은 lib/util/url.ts::buildPath 또는 직접 URL 작성. */
 export function apiGet<T>(url: string, opts?: ApiFetchOpts): Promise<T> {
   return apiFetch<T>(url, { ...opts, method: 'GET' });
 }

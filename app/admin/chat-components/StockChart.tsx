@@ -93,7 +93,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // 차트 전체 영역 cap — 모바일 320px / PC 480px. breakpoint 640 (sm). SSR null 시 320 fallback.
-  // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) = cap 박음.
+  // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) 에 cap 적용.
   // 봉 영역 = 차트 영역 (헤더 뺀 나머지) 의 약 78% (옛 280/360 비율) — 봉 ≥ 2/3 요청 충족.
   // flexbox (flex-1 + SVG h-full) 폐기 — 봉/거래량 겹침 발생 → 명시 px 방식 복원.
   const containerMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.6, breakpoint: 640, mobileMaxPx: 320, desktopMaxPx: 480 });
@@ -107,8 +107,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const priceChartHeight = `${priceChartHeightPx}px`;
   const volChartHeight = `${Math.floor(chartAreaH * 80 / 360)}px`;      // 거래량 (옛 80/360 비율)
 
-  // 봉 영역 실제 렌더 width 측정 — viewBox 영역 동적 (찌그러짐 fix). preserveAspectRatio="none" 박은
-  // 영역에서 viewBox aspect (W:priceH) ≠ box aspect (boxW:priceChartHeightPx) 면 봉이 가로/세로 stretch
+  // 봉 영역 실제 렌더 width 측정 — viewBox 동적 (찌그러짐 fix). preserveAspectRatio="none" 를 쓴
+  // 경우 viewBox aspect (W:priceH) ≠ box aspect (boxW:priceChartHeightPx) 면 봉이 가로/세로 stretch
   // 찌그러짐. viewBox priceH 영역을 box 비율 맞춰 동적 계산 → 찌그러짐 0 + 크로스헤어 1:1 유지.
   const [boxW, setBoxW] = useState(720);
   useEffect(() => {

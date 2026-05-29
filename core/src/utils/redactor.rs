@@ -179,7 +179,7 @@ fn mask_key_value(s: &str, key: &str) -> String {
                     continue;
                 }
             }
-            // 키 이후 close-quote (`"` / `'`) 박힐 수 있음 — JSON 안 `"apikey":"value"` 형식 호환.
+            // 키 이후 close-quote (`"` / `'`) 가 올 수 있음 — JSON 안 `"apikey":"value"` 형식 호환.
             // 옛 mask_key_value 안 close-quote skip 0 → JSON 매칭 fail → api-key 노출 사고.
             let mut after = key_end;
             if after < bytes.len() && (bytes[after] == b'"' || bytes[after] == b'\'') {

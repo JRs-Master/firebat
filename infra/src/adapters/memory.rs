@@ -25,7 +25,7 @@ const EVENT_DEDUP_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 pub struct SqliteMemoryAdapter {
     conn: Mutex<Connection>,
-    /// IEmbedderPort 옵션 — 박히면 자동 임베딩 + cosine 검색 활성. 없으면 substring 매칭.
+    /// IEmbedderPort 옵션 — 설정되면 자동 임베딩 + cosine 검색 활성. 없으면 substring 매칭.
     embedder: Option<Arc<dyn IEmbedderPort>>,
 }
 
@@ -55,7 +55,7 @@ impl SqliteMemoryAdapter {
         })
     }
 
-    /// Embedder 주입 — 박히면 saveEntity / saveFact / saveEvent 자동 임베딩 +
+    /// Embedder 주입 — 설정되면 saveEntity / saveFact / saveEvent 자동 임베딩 +
     /// search_* cosine 정렬 + dedup_threshold cosine 활성.
     /// 미설정 시 옛 Phase B-12 substring 매칭 fallback (테스트·embedder 없는 환경 호환).
     pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {

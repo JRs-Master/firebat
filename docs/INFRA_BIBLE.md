@@ -181,7 +181,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ### 15. Image Gen Adapter (`infra/llm/configs/image-*.json` + `image-config-adapter.ts`)
 - `IImageGenPort` 구현 — config-driven (OpenAI gpt-image-2 / Gemini 3 Flash Image).
-- 모델 추가 시 JSON 1개 박으면 됨.
+- 모델 추가 시 JSON 1개 넣으면 됨.
 
 ### 16. Entity Adapter (`infra/entity/sqlite-adapter.ts`) — 메모리 Phase 1
 - `IEntityPort` 구현 — entities + entity_facts 테이블 (FK CASCADE, JSON aliases/metadata/tags, BLOB embedding).

@@ -141,11 +141,11 @@ impl ModuleManager {
             .await?;
 
         // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택).
-        // success:false 박은 영역 (outErr 호출 영역) = envelope `{success:false, errorKey, errorParams}`
-        // 형태라 `data` field 박지 못함 → sandbox.rs 영역에서 result.data = Value::Null 박힘.
-        // output schema 영역 = success 박은 정상 응답의 data 영역만 검증 박는 게 정공.
-        // success:false 박은 영역 검증 박은 영역 = 옛 kma-weather (API key 미설정) 영역에서
-        // "null is not of type object" warning 박은 root cause.
+        // success:false 응답 (outErr 호출 경로) = envelope `{success:false, errorKey, errorParams}`
+        // 형태라 `data` field 가 없음 → sandbox.rs 에서 result.data = Value::Null 로 설정됨.
+        // output schema 검증 = success 인 정상 응답의 data 만 검증하는 게 정공.
+        // success:false 응답까지 검증하던 것 = 옛 kma-weather (API key 미설정) 에서
+        // "null is not of type object" warning 이 나던 root cause.
         if result.success {
             if let Some(config) = self.get_module_config(scope, module_name).await {
                 if let Some(output_schema) = config.get("output") {

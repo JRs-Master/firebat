@@ -153,7 +153,7 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
  * 모듈 ↔ system service alias — 옛 이름으로 호출되어도 새 service 의 config/lang 로 dispatch.
  *
  * 'seo' 옛 모듈명 → 'cms' service (2026-04-28 SEO → CMS rename 호환).
- * 추가 alias 가 박힐 때 이 매핑만 늘리면 됨.
+ * 추가 alias 가 생길 때 이 매핑만 늘리면 됨.
  */
 const MODULE_NAME_ALIASES: Record<string, string> = {
   seo: 'cms',
@@ -186,7 +186,7 @@ function parseSecretEntries(secrets: SecretEntry[] | undefined): ParsedSecret[] 
 /**
  * config.json secrets 배열 → SettingField[] 자동 생성.
  * type='token' (자동 발급 OAuth/cache) 항목은 입력 필드 생성하지 않음 — 사용자 직접 입력 금지.
- * `hiddenNames` 에 박힌 이름 (settings_fields 의 oauth.oauthSecrets) 도 동일 제외.
+ * `hiddenNames` 에 포함된 이름 (settings_fields 의 oauth.oauthSecrets) 도 동일하게 제외.
  */
 function secretsToFields(secrets: SecretEntry[], hiddenNames: Set<string>): SettingField[] {
   return parseSecretEntries(secrets)
@@ -319,7 +319,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang, fetchedLang));
 
           // OAuth 가 자동 발급 관리하는 secret 이름 수집 — 자동 입력 필드 노출 차단.
-          // (옛 형태: secrets 안 type 미명시 + settings_fields 의 oauth.oauthSecrets 에 박힌 영역.)
+          // (옛 형태: secrets 안 type 미명시 + settings_fields 의 oauth.oauthSecrets 에 들어있는 항목.)
           const oauthManagedNames = new Set<string>();
           for (const cf of configFields) {
             if (cf.type === 'oauth' && Array.isArray(cf.oauthSecrets)) {

@@ -59,7 +59,7 @@ impl ClaudeCodeCliHandler {
         name
     }
 
-    /// MCP config 파일 박기 — HTTP streamable 우선 (즉시 도구 사용), stdio fallback (옛 TS `ensureMcpConfigFile` 1:1).
+    /// MCP config 파일 작성 — HTTP streamable 우선 (즉시 도구 사용), stdio fallback (옛 TS `ensureMcpConfigFile` 1:1).
     ///
     /// HTTP streamable: Firebat 메인 프로세스의 `/api/mcp-internal` 에 직접 연결.
     /// 매 spawn 마다 Firebat Core 를 서브프로세스로 재부팅 (~수초) 하지 않고 즉시 도구 사용 가능.

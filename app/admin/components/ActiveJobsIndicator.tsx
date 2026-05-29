@@ -38,7 +38,7 @@ interface JobStatus {
 
 const FINISHED_RETENTION_MS = 5_000;
 // STALE_RUNNING_MS = 5분 (lib/config.ts). SSE drop (모바일 백그라운드) 시 'completed' 이벤트
-// 놓쳐서 영구 running 으로 박히는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
+// 놓쳐서 영구 running 으로 남는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
 
 export function ActiveJobsIndicator() {
   const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());

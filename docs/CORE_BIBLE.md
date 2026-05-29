@@ -103,7 +103,7 @@ interface FirebatInfraContainer {
 외부에서 `core.infra.storage` 등 포트를 직접 호출하지 않는다.
 모든 API route는 `getCore()` → Core 메서드 호출 패턴을 따른다.
 
-### 제1-1항. 21-Manager 아키텍처 (2026-04-20, 2026-04-26 4 매니저 + 2026-05-04 메모리 시스템 4-tier 박으면서 3 매니저 추가)
+### 제1-1항. 21-Manager 아키텍처 (2026-04-20, 2026-04-26 4 매니저 + 2026-05-04 메모리 시스템 4-tier 추가하면서 3 매니저 추가)
 `FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 21개 도메인 매니저에 위임한다.
 
 | 매니저 | 인프라 포트 | Core 참조 | 역할 |
@@ -300,7 +300,7 @@ type PipelineStep =
 ### EpisodicManager (메모리 시스템 — Episodic tier)
 - 시간순 사건 (events): 자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
 - IEpisodicPort 직접 주입.
-- 핵심 메서드: `saveEvent` (entityIds 박으면 m2m link, dedupThreshold 옵션), `searchEvents` (type/who/시간범위/entityId 다중 필터), `listRecentEvents` (occurredAt DESC), `linkEntity` / `unlinkEntity`.
+- 핵심 메서드: `saveEvent` (entityIds 넘기면 m2m link, dedupThreshold 옵션), `searchEvents` (type/who/시간범위/entityId 다중 필터), `listRecentEvents` (occurredAt DESC), `linkEntity` / `unlinkEntity`.
 - **자동 훅** — 매니저 직접 호출 X. Core facade 의 `savePage` / `handleCronTrigger` / `generateImage` 가 manager 호출 후 자동 `saveEvent` (BIBLE 일관성).
 
 ### ConsolidationManager (메모리 시스템 — Consolidation engine)

@@ -14,7 +14,7 @@ export function unBigInt<T>(data: T): T {
   if (typeof data === 'bigint') return Number(data) as T;
   if (Array.isArray(data)) return data.map(unBigInt) as T;
   // Typed arrays (Uint8Array / Int8Array / DataView 등 proto bytes field) 영역 보존 —
-  // Object.entries 박으면 일반 객체로 변환되어 instanceof 체크 깨지고 binary 데이터 손실됨.
+  // Object.entries 를 쓰면 일반 객체로 변환되어 instanceof 체크 깨지고 binary 데이터 손실됨.
   // ArrayBuffer.isView 가 모든 typed array view + DataView 잡음.
   if (ArrayBuffer.isView(data)) return data;
   if (data && typeof data === 'object') {

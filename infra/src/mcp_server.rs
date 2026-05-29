@@ -261,11 +261,11 @@ async fn handle_rpc(
                 tools.get(&name).map(|t| t.handler.clone())
             };
             let Some(handler) = tool else {
-                // unknown tool — JSON-RPC error 박지 말고 tool result (isError: true) 박음.
-                // 옛 = -32601 rpc_error 박은 영역. 단 CLI 자체 MCP loop (Claude Code / Codex / Gemini CLI)
-                // 안에서 JSON-RPC error 영역은 LLM 에 명확 전달 박지 못해 hallucinate 도구
-                // (TaskCreate / TaskUpdate / task_create / add_task 등) 호출 retry 박는 영역.
-                // tool result 형태로 박으면 LLM 이 "다음 turn 영역에서 정공 도구 선택" 인식.
+                // unknown tool — JSON-RPC error 대신 tool result (isError: true) 로 반환.
+                // 옛 = -32601 rpc_error 를 쓰던 곳. 단 CLI 자체 MCP loop (Claude Code / Codex / Gemini CLI)
+                // 안에서 JSON-RPC error 는 LLM 에 명확히 전달되지 못해 hallucinate 도구
+                // (TaskCreate / TaskUpdate / task_create / add_task 등) 호출 retry 를 유발한다.
+                // tool result 형태로 반환하면 LLM 이 "다음 turn 에서 정공 도구 선택" 으로 인식한다.
                 let available_preview: Vec<String> = {
                     let tools = state.tools.read().await;
                     let mut keys: Vec<String> = tools.keys().cloned().collect();
@@ -364,9 +364,9 @@ pub struct SysmodToolHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for SysmodToolHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // Hub visitor 가드 — hub_context 활성 상태에서 allowed_sysmods 에 박지 않은 sysmod 호출 차단.
-        // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 박혀있어 CLI 모델
-        // (supports_mcp=true) 의 자체 MCP loop 영역에서는 우회 박힘. 본 가드 = MCP path 보안 영역.
+        // Hub visitor 가드 — hub_context 활성 상태에서 allowed_sysmods 에 없는 sysmod 호출 차단.
+        // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 처리해 CLI 모델
+        // (supports_mcp=true) 의 자체 MCP loop 에서는 우회된다. 본 가드 = MCP path 보안용.
         if firebat_core::utils::hub_context::is_sysmod_blocked_for_hub(&self.module_name) {
             return Ok(serde_json::json!({
                 "success": false,
@@ -578,8 +578,8 @@ pub struct RenderUnifiedHandler;
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         // 진단 log — args 영역 실제 형태 확인 (Issue 3 root cause 진단용).
-        // CLI 자체 MCP loop / API 모델 / etc 각 path 가 args 박는 형태 다를 가능성 추적.
-        // root cause 확정 박은 후 본 log 영역 제거.
+        // CLI 자체 MCP loop / API 모델 / etc 각 path 가 args 를 넘기는 형태 다를 가능성 추적.
+        // root cause 확정 후 본 log 제거.
         let args_preview: String = serde_json::to_string(&args)
             .unwrap_or_default()
             .chars()
@@ -719,7 +719,7 @@ impl McpToolHandler for RenderUnifiedHandler {
             ));
         }
 
-        // 부분 성공 시 진단 — 검증 실패 block 이 silent skip 되어 사용자 화면 안 header 만 박히고
+        // 부분 성공 시 진단 — 검증 실패 block 이 silent skip 되어 사용자 화면 안 header 만 표시되고
         // 본문 빠짐 root cause 추적. journalctl 안 어떤 block 이 왜 실패했는지 확정.
         if !failed.is_empty() {
             tracing::warn!(
@@ -847,19 +847,19 @@ impl McpToolHandler for GetPageHandler {
     }
 }
 
-/// admin context 면 pending 박은 결과 반환 (Some). cron context 면 None — caller 가 기존 동작 진행.
+/// admin context 면 pending 결과 반환 (Some). cron context 면 None — caller 가 기존 동작 진행.
 ///
 /// 옛 TS commit 262bc78 의 `globalThis.__firebatCronAgentJobId` 분기 Rust port. CLI 모델의 자체
 /// MCP loop 가 destructive 도구 (save_page / delete_* / schedule_task / cancel_task) 호출 시
-/// 본 helper 통과 — admin chat 호출이면 pending action 생성 → 사용자 ✓ 박혀야 실행. cron 자동
-/// 실행 영역 (CronContextGuard 활성) 이면 우회 후 직접 실행.
+/// 본 helper 통과 — admin chat 호출이면 pending action 생성 → 사용자 ✓ 승인해야 실행. cron 자동
+/// 실행 (CronContextGuard 활성) 이면 우회 후 직접 실행.
 fn pending_or_passthrough(
     args: &Value,
     tool_name: &str,
     summary_fn: impl FnOnce(&Value) -> String,
 ) -> Option<Value> {
     // Hub visitor 영역 = destructive 도구 사용 차단 (ai.rs:686-687 admin path 와 일관 X).
-    // hub visitor 가 admin DB 영구 손실 (페이지 덮어쓰기 / 파일 삭제 / 등) 박는 영역 차단.
+    // hub visitor 가 admin DB 영구 손실 (페이지 덮어쓰기 / 파일 삭제 / 등) 일으키는 행위 차단.
     if firebat_core::utils::hub_context::is_hub_context_active() {
         return Some(serde_json::json!({
             "success": false,
@@ -900,7 +900,7 @@ pub struct SavePageHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for SavePageHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // admin context → pending 박음 (사용자 승인 카드). cron context → 직접 실행.
+        // admin context → pending 생성 (사용자 승인 카드). cron context → 직접 실행.
         // 옛 TS commit 262bc78 의 globalThis.__firebatCronAgentJobId 분기 Rust port.
         if let Some(r) = pending_or_passthrough(&args, "save_page", |s| {
             let slug = obj_str(s, "slug").unwrap_or_default();
@@ -1600,9 +1600,9 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         handler: Arc::new(ExecuteHandler { module: deps.module }),
     }).await;
 
-    // Schedule / Task — trigger 시각은 cronTime/runAt/delaySec 중 직접 하나만 박음.
-    // 옛에 mode field 박혀있어 AI 가 `mode: "runAt"` 박고 실제 runAt 누락 → validator reject 반복.
-    // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 박힘.
+    // Schedule / Task — trigger 시각은 cronTime/runAt/delaySec 중 직접 하나만 지정.
+    // 옛에 mode field 가 있어 AI 가 `mode: "runAt"` 만 쓰고 실제 runAt 누락 → validator reject 반복.
+    // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 유지.
     state.register(McpTool {
         name: "schedule_task".into(),
         description: "크론 / 일회성 작업 예약. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 를 직접 박는다. 'mode' 같은 별도 field 박지 마라 — schema 에 없다.".into(),
@@ -1906,9 +1906,9 @@ async fn dispatch_method(
                 tools.get(&name).map(|t| t.handler.clone())
             };
             let Some(handler) = handler else {
-                // unknown tool — JSON-RPC error 박지 말고 tool result (isError: true) 박음 (옛 HTTP path 와 동일).
-                // CLI 자체 MCP loop 안에서 JSON-RPC error 영역은 LLM 에 명확 전달 박지 못해 hallucinate
-                // 도구 (TaskCreate / TaskUpdate / task_create / add_task 등) retry 박는 영역.
+                // unknown tool — JSON-RPC error 대신 tool result (isError: true) 로 반환 (옛 HTTP path 와 동일).
+                // CLI 자체 MCP loop 안에서 JSON-RPC error 는 LLM 에 명확히 전달되지 못해 hallucinate
+                // 도구 (TaskCreate / TaskUpdate / task_create / add_task 등) retry 를 유발한다.
                 let available_preview: Vec<String> = {
                     let tools = state.tools.read().await;
                     let mut keys: Vec<String> = tools.keys().cloned().collect();

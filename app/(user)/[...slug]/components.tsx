@@ -1453,7 +1453,7 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
   isDoughnut?: boolean;
 }) {
   // hover/touch highlight 영역 — PC hover + 모바일 tap 양쪽 같은 activeIndex state 사용.
-  // SVG path 영역으로 박아 slice 영역 hover 박힘 (옛 conic-gradient 영역 = 못 박은 영역).
+  // SVG path 로 그려 slice 영역 hover 가능 (옛 conic-gradient = 불가능했던 부분).
   const [active, setActive] = React.useState<number | null>(null);
 
   // SVG arc path 영역 계산.
@@ -1473,7 +1473,7 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
     return { ...seg, a0, a1 };
   });
 
-  /** SVG path d 영역 — arc 영역. r 영역 박은 outer radius 사용 (active 영역 = 더 큰 r). */
+  /** SVG path d 계산 — arc. r 은 outer radius 사용 (active 조각은 더 큰 r). */
   const arcPath = (a0: number, a1: number, r: number, ri = 0) => {
     const largeArc = a1 - a0 > Math.PI ? 1 : 0;
     const x0 = CENTER + Math.cos(a0) * r;
@@ -1499,8 +1499,8 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
           height={SIZE}
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           className="drop-shadow-sm shrink-0"
-          // 모바일 영역 — pie 외부 박은 영역 터치 시 active 해제.
-          onTouchEnd={() => { /* slice onTouchStart 영역에서 박은 active 영역 유지 — 외부 박은 영역에서만 해제 */ }}
+          // 모바일 — pie 외부 영역 터치 시 active 해제.
+          onTouchEnd={() => { /* slice onTouchStart 에서 설정한 active 유지 — 외부 영역에서만 해제 */ }}
         >
           {arcs.map((arc, i) => {
             // 선택 조각 = 중심각 방향으로 살짝 pop-out (분리). 다른 조각·범례 글자 이동 0 (translate 만).
@@ -1826,7 +1826,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
 type MapMarker = {
   lat: number;
   lon: number;
-  /** \n 박은 multi-line 영역 박음 — 옛 단일 줄 텍스트 + 새 기상청 태풍 예보 형태 양쪽 지원 */
+  /** \n 으로 구분한 multi-line 지원 — 옛 단일 줄 텍스트 + 새 기상청 태풍 예보 형태 양쪽 지원 */
   label: string;
   popup?: string | null;
   color?: string | null;
@@ -1835,7 +1835,7 @@ type MapMarker = {
   icon?: string | null;
   /** 마커 크기 — small / medium(기본) / large. 태풍 현재 위치 = large */
   size?: 'small' | 'medium' | 'large' | null;
-  /** 최대풍속 m/s — typhoon/forecast 마커 색 자동 (기상청 강도 단계). 박혀있으면 color 우선. */
+  /** 최대풍속 m/s — typhoon/forecast 마커 색 자동 (기상청 강도 단계). color 가 있으면 color 우선. */
   windSpeed?: number | null;
 };
 
@@ -1971,7 +1971,7 @@ function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = n
 }
 
 
-/** multi-line label 영역 → HTML \<br\> 변환. sanitize 박은 후. */
+/** multi-line label → HTML \<br\> 변환. sanitize 후. */
 function labelToHtml(label: string): string {
   return sanitizePopupHtml(label).replace(/\n/g, '<br>');
 }
@@ -2226,7 +2226,7 @@ function MapComp({
               fillOpacity: 0.1,
             }).setMap(map);
           }
-          // Polyline (lines) — 태풍 경로 / 항공 경로 / 도보 경로 영역. style=dashed 박힌 영역 = 예상 경로.
+          // Polyline (lines) — 태풍 경로 / 항공 경로 / 도보 경로. style=dashed 인 선 = 예상 경로.
           for (const ln of safeLines) {
             const path = ln.points.map(p => new w.kakao.maps.LatLng(p.lat, p.lon));
             new w.kakao.maps.Polyline({
@@ -2238,7 +2238,7 @@ function MapComp({
               strokeStyle: ln.style === 'dashed' ? 'dash' : 'solid',
             }).setMap(map);
           }
-          // 마커 — icon 박힌 영역 = emoji divIcon (태풍 / 카테고리), 옛 영역 = color svg circle.
+          // 마커 — icon 이 있으면 emoji divIcon (태풍 / 카테고리), 없으면 color svg circle.
           // 클릭 시 항상 우리 popup 표시 (label 또는 m.popup), kakao 기본 place_url javascript:void 링크 회피.
           const makeColorMarkerImage = (color: string, size = 22) => {
             const r = Math.floor(size / 2) - 3;

@@ -109,7 +109,7 @@ const TEMP_FINAL_TURN: f64 = 0.85;
 // 옛 is_simple_chat fast path 폐기 (2026-05-11) — 길이 / 키워드 휴리스틱 기반은 일반 fix
 // 가 안 됨. 짧은 query 가 fast path 로 빠져 도구 schema 가 누락 → "삼성전자 현재가 얼마야" 같은
 // 자연 query 가 sysmod 호출 못 하던 root cause. 새 keyword 추가는 또 다른 개별 fix.
-// 진짜 일반 = 도구 schema 항상 박고 LLM 자체 판단 위임. 토큰 비용 약간 ↑ 단 정확성 ↑.
+// 진짜 일반 = 도구 schema 항상 제공하고 LLM 자체 판단 위임. 토큰 비용 약간 ↑ 단 정확성 ↑.
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -851,7 +851,7 @@ impl AiManager {
                 // cron_agent 옵션 → PromptBuilder 의 CronAgentContext 변환.
                 // ai_opts.cron_agent 가 Some 일 때만 cron 전용 prelude (system/prompts/cron_agent)
                 // 가 base 시스템 프롬프트 앞에 prepend 됨. cron 발화 시 LLM 이 "이건 자동 실행이다,
-                // 즉시 도구 호출 박아라" 인식 — 옛에 schedule.rs 가 cron_agent 박지 않아 admin chat
+                // 즉시 도구 호출해라" 인식 — 옛에 schedule.rs 가 cron_agent 를 전달하지 않아 admin chat
                 // 표준 prompt 만 받음 → LLM 이 agentPrompt 를 "신규 사용자 요청" 으로 잘못 해석 →
                 // sysmod 호출 0 silent fail issue 의 진짜 root cause.
                 let cron_ctx = ai_opts.cron_agent.as_ref().map(|c| {

@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
     //   - `image-rs` (default 권장) — image-rs + fast_image_resize + blurhash crate. 옛 TS sharp 1:1.
     //   - `stub` — 단위 테스트 용 no-op (1x1 grey PNG / no-op resize).
     // env `FIREBAT_IMAGE_GEN`:
-    //   - `stub` (default — Step 2c 설정될 ConfigDrivenImageGenAdapter 박히기 전 placeholder)
+    //   - `stub` (default — Step 2c 설정될 ConfigDrivenImageGenAdapter 적용되기 전 placeholder)
     //   - Step 2c 설정될 어댑터: ConfigDrivenImageGenAdapter (4 format — openai/gemini/codex CLI)
     // 어댑터 swap 시 매니저 / tool_registry 코드 변경 0건 (인터페이스 동일).
     let processor_kind = std::env::var("FIREBAT_IMAGE_PROCESSOR")

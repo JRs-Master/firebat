@@ -445,8 +445,8 @@ export function HubInstanceDetail({
             </button>
           </div>
           <p className="text-[10px] text-slate-400">
-            외부 사이트 (워드프레스 등) HTML 안 &lt;/body&gt; 직전에 박으면 즉시 Hub 활성. allowed_domains
-            설정 영역 비어있으면 모든 origin 허용 (개발). 운영 시 도메인 명시 권장.
+            외부 사이트 (워드프레스 등) HTML 의 &lt;/body&gt; 직전에 넣으면 즉시 Hub 가 활성화됩니다. allowed_domains
+            설정이 비어있으면 모든 origin 을 허용합니다 (개발). 운영 시 도메인 명시를 권장합니다.
           </p>
         </div>
       </div>

@@ -1,8 +1,8 @@
 /**
  * Hub 외부 위젯 JS — GET /api/hub/widget.js
  *
- * 외부 사이트 (워드프레스 등) 안 박히는 `<script src="...">` 영역 응답. self-contained vanilla JS —
- * 의존성 0, framework 0. data-slug / data-token / data-firebat-url 영역 script tag 자체 안 명시.
+ * 외부 사이트 (워드프레스 등) 에 들어가는 `<script src="...">` 응답. self-contained vanilla JS —
+ * 의존성 0, framework 0. data-slug / data-token / data-firebat-url 은 script tag 자체에 명시.
  *
  * snippet 예시 (admin HubInstanceDetail 안 자동 생성):
  *

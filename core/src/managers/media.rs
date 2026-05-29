@@ -283,7 +283,7 @@ fn parse_media_url(url: &str) -> Option<(MediaScope, String, String)> {
 pub struct MediaManager {
     media: Arc<dyn IMediaPort>,
     /// IImageGenPort + IImageProcessorPort + IVaultPort + ILogPort — Step 2d 설정.
-    /// 모두 Optional builder — 박히기 전엔 thin wrapper (옛 호환).
+    /// 모두 Optional builder — 주입되기 전엔 thin wrapper (옛 호환).
     image_gen: Option<Arc<dyn IImageGenPort>>,
     processor: Option<Arc<dyn IImageProcessorPort>>,
     vault: Option<Arc<dyn IVaultPort>>,
@@ -334,7 +334,7 @@ impl MediaManager {
         self
     }
 
-    /// Cross-call hooks (옛 TS Core facade 패턴 1:1) — 박히면 자동 forward.
+    /// Cross-call hooks (옛 TS Core facade 패턴 1:1) — 주입되면 자동 forward.
     pub fn with_cost(mut self, cost: Arc<CostManager>) -> Self {
         self.cost = Some(cost);
         self

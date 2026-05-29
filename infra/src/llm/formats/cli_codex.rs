@@ -47,7 +47,7 @@ impl CodexCliHandler {
         }
     }
 
-    /// CODEX_HOME 디렉토리 박기 + config.toml + auth.json 복사.
+    /// CODEX_HOME 디렉토리 생성 + config.toml + auth.json 복사.
     /// 옛 TS `ensureCodexHome` 1:1. HTTP MCP (`experimental_use_rmcp_client = true`) + `bearer_token_env_var`.
     fn ensure_codex_home(internal_mcp_token: Option<&str>, base_url: Option<&str>) -> Option<PathBuf> {
         let codex_home = std::env::temp_dir().join("firebat-codex-home");
@@ -211,7 +211,7 @@ impl CodexCliHandler {
 
         let args = Self::build_args(&prompt_with_system, opts, tmp_image_path);
 
-        // CODEX_HOME 박기 (도구 호출 모드만)
+        // CODEX_HOME 설정 (도구 호출 모드만)
         let codex_home = if with_tools {
             Self::ensure_codex_home(opts.mcp_token.as_deref(), opts.mcp_base_url.as_deref())
         } else {

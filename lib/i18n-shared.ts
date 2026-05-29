@@ -26,7 +26,7 @@ export const MESSAGES: Record<Lang, Record<string, unknown>> = {
 export const FALLBACK_LANG: Lang = 'en';
 
 /** SSR + 첫 client render (hydration) 의 default 언어.
- *  ⚠️ localStorage 읽기는 useEffect 안에서만 — lazy useState init 에 박으면 server 는
+ *  ⚠️ localStorage 읽기는 useEffect 안에서만 — lazy useState init 에 넣으면 server 는
  *  FALLBACK 으로 영문 렌더, client 는 localStorage 의 'ko' 로 한국어 렌더 → text node
  *  mismatch → React #418. server / client 가 같은 값 반환하도록 통일.
  *  값 = 'en' — SetupWizard / FALLBACK 과 동일한 글로벌 default. 한국어 사용자는

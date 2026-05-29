@@ -4,21 +4,21 @@
 //!
 //! 용도: cron 자동 실행 (사용자 부재) 안에서 CLI 모델의 자체 MCP loop 으로 destructive
 //! 도구 (schedule_task / cancel_task / save_page / delete_file / delete_page) 호출 시
-//! pending action 박지 않고 직접 실행. 등록 시점에 이미 사용자 승인 받음.
+//! pending action 만들지 않고 직접 실행. 등록 시점에 이미 사용자 승인 받음.
 //!
-//! admin chat 안에서 같은 도구 호출 시 = 본 flag 박지 않음 = MCP handler 가 pending
-//! 박아 사용자 승인 카드 박힘.
+//! admin chat 안에서 같은 도구 호출 시 = 본 flag 가 설정되지 않음 = MCP handler 가 pending
+//! 을 만들어 사용자 승인 카드를 표시.
 //!
-//! 동시 cron 발화 시점 race = 옛 TS 와 동일하게 단순 counter 박음 (jobId 식별 X).
-//! 동시 cron + admin race 시 admin 호출이 cron 우회 박힐 위험 있지만 운영 영역
-//! 작음 (cron 발화 빈도 ↓ + admin 사용자 활성 시간 ↑ 영역 거의 0).
+//! 동시 cron 발화 시점 race = 옛 TS 와 동일하게 단순 counter 사용 (jobId 식별 X).
+//! 동시 cron + admin race 시 admin 호출이 cron 우회될 위험 있지만 그 가능성
+//! 작음 (cron 발화 빈도 ↓ + admin 사용자 활성 시간 ↑ 으로 거의 0).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static ACTIVE_CRON_JOBS: AtomicUsize = AtomicUsize::new(0);
 
 /// RAII guard — enter() 호출 시 counter +1, drop 시 -1.
-/// run_agent_job RPC + ScheduleManager.run_once 의 agent 분기 양쪽에서 박음.
+/// run_agent_job RPC + ScheduleManager.run_once 의 agent 분기 양쪽에서 사용.
 pub struct CronContextGuard;
 
 impl CronContextGuard {

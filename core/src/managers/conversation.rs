@@ -64,7 +64,7 @@ impl ConversationManager {
         }
     }
 
-    /// Embedder 주입 — 박히면 메시지 sync + cosine 검색 활성. 옛 TS 의 IEmbedderPort 의존성 위치.
+    /// Embedder 주입 — 주입되면 메시지 sync + cosine 검색 활성. 옛 TS 의 IEmbedderPort 의존성 위치.
     pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {
         self.embedder = Some(embedder);
         self

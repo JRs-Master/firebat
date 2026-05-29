@@ -83,7 +83,7 @@ impl ConfigDrivenImageGenAdapter {
                 return Some(cfg);
             }
         }
-        // fallback — default model (registry 안 명시 박힐 때만). 임의 첫 값 fallback 폐기.
+        // fallback — default model (registry 안에 명시돼 있을 때만). 임의 첫 값 fallback 폐기.
         if !self.default_model_id.is_empty() {
             self.registry.get(&self.default_model_id)
         } else {

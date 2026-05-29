@@ -4,7 +4,7 @@
 //! - `gemini -p <prompt> --output-format stream-json --approval-mode yolo`
 //! - `-m <cli_model>` (CLI 모델 ID)
 //! - `--resume <session_id>` (멀티턴) — 실패 시 자동 재시도 (resume 없이)
-//! - workspace 디렉토리 (cwd) 박기:
+//! - workspace 디렉토리 (cwd) 구성:
 //!   - `<workspace>/GEMINI.md` — Firebat User AI 페르소나 + Gemini CLI 도구 prefix 규칙 + 환경 노출 금지
 //!   - `<workspace>/.gemini/settings.json` — `mcpServers.firebat` (HTTP streamable 우선) + `coreTools=[]` + `excludeTools` (내장 차단) + `model.thinkingConfig` (thinking 출력 차단)
 //! - 첨부 이미지: workspace 내부 임시 파일 + `@<path>` 구문 (workspace 외 차단됨)
@@ -51,7 +51,7 @@ impl GeminiCliHandler {
         name
     }
 
-    /// workspace 박기 — GEMINI.md (system prompt + 도구 prefix 규칙) + .gemini/settings.json (MCP).
+    /// workspace 구성 — GEMINI.md (system prompt + 도구 prefix 규칙) + .gemini/settings.json (MCP).
     /// 옛 TS `ensureGeminiWorkspace` 1:1.
     fn ensure_workspace(
         system_prompt: Option<&str>,
@@ -154,7 +154,7 @@ impl GeminiCliHandler {
         with_tools: bool,
         skip_resume: bool,
     ) -> InfraResult<CliRunOutcome> {
-        // workspace 박기 (도구 호출 모드만)
+        // workspace 구성 (도구 호출 모드만)
         let workspace = if with_tools {
             Self::ensure_workspace(
                 opts.system_prompt.as_deref(),
