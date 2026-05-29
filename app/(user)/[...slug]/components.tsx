@@ -1903,19 +1903,22 @@ function markerDeviceScale(): number {
   return (typeof window !== 'undefined' && window.innerWidth >= 640) ? 1.25 : 1.0;
 }
 
-/** 카테고리 마커 핀 — 표준 지도 핀(아래 뾰족 + 위 둥근 머리, 흰 바탕 + slate 테두리) 안에 이모지.
- *  끝(tip)이 좌표 지점을 가리킴 (anchor=bottom / offset=tip). data URI 반환. 크기 w × round(w*1.32). */
-function buildPinSvgUrl(emoji: string, w: number): string {
+/** 카테고리 마커 핀 — 구글맵식: 색 있는 teardrop(Firebat indigo) + 흰 속원 + 이모지.
+ *  색 = 브랜드 accent 와 어울림, 흰 속원이 이모지 가독성 유지. 끝(tip)이 좌표 지점 (anchor=bottom /
+ *  offset=tip). data URI 반환. 크기 w × round(w*1.32). */
+function buildPinSvgUrl(emoji: string, w: number, color = '#6366f1'): string {
   const r = w / 2 - 1.5;
   const cx = w / 2;
   const cy = r + 1.5;
   const h = Math.round(w * 1.32);
   const tipY = h - 0.5;
-  // 머리 원 + 아래로 모이는 tail (teardrop): bottom tip → 왼쪽 → 머리 원 arc → 오른쪽 → tip.
+  // 색 teardrop: bottom tip → 왼쪽 → 머리 원 arc → 오른쪽 → tip. 흰 외곽선으로 지도 위 대비.
   const path = `M ${cx} ${tipY} C ${cx - r * 0.55} ${cy + r * 1.05}, ${cx - r} ${cy + r * 0.35}, ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} C ${cx + r} ${cy + r * 0.35}, ${cx + r * 0.55} ${cy + r * 1.05}, ${cx} ${tipY} Z`;
-  const fontSize = Math.round(r * 1.0);
+  const inner = r * 0.62;
+  const fontSize = Math.round(inner * 1.4);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
-    + `<path d="${path}" fill="white" stroke="#64748b" stroke-width="1.5"/>`
+    + `<path d="${path}" fill="${color}" stroke="white" stroke-width="1.5"/>`
+    + `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="white"/>`
     + `<text x="${cx}" y="${cy}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
@@ -2089,8 +2092,8 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
     el.innerHTML = `<img src="${typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-    // 표준 핀(아래 뾰족 + 둥근 머리)에 이모지 — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom).
-    const headW = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
+    // 색 핀(흰 속원 + 이모지) — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom). 속원만큼 크게.
+    const headW = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
     const h = Math.round(headW * 1.32);
     el.innerHTML = `<img src="${buildPinSvgUrl(MARKER_ICON_EMOJI[m.icon], headW)}" width="${headW}" height="${h}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
   } else {
@@ -2266,7 +2269,7 @@ function MapComp({
               const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
               opts.image = makeDataUriImage(typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-              const size = markerPixelSize(m.size, true);
+              const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
             } else if (m.color) {
               opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
