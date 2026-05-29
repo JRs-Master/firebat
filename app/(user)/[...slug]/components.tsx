@@ -2279,17 +2279,19 @@ function MapComp({
           style: 'https://tiles.openfreemap.org/styles/bright',
           center: [finalCenter.lon, finalCenter.lat],
           zoom: Math.max(1, finalZoom - 1),
+          // attribution = 항상 접힘(ⓘ 아이콘). compact 미지정 시 넓은 화면에서 자동 펼침 → 강제 접음.
+          attributionControl: { compact: true },
         });
         mapInstance = map;
         resizeObserver = new ResizeObserver(() => map.resize());
         resizeObserver.observe(container);
-        map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-left');
+        // +/- 줌 버튼(NavigationControl) 미표시 — 휠/핀치 줌으로 충분, 화면 깔끔하게.
         map.on('load', () => {
           // lang 분기 — symbol layer text-field = name:{lang} 우선 → name:latin → name (현지어) fallback.
           // 한국어 lang = 동아시아 전역 한글 라벨 (네이버처럼). 영어 lang = name:latin (영문).
           for (const layer of map.getStyle().layers) {
-            // 행정·해상 경계선 (점선 포함) 숨김 — 태풍/날씨 지도에 불필요 + 뱃길로 오인.
-            if (layer.type === 'line' && /boundary/i.test(layer.id)) {
+            // 행정·해상 경계선 (국경/주경계/분쟁경계/점선 포함) 숨김 — 태풍/날씨 지도에 불필요 + 뱃길로 오인.
+            if (layer.type === 'line' && /bound|admin|disput/i.test(layer.id)) {
               try { map.setLayoutProperty(layer.id, 'visibility', 'none'); } catch { /* 무시 */ }
               continue;
             }
@@ -2302,6 +2304,10 @@ function MapComp({
                   ['get', 'name:latin'],
                   ['get', 'name'],
                 ]);
+                // 폰트 weight — 나라명·수도 = Bold(굵게), 일반 지명 = Regular(가늘게). 벡터 glyph 는
+                // 숫자 weight(500/600) 미지원 → Noto Sans Regular/Bold 2단계로 분리 (OpenFreeMap 기본 제공).
+                const bold = /country|capital/i.test(layer.id);
+                map.setLayoutProperty(layer.id, 'text-font', bold ? ['Noto Sans Bold'] : ['Noto Sans Regular']);
               } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
             }
           }
