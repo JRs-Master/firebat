@@ -212,6 +212,12 @@ impl ToolManager {
         let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.handlers.len()
     }
+
+    /// 도구 핸들러 등록 여부 — 환각 도구(TaskCreate 등) 사전 판정용. dispatch 전 호출.
+    pub fn has_handler(&self, name: &str) -> bool {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.handlers.contains_key(name)
+    }
 }
 
 impl Default for ToolManager {

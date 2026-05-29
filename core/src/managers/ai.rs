@@ -925,6 +925,10 @@ impl AiManager {
         // Layer 2 per-turn duplicate guard — turn 안에서 같은 (name + args) 두 번째 호출 차단.
         // 옛 TS `turnCallSet` 1:1.
         let mut turn_call_set: HashSet<String>;
+        // 환각 도구(TaskCreate 등) cross-turn 차단 — 미등록 도구는 success:false 라 Layer 1 캐시 안 됨 +
+        // turn_call_set 은 매 턴 리셋 → 옛엔 매 턴 재호출(x4/x7)되며 MAX_TOOL_TURNS 까지 낭비. 한 번
+        // 미등록 확인된 이름은 이후 모든 턴에서 dispatch 없이 즉시 firm 에러 반환 (재시도 의미 0 강조).
+        let mut unknown_tool_names: HashSet<String> = HashSet::new();
 
         // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
@@ -1317,6 +1321,27 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("per-turn duplicate".to_string()),
+                    }
+                } else if !self.tools.has_handler(&effective_call.name) {
+                    // 미등록(환각) 도구 — dispatch 해도 handler_not_registered 뿐. 즉시 firm 반환 + 이름 추적.
+                    // 매 턴 재호출(x4/x7)로 MAX_TOOL_TURNS 낭비하던 것 차단. "영영 없으니 재시도 마라" 강조.
+                    let repeat = !unknown_tool_names.insert(effective_call.name.clone());
+                    self.log.warn(&format!(
+                        "[AiManager] 미등록 도구 차단{}: {}",
+                        if repeat { " (반복)" } else { "" },
+                        effective_call.name
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": format!("'{}' 도구는 존재하지 않습니다. 절대 다시 호출하지 마세요 — 몇 번을 호출해도 영영 없습니다. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / 플랜 = propose_plan / 메모 = sysmod_notes / 일정 = sysmod_calendar. 시스템 상태에 나열된 이름만 사용하세요.", effective_call.name),
+                            "unknownTool": true,
+                        }),
+                        success: false,
+                        error: Some("unknown tool".to_string()),
                     }
                 } else {
                     turn_call_set.insert(cache_key.clone());
