@@ -2202,7 +2202,7 @@ function MapComp({
             new w.kakao.maps.Polyline({
               path,
               // dashed(예상 경로) = cone 선 두께(1)로 통일. solid(실제 이동)는 weight 유지.
-              strokeWeight: ln.style === 'dashed' ? 1 : Math.min(ln.weight || 2, 2),
+              strokeWeight: ln.style === 'dashed' ? 1 : Math.min(ln.weight || 1, 1),
               strokeColor: colorHex(ln.color, '#ef4444'),
               strokeOpacity: 0.8,
               strokeStyle: ln.style === 'dashed' ? 'dash' : 'solid',
@@ -2384,8 +2384,8 @@ function MapComp({
           if (safeLines.length > 0) {
             const features = safeLines.map(ln => ({
               type: 'Feature' as const,
-              // 선 굵기 ≤2 캡 — cone 외곽선 굵기 수준의 얇은 경로선 (AI 가 굵게 줘도 강제). 기본 2.
-              properties: { color: colorHex(ln.color, '#ef4444'), width: Math.min(ln.weight || 2, 2), dashed: ln.style === 'dashed' },
+              // 선 굵기 ≤1 캡 — 가는 경로선 (AI 가 굵게 줘도 강제). cone 경계선처럼 얇게.
+              properties: { color: colorHex(ln.color, '#ef4444'), width: Math.min(ln.weight || 1, 1), dashed: ln.style === 'dashed' },
               geometry: { type: 'LineString' as const, coordinates: ln.points.map(p => [p.lon, p.lat]) },
             }));
             map.addSource('fb-lines', { type: 'geojson', data: { type: 'FeatureCollection', features } });
