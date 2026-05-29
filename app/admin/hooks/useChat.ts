@@ -498,13 +498,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
+  // 하단 강제 — sentinel scrollIntoView 는 모바일에서 layout viewport 기준이라 주소창/키보드만큼
+  // 짧게 멈춤(끝까지 안 내려감). 스크롤 컨테이너를 scrollHeight 로 직접 내려 진짜 바닥 보장.
+  // rAF 로 새 메시지·스피너 레이아웃 settle 후 측정 (fire 시점엔 높이 미반영).
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = chatContainerRef.current;
+    if (!el) { chatEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' }); return; }
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    });
+  }, []);
+
   const prevMsgCountRef = useRef(messages.length);
   useEffect(() => {
     if (messages.length > prevMsgCountRef.current && isNearBottomRef.current) {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom(true);
     }
     prevMsgCountRef.current = messages.length;
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
   const handleNewConv = useCallback(() => {
@@ -745,9 +756,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     // StatusManager job 은 server 가 발행 → ActiveJobsIndicator 자동 표시.
     if (inputMode === 'image' && !isSuggestion && !meta?.planExecuteId && !meta?.planReviseId) {
       setLoading(true);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }));
+      scrollToBottom(true);
       try {
         const ctrl = new AbortController();
         abortRef.current = ctrl;
@@ -793,12 +802,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       return;
     }
 
-    // 명령 전송 직후엔 무조건 하단으로 — isNearBottomRef 는 dispatch 전에 갱신해
-    // useEffect 자동 scroll 발화. 추가 명시 scrollIntoView — smooth animation 으로
-    // 마지막 chatEnd 위치 보장 (DOM update 후 두 rAF 통해서).
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }));
+    // 명령 전송 직후엔 무조건 하단으로 — isNearBottomRef 는 dispatch 전에 갱신해 useEffect 자동
+    // scroll 발화. 추가 명시 — 컨테이너 scrollHeight 직접 (모바일 진짜 바닥). 한 번 더 늦게도 호출해
+    // 스피너·thinking 높이 늘어난 뒤 위치 재보정.
+    scrollToBottom(true);
+    setTimeout(() => scrollToBottom(true), 120);
 
     // 저장 시점 1: 유저 메시지 DB 즉시 반영 (다음 프레임에 최신 messages ref 로)
     const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
