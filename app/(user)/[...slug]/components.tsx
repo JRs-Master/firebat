@@ -2019,28 +2019,34 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
   return coords;
 }
 
-/** cone 을 MultiPolygon(원들 + 구간 사다리꼴)의 union 으로 — 단일 경계 polygon 의 자기 교차(fold)
- *  회피. 각 점 = 확률반경 원, 인접 점 사이 = 수직 offset 사다리꼴. fill nonzero 라 겹쳐도 균일 채움 →
- *  급격히 꺾여도 fold 없이 부드러운 tube. 끝/시작 = 원이라 자동 둥근 마감. 외곽선 없이 fill 전용. */
+/** cone 을 MultiPolygon(원들 + 구간 사다리꼴)의 union 으로 — 단일 경계 polygon 의 자기 교차(fold) 회피.
+ *  사다리꼴 변은 **외접선**(두 원에 접함, 반지름 변화량 beta 만큼 기울임)이라 원이 옆으로 안 튀어나옴 →
+ *  구슬 꿰기(beading) 없이 매끈한 tube. 원은 양 끝 둥근 마감 + 꺾이는 바깥쪽 코너 라운딩 담당. fill nonzero
+ *  라 겹쳐도 균일 채움 → 급커브에서도 fold 없음. 외곽선 없이 fill 전용. */
 function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
   const polys: [number, number][][][] = [];
   for (const p of pts) {
     polys.push([circlePolygonCoords(p.lat, p.lon, p.radius)]);
   }
+  const mLat = 111320;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    const refLat = (a.lat * Math.PI) / 180;
-    const mLat = 111320, mLon = 111320 * Math.cos(refLat);
-    let dx = (b.lon - a.lon) * mLon, dy = (b.lat - a.lat) * mLat;
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len; dy /= len;
+    let dx = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    let dy = (b.lat - a.lat) * mLat;
+    const d = Math.hypot(dx, dy) || 1;
+    dx /= d; dy /= d;
     const nx = -dy, ny = dx; // 왼쪽 법선 (meter)
-    const off = (p: { lat: number; lon: number }, r: number, sign: number): [number, number] => {
-      const pmLon = 111320 * Math.cos((p.lat * Math.PI) / 180);
-      return [p.lon + (sign * r * nx) / pmLon, p.lat + (sign * r * ny) / mLat];
+    // 외접선 기울기 — 반지름 변화량. 변이 두 원에 동시에 접하도록.
+    const beta = Math.asin(Math.max(-1, Math.min(1, (b.radius - a.radius) / d)));
+    const cb = Math.cos(beta), sb = Math.sin(beta);
+    const qLx = nx * cb - dx * sb, qLy = ny * cb - dy * sb;   // 왼쪽 접점 방향
+    const qRx = -nx * cb - dx * sb, qRy = -ny * cb - dy * sb; // 오른쪽 접점 방향
+    const offDir = (p: { lat: number; lon: number }, r: number, qx: number, qy: number): [number, number] => {
+      const pmLon = mLat * Math.cos((p.lat * Math.PI) / 180);
+      return [p.lon + (r * qx) / pmLon, p.lat + (r * qy) / mLat];
     };
-    const lA = off(a, a.radius, 1), lB = off(b, b.radius, 1);
-    const rB = off(b, b.radius, -1), rA = off(a, a.radius, -1);
+    const lA = offDir(a, a.radius, qLx, qLy), lB = offDir(b, b.radius, qLx, qLy);
+    const rA = offDir(a, a.radius, qRx, qRy), rB = offDir(b, b.radius, qRx, qRy);
     polys.push([[lA, lB, rB, rA, lA]]);
   }
   return polys;
@@ -2196,7 +2202,7 @@ function MapComp({
             new w.kakao.maps.Polyline({
               path,
               // dashed(예상 경로) = cone 선 두께(1)로 통일. solid(실제 이동)는 weight 유지.
-              strokeWeight: ln.style === 'dashed' ? 1 : (ln.weight || 3),
+              strokeWeight: ln.style === 'dashed' ? 1 : Math.min(ln.weight || 2, 2),
               strokeColor: colorHex(ln.color, '#ef4444'),
               strokeOpacity: 0.8,
               strokeStyle: ln.style === 'dashed' ? 'dash' : 'solid',
@@ -2378,7 +2384,8 @@ function MapComp({
           if (safeLines.length > 0) {
             const features = safeLines.map(ln => ({
               type: 'Feature' as const,
-              properties: { color: colorHex(ln.color, '#ef4444'), width: ln.weight || 3, dashed: ln.style === 'dashed' },
+              // 선 굵기 ≤2 캡 — cone 외곽선 굵기 수준의 얇은 경로선 (AI 가 굵게 줘도 강제). 기본 2.
+              properties: { color: colorHex(ln.color, '#ef4444'), width: Math.min(ln.weight || 2, 2), dashed: ln.style === 'dashed' },
               geometry: { type: 'LineString' as const, coordinates: ln.points.map(p => [p.lon, p.lat]) },
             }));
             map.addSource('fb-lines', { type: 'geojson', data: { type: 'FeatureCollection', features } });
