@@ -415,5 +415,12 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
 // 진행 중 상태 (isThinking/executing/streaming) 제거 — 다른 기기에서 "중단되었습니다"
 // 로 박제되는 문제 차단.
 export function cleanMessages(msgs: Message[]): Message[] {
-  return msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
+  return msgs.filter(m =>
+    !m.isThinking && !m.executing && !m.streaming
+    // fallback/에러 메시지("응답이 비어있습니다" 등)는 DB 저장·복원에서 제외. 옛 = 클라이언트가
+    // fallback 을 systemId 로 저장 → 서버가 같은 id 로 저장하는 진짜 답과 race → fallback 이 나중에
+    // 쓰이면 진짜 답을 덮어써서 "F5 해도 계속 SSE 에러" 영구화. 이제 fallback 은 세션 내 표시만 하고
+    // 영속 0 → 서버 완료 후 refresh/F5 시 진짜 답이 단독 source 라 안정 복구.
+    && !(m.role === 'system' && isFallbackContent(m.content)),
+  );
 }
