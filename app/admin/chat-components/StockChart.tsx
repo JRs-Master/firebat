@@ -34,6 +34,9 @@ const FG = '#0f172a';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
 
+// 줌 = 한 화면 캔들 수. 최소(최대 줌인) 하한 — 그 이하론 못 줌인.
+const ZOOM_MIN_CANDLES = 15;
+
 function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
   let sum = 0;
@@ -153,7 +156,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const curRange = viewEnd - viewStart + 1;
     const anchorIdx = viewStart + relX * (curRange - 1);
-    const newRange = Math.max(5, Math.min(fullN, Math.round(curRange * factor)));
+    const newRange = Math.max(ZOOM_MIN_CANDLES, Math.min(fullN, Math.round(curRange * factor)));
     let newS = Math.round(anchorIdx - relX * (newRange - 1));
     newS = Math.max(0, Math.min(fullN - newRange, newS));
     setView({ s: newS, e: newS + newRange - 1 });
@@ -192,11 +195,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, []);
 
   // 차트 치수 (가변).
-  // 봉 N 개 > SCROLL_THRESHOLD 이면 SVG 가로 스크롤 모드 — 봉 width 최소 12px 보장.
-  // 그 이하면 기존 viewport-fit 모드 (w-full).
+  // 스크롤 vs fit 모드는 **전체 데이터 수(fullN)** 로 결정. 옛엔 줌된 뷰 개수(safeData.length)로 결정해
+  // 휠 줌이 SCROLL_THRESHOLD 를 넘나들 때 모드가 flip → viewBox/텍스트 스케일/툴팁 매핑/스크롤바가
+  // 통째로 바뀌던 버그. fullN 기준이면 줌은 같은 모드 안에서 매끄럽게 (텍스트·툴팁 안정).
   const SCROLL_THRESHOLD = 60;
   const MIN_BAR_PX = 12; // 봉 1개 minimum 가로 픽셀
-  const useHScroll = safeData.length > SCROLL_THRESHOLD;
+  const useHScroll = fullN > SCROLL_THRESHOLD;
   // viewBox priceH 동적 — 비-스크롤 모드는 box 비율 (boxW : priceChartHeightPx) 에 viewBox aspect
   // (720 : priceH) 맞춤 → preserveAspectRatio="none" stretch 찌그러짐 0. 가로 스크롤 모드는 옛 280 고정.
   const priceH = useHScroll ? 280 : Math.max(Math.round(720 * priceChartHeightPx / boxW), 100);
@@ -210,8 +214,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const padRight = Math.max(56, maxPriceDigits * 6 + 12);
   const padTop = 18;
   const padBottom = 24;
-  // viewBox 너비 — 가로 스크롤 모드면 봉 수에 비례 확장. plot 영역도 자동 확장.
-  const W = useHScroll ? Math.max(720, padLeft + padRight + safeData.length * MIN_BAR_PX) : 720;
+  // viewBox 너비 — 가로 스크롤 모드면 봉 수에 비례 확장하되, 줌인으로 봉이 적어지면 최소 box 너비까지
+  // 채워 봉이 넓어지게 (빈 여백·모드 flip 방지). 봉이 많으면 box 초과 → 자연 가로 스크롤.
+  const W = useHScroll ? Math.max(Math.round(boxW), padLeft + padRight + safeData.length * MIN_BAR_PX) : 720;
   const plotW = W - padLeft - padRight;
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
@@ -319,7 +324,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const relX = Math.max(0, Math.min(1, (centerX - rect.left) / rect.width));
       const startRange = pinchRef.current.startE - pinchRef.current.startS + 1;
       const anchorIdx = pinchRef.current.startS + relX * (startRange - 1);
-      const newRange = Math.max(5, Math.min(fullN, Math.round(startRange * factor)));
+      const newRange = Math.max(ZOOM_MIN_CANDLES, Math.min(fullN, Math.round(startRange * factor)));
       let newS = Math.round(anchorIdx - relX * (newRange - 1));
       newS = Math.max(0, Math.min(fullN - newRange, newS));
       setView({ s: newS, e: newS + newRange - 1 });
