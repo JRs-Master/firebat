@@ -6,6 +6,7 @@ import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import type { LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
 import type { LibraryHubContext } from './LibraryPanel';
+import { Modal, MODAL_PAD_TOP, MODAL_PAD_BOTTOM } from './Modal';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
@@ -88,16 +89,9 @@ export function LibrarySourceModal({
   ) : null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
+    <Modal onClose={onClose}>
         {/* 헤더 */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0" style={MODAL_PAD_TOP}>
           {typeIcon}
           <div className="flex-1 min-w-0">
             <div className="text-[13px] font-bold text-slate-700 truncate">
@@ -128,7 +122,7 @@ export function LibrarySourceModal({
         </div>
 
         {/* 본문 */}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3" style={MODAL_PAD_BOTTOM}>
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 size={20} className="animate-spin text-slate-400" />
@@ -154,7 +148,6 @@ export function LibrarySourceModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
