@@ -340,7 +340,7 @@ mkdir -p /opt/firebat/{data,user/media,frontend}
 ln -sfn /opt/firebat-src/system /opt/firebat/system
 ln -sfn /opt/firebat-src/language /opt/firebat/language
 
-# 2. Python venv 의존 (E5 임베딩 모델 prefetch 용 — npm install postinstall 이 자동 사용)
+# 2. Python (sysmod 런타임용 — yfinance / playwright 등). 모듈 설치 시 venv 자동 생성.
 sudo apt install python3-venv
 
 # 3. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
@@ -350,10 +350,8 @@ chmod +x /opt/firebat/firebat-core
 # 4. Next.js standalone build + 배치
 cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
-# ↑ postinstall 이 자동 실행 — E5 임베딩 모델 (~470MB) prefetch.
-#   venv (<source root>/.venv) 자동 생성 + huggingface_hub 설치 + 모델 다운로드.
-#   cache 가 생성된 이후 매 npm install 시점 즉시 skip.
-#   skip: FIREBAT_SKIP_EMBEDDER_PREFETCH=1 또는 FIREBAT_EMBEDDER=stub
+# E5 임베딩 모델(~470MB)은 Rust core 가 첫 임베딩 사용 시 hf-hub 로 자동 다운로드(lazy) —
+# 옛 npm postinstall prefetch 는 폐기됨(2026-05-17). FIREBAT_EMBEDDER=stub 으로 임베딩 비활성 가능.
 rsync -a .next/standalone/ /opt/firebat/frontend/
 rsync -a .next/static/ /opt/firebat/frontend/.next/static/
 rsync -a language/ /opt/firebat/frontend/language/
@@ -371,9 +369,8 @@ systemctl reload caddy
 **Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP / `cargo build` (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
 
 **System dependencies** (Vultr Debian 표준):
-- `python3-venv` — E5 임베딩 모델 prefetch venv (PEP 668 정공)
-- `python3` — sysmod (yfinance / playwright / etc) runtime + venv host
-- Optional: `pipx install huggingface_hub` 설치한 경우 setup-embedder.mjs 가 시스템 PATH 의 `huggingface-cli` 자동 사용 (venv 생성 skip)
+- `python3` / `python3-venv` — sysmod (yfinance / playwright / etc) 런타임 + 모듈 설치 venv host
+- E5 임베딩 모델(~470MB) = 별도 의존성 0 — Rust core 가 hf-hub 로 첫 사용 시 자동 다운로드 (`~/.cache/huggingface/hub/` 캐시)
 
 **Self-contained 패턴** — 매 의존성 (venv / sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
 
