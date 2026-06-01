@@ -14,6 +14,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react'
 import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
@@ -89,6 +91,7 @@ export function CalendarPanel({
   hubContext?: CalendarHubContext;
 } = {}) {
   const t = useTranslations();
+  const rows = useRowActions();
   const today = useMemo(() => new Date(), []);
   const [cursorYear, setCursorYear] = useState(today.getFullYear());
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
@@ -368,7 +371,7 @@ export function CalendarPanel({
           <ul className="list-none p-0 m-0">
             {selectedEvents.map(e => (
               <li key={e.id} className="border-b border-slate-100 px-2 py-1.5 hover:bg-slate-50">
-                <div className="flex items-start gap-1.5">
+                <div className="group flex items-start gap-1.5" onClick={() => rows.handleRowClick(e.id)}>
                   <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(e.startAt)}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-bold text-slate-700 truncate">{e.title}</div>
@@ -396,9 +399,10 @@ export function CalendarPanel({
                       )}
                     </div>
                   </div>
+                  <span className={rowActionsClass(rows.isActive(e.id))}>
                   <Tooltip label={t('common.edit')}>
                     <button
-                      onClick={() => { setEditing(e); setShowCreate(true); }}
+                      onClick={(ev) => { ev.stopPropagation(); setEditing(e); setShowCreate(true); }}
                       className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                     >
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -409,12 +413,13 @@ export function CalendarPanel({
                   </Tooltip>
                   <Tooltip label={t('common.delete')}>
                     <button
-                      onClick={() => handleDelete(e)}
+                      onClick={(ev) => { ev.stopPropagation(); handleDelete(e); }}
                       className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
                     >
                       <Trash2 size={10} />
                     </button>
                   </Tooltip>
+                  </span>
                 </div>
               </li>
             ))}

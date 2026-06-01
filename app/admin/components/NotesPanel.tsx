@@ -13,6 +13,8 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -71,6 +73,7 @@ export function NotesPanel({
   hubContext?: NotesHubContext;
 } = {}) {
   const t = useTranslations();
+  const rows = useRowActions();
   const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
@@ -182,7 +185,7 @@ export function NotesPanel({
                 <li key={n.slug} className="border-b border-slate-100">
                   <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
                     <button
-                      onClick={() => handleExpand(n.slug)}
+                      onClick={() => rows.handleRowClick(n.slug, () => handleExpand(n.slug))}
                       className="flex-1 text-left flex items-start gap-2 cursor-pointer bg-transparent border-0 p-0 min-w-0"
                     >
                       <NotebookText size={11} className="mt-0.5 shrink-0 text-slate-400" />
@@ -200,6 +203,7 @@ export function NotesPanel({
                         )}
                       </div>
                     </button>
+                    <span className={rowActionsClass(rows.isActive(n.slug))}>
                     <Tooltip label={t('common.edit')}>
                       <button
                         onClick={() => { setEditing(detail || n); setShowCreate(true); }}
@@ -219,6 +223,7 @@ export function NotesPanel({
                         <Trash2 size={10} />
                       </button>
                     </Tooltip>
+                    </span>
                   </div>
                   {isExpanded && detail && (
                     <div className="px-3 py-2 bg-slate-50/50 border-t border-slate-100">

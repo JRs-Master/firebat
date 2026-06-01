@@ -12,6 +12,8 @@ import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 
 interface TemplateEntry {
   slug: string;
@@ -49,6 +51,7 @@ export function TemplatesPanel({
   hubContext?: TemplatesHubContext;
 }) {
   const t = useTranslations();
+  const rows = useRowActions();
   const newSlugId = useId();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -187,22 +190,24 @@ export function TemplatesPanel({
               <div
                 key={tpl.slug}
                 className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                onClick={() => onEditFile?.(`user/templates/${tpl.slug}/template.json`)}
+                onClick={() => rows.handleRowClick(tpl.slug, () => onEditFile?.(`user/templates/${tpl.slug}/template.json`))}
               >
                 <FileCode size={13} className="shrink-0 text-slate-400" />
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] font-bold text-slate-700 truncate">{tpl.name}</div>
                   <div className="text-[10px] text-slate-400 truncate">{tpl.slug}</div>
                 </div>
-                <Tooltip label={t('common.delete')}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(tpl.slug); }}
-                    className="p-1 text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                    aria-label="삭제"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </Tooltip>
+                <span className={rowActionsClass(rows.isActive(tpl.slug))}>
+                  <Tooltip label={t('common.delete')}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(tpl.slug); }}
+                      className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                      aria-label="삭제"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </Tooltip>
+                </span>
               </div>
             ))}
           </div>

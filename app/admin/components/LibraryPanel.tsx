@@ -6,6 +6,8 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 import { apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibraryReferenceDetail } from './LibraryReferenceDetail';
@@ -25,6 +27,7 @@ export type LibraryHubContext = { slug: string; apiToken: string; sessionId: str
  */
 export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } = {}) {
   const t = useTranslations();
+  const rows = useRowActions();
   const [refs, setRefs] = useState<LibraryReferencePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -194,7 +197,7 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
               <div
                 key={ref.id}
                 className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => setSelectedRef(ref)}
+                onClick={() => rows.handleRowClick(String(ref.id), () => setSelectedRef(ref))}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-slate-700 truncate">
@@ -206,14 +209,16 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
                     </div>
                   )}
                 </div>
-                <Tooltip label={t('common.delete')}>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDelete(ref); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </Tooltip>
+                <span className={rowActionsClass(rows.isActive(String(ref.id)))}>
+                  <Tooltip label={t('common.delete')}>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDelete(ref); }}
+                      className="p-1 text-slate-400 hover:text-red-600 transition-all"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </Tooltip>
+                </span>
                 <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
               </div>
             ))}

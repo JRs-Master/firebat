@@ -16,6 +16,8 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -72,6 +74,7 @@ export function EntitiesPanel({
   hubContext?: EntitiesHubContext;
 } = {}) {
   const t = useTranslations();
+  const rows = useRowActions();
   const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -290,7 +293,7 @@ export function EntitiesPanel({
                 <li key={e.id} className="border-b border-slate-100">
                   <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
                     <button
-                      onClick={() => handleExpand(e.id)}
+                      onClick={() => rows.handleRowClick(String(e.id), () => handleExpand(e.id))}
                       className="flex-1 text-left flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0"
                     >
                       <span className="text-[11px] font-bold text-slate-700 truncate">{e.name}</span>
@@ -299,6 +302,7 @@ export function EntitiesPanel({
                         <span className="text-[9px] text-slate-400 tabular-nums shrink-0">{e.factCount}</span>
                       )}
                     </button>
+                    <span className={rowActionsClass(rows.isActive(String(e.id)))}>
                     <Tooltip label={t('common.delete')}>
                       <button
                         onClick={() => handleDelete(e)}
@@ -307,6 +311,7 @@ export function EntitiesPanel({
                         <Trash2 size={10} />
                       </button>
                     </Tooltip>
+                    </span>
                   </div>
                   {isExpanded && (
                     <div className="px-3 py-2 bg-slate-50/50 border-t border-slate-100">

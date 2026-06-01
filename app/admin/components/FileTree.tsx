@@ -9,6 +9,8 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiDelete } from '../../../lib/api-fetch';
 import { useTranslations } from '../../../lib/i18n';
+import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 
 export interface TreeNode {
   name: string;
@@ -46,6 +48,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
   const t = useTranslations();
   const [isOpen, setIsOpen] = useState(depth < 2);
   const [deleting, setDeleting] = useState(false);
+  const rows = useRowActions();
 
   const pageUrl = !node.isDirectory ? toPageUrl(node.path) : null;
   const canDelete = isDeletable(node.path);
@@ -78,7 +81,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
     <div className="text-[13px] font-sans font-medium whitespace-nowrap">
       <div
         className="flex items-center py-1.5 px-2 hover:bg-slate-200/50 rounded cursor-pointer text-slate-700 transition-colors select-none group"
-        onClick={() => node.isDirectory && setIsOpen(!isOpen)}
+        onClick={() => rows.handleNavClick(node.path, node.isDirectory ? () => setIsOpen(!isOpen) : undefined)}
       >
         {/* 화살표 */}
         <span className="w-4 h-4 mr-1 flex-shrink-0 flex items-center justify-center opacity-60 text-slate-500">
@@ -102,7 +105,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
         </span>
 
         {/* 액션 버튼 — 호버 시 노출 */}
-        <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex-shrink-0">
+        <span className={`${rowActionsClass(rows.isActive(node.path))} ml-1`}>
           {/* 열기 (page.tsx만) */}
           {pageUrl && (
             <Tooltip label={t('file_tree.open_in_browser')}>
