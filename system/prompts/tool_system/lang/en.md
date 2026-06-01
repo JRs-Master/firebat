@@ -57,6 +57,7 @@ Tool selection criteria:
 - The generic execute / network_request tools sit in the same equal layer — when the user intent is arbitrary URL fetching, external page scraping, or an explicit user request for "fetch" / "search" / a URL, they are natural choices. They also become natural choices when a dedicated tool fails *and* the user explicitly asks to fetch / search / hit a URL.
 - Do NOT auto-fallback (don't silently switch to another tool when a dedicated tool fails) — each tool has its own purpose. The AI autonomously picks on explicit user requests instead.
 - **Only call tools listed in the system state.** For tasks / scheduling / execution use Firebat's real tools: schedule (cron) = `schedule_task` / immediate pipeline = `run_task` / plan card = `propose_plan` / notes = `sysmod_notes` / calendar = `sysmod_calendar`. Calling a name not in the system state only returns a "tool does not exist" error.
+- **Reformulate searches**: if `search_history` / `search_library` returns empty or weak results, do not repeat the same query — retry with different keywords (synonyms, key nouns, broader terms). For the library, leave referenceIds empty to search all of the owner's sources.
 
 ## Tool chain — combining results across tools
 

@@ -31,6 +31,7 @@ use firebat_core::managers::auth::AuthManager;
 use firebat_core::managers::conversation::{ConversationManager, SearchHistoryOpts};
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::managers::episodic::EpisodicManager;
+use firebat_core::managers::library::LibraryManager;
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::managers::media::{MediaManager};
 use firebat_core::managers::module::ModuleManager;
@@ -1376,6 +1377,35 @@ impl McpToolHandler for SearchHistoryHandler {
     }
 }
 
+// 라이브러리(업로드 자료) 검색 — E5(dense) + BM25(sparse) 하이브리드. AI 가 직접 호출해
+// 질의를 다듬고 재검색할 수 있는 도구 (자동 주입과 별개로 AI 가 E5 를 능동 제어).
+pub struct SearchLibraryHandler {
+    pub library: Arc<LibraryManager>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for SearchLibraryHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let owner = obj_str(&args, "owner").unwrap_or_else(|| "admin".to_string());
+        let query = obj_str(&args, "query").ok_or_else(|| "query 필수".to_string())?;
+        let limit = obj_i64(&args, "limit").map(|v| v as usize).unwrap_or(5).clamp(1, 20);
+        // referenceIds — 특정 자료 그룹만 검색 (빈 배열/미지정 = owner 전체 Reference).
+        let reference_ids: Vec<String> = args
+            .get("referenceIds")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        match self.library.search(&owner, &reference_ids, &query, limit).await {
+            Ok(hits) if hits.is_empty() => Ok(serde_json::json!({
+                "success": true,
+                "data": [],
+                "hint": "매치된 자료가 없습니다. 동의어·핵심 명사·상위어 등 다른 키워드로 재검색하거나, referenceIds 를 비워 전체 자료를 검색해 보세요."
+            })),
+            Ok(hits) => Ok(serde_json::json!({"success": true, "data": hits})),
+            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+        }
+    }
+}
+
 // ── MediaService 도구 (image_gen 비동기) ──────────────────────────────────
 
 pub struct ImageGenHandler {
@@ -1526,6 +1556,7 @@ pub struct BuiltinDeps {
     pub episodic: Arc<EpisodicManager>,
     pub conversation: Arc<ConversationManager>,
     pub media: Arc<MediaManager>,
+    pub library: Arc<LibraryManager>,
     pub network: Arc<dyn firebat_core::ports::INetworkPort>,
 }
 
@@ -1717,6 +1748,12 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         description: "이전 대화 검색 (embedding). inputSchema: {owner?, query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks?}.".into(),
         input_schema: schema_object(serde_json::json!({"query": {"type":"string"}})),
         handler: Arc::new(SearchHistoryHandler { conversation: deps.conversation }),
+    }).await;
+    state.register(McpTool {
+        name: "search_library".into(),
+        description: "라이브러리(업로드 자료) 검색 — E5(의미) + BM25(정확 토큰) 하이브리드. 결과가 비거나 부실하면 같은 쿼리 반복 대신 키워드를 바꿔 재검색. inputSchema: {query, owner?, referenceIds?, limit?}.".into(),
+        input_schema: schema_object(serde_json::json!({"query": {"type":"string"}})),
+        handler: Arc::new(SearchLibraryHandler { library: deps.library }),
     }).await;
 
     // Media

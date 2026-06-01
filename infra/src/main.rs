@@ -811,6 +811,7 @@ async fn main() -> Result<()> {
                 episodic: episodic_manager.clone(),
                 conversation: conversation_manager.clone(),
                 media: media_manager.clone(),
+                library: library_manager.clone(),
                 network: network_port.clone(),
             },
         )
@@ -851,6 +852,7 @@ async fn main() -> Result<()> {
                 episodic: episodic_manager.clone(),
                 conversation: conversation_manager.clone(),
                 media: media_manager.clone(),
+                library: library_manager.clone(),
                 network: network_port.clone(),
             },
         )
