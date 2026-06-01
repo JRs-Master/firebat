@@ -98,6 +98,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  // 가로 스크롤 위치 — 가격축 라벨/툴팁을 뷰포트 우측·커서에 고정시키기 위해 추적.
+  const [scrollX, setScrollX] = useState(0);
+  const lastPointerXRef = useRef<number | null>(null); // 스크롤 시 마지막 커서 X 로 호버 재계산
 
   // 차트 전체 영역 cap — 모바일 320px / PC 480px. breakpoint 640 (sm). SSR null 시 320 fallback.
   // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) 에 cap 적용.
@@ -195,22 +198,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const priceH = priceChartHeightPx;
   const volH = 80;
   const padLeft = 50;
-  // Y축 라벨 우측 영역 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
+  // Y축 라벨 폭 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
   // 작은 가격대 (5만, 6자리) = 56 그대로. 큰 가격대 (1억, 11자리) ≈ 78px. 라벨 잘림 0.
+  // padRight 는 캔들 스크롤 영역 밖 우측 고정 거터(별도 컬럼) 폭 — 가격축이 캔들 위를 덮지 않게 분리.
   const maxPriceDigits = safeData.length > 0
     ? Math.max(...safeData.map(d => d.high)).toLocaleString('ko-KR').length
     : 8;
   const padRight = Math.max(56, maxPriceDigits * 6 + 12);
   const padTop = 18;
   const padBottom = 24;
+  // boxW = 캔들 스크롤 뷰포트 폭 (부모 paddingRight 로 거터 제외됨). plot 폭 = boxW - padLeft.
   // 줌(한 화면 캔들 수) → 캔들 폭(barPx). 봉 폭 캡 [MIN_BAR, MAX_BAR] 안.
-  const plotBoxW = Math.max(1, Math.round(boxW) - padLeft - padRight); // box 에 보이는 plot 폭
+  const plotBoxW = Math.max(1, Math.round(boxW) - padLeft); // box 에 보이는 plot 폭 (우측 거터는 외부)
   const cpsMin = Math.max(2, Math.round(plotBoxW / ZOOM_MAX_BAR));         // 최대 줌인 (봉 ~36px)
   const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 최대 줌아웃 (봉 ~3px)
   const effCps = Math.max(cpsMin, Math.min(cpsMax, Math.min(cps, fullN)));  // 실제 한 화면 캔들 수
   const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px
-  // 전체 W = 봉 전체 + 우측 여백. box 보다 넓으면 가로 스크롤. box 보다 좁으면(소량 데이터) box 채움.
-  const W = Math.max(Math.round(boxW), Math.round(padLeft + padRight + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
+  // 전체 W = 좌측 inset + 봉 전체 + 우측 여백 슬롯. box 보다 넓으면 가로 스크롤. 좁으면(소량 데이터) box 채움.
+  const W = Math.max(Math.round(boxW), Math.round(padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
 
@@ -266,6 +271,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [n, barPx, padLeft]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    lastPointerXRef.current = e.clientX;
     updateHoverFromClientX(e.clientX);
     if (priceBoxRef.current) {
       const rect = priceBoxRef.current.getBoundingClientRect();
@@ -382,13 +388,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </div>
       )}
 
-      {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
+      {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) — 우측 padRight 만큼 고정 가격축 거터 확보 (캔들 위 안 덮음) */}
+      <div className="relative" style={{ paddingRight: padRight }}>
       <div
         ref={priceBoxRef}
-        className="relative select-none overflow-x-auto scrollbar-thin"
+        className="relative select-none overflow-x-auto overflow-y-hidden scrollbar-thin"
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
-        onScroll={() => { const v = volScrollRef.current; if (v && priceBoxRef.current) v.scrollLeft = priceBoxRef.current.scrollLeft; }}
+        onScroll={(e) => {
+          const sl = e.currentTarget.scrollLeft;
+          setScrollX(sl);
+          if (volScrollRef.current) volScrollRef.current.scrollLeft = sl;
+          if (lastPointerXRef.current != null) updateHoverFromClientX(lastPointerXRef.current);
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -402,15 +414,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           preserveAspectRatio="none"
           style={{ height: priceChartHeight }}
         >
-          {/* 가로 그리드 */}
+          {/* 가로 그리드 (가격 라벨은 우측 고정축으로 별도 렌더 — 스크롤해도 항상 보이게) */}
           {priceTicks.map(t => {
             const y = yPrice(t);
-            return (
-              <g key={t}>
-                <line x1={padLeft} x2={W - padRight} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />
-                <text x={W - padRight + 4} y={y} fill={MUTED} fontSize="10" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif" className="tabular-nums">{t.toLocaleString('ko-KR')}</text>
-              </g>
-            );
+            return <line key={t} x1={padLeft} x2={W} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />;
           })}
 
           {/* 매수 구간 */}
@@ -418,7 +425,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const y = yPrice(bp.price);
             return (
               <g key={'bp' + i}>
-                <line x1={padLeft} x2={W - padRight} y1={y} y2={y} stroke={UP} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
+                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={UP} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
                 <text x={padLeft + 4} y={y - 4} fill={UP} fontSize="10" fontWeight="700" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label} {bp.price.toLocaleString('ko-KR')}</text>
               </g>
             );
@@ -427,7 +434,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const y = yPrice(sp.price);
             return (
               <g key={'sp' + i}>
-                <line x1={padLeft} x2={W - padRight} y1={y} y2={y} stroke={DOWN} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
+                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={DOWN} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
                 <text x={padLeft + 4} y={y - 4} fill={DOWN} fontSize="10" fontWeight="700" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label} {sp.price.toLocaleString('ko-KR')}</text>
               </g>
             );
@@ -521,11 +528,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               }
             }
             const last = n - 1;
-            // 끝 라벨 추가 + 최소 간격 (직전과 너무 가까우면 직전 제거)
-            const minGap = Math.max(2, Math.floor(n * 0.08));
-            if (indices[indices.length - 1] !== last) {
-              if (indices.length > 0 && last - indices[indices.length - 1] < minGap) indices.pop();
-              indices.push(last);
+            if (indices.length > 0 && indices[indices.length - 1] !== last) indices.push(last);
+            // 픽셀 간격 dedup — 라벨 폭보다 가까운 인접 라벨 제거 (줌/barPx 무관, 12/31·1/1 겹침 방지). 끝 라벨 우선 보존.
+            const MIN_LABEL_GAP = 42;
+            const pruned: number[] = [];
+            for (const i of indices) {
+              const prev = pruned[pruned.length - 1];
+              if (prev === undefined || xs[i] - xs[prev] >= MIN_LABEL_GAP) pruned.push(i);
+              else if (i === last) { pruned.pop(); pruned.push(i); } // 끝 라벨이 직전과 충돌하면 직전 대신 끝 유지
             }
             // 라벨 텍스트 — mode 별 분기
             const formatLabel = (d: string) => {
@@ -544,10 +554,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               }
               return shortDate(d);
             };
-            return indices.map(i => (
+            return pruned.map(i => (
               <text key={'xl' + i} x={xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
             ));
           })()}
+
         </svg>
 
         {/* 호버 툴팁 — 마우스 위치 기준 (커서 하단 가까울 때 위로 flip, 컨테이너 안 clamp) */}
@@ -563,7 +574,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           <div
             className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap z-10"
             style={{
-              left: hoverPos.x + 14,
+              left: hoverPos.x + scrollX + 14,
               top,
               transform: hoverPos.x > 0.6 * containerW
                 ? 'translateX(calc(-100% - 28px))' : undefined,
@@ -589,18 +600,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           );
         })()}
       </div>
+      {/* 우측 고정 가격축 — 캔들 스크롤과 무관한 별도 컬럼 (캔들 위를 안 덮음). yPrice 동일 viewBox(priceH)+동일 높이라 그리드와 수직 정렬. */}
+      <div className="absolute top-0 right-0 pointer-events-none" style={{ width: padRight, height: priceChartHeight }}>
+        <svg viewBox={`0 0 ${padRight} ${priceH}`} className="block" width={padRight} preserveAspectRatio="none" style={{ height: priceChartHeight }}>
+          {priceTicks.map(t => (
+            <text key={'pa' + t} x={4} y={yPrice(t)} fill={MUTED} fontSize="10" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif" className="tabular-nums">{t.toLocaleString('ko-KR')}</text>
+          ))}
+        </svg>
+      </div>
+      </div>
 
-      {/* 거래량 차트 — 가격과 가로 스크롤 동기화 (width=W + overflow-hidden, price onScroll 이 scrollLeft 맞춤). */}
+      {/* 거래량 차트 — 가격과 가로 스크롤 동기화 (width=W + overflow-hidden, price onScroll 이 scrollLeft 맞춤). 우측 padRight 거터로 거래량축 분리. */}
+      <div className="relative" style={{ paddingRight: padRight }}>
       <div ref={volScrollRef} className="relative overflow-x-hidden">
         <svg viewBox={`0 0 ${W} ${volH}`} className="block" width={W} preserveAspectRatio="none" style={{ height: volChartHeight }}>
           {volTicks.map(t => {
             const y = yVol(t);
-            return (
-              <g key={t}>
-                <line x1={padLeft} x2={W - padRight} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />
-                <text x={W - padRight + 4} y={y} fill={MUTED} fontSize="9" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{compactKorean(t)}</text>
-              </g>
-            );
+            return <line key={t} x1={padLeft} x2={W} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />;
           })}
           {safeData.map((d, i) => {
             const x = xs[i];
@@ -614,6 +630,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             <line x1={hoverX} x2={hoverX} y1={0} y2={volH} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.3} />
           )}
         </svg>
+      </div>
+      {/* 우측 고정 거래량축 — 가격축과 동일 패턴 (별도 컬럼, yVol 동일 viewBox(volH)+동일 높이로 그리드와 수직 정렬) */}
+      <div className="absolute top-0 right-0 pointer-events-none" style={{ width: padRight, height: volChartHeight }}>
+        <svg viewBox={`0 0 ${padRight} ${volH}`} className="block" width={padRight} preserveAspectRatio="none" style={{ height: volChartHeight }}>
+          {volTicks.map(t => (
+            <text key={'va' + t} x={4} y={yVol(t)} fill={MUTED} fontSize="9" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{compactKorean(t)}</text>
+          ))}
+        </svg>
+      </div>
       </div>
 
       {/* 매수/매도 포인트 */}
