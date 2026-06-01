@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { Modal } from './Modal';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
@@ -323,13 +323,10 @@ function MediaDetailModal({
   const isError = item.status === 'error';
   const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
   // viewport quirk 우회 — iOS toolbar 변동 시 박스 흔들림 차단. md(768px+) 는 max-h-full 유지.
   const { vw, vh } = useViewportSize();
   const isMobile = vw != null && vw < 768;
   const previewMaxH = isMobile && vh != null ? Math.floor(vh * 0.45) : null;
-  // SSR 안전: client 마운트 후에만 portal 활성화
-  useEffect(() => { setMounted(true); }, []);
   // 키보드 ← → 로 이전/다음, Esc 로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -353,25 +350,8 @@ function MediaDetailModal({
   const sizeKb = (item.bytes / 1024).toFixed(1);
   const createdStr = new Date(item.createdAt).toLocaleString('ko-KR');
 
-  if (!mounted) return null;
-
-  const modalContent = (
-    <div
-      className="fixed inset-0 z-[60] flex items-stretch justify-center sm:items-center sm:p-4 bg-slate-900/60 backdrop-blur-sm"
-      style={{ height: '100dvh' }}
-      onClick={onClose}
-    >
-      {/*
-        모달 크기 — outer 에 100dvh (visible viewport) 명시 → iOS Safari 주소창 표시 시점에도 정확.
-        - 모바일: modal 이 outer flex container 안에서 flex-1 → 부모 100% 강제 (콘텐츠 따라 자라기 차단)
-        - PC (sm:): flex-none + h-[85vh] 자체 높이
-        - 헤더 paddingTop·버튼 paddingBottom 에 env(safe-area-inset-*) — 노치/홈인디케이터 회피
-        Portal 로 document.body 에 직접 렌더 → sidebar 등 부모의 containing block 회피.
-      */}
-      <div
-        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1 sm:flex-none min-h-0 sm:h-[85vh] sm:max-h-[85vh]"
-        onClick={e => e.stopPropagation()}
-      >
+  return (
+    <Modal onClose={onClose}>
         {/* 헤더 — N/total 인디케이터 + prev/next + 닫기. safe-area-inset-top 으로 status bar 침범 방지 */}
         <div
           className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0 gap-2"
@@ -587,12 +567,8 @@ function MediaDetailModal({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
-
-  // Portal — document.body 직접 렌더링으로 sidebar/parent 의 fixed containing block 회피
-  return createPortal(modalContent, document.body);
 }
 
 function MetaRow({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
