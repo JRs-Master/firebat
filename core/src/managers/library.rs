@@ -17,10 +17,12 @@ use crate::ports::{
     LibrarySource,
 };
 
-/// Chunking 영역 — Phase 1 단순 영역 (~500 토큰 + 50 overlap).
-/// 토큰 단위 = 단순 char 단위 (1 char ~= 1 token 가정 — 한국어는 ~1.5x 가 될 수 있음).
+/// Chunking — char 기준 ~CHUNK_SIZE + CHUNK_OVERLAP overlap. 끊는 지점은 자연 경계(문단/문장/공백) 보정.
+/// 토큰 단위 = 단순 char (1 char ~= 1 token 가정 — 한국어는 ~1.5x 가 될 수 있음).
 const CHUNK_SIZE: usize = 500;
 const CHUNK_OVERLAP: usize = 50;
+/// parent-doc 맥락 확장 폭 — 검색 hit 의 작은 chunk 주변을 full_text 에서 ±이만큼 확장해 반환.
+const CONTEXT_PAD: usize = 400;
 
 pub struct LibraryManager {
     library: Arc<dyn ILibraryPort>,
@@ -234,6 +236,14 @@ impl LibraryManager {
                 .unwrap_or_default();
             // hit.score = dense cosine (0~1 직관적 의미 유사도). 정렬 순서는 RRF.
             let score = cosine_score.get(&chunk_id).copied().unwrap_or(0.0);
+            // parent-doc — 작은 chunk 주변 맥락을 full_text 에서 확장 (매칭은 chunk, 맥락은 넓게).
+            let expanded =
+                expand_context(&source.full_text, chunk.start_char, chunk.end_char, CONTEXT_PAD);
+            let content = if expanded.is_empty() {
+                chunk.content.clone()
+            } else {
+                expanded
+            };
             hits.push(LibraryHit {
                 source_id: chunk.source_id.clone(),
                 source_name: source.name,
@@ -241,7 +251,7 @@ impl LibraryManager {
                 reference_name: ref_name,
                 chunk_id: chunk.id.clone(),
                 chunk_index: chunk.chunk_index,
-                content: chunk.content.clone(),
+                content,
                 page_number: chunk.page_number,
                 score,
             });
@@ -250,9 +260,9 @@ impl LibraryManager {
     }
 }
 
-/// 단순 Chunking 영역 (Phase 1) — char 영역 기준 ~CHUNK_SIZE + CHUNK_OVERLAP overlap.
-/// 반환값 = `[(content, start_char, end_char), ...]`.
-/// 매 chunk boundary 는 자연 단어 boundary 가 아님 (Phase 2 에서 token boundary 도입 예정).
+/// Chunking — char 기준 ~CHUNK_SIZE + overlap. 끊는 지점은 hard_end 근처의 자연 경계
+/// (문단 > 문장부호 > 공백)로 뒤로 당겨 단어/문장 중간 절단을 완화. 경계가 없으면 hard cut(=옛 동작).
+/// 반환값 = `[(content, start_char, end_char), ...]` (char 단위 offset).
 fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<(String, usize, usize)> {
     if text.is_empty() {
         return Vec::new();
@@ -262,19 +272,77 @@ fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<(String, usi
     if total <= chunk_size {
         return vec![(text.to_string(), 0, total)];
     }
-    let step = chunk_size.saturating_sub(overlap).max(1);
     let mut chunks = Vec::new();
     let mut start = 0;
     while start < total {
-        let end = (start + chunk_size).min(total);
+        let hard_end = (start + chunk_size).min(total);
+        let end = if hard_end == total {
+            hard_end
+        } else {
+            find_chunk_boundary(&chars, start, hard_end, chunk_size)
+        };
         let content: String = chars[start..end].iter().collect();
         chunks.push((content, start, end));
-        if end == total {
+        if end >= total {
             break;
         }
-        start += step;
+        // overlap 은 실제 end 기준 — 경계 보정으로 end 가 당겨져도 진행 보장 (start 단조 증가).
+        start = end.saturating_sub(overlap).max(start + 1);
     }
     chunks
+}
+
+/// hard_end 에서 뒤로 당겨 자연 경계에서 끊는다. 너무 작아지지 않게 floor(70%) 하한.
+/// 우선순위: 문단('\n') > 문장부호 > 공백. 경계 char 위치 다음(=반환값) 에서 절단. 없으면 hard_end.
+fn find_chunk_boundary(chars: &[char], start: usize, hard_end: usize, chunk_size: usize) -> usize {
+    let floor = start + (chunk_size * 7 / 10);
+    if hard_end <= floor {
+        return hard_end;
+    }
+    let is_sentence = |c: char| matches!(c, '.' | '!' | '?' | '。' | '！' | '？' | '…');
+    let mut best_sentence: Option<usize> = None;
+    let mut best_space: Option<usize> = None;
+    let mut i = hard_end;
+    while i > floor {
+        let c = chars[i - 1];
+        if c == '\n' {
+            return i; // 문단 경계 — 최우선 + hard_end 에 가장 가까운 것 즉시 채택
+        }
+        if best_sentence.is_none() && is_sentence(c) {
+            best_sentence = Some(i);
+        }
+        if best_space.is_none() && c.is_whitespace() {
+            best_space = Some(i);
+        }
+        i -= 1;
+    }
+    best_sentence.or(best_space).unwrap_or(hard_end)
+}
+
+/// parent-doc — 검색 hit 의 작은 chunk 주변 맥락을 full_text 에서 ±pad 확장해 반환.
+/// 양끝은 공백 경계로 스냅(단어 잘림 완화). 범위 비정상이면 빈 String (호출측 fallback).
+fn expand_context(full_text: &str, start_char: i64, end_char: i64, pad: usize) -> String {
+    let chars: Vec<char> = full_text.chars().collect();
+    let total = chars.len();
+    if total == 0 {
+        return String::new();
+    }
+    let s = (start_char.max(0) as usize).min(total);
+    let e = (end_char.max(0) as usize).min(total);
+    if s >= e {
+        return String::new();
+    }
+    let mut ws = s.saturating_sub(pad);
+    let mut we = (e + pad).min(total);
+    // 앞쪽: 공백까지 전진 (단어 중간 시작 완화)
+    while ws < s && !chars[ws].is_whitespace() {
+        ws += 1;
+    }
+    // 뒤쪽: 공백까지 후진
+    while we > e && !chars[we - 1].is_whitespace() {
+        we -= 1;
+    }
+    chars[ws..we].iter().collect()
 }
 
 #[cfg(test)]
