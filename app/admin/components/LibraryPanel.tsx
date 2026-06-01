@@ -197,7 +197,7 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
               <div
                 key={ref.id}
                 className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => rows.handleRowClick(String(ref.id), () => setSelectedRef(ref))}
+                onClick={() => rows.handleRowClick(String(ref.id), rows.hoverNone ? undefined : () => setSelectedRef(ref))}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-[13px] font-semibold text-slate-700 truncate">
@@ -219,7 +219,14 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
                     </button>
                   </Tooltip>
                 </span>
-                <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
+                {/* > = 명시적 진입(상세) 버튼. 본문 탭은 액션 노출만 (모바일). */}
+                <button
+                  onClick={e => { e.stopPropagation(); setSelectedRef(ref); }}
+                  className="p-1 text-slate-300 hover:text-slate-600 transition-colors shrink-0"
+                  aria-label={t('common.open')}
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
             ))}
           </div>
