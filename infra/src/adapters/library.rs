@@ -75,6 +75,11 @@ impl SqliteLibraryAdapter {
                 end_char INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (source_id) REFERENCES library_sources(id) ON DELETE CASCADE
             );
+            CREATE VIRTUAL TABLE IF NOT EXISTS library_chunks_fts USING fts5(
+                chunk_id UNINDEXED,
+                content,
+                tokenize='trigram'
+            );
             "#,
         )
         .map_err(|e| format!("Library schema 초기화 실패: {e}"))?;
@@ -135,6 +140,15 @@ impl ILibraryPort for SqliteLibraryAdapter {
 
     async fn delete_reference(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
+        // FTS5 수동 정리 — 이 reference 하위 모든 chunk (cascade 전에).
+        conn.execute(
+            "DELETE FROM library_chunks_fts WHERE chunk_id IN
+                (SELECT c.id FROM library_chunks c
+                 JOIN library_sources s ON c.source_id = s.id
+                 WHERE s.reference_id = ?1)",
+            params![id],
+        )
+        .map_err(|e| format!("delete_reference fts: {e}"))?;
         conn.execute("DELETE FROM library_references WHERE id = ?1", params![id])
             .map_err(|e| format!("delete_reference: {e}"))?;
         Ok(())
@@ -229,6 +243,13 @@ impl ILibraryPort for SqliteLibraryAdapter {
 
     async fn delete_source(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
+        // FTS5 는 FK cascade 대상이 아니라 먼저 수동 정리 (chunk 가 cascade 로 사라지기 전 id 확보).
+        conn.execute(
+            "DELETE FROM library_chunks_fts WHERE chunk_id IN
+                (SELECT id FROM library_chunks WHERE source_id = ?1)",
+            params![id],
+        )
+        .map_err(|e| format!("delete_source fts: {e}"))?;
         conn.execute("DELETE FROM library_sources WHERE id = ?1", params![id])
             .map_err(|e| format!("delete_source: {e}"))?;
         Ok(())
@@ -253,6 +274,12 @@ impl ILibraryPort for SqliteLibraryAdapter {
             params![id, source_id, chunk_index, content, embedding, page_number, start_char, end_char],
         )
         .map_err(|e| format!("save_chunk: {e}"))?;
+        // 하이브리드 검색 FTS5 동기화 — BM25 sparse 인덱스 (trigram).
+        conn.execute(
+            "INSERT INTO library_chunks_fts (chunk_id, content) VALUES (?1, ?2)",
+            params![id, content],
+        )
+        .map_err(|e| format!("save_chunk fts: {e}"))?;
         Ok(())
     }
 
@@ -310,6 +337,58 @@ impl ILibraryPort for SqliteLibraryAdapter {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    async fn search_chunks_bm25(
+        &self,
+        reference_ids: &[String],
+        query: &str,
+        limit: usize,
+    ) -> InfraResult<Vec<String>> {
+        if reference_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        // trigram FTS5 — 부분문자열 매칭. 3자 미만 토큰은 trigram 불가라 제외.
+        // 각 토큰을 따옴표로 감싸 phrase(리터럴 substring) 질의 + OR 결합 (MATCH 구문·연산자 오인 방지).
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .filter(|t| t.chars().count() >= 3)
+            .map(|t| format!("\"{}\"", t.replace('"', "\"\"")))
+            .collect();
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let match_query = terms.join(" OR ");
+        let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
+        // bind: ?1 = MATCH query, ?2 = limit, ?3.. = reference_ids
+        let placeholders = (3..3 + reference_ids.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT library_chunks_fts.chunk_id
+             FROM library_chunks_fts
+             JOIN library_chunks c ON library_chunks_fts.chunk_id = c.id
+             JOIN library_sources s ON c.source_id = s.id
+             WHERE library_chunks_fts MATCH ?1 AND s.reference_id IN ({placeholders})
+             ORDER BY bm25(library_chunks_fts) LIMIT ?2"
+        );
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("prepare search_chunks_bm25: {e}"))?;
+        let limit_i = limit as i64;
+        let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(2 + reference_ids.len());
+        binds.push(&match_query);
+        binds.push(&limit_i);
+        for r in reference_ids {
+            binds.push(r as &dyn rusqlite::ToSql);
+        }
+        let ids = stmt
+            .query_map(binds.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query search_chunks_bm25: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(ids)
     }
 }
 

@@ -5,13 +5,16 @@
 //! - 매 Source = 매 자료 (PDF / TXT / MD / URL / 직접 입력)
 //! - 매 Chunk = ~500 토큰 임베딩 단위 (Arctic 1024-dim)
 //!
-//! 매 사용자 query 시점 → 매 Reference 의 매 chunk 영역 cosine similarity 매치 → top-K
-//! → 시스템 프롬프트 영역 `<LIBRARY_CONTEXT>` prepend (RetrievalEngine 5tier 영역).
+//! 매 사용자 query 시점 → dense(E5 cosine) + sparse(BM25/FTS5 trigram) 하이브리드 검색 → RRF 융합
+//! → top-K → 시스템 프롬프트 영역 `<LIBRARY_CONTEXT>` prepend (RetrievalEngine 5tier 영역).
+//! dense 는 의미, sparse 는 정확 토큰(고유명사·법조문 코드·숫자)을 잡아 서로 보완.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ports::{
-    IEmbedderPort, ILibraryPort, InfraResult, LibraryHit, LibraryReference, LibrarySource,
+    IEmbedderPort, ILibraryPort, InfraResult, LibraryChunk, LibraryHit, LibraryReference,
+    LibrarySource,
 };
 
 /// Chunking 영역 — Phase 1 단순 영역 (~500 토큰 + 50 overlap).
@@ -176,45 +179,73 @@ impl LibraryManager {
         );
         let q_vec = self.embedder.embed_query(query).await?;
 
-        // 매 chunk 영역 cosine — list_chunks_for_search 영역
+        // ── 하이브리드: dense(E5 cosine) + sparse(BM25/FTS5) → RRF 융합 ──
         let chunks = self.library.list_chunks_for_search(&target_refs).await?;
+        // chunk id → chunk 매핑 (최종 hit 구성용 — 메타 lookup 은 top_k 에만)
+        let chunk_map: HashMap<&str, &LibraryChunk> =
+            chunks.iter().map(|c| (c.id.as_str(), c)).collect();
 
-        // Source / Reference 메타 매핑 — 매 chunk 의 source_id 를 받은 후 name 조회.
-        // 단순 영역 = 매 chunk 별 매 source / reference 영역 lookup (N+1 영역 가능, 다만 chunk 영역 수천 영역까지 자연).
-        let mut hits: Vec<LibraryHit> = Vec::with_capacity(chunks.len());
-        for chunk in chunks {
-            let Some(embedding) = chunk.embedding.as_ref() else {
+        // dense — 모든 chunk cosine → desc 정렬 → rank. cosine 점수는 hit.score 로도 사용.
+        let mut dense: Vec<(String, f32)> = chunks
+            .iter()
+            .filter_map(|c| {
+                let emb = c.embedding.as_ref()?;
+                let v = self.embedder.bytes_to_vec(emb);
+                Some((c.id.clone(), self.embedder.cosine(&q_vec, &v)))
+            })
+            .collect();
+        dense.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let cosine_score: HashMap<String, f32> = dense.iter().cloned().collect();
+
+        // sparse — BM25 best-first chunk_id (실패/0건이면 dense 단독으로 자연 진행)
+        let sparse_ids = self
+            .library
+            .search_chunks_bm25(&target_refs, query, top_k.saturating_mul(5).max(10))
+            .await
+            .unwrap_or_default();
+
+        // RRF 융합 — score = Σ 1/(k + rank). dense·sparse 양쪽 상위면 가산되어 위로.
+        const RRF_K: f32 = 60.0;
+        let mut rrf: HashMap<String, f32> = HashMap::new();
+        for (rank, (id, _)) in dense.iter().enumerate() {
+            *rrf.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32);
+        }
+        for (rank, id) in sparse_ids.iter().enumerate() {
+            *rrf.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32);
+        }
+        let mut ranked: Vec<(String, f32)> = rrf.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        ranked.truncate(top_k);
+
+        // 최종 top_k hit 구성 — reference 목록 1회 조회 (옛 chunk 별 N+1 제거)
+        let refs = self.library.list_references(owner).await?;
+        let mut hits: Vec<LibraryHit> = Vec::with_capacity(ranked.len());
+        for (chunk_id, _rrf) in ranked {
+            let Some(chunk) = chunk_map.get(chunk_id.as_str()) else {
                 continue;
             };
-            let chunk_vec = self.embedder.bytes_to_vec(embedding);
-            let score = self.embedder.cosine(&q_vec, &chunk_vec);
-            // source / reference 메타 영역 — 매 chunk 별 lookup (캐싱 영역 Phase 2 영역 자연 추가)
-            let source = self.library.get_source(&chunk.source_id).await?;
-            let Some(source) = source else { continue };
-            // reference name — 매 reference list 조회 후 lookup (캐싱은 Phase 2)
-            let ref_name = self
-                .library
-                .list_references(owner)
-                .await?
-                .into_iter()
+            let Some(source) = self.library.get_source(&chunk.source_id).await? else {
+                continue;
+            };
+            let ref_name = refs
+                .iter()
                 .find(|r| r.id == source.reference_id)
-                .map(|r| r.name)
+                .map(|r| r.name.clone())
                 .unwrap_or_default();
+            // hit.score = dense cosine (0~1 직관적 의미 유사도). 정렬 순서는 RRF.
+            let score = cosine_score.get(&chunk_id).copied().unwrap_or(0.0);
             hits.push(LibraryHit {
                 source_id: chunk.source_id.clone(),
                 source_name: source.name,
                 reference_id: source.reference_id,
                 reference_name: ref_name,
-                chunk_id: chunk.id,
+                chunk_id: chunk.id.clone(),
                 chunk_index: chunk.chunk_index,
-                content: chunk.content,
+                content: chunk.content.clone(),
                 page_number: chunk.page_number,
                 score,
             });
         }
-        // score 영역 desc 영역 sort + top_k
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        hits.truncate(top_k);
         Ok(hits)
     }
 }

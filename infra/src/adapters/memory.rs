@@ -182,6 +182,19 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_library_chunks_source ON library_chunks(source_id);
             CREATE INDEX IF NOT EXISTS idx_library_chunks_index ON library_chunks(source_id, chunk_index);
 
+            -- 하이브리드 검색용 FTS5 (trigram) — BM25 sparse 인덱스. dense(E5 cosine) 과 RRF 융합.
+            -- trigram = 부분문자열 매칭(한국어 띄어쓰기 변동·법조문 코드·고유명사에 강함). FK cascade 가
+            -- 가상테이블엔 미적용 → save_chunk insert / delete 시 어댑터가 수동 동기화.
+            CREATE VIRTUAL TABLE IF NOT EXISTS library_chunks_fts USING fts5(
+                chunk_id UNINDEXED,
+                content,
+                tokenize='trigram'
+            );
+            -- 기존 배포본 chunk 백필 (FTS 에 아직 없는 것만 — 멱등, 매 부팅 안전).
+            INSERT INTO library_chunks_fts (chunk_id, content)
+                SELECT id, content FROM library_chunks
+                WHERE id NOT IN (SELECT chunk_id FROM library_chunks_fts);
+
             -- Hub Phase 1 (2026-05-17) — system service hub 인스턴스 settings + 대화 + 메시지.
             -- 외부 워드프레스 사이트 영역 연결용. admin chat 과 별개 (conversation / message 테이블 분리).
             CREATE TABLE IF NOT EXISTS hub_instances (

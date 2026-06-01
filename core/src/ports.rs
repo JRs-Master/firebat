@@ -867,6 +867,16 @@ pub trait ILibraryPort: Send + Sync {
         &self,
         reference_ids: &[String],
     ) -> InfraResult<Vec<LibraryChunk>>;
+
+    /// BM25 (FTS5 trigram) sparse 검색 — query 와 어휘적으로 매치되는 chunk_id 를 best-first 순서로.
+    /// dense cosine 과 RRF 융합용 (하이브리드 검색). reference_ids 로 범위 제한, limit 으로 상한.
+    /// 정확 토큰(고유명사·법조문 코드·숫자)을 잡아 dense 의미 검색을 보완. 매치 0건이면 빈 Vec.
+    async fn search_chunks_bm25(
+        &self,
+        reference_ids: &[String],
+        query: &str,
+        limit: usize,
+    ) -> InfraResult<Vec<String>>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
