@@ -206,7 +206,7 @@ CrewAI / Mem0 식 4-tier memory — **dialogue ends, facts persist**. Continuous
 | **Short-term** | Active conversation turns | ConversationManager (existing) — embeddings search |
 | **Episodic** | Time-stamped events (auto-trading executions, page publishes, cron triggers, tool calls) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
 | **Entity** | Tracked subjects (stocks, people, projects, concepts) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
-| **Contextual** | 4-tier merged retrieval | `RetrievalEngine` — every user prompt → parallel search → `<MEMORY_CONTEXT>` auto-prepended to system prompt |
+| **Contextual** | 5-source merged retrieval (4 memory tiers + Library RAG) | `RetrievalEngine` — every user prompt → parallel search → `<MEMORY_CONTEXT>` auto-prepended (when the AI Assistant toggle is on) |
 
 **Auto-accumulation, zero manual work**:
 - Core hooks fire `saveEvent` on every `savePage` / `handleCronTrigger` / `generateImage`.
@@ -217,6 +217,8 @@ CrewAI / Mem0 식 4-tier memory — **dialogue ends, facts persist**. Continuous
 After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recommendations → buys → results) without asking for context. The memory layer fills itself.
 
 > 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
+
+> 🇰🇷 **Library RAG** (2026-05-17, 2026-06-01 하이브리드) — 사용자 업로드 자료(PDF/TXT/MD/URL) NotebookLM 식 RAG. **dense(E5) + sparse(BM25/SQLite FTS5) 하이브리드 + RRF** 검색 — 의미 + 정확 토큰(고유명사·법조문 코드)까지. parent-doc 맥락 확장 + 경계 인식 청킹. RetrievalEngine 5번째 source 로 자동 주입(AI Assistant 토글 ON 시) + `search_library` 도구로 AI 능동 검색. 쿼리당 LLM 비용 0 — ANN/벡터DB 없이 SQLite 만으로.
 
 ### Observability — Runtime Logs
 

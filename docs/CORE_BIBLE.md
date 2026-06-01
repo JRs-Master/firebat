@@ -313,9 +313,16 @@ type PipelineStep =
 - `dedupThreshold=0.92` 적용 — 같은 대화 여러 번 정리해도 fact/event 중복 누적 0 (cosine 유사도 검출).
 
 ### RetrievalEngine (AiManager 내부 collaborator, 매니저 X)
-- `core/managers/ai/retrieval-engine.ts` — AiManager 만 사용 (외부 import 금지).
-- 사용자 query → 4-tier 병렬 검색 (search_history + searchEntities + searchEntityFacts + searchEvents) → 통합 `<MEMORY_CONTEXT>` 시스템 프롬프트 자동 prepend.
-- AiManager 가 매 turn 호출 — AI 가 도구 호출 없이도 관련 메모리 자동 컨텍스트.
+- `core/src/managers/ai/retrieval_engine.rs` — AiManager 만 사용 (외부 import 금지).
+- 사용자 query → **5-source 병렬 검색**: 4 memory tier (search_history + searchEntities + searchEntityFacts + searchEvents) + **Library RAG** → 통합 `<MEMORY_CONTEXT>` 시스템 프롬프트 자동 prepend.
+- AiManager 가 매 turn 호출 (Vault `system:ai-router:enabled` = AI Assistant 토글 ON 시) — AI 가 도구 호출 없이도 관련 메모리·자료 자동 컨텍스트.
+
+### Library RAG (2026-05-17 도입, 2026-06-01 하이브리드)
+- `LibraryManager` + `SqliteLibraryAdapter` (memory.db 안 library_references / library_sources / library_chunks + FTS5 `library_chunks_fts`). NotebookLM 식 — Reference(자료 그룹) > Source(자료) > Chunk(임베딩 단위).
+- **하이브리드 검색**: dense(E5 cosine) + sparse(**BM25 / SQLite FTS5 trigram**) → **RRF(k=60) 융합** top-K. dense=의미, sparse=정확 토큰(고유명사·법조문 코드·숫자) 보완. 쿼리당 LLM 호출 0.
+- **parent-doc** — 작은 chunk 로 정밀 매칭, full_text + start/end char 로 ±맥락 확장해 반환. **경계 인식 청킹**(문단/문장/공백 보정).
+- **노출 2경로**: (1) RetrievalEngine 자동 주입(위, 5번째 source), (2) `search_library` MCP 도구 — AI 가 질의 다듬어 능동 검색·재검색 (대화 검색 `search_history` 등가). 빈 결과 시 재검색 hint.
+- scale 정책: 현 brute-force cosine + FTS5 로 충분 — ANN/벡터DB 는 자료 수천+ & 지연 실측 시점 (YAGNI, 품질≠속도). 품질 천장 시 로컬 리랭커 / contextual retrieval (둘 다 deferred).
 
 ---
 
