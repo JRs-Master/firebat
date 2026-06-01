@@ -253,6 +253,8 @@ impl GeminiCliHandler {
         let mut error_msg: Option<String> = None;
         // 인라인 [Thought: true/false] 마커 stateful 파서 — 청크 경계 보존
         let mut is_in_thought = false;
+        // CLI 네이티브 계획 도구(write_todos / tracker_*)는 turn 당 한 번만 "계획 정리" 표시로 통합.
+        let mut plan_noted = false;
 
         for line in stdout.lines() {
             if line.trim().is_empty() {
@@ -379,6 +381,18 @@ impl GeminiCliHandler {
                     continue;
                 }
                 let bare = Self::strip_gemini_mcp_prefix(raw_name).to_string();
+                // Gemini 네이티브 계획 도구(write_todos / tracker_*) — 모델 내부 todo 스캐폴드.
+                // 일반 도구 뱃지·tool_results 로 노출하지 않고 turn 당 한 번 "계획 정리" 표시로 통합.
+                if firebat_core::ports::is_native_plan_tool(&bare) {
+                    if !plan_noted {
+                        plan_noted = true;
+                        if !outcome.thinking_acc.is_empty() {
+                            outcome.thinking_acc.push('\n');
+                        }
+                        outcome.thinking_acc.push_str("[계획 정리]");
+                    }
+                    continue;
+                }
                 outcome.used_tools.push(bare.clone());
                 // 도구 호출 마커 — frontend ThinkingBlock 본문에 누적 표시.
                 // 옛 Node 의 onChunk({type:'thinking', content:'[도구 호출: name]'}) 와 동등.

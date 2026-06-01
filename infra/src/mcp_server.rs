@@ -273,7 +273,7 @@ async fn handle_rpc(
                     keys.into_iter().take(15).collect()
                 };
                 let msg = format!(
-                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 이름은 hallucinate 도구 — 호출하지 마세요. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용. 일부 사용 가능 도구: {}",
+                    "'{}' 도구는 존재하지 않습니다. 작업 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용하세요. 일부 사용 가능 도구: {}",
                     name,
                     available_preview.join(", ")
                 );
@@ -1916,7 +1916,7 @@ async fn dispatch_method(
                     keys.into_iter().take(15).collect()
                 };
                 let msg = format!(
-                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 이름은 hallucinate 도구 — 호출하지 마세요. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용. 일부 사용 가능 도구: {}",
+                    "'{}' 도구는 존재하지 않습니다. 작업 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용하세요. 일부 사용 가능 도구: {}",
                     name,
                     available_preview.join(", ")
                 );

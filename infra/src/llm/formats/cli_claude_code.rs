@@ -323,6 +323,8 @@ impl ClaudeCodeCliHandler {
         let mut current_text = String::new();
         let mut pending_tool_uses: HashMap<String, PendingToolUse> = HashMap::new();
         let mut errored = false;
+        // CLI 네이티브 계획 도구(TaskCreate 등)는 turn 당 한 번만 "계획 정리" 표시로 통합.
+        let mut plan_noted = false;
         let mut error_msg: Option<String> = None;
 
         let mut reader = BufReader::new(stdout_pipe).lines();
@@ -406,6 +408,25 @@ impl ClaudeCodeCliHandler {
                                     continue;
                                 }
                                 let bare = Self::strip_mcp_prefix(raw_name).to_string();
+                                // CLI 네이티브 계획 도구(TaskCreate 등) — 모델 내부 todo 스캐폴드.
+                                // 일반 도구 뱃지·tool_results 로 노출하지 않고 turn 당 한 번 "계획 정리"
+                                // 진행 표시로 통합 (사용자 승인 게이트인 propose_plan 과 별개).
+                                if firebat_core::ports::is_native_plan_tool(&bare) {
+                                    if !plan_noted {
+                                        plan_noted = true;
+                                        if !outcome.thinking_acc.is_empty() {
+                                            outcome.thinking_acc.push('\n');
+                                        }
+                                        outcome.thinking_acc.push_str("[계획 정리]");
+                                        if let Some(tx) = emit {
+                                            let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                                name: "plan".to_string(),
+                                                status: "start".to_string(),
+                                            });
+                                        }
+                                    }
+                                    continue;
+                                }
                                 outcome.used_tools.push(bare.clone());
                                 // 도구 호출 마커도 thinking 본문에 추가 — 사용자가 turn 중 어떤 도구가
                                 // 호출됐는지 자연어로 본다. 옛 Node 의 onChunk({type:'thinking',

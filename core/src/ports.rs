@@ -1401,6 +1401,26 @@ pub enum LlmStreamEvent {
 /// 채널 방식 (Arc<dyn Fn> 호출 문법 모호성 회피). AiManager 가 받아 AiStreamEvent 로 매핑.
 pub type LlmStreamSink = tokio::sync::mpsc::Sender<LlmStreamEvent>;
 
+/// CLI 에이전트(Claude Code / Codex / Gemini)가 자체적으로 쓰는 내부 계획·할 일 추적 도구인지 판정.
+/// 모델이 멀티스텝 작업을 스스로 정리하는 스캐폴드로, 사용자 승인 게이트인 우리 `propose_plan` 과는 별개다.
+/// 일반 도구 호출 뱃지로 노출하면 ×N 반복처럼 보이므로, 단일 "계획 정리" 진행 표시로 통합하고
+/// tool_results 에서는 제외한다. 세 CLI 가 이름·표출 형태가 모두 달라 공유 분류기로 일반화:
+/// - Claude Code v2.1.142+: TaskCreate / TaskUpdate / TaskGet / TaskList (+ 옛 TodoWrite)
+/// - OpenAI Codex: update_plan (codex exec --json 에선 todo_list 아이템으로 표출 — 어댑터가 따로 처리)
+/// - Gemini CLI: write_todos (+ 비기본 tracker_* 묶음)
+pub fn is_native_plan_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "TaskCreate"
+            | "TaskUpdate"
+            | "TaskGet"
+            | "TaskList"
+            | "TodoWrite"
+            | "update_plan"
+            | "write_todos"
+    ) || name.starts_with("tracker_")
+}
+
 /// ILlmPort — 옛 TS ILlmPort Rust port.
 ///
 /// Phase B-16 minimum: trait 정의 + Stub 구현체 (실 LLM 호출 없음, dispatch 흐름만 작동).

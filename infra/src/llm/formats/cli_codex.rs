@@ -252,6 +252,8 @@ impl CodexCliHandler {
         let mut text_parts: Vec<String> = Vec::new();
         let mut errored = false;
         let mut error_msg: Option<String> = None;
+        // CLI 네이티브 계획 도구(update_plan → todo_list 아이템)는 turn 당 한 번만 "계획 정리" 표시로 통합.
+        let mut plan_noted = false;
 
         for line in stdout.lines() {
             if line.trim().is_empty() {
@@ -341,6 +343,18 @@ impl CodexCliHandler {
                         }
                         continue;
                     }
+                    // todo_list: Codex update_plan 의 codex exec --json 표출 — 모델 내부 계획 스캐폴드.
+                    // 일반 도구로 노출하지 않고 turn 당 한 번 "계획 정리" 표시로 통합 (propose_plan 과 별개).
+                    if item_type == "todo_list" {
+                        if !plan_noted {
+                            plan_noted = true;
+                            if !outcome.thinking_acc.is_empty() {
+                                outcome.thinking_acc.push('\n');
+                            }
+                            outcome.thinking_acc.push_str("[계획 정리]");
+                        }
+                        continue;
+                    }
                     // mcp_tool_call: 도구 호출 + 결과
                     if item_type == "mcp_tool_call" {
                         let server =
@@ -348,6 +362,10 @@ impl CodexCliHandler {
                         let tool_name =
                             item.get("tool").and_then(|v| v.as_str()).unwrap_or("");
                         if tool_name.is_empty() {
+                            continue;
+                        }
+                        // CLI 네이티브 계획 도구가 MCP 경로로 들어오는 경우 방어 — 일반 도구로 노출 X.
+                        if firebat_core::ports::is_native_plan_tool(tool_name) {
                             continue;
                         }
                         if ev_type == "item.started" {

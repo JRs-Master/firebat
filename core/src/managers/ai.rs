@@ -44,6 +44,7 @@ fn tool_label(name: &str) -> String {
         "schedule_task" => "스케줄 등록 중".to_string(),
         "cancel_task" => "스케줄 해제 중".to_string(),
         "run_task" => "파이프라인 실행 중".to_string(),
+        "plan" => "계획 정리 중".to_string(),
         "request_secret" => "API 키 요청".to_string(),
         "suggest" => "선택지 제시".to_string(),
         "render_iframe" => "iframe 위젯 렌더링 중".to_string(),

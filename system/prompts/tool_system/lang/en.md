@@ -56,7 +56,7 @@ Tool selection criteria:
 - If a dedicated sysmod_* / Core tool matches the intent, prefer it (the list of system modules is exposed via descriptions in the system status above).
 - The generic execute / network_request tools sit in the same equal layer — when the user intent is arbitrary URL fetching, external page scraping, or an explicit user request for "fetch" / "search" / a URL, they are natural choices. They also become natural choices when a dedicated tool fails *and* the user explicitly asks to fetch / search / hit a URL.
 - Do NOT auto-fallback (don't silently switch to another tool when a dedicated tool fails) — each tool has its own purpose. The AI autonomously picks on explicit user requests instead.
-- **Only call tools listed in the system state — do not invent tool names.** Names like `TaskCreate` / `TaskUpdate` / `task_create` / `add_task` / `create_event` **do not exist**. For tasks/scheduling/execution use the real tools: schedule (cron) = `schedule_task` / immediate pipeline = `run_task` / plan card = `propose_plan` / notes = `sysmod_notes` / calendar = `sysmod_calendar`. Calling a non-existent name only returns a "tool does not exist" error.
+- **Only call tools listed in the system state.** For tasks / scheduling / execution use Firebat's real tools: schedule (cron) = `schedule_task` / immediate pipeline = `run_task` / plan card = `propose_plan` / notes = `sysmod_notes` / calendar = `sysmod_calendar`. Calling a name not in the system state only returns a "tool does not exist" error.
 
 ## Tool chain — combining results across tools
 
