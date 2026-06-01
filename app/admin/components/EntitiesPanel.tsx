@@ -293,7 +293,7 @@ export function EntitiesPanel({
                 <li key={e.id} className="border-b border-slate-100">
                   <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
                     <button
-                      onClick={() => rows.handleRowClick(String(e.id), () => handleExpand(e.id))}
+                      onClick={() => rows.handleNavClick(String(e.id), () => handleExpand(e.id))}
                       className="flex-1 text-left flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0"
                     >
                       <span className="text-[11px] font-bold text-slate-700 truncate">{e.name}</span>

@@ -185,7 +185,7 @@ export function NotesPanel({
                 <li key={n.slug} className="border-b border-slate-100">
                   <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
                     <button
-                      onClick={() => rows.handleRowClick(n.slug, () => handleExpand(n.slug))}
+                      onClick={() => rows.handleNavClick(n.slug, () => handleExpand(n.slug))}
                       className="flex-1 text-left flex items-start gap-2 cursor-pointer bg-transparent border-0 p-0 min-w-0"
                     >
                       <NotebookText size={11} className="mt-0.5 shrink-0 text-slate-400" />
