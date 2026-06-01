@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useViewportMaxHeight, useViewportSize } from '../../../lib/use-viewport-size';
 
 export type OhlcvBar = {
@@ -34,8 +34,11 @@ const FG = '#0f172a';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
 
-// 줌 = 한 화면 캔들 수. 최소(최대 줌인) 하한 — 그 이하론 못 줌인.
-const ZOOM_MIN_CANDLES = 15;
+// 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
+const ZOOM_DEFAULT_CPS = 90; // 기본 한 화면 캔들 수
+const ZOOM_MAX_BAR = 36;     // 최대 봉 px (줌인 한계 — 그 이상 안 커짐)
+const ZOOM_MIN_BAR = 3;      // 최소 봉 px (줌아웃 한계 — 그 이하 안 작아짐)
+const ZOOM_RIGHT_PAD_SLOTS = 1; // 마지막 캔들 우측 여백 (slot 수)
 
 function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
@@ -91,6 +94,7 @@ function niceTicks(min: number, max: number, count = 5): number[] {
 
 export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints }: StockChartProps) {
   const priceBoxRef = useRef<HTMLDivElement>(null);
+  const volScrollRef = useRef<HTMLDivElement>(null); // 거래량 차트 — 가격과 가로 스크롤 동기화
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
@@ -136,31 +140,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [data]);
   const fullN = fullData.length;
 
-  // 뷰 윈도우 (팬/줌) — null이면 전체 보기
-  const [view, setView] = useState<{ s: number; e: number } | null>(null);
-  useEffect(() => { setView(null); /* 데이터 변경 시 뷰 리셋 */ }, [fullN]);
-  const viewStart = Math.max(0, Math.min(fullN - 1, view?.s ?? 0));
-  const viewEnd = Math.max(viewStart, Math.min(fullN - 1, view?.e ?? fullN - 1));
-  const safeData = useMemo(() => fullData.slice(viewStart, viewEnd + 1), [fullData, viewStart, viewEnd]);
-  const n = safeData.length;
+  // 줌 = 한 화면 캔들 수(cps). 데이터(slice)는 항상 전체 — 줌은 캔들 폭만 바꾸고, 화면에 다 안
+  // 들어가면 가로 스크롤. (옛 slice 기반 줌 폐기 — "보여줄 개수"가 아니라 "캔들 폭/밀도")
+  const [cps, setCps] = useState(ZOOM_DEFAULT_CPS);
+  useEffect(() => { setCps(ZOOM_DEFAULT_CPS); /* 데이터 변경 시 기본 줌 */ }, [fullN]);
+  // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
+  const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
+  const safeData = fullData;
+  const n = fullN;
 
   // 줌/팬 내부 참조 (isDragging: 임계값 넘어야 팬 시작 — 그 전까지는 툴팁)
-  const panRef = useRef<{ startX: number; startY: number; startS: number; startE: number; isDragging: boolean } | null>(null);
-  const pinchRef = useRef<{ startDist: number; startS: number; startE: number } | null>(null);
-  const PAN_THRESHOLD = 6;
+  const pinchRef = useRef<{ startDist: number; startCps: number } | null>(null);
 
-  // 줌: 픽셀 X 위치 앵커로 범위 조정 (factor < 1 = 확대, > 1 = 축소)
-  const zoomAround = useCallback((factor: number, clientX: number) => {
-    if (!priceBoxRef.current || fullN < 2) return;
-    const rect = priceBoxRef.current.getBoundingClientRect();
-    const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    const curRange = viewEnd - viewStart + 1;
-    const anchorIdx = viewStart + relX * (curRange - 1);
-    const newRange = Math.max(ZOOM_MIN_CANDLES, Math.min(fullN, Math.round(curRange * factor)));
-    let newS = Math.round(anchorIdx - relX * (newRange - 1));
-    newS = Math.max(0, Math.min(fullN - newRange, newS));
-    setView({ s: newS, e: newS + newRange - 1 });
-  }, [viewStart, viewEnd, fullN]);
+  // 줌: 한 화면 캔들 수(cps) 조정. factor>1 = 줌아웃(많이·좁게), <1 = 줌인(적게·넓게).
+  // 위치 앵커는 barPx 비례 scrollLeft 보정(아래 useLayoutEffect)으로 — 보던 구간 유지.
+  const zoomAround = useCallback((factor: number) => {
+    if (fullN < 2) return;
+    setCps(c => Math.max(5, Math.min(2000, Math.round(c * factor))));
+  }, [fullN]);
 
   // PC 휠 줌 (preventDefault 필요 → native listener)
   useEffect(() => {
@@ -169,8 +166,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const onWheel = (e: WheelEvent) => {
       if (fullN < 2) return;
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
-      zoomAround(factor, e.clientX);
+      zoomAround(e.deltaY > 0 ? 1.15 : 1 / 1.15);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -194,16 +190,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     };
   }, []);
 
-  // 차트 치수 (가변).
-  // 스크롤 vs fit 모드는 **전체 데이터 수(fullN)** 로 결정. 옛엔 줌된 뷰 개수(safeData.length)로 결정해
-  // 휠 줌이 SCROLL_THRESHOLD 를 넘나들 때 모드가 flip → viewBox/텍스트 스케일/툴팁 매핑/스크롤바가
-  // 통째로 바뀌던 버그. fullN 기준이면 줌은 같은 모드 안에서 매끄럽게 (텍스트·툴팁 안정).
-  const SCROLL_THRESHOLD = 60;
-  const MIN_BAR_PX = 12; // 봉 1개 minimum 가로 픽셀
-  const useHScroll = fullN > SCROLL_THRESHOLD;
-  // viewBox priceH 동적 — 비-스크롤 모드는 box 비율 (boxW : priceChartHeightPx) 에 viewBox aspect
-  // (720 : priceH) 맞춤 → preserveAspectRatio="none" stretch 찌그러짐 0. 가로 스크롤 모드는 옛 280 고정.
-  const priceH = useHScroll ? 280 : Math.max(Math.round(720 * priceChartHeightPx / boxW), 100);
+  // 차트 치수 — 항상 1:1 스크롤 스타일 (viewBox 가 픽셀과 1:1 → 텍스트 10px 고정, 줌해도 안 바뀜).
+  // 줌 = 캔들 폭(barPx) 조절, 데이터는 전체 렌더, 화면 넘치면 가로 스크롤바.
+  const priceH = priceChartHeightPx;
   const volH = 80;
   const padLeft = 50;
   // Y축 라벨 우측 영역 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
@@ -214,12 +203,31 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const padRight = Math.max(56, maxPriceDigits * 6 + 12);
   const padTop = 18;
   const padBottom = 24;
-  // viewBox 너비 — 가로 스크롤 모드면 봉 수에 비례 확장하되, 줌인으로 봉이 적어지면 최소 box 너비까지
-  // 채워 봉이 넓어지게 (빈 여백·모드 flip 방지). 봉이 많으면 box 초과 → 자연 가로 스크롤.
-  const W = useHScroll ? Math.max(Math.round(boxW), padLeft + padRight + safeData.length * MIN_BAR_PX) : 720;
-  const plotW = W - padLeft - padRight;
+  // 줌(한 화면 캔들 수) → 캔들 폭(barPx). 봉 폭 캡 [MIN_BAR, MAX_BAR] 안.
+  const plotBoxW = Math.max(1, Math.round(boxW) - padLeft - padRight); // box 에 보이는 plot 폭
+  const cpsMin = Math.max(2, Math.round(plotBoxW / ZOOM_MAX_BAR));         // 최대 줌인 (봉 ~36px)
+  const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 최대 줌아웃 (봉 ~3px)
+  const effCps = Math.max(cpsMin, Math.min(cpsMax, Math.min(cps, fullN)));  // 실제 한 화면 캔들 수
+  const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px
+  // 전체 W = 봉 전체 + 우측 여백. box 보다 넓으면 가로 스크롤. box 보다 좁으면(소량 데이터) box 채움.
+  const W = Math.max(Math.round(boxW), Math.round(padLeft + padRight + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
+
+  // 줌 시 보던 구간 유지 — barPx 변하면 scrollLeft 를 비례 보정 (콘텐츠 폭 ∝ barPx → 같은 구간 유지).
+  const prevBarRef = useRef(barPx);
+  useLayoutEffect(() => {
+    const el = priceBoxRef.current;
+    if (el && prevBarRef.current && prevBarRef.current !== barPx) {
+      el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);
+    }
+    prevBarRef.current = barPx;
+  }, [barPx]);
+  // 데이터 로드 시 최신(우측)부터 보기.
+  useEffect(() => {
+    const el = priceBoxRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [fullN]);
 
   const { xs, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
@@ -232,13 +240,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const pMin = minP - rangeP * 0.05;
     const pMax = maxP + rangeP * 0.05;
     const maxV = Math.max(...volumes, 1);
-    // 차트 관례: 우측에 2일치 여백 (마지막 캔들이 끝에 붙지 않게)
-    const RIGHT_MARGIN_SLOTS = 2;
-    const slots = n <= 1 ? 1 : (n - 1 + RIGHT_MARGIN_SLOTS);
-    const xs = safeData.map((_, i) => padLeft + (n <= 1 ? 0 : (i / slots) * plotW));
+    // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
+    const xs = safeData.map((_, i) => padLeft + i * barPx + barPx / 2);
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
-    const candleW = n > 1 ? (plotW / slots) * 0.55 : 10;
+    const candleW = Math.max(1.5, barPx * 0.6);
     const maLines = indicators.map(ind => {
       const period = parseInt(ind.replace('MA', ''), 10);
       const values = sma(closes, period);
@@ -247,22 +253,20 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return { name: ind, d, color: MA_COLORS[ind] };
     });
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, n, indicators, plotW, plotH, padLeft, padTop, volPlotH]);
+  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH]);
 
-  // clientX → viewData 인덱스 매핑 (툴팁/호버용)
+  // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {
-    if (!priceBoxRef.current || n === 0) return;
-    const rect = priceBoxRef.current.getBoundingClientRect();
-    const relX = clientX - rect.left;
-    const svgX = (relX / rect.width) * W;
-    const dataX = svgX - padLeft;
-    const slots = n <= 1 ? 1 : (n - 1 + 2);
-    const idx = Math.round((dataX / plotW) * slots);
+    const el = priceBoxRef.current;
+    if (!el || n === 0) return;
+    const rect = el.getBoundingClientRect();
+    const contentX = (clientX - rect.left) + el.scrollLeft; // 1:1 이라 콘텐츠 px = svg 단위
+    const idx = Math.round((contentX - padLeft - barPx / 2) / barPx);
     setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
-  }, [n, plotW]);
+  }, [n, barPx, padLeft]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    updateHoverFromClientX(e.clientX); // 팬 중에도 툴팁 유지
+    updateHoverFromClientX(e.clientX);
     if (priceBoxRef.current) {
       const rect = priceBoxRef.current.getBoundingClientRect();
       setHoverPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
@@ -271,87 +275,28 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   const handleLeave = useCallback(() => { setHoverIdx(null); setHoverPos(null); }, []);
 
-  // 줌 인 상태 여부: 현재 뷰 범위 < 전체 데이터 수 (팬 가능한지 판단)
-  const canPan = viewEnd - viewStart + 1 < fullN;
-
-  // PC: 호버 = 툴팁, 마우스다운+드래그 = 팬 (줌인 상태일 때만)
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (fullN < 2) return;
-    panRef.current = { startX: e.clientX, startY: e.clientY, startS: viewStart, startE: viewEnd, isDragging: false };
-  }, [viewStart, viewEnd, fullN]);
-  const handleMouseMovePan = useCallback((e: React.MouseEvent) => {
-    if (!panRef.current || !priceBoxRef.current) return;
-    const dx = e.clientX - panRef.current.startX;
-    if (!panRef.current.isDragging && Math.abs(dx) < PAN_THRESHOLD) return; // 아직 팬 아님
-    panRef.current.isDragging = true;
-    // 팬 중에도 툴팁 유지 (줌인/아웃 모두 커서 위치 표시)
-    updateHoverFromClientX(e.clientX);
-    if (!canPan) return; // 줌아웃이면 툴팁만 갱신
-    const rect = priceBoxRef.current.getBoundingClientRect();
-    const range = panRef.current.startE - panRef.current.startS + 1;
-    const dxIdx = Math.round(-dx / rect.width * range);
-    const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
-    if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
-  }, [viewStart, fullN, canPan, updateHoverFromClientX]);
-  const handleMouseUp = useCallback(() => { panRef.current = null; }, []);
-
-  // 모바일:
-  // - 2손가락 핀치 = 줌
-  // - 1손가락 세로 드래그 = 페이지 스크롤 (touchAction:pan-y가 브라우저에 위임)
-  // - 1손가락 가로 드래그 = 줌인 상태일 때만 팬
-  // - 1손가락 터치(거의 정지) = 툴팁
+  // 모바일: 2손가락 핀치 = 줌(cps 조절) / 1손가락 = 툴팁. 1손가락 가로 이동 = 컨테이너 native 스크롤.
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (fullN < 2) return;
     if (e.touches.length === 2) {
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      pinchRef.current = { startDist: d, startS: viewStart, startE: viewEnd };
-      panRef.current = null;
+      pinchRef.current = { startDist: d, startCps: cps };
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
-      panRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startS: viewStart, startE: viewEnd, isDragging: false };
-      pinchRef.current = null;
-      // 터치 즉시 툴팁 표시 (정지 터치 = 툴팁 요구사항)
       updateHoverFromClientX(e.touches[0].clientX);
     }
-  }, [viewStart, viewEnd, fullN, updateHoverFromClientX]);
+  }, [fullN, cps, updateHoverFromClientX]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!priceBoxRef.current) return;
     if (e.touches.length === 2 && pinchRef.current) {
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      const factor = pinchRef.current.startDist / Math.max(d, 1);
-      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const rect = priceBoxRef.current.getBoundingClientRect();
-      const relX = Math.max(0, Math.min(1, (centerX - rect.left) / rect.width));
-      const startRange = pinchRef.current.startE - pinchRef.current.startS + 1;
-      const anchorIdx = pinchRef.current.startS + relX * (startRange - 1);
-      const newRange = Math.max(ZOOM_MIN_CANDLES, Math.min(fullN, Math.round(startRange * factor)));
-      let newS = Math.round(anchorIdx - relX * (newRange - 1));
-      newS = Math.max(0, Math.min(fullN - newRange, newS));
-      setView({ s: newS, e: newS + newRange - 1 });
-    } else if (e.touches.length === 1 && panRef.current) {
-      const dx = e.touches[0].clientX - panRef.current.startX;
-      const dy = e.touches[0].clientY - panRef.current.startY;
-      const absDx = Math.abs(dx);
-      const absDy = Math.abs(dy);
-      // 세로 의도 감지 → 이 제스처 전체 포기 (페이지 스크롤 양보)
-      if (absDy > absDx + 4) {
-        setHoverIdx(null);
-        panRef.current = null;
-        return;
-      }
-      // 가로 이동 — 줌인/아웃 모두 툴팁 항상 갱신
+      // 핀치 벌림(d↑) = 줌인(적게·넓게) = cps↓. startCps × (startDist / d).
+      const next = Math.round(pinchRef.current.startCps * (pinchRef.current.startDist / Math.max(d, 1)));
+      setCps(Math.max(5, Math.min(2000, next)));
+    } else if (e.touches.length === 1) {
       updateHoverFromClientX(e.touches[0].clientX);
-      if (!panRef.current.isDragging && absDx < PAN_THRESHOLD) return; // 짧은 이동: 툴팁만
-      if (!canPan) return; // 줌아웃 상태: 툴팁만, 팬 없음
-      panRef.current.isDragging = true;
-      const rect = priceBoxRef.current.getBoundingClientRect();
-      const range = panRef.current.startE - panRef.current.startS + 1;
-      const dxIdx = Math.round(-dx / rect.width * range);
-      const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
-      if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
     }
-  }, [viewStart, fullN, updateHoverFromClientX, canPan]);
-  const handleTouchEnd = useCallback(() => { panRef.current = null; pinchRef.current = null; }, []);
+  }, [updateHoverFromClientX]);
+  const handleTouchEnd = useCallback(() => { pinchRef.current = null; }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
   const volTicks = useMemo(() => niceTicks(0, maxV, 3).filter(t => t > 0), [maxV]);
@@ -440,26 +385,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
       <div
         ref={priceBoxRef}
-        className={`relative select-none ${canPan && !useHScroll ? 'cursor-grab active:cursor-grabbing' : ''} ${useHScroll ? 'overflow-x-auto scrollbar-thin' : ''}`}
+        className="relative select-none overflow-x-auto scrollbar-thin"
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMovePan}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onScroll={() => { const v = volScrollRef.current; if (v && priceBoxRef.current) v.scrollLeft = priceBoxRef.current.scrollLeft; }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
-        style={{ touchAction: 'pan-y' }}
+        style={{ touchAction: 'pan-x pan-y' }}
       >
         <svg
           viewBox={`0 0 ${W} ${priceH}`}
-          className={useHScroll ? 'block' : 'w-full block'}
-          width={useHScroll ? W : undefined}
-          height={useHScroll ? priceH : undefined}
+          className="block"
+          width={W}
           preserveAspectRatio="none"
-          style={{ touchAction: 'pan-y', height: useHScroll ? undefined : priceChartHeight }}
+          style={{ height: priceChartHeight }}
         >
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
@@ -649,9 +590,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         })()}
       </div>
 
-      {/* 거래량 차트 */}
-      <div className="relative">
-        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full block" preserveAspectRatio="none" style={{ height: volChartHeight }}>
+      {/* 거래량 차트 — 가격과 가로 스크롤 동기화 (width=W + overflow-hidden, price onScroll 이 scrollLeft 맞춤). */}
+      <div ref={volScrollRef} className="relative overflow-x-hidden">
+        <svg viewBox={`0 0 ${W} ${volH}`} className="block" width={W} preserveAspectRatio="none" style={{ height: volChartHeight }}>
           {volTicks.map(t => {
             const y = yVol(t);
             return (
