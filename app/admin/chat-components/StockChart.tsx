@@ -101,6 +101,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 가로 스크롤 위치 — 가격축 라벨/툴팁을 뷰포트 우측·커서에 고정시키기 위해 추적.
   const [scrollX, setScrollX] = useState(0);
   const lastPointerXRef = useRef<number | null>(null); // 스크롤 시 마지막 커서 X 로 호버 재계산
+  const pinnedRightRef = useRef(true); // 우측(최신) 고정 여부 — 좌로 스크롤하면 해제, 우측 끝 복귀 시 재고정
 
   // 차트 전체 영역 cap — 모바일 320px / PC 480px. breakpoint 640 (sm). SSR null 시 320 fallback.
   // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) 에 cap 적용.
@@ -146,7 +147,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 줌 = 한 화면 캔들 수(cps). 데이터(slice)는 항상 전체 — 줌은 캔들 폭만 바꾸고, 화면에 다 안
   // 들어가면 가로 스크롤. (옛 slice 기반 줌 폐기 — "보여줄 개수"가 아니라 "캔들 폭/밀도")
   const [cps, setCps] = useState(ZOOM_DEFAULT_CPS);
-  useEffect(() => { setCps(ZOOM_DEFAULT_CPS); /* 데이터 변경 시 기본 줌 */ }, [fullN]);
+  useEffect(() => { setCps(ZOOM_DEFAULT_CPS); pinnedRightRef.current = true; /* 데이터 변경 시 기본 줌 + 최신 보기 */ }, [fullN]);
   // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
   const safeData = fullData;
@@ -219,20 +220,20 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
 
-  // 줌 시 보던 구간 유지 — barPx 변하면 scrollLeft 를 비례 보정 (콘텐츠 폭 ∝ barPx → 같은 구간 유지).
+  // 스크롤 위치 보정 — 지오메트리(boxW/W/barPx) 변할 때마다 실행.
+  //  · 우측 고정 상태(pinnedRight): 끝(최신)으로 — ResizeObserver 가 boxW 를 늦게 확정해도 항상 우측에 닿음.
+  //  · 아니면: 줌 시 보던 구간 유지 (콘텐츠 폭 ∝ barPx → scrollLeft 비례 보정).
   const prevBarRef = useRef(barPx);
   useLayoutEffect(() => {
     const el = priceBoxRef.current;
-    if (el && prevBarRef.current && prevBarRef.current !== barPx) {
+    if (!el) return;
+    if (pinnedRightRef.current) {
+      el.scrollLeft = el.scrollWidth;
+    } else if (prevBarRef.current && prevBarRef.current !== barPx) {
       el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);
     }
     prevBarRef.current = barPx;
-  }, [barPx]);
-  // 데이터 로드 시 최신(우측)부터 보기.
-  useEffect(() => {
-    const el = priceBoxRef.current;
-    if (el) el.scrollLeft = el.scrollWidth;
-  }, [fullN]);
+  }, [barPx, boxW, fullN]);
 
   const { xs, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
@@ -396,7 +397,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onScroll={(e) => {
-          const sl = e.currentTarget.scrollLeft;
+          const el = e.currentTarget;
+          const sl = el.scrollLeft;
+          pinnedRightRef.current = sl >= (el.scrollWidth - el.clientWidth) - 2; // 우측 끝이면 최신 고정 유지
           setScrollX(sl);
           if (volScrollRef.current) volScrollRef.current.scrollLeft = sl;
           if (lastPointerXRef.current != null) updateHoverFromClientX(lastPointerXRef.current);
