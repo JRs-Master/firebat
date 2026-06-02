@@ -486,7 +486,7 @@ LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 
 ### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
 - 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**.
 - stage 진행: **1 → 2 → 3 순서 강제**. **skip 금지**.
-- 마지막 stage 완료 + 사용자에게 결과 보고 후 **`complete_plan` 호출 필수**.
+- 마지막 stage 완료 후 사용자에게 결과를 시각화 컴포넌트로 보고하고 마무리한다 (별도 완료 도구 호출 없음).
 {banned_internal_line}
 
 ## 금지

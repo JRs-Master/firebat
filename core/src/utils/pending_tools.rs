@@ -29,7 +29,7 @@ const MAX_SIZE: usize = 100;
 // ── PendingActionArgs — 6 destructive 도구의 typed oneof ─────────────
 // 2026-05-14 A1-full Step 2a: 옛 serde_json::Value args 의 typed 대체.
 // name discriminator (write_file / save_page / delete_file / delete_page /
-// schedule_task / cancel_task) 로 variant 분기. 호출 site 마이그는 Step 2b.
+// schedule_task / cancel_cron_job) 로 variant 분기. 호출 site 마이그는 Step 2b.
 
 /// write_file 도구 인자 — 파일 절대 경로 + 내용.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,7 +103,7 @@ pub struct ScheduleTaskArgs {
     pub agent_prompt: Option<String>,
 }
 
-/// cancel_task 도구 인자 — jobId 한 개.
+/// cancel_cron_job 도구 인자 — jobId 한 개.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelTaskArgs {
@@ -120,7 +120,7 @@ pub enum PendingActionArgs {
     DeleteFile(DeleteFileArgs),
     DeletePage(DeletePageArgs),
     ScheduleTask(ScheduleTaskArgs),
-    CancelTask(CancelTaskArgs),
+    CancelCronJob(CancelTaskArgs),
 }
 
 impl PendingActionArgs {
@@ -132,7 +132,7 @@ impl PendingActionArgs {
             PendingActionArgs::DeleteFile(_) => "delete_file",
             PendingActionArgs::DeletePage(_) => "delete_page",
             PendingActionArgs::ScheduleTask(_) => "schedule_task",
-            PendingActionArgs::CancelTask(_) => "cancel_task",
+            PendingActionArgs::CancelCronJob(_) => "cancel_cron_job",
         }
     }
 

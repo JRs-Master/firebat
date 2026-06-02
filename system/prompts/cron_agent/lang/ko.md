@@ -37,7 +37,7 @@
 
 7. **자동 발행 권한**:
    - 사용자 승인 게이트 우회됨 (등록 시 한 번 승인). 매 트리거마다 save_page 직접 호출 OK
-   - schedule_task / cancel_task / propose_plan / complete_plan 도구는 차단됨 (recursion 방지)
+   - schedule_task / cancel_cron_job / propose_plan 도구는 차단됨 (recursion 방지)
 
 8. **이전 발행 페이지 같은 slug 충돌 시 `allowOverwrite:false` 기본 — 자동 -2 접미사. 매번 새 slug 보장.**
 

@@ -22,6 +22,7 @@ pub mod plan_mode;
 pub mod code_assist;
 // 옛 llm/ 에 설정되어 있던 순수 검색 index — infra 의존 0건이라 core (managers/ai) 로 이동.
 pub mod component_registry;
+pub mod render_exec;
 pub mod component_search_index;
 pub mod tool_search_index;
 pub mod dynamic_tools;
@@ -42,7 +43,7 @@ fn tool_label(name: &str) -> String {
         "save_page" => "페이지 저장 중".to_string(),
         "delete_page" => "페이지 삭제 중".to_string(),
         "schedule_task" => "스케줄 등록 중".to_string(),
-        "cancel_task" => "스케줄 해제 중".to_string(),
+        "cancel_cron_job" => "스케줄 해제 중".to_string(),
         "run_task" => "파이프라인 실행 중".to_string(),
         "plan" => "계획 정리 중".to_string(),
         "request_secret" => "API 키 요청".to_string(),
@@ -191,7 +192,7 @@ pub struct AiManager {
     cost: Option<Arc<CostManager>>,
     /// ToolDispatcher (옵션) — approval gate (check_needs_approval + pre_validate_pending_args).
     /// 설정되어 있으면 destructive 도구 (write_file/save_page 덮어쓰기 / delete_* / schedule_task /
-    /// cancel_task) 호출 시 즉시 실행 X → pending 으로 등록. 옛 TS ai-manager.ts approval flow 1:1.
+    /// cancel_cron_job) 호출 시 즉시 실행 X → pending 으로 등록. 옛 TS ai-manager.ts approval flow 1:1.
     /// 미설정 시 모든 도구 즉시 실행 (현재 default — 회귀 안전).
     dispatcher: Option<Arc<ToolDispatcher>>,
     /// ConversationManager (옵션) — CLI session resume 위해 직접 참조. 설정되어 있고 model 이 `cli-` 로
@@ -324,7 +325,7 @@ impl AiManager {
     }
 
     /// ToolDispatcher 설정한 채로 부팅 — approval gate (write_file/save_page 덮어쓰기 / delete_* /
-    /// schedule_task / cancel_task) 활성. cron agent 모드는 우회 (server-side 실행).
+    /// schedule_task / cancel_cron_job) 활성. cron agent 모드는 우회 (server-side 실행).
     pub fn with_tool_dispatcher(mut self, dispatcher: Arc<ToolDispatcher>) -> Self {
         self.dispatcher = Some(dispatcher);
         self
@@ -646,6 +647,8 @@ impl AiManager {
         // OpenAI Responses). 토큰 없으면 즉시 명시 에러 (silent stdio fallback → "도구 없음"
         // hallucinate 차단). MCP 미지원 모델 (Gemini native / Vertex 등) 은 ai.rs 의
         // effective_tools schema 가 정공 (Function Calling 표준).
+        // 두 경로(MCP register_builtin_tools ↔ ToolManager register_core_tools)의 도구 카탈로그
+        // 동기화 책임은 tool.rs 모듈 doc 참조 — 한쪽만 등록 시 그 모델군에서 도구 누락 (drift).
         let supports_mcp = self.llm.supports_hosted_mcp(&effective_opts);
         if supports_mcp && effective_opts.mcp_token.is_none() {
             let model_id = effective_opts
@@ -691,7 +694,7 @@ impl AiManager {
             //
             // 차단 영역 (destructive — admin DB 영구 변경):
             //   delete_page / delete_file / write_file / write_module /
-            //   schedule_task / cancel_task / run_task / run_module / run_user_module /
+            //   schedule_task / cancel_cron_job / run_task / run_module / run_user_module /
             //   request_secret / mcp_* (admin 권한 도구)
             if let Some(ctx) = &ai_opts.hub_context {
                 let allowed: std::collections::HashSet<String> =
@@ -702,8 +705,9 @@ impl AiManager {
                     if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
                         return allowed.contains(sysmod_name);
                     }
-                    // render_* / read-only / 컨텍스트 / save_page (hub-scoped) = 허용
-                    if name.starts_with("render_")
+                    // render(통합) / render_* / read-only / 컨텍스트 / save_page (hub-scoped) = 허용
+                    if name == "render"
+                        || name.starts_with("render_")
                         || name.starts_with("list_")
                         || name.starts_with("get_")
                         || name.starts_with("search_")

@@ -1,0 +1,140 @@
+//! render 도구 실행 — blocks 검증/정규화 단일 소스.
+//!
+//! 두 경로가 같은 로직을 써야 한다:
+//! - **ToolManager**(FC 모델 = Gemini/Vertex) — `tool_registry::register_meta_render_tools` 의 핸들러.
+//! - **MCP 서버**(hosted = CLI/Anthropic/OpenAI) — `infra::mcp_server::RenderUnifiedHandler`.
+//!
+//! 옛에는 render 실행 본체가 infra(mcp_server) 에만 있어 FC 모델은 render 를 아예 못 불렀다(drift).
+//! 본 함수로 추출해 양쪽이 호출 → 동작 일치 + drift 차단.
+//!
+//! 결과 = `{ success: true, blocks: [{type:"component", name, props}], failed: [...] }`.
+//! block 별 graceful 처리 — 1개 block 이 hallucinate 여도 나머지 정상 block 은 표시,
+//! 실패 block 만 `failed` 배열로 분리(AI 가 보고 retry 자율 결정). 전부 실패 시만 Err.
+
+use serde_json::Value;
+
+use super::component_registry;
+
+/// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
+/// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
+pub fn render_blocks(args: &Value) -> Result<Value, String> {
+    // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
+    // blocks 배열 자체를 직접 보내는 경우 수용.
+    let parsed_args: Value = match args.as_str() {
+        Some(s) => serde_json::from_str(s).unwrap_or_else(|_| args.clone()),
+        None => args.clone(),
+    };
+    let blocks_val = parsed_args.get("blocks").cloned();
+    let blocks_owned: Vec<Value> = if let Some(bv) = blocks_val {
+        match bv {
+            Value::Array(a) => a,
+            Value::String(s) => serde_json::from_str::<Vec<Value>>(&s)
+                .map_err(|_| "render: 'blocks' 가 array 가 아닙니다".to_string())?,
+            _ => return Err("render: 'blocks' (array) 가 필요합니다".to_string()),
+        }
+    } else if let Value::Array(a) = &parsed_args {
+        a.clone()
+    } else {
+        return Err("render: 'blocks' (array) 가 필요합니다".to_string());
+    };
+    let blocks = &blocks_owned;
+    if blocks.is_empty() {
+        return Err("render: 'blocks' 가 비어있습니다 (최소 1개 필요)".to_string());
+    }
+
+    // block 별 graceful 처리 — 정상은 rendered, 실패는 failed 로 분리.
+    let mut rendered = Vec::with_capacity(blocks.len());
+    let mut failed: Vec<Value> = Vec::new();
+    for (idx, block) in blocks.iter().enumerate() {
+        let block_type = match block.get("type").and_then(|v| v.as_str()) {
+            Some(t) => t,
+            None => {
+                failed.push(serde_json::json!({
+                    "idx": idx,
+                    "type": Value::Null,
+                    "error": format!("blocks[{idx}]: 'type' (string) 가 필요합니다"),
+                }));
+                continue;
+            }
+        };
+        let mut props = block
+            .get("props")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        // 정규화 전 원본 키 — 검증 실패 진단용(synonym 매핑 필요 vs 통째 누락 구분).
+        let original_keys: Vec<String> = props
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let comp = match component_registry::find_component(block_type) {
+            Some(c) => c,
+            None => {
+                failed.push(serde_json::json!({
+                    "idx": idx,
+                    "type": block_type,
+                    "error": format!("알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야", block_type),
+                }));
+                continue;
+            }
+        };
+
+        // AI hallucination normalize — 'name' → 'title' 매핑 후 sanitize_to_schema 재귀 정규화.
+        if let Some(obj) = props.as_object_mut() {
+            if !obj.contains_key("title") {
+                if let Some(name_val) = obj.remove("name") {
+                    obj.insert("title".to_string(), name_val);
+                }
+            }
+        }
+        component_registry::sanitize_to_schema(&mut props, &comp.props_schema);
+
+        // propsSchema 검증 — 실패 block 만 분리.
+        if let Err(e) = crate::managers::module::validate_value(&props, &comp.props_schema) {
+            failed.push(serde_json::json!({
+                "idx": idx,
+                "type": block_type,
+                "error": format!("props 검증 실패: {}", e),
+                "gotKeys": original_keys,
+            }));
+            continue;
+        }
+
+        rendered.push(serde_json::json!({
+            "type": "component",
+            "name": comp.component_type,
+            "props": props,
+        }));
+    }
+
+    // 모두 실패 — Err 로 AI retry 유도.
+    if rendered.is_empty() && !failed.is_empty() {
+        let summary = failed
+            .iter()
+            .filter_map(|f| f.get("error").and_then(|v| v.as_str()))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!(
+            "render: 모든 block 검증 실패 ({}). schema 맞춰 다시 호출하라.",
+            summary
+        ));
+    }
+
+    // 부분 성공 진단 — 검증 실패 block 이 silent skip 되어 화면 누락되는 root cause 추적.
+    if !failed.is_empty() {
+        tracing::warn!(
+            target: "render",
+            rendered_count = rendered.len(),
+            failed_count = failed.len(),
+            failed = %serde_json::to_string(&failed).unwrap_or_default(),
+            "[render] 일부 block 검증 실패 — silent skip (사용자 화면 미표시)"
+        );
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "blocks": rendered,
+        "failed": failed,
+    }))
+}

@@ -37,7 +37,7 @@ You are performing an auto-triggered content generation job while the user is aw
 
 7. **Auto-publication permission**:
    - User approval gate bypassed (one-time approval at registration). save_page can be called directly per trigger
-   - schedule_task / cancel_task / propose_plan / complete_plan tools are blocked (recursion prevention)
+   - schedule_task / cancel_cron_job / propose_plan tools are blocked (recursion prevention)
 
 8. **Same-slug collision with previously published pages: default `allowOverwrite:false` — auto -2 suffix. New slug guaranteed each time.**
 

@@ -130,7 +130,7 @@ const CATEGORIES: &[CategoryDef] = &[
         id: "scheduling",
         label: "스케줄·예약·태스크",
         semantic_text: "스케줄 예약 크론 정기 매일 매시간 몇시에 태스크 작업 자동화 즉시 실행 취소 해제 목록 조회 파이프라인",
-        match_by_name: |n| matches!(n, "schedule_task" | "run_task" | "cancel_task" | "list_tasks"),
+        match_by_name: |n| matches!(n, "schedule_task" | "run_task" | "cancel_cron_job" | "list_cron_jobs"),
         match_by_capability: &[],
     },
     CategoryDef {

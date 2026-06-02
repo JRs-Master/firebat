@@ -502,7 +502,7 @@ async fn main() -> Result<()> {
     // ToolDispatcher — approval gate (check_needs_approval + pre_validate_pending_args) 활성.
     // 옛에 wiring 누락 상태로 있어 save_page 수정 시 승인 UI 안 나오던 fix (사용자 보고 2026-05-19).
     // page / schedule / mcp 가 연결되어 있어 destructive 도구 (save_page 덮어쓰기 / delete_page /
-    // delete_file / schedule_task / cancel_task) 호출 시 pending action 생성.
+    // delete_file / schedule_task / cancel_cron_job) 호출 시 pending action 생성.
     let tool_dispatcher = Arc::new(
         firebat_core::managers::ai::tool_dispatcher::ToolDispatcher::new(storage.clone())
             .with_page(page_manager.clone())
@@ -544,24 +544,8 @@ async fn main() -> Result<()> {
         Some(cost_manager.clone()),
     );
 
-    // Phase B-17a/c — 정적 도구 dispatch 등록 (27 도구). LLM stub 위에서도 도구 호출 e2e 동작.
-    firebat_core::tool_registry::register_core_tools(
-        &tool_manager,
-        firebat_core::tool_registry::CoreToolHandlers {
-            page: page_manager.clone(),
-            schedule: schedule_manager.clone(),
-            media: media_manager.clone(),
-            conversation: conversation_manager.clone(),
-            storage: storage.clone(),
-            entity: entity_manager.clone(),
-            episodic: episodic_manager.clone(),
-            consolidation: consolidation_manager.clone(),
-            module: module_manager.clone(),
-            mcp: mcp_manager.clone(),
-            event: event_manager.clone(),
-            cache: cache_adapter.clone(),
-        },
-    );
+    // 정적 도구 dispatch 등록은 task_manager 생성 뒤로 이동 (run_task = TaskManager 의존).
+    // tool_manager 는 dispatch 시점(부팅 후)에만 읽히므로 등록을 미뤄도 안전.
 
     // Phase B-17a — TaskManager 의 step executor 를 RealTaskExecutor 로 wiring.
     // AiManager (ToolManager 위) → RealTaskExecutor (Sandbox/Mcp/Ai/Page/Tool 위) → TaskManager.
@@ -592,6 +576,30 @@ async fn main() -> Result<()> {
         )
             .with_tools(tool_manager.clone())
             .with_status(status_manager.clone()),
+    );
+
+    // Phase B-17a/c — 정적 도구 dispatch 등록. LLM stub 위에서도 도구 호출 e2e 동작.
+    // task_manager 생성 뒤 — run_task(파이프라인)·search_library 가 각각 TaskManager·LibraryManager 의존.
+    // schedule_manager 는 여기서 아직 pre-hooks 버전이나, schedule/list/cancel 는 hooks 무관이라 안전
+    // (트리거 콜백은 shared cron_adapter 에 등록되므로 어느 인스턴스로 schedule 해도 발화).
+    firebat_core::tool_registry::register_core_tools(
+        &tool_manager,
+        firebat_core::tool_registry::CoreToolHandlers {
+            page: page_manager.clone(),
+            schedule: schedule_manager.clone(),
+            media: media_manager.clone(),
+            conversation: conversation_manager.clone(),
+            storage: storage.clone(),
+            entity: entity_manager.clone(),
+            episodic: episodic_manager.clone(),
+            consolidation: consolidation_manager.clone(),
+            module: module_manager.clone(),
+            mcp: mcp_manager.clone(),
+            event: event_manager.clone(),
+            cache: cache_adapter.clone(),
+            task: task_manager.clone(),
+            library: library_manager.clone(),
+        },
     );
 
     // ScheduleManager 에 hooks 저장 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)

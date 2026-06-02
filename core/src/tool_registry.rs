@@ -15,11 +15,13 @@ use crate::managers::conversation::ConversationManager;
 use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
+use crate::managers::library::LibraryManager;
 use crate::managers::mcp::McpManager;
 use crate::managers::media::MediaManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::page::PageManager;
 use crate::managers::schedule::ScheduleManager;
+use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, IStoragePort,
@@ -46,6 +48,10 @@ pub struct CoreToolHandlers {
     /// 자동 저장 + AI 가 cache_read / cache_grep / cache_aggregate / cache_drop 도구로 조회.
     /// sandbox 가 envelope 변환 후 cacheKey 만 AI 에게 전달 — main context 토큰 절약.
     pub cache: Arc<SysmodCacheAdapter>,
+    /// 파이프라인 즉시 실행 (run_task). task=파이프라인 도메인 (cron=스케줄과 구분).
+    pub task: Arc<TaskManager>,
+    /// 자료 라이브러리 하이브리드 검색 (search_library).
+    pub library: Arc<LibraryManager>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -62,6 +68,193 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_module_tools(tools, &h);
     register_mcp_tools(tools, &h);
     register_cache_tools(tools, &h);
+    register_task_library_tools(tools, &h);
+    register_meta_render_tools(tools, &h);
+}
+
+/// task(파이프라인 즉시 실행) + library(자료 하이브리드 검색) 도구.
+/// 옛엔 MCP 에만 있어 FC 모델(Gemini/Vertex)이 못 불렀다 (drift). MCP RunTaskHandler /
+/// SearchLibraryHandler 와 같은 매니저 메서드 위임 → 동작 일치.
+fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // run_task — 파이프라인 즉시 실행. task=파이프라인 / cron=스케줄(schedule_task) 구분.
+    let task = h.task.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "run_task".to_string(),
+            description: "파이프라인 즉시 실행 (예약 아님). pipeline = step 배열. 예약·반복은 schedule_task 사용.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "pipeline": { "type": "array" } },
+                "required": ["pipeline"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let task = task.clone();
+            async move {
+                let pipeline = args
+                    .get("pipeline")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Array(vec![]));
+                let steps: Vec<PipelineStep> =
+                    serde_json::from_value(pipeline).map_err(|e| format!("pipeline: {e}"))?;
+                let result = task.execute_pipeline(&steps).await;
+                Ok(if result.success {
+                    serde_json::json!({"success": true, "data": result.data})
+                } else {
+                    serde_json::json!({"success": false, "error": result.error.unwrap_or_default()})
+                })
+            }
+        },
+    );
+
+    // search_library — 하이브리드 RAG (dense E5 + sparse BM25 + RRF). MCP SearchLibraryHandler 1:1.
+    let library = h.library.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "search_library".to_string(),
+            description: "자료 라이브러리 하이브리드 검색 (dense + sparse). query 필수. referenceIds 로 특정 자료 그룹만 (빈 배열/미지정 = 전체). limit 기본 5.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "owner": { "type": "string" },
+                    "referenceIds": { "type": "array", "items": { "type": "string" } },
+                    "limit": { "type": "integer" }
+                },
+                "required": ["query"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let library = library.clone();
+            async move {
+                let owner = args
+                    .get("owner")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("admin")
+                    .to_string();
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "search_library: query 필수".to_string())?
+                    .to_string();
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(5)
+                    .clamp(1, 20);
+                let reference_ids: Vec<String> = args
+                    .get("referenceIds")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                match library.search(&owner, &reference_ids, &query, limit).await {
+                    Ok(hits) if hits.is_empty() => Ok(serde_json::json!({
+                        "success": true,
+                        "data": [],
+                        "hint": "매치된 자료가 없습니다. 동의어·핵심 명사·상위어 등 다른 키워드로 재검색하거나, referenceIds 를 비워 전체 자료를 검색해 보세요."
+                    })),
+                    Ok(hits) => Ok(serde_json::json!({"success": true, "data": hits})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+}
+
+/// 메타 도구 — render / suggest / propose_plan. ToolManager(FC 모델) 노출용.
+/// 옛엔 MCP 에만 있어 Gemini/Vertex 가 시각화·플랜카드·제안칩을 전혀 못 불렀다 (drift).
+/// 실행 본체는 core 공유 소스(render_exec / plan_store) — MCP 핸들러와 동작 일치.
+/// 결과(blocks / component=PlanCard / suggestions)는 AiManager 멀티턴 루프가 자동 변환.
+fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
+    use crate::managers::ai::{component_registry, render_exec};
+
+    // render — 단일 통합 도구. schema enum 은 MCP register_render_tools 와 동일 소스(component_names).
+    let names: Vec<serde_json::Value> = component_registry::component_names()
+        .iter()
+        .map(|n| serde_json::Value::String((*n).to_string()))
+        .collect();
+    tools.register_tool(
+        ToolDefinition {
+            name: "render".to_string(),
+            description: "UI 컴포넌트 렌더링 — blocks 배열로 한 번에 렌더. 각 block = `type`(컴포넌트 이름, 26 종 enum) + `props`(해당 컴포넌트 schema). 실패 시 schema 에러 반환 — props 맞춰 재호출.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "blocks": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": { "type": "string", "enum": names },
+                                "props": { "type": "object" }
+                            },
+                            "required": ["type", "props"],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": ["blocks"],
+                "additionalProperties": false
+            }),
+            source: "core".to_string(),
+        },
+        |args| async move { render_exec::render_blocks(&args) },
+    );
+
+    // suggest — 다음 행동 제안 칩 (AiManager 가 응답 suggestions 로 변환).
+    tools.register_tool(
+        ToolDefinition {
+            name: "suggest".to_string(),
+            description: "사용자에게 다음 행동 제안 칩 제시. suggestions = 짧은 문자열 배열.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "suggestions": { "type": "array", "items": { "type": "string" } } },
+                "required": ["suggestions"]
+            }),
+            source: "core".to_string(),
+        },
+        |args| async move {
+            Ok(serde_json::json!({
+                "success": true,
+                "suggestions": args.get("suggestions").cloned().unwrap_or(serde_json::Value::Array(vec![]))
+            }))
+        },
+    );
+
+    // propose_plan — plan 카드 제시 + ✓실행/⚙수정. 실행 본체 = plan_store 공유 소스.
+    tools.register_tool(
+        ToolDefinition {
+            name: "propose_plan".to_string(),
+            description: "복합·파괴적 작업 전 plan 카드 제시 (사용자 ✓실행 승인 후 실행). title + steps[] (각 {title, description?, tool?}) + estimatedTime? + risks?.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string" },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": { "type": "string" },
+                                "description": { "type": "string" },
+                                "tool": { "type": "string" }
+                            },
+                            "required": ["title"]
+                        }
+                    },
+                    "estimatedTime": { "type": "string" },
+                    "risks": { "type": "array", "items": { "type": "string" } }
+                },
+                "required": ["title", "steps"]
+            }),
+            source: "core".to_string(),
+        },
+        |args| async move { Ok(crate::utils::plan_store::build_propose_plan_result(&args)) },
+    );
 }
 
 fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
@@ -487,6 +680,10 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 }
 
+/// cron(스케줄) 도메인 도구 — schedule_task(등록) / list_cron_jobs(목록) / cancel_cron_job(해제).
+/// 도메인 구분: **cron = 스케줄**(ScheduleManager, 예약·반복) ↔ **task = 파이프라인**
+/// (run_task = TaskManager.execute_pipeline, 즉시 1회). MCP 서버도 같은 이름으로 통일됨
+/// (옛 MCP 의 list_tasks/cancel_task 는 ScheduleManager 백엔드인데 task 이름을 쓴 오명 → cron 통일).
 fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "list_cron_jobs".to_string(),

@@ -13,16 +13,20 @@ use firebat_core::managers::media::MediaManager;
 use firebat_core::managers::memory_facade::MemoryFacade;
 use firebat_core::managers::module::ModuleManager;
 use firebat_core::managers::page::PageManager;
+use firebat_core::managers::library::LibraryManager;
 use firebat_core::managers::schedule::ScheduleManager;
+use firebat_core::managers::task::{StubTaskExecutor, TaskManager};
 use firebat_core::managers::tool::ToolManager;
 use firebat_core::ports::{
-    ICronPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort, IMediaPort,
-    IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
+    ICronPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort, ILibraryPort, ILogPort,
+    IMcpClientPort, IMediaPort, IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
 };
 use firebat_core::tool_registry::{register_core_tools, CoreToolHandlers};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 use firebat_infra::adapters::cron::TokioCronAdapter;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
+use firebat_infra::adapters::embedder::StubEmbedderAdapter;
+use firebat_infra::adapters::library::SqliteLibraryAdapter;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 use firebat_infra::adapters::media::LocalMediaAdapter;
@@ -68,9 +72,15 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     .unwrap();
     let schedule_mgr = Arc::new(ScheduleManager::new(cron));
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-    let event_mgr = Arc::new(EventManager::new(log));
+    let event_mgr = Arc::new(EventManager::new(log.clone()));
 
     let cache = Arc::new(SysmodCacheAdapter::new(dir.path().join("cache")).unwrap());
+    let task_mgr = Arc::new(TaskManager::new(Arc::new(StubTaskExecutor), log));
+    let lib_path = dir.path().join("library.db");
+    let library_port: Arc<dyn ILibraryPort> =
+        Arc::new(SqliteLibraryAdapter::new(&lib_path).unwrap());
+    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    let library_mgr = Arc::new(LibraryManager::new(library_port, embedder));
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -87,6 +97,8 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             mcp: mcp_mgr,
             event: event_mgr,
             cache,
+            task: task_mgr,
+            library: library_mgr,
         },
     );
     (tools, dir)
@@ -166,9 +178,20 @@ async fn registered_tool_count() {
     let stats = tools.stats();
     // page: 4 + storage: 4 + schedule: 3 + media: 3 (search/image_gen/regenerate) +
     // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 +
-    // module: 3 + mcp: 2 + cache: 4 (read/grep/aggregate/drop) = 34
-    assert_eq!(stats.total, 34);
-    assert_eq!(stats.by_source.get("core").copied(), Some(34));
+    // module: 3 + mcp: 2 + cache: 4 (read/grep/aggregate/drop) +
+    // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) = 39
+    assert_eq!(stats.total, 39);
+    assert_eq!(stats.by_source.get("core").copied(), Some(39));
+}
+
+#[tokio::test]
+async fn meta_and_pipeline_tools_have_handlers() {
+    // FC 모델(Gemini/Vertex) 이 호출 가능하려면 schema 뿐 아니라 핸들러도 등록돼야 한다
+    // (ai.rs has_handler 체크가 special-case 처리보다 먼저 — 미등록 시 unknownTool).
+    let (tools, _dir) = make_setup().await;
+    for name in ["run_task", "search_library", "render", "suggest", "propose_plan"] {
+        assert!(tools.has_handler(name), "{name} 핸들러 미등록");
+    }
 }
 
 #[tokio::test]

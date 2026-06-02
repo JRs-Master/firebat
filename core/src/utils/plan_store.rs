@@ -147,6 +147,65 @@ pub fn store_plan(plan: PlanInsert) {
     flush(&map);
 }
 
+/// propose_plan 도구 결과 빌더 — plan 저장 + PlanCard component 응답.
+///
+/// ToolManager(FC 모델 = Gemini/Vertex) + MCP(hosted = CLI/Anthropic/OpenAI) 핸들러 공용 단일 소스.
+/// AiManager result_processor 가 `component="PlanCard"` → blocks 안 PlanCard 자동 변환 +
+/// suggestions = ✓실행(plan-confirm) / ⚙수정(plan-revise) UI 버튼.
+pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value {
+    let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let steps: Vec<PlanStep> = args
+        .get("steps")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let estimated_time = args
+        .get("estimatedTime")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let risks: Option<Vec<String>> = args
+        .get("risks")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    store_plan(PlanInsert {
+        plan_id: plan_id.clone(),
+        title: title.clone(),
+        steps: steps.clone(),
+        estimated_time: estimated_time.clone(),
+        risks: risks.clone(),
+    });
+    let steps_json =
+        serde_json::to_value(&steps).unwrap_or(serde_json::Value::Array(vec![]));
+    let risks_json = risks
+        .as_ref()
+        .map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Array(vec![])))
+        .unwrap_or(serde_json::Value::Null);
+    let est_time_json = estimated_time
+        .as_ref()
+        .map(|s| serde_json::Value::String(s.clone()))
+        .unwrap_or(serde_json::Value::Null);
+    serde_json::json!({
+        "success": true,
+        "planId": plan_id,
+        "component": "PlanCard",
+        "props": {
+            "planId": plan_id,
+            "title": title,
+            "steps": steps_json,
+            "estimatedTime": est_time_json,
+            "risks": risks_json,
+        },
+        "suggestions": [
+            { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
+            { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
+            "✕ 취소"
+        ]
+    })
+}
+
 /// 옛 TS `getPlan` 1:1 — 메모리 → 파일 폴백.
 pub fn get_plan(plan_id: &str) -> Option<StoredPlan> {
     let mut map = store_lock().lock().ok()?;

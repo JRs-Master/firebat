@@ -241,7 +241,7 @@ impl ToolDispatcher {
                     summary: format!("예약 등록: {} ({})", title, when),
                 })
             }
-            "cancel_task" => {
+            "cancel_cron_job" => {
                 let job_id = args
                     .get("jobId")
                     .and_then(|v| v.as_str())

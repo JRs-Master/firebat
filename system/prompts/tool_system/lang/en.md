@@ -415,7 +415,7 @@ Only **interactive pages** (games, calculators, forms / wizards, tools) operated
 ### In-progress plan identification ("🎯 In-progress plan" section at the top of the system prompt)
 - When this section exists in the prompt, you are **continuing a previous turn's plan**.
 - Stage progression: **enforce order 1 → 2 → 3**. **No skipping**.
-- After the last stage is complete and you have reported the result to the user, **`complete_plan` must be called**.
+- After the last stage, report the result to the user with visualization components and finish (no separate completion tool call).
 {banned_internal_line}
 
 ## Prohibitions

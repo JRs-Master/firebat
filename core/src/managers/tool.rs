@@ -3,6 +3,20 @@
 //! 옛 TS ToolManager (`core/managers/tool-manager.ts`) Rust 재구현 (간소화).
 //! Phase B 단계: 메모리 registry + filter. Tool 실행 자체는 매니저별 dispatch — 본 매니저는
 //! 메타데이터 + lookup 만 담당. AiManager 변환 시 통합.
+//!
+//! ## 두 레지스트리 공존 (drift 주의)
+//!
+//! Firebat 은 도구를 두 경로로 LLM 에 노출한다 (모델의 `mcp_connector` 플래그 기준):
+//! - **ToolManager**(여기) — `mcp_connector=false` (Gemini native / Vertex). AiManager 멀티턴
+//!   루프가 `build_tool_definitions()` = `list()` 로 schema 노출 + `dispatch()` 로 in-process 실행.
+//! - **MCP 서버**(`infra::mcp_server::register_builtin_tools`) — `mcp_connector=true`
+//!   (CLI 3종 + Anthropic API + OpenAI Responses). LLM 이 MCP 서버를 직접 호출.
+//!
+//! **단일 dispatcher 는 불가**: FC 경로는 AiManager 루프(approval gate / hub arg 주입 / render·suggest
+//! 결과 가공)를 거치고, hosted 경로는 LLM 이 MCP 서버를 직접 호출하므로 그 책임(envelope / hub guard /
+//! visibility)을 MCP 서버가 따로 진다. 두 레지스트리는 같은 매니저 Arc 를 병렬 등록한다.
+//! **새 빌트인 도구는 양쪽 모두 등록해야 한다** (한쪽만 하면 그쪽 모델군에서 도구가 안 보임).
+//! 공유 로직(render_exec / plan_store)으로 동작 일치를 보장. 카탈로그 자동 동기화는 향후 과제.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -180,6 +194,19 @@ impl ToolManager {
     pub fn register_handler(&self, name: &str, handler: ToolHandler) {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.handlers.insert(name.to_string(), handler);
+    }
+
+    /// 메타 + 핸들러 단일 등록 — `register` + `register_handler` 를 한 번에.
+    /// schema 와 handler 의 name 불일치를 구조적으로 차단. 핸들러 클로저는 `make_handler` 로 자동 wrap.
+    /// `tools.register_tool(def, |args| async move { ... })` 형태.
+    pub fn register_tool<F, Fut>(&self, def: ToolDefinition, handler: F)
+    where
+        F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = InfraResult<serde_json::Value>> + Send + 'static,
+    {
+        let name = def.name.clone();
+        self.register(def);
+        self.register_handler(&name, make_handler(handler));
     }
 
     pub fn unregister_handler(&self, name: &str) -> bool {

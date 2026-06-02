@@ -579,166 +579,8 @@ pub struct RenderUnifiedHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // 진단 log — args 영역 실제 형태 확인 (Issue 3 root cause 진단용).
-        // CLI 자체 MCP loop / API 모델 / etc 각 path 가 args 를 넘기는 형태 다를 가능성 추적.
-        // root cause 확정 후 본 log 제거.
-        let args_preview: String = serde_json::to_string(&args)
-            .unwrap_or_default()
-            .chars()
-            .take(300)
-            .collect();
-        let args_type = if args.is_array() { "array" }
-            else if args.is_string() { "string" }
-            else if args.is_object() { "object" }
-            else if args.is_null() { "null" }
-            else { "other" };
-        tracing::info!(
-            target: "render",
-            "[Render] args type={} preview={}",
-            args_type,
-            args_preview
-        );
-        // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
-        // blocks 배열 자체를 직접 보내는 경우 수용. 옛 = args.get("blocks") 단일 경로라
-        // 'blocks (array) 가 필요합니다' 거짓 거부 (AI 가 정상 {blocks:[...]} 보냈을 때도).
-        let parsed_args: Value = match args.as_str() {
-            Some(s) => serde_json::from_str(s).unwrap_or(args.clone()),
-            None => args.clone(),
-        };
-        // blocks 값도 stringified 일 수 있음 (blocks: "[...]") → parse.
-        let blocks_val = parsed_args.get("blocks").cloned();
-        let blocks_owned: Vec<Value> = if let Some(bv) = blocks_val {
-            match bv {
-                Value::Array(a) => a,
-                Value::String(s) => serde_json::from_str::<Vec<Value>>(&s)
-                    .map_err(|_| "render: 'blocks' 가 array 가 아닙니다".to_string())?,
-                _ => return Err("render: 'blocks' (array) 가 필요합니다".to_string()),
-            }
-        } else if let Value::Array(a) = &parsed_args {
-            // args 자체가 blocks 배열인 경우
-            a.clone()
-        } else {
-            return Err("render: 'blocks' (array) 가 필요합니다".to_string());
-        };
-        let blocks = &blocks_owned;
-        if blocks.is_empty() {
-            return Err("render: 'blocks' 가 비어있습니다 (최소 1개 필요)".to_string());
-        }
-
-        // block 별 graceful 처리 — 정상 block 은 rendered 에 push, 실패 block 은 failed 에 분리 push.
-        // 옛 흐름은 첫 fail 만나면 즉시 Err return → 통째 도구 호출 실패 → 사용자 화면 0 block.
-        // 정공 = 1개 block hallucinate (예: marker 안 lon 누락) 이 있어도 나머지 정상 block 은 화면 표시 +
-        // 실패한 block 만 사용자 / AI 한테 에러 안내. AI 는 응답 안 `failed` 배열 보고 retry 결정 자율.
-        let mut rendered = Vec::with_capacity(blocks.len());
-        let mut failed: Vec<Value> = Vec::new();
-        for (idx, block) in blocks.iter().enumerate() {
-            let block_type = match block.get("type").and_then(|v| v.as_str()) {
-                Some(t) => t,
-                None => {
-                    failed.push(serde_json::json!({
-                        "idx": idx,
-                        "type": Value::Null,
-                        "error": format!("blocks[{idx}]: 'type' (string) 가 필요합니다"),
-                    }));
-                    continue;
-                }
-            };
-            let mut props = block
-                .get("props")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
-
-            // 정규화(synonym 매핑 / extras drop) 전 Claude 가 실제 보낸 키 — 검증 실패 진단용.
-            // 핵심 prop(text/children/headers 등) 누락 시, Claude 가 다른 키(label/items/columns)로
-            // 보냈는지(→ synonym 매핑 필요) 통째 누락인지 구분하려면 원본 키가 필요하다.
-            let original_keys: Vec<String> = props
-                .as_object()
-                .map(|o| o.keys().cloned().collect())
-                .unwrap_or_default();
-
-            let comp = match firebat_core::managers::ai::component_registry::find_component(block_type) {
-                Some(c) => c,
-                None => {
-                    failed.push(serde_json::json!({
-                        "idx": idx,
-                        "type": block_type,
-                        "error": format!("알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야", block_type),
-                    }));
-                    continue;
-                }
-            };
-
-            // AI hallucination normalize — AI 가 schema 잘못 학습해서 'name' / 'currency' 등 보내는
-            // 경우 자주 발생. additionalProperties false + required title 명시 + description 강화로도
-            // 해결 안 됨 (commit `2cedd5b` 이후 또 발생). 검증 전 흡수.
-            //   1. 'name' 이 있고 'title' 이 없으면 → 'title' 매핑 (의미상 동일, stock_chart 같은
-            //      component 안 옛에 'name' 쓰던 적 있어 AI 가 학습한 잔재). sanitize 전에 처리.
-            //   2. sanitize_to_schema 가 나머지 정규화를 재귀적으로 수행 — additionalProperties:false
-            //      미지 키 drop / 중첩 객체·배열의 optional enum·type 위반 drop / 누락 required 의
-            //      default·null 채움. top-level 만 처리하던 옛 인라인 로직의 중첩 누락을 일반화.
-            if let Some(obj) = props.as_object_mut() {
-                if !obj.contains_key("title") {
-                    if let Some(name_val) = obj.remove("name") {
-                        obj.insert("title".to_string(), name_val);
-                    }
-                }
-            }
-            firebat_core::managers::ai::component_registry::sanitize_to_schema(
-                &mut props,
-                &comp.props_schema,
-            );
-
-            // propsSchema 검증 — 실패 block 만 분리, 정상 block 은 계속 push.
-            if let Err(e) =
-                firebat_core::managers::module::validate_value(&props, &comp.props_schema)
-            {
-                failed.push(serde_json::json!({
-                    "idx": idx,
-                    "type": block_type,
-                    "error": format!("props 검증 실패: {}", e),
-                    "gotKeys": original_keys,
-                }));
-                continue;
-            }
-
-            rendered.push(serde_json::json!({
-                "type": "component",
-                "name": comp.component_type,
-                "props": props,
-            }));
-        }
-
-        // 모두 실패 — 옛 흐름 호환 위해 Err return (AI retry 유도).
-        if rendered.is_empty() && !failed.is_empty() {
-            let summary = failed
-                .iter()
-                .filter_map(|f| f.get("error").and_then(|v| v.as_str()))
-                .collect::<Vec<_>>()
-                .join("; ");
-            return Err(format!(
-                "render: 모든 block 검증 실패 ({}). schema 맞춰 다시 호출하라.",
-                summary
-            ));
-        }
-
-        // 부분 성공 시 진단 — 검증 실패 block 이 silent skip 되어 사용자 화면 안 header 만 표시되고
-        // 본문 빠짐 root cause 추적. journalctl 안 어떤 block 이 왜 실패했는지 확정.
-        if !failed.is_empty() {
-            tracing::warn!(
-                target: "render",
-                rendered_count = rendered.len(),
-                failed_count = failed.len(),
-                failed = %serde_json::to_string(&failed).unwrap_or_default(),
-                "[render] 일부 block 검증 실패 — silent skip (사용자 화면 미표시)"
-            );
-        }
-
-        // 부분 성공 / 전체 성공 — success: true 설정 + failed 배열은 사용자 / AI 안내용.
-        Ok(serde_json::json!({
-            "success": true,
-            "blocks": rendered,
-            "failed": failed,
-        }))
+        // 실행 본체는 core 의 단일 소스에 있음 (ToolManager FC 경로와 공유 → drift 차단).
+        firebat_core::managers::ai::render_exec::render_blocks(&args)
     }
 }
 
@@ -852,7 +694,7 @@ impl McpToolHandler for GetPageHandler {
 /// admin context 면 pending 결과 반환 (Some). cron context 면 None — caller 가 기존 동작 진행.
 ///
 /// 옛 TS commit 262bc78 의 `globalThis.__firebatCronAgentJobId` 분기 Rust port. CLI 모델의 자체
-/// MCP loop 가 destructive 도구 (save_page / delete_* / schedule_task / cancel_task) 호출 시
+/// MCP loop 가 destructive 도구 (save_page / delete_* / schedule_task / cancel_cron_job) 호출 시
 /// 본 helper 통과 — admin chat 호출이면 pending action 생성 → 사용자 ✓ 승인해야 실행. cron 자동
 /// 실행 (CronContextGuard 활성) 이면 우회 후 직접 실행.
 fn pending_or_passthrough(
@@ -1090,13 +932,16 @@ impl McpToolHandler for ScheduleTaskHandler {
     }
 }
 
-pub struct CancelTaskHandler {
+// cron(스케줄) 도메인 — ScheduleManager 백엔드. ToolManager(register_schedule_tools) 와 동일 이름.
+// 도메인 구분: **cron = 스케줄**(예약·반복) ↔ **task = 파이프라인**(run_task, 즉시 1회).
+// 옛 이름 cancel_task/list_tasks 는 ScheduleManager 백엔드인데 task 와 혼동돼 cron 이름으로 통일.
+pub struct CancelCronJobHandler {
     pub schedule: Arc<ScheduleManager>,
 }
 #[async_trait::async_trait]
-impl McpToolHandler for CancelTaskHandler {
+impl McpToolHandler for CancelCronJobHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        if let Some(r) = pending_or_passthrough(&args, "cancel_task", |s| {
+        if let Some(r) = pending_or_passthrough(&args, "cancel_cron_job", |s| {
             format!("예약 해제: {}", obj_str(s, "jobId").unwrap_or_default())
         }) {
             return Ok(r);
@@ -1110,11 +955,11 @@ impl McpToolHandler for CancelTaskHandler {
     }
 }
 
-pub struct ListTasksHandler {
+pub struct ListCronJobsHandler {
     pub schedule: Arc<ScheduleManager>,
 }
 #[async_trait::async_trait]
-impl McpToolHandler for ListTasksHandler {
+impl McpToolHandler for ListCronJobsHandler {
     async fn call(&self, _args: Value) -> Result<Value, String> {
         let jobs = self.schedule.list();
         Ok(serde_json::json!({"success": true, "data": jobs}))
@@ -1488,6 +1333,53 @@ impl McpToolHandler for ImageGenHandler {
     }
 }
 
+// search_media / regenerate_image — ToolManager(register_media_tools) 와 같은 MediaManager 위임.
+// 옛엔 MCP 누락이라 hosted MCP 모델(CLI/Anthropic/OpenAI)이 갤러리 검색·이미지 재생성 불가했음.
+pub struct SearchMediaHandler {
+    pub media: Arc<MediaManager>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for SearchMediaHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let scope = obj_str(&args, "scope").and_then(|s| match s.as_str() {
+            "user" => Some(firebat_core::ports::MediaScope::User),
+            "system" => Some(firebat_core::ports::MediaScope::System),
+            _ => None,
+        });
+        let opts = firebat_core::ports::MediaListOpts {
+            search: obj_str(&args, "query"),
+            scope,
+            limit: args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize),
+            offset: args.get("offset").and_then(|v| v.as_u64()).map(|n| n as usize),
+            hub_owner: obj_str(&args, "hubOwner"),
+        };
+        match self.media.list(opts).await {
+            Ok(result) => Ok(serde_json::json!({"success": true, "data": result})),
+            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+        }
+    }
+}
+
+pub struct RegenerateImageHandler {
+    pub media: Arc<MediaManager>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for RegenerateImageHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
+        match self.media.regenerate_image_by_slug(&slug).await {
+            Ok((result, regen_from)) => {
+                let mut value = serde_json::to_value(&result).unwrap_or_default();
+                if let serde_json::Value::Object(ref mut map) = value {
+                    map.insert("regenFrom".to_string(), serde_json::Value::String(regen_from));
+                }
+                Ok(serde_json::json!({"success": true, "data": value}))
+            }
+            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+        }
+    }
+}
+
 // ── AI 메타 도구 (suggest / propose_plan / network_request) ───────────────
 
 pub struct SuggestHandler;
@@ -1503,55 +1395,8 @@ pub struct ProposePlanHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for ProposePlanHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // propose_plan — plan store 저장 후 PlanCard component + plan-confirm/revise suggestions 응답.
-        // 옛 TS mcp/internal-server.ts 1:1 — AiManager result_processor 가 component='PlanCard' →
-        // blocks 안 PlanCard 자동 변환 + suggestions 영역 frontend 가 ✓실행 / ⚙수정 버튼 UI.
-        let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
-        let title = obj_str(&args, "title").unwrap_or_default();
-        let steps: Vec<firebat_core::utils::plan_store::PlanStep> = args
-            .get("steps")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-        let estimated_time = obj_str(&args, "estimatedTime");
-        let risks: Option<Vec<String>> = args
-            .get("risks")
-            .and_then(|v| serde_json::from_value(v.clone()).ok());
-        firebat_core::utils::plan_store::store_plan(firebat_core::utils::plan_store::PlanInsert {
-            plan_id: plan_id.clone(),
-            title: title.clone(),
-            steps: steps.clone(),
-            estimated_time: estimated_time.clone(),
-            risks: risks.clone(),
-        });
-        // steps / risks 영역 serde_json::Value 변환 — frontend 안 그대로 props 사용.
-        let steps_json = serde_json::to_value(&steps).unwrap_or(serde_json::Value::Array(vec![]));
-        let risks_json = risks
-            .as_ref()
-            .map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Array(vec![])))
-            .unwrap_or(serde_json::Value::Null);
-        let est_time_json = estimated_time
-            .as_ref()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .unwrap_or(serde_json::Value::Null);
-        Ok(serde_json::json!({
-            "success": true,
-            "planId": plan_id,
-            "component": "PlanCard",
-            "props": {
-                "planId": plan_id,
-                "title": title,
-                "steps": steps_json,
-                "estimatedTime": est_time_json,
-                "risks": risks_json,
-            },
-            // ✓실행 = plan-confirm → AiManager 가 plan_execute_id 받아 다음 turn prompt 안 강제 주입.
-            // ⚙수정 = plan-revise → 사용자 입력 받은 후 AI 가 plan 재작성.
-            "suggestions": [
-                { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
-                { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
-                "✕ 취소"
-            ]
-        }))
+        // 실행 본체는 core plan_store 단일 소스 (ToolManager FC 경로와 공유 → drift 차단).
+        Ok(firebat_core::utils::plan_store::build_propose_plan_result(&args))
     }
 }
 
@@ -1715,17 +1560,19 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),
     }).await;
+    // cron(스케줄) 도메인 — ToolManager 와 동일 이름. 옛 cancel_task/list_tasks 는 task(파이프라인)와
+    // 혼동돼 cron 이름으로 통일 (둘 다 ScheduleManager 백엔드).
     state.register(McpTool {
-        name: "cancel_task".into(),
-        description: "예약 작업 취소. inputSchema: {jobId}.".into(),
+        name: "cancel_cron_job".into(),
+        description: "cron / 예약 잡 해제. inputSchema: {jobId}.".into(),
         input_schema: schema_object(serde_json::json!({"jobId": {"type": "string"}})),
-        handler: Arc::new(CancelTaskHandler { schedule: deps.schedule.clone() }),
+        handler: Arc::new(CancelCronJobHandler { schedule: deps.schedule.clone() }),
     }).await;
     state.register(McpTool {
-        name: "list_tasks".into(),
-        description: "예약 작업 목록.".into(),
+        name: "list_cron_jobs".into(),
+        description: "등록된 cron / 1회 예약 / delay 잡 목록.".into(),
         input_schema: schema_object(serde_json::json!({})),
-        handler: Arc::new(ListTasksHandler { schedule: deps.schedule.clone() }),
+        handler: Arc::new(ListCronJobsHandler { schedule: deps.schedule.clone() }),
     }).await;
     state.register(McpTool {
         name: "run_cron_job".into(),
@@ -1862,6 +1709,23 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
 
     // Media
+    state.register(McpTool {
+        name: "search_media".into(),
+        description: "갤러리 미디어 검색 (slug / filenameHint / prompt / model 매칭, 최신순). inputSchema: {query?, scope?, limit?, offset?}.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "query": {"type": "string"},
+            "scope": {"type": "string", "enum": ["user", "system"]},
+            "limit": {"type": "integer"},
+            "offset": {"type": "integer"}
+        })),
+        handler: Arc::new(SearchMediaHandler { media: deps.media.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "regenerate_image".into(),
+        description: "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. inputSchema: {slug}.".into(),
+        input_schema: schema_object(serde_json::json!({"slug": {"type": "string"}})),
+        handler: Arc::new(RegenerateImageHandler { media: deps.media.clone() }),
+    }).await;
     state.register(McpTool {
         name: "image_gen".into(),
         description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환, 백그라운드 완성. inputSchema: GenerateImageInput.".into(),

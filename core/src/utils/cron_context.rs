@@ -3,7 +3,7 @@
 //! 옛 TS `globalThis.__firebatCronAgentJobId` 패턴의 Rust port (commit 262bc78).
 //!
 //! 용도: cron 자동 실행 (사용자 부재) 안에서 CLI 모델의 자체 MCP loop 으로 destructive
-//! 도구 (schedule_task / cancel_task / save_page / delete_file / delete_page) 호출 시
+//! 도구 (schedule_task / cancel_cron_job / save_page / delete_file / delete_page) 호출 시
 //! pending action 만들지 않고 직접 실행. 등록 시점에 이미 사용자 승인 받음.
 //!
 //! admin chat 안에서 같은 도구 호출 시 = 본 flag 가 설정되지 않음 = MCP handler 가 pending
