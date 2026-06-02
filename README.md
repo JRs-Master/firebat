@@ -37,7 +37,7 @@ Firebat is an **AI-Powered Visual Automation Agent (VAA)** — a self-hosted pla
 One prompt flows through **design → implementation → deployment → scheduling → notification**.
 
 **Why VAA?** Firebat sits at the intersection of three categories:
-- **Visual** — results are pages, charts, tables, cards (20+ render_* components), not chat logs.
+- **Visual** — results are pages, charts, tables, cards (27 built-in components), not chat logs.
 - **Automation** — cron + pipelines run while you're away (not one-shot chat).
 - **Agent** — native Function Calling multi-turn tool loop (no brittle JSON parsing).
 
@@ -154,11 +154,11 @@ User prompt
 }
 ```
 
-Exposes 20+ tools: page CRUD, file CRUD, module execution + introspection (`list_user_modules` / `get_module_schema`), project management, cron management, nested MCP tool calls, etc.
+Exposes 30+ tools: page CRUD, file CRUD, module execution + introspection (`list_user_modules` / `get_module_schema`), project management, cron management, nested MCP tool calls, etc.
 
 **MCP Client** — Firebat calls out to external MCP servers (Gmail, Slack, KakaoTalk, …). Tools are auto-registered and the AI invokes them without extra wiring.
 
-> 🇰🇷 **MCP (Model Context Protocol)** — 외부 AI가 Firebat을 조작하는 **서버**(stdio / Streamable HTTP)와, Firebat이 Gmail·Slack·카톡 같은 외부 서비스를 호출하는 **클라이언트**를 모두 제공합니다. 서버는 18개 도구를 노출하고 Bearer 토큰으로 보호됩니다.
+> 🇰🇷 **MCP (Model Context Protocol)** — 외부 AI가 Firebat을 조작하는 **서버**(stdio / Streamable HTTP)와, Firebat이 Gmail·Slack·카톡 같은 외부 서비스를 호출하는 **클라이언트**를 모두 제공합니다. 서버는 36개의 빌트인 도구(+ 시스템 모듈·렌더 동적 등록)를 노출하고 Bearer 토큰으로 보호됩니다.
 
 ### Sandbox Execution
 
@@ -466,7 +466,7 @@ Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + 
 **Target architecture**:
 
 ```
-Frontend  Next.js + React + 27 render_* components
+Frontend  Next.js + React + 27 built-in components
                           ↓
                 RustCoreProxy → @connectrpc typed client → gRPC (Phase B-typed)
                           ↓

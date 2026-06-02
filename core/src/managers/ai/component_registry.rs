@@ -32,7 +32,7 @@ pub struct ComponentDef {
     pub props_schema: serde_json::Value,
 }
 
-/// 26개 component 정의 — 옛 TS `COMPONENTS` 1:1.
+/// 27개 component 정의 (components.json) — 옛 TS 26개 + map(태풍 시각화).
 /// 첫 호출 시 lazy init. 이후 cached.
 pub fn components() -> &'static Vec<ComponentDef> {
     static CACHE: OnceLock<Vec<ComponentDef>> = OnceLock::new();
@@ -186,9 +186,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_26_components() {
+    fn loads_all_components() {
         let comps = components();
-        assert_eq!(comps.len(), 26, "옛 TS 의 26개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — map(태풍 시각화) 추가로 27 (옛 26 + map).
+        assert_eq!(comps.len(), 27, "components.json 의 27개 컴포넌트 모두 설정되어야");
     }
 
     #[test]
@@ -229,12 +230,13 @@ mod tests {
     }
 
     #[test]
-    fn component_names_returns_26() {
+    fn component_names_returns_all() {
         let names = component_names();
-        assert_eq!(names.len(), 26);
+        assert_eq!(names.len(), 27);
         assert!(names.contains(&"stock_chart"));
         assert!(names.contains(&"table"));
         assert!(names.contains(&"network"));
+        assert!(names.contains(&"map"));
     }
 
     use crate::managers::module::validate_value;
