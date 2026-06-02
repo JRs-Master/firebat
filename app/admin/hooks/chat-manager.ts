@@ -209,12 +209,20 @@ export type ChatAction =
 // reducer 반환 직전 모든 메시지에 적용 → 로봇 사라짐 구조적 차단.
 function enforceInvariant(m: Message): Message {
   if (!isTerminal(m)) return m;
-  if (hasVisible(m)) return m;
+  // 터미널 system 답변(인사말 system-init 제외)은 항상 thinkingText 보유 → ThinkingBlock 의
+  // `!complete && !thinkingText` null-return 을 피해 '답변완료' 라벨 유지. backend 가 thinkingText
+  // 를 저장 안 해서(chat/stream save·hub schema 에 필드 없음) SSE 끊김 후 폴링 복구 / reload /
+  // 대화 전환으로 DB 메시지를 LOAD 하면 라벨이 사라지던 것 — visible 콘텐츠 유무와 무관하게 채운다.
+  // (LOAD 도 chatReducer → enforceInvariant 를 통과하므로 여기 한 곳에서 전 경로 일괄 해소.)
+  const m2: Message = (m.role === 'system' && m.id !== 'system-init' && !m.thinkingText)
+    ? { ...m, thinkingText: THINKING_STATUS.DONE }
+    : m;
+  if (hasVisible(m2)) return m2;
   return {
-    ...m,
-    content: m.content || m.error || FALLBACK.EMPTY_REPLY,
-    error: m.error || FALLBACK.INVISIBLE,
-    thinkingText: m.thinkingText || THINKING_STATUS.DONE,
+    ...m2,
+    content: m2.content || m2.error || FALLBACK.EMPTY_REPLY,
+    error: m2.error || FALLBACK.INVISIBLE,
+    thinkingText: m2.thinkingText || THINKING_STATUS.DONE,
   };
 }
 
