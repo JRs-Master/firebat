@@ -40,6 +40,7 @@ use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
+use firebat_core::managers::tool::{ToolListFilter, ToolManager};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 // ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
 // 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
@@ -1469,7 +1470,47 @@ pub struct BuiltinDeps {
     /// sysmod 자동캐시 drill-in (cache_read / cache_grep / cache_aggregate / cache_drop).
     /// sandbox 가 큰 응답을 저장한 것과 동일 Arc 여야 cacheKey 가 맞는다.
     pub cache: Arc<SysmodCacheAdapter>,
+    /// Stage 2 auto-sync — ToolManager(core) 카탈로그를 iterate 해 MCP 에 빠진 도구를 자동 노출.
+    /// 새 core 도구 추가 시 register_core_tools 한 곳만 등록하면 hosted MCP 에도 자동 반영(drift 차단).
+    pub tool_manager: Arc<ToolManager>,
 }
+
+/// Stage 2 — ToolManager(core) 카탈로그 위임 핸들러. MCP 에 명시 핸들러 없는 core 도구를 자동 노출.
+/// 기존 명시 핸들러(bespoke pending 요약·envelope 보유)는 그대로 보존되고, 본 핸들러는 그 외
+/// (주로 read-only/meta) 도구 전용 — 새 core 도구 추가 시 register_core_tools 한 곳만 등록하면
+/// hosted MCP tools/list 에도 자동 반영(drift 차단).
+pub struct ToolManagerProxyHandler {
+    pub tool_manager: Arc<ToolManager>,
+    pub name: String,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for ToolManagerProxyHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        // hub visitor 가드 — auto-sync 대상은 read-only/meta 라, FC 경로(ai.rs hub allow)와 동일
+        // 규칙으로 list_/get_/search_/cache_/render/suggest/propose_plan 만 허용, 그 외 차단.
+        if firebat_core::utils::hub_context::is_hub_context_active() && !hub_allows_proxy(&self.name) {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": format!("이 hub 에서는 '{}' 도구 사용이 허용되지 않습니다.", self.name)
+            }));
+        }
+        self.tool_manager.dispatch(&self.name, &args).await
+    }
+}
+
+/// hub visitor 에게 허용할 도구 판정 — ai.rs 의 hub filter allow 규칙과 일치.
+fn hub_allows_proxy(name: &str) -> bool {
+    name.starts_with("list_")
+        || name.starts_with("get_")
+        || name.starts_with("search_")
+        || name.starts_with("cache_")
+        || name == "render"
+        || name == "suggest"
+        || name == "propose_plan"
+}
+
+/// auto-sync 제외 — 다른 이름의 명시 핸들러가 이미 같은 기능 제공(중복 방지).
+const AUTOSYNC_SKIP: &[&str] = &["call_mcp_tool"]; // mcp_call 핸들러가 이미 McpManager.call_tool 위임
 
 pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDeps) {
     // Page
@@ -1758,6 +1799,36 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         input_schema: schema_object(serde_json::json!({"url": {"type":"string"}})),
         handler: Arc::new(NetworkRequestHandler { network: deps.network }),
     }).await;
+
+    // ── Stage 2: ToolManager(core) 카탈로그 auto-sync ──
+    // 위에서 명시 등록 안 된 core 도구(get_memory_stats / list_system_modules / consolidate_conversation
+    // 등)를 ToolManagerProxyHandler 로 자동 노출. 명시 핸들러(bespoke pending 요약·envelope)가 있는
+    // 도구는 이미 state 에 있어 건너뜀(보존). 새 core 도구 추가 시 register_core_tools 한 곳만 등록하면
+    // 여기서 자동으로 hosted MCP tools/list 에 반영 → 한쪽만 등록하던 drift 원천 차단.
+    let core_catalog = deps.tool_manager.list(&ToolListFilter {
+        source: Some("core".to_string()),
+        name_prefix: None,
+    });
+    for def in core_catalog {
+        if AUTOSYNC_SKIP.contains(&def.name.as_str()) {
+            continue;
+        }
+        if state.tools.read().await.contains_key(&def.name) {
+            continue; // 명시 핸들러 우선
+        }
+        let name = def.name.clone();
+        state
+            .register(McpTool {
+                name: def.name,
+                description: def.description,
+                input_schema: def.parameters,
+                handler: Arc::new(ToolManagerProxyHandler {
+                    tool_manager: deps.tool_manager.clone(),
+                    name,
+                }),
+            })
+            .await;
+    }
 }
 
 /// MCP server 부팅 — port 바인딩 + axum serve.

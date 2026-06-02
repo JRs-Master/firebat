@@ -822,6 +822,7 @@ async fn main() -> Result<()> {
                 library: library_manager.clone(),
                 network: network_port.clone(),
                 cache: cache_adapter.clone(),
+                tool_manager: tool_manager.clone(),
             },
         )
         .await;
@@ -864,6 +865,7 @@ async fn main() -> Result<()> {
                 library: library_manager.clone(),
                 network: network_port.clone(),
                 cache: cache_adapter.clone(),
+                tool_manager: tool_manager.clone(),
             },
         )
         .await;
