@@ -1288,6 +1288,9 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
 }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
+  // 툴팁이 항상 커서 우/하단에 붙으면 우측·하단 포인트에서 컨테이너 밖으로 밀려 글자가 1자씩
+  // 찌그러진다 → 가장자리 근처면 커서 반대쪽으로 뒤집어 표시 (공간 확보).
+  const [flip, setFlip] = React.useState<{ x: boolean; y: boolean }>({ x: false, y: false });
   const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -1325,7 +1328,10 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
       if (d < minDist) { minDist = d; idx = i; }
     }
     if (idx >= 0) setHovered(idx);
-    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    setCursorPos({ x: px, y: py });
+    // 오른쪽/아래 가장자리 근처(툴팁 폭·높이 추정만큼 공간 부족)면 반대쪽으로 뒤집어 표시.
+    setFlip({ x: px > rect.width - 170, y: py > rect.height - 90 });
   };
 
   return (
@@ -1384,14 +1390,18 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
         {hovered != null && cursorPos && (
           <div
             className="absolute pointer-events-none bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center border border-slate-200 z-10"
-            style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
+            style={{
+              left: cursorPos.x + (flip.x ? -14 : 14),
+              top: cursorPos.y + (flip.y ? -14 : 14),
+              transform: `translate(${flip.x ? '-100%' : '0'}, ${flip.y ? '-100%' : '0'})`,
+            }}
           >
             <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap mb-0.5">{labels[hovered] ?? hovered}</div>
             {/* multi-series 시 각 series 별 값 list, single 시 단일 큰 텍스트 */}
             {isMulti ? (
               <div className="space-y-0.5 text-left">
                 {seriesPaths.map((sp, si) => sp.values[hovered] !== undefined ? (
-                  <div key={si} className="flex items-center gap-1.5 text-[12px]">
+                  <div key={si} className="flex items-center gap-1.5 text-[12px] whitespace-nowrap">
                     <span className="inline-block w-2 h-2 rounded-sm" style={{ background: sp.color }} />
                     <span className="text-gray-600">{sp.name || `시리즈 ${si + 1}`}</span>
                     <span className="font-extrabold text-slate-900 ml-auto">{sp.values[hovered].toLocaleString('ko-KR')}{unit || ''}</span>
