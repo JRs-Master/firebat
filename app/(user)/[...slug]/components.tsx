@@ -2308,18 +2308,29 @@ function MapComp({
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
-            const cardHtml = m.popup
-              ? `<div style="padding:8px 12px;font-size:12px;line-height:1.5;max-width:min(280px,calc(100vw - 80px));word-break:break-word;">${sanitizePopupHtml(m.popup)}</div>`
+            // kakao 기본 InfoWindow 는 wrapping 멀티라인(주소·전화 2~3줄) 콘텐츠의 흰 박스 높이를
+            // 잘못 측정해 내용이 박스 밖으로 넘쳤다 → CustomOverlay 로 우리 div 자체를 박스로 렌더해
+            // CSS 가 콘텐츠 길이에 맞춰 auto-fit (MapLibre Popup 과 시각 일관).
+            const innerHtml = m.popup
+              ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
               : buildPopupCardHtml(m.label);
-            if (cardHtml) {
-              const info = new w.kakao.maps.InfoWindow({
-                content: `<div style="max-width:min(280px,calc(100vw - 80px));overflow:hidden;border-radius:10px;">${cardHtml}</div>`,
-                removable: true,
+            if (innerHtml) {
+              const box = document.createElement('div');
+              box.style.cssText = 'position:relative;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.18);max-width:min(280px,calc(100vw - 80px));word-break:break-word;overflow-wrap:anywhere;';
+              box.innerHTML = `<button type="button" aria-label="닫기" class="fb-map-popup-x" style="position:absolute;top:2px;right:5px;border:none;background:transparent;font-size:13px;line-height:1;color:#94a3b8;cursor:pointer;padding:4px;z-index:1;">✕</button>${innerHtml}`;
+              const overlay = new w.kakao.maps.CustomOverlay({
+                position: new w.kakao.maps.LatLng(m.lat, m.lon),
+                content: box,
+                yAnchor: 1.25,  // 박스 하단이 마커 위쪽에 오도록 (마커 가림 방지)
+                zIndex: 5,
+                clickable: true,
               });
+              const xBtn = box.querySelector('.fb-map-popup-x') as HTMLElement | null;
+              if (xBtn) xBtn.addEventListener('click', (e) => { e.stopPropagation(); overlay.setMap(null); });
               w.kakao.maps.event.addListener(marker, 'click', () => {
-                if (openInfo && openInfo !== info) openInfo.close();
-                info.open(map, marker);
-                openInfo = info;
+                if (openInfo && openInfo !== overlay) openInfo.setMap(null);
+                overlay.setMap(map);
+                openInfo = overlay;
               });
             }
           }
