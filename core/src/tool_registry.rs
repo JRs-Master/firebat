@@ -214,10 +214,18 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| serde_json::from_value(v.clone()).ok());
                 let body = args.get("body").cloned();
                 let timeout_ms = args.get("timeoutMs").and_then(|v| v.as_i64()).unwrap_or(30_000) as u64;
-                let req = NetworkRequest { url, method, headers, body, timeout_ms };
+                // MCP NetworkRequestHandler 와 동일 진단 로깅 (관찰성 대칭).
+                tracing::info!(target: "network", url = %url, method = %method, timeout_ms = timeout_ms, "[network_request] 호출 시작");
+                let req = NetworkRequest { url: url.clone(), method, headers, body, timeout_ms };
                 match network.fetch(req).await {
-                    Ok(resp) => Ok(serde_json::json!({"success": true, "data": resp})),
-                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                    Ok(resp) => {
+                        tracing::info!(target: "network", url = %url, status = resp.status, ok = resp.ok, "[network_request] 응답 수신");
+                        Ok(serde_json::json!({"success": true, "data": resp}))
+                    }
+                    Err(e) => {
+                        tracing::warn!(target: "network", url = %url, error = %e, "[network_request] 실패");
+                        Ok(serde_json::json!({"success": false, "error": e}))
+                    }
                 }
             }
         },
