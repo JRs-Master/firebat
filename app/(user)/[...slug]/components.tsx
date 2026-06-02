@@ -957,6 +957,30 @@ function mdBoldFix(s: string): string {
   return s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '');
 }
 
+// 인라인 마크다운 components — <p> 블록 래퍼 없이 부모(<li> / <div>) 안에 인라인 배치.
+// alertMdComponents 와 달리 p 를 Fragment 로 눌러 list item·timeline 줄 안에서 줄바꿈/여백 0.
+const inlineMdComponents = {
+  p: (props: any) => <>{props.children}</>,
+  strong: (props: any) => <strong className="font-bold" {...props} />,
+  em: (props: any) => <em className="italic" {...props} />,
+  code: (props: any) => <code className="px-1 py-0.5 bg-black/10 rounded text-[12px] font-mono" {...props} />,
+  a: (props: any) => <a className="underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  br: () => <br />,
+};
+
+/** 자유 텍스트 필드(List 항목 / Timeline 제목·설명 등 AI 가 **bold** 섞어 보내는 prose)용
+ *  인라인 마크다운 렌더러. TextComp 와 동일하게 mdBoldFix + rehypeRaw 로 raw "**" 노출 방지하되
+ *  <p> 블록 래퍼 없이 인라인. 숫자/구조 값(KeyValue value 등)에는 쓰지 말 것 — "1_000" 이탤릭 오작동. */
+function InlineMd({ text }: { text: string | number | null | undefined }) {
+  const s = cleanPlainText(text);
+  if (!s) return null;
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={inlineMdComponents}>
+      {mdBoldFix(normalizeEscapes(s))}
+    </ReactMarkdown>
+  );
+}
+
 function AlertComp({ message, type = 'info', title, action }: {
   message: string;
   type?: string;
@@ -1011,7 +1035,7 @@ function ListComp({ items, ordered = false }: { items: string[]; ordered?: boole
   return (
     <Tag className={`space-y-1.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'} text-gray-700`}>
       {items.map((item, i) => (
-        <li key={i} className="text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed">{cleanPlainText(item)}</li>
+        <li key={i} className="text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed"><InlineMd text={item} /></li>
       ))}
     </Tag>
   );
@@ -1643,8 +1667,8 @@ function TimelineComp({ items }: {
             <>
               <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
               <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>
-              <div className="font-bold text-sm text-gray-900">{cleanPlainText(item.title)}</div>
-              {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{cleanPlainText(item.description)}</div>}
+              <div className="font-bold text-sm text-gray-900"><InlineMd text={item.title} /></div>
+              {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed"><InlineMd text={item.description} /></div>}
             </>
           );
           // href 설정되어 있으면 항목 전체 anchor wrap (호버 시 미세 강조)
