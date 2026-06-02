@@ -419,6 +419,7 @@ impl ClaudeCodeCliHandler {
                                         }
                                         outcome.thinking_acc.push_str("[계획 정리]");
                                         if let Some(tx) = emit {
+                                            let _ = tx.try_send(LlmStreamEvent::Thinking("[계획 정리]\n".to_string()));
                                             let _ = tx.try_send(LlmStreamEvent::ToolStep {
                                                 name: "plan".to_string(),
                                                 status: "start".to_string(),
@@ -431,12 +432,16 @@ impl ClaudeCodeCliHandler {
                                 // 도구 호출 마커도 thinking 본문에 추가 — 사용자가 turn 중 어떤 도구가
                                 // 호출됐는지 자연어로 본다. 옛 Node 의 onChunk({type:'thinking',
                                 // content:'[도구 호출: name]'}) 와 동등.
+                                let marker = format!("[도구 호출: {bare}]");
                                 if !outcome.thinking_acc.is_empty() {
                                     outcome.thinking_acc.push('\n');
                                 }
-                                outcome.thinking_acc.push_str(&format!("[도구 호출: {bare}]"));
-                                // 실시간 emit — frontend "생각중 → 도구 진행" 표시 (ToolStep start).
+                                outcome.thinking_acc.push_str(&marker);
+                                // 실시간 emit — Thinking(생각 본문에 "[도구 호출: name]") + ToolStep(진행 라벨).
+                                // 옛엔 thinking_acc 에 쌓기만 하고 streamed 시 thinking_text=None 이라 본문 미표시 →
+                                // auto/off 에서 도구 호출 마커가 안 보였음. 실시간 Thinking 으로 본문에도 노출.
                                 if let Some(tx) = emit {
+                                    let _ = tx.try_send(LlmStreamEvent::Thinking(format!("{marker}\n")));
                                     let _ = tx.try_send(LlmStreamEvent::ToolStep {
                                         name: bare.clone(),
                                         status: "start".to_string(),

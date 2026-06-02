@@ -1497,7 +1497,17 @@ impl McpToolHandler for ToolManagerProxyHandler {
                 "error": format!("이 hub 에서는 '{}' 도구 사용이 허용되지 않습니다.", self.name)
             }));
         }
-        self.tool_manager.dispatch(&self.name, &args).await
+        // ToolManager 핸들러는 raw 결과(success 필드 없음)를 반환할 수 있음 — CLI(cli_claude_code)가
+        // tool_result 의 success 로 done/error 판정하므로 없으면 false 빨간 뱃지로 오인(cache_read 와 동류).
+        // 성공 dispatch 면 success:true 보장(이미 있으면 보존). 객체 아니면 {success, data} 래핑.
+        match self.tool_manager.dispatch(&self.name, &args).await {
+            Ok(Value::Object(mut m)) => {
+                m.entry("success".to_string()).or_insert(Value::Bool(true));
+                Ok(Value::Object(m))
+            }
+            Ok(other) => Ok(serde_json::json!({ "success": true, "data": other })),
+            Err(e) => Err(e),
+        }
     }
 }
 
