@@ -26,6 +26,33 @@ impl AnthropicMessagesHandler {
         Self
     }
 
+    /// Extended thinking 요청 파라미터 주입 — features.extendedThinking 활성 + thinking_level 실 레벨일 때만.
+    /// body["thinking"]={type:enabled, budget_tokens} + max_tokens 를 (budget + 출력여유) 로 상향 +
+    /// temperature 제거(extended thinking 은 temperature 미지원). 옛엔 모듈 doc 에 매핑만 적혀있고 요청에
+    /// 미구현 → 모델이 thinking 자체를 안 시작 → 추론 0 (추출은 정상이어도 빈값). 이걸 실제 구현.
+    fn apply_extended_thinking(
+        body: &mut serde_json::Value,
+        config: &LlmModelConfig,
+        opts: &LlmCallOpts,
+    ) {
+        if !config.features.extended_thinking {
+            return;
+        }
+        let budget: i64 = match opts.thinking_level.as_deref() {
+            Some("low") => 2048,
+            Some("medium") => 8192,
+            Some("high") => 16384,
+            Some("xhigh") => 24576,
+            Some("max") => 32768,
+            _ => return, // none / minimal / 미설정 → thinking off
+        };
+        body["max_tokens"] = serde_json::Value::from(budget + opts.max_tokens.unwrap_or(8192));
+        body["thinking"] = serde_json::json!({ "type": "enabled", "budget_tokens": budget });
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("temperature");
+        }
+    }
+
     /// Anthropic 표준 헤더 빌드 — x-api-key + anthropic-version + extra (config.extra_headers).
     fn build_headers(
         config: &LlmModelConfig,
@@ -161,6 +188,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
+        Self::apply_extended_thinking(&mut body, config, opts);
 
         let response = http_client()
             .post(&config.endpoint)
@@ -279,6 +307,7 @@ impl FormatHandler for AnthropicMessagesHandler {
             "messages": messages,
             "tools": tool_defs,
         });
+        Self::apply_extended_thinking(&mut body, config, opts);
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control}]` 형식.
         if let Some(sp) = opts.system_prompt.as_deref() {
             if !sp.is_empty() {

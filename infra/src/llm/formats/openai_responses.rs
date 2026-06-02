@@ -20,6 +20,30 @@ impl OpenAiResponsesHandler {
         Self
     }
 
+    /// Reasoning 요청 파라미터 주입 — features.reasoning 활성 + thinking_level 실 레벨일 때만.
+    /// body["reasoning"]={effort} + temperature 제거(reasoning 모델 미지원). 옛엔 요청에 미구현 →
+    /// 모델이 reasoning 자체를 안 함 → 추론 0 (추출은 정상이어도 빈값). thinking_level → effort 매핑.
+    fn apply_reasoning(
+        body: &mut serde_json::Value,
+        config: &LlmModelConfig,
+        opts: &LlmCallOpts,
+    ) {
+        if !config.features.reasoning {
+            return;
+        }
+        let effort = match opts.thinking_level.as_deref() {
+            Some("minimal") => "minimal",
+            Some("low") => "low",
+            Some("medium") => "medium",
+            Some("high") | Some("xhigh") | Some("max") => "high",
+            _ => return, // none / 미설정
+        };
+        body["reasoning"] = serde_json::json!({ "effort": effort });
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("temperature");
+        }
+    }
+
     fn parse_response(
         body: &serde_json::Value,
     ) -> (String, Vec<ToolCall>, i64, i64, Option<String>) {
@@ -137,6 +161,7 @@ impl FormatHandler for OpenAiResponsesHandler {
         }
         // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
         body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
+        Self::apply_reasoning(&mut body, config, opts);
 
         let response = http_client()
             .post(&config.endpoint)
@@ -230,6 +255,7 @@ impl FormatHandler for OpenAiResponsesHandler {
         }
         // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
         body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
+        Self::apply_reasoning(&mut body, config, opts);
 
         let response = http_client()
             .post(&config.endpoint)
