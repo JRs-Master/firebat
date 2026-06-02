@@ -6,7 +6,7 @@
 //!   1. `resolve_call_target(identifier)` — AI 가 호출한 변형 (snake/kebab/sysmod_) → 실제 dispatch target.
 //!      MCP 서버명·system/user 모듈 경로 매칭. 60초 캐시 (listMcpServers / list_dir 호출 비용 절감).
 //!   2. `check_needs_approval(tool_call)` — write_file / save_page / delete_* / schedule_task /
-//!      cancel_task 6 케이스. 되돌리기 어려운 작업만 user confirmation.
+//!      cancel_cron_job 6 케이스. 되돌리기 어려운 작업만 user confirmation.
 //!   3. `pre_validate_pending_args(tool_call)` — schedule_task / write_file / save_page 사전 검증.
 //!      잘못된 인자로 pending 만드는 헛발질 차단.
 //!
@@ -46,7 +46,7 @@ struct CachedTargets {
 
 pub struct ToolDispatcher {
     storage: Arc<dyn IStoragePort>,
-    /// 옵션 — 설정되어 있으면 cancel_task / save_page / 외부 MCP 검증 활성. 미설정 시 검증 skip.
+    /// 옵션 — 설정되어 있으면 cancel_cron_job / save_page / 외부 MCP 검증 활성. 미설정 시 검증 skip.
     page: Option<Arc<PageManager>>,
     schedule: Option<Arc<ScheduleManager>>,
     mcp: Option<Arc<McpManager>>,
