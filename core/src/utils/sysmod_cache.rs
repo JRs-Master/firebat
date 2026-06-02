@@ -180,7 +180,10 @@ impl SysmodCacheAdapter {
         let records = self.read_records(key)?;
         let total = records.len();
         let slice: Vec<serde_json::Value> = records.into_iter().skip(offset).take(limit).collect();
+        // success: true 명시 — CLI(cli_claude_code) 가 tool_result 의 success 필드로 done/error 판정.
+        // 없으면 false 로 간주돼 빨간 에러 뱃지로 오인됨(실제론 성공). 다른 도구 컨벤션과 일치.
         Ok(serde_json::json!({
+            "success": true,
             "records": slice,
             "total": total,
             "offset": offset,
@@ -222,6 +225,7 @@ impl SysmodCacheAdapter {
             })
             .collect();
         Ok(serde_json::json!({
+            "success": true,
             "matched": matched.len(),
             "records": matched,
         }))
@@ -275,6 +279,7 @@ impl SysmodCacheAdapter {
             }
         };
         Ok(serde_json::json!({
+            "success": true,
             "field": field,
             "op": op,
             "value": result,
