@@ -1223,9 +1223,12 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   }
   // bar/pie/doughnut 는 single-series chart — series[0].values 만 사용 (multi 시 console.warn 설정).
   // 변수명 firstSeriesData 그대로 활용해 의미 명확.
-  const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
-  // 음수 막대 색 — default 빨강 (글로벌 자산 차트). 한국 수급 차트는 AI 가 negColor='blue' 명시.
-  const negBarColor = (negColor && COLOR_MAP[negColor]) ? COLOR_MAP[negColor].bar : 'bg-red-500';
+  // 막대 색 default — 한국 주식시장 관습 (오른 게 빨강 / 내린 게 파랑).
+  // 음수가 섞인 diverging 차트(수급·등락)만 양수=빨강, 단방향(순위 등)은 중립 파랑 유지.
+  // 글로벌 자산 차트는 AI 가 color='blue' + negColor='red' 명시로 뒤집을 수 있음.
+  const hasNeg = firstSeriesData.some((v) => v < 0);
+  const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : (hasNeg ? 'bg-red-500' : 'bg-blue-500');
+  const negBarColor = (negColor && COLOR_MAP[negColor]) ? COLOR_MAP[negColor].bar : 'bg-blue-500';
   const pieColors = PALETTE_MAP[palette ?? 'default'] ?? PALETTE_MAP.default;
   const fmtVal = (v: number) => {
     const base = Math.abs(v) >= 10000 ? v.toLocaleString('ko-KR') : v.toString();
@@ -1392,7 +1395,7 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
   //
   // 음수 값 처리 (v0.1, 2026-04-29 v2) — 0 baseline 중앙 + 양수 오른쪽 / 음수 왼쪽 (financial chart 표준).
   //   데이터 모두 양수면 기존 단방향 (왼쪽→오른쪽), 음수 혼재면 양방향. 일반 로직 — 자동 감지.
-  //   maxAbs 기준 비례 (트랙 절반 영역 활용). 음수 막대는 빨강 + 텍스트도 빨강.
+  //   maxAbs 기준 비례 (트랙 절반 영역 활용). 한국 관습 default — 양수 빨강 / 음수 파랑 (텍스트 동일).
   // 단위 중복 제거 (v0.1, 2026-04-29) — fmtVal 이 이미 unit 포함하므로 별도 unit 추가 X.
   //   이전: `{fmtVal(v)}{unit||''}` → "3570억원억원" 버그.
   const hasNegative = data.some(v => v < 0);
@@ -1403,9 +1406,8 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
       <div className="space-y-2">
         {data.map((v, i) => {
           const isNegative = v < 0;
-          // 양수 = barColor (사용자 color prop), 음수 = negBarColor (사용자 negColor prop, default 빨강).
-          // 한국 수급 차트면 AI 가 color='red' + negColor='blue' 명시. 글로벌 자산 차트는 default
-          // (color='orange' 등 + 음수 빨강).
+          // 양수 = barColor, 음수 = negBarColor. default 는 한국 관습 (양수 빨강 / 음수 파랑).
+          // 글로벌 자산 차트는 AI 가 color='blue' + negColor='red' 명시로 뒤집을 수 있음.
           const fillCls = isNegative ? negBarColor : barColor;
           // 양방향 mode: width 는 트랙 절반 영역 (50%) 안에서 비례.
           // 음수: 가운데부터 왼쪽으로 (right-1/2 + width). 양수: 가운데부터 오른쪽으로 (left-1/2 + width).
