@@ -15,7 +15,7 @@
 import { useReducer, useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
-import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent, THINKING_STATUS } from './chat-manager';
+import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent } from './chat-manager';
 import { useTranslations } from '../../../lib/i18n';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
@@ -165,11 +165,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
                     role: m.role === 'system' ? 'system' as const : 'user' as const,
                     content: m.content ?? '',
                     ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
-                    // reload 후 옛 system 메시지 안 thinkingText 누락 → ThinkingBlock 의 `!complete &&
-                    // !thinkingText` 조건 안 null return → '답변완료' 라벨 사라짐. backend hub_messages
-                    // schema 안 thinkingText field 없음 (admin Message 와 차이). 변환 시 system role
-                    // 인 경우 default DONE 사용.
-                    ...(m.role === 'system' ? { thinkingText: THINKING_STATUS.DONE } : {}),
+                    // thinkingText('답변완료')는 hub/admin 공통으로 chatReducer→enforceInvariant 가
+                    // 터미널 system 답변에 자동 주입한다 (backend 가 저장 안 하는 필드). hub/admin 동일
+                    // 단일 경로 — 여기 별도 hub 전용 처리 두지 않음.
                   } as Message));
                 }
               } catch (e) {
