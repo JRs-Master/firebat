@@ -106,11 +106,15 @@ export function isSectionStartBlock(
 /** AI 가 설명 텍스트에 HTML 태그 이름을 백틱 없이 써서 rehype-raw 가 실제 HTML 요소로
  *  파싱해버리는 문제 방어. 예: "`</header>`로 교정" 이라고 써야 하는데 "</header>로 교정"
  *  으로 쓰면 `</header>` 가 빈 HTML 요소로 렌더되어 앞 글자가 사라져 보임.
- *  블록 레벨 태그 (markdown 내부에서 쓰이지 않는) 만 선별 escape — strong/em/br/a/code 등
- *  인라인 태그는 정상 렌더되도록 그대로 둠. 이미 코드펜스(```) 안에 있으면 건드리지 않음. */
+ *  블록 + 인라인 포맷 태그를 모두 escape — AI 가 답변에서 마크다운/HTML 을 설명하며 literal
+ *  태그(`<strong>` 등)를 쓰면 rehypeRaw 가 실제 태그로 실행한다. 특히 짝 안 맞는 인라인 포맷
+ *  태그는 닫힘 전까지 뒤 텍스트를 통째로 굵게/이탤릭 번지게 한다 (닫는 `</strong>` 이 코드펜스로
+ *  갈려 안 닫히는 케이스). 굵게는 `**bold**`(→ renderMarkdown 이 <strong> 주입)로 충분하므로
+ *  raw 인라인 HTML 은 literal 텍스트로 보여주는 게 안전. 이미 코드펜스(```) 안이면 건드리지 않음.
+ *  (옛엔 인라인 태그를 "정상 렌더되도록" 일부러 뒀으나, 그게 bold 번짐의 root 라 escape 로 전환.) */
 export function escapeHtmlTagMentions(text: string): string {
   if (!text) return text;
-  const BLOCK_TAGS = [
+  const HTML_TAGS = [
     'header', 'footer', 'article', 'main', 'nav', 'section', 'aside',
     'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup',
     'ul', 'ol', 'li', 'dl', 'dt', 'dd',
@@ -118,8 +122,12 @@ export function escapeHtmlTagMentions(text: string): string {
     'form', 'input', 'select', 'option', 'textarea',
     'iframe', 'html', 'body', 'head', 'script', 'style', 'meta', 'link',
     'template', 'slot', 'canvas', 'svg',
+    // 인라인/포맷 태그 — bold/italic 번짐의 root (특히 strong/em/b/i). 짝 안 맞으면 뒤 텍스트 오염.
+    'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins', 'mark',
+    'small', 'sub', 'sup', 'code', 'pre', 'kbd', 'samp', 'var',
+    'a', 'span', 'abbr', 'cite', 'q', 'blockquote', 'p', 'br', 'hr', 'img',
   ];
-  const tagAlt = BLOCK_TAGS.join('|');
+  const tagAlt = HTML_TAGS.join('|');
   const tagPattern = new RegExp(`</?(?:${tagAlt})(?:\\s[^>]*)?\\/?>`, 'gi');
   // 코드펜스 블록은 건너뛰고 바깥 텍스트만 처리
   const parts = text.split(/(```[\s\S]*?```)/g);
