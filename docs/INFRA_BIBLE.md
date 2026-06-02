@@ -8,7 +8,7 @@
 Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템, 프로세스, 네트워크)와 직접 맞닿아 궂은일을 수행하는 **유일한 I/O 실행 계층**이다.
 
 **🔥 Phase B-4 cutover 후 코드 위치 (개념·규칙은 그대로)**:
-- 옛 TS `infra/*/index.ts` → `infra/src/adapters/*.rs` (16 어댑터)
+- 옛 TS `infra/*/index.ts` → `infra/src/adapters/*.rs` (운영 어댑터 20개)
 - 옛 TS `infra/llm/*` → `infra/src/llm/*.rs` (ConfigDrivenAdapter + 8 format handlers)
 - 옛 TS `infra/image/*` → `infra/src/image_gen/*.rs`
 - 옛 TS `infra/boot.ts` (싱글톤 조립) → `infra/src/main.rs` (gRPC server entry — `firebat-core` binary 가 시작 시 어댑터 wiring)
@@ -27,21 +27,25 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 17개 어댑터 구현 규격 (Phase B-post 갱신 — 2026-05-06)
+## 제2장: 20개 어댑터 구현 규격 (2026-06-02 코드 전수 검증)
+
+CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영 어댑터 20개**가 22개 포트 중 21개를 구현한다 — `SqliteMemoryAdapter` 1개가 `IEntityPort` + `IEpisodicPort` 둘을 겸하고, 나머지 22번째 `IMemoryFacadePort` 는 infra 어댑터가 아니라 core 매니저(`MemoryFacade`, `core/src/managers/memory_facade.rs`)가 구현한다 (Entity/Episodic wrapper — hexagonal 정공). 모두 `infra/src/adapters/*.rs` (LLM·image_gen 은 `infra/src/llm/` · `infra/src/image_gen/`).
 
 진화 추적:
 - v0.1: 10개 어댑터
-- 2026-05-04: 7개 추가 (미디어 4 + 메모리 2 + 임베더 1) → 17개
-- Phase B-4 cutover (2026-05-06): SysmodCache → core/utils 이동 → 16개
-- Phase B-post Track A5 (2026-05-06): `ReqwestNetworkAdapter` (INetworkPort 구현) 신설 → 17개
-- Phase B-post Track B skeleton (2026-05-06): `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os = "linux")]`) — 운영 미사용 (sysmod libuv / encodings / CLONE_NEWNET 차단 이슈로 `FIREBAT_SANDBOX=basic` 으로 BasicProcessSandbox 사용)
+- 2026-05-04: 메모리/미디어/임베더 확장
+- Phase B-4 cutover (2026-05-06): TS → Rust 전면 이식, SysmodCache → core/utils 이동
+- Phase B-post (2026-05-06): `ReqwestNetworkAdapter`(INetworkPort) 신설
+- 이후 누적: `EnvConfigAdapter`(IConfigPort) / `FileEmbedderCacheAdapter`(IEmbedderCachePort) / `SqliteLibraryAdapter`(ILibraryPort) / `TelegramNotifierAdapter`(INotifierPort) / `SqliteHubAdapter`(IHubPort) 추가 → 20
 
-**현재 17개**: storage / vault / auth / log / tracing_log / database / sandbox (BasicProcess) / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / **network (신설)** / sandbox_linux_cgroups (skeleton, Linux 한정).
+**운영 어댑터 20개**: storage / log(tracing) / sandbox / llm / network / cron / database / vault / mcp_client / auth / embedder(E5) / media / image_processor(image-rs) / image_gen / memory(Entity+Episodic) / embedder_cache / library / config / notifier(telegram) / hub.
+
+> 운영 외 구현 (개수 제외): stub 5종 (embedder/llm/sandbox/image_gen/image_processor — 테스트·부팅 fallback), 대체구현 2종 (`ArcticLocalEmbedderAdapter` — `FIREBAT_EMBEDDER=arctic` env 시 / `ConsoleLogAdapter` — 옛 단순 로그). `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os="linux")]`) 은 운영 미사용 — sysmod libuv/encodings/CLONE_NEWNET 차단 이슈로 `FIREBAT_SANDBOX=basic`(ProcessSandbox) 사용.
 
 
 
-### 1. Storage Adapter (`infra/storage/`)
-- `IStoragePort` 구현.
+### 1. Storage Adapter (`infra/src/adapters/storage.rs`)
+- `IStoragePort` 구현 (`LocalStorageAdapter`, tokio::fs + base64 + regex + tempfile).
 - **경로 탐색 공격 차단** (2026-05-10 갱신): `resolve_safe_path` 가 (a) `Path::is_absolute()` 거부 (b) `..` segment 거부 (c) `workspace_root.join(rel_path)` lexical normalize. **`canonicalize()` 미사용** — symlink 자동 풀어 self-hosted deploy 의 표준 패턴 (system/modules → src symlink) 이 workspace zone 밖 판정해 reject buggy. 옛 TS LocalStorageAdapter 의 `path.resolve + isInsideZone` 1:1 매칭. path traversal 방어 유지 + symlink 호환.
 - **쓰기 허용 구역**: `app/(user)/`, `user/`
 - **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/modules/`, `system/services/`
@@ -58,8 +62,8 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **frontend 수집**: 브라우저 logger 가 error/warn 을 `/api/log` 로 POST → firebat-frontend journalctl 에 `[client:<category>]` 출력 (hub visitor 브라우저 에러 가시화).
 - 범위 한정 (observability paradox 룰): 조회 / 필터 / 토글만. 대시보드 / 그래프 / 알림 미도입.
 
-### 3. Sandbox Adapter (`infra/sandbox/`)
-- `ISandboxPort` 구현.
+### 3. Sandbox Adapter (`infra/src/adapters/sandbox.rs`)
+- `ISandboxPort` 구현 (`ProcessSandboxAdapter`, tokio::process + reqwest).
 - **경로 검증**: `canExecute` 메서드로 `user/modules/`, `system/modules/` 외 실행 차단.
 - **언어 중립**: `.py`, `.js`, `.mjs`, `.php`, `.rs`, `.wasm`, `.sh` 지원.
 - **config.json 선제 설치**: `packages` 필드 의존성을 실행 전 자동 설치.
@@ -75,22 +79,22 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
   - **auto-cache fallback** (모듈 변경 0): 명시 envelope 없을 때 sandbox 가 `data` 의 직접 자식 배열 중 가장 큰 것을 자동 추출 — 길이 `AUTO_CACHE_THRESHOLD`(30) 이상이면 cache 저장 + 첫 `AUTO_CACHE_PREVIEW`(5) 개로 in-place truncate + `_cacheKey` / `_cacheMeta {fieldName, totalCount, autoCached:true}` 주입. 한 응답당 1개. **admin · hub 공통 경로** (모든 sysmod 자동 혜택 — law-search / naver-search / kiwoom 등).
   - 명시 envelope 처리에서 `_cacheKey` 가 이미 주입된 경우 auto-cache 는 skip — 모듈 의도 우선.
 
-### 4. LLM Adapter (`infra/llm/config-adapter.ts` + format handlers) — 2026-04-18 Config-driven 개편
-- `ILlmPort` 구현은 **ConfigDrivenAdapter 단일**. 프로바이더별 개별 어댑터 금지.
-- **Config 파일** (`infra/llm/configs/*.json`): 모델당 1개. 새 LLM 도입 시 JSON 추가만으로 확장.
+### 4. LLM Adapter (`infra/src/llm/adapter.rs` + `infra/src/llm/formats/*.rs`)
+- `ILlmPort` 구현은 **ConfigDrivenAdapter 단일** (tokio + reqwest + serde_json + rusqlite). 프로바이더별 개별 어댑터 금지 — `config.format` → 등록된 FormatHandler 로 HashMap dispatch.
+- **모델 registry** (`system/llm/models.json` + 사용자 `*.json` merge, override 우선): 모델당 1개 항목. 새 LLM 도입 시 JSON 추가만으로 확장.
   - 필수: `id`, `displayName`, `provider`, `format`, `endpoint`, `apiKeyVaultKey`.
-  - 선택: `features` (mcpConnector/strictTools/reasoning/thinking/extendedThinking/toolSearch/promptCache24h 등), `pricing`, `extraHeaders`.
-- **포맷 핸들러 8종** (`infra/llm/formats/*.ts`) — API 5 + CLI 3:
-  | format | SDK / 실행 | 용도 |
+  - 선택: `features` (mcpConnector/strictTools/reasoning/thinking/extendedThinking/toolSearch/promptCache 등), `pricing`, `extraHeaders`.
+- **포맷 핸들러 8종** (`infra/src/llm/formats/*.rs`) — API 5(reqwest 직접 호출) + CLI 3(자식 프로세스). API 어댑터는 SDK 없이 reqwest 로 각 프로바이더 HTTP API 직접 호출:
+  | format | transport / 실행 | 용도 |
   |---|---|---|
-  | `openai-responses` | `openai` (`client.responses`) | OpenAI Responses API — GPT-5.4 (MCP connector, tool_search + defer_loading, previous_response_id, 24h cache, reasoning.effort) |
-  | `anthropic-messages` | `@anthropic-ai/sdk` (`client.beta.messages`) | Claude 4 Messages API — MCP connector 2025-11-20 (`betas + mcp_toolset` 필수), extended thinking, max_tokens 32K, **prompt caching 토글** (`VK_LLM_ANTHROPIC_CACHE`, 기본 OFF — cache write 25% 비용 회피, 같은 prefix 5분 재호출 시 ON 권장) |
-  | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 (rawModelParts 보존) |
-  | `vertex-gemini` | `@google/genai` (vertexai:true) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 |
-  | `openai-chat` | `openai` (`client.chat.completions`) | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 예비, 현재 등록 모델 없음) |
-  | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. `--print --output-format stream-json --verbose --allowed-tools 'mcp__firebat__*' --mcp-config <json> --effort <level>`. **Daemon 지원**: `conversationId` 있으면 `--input-format stream-json` 으로 대화당 프로세스 재사용 |
-  | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME/config.toml` ([mcp_servers.firebat]) + env 주입, `--json --skip-git-repo-check --full-auto -c model_reasoning_effort="<level>"`. 이벤트: `thread.started` / `turn.{started,completed,failed}` / `item.{started,completed}.item.type:agent_message\|reasoning\|mcp_tool_call` |
-  | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. `workspace/.gemini/settings.json` (프로젝트 로컬 MCP, cwd 자동 로드) + `GEMINI.md` (시스템 프롬프트) + cwd 설정. `--output-format stream-json --approval-mode yolo`. **도구 이름 `mcp_firebat_` 접두사**. 이벤트: `init` / `message{role}` / `tool_use{tool_name,tool_id,parameters}` / `tool_result{tool_id,output}` / `result` |
+  | `openai-responses` | reqwest (`/v1/responses`) | OpenAI Responses API — GPT-5.x (MCP connector, previous_response_id, `reasoning.effort`). 토큰 회계: `usage.input_tokens` + `input_tokens_details.cached_tokens` |
+  | `anthropic-messages` | reqwest (`/v1/messages`) | Claude Messages API — MCP connector, extended thinking(`thinking.budget_tokens`), **prompt caching 토글** (`VK_LLM_ANTHROPIC_CACHE`, 기본 OFF — 같은 prefix 5분 재호출 시 ON 권장). 토큰: input + cache_creation + cache_read 합산, cached=cache_read |
+  | `gemini-native` | reqwest (generativelanguage API) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 (rawModelParts 보존), `thinkingConfig`. 토큰: promptTokenCount / candidates+thoughts / cachedContentTokenCount |
+  | `vertex-gemini` | reqwest (Vertex AI) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 (JWT). usage 매핑 gemini-native 와 동일 |
+  | `openai-chat` | reqwest (`/v1/chat/completions`) | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 예비) |
+  | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. `--print --output-format stream-json --verbose --allowed-tools 'mcp__firebat__*' --mcp-config <json> --effort <level>`. 줄 단위 streaming 파싱 — thinking/tool_use 실시간 emit, `result.usage` 토큰 + `total_cost_usd` |
+  | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME/config.toml` ([mcp_servers.firebat]) + env, `--json --skip-git-repo-check --full-auto -c model_reasoning_effort="<level>"`. 이벤트: `thread.started` / `turn.{started,completed}` / `item.{started,completed}`. `turn.completed.usage` 토큰 |
+  | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. `workspace/.gemini/settings.json` (프로젝트 로컬 MCP) + `GEMINI.md` + cwd. `--output-format stream-json --approval-mode yolo`. 도구 이름 `mcp_firebat_` 접두사. `result.stats.models[*].tokens` |
 
 - **CLI 세션 resume** (3사 공통):
   - DB: `conversations` 테이블 `cli_session_id`, `cli_model` 컬럼. 모델 변경 시 자동 무효화.
@@ -114,85 +118,96 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 **원칙**: "어떤 LLM 선택해도 동작해야 하고 개별 어댑터를 만들면 안 된다" — 새 모델은 JSON 파일 하나 추가. 새 포맷(새 인증/엔드포인트 체계)만 새 handler 추가.
 
-### 5. Network Adapter (`infra/network/`)
-- `INetworkPort` 구현.
-- `fetch` 래퍼. `127.0.0.1`, `localhost` 접근 차단 (SSRF 방어).
+### 5. Network Adapter (`infra/src/adapters/network.rs`)
+- `INetworkPort` 구현 (`ReqwestNetworkAdapter`).
+- reqwest 공유 연결풀 래퍼 — HTTP 메서드 파싱·검증, 요청별 타임아웃, 헤더/바디(String·JSON) 처리, 응답 상태·헤더·바디 맵핑(JSON 폴백).
 
-### 6. Cron Adapter (`infra/cron/`)
-- `ICronPort` 구현.
-- `node-cron` 기반 백그라운드 스케줄러.
-- **싱글톤**: `globalThis` 캐싱 (Next.js 핫리로드 시 중복 방지).
-- **영속 저장**: `data/cron-jobs.json`에 잡 설정 저장, 컨테이너 / 프로세스 재시작 시 자동 복원.
+### 6. Cron Adapter (`infra/src/adapters/cron.rs`)
+- `ICronPort` 구현 (`TokioCronAdapter`).
+- `tokio` + `cron` crate + `chrono-tz` 기반 백그라운드 스케줄러 — cron 표현식 파싱 + 타임존 기준 다음 발화 시각 계산.
+- **영속 저장**: `data/cron-jobs.json`(설정) + `data/cron-logs.json`(LRU 200건) + `data/cron-notifications.json`. 프로세스 재시작 시 자동 복원 (delay 모드 제외, endAt 만료·과거 1회 잡 자동 정리).
 - **3가지 모드**: `cronTime`(반복), `runAt`(1회 예약), `delaySec`(N초 후 1회).
 - **기간 한정**: `startAt`/`endAt`으로 반복 기간 제한, 만료 시 자동 해제.
 - **동적 타임존**: Vault `system:timezone` 키로 저장, `setTimezone()`/`getTimezone()` 지원.
 - **페이지 URL 스케줄링**: `targetPath.startsWith('/')` → notify 파일 → 클라이언트 폴링 → window.open.
 
-### 7. Database Adapter (`infra/database/`)
-- `IDatabasePort` 구현.
-- `better-sqlite3` 기반 (`data/app.db`).
+### 7. Database Adapter (`infra/src/adapters/database.rs`)
+- `IDatabasePort` 구현 (`SqliteDatabaseAdapter`).
+- `rusqlite` 기반 (`data/app.db`) — `Mutex<Connection>` 으로 thread-safe 접근.
 - 자동 초기화: `pages` / `conversations` / `conversation_embeddings` / `routing_cache` / `media_usage` / `shared_conversations` / `deleted_conversations` / `page_redirects` / `llm_costs` 테이블 `CREATE TABLE IF NOT EXISTS`.
 - CRUD: `savePage`, `getPage`, `listPages`, `deletePage`, `listPagesByProject`, `deletePagesByProject`.
 - **LLM cost 통계** (2026-05-10 갱신): `query_llm_cost_stats(filter)` 가 totals (`LlmCostStatsSummary`) + records (`Vec<LlmCostStatsRecord>` per-day / per-model GROUP BY) 둘 다 응답. records SQL: `date(ts/1000, 'unixepoch', 'localtime') AS date, model, COUNT/SUM`. ts ms 단위 (cost.rs `Self::now_ms()`).
 - **마이그레이션 runner** (`infra/database/migrations/`, v0.1 2026-04-26): `_db_version` 테이블이 스키마 버전 추적. 부팅 시 `migrations/NNN-name.sql` 파일 검색 → currentVersion 보다 큰 것만 트랜잭션 보호로 순차 적용. 일방향 (up only). 새 변경은 v2+ 부터 (v1 = implicit baseline = 위 CREATE 자동초기화). 자세한 안내: `infra/database/migrations/README.md`.
 
-### 8. Vault Adapter (`infra/storage/vault-adapter.ts`)
-- `IVaultPort` 구현.
-- `better-sqlite3` 기반 (`data/vault.db`).
+### 8. Vault Adapter (`infra/src/adapters/vault.rs`)
+- `IVaultPort` 구현 (`SqliteVaultAdapter`).
+- `rusqlite` 기반 (`data/vault.db`) — Unix 파일 권한 `0600` 강제 (owner read/write), `Mutex<Connection>`, set_secret 시 whitespace trim.
 - API 키, 시크릿 등 민감한 값의 CRUD.
 - `user:` 접두사로 사용자 시크릿과 시스템 키 분리.
 - `listKeysByPrefix(prefix)`: 특정 접두사의 키 목록 반환.
 - 시스템 모듈 설정: `system:module:<name>:settings` 키에 JSON 저장.
 
-### 9. MCP Client Adapter (`infra/mcp-client/`)
-- `IMcpClientPort` 구현.
+### 9. MCP Client Adapter (`infra/src/adapters/mcp_client.rs`)
+- `IMcpClientPort` 구현 (`McpClientFileAdapter`, tokio + reqwest + futures_util).
 - 외부 MCP 서버(Gmail, Slack 등) 접속 및 도구 호출.
 - **전송 방식**: stdio (로컬 프로세스) + Streamable HTTP (원격 서버).
 - **영속 저장**: `data/mcp-servers.json`.
 - `addServer`/`removeServer`/`listTools`/`callTool`/`listAllTools`/`disconnectAll`.
 
-### 10. Auth Adapter (`infra/auth/`)
-- `IAuthPort` 구현 (VaultAuthAdapter).
+### 10. Auth Adapter (`infra/src/adapters/auth.rs`)
+- `IAuthPort` 구현 (`VaultAuthAdapter` — IVaultPort 위임).
 - Vault 기반 세션 저장: `auth:session:{token}` 키에 AuthSession JSON 저장.
 - 세션/API 토큰 CRUD: `saveSession`/`getSession`/`deleteSession`/`listSessions`/`deleteSessions`.
 - 만료 검사 포함: `getSession()` 호출 시 `expiresAt` 체크, 만료 시 자동 삭제.
 - **비번 hash** (2026-05-10 도입): admin password 가 `set_admin_credentials` 호출 시 vault 저장 단계에서 자동 argon2id hash. login + verify_admin_password RPC 가 verify. **plain text 저장 X** — vault.db 유출 시에도 비번 노출 0. SettingsModal 비번 변경의 옛 `timingSafeStringEqual(plain, hash)` 패턴이 항상 mismatch buggy → `verify_admin_password` 신설 fix.
 
-### 11. Embedder Adapter (`infra/llm/embedder-adapter.ts`)
-- `IEmbedderPort` 구현 — multilingual-e5-small 모델 (한국어·영어 OK).
-- `embedQuery` (검색 쿼리용) / `embedPassage` (인덱싱 대상용) — Float32Array 반환.
-- `cosine(a, b)` — 정규화된 벡터 cosine similarity (0~1).
-- `float32ToBuffer` / `bufferToFloat32` — SQLite BLOB 저장 변환.
-- `version` — 모델 변경 감지용 (Phase 3 vector store 도입 시 re-index 트리거).
+### 11. Embedder Adapter (`infra/src/adapters/embedder/e5_local.rs`)
+- `IEmbedderPort` 구현 (`E5LocalEmbedderAdapter`) — multilingual-e5-small 로컬 추론 (`candle_core` + `candle_transformers` BERT + `hf_hub` + `tokenizers`). 한국어·영어 OK.
+- `OnceCell` lazy 모델 로드 (첫 호출 시 1회, 이후 Arc 공유). `embed_query`(query: 접두사) / `embed_passage`(passage: 접두사) — 같은 텍스트도 역할별 distinct 임베딩.
+- attention mask 가중 mean pooling + L2 normalization → cosine similarity 최적화. `cosine(a,b)` 0~1.
+- `E5_VERSION` 상수 — 모델 변경 감지 시 SQLite 임베딩 자동 재인덱싱 트리거.
+- 대체구현 `ArcticLocalEmbedderAdapter` (`FIREBAT_EMBEDDER=arctic` env 시) — 운영 default 는 E5.
 
-### 12. Tool Router Adapter (`infra/llm/llm-router.ts`)
-- `IToolRouterPort` 구현 — self-learning 도구·컴포넌트 라우팅. AI Assistant 모델 (gpt-5-nano / gemini-flash-lite) 활용.
-- `ToolRouterFactory(modelId)` 로 lifecycle 생성 (요청별 다른 모델 가능).
+> (옛 #12 `IToolRouterPort` / `llm-router.ts` 어댑터는 폐기 — 도구·컴포넌트 라우팅은 포트가 아니라 core 매니저 `tool_search_index.rs` / `component_search_index.rs` + `IEmbedderCachePort` 조합으로 구현. 어댑터 아님.)
 
-### 13. Media Adapter (`infra/media/local-adapter.ts`)
-- `IMediaPort` 구현 — 로컬 파일 저장 (`user/media/`, `system/media/`).
-- `save` / `list` / `remove` / `saveVariant` / `updateMeta` / `saveErrorRecord`.
-- 메타: `<slug>.json` (prompt / model / size / aspectRatio / variants 등).
+### 12. Media Adapter (`infra/src/adapters/media.rs`)
+- `IMediaPort` 구현 (`LocalMediaAdapter`, tokio async file I/O + chrono + rand) — 로컬 파일 저장 (`user/media/`, `system/media/`, 첨부 `user/hub/<id>/`).
+- `save` / `list` / `remove` / `save_variant` / `update_meta` / `save_error_record` + 임시 첨부 30일 retention (`cleanup_old_attachments`, mtime 기반).
+- slug 생성 `YYYY-MM-DD-<hint>-<rand4>` + UTF-8 정규화. hub_owner path traversal 가드 (영숫자/하이픈/언더스코어만). 메타: `<slug>.meta.json`.
 
-### 14. Image Processor Adapter (`infra/image-processor/sharp-adapter.ts`)
-- `IImageProcessorPort` 구현 — sharp + blurhash.
-- `process` (resize / format convert / EXIF strip / auto-rotate / attention crop).
-- `blurhash` (32×32 → Base83 LQIP 문자열).
+### 13. Image Processor Adapter (`infra/src/adapters/image_processor/image_rs.rs`)
+- `IImageProcessorPort` 구현 (`ImageRsProcessorAdapter`) — **`image` + `fast_image_resize` + `blurhash` crate** (옛 sharp Node sidecar 폐기, 순수 Rust CPU·플랫폼 무관).
+- `process` — SIMD 가속 resize(`fast_image_resize`) + format convert(Png/Jpeg/Webp, Avif 미포함) + EXIF strip(ImageReader 가 미보존) + focus 크롭(`CropPosition::Focus`, attention/entropy 미지원 시 중앙 fallback).
+- `blurhash` (Base83 LQIP). placeholder 생성 시 width/height 1..=4096 clamp (메모리 폭주 방어).
 
-### 15. Image Gen Adapter (`infra/llm/configs/image-*.json` + `image-config-adapter.ts`)
-- `IImageGenPort` 구현 — config-driven (OpenAI gpt-image-2 / Gemini 3 Flash Image).
-- 모델 추가 시 JSON 1개 넣으면 됨.
+### 14. Image Gen Adapter (`infra/src/image_gen/adapter.rs`)
+- `IImageGenPort` 구현 (`ConfigDrivenImageGenAdapter`, tokio + reqwest + image) — config-driven (OpenAI gpt-image / Gemini Image). registry 기반 `ImageFormatHandler` trait 위임.
+- 모델 ID 다단계 해석 (직접 매칭 → prefix → default). Vault `system:image:model` override + `system/image/configs/` 사용자 디렉토리 merge. API 키는 Vault lazy resolve.
 
-### 16. Entity Adapter (`infra/entity/sqlite-adapter.ts`) — 메모리 Phase 1
-- `IEntityPort` 구현 — entities + entity_facts 테이블 (FK CASCADE, JSON aliases/metadata/tags, BLOB embedding).
-- 자동 임베딩 — saveEntity (name+aliases) / saveFact (content) 시 IEmbedderPort 호출.
-- semantic search — 모든 row scan + cosine (Phase 1 단순). 1만 row 까지 충분, Phase 3 에서 vector store 인덱스화.
-- **dedup 검출** — saveFact 의 dedupThreshold 옵션. 같은 entity 의 기존 fact 들과 cosine ≥ threshold 면 skip + 기존 id 반환.
+### 15. Memory Adapter (`infra/src/adapters/memory.rs`) — 메모리 Entity + Episodic
+- **단일 어댑터가 `IEntityPort` + `IEpisodicPort` 둘 다 구현** (`SqliteMemoryAdapter`, rusqlite). 옛 BIBLE 의 별도 2어댑터 표기 정정.
+- 자동 임베딩 — embedder 주입 시 entity/fact/event 저장 시 passage text → `embed_passage` → BLOB 자동 저장 (미설정/실패 silent).
+- cosine 재정렬 — embedder + query 시 후보 embedding 과 cosine 정렬 (fallback substring LIKE). dedup — `dedup_threshold` 활성 시 cosine ≥ threshold 면 skip + 기존 id 반환 (fact: 같은 entity / event: 같은 type + 7일 이내).
+- owner-scoped 다중 테넌트 격리 (`UNIQUE(name,type,owner)` + 모든 쿼리 owner filter — admin/hub 분리). TTL — `ttl_days`→`expires_at`, 검색 시 만료 제외 + `cleanup_expired_facts()`.
 
-### 17. Episodic Adapter (`infra/episodic/sqlite-adapter.ts`) — 메모리 Phase 2
-- `IEpisodicPort` 구현 — events + event_entities m2m (FK CASCADE).
-- saveEvent transaction — event INSERT + entity links INSERT OR IGNORE atomic.
-- **dedup 검출** — saveEvent 의 dedupThreshold 옵션. 같은 type + 7일 이내 기존 event 와 cosine ≥ threshold 면 skip (entityIds 가 설정되어 있으면 기존 event 에 link 추가).
+### 16. Embedder Cache Adapter (`infra/src/adapters/embedder_cache.rs`)
+- `IEmbedderCachePort` 구현 (`FileEmbedderCacheAdapter`, std::fs) — component / tool 검색 인덱스 벡터 캐시 영속화 (옛 std::fs 직접 호출을 포트로 격리).
+- `FIREBAT_DATA_DIR` 로 캐시 디렉토리 resolve (미설정 시 `data`). `load()` 캐시명 기반 읽기(실패 None) / `save()` JSON 저장 + 자동 디렉토리 생성 (실패 시 warn 로그만, panic 회피).
+
+### 17. Library Adapter (`infra/src/adapters/library.rs`)
+- `ILibraryPort` 구현 (`SqliteLibraryAdapter`, rusqlite) — 라이브러리 하이브리드 RAG (Reference / Source / Chunk CRUD).
+- dense(E5 BLOB embedding) + sparse(FTS5 trigram BM25) — 가상테이블이 FK cascade 미적용이라 삭제 수동 동기화. 3자 이상 토큰만 FTS5 phrase 질의. `Mutex<Connection>` (write 시 lock).
+
+### 18. Config Adapter (`infra/src/adapters/config.rs`)
+- `IConfigPort` 구현 (`EnvConfigAdapter`, std::env) — env / config 접근 추상화 (`FIREBAT_MCP_BASE_URL` 등). `std::env::var` 직접 호출을 포트로 격리 (Ok→Some / Err→None).
+
+### 19. Notifier Adapter (`infra/src/adapters/notifier_telegram.rs`)
+- `INotifierPort` 구현 (`TelegramNotifierAdapter`, reqwest) — fire-and-forget 외부 알림.
+- Vault `bruteForceAlert` 토글 검사(off/미설정 시 silent skip) + `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` 읽기. `NotifyLevel`→emoji(ℹ/⚠/🚨) Markdown. 10초 타임아웃 — 실패는 warn 로그만, 로그인 latency 차단 없음.
+
+### 20. Hub Adapter (`infra/src/adapters/hub.rs`)
+- `IHubPort` 구현 (`SqliteHubAdapter`, rusqlite + uuid) — Hub(외부 위젯·방문자) 인스턴스 / 대화 / 메시지 CRUD.
+- 대화 메시지 soft-delete(`deleted_at`, 30일 retention cron) + 인스턴스 삭제 시 conversations/messages FK순 cascade hard-delete. `allowed_references`/`allowed_sysmods`/`allowed_domains` 는 `Vec<String>` ↔ TEXT(JSON) 직렬화.
 
 ---
 
@@ -215,10 +230,10 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ## 제3장: 부트스트랩
 
-### 제1항. 어댑터 조립 (`infra/boot.ts`)
-`getInfra()` 함수가 17개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
-LLM 어댑터는 resolver 함수를 받아 lazy 초기화 (API 키 미설정 상태에서도 부팅 가능).
-Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + Log 받아 같은 DB 위에 자기 테이블 생성.
+### 제1항. 어댑터 조립 (`infra/src/main.rs`)
+`firebat-core` binary 가 시작 시 20개 운영 어댑터를 1회 wiring 하여 매니저·gRPC 서비스에 주입한다.
+LLM 어댑터는 resolver 클로저를 받아 lazy 초기화 (API 키 미설정 상태에서도 부팅 가능).
+Memory 어댑터(`SqliteMemoryAdapter`)는 SQLite 핸들 + Embedder 받아 같은 DB 위에 entity/episodic 테이블 생성.
 
 ### 제2항. 서버 초기화
 - `instrumentation.ts`: `NEXT_RUNTIME === 'nodejs'` 조건 하에 `instrumentation.node.ts` 동적 import.
@@ -248,7 +263,7 @@ Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + 
 
 ## 제5장: 마이그레이션 로드맵 — v1.0 Final (2026-05-03 확정)
 
-옛 v2.0 의 "infra → system/modules 동적 로드" 노선 폐기. 단일 v1.0 Final milestone 으로 통합 — Rust Core 의 단일 binary 안에 17 어댑터 정적 컴파일.
+옛 v2.0 의 "infra → system/modules 동적 로드" 노선 폐기. 단일 v1.0 Final milestone 으로 통합 — Rust Core 의 단일 binary 안에 20개 운영 어댑터 정적 컴파일.
 
 ### v1.0 Final 의 인프라 변환
 
@@ -296,7 +311,7 @@ BIBLE 제2장 "언어 중립성" 의 Core 어댑터 layer 적용. 영구 진화 
 
 | 영역 | 시작 시점 (2026-05) | 진화 trigger |
 |---|---|---|
-| **Image 처리** (resize / format / blurhash / attention crop) | **sharp via Node bridge** (1년+ 검증, 색공간 정확) — 또는 image-rs 시작도 OK | Rust crate 의 attention crop / 색공간 처리가 sharp 등가 도달 시 swap |
+| **Image 처리** (resize / format / blurhash / focus crop) | **image-rs 계열 정착** (`image` + `fast_image_resize` + `blurhash`, 순수 Rust) — 옛 sharp Node bridge 폐기 완료 | attention/entropy crop 정밀도 필요 시 추가 crate 평가 |
 | **로컬 임베딩** (BGE-M3 등, 사용 시점에) | onnxruntime-node 또는 ort 평가 후 결정 | 둘 다 충분 — 검증된 동작 우선 |
 | **Playwright (browser-scrape)** | **Node spawn 자연** (Rust 등가 0) | fantoccini / headless_chrome 가 playwright 등가 도달 시 |
 | **Token 카운팅** | tiktoken-rs (Rust) 또는 tiktoken (Node) | 어느 쪽이든 OK |
