@@ -83,9 +83,10 @@ impl AnthropicMessagesHandler {
 
     /// Anthropic 응답에서 사용량 + content 추출.
     /// 응답 schema: { content: [{type: "text", text: ...}, {type: "thinking", thinking: ...}, {type: "tool_use", id, name, input}], usage: {input_tokens, output_tokens} }
+    /// 반환: (text, tool_calls, tokens_in 총입력, tokens_out, cached 부분집합, thinking).
     fn parse_response(
         body: &serde_json::Value,
-    ) -> (String, Vec<ToolCall>, i64, i64, Option<String>) {
+    ) -> (String, Vec<ToolCall>, i64, i64, i64, Option<String>) {
         let mut text = String::new();
         let mut thinking_text = String::new();
         let mut tool_calls = Vec::new();
@@ -133,22 +134,25 @@ impl AnthropicMessagesHandler {
                 }
             }
         }
-        let tokens_in = body
-            .get("usage")
-            .and_then(|u| u.get("input_tokens"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let tokens_out = body
-            .get("usage")
-            .and_then(|u| u.get("output_tokens"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        // Anthropic usage 의 input_tokens 는 캐시 제외 신규 입력만 — cache_read / cache_creation 은 별도 가산.
+        // 총 입력(tokens_in) = input_tokens + cache_creation + cache_read 로 합산해 다른 포맷과 의미 통일.
+        let usage = body.get("usage");
+        let get_usage = |key: &str| -> i64 {
+            usage.and_then(|u| u.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+        };
+        let input_new = get_usage("input_tokens");
+        let cache_creation = get_usage("cache_creation_input_tokens");
+        let cache_read = get_usage("cache_read_input_tokens");
+        let tokens_in = input_new + cache_creation + cache_read;
+        let tokens_out = get_usage("output_tokens");
+        // cached = 캐시에서 읽힌 부분만 (0.1x 과금). cache_creation 은 신규 쓰기라 제외.
+        let cached_tokens = cache_read;
         let thinking_opt = if thinking_text.is_empty() {
             None
         } else {
             Some(thinking_text)
         };
-        (text, tool_calls, tokens_in, tokens_out, thinking_opt)
+        (text, tool_calls, tokens_in, tokens_out, cached_tokens, thinking_opt)
     }
 }
 
@@ -211,7 +215,8 @@ impl FormatHandler for AnthropicMessagesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, _tool_calls, tokens_in, tokens_out, _thinking) = Self::parse_response(&body_json);
+        let (text, _tool_calls, tokens_in, tokens_out, cached_tokens, _thinking) =
+            Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
             text,
@@ -219,6 +224,7 @@ impl FormatHandler for AnthropicMessagesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
         })
     }
 
@@ -344,7 +350,7 @@ impl FormatHandler for AnthropicMessagesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, tool_calls, tokens_in, tokens_out, thinking_text) =
+        let (text, tool_calls, tokens_in, tokens_out, cached_tokens, thinking_text) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
@@ -354,6 +360,7 @@ impl FormatHandler for AnthropicMessagesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
             thinking_text,
             ..Default::default()
         })

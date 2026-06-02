@@ -636,6 +636,19 @@ impl ClaudeCodeCliHandler {
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0);
                 outcome.cost_usd = cost_usd;
+                // usage — 비용 통계 토큰. Claude Code result.usage = {input_tokens,
+                // cache_creation_input_tokens, cache_read_input_tokens, output_tokens}.
+                // input_tokens 는 캐시 제외 신규분이라, 다른 포맷과 의미 통일 위해 총합으로 합산.
+                if let Some(usage) = ev.get("usage") {
+                    let get_u = |key: &str| -> i64 {
+                        usage.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+                    };
+                    let cache_read = get_u("cache_read_input_tokens");
+                    outcome.tokens_in =
+                        get_u("input_tokens") + get_u("cache_creation_input_tokens") + cache_read;
+                    outcome.tokens_out = get_u("output_tokens");
+                    outcome.cached_tokens = cache_read;
+                }
             }
         }
 
@@ -676,6 +689,11 @@ struct CliRunOutcome {
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
     cost_usd: f64,
+    /// result 이벤트 usage — 비용 통계 토큰 표시용. tokens_in = 캐시 포함 총 입력
+    /// (input + cache_creation + cache_read), cached = cache_read 부분집합.
+    tokens_in: i64,
+    tokens_out: i64,
+    cached_tokens: i64,
     /// Extended thinking 본문 + 도구 호출 마커 누적. 옛 Node 의 onChunk({type:'thinking', ...})
     /// 와 동등 — frontend ThinkingBlock bodyText 에 표시되어 사용자가 AI 의 추론·도구 호출
     /// 흐름을 본다. 옛 Rust 는 None 반환이라 표시 0 이었음 (사용자 보고 2026-05-24).
@@ -703,8 +721,9 @@ impl FormatHandler for ClaudeCodeCliHandler {
             text: outcome.text,
             model_id: config.id.clone(),
             cost_usd: Some(outcome.cost_usd),
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
         })
     }
 
@@ -744,6 +763,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
                 cost_usd: r.cost_usd,
                 tokens_in: r.tokens_in,
                 tokens_out: r.tokens_out,
+                cached_tokens: r.cached_tokens,
                 cli_session_id: None,
                 response_id: None,
                 ..Default::default()
@@ -772,8 +792,9 @@ impl FormatHandler for ClaudeCodeCliHandler {
             tool_calls: vec![], // CLI 가 자체 MCP loop 처리 — 외부 dispatch 없음
             model_id: config.id.clone(),
             cost_usd: Some(outcome.cost_usd),
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
             cli_session_id: outcome.session_id.clone(),
             response_id: outcome.session_id, // CLI 는 session_id 를 response_id 자리에도 노출
             internally_used_tools: outcome.used_tools,

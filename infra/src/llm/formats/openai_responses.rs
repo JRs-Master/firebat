@@ -44,9 +44,10 @@ impl OpenAiResponsesHandler {
         }
     }
 
+    /// 반환: (text, tool_calls, tokens_in 총입력, tokens_out, cached 부분집합, thinking).
     fn parse_response(
         body: &serde_json::Value,
-    ) -> (String, Vec<ToolCall>, i64, i64, Option<String>) {
+    ) -> (String, Vec<ToolCall>, i64, i64, i64, Option<String>) {
         let mut text = String::new();
         let mut thinking_text = String::new();
         let mut tool_calls = Vec::new();
@@ -118,14 +119,19 @@ impl OpenAiResponsesHandler {
                 }
             }
         }
-        let tokens_in = body
-            .get("usage")
+        // Responses usage.input_tokens 는 캐시 포함 총 입력. cached 는 input_tokens_details.cached_tokens 부분집합.
+        let usage = body.get("usage");
+        let tokens_in = usage
             .and_then(|u| u.get("input_tokens"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        let tokens_out = body
-            .get("usage")
+        let tokens_out = usage
             .and_then(|u| u.get("output_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let cached_tokens = usage
+            .and_then(|u| u.get("input_tokens_details"))
+            .and_then(|d| d.get("cached_tokens"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
         let thinking_opt = if thinking_text.is_empty() {
@@ -133,7 +139,7 @@ impl OpenAiResponsesHandler {
         } else {
             Some(thinking_text)
         };
-        (text, tool_calls, tokens_in, tokens_out, thinking_opt)
+        (text, tool_calls, tokens_in, tokens_out, cached_tokens, thinking_opt)
     }
 }
 
@@ -183,7 +189,8 @@ impl FormatHandler for OpenAiResponsesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, _calls, tokens_in, tokens_out, _thinking) = Self::parse_response(&body_json);
+        let (text, _calls, tokens_in, tokens_out, cached_tokens, _thinking) =
+            Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
             text,
@@ -191,6 +198,7 @@ impl FormatHandler for OpenAiResponsesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
         })
     }
 
@@ -277,7 +285,7 @@ impl FormatHandler for OpenAiResponsesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, tool_calls, tokens_in, tokens_out, thinking_text) =
+        let (text, tool_calls, tokens_in, tokens_out, cached_tokens, thinking_text) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
@@ -287,6 +295,7 @@ impl FormatHandler for OpenAiResponsesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
             thinking_text,
             ..Default::default()
         })

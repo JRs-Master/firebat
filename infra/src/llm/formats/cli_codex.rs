@@ -297,8 +297,18 @@ impl CodexCliHandler {
                             .unwrap_or_else(|| "Codex 오류".to_string()),
                     );
                 }
-                "turn.started" | "turn.completed" => {
-                    // 통계만 — 무시
+                "turn.started" => {}
+                "turn.completed" => {
+                    // usage — 비용 통계 토큰. {input_tokens(캐시 포함 총 입력), cached_input_tokens(부분집합),
+                    // output_tokens, reasoning_output_tokens}. 누적값이라 매번 덮어써 최종이 합계가 됨.
+                    if let Some(usage) = ev.get("usage") {
+                        let get_u = |key: &str| -> i64 {
+                            usage.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+                        };
+                        outcome.tokens_in = get_u("input_tokens");
+                        outcome.tokens_out = get_u("output_tokens") + get_u("reasoning_output_tokens");
+                        outcome.cached_tokens = get_u("cached_input_tokens");
+                    }
                 }
                 "item.started" | "item.completed" | "item.updated" => {
                     let Some(item) = ev.get("item") else { continue };
@@ -543,6 +553,11 @@ struct CliRunOutcome {
     rendered_blocks: Vec<serde_json::Value>,
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
+    /// turn.completed.usage — 비용 통계 토큰 표시용 (codex 는 구독이라 cost 0). input_tokens 는
+    /// 캐시 포함 총 입력, cached_input_tokens 는 그 부분집합. 매 turn.completed 가 누적값이라 덮어씀.
+    tokens_in: i64,
+    tokens_out: i64,
+    cached_tokens: i64,
     /// reasoning event 본문 + 도구 호출 마커 누적. 옛 Node 의 onChunk({type:'thinking', ...})
     /// 와 동등 — frontend ThinkingBlock bodyText 에 표시되어 사용자가 AI 의 추론·도구 호출
     /// 흐름을 본다. streaming chunk emit 은 아직 X (turn 종료 후 batch 표시).
@@ -566,8 +581,9 @@ impl FormatHandler for CodexCliHandler {
             text: outcome.text,
             model_id: config.id.clone(),
             cost_usd: Some(0.0), // 구독 모드
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
         })
     }
 
@@ -591,6 +607,7 @@ impl FormatHandler for CodexCliHandler {
                 cost_usd: r.cost_usd,
                 tokens_in: r.tokens_in,
                 tokens_out: r.tokens_out,
+                cached_tokens: r.cached_tokens,
                 cli_session_id: None,
                 response_id: None,
                 ..Default::default()
@@ -602,8 +619,9 @@ impl FormatHandler for CodexCliHandler {
             tool_calls: vec![], // Codex 자체 MCP loop 처리 — 외부 dispatch 없음
             model_id: config.id.clone(),
             cost_usd: Some(0.0),
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
             cli_session_id: outcome.session_id.clone(),
             response_id: outcome.session_id,
             internally_used_tools: outcome.used_tools,

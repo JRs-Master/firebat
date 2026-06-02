@@ -182,6 +182,7 @@ impl ILlmPort for ScriptedLlm {
             cost_usd: Some(0.0),
             tokens_in: Some(0),
             tokens_out: Some(0),
+            cached_tokens: Some(0),
         })
     }
     async fn ask_with_tools(
@@ -231,6 +232,7 @@ impl ILlmPort for CliSessionMockLlm {
             cost_usd: Some(0.0),
             tokens_in: Some(0),
             tokens_out: Some(0),
+            cached_tokens: Some(0),
         })
     }
     async fn ask_with_tools(

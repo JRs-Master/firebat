@@ -1124,7 +1124,7 @@ impl AiManager {
                     &response.model_id,
                     response.tokens_in.unwrap_or(0),
                     response.tokens_out.unwrap_or(0),
-                    0, // cached_tokens — Phase B-17+ Anthropic cache 응답 설정된 후
+                    response.cached_tokens.unwrap_or(0),
                     response.cost_usd.unwrap_or(0.0),
                     Some("user-ai"),
                 );
@@ -1794,6 +1794,7 @@ mod tests {
                 cost_usd: Some(0.0),
                 tokens_in: Some(0),
                 tokens_out: Some(0),
+                cached_tokens: Some(0),
             })
         }
         async fn ask_with_tools(

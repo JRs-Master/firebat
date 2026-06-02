@@ -631,6 +631,7 @@
     "cost_metric_calls": "Calls",
     "cost_metric_input_tokens": "Input tokens",
     "cost_metric_output_tokens": "Output tokens",
+    "cost_metric_cached_tokens": "Cached tokens",
     "cost_metric_cost_usd": "Cost USD",
     "cost_section_by_model": "By model",
     "cost_section_daily": "Daily",

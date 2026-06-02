@@ -2427,6 +2427,7 @@ interface CostStats {
   totalCalls: number;
   totalInputTokens: number;
   totalOutputTokens: number;
+  totalCachedTokens: number;
   totalCostUsd: number;
   records: CostRecord[];
 }
@@ -2835,9 +2836,10 @@ function CostTabContent() {
 
       {stats && !loading && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_calls')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCalls)}</p></div>
             <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_input_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalInputTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_cached_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCachedTokens)}</p></div>
             <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_output_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalOutputTokens)}</p></div>
             <div className="border border-blue-200 bg-blue-50 rounded-lg p-3"><p className="text-[10px] font-bold text-blue-500 uppercase">{t('settings_modal.cost_metric_cost_usd')}</p><p className="text-[18px] font-bold text-blue-700 tabular-nums">{fmtUsd(stats.totalCostUsd)}</p></div>
           </div>

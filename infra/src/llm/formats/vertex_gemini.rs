@@ -166,11 +166,13 @@ impl VertexGeminiHandler {
         }
     }
 
+    /// 반환: (text, tool_calls, tokens_in 총입력, tokens_out, cached 부분집합, raw_parts, thinking).
     fn parse_response(
         body: &serde_json::Value,
     ) -> (
         String,
         Vec<ToolCall>,
+        i64,
         i64,
         i64,
         Option<serde_json::Value>,
@@ -227,22 +229,21 @@ impl VertexGeminiHandler {
                 }
             }
         }
-        let tokens_in = body
-            .get("usageMetadata")
-            .and_then(|u| u.get("promptTokenCount"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let tokens_out = body
-            .get("usageMetadata")
-            .and_then(|u| u.get("candidatesTokenCount"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        // Vertex Gemini usageMetadata: promptTokenCount(캐시 포함 총 입력) / candidatesTokenCount(답변) /
+        // thoughtsTokenCount(thinking, 출력 과금) / cachedContentTokenCount(캐시 부분집합).
+        let usage = body.get("usageMetadata");
+        let get_usage = |key: &str| -> i64 {
+            usage.and_then(|u| u.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+        };
+        let tokens_in = get_usage("promptTokenCount");
+        let tokens_out = get_usage("candidatesTokenCount") + get_usage("thoughtsTokenCount");
+        let cached_tokens = get_usage("cachedContentTokenCount");
         let thinking_opt = if thinking_text.is_empty() {
             None
         } else {
             Some(thinking_text)
         };
-        (text, tool_calls, tokens_in, tokens_out, raw_parts, thinking_opt)
+        (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_opt)
     }
 
     fn image_to_inline_data_part(image: &str, mime_hint: Option<&str>) -> serde_json::Value {
@@ -435,7 +436,7 @@ impl FormatHandler for VertexGeminiHandler {
             }
             return Err(format!("Vertex API 에러 {}: {}", status, body_json));
         }
-        let (text, _calls, tokens_in, tokens_out, _raw, _thinking) =
+        let (text, _calls, tokens_in, tokens_out, cached_tokens, _raw, _thinking) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
@@ -444,6 +445,7 @@ impl FormatHandler for VertexGeminiHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
         })
     }
 
@@ -486,7 +488,7 @@ impl FormatHandler for VertexGeminiHandler {
             }
             return Err(format!("Vertex API 에러 {}: {}", status, body_json));
         }
-        let (text, tool_calls, tokens_in, tokens_out, raw_parts, thinking_text) =
+        let (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_text) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
@@ -496,6 +498,7 @@ impl FormatHandler for VertexGeminiHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
             raw_model_parts: raw_parts,
             thinking_text,
             ..Default::default()
@@ -573,7 +576,7 @@ mod tests {
             }],
             "usageMetadata": {"promptTokenCount": 100, "candidatesTokenCount": 50}
         });
-        let (_, calls, tin, tout, _, thinking) = VertexGeminiHandler::parse_response(&body);
+        let (_, calls, tin, tout, _cached, _raw, thinking) = VertexGeminiHandler::parse_response(&body);
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "save_page");
         assert_eq!(tin, 100);

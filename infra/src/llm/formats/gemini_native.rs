@@ -49,11 +49,13 @@ impl GeminiNativeHandler {
     }
 
     /// 응답 파싱 — text + tool_calls + tokens + raw_model_parts (rest) + thinking text.
+    /// 반환: (text, tool_calls, tokens_in 총입력, tokens_out, cached 부분집합, raw_parts, thinking).
     fn parse_response(
         body: &serde_json::Value,
     ) -> (
         String,
         Vec<ToolCall>,
+        i64,
         i64,
         i64,
         Option<serde_json::Value>,
@@ -110,22 +112,22 @@ impl GeminiNativeHandler {
                 }
             }
         }
-        let tokens_in = body
-            .get("usageMetadata")
-            .and_then(|u| u.get("promptTokenCount"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let tokens_out = body
-            .get("usageMetadata")
-            .and_then(|u| u.get("candidatesTokenCount"))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+        // Gemini usageMetadata: promptTokenCount(캐시 포함 총 입력) / candidatesTokenCount(답변) /
+        // thoughtsTokenCount(thinking, 출력 과금) / cachedContentTokenCount(캐시 부분집합).
+        let usage = body.get("usageMetadata");
+        let get_usage = |key: &str| -> i64 {
+            usage.and_then(|u| u.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+        };
+        let tokens_in = get_usage("promptTokenCount");
+        // 출력 = 답변 + thinking (thinking 은 출력 토큰으로 과금).
+        let tokens_out = get_usage("candidatesTokenCount") + get_usage("thoughtsTokenCount");
+        let cached_tokens = get_usage("cachedContentTokenCount");
         let thinking_opt = if thinking_text.is_empty() {
             None
         } else {
             Some(thinking_text)
         };
-        (text, tool_calls, tokens_in, tokens_out, raw_parts, thinking_opt)
+        (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_opt)
     }
 
     /// 첨부 이미지 → `inlineData` part 빌드. data URL 또는 raw base64 모두 처리.
@@ -321,7 +323,7 @@ impl FormatHandler for GeminiNativeHandler {
         if !status.is_success() {
             return Err(format!("Gemini API 에러 {}: {}", status, body_json));
         }
-        let (text, _calls, tokens_in, tokens_out, _raw, _thinking) =
+        let (text, _calls, tokens_in, tokens_out, cached_tokens, _raw, _thinking) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
@@ -330,6 +332,7 @@ impl FormatHandler for GeminiNativeHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
         })
     }
 
@@ -357,7 +360,7 @@ impl FormatHandler for GeminiNativeHandler {
         if !status.is_success() {
             return Err(format!("Gemini API 에러 {}: {}", status, body_json));
         }
-        let (text, tool_calls, tokens_in, tokens_out, raw_parts, thinking_text) =
+        let (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_text) =
             Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
@@ -367,6 +370,7 @@ impl FormatHandler for GeminiNativeHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
             raw_model_parts: raw_parts,
             thinking_text,
             ..Default::default()
@@ -547,7 +551,7 @@ mod tests {
             }],
             "usageMetadata": {"promptTokenCount": 50, "candidatesTokenCount": 20}
         });
-        let (text, calls, tin, tout, raw, thinking) =
+        let (text, calls, tin, tout, _cached, raw, thinking) =
             GeminiNativeHandler::parse_response(&body);
         assert_eq!(text, "Done");
         assert_eq!(calls.len(), 1);
@@ -576,7 +580,7 @@ mod tests {
                 }
             }]
         });
-        let (text, _, _, _, _, thinking) = GeminiNativeHandler::parse_response(&body);
+        let (text, _, _, _, _, _, thinking) = GeminiNativeHandler::parse_response(&body);
         assert_eq!(text, "Final answer");
         assert_eq!(thinking.as_deref(), Some("thinking..."));
     }

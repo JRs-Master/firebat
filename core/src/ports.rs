@@ -1237,6 +1237,11 @@ pub struct LlmTextResponse {
     pub tokens_in: Option<i64>,
     #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
     pub tokens_out: Option<i64>,
+    /// `tokens_in` 중 프롬프트 캐시에서 읽힌 부분집합 (전체 입력의 subset, 별도 추가 아님).
+    /// Anthropic `cache_read_input_tokens` / OpenAI `input_tokens_details.cached_tokens` /
+    /// Gemini `cachedContentTokenCount` / Codex `cached_input_tokens` 통합. 비용 통계 표시용.
+    #[serde(rename = "cachedTokens", default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1254,6 +1259,11 @@ pub struct LlmToolResponse {
     pub tokens_in: Option<i64>,
     #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
     pub tokens_out: Option<i64>,
+    /// `tokens_in` 중 프롬프트 캐시에서 읽힌 부분집합 (전체 입력의 subset, 별도 추가 아님).
+    /// Anthropic `cache_read_input_tokens` / OpenAI `input_tokens_details.cached_tokens` /
+    /// Gemini `cachedContentTokenCount` / Codex `cached_input_tokens` 통합. 비용 통계 표시용.
+    #[serde(rename = "cachedTokens", default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<i64>,
     /// CLI 모드 어댑터가 첫 turn 에서 잡은 session_id — 옛 TS `onCliSessionId` 콜백 패턴 대신
     /// response 에 설정하여 callee (AiManager) 가 직접 DB 영속화. 다음 turn `cli_resume_session_id` 으로 사용.
     #[serde(rename = "cliSessionId", default, skip_serializing_if = "Option::is_none")]

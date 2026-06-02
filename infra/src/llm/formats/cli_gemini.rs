@@ -266,6 +266,27 @@ impl GeminiCliHandler {
             };
             let ev_type = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
+            // result: stats.models[*].tokens — 비용 통계 토큰 (모델별 합산).
+            // { type:"result", stats:{ models:{ "<model>": { tokens:{ prompt, candidates, cached, thoughts } } } } }
+            if ev_type == "result" {
+                if let Some(models) = ev
+                    .get("stats")
+                    .and_then(|s| s.get("models"))
+                    .and_then(|m| m.as_object())
+                {
+                    for (_model, mstat) in models {
+                        let tokens = mstat.get("tokens");
+                        let get_t = |key: &str| -> i64 {
+                            tokens.and_then(|t| t.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+                        };
+                        outcome.tokens_in += get_t("prompt");
+                        outcome.tokens_out += get_t("candidates") + get_t("thoughts");
+                        outcome.cached_tokens += get_t("cached");
+                    }
+                }
+                continue;
+            }
+
             // init: session_id
             if ev_type == "init" {
                 if outcome.session_id.is_none() {
@@ -557,6 +578,11 @@ struct CliRunOutcome {
     rendered_blocks: Vec<serde_json::Value>,
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
+    /// result.stats.models[*].tokens — 비용 통계 토큰 표시용 (gemini CLI 는 구독이라 cost 0).
+    /// prompt=입력 / candidates+thoughts=출력 / cached=캐시 부분집합. 모델별 합산.
+    tokens_in: i64,
+    tokens_out: i64,
+    cached_tokens: i64,
     /// thought 본문 (event-level + 인라인 마커) + 도구 호출 마커 누적. 옛 Node 의
     /// onChunk({type:'thinking', ...}) 와 동등 — frontend ThinkingBlock bodyText 에 표시.
     /// streaming chunk emit 은 아직 X (turn 종료 후 batch 표시).
@@ -586,8 +612,9 @@ impl FormatHandler for GeminiCliHandler {
             text: outcome.text,
             model_id: config.id.clone(),
             cost_usd: Some(0.0),
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
         })
     }
 
@@ -611,6 +638,7 @@ impl FormatHandler for GeminiCliHandler {
                 cost_usd: r.cost_usd,
                 tokens_in: r.tokens_in,
                 tokens_out: r.tokens_out,
+                cached_tokens: r.cached_tokens,
                 cli_session_id: None,
                 response_id: None,
                 ..Default::default()
@@ -633,8 +661,9 @@ impl FormatHandler for GeminiCliHandler {
             tool_calls: vec![],
             model_id: config.id.clone(),
             cost_usd: Some(0.0),
-            tokens_in: None,
-            tokens_out: None,
+            tokens_in: Some(outcome.tokens_in),
+            tokens_out: Some(outcome.tokens_out),
+            cached_tokens: Some(outcome.cached_tokens),
             cli_session_id: outcome.session_id.clone(),
             response_id: outcome.session_id,
             internally_used_tools: outcome.used_tools,

@@ -631,6 +631,7 @@
     "cost_metric_calls": "호출 수",
     "cost_metric_input_tokens": "입력 토큰",
     "cost_metric_output_tokens": "출력 토큰",
+    "cost_metric_cached_tokens": "캐시 토큰",
     "cost_metric_cost_usd": "비용 USD",
     "cost_section_by_model": "모델별",
     "cost_section_daily": "일별",
