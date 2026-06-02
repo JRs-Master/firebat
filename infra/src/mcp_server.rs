@@ -40,6 +40,7 @@ use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
+use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 // ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
 // 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
 use firebat_core::ports::{
@@ -1154,6 +1155,68 @@ impl McpToolHandler for RunTaskHandler {
     }
 }
 
+// ── SysmodCache drill-in 도구 (cache_read / cache_grep / cache_aggregate / cache_drop) ──
+// 큰 sysmod 응답(yfinance/한투/키움/DART 시계열)의 `_cacheKey` 부분 조회.
+// ToolManager(tool_registry.rs::register_cache_tools, API 모델용)와 동일 동작 — CLI(hosted MCP)
+// 모델도 tools/list 로 보고 직접 호출하도록 MCP 레이어에도 등록. (옛 ToolManager 에만 있어
+// CLI 가 execute/run_task 로 우회하다 실패하던 것 정정.)
+
+pub struct CacheReadHandler {
+    pub cache: Arc<SysmodCacheAdapter>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for CacheReadHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let key = obj_str(&args, "cacheKey").ok_or_else(|| "cache_read: cacheKey 필수".to_string())?;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+        let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+        self.cache.read(&key, offset, limit)
+    }
+}
+
+pub struct CacheGrepHandler {
+    pub cache: Arc<SysmodCacheAdapter>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for CacheGrepHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let key = obj_str(&args, "cacheKey").ok_or_else(|| "cache_grep: cacheKey 필수".to_string())?;
+        let field = obj_str(&args, "field").ok_or_else(|| "cache_grep: field 필수".to_string())?;
+        let op = obj_str(&args, "op").ok_or_else(|| "cache_grep: op 필수".to_string())?;
+        let value = args
+            .get("value")
+            .cloned()
+            .ok_or_else(|| "cache_grep: value 필수".to_string())?;
+        self.cache.grep(&key, &field, &op, &value)
+    }
+}
+
+pub struct CacheAggregateHandler {
+    pub cache: Arc<SysmodCacheAdapter>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for CacheAggregateHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let key = obj_str(&args, "cacheKey").ok_or_else(|| "cache_aggregate: cacheKey 필수".to_string())?;
+        let field = obj_str(&args, "field").ok_or_else(|| "cache_aggregate: field 필수".to_string())?;
+        let op = obj_str(&args, "op").ok_or_else(|| "cache_aggregate: op 필수".to_string())?;
+        self.cache.aggregate(&key, &field, &op)
+    }
+}
+
+pub struct CacheDropHandler {
+    pub cache: Arc<SysmodCacheAdapter>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for CacheDropHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let key = obj_str(&args, "cacheKey").ok_or_else(|| "cache_drop: cacheKey 필수".to_string())?;
+        self.cache
+            .drop_key(&key)
+            .map(|_| serde_json::json!({"success": true}))
+    }
+}
+
 // ── SecretService / McpService 도구 ───────────────────────────────────────
 
 pub struct RequestSecretHandler {
@@ -1558,6 +1621,9 @@ pub struct BuiltinDeps {
     pub media: Arc<MediaManager>,
     pub library: Arc<LibraryManager>,
     pub network: Arc<dyn firebat_core::ports::INetworkPort>,
+    /// sysmod 자동캐시 drill-in (cache_read / cache_grep / cache_aggregate / cache_drop).
+    /// sandbox 가 큰 응답을 저장한 것과 동일 Arc 여야 cacheKey 가 맞는다.
+    pub cache: Arc<SysmodCacheAdapter>,
 }
 
 pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDeps) {
@@ -1672,6 +1738,45 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         description: "파이프라인 즉시 실행 (예약 아님). inputSchema: {pipeline: [step, ...]}.".into(),
         input_schema: schema_object(serde_json::json!({"pipeline": {"type": "array"}})),
         handler: Arc::new(RunTaskHandler { task: deps.task }),
+    }).await;
+
+    // SysmodCache drill-in — 큰 sysmod 응답의 `_cacheKey` 부분 조회 (yfinance/한투/키움/DART 시계열).
+    state.register(McpTool {
+        name: "cache_read".into(),
+        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 응답에서 일부만 가져올 때 offset/limit 으로 자르기. inputSchema: {cacheKey, offset?, limit?}.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "cacheKey": {"type": "string", "description": "sysmod 응답의 `_cacheKey` 값"},
+            "offset": {"type": "integer", "description": "시작 인덱스 (기본 0)"},
+            "limit": {"type": "integer", "description": "최대 행 수 (기본 50)"}
+        })),
+        handler: Arc::new(CacheReadHandler { cache: deps.cache.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "cache_grep".into(),
+        description: "sysmod `_cacheKey` records 조건 필터. field=점 표기, op=eq/ne/gt/gte/lt/lte/contains/in. inputSchema: {cacheKey, field, op, value}.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "cacheKey": {"type": "string"},
+            "field": {"type": "string", "description": "필드 경로 (점 표기)"},
+            "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in"]},
+            "value": {"description": "비교값 (op 따라 타입 다름)"}
+        })),
+        handler: Arc::new(CacheGrepHandler { cache: deps.cache.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "cache_aggregate".into(),
+        description: "sysmod `_cacheKey` records 집계. op=count/sum/avg/min/max, field=숫자 필드 경로(count 는 무시). inputSchema: {cacheKey, field, op}.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "cacheKey": {"type": "string"},
+            "field": {"type": "string", "description": "숫자 필드 경로 (점 표기)"},
+            "op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}
+        })),
+        handler: Arc::new(CacheAggregateHandler { cache: deps.cache.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "cache_drop".into(),
+        description: "sysmod `_cacheKey` 캐시 삭제. inputSchema: {cacheKey}.".into(),
+        input_schema: schema_object(serde_json::json!({"cacheKey": {"type": "string"}})),
+        handler: Arc::new(CacheDropHandler { cache: deps.cache }),
     }).await;
 
     // Secret / Mcp

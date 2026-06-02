@@ -813,6 +813,7 @@ async fn main() -> Result<()> {
                 media: media_manager.clone(),
                 library: library_manager.clone(),
                 network: network_port.clone(),
+                cache: cache_adapter.clone(),
             },
         )
         .await;
@@ -854,6 +855,7 @@ async fn main() -> Result<()> {
                 media: media_manager.clone(),
                 library: library_manager.clone(),
                 network: network_port.clone(),
+                cache: cache_adapter.clone(),
             },
         )
         .await;

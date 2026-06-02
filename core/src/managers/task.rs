@@ -80,7 +80,9 @@ pub enum PipelineStep {
     },
     ToolCall {
         tool: String,
-        #[serde(rename = "inputData", default, skip_serializing_if = "Option::is_none")]
+        // `args` alias — Function Calling 관례상 도구 인자는 `args`. AI 가 `{tool, args}` 형태로
+        // 넘겨도 inputData 로 받아 유실 0 (McpCall 의 `arguments` 수용과 동일 취지).
+        #[serde(rename = "inputData", alias = "args", default, skip_serializing_if = "Option::is_none")]
         input_data: Option<Value>,
         #[serde(rename = "inputMap", default, skip_serializing_if = "Option::is_none")]
         input_map: Option<Value>,
