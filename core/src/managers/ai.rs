@@ -705,15 +705,10 @@ impl AiManager {
                     if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
                         return allowed.contains(sysmod_name);
                     }
-                    // render(통합) / render_* / read-only / 컨텍스트 / save_page (hub-scoped) = 허용
-                    if name == "render"
+                    // read-only allow 규칙은 core 단일 소스(hosted 경로 ToolManagerProxyHandler 와 공유 →
+                    // 규칙 drift 차단). + 레거시 render_* 분리 도구 + save_page(hub-scoped write) 추가 허용.
+                    if crate::utils::hub_context::is_hub_readonly_tool(name)
                         || name.starts_with("render_")
-                        || name.starts_with("list_")
-                        || name.starts_with("get_")
-                        || name.starts_with("search_")
-                        || name.starts_with("cache_")
-                        || name == "suggest"
-                        || name == "propose_plan"
                         || name == "save_page"
                     {
                         return true;

@@ -15,11 +15,13 @@ use firebat_core::managers::module::ModuleManager;
 use firebat_core::managers::page::PageManager;
 use firebat_core::managers::library::LibraryManager;
 use firebat_core::managers::schedule::ScheduleManager;
+use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::task::{StubTaskExecutor, TaskManager};
 use firebat_core::managers::tool::ToolManager;
 use firebat_core::ports::{
     ICronPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort, ILibraryPort, ILogPort,
-    IMcpClientPort, IMediaPort, IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
+    IMcpClientPort, IMediaPort, IMemoryFacadePort, INetworkPort, ISandboxPort, IStoragePort,
+    IVaultPort,
 };
 use firebat_core::tool_registry::{register_core_tools, CoreToolHandlers};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
@@ -31,6 +33,7 @@ use firebat_infra::adapters::log::ConsoleLogAdapter;
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 use firebat_infra::adapters::media::LocalMediaAdapter;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
+use firebat_infra::adapters::network::ReqwestNetworkAdapter;
 use firebat_infra::adapters::sandbox::ProcessSandboxAdapter;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
@@ -81,6 +84,8 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
         Arc::new(SqliteLibraryAdapter::new(&lib_path).unwrap());
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
     let library_mgr = Arc::new(LibraryManager::new(library_port, embedder));
+    let secret_mgr = Arc::new(SecretManager::new(vault.clone(), storage.clone()));
+    let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -99,6 +104,8 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             cache,
             task: task_mgr,
             library: library_mgr,
+            secret: secret_mgr,
+            network: network_port,
         },
     );
     (tools, dir)
@@ -178,18 +185,24 @@ async fn registered_tool_count() {
     let stats = tools.stats();
     // page: 4 + storage: 4 + schedule: 3 + media: 3 (search/image_gen/regenerate) +
     // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 +
-    // module: 3 + mcp: 2 + cache: 4 (read/grep/aggregate/drop) +
-    // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) = 39
-    assert_eq!(stats.total, 39);
-    assert_eq!(stats.by_source.get("core").copied(), Some(39));
+    // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
+    // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
+    // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) = 43
+    assert_eq!(stats.total, 43);
+    assert_eq!(stats.by_source.get("core").copied(), Some(43));
 }
 
 #[tokio::test]
 async fn meta_and_pipeline_tools_have_handlers() {
     // FC 모델(Gemini/Vertex) 이 호출 가능하려면 schema 뿐 아니라 핸들러도 등록돼야 한다
     // (ai.rs has_handler 체크가 special-case 처리보다 먼저 — 미등록 시 unknownTool).
+    // 옛 MCP 전용이라 FC 가 못 쓰던 도구(execute/run_cron_job/request_secret/network_request)
+    // + 메타/파이프라인까지 양 경로 대칭 확인.
     let (tools, _dir) = make_setup().await;
-    for name in ["run_task", "search_library", "render", "suggest", "propose_plan"] {
+    for name in [
+        "run_task", "search_library", "render", "suggest", "propose_plan",
+        "execute", "run_cron_job", "request_secret", "network_request", "mcp_call",
+    ] {
         assert!(tools.has_handler(name), "{name} 핸들러 미등록");
     }
 }

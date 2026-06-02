@@ -1486,9 +1486,12 @@ pub struct ToolManagerProxyHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for ToolManagerProxyHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // hub visitor 가드 — auto-sync 대상은 read-only/meta 라, FC 경로(ai.rs hub allow)와 동일
-        // 규칙으로 list_/get_/search_/cache_/render/suggest/propose_plan 만 허용, 그 외 차단.
-        if firebat_core::utils::hub_context::is_hub_context_active() && !hub_allows_proxy(&self.name) {
+        // hub visitor 가드 — read-only allow 규칙은 core 단일 소스(ai.rs FC 경로와 공유).
+        // auto-sync 대상은 context 주입 불요한 read-only/meta 도구 — 인자 주입(hub_owner 등)이 필요한
+        // 도구는 명시 핸들러로 등록해야 하며 auto-sync 대상이 아니다(아래 register 루프 skip 로직 참고).
+        if firebat_core::utils::hub_context::is_hub_context_active()
+            && !firebat_core::utils::hub_context::is_hub_readonly_tool(&self.name)
+        {
             return Ok(serde_json::json!({
                 "success": false,
                 "error": format!("이 hub 에서는 '{}' 도구 사용이 허용되지 않습니다.", self.name)
@@ -1498,19 +1501,9 @@ impl McpToolHandler for ToolManagerProxyHandler {
     }
 }
 
-/// hub visitor 에게 허용할 도구 판정 — ai.rs 의 hub filter allow 규칙과 일치.
-fn hub_allows_proxy(name: &str) -> bool {
-    name.starts_with("list_")
-        || name.starts_with("get_")
-        || name.starts_with("search_")
-        || name.starts_with("cache_")
-        || name == "render"
-        || name == "suggest"
-        || name == "propose_plan"
-}
-
-/// auto-sync 제외 — 다른 이름의 명시 핸들러가 이미 같은 기능 제공(중복 방지).
-const AUTOSYNC_SKIP: &[&str] = &["call_mcp_tool"]; // mcp_call 핸들러가 이미 McpManager.call_tool 위임
+/// auto-sync 제외 목록 — 다른 이름의 명시 핸들러가 이미 같은 기능 제공 시 추가(중복 방지).
+/// (call_mcp_tool↔mcp_call 이름 통일 후 비어있음. ToolManager 와 MCP 가 mcp_call 로 일치.)
+const AUTOSYNC_SKIP: &[&str] = &[];
 
 pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDeps) {
     // Page

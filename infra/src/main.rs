@@ -578,6 +578,10 @@ async fn main() -> Result<()> {
             .with_status(status_manager.clone()),
     );
 
+    // INetworkPort — network_request 도구가 의존. 어댑터는 무의존이라 register_core_tools 앞에서 생성
+    // (아래 network_service / BuiltinDeps 도 이 인스턴스 공유).
+    let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
+
     // Phase B-17a/c — 정적 도구 dispatch 등록. LLM stub 위에서도 도구 호출 e2e 동작.
     // task_manager 생성 뒤 — run_task(파이프라인)·search_library 가 각각 TaskManager·LibraryManager 의존.
     // schedule_manager 는 여기서 아직 pre-hooks 버전이나, schedule/list/cancel 는 hooks 무관이라 안전
@@ -599,6 +603,8 @@ async fn main() -> Result<()> {
             cache: cache_adapter.clone(),
             task: task_manager.clone(),
             library: library_manager.clone(),
+            secret: secret_manager.clone(),
+            network: network_port.clone(),
         },
     );
 
@@ -677,8 +683,7 @@ async fn main() -> Result<()> {
     let ai_service = grpc::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
-    // Phase B-post audit A5 (2026-05-06): INetworkPort 저장 — services 의 reqwest 직접 의존 제거.
-    let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
+    // Phase B-post audit A5 (2026-05-06): INetworkPort — 위 register_core_tools 앞에서 생성한 인스턴스 공유.
     let storage_service = grpc::storage::StorageServiceImpl::new(storage.clone());
     let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone());
     let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());

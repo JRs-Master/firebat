@@ -21,12 +21,13 @@ use crate::managers::media::MediaManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::page::PageManager;
 use crate::managers::schedule::ScheduleManager;
+use crate::managers::secret::SecretManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
-    CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, IStoragePort,
-    ListRecentOpts, MediaListOpts, MediaScope, SaveEntityInput, SaveEventInput, SaveFactInput,
-    TimelineOpts,
+    CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, INetworkPort,
+    IStoragePort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest, SandboxExecuteOpts,
+    SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
 
@@ -52,6 +53,10 @@ pub struct CoreToolHandlers {
     pub task: Arc<TaskManager>,
     /// 자료 라이브러리 하이브리드 검색 (search_library).
     pub library: Arc<LibraryManager>,
+    /// 시크릿 조회 (request_secret) — 옛 MCP 전용이라 FC 모델이 못 쓰던 것 대칭화.
+    pub secret: Arc<SecretManager>,
+    /// HTTP 요청 (network_request) — 옛 MCP 전용 대칭화.
+    pub network: Arc<dyn INetworkPort>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -70,6 +75,153 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_cache_tools(tools, &h);
     register_task_library_tools(tools, &h);
     register_meta_render_tools(tools, &h);
+    register_infra_parity_tools(tools, &h);
+}
+
+/// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.
+/// execute(user 모듈) / run_cron_job(예약 잡 즉시 실행) / request_secret(시크릿 조회) /
+/// network_request(HTTP). MCP 핸들러(ExecuteHandler/RunCronJobHandler/RequestSecretHandler/
+/// NetworkRequestHandler)와 같은 매니저 메서드 위임 = 동작 일치.
+fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // execute — user/modules 사용자 정의 모듈 실행. 시스템 모듈은 sysmod_* 사용.
+    let module = h.module.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "execute".to_string(),
+            description: "user/modules 사용자 정의 모듈 실행 전용 (시스템 모듈은 sysmod_* 사용). {path, inputData}.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "path": {"type": "string"}, "inputData": {"type": "object"} },
+                "required": ["path"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let module = module.clone();
+            async move {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "execute: path 필수".to_string())?
+                    .to_string();
+                let input = args.get("inputData").cloned().unwrap_or(serde_json::json!({}));
+                if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
+                    return Ok(serde_json::json!({"success": false, "error": "execute: inputData 빈 객체 금지. 모듈 입력 필드를 채우거나 시스템 모듈이면 sysmod_* 사용."}));
+                }
+                match module.execute(&path, &input, &SandboxExecuteOpts::default()).await {
+                    Ok(output) => Ok(if output.success {
+                        serde_json::json!({"success": true, "data": output.data})
+                    } else {
+                        serde_json::json!({"success": false, "error": output.error.unwrap_or_default()})
+                    }),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+
+    // run_cron_job — 예약된 jobId 즉시 1회 실행 (cron 도메인). run_task(파이프라인)와 구분.
+    let schedule = h.schedule.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "run_cron_job".to_string(),
+            description: "예약된 cron 잡을 jobId 로 즉시 1회 실행. (파이프라인 즉시 실행은 run_task.)".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "jobId": {"type": "string"} },
+                "required": ["jobId"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let schedule = schedule.clone();
+            async move {
+                let job_id = args
+                    .get("jobId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "run_cron_job: jobId 필수".to_string())?
+                    .to_string();
+                match schedule.trigger_now(&job_id).await {
+                    Ok(()) => Ok(serde_json::json!({"success": true})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+
+    // request_secret — 시크릿 등록 여부 + 값 조회. (AI 가 키 저장은 못 함 — 사용자만 등록.)
+    let secret = h.secret.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "request_secret".to_string(),
+            description: "시크릿 조회 (등록 여부 present + 값). AI 는 키 저장 불가 — 사용자가 설정에서 직접 등록.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "name": {"type": "string"} },
+                "required": ["name"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let secret = secret.clone();
+            async move {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "request_secret: name 필수".to_string())?
+                    .to_string();
+                let value = secret.get_user(&name).unwrap_or_default();
+                let present = !value.is_empty();
+                Ok(serde_json::json!({"success": true, "name": name, "present": present, "value": value}))
+            }
+        },
+    );
+
+    // network_request — 가벼운 HTTP 요청.
+    let network = h.network.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "network_request".to_string(),
+            description: "HTTP 요청. {url, method?, headers?, body?, timeoutMs?}.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "method": {"type": "string"},
+                    "headers": {"type": "object"},
+                    "body": {},
+                    "timeoutMs": {"type": "integer"}
+                },
+                "required": ["url"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let network = network.clone();
+            async move {
+                let url = args
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "network_request: url 필수".to_string())?
+                    .to_string();
+                let method = args
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("GET")
+                    .to_string();
+                let headers: Option<std::collections::HashMap<String, String>> = args
+                    .get("headers")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok());
+                let body = args.get("body").cloned();
+                let timeout_ms = args.get("timeoutMs").and_then(|v| v.as_i64()).unwrap_or(30_000) as u64;
+                let req = NetworkRequest { url, method, headers, body, timeout_ms };
+                match network.fetch(req).await {
+                    Ok(resp) => Ok(serde_json::json!({"success": true, "data": resp})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
 }
 
 /// task(파이프라인 즉시 실행) + library(자료 하이브리드 검색) 도구.
@@ -1484,9 +1636,10 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
-    // call_mcp_tool — 외부 MCP 서버 도구 호출 (stdio + SSE 설정, 2026-05-07)
+    // mcp_call — 외부 MCP 서버 도구 호출 (stdio + SSE 설정, 2026-05-07).
+    // MCP 서버 핸들러(McpCallHandler)와 이름 통일 — 옛 call_mcp_tool 명칭 폐기 (양 경로 mcp_call).
     tools.register(ToolDefinition {
-        name: "call_mcp_tool".to_string(),
+        name: "mcp_call".to_string(),
         description: "외부 MCP 서버의 도구 호출 (stdio 또는 SSE transport).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
@@ -1501,7 +1654,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     });
     let mcp = h.mcp.clone();
     tools.register_handler(
-        "call_mcp_tool",
+        "mcp_call",
         make_handler(move |args| {
             let mcp = mcp.clone();
             async move {

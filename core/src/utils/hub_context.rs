@@ -71,6 +71,20 @@ pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
     }
 }
 
+/// hub visitor 에게 허용할 read-only/안전 도구 판정 — **단일 소스**.
+/// FC 경로(ai.rs hub tool filter)와 hosted 경로(mcp_server ToolManagerProxyHandler)가 모두 호출 →
+/// 두 곳에 중복 박혀 drift 나던 allow 규칙 통일. 정보 조회·시각화·제안만 허용(destructive·admin 제외).
+/// sysmod_* 는 allowed_sysmods 별도 검사, save_page(hub-scoped)·render_* 레거시는 호출처가 추가 허용.
+pub fn is_hub_readonly_tool(name: &str) -> bool {
+    name.starts_with("list_")
+        || name.starts_with("get_")
+        || name.starts_with("search_")
+        || name.starts_with("cache_")
+        || name == "render"
+        || name == "suggest"
+        || name == "propose_plan"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
