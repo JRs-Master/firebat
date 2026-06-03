@@ -254,10 +254,19 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
         ? { ...m, isThinking: false, streaming: true, statusText: undefined, content: (m.content || '') + action.content }
         : m);
 
-    case 'CHUNK_THINKING':
+    case 'CHUNK_THINKING': {
+      // "[도구 호출: name]" / "[계획 정리]" 마커는 본문에 줄줄이 쌓지 않고 단일 상태줄(statusText)만
+      // 갱신 — 스피너 옆 한 줄이 '생각중 ↔ 도구 호출 중'으로 바뀌게. 실제 추론 텍스트만 본문 누적.
+      const c = action.content;
+      if (c.includes('[도구 호출:') || c.includes('[계획 정리]')) {
+        return state.map(m => m.id === action.id
+          ? { ...m, isThinking: true, streaming: false, statusText: c.includes('[계획 정리]') ? '계획 정리 중...' : '도구 호출 중...' }
+          : m);
+      }
       return state.map(m => m.id === action.id
-        ? { ...m, isThinking: true, streaming: false, statusText: undefined, thinkingText: (m.thinkingText || '') + action.content }
+        ? { ...m, isThinking: true, streaming: false, statusText: undefined, thinkingText: (m.thinkingText || '') + c }
         : m);
+    }
 
     case 'STEP':
       return state.map(m => m.id === action.id
@@ -266,7 +275,9 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             executing: true,
             isThinking: true,
             streaming: false,
-            statusText: action.isLast ? '결과 정리 중...' : (action.step.description || m.statusText),
+            // 도구 step 진행은 단일 상태줄로 — 마지막 step = '답변 준비 중', 그 외 = '도구 호출 중'.
+            // (옛 '결과 정리 중' = '결과'가 어색 + 도구명 그대로 노출은 줄줄이 사탕 원인이라 제네릭으로.)
+            statusText: action.isLast ? '답변 준비 중...' : '도구 호출 중...',
             steps: [...(m.steps || []), action.step],
           }
         : m);

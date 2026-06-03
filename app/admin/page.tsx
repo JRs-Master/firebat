@@ -408,7 +408,13 @@ function ThinkingBlock({
   const sentinelValues = Object.values(THINKING_STATUS);
   const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
   const label = statusText || (isActive ? '생각중' : (isComplete ? '답변완료' : ''));
-  const bodyText = (!isSentinel && thinkingText) ? thinkingText : '';
+  // "[도구 호출: ...]" / "[계획 정리]" 마커 줄은 본문에 표시하지 않는다 — 도구 호출 진행은 위 단일
+  // 상태줄(label: 도구 호출 중)로만. CLI 스트림은 reducer 가 이미 라우팅하지만, API batch·reload 로
+  // 들어온 thinkingText 안 마커도 여기서 정리 (실제 추론 텍스트만 본문에 남김).
+  const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
+  const bodyText = rawBody
+    ? rawBody.split('\n').filter((l) => !/^\s*\[(도구 호출:|계획 정리)/.test(l)).join('\n').trim()
+    : '';
   return (
     <div className="flex items-start gap-2 text-slate-400 flex-wrap">
       {isActive && <div className="animate-spin shrink-0 mt-0.5"><Cpu size={13} /></div>}
