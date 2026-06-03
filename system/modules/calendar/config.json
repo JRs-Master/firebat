@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Built-in Firebat calendar — JSONL file (data/calendar/events.jsonl). No external sync (by design). Chains naturally with other sysmods (cron, notes, trading) — link calendar events to cron jobs via linkedJobId for two-way tracking.",
+  "description": "Built-in Firebat calendar (캘린더) — RECORDS dates/events only; it does NOT execute anything. For something that must run automatically at a time, use schedule_task (cron), not this. JSONL file (data/calendar/events.jsonl), no external sync (by design). Chains with other sysmods — link a calendar event to a cron job via linkedJobId for two-way tracking.",
   "runtime": "node",
   "capability": "calendar",
   "providerType": "local",

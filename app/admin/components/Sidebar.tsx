@@ -44,7 +44,7 @@ const TABS: { id: TabId; label: string; Icon: typeof FolderTree; tooltip: string
   { id: 'library', label: 'Library', Icon: BookOpen, tooltip: 'Library — 자료 영역 + RAG 검색' },
   { id: 'entities', label: 'Recall', Icon: Sparkles, tooltip: 'Recall (엔티티 + 사건)' },
   { id: 'notes', label: '노트', Icon: NotebookText, tooltip: '노트' },
-  { id: 'calendar', label: '일정', Icon: CalendarIcon, tooltip: '일정' },
+  { id: 'calendar', label: '캘린더', Icon: CalendarIcon, tooltip: '캘린더' },
 ];
 
 interface SidebarProps {

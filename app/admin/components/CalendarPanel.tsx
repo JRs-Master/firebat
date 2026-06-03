@@ -3,7 +3,7 @@
 /**
  * CalendarPanel — sysmod_calendar 어드민 UI.
  *
- * 사이드바 일정 탭. 월(month) 단위 달력 그리드 + 선택 날짜 events 리스트.
+ * 사이드바 캘린더 탭. 월(month) 단위 달력 그리드 + 선택 날짜 events 리스트.
  * 상단: ◀ 2026년 5월 ▶ (year/month dropdown 클릭 변경) + 오늘로 + 추가.
  * 그리드: 일~토 7×6, 오늘 강조, events 있는 날 점 표시 + 개수.
  * 셀 클릭 → 하단에 그 날짜 events list. 데이터 fetch 는 1년치 한 번.

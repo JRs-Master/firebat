@@ -889,7 +889,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 
     tools.register(ToolDefinition {
         name: "schedule_task".to_string(),
-        description: "cron 잡 등록. cronTime (반복) / runAt (1회 예약) / delaySec (N초 후) 중 하나 필수.".to_string(),
+        description: "cron 잡 등록 — 특정 시각·주기에 작업을 자동 실행(스케줄). 날짜만 기록할 거면 sysmod_calendar(캘린더)를 써라. cronTime (반복) / runAt (1회 예약) / delaySec (N초 후) 중 하나 필수.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

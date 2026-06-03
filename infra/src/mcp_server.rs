@@ -1591,7 +1591,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 유지.
     state.register(McpTool {
         name: "schedule_task".into(),
-        description: "크론 / 일회성 작업 예약. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
+        description: "크론 / 일회성 작업 예약 — 특정 시각·주기에 작업을 자동 실행한다(스케줄). 단지 날짜·약속을 기록만 할 거면 sysmod_calendar(캘린더)를 써라. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
         input_schema: schema_object(serde_json::json!({
             "jobId": {"type": "string", "description": "고유 job id (이미 있는 jobId 면 덮어쓰기)"},
             "targetPath": {"type": "string", "description": "agent | <pipeline 식별자>"},

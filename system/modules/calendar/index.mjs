@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Firebat 일정 sysmod — JSONL file-based.
+ * Firebat 캘린더 sysmod — JSONL file-based.
  *
  * 저장: data/calendar/events.jsonl
  *   한 줄 = 한 이벤트 JSON. soft-delete (deletedAt 설정) — 추가만 빠르게 (파일 끝에 append).

@@ -1369,7 +1369,7 @@ impl AiManager {
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": format!("'{}' 도구는 존재하지 않습니다. 절대 다시 호출하지 마세요 — 몇 번을 호출해도 영영 없습니다. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / 플랜 = propose_plan / 메모 = sysmod_notes / 일정 = sysmod_calendar. 시스템 상태에 나열된 이름만 사용하세요.", effective_call.name),
+                            "error": format!("'{}' 도구는 존재하지 않습니다. 절대 다시 호출하지 마세요 — 몇 번을 호출해도 영영 없습니다. 실제 도구: 자동 실행 예약 = schedule_task / 즉시 실행 = run_task / 플랜 = propose_plan / 메모 = sysmod_notes / 날짜 기록(캘린더) = sysmod_calendar. 시스템 상태에 나열된 이름만 사용하세요.", effective_call.name),
                             "unknownTool": true,
                         }),
                         success: false,
