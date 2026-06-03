@@ -259,8 +259,13 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
       // 갱신 — 스피너 옆 한 줄이 '생각중 ↔ 도구 호출 중'으로 바뀌게. 실제 추론 텍스트만 본문 누적.
       const c = action.content;
       if (c.includes('[도구 호출:') || c.includes('[계획 정리]')) {
+        // 단일 상태줄에 도구명까지 노출 — 한 줄만 갱신하므로 줄줄이 쌓이지 않는다. 마커 형식 "[도구 호출: name]".
+        const toolName = c.match(/\[도구 호출:\s*([^\]]+)\]/)?.[1]?.trim();
+        const status = c.includes('[계획 정리]')
+          ? '계획 정리 중...'
+          : (toolName ? `도구 호출 중: ${toolName}` : '도구 호출 중...');
         return state.map(m => m.id === action.id
-          ? { ...m, isThinking: true, streaming: false, statusText: c.includes('[계획 정리]') ? '계획 정리 중...' : '도구 호출 중...' }
+          ? { ...m, isThinking: true, streaming: false, statusText: status }
           : m);
       }
       return state.map(m => m.id === action.id
@@ -268,19 +273,24 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
         : m);
     }
 
-    case 'STEP':
+    case 'STEP': {
+      // 도구 step 진행은 단일 상태줄로 — 마지막 step = '답변 준비 중', 그 외 = '도구 호출 중: <도구명>'.
+      // 단일 줄만 갱신하므로 도구명을 노출해도 줄줄이 쌓이지 않는다(옛 제거 사유는 다중 줄 누적이었음).
+      const stepName = (action.step.description || action.step.type || '').trim();
+      const status = action.isLast
+        ? '답변 준비 중...'
+        : (stepName ? `도구 호출 중: ${stepName}` : '도구 호출 중...');
       return state.map(m => m.id === action.id
         ? {
             ...m,
             executing: true,
             isThinking: true,
             streaming: false,
-            // 도구 step 진행은 단일 상태줄로 — 마지막 step = '답변 준비 중', 그 외 = '도구 호출 중'.
-            // (옛 '결과 정리 중' = '결과'가 어색 + 도구명 그대로 노출은 줄줄이 사탕 원인이라 제네릭으로.)
-            statusText: action.isLast ? '답변 준비 중...' : '도구 호출 중...',
+            statusText: status,
             steps: [...(m.steps || []), action.step],
           }
         : m);
+    }
 
     case 'RESULT': {
       const p = action.payload;
