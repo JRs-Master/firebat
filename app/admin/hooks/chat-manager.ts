@@ -18,6 +18,7 @@
 import type { Message, StepStatus, PendingAction } from '../types';
 import koMessages from '../../../language/ko.json';
 import enMessages from '../../../language/en.json';
+import { inlineFormatTagsToMarkdown } from '../../../lib/util/md';
 
 // ── Fallback i18n keys — language/*.json 단일 source (2026-05-13) ───────────
 // 사용자가 useTranslations 으로 변환 (useChat hook 안). reducer pure 영역에서는
@@ -114,6 +115,9 @@ export function isSectionStartBlock(
  *  (옛엔 인라인 태그를 "정상 렌더되도록" 일부러 뒀으나, 그게 bold 번짐의 root 라 escape 로 전환.) */
 export function escapeHtmlTagMentions(text: string): string {
   if (!text) return text;
+  // 짝 맞는 인라인 포맷 태그(<strong>x</strong> 등)는 먼저 마크다운으로 변환 → 굵게 의도 보존.
+  // (변환 안 하면 아래 백틱 escape 가 `<strong>` 를 인라인코드(회색 박스)로 죽여 안 굵게가 된다.)
+  text = inlineFormatTagsToMarkdown(text);
   const HTML_TAGS = [
     'header', 'footer', 'article', 'main', 'nav', 'section', 'aside',
     'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup',

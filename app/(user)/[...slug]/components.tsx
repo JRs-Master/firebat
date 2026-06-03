@@ -9,6 +9,7 @@ import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
+import { inlineFormatTagsToMarkdown } from '../../../lib/util/md';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -968,7 +969,9 @@ function escapeHtmlTags(s: string): string {
  *  rehypeRaw 와 함께 쓰는 모든 마크다운 렌더(TextComp / InlineMd / AlertComp) 공용. 숫자/구조 값
  *  (KeyValue value 등)에는 쓰지 말 것 — "1_000" 이탤릭 등 오작동. */
 function mdReady(s: string): string {
-  return mdBoldFix(escapeHtmlTags(normalizeEscapes(s)));
+  // 짝 맞는 인라인 포맷 태그(<strong>x</strong> 등) → 마크다운 변환을 escapeHtmlTags 앞에 둬서
+  // 굵게 의도 보존 (변환 안 하면 escapeHtmlTags 가 literal `&lt;strong&gt;` 텍스트로 죽인다).
+  return mdBoldFix(escapeHtmlTags(inlineFormatTagsToMarkdown(normalizeEscapes(s))));
 }
 
 // 인라인 마크다운 components — <p> 블록 래퍼 없이 부모(<li> / <div>) 안에 인라인 배치.
