@@ -239,10 +239,12 @@ impl E5LocalEmbedderAdapter {
         let hidden_f = hidden
             .to_dtype(DType::F32)
             .map_err(|e| format!("hidden cast: {e}"))?;
-        let masked = (&hidden_f * &mask_f).map_err(|e| format!("mask multiply: {e}"))?;
+        // broadcast_* 필수 — mask_f [1, seq, 1] 를 hidden_f [1, seq, 384] 에 곱/나누기. candle 의
+        // `*`·`/`(std::ops)는 동일 shape 만 → "shape mismatch in mul" 로 깨짐 (라이브러리 업로드 0 chunks 원인).
+        let masked = hidden_f.broadcast_mul(&mask_f).map_err(|e| format!("mask multiply: {e}"))?;
         let summed = masked.sum(1).map_err(|e| format!("sum seq: {e}"))?;
         let counts = mask_f.sum(1).map_err(|e| format!("count mask: {e}"))?;
-        let mean = (summed / counts).map_err(|e| format!("mean div: {e}"))?;
+        let mean = summed.broadcast_div(&counts).map_err(|e| format!("mean div: {e}"))?;
 
         // L2 normalize — 옛 TS `normalize: true` 1:1.
         let norm = mean
@@ -250,7 +252,7 @@ impl E5LocalEmbedderAdapter {
             .and_then(|t| t.sum_keepdim(1))
             .and_then(|t| t.sqrt())
             .map_err(|e| format!("L2 norm: {e}"))?;
-        let normalized = (mean / norm).map_err(|e| format!("normalize div: {e}"))?;
+        let normalized = mean.broadcast_div(&norm).map_err(|e| format!("normalize div: {e}"))?;
 
         // [1, 384] → Vec<f32>
         let vec: Vec<f32> = normalized

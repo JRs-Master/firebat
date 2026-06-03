@@ -226,10 +226,12 @@ impl ArcticLocalEmbedderAdapter {
         let hidden_f = hidden
             .to_dtype(DType::F32)
             .map_err(|e| format!("hidden cast: {e}"))?;
-        let masked = (&hidden_f * &mask_f).map_err(|e| format!("mask multiply: {e}"))?;
+        // broadcast_* 필수 — mask_f [1, seq, 1] × hidden_f [1, seq, dim]. candle `*`·`/` 는 동일 shape 만
+        // (e5_local.rs 와 같은 버그 — "shape mismatch in mul"). 임베딩 0 chunks 원인.
+        let masked = hidden_f.broadcast_mul(&mask_f).map_err(|e| format!("mask multiply: {e}"))?;
         let summed = masked.sum(1).map_err(|e| format!("sum seq: {e}"))?;
         let counts = mask_f.sum(1).map_err(|e| format!("count mask: {e}"))?;
-        let mean = (summed / counts).map_err(|e| format!("mean div: {e}"))?;
+        let mean = summed.broadcast_div(&counts).map_err(|e| format!("mean div: {e}"))?;
 
         // L2 normalize
         let norm = mean
@@ -237,7 +239,7 @@ impl ArcticLocalEmbedderAdapter {
             .and_then(|t| t.sum_keepdim(1))
             .and_then(|t| t.sqrt())
             .map_err(|e| format!("L2 norm: {e}"))?;
-        let normalized = (mean / norm).map_err(|e| format!("normalize div: {e}"))?;
+        let normalized = mean.broadcast_div(&norm).map_err(|e| format!("normalize div: {e}"))?;
 
         let vec: Vec<f32> = normalized
             .squeeze(0)
