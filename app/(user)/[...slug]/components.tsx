@@ -413,6 +413,13 @@ function DividerComp() {
 
 // ── Table ───────────────────────────────────────────────────────────────────
 type AlignOpt = 'left' | 'right' | 'center';
+/** 표 셀/헤더처럼 보통 plain 인 필드에 **bold**·<strong> 같은 인라인 포맷이 실제로 섞였는지.
+ *  섞였을 때만 InlineMd 로 렌더 — 숫자·코드 cell 은 formatNumberString 그대로 둬 마크다운 오작동
+ *  (언더스코어 이탤릭 등) 회피. list/timeline 은 항상 prose 라 무조건 InlineMd 지만 표는 혼재. */
+function hasInlineMd(s: string): boolean {
+  return /\*\*[^\n*]+\*\*|<\/?(?:strong|b|em|i)\b/i.test(s);
+}
+
 function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign }: {
   headers: string[]; rows: string[][]; stickyCol?: boolean;
   /** zebra 행 — 짝수 row 배경 살짝 어둡게. 행 많을 때 가독성 ↑. 기본 false. */
@@ -479,7 +486,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                   // 시각적으로 두 줄처럼 보이던 buf. bg 는 th 만 명시 (thead 의 bg 제거).
                   className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                 >
-                  {headerText}
+                  {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
                 </th>
               );
             })}
@@ -504,7 +511,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                     key={ci}
                     className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
                   >
-                    {displayCell}
+                    {typeof cell === 'string' && hasInlineMd(cell) ? <InlineMd text={cell} /> : displayCell}
                   </td>
                 );
               })}
