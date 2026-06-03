@@ -157,10 +157,9 @@ function formatNumberString(v: string | number | null | undefined): string {
 }
 
 function TextComp({ content }: { content: string }) {
-  const normalized = normalizeEscapes(content);
-  // 한국어 + `(`/`)` 인접 영역에서 ReactMarkdown commonmark 의 **bold** 인식 실패 회피 —
-  // 명시적으로 <strong> 변환 + rehypeRaw 로 HTML 통과 (admin chat renderMarkdown 동일 패턴).
-  const withStrong = mdBoldFix(normalized);
+  // mdReady = 개행 정규화 + AI raw HTML escape + **bold** 주입 단일 로직. escape 후라 AI 가 쓴
+  // raw <strong> 등은 literal 텍스트로 보이고(번짐 차단), 한국어 인접 **bold** 는 <strong> 렌더.
+  const withStrong = mdReady(content);
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
@@ -952,9 +951,24 @@ const alertMdComponents = {
 };
 
 /** **bold** → <strong> 변환 — 한국어/괄호 인접 시 commonmark 가 인식 못해 raw "**" 노출되는 것 보강.
- *  rehypeRaw 와 함께 사용. TextComp / AlertComp(callout) 공용. */
+ *  rehypeRaw 와 함께 사용. mdReady 안에서 escape 뒤에 호출. */
 function mdBoldFix(s: string): string {
   return s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '');
+}
+
+// 인식되는 HTML 태그만 (math 의 `<` 는 안 건드림). admin chat-manager 의 escapeHtmlTagMentions 와 동일 취지.
+const HTML_TAG_RE = /<\/?(?:strong|b|em|i|u|s|strike|del|ins|mark|small|sub|sup|code|pre|kbd|samp|var|a|span|abbr|cite|q|blockquote|p|br|hr|img|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|dl|dt|dd|h[1-6]|section|article|header|footer|nav|aside|main|form|input|select|option|textarea|script|style|iframe|svg|canvas|template)(?:\s[^>]*)?\/?>/gi;
+/** AI 가 렌더 텍스트에 literal HTML 태그(`<strong>` 등)를 글로 쓰면 rehypeRaw 가 실제 태그로 실행 →
+ *  짝 안 맞으면 뒤 텍스트까지 굵게/이탤릭 번진다. 인식되는 HTML 태그를 entity 로 escape 해 literal
+ *  텍스트로 표시 (mdBoldFix 의 의도된 <strong> 주입은 escape 이후라 정상 렌더). */
+function escapeHtmlTags(s: string): string {
+  return s.replace(HTML_TAG_RE, (m) => m.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+}
+/** prose 텍스트 → 마크다운 렌더 준비 단일 로직: 개행 정규화 → AI raw HTML escape → **bold** 주입.
+ *  rehypeRaw 와 함께 쓰는 모든 마크다운 렌더(TextComp / InlineMd / AlertComp) 공용. 숫자/구조 값
+ *  (KeyValue value 등)에는 쓰지 말 것 — "1_000" 이탤릭 등 오작동. */
+function mdReady(s: string): string {
+  return mdBoldFix(escapeHtmlTags(normalizeEscapes(s)));
 }
 
 // 인라인 마크다운 components — <p> 블록 래퍼 없이 부모(<li> / <div>) 안에 인라인 배치.
@@ -976,7 +990,7 @@ function InlineMd({ text }: { text: string | number | null | undefined }) {
   if (!s) return null;
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={inlineMdComponents}>
-      {mdBoldFix(normalizeEscapes(s))}
+      {mdReady(s)}
     </ReactMarkdown>
   );
 }
@@ -1003,18 +1017,17 @@ function AlertComp({ message, type = 'info', title, action }: {
   const s = styles[type] ?? styles.info;
 
   const normTitle = title ? normalizeEscapes(title) : undefined;
-  const normMessage = normalizeEscapes(message);
   return (
     <div className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
       <span className="text-lg shrink-0">{s.icon}</span>
       <div className="min-w-0 flex-1">
         {normTitle && (
           <div className={`font-bold text-sm mb-1 ${s.text}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdBoldFix(normTitle)}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdReady(title ?? '')}</ReactMarkdown>
           </div>
         )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdBoldFix(normMessage)}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdReady(message)}</ReactMarkdown>
         </div>
         {action?.label && action?.href && (
           <a
