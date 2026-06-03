@@ -156,7 +156,30 @@ impl LibraryService for LibraryServiceImpl {
             };
 
         let source_url_opt = if args.source_url.is_empty() { None } else { Some(args.source_url.as_str()) };
-        let file_path_opt = if args.file_path.is_empty() { None } else { Some(args.file_path.as_str()) };
+
+        // 원본 영구 보관 — 업로드 임시 파일을 data/library/originals/ 로 복사. 재추출(정밀/비전 포함) 시
+        // 재업로드·중복 없이 보관본으로 재실행하기 위함. text/url 은 파일 없음. 복사 실패해도 추출은 계속.
+        // 임시파일명(Node 가 부여한 uuid.<ext>)을 그대로 써 별도 id 생성 의존성 0.
+        let persistent_path: Option<String> =
+            if matches!(args.source_type.as_str(), "pdf" | "txt" | "md") && !args.file_path.is_empty() {
+                let dir = Path::new("data/library/originals");
+                let _ = std::fs::create_dir_all(dir);
+                let fname = Path::new(&args.file_path)
+                    .file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| format!("source.{}", args.source_type));
+                let dest = dir.join(&fname);
+                match std::fs::copy(&args.file_path, &dest) {
+                    Ok(_) => Some(dest.to_string_lossy().to_string()),
+                    Err(e) => {
+                        tracing::warn!(category = "library", "원본 보관 실패 (추출은 계속): {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+        let file_path_opt = persistent_path.as_deref();
 
         let source_id = self
             .manager
