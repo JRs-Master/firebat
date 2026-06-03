@@ -412,18 +412,19 @@ function ThinkingBlock({
   // 상태줄(label: 도구 호출 중)로만. CLI 스트림은 reducer 가 이미 라우팅하지만, API batch·reload 로
   // 들어온 thinkingText 안 마커도 여기서 정리 (실제 추론 텍스트만 본문에 남김).
   const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
-  const bodyText = rawBody
-    ? rawBody.split('\n').filter((l) => !/^\s*\[(도구 호출:|계획 정리)/.test(l)).join('\n').trim()
-    : '';
+  // 도구 호출/계획 마커 줄 제외 후 가장 최근 추론 줄 하나만 — 스트림 누적 시 줄바꿈으로 화면 높이가
+  // 계속 바뀌어 흔들리던 것 → 단일 라인 고정 + 길면 ... 으로 truncate (왔다갔다 방지).
+  const bodyLines = rawBody
+    ? rawBody.split('\n').map((l) => l.trim()).filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
+    : [];
+  const bodyLine = bodyLines.length ? bodyLines[bodyLines.length - 1] : '';
   return (
-    <div className="flex items-start gap-2 text-slate-400 flex-wrap">
-      {isActive && <div className="animate-spin shrink-0 mt-0.5"><Cpu size={13} /></div>}
-      {!isActive && isComplete && <div className="shrink-0 mt-0.5"><Cpu size={13} /></div>}
+    <div className="flex items-center gap-2 text-slate-400 min-w-0">
+      {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
+      {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
-      {bodyText && (
-        <span className="text-[12px] text-slate-400 leading-relaxed break-words whitespace-pre-wrap">
-          {bodyText}
-        </span>
+      {bodyLine && (
+        <span className="text-[12px] text-slate-400 flex-1 min-w-0 truncate">{bodyLine}</span>
       )}
     </div>
   );
