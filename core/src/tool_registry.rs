@@ -273,7 +273,7 @@ fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "search_library".to_string(),
-            description: "자료 라이브러리 하이브리드 검색 (dense + sparse). query 필수. referenceIds 로 특정 자료 그룹만 (빈 배열/미지정 = 전체). limit 기본 5.".to_string(),
+            description: "자료 라이브러리 하이브리드 검색 (dense + sparse). 질문이 업로드 자료와 관련될 가능성이 있으면 명시 지시 없이 호출하라. query 필수. referenceIds 로 특정 자료 그룹만 (빈 배열/미지정 = 전체). limit 기본 5.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

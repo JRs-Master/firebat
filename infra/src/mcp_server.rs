@@ -1747,7 +1747,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "search_library".into(),
-        description: "라이브러리(업로드 자료) 검색 — E5(의미) + BM25(정확 토큰) 하이브리드. 결과가 비거나 부실하면 같은 쿼리 반복 대신 키워드를 바꿔 재검색. inputSchema: {query, owner?, referenceIds?, limit?}.".into(),
+        description: "라이브러리(업로드 자료) 검색 — E5(의미) + BM25(정확 토큰) 하이브리드. 질문이 업로드 자료와 관련될 가능성이 있으면 명시 지시 없이 호출하라. 결과가 비거나 부실하면 같은 쿼리 반복 대신 키워드를 바꿔 재검색. inputSchema: {query, owner?, referenceIds?, limit?}.".into(),
         input_schema: schema_object(serde_json::json!({"query": {"type":"string"}})),
         handler: Arc::new(SearchLibraryHandler { library: deps.library }),
     }).await;
