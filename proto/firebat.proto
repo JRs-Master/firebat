@@ -2499,6 +2499,15 @@ message LibraryUploadSourceResponse {
   string source_id = 1;
   int64 chunk_count = 2;
 }
+message LibraryReextractSourceRequest {
+  string source_id = 1;
+  // 정밀 추출(vision) — pdf 전용. quality_boost = Gemini Pro, 아니면 Flash.
+  bool precise = 2;
+  bool quality_boost = 3;
+}
+message LibraryReextractSourceResponse {
+  int64 chunk_count = 1;
+}
 message LibraryListSourcesRequest {
   string reference_id = 1;
 }
@@ -2537,6 +2546,7 @@ service LibraryService {
   rpc ListSources(LibraryListSourcesRequest) returns (LibraryListSourcesResponse);
   rpc GetSource(LibraryGetSourceRequest) returns (LibraryGetSourceResponse);
   rpc DeleteSource(LibraryDeleteSourceRequest) returns (LibraryDeleteSourceResponse);
+  rpc ReextractSource(LibraryReextractSourceRequest) returns (LibraryReextractSourceResponse);
   rpc Search(LibrarySearchRequest) returns (LibrarySearchResponse);
 }
 

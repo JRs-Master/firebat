@@ -23,8 +23,9 @@ use firebat_core::proto::{
     LibraryDeleteSourceRequest, LibraryDeleteSourceResponse, LibraryGetSourceRequest,
     LibraryGetSourceResponse, LibraryHitPb, LibraryListReferencesRequest,
     LibraryListReferencesResponse, LibraryListSourcesRequest, LibraryListSourcesResponse,
-    LibraryReferencePb, LibrarySearchRequest, LibrarySearchResponse, LibrarySourcePb,
-    LibraryUploadSourceRequest, LibraryUploadSourceResponse,
+    LibraryReextractSourceRequest, LibraryReextractSourceResponse, LibraryReferencePb,
+    LibrarySearchRequest, LibrarySearchResponse, LibrarySourcePb, LibraryUploadSourceRequest,
+    LibraryUploadSourceResponse,
 };
 
 use crate::library::extractor;
@@ -281,6 +282,72 @@ impl LibraryService for LibraryServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(LibraryDeleteSourceResponse {}))
+    }
+
+    async fn reextract_source(
+        &self,
+        req: Request<LibraryReextractSourceRequest>,
+    ) -> Result<Response<LibraryReextractSourceResponse>, TonicStatus> {
+        let args = req.into_inner();
+        // 1. 기존 source 조회
+        let source = self
+            .manager
+            .get_source(&args.source_id)
+            .await
+            .map_err(TonicStatus::internal)?
+            .ok_or_else(|| TonicStatus::not_found("source 를 찾을 수 없습니다."))?;
+        // 2. 원본 파일 존재 체크 — persist 이전 자료 / 사용자 삭제 시 명확한 에러 (재업로드 안내).
+        let file_path = source.file_path.clone().unwrap_or_default();
+        if file_path.is_empty() || !Path::new(&file_path).exists() {
+            return Err(TonicStatus::failed_precondition(
+                "원본 파일이 서버에 없습니다. 자료를 삭제 후 다시 업로드해 주세요.",
+            ));
+        }
+        // 3. 재추출 — precise+pdf 면 vision, 아니면 기존 pdf-extract / text.
+        let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
+            if args.precise && source.source_type == "pdf" {
+                let text = self
+                    .vision_extract_pdf(&file_path, args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("정밀 추출 실패: {e}")))?;
+                (text, None)
+            } else {
+                match source.source_type.as_str() {
+                    "txt" | "md" => {
+                        let r = extractor::extract_text_file(Path::new(&file_path))
+                            .map_err(|e| TonicStatus::invalid_argument(format!("text 추출 실패: {e}")))?;
+                        (r.full_text, r.pages)
+                    }
+                    "pdf" => {
+                        let r = extractor::extract_pdf(Path::new(&file_path))
+                            .map_err(|e| TonicStatus::invalid_argument(format!("PDF 추출 실패: {e}")))?;
+                        (r.full_text, r.pages)
+                    }
+                    other => {
+                        return Err(TonicStatus::invalid_argument(format!(
+                            "재추출 미지원 타입: {other}"
+                        )));
+                    }
+                }
+            };
+        // 4. 같은 id 로 청크 교체.
+        let chunk_count = self
+            .manager
+            .reextract_source(
+                &source.id,
+                &source.reference_id,
+                &source.name,
+                &source.source_type,
+                source.source_url.as_deref(),
+                Some(file_path.as_str()),
+                &extracted_text,
+                page_numbers.as_deref(),
+            )
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(LibraryReextractSourceResponse {
+            chunk_count: chunk_count as i64,
+        }))
     }
 
     async fn search(

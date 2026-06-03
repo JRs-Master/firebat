@@ -7,6 +7,7 @@ import {
   listSources,
   getSource,
   deleteSource,
+  reextractSource,
   search,
 } from '../../../../lib/api-gen/library';
 import { withAuth } from '../../../../lib/with-api-error';
@@ -58,6 +59,12 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
       return getSource({ id: String(args?.id ?? '') });
     case 'delete-source':
       return deleteSource({ id: String(args?.id ?? '') });
+    case 'reextract-source':
+      return reextractSource({
+        sourceId: String(args?.sourceId ?? ''),
+        precise: !!args?.precise,
+        qualityBoost: !!args?.qualityBoost,
+      });
     case 'upload-text-source':
       return uploadSource({
         referenceId: String(args?.referenceId ?? ''),

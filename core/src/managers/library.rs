@@ -86,7 +86,20 @@ impl LibraryManager {
             )
             .await?;
 
-        // 2. Chunking
+        // 2. Chunking + 임베딩 + 저장 (upload / reextract 공용 헬퍼)
+        self.index_chunks(&source_id, name, extracted_text, page_numbers)
+            .await?;
+        Ok(source_id)
+    }
+
+    /// 청킹 + 임베딩 + 저장 공용 헬퍼 — upload_source / reextract_source 가 호출. source 행은 이미 생성됨.
+    async fn index_chunks(
+        &self,
+        source_id: &str,
+        name: &str,
+        extracted_text: &str,
+        page_numbers: Option<&[(usize, usize, usize)]>,
+    ) -> InfraResult<usize> {
         let chunks = chunk_text(extracted_text, CHUNK_SIZE, CHUNK_OVERLAP);
         tracing::info!(
             category = "library",
@@ -94,13 +107,11 @@ impl LibraryManager {
             name,
             chunks.len()
         );
-
-        // 3. 매 chunk 영역 — Arctic 임베딩 + 저장
         for (idx, (content, start_char, end_char)) in chunks.iter().enumerate() {
             let chunk_id = uuid::Uuid::new_v4().to_string();
             let vec = self.embedder.embed_passage(content).await?;
             let bytes = self.embedder.vec_to_bytes(&vec);
-            // PDF page 영역 매핑 — start_char 영역 포함하는 page 영역 찾기
+            // PDF page 매핑 — start_char 포함하는 page 찾기 (vision 추출은 page_numbers=None → 매핑 없음)
             let page_num = page_numbers.and_then(|pages| {
                 pages
                     .iter()
@@ -110,7 +121,7 @@ impl LibraryManager {
             self.library
                 .save_chunk(
                     &chunk_id,
-                    &source_id,
+                    source_id,
                     idx as i64,
                     content,
                     &bytes,
@@ -120,10 +131,8 @@ impl LibraryManager {
                 )
                 .await?;
         }
-
-        // 4. chunk_count 갱신
         self.library
-            .update_source_chunk_count(&source_id, chunks.len() as i64)
+            .update_source_chunk_count(source_id, chunks.len() as i64)
             .await?;
         tracing::info!(
             category = "library",
@@ -131,7 +140,37 @@ impl LibraryManager {
             name,
             chunks.len()
         );
-        Ok(source_id)
+        Ok(chunks.len())
+    }
+
+    /// 기존 source 를 보관 원본으로 재추출 — 같은 id 유지, 청크만 교체. extracted_text 는 infra 가
+    /// (정밀 추출 vision 또는 pdf-extract 로) 다시 뽑아 전달. delete_source(FK cascade 로 옛 청크 정리)
+    /// → create_source(같은 id) → 재인덱싱. 반환 = 새 청크 수.
+    pub async fn reextract_source(
+        &self,
+        source_id: &str,
+        reference_id: &str,
+        name: &str,
+        source_type: &str,
+        source_url: Option<&str>,
+        file_path: Option<&str>,
+        extracted_text: &str,
+        page_numbers: Option<&[(usize, usize, usize)]>,
+    ) -> InfraResult<usize> {
+        self.library.delete_source(source_id).await?;
+        self.library
+            .create_source(
+                source_id,
+                reference_id,
+                name,
+                source_type,
+                source_url,
+                file_path,
+                extracted_text,
+            )
+            .await?;
+        self.index_chunks(source_id, name, extracted_text, page_numbers)
+            .await
     }
 
     pub async fn list_sources(&self, reference_id: &str) -> InfraResult<Vec<LibrarySource>> {

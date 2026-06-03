@@ -13,6 +13,7 @@ import {
   LibraryHitPb,
   LibraryListReferencesRequestSchema,
   LibraryListSourcesRequestSchema,
+  LibraryReextractSourceRequestSchema,
   LibraryReferencePb,
   LibrarySearchRequestSchema,
   LibraryService,
@@ -86,6 +87,15 @@ export async function deleteSource(args: MessageInitShape<typeof LibraryDeleteSo
   try {
       await libraryClient.deleteSource(args ?? {});
       return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function reextractSource(args: MessageInitShape<typeof LibraryReextractSourceRequestSchema>): Promise<RpcResult<bigint>> {
+  try {
+      const response = await libraryClient.reextractSource(args ?? {});
+      return { ok: true, data: unBigInt(response.chunkCount) };
   } catch (err) {
     return toRpcError(err);
   }

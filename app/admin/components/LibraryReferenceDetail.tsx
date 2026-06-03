@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useId } from 'react';
-import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Type, X } from 'lucide-react';
+import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Type, X, Sparkles } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -56,6 +56,7 @@ export function LibraryReferenceDetail({
   const [qualityBoost, setQualityBoost] = useState(false);
   // 정밀 추출 게이트 — Gemini 키 있어야 활성 (admin only). 없으면 토글 비활성 + 안내.
   const [geminiKeyAvailable, setGeminiKeyAvailable] = useState(false);
+  const [reextractingId, setReextractingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileBtnId = useId();
   const textNameId = useId();
@@ -123,6 +124,33 @@ export function LibraryReferenceDetail({
       if (res.success) await loadSources();
     } catch (e) {
       logger.debug('library', 'delete_source 실패', { error: e });
+    }
+  }, [loadSources, libraryFetch]);
+
+  // 보관 원본으로 정밀(vision) 재추출 — 같은 source id 유지, 청크 교체. 원본 파일 없으면 backend 가
+  // "원본 파일이 서버에 없습니다 — 재업로드" 에러 반환 (옛 자료 / 삭제 케이스).
+  const handleReextract = useCallback(async (src: LibrarySourcePb) => {
+    const ok = await confirmDialog({
+      title: '정밀 재추출',
+      message: `"${src.name}" 을 보관된 원본으로 정밀 추출(Gemini)합니다. 기존 청크가 새로 교체됩니다.`,
+      okLabel: '재추출',
+    });
+    if (!ok) return;
+    setReextractingId(src.id);
+    try {
+      const res = await libraryFetch<{ chunkCount: number }>(
+        'reextract-source',
+        { sourceId: src.id, precise: true, qualityBoost: false },
+      );
+      if (res.success) {
+        await loadSources();
+      } else {
+        await alertDialog({ title: '재추출 실패', message: res.error ?? '오류가 발생했습니다.', danger: true });
+      }
+    } catch (e) {
+      await alertDialog({ title: '재추출 실패', message: String(e), danger: true });
+    } finally {
+      setReextractingId(null);
     }
   }, [loadSources, libraryFetch]);
 
@@ -396,6 +424,17 @@ export function LibraryReferenceDetail({
                     <span>{Number(src.chunkCount)} chunks</span>
                   </div>
                 </div>
+                {!hubContext && src.sourceType === 'pdf' && geminiKeyAvailable && (
+                  <Tooltip label="정밀 재추출 (Gemini)">
+                    <button
+                      onClick={e => { e.stopPropagation(); handleReextract(src); }}
+                      disabled={reextractingId === src.id}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 transition-all disabled:opacity-100"
+                    >
+                      {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                    </button>
+                  </Tooltip>
+                )}
                 <Tooltip label={t('common.delete')}>
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(src); }}
