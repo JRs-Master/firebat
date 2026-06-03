@@ -6,7 +6,7 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
-import { apiPost } from '../../../lib/api-fetch';
+import { apiGet, apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibrarySourceModal } from './LibrarySourceModal';
 import type { LibraryHubContext } from './LibraryPanel';
@@ -51,6 +51,11 @@ export function LibraryReferenceDetail({
   const [textName, setTextName] = useState('');
   const [textBody, setTextBody] = useState('');
   const [busy, setBusy] = useState(false);
+  // 정밀 추출(vision) — pdf 전용 수동 opt-in. quality_boost = Gemini Pro, 아니면 Flash.
+  const [precise, setPrecise] = useState(false);
+  const [qualityBoost, setQualityBoost] = useState(false);
+  // 정밀 추출 게이트 — Gemini 키 있어야 활성 (admin only). 없으면 토글 비활성 + 안내.
+  const [geminiKeyAvailable, setGeminiKeyAvailable] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileBtnId = useId();
   const textNameId = useId();
@@ -89,6 +94,14 @@ export function LibraryReferenceDetail({
   }, [reference.id, libraryFetch]);
 
   useEffect(() => { loadSources(); }, [loadSources]);
+
+  // 정밀 추출 게이트 — Gemini(AI Studio) 키 등록 여부 조회 (admin only). hub 방문자는 정밀 추출 미노출.
+  useEffect(() => {
+    if (hubContext) return;
+    apiGet<{ keys?: Record<string, { hasKey?: boolean }> }>('/api/vault', { category: 'library' })
+      .then(d => setGeminiKeyAvailable(!!d?.keys?.gemini_api_key?.hasKey))
+      .catch(() => setGeminiKeyAvailable(false));
+  }, [hubContext]);
 
   const resetForm = useCallback(() => {
     setPickedFile(null);
@@ -139,6 +152,11 @@ export function LibraryReferenceDetail({
       fd.append('referenceId', reference.id);
       fd.append('name', pickedFile.name);
       fd.append('sourceType', sourceType);
+      // 정밀 추출 — pdf + 토글 ON + Gemini 키 있을 때만. quality_boost ON 이면 Gemini Pro.
+      if (sourceType === 'pdf' && precise && geminiKeyAvailable) {
+        fd.append('precise', 'true');
+        if (qualityBoost) fd.append('qualityBoost', 'true');
+      }
       const url = hubContext
         ? `/api/hub/${encodeURIComponent(hubContext.slug)}/library/upload`
         : '/api/library/upload-and-extract';
@@ -162,7 +180,7 @@ export function LibraryReferenceDetail({
     } finally {
       setBusy(false);
     }
-  }, [pickedFile, reference.id, resetForm, loadSources, hubContext]);
+  }, [pickedFile, reference.id, resetForm, loadSources, hubContext, precise, qualityBoost, geminiKeyAvailable]);
 
   const submitText = useCallback(async () => {
     if (!textName.trim() || !textBody.trim()) return;
@@ -272,6 +290,30 @@ export function LibraryReferenceDetail({
                   </p>
                 )}
                 <p className="text-[10px] text-slate-400">PDF / TXT / MD 파일을 지원합니다.</p>
+                {/* 정밀 추출(vision) — pdf 선택 시에만. Gemini 가 PDF 를 직접 읽어 수식·도형 인식. */}
+                {!hubContext && pickedFile && extOf(pickedFile.name) === 'pdf' && (
+                  <div className="flex flex-col gap-1 p-2 rounded-lg bg-indigo-50/50 border border-indigo-100">
+                    <label className={`flex items-center gap-2 text-[11px] ${geminiKeyAvailable ? 'cursor-pointer text-slate-700' : 'cursor-not-allowed text-slate-400'}`}>
+                      <input
+                        type="checkbox"
+                        checked={precise && geminiKeyAvailable}
+                        disabled={!geminiKeyAvailable}
+                        onChange={e => setPrecise(e.target.checked)}
+                      />
+                      <span className="font-bold">정밀 추출 (수식·도형 — Gemini 가 PDF 직접 인식)</span>
+                    </label>
+                    {!geminiKeyAvailable ? (
+                      <p className="text-[10px] text-amber-600">설정 → 시크릿에서 Gemini(Google AI Studio) 키를 먼저 등록하시면 활성화됩니다.</p>
+                    ) : precise ? (
+                      <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-700 pl-5">
+                        <input type="checkbox" checked={qualityBoost} onChange={e => setQualityBoost(e.target.checked)} />
+                        <span>품질 향상 (Gemini Pro — 빽빽한 수식에 더 강함, 비용 ↑)</span>
+                      </label>
+                    ) : (
+                      <p className="text-[10px] text-slate-400">일반 추출은 빠르고 무료. 수식·도형이 많은 PDF 는 정밀 추출을 권장합니다.</p>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={submitFile}
                   disabled={!pickedFile || busy}

@@ -35,6 +35,9 @@ export const POST = withAuth(async (req: NextRequest) => {
   const referenceId = String(form.get('referenceId') ?? '').trim();
   const sourceType = String(form.get('sourceType') ?? '').trim().toLowerCase();
   let name = String(form.get('name') ?? '').trim();
+  // 정밀 추출(vision) — 수동 opt-in (pdf 전용). quality_boost = Gemini Pro, 아니면 Flash.
+  const precise = String(form.get('precise') ?? '') === 'true';
+  const qualityBoost = String(form.get('qualityBoost') ?? '') === 'true';
 
   if (!(file instanceof File)) {
     return NextResponse.json({ success: false, error: 'file 필드가 필요합니다.' }, { status: 400 });
@@ -59,6 +62,8 @@ export const POST = withAuth(async (req: NextRequest) => {
       name,
       sourceType,
       filePath: tmpPath,
+      precise,
+      qualityBoost,
     });
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.message ?? 'UploadSource 실패' }, { status: 500 });
