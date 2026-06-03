@@ -118,7 +118,7 @@ export function LibraryReferenceDetail({
     if (!f) { setPickedFile(null); return; }
     const ext = extOf(f.name);
     if (!SUPPORTED_EXT[ext]) {
-      alertDialog({ title: '지원되지 않는 형식', message: `PDF / TXT / MD 파일만 지원됩니다. (현재: ${ext || '확장자 없음'})` });
+      alertDialog({ title: '지원되지 않는 형식', message: `PDF / TXT / MD 파일만 지원됩니다. (현재: ${ext || '확장자 없음'})`, danger: true });
       if (fileInputRef.current) fileInputRef.current.value = '';
       setPickedFile(null);
       return;
@@ -150,7 +150,7 @@ export function LibraryReferenceDetail({
       const res = await fetch(url, { method: 'POST', headers, body: fd });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
-        await alertDialog({ title: '업로드 실패', message: json?.error ?? `HTTP ${res.status}` });
+        await alertDialog({ title: '업로드 실패', message: json?.error ?? `HTTP ${res.status}`, danger: true });
         return;
       }
       resetForm();
@@ -158,7 +158,7 @@ export function LibraryReferenceDetail({
       await loadSources();
     } catch (e) {
       logger.debug('library', 'upload_file 실패', { error: e });
-      await alertDialog({ title: '업로드 실패', message: String(e) });
+      await alertDialog({ title: '업로드 실패', message: String(e), danger: true });
     } finally {
       setBusy(false);
     }
@@ -177,7 +177,7 @@ export function LibraryReferenceDetail({
         },
       );
       if (!res.success) {
-        await alertDialog({ title: '저장 실패', message: res.error ?? 'UploadSource 실패' });
+        await alertDialog({ title: '저장 실패', message: res.error ?? 'UploadSource 실패', danger: true });
         return;
       }
       resetForm();
@@ -185,7 +185,7 @@ export function LibraryReferenceDetail({
       await loadSources();
     } catch (e) {
       logger.debug('library', 'upload_text 실패', { error: e });
-      await alertDialog({ title: '저장 실패', message: String(e) });
+      await alertDialog({ title: '저장 실패', message: String(e), danger: true });
     } finally {
       setBusy(false);
     }

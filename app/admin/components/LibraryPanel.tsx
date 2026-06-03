@@ -90,7 +90,7 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
         setCreating(false);
         await loadRefs();
       } else {
-        await alertDialog({ title: '생성 실패', message: res.error ?? '오류가 발생했습니다.' });
+        await alertDialog({ title: '생성 실패', message: res.error ?? '오류가 발생했습니다.', danger: true });
       }
     } catch (e) {
       logger.debug('library', 'create_reference 실패', { error: e });
