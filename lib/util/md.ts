@@ -31,3 +31,27 @@ export function inlineFormatTagsToMarkdown(text: string): string {
     })
     .join('');
 }
+
+/**
+ * `$$...$$` / `$...$` 수식(LaTeX) 영역을 placeholder 로 잠시 치환해, 다른 텍스트 변환(HTML escape /
+ * `**bold**` 주입 / 개행·탭 정규화)이 LaTeX 명령(`\times`·`\theta`·`\neq` 등 — 백슬래시 t/n 으로
+ * 시작)을 망가뜨리지 않게 보호한다. 변환을 마친 뒤 `restore` 로 원래 `$...$` 를 되돌리면
+ * remark-math 가 정상 파싱한다. placeholder `@@FBMATH<n>@@` 는 어떤 마크다운/HTML 변환에도 안 걸리고
+ * 본문에 나올 일 없는 토큰이다.
+ *
+ * 인라인 `$...$` 는 여는 `$` 뒤 공백 금지 + 닫는 `$` 앞 공백 금지(KaTeX 관례)로 매칭해 통화 표기
+ * 같은 오탐을 줄인다. display `$$...$$` 우선.
+ */
+export function maskMath(s: string): { masked: string; restore: (t: string) => string } {
+  const identity = (t: string) => t;
+  if (!s) return { masked: s, restore: identity };
+  const store: string[] = [];
+  const masked = s.replace(/\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]*?(?<!\s)\$/g, (m) => {
+    store.push(m);
+    return '@@FBMATH' + (store.length - 1) + '@@';
+  });
+  if (store.length === 0) return { masked: s, restore: identity };
+  const restore = (t: string) =>
+    t.replace(/@@FBMATH(\d+)@@/g, (_x, i) => store[Number(i)] ?? '');
+  return { masked, restore };
+}

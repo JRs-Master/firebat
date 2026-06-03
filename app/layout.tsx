@@ -2,6 +2,8 @@ import './globals.css';
 // Pretendard self-host — Edge/Brave Tracking Prevention 에 막히던 jsdelivr CDN 대체.
 // Next.js 가 woff2 hash + /_next/static/ 자동 처리.
 import 'pretendard/dist/web/variable/pretendardvariable.css';
+// KaTeX — AI 가 보내는 LaTeX 수식($...$ / \dfrac 등) 렌더용 CSS. 전역 1회 로드 (admin·user·hub·share 공통).
+import 'katex/dist/katex.min.css';
 import type { Metadata, Viewport } from 'next';
 
 // force-dynamic — build 시 Rust core (127.0.0.1:50051) 미접근. root layout 의

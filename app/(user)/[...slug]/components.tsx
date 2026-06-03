@@ -3,13 +3,15 @@
 import React, { useState, useCallback, useEffect, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
 import StockChart from '../../admin/chat-components/StockChart';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath } from '../../../lib/util/md';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -163,7 +165,7 @@ function TextComp({ content }: { content: string }) {
   const withStrong = mdReady(content);
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{withStrong}</ReactMarkdown>
     </div>
   );
 }
@@ -976,9 +978,11 @@ function escapeHtmlTags(s: string): string {
  *  rehypeRaw 와 함께 쓰는 모든 마크다운 렌더(TextComp / InlineMd / AlertComp) 공용. 숫자/구조 값
  *  (KeyValue value 등)에는 쓰지 말 것 — "1_000" 이탤릭 등 오작동. */
 function mdReady(s: string): string {
-  // 짝 맞는 인라인 포맷 태그(<strong>x</strong> 등) → 마크다운 변환을 escapeHtmlTags 앞에 둬서
-  // 굵게 의도 보존 (변환 안 하면 escapeHtmlTags 가 literal `&lt;strong&gt;` 텍스트로 죽인다).
-  return mdBoldFix(escapeHtmlTags(inlineFormatTagsToMarkdown(normalizeEscapes(s))));
+  // 수식($...$) 영역을 먼저 placeholder 로 보호 → escape / **bold** / \n·\t 정규화가 LaTeX 명령을
+  // 안 망가뜨리게 하고 마지막에 복원(remark-math 가 파싱). 짝 맞는 인라인 포맷 태그(<strong>x</strong>
+  // 등)는 마크다운으로 변환해 굵게 의도 보존 (변환 안 하면 escapeHtmlTags 가 literal 로 죽인다).
+  const { masked, restore } = maskMath(s);
+  return restore(mdBoldFix(escapeHtmlTags(inlineFormatTagsToMarkdown(normalizeEscapes(masked)))));
 }
 
 // 인라인 마크다운 components — <p> 블록 래퍼 없이 부모(<li> / <div>) 안에 인라인 배치.
@@ -999,7 +1003,7 @@ function InlineMd({ text }: { text: string | number | null | undefined }) {
   const s = cleanPlainText(text);
   if (!s) return null;
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={inlineMdComponents}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={inlineMdComponents}>
       {mdReady(s)}
     </ReactMarkdown>
   );
@@ -1033,11 +1037,11 @@ function AlertComp({ message, type = 'info', title, action }: {
       <div className="min-w-0 flex-1">
         {normTitle && (
           <div className={`font-bold text-sm mb-1 ${s.text}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdReady(title ?? '')}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(title ?? '')}</ReactMarkdown>
           </div>
         )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdReady(message)}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(message)}</ReactMarkdown>
         </div>
         {action?.label && action?.href && (
           <a

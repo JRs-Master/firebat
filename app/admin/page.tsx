@@ -6,7 +6,10 @@ import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, 
 import ReactMarkdown from 'react-markdown';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
+import { maskMath } from '../../lib/util/md';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -108,10 +111,14 @@ function cleanMarkdown(text: string): string {
 function renderMarkdown(text: string) {
   // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
   // **bold** 가 한국어/괄호 인접 시 commonmark 인식 실패(raw ** 노출) → 명시적 <strong> 변환 (user TextComp 동일).
-  const withStrong = escapeHtmlTagMentions(cleanMarkdown(text))
-    .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*\*/g, '');
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{withStrong}</ReactMarkdown>;
+  // 수식($...$) 보호 → escapeHtmlTagMentions + **bold** 주입이 LaTeX 안 건드리게 → 복원 → remark-math 파싱.
+  const { masked, restore } = maskMath(cleanMarkdown(text));
+  const withStrong = restore(
+    escapeHtmlTagMentions(masked)
+      .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*\*/g, ''),
+  );
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{withStrong}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (단일 버튼 + 카드 aggregate: toggle + multi-input + plan-revise) ───

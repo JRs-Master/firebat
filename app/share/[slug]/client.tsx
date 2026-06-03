@@ -3,10 +3,23 @@
 import { Ghost } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
+import rehypeKatex from 'rehype-katex';
 import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
+import { maskMath } from '../../../lib/util/md';
+
+/** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML 태그 escape + **bold** 주입 → 복원 (admin renderMarkdown 과 동일 취지). */
+function prepShare(s: string): string {
+  const { masked, restore } = maskMath(s);
+  return restore(
+    escapeHtmlTagMentions(masked)
+      .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*\*/g, ''),
+  );
+}
 
 // 공유 페이지 전용 읽기 전용 메시지 리스트. 어드민 MessageBubble 의 인터랙티브 요소
 // (plan-confirm, pendingActions, suggestions, 복사·공유 버튼) 는 모두 제거 — 읽기만.
@@ -77,7 +90,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             if (b.type === 'text' && b.text) {
               return (
                 <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(b.text).replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '')}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(b.text)}</ReactMarkdown>
                 </div>
               );
             }
@@ -105,7 +118,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
           })
         ) : msg.content ? (
           <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(msg.content ?? '').replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '')}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(msg.content ?? '')}</ReactMarkdown>
           </div>
         ) : null}
       </div>
