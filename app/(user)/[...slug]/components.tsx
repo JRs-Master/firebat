@@ -1841,7 +1841,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-[13px] font-semibold text-slate-800">{cleanPlainText(s.title)}</div>
-              {s.description && <div className="text-[11px] text-slate-600 mt-0.5">{cleanPlainText(s.description)}</div>}
+              {s.description && <div className="text-[11px] text-slate-600 mt-0.5"><InlineMd text={s.description} /></div>}
               {s.tool && (
                 <div className="text-[10px] text-indigo-500 mt-0.5 font-mono">→ {s.tool}</div>
               )}
