@@ -412,19 +412,24 @@ function ThinkingBlock({
   // 상태줄(label: 도구 호출 중)로만. CLI 스트림은 reducer 가 이미 라우팅하지만, API batch·reload 로
   // 들어온 thinkingText 안 마커도 여기서 정리 (실제 추론 텍스트만 본문에 남김).
   const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
-  // 도구 호출/계획 마커 줄 제외 후 가장 최근 추론 줄 하나만 — 스트림 누적 시 줄바꿈으로 화면 높이가
-  // 계속 바뀌어 흔들리던 것 → 단일 라인 고정 + 길면 ... 으로 truncate (왔다갔다 방지).
-  const bodyLines = rawBody
-    ? rawBody.split('\n').map((l) => l.trim()).filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
-    : [];
-  const bodyLine = bodyLines.length ? bodyLines[bodyLines.length - 1] : '';
+  // 도구 호출/계획 마커 줄 제외 후 한 줄로 합침(개행=공백). 스트림 누적 시 최신(끝) 내용이 흐르듯
+  // 계속 갱신되되 화면 높이는 한 줄 고정 — 끝을 보여주려고 rtl 방향 truncate(앞에 …) + <bdi dir=ltr>
+  // 로 실제 글자 순서 보존. (옛 줄바꿈 누적 = 화면 높이 왔다갔다 → 단일 라인 ticker.)
+  const bodyLine = rawBody
+    ? rawBody.split('\n').map((l) => l.trim()).filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l)).join('  ')
+    : '';
   return (
     <div className="flex items-center gap-2 text-slate-400 min-w-0">
       {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
       {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {bodyLine && (
-        <span className="text-[12px] text-slate-400 flex-1 min-w-0 truncate">{bodyLine}</span>
+        <span
+          className="text-[12px] text-slate-400 flex-1 min-w-0 truncate text-left"
+          style={{ direction: 'rtl' }}
+        >
+          <bdi style={{ direction: 'ltr' }}>{bodyLine}</bdi>
+        </span>
       )}
     </div>
   );
