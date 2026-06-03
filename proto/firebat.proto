@@ -2489,6 +2489,11 @@ message LibraryUploadSourceRequest {
   string source_url = 4;
   string file_path = 5;
   string inline_text = 6;
+  // 정밀 추출 (vision LLM) — 수동 opt-in (pdf 전용). pdf-extract 대신 Gemini 가 PDF 를 직접 읽어
+  // 수식 LaTeX·레이아웃 보존 추출. Gemini 키 필요.
+  bool precise = 7;
+  // 품질 향상 — true = Gemini Pro (고품질), false = Gemini Flash (기본·저렴). precise 시에만 의미.
+  bool quality_boost = 8;
 }
 message LibraryUploadSourceResponse {
   string source_id = 1;

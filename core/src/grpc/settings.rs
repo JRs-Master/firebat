@@ -223,15 +223,29 @@ impl SettingsService for SettingsServiceImpl {
         &self,
         _req: Request<SettingsGetAvailableAiAssistantModelsRequest>,
     ) -> Result<Response<SettingsGetAvailableAiAssistantModelsResponse>, TonicStatus> {
-        // 빌트인 carousel 에서 cli 제외 (assistant 는 fast/cheap 모델 우선)
-        let models = crate::llm::config::builtin_models()
-            .into_iter()
-            .filter(|m| !m.format.starts_with("cli-"))
-            .map(|m| AiAssistantModelPb {
-                id: m.id,
-                display_name: m.display_name,
-            })
-            .collect::<Vec<_>>();
+        // models.json `assistantModels` 지정 목록을 단일 소스로. 미지정 시 non-CLI 전체로 폴백.
+        let all = crate::llm::config::builtin_models();
+        let allowed = crate::llm::registry::assistant_models();
+        let models = if allowed.is_empty() {
+            all.into_iter()
+                .filter(|m| !m.format.starts_with("cli-"))
+                .map(|m| AiAssistantModelPb {
+                    id: m.id,
+                    display_name: m.display_name,
+                })
+                .collect::<Vec<_>>()
+        } else {
+            // 지정 순서 보존, display_name 은 레지스트리 lookup.
+            allowed
+                .iter()
+                .filter_map(|id| {
+                    all.iter().find(|m| &m.id == id).map(|m| AiAssistantModelPb {
+                        id: m.id.clone(),
+                        display_name: m.display_name.clone(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
         Ok(Response::new(
             SettingsGetAvailableAiAssistantModelsResponse { models },
         ))

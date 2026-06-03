@@ -31,7 +31,24 @@ use std::sync::OnceLock;
 pub struct LlmRegistry {
     /// AI Assistant default model — Vault 미설정 시 폴백.
     pub default_assistant_model: String,
+    /// AI Assistant 로 선택 가능한 모델 목록 (저비용 — gemini-flash-lite / gpt-nano 등). 설정 dropdown
+    /// 소스. 비면 호출측이 non-CLI 전체로 폴백. LLM 버전업 시 models.json 한 곳만 수정.
+    #[serde(default)]
+    pub assistant_models: Vec<String>,
+    /// 라이브러리 정밀 추출(vision) 기본 모델 — 품질향상 OFF. LLM 버전업 시 models.json 한 곳만 수정.
+    #[serde(default = "default_library_extraction_model")]
+    pub default_library_extraction_model: String,
+    /// 라이브러리 정밀 추출 고품질 모델 — 품질향상 ON.
+    #[serde(default = "default_library_extraction_pro_model")]
+    pub library_extraction_pro_model: String,
     pub models: Vec<LlmModelConfig>,
+}
+
+fn default_library_extraction_model() -> String {
+    "gemini-3.5-flash".to_string()
+}
+fn default_library_extraction_pro_model() -> String {
+    "gemini-3.1-pro".to_string()
 }
 
 impl LlmRegistry {
@@ -56,6 +73,9 @@ pub fn current() -> &'static LlmRegistry {
     REGISTRY.get_or_init(|| LlmRegistry {
         models: Vec::new(),
         default_assistant_model: "gemini-3.1-flash-lite".to_string(),
+        assistant_models: Vec::new(),
+        default_library_extraction_model: default_library_extraction_model(),
+        library_extraction_pro_model: default_library_extraction_pro_model(),
     })
 }
 
@@ -67,4 +87,19 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
 /// AI Assistant default model — 옛 `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` 대체.
 pub fn assistant_default_model() -> &'static str {
     &current().default_assistant_model
+}
+
+/// AI Assistant 선택 가능 모델 목록 — models.json `assistantModels`. 비면 호출측이 폴백(non-CLI 전체).
+pub fn assistant_models() -> &'static [String] {
+    &current().assistant_models
+}
+
+/// 라이브러리 정밀 추출(vision) 모델 — quality_boost 면 Pro, 아니면 Flash. models.json 단일 소스라
+/// LLM 버전업 시 JSON 한 곳만 수정하면 자동 반영 (Rust 하드코딩 0).
+pub fn library_extraction_model(quality_boost: bool) -> &'static str {
+    if quality_boost {
+        &current().library_extraction_pro_model
+    } else {
+        &current().default_library_extraction_model
+    }
 }

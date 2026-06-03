@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use firebat_core::managers::library::LibraryManager;
+use firebat_core::ports::ILlmPort;
 use firebat_core::proto::{
     library_service_server::LibraryService, LibraryCreateReferenceRequest,
     LibraryCreateReferenceResponse, LibraryDeleteReferenceRequest, LibraryDeleteReferenceResponse,
@@ -30,11 +31,33 @@ use crate::library::extractor;
 
 pub struct LibraryServiceImpl {
     manager: Arc<LibraryManager>,
+    llm: Arc<dyn ILlmPort>,
 }
 
 impl LibraryServiceImpl {
-    pub fn new(manager: Arc<LibraryManager>) -> Self {
-        Self { manager }
+    pub fn new(manager: Arc<LibraryManager>, llm: Arc<dyn ILlmPort>) -> Self {
+        Self { manager, llm }
+    }
+
+    /// 정밀 추출(vision) — PDF 를 Gemini 가 직접 읽어 LaTeX·레이아웃 보존 텍스트로 추출. pdf-extract 가
+    /// 수식·숫자를 망가뜨리던 문제를 우회. quality_boost = Gemini Pro, 아니면 Flash (models.json 단일 소스).
+    async fn vision_extract_pdf(&self, file_path: &str, quality_boost: bool) -> Result<String, String> {
+        use base64::Engine;
+        let bytes = std::fs::read(file_path).map_err(|e| format!("PDF read 실패: {e}"))?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let model = firebat_core::llm::registry::library_extraction_model(quality_boost).to_string();
+        let opts = firebat_core::ports::LlmCallOpts {
+            model: Some(model),
+            image: Some(b64),
+            image_mime_type: Some("application/pdf".to_string()),
+            max_tokens: Some(32000),
+            ..Default::default()
+        };
+        let prompt = "이 문서(PDF)의 모든 텍스트를 빠짐없이 추출하라. 수식은 LaTeX 로 표기한다 \
+            (인라인 $...$, 디스플레이 $$...$$). 표·문항·보기(①②③④⑤ 등)의 구조와 순서를 그대로 \
+            보존한다. 페이지 경계는 빈 줄로 구분한다. 설명·머리말·메타 코멘트 없이 추출된 본문만 출력한다.";
+        let resp = self.llm.ask_text(prompt, &opts).await?;
+        Ok(resp.text)
     }
 }
 
@@ -136,22 +159,31 @@ impl LibraryService for LibraryServiceImpl {
         //  - "pdf" — file_path pdf-extract
         //  - "url" — source_url fetch (Phase 1.5) — 현재 = inline_text 만 (frontend 에서 fetch + strip 처리)
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
-            match args.source_type.as_str() {
-                "text" | "url" => (args.inline_text.clone(), None),
-                "txt" | "md" => {
-                    let result = extractor::extract_text_file(Path::new(&args.file_path))
-                        .map_err(|e| TonicStatus::invalid_argument(format!("text 추출 실패: {e}")))?;
-                    (result.full_text, result.pages)
-                }
-                "pdf" => {
-                    let result = extractor::extract_pdf(Path::new(&args.file_path))
-                        .map_err(|e| TonicStatus::invalid_argument(format!("PDF 추출 실패: {e}")))?;
-                    (result.full_text, result.pages)
-                }
-                other => {
-                    return Err(TonicStatus::invalid_argument(format!(
-                        "지원되지 않는 source_type: {other}"
-                    )));
+            if args.precise && args.source_type == "pdf" {
+                // 정밀 추출 (vision) — Gemini 가 PDF 직접 읽어 LaTeX·레이아웃 보존. page char-매핑 없음(None).
+                let text = self
+                    .vision_extract_pdf(&args.file_path, args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("정밀 추출 실패: {e}")))?;
+                (text, None)
+            } else {
+                match args.source_type.as_str() {
+                    "text" | "url" => (args.inline_text.clone(), None),
+                    "txt" | "md" => {
+                        let result = extractor::extract_text_file(Path::new(&args.file_path))
+                            .map_err(|e| TonicStatus::invalid_argument(format!("text 추출 실패: {e}")))?;
+                        (result.full_text, result.pages)
+                    }
+                    "pdf" => {
+                        let result = extractor::extract_pdf(Path::new(&args.file_path))
+                            .map_err(|e| TonicStatus::invalid_argument(format!("PDF 추출 실패: {e}")))?;
+                        (result.full_text, result.pages)
+                    }
+                    other => {
+                        return Err(TonicStatus::invalid_argument(format!(
+                            "지원되지 않는 source_type: {other}"
+                        )));
+                    }
                 }
             };
 

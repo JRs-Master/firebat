@@ -669,7 +669,7 @@ async fn main() -> Result<()> {
         grpc::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
     // Library — Phase 1 (2026-05-17). infra/grpc/library.rs 영역 (extractor 영역 의존 — pdf-extract / extract_text_file).
     let library_service =
-        firebat_infra::grpc::library::LibraryServiceImpl::new(library_manager.clone());
+        firebat_infra::grpc::library::LibraryServiceImpl::new(library_manager.clone(), llm.clone());
     // Hub — Phase 1 (2026-05-17). core/grpc/hub.rs 영역. SendMessage RPC 안 AiManager 의존
     // (외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 가드 + 영속화 한 RPC 안 흐름).
     let hub_service =
