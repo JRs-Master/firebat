@@ -768,6 +768,22 @@ message CronLogListPb {
   repeated CronLogEntryPb entries = 1;
 }
 
+message CronOccurrencePb {
+  string job_id = 1;
+  optional string title = 2;
+  string target_path = 3;
+  string occurs_at = 4;
+  string mode = 5;
+}
+message CronOccurrenceListPb {
+  repeated CronOccurrencePb occurrences = 1;
+}
+message ListCronOccurrencesRequest {
+  string from_date = 1;
+  string to_date = 2;
+  optional string owner = 3;
+}
+
 message CronNotificationPb {
   string job_id = 1;
   string url = 2;
@@ -861,6 +877,7 @@ service ScheduleService {
   rpc ConsumeNotifications(ConsumeCronNotificationsRequest) returns (CronNotificationListPb);
   rpc RunNow(RunCronNowRequest) returns (RunCronNowResponse);
   rpc ValidatePipeline(ValidatePipelineRequest) returns (ValidatePipelineResultPb);
+  rpc ListOccurrences(ListCronOccurrencesRequest) returns (CronOccurrenceListPb);
 }
 
 // ─── SecretService typed Request / Response messages ───────────────────────

@@ -11,16 +11,17 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::schedule::ScheduleManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::ports::{
-    CronJobInfo, CronLogEntry, CronNotification, CronNotify, CronRetry, CronRunWhen,
-    CronScheduleOptions,
+    CronJobInfo, CronLogEntry, CronNotification, CronNotify, CronOccurrence, CronRetry,
+    CronRunWhen, CronScheduleOptions,
 };
 use crate::proto::{
     schedule_service_server::ScheduleService, CancelCronRequest, CancelCronResponse,
     ClearCronLogsRequest, ClearCronLogsResponse, ConsumeCronNotificationsRequest, CronJobListPb,
     CronJobPb, CronLogEntryPb, CronLogListPb, CronNotificationListPb, CronNotificationPb,
-    GetCronLogsRequest, ListCronRequest, RunCronNowRequest, RunCronNowResponse,
-    ScheduleCronRequest, ScheduleCronResponse, UpdateCronRequest, UpdateCronResponse,
-    ValidatePipelineRequest, ValidatePipelineResultPb,
+    CronOccurrenceListPb, CronOccurrencePb, GetCronLogsRequest, ListCronOccurrencesRequest,
+    ListCronRequest, RunCronNowRequest, RunCronNowResponse, ScheduleCronRequest,
+    ScheduleCronResponse, UpdateCronRequest, UpdateCronResponse, ValidatePipelineRequest,
+    ValidatePipelineResultPb,
 };
 
 pub struct ScheduleServiceImpl {
@@ -209,6 +210,18 @@ impl From<CronNotification> for CronNotificationPb {
     }
 }
 
+impl From<CronOccurrence> for CronOccurrencePb {
+    fn from(o: CronOccurrence) -> Self {
+        CronOccurrencePb {
+            job_id: o.job_id,
+            title: o.title,
+            target_path: o.target_path,
+            occurs_at: o.occurs_at,
+            mode: o.mode,
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl ScheduleService for ScheduleServiceImpl {
     async fn schedule_cron(
@@ -324,6 +337,20 @@ impl ScheduleService for ScheduleServiceImpl {
                 error: Some(err),
             })),
         }
+    }
+
+    async fn list_occurrences(
+        &self,
+        req: Request<ListCronOccurrencesRequest>,
+    ) -> Result<Response<CronOccurrenceListPb>, TonicStatus> {
+        let r = req.into_inner();
+        let occurrences = self
+            .manager
+            .list_occurrences(&r.from_date, &r.to_date, r.owner.as_deref())
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(CronOccurrenceListPb { occurrences }))
     }
 }
 

@@ -29,8 +29,9 @@ use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
 
 use firebat_core::ports::{
-    CronJobInfo, CronJobMode, CronJobResult, CronLogEntry, CronNotification, CronScheduleOptions,
-    CronTriggerCallback, CronTriggerInfo, CronTriggerType, ICronPort, InfraResult,
+    CronJobInfo, CronJobMode, CronJobResult, CronLogEntry, CronNotification, CronOccurrence,
+    CronScheduleOptions, CronTriggerCallback, CronTriggerInfo, CronTriggerType, ICronPort,
+    InfraResult,
 };
 
 const MAX_LOGS: usize = 200;
@@ -471,6 +472,115 @@ impl ICronPort for TokioCronAdapter {
         let mut list: Vec<CronJobInfo> = jobs.values().cloned().collect();
         list.sort_by(|a, b| a.job_id.cmp(&b.job_id));
         list
+    }
+
+    /// 캘린더 투영용 — [from, to] 구간 내 cron 발화 시각 전개. 반복(cron_time)은 cron crate 로
+    /// 구간 내 N건, runAt/delay 는 1건. start_at/end_at 윈도 + owner 필터 적용. 잡당 상한으로
+    /// runaway 방어. occurs_at = RFC3339 UTC.
+    fn list_occurrences(
+        &self,
+        from_iso: &str,
+        to_iso: &str,
+        owner: Option<&str>,
+    ) -> Vec<CronOccurrence> {
+        let tz_name = self.get_timezone();
+        let (Some(from_dt), Some(to_dt)) = (
+            Self::parse_in_timezone(from_iso, &tz_name),
+            Self::parse_in_timezone(to_iso, &tz_name),
+        ) else {
+            return Vec::new();
+        };
+        if to_dt < from_dt {
+            return Vec::new();
+        }
+        let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::UTC);
+        // 반복 잡 runaway 방어 — 캘린더는 월 단위 조회라 잡당 500건이면 분 단위 반복도 충분.
+        const MAX_PER_JOB: usize = 500;
+
+        let jobs = self.jobs.lock().unwrap();
+        let mut out: Vec<CronOccurrence> = Vec::new();
+        for job in jobs.values() {
+            if job.options.owner.as_deref() != owner {
+                continue;
+            }
+            // 발화 시각만 먼저 모으고(차용 단순화) 이후 CronOccurrence 로 매핑.
+            let mut fires: Vec<DateTime<Utc>> = Vec::new();
+            match job.mode {
+                CronJobMode::Cron => {
+                    if let Some(cron_time) = job.options.cron_time.as_deref() {
+                        if let Ok(schedule) = Schedule::from_str(cron_time) {
+                            let start_w = job
+                                .options
+                                .start_at
+                                .as_deref()
+                                .and_then(|s| Self::parse_in_timezone(s, &tz_name));
+                            let end_w = job
+                                .options
+                                .end_at
+                                .as_deref()
+                                .and_then(|e| Self::parse_in_timezone(e, &tz_name));
+                            // schedule.after 는 strictly after — from 직전을 anchor 로.
+                            let anchor =
+                                (from_dt - chrono::Duration::seconds(1)).with_timezone(&tz);
+                            for fire in schedule.after(&anchor).take(MAX_PER_JOB) {
+                                let fire_utc = fire.with_timezone(&Utc);
+                                if fire_utc > to_dt {
+                                    break;
+                                }
+                                if fire_utc < from_dt {
+                                    continue;
+                                }
+                                if start_w.map(|s| fire_utc < s).unwrap_or(false) {
+                                    continue;
+                                }
+                                if end_w.map(|e| fire_utc > e).unwrap_or(false) {
+                                    break;
+                                }
+                                fires.push(fire_utc);
+                            }
+                        }
+                    }
+                }
+                CronJobMode::Once => {
+                    if let Some(target) = job
+                        .options
+                        .run_at
+                        .as_deref()
+                        .and_then(|r| Self::parse_in_timezone(r, &tz_name))
+                    {
+                        if target >= from_dt && target <= to_dt {
+                            fires.push(target);
+                        }
+                    }
+                }
+                CronJobMode::Delay => {
+                    // created_at + delay_sec 추정 (영속 복원은 안 되지만 미래 구간 표시용).
+                    if let Some(delay) = job.options.delay_sec {
+                        if let Some(created) = Self::parse_in_timezone(&job.created_at, &tz_name) {
+                            let target = created + chrono::Duration::seconds(delay);
+                            if target >= from_dt && target <= to_dt {
+                                fires.push(target);
+                            }
+                        }
+                    }
+                }
+            }
+            let mode_str = match job.mode {
+                CronJobMode::Cron => "cron",
+                CronJobMode::Once => "once",
+                CronJobMode::Delay => "delay",
+            };
+            for at in fires {
+                out.push(CronOccurrence {
+                    job_id: job.job_id.clone(),
+                    title: job.options.title.clone(),
+                    target_path: job.target_path.clone(),
+                    occurs_at: at.to_rfc3339(),
+                    mode: mode_str.to_string(),
+                });
+            }
+        }
+        out
     }
 
     fn set_timezone(&self, tz: &str) {

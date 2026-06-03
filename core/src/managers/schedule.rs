@@ -16,9 +16,9 @@ use crate::managers::status::StatusManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::ToolManager;
 use crate::ports::{
-    CronJobInfo, CronJobResult, CronLogEntry, CronNotification, CronScheduleOptions,
-    CronTriggerCallback, CronTriggerInfo, ICronPort, ILogPort, ISandboxPort, InfraResult,
-    LlmCallOpts, SandboxExecuteOpts, SaveEventInput,
+    CronJobInfo, CronJobResult, CronLogEntry, CronNotification, CronOccurrence,
+    CronScheduleOptions, CronTriggerCallback, CronTriggerInfo, ICronPort, ILogPort, ISandboxPort,
+    InfraResult, LlmCallOpts, SandboxExecuteOpts, SaveEventInput,
 };
 use crate::utils::condition::evaluate_condition;
 use crate::utils::path_resolve::resolve_field_path;
@@ -128,6 +128,17 @@ impl ScheduleManager {
 
     pub fn get_logs(&self, limit: Option<usize>) -> Vec<CronLogEntry> {
         self.cron.get_logs(limit)
+    }
+
+    /// 캘린더 투영 — [from, to] 구간 내 cron 발화 시각 전개 (owner 필터). cron 잡이 진실원천이고
+    /// 캘린더는 read-only 투영이라 중복 저장/드리프트 0.
+    pub fn list_occurrences(
+        &self,
+        from_iso: &str,
+        to_iso: &str,
+        owner: Option<&str>,
+    ) -> Vec<CronOccurrence> {
+        self.cron.list_occurrences(from_iso, to_iso, owner)
     }
 
     pub fn clear_logs(&self) {

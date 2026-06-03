@@ -9,7 +9,9 @@ import {
   CronJobPb,
   CronLogEntryPb,
   CronNotificationPb,
+  CronOccurrencePb,
   GetCronLogsRequestSchema,
+  ListCronOccurrencesRequestSchema,
   RunCronNowRequestSchema,
   ScheduleCronRequestSchema,
   ScheduleService,
@@ -101,6 +103,15 @@ export async function validatePipeline(args: MessageInitShape<typeof ValidatePip
   try {
       const response = await scheduleClient.validatePipeline(args ?? {});
       return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function listOccurrences(args: MessageInitShape<typeof ListCronOccurrencesRequestSchema>): Promise<RpcResult<CronOccurrencePb[]>> {
+  try {
+      const response = await scheduleClient.listOccurrences(args ?? {});
+      return { ok: true, data: unBigInt(response.occurrences) };
   } catch (err) {
     return toRpcError(err);
   }

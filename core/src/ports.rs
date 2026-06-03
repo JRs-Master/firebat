@@ -2071,6 +2071,24 @@ pub struct CronNotification {
     pub triggered_at: String,
 }
 
+/// 캘린더 투영용 — cron 잡의 특정 구간 내 발화 시각 1건. cron 잡 자체가 source of truth 이고
+/// 캘린더는 read-only 투영(중복 저장 0). 반복(cron_time)은 구간 내 N건으로 전개, runAt/delay 는
+/// 1건. occurs_at = RFC3339 UTC (프론트가 로컬 표시).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronOccurrence {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "targetPath")]
+    pub target_path: String,
+    #[serde(rename = "occursAt")]
+    pub occurs_at: String,
+    /// "cron" | "once" | "delay"
+    pub mode: String,
+}
+
 /// 트리거 콜백 — 매니저가 cron 어댑터에 등록. 타이머 발화 시 호출됨.
 /// 매니저 → core.handleCronTrigger 위임 (BIBLE: cron 콜백도 Core facade 경유).
 pub type CronTriggerCallback = std::sync::Arc<
@@ -2106,6 +2124,18 @@ pub trait ICronPort: Send + Sync {
     fn clear_logs(&self);
     fn consume_notifications(&self) -> Vec<CronNotification>;
     fn append_notify(&self, entry: CronNotification);
+
+    /// 캘린더 투영용 — [from_iso, to_iso] 구간 내 모든 cron 발화 시각 전개. 반복(cron_time)은
+    /// 구간 내 N건, runAt/delay 는 1건(구간 포함 시). owner 필터 (None=admin scope).
+    /// default = 빈 Vec — occurrence 계산은 cron crate 가 있는 infra 책임이라 mock·미구현 어댑터 무영향.
+    fn list_occurrences(
+        &self,
+        _from_iso: &str,
+        _to_iso: &str,
+        _owner: Option<&str>,
+    ) -> Vec<CronOccurrence> {
+        Vec::new()
+    }
 
     /// schedule + spawn 통합 — 옛 TS 의 Manager 측 helper 가 trait 으로 격리.
     /// `self: Arc<Self>` 시그니처 — adapter 가 weak ref 로 task 안에서 self.upgrade() 해야 하므로.
