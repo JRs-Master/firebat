@@ -1299,16 +1299,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {/* AI 어시스턴트 라우터 */}
                 {(() => {
-                  const hasGeminiKey = !!googleApiKey || !!vertexSaJson;
+                  // AI Assistant 는 Gemini/Vertex 뿐 아니라 GPT(OpenAI)·Claude 모델도 선택 가능 →
+                  // 제공자 키 중 하나라도 있으면 활성 가능. 옛엔 Gemini/Vertex 만 봐서 OpenAI 키만 있는
+                  // 경우 토글이 안 먹던 버그. (geminiApiKey state = OpenAI 키, 레거시 이름)
+                  const hasAssistantKey = !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
                       <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
-                      <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasGeminiKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
+                      <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasAssistantKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
                         <input
                           type="checkbox"
                           className="mt-0.5"
                           checked={aiRouterEnabled}
-                          disabled={!hasGeminiKey}
+                          disabled={!hasAssistantKey}
                           onChange={e => setAiRouterEnabled(e.target.checked)}
                           aria-label={t('settings_modal.ai_assistant_aria')}
                           name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
@@ -1330,7 +1333,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <div className="text-[11px] text-slate-400 mt-1.5">
                             {t('settings_modal.ai_assistant_cache_note')}
                           </div>
-                          {!hasGeminiKey && (
+                          {!hasAssistantKey && (
                             <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
                               {t('settings_modal.ai_assistant_no_key_warning')}
                             </div>
