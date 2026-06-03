@@ -3,6 +3,7 @@ import {
   runNow,
   listCron,
   getLogs,
+  listOccurrences,
   consumeNotifications,
   clearLogs,
   cancelCron,
@@ -43,12 +44,22 @@ export const GET = withAuth(async (req: NextRequest) => {
     notifications = notifRes.data ?? [];
   }
 
+  // 캘린더 투영용 — ?from=YYYY-MM-DD&to=YYYY-MM-DD 구간의 cron 발화 시각 (admin scope, owner 미지정).
+  let occurrences: unknown[] = [];
+  const from = req.nextUrl.searchParams.get('from');
+  const to = req.nextUrl.searchParams.get('to');
+  if (from && to) {
+    const occRes = await listOccurrences({ fromDate: from, toDate: to });
+    if (occRes.ok) occurrences = occRes.data ?? [];
+  }
+
   // hub-scoped 자료 필터 — owner 시작 'hub:' 모두 제외 (admin 자료만 표시).
   const adminJobs = (jobsRes.data ?? []).filter((j: any) => !j.owner || !j.owner.startsWith('hub:'));
 
   return NextResponse.json({
     jobs: adminJobs,
     logs: logsRes.data ?? [],
+    occurrences,
     notifications,
   });
 });

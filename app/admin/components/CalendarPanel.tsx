@@ -11,13 +11,13 @@
  * 데이터: data/calendar/events.jsonl (sysmod_calendar 모듈). cron 잡 linkedJobId 양방향.
  */
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
-import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
 import { rowActionsClass } from '../utils/row-actions';
 import { useRowActions } from '../hooks/useRowActions';
 import { confirmDialog, alertDialog } from './Dialog';
-import { apiPost } from '../../../lib/api-fetch';
+import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 
@@ -30,6 +30,23 @@ interface CalEvent {
   description?: string;
   tags?: string[];
   linkedJobId?: string;
+}
+
+/** cron 잡의 캘린더 투영 — 예약 발화 시각(occursAt) 1건. cron 이 진실원천, 캘린더는 read-only 표시. */
+interface CronOcc {
+  jobId: string;
+  title?: string;
+  targetPath: string;
+  occursAt: string;
+  mode: string;
+}
+/** cron 실행 이력 1건 — 완료/실패 표시용. */
+interface CronLog {
+  jobId: string;
+  title?: string;
+  triggeredAt: string;
+  success: boolean;
+  error?: string;
 }
 
 export type CalendarHubContext = { slug: string; apiToken: string; sessionId: string };
@@ -97,6 +114,8 @@ export function CalendarPanel({
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
   const [selectedDate, setSelectedDate] = useState<string>(ymd(today)); // 'YYYY-MM-DD'
   const [events, setEvents] = useState<CalEvent[]>([]);
+  const [cronOccs, setCronOccs] = useState<CronOcc[]>([]);
+  const [cronLogs, setCronLogs] = useState<CronLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
@@ -132,6 +151,29 @@ export function CalendarPanel({
     fetchEvents();
   }, [fetchEvents]);
 
+  // cron 잡 투영 — admin 전용 (cron 은 owner-scoped, hub 방문자엔 미노출). /api/cron 이 from/to 구간
+  // occurrences + 실행 로그 반환. cron 이 진실원천이라 캘린더는 비추기만 (중복 저장 0).
+  const fetchCron = useCallback(async () => {
+    if (hubMode) { setCronOccs([]); setCronLogs([]); return; }
+    try {
+      const now = new Date();
+      const from = ymd(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+      const to = ymd(new Date(now.getTime() + 400 * 24 * 60 * 60 * 1000));
+      const res = await apiGet<{ occurrences?: CronOcc[]; logs?: CronLog[] }>(
+        `/api/cron?from=${from}&to=${to}`,
+        { category: 'calendar' },
+      );
+      setCronOccs(res.occurrences ?? []);
+      setCronLogs(res.logs ?? []);
+    } catch (err) {
+      logger.debug('calendar', 'cron 투영 fetch 실패', { error: err });
+    }
+  }, [hubMode]);
+
+  useEffect(() => {
+    fetchCron();
+  }, [fetchCron]);
+
   // bucket: 'YYYY-MM-DD' → events[]
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
@@ -148,6 +190,35 @@ export function CalendarPanel({
     }
     return map;
   }, [events]);
+
+  // cron 발화 시각 → 날짜 버킷 (예약 표시).
+  const cronByDate = useMemo(() => {
+    const map = new Map<string, CronOcc[]>();
+    for (const o of cronOccs) {
+      const d = new Date(o.occursAt);
+      if (isNaN(d.getTime())) continue;
+      const key = ymd(d);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => new Date(a.occursAt).getTime() - new Date(b.occursAt).getTime());
+    }
+    return map;
+  }, [cronOccs]);
+
+  // cron 실행 이력 → 날짜 버킷 (완료/실패 표시).
+  const logsByDate = useMemo(() => {
+    const map = new Map<string, CronLog[]>();
+    for (const l of cronLogs) {
+      const d = new Date(l.triggeredAt);
+      if (isNaN(d.getTime())) continue;
+      const key = ymd(d);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(l);
+    }
+    return map;
+  }, [cronLogs]);
 
   // 그리드 셀 — 6주 × 7일 = 42 cells
   const gridCells = useMemo(() => {
@@ -169,6 +240,8 @@ export function CalendarPanel({
 
   const todayKey = ymd(today);
   const selectedEvents = eventsByDate.get(selectedDate) ?? [];
+  const selectedOccs = cronByDate.get(selectedDate) ?? [];
+  const selectedLogs = logsByDate.get(selectedDate) ?? [];
 
   const goPrevMonth = () => {
     if (cursorMonth === 0) {
@@ -350,6 +423,19 @@ export function CalendarPanel({
                   )}
                 </span>
               )}
+              {/* cron 투영 마커 — 예약(보라) / 완료(초록) / 실패(빨강). 일정 점(파랑)과 별도 줄. */}
+              {(cronByDate.get(cell.key)?.length || logsByDate.get(cell.key)?.length) ? (
+                <span className="flex items-center gap-0.5 mt-0.5">
+                  {cronByDate.get(cell.key)?.length ? (
+                    <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-violet-500'}`} />
+                  ) : null}
+                  {logsByDate.get(cell.key)?.some(l => !l.success) ? (
+                    <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-red-500'}`} />
+                  ) : logsByDate.get(cell.key)?.length ? (
+                    <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-green-500'}`} />
+                  ) : null}
+                </span>
+              ) : null}
             </button>
           );
         })}
@@ -424,6 +510,36 @@ export function CalendarPanel({
               </li>
             ))}
           </ul>
+        )}
+
+        {/* 스케줄(cron) 투영 — 선택 날짜의 예약 발화 + 실행 이력. cron 이 진실원천, 캘린더는 read-only 표시. */}
+        {(selectedOccs.length > 0 || selectedLogs.length > 0) && (
+          <div className="border-t border-violet-100">
+            <div className="px-2 py-1.5 bg-violet-50/60 text-[11px] font-bold text-violet-700 flex items-center gap-1">
+              <Clock size={11} /> 스케줄 ({selectedOccs.length + selectedLogs.length})
+            </div>
+            <ul className="list-none p-0 m-0">
+              {selectedOccs.map((o, i) => (
+                <li key={`occ-${i}`} className="border-b border-slate-100 px-2 py-1.5 flex items-start gap-1.5">
+                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(o.occursAt)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
+                    <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
+                  </div>
+                </li>
+              ))}
+              {selectedLogs.map((l, i) => (
+                <li key={`log-${i}`} className="border-b border-slate-100 px-2 py-1.5 flex items-start gap-1.5">
+                  <span className="mt-0.5 shrink-0">{l.success ? <CheckCircle2 size={11} className="text-green-600" /> : <XCircle size={11} className="text-red-600" />}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-slate-700 truncate">{l.title || l.jobId}</div>
+                    <div className="text-[10px] text-slate-400 tabular-nums">{formatTime(l.triggeredAt)} · {l.success ? '완료' : '실패'}</div>
+                    {!l.success && l.error && <div className="text-[10px] text-red-500 line-clamp-1 break-words">{l.error}</div>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
 
