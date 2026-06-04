@@ -15,6 +15,8 @@ const BASE = 'https://www.law.go.kr/DRF';
 // (끝까지 대기) 느려도 결과를 받았는데, 속도 최적화 리팩터(25e0eea)에서 20s 상한이
 // 들어가며 느린 응답이 자주 잘렸다. 넉넉히 45s — sandbox/watchdog(2분) 안쪽이라 안전.
 const TIMEOUT = 45000;
+// law.go.kr(정부 서버)이 node 기본 UA 의 연결을 리셋(ECONNRESET)하는 사례 대비 — 브라우저 유사 UA.
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 let raw = '';
 process.stdin.setEncoding('utf-8');
@@ -60,28 +62,45 @@ function outErr(key, params) {
 
 // ── 공통 fetch ──────────────────────────────────────────────────────────────
 async function apiFetch(url) {
-  let resp;
-  try {
-    resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
-  } catch (e) {
-    // 네트워크 장애, DNS 실패, 타임아웃 등
-    const cause = e.cause?.code || e.cause?.message || '';
-    throw new I18nError('error.network', { message: e.message, cause });
+  const MAX_TRY = 3;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_TRY; attempt++) {
+    let resp;
+    try {
+      resp = await fetch(url, {
+        signal: AbortSignal.timeout(TIMEOUT),
+        headers: { 'User-Agent': UA, Accept: 'application/json, text/plain, */*' },
+      });
+    } catch (e) {
+      // 네트워크 장애 (ECONNRESET / DNS / 타임아웃 등). ECONNRESET 류는 일시적이라 backoff 재시도.
+      // 타임아웃(AbortError)은 이미 45s 대기했으니 재시도 안 함 (watchdog 2분 초과 방지).
+      lastErr = e;
+      const isTimeout = e.name === 'TimeoutError' || e.name === 'AbortError';
+      if (!isTimeout && attempt < MAX_TRY) {
+        await new Promise(r => setTimeout(r, attempt * 800)); // 0.8s → 1.6s backoff
+        continue;
+      }
+      const cause = e.cause?.code || e.cause?.message || '';
+      throw new I18nError('error.network', { message: e.message, cause });
+    }
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new I18nError('error.api_status', { status: String(resp.status), body: t });
+    }
+    const text = await resp.text();
+    try {
+      const json = JSON.parse(text);
+      if (json.result) throw new I18nError('error.api_result', { result: String(json.result), message: json.msg || '' });
+      return json;
+    } catch (e) {
+      if (e instanceof I18nError) throw e;
+      // JSON 파싱 실패 — HTML/XML 응답일 수 있음
+      return { _raw: text.slice(0, 10000) };
+    }
   }
-  if (!resp.ok) {
-    const t = await resp.text().catch(() => '');
-    throw new I18nError('error.api_status', { status: String(resp.status), body: t });
-  }
-  const text = await resp.text();
-  try {
-    const json = JSON.parse(text);
-    if (json.result) throw new I18nError('error.api_result', { result: String(json.result), message: json.msg || '' });
-    return json;
-  } catch (e) {
-    if (e instanceof I18nError) throw e;
-    // JSON 파싱 실패 — HTML/XML 응답일 수 있음
-    return { _raw: text.slice(0, 10000) };
-  }
+  // 루프가 정상 종료될 일은 없지만(성공 return / throw), 타입 안전망.
+  const cause = lastErr?.cause?.code || lastErr?.cause?.message || '';
+  throw new I18nError('error.network', { message: lastErr?.message || 'fetch failed', cause });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
