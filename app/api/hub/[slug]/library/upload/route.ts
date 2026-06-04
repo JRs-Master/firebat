@@ -56,8 +56,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   if (!(file instanceof File)) return jsonResponse(400, { error: 'file 필드가 필요합니다.' });
   if (!referenceId) return jsonResponse(400, { error: 'referenceId 필드가 필요합니다.' });
-  if (!['pdf', 'txt', 'md'].includes(sourceType)) {
-    return jsonResponse(400, { error: `지원되지 않는 sourceType: ${sourceType}` });
+  // 지원 포맷은 Rust dispatch 가 단일 권위 (unknown → invalid_argument). 존재만 확인 (drift 방지).
+  if (!sourceType) {
+    return jsonResponse(400, { error: 'sourceType 필드가 필요합니다.' });
   }
   if (!name) name = file.name || `source-${Date.now()}.${sourceType}`;
 

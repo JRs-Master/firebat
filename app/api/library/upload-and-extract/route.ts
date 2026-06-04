@@ -45,15 +45,10 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!referenceId) {
     return NextResponse.json({ success: false, error: 'referenceId 필드가 필요합니다.' }, { status: 400 });
   }
-  // 텍스트(txt/md/csv) / PDF / Office·OpenDocument(docx/pptx/xlsx/xls/ods/odt/odp) / 한글신형(hwpx) /
-  // 이미지(png/jpg/jpeg/webp/gif — vision 추출). 구형 .hwp/.doc/.ppt(바이너리)는 미지원.
-  const ALLOWED_TYPES = [
-    'pdf', 'txt', 'md', 'csv',
-    'docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt', 'odp', 'hwpx',
-    'png', 'jpg', 'jpeg', 'webp', 'gif',
-  ];
-  if (!ALLOWED_TYPES.includes(sourceType)) {
-    return NextResponse.json({ success: false, error: `지원되지 않는 sourceType: ${sourceType}` }, { status: 400 });
+  // 지원 포맷 검증은 Rust dispatch(grpc/library.rs)가 단일 권위 — unknown → invalid_argument.
+  // 포맷 리스트를 route/Rust/프론트 여러 곳에 두면 drift (hub route 가 실제로 뒤처졌던 사례). 존재만 확인.
+  if (!sourceType) {
+    return NextResponse.json({ success: false, error: 'sourceType 필드가 필요합니다.' }, { status: 400 });
   }
   if (!name) name = file.name || `source-${Date.now()}.${sourceType}`;
 
