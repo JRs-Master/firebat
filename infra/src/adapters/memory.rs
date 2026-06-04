@@ -168,7 +168,6 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_library_sources_ref ON library_sources(reference_id);
             CREATE INDEX IF NOT EXISTS idx_library_sources_type ON library_sources(source_type);
             CREATE INDEX IF NOT EXISTS idx_library_sources_created ON library_sources(created_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_library_sources_hash ON library_sources(reference_id, content_hash);
 
             CREATE TABLE IF NOT EXISTS library_chunks (
                 id TEXT PRIMARY KEY,
@@ -257,6 +256,12 @@ impl SqliteMemoryAdapter {
         // 예외 — content_hash (중복 업로드 dedup, 2026-06): 라이브러리 자료가 이미 쌓인 운영 DB 보존을
         // 위해 신규 nullable 컬럼만 defensive ALTER (이미 있으면 무시). 자료 손실 없이 dedup 활성.
         let _ = conn.execute("ALTER TABLE library_sources ADD COLUMN content_hash TEXT", []);
+        // content_hash 인덱스는 컬럼 보장(ALTER) 후 생성. 옛 DB 는 CREATE TABLE 가 no-op 라 batch 안에서
+        // 만들면 컬럼 부재로 schema init 전체가 실패(crash) — ALTER 뒤로 분리해야 fresh/기존 DB 모두 안전.
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_library_sources_hash ON library_sources(reference_id, content_hash)",
+            [],
+        );
         Ok(())
     }
 }
