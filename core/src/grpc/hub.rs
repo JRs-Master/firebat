@@ -12,8 +12,8 @@ use crate::managers::ai::{AiManager, AiStreamEvent};
 use crate::managers::hub::{HubManager, CreateInstanceInput, UpdateInstanceInput};
 use crate::ports::HubInstance;
 use crate::proto::{
-    ai_stream_event_pb::Event as AiStreamEventOneof, AiChunkEventPb, AiErrorEventPb,
-    AiResultEventPb, AiStepEventPb, AiStreamEventPb,
+    hub_stream_event_pb::Event as HubStreamEventOneof, AiChunkEventPb, AiErrorEventPb,
+    AiResultEventPb, AiStepEventPb, HubSendMessageStreamRequest, HubStreamEventPb,
     hub_service_server::HubService, HubAppendSystemMessageRequest,
     HubAppendSystemMessageResponse, HubAppendUserMessageRequest,
     HubAppendUserMessageResponse, HubAuthenticateRequest, HubAuthenticateResponse,
@@ -501,14 +501,14 @@ impl HubService for HubServiceImpl {
     }
 
     type SendMessageStreamStream =
-        Pin<Box<dyn Stream<Item = Result<AiStreamEventPb, TonicStatus>> + Send + 'static>>;
+        Pin<Box<dyn Stream<Item = Result<HubStreamEventPb, TonicStatus>> + Send + 'static>>;
 
     /// streaming 변형 — admin chat (AiService.StreamRequestActionWithTools) 과 동일한 이벤트 스트림.
     /// 인증 + 대화 ensure + user 메시지 영속화는 동기로 먼저, 그 다음 AI 호출(emit)을 spawn 해
     /// chunk/step/result 를 server-stream. hub plan mode 가 admin 과 같은 경로를 타 실행 카드 누락 차단.
     async fn send_message_stream(
         &self,
-        req: Request<HubSendMessageRequest>,
+        req: Request<HubSendMessageStreamRequest>,
     ) -> Result<Response<Self::SendMessageStreamStream>, TonicStatus> {
         let args = req.into_inner();
         if args.user_message.trim().is_empty() {
@@ -580,11 +580,11 @@ impl HubService for HubServiceImpl {
 
         // 5. event stream → AiStreamEventPb (admin stream_request_action_with_tools 와 동일 매핑).
         let event_stream = ReceiverStream::new(event_rx).map(|evt| match evt {
-            AiStreamEvent::Chunk { event_type, content } => Ok(AiStreamEventPb {
-                event: Some(AiStreamEventOneof::Chunk(AiChunkEventPb { event_type, content })),
+            AiStreamEvent::Chunk { event_type, content } => Ok(HubStreamEventPb {
+                event: Some(HubStreamEventOneof::Chunk(AiChunkEventPb { event_type, content })),
             }),
-            AiStreamEvent::Step { name, status, description, error_message } => Ok(AiStreamEventPb {
-                event: Some(AiStreamEventOneof::Step(AiStepEventPb {
+            AiStreamEvent::Step { name, status, description, error_message } => Ok(HubStreamEventPb {
+                event: Some(HubStreamEventOneof::Step(AiStepEventPb {
                     name,
                     status,
                     description,
@@ -601,18 +601,18 @@ impl HubService for HubServiceImpl {
             match final_rx.recv().await {
                 Some(Ok(response)) => {
                     let raw_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".to_string());
-                    yield Ok(AiStreamEventPb {
-                        event: Some(AiStreamEventOneof::Result(AiResultEventPb { raw_json })),
+                    yield Ok(HubStreamEventPb {
+                        event: Some(HubStreamEventOneof::Result(AiResultEventPb { raw_json })),
                     });
                 }
                 Some(Err(e)) => {
-                    yield Ok(AiStreamEventPb {
-                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb { error_message: e })),
+                    yield Ok(HubStreamEventPb {
+                        event: Some(HubStreamEventOneof::Error(AiErrorEventPb { error_message: e })),
                     });
                 }
                 None => {
-                    yield Ok(AiStreamEventPb {
-                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb {
+                    yield Ok(HubStreamEventPb {
+                        event: Some(HubStreamEventOneof::Error(AiErrorEventPb {
                             error_message: "hub AI streaming final 채널 닫힘".to_string(),
                         })),
                     });

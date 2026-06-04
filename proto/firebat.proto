@@ -2798,6 +2798,29 @@ message HubSendMessageResponse {
   string raw_json = 2;          // AiResponse JSON — admin chat 영역 동일 포맷
 }
 
+// streaming 전용 — buf STANDARD RPC_REQUEST_RESPONSE_UNIQUE 충족 (RPC 마다 고유 req/resp).
+// 필드는 HubSendMessageRequest 와 동일 (unary 와 같은 입력).
+message HubSendMessageStreamRequest {
+  string slug = 1;
+  string api_token = 2;
+  string origin = 3;
+  string session_id = 4;
+  string user_message = 5;
+  string self_host = 6;
+  string plan_mode = 7;
+  string plan_execute_id = 8;
+  string plan_revise_id = 9;
+}
+// streaming 응답 이벤트 — AiStreamEventPb 와 동일 shape (sub-event 메시지 재사용). top-level 만 분리.
+message HubStreamEventPb {
+  oneof event {
+    AiChunkEventPb chunk = 1;
+    AiStepEventPb step = 2;
+    AiResultEventPb result = 3;
+    AiErrorEventPb error = 4;
+  }
+}
+
 service HubService {
   // Instance CRUD (admin)
   rpc CreateInstance(HubCreateInstanceRequest) returns (HubCreateInstanceResponse);
@@ -2833,7 +2856,7 @@ service HubService {
   // streaming 변형 — admin chat 과 동일한 AiStreamEventPb 스트림 (chunk/step/result/error).
   // hub plan mode 가 admin 과 같은 경로를 타게 해 plan-confirm suggestions(실행 카드) 누락을 근본 차단.
   // SendMessage 는 thin wrapper 로 잔존 (Phase 4 에서 제거 예정).
-  rpc SendMessageStream(HubSendMessageRequest) returns (stream AiStreamEventPb);
+  rpc SendMessageStream(HubSendMessageStreamRequest) returns (stream HubStreamEventPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
