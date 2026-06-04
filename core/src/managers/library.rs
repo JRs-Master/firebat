@@ -60,6 +60,13 @@ impl LibraryManager {
         self.library.list_references(owner).await
     }
 
+    /// hub 격리 — reference_id 가 owner 소유인지 (list_references(owner) 에 포함). 미소유 false.
+    /// source id-op 은 get_source 로 reference_id 를 얻어 이 함수로 검사한다.
+    pub async fn is_reference_owned(&self, reference_id: &str, owner: &str) -> InfraResult<bool> {
+        let refs = self.library.list_references(owner).await?;
+        Ok(refs.iter().any(|r| r.id == reference_id))
+    }
+
     pub async fn delete_reference(&self, id: &str) -> InfraResult<()> {
         self.library.delete_reference(id).await
     }

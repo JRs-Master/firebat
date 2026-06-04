@@ -63,6 +63,33 @@ impl LibraryServiceImpl {
         Self { manager, llm }
     }
 
+    /// hub owner scoping — owner 지정 시 reference_id 가 그 owner 소유일 때만 통과. admin(None) 무검사.
+    /// 미소유 = 권한 거부. 프론트(hub library route) ensureRefOwnership 대신 core 단일 강제.
+    async fn ensure_ref_owner(&self, reference_id: &str, owner: &Option<String>) -> Result<(), TonicStatus> {
+        let Some(o) = owner.as_deref().filter(|s| !s.is_empty()) else {
+            return Ok(());
+        };
+        match self.manager.is_reference_owned(reference_id, o).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(TonicStatus::permission_denied(
+                "이 reference 에 접근할 권한이 없습니다.",
+            )),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    /// source id-op owner scoping — source 의 reference 가 owner 소유일 때만 통과 (간접).
+    async fn ensure_source_owner(&self, source_id: &str, owner: &Option<String>) -> Result<(), TonicStatus> {
+        if owner.as_deref().filter(|s| !s.is_empty()).is_none() {
+            return Ok(());
+        }
+        match self.manager.get_source(source_id).await {
+            Ok(Some(s)) => self.ensure_ref_owner(&s.reference_id, owner).await,
+            Ok(None) => Err(TonicStatus::not_found("source 를 찾을 수 없습니다.")),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
     /// 정밀/비전 추출 — 파일(PDF 또는 이미지)을 Gemini 가 직접 읽어 LaTeX·레이아웃 보존 텍스트로 추출.
     /// pdf-extract 가 수식·숫자를 망가뜨리던 문제 우회 + 이미지(스캔 기출·사진 등) OCR 겸용.
     /// quality_boost = Gemini Pro, 아니면 Flash (models.json 단일 소스). mime = application/pdf 또는 image/*.
@@ -164,9 +191,10 @@ impl LibraryService for LibraryServiceImpl {
         &self,
         req: Request<LibraryDeleteReferenceRequest>,
     ) -> Result<Response<LibraryDeleteReferenceResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_ref_owner(&args.id, &args.owner).await?;
         self.manager
-            .delete_reference(&id)
+            .delete_reference(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(LibraryDeleteReferenceResponse {}))
@@ -177,6 +205,7 @@ impl LibraryService for LibraryServiceImpl {
         req: Request<LibraryUploadSourceRequest>,
     ) -> Result<Response<LibraryUploadSourceResponse>, TonicStatus> {
         let args = req.into_inner();
+        self.ensure_ref_owner(&args.reference_id, &args.owner).await?;
         // 매 source_type 별 추출 path 분기:
         //  - "text" — inline_text 직접
         //  - "txt" / "md" — file_path read
@@ -285,10 +314,11 @@ impl LibraryService for LibraryServiceImpl {
         &self,
         req: Request<LibraryListSourcesRequest>,
     ) -> Result<Response<LibraryListSourcesResponse>, TonicStatus> {
-        let reference_id = req.into_inner().reference_id;
+        let args = req.into_inner();
+        self.ensure_ref_owner(&args.reference_id, &args.owner).await?;
         let sources = self
             .manager
-            .list_sources(&reference_id)
+            .list_sources(&args.reference_id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(LibraryListSourcesResponse {
@@ -300,10 +330,11 @@ impl LibraryService for LibraryServiceImpl {
         &self,
         req: Request<LibraryGetSourceRequest>,
     ) -> Result<Response<LibraryGetSourceResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_source_owner(&args.id, &args.owner).await?;
         let source = self
             .manager
-            .get_source(&id)
+            .get_source(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(LibraryGetSourceResponse {
@@ -315,9 +346,10 @@ impl LibraryService for LibraryServiceImpl {
         &self,
         req: Request<LibraryDeleteSourceRequest>,
     ) -> Result<Response<LibraryDeleteSourceResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_source_owner(&args.id, &args.owner).await?;
         self.manager
-            .delete_source(&id)
+            .delete_source(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(LibraryDeleteSourceResponse {}))

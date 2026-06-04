@@ -38,13 +38,14 @@ export async function libraryOpDispatch(
         owner,
       });
     case 'delete-reference':
-      return deleteReference({ id: String(a.id ?? '') });
+      // owner scoping 은 Rust core(LibraryService)가 강제 — id-op 에 owner 전달.
+      return deleteReference({ id: String(a.id ?? ''), owner } as Parameters<typeof deleteReference>[0]);
     case 'list-sources':
-      return listSources({ referenceId: String(a.referenceId ?? '') });
+      return listSources({ referenceId: String(a.referenceId ?? ''), owner } as Parameters<typeof listSources>[0]);
     case 'get-source':
-      return getSource({ id: String(a.id ?? '') });
+      return getSource({ id: String(a.id ?? ''), owner } as Parameters<typeof getSource>[0]);
     case 'delete-source':
-      return deleteSource({ id: String(a.id ?? '') });
+      return deleteSource({ id: String(a.id ?? ''), owner } as Parameters<typeof deleteSource>[0]);
     case 'reextract-source':
       return reextractSource({
         sourceId: String(a.sourceId ?? ''),
@@ -57,7 +58,8 @@ export async function libraryOpDispatch(
         name: String(a.name ?? ''),
         sourceType: 'text',
         inlineText: String(a.inlineText ?? ''),
-      });
+        owner,
+      } as Parameters<typeof uploadSource>[0]);
     case 'search':
       return search({
         owner,

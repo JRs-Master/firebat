@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listReferences, getSource } from '../../../../../lib/api-gen/library';
 import { libraryOpDispatch } from '../../../../../lib/handlers/library';
 import { authenticate } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
@@ -52,27 +51,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const op = String(body.op ?? '');
 
-  // Reference 권한 가드 — owner 가 본 hub 와 일치할 때만 통과.
-  const ensureRefOwnership = async (refId: string): Promise<NextResponse | null> => {
-    const list = await listReferences({ owner: hubOwner });
-    if (!list.ok) return jsonResponse(500, { error: list.message });
-    const found = (list.data ?? []).some(r => r.id === refId);
-    if (!found) {
-      return jsonResponse(403, { error: '이 reference 에 접근할 권한이 없습니다.' });
-    }
-    return null;
-  };
-
-  // Source 권한 가드 — source.reference 가 본 hub owner 와 일치할 때만.
-  const ensureSourceOwnership = async (srcId: string): Promise<NextResponse | null> => {
-    const res = await getSource({ id: srcId });
-    if (!res.ok || !res.data?.source) {
-      return jsonResponse(404, { error: 'source 를 찾을 수 없습니다.' });
-    }
-    return ensureRefOwnership(res.data.source.referenceId);
-  };
-
-  // hub 가 쓸 수 있는 op 만 허용 — reextract/search 등은 가드 없는 노출 차단 위해 미지원.
+  // hub 가 쓸 수 있는 op 만 허용 — reextract/search 등은 미지원.
   const HUB_OPS = new Set([
     'list-references', 'create-reference', 'delete-reference',
     'list-sources', 'get-source', 'delete-source', 'upload-text-source',
@@ -80,33 +59,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!HUB_OPS.has(op)) return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });
 
   try {
-    // id-기반 조작은 본 hub owner 의 reference/source 인지 가드 (list/create 는 hubOwner 자동 스코프).
-    let guard: NextResponse | null = null;
-    switch (op) {
-      case 'delete-reference': {
-        const id = String(body.id ?? '');
-        if (!id) return jsonResponse(400, { error: 'id 필수' });
-        guard = await ensureRefOwnership(id);
-        break;
-      }
-      case 'list-sources':
-      case 'upload-text-source': {
-        const refId = String(body.referenceId ?? '');
-        if (!refId) return jsonResponse(400, { error: 'referenceId 필수' });
-        guard = await ensureRefOwnership(refId);
-        break;
-      }
-      case 'get-source':
-      case 'delete-source': {
-        const id = String(body.id ?? '');
-        if (!id) return jsonResponse(400, { error: 'id 필수' });
-        guard = await ensureSourceOwnership(id);
-        break;
-      }
-    }
-    if (guard) return guard;
-
-    // op→RPC 매핑은 admin 라우트와 공유 (libraryOpDispatch). owner = hubOwner 강제.
+    // reference/source owner scoping 은 Rust core(LibraryService)가 강제 — libraryOpDispatch 가 owner=hubOwner 전달 시
+    // 미소유 reference/source 는 권한 거부. 프론트 ensureRef/SourceOwnership 가드 폐기.
     const result = await libraryOpDispatch(op, body, hubOwner);
     if (!result.ok) return jsonResponse(500, { error: result.message });
     return NextResponse.json({ success: true, data: result.data });

@@ -2488,6 +2488,8 @@ message LibraryListReferencesResponse {
 }
 message LibraryDeleteReferenceRequest {
   string id = 1;
+  // hub owner scoping — 지정 시 reference.owner 일치할 때만. admin 은 omit.
+  optional string owner = 2;
 }
 message LibraryDeleteReferenceResponse {}
 
@@ -2506,6 +2508,8 @@ message LibraryUploadSourceRequest {
   bool precise = 7;
   // 품질 향상 — true = Gemini Pro (고품질), false = Gemini Flash (기본·저렴). precise 시에만 의미.
   bool quality_boost = 8;
+  // hub owner scoping — 지정 시 reference_id 의 owner 일치할 때만 업로드. admin 은 omit.
+  optional string owner = 9;
 }
 message LibraryUploadSourceResponse {
   string source_id = 1;
@@ -2524,18 +2528,21 @@ message LibraryReextractSourceResponse {
 }
 message LibraryListSourcesRequest {
   string reference_id = 1;
+  optional string owner = 2;
 }
 message LibraryListSourcesResponse {
   repeated LibrarySourcePb sources = 1;
 }
 message LibraryGetSourceRequest {
   string id = 1;
+  optional string owner = 2;
 }
 message LibraryGetSourceResponse {
   LibrarySourcePb source = 1;
 }
 message LibraryDeleteSourceRequest {
   string id = 1;
+  optional string owner = 2;
 }
 message LibraryDeleteSourceResponse {}
 

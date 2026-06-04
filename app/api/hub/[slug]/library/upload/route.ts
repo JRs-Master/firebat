@@ -3,7 +3,7 @@ import { writeFile, unlink, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { uploadSource, listReferences } from '../../../../../../lib/api-gen/library';
+import { uploadSource } from '../../../../../../lib/api-gen/library';
 import { authenticate } from '../../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../../lib/util/logger';
 
@@ -62,13 +62,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   if (!name) name = file.name || `source-${Date.now()}.${sourceType}`;
 
-  // referenceId 가 본 hub owner 안에 있는지 가드 — 다른 hub 자료에 업로드 차단.
-  const refList = await listReferences({ owner: hubOwner });
-  if (!refList.ok) return jsonResponse(500, { error: refList.message });
-  if (!(refList.data ?? []).some(r => r.id === referenceId)) {
-    return jsonResponse(403, { error: '이 reference 에 업로드할 권한이 없습니다.' });
-  }
-
+  // reference owner scoping 은 Rust core(LibraryService.upload_source)가 강제 — owner=hubOwner 전달 시 미소유 거부. 프론트 가드 폐기.
   const dir = path.join(tmpdir(), 'firebat-library-hub');
   await mkdir(dir, { recursive: true });
   const tmpPath = path.join(dir, `${randomUUID()}.${sourceType}`);
@@ -81,7 +75,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       name,
       sourceType,
       filePath: tmpPath,
-    });
+      owner: hubOwner,
+    } as Parameters<typeof uploadSource>[0]);
     if (!result.ok) {
       return jsonResponse(500, { error: result.message ?? 'UploadSource 실패' });
     }
