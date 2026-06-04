@@ -5,10 +5,15 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::ai::AiManager;
+use std::pin::Pin;
+use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
+
+use crate::managers::ai::{AiManager, AiStreamEvent};
 use crate::managers::hub::{HubManager, CreateInstanceInput, UpdateInstanceInput};
 use crate::ports::HubInstance;
 use crate::proto::{
+    ai_stream_event_pb::Event as AiStreamEventOneof, AiChunkEventPb, AiErrorEventPb,
+    AiResultEventPb, AiStepEventPb, AiStreamEventPb,
     hub_service_server::HubService, HubAppendSystemMessageRequest,
     HubAppendSystemMessageResponse, HubAppendUserMessageRequest,
     HubAppendUserMessageResponse, HubAuthenticateRequest, HubAuthenticateResponse,
@@ -479,6 +484,7 @@ impl HubService for HubServiceImpl {
                 plan_mode,
                 plan_execute_id,
                 plan_revise_id,
+                None, // unary — 스트리밍 emit 없음
             )
             .await
             .map_err(TonicStatus::internal)?;
@@ -492,5 +498,129 @@ impl HubService for HubServiceImpl {
             conversation_id,
             raw_json,
         }))
+    }
+
+    type SendMessageStreamStream =
+        Pin<Box<dyn Stream<Item = Result<AiStreamEventPb, TonicStatus>> + Send + 'static>>;
+
+    /// streaming 변형 — admin chat (AiService.StreamRequestActionWithTools) 과 동일한 이벤트 스트림.
+    /// 인증 + 대화 ensure + user 메시지 영속화는 동기로 먼저, 그 다음 AI 호출(emit)을 spawn 해
+    /// chunk/step/result 를 server-stream. hub plan mode 가 admin 과 같은 경로를 타 실행 카드 누락 차단.
+    async fn send_message_stream(
+        &self,
+        req: Request<HubSendMessageRequest>,
+    ) -> Result<Response<Self::SendMessageStreamStream>, TonicStatus> {
+        let args = req.into_inner();
+        if args.user_message.trim().is_empty() {
+            return Err(TonicStatus::invalid_argument("user_message 가 비어있습니다."));
+        }
+        if args.session_id.trim().is_empty() {
+            return Err(TonicStatus::invalid_argument("session_id 가 비어있습니다."));
+        }
+
+        // 1. 인증 (origin/token/self-host — 익명 visitor 신뢰 불가, 반드시 server-side).
+        let origin = if args.origin.is_empty() { None } else { Some(args.origin.as_str()) };
+        let self_host = if args.self_host.is_empty() { None } else { Some(args.self_host.as_str()) };
+        let instance = self
+            .manager
+            .authenticate(&args.slug, &args.api_token, origin, self_host)
+            .await
+            .map_err(TonicStatus::permission_denied)?;
+
+        // 2. 대화 ensure + 3. user 메시지 영속화 (AI history 빌드 전 동기 반영).
+        let conversation_id = self
+            .manager
+            .ensure_conversation(&instance.id, &args.session_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        let _ = self
+            .manager
+            .append_user_message(&conversation_id, &args.user_message)
+            .await;
+
+        let plan_mode = match args.plan_mode.as_str() {
+            "always" => crate::ports::PlanMode::Always,
+            "auto" => crate::ports::PlanMode::Auto,
+            _ => crate::ports::PlanMode::Off,
+        };
+        let plan_execute_id = if args.plan_execute_id.is_empty() {
+            None
+        } else {
+            Some(args.plan_execute_id.clone())
+        };
+        let plan_revise_id = if args.plan_revise_id.is_empty() {
+            None
+        } else {
+            Some(args.plan_revise_id.clone())
+        };
+
+        // 4. mpsc — AiManager 가 emit. capacity 256 (admin streaming 과 동일).
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel::<AiStreamEvent>(256);
+        let (final_tx, mut final_rx) =
+            tokio::sync::mpsc::channel::<Result<crate::managers::ai::AiResponse, String>>(1);
+
+        let manager = self.manager.clone();
+        let ai = self.ai.clone();
+        let user_message = args.user_message.clone();
+        tokio::spawn(async move {
+            let res = manager
+                .send_message(
+                    ai,
+                    &instance,
+                    &conversation_id,
+                    &user_message,
+                    plan_mode,
+                    plan_execute_id,
+                    plan_revise_id,
+                    Some(event_tx),
+                )
+                .await;
+            let _ = final_tx.send(res).await;
+        });
+
+        // 5. event stream → AiStreamEventPb (admin stream_request_action_with_tools 와 동일 매핑).
+        let event_stream = ReceiverStream::new(event_rx).map(|evt| match evt {
+            AiStreamEvent::Chunk { event_type, content } => Ok(AiStreamEventPb {
+                event: Some(AiStreamEventOneof::Chunk(AiChunkEventPb { event_type, content })),
+            }),
+            AiStreamEvent::Step { name, status, description, error_message } => Ok(AiStreamEventPb {
+                event: Some(AiStreamEventOneof::Step(AiStepEventPb {
+                    name,
+                    status,
+                    description,
+                    error_message,
+                })),
+            }),
+        });
+
+        let final_stream = async_stream::stream! {
+            let mut event_stream = event_stream;
+            while let Some(item) = event_stream.next().await {
+                yield item;
+            }
+            match final_rx.recv().await {
+                Some(Ok(response)) => {
+                    let raw_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".to_string());
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Result(AiResultEventPb { raw_json })),
+                    });
+                }
+                Some(Err(e)) => {
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb { error_message: e })),
+                    });
+                }
+                None => {
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb {
+                            error_message: "hub AI streaming final 채널 닫힘".to_string(),
+                        })),
+                    });
+                }
+            }
+        };
+
+        let pinned: Self::SendMessageStreamStream = Box::pin(final_stream);
+        Ok(Response::new(pinned))
     }
 }

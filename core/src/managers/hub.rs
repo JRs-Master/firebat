@@ -421,6 +421,7 @@ impl HubManager {
         plan_mode: crate::ports::PlanMode,
         plan_execute_id: Option<String>,
         plan_revise_id: Option<String>,
+        emit: Option<tokio::sync::mpsc::Sender<crate::managers::ai::AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
 
@@ -463,6 +464,9 @@ impl HubManager {
         // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
         let conv = self.port.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
+        // owner = hub:<instance>:<session> (세션 단위 격리) — tool 주입(ai.rs)·library route 와 통일.
+        // 옛 hub:<instance> (세션 없음) 은 per-tool 주입과 어긋나던 drift 였음.
+        let owner = format!("hub:{}:{}", instance.id, session_id);
 
         let hub_ctx = HubContext {
             instance_id: instance.id.clone(),
@@ -484,7 +488,7 @@ impl HubManager {
             .map(String::from);
 
         let llm_opts = LlmCallOpts {
-            owner: Some(format!("hub:{}", instance.id)),
+            owner: Some(owner.clone()),
             conversation_id: Some(conversation_id.to_string()),
             system_prompt,
             model: model_id.clone(),
@@ -493,7 +497,7 @@ impl HubManager {
         };
 
         let ai_opts = AiRequestOpts {
-            owner: Some(format!("hub:{}", instance.id)),
+            owner: Some(owner),
             conversation_id: Some(conversation_id.to_string()),
             model: model_id,
             hub_context: Some(hub_ctx),
@@ -503,8 +507,10 @@ impl HubManager {
             ..Default::default()
         };
 
+        // streaming variant — emit 가 Some 이면 admin chat 과 동일하게 chunk/step 이벤트가 채널로 흐름.
+        // None 이면 옛 unary 동작 (SendMessage RPC). 영속화는 어느 쪽이든 호출 후 동일.
         let response = ai
-            .process_with_tools_opts(user_message, &[], &llm_opts, &ai_opts)
+            .process_with_tools_opts_with_emit(user_message, &[], &llm_opts, &ai_opts, emit)
             .await?;
 
         // AI 응답 영역 hub_messages 영속화. data_json 영역 blocks + tool_results + suggestions 영역.

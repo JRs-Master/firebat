@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
-import { sendMessage } from '../../../../../lib/api-gen/hub';
+import { createClient } from '@connectrpc/connect';
+import { HubService } from '../../../../../lib/proto-gen/firebat_pb';
+import { transport } from '../../../../../lib/api-gen/_transport';
+import { unBigInt } from '../../../../../lib/api-gen/_unbigint';
 import { logger } from '../../../../../lib/util/logger';
 
 // AI 응답 대기 시간 고려 (CLI 모드 멀티턴 도구 호출 포함 가능). admin chat 과 동일.
@@ -107,7 +110,11 @@ function streamResponse(args: {
       }, 15000);
 
       try {
-        const r = await sendMessage({
+        // admin chat 과 동일한 streaming RPC — Rust 가 인증 + 대화 ensure + user 영속화 + AI 호출(emit)
+        // + AI 응답 영속화를 한 흐름에 처리하고 chunk/step/result/error 를 server-stream. 옛 unary
+        // SendMessage 분기 폐기 → hub plan mode 가 admin 과 같은 경로 = plan-confirm 실행 카드 누락 차단.
+        const hubClient = createClient(HubService, transport);
+        const aiStream = hubClient.sendMessageStream({
           slug,
           apiToken,
           origin,
@@ -117,69 +124,79 @@ function streamResponse(args: {
           planMode,
           planExecuteId,
           planReviseId,
-        });
+        } as any);
 
-        if (!r.ok) {
-          // Rust HubManager 의 UNAUTHORIZED_ORIGIN: sentinel — 무단 임베드 발견 시.
-          // 403 reject 대신 Firebat 광고 메시지 + 사이트 링크 SSE 응답 — 무단 사용자 활용 트래픽화.
-          const UNAUTHORIZED_PREFIX = 'UNAUTHORIZED_ORIGIN:';
-          if (r.message.includes(UNAUTHORIZED_PREFIX)) {
-            send('result', {
-              conversationId: '',
-              success: true,
-              reply:
-                '🔥 **Firebat Just Imagine. Firebat runs.**\n\n' +
-                '이 챗봇은 무단으로 임베드되어 있습니다. ' +
-                '직접 만든 AI 어시스턴트를 본인 사이트에 설치하고 싶으시다면 ' +
-                '[firebat.co.kr](https://firebat.co.kr) 에서 무료로 시작하실 수 있습니다.',
-              blocks: undefined,
-              suggestions: ['firebat.co.kr 둘러보기'],
+        let finalResult: Record<string, unknown> | null = null;
+        let stepIndex = 0;
+
+        for await (const ev of aiStream) {
+          const evt: any = unBigInt(ev);
+          const oneof = evt?.event;
+          if (!oneof) continue;
+          if (oneof.case === 'chunk') {
+            const v = oneof.value;
+            send('chunk', { type: v.eventType, content: v.content });
+          } else if (oneof.case === 'step') {
+            const v = oneof.value;
+            send('step', {
+              index: stepIndex,
+              type: v.name,
+              status: v.status,
+              description: v.description ?? v.name,
+              error: v.errorMessage ?? undefined,
             });
-          } else {
-            send('error', { error: r.message });
+            if (v.status !== 'start') stepIndex++;
+          } else if (oneof.case === 'result') {
+            try {
+              finalResult = JSON.parse(oneof.value.rawJson);
+            } catch (e) {
+              send('error', { error: `result JSON 파싱 실패: ${(e as Error).message}` });
+            }
+          } else if (oneof.case === 'error') {
+            send('error', { error: oneof.value.errorMessage });
           }
-        } else {
-          const { conversationId, rawJson } = r.data;
-          let aiResponse: Record<string, unknown> = {};
-          try {
-            aiResponse = JSON.parse(rawJson);
-          } catch (err) {
-            logger.debug('hub', 'rawJson 파싱 실패', { error: err });
-          }
-          // admin chat (`/api/chat/stream`) 의 result event 형식과 통일 — useChat 의 RESULT
-          // 처리 (ev.data.data.blocks / ev.data.data.pendingActions 등) 그대로 reuse 가능.
-          // top-level + data 안 mirror 동시 노출 — frontend 옛 매핑 호환.
-          const reply = typeof aiResponse.reply === 'string' ? aiResponse.reply : '';
-          const executedActions = aiResponse.executedActions;
-          const toolResults = aiResponse.toolResults;
-          const blocks = aiResponse.blocks;
-          const suggestions = aiResponse.suggestions;
-          const pendingActions = aiResponse.pendingActions;
-          const success = aiResponse.success !== false;
-          const error = typeof aiResponse.error === 'string' ? aiResponse.error : undefined;
-          const passthroughData = (aiResponse.data && typeof aiResponse.data === 'object')
-            ? aiResponse.data as Record<string, unknown>
+        }
+
+        if (finalResult) {
+          const result = finalResult;
+          const reply = typeof result.reply === 'string' ? result.reply : '';
+          const passthroughData = (result.data && typeof result.data === 'object')
+            ? result.data as Record<string, unknown>
             : {};
+          // admin /api/chat/stream 의 result event 형식과 동일 — top-level + data 안 mirror.
           const mergedData: Record<string, unknown> = {
             ...passthroughData,
-            blocks,
-            suggestions,
-            pendingActions,
-            conversationId,
+            blocks: result.blocks,
+            suggestions: result.suggestions,
+            pendingActions: result.pendingActions,
           };
-
           send('result', {
-            success,
+            success: result.success !== false,
             reply,
-            executedActions,
-            toolResults,
+            executedActions: result.executedActions,
+            toolResults: result.toolResults,
             data: mergedData,
-            suggestions,
-            error,
+            suggestions: result.suggestions,
+            error: typeof result.error === 'string' ? result.error : undefined,
           });
         }
       } catch (err) {
-        send('error', { error: (err as Error)?.message ?? '알 수 없는 오류' });
+        const msg = (err as Error)?.message ?? '알 수 없는 오류';
+        // 인증 단계(streaming RPC 시작 전) UNAUTHORIZED_ORIGIN: sentinel — 무단 임베드 시 403 대신
+        // Firebat 광고 응답으로 트래픽화. (Rust authenticate 가 permission_denied 로 던짐 → 여기 catch.)
+        if (msg.includes('UNAUTHORIZED_ORIGIN:')) {
+          send('result', {
+            success: true,
+            reply:
+              '🔥 **Firebat Just Imagine. Firebat runs.**\n\n' +
+              '이 챗봇은 무단으로 임베드되어 있습니다. ' +
+              '직접 만든 AI 어시스턴트를 본인 사이트에 설치하고 싶으시다면 ' +
+              '[firebat.co.kr](https://firebat.co.kr) 에서 무료로 시작하실 수 있습니다.',
+            suggestions: ['firebat.co.kr 둘러보기'],
+          });
+        } else {
+          send('error', { error: msg });
+        }
       }
 
       clearInterval(keepAlive);

@@ -2829,6 +2829,11 @@ service HubService {
 
   // 외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 영속화 통합
   rpc SendMessage(HubSendMessageRequest) returns (HubSendMessageResponse);
+
+  // streaming 변형 — admin chat 과 동일한 AiStreamEventPb 스트림 (chunk/step/result/error).
+  // hub plan mode 가 admin 과 같은 경로를 타게 해 plan-confirm suggestions(실행 카드) 누락을 근본 차단.
+  // SendMessage 는 thin wrapper 로 잔존 (Phase 4 에서 제거 예정).
+  rpc SendMessageStream(HubSendMessageRequest) returns (stream AiStreamEventPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
