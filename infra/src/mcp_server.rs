@@ -162,16 +162,18 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     let Some(rest) = tool_name.strip_prefix("sysmod_") else {
         return true;
     };
-    // 도메인 분리 도구 (sysmod_<name>_<domain>) — 첫 segment 가 module name. config 안 `-` 가 있으면 `_` 로 등록됨.
-    // 매칭 시 두 변형 모두 시도 — module 이름이 정확히 hit 할 때까지.
-    let candidate = rest.split('_').next().unwrap_or(rest);
-    let with_dash = candidate.replace('_', "-");
-    if mm.is_enabled(candidate) || mm.is_enabled(&with_dash) {
-        return true;
+    // 모듈명 경계가 도구이름만으론 모호하다 — 두-단어 모듈(browser-scrape)이 `browser_scrape` 로 등록되고
+    // 도메인 분리 도구는 `<module>_<domain>` 형태라, 첫 토막만 보면 모듈명을 못 잡는다.
+    // (옛 버그: `sysmod_browser_scrape` → candidate `browser` 로 검사 → 그런 모듈 없음 → default true → disabled 무시.)
+    // 정공 = rest 의 세그먼트 prefix 들을 dash 로 이어 실제 config(is_enabled)에 묻는다. 명시적으로 비활성인
+    // prefix 가 하나라도 있으면 그 모듈이 꺼진 것 → 숨김. 미존재 이름은 default true 라 무영향.
+    let segs: Vec<&str> = rest.split('_').collect();
+    for n in 1..=segs.len() {
+        if !mm.is_enabled(&segs[..n].join("-")) {
+            return false;
+        }
     }
-    // 두 candidate 모두 disabled — 단 module 자체 존재 0 시 (builtin 등 sysmod_ 접두인데 module 아닌 도구)
-    // false negative 방지: 어떤 이름이라도 module 미존재 면 default true 처리 어렵. 보수적으로 disabled 처리.
-    false
+    true
 }
 
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
