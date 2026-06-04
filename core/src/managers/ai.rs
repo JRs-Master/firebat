@@ -697,26 +697,10 @@ impl AiManager {
             //   schedule_task / cancel_cron_job / run_task / run_module / run_user_module /
             //   request_secret / mcp_* (admin 권한 도구)
             if let Some(ctx) = &ai_opts.hub_context {
-                let allowed: std::collections::HashSet<String> =
-                    ctx.allowed_sysmods.iter().cloned().collect();
-                tools_built.retain(|t| {
-                    let name = t.name.as_str();
-                    // sysmod_<name>: allowed 에 있는 것만
-                    if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
-                        return allowed.contains(sysmod_name);
-                    }
-                    // read-only allow 규칙은 core 단일 소스(hosted 경로 ToolManagerProxyHandler 와 공유 →
-                    // 규칙 drift 차단). + 레거시 render_* 분리 도구 + save_page(hub-scoped write) 추가 허용.
-                    if crate::utils::hub_context::is_hub_readonly_tool(name)
-                        || name.starts_with("render_")
-                        || name == "save_page"
-                    {
-                        return true;
-                    }
-                    // 그 외 (destructive: write_* / delete_* / schedule_task /
-                    // run_task / run_module / mcp_* / request_secret 등) = 차단
-                    false
-                });
+                // 단일 권한 게이트 — hosted 경로(mcp_server)와 같은 hub_context::permits_tool 사용 (규칙 drift 0).
+                // 허용 = 핵심 sysmod(notes/calendar) + allowed_sysmods + read-only + render_* + save_page.
+                // 그 외(write/delete/schedule/run/mcp/request_secret 등)는 fail-safe 차단.
+                tools_built.retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
             }
             auto_tools = tools_built;
             &auto_tools

@@ -62,13 +62,34 @@ pub fn active_allowed_sysmods() -> Option<Vec<String>> {
         .and_then(|g| g.as_ref().map(|c| c.allowed_sysmods.clone()))
 }
 
+/// hub 핵심 사이드바 sysmod — admin 의 per-hub allowed_sysmods 와 무관하게 항상 허용.
+/// hub 가 admin 사이드바 경험(메모·캘린더)을 가지려면 필수이고, 데이터는 owner-scope 라 격리됨.
+/// 외부 데이터 도구(law-search/yfinance/kakao 등)는 per-hub allowed_sysmods 로 제어.
+pub const CORE_SYSMODS: &[&str] = &["notes", "calendar"];
+
 /// MCP server 의 sysmod handler 에서 호출 — hub context 가 활성이고 sysmod 가 미허용이면 true.
-/// admin 호출 (Guard 미설정) = false (정공 허용).
+/// admin 호출 (Guard 미설정) = false (정공 허용). 핵심 sysmod(notes/calendar)는 항상 허용.
 pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
     match active_allowed_sysmods() {
         None => false,
-        Some(allowed) => !allowed.iter().any(|s| s == sysmod_name),
+        Some(allowed) => {
+            !CORE_SYSMODS.contains(&sysmod_name) && !allowed.iter().any(|s| s == sysmod_name)
+        }
     }
+}
+
+/// hub principal 이 도구 `name` 을 호출할 수 있는지 — **단일 권한 게이트**.
+/// FC 경로(ai.rs effective_tools 필터)와 hosted 경로(mcp_server)가 모두 이걸 통해 판정 → 규칙 drift 0.
+///
+/// 허용: 핵심 sysmod(notes/calendar) + per-hub allowed_sysmods 의 sysmod + read-only(list/get/search/cache)
+///       + render(_*) + suggest + propose_plan + save_page(hub-scoped write).
+/// 거부(기본 deny): write_*/delete_*/schedule_task/run_task/run_module/mcp_*/request_secret/vault_* 등
+///       destructive·admin 도구. 명시 허용에 없으면 전부 차단 = fail-safe.
+pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
+    if let Some(sysmod) = name.strip_prefix("sysmod_") {
+        return CORE_SYSMODS.contains(&sysmod) || allowed_sysmods.iter().any(|s| s == sysmod);
+    }
+    is_hub_readonly_tool(name) || name.starts_with("render_") || name == "save_page"
 }
 
 /// hub visitor 에게 허용할 read-only/안전 도구 판정 — **단일 소스**.
@@ -113,5 +134,59 @@ mod tests {
             assert!(is_hub_context_active());
         }
         assert!(!is_hub_context_active());
+    }
+
+    #[test]
+    fn core_sysmods_allowed_without_explicit_grant() {
+        // notes/calendar 는 allowed_sysmods 에 없어도 허용 (핵심 사이드바).
+        assert!(!is_sysmod_blocked_for_hub_with(&[], "notes"));
+        assert!(!is_sysmod_blocked_for_hub_with(&[], "calendar"));
+        // 외부 도구는 allowed 에 있어야만.
+        assert!(is_sysmod_blocked_for_hub_with(&[], "telegram"));
+        assert!(!is_sysmod_blocked_for_hub_with(&["telegram".to_string()], "telegram"));
+    }
+
+    // is_sysmod_blocked_for_hub 의 static 의존 없이 로직만 검증하는 헬퍼.
+    fn is_sysmod_blocked_for_hub_with(allowed: &[String], name: &str) -> bool {
+        !CORE_SYSMODS.contains(&name) && !allowed.iter().any(|s| s == name)
+    }
+
+    #[test]
+    fn permits_tool_hub_policy_allow() {
+        let allowed = vec!["law-search".to_string()];
+        // 핵심 sysmod (allowed 없이도)
+        assert!(permits_tool("sysmod_notes", &allowed));
+        assert!(permits_tool("sysmod_calendar", &allowed));
+        // per-hub 허용 sysmod
+        assert!(permits_tool("sysmod_law-search", &allowed));
+        // read-only / 시각화 / 제안 / hub-scoped write
+        assert!(permits_tool("search_library", &allowed));
+        assert!(permits_tool("get_page", &allowed));
+        assert!(permits_tool("list_pages", &allowed));
+        assert!(permits_tool("cache_read", &allowed));
+        assert!(permits_tool("render", &allowed));
+        assert!(permits_tool("render_image", &allowed));
+        assert!(permits_tool("suggest", &allowed));
+        assert!(permits_tool("propose_plan", &allowed));
+        assert!(permits_tool("save_page", &allowed));
+    }
+
+    #[test]
+    fn permits_tool_hub_policy_deny() {
+        let allowed = vec!["law-search".to_string()];
+        // 미허용 sysmod (allowed 에도 core 에도 없음)
+        assert!(!permits_tool("sysmod_telegram", &allowed));
+        assert!(!permits_tool("sysmod_kiwoom", &allowed));
+        // destructive / admin / 시크릿 — 전부 차단 (fail-safe)
+        assert!(!permits_tool("delete_page", &allowed));
+        assert!(!permits_tool("delete_file", &allowed));
+        assert!(!permits_tool("write_file", &allowed));
+        assert!(!permits_tool("schedule_task", &allowed));
+        assert!(!permits_tool("cancel_cron_job", &allowed));
+        assert!(!permits_tool("run_task", &allowed));
+        assert!(!permits_tool("run_module", &allowed));
+        assert!(!permits_tool("request_secret", &allowed));
+        assert!(!permits_tool("mcp_call", &allowed));
+        assert!(!permits_tool("vault_get_secret", &allowed));
     }
 }
