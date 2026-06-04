@@ -749,6 +749,15 @@ impl AiManager {
                             extra_parts.push(s);
                         }
                     }
+                    // instance 커스텀 지침 — 기본 프롬프트(에이전트·plan·render 규칙)에 **추가** (replace 아님).
+                    // 옛 방식(llm_opts.system_prompt=instance)은 이 블록 전체를 skip 해 hub 가 인사·plan 실행 누락하던 root.
+                    if let Some(directive) = ctx
+                        .instance_directive
+                        .as_deref()
+                        .filter(|d| !d.trim().is_empty())
+                    {
+                        extra_parts.push(format!("## 이 어시스턴트의 추가 지침\n{}", directive));
+                    }
                 } else if let Some(hr) = &self.history_resolver {
                     let owner = effective_opts
                         .owner

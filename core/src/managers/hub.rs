@@ -468,29 +468,33 @@ impl HubManager {
         // 옛 hub:<instance> (세션 없음) 은 per-tool 주입과 어긋나던 drift 였음.
         let owner = format!("hub:{}:{}", instance.id, session_id);
 
+        // instance 커스텀 프롬프트는 기본 시스템 프롬프트(에이전트·plan·render 규칙)를 replace 하지 않고
+        // hub_context 로 넘긴다 → AiManager 가 base 에 추가 합성 (admin 과 동일 base + plan_instruction 보장).
+        let instance_directive = instance
+            .system_prompt
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(String::from);
         let hub_ctx = HubContext {
             instance_id: instance.id.clone(),
             session_id,
             allowed_sysmods: instance.allowed_sysmods.clone(),
             allowed_references: instance.allowed_references.clone(),
             history,
+            instance_directive,
         };
 
-        let system_prompt = instance
-            .system_prompt
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .map(String::from);
         let model_id = instance
             .model_id
             .as_deref()
             .filter(|s| !s.is_empty())
             .map(String::from);
 
+        // system_prompt 는 의도적으로 None — AiManager 가 prompt_builder 로 기본 프롬프트(+plan+history)를 빌드하고
+        // hub_context.instance_directive 를 거기에 추가한다. 옛 system_prompt=instance 방식은 그 블록을 통째로 skip 했음.
         let llm_opts = LlmCallOpts {
             owner: Some(owner.clone()),
             conversation_id: Some(conversation_id.to_string()),
-            system_prompt,
             model: model_id.clone(),
             plan_mode,
             ..Default::default()
