@@ -66,6 +66,7 @@ async fn cancel_unknown_returns_error() {
     let err = svc
         .cancel_cron(Request::new(CancelCronRequest {
             job_id: "none".to_string(),
+            owner: None,
         }))
         .await
         .err()
