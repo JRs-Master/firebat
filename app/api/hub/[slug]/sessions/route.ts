@@ -59,19 +59,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const op = body.op ?? '';
 
-  // 권한 가드 helper — conv.instance_id + conv.session_id 매칭 검증 (다른 hub / 다른 sessionId 차단).
-  const ensureConvOwnership = async (convId: string): Promise<NextResponse | null> => {
-    const res = await getConversation({ id: convId });
-    if (!res.ok || !res.data?.conversation) {
-      return jsonResponse(404, { error: '대화를 찾을 수 없습니다.' });
-    }
-    const conv = res.data.conversation;
-    if (conv.instanceId !== instance.id || conv.sessionId !== sessionId) {
-      return jsonResponse(403, { error: '이 대화에 접근할 권한이 없습니다.' });
-    }
-    return null;
-  };
-
+  // 대화 ownership(instance_id + session_id 매칭)은 Rust core(HubService)가 강제 — 각 RPC 에 instanceId/sessionId
+  // 전달 시 불일치/부재면 권한 거부. 프론트 가드 폐기.
   try {
     switch (op) {
       case 'list-conversations': {
@@ -92,18 +81,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'get-conversation': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await getConversation({ id });
+        const res = await getConversation({ id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, conversation: res.data });
       }
       case 'delete-conversation': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await deleteConversation({ id });
+        const res = await deleteConversation({ id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
@@ -115,18 +100,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'restore-conversation': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await restoreConversation({ id });
+        const res = await restoreConversation({ id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
       case 'permanent-delete-conversation': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await permanentDeleteConversation({ id });
+        const res = await permanentDeleteConversation({ id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
@@ -134,18 +115,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const id = String(body.id ?? '');
         const title = String(body.title ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await updateConversationTitle({ id, title });
+        const res = await updateConversationTitle({ id, title, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
       case 'list-messages': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureConvOwnership(id);
-        if (guard) return guard;
-        const res = await listMessages({ conversationId: id });
+        const res = await listMessages({ conversationId: id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, messages: res.data ?? [] });
       }

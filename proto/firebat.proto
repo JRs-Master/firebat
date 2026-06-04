@@ -2714,6 +2714,9 @@ message HubListConversationsResponse {
 
 message HubGetConversationRequest {
   string id = 1;
+  // hub visitor 격리 — 지정 시 conv.instance_id/session_id 와 일치할 때만 (Rust 강제). 옛 호환 위해 optional.
+  optional string instance_id = 2;
+  optional string session_id = 3;
 }
 message HubGetConversationResponse {
   HubConversationPb conversation = 1;
@@ -2721,6 +2724,8 @@ message HubGetConversationResponse {
 
 message HubDeleteConversationRequest {
   string id = 1;
+  optional string instance_id = 2;
+  optional string session_id = 3;
 }
 message HubDeleteConversationResponse {}
 
@@ -2734,17 +2739,23 @@ message HubListDeletedConversationsResponse {
 
 message HubRestoreConversationRequest {
   string id = 1;
+  optional string instance_id = 2;
+  optional string session_id = 3;
 }
 message HubRestoreConversationResponse {}
 
 message HubPermanentDeleteConversationRequest {
   string id = 1;
+  optional string instance_id = 2;
+  optional string session_id = 3;
 }
 message HubPermanentDeleteConversationResponse {}
 
 message HubUpdateConversationTitleRequest {
   string id = 1;
   string title = 2;
+  optional string instance_id = 3;
+  optional string session_id = 4;
 }
 message HubUpdateConversationTitleResponse {}
 
@@ -2769,6 +2780,8 @@ message HubAppendSystemMessageResponse {
 
 message HubListMessagesRequest {
   string conversation_id = 1;
+  optional string instance_id = 2;
+  optional string session_id = 3;
 }
 message HubListMessagesResponse {
   repeated HubMessagePb messages = 1;

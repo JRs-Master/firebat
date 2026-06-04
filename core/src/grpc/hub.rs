@@ -44,6 +44,30 @@ impl HubServiceImpl {
     pub fn new(manager: Arc<HubManager>, ai: Arc<AiManager>) -> Self {
         Self { manager, ai }
     }
+
+    /// hub visitor 격리 — instance_id/session_id 지정 시 conv 의 그것과 모두 일치할 때만 통과.
+    /// 둘 중 하나라도 빈 값/부재면 무검사(옛 호환). 불일치·conv 부재 = 권한 거부.
+    /// 프론트(sessions route) ensureConvOwnership 가드 대신 core 단일 강제.
+    async fn ensure_conv_owner(
+        &self,
+        conv_id: &str,
+        instance_id: &Option<String>,
+        session_id: &Option<String>,
+    ) -> Result<(), TonicStatus> {
+        let (Some(inst), Some(sess)) = (
+            instance_id.as_deref().filter(|s| !s.is_empty()),
+            session_id.as_deref().filter(|s| !s.is_empty()),
+        ) else {
+            return Ok(());
+        };
+        match self.manager.get_conversation(conv_id).await {
+            Ok(Some(c)) if c.instance_id.as_str() == inst && c.session_id.as_str() == sess => Ok(()),
+            Ok(_) => Err(TonicStatus::permission_denied(
+                "이 대화에 접근할 권한이 없습니다.",
+            )),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
 }
 
 // ─── 변환 헬퍼 ────────────────────────────────────────────────────────────
@@ -297,7 +321,10 @@ impl HubService for HubServiceImpl {
         &self,
         req: Request<HubGetConversationRequest>,
     ) -> Result<Response<HubGetConversationResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_conv_owner(&args.id, &args.instance_id, &args.session_id)
+            .await?;
+        let id = args.id;
         let conversation = self
             .manager
             .get_conversation(&id)
@@ -313,9 +340,11 @@ impl HubService for HubServiceImpl {
         &self,
         req: Request<HubDeleteConversationRequest>,
     ) -> Result<Response<HubDeleteConversationResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_conv_owner(&args.id, &args.instance_id, &args.session_id)
+            .await?;
         self.manager
-            .delete_conversation(&id)
+            .delete_conversation(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubDeleteConversationResponse {}))
@@ -340,9 +369,11 @@ impl HubService for HubServiceImpl {
         &self,
         req: Request<HubRestoreConversationRequest>,
     ) -> Result<Response<HubRestoreConversationResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_conv_owner(&args.id, &args.instance_id, &args.session_id)
+            .await?;
         self.manager
-            .restore_conversation(&id)
+            .restore_conversation(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubRestoreConversationResponse {}))
@@ -352,9 +383,11 @@ impl HubService for HubServiceImpl {
         &self,
         req: Request<HubPermanentDeleteConversationRequest>,
     ) -> Result<Response<HubPermanentDeleteConversationResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_conv_owner(&args.id, &args.instance_id, &args.session_id)
+            .await?;
         self.manager
-            .permanent_delete_conversation(&id)
+            .permanent_delete_conversation(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubPermanentDeleteConversationResponse {}))
@@ -365,6 +398,8 @@ impl HubService for HubServiceImpl {
         req: Request<HubUpdateConversationTitleRequest>,
     ) -> Result<Response<HubUpdateConversationTitleResponse>, TonicStatus> {
         let args = req.into_inner();
+        self.ensure_conv_owner(&args.id, &args.instance_id, &args.session_id)
+            .await?;
         self.manager
             .update_conversation_title(&args.id, &args.title)
             .await
@@ -410,7 +445,10 @@ impl HubService for HubServiceImpl {
         &self,
         req: Request<HubListMessagesRequest>,
     ) -> Result<Response<HubListMessagesResponse>, TonicStatus> {
-        let conversation_id = req.into_inner().conversation_id;
+        let args = req.into_inner();
+        self.ensure_conv_owner(&args.conversation_id, &args.instance_id, &args.session_id)
+            .await?;
+        let conversation_id = args.conversation_id;
         let messages = self
             .manager
             .list_messages(&conversation_id)
