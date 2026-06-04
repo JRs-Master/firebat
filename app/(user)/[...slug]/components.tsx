@@ -1952,16 +1952,21 @@ function KeyValueComp({ title, items, columns = 2 }: {
     2: 'grid-cols-1 sm:grid-cols-2',
     3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
   };
+  // 다른 컴포넌트(card/metric)와 통일된 프레임 — 테두리 + 제목 바 + 값 강조. 평면 나열 탈피.
   return (
-    <div className="space-y-2">
-      {title && <div className="text-sm font-bold text-gray-800">{cleanPlainText(title)}</div>}
-      <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-4 gap-y-2`}>
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden my-1">
+      {title && (
+        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-800">
+          {cleanPlainText(title)}
+        </div>
+      )}
+      <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-6 px-4 py-1`}>
         {items.map((item, i) => {
-          const rowCls = `flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100 ${item.href ? 'hover:opacity-80 transition-opacity cursor-pointer no-underline' : ''}`;
+          const rowCls = `flex items-baseline justify-between gap-3 py-2.5 border-b border-gray-100 ${item.href ? 'hover:opacity-70 transition-opacity cursor-pointer no-underline' : ''}`;
           const inner = (
             <>
-              <span className="text-xs text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
-              <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
+              <span className="text-[13px] text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
+              <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>
                 {formatNumberString(item.value)}
               </span>
             </>
