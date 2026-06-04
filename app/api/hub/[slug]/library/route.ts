@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  createReference,
-  listReferences,
-  deleteReference,
-  uploadSource,
-  listSources,
-  getSource,
-  deleteSource,
-} from '../../../../../lib/api-gen/library';
+import { listReferences, getSource } from '../../../../../lib/api-gen/library';
+import { libraryOpDispatch } from '../../../../../lib/handlers/library';
 import { authenticate } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -79,75 +72,44 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return ensureRefOwnership(res.data.source.referenceId);
   };
 
+  // hub 가 쓸 수 있는 op 만 허용 — reextract/search 등은 가드 없는 노출 차단 위해 미지원.
+  const HUB_OPS = new Set([
+    'list-references', 'create-reference', 'delete-reference',
+    'list-sources', 'get-source', 'delete-source', 'upload-text-source',
+  ]);
+  if (!HUB_OPS.has(op)) return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });
+
   try {
+    // id-기반 조작은 본 hub owner 의 reference/source 인지 가드 (list/create 는 hubOwner 자동 스코프).
+    let guard: NextResponse | null = null;
     switch (op) {
-      case 'list-references': {
-        const res = await listReferences({ owner: hubOwner });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, data: res.data ?? [] });
-      }
-      case 'create-reference': {
-        const res = await createReference({
-          name: String(body.name ?? ''),
-          description: String(body.description ?? ''),
-          owner: hubOwner,
-        });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, data: res.data });
-      }
       case 'delete-reference': {
         const id = String(body.id ?? '');
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureRefOwnership(id);
-        if (guard) return guard;
-        const res = await deleteReference({ id });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true });
+        guard = await ensureRefOwnership(id);
+        break;
       }
-      case 'list-sources': {
-        const refId = String(body.referenceId ?? '');
-        if (!refId) return jsonResponse(400, { error: 'referenceId 필수' });
-        const guard = await ensureRefOwnership(refId);
-        if (guard) return guard;
-        const res = await listSources({ referenceId: refId });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, data: res.data ?? [] });
-      }
-      case 'get-source': {
-        const id = String(body.id ?? '');
-        if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureSourceOwnership(id);
-        if (guard) return guard;
-        const res = await getSource({ id });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, data: res.data });
-      }
-      case 'delete-source': {
-        const id = String(body.id ?? '');
-        if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureSourceOwnership(id);
-        if (guard) return guard;
-        const res = await deleteSource({ id });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true });
-      }
+      case 'list-sources':
       case 'upload-text-source': {
         const refId = String(body.referenceId ?? '');
         if (!refId) return jsonResponse(400, { error: 'referenceId 필수' });
-        const guard = await ensureRefOwnership(refId);
-        if (guard) return guard;
-        const res = await uploadSource({
-          referenceId: refId,
-          name: String(body.name ?? ''),
-          sourceType: 'text',
-          inlineText: String(body.inlineText ?? ''),
-        });
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, data: res.data });
+        guard = await ensureRefOwnership(refId);
+        break;
       }
-      default:
-        return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });
+      case 'get-source':
+      case 'delete-source': {
+        const id = String(body.id ?? '');
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        guard = await ensureSourceOwnership(id);
+        break;
+      }
     }
+    if (guard) return guard;
+
+    // op→RPC 매핑은 admin 라우트와 공유 (libraryOpDispatch). owner = hubOwner 강제.
+    const result = await libraryOpDispatch(op, body, hubOwner);
+    if (!result.ok) return jsonResponse(500, { error: result.message });
+    return NextResponse.json({ success: true, data: result.data });
   } catch (err) {
     logger.debug('hub-library', 'op 실패', { op, error: err });
     return jsonResponse(500, { error: (err as Error)?.message ?? '서버 오류' });
