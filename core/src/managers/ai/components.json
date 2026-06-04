@@ -852,6 +852,45 @@
     }
   },
   {
+    "name": "quiz",
+    "componentType": "Quiz",
+    "description": "객관식 문제 1개. 문제·정답·해설을 분리 저장하고 view 로 표현 결정: exam(시험지=문제만) / answers(해설지=정답+해설) / full(전부) / interactive(클릭→채점→해설, 기본). 본문 박스(boxes, 무채색 시험지 스타일)·ㄱㄴㄷ 합답형 보기(statements)·그림/표/그래프(figures=다른 컴포넌트 배열)·보기(choices ①~⑧) 조합. 수식은 LaTeX $...$.",
+    "semanticText": "문제 객관식 시험 퀴즈 quiz 보기 선택지 정답 해설 수능 공무원 기출 사법고시 ①②③④⑤ ㄱㄴㄷ 합답형 시험지 해설지 exam",
+    "propsSchema": {
+      "type": "object",
+      "required": ["question", "choices"],
+      "properties": {
+        "number": { "type": ["number", "string", "null"], "description": "문항 번호" },
+        "points": { "type": ["number", "string", "null"], "description": "배점" },
+        "question": { "type": "string", "description": "문제 지문 (markdown + LaTeX $...$)" },
+        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "본문 네모박스 0~N개 (무채색 시험지 스타일, markdown+LaTeX). 박스 2개 케이스 포함" },
+        "statements": { "type": ["array", "null"], "items": { "type": "string" }, "description": "ㄱㄴㄷ 합답형 보기 (자동 ㄱ/ㄴ/ㄷ/ㄹ 라벨). choices 가 'ㄱ,ㄴ' 식으로 참조" },
+        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "그림/표/그래프 등 시각 자극 — image/table/chart 등 다른 컴포넌트 배열" },
+        "choices": { "type": "array", "items": { "type": "string" }, "description": "보기 2~8개 (①②③④⑤⑥⑦⑧ 자동 번호, markdown+LaTeX)" },
+        "answer": { "type": ["number", "null"], "description": "정답 번호 (1-based)" },
+        "explanation": { "type": ["string", "null"], "description": "해설 (markdown + LaTeX)" },
+        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
+      }
+    }
+  },
+  {
+    "name": "quiz_group",
+    "componentType": "QuizGroup",
+    "description": "한 지문에 여러 문제가 딸린 세트 (수능 42~45 등). passage(공유 지문)+boxes/figures(공유 자극)+questions[] (각 문항: question/choices/answer/explanation/statements/figures). view 는 quiz 와 동일 (interactive 면 전부 풀고 한 번에 채점).",
+    "semanticText": "지문 장문독해 세트 여러 문제 quiz group 수능 42 43 44 45 공통 지문 본문 한번에 채점 묶음",
+    "propsSchema": {
+      "type": "object",
+      "required": ["questions"],
+      "properties": {
+        "passage": { "type": ["string", "null"], "description": "공유 지문/본문 (markdown + LaTeX)" },
+        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "공유 본문 박스 (무채색)" },
+        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "공유 그림/표/그래프" },
+        "questions": { "type": "array", "items": { "type": "object", "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "문항 배열 (각 {question, choices, answer?, explanation?, statements?, figures?})" },
+        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "라벨:값 구조적 나열. 종목 스펙·제품 정보·재무 지표 등.",

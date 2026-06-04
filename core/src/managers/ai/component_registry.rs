@@ -32,7 +32,7 @@ pub struct ComponentDef {
     pub props_schema: serde_json::Value,
 }
 
-/// 27개 component 정의 (components.json) — 옛 TS 26개 + map(태풍 시각화).
+/// 29개 component 정의 (components.json) — 27 + quiz/quiz_group(exam-prep 객관식).
 /// 첫 호출 시 lazy init. 이후 cached.
 pub fn components() -> &'static Vec<ComponentDef> {
     static CACHE: OnceLock<Vec<ComponentDef>> = OnceLock::new();
@@ -188,8 +188,8 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — map(태풍 시각화) 추가로 27 (옛 26 + map).
-        assert_eq!(comps.len(), 27, "components.json 의 27개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — 27 + quiz/quiz_group(exam-prep 객관식) 추가로 29.
+        assert_eq!(comps.len(), 29, "components.json 의 29개 컴포넌트 모두 설정되어야");
     }
 
     #[test]

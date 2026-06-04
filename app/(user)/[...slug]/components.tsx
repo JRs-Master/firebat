@@ -45,6 +45,7 @@ const TYPE_ALIAS: Record<string, string> = {
   countdown: 'Countdown', chart: 'Chart', ad_slot: 'AdSlot', adslot: 'AdSlot',
   diagram: 'Diagram', math: 'Math', code: 'Code', slideshow: 'Slideshow',
   lottie: 'Lottie', network: 'Network', map: 'Map',
+  quiz: 'Quiz', quizgroup: 'QuizGroup', quiz_group: 'QuizGroup',
 };
 
 function ComponentSwitch({ comp }: { comp: ComponentDef }) {
@@ -90,12 +91,166 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
+    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? []} answer={p.answer} explanation={p.explanation} view={p.view} />;
+    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? []} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
       logger.warn('component-switch', `알 수 없는 컴포넌트 type: ${type}`, { comp });
       return null;
   }
+}
+
+// ── Quiz (객관식 문제) ────────────────────────────────────────────────────────
+// 데이터(문제/정답/해설 분리) + view 4종으로 같은 데이터를 다르게 렌더:
+//   exam(시험지 — 문제만) / answers(해설지 — 정답·해설) / full(풀이본 — 전부) / interactive(풀이 — 클릭→채점→해설).
+// 문제 박스·ㄱㄴㄷ 보기는 무채색(흰+검은줄) 시험지 스타일. 정답·오답 표시만 색. 해설은 자유.
+const QUIZ_CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+const QUIZ_KOR = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ'];
+type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
+
+/** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
+function QuizBody({
+  number, question, boxes, figures, statements, choices, answer, explanation,
+  view, selected, revealed, onSelect,
+}: {
+  number?: number | string; question: string; boxes?: string[]; figures?: ComponentDef[];
+  statements?: string[]; choices: string[]; answer?: number; explanation?: string;
+  view: QuizView; selected?: number; revealed: boolean; onSelect?: (i: number) => void;
+}) {
+  const showAnswer = view === 'answers' || view === 'full' || (view === 'interactive' && revealed);
+  const interactive = view === 'interactive';
+  const ans = typeof answer === 'number' ? answer : undefined; // 1-based
+  const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
+  return (
+    <div className="text-[14px] sm:text-[15px] text-slate-800">
+      {view === 'answers' ? (
+        number != null && <div className="text-[12px] font-bold text-slate-500 mb-1">{typeof number === 'number' ? `${number}번` : String(number)}</div>
+      ) : (
+        <div className="font-semibold mb-2">
+          {numLabel && <span className="mr-1">{numLabel}</span>}
+          <InlineMd text={question} />
+        </div>
+      )}
+      {view !== 'answers' && (boxes ?? []).map((b, i) => (
+        <div key={`b-${i}`} className="border border-slate-400 bg-white rounded-md p-3 my-2 text-[13px] sm:text-[14px] leading-relaxed">
+          <TextComp content={b} />
+        </div>
+      ))}
+      {view !== 'answers' && figures && figures.length > 0 && (
+        <div className="my-2"><ComponentRenderer components={figures} /></div>
+      )}
+      {view !== 'answers' && statements && statements.length > 0 && (
+        <div className="border border-slate-400 bg-white rounded-md p-3 my-2 flex flex-col gap-1 text-[13px] sm:text-[14px]">
+          {statements.map((s, i) => (
+            <div key={`s-${i}`} className="flex gap-1.5">
+              <span className="font-bold shrink-0">{QUIZ_KOR[i] ?? ''}.</span>
+              <span className="flex-1"><InlineMd text={s} /></span>
+            </div>
+          ))}
+        </div>
+      )}
+      {view !== 'answers' && (
+        <div className="flex flex-col gap-1 my-2">
+          {choices.map((c, i) => {
+            const num = i + 1;
+            const isAns = ans === num;
+            const isSel = selected === num;
+            let cls = 'border-slate-200';
+            if (showAnswer && isAns) cls = 'border-green-500 bg-green-50 text-green-800 font-semibold';
+            else if (showAnswer && isSel && !isAns) cls = 'border-red-400 bg-red-50 text-red-700';
+            else if (interactive && isSel && !revealed) cls = 'border-blue-500 bg-blue-50';
+            else if (interactive && !revealed) cls = 'border-slate-200 hover:bg-slate-50';
+            return (
+              <button
+                key={`c-${i}`}
+                type="button"
+                disabled={!interactive || revealed}
+                onClick={() => onSelect?.(num)}
+                className={`text-left flex gap-2 items-start px-2.5 py-1.5 rounded-md border transition-colors ${cls} ${interactive && !revealed ? 'cursor-pointer' : 'cursor-default'}`}
+              >
+                <span className="shrink-0">{QUIZ_CIRCLED[i] ?? `${num}.`}</span>
+                <span className="flex-1"><InlineMd text={c} /></span>
+                {showAnswer && isAns && <span className="text-green-600 shrink-0">✓</span>}
+                {showAnswer && isSel && !isAns && <span className="text-red-500 shrink-0">✗</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showAnswer && (
+        <div className="mt-2">
+          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-1">정답: {QUIZ_CIRCLED[ans - 1] ?? ans}</div>}
+          {explanation && (
+            <div className="border-l-2 border-indigo-300 pl-3 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
+              <TextComp content={explanation} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, explanation, view = 'interactive' }: {
+  number?: number | string; points?: number | string; question: string; boxes?: string[];
+  figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number;
+  explanation?: string; view?: QuizView;
+}) {
+  const [selected, setSelected] = useState<number | undefined>(undefined);
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="border border-slate-300 rounded-lg p-3 sm:p-4 bg-white my-2">
+      {points != null && (
+        <div className="text-[11px] text-slate-400 mb-1 text-right">[{typeof points === 'number' ? `${points}점` : String(points)}]</div>
+      )}
+      <QuizBody
+        number={number} question={question} boxes={boxes} figures={figures} statements={statements}
+        choices={choices} answer={answer} explanation={explanation} view={view}
+        selected={selected} revealed={revealed} onSelect={setSelected}
+      />
+      {view === 'interactive' && !revealed && (
+        <button type="button" onClick={() => setRevealed(true)} className="mt-2 px-3 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">채점</button>
+      )}
+    </div>
+  );
+}
+
+function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive' }: {
+  passage?: string; boxes?: string[]; figures?: ComponentDef[];
+  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; answer?: number; explanation?: string; figures?: ComponentDef[] }>;
+  view?: QuizView;
+}) {
+  const [selected, setSelected] = useState<Record<number, number>>({});
+  const [revealed, setRevealed] = useState(false);
+  const qs = questions ?? [];
+  return (
+    <div className="border border-slate-300 rounded-lg p-3 sm:p-4 bg-white my-2">
+      {view !== 'answers' && passage && (
+        <div className="border border-slate-400 bg-white rounded-md p-3 mb-3 text-[13px] sm:text-[14px] leading-relaxed">
+          <TextComp content={passage} />
+        </div>
+      )}
+      {view !== 'answers' && (boxes ?? []).map((b, i) => (
+        <div key={`gb-${i}`} className="border border-slate-400 bg-white rounded-md p-3 mb-2 text-[13px] sm:text-[14px] leading-relaxed"><TextComp content={b} /></div>
+      ))}
+      {view !== 'answers' && figures && figures.length > 0 && (
+        <div className="mb-3"><ComponentRenderer components={figures} /></div>
+      )}
+      <div className="flex flex-col gap-4">
+        {qs.map((q, i) => (
+          <QuizBody
+            key={`q-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
+            choices={q.choices ?? []} answer={q.answer} explanation={q.explanation} view={view}
+            selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected(s => ({ ...s, [i]: n }))}
+          />
+        ))}
+      </div>
+      {view === 'interactive' && !revealed && (
+        <button type="button" onClick={() => setRevealed(true)} className="mt-3 px-3 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 채점</button>
+      )}
+    </div>
+  );
 }
 
 // ── Header ──────────────────────────────────────────────────────────────────
