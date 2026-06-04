@@ -827,6 +827,8 @@ message ScheduleCronRequest {
 message ScheduleCronResponse {}
 message CancelCronRequest {
   string job_id = 1;
+  // hub owner scoping — 지정 시 job.owner 일치할 때만 cancel (cancel_owned). admin 은 omit → 무검사.
+  optional string owner = 2;
 }
 message CancelCronResponse {}
 // UpdateCron 은 ScheduleCron 과 동일 schema (등록/수정 호환). buf STANDARD 정공으로 분리.

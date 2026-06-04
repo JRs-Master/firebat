@@ -63,14 +63,8 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   if (!jobId) return NextResponse.json({ success: false, error: 'jobId 필요' }, { status: 400 });
 
   try {
-    // ownership 가드 — list 가져와 본 job 의 owner 매칭 확인.
-    const list = await listCron();
-    if (!list.ok) return NextResponse.json({ success: false, error: list.message }, { status: 500 });
-    const job = (list.data ?? []).find((j: any) => j.jobId === jobId);
-    if (!job || (job as any).owner !== expectedOwner) {
-      return NextResponse.json({ success: false, error: '이 작업에 접근할 권한이 없습니다.' }, { status: 403 });
-    }
-    const res = await cancelCron({ jobId });
+    // owner scoping = Rust core(ScheduleService.cancel_cron → cancel_owned)가 강제 — owner 불일치 시 거부. 프론트 가드 폐기.
+    const res = await cancelCron({ jobId, owner: expectedOwner } as any);
     if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
     return NextResponse.json({ success: true });
   } catch (err) {

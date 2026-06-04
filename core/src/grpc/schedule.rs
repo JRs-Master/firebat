@@ -241,12 +241,14 @@ impl ScheduleService for ScheduleServiceImpl {
         &self,
         req: Request<CancelCronRequest>,
     ) -> Result<Response<CancelCronResponse>, TonicStatus> {
-        let job_id = req.into_inner().job_id;
-        let cancelled = self
-            .manager
-            .cancel(&job_id)
-            .await
-            .map_err(TonicStatus::internal)?;
+        let args = req.into_inner();
+        let job_id = args.job_id;
+        // owner 지정(hub) → cancel_owned 로 owner 일치 검사. None(admin) → 기존 cancel(무검사).
+        let cancelled = match args.owner.as_deref().filter(|s| !s.is_empty()) {
+            Some(o) => self.manager.cancel_owned(&job_id, Some(o)).await,
+            None => self.manager.cancel(&job_id).await,
+        }
+        .map_err(TonicStatus::internal)?;
         if !cancelled {
             return Err(TonicStatus::not_found(format!(
                 "cron 잡 {} 미등록",
