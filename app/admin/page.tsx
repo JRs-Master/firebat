@@ -1252,7 +1252,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   };
 
   return (
-    <div className="flex w-full h-full bg-slate-50 overflow-hidden">
+    <div className="flex w-full h-full bg-slate-50 overflow-hidden font-sans tracking-tight">
       <Sidebar
         onRefreshTree={fetchFileTree}
         conversations={conversations}
