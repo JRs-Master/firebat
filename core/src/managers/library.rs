@@ -29,6 +29,13 @@ pub struct LibraryManager {
     embedder: Arc<dyn IEmbedderPort>,
 }
 
+/// upload_source 결과 — 신규 생성 또는 중복(dedup) 시 기존 source 반환.
+pub struct UploadOutcome {
+    pub source_id: String,
+    pub chunk_count: i64,
+    pub deduped: bool,
+}
+
 impl LibraryManager {
     pub fn new(library: Arc<dyn ILibraryPort>, embedder: Arc<dyn IEmbedderPort>) -> Self {
         Self { library, embedder }
@@ -72,7 +79,18 @@ impl LibraryManager {
         extracted_text: &str,
         page_numbers: Option<&[(usize, usize, usize)]>, // (page_num, start_char, end_char)
         content_hash: Option<&str>,
-    ) -> InfraResult<String> {
+    ) -> InfraResult<UploadOutcome> {
+        // 0. 중복 dedup — 같은 reference 에 동일 content_hash 가 있으면 새로 만들지 않고 기존 반환.
+        //    (해시 계산은 파일 I/O 라 infra 담당, dedup 결정·조회는 Core.)
+        if let Some(h) = content_hash {
+            if let Some(existing) = self.library.find_source_by_hash(reference_id, h).await? {
+                return Ok(UploadOutcome {
+                    source_id: existing.id,
+                    chunk_count: existing.chunk_count,
+                    deduped: true,
+                });
+            }
+        }
         let source_id = uuid::Uuid::new_v4().to_string();
         // 1. Source 영역 저장
         self.library
@@ -89,9 +107,14 @@ impl LibraryManager {
             .await?;
 
         // 2. Chunking + 임베딩 + 저장 (upload / reextract 공용 헬퍼)
-        self.index_chunks(&source_id, name, extracted_text, page_numbers)
-            .await?;
-        Ok(source_id)
+        let chunk_count = self
+            .index_chunks(&source_id, name, extracted_text, page_numbers)
+            .await? as i64;
+        Ok(UploadOutcome {
+            source_id,
+            chunk_count,
+            deduped: false,
+        })
     }
 
     /// 청킹 + 임베딩 + 저장 공용 헬퍼 — upload_source / reextract_source 가 호출. source 행은 이미 생성됨.
@@ -174,17 +197,6 @@ impl LibraryManager {
             )
             .await?;
         self.index_chunks(source_id, name, extracted_text, page_numbers)
-            .await
-    }
-
-    /// 같은 reference 안 동일 content_hash source 조회 — 중복 업로드 dedup.
-    pub async fn find_source_by_hash(
-        &self,
-        reference_id: &str,
-        content_hash: &str,
-    ) -> InfraResult<Option<LibrarySource>> {
-        self.library
-            .find_source_by_hash(reference_id, content_hash)
             .await
     }
 

@@ -8,7 +8,7 @@ import { authenticate } from '../../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../../lib/util/logger';
 
 /**
- * POST /api/hub/[slug]/library/upload — 익명 hub 방문자의 파일 업로드 (PDF / TXT / MD).
+ * POST /api/hub/[slug]/library/upload — 익명 hub 방문자의 파일 업로드 (지원 포맷은 Rust dispatch 권위).
  *
  * admin /api/library/upload-and-extract 와 동등 흐름 — X-Api-Token + X-Session-Id 인증 +
  * referenceId 가 hub-scoped owner 인지 가드.

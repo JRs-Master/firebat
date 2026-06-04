@@ -106,7 +106,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
 //   exam(시험지 — 문제만) / answers(해설지 — 정답·해설) / full(풀이본 — 전부) / interactive(풀이 — 클릭→채점→해설).
 // 문제 박스·ㄱㄴㄷ 보기는 무채색(흰+검은줄) 시험지 스타일. 정답·오답 표시만 색. 해설은 자유.
 const QUIZ_CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
-const QUIZ_KOR = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ'];
+const QUIZ_KOR = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
@@ -144,7 +144,7 @@ function QuizBody({
         <div className="border border-slate-400 bg-white rounded-md p-3 my-2 flex flex-col gap-1 text-[13px] sm:text-[14px]">
           {statements.map((s, i) => (
             <div key={`s-${i}`} className="flex gap-1.5">
-              <span className="font-bold shrink-0">{QUIZ_KOR[i] ?? ''}.</span>
+              <span className="font-bold shrink-0">{QUIZ_KOR[i] ?? `${i + 1}`}.</span>
               <span className="flex-1"><InlineMd text={s} /></span>
             </div>
           ))}

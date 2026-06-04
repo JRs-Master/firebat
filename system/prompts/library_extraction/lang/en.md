@@ -1,0 +1,1 @@
+Extract all text from this document/image without omission. Render mathematical formulas in LaTeX (inline $...$, display $$...$$). Preserve the structure and order of tables, questions, and choices (①②③④⑤, etc.) exactly. Separate page boundaries with blank lines. Output only the extracted body text — no explanations, preamble, or meta comments.

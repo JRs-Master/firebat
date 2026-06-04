@@ -78,10 +78,9 @@ impl LibraryServiceImpl {
             max_tokens: Some(32000),
             ..Default::default()
         };
-        let prompt = "이 문서/이미지의 모든 텍스트를 빠짐없이 추출하라. 수식은 LaTeX 로 표기한다 \
-            (인라인 $...$, 디스플레이 $$...$$). 표·문항·보기(①②③④⑤ 등)의 구조와 순서를 그대로 \
-            보존한다. 페이지 경계는 빈 줄로 구분한다. 설명·머리말·메타 코멘트 없이 추출된 본문만 출력한다.";
-        let resp = self.llm.ask_text(prompt, &opts).await?;
+        // 추출 프롬프트는 system/prompts/library_extraction/lang/{lang}.md 외부화 (i18n) — 재빌드 없이 튜닝.
+        let prompt = firebat_core::i18n::prompt("library_extraction", None);
+        let resp = self.llm.ask_text(&prompt, &opts).await?;
         Ok(resp.text)
     }
 }
@@ -259,17 +258,8 @@ impl LibraryService for LibraryServiceImpl {
         } else {
             None
         };
-        if let Some(h) = &content_hash {
-            if let Ok(Some(existing)) = self.manager.find_source_by_hash(&args.reference_id, h).await {
-                return Ok(Response::new(LibraryUploadSourceResponse {
-                    source_id: existing.id,
-                    chunk_count: existing.chunk_count,
-                    deduped: true,
-                }));
-            }
-        }
-
-        let source_id = self
+        // dedup 결정·인덱싱은 manager(Core) — infra 는 해시 계산(파일 I/O)만 + 결과 매핑.
+        let outcome = self
             .manager
             .upload_source(
                 &args.reference_id,
@@ -284,18 +274,10 @@ impl LibraryService for LibraryServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
 
-        // chunk_count 채우기 위해 get_source 한 번 더 read.
-        let source = self
-            .manager
-            .get_source(&source_id)
-            .await
-            .map_err(TonicStatus::internal)?;
-        let chunk_count = source.map(|s| s.chunk_count).unwrap_or(0);
-
         Ok(Response::new(LibraryUploadSourceResponse {
-            source_id,
-            chunk_count,
-            deduped: false,
+            source_id: outcome.source_id,
+            chunk_count: outcome.chunk_count,
+            deduped: outcome.deduped,
         }))
     }
 
