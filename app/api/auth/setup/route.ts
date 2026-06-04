@@ -23,15 +23,18 @@ import { VK_SYSTEM_UI_LANG } from '../../../../lib/proto-gen/vault-keys';
 export async function GET(_req: NextRequest) {
   const res = await isAdminSetup();
   if (!res.ok) {
-    return NextResponse.json({ isAdminSetup: false });
+    // RPC 실패(core 재시작·일시 장애 등) 시 'true' 로 안전 처리 — 위자드 대신 로그인 폼 노출.
+    // 옛 false 폴백은 core 일시 다운 시 재설정 위자드를 띄워 기존 admin 을 덮을 위험이 있었음.
+    return NextResponse.json({ isAdminSetup: true });
   }
   return NextResponse.json({ isAdminSetup: Boolean(res.data) });
 }
 
 export async function POST(req: NextRequest) {
-  // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유).
+  // 이미 설정됨 OR 확인 실패 = 거부. 확인 안 되는 상태(core 일시 장애)에서 재설정을 허용하면
+  // 기존 admin 자격증명을 덮을 위험 — check 가 명시적으로 '미설정' 을 확인했을 때만 진행.
   const setupRes = await isAdminSetup();
-  if (setupRes.ok && setupRes.data === true) {
+  if (!setupRes.ok || setupRes.data === true) {
     return NextResponse.json({ success: false }, { status: 403 });
   }
 
