@@ -50,18 +50,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const op = String(body.op ?? '');
 
-  // entity 의 owner 가 본 hub 와 일치하는지 가드 (id 직접 접근 시). res.data 는 parsed object.
-  const ensureEntityOwnership = async (id: number): Promise<NextResponse | null> => {
-    const res = await getEntity({ id: BigInt(id) });
-    if (!res.ok || !res.data) {
-      return jsonResponse(404, { error: 'entity 를 찾을 수 없습니다.' });
-    }
-    const parsed = res.data as { owner?: string } | null;
-    if (parsed?.owner !== hubOwner) {
-      return jsonResponse(403, { error: '이 entity 에 접근할 권한이 없습니다.' });
-    }
-    return null;
-  };
+  // owner scoping 은 Rust core(EntityService)가 강제한다 — id-op 에 owner=hubOwner 전달 시
+  // owner 불일치 entity 는 get=null / delete·update·timeline·save-fact=권한거부. 프론트 가드 폐기.
 
   try {
     switch (op) {
@@ -91,26 +81,20 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'get': {
         const id = Number(body.id);
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureEntityOwnership(id);
-        if (guard) return guard;
-        const res = await getEntity({ id: BigInt(id) });
+        const res = await getEntity({ id: BigInt(id), owner: hubOwner } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, entity: res.data ?? null });
       }
       case 'delete': {
         const id = Number(body.id);
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        const guard = await ensureEntityOwnership(id);
-        if (guard) return guard;
-        const res = await deleteEntity({ id: BigInt(id) });
+        const res = await deleteEntity({ id: BigInt(id), owner: hubOwner } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
       case 'timeline': {
         const id = Number(body.entityId);
         if (!id) return jsonResponse(400, { error: 'entityId 필수' });
-        const guard = await ensureEntityOwnership(id);
-        if (guard) return guard;
         const res = await getTimeline({
           entityId: BigInt(id),
           limit: body.limit ? BigInt(body.limit) : BigInt(50),
@@ -122,14 +106,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'save-fact': {
         const eid = Number(body.entityId);
         if (!eid || !body.content) return jsonResponse(400, { error: 'entityId + content 필수' });
-        const guard = await ensureEntityOwnership(eid);
-        if (guard) return guard;
         const res = await saveFact({
           entityId: BigInt(eid),
           content: String(body.content),
           factType: body.factType ?? undefined,
           occurredAt: body.occurredAt ? BigInt(body.occurredAt) : undefined,
           tags: Array.isArray(body.tags) ? body.tags : [],
+          owner: hubOwner,
         } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, id: res.data?.id, skipped: res.data?.skipped });

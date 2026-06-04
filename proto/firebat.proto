@@ -1828,14 +1828,18 @@ message EntityUpdateRequest {
   // Some(Vec) replace, None = 변경 X. 빈 string array json = clear.
   optional string aliases_json = 4;
   optional string metadata_json = 5;
+  // hub owner scoping — 지정 시 entity.owner 와 일치할 때만 허용 (admin 은 omit).
+  optional string owner = 6;
 }
 message EntityUpdateResponse {}
 message EntityDeleteRequest {
   int64 id = 1;
+  optional string owner = 2;
 }
 message EntityDeleteResponse {}
 message EntityGetRequest {
   int64 id = 1;
+  optional string owner = 2;
 }
 message EntityGetResponse {
   string raw_json = 1;
@@ -1862,6 +1866,8 @@ message EntityFactSaveRequest {
   optional string source_conv_id = 6;
   optional int64 ttl_days = 7;
   optional double dedup_threshold = 8;
+  // hub owner scoping — 지정 시 entity_id 의 owner 와 일치할 때만 fact 추가 허용.
+  optional string owner = 9;
 }
 message EntityFactSaveResponse {
   int64 id = 1;

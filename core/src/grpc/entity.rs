@@ -33,6 +33,22 @@ impl EntityServiceImpl {
     pub fn new(manager: Arc<EntityManager>) -> Self {
         Self { manager }
     }
+
+    /// hub owner scoping — owner 지정 시 entity 의 owner 와 일치할 때만 통과. admin(None/빈값)은 무검사.
+    /// 불일치·부재 = PermissionDenied (존재 여부 노출 방지). 프론트 가드 대신 core 가 강제하는 단일 지점.
+    fn ensure_entity_owner(&self, id: i64, owner: Option<&str>) -> Result<(), TonicStatus> {
+        let owner = match owner {
+            Some(o) if !o.is_empty() => o,
+            _ => return Ok(()),
+        };
+        match self.manager.get_entity(id) {
+            Ok(Some(r)) if r.owner == owner => Ok(()),
+            Ok(_) => Err(TonicStatus::permission_denied(
+                "이 entity 에 접근할 권한이 없습니다.",
+            )),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
 }
 
 fn raw_json_string(value: &impl serde::Serialize) -> String {
@@ -73,6 +89,7 @@ impl EntityService for EntityServiceImpl {
         req: Request<EntityUpdateRequest>,
     ) -> Result<Response<EntityUpdateResponse>, TonicStatus> {
         let args = req.into_inner();
+        self.ensure_entity_owner(args.id, args.owner.as_deref())?;
         let aliases = args
             .aliases_json
             .as_deref()
@@ -101,9 +118,10 @@ impl EntityService for EntityServiceImpl {
         &self,
         req: Request<EntityDeleteRequest>,
     ) -> Result<Response<EntityDeleteResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let args = req.into_inner();
+        self.ensure_entity_owner(args.id, args.owner.as_deref())?;
         self.manager
-            .delete_entity(id)
+            .delete_entity(args.id)
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(EntityDeleteResponse {}))
     }
@@ -112,11 +130,18 @@ impl EntityService for EntityServiceImpl {
         &self,
         req: Request<EntityGetRequest>,
     ) -> Result<Response<EntityGetResponse>, TonicStatus> {
-        let id = req.into_inner().id;
-        match self.manager.get_entity(id) {
-            Ok(rec) => Ok(Response::new(EntityGetResponse {
-                raw_json: raw_json_string(&rec),
-            })),
+        let args = req.into_inner();
+        match self.manager.get_entity(args.id) {
+            Ok(rec) => {
+                // owner 지정 시 일치하는 것만 노출 (hub visitor 격리). admin 은 그대로.
+                let rec = match args.owner.as_deref().filter(|s| !s.is_empty()) {
+                    Some(o) => rec.filter(|r| r.owner == o),
+                    None => rec,
+                };
+                Ok(Response::new(EntityGetResponse {
+                    raw_json: raw_json_string(&rec),
+                }))
+            }
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -158,6 +183,8 @@ impl EntityService for EntityServiceImpl {
         req: Request<EntityFactSaveRequest>,
     ) -> Result<Response<EntityFactSaveResponse>, TonicStatus> {
         let args = req.into_inner();
+        // fact 는 entity 에 붙으므로 그 entity 의 owner 로 스코프 (hub visitor 가 남 entity 에 추가 차단).
+        self.ensure_entity_owner(args.entity_id, args.owner.as_deref())?;
         match self
             .manager
             .save_fact(SaveFactInput {
@@ -235,6 +262,7 @@ impl EntityService for EntityServiceImpl {
         req: Request<EntityTimelineRequest>,
     ) -> Result<Response<EntityTimelineResponse>, TonicStatus> {
         let args = req.into_inner();
+        self.ensure_entity_owner(args.entity_id, args.owner.as_deref())?;
         match self.manager.get_entity_timeline(
             args.entity_id,
             TimelineOpts {
