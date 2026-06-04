@@ -574,7 +574,41 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     setActiveConvId(id);
     dispatch({ type: 'LOAD', messages: cleanMessages(conv.messages) });
 
-    // 다기기 동기화: 선택 시 DB 최신 버전 fetch
+    if (hubContext) {
+      // hub: 비활성 대화는 init 시 messages 미로드(빈 배열) → 선택할 때 hub sessions endpoint 에서
+      // 그 대화의 messages 를 fetch (init 의 list-messages 와 동일 경로). admin 의 /api/conversations
+      // 다기기 동기화는 hub 방문자엔 부적합이라 별도 분기. (init 매핑과 동일 — 추후 helper 로 DRY 여지.)
+      (async () => {
+        try {
+          const msgRes = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+            body: JSON.stringify({ op: 'list-messages', id }),
+          }).then(r => r.json()).catch(() => null);
+          if (!msgRes?.success) return;
+          type HubMsg = { id: string; role: string; content?: string; dataJson?: string };
+          const hubMsgs: HubMsg[] = msgRes.messages ?? [];
+          const mapped: Message[] = hubMsgs.map(m => ({
+            id: m.id,
+            role: m.role === 'system' ? ('system' as const) : ('user' as const),
+            content: m.content ?? '',
+            ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
+          } as Message));
+          const cleaned = cleanMessages(mapped);
+          dispatch({ type: 'LOAD', messages: cleaned });
+          setConversations(prev => prev.map(c => (c.id === id ? { ...c, messages: cleaned } : c)));
+        } catch (e) {
+          logger.debug('useChat', 'hub select list-messages 실패', { error: e });
+        }
+      })();
+      return;
+    }
+
+    // 다기기 동기화: 선택 시 DB 최신 버전 fetch (admin)
     const localUpdatedAt = conv.updatedAt ?? conv.createdAt ?? 0;
     const localRealMsgCount = conv.messages.filter(m => m.id !== 'system-init').length;
     (async () => {
@@ -610,7 +644,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         });
       } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     })();
-  }, [activeConvId, conversations, setActiveConvId]);
+  }, [activeConvId, conversations, setActiveConvId, hubContext]);
 
   const handleDeleteConv = useCallback((id: string) => {
     if (hubContext) {
