@@ -458,11 +458,15 @@ mod tests {
             .unwrap();
         adapter
             .create_source("src-1", "ref-1", "samsung.pdf", "pdf", None, Some("/path/a.pdf"),
-                           "삼성전자 2026 Q1 영업이익 6.4조원")
+                           "삼성전자 2026 Q1 영업이익 6.4조원", Some("hash-abc"))
             .await
             .unwrap();
         let sources = adapter.list_sources("ref-1").await.unwrap();
         assert_eq!(sources.len(), 1);
+        // dedup — 동일 content_hash 조회 (없는 해시는 None)
+        let dup = adapter.find_source_by_hash("ref-1", "hash-abc").await.unwrap();
+        assert_eq!(dup.map(|s| s.id), Some("src-1".to_string()));
+        assert!(adapter.find_source_by_hash("ref-1", "nope").await.unwrap().is_none());
         assert_eq!(sources[0].char_count, "삼성전자 2026 Q1 영업이익 6.4조원".chars().count() as i64);
 
         // chunk 저장 — dummy embedding (4 bytes = 1 f32)

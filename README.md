@@ -37,7 +37,7 @@ Firebat is an **AI-Powered Visual Automation Agent (VAA)** — a self-hosted pla
 One prompt flows through **design → implementation → deployment → scheduling → notification**.
 
 **Why VAA?** Firebat sits at the intersection of three categories:
-- **Visual** — results are pages, charts, tables, cards (27 built-in components), not chat logs.
+- **Visual** — results are pages, charts, tables, cards (29 built-in components), not chat logs.
 - **Automation** — cron + pipelines run while you're away (not one-shot chat).
 - **Agent** — native Function Calling multi-turn tool loop (no brittle JSON parsing).
 
@@ -466,7 +466,7 @@ Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + 
 **Target architecture**:
 
 ```
-Frontend  Next.js + React + 27 built-in components
+Frontend  Next.js + React + 29 built-in components
                           ↓
                 RustCoreProxy → @connectrpc typed client → gRPC (Phase B-typed)
                           ↓
