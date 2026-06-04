@@ -61,6 +61,7 @@ impl SqliteLibraryAdapter {
                 full_text TEXT NOT NULL,
                 char_count INTEGER NOT NULL DEFAULT 0,
                 chunk_count INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT,
                 created_at INTEGER NOT NULL,
                 FOREIGN KEY (reference_id) REFERENCES library_references(id) ON DELETE CASCADE
             );
@@ -163,15 +164,16 @@ impl ILibraryPort for SqliteLibraryAdapter {
         source_url: Option<&str>,
         file_path: Option<&str>,
         full_text: &str,
+        content_hash: Option<&str>,
     ) -> InfraResult<()> {
         let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
         let char_count = full_text.chars().count() as i64;
         let now = now_ms();
         conn.execute(
             "INSERT INTO library_sources (id, reference_id, name, source_type, source_url,
-                                          file_path, full_text, char_count, chunk_count, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)",
-            params![id, reference_id, name, source_type, source_url, file_path, full_text, char_count, now],
+                                          file_path, full_text, char_count, chunk_count, content_hash, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10)",
+            params![id, reference_id, name, source_type, source_url, file_path, full_text, char_count, content_hash, now],
         )
         .map_err(|e| format!("create_source: {e}"))?;
         // Reference 의 updated_at 도 갱신 (sort 영역)
@@ -238,6 +240,38 @@ impl ILibraryPort for SqliteLibraryAdapter {
                 })
             })
             .map_err(|e| format!("query get_source: {e}"))?;
+        Ok(rows.next().and_then(|r| r.ok()))
+    }
+
+    async fn find_source_by_hash(
+        &self,
+        reference_id: &str,
+        content_hash: &str,
+    ) -> InfraResult<Option<LibrarySource>> {
+        let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, reference_id, name, source_type, source_url, file_path,
+                        full_text, char_count, chunk_count, created_at
+                 FROM library_sources WHERE reference_id = ?1 AND content_hash = ?2 LIMIT 1",
+            )
+            .map_err(|e| format!("prepare find_source_by_hash: {e}"))?;
+        let mut rows = stmt
+            .query_map(params![reference_id, content_hash], |r| {
+                Ok(LibrarySource {
+                    id: r.get(0)?,
+                    reference_id: r.get(1)?,
+                    name: r.get(2)?,
+                    source_type: r.get(3)?,
+                    source_url: r.get(4)?,
+                    file_path: r.get(5)?,
+                    full_text: r.get(6)?,
+                    char_count: r.get(7)?,
+                    chunk_count: r.get(8)?,
+                    created_at: r.get(9)?,
+                })
+            })
+            .map_err(|e| format!("query find_source_by_hash: {e}"))?;
         Ok(rows.next().and_then(|r| r.ok()))
     }
 

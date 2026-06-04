@@ -838,11 +838,22 @@ pub trait ILibraryPort: Send + Sync {
         source_url: Option<&str>,
         file_path: Option<&str>,
         full_text: &str,
+        content_hash: Option<&str>,
     ) -> InfraResult<()>;
 
     async fn list_sources(&self, reference_id: &str) -> InfraResult<Vec<LibrarySource>>;
 
     async fn get_source(&self, id: &str) -> InfraResult<Option<LibrarySource>>;
+
+    /// 같은 reference 안에서 동일 content_hash 의 source 조회 — 중복 업로드 dedup 용. 없으면 None.
+    /// default = Ok(None) — mock / 구버전 어댑터 무영향 (dedup 없이 자연 진행).
+    async fn find_source_by_hash(
+        &self,
+        _reference_id: &str,
+        _content_hash: &str,
+    ) -> InfraResult<Option<LibrarySource>> {
+        Ok(None)
+    }
 
     async fn delete_source(&self, id: &str) -> InfraResult<()>;
 

@@ -161,12 +161,14 @@ impl SqliteMemoryAdapter {
                 full_text TEXT NOT NULL,               -- 추출된 전체 텍스트 (cache + 검색 영역)
                 char_count INTEGER NOT NULL DEFAULT 0,
                 chunk_count INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT,                     -- 중복 업로드 dedup (sha256 of 원본 파일/텍스트)
                 created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
                 FOREIGN KEY (reference_id) REFERENCES library_references(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_library_sources_ref ON library_sources(reference_id);
             CREATE INDEX IF NOT EXISTS idx_library_sources_type ON library_sources(source_type);
             CREATE INDEX IF NOT EXISTS idx_library_sources_created ON library_sources(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_library_sources_hash ON library_sources(reference_id, content_hash);
 
             CREATE TABLE IF NOT EXISTS library_chunks (
                 id TEXT PRIMARY KEY,
@@ -251,6 +253,10 @@ impl SqliteMemoryAdapter {
         // 옛 schema → 새 schema 마이그 영역 폐기 (2026-05-20). 사용자 본인 운영 영역 = data/memory.db
         // 삭제 후 재기동 → 새 schema 자동 생성. 옛 자료 호환 부담 0 정공.
         // (옛 embedding ALTER / deleted_at / owner 컬럼 모두 새 CREATE TABLE 안에 정의되어 있음.)
+        //
+        // 예외 — content_hash (중복 업로드 dedup, 2026-06): 라이브러리 자료가 이미 쌓인 운영 DB 보존을
+        // 위해 신규 nullable 컬럼만 defensive ALTER (이미 있으면 무시). 자료 손실 없이 dedup 활성.
+        let _ = conn.execute("ALTER TABLE library_sources ADD COLUMN content_hash TEXT", []);
         Ok(())
     }
 }

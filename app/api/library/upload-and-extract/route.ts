@@ -73,6 +73,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       data: {
         sourceId: result.data.sourceId,
         chunkCount: Number(result.data.chunkCount),
+        deduped: !!result.data.deduped,
       },
     });
   } finally {

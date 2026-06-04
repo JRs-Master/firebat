@@ -202,6 +202,9 @@ export function LibraryReferenceDetail({
       resetForm();
       setUploadOpen(false);
       await loadSources();
+      if (json?.data?.deduped) {
+        await alertDialog({ title: '중복 자료', message: '동일한 파일이 이미 등록되어 있어 새로 추가하지 않았습니다.' });
+      }
     } catch (e) {
       logger.debug('library', 'upload_file 실패', { error: e });
       await alertDialog({ title: '업로드 실패', message: String(e), danger: true });

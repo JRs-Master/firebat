@@ -71,6 +71,7 @@ impl LibraryManager {
         file_path: Option<&str>,
         extracted_text: &str,
         page_numbers: Option<&[(usize, usize, usize)]>, // (page_num, start_char, end_char)
+        content_hash: Option<&str>,
     ) -> InfraResult<String> {
         let source_id = uuid::Uuid::new_v4().to_string();
         // 1. Source 영역 저장
@@ -83,6 +84,7 @@ impl LibraryManager {
                 source_url,
                 file_path,
                 extracted_text,
+                content_hash,
             )
             .await?;
 
@@ -156,6 +158,7 @@ impl LibraryManager {
         file_path: Option<&str>,
         extracted_text: &str,
         page_numbers: Option<&[(usize, usize, usize)]>,
+        content_hash: Option<&str>,
     ) -> InfraResult<usize> {
         self.library.delete_source(source_id).await?;
         self.library
@@ -167,9 +170,21 @@ impl LibraryManager {
                 source_url,
                 file_path,
                 extracted_text,
+                content_hash,
             )
             .await?;
         self.index_chunks(source_id, name, extracted_text, page_numbers)
+            .await
+    }
+
+    /// 같은 reference 안 동일 content_hash source 조회 — 중복 업로드 dedup.
+    pub async fn find_source_by_hash(
+        &self,
+        reference_id: &str,
+        content_hash: &str,
+    ) -> InfraResult<Option<LibrarySource>> {
+        self.library
+            .find_source_by_hash(reference_id, content_hash)
             .await
     }
 

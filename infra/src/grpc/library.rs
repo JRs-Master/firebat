@@ -30,6 +30,14 @@ use firebat_core::proto::{
 
 use crate::library::extractor;
 
+/// 중복 업로드 dedup 용 — 파일/텍스트 바이트의 sha256 hex.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("{:x}", h.finalize())
+}
+
 pub struct LibraryServiceImpl {
     manager: Arc<LibraryManager>,
     llm: Arc<dyn ILlmPort>,
@@ -214,6 +222,25 @@ impl LibraryService for LibraryServiceImpl {
             };
         let file_path_opt = persistent_path.as_deref();
 
+        // 중복 dedup — 파일은 바이트, text/url 은 inline_text 의 sha256. 같은 reference 에 동일 내용이
+        // 이미 있으면 새로 만들지 않고 기존 반환 (deduped=true). 못 읽으면 hash=None → dedup 생략.
+        let content_hash: Option<String> = if !args.file_path.is_empty() {
+            std::fs::read(&args.file_path).ok().map(|b| sha256_hex(&b))
+        } else if !args.inline_text.is_empty() {
+            Some(sha256_hex(args.inline_text.as_bytes()))
+        } else {
+            None
+        };
+        if let Some(h) = &content_hash {
+            if let Ok(Some(existing)) = self.manager.find_source_by_hash(&args.reference_id, h).await {
+                return Ok(Response::new(LibraryUploadSourceResponse {
+                    source_id: existing.id,
+                    chunk_count: existing.chunk_count,
+                    deduped: true,
+                }));
+            }
+        }
+
         let source_id = self
             .manager
             .upload_source(
@@ -224,11 +251,12 @@ impl LibraryService for LibraryServiceImpl {
                 file_path_opt,
                 &extracted_text,
                 page_numbers.as_deref(),
+                content_hash.as_deref(),
             )
             .await
             .map_err(TonicStatus::internal)?;
 
-        // chunk_count 채우기 위해 get_source 한 번 더 (or 매니저 반환값 사용) — 단순하게 한 번 더 read
+        // chunk_count 채우기 위해 get_source 한 번 더 read.
         let source = self
             .manager
             .get_source(&source_id)
@@ -239,6 +267,7 @@ impl LibraryService for LibraryServiceImpl {
         Ok(Response::new(LibraryUploadSourceResponse {
             source_id,
             chunk_count,
+            deduped: false,
         }))
     }
 
@@ -331,6 +360,7 @@ impl LibraryService for LibraryServiceImpl {
                 }
             };
         // 4. 같은 id 로 청크 교체.
+        let content_hash = std::fs::read(&file_path).ok().map(|b| sha256_hex(&b));
         let chunk_count = self
             .manager
             .reextract_source(
@@ -342,6 +372,7 @@ impl LibraryService for LibraryServiceImpl {
                 Some(file_path.as_str()),
                 &extracted_text,
                 page_numbers.as_deref(),
+                content_hash.as_deref(),
             )
             .await
             .map_err(TonicStatus::internal)?;
