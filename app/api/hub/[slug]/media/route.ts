@@ -66,11 +66,8 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   // visitor 별 격리 — hubOwner = `<instance_id>:<session_id>` 매칭만 통과.
   const sessionId = req.headers.get('x-session-id') ?? '';
   const scopeId = `${auth.instanceId}:${sessionId}`;
-  const list = await listMedia({ optsJson: JSON.stringify({ hubOwner: scopeId, limit: 200, offset: 0 }) });
-  if (!list.ok) return NextResponse.json({ success: false, error: list.message }, { status: 500 });
-  const ownsMedia = (list.data?.items ?? []).some(item => item.slug === mediaSlug);
-  if (!ownsMedia) return NextResponse.json({ success: false, error: '이 자료에 접근할 권한이 없습니다.' }, { status: 403 });
-  const result = await removeMedia({ slug: mediaSlug });
+  // owner scoping = Rust core(MediaService.remove → remove_owned)가 강제 — 미소유 시 거부. 프론트 가드 폐기.
+  const result = await removeMedia({ slug: mediaSlug, hubOwner: scopeId } as any);
   if (!result.ok) return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   return NextResponse.json({ success: true });
 }

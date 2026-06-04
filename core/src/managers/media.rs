@@ -619,6 +619,25 @@ impl MediaManager {
         self.media.remove(slug).await
     }
 
+    /// hub 격리 삭제 — hub_owner 지정 시 그 owner 의 미디어(user/hub/<id>/media/)인지 확인 후 삭제.
+    /// admin(None) 무검사. 미소유 = 권한 거부. 프론트 ownsMedia 가드 대신 core 강제.
+    pub async fn remove_owned(&self, slug: &str, hub_owner: Option<&str>) -> InfraResult<()> {
+        if let Some(ho) = hub_owner.filter(|s| !s.is_empty()) {
+            let list = self
+                .media
+                .list(&MediaListOpts {
+                    hub_owner: Some(ho.to_string()),
+                    limit: Some(1000),
+                    ..Default::default()
+                })
+                .await?;
+            if !list.items.iter().any(|m| m.slug == slug) {
+                return Err("이 자료에 접근할 권한이 없습니다.".to_string());
+            }
+        }
+        self.media.remove(slug).await
+    }
+
     pub async fn list(&self, opts: MediaListOpts) -> InfraResult<MediaListResult> {
         self.media.list(&opts).await
     }

@@ -192,9 +192,10 @@ impl MediaService for MediaServiceImpl {
         &self,
         req: Request<MediaRemoveRequest>,
     ) -> Result<Response<MediaRemoveResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
+        let args = req.into_inner();
+        // hub_owner 지정(hub) → remove_owned(소유 검사) / None(admin) → 무검사.
         self.manager
-            .remove(&slug)
+            .remove_owned(&args.slug, args.hub_owner.as_deref())
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(MediaRemoveResponse {}))
