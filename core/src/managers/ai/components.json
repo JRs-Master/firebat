@@ -521,14 +521,54 @@
   {
     "name": "card",
     "componentType": "Card",
-    "description": "카드 (children에 다른 컴포넌트 배치). 제목+내용+이미지 그룹. image 설정하면 상단 hero 이미지, footer 설정하면 하단 메타 텍스트, link 설정하면 카드 전체 클릭.",
-    "semanticText": "카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰 썸네일 이미지 hero",
+    "description": "카드. 간단한 경우 title(제목) + content(본문 텍스트, **bold** 지원) 를 직접 지정. 복잡한 구성은 children 에 컴포넌트 배치 (title/content 와 혼용 가능). image=상단 hero 이미지, footer=하단 메타 텍스트, link=카드 전체 클릭.",
+    "semanticText": "카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰 썸네일 이미지 hero 제목 내용 본문",
     "propsSchema": {
       "type": "object",
-      "required": [
-        "children"
-      ],
+      "required": [],
       "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "카드 제목 (선택)."
+        },
+        "content": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "카드 본문 텍스트 (선택). **bold** 등 인라인 마크다운 지원. 줄바꿈 보존."
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "content 의 별칭 (선택). content 가 없으면 본문으로 사용."
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "content 의 별칭 (선택). 본문 텍스트로 사용."
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "content 의 별칭 (선택). 본문 텍스트로 사용."
+        },
+        "badge": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "카드 상단 태그 칩 (선택). 분류·상태 라벨."
+        },
         "children": {
           "type": "array",
           "items": {

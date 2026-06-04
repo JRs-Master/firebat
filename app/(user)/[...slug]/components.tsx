@@ -62,7 +62,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} />;
-    case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} />;
+    case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
     case 'Html':          return <HtmlComp content={p.content ?? ''} dependencies={p.dependencies as string[] | undefined} />;
@@ -681,8 +681,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
 }
 
 // ── Card ────────────────────────────────────────────────────────────────────
-function CardComp({ children = [], align, image, footer, link }: {
-  children: ComponentDef[];
+function CardComp({ children = [], align, image, footer, link, title, content, badge }: {
+  children?: ComponentDef[];
   align?: AlignOpt;
   /** 카드 상단 이미지 (선택). src + alt. magazine·card 변형 케이스. */
   image?: { src?: string; alt?: string };
@@ -690,6 +690,12 @@ function CardComp({ children = [], align, image, footer, link }: {
   footer?: string;
   /** 카드 전체 클릭 link (선택). */
   link?: { href?: string };
+  /** 카드 제목 (선택). children 없이 title+content 만으로도 카드 구성 가능. */
+  title?: string;
+  /** 카드 본문 텍스트 (선택). **bold** 등 인라인 마크다운 지원. */
+  content?: string;
+  /** 카드 상단 태그 칩 (선택). 분류·상태 라벨. */
+  badge?: string;
 }) {
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   const cardCls = `bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden ${alignCls} ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline block' : ''}`;
@@ -700,6 +706,17 @@ function CardComp({ children = [], align, image, footer, link }: {
         <img src={image.src} alt={image.alt ?? ''} className="w-full h-48 object-cover" />
       )}
       <div className="p-6">
+        {badge && (
+          <span className="inline-block mb-2 px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">{cleanPlainText(badge)}</span>
+        )}
+        {title && (
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">{cleanPlainText(title)}</h3>
+        )}
+        {content && (
+          <p className="text-[15px] sm:text-base text-gray-700 leading-relaxed whitespace-pre-line mb-1">
+            <InlineMd text={content} />
+          </p>
+        )}
         <ComponentRenderer components={children} />
         {footer && (
           <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
