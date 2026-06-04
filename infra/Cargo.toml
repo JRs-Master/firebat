@@ -93,6 +93,11 @@ hf-hub = { version = "0.4", default-features = false, features = ["tokio", "defa
 # Library Phase 1 — PDF 텍스트 추출 (image / scanned PDF Phase 2 영역).
 pdf-extract = "0.7"
 
+# Library 포맷 확장 — Office/한글신형(ZIP+XML) + xlsx. docx/pptx/hwpx 는 zip 으로 풀어 XML 텍스트 추출,
+# xlsx 는 calamine 으로 셀 읽기. 이미지(png/jpg)는 Gemini vision 경로 재사용 (별도 dep 0).
+zip = "2"
+calamine = "0.26"
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "fs"] }

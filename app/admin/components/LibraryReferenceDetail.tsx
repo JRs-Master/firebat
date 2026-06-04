@@ -15,7 +15,11 @@ type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 type UploadMode = 'file' | 'text';
 
-const SUPPORTED_EXT: Record<string, string> = { pdf: 'pdf', txt: 'txt', md: 'md' };
+const SUPPORTED_EXT: Record<string, string> = {
+  pdf: 'pdf', txt: 'txt', md: 'md', csv: 'csv',
+  docx: 'docx', pptx: 'pptx', xlsx: 'xlsx', xls: 'xls', ods: 'ods', odt: 'odt', odp: 'odp', hwpx: 'hwpx',
+  png: 'png', jpg: 'jpg', jpeg: 'jpeg', webp: 'webp', gif: 'gif',
+};
 
 function extOf(filename: string): string {
   const idx = filename.lastIndexOf('.');
@@ -172,6 +176,12 @@ export function LibraryReferenceDetail({
     const ext = extOf(pickedFile.name);
     const sourceType = SUPPORTED_EXT[ext];
     if (!sourceType) return;
+    // 이미지 — 텍스트 레이어가 없어 Gemini vision 으로만 추출. 키 없으면 차단.
+    const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(sourceType);
+    if (isImage && !geminiKeyAvailable) {
+      await alertDialog({ title: '추출 불가', message: '이미지 추출은 Gemini 키가 필요합니다. 설정 > 시크릿 탭에서 등록해 주세요.', danger: true });
+      return;
+    }
 
     setBusy(true);
     try {
@@ -180,9 +190,11 @@ export function LibraryReferenceDetail({
       fd.append('referenceId', reference.id);
       fd.append('name', pickedFile.name);
       fd.append('sourceType', sourceType);
-      // 정밀 추출 — pdf + 토글 ON + Gemini 키 있을 때만. quality_boost ON 이면 Gemini Pro.
+      // 정밀/비전 추출 — pdf(토글 ON+키) 또는 이미지(항상 vision). quality_boost ON 이면 Gemini Pro.
       if (sourceType === 'pdf' && precise && geminiKeyAvailable) {
         fd.append('precise', 'true');
+        if (qualityBoost) fd.append('qualityBoost', 'true');
+      } else if (isImage) {
         if (qualityBoost) fd.append('qualityBoost', 'true');
       }
       const url = hubContext
@@ -310,7 +322,7 @@ export function LibraryReferenceDetail({
                   ref={fileInputRef}
                   id={fileBtnId}
                   type="file"
-                  accept=".pdf,.txt,.md"
+                  accept=".pdf,.txt,.md,.csv,.docx,.pptx,.xlsx,.xls,.ods,.odt,.odp,.hwpx,.png,.jpg,.jpeg,.webp,.gif"
                   onChange={handleFilePick}
                   className="text-[11px] text-slate-600 file:mr-2 file:px-2 file:py-1 file:text-[11px] file:font-bold file:border-0 file:bg-slate-200 file:text-slate-700 file:rounded hover:file:bg-slate-300"
                   name="libraryFile"
@@ -320,7 +332,17 @@ export function LibraryReferenceDetail({
                     선택됨: <span className="font-semibold">{pickedFile.name}</span> ({(pickedFile.size / 1024).toFixed(1)} KB)
                   </p>
                 )}
-                <p className="text-[10px] text-slate-400">PDF / TXT / MD 파일을 지원합니다.</p>
+                <p className="text-[10px] text-slate-400">PDF · 문서(docx/pptx/xlsx/ods/odt/odp) · 한글(hwpx) · 텍스트(txt/md/csv) · 이미지(png/jpg/webp)를 지원합니다.</p>
+                {/* 이미지 — 텍스트 레이어가 없어 Gemini 비전으로만 추출. 키 필요 안내. */}
+                {pickedFile && ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extOf(pickedFile.name)) && (
+                  <div className="p-2 rounded-lg bg-indigo-50/50 border border-indigo-100">
+                    {geminiKeyAvailable ? (
+                      <p className="text-[10px] text-slate-600">이미지는 Gemini 비전으로 텍스트·수식을 추출합니다.</p>
+                    ) : (
+                      <p className="text-[10px] text-amber-600">이미지 추출은 Gemini(Google AI Studio) 키가 필요합니다. 설정 → 시크릿에서 등록해 주세요.</p>
+                    )}
+                  </div>
+                )}
                 {/* 정밀 추출(vision) — pdf 선택 시에만. Gemini 가 PDF 를 직접 읽어 수식·도형 인식. */}
                 {!hubContext && pickedFile && extOf(pickedFile.name) === 'pdf' && (
                   <div className="flex flex-col gap-1 p-2 rounded-lg bg-indigo-50/50 border border-indigo-100">
@@ -427,7 +449,7 @@ export function LibraryReferenceDetail({
                     <span>{Number(src.chunkCount)} chunks</span>
                   </div>
                 </div>
-                {!hubContext && src.sourceType === 'pdf' && geminiKeyAvailable && (
+                {!hubContext && (src.sourceType === 'pdf' || ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(src.sourceType)) && geminiKeyAvailable && (
                   <Tooltip label="정밀 재추출 (Gemini)">
                     <button
                       onClick={e => { e.stopPropagation(); handleReextract(src); }}

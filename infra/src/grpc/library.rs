@@ -38,6 +38,21 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", h.finalize())
 }
 
+/// 이미지 source_type 인지 — 이미지는 텍스트 레이어가 없어 vision(Gemini)으로만 추출.
+fn is_image_type(t: &str) -> bool {
+    matches!(t, "png" | "jpg" | "jpeg" | "webp" | "gif")
+}
+
+/// 이미지 source_type → MIME (Gemini vision inlineData 용).
+fn image_mime(t: &str) -> &'static str {
+    match t {
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "image/png",
+    }
+}
+
 pub struct LibraryServiceImpl {
     manager: Arc<LibraryManager>,
     llm: Arc<dyn ILlmPort>,
@@ -48,21 +63,22 @@ impl LibraryServiceImpl {
         Self { manager, llm }
     }
 
-    /// 정밀 추출(vision) — PDF 를 Gemini 가 직접 읽어 LaTeX·레이아웃 보존 텍스트로 추출. pdf-extract 가
-    /// 수식·숫자를 망가뜨리던 문제를 우회. quality_boost = Gemini Pro, 아니면 Flash (models.json 단일 소스).
-    async fn vision_extract_pdf(&self, file_path: &str, quality_boost: bool) -> Result<String, String> {
+    /// 정밀/비전 추출 — 파일(PDF 또는 이미지)을 Gemini 가 직접 읽어 LaTeX·레이아웃 보존 텍스트로 추출.
+    /// pdf-extract 가 수식·숫자를 망가뜨리던 문제 우회 + 이미지(스캔 기출·사진 등) OCR 겸용.
+    /// quality_boost = Gemini Pro, 아니면 Flash (models.json 단일 소스). mime = application/pdf 또는 image/*.
+    async fn vision_extract(&self, file_path: &str, mime: &str, quality_boost: bool) -> Result<String, String> {
         use base64::Engine;
-        let bytes = std::fs::read(file_path).map_err(|e| format!("PDF read 실패: {e}"))?;
+        let bytes = std::fs::read(file_path).map_err(|e| format!("파일 read 실패: {e}"))?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         let model = firebat_core::llm::registry::library_extraction_model(quality_boost).to_string();
         let opts = firebat_core::ports::LlmCallOpts {
             model: Some(model),
             image: Some(b64),
-            image_mime_type: Some("application/pdf".to_string()),
+            image_mime_type: Some(mime.to_string()),
             max_tokens: Some(32000),
             ..Default::default()
         };
-        let prompt = "이 문서(PDF)의 모든 텍스트를 빠짐없이 추출하라. 수식은 LaTeX 로 표기한다 \
+        let prompt = "이 문서/이미지의 모든 텍스트를 빠짐없이 추출하라. 수식은 LaTeX 로 표기한다 \
             (인라인 $...$, 디스플레이 $$...$$). 표·문항·보기(①②③④⑤ 등)의 구조와 순서를 그대로 \
             보존한다. 페이지 경계는 빈 줄로 구분한다. 설명·머리말·메타 코멘트 없이 추출된 본문만 출력한다.";
         let resp = self.llm.ask_text(prompt, &opts).await?;
@@ -168,32 +184,44 @@ impl LibraryService for LibraryServiceImpl {
         //  - "pdf" — file_path pdf-extract
         //  - "url" — source_url fetch (Phase 1.5) — 현재 = inline_text 만 (frontend 에서 fetch + strip 처리)
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
-            if args.precise && args.source_type == "pdf" {
+            if args.source_type == "text" || args.source_type == "url" {
+                (args.inline_text.clone(), None)
+            } else if is_image_type(&args.source_type) {
+                // 이미지 — 텍스트 레이어가 없어 vision(Gemini)으로만 추출 (스캔 기출·사진 OCR).
+                let text = self
+                    .vision_extract(&args.file_path, image_mime(&args.source_type), args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("이미지 추출 실패: {e}")))?;
+                (text, None)
+            } else if args.precise && args.source_type == "pdf" {
                 // 정밀 추출 (vision) — Gemini 가 PDF 직접 읽어 LaTeX·레이아웃 보존. page char-매핑 없음(None).
                 let text = self
-                    .vision_extract_pdf(&args.file_path, args.quality_boost)
+                    .vision_extract(&args.file_path, "application/pdf", args.quality_boost)
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("정밀 추출 실패: {e}")))?;
                 (text, None)
             } else {
-                match args.source_type.as_str() {
-                    "text" | "url" => (args.inline_text.clone(), None),
-                    "txt" | "md" => {
-                        let result = extractor::extract_text_file(Path::new(&args.file_path))
-                            .map_err(|e| TonicStatus::invalid_argument(format!("text 추출 실패: {e}")))?;
-                        (result.full_text, result.pages)
-                    }
-                    "pdf" => {
-                        let result = extractor::extract_pdf(Path::new(&args.file_path))
-                            .map_err(|e| TonicStatus::invalid_argument(format!("PDF 추출 실패: {e}")))?;
-                        (result.full_text, result.pages)
-                    }
+                // 텍스트 추출 가능 포맷 — pdf-extract / ZIP+XML(office·한글신형·odf) / calamine(스프레드시트).
+                let p = Path::new(&args.file_path);
+                let result = match args.source_type.as_str() {
+                    "txt" | "md" | "csv" => extractor::extract_text_file(p),
+                    "pdf" => extractor::extract_pdf(p),
+                    "docx" => extractor::extract_docx(p),
+                    "pptx" => extractor::extract_pptx(p),
+                    "hwpx" => extractor::extract_hwpx(p),
+                    "odt" => extractor::extract_odt(p),
+                    "odp" => extractor::extract_odp(p),
+                    "xlsx" | "xls" | "ods" => extractor::extract_spreadsheet(p),
                     other => {
                         return Err(TonicStatus::invalid_argument(format!(
                             "지원되지 않는 source_type: {other}"
                         )));
                     }
                 }
+                .map_err(|e| {
+                    TonicStatus::invalid_argument(format!("{} 추출 실패: {e}", args.source_type))
+                })?;
+                (result.full_text, result.pages)
             };
 
         let source_url_opt = if args.source_url.is_empty() { None } else { Some(args.source_url.as_str()) };
@@ -202,7 +230,7 @@ impl LibraryService for LibraryServiceImpl {
         // 재업로드·중복 없이 보관본으로 재실행하기 위함. text/url 은 파일 없음. 복사 실패해도 추출은 계속.
         // 임시파일명(Node 가 부여한 uuid.<ext>)을 그대로 써 별도 id 생성 의존성 0.
         let persistent_path: Option<String> =
-            if matches!(args.source_type.as_str(), "pdf" | "txt" | "md") && !args.file_path.is_empty() {
+            if !args.file_path.is_empty() {
                 let dir = Path::new("data/library/originals");
                 let _ = std::fs::create_dir_all(dir);
                 let fname = Path::new(&args.file_path)
@@ -334,30 +362,39 @@ impl LibraryService for LibraryServiceImpl {
         }
         // 3. 재추출 — precise+pdf 면 vision, 아니면 기존 pdf-extract / text.
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
-            if args.precise && source.source_type == "pdf" {
+            if is_image_type(&source.source_type) {
                 let text = self
-                    .vision_extract_pdf(&file_path, args.quality_boost)
+                    .vision_extract(&file_path, image_mime(&source.source_type), args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("이미지 추출 실패: {e}")))?;
+                (text, None)
+            } else if args.precise && source.source_type == "pdf" {
+                let text = self
+                    .vision_extract(&file_path, "application/pdf", args.quality_boost)
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("정밀 추출 실패: {e}")))?;
                 (text, None)
             } else {
-                match source.source_type.as_str() {
-                    "txt" | "md" => {
-                        let r = extractor::extract_text_file(Path::new(&file_path))
-                            .map_err(|e| TonicStatus::invalid_argument(format!("text 추출 실패: {e}")))?;
-                        (r.full_text, r.pages)
-                    }
-                    "pdf" => {
-                        let r = extractor::extract_pdf(Path::new(&file_path))
-                            .map_err(|e| TonicStatus::invalid_argument(format!("PDF 추출 실패: {e}")))?;
-                        (r.full_text, r.pages)
-                    }
+                let p = Path::new(&file_path);
+                let r = match source.source_type.as_str() {
+                    "txt" | "md" | "csv" => extractor::extract_text_file(p),
+                    "pdf" => extractor::extract_pdf(p),
+                    "docx" => extractor::extract_docx(p),
+                    "pptx" => extractor::extract_pptx(p),
+                    "hwpx" => extractor::extract_hwpx(p),
+                    "odt" => extractor::extract_odt(p),
+                    "odp" => extractor::extract_odp(p),
+                    "xlsx" | "xls" | "ods" => extractor::extract_spreadsheet(p),
                     other => {
                         return Err(TonicStatus::invalid_argument(format!(
                             "재추출 미지원 타입: {other}"
                         )));
                     }
                 }
+                .map_err(|e| {
+                    TonicStatus::invalid_argument(format!("{} 추출 실패: {e}", source.source_type))
+                })?;
+                (r.full_text, r.pages)
             };
         // 4. 같은 id 로 청크 교체.
         let content_hash = std::fs::read(&file_path).ok().map(|b| sha256_hex(&b));

@@ -45,7 +45,14 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!referenceId) {
     return NextResponse.json({ success: false, error: 'referenceId 필드가 필요합니다.' }, { status: 400 });
   }
-  if (!['pdf', 'txt', 'md'].includes(sourceType)) {
+  // 텍스트(txt/md/csv) / PDF / Office·OpenDocument(docx/pptx/xlsx/xls/ods/odt/odp) / 한글신형(hwpx) /
+  // 이미지(png/jpg/jpeg/webp/gif — vision 추출). 구형 .hwp/.doc/.ppt(바이너리)는 미지원.
+  const ALLOWED_TYPES = [
+    'pdf', 'txt', 'md', 'csv',
+    'docx', 'pptx', 'xlsx', 'xls', 'ods', 'odt', 'odp', 'hwpx',
+    'png', 'jpg', 'jpeg', 'webp', 'gif',
+  ];
+  if (!ALLOWED_TYPES.includes(sourceType)) {
     return NextResponse.json({ success: false, error: `지원되지 않는 sourceType: ${sourceType}` }, { status: 400 });
   }
   if (!name) name = file.name || `source-${Date.now()}.${sourceType}`;
