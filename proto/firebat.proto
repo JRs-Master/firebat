@@ -362,6 +362,8 @@ message PageSaveRequest {
 }
 message PageDeleteRequest {
   string slug = 1;
+  // hub project scoping — 지정 시 page.project 와 일치할 때만 삭제 허용 (admin 은 omit).
+  optional string project = 2;
 }
 message PageDeleteResponse {}
 message PageRenameRequest {

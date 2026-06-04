@@ -64,15 +64,8 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   if (!pageSlug) return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
 
   try {
-    // ownership 가드 — list 안 본 hub 의 project 자료인지 확인.
-    const listRes = await listPages();
-    if (!listRes.ok) return NextResponse.json({ success: false, error: listRes.message }, { status: 500 });
-    const all = (listRes.data ?? []) as Array<{ slug: string; project?: string | null }>;
-    const found = all.find(p => p.slug === pageSlug);
-    if (!found || found.project !== projectKey) {
-      return NextResponse.json({ success: false, error: '이 페이지에 접근할 권한이 없습니다.' }, { status: 403 });
-    }
-    const del = await deletePage({ slug: pageSlug });
+    // project scoping 은 Rust core(PageService.delete)가 강제 — project 불일치 시 권한 거부. 프론트 가드 폐기.
+    const del = await deletePage({ slug: pageSlug, project: projectKey } as any);
     if (!del.ok) return NextResponse.json({ success: false, error: del.message }, { status: 500 });
     return NextResponse.json({ success: true });
   } catch (err) {
