@@ -208,7 +208,13 @@ export function EntitiesPanel({
     });
     if (!ok) return;
     try {
-      await apiDelete(`/api/entities/${entity.id}`, { category: 'entities' });
+      if (hubMode && hubContext) {
+        // hub 모드 = hub 라우트(owner-scoped delete). 옛엔 admin /api/entities/:id 호출이라 hub 엔티티 삭제 안 됐음.
+        const r = await hubFetch('delete', { id: entity.id });
+        if (!r?.success) throw new Error(r?.error || 'delete 실패');
+      } else {
+        await apiDelete(`/api/entities/${entity.id}`, { category: 'entities' });
+      }
       setEntities(prev => prev.filter(e => e.id !== entity.id));
       setTimeline(prev => {
         const next = { ...prev };

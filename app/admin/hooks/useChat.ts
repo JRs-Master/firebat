@@ -345,9 +345,18 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
   const refreshConversations = useCallback(async () => {
-    // hub mode 안 admin /api/conversations 호출 차단 — hub 대화 = hub_conversations 별개 테이블,
-    // 초기 mount effect 안 /api/hub/<slug>/sessions 영역만 호출. 본 refresh 영역 호출 0.
-    if (hubContext) return;
+    // hub mode — convBackend(/api/hub/<slug>/sessions)로 대화 목록 재조회 (휴지통 복원·삭제 후 사이드바 즉시 반영).
+    // 옛엔 early-return 이라 복원해도 F5 전엔 목록에 안 떴음. 아래 admin 로직(/api/conversations)은 hub 에 안 맞아 분리.
+    if (hubContext) {
+      const remote = await convBackend.listConversations();
+      if (!remote) return;
+      remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+      setConversations(prev => remote.map(r => ({
+        id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
+        messages: prev.find(p => p.id === r.id)?.messages ?? [],
+      })));
+      return;
+    }
     // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
     // SSE 가 조용히 끊어진 경우 DB 쪽이 진짜 응답 보유. 아래 per-message 비교로 판단.
     const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
@@ -417,7 +426,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         return updated;
       });
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [activeConvId, conversations]);
+  }, [activeConvId, conversations, hubContext, convBackend]);
 
   // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
