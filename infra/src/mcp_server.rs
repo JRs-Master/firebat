@@ -176,6 +176,27 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     true
 }
 
+/// hub context 활성 시 도구 호출 args 에 owner/hubOwner/_hubScope/project 주입 — ai.rs FC 주입과 대칭.
+/// CLI/hosted 모델은 ai.rs(FC) owner 주입을 우회하므로 MCP 경로에서 강제해야, hub 가 저장하는 자료(메모·엔티티·
+/// 페이지 등)가 올바른 hub owner 로 들어가 사이드바(hub owner 조회)에 보인다. 미주입 시 'admin' default 로 새던 버그.
+/// override = visitor 가 args 로 다른 owner 를 흘려 admin/타 hub 자료를 건드리지 못하게.
+fn inject_hub_owner(args: &mut Value) {
+    let Some((inst_id, sid)) = firebat_core::utils::hub_context::active_hub_owner() else {
+        return;
+    };
+    let scope_id = if sid.is_empty() {
+        inst_id.clone()
+    } else {
+        format!("{}:{}", inst_id, sid)
+    };
+    if let Some(obj) = args.as_object_mut() {
+        obj.insert("owner".into(), Value::String(format!("hub:{}", scope_id)));
+        obj.insert("hubOwner".into(), Value::String(scope_id.clone()));
+        obj.insert("_hubScope".into(), Value::String(scope_id));
+        obj.insert("project".into(), Value::String(format!("hub:{}", inst_id)));
+    }
+}
+
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
 ///   1. Vault `system:internal-mcp-token` (옛 internal MCP 토큰 — Frontend / CLI 어댑터)
 ///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
@@ -253,11 +274,12 @@ async fn handle_rpc(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let args = req
+            let mut args = req
                 .params
                 .get("arguments")
                 .cloned()
                 .unwrap_or(Value::Object(Default::default()));
+            inject_hub_owner(&mut args);
             if name.is_empty() {
                 return rpc_error(id, -32602, "missing 'name' parameter");
             }
@@ -1976,10 +1998,11 @@ async fn dispatch_method(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            let args = params
+            let mut args = params
                 .get("arguments")
                 .cloned()
                 .unwrap_or(Value::Object(Default::default()));
+            inject_hub_owner(&mut args);
             if name.is_empty() {
                 return Err((-32602, "missing 'name' parameter".to_string()));
             }

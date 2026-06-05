@@ -938,7 +938,11 @@ impl AiManager {
         // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 적용 →
         // CLI 모델 path 영역의 보안 영역 fix. Guard drop = 자동 unset.
         let _hub_guard = ai_opts.hub_context.as_ref().map(|ctx| {
-            crate::utils::hub_context::HubContextGuard::enter(ctx.allowed_sysmods.clone())
+            crate::utils::hub_context::HubContextGuard::enter(
+                ctx.allowed_sysmods.clone(),
+                ctx.instance_id.clone(),
+                ctx.session_id.clone(),
+            )
         });
 
         // Layer 2 per-turn duplicate guard — turn 안에서 같은 (name + args) 두 번째 호출 차단.

@@ -22,20 +22,36 @@ use std::sync::RwLock;
 #[derive(Clone, Debug)]
 pub struct ActiveHubContext {
     pub allowed_sysmods: Vec<String>,
+    /// owner 주입용 — hosted/MCP 경로(CLI)는 ai.rs FC owner 주입을 우회하므로, MCP dispatch 가
+    /// 이 값으로 owner/hubOwner/project 를 args 에 주입해야 hub 자료가 올바른 owner 로 저장된다.
+    pub instance_id: String,
+    pub session_id: String,
 }
 
 static ACTIVE_HUB_CONTEXT: RwLock<Option<ActiveHubContext>> = RwLock::new(None);
 
-/// RAII guard — enter(allowed_sysmods) 호출 시 active 설정, drop 시 unset.
+/// RAII guard — enter(...) 호출 시 active 설정, drop 시 unset.
 pub struct HubContextGuard;
 
 impl HubContextGuard {
-    pub fn enter(allowed_sysmods: Vec<String>) -> Self {
+    pub fn enter(allowed_sysmods: Vec<String>, instance_id: String, session_id: String) -> Self {
         if let Ok(mut guard) = ACTIVE_HUB_CONTEXT.write() {
-            *guard = Some(ActiveHubContext { allowed_sysmods });
+            *guard = Some(ActiveHubContext {
+                allowed_sysmods,
+                instance_id,
+                session_id,
+            });
         }
         Self
     }
+}
+
+/// 현재 활성 hub context 의 (instance_id, session_id) — MCP 경로 owner 주입용. None = admin.
+pub fn active_hub_owner() -> Option<(String, String)> {
+    ACTIVE_HUB_CONTEXT
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| (c.instance_id.clone(), c.session_id.clone())))
 }
 
 impl Drop for HubContextGuard {
@@ -119,7 +135,11 @@ mod tests {
 
     #[test]
     fn guard_activates_and_filters_sysmods() {
-        let _g = HubContextGuard::enter(vec!["notes".to_string(), "calendar".to_string()]);
+        let _g = HubContextGuard::enter(
+            vec!["notes".to_string(), "calendar".to_string()],
+            "inst".to_string(),
+            "sess".to_string(),
+        );
         assert!(is_hub_context_active());
         assert!(!is_sysmod_blocked_for_hub("notes"));
         assert!(!is_sysmod_blocked_for_hub("calendar"));
@@ -130,7 +150,7 @@ mod tests {
     #[test]
     fn guard_drop_clears_context() {
         {
-            let _g = HubContextGuard::enter(vec!["notes".to_string()]);
+            let _g = HubContextGuard::enter(vec!["notes".to_string()], "inst".to_string(), "sess".to_string());
             assert!(is_hub_context_active());
         }
         assert!(!is_hub_context_active());
