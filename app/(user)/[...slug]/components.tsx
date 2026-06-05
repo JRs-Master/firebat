@@ -383,7 +383,7 @@ function ImageComp({
   const hasVariants = Boolean(avifSrcset || webpSrcset);
 
   return (
-    <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full">
+    <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
       <div className="relative">
         {/* blurhash 캔버스 — 이미지 로드 전까지만 보임 */}
         {blurhash && !loaded && (
@@ -2240,8 +2240,8 @@ function buildPopupCardHtml(rawLabel: string): string {
   // 둥근 모서리 + 그림자 + border 는 popup wrapper CSS (firebat-map-popup).
   return (
     `<div style="min-width:140px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
-    + `<div style="font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 7px;border-bottom:1px solid #e2e8f0;">${head}</div>`
-    + (bodyRows ? `<div style="padding:8px 13px;font-size:12px;line-height:1.55;">${bodyRows}</div>` : '')
+    + `<div style="font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">${head}</div>`
+    + (bodyRows ? `<div style="padding:9px 13px;font-size:12px;line-height:1.55;background:#fff;">${bodyRows}</div>` : '')
     + `</div>`
   );
 }
