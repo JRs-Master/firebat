@@ -73,6 +73,14 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
     loadRefs();
   }, [loadRefs]);
 
+  // AI 채팅이 도구로 자료를 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회.
+  // (저장은 됐는데 수동 새로고침 전까지 Reference 목록에 안 뜨던 문제 차단.)
+  useEffect(() => {
+    const onRefresh = () => loadRefs();
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
+  }, [loadRefs]);
+
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     try {

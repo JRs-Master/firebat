@@ -151,6 +151,14 @@ export function CalendarPanel({
     fetchEvents();
   }, [fetchEvents]);
 
+  // AI 채팅이 도구로 일정을 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회.
+  // (저장은 됐는데 수동 새로고침 전까지 달력에 안 뜨던 문제 차단.)
+  useEffect(() => {
+    const onRefresh = () => fetchEvents();
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
+  }, [fetchEvents]);
+
   // cron 잡 투영 — admin 전용 (cron 은 owner-scoped, hub 방문자엔 미노출). /api/cron 이 from/to 구간
   // occurrences + 실행 로그 반환. cron 이 진실원천이라 캘린더는 비추기만 (중복 저장 0).
   const fetchCron = useCallback(async () => {

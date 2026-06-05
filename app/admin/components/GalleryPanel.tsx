@@ -140,10 +140,19 @@ export function GalleryPanel({
       : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
     if (!await confirmDialog({ title: '이미지 삭제', message: msg, danger: true, okLabel: '삭제' })) return;
     try {
-      const data = await apiDelete<{ success: boolean; error?: string }>(
-        `/api/media/list?slug=${encodeURIComponent(slug)}`,
-        { category: 'gallery' },
-      );
+      // hub 모드 = hub 라우트(owner-scoped delete). 옛엔 admin /api/media/list 무조건 호출이라 hub 방문자 이미지 삭제가 안 됐음.
+      const data = hubMode && hubContext
+        ? await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?slug=${encodeURIComponent(slug)}`, {
+            method: 'DELETE',
+            headers: {
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+          }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }))
+        : await apiDelete<{ success: boolean; error?: string }>(
+            `/api/media/list?slug=${encodeURIComponent(slug)}`,
+            { category: 'gallery' },
+          );
       if (data.success) {
         setItems(prev => prev.filter(i => i.slug !== slug));
         setTotal(prev => Math.max(0, prev - 1));
@@ -160,6 +169,7 @@ export function GalleryPanel({
   const handleRegenerate = async (slug: string) => {
     setRegenerating(true);
     try {
+      // TODO(hub): hub media route 에 regenerate op 없음 — backend 필요. hub 모드에서도 admin 라우트로 fallback.
       const data = await apiPost<{ success: boolean; error?: string }>(
         `/api/media/regenerate?slug=${encodeURIComponent(slug)}`,
         undefined,

@@ -392,6 +392,7 @@ export function Sidebar({
       return;
     }
     try {
+      // TODO(hub): hub pages route 에 visibility op 없음 — backend 필요.
       await apiPatch(`/api/pages/${encodeURIComponent(slug)}/visibility`, { visibility: vis }, { category: 'sidebar' });
       fetchPages();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
@@ -409,6 +410,7 @@ export function Sidebar({
       return;
     }
     try {
+      // TODO(hub): hub fs route 에 project visibility op 없음 — backend 필요.
       await apiPatch('/api/fs/projects', { project: name, visibility: vis }, { category: 'sidebar' });
       refreshAll();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
@@ -453,6 +455,7 @@ export function Sidebar({
     if (!await confirmDialog({ title: '프로젝트 삭제', message: `프로젝트 "${name}"의 모든 파일을 삭제하시겠습니까?\n관련 페이지와 모듈이 모두 삭제됩니다.`, danger: true, okLabel: '삭제' })) return;
     setDeletingProject(name);
     try {
+      // TODO(hub): hub fs route 에 project delete op 없음 — backend 필요.
       await apiDelete(`/api/fs/projects?project=${encodeURIComponent(name)}`, { category: 'sidebar' });
       onRefreshTree();
       refreshAll();
@@ -465,7 +468,18 @@ export function Sidebar({
     if (!await confirmDialog({ title: '페이지 삭제', message: `페이지 "${slug}"을(를) 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     setDeletingPage(slug);
     try {
-      await apiDelete(`/api/pages?slug=${encodeURIComponent(slug)}`, { category: 'sidebar' });
+      // hub 모드 = hub 라우트(project-scoped delete). 옛엔 admin /api/pages 무조건 호출이라 hub 페이지 삭제가 admin 영역에 박혔음.
+      if (hubMode && hubShareContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/pages?slug=${encodeURIComponent(slug)}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Api-Token': hubShareContext.apiToken,
+            'X-Session-Id': hubShareContext.sessionId,
+          },
+        });
+      } else {
+        await apiDelete(`/api/pages?slug=${encodeURIComponent(slug)}`, { category: 'sidebar' });
+      }
       fetchPages();
     } finally {
       setDeletingPage(null);
@@ -494,6 +508,7 @@ export function Sidebar({
     if (!normalized || normalized === renameTarget.current) return;
     setRenaming(true);
     try {
+      // TODO(hub): hub pages / hub fs route 에 rename op 없음 — backend 필요.
       if (renameTarget.type === 'page') {
         const data = await apiPatch<{ success: boolean; error?: string }>(
           `/api/pages/${encodeURIComponent(renameTarget.current)}`,

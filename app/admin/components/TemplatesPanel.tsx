@@ -5,7 +5,7 @@
  * user/templates/* 의 list 표시 + 클릭 시 모나코 에디터로 template.json 편집.
  * 새 템플릿 만들기 — inline 모달 (rename 패턴 차용, native prompt/alert 회피).
  */
-import { useId, useState, useCallback } from 'react';
+import { useId, useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, FileCode, ChevronRight } from 'lucide-react';
 import { Tooltip } from './Tooltip';
@@ -90,6 +90,14 @@ export function TemplatesPanel({
     () => queryClient.invalidateQueries({ queryKey: ['templates'] }),
     [queryClient],
   );
+
+  // AI 채팅이 도구로 템플릿을 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회.
+  // (저장은 됐는데 수동 새로고침 전까지 목록에 안 뜨던 문제 차단.)
+  useEffect(() => {
+    const onRefresh = () => invalidate();
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
+  }, [invalidate]);
 
   const openCreate = useCallback(() => {
     setNewSlug('');

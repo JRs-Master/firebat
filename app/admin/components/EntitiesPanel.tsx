@@ -423,6 +423,9 @@ export function EntitiesPanel({
       {/* Create modal */}
       {showCreate && (
         <CreateEntityModal
+          hubMode={hubMode}
+          hubContext={hubContext}
+          hubFetch={hubFetch}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -618,7 +621,13 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
   );
 }
 
-function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }: {
+  hubMode?: boolean;
+  hubContext?: EntitiesHubContext;
+  hubFetch: (op: string, payload: Record<string, unknown>) => Promise<any>;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const nameId = useId();
   const typeId = useId();
   const aliasesId = useId();
@@ -643,17 +652,24 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
     setSubmitting(true);
     try {
       const aliasList = aliases.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      const data = await apiPost<{ success: boolean; error?: string }>(
-        '/api/entities',
-        {
-          name: parsed.data.name,
-          type: parsed.data.type,
-          aliases: aliasList.length > 0 ? aliasList : undefined,
-        },
-        { category: 'entities' },
-      );
-      if (!data.success) {
-        setError(data.error || '실패');
+      // hub 모드 = hub 라우트(owner-scoped save). 옛엔 admin /api/entities 무조건 호출이라 hub 엔티티 생성이 admin 영역에 박혔음.
+      const data = hubMode && hubContext
+        ? await hubFetch('save', {
+            name: parsed.data.name,
+            type: parsed.data.type,
+            aliases: aliasList.length > 0 ? aliasList : undefined,
+          })
+        : await apiPost<{ success: boolean; error?: string }>(
+            '/api/entities',
+            {
+              name: parsed.data.name,
+              type: parsed.data.type,
+              aliases: aliasList.length > 0 ? aliasList : undefined,
+            },
+            { category: 'entities' },
+          );
+      if (!data?.success) {
+        setError(data?.error || '실패');
         return;
       }
       onCreated();
