@@ -124,7 +124,7 @@ impl ModuleManager {
         // Pre-spawn input validation — config.json 의 input schema 기준
         if let Some(config) = self.get_module_config(scope, module_name).await {
             if let Some(input_schema) = config.get("input") {
-                validate_value(input_data, input_schema).map_err(|e| {
+                validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
                     crate::i18n::t(
                         "core.error.module.input_validation_failed",
                         None,
@@ -430,6 +430,26 @@ impl ModuleManager {
 // 형태가 JSON Schema 와 호환 (type/properties/required/enum/etc) 이므로 jsonschema
 // crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
 
+/// hub 프레임워크가 도구 호출 args 에 자동 주입하는 예약 메타 키 (owner/hubOwner/_hubScope/project).
+/// 모듈 본체는 이 키들(특히 `_hubScope` = 데이터 디렉토리 hub-scope 분기)을 받아 쓰지만, config.json 의
+/// input 스키마는 선언하지 않으므로(additionalProperties:false) **입력 검증에서만** 제거한다.
+/// 검증 통과 후 모듈에는 원본(메타 포함)이 그대로 전달돼 `_hubScope` scope 분기가 정상 동작한다.
+const RESERVED_HUB_META_KEYS: &[&str] = &["owner", "hubOwner", "_hubScope", "project"];
+
+/// 입력값에 예약 메타 키가 있으면 제거한 사본을 반환 (검증 전용). 없으면 원본 차용 (clone 회피).
+fn input_for_validation(input_data: &serde_json::Value) -> std::borrow::Cow<'_, serde_json::Value> {
+    match input_data.as_object() {
+        Some(obj) if RESERVED_HUB_META_KEYS.iter().any(|k| obj.contains_key(*k)) => {
+            let mut cleaned = obj.clone();
+            for k in RESERVED_HUB_META_KEYS {
+                cleaned.remove(*k);
+            }
+            std::borrow::Cow::Owned(serde_json::Value::Object(cleaned))
+        }
+        _ => std::borrow::Cow::Borrowed(input_data),
+    }
+}
+
 /// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
 pub fn validate_value(
     value: &serde_json::Value,
@@ -509,7 +529,7 @@ impl ModuleManager {
         })?;
         validate_module_definition(&config)?;
         if let Some(input_schema) = config.get("input") {
-            validate_value(input_data, input_schema).map_err(|e| {
+            validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
                 crate::i18n::t(
                     "core.error.module.input_validation_failed_scoped",
                     None,

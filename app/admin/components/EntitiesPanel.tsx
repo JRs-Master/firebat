@@ -54,8 +54,12 @@ interface EventItem {
   entityIds?: number[];
 }
 
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+function formatDate(ms: number | string | bigint | undefined | null): string {
+  // proto i64 가 number / BigInt / string 어느 형태로 와도 안전하게 — new Date 가 Invalid 안 나게 Number 강제.
+  if (ms == null) return '';
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return new Date(n).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 interface MemoryStats {
