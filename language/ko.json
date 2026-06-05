@@ -7,6 +7,7 @@
     "module": {
       "invalid_name": "잘못된 모듈 이름입니다.",
       "not_found": "모듈을 찾을 수 없습니다: {{name}}",
+      "disabled": "모듈 '{{name}}' 가 비활성화되어 있습니다. 시스템 설정에서 활성화한 뒤 다시 시도해 주세요.",
       "entry_missing": "모듈 entry 파일을 찾을 수 없습니다: {{name}}",
       "config_missing": "모듈 config.json 을 찾을 수 없습니다: {{scope}}/{{name}}",
       "input_validation_failed": "[{{name}}] 입력 검증 실패: {{detail}}",

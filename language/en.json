@@ -7,6 +7,7 @@
     "module": {
       "invalid_name": "Invalid module name.",
       "not_found": "Module not found: {{name}}",
+      "disabled": "Module '{{name}}' is disabled. Please enable it in system settings and try again.",
       "entry_missing": "Module entry file not found: {{name}}",
       "config_missing": "Module config.json not found: {{scope}}/{{name}}",
       "input_validation_failed": "[{{name}}] Input validation failed: {{detail}}",

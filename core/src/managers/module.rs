@@ -85,6 +85,16 @@ impl ModuleManager {
         if !is_safe_name(module_name) {
             return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
         }
+        // 전역 비활성 모듈은 **어느 실행 경로**(FC dispatch / cron / 파이프라인 / MCP)로 들어와도 차단 —
+        // 단일 choke point. 옛엔 MCP handler 만 is_enabled 체크해 FC·cron·파이프라인이 꺼진 모듈(telegram 등)을
+        // 그대로 실행하던 갭. 사용자가 끈 모듈은 어떤 경로든 돌지 않아야 한다.
+        if !self.is_enabled(module_name) {
+            return Err(crate::i18n::t(
+                "core.error.module.disabled",
+                None,
+                &[("name", module_name)],
+            ));
+        }
         // user / system 모두 검색 — sysmod 도구는 system/modules/ 에 있음.
         let (scope, dir_path, files) = {
             let user_dir = format!("user/modules/{}", module_name);
