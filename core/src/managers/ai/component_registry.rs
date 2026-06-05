@@ -177,6 +177,16 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         for item in arr.iter_mut() {
             sanitize_to_schema(item, items_schema);
         }
+    } else if schema_allows_type(schema, "string") {
+        // string 기대 위치에 {text}/{label}/{value}/{content} 단일-텍스트 객체가 오면 그 문자열로 coerce.
+        // AI 가 list 항목·라벨 등을 객체로 감싸 보내 검증 실패하던 것을 흡수 (render robustness, 일반 규칙).
+        if let Some(s) = value.as_object().and_then(|o| {
+            ["text", "label", "value", "content"]
+                .iter()
+                .find_map(|k| o.get(*k).and_then(|v| v.as_str()).map(|s| s.to_string()))
+        }) {
+            *value = serde_json::Value::String(s);
+        }
     }
     // scalar: no-op.
 }
@@ -310,6 +320,23 @@ mod tests {
         assert!(
             validate_value(&props, schema).is_err(),
             "필수 'text' 누락은 sanitize 후에도 검증 실패해야 함"
+        );
+    }
+
+    #[test]
+    fn sanitize_coerces_text_object_to_string_in_list() {
+        // AI 가 list 항목을 {text:"..."} 객체로 보낸 경우 → 문자열로 coerce 후 검증 통과.
+        let schema = &find_component("list").unwrap().props_schema;
+        let mut props = json!({
+            "items": [{ "text": "**굵게** 항목" }, "평범 항목"],
+            "ordered": false
+        });
+        sanitize_to_schema(&mut props, schema);
+        assert_eq!(props["items"][0], json!("**굵게** 항목"), "{{text}} 객체가 문자열로 coerce 되어야");
+        assert_eq!(props["items"][1], json!("평범 항목"), "이미 문자열인 항목은 그대로");
+        assert!(
+            validate_value(&props, schema).is_ok(),
+            "coerce 후 list 검증 통과해야 함"
         );
     }
 }
