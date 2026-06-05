@@ -108,6 +108,14 @@ export function NotesPanel({
     return () => clearTimeout(handle);
   }, [query, fetchNotes]);
 
+  // AI 채팅이 도구로 노트를 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회.
+  // (옛엔 미수신이라 저장은 됐는데 수동 새로고침 전까지 사이드바에 안 뜨던 문제.)
+  useEffect(() => {
+    const onRefresh = () => fetchNotes(query);
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
+  }, [fetchNotes, query]);
+
   const handleExpand = async (slug: string) => {
     if (expandedSlug === slug) {
       setExpandedSlug(null);

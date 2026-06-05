@@ -149,6 +149,14 @@ export function EntitiesPanel({
     return () => clearTimeout(handle);
   }, [query, fetchEntities]);
 
+  // AI 채팅이 도구로 엔티티/사실을 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회
+  // (저장은 됐는데 수동 새로고침 전까지 안 뜨던 문제 차단).
+  useEffect(() => {
+    const onRefresh = () => fetchEntities(query);
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
+  }, [fetchEntities, query]);
+
   const fetchTimeline = async (entityId: number) => {
     if (timeline[entityId]) return;
     if (hubMode && hubContext) {
