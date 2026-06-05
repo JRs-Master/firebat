@@ -13,5 +13,7 @@ export const rowActionsClass = (isSelected: boolean): string =>
   `flex items-center gap-0.5 transition-all shrink-0 ${
     isSelected
       ? 'opacity-100'
-      : 'opacity-0 pointer-events-none sm:pointer-events-auto sm:group-hover:opacity-100'
+      // 미선택: 숨김 + 터치 차단. PC(>=sm)는 hover 로 노출·클릭. 단 터치기기(hover:none)는 너비와 무관하게
+      // 항상 pointer-events-none 강제 — 큰 폰/태블릿(>=sm)에서 안 보이는 버튼이 예측 터치되던 구멍 차단.
+      : 'opacity-0 pointer-events-none sm:pointer-events-auto sm:group-hover:opacity-100 [@media(hover:none)]:!pointer-events-none'
   }`;

@@ -7,7 +7,7 @@
  * 데이터: data/notes/*.md (markdown + frontmatter).
  */
 import { useState, useEffect, useCallback, useId } from 'react';
-import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
+import { Search, Plus, Trash2, X, NotebookText, ChevronRight, ChevronDown } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -183,9 +183,16 @@ export function NotesPanel({
               const detail = details[n.slug];
               return (
                 <li key={n.slug} className="border-b border-slate-100">
-                  <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
+                  <div className="group flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
                     <button
-                      onClick={() => rows.handleNavClick(n.slug, () => handleExpand(n.slug))}
+                      onClick={(ev) => { ev.stopPropagation(); handleExpand(n.slug); }}
+                      className="p-1 text-slate-300 hover:text-slate-600 transition-colors shrink-0 self-start"
+                      aria-label={isExpanded ? '상세 닫기' : '상세 열기'}
+                    >
+                      {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </button>
+                    <button
+                      onClick={() => rows.handleRowClick(String(n.slug))}
                       className="flex-1 text-left flex items-start gap-2 cursor-pointer bg-transparent border-0 p-0 min-w-0"
                     >
                       <NotebookText size={11} className="mt-0.5 shrink-0 text-slate-400" />
