@@ -98,14 +98,72 @@ pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
 /// FC 경로(ai.rs effective_tools 필터)와 hosted 경로(mcp_server)가 모두 이걸 통해 판정 → 규칙 drift 0.
 ///
 /// 허용: 핵심 sysmod(notes/calendar) + per-hub allowed_sysmods 의 sysmod + read-only(list/get/search/cache)
-///       + render(_*) + suggest + propose_plan + save_page(hub-scoped write).
-/// 거부(기본 deny): write_*/delete_*/schedule_task/run_task/run_module/mcp_*/request_secret/vault_* 등
-///       destructive·admin 도구. 명시 허용에 없으면 전부 차단 = fail-safe.
+///       + render(_*) + suggest + propose_plan + save_page + ① 필수-on owner-scoped 쓰기(is_hub_writable_builtin).
+/// 거부(기본 deny): request_secret/network_request(③deny Vault·SSRF) / run_module·execute(sysmod allow 우회) /
+///       schedule_task·run_task·run_cron_job(배경 실행·남용) / *_module·mcp_*·log(admin). 명시 허용에 없으면 차단 = fail-safe.
 pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
     if let Some(sysmod) = name.strip_prefix("sysmod_") {
         return CORE_SYSMODS.contains(&sysmod) || allowed_sysmods.iter().any(|s| s == sysmod);
     }
-    is_hub_readonly_tool(name) || name.starts_with("render_") || name == "save_page"
+    // ③deny / admin / 배경실행 — list_/get_ 접두어라 is_hub_readonly_tool 에 잡히는 admin 조회까지 우선 차단.
+    if is_hub_denied_tool(name) {
+        return false;
+    }
+    is_hub_readonly_tool(name)
+        || is_hub_writable_builtin(name)
+        || name.starts_with("render_")
+        || name == "save_page"
+}
+
+/// hub 에서 **명시 차단**할 도구 — readonly 접두어(list_/get_)에 잡히는 admin 조회까지 포함해 우선 차단.
+/// (a) ③deny: request_secret/network_request(Vault·SSRF) (b) 임의 실행/우회: run_module/execute
+/// (c) 배경 실행(남용 — QueueManager 전까지 보류): schedule_task/run_task/run_cron_job
+/// (d) admin/시스템/모듈/mcp/로그 관리: list_system_modules/get_module_config/list_mcp_servers/query_logs 등.
+fn is_hub_denied_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "request_secret"
+            | "network_request"
+            | "run_module"
+            | "execute"
+            | "schedule_task"
+            | "run_task"
+            | "run_cron_job"
+            | "list_system_modules"
+            | "list_user_modules"
+            | "get_module_config"
+            | "get_module_schema"
+            | "install_packages"
+            | "get_package_status"
+            | "list_mcp_servers"
+            | "list_mcp_tools"
+            | "call_mcp_tool"
+            | "mcp_call"
+            | "set_log_filter"
+            | "query_logs"
+            | "get_memory_stats"
+    )
+}
+
+/// hub visitor 가 **자기 owner-scope 자료**를 생성/수정/삭제하는 내장 도구 — ① 필수-on 의 write.
+/// owner 자동 주입으로 visitor 간 격리되므로 허용해도 안전. **배경 실행·전역·민감 도구는 제외**(default-deny):
+/// schedule_task/run_task/run_cron_job(배경 실행·남용), run_module/execute(sysmod allow-list 우회),
+/// request_secret/network_request(③deny Vault·SSRF), *_module/mcp_*/log(admin) 은 여기에 없어 차단된다.
+/// 새 owner-scoped 쓰기 도구 추가 시 여기 등록 (없으면 hub 에서만 안 됨 = 보안상 안전한 누락).
+fn is_hub_writable_builtin(name: &str) -> bool {
+    matches!(
+        name,
+        "save_entity"
+            | "save_fact"
+            | "consolidate_conversation"
+            | "delete_page"
+            | "delete_project"
+            | "write_file"
+            | "delete_file"
+            | "regenerate_image"
+            | "save_template"
+            | "delete_template"
+    )
 }
 
 /// hub visitor 에게 허용할 read-only/안전 도구 판정 — **단일 소스**.
@@ -189,6 +247,14 @@ mod tests {
         assert!(permits_tool("suggest", &allowed));
         assert!(permits_tool("propose_plan", &allowed));
         assert!(permits_tool("save_page", &allowed));
+        // ① 필수-on owner-scoped 쓰기 (owner 주입으로 visitor 간 격리 → 허용)
+        assert!(permits_tool("save_entity", &allowed));
+        assert!(permits_tool("save_fact", &allowed));
+        assert!(permits_tool("delete_page", &allowed));
+        assert!(permits_tool("write_file", &allowed));
+        assert!(permits_tool("delete_file", &allowed));
+        assert!(permits_tool("save_template", &allowed));
+        assert!(permits_tool("regenerate_image", &allowed));
     }
 
     #[test]
@@ -197,15 +263,23 @@ mod tests {
         // 미허용 sysmod (allowed 에도 core 에도 없음)
         assert!(!permits_tool("sysmod_telegram", &allowed));
         assert!(!permits_tool("sysmod_kiwoom", &allowed));
-        // destructive / admin / 시크릿 — 전부 차단 (fail-safe)
-        assert!(!permits_tool("delete_page", &allowed));
-        assert!(!permits_tool("delete_file", &allowed));
-        assert!(!permits_tool("write_file", &allowed));
-        assert!(!permits_tool("schedule_task", &allowed));
-        assert!(!permits_tool("cancel_cron_job", &allowed));
-        assert!(!permits_tool("run_task", &allowed));
-        assert!(!permits_tool("run_module", &allowed));
+        // ③deny: Vault/시크릿 / 임의 네트워크
         assert!(!permits_tool("request_secret", &allowed));
+        assert!(!permits_tool("network_request", &allowed));
+        // 임의 실행 / sysmod allow-list 우회
+        assert!(!permits_tool("run_module", &allowed));
+        assert!(!permits_tool("execute", &allowed));
+        // 배경 실행 (남용 방지 — QueueManager 전까지 보류)
+        assert!(!permits_tool("schedule_task", &allowed));
+        assert!(!permits_tool("run_task", &allowed));
+        assert!(!permits_tool("run_cron_job", &allowed));
+        assert!(!permits_tool("cancel_cron_job", &allowed)); // writable·readonly 아님 → default-deny
+        // admin/시스템/모듈 조회 — list_/get_ 접두어지만 우선 차단 (readonly 누수 차단)
+        assert!(!permits_tool("list_system_modules", &allowed));
+        assert!(!permits_tool("list_user_modules", &allowed));
+        assert!(!permits_tool("get_module_config", &allowed));
+        assert!(!permits_tool("get_memory_stats", &allowed));
+        // mcp 관리 / 시크릿 변형
         assert!(!permits_tool("mcp_call", &allowed));
         assert!(!permits_tool("vault_get_secret", &allowed));
     }

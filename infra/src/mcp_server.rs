@@ -211,6 +211,18 @@ fn inject_hub_owner(args: &mut Value) {
     }
 }
 
+/// hub context 활성 시 permits_tool 정책으로 도구 호출을 차단하는지 — MCP 의 **모든** 핸들러(explicit 포함)에 적용.
+/// FC 경로(ai.rs effective_tools 필터)와 동일한 hub_context::permits_tool 단일 정책. 옛 MCP 는 sysmod handler 와
+/// auto-sync ProxyHandler 만 가드해서, request_secret(Vault)·network_request 같은 explicit 핸들러가 hub 정책을
+/// 우회했다. dispatch 단일 지점 가드로 ③deny·배경실행을 hosted 경로에서도 일관 차단.
+fn hub_blocks_tool(name: &str) -> bool {
+    firebat_core::utils::hub_context::is_hub_context_active()
+        && !firebat_core::utils::hub_context::permits_tool(
+            name,
+            &firebat_core::utils::hub_context::active_allowed_sysmods().unwrap_or_default(),
+        )
+}
+
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
 ///   1. Vault `system:internal-mcp-token` (옛 internal MCP 토큰 — Frontend / CLI 어댑터)
 ///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
@@ -327,6 +339,16 @@ async fn handle_rpc(
                     serde_json::json!({ "content": content, "isError": true }),
                 );
             };
+            if hub_blocks_tool(&name) {
+                let content = vec![ContentBlock {
+                    block_type: "text",
+                    text: serde_json::json!({
+                        "error": format!("이 hub 에서는 '{}' 도구 사용이 허용되지 않습니다.", name)
+                    })
+                    .to_string(),
+                }];
+                return rpc_success(id, serde_json::json!({ "content": content, "isError": true }));
+            }
             match handler.call(args).await {
                 Ok(result) => {
                     let text = serde_json::to_string(&result).unwrap_or_else(|_| "null".to_string());
@@ -2045,6 +2067,16 @@ async fn dispatch_method(
                     "isError": true
                 })));
             };
+            if hub_blocks_tool(&name) {
+                let text = serde_json::json!({
+                    "error": format!("이 hub 에서는 '{}' 도구 사용이 허용되지 않습니다.", name)
+                })
+                .to_string();
+                return Ok(Some(serde_json::json!({
+                    "content": [{ "type": "text", "text": text }],
+                    "isError": true
+                })));
+            }
             match handler.call(args).await {
                 Ok(result) => {
                     let text = serde_json::to_string(&result).unwrap_or_else(|_| "null".to_string());
