@@ -169,12 +169,18 @@ export function GalleryPanel({
   const handleRegenerate = async (slug: string) => {
     setRegenerating(true);
     try {
-      // TODO(hub): hub media route 에 regenerate op 없음 — backend 필요. hub 모드에서도 admin 라우트로 fallback.
-      const data = await apiPost<{ success: boolean; error?: string }>(
-        `/api/media/regenerate?slug=${encodeURIComponent(slug)}`,
-        undefined,
-        { category: 'gallery' },
-      );
+      // hub 모드 = hub 라우트(owner-scoped regenerate). owner scoping 은 Rust core 가 강제.
+      const data = hubMode && hubContext
+        ? await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+            body: JSON.stringify({ op: 'regenerate', slug }),
+          }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }))
+        : await apiPost<{ success: boolean; error?: string }>(
+            `/api/media/regenerate?slug=${encodeURIComponent(slug)}`,
+            undefined,
+            { category: 'gallery' },
+          );
       if (!data.success) {
         await alertDialog({ title: '재생성 실패', message: data.error || 'unknown', danger: true });
       }

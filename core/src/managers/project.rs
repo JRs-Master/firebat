@@ -169,18 +169,51 @@ impl ProjectManager {
 
     /// 프로젝트 일괄 삭제 — 모든 path + DB pages.
     pub async fn delete(&self, project: &str) -> InfraResult<ProjectDeleteResult> {
+        let entry = self.find_in_scope(project, None).await?;
+        self.delete_entry(project, &entry).await
+    }
+
+    /// hub 격리 삭제 — hub_id 지정 시 그 hub 자료(scan_for_hub)에서만 찾아 삭제.
+    /// 미소유 = not_found (존재 여부 노출 방지). admin(None) 은 delete 와 동일 동작.
+    pub async fn delete_owned(
+        &self,
+        project: &str,
+        hub_id: Option<&str>,
+    ) -> InfraResult<ProjectDeleteResult> {
+        let entry = self.find_in_scope(project, hub_id).await?;
+        self.delete_entry(project, &entry).await
+    }
+
+    /// hub_id scope 안에서 project entry 조회. hub_id=None 이면 admin scope(scan).
+    /// 못 찾으면 not_found — hub 격리 + 빈 프로젝트 가드 단일 지점.
+    async fn find_in_scope(
+        &self,
+        project: &str,
+        hub_id: Option<&str>,
+    ) -> InfraResult<ProjectEntry> {
         if !is_safe_name(project) {
             return Err(crate::i18n::t("core.error.project.name_invalid", None, &[]));
         }
-        let projects = self.scan().await;
-        let entry = projects.iter().find(|p| p.name == project);
+        let projects = match hub_id.filter(|s| !s.is_empty()) {
+            Some(id) => self.scan_for_hub(id).await,
+            None => self.scan().await,
+        };
+        let entry = projects.into_iter().find(|p| p.name == project);
         let Some(entry) = entry else {
             return Err(crate::i18n::t("core.error.project.not_found", None, &[]));
         };
         if entry.paths.is_empty() && entry.page_slugs.is_empty() {
             return Err(crate::i18n::t("core.error.project.not_found", None, &[]));
         }
+        Ok(entry)
+    }
 
+    /// scope 검증을 통과한 entry 실제 삭제 — path + DB pages.
+    async fn delete_entry(
+        &self,
+        project: &str,
+        entry: &ProjectEntry,
+    ) -> InfraResult<ProjectDeleteResult> {
         for p in &entry.paths {
             let _ = self.storage.delete(p).await;
         }
@@ -194,6 +227,17 @@ impl ProjectManager {
             paths: entry.paths.clone(),
             pages: deleted_pages,
         })
+    }
+
+    /// hub_id 가 project 를 소유하는지 — set_visibility 등 mutate 전 hub 격리 가드.
+    pub async fn hub_owns_project(&self, hub_id: &str, project: &str) -> bool {
+        if !is_safe_name(hub_id) {
+            return false;
+        }
+        self.scan_for_hub(hub_id)
+            .await
+            .iter()
+            .any(|p| p.name == project)
     }
 
     pub fn get_visibility(&self, project: &str) -> ProjectVisibility {

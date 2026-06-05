@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listMedia, removeMedia } from '../../../../../lib/api-gen/media';
+import { listMedia, removeMedia, regenerate as regenerateMedia } from '../../../../../lib/api-gen/media';
 import { authenticate } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -8,8 +8,9 @@ import { logger } from '../../../../../lib/util/logger';
  *
  * GET ?limit=50&offset=0&search=...  — hub-scoped 미디어 목록 (user/hub/<id>/media/)
  * DELETE ?slug=...                    — hub-scoped 미디어 삭제 (소유 확인 후)
+ * POST   op='regenerate'             — hub-scoped 미디어 재생성 (소유 확인 후, 결과도 같은 scope)
  *
- * 인증: X-Api-Token + X-Session-Id. hub_owner 자동 instance.id 강제.
+ * 인증: X-Api-Token + X-Session-Id. hub_owner = `<instance_id>:<session_id>` 강제.
  */
 export const dynamic = 'force-dynamic';
 
@@ -72,12 +73,45 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   return NextResponse.json({ success: true });
 }
 
+export async function POST(req: NextRequest, { params }: Ctx) {
+  const { slug } = await params;
+  const auth = await authHub(req, slug);
+  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  // visitor 별 격리 — hubOwner = `<instance_id>:<session_id>` 매칭만 통과.
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const scopeId = `${auth.instanceId}:${sessionId}`;
+
+  let body: Record<string, any> = {};
+  try { body = await req.json(); }
+  catch { return NextResponse.json({ success: false, error: 'JSON body 필요' }, { status: 400 }); }
+
+  const op = String(body.op ?? '');
+
+  try {
+    switch (op) {
+      case 'regenerate': {
+        const mediaSlug = String(body.slug ?? '');
+        if (!mediaSlug) return NextResponse.json({ success: false, error: 'slug 가 필요합니다.' }, { status: 400 });
+        // owner scoping = Rust core(MediaService.regenerate → regenerate_image_owned)가 강제 — 미소유 시 거부.
+        const res = await regenerateMedia({ slug: mediaSlug, hubOwner: scopeId } as any);
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true });
+      }
+      default:
+        return NextResponse.json({ success: false, error: `지원되지 않는 op: ${op}` }, { status: 400 });
+    }
+  } catch (err) {
+    logger.debug('hub-media', 'op 실패', { op, error: err });
+    return NextResponse.json({ success: false, error: (err as Error)?.message ?? '서버 오류' }, { status: 500 });
+  }
+}
+
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Api-Token, X-Session-Id',
       'Access-Control-Max-Age': '86400',
     },

@@ -114,6 +114,17 @@ impl ScheduleManager {
         self.cron.trigger_now(job_id).await
     }
 
+    /// owner-aware trigger — owner 가 일치하는 job 만 즉시 실행. visitor 가 다른 hub / admin 자료에 접근 불가.
+    pub async fn trigger_now_owned(&self, job_id: &str, owner: Option<&str>) -> InfraResult<()> {
+        let owned = self.cron.list().into_iter().any(|j| {
+            j.job_id == job_id && j.options.owner.as_deref() == owner
+        });
+        if !owned {
+            return Err("이 cron 작업에 접근할 권한이 없습니다.".to_string());
+        }
+        self.cron.trigger_now(job_id).await
+    }
+
     pub fn list(&self) -> Vec<CronJobInfo> {
         self.cron.list()
     }

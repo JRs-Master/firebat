@@ -392,8 +392,16 @@ export function Sidebar({
       return;
     }
     try {
-      // TODO(hub): hub pages route 에 visibility op 없음 — backend 필요.
-      await apiPatch(`/api/pages/${encodeURIComponent(slug)}/visibility`, { visibility: vis }, { category: 'sidebar' });
+      // hub 모드 = hub 라우트(project-scoped visibility). owner scoping 은 Rust core 가 강제.
+      if (hubMode && hubShareContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/pages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+          body: JSON.stringify({ op: 'visibility', slug, visibility: vis }),
+        });
+      } else {
+        await apiPatch(`/api/pages/${encodeURIComponent(slug)}/visibility`, { visibility: vis }, { category: 'sidebar' });
+      }
       fetchPages();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
@@ -410,8 +418,16 @@ export function Sidebar({
       return;
     }
     try {
-      // TODO(hub): hub fs route 에 project visibility op 없음 — backend 필요.
-      await apiPatch('/api/fs/projects', { project: name, visibility: vis }, { category: 'sidebar' });
+      // hub 모드 = hub 라우트(hub-scoped visibility). owner scoping 은 Rust core 가 hub_id 로 강제.
+      if (hubMode && hubShareContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+          body: JSON.stringify({ op: 'set-project-visibility', project: name, visibility: vis }),
+        });
+      } else {
+        await apiPatch('/api/fs/projects', { project: name, visibility: vis }, { category: 'sidebar' });
+      }
       refreshAll();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
@@ -422,11 +438,28 @@ export function Sidebar({
   const handlePwConfirm = async () => {
     if (!pwModal || !pwInput.trim()) return;
     try {
+      // hub 모드 = hub 라우트(scoped). owner scoping 은 Rust core 가 강제.
       if (pwModal.type === 'page') {
-        await apiPatch(`/api/pages/${encodeURIComponent(pwModal.target)}/visibility`, { visibility: 'password', password: pwInput }, { category: 'sidebar' });
+        if (hubMode && hubShareContext) {
+          await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/pages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+            body: JSON.stringify({ op: 'visibility', slug: pwModal.target, visibility: 'password', password: pwInput }),
+          });
+        } else {
+          await apiPatch(`/api/pages/${encodeURIComponent(pwModal.target)}/visibility`, { visibility: 'password', password: pwInput }, { category: 'sidebar' });
+        }
         fetchPages();
       } else {
-        await apiPatch('/api/fs/projects', { project: pwModal.target, visibility: 'password', password: pwInput }, { category: 'sidebar' });
+        if (hubMode && hubShareContext) {
+          await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+            body: JSON.stringify({ op: 'set-project-visibility', project: pwModal.target, visibility: 'password', password: pwInput }),
+          });
+        } else {
+          await apiPatch('/api/fs/projects', { project: pwModal.target, visibility: 'password', password: pwInput }, { category: 'sidebar' });
+        }
         refreshAll();
       }
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
@@ -455,8 +488,16 @@ export function Sidebar({
     if (!await confirmDialog({ title: '프로젝트 삭제', message: `프로젝트 "${name}"의 모든 파일을 삭제하시겠습니까?\n관련 페이지와 모듈이 모두 삭제됩니다.`, danger: true, okLabel: '삭제' })) return;
     setDeletingProject(name);
     try {
-      // TODO(hub): hub fs route 에 project delete op 없음 — backend 필요.
-      await apiDelete(`/api/fs/projects?project=${encodeURIComponent(name)}`, { category: 'sidebar' });
+      // hub 모드 = hub 라우트(hub-scoped delete). owner scoping 은 Rust core 가 hub_id 로 강제.
+      if (hubMode && hubShareContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+          body: JSON.stringify({ op: 'delete-project', project: name }),
+        });
+      } else {
+        await apiDelete(`/api/fs/projects?project=${encodeURIComponent(name)}`, { category: 'sidebar' });
+      }
       onRefreshTree();
       refreshAll();
     } finally {
@@ -508,15 +549,30 @@ export function Sidebar({
     if (!normalized || normalized === renameTarget.current) return;
     setRenaming(true);
     try {
-      // TODO(hub): hub pages / hub fs route 에 rename op 없음 — backend 필요.
+      // hub 모드 = hub 라우트(scoped). owner scoping 은 Rust core 가 강제.
       if (renameTarget.type === 'page') {
-        const data = await apiPatch<{ success: boolean; error?: string }>(
-          `/api/pages/${encodeURIComponent(renameTarget.current)}`,
-          { newSlug: normalized, setRedirect: renameSetRedirect },
-          { category: 'sidebar' },
-        );
-        if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
+        if (hubMode && hubShareContext) {
+          const res = await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/pages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+            body: JSON.stringify({ op: 'rename', slug: renameTarget.current, newSlug: normalized, setRedirect: renameSetRedirect }),
+          });
+          const data = await res.json().catch(() => ({ success: false, error: '네트워크 오류' }));
+          if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
+        } else {
+          const data = await apiPatch<{ success: boolean; error?: string }>(
+            `/api/pages/${encodeURIComponent(renameTarget.current)}`,
+            { newSlug: normalized, setRedirect: renameSetRedirect },
+            { category: 'sidebar' },
+          );
+          if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
+        }
       } else {
+        // 프로젝트 이름 변경은 hub 인스턴스 프로젝트(hub:<id>)에는 적용할 수 없음 — 인스턴스 식별자라 변경 시 자료 연결이 끊깁니다.
+        if (hubMode) {
+          await alertDialog({ title: '변경 불가', message: '허브 프로젝트 이름은 변경할 수 없습니다.', danger: true });
+          return;
+        }
         const data = await apiPatch<{ success: boolean; error?: string }>(
           '/api/fs/projects',
           { action: 'rename', project: renameTarget.current, newName: normalized, setRedirect: renameSetRedirect },

@@ -160,6 +160,29 @@ impl PageManager {
         new_slug_input: &str,
         set_redirect: bool,
     ) -> InfraResult<RenameResult> {
+        self.rename_inner(old_slug, new_slug_input, set_redirect, None)
+    }
+
+    /// project 고정 rename — pin_project 지정 시 새 slug 첫 segment 와 무관하게 project 를 그대로 유지.
+    /// hub visitor 가 자기 페이지를 admin project 이름(예: `news/x`)으로 바꿔 admin 워크스페이스에
+    /// 노출시키는 cross-tenant leak 차단. hub 경로에서만 사용 (admin 은 rename 그대로).
+    pub fn rename_pinned(
+        &self,
+        old_slug: &str,
+        new_slug_input: &str,
+        set_redirect: bool,
+        pin_project: &str,
+    ) -> InfraResult<RenameResult> {
+        self.rename_inner(old_slug, new_slug_input, set_redirect, Some(pin_project))
+    }
+
+    fn rename_inner(
+        &self,
+        old_slug: &str,
+        new_slug_input: &str,
+        set_redirect: bool,
+        pin_project: Option<&str>,
+    ) -> InfraResult<RenameResult> {
         let new_slug = new_slug_input
             .trim()
             .trim_start_matches('/')
@@ -194,13 +217,18 @@ impl PageManager {
         let mut spec_value: serde_json::Value =
             serde_json::from_str(&cur.spec).unwrap_or(serde_json::json!({}));
         spec_value["slug"] = serde_json::Value::String(new_slug.clone());
-        // 새 slug 의 첫 segment → project 자동 동기
-        let first_segment = new_slug.split('/').next().unwrap_or("").to_string();
-        let new_project = if first_segment.is_empty() {
-            cur.project.clone()
+        // project 결정 — pin_project 지정(hub) 시 그대로 고정, 아니면 새 slug 첫 segment 로 자동 동기.
+        let new_project = if let Some(pin) = pin_project {
+            spec_value["project"] = serde_json::Value::String(pin.to_string());
+            Some(pin.to_string())
         } else {
-            spec_value["project"] = serde_json::Value::String(first_segment.clone());
-            Some(first_segment)
+            let first_segment = new_slug.split('/').next().unwrap_or("").to_string();
+            if first_segment.is_empty() {
+                cur.project.clone()
+            } else {
+                spec_value["project"] = serde_json::Value::String(first_segment.clone());
+                Some(first_segment)
+            }
         };
         let spec_str = serde_json::to_string(&spec_value).map_err(|e| {
             crate::i18n::t(

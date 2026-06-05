@@ -314,11 +314,14 @@ impl ScheduleService for ScheduleServiceImpl {
         &self,
         req: Request<RunCronNowRequest>,
     ) -> Result<Response<RunCronNowResponse>, TonicStatus> {
-        let job_id = req.into_inner().job_id;
-        self.manager
-            .trigger_now(&job_id)
-            .await
-            .map_err(TonicStatus::internal)?;
+        let args = req.into_inner();
+        let job_id = args.job_id;
+        // owner 지정(hub) → trigger_now_owned 로 owner 일치 검사. None(admin) → 기존 trigger_now(무검사).
+        match args.owner.as_deref().filter(|s| !s.is_empty()) {
+            Some(o) => self.manager.trigger_now_owned(&job_id, Some(o)).await,
+            None => self.manager.trigger_now(&job_id).await,
+        }
+        .map_err(TonicStatus::internal)?;
         Ok(Response::new(RunCronNowResponse {}))
     }
 

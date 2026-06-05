@@ -687,6 +687,30 @@ impl MediaManager {
         self: &Arc<Self>,
         slug: &str,
     ) -> InfraResult<(GenerateImageResult, String)> {
+        self.regenerate_image_owned(slug, None).await
+    }
+
+    /// hub 격리 재생성 — hub_owner 지정 시 그 owner 의 미디어인지 확인 후 재생성하고,
+    /// 결과도 같은 hub scope (`user/hub/<id>/media/`) 로 저장. admin(None) 무검사.
+    /// 미소유 = 권한 거부. 프론트 가드 대신 core 강제.
+    pub async fn regenerate_image_owned(
+        self: &Arc<Self>,
+        slug: &str,
+        hub_owner: Option<&str>,
+    ) -> InfraResult<(GenerateImageResult, String)> {
+        if let Some(ho) = hub_owner.filter(|s| !s.is_empty()) {
+            let list = self
+                .media
+                .list(&MediaListOpts {
+                    hub_owner: Some(ho.to_string()),
+                    limit: Some(1000),
+                    ..Default::default()
+                })
+                .await?;
+            if !list.items.iter().any(|m| m.slug == slug) {
+                return Err("이 자료에 접근할 권한이 없습니다.".to_string());
+            }
+        }
         let stat = self
             .media
             .stat(slug)
@@ -704,6 +728,8 @@ impl MediaManager {
             filename_hint: stat.filename_hint.clone(),
             scope: stat.scope,
             aspect_ratio: stat.aspect_ratio.clone(),
+            // hub 재생성 결과도 같은 visitor scope 로 — admin 갤러리로 새지 않게.
+            hub_owner: hub_owner.filter(|s| !s.is_empty()).map(|s| s.to_string()),
             ..Default::default()
         };
         let result = self.generate_image(input, None).await?;

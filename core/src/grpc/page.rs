@@ -29,6 +29,21 @@ impl PageServiceImpl {
     pub fn new(manager: Arc<PageManager>) -> Self {
         Self { manager }
     }
+
+    /// hub project scoping — project 지정 시 page.project 와 일치할 때만 통과. admin(None/빈값)은 무검사.
+    /// 불일치·부재 = PermissionDenied (존재 여부 노출 방지). 프론트 가드 대신 core 가 강제하는 단일 지점.
+    fn ensure_page_project(&self, slug: &str, project: Option<&str>) -> Result<(), TonicStatus> {
+        let project = match project {
+            Some(p) if !p.is_empty() => p,
+            _ => return Ok(()),
+        };
+        match self.manager.get(slug) {
+            Some(r) if r.project.as_deref() == Some(project) => Ok(()),
+            _ => Err(TonicStatus::permission_denied(
+                "이 페이지에 접근할 권한이 없습니다.",
+            )),
+        }
+    }
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -152,18 +167,8 @@ impl PageService for PageServiceImpl {
         req: Request<PageDeleteRequest>,
     ) -> Result<Response<PageDeleteResponse>, TonicStatus> {
         let args = req.into_inner();
-        // hub project scoping — project 지정 시 page.project 일치할 때만. 불일치/부재 = 권한 거부.
-        // 프론트(hub pages route) 가드 대신 core 단일 강제. admin(None) 무검사.
-        if let Some(proj) = args.project.as_deref().filter(|s| !s.is_empty()) {
-            match self.manager.get(&args.slug) {
-                Some(r) if r.project.as_deref() == Some(proj) => {}
-                _ => {
-                    return Err(TonicStatus::permission_denied(
-                        "이 페이지에 접근할 권한이 없습니다.",
-                    ))
-                }
-            }
-        }
+        // hub project scoping — project 지정 시 page.project 일치할 때만. admin(None) 무검사.
+        self.ensure_page_project(&args.slug, args.project.as_deref())?;
         self.manager
             .delete(&args.slug)
             .map_err(TonicStatus::internal)?;
@@ -175,9 +180,20 @@ impl PageService for PageServiceImpl {
         req: Request<PageRenameRequest>,
     ) -> Result<Response<PageRenameResponse>, TonicStatus> {
         let args = req.into_inner();
-        self.manager
-            .rename(&args.old_slug, &args.new_slug, args.set_redirect.unwrap_or(false))
-            .map_err(TonicStatus::internal)?;
+        // hub project scoping — project 지정 시 옛 slug 의 page.project 일치할 때만. admin(None) 무검사.
+        self.ensure_page_project(&args.old_slug, args.project.as_deref())?;
+        let set_redirect = args.set_redirect.unwrap_or(false);
+        // hub 경로(project 지정) → project 고정 rename (새 slug 가 admin project 로 새는 leak 차단).
+        // admin(None) → 기존 rename (새 slug 첫 segment 로 project 자동 동기).
+        match args.project.as_deref().filter(|s| !s.is_empty()) {
+            Some(pin) => self
+                .manager
+                .rename_pinned(&args.old_slug, &args.new_slug, set_redirect, pin),
+            None => self
+                .manager
+                .rename(&args.old_slug, &args.new_slug, set_redirect),
+        }
+        .map_err(TonicStatus::internal)?;
         Ok(Response::new(PageRenameResponse {}))
     }
 
@@ -220,6 +236,8 @@ impl PageService for PageServiceImpl {
         req: Request<PageSetVisibilityRequest>,
     ) -> Result<Response<PageSetVisibilityResponse>, TonicStatus> {
         let args = req.into_inner();
+        // hub project scoping — project 지정 시 page.project 일치할 때만. admin(None) 무검사.
+        self.ensure_page_project(&args.slug, args.project.as_deref())?;
         self.manager
             .set_visibility(&args.slug, &args.visibility, args.password.as_deref())
             .map_err(TonicStatus::internal)?;

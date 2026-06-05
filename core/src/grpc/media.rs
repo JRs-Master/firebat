@@ -241,8 +241,13 @@ impl MediaService for MediaServiceImpl {
         &self,
         req: Request<MediaRegenerateRequest>,
     ) -> Result<Response<MediaRegenerateResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
-        match self.manager.regenerate_image_by_slug(&slug).await {
+        let args = req.into_inner();
+        // hub_owner 지정(hub) → regenerate_image_owned(소유 검사 + 같은 scope 저장) / None(admin) → 무검사.
+        match self
+            .manager
+            .regenerate_image_owned(&args.slug, args.hub_owner.as_deref())
+            .await
+        {
             Ok((result, _new_slug)) => Ok(Response::new(result.into())),
             Err(e) => Err(TonicStatus::internal(e)),
         }

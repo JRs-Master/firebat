@@ -147,8 +147,16 @@ export function CronPanel({
     try {
       // fire-and-forget — 백엔드가 비동기 트리거. 결과는 cron-logs SSE 로 반영.
       // setTimeout 으로 spinner 잠깐 보여주고 자동 해제 (UX 안정).
-      // TODO(hub): hub cron route 에 run op 없음 — backend 필요. hub 모드에서도 admin 라우트로 호출.
-      await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
+      // hub 모드 = hub 라우트(owner-scoped run). owner scoping 은 Rust core 가 강제.
+      if (hubMode && hubContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+          body: JSON.stringify({ op: 'run', jobId }),
+        });
+      } else {
+        await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
+      }
       setTimeout(() => setRunning(null), 1500);
     } catch {
       setRunning(null);

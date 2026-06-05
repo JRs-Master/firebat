@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { scanProjects } from '../../../../../lib/api-gen/project';
+import { scanProjects, setProjectVisibility, deleteProject } from '../../../../../lib/api-gen/project';
 import { readFile, writeFile, getFileTree } from '../../../../../lib/api-gen/storage';
 import { authenticate } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
@@ -15,6 +15,10 @@ import { logger } from '../../../../../lib/util/logger';
  *  - 'tree' — `{ root: 'user/hub/<id>/modules/<module>' }` 파일 트리
  *  - 'read' — `{ path: 'user/hub/<id>/...' }` 파일 본문
  *  - 'write' — `{ path: 'user/hub/<id>/...', content }` 파일 저장
+ *  - 'set-project-visibility' — `{ project, visibility, password? }` 자기 hub 프로젝트 가시성
+ *  - 'delete-project' — `{ project }` 자기 hub 프로젝트 일괄 삭제
+ *
+ * project op 의 owner scoping = Rust core(ProjectService)가 hub_id 로 강제 — 미소유 시 거부.
  */
 export const dynamic = 'force-dynamic';
 
@@ -95,6 +99,29 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           return NextResponse.json({ success: false, error: '이 파일에 접근할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await writeFile({ path, content });
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true });
+      }
+      case 'set-project-visibility': {
+        const project = String(body.project ?? '');
+        const visibility = String(body.visibility ?? '');
+        if (!project) return NextResponse.json({ success: false, error: 'project 필수' }, { status: 400 });
+        if (!['public', 'password', 'private'].includes(visibility)) {
+          return NextResponse.json({ success: false, error: 'visibility 는 public·password·private 중 하나여야 합니다.' }, { status: 400 });
+        }
+        if (visibility === 'password' && !body.password) {
+          return NextResponse.json({ success: false, error: 'password 모드에서는 비밀번호가 필요합니다.' }, { status: 400 });
+        }
+        // hub scoping = Rust core(ProjectService.setVisibility)가 hub_id 로 강제 — 미소유 시 거부.
+        const res = await setProjectVisibility({ project, visibility, password: body.password ?? undefined, hubId: auth.instanceId } as any);
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true });
+      }
+      case 'delete-project': {
+        const project = String(body.project ?? '');
+        if (!project) return NextResponse.json({ success: false, error: 'project 필수' }, { status: 400 });
+        // hub scoping = Rust core(ProjectService.delete → delete_owned)가 hub_id 로 강제 — 미소유 시 거부.
+        const res = await deleteProject({ project, hubId: auth.instanceId } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
       }

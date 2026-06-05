@@ -85,6 +85,14 @@ impl ProjectService for ProjectServiceImpl {
                 )))
             }
         };
+        // hub scoping — hub_id 지정 시 그 hub 가 project 를 소유할 때만. admin(None) 무검사.
+        if let Some(hub_id) = args.hub_id.as_deref().filter(|s| !s.is_empty()) {
+            if !self.manager.hub_owns_project(hub_id, &args.project).await {
+                return Err(TonicStatus::permission_denied(
+                    "이 프로젝트에 접근할 권한이 없습니다.",
+                ));
+            }
+        }
         self.manager
             .set_visibility(&args.project, visibility, args.password.as_deref());
         Ok(Response::new(ProjectSetVisibilityResponse {}))
@@ -141,9 +149,10 @@ impl ProjectService for ProjectServiceImpl {
         &self,
         req: Request<ProjectDeleteRequest>,
     ) -> Result<Response<ProjectDeleteResponse>, TonicStatus> {
-        let project = req.into_inner().project;
+        let args = req.into_inner();
+        // hub_id 지정(hub) → delete_owned(hub scope 안에서만 조회·삭제) / None(admin) → 무검사.
         self.manager
-            .delete(&project)
+            .delete_owned(&args.project, args.hub_id.as_deref())
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(ProjectDeleteResponse {}))

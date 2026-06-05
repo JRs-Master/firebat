@@ -370,6 +370,8 @@ message PageRenameRequest {
   string old_slug = 1;
   string new_slug = 2;
   optional bool set_redirect = 3;
+  // hub project scoping — 지정 시 page.project 와 일치할 때만 rename 허용. admin 은 omit → 무검사.
+  optional string project = 4;
 }
 message PageRenameResponse {}
 message PageGetRedirectRequest {
@@ -390,6 +392,8 @@ message PageSetVisibilityRequest {
   string slug = 1;
   string visibility = 2;
   optional string password = 3;
+  // hub project scoping — 지정 시 page.project 와 일치할 때만 변경 허용. admin 은 omit → 무검사.
+  optional string project = 4;
 }
 message PageSetVisibilityResponse {}
 message PageVerifyPasswordRequest {
@@ -458,6 +462,8 @@ message ProjectSetVisibilityRequest {
   string project = 1;
   string visibility = 2;
   optional string password = 3;
+  // hub scoping — 지정 시 project 가 해당 hub 자료일 때만 변경 허용. admin 은 omit → 무검사.
+  optional string hub_id = 4;
 }
 message ProjectSetVisibilityResponse {}
 message ProjectGetVisibilityRequest {
@@ -480,11 +486,15 @@ message ProjectVerifyPasswordResponse {
 }
 message ProjectDeleteRequest {
   string project = 1;
+  // hub scoping — 지정 시 project 가 해당 hub 자료일 때만 삭제 허용. admin 은 omit → 무검사.
+  optional string hub_id = 2;
 }
 message ProjectDeleteResponse {}
 message ProjectRenameRequest {
   string old_name = 1;
   string new_name = 2;
+  // hub scoping — 지정 시 old_name 이 해당 hub 자료일 때만 rename 허용. admin 은 omit → 무검사.
+  optional string hub_id = 3;
 }
 message ProjectRenameResponse {}
 
@@ -862,6 +872,8 @@ message ClearCronLogsResponse {}
 message ConsumeCronNotificationsRequest {}
 message RunCronNowRequest {
   string job_id = 1;
+  // hub owner scoping — 지정 시 job.owner 일치할 때만 실행. admin 은 omit → 무검사.
+  optional string owner = 2;
 }
 message RunCronNowResponse {}
 message ValidatePipelineRequest {
@@ -1488,6 +1500,9 @@ message MediaGenerateRequest {
 }
 message MediaRegenerateRequest {
   string slug = 1;
+  // hub owner scoping — 지정 시 자기 소유 미디어일 때만 재생성 + 결과도 같은 hub scope 로 저장.
+  // admin 은 omit → 무검사.
+  optional string hub_owner = 2;
 }
 message MediaSaveRequest {
   // binary base64 + content type + 동적 MediaSaveOptions JSON.
