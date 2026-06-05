@@ -26,6 +26,9 @@ pub struct ActiveHubContext {
     /// 이 값으로 owner/hubOwner/project 를 args 에 주입해야 hub 자료가 올바른 owner 로 저장된다.
     pub instance_id: String,
     pub session_id: String,
+    /// admin 이 이 hub 에 공유한 Library Reference ID 들 — MCP search_library 가 본인(owner) 자료에
+    /// 더해 이 공유분도 검색하게 한다 (위젯 챗봇이 admin 지식베이스로 답하도록). 빈 배열 = 공유 0.
+    pub allowed_references: Vec<String>,
 }
 
 static ACTIVE_HUB_CONTEXT: RwLock<Option<ActiveHubContext>> = RwLock::new(None);
@@ -34,12 +37,18 @@ static ACTIVE_HUB_CONTEXT: RwLock<Option<ActiveHubContext>> = RwLock::new(None);
 pub struct HubContextGuard;
 
 impl HubContextGuard {
-    pub fn enter(allowed_sysmods: Vec<String>, instance_id: String, session_id: String) -> Self {
+    pub fn enter(
+        allowed_sysmods: Vec<String>,
+        instance_id: String,
+        session_id: String,
+        allowed_references: Vec<String>,
+    ) -> Self {
         if let Ok(mut guard) = ACTIVE_HUB_CONTEXT.write() {
             *guard = Some(ActiveHubContext {
                 allowed_sysmods,
                 instance_id,
                 session_id,
+                allowed_references,
             });
         }
         Self
@@ -52,6 +61,15 @@ pub fn active_hub_owner() -> Option<(String, String)> {
         .read()
         .ok()
         .and_then(|g| g.as_ref().map(|c| (c.instance_id.clone(), c.session_id.clone())))
+}
+
+/// 현재 활성 hub context 의 admin 공유 reference id 들 — MCP search_library 가 본인 자료에 합쳐 검색.
+/// None = admin 영역(hub 아님), Some(빈) = hub 인데 공유 0.
+pub fn active_allowed_references() -> Option<Vec<String>> {
+    ACTIVE_HUB_CONTEXT
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.allowed_references.clone()))
 }
 
 impl Drop for HubContextGuard {
@@ -202,6 +220,7 @@ mod tests {
             vec!["notes".to_string(), "calendar".to_string()],
             "inst".to_string(),
             "sess".to_string(),
+            vec![],
         );
         assert!(is_hub_context_active());
         assert!(!is_sysmod_blocked_for_hub("notes"));
@@ -213,7 +232,7 @@ mod tests {
     #[test]
     fn guard_drop_clears_context() {
         {
-            let _g = HubContextGuard::enter(vec!["notes".to_string()], "inst".to_string(), "sess".to_string());
+            let _g = HubContextGuard::enter(vec!["notes".to_string()], "inst".to_string(), "sess".to_string(), vec![]);
             assert!(is_hub_context_active());
         }
         assert!(!is_hub_context_active());

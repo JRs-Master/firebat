@@ -942,6 +942,7 @@ impl AiManager {
                 ctx.allowed_sysmods.clone(),
                 ctx.instance_id.clone(),
                 ctx.session_id.clone(),
+                ctx.allowed_references.clone(),
             )
         });
 

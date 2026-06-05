@@ -1358,14 +1358,36 @@ impl McpToolHandler for SearchLibraryHandler {
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
             .unwrap_or_default();
-        match self.library.search(&owner, &reference_ids, &query, limit).await {
-            Ok(hits) if hits.is_empty() => Ok(serde_json::json!({
+        // 본인(owner) 자료 검색
+        let mut hits = match self.library.search(&owner, &reference_ids, &query, limit).await {
+            Ok(h) => h,
+            Err(e) => return Ok(serde_json::json!({"success": false, "error": e})),
+        };
+        // hub 위젯 — AI 가 특정 referenceIds 를 안 고른 경우, admin 이 이 hub 에 공유한 reference(allowed_references)도
+        // 합쳐 검색 (위젯 챗봇이 admin 지식베이스로도 답하도록). FC 경로(ai.rs reference_filter)와 패리티.
+        // referenceIds 를 명시했으면 그 의도 존중(추가 안 함). 본인 ∪ 공유 병합 후 점수순 truncate.
+        if reference_ids.is_empty() {
+            if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_references() {
+                let extra: Vec<String> = allowed.into_iter().filter(|r| !r.is_empty()).collect();
+                if !extra.is_empty() {
+                    if let Ok(shared) = self.library.search(&owner, &extra, &query, limit).await {
+                        hits.extend(shared);
+                        hits.sort_by(|a, b| {
+                            b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        hits.truncate(limit);
+                    }
+                }
+            }
+        }
+        if hits.is_empty() {
+            Ok(serde_json::json!({
                 "success": true,
                 "data": [],
                 "hint": "매치된 자료가 없습니다. 동의어·핵심 명사·상위어 등 다른 키워드로 재검색하거나, referenceIds 를 비워 전체 자료를 검색해 보세요."
-            })),
-            Ok(hits) => Ok(serde_json::json!({"success": true, "data": hits})),
-            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+            }))
+        } else {
+            Ok(serde_json::json!({"success": true, "data": hits}))
         }
     }
 }
