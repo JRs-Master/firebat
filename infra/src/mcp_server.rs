@@ -168,8 +168,22 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     // 정공 = rest 의 세그먼트 prefix 들을 dash 로 이어 실제 config(is_enabled)에 묻는다. 명시적으로 비활성인
     // prefix 가 하나라도 있으면 그 모듈이 꺼진 것 → 숨김. 미존재 이름은 default true 라 무영향.
     let segs: Vec<&str> = rest.split('_').collect();
+    // 1. 전역 비활성 모듈 제외 (config is_enabled). 명시적으로 disabled 인 prefix 가 하나라도 있으면 숨김.
     for n in 1..=segs.len() {
         if !mm.is_enabled(&segs[..n].join("-")) {
+            return false;
+        }
+    }
+    // 2. hub 활성 시 — sysmod 가 allowed_sysmods ∪ CORE_SYSMODS 에 없으면 hub 도구목록에서도 제외.
+    //    옛 버그: 전역 ON 이지만 hub 미허용인 sysmod(telegram 등)가 목록엔 남아 AI 가 호출 → 실행 게이트
+    //    (is_sysmod_blocked_for_hub, 373)에 막혀 "허용 안 됨" + 턴 낭비. FC 경로(permits_tool)와 일관되게 목록에서 제외.
+    if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_sysmods() {
+        let hub_ok = (1..=segs.len()).any(|n| {
+            let name = segs[..n].join("-");
+            firebat_core::utils::hub_context::CORE_SYSMODS.contains(&name.as_str())
+                || allowed.iter().any(|a| a == &name)
+        });
+        if !hub_ok {
             return false;
         }
     }
