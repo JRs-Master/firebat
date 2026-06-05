@@ -763,18 +763,13 @@ fn pending_or_passthrough(
     tool_name: &str,
     summary_fn: impl FnOnce(&Value) -> String,
 ) -> Option<Value> {
-    // Hub visitor 영역 = destructive 도구 사용 차단 (ai.rs:686-687 admin path 와 일관 X).
-    // hub visitor 가 admin DB 영구 손실 (페이지 덮어쓰기 / 파일 삭제 / 등) 일으키는 행위 차단.
-    if firebat_core::utils::hub_context::is_hub_context_active() {
-        return Some(serde_json::json!({
-            "success": false,
-            "error": format!(
-                "이 hub 에서는 destructive 도구 '{}' 사용이 허용되지 않습니다.",
-                tool_name
-            ),
-        }));
-    }
-    if firebat_core::utils::cron_context::is_cron_context_active() {
+    // hub visitor / cron 자동 실행 — 승인 게이트 없이 직접 실행 (passthrough).
+    // hub 정책은 dispatch 게이트(hub_blocks_tool → permits_tool)가 이미 적용 → ③deny·배경실행은 여기 도달 전 차단.
+    // 여기 도달한 destructive 도구는 hub 에 허용된 owner-scoped 쓰기(save_page/delete_page/delete_file)뿐이고,
+    // owner 자동 주입으로 자기 scope 만 건드리므로 admin DB 손실 우려 없음 (옛 무조건 차단 = owner-scoping 이전 가드, 폐기).
+    if firebat_core::utils::hub_context::is_hub_context_active()
+        || firebat_core::utils::cron_context::is_cron_context_active()
+    {
         return None;
     }
     let pending_args = match firebat_core::utils::pending_tools::PendingActionArgs::from_call(
