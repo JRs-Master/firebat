@@ -103,7 +103,12 @@ pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
 ///       schedule_task·run_task·run_cron_job(배경 실행·남용) / *_module·mcp_*·log(admin). 명시 허용에 없으면 차단 = fail-safe.
 pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
     if let Some(sysmod) = name.strip_prefix("sysmod_") {
-        return CORE_SYSMODS.contains(&sysmod) || allowed_sysmods.iter().any(|s| s == sysmod);
+        // MCP 도구명은 모듈명의 dash 를 underscore 로 바꿔 등록한다(kma-weather → sysmod_kma_weather).
+        // 비교 전 underscore → dash 복원 — 안 하면 다단어 sysmod(kma-weather/naver-search/law-search 등)가
+        // allowed_sysmods(대시 보유)와 영영 안 맞아 허용돼도 무조건 차단된다. (is_tool_visible 의 dash join 과 일관.)
+        let module = sysmod.replace('_', "-");
+        return CORE_SYSMODS.contains(&module.as_str())
+            || allowed_sysmods.iter().any(|s| s == &module);
     }
     // ③deny / admin / 배경실행 — list_/get_ 접두어라 is_hub_readonly_tool 에 잡히는 admin 조회까지 우선 차단.
     if is_hub_denied_tool(name) {
@@ -235,8 +240,10 @@ mod tests {
         // 핵심 sysmod (allowed 없이도)
         assert!(permits_tool("sysmod_notes", &allowed));
         assert!(permits_tool("sysmod_calendar", &allowed));
-        // per-hub 허용 sysmod
+        // per-hub 허용 sysmod (dash 모듈명)
         assert!(permits_tool("sysmod_law-search", &allowed));
+        // MCP 도구명은 underscore (sysmod_law_search) — dash 모듈명(law-search)과 매칭돼야 함
+        assert!(permits_tool("sysmod_law_search", &allowed));
         // read-only / 시각화 / 제안 / hub-scoped write
         assert!(permits_tool("search_library", &allowed));
         assert!(permits_tool("get_page", &allowed));
