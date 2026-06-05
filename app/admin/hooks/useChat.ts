@@ -53,16 +53,29 @@ export interface UseChatHubContext {
 /** 대화 목록 메타 — admin/hub 공통 shape (convBackend 가 정규화). */
 type ConvBackendMeta = { id: string; title: string; createdAt: number; updatedAt: number };
 
-/** hub_messages(wire) → frontend Message. init·select 공용 (옛 중복 제거). */
+/** hub_messages(wire) → frontend Message. init·select 공용 (옛 중복 제거).
+ *  reload 복원 시 라이브 RESULT 와 같은 shape — 뱃지(executedActions/toolResults/suggestions/libraryHits)는
+ *  top-level 이어야 렌더가 읽는다 (옛 버그: data 에만 넣어 reload 후 액션 뱃지 사라짐). blocks 는 data 에서 렌더. */
 function mapHubMessages(
   hubMsgs: Array<{ id: string; role: string; content?: string; dataJson?: string }>,
 ): Message[] {
-  return hubMsgs.map(m => ({
-    id: m.id,
-    role: m.role === 'system' ? ('system' as const) : ('user' as const),
-    content: m.content ?? '',
-    ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
-  } as Message));
+  return hubMsgs.map(m => {
+    const role = m.role === 'system' ? ('system' as const) : ('user' as const);
+    if (!m.dataJson) {
+      return { id: m.id, role, content: m.content ?? '' } as Message;
+    }
+    const d = safeJsonParse<Record<string, unknown>>(m.dataJson, {});
+    return {
+      id: m.id,
+      role,
+      content: m.content ?? '',
+      executedActions: d.executedActions,
+      toolResults: d.toolResults,
+      libraryHits: d.libraryHits,
+      suggestions: d.suggestions,
+      data: d,
+    } as Message;
+  });
 }
 
 export function useChat(aiModel: string, onRefresh: () => void, hubContext?: UseChatHubContext) {
