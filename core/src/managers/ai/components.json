@@ -907,8 +907,9 @@
         "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "본문 네모박스 0~N개 (무채색 시험지 스타일, markdown+LaTeX). 박스 2개 케이스 포함" },
         "statements": { "type": ["array", "null"], "items": { "type": "string" }, "description": "ㄱㄴㄷ 합답형 보기 (자동 ㄱ/ㄴ/ㄷ/ㄹ 라벨). choices 가 'ㄱ,ㄴ' 식으로 참조" },
         "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "그림/표/그래프 등 시각 자극 — image/table/chart 등 다른 컴포넌트 배열" },
-        "choices": { "type": "array", "items": { "type": "string" }, "description": "보기 2~8개 (①②③④⑤⑥⑦⑧ 자동 번호, markdown+LaTeX)" },
-        "answer": { "type": ["number", "null"], "description": "정답 번호 (1-based)" },
+        "choices": { "type": "array", "items": { "type": "string" }, "description": "보기 2~8개 (markdown+LaTeX). 번호 ①②③은 컴포넌트가 자동 부여하므로 choice 텍스트엔 번호를 넣지 말 것 (본문만)" },
+        "answer": { "type": ["number", "null"], "description": "정답 번호 (1-based). 0-based 인덱스로는 answerIndex 사용" },
+        "answerIndex": { "type": ["number", "null"], "description": "정답 인덱스 (0-based, choices 배열 위치). answer(1-based)와 택1" },
         "explanation": { "type": ["string", "null"], "description": "해설 (markdown + LaTeX)" },
         "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
       }
@@ -926,7 +927,7 @@
         "passage": { "type": ["string", "null"], "description": "공유 지문/본문 (markdown + LaTeX)" },
         "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "공유 본문 박스 (무채색)" },
         "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "공유 그림/표/그래프" },
-        "questions": { "type": "array", "items": { "type": "object", "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "문항 배열 (각 {question, choices, answer?, explanation?, statements?, figures?})" },
+        "questions": { "type": "array", "items": { "type": "object", "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "answerIndex": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "문항 배열 (각 {question, choices, answer(1-based) 또는 answerIndex(0-based), explanation?, statements?, figures?})" },
         "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
       }
     }

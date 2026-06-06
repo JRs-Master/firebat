@@ -91,7 +91,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
-    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? []} answer={p.answer} explanation={p.explanation} view={p.view} />;
+    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? []} answer={p.answer} answerIndex={p.answerIndex} explanation={p.explanation} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? []} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
@@ -109,18 +109,27 @@ const QUIZ_CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '�
 const QUIZ_KOR = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 
+// 컴포넌트가 QUIZ_CIRCLED 로 보기 번호(①②③)를 자동 부여하므로, AI 가 choice 텍스트에 또 넣은
+// 앞쪽 마커(원문자 ①~⑩ / "1." / "1)")를 제거해 "① ① form" 식 중복 표시를 막는다.
+const stripChoiceMarker = (s: string): string =>
+  s.replace(/^\s*(?:[①-⑩]|\d+[.)])\s*/u, '');
+
+// 정답 정규화 — answer(1-based, 스키마 정공) 우선, AI 가 answerIndex(0-based)로 보내면 +1 환산.
+const quizAns = (answer?: number, answerIndex?: number): number | undefined =>
+  typeof answer === 'number' ? answer : typeof answerIndex === 'number' ? answerIndex + 1 : undefined;
+
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
 function QuizBody({
-  number, question, boxes, figures, statements, choices, answer, explanation,
+  number, question, boxes, figures, statements, choices, answer, answerIndex, explanation,
   view, selected, revealed, onSelect,
 }: {
   number?: number | string; question: string; boxes?: string[]; figures?: ComponentDef[];
-  statements?: string[]; choices: string[]; answer?: number; explanation?: string;
+  statements?: string[]; choices: string[]; answer?: number; answerIndex?: number; explanation?: string;
   view: QuizView; selected?: number; revealed: boolean; onSelect?: (i: number) => void;
 }) {
   const showAnswer = view === 'answers' || view === 'full' || (view === 'interactive' && revealed);
   const interactive = view === 'interactive';
-  const ans = typeof answer === 'number' ? answer : undefined; // 1-based
+  const ans = quizAns(answer, answerIndex); // 1-based
   const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
   return (
     <div className="text-[14px] sm:text-[15px] text-slate-800">
@@ -170,7 +179,7 @@ function QuizBody({
                 className={`text-left flex gap-2 items-start px-2.5 py-1.5 rounded-md border transition-colors ${cls} ${interactive && !revealed ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 <span className="shrink-0">{QUIZ_CIRCLED[i] ?? `${num}.`}</span>
-                <span className="flex-1"><InlineMd text={c} /></span>
+                <span className="flex-1"><InlineMd text={stripChoiceMarker(c)} /></span>
                 {showAnswer && isAns && <span className="text-green-600 shrink-0">✓</span>}
                 {showAnswer && isSel && !isAns && <span className="text-red-500 shrink-0">✗</span>}
               </button>
@@ -192,9 +201,9 @@ function QuizBody({
   );
 }
 
-function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, explanation, view = 'interactive' }: {
+function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, answerIndex, explanation, view = 'interactive' }: {
   number?: number | string; points?: number | string; question: string; boxes?: string[];
-  figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number;
+  figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number; answerIndex?: number;
   explanation?: string; view?: QuizView;
 }) {
   const [selected, setSelected] = useState<number | undefined>(undefined);
@@ -206,7 +215,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
       )}
       <QuizBody
         number={number} question={question} boxes={boxes} figures={figures} statements={statements}
-        choices={choices} answer={answer} explanation={explanation} view={view}
+        choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} view={view}
         selected={selected} revealed={revealed} onSelect={setSelected}
       />
       {view === 'interactive' && !revealed && (
@@ -218,7 +227,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
 
 function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive' }: {
   passage?: string; boxes?: string[]; figures?: ComponentDef[];
-  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; answer?: number; explanation?: string; figures?: ComponentDef[] }>;
+  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; answer?: number; answerIndex?: number; explanation?: string; figures?: ComponentDef[] }>;
   view?: QuizView;
 }) {
   const [selected, setSelected] = useState<Record<number, number>>({});
@@ -241,7 +250,7 @@ function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive
         {qs.map((q, i) => (
           <QuizBody
             key={`q-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
-            choices={q.choices ?? []} answer={q.answer} explanation={q.explanation} view={view}
+            choices={q.choices ?? []} answer={q.answer} answerIndex={q.answerIndex} explanation={q.explanation} view={view}
             selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected(s => ({ ...s, [i]: n }))}
           />
         ))}
