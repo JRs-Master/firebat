@@ -467,8 +467,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 onClick={openAiPanel}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
                   aiOpen
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-600/20 border border-blue-700/40'
+                    ? 'bg-blue-800 text-white'
+                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-800/20 border border-blue-700/40'
                 }`}
               >
                 <Bot size={13} /> AI
@@ -480,7 +480,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               <button
                 onClick={() => setPreviewOpen(!previewOpen)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  previewOpen ? 'bg-blue-600 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
+                  previewOpen ? 'bg-blue-800 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
                 }`}
               >
                 <Eye size={13} /> 미리보기
@@ -655,7 +655,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={preset.label}
                           onClick={() => handleAiSubmit(preset.instruction)}
-                          className="text-left bg-slate-800/40 hover:bg-blue-600/20 border border-slate-700/60 hover:border-blue-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
+                          className="text-left bg-slate-800/40 hover:bg-blue-800/20 border border-slate-700/60 hover:border-blue-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
                         >
                           {preset.label}
                         </button>
@@ -669,13 +669,13 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 {chat.map((turn, idx) => (
                   <div key={turn.id} className={turn.role === 'user' ? 'flex justify-end' : 'flex gap-2'}>
                     {turn.role === 'assistant' && (
-                      <div className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="w-6 h-6 rounded-full bg-blue-800/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
                         <Bot size={13} />
                       </div>
                     )}
                     <div className={`max-w-[85%] ${turn.role === 'user' ? '' : 'flex-1 min-w-0'}`}>
                       {turn.role === 'user' ? (
-                        <div className="bg-blue-600/30 border border-blue-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
+                        <div className="bg-blue-800/30 border border-blue-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
                           {turn.content}
                         </div>
                       ) : (
@@ -690,7 +690,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                               <Tooltip label={t('file_editor.preview_changes')}>
                                 <button
                                   onClick={() => setDiffTurnId(turn.id)}
-                                  className="flex items-center gap-1 px-2 py-1 bg-blue-600/80 hover:bg-blue-600 text-white text-[11px] font-bold rounded transition-colors"
+                                  className="flex items-center gap-1 px-2 py-1 bg-blue-800/80 hover:bg-blue-800 text-white text-[11px] font-bold rounded transition-colors"
                                 >
                                   <Eye size={11} /> Diff
                                 </button>
@@ -733,7 +733,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 ))}
                 {aiLoading && (
                   <div className="flex gap-2">
-                    <div className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-6 h-6 rounded-full bg-blue-800/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
                       <Bot size={13} />
                     </div>
                     <div className="flex-1 bg-slate-800/40 border border-slate-700/60 rounded-lg px-3 py-2 text-[12px] text-slate-400 flex items-center gap-2">
@@ -759,7 +759,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={c.cmd}
                           onClick={() => { setAiInstruction(''); setSlashOpen(null); handleAiSubmit(c.instruction); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
                         >
                           <code className="text-blue-400 font-bold">{c.cmd}</code>
                           <span className="text-slate-300">{c.label}</span>
@@ -769,14 +769,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                       <div className="border-t border-slate-700/60" />
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('model'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
                       >
                         <code className="text-blue-400 font-bold">/model</code>
                         <span className="text-slate-300">모델 변경</span>
                       </button>
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('thinking'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
                       >
                         <code className="text-blue-400 font-bold">/thinking</code>
                         <span className="text-slate-300">추론 강도 변경</span>
@@ -797,7 +797,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={m.value}
                           onClick={() => { setLocalModel(m.value); setAiInstruction(''); setSlashOpen(null); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-600/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-800/30 transition-colors"
                         >
                           {(localModel ?? aiModel) === m.value && <Check size={11} className="text-blue-400" />}
                           <span className="text-slate-200">{m.label}</span>
@@ -821,7 +821,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                           <button
                             key={l.value}
                             onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-600/30 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-800/30 transition-colors"
                           >
                             {localThinking === l.value && <Check size={11} className="text-blue-400" />}
                             <span className="text-slate-200">{thinkingLevelLabel(l, thinkingLang)}</span>
@@ -863,7 +863,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     <button
                       onClick={() => handleAiSubmit()}
                       disabled={!aiInstruction.trim() || aiLoading}
-                      className="flex items-center justify-center w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
+                      className="flex items-center justify-center w-10 h-10 bg-blue-800 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
                     >
                       {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                     </button>
@@ -875,7 +875,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
         </div>
 
         {/* 하단 상태바 */}
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-[#252526] text-slate-300 text-[11px] font-mono flex-shrink-0 border-t border-slate-700/60">
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-[#141414] text-slate-300 text-[11px] font-mono flex-shrink-0 border-t border-slate-700/60">
           <span className="uppercase font-bold tracking-wider">{lang}</span>
           <span className="opacity-70">UTF-8</span>
           <span className="opacity-60">Ctrl+K: AI 어시스트</span>
