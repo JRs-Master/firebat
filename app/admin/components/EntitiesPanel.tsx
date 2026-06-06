@@ -696,7 +696,7 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
               onChange={(e) => setName(e.target.value)}
               placeholder="예: 회사명, 봇 v1"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="name" autoComplete="off" id={nameId}
+              name="name" autoComplete="off" id={nameId}
             />
           </div>
           <div>

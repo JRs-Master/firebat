@@ -333,7 +333,7 @@ function NoteModal({ existing, hubContext, onClose, onSaved }: { existing: Note 
               onChange={(e) => setTitle(e.target.value)}
               placeholder="노트 제목"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="title" autoComplete="off" id={titleId}
+              name="title" autoComplete="off" id={titleId}
             />
           </div>
           <div>

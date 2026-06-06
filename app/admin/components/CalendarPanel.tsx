@@ -11,7 +11,7 @@
  * 데이터: data/calendar/events.jsonl (sysmod_calendar 모듈). cron 잡 linkedJobId 양방향.
  */
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
-import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, Pencil } from 'lucide-react';
+import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, Pencil, Play } from 'lucide-react';
 import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
 import { RowActions, InteractiveRow } from './InteractiveRow';
@@ -281,6 +281,17 @@ export function CalendarPanel({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showYearPicker, showMonthPicker]);
+
+  // cron 스케줄 즉시 1회 실행 — /api/cron?action=run (CronPanel handleRunNow 와 동일). 실행 후 refetch 로 로그 갱신.
+  const runCronNow = async (jobId: string, title?: string) => {
+    if (!await confirmDialog({ title: '즉시 실행', message: `"${title || jobId}" 스케줄을 지금 1회 실행합니다.`, okLabel: '실행' })) return;
+    try {
+      await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, {}, { category: 'calendar' });
+      await fetchCron();
+    } catch (err: any) {
+      await alertDialog({ title: '실행 실패', message: err?.message ?? String(err), danger: true });
+    }
+  };
 
   // cron 스케줄(투영) 삭제 — cron 이 진실원천이라 /api/cron 잡 해제 호출, 캘린더는 투영만 → refetch.
   const deleteCronJob = async (jobId: string, title?: string): Promise<boolean> => {
@@ -569,6 +580,7 @@ export function CalendarPanel({
                     <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0">
+                    <Tooltip label="즉시 실행"><button onClick={() => runCronNow(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"><Play size={11} /></button></Tooltip>
                     <Tooltip label="스케줄 편집"><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 transition-colors"><Pencil size={11} /></button></Tooltip>
                     <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={11} /></button></Tooltip>
                   </div>
