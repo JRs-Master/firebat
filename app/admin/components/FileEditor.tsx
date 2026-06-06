@@ -521,7 +521,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 height="100%"
                 language={lang}
                 theme="vs-dark"
-                value={content}
+                defaultValue={content}
                 onChange={(v) => setContent(v ?? '')}
                 onMount={(editor) => { editorRef.current = editor; }}
                 options={{
@@ -532,8 +532,6 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   wordWrap: 'on',
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
-                  occurrencesHighlight: 'off',  // 커서 놓인 단어와 같은 단어 전부 강조('점심내기 다 선택')는 편집 시 노이즈 → 끔
-                  selectionHighlight: false,    // 선택 텍스트와 같은 텍스트 강조도 끔
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
                   padding: { top: 16, bottom: 16 },
@@ -597,7 +595,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
           {/* AI 사이드바 (우측) — VSCode Copilot Chat 스타일 */}
           {aiOpen && (
-            <aside className="w-[380px] flex-shrink-0 bg-[#1e1e1e] border-l border-blue-800/60 flex flex-col min-h-0">
+            <aside className="w-[380px] flex-shrink-0 bg-[#141414] border-l border-blue-800/60 flex flex-col min-h-0">
               {/* 사이드바 헤더 */}
               <div className="flex items-center gap-2 px-3 py-2 border-b border-blue-800/40 flex-shrink-0">
                 <Bot size={14} className="text-blue-400" />
