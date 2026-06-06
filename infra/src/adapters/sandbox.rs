@@ -1346,11 +1346,28 @@ impl ProcessSandboxAdapter {
 
         let timeout_ms = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let timeout = tokio::time::Duration::from_millis(timeout_ms);
-        let stdout_handle = child.stdout.take();
-        let stderr_handle = child.stderr.take();
-
-        let wait_result = tokio::time::timeout(timeout, child.wait()).await;
-        let exit_status = match wait_result {
+        // stdout/stderr 를 child.wait() 와 **동시에** 드레인한다. wait 먼저 하고 나중에 읽으면, 출력이
+        // OS 파이프 버퍼(~64KB)를 넘는 거대 응답(위키백과 등)에서 자식이 write 에 막혀 영영 안 끝나
+        // → 매번 sandbox timeout 으로 죽던 deadlock. (53KB 뉴스는 버퍼에 들어가 통과, 그 이상은 deadlock)
+        let mut stdout_pipe = child.stdout.take();
+        let mut stderr_pipe = child.stderr.take();
+        let mut stdout_raw: Vec<u8> = Vec::new();
+        let mut stderr_raw: Vec<u8> = Vec::new();
+        let drain_and_wait = async {
+            let so = async {
+                if let Some(h) = stdout_pipe.as_mut() {
+                    let _ = h.read_to_end(&mut stdout_raw).await;
+                }
+            };
+            let se = async {
+                if let Some(h) = stderr_pipe.as_mut() {
+                    let _ = h.read_to_end(&mut stderr_raw).await;
+                }
+            };
+            let (status, _, _) = tokio::join!(child.wait(), so, se);
+            status
+        };
+        let exit_status = match tokio::time::timeout(timeout, drain_and_wait).await {
             Ok(Ok(status)) => status,
             Ok(Err(e)) => return Err(format!("child wait 실패: {e}")),
             Err(_) => {
@@ -1359,14 +1376,8 @@ impl ProcessSandboxAdapter {
             }
         };
 
-        let mut stdout_buf = String::new();
-        if let Some(mut h) = stdout_handle {
-            h.read_to_string(&mut stdout_buf).await.ok();
-        }
-        let mut stderr_buf = String::new();
-        if let Some(mut h) = stderr_handle {
-            h.read_to_string(&mut stderr_buf).await.ok();
-        }
+        let stdout_buf = String::from_utf8_lossy(&stdout_raw).into_owned();
+        let stderr_buf = String::from_utf8_lossy(&stderr_raw).into_owned();
 
         let exit_code = exit_status.code();
         // 진단 — sysmod 응답 결과. exit_code / stdout / stderr size + preview 명시.
