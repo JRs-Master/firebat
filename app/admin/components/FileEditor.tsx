@@ -467,8 +467,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 onClick={openAiPanel}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
                   aiOpen
-                    ? 'bg-blue-800 text-white'
-                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-800/20 border border-slate-700/40'
+                    ? 'bg-slate-600 text-white'
+                    : 'bg-[#2d2d2d] text-slate-400 hover:bg-slate-600/20 border border-slate-700/40'
                 }`}
               >
                 <Bot size={13} /> AI
@@ -480,7 +480,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               <button
                 onClick={() => setPreviewOpen(!previewOpen)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  previewOpen ? 'bg-blue-800 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
+                  previewOpen ? 'bg-slate-600 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
                 }`}
               >
                 <Eye size={13} /> 미리보기
@@ -530,6 +530,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   wordWrap: 'on',
+                  stopRenderingLineAfter: -1,  // 거대 한 줄(PageSpec HTML)도 끝까지 렌더 — 기본 10000자 컷이라 긴 줄의 선택 하이라이트/텍스트가 끝까지 안 보이던 것
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
                   smoothScrolling: true,
@@ -598,8 +599,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             <aside className="w-[380px] flex-shrink-0 bg-[#141414] border-l border-slate-700/60 flex flex-col min-h-0">
               {/* 사이드바 헤더 */}
               <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/40 flex-shrink-0">
-                <Bot size={14} className="text-blue-400" />
-                <span className="text-[12px] font-bold text-blue-300">AI 어시스트</span>
+                <Bot size={14} className="text-slate-400" />
+                <span className="text-[12px] font-bold text-slate-300">AI 어시스트</span>
                 <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
                 <div className="flex-1" />
                 {chat.length > 0 && (
@@ -647,7 +648,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 {chat.length === 0 && !aiLoading && (
                   <div className="space-y-3 py-2">
                     <div className="text-center text-slate-500 text-[12px]">
-                      <Sparkles size={18} className="mx-auto mb-1.5 text-blue-500/50" />
+                      <Sparkles size={18} className="mx-auto mb-1.5 text-slate-500/50" />
                       빠르게 시작하기
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -655,27 +656,27 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={preset.label}
                           onClick={() => handleAiSubmit(preset.instruction)}
-                          className="text-left bg-slate-800/40 hover:bg-blue-800/20 border border-slate-700/60 hover:border-slate-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
+                          className="text-left bg-slate-800/40 hover:bg-slate-600/20 border border-slate-700/60 hover:border-slate-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-slate-100 transition-colors"
                         >
                           {preset.label}
                         </button>
                       ))}
                     </div>
                     <div className="text-center text-[10.5px] text-slate-600 pt-2 border-t border-slate-800/60">
-                      <code className="text-blue-400/70">/</code> 로 슬래시 명령어 · <code className="text-blue-400/70">/model</code> · <code className="text-blue-400/70">/thinking</code>
+                      <code className="text-slate-400/70">/</code> 로 슬래시 명령어 · <code className="text-slate-400/70">/model</code> · <code className="text-slate-400/70">/thinking</code>
                     </div>
                   </div>
                 )}
                 {chat.map((turn, idx) => (
                   <div key={turn.id} className={turn.role === 'user' ? 'flex justify-end' : 'flex gap-2'}>
                     {turn.role === 'assistant' && (
-                      <div className="w-6 h-6 rounded-full bg-blue-800/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="w-6 h-6 rounded-full bg-slate-600/30 text-slate-300 flex items-center justify-center shrink-0 mt-0.5">
                         <Bot size={13} />
                       </div>
                     )}
                     <div className={`max-w-[85%] ${turn.role === 'user' ? '' : 'flex-1 min-w-0'}`}>
                       {turn.role === 'user' ? (
-                        <div className="bg-blue-800/30 border border-slate-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
+                        <div className="bg-slate-600/30 border border-slate-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
                           {turn.content}
                         </div>
                       ) : (
@@ -690,7 +691,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                               <Tooltip label={t('file_editor.preview_changes')}>
                                 <button
                                   onClick={() => setDiffTurnId(turn.id)}
-                                  className="flex items-center gap-1 px-2 py-1 bg-blue-800/80 hover:bg-blue-800 text-white text-[11px] font-bold rounded transition-colors"
+                                  className="flex items-center gap-1 px-2 py-1 bg-slate-600/80 hover:bg-slate-600 text-white text-[11px] font-bold rounded transition-colors"
                                 >
                                   <Eye size={11} /> Diff
                                 </button>
@@ -733,7 +734,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 ))}
                 {aiLoading && (
                   <div className="flex gap-2">
-                    <div className="w-6 h-6 rounded-full bg-blue-800/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-6 h-6 rounded-full bg-slate-600/30 text-slate-300 flex items-center justify-center shrink-0 mt-0.5">
                       <Bot size={13} />
                     </div>
                     <div className="flex-1 bg-slate-800/40 border border-slate-700/60 rounded-lg px-3 py-2 text-[12px] text-slate-400 flex items-center gap-2">
@@ -759,9 +760,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={c.cmd}
                           onClick={() => { setAiInstruction(''); setSlashOpen(null); handleAiSubmit(c.instruction); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-slate-600/30 transition-colors"
                         >
-                          <code className="text-blue-400 font-bold">{c.cmd}</code>
+                          <code className="text-slate-400 font-bold">{c.cmd}</code>
                           <span className="text-slate-300">{c.label}</span>
                           <span className="ml-auto text-[10px] text-slate-500">{c.mode === 'explain' ? '리뷰' : '코드'}</span>
                         </button>
@@ -769,16 +770,16 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                       <div className="border-t border-slate-700/60" />
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('model'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-slate-600/30 transition-colors"
                       >
-                        <code className="text-blue-400 font-bold">/model</code>
+                        <code className="text-slate-400 font-bold">/model</code>
                         <span className="text-slate-300">모델 변경</span>
                       </button>
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('thinking'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-800/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-slate-600/30 transition-colors"
                       >
-                        <code className="text-blue-400 font-bold">/thinking</code>
+                        <code className="text-slate-400 font-bold">/thinking</code>
                         <span className="text-slate-300">추론 강도 변경</span>
                       </button>
                       <button
@@ -797,9 +798,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={m.value}
                           onClick={() => { setLocalModel(m.value); setAiInstruction(''); setSlashOpen(null); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-800/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-slate-600/30 transition-colors"
                         >
-                          {(localModel ?? aiModel) === m.value && <Check size={11} className="text-blue-400" />}
+                          {(localModel ?? aiModel) === m.value && <Check size={11} className="text-slate-400" />}
                           <span className="text-slate-200">{m.label}</span>
                           <code className="ml-auto text-[10px] text-slate-500">{m.value}</code>
                         </button>
@@ -821,9 +822,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                           <button
                             key={l.value}
                             onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-800/30 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-slate-600/30 transition-colors"
                           >
-                            {localThinking === l.value && <Check size={11} className="text-blue-400" />}
+                            {localThinking === l.value && <Check size={11} className="text-slate-400" />}
                             <span className="text-slate-200">{thinkingLevelLabel(l, thinkingLang)}</span>
                           </button>
                         ))}
@@ -863,7 +864,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     <button
                       onClick={() => handleAiSubmit()}
                       disabled={!aiInstruction.trim() || aiLoading}
-                      className="flex items-center justify-center w-10 h-10 bg-blue-800 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
+                      className="flex items-center justify-center w-10 h-10 bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
                     >
                       {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                     </button>
@@ -890,7 +891,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setDiffTurnId(null)}>
               <div className="bg-[#1e1e1e] rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700 bg-[#252526]">
-                  <Eye size={14} className="text-blue-400" />
+                  <Eye size={14} className="text-slate-400" />
                   <span className="text-[13px] font-bold text-slate-200">변경점 미리보기</span>
                   <span className="text-[11px] text-slate-500">
                     <span className="text-red-400">← 원본</span> · <span className="text-green-400">AI 제안 →</span>
