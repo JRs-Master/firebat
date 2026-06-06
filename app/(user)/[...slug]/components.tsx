@@ -904,6 +904,13 @@ ${IFRAME_CSP_META}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
+<script>
+/* sandbox 에 allow-same-origin 이 없으면(보안상 의도적) localStorage/sessionStorage 접근이 SecurityError 라
+   AI 코드가 즉시 크래시(버튼 등 이후 JS 전부 죽음). allow-same-origin 추가는 부모 origin 접근 위험이라
+   대신 in-memory shim 으로 대체 — 앱은 정상 동작, 영속만 세션 한정. */
+(function(){function mk(){var s={};return{getItem:function(k){return Object.prototype.hasOwnProperty.call(s,k)?s[k]:null;},setItem:function(k,v){s[k]=String(v);},removeItem:function(k){delete s[k];},clear:function(){s={};},key:function(i){return Object.keys(s)[i]||null;},get length(){return Object.keys(s).length;}};}
+['localStorage','sessionStorage'].forEach(function(n){try{window[n]&&window[n].getItem('__fb');}catch(e){try{Object.defineProperty(window,n,{value:mk(),configurable:true});}catch(_){}}});})();
+</script>
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
