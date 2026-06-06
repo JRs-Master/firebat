@@ -538,7 +538,6 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   wordWrap: 'on',
-                  wrappingStrategy: 'advanced',  // 긴 줄 wrap 위치를 실제 DOM 측정으로 — 기본 'simple'은 글자폭 근사치라 거대 한 줄에서 선택 하이라이트가 어긋날 수 있음
                   stopRenderingLineAfter: -1,  // 거대 한 줄(PageSpec HTML)도 끝까지 렌더 — 기본 10000자 컷이라 긴 줄의 선택 하이라이트/텍스트가 끝까지 안 보이던 것
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
