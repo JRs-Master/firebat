@@ -17,6 +17,7 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 import { rowActionsClass } from '../utils/row-actions';
+import { useRowActions } from '../hooks/useRowActions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { TIME } from '../../../lib/util/time';
@@ -88,6 +89,9 @@ export function Sidebar({
   const [tab, setTab] = useState<TabId>('workspace');
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  // 행 인터랙션용 터치 판정 — 레이아웃용 isMobile(폭<768)과 분리. 패널(useRowActions)·버튼 가시성
+  // (rowActionsClass 의 hover:none)과 동일 기준으로 통일 — 터치 태블릿(폭≥768)에서도 탭=선택 정상.
+  const { hoverNone } = useRowActions();
 
   // ── 휴지통 — chats 탭 안 토글 섹션 ──
   // 30일 retention 후 internal cron 자동 삭제. 복원 / 영구 삭제 가능.
@@ -796,7 +800,7 @@ export function Sidebar({
                           isSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-100 border border-transparent'
                         }`}
                         onClick={() => {
-                          if (isMobile) {
+                          if (hoverNone) {
                             setSelectedItem(isSelected ? null : `proj:${mp.name}`);
                           } else if (!isSingle) {
                             toggleProject(mp.name);
@@ -953,7 +957,7 @@ export function Sidebar({
                                     pgSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-100 border border-transparent'
                                   }`}
                                   onClick={() => {
-                                    if (isMobile) {
+                                    if (hoverNone) {
                                       setSelectedItem(pgSelected ? null : `page:${pg.slug}`);
                                     } else {
                                       window.open(`/${pg.slug}`, '_blank');
@@ -1042,7 +1046,7 @@ export function Sidebar({
                                     modSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-100 border border-transparent'
                                   }`}
                                   onClick={() => {
-                                    if (isMobile) {
+                                    if (hoverNone) {
                                       setSelectedItem(modSelected ? null : `mod:${p}`);
                                     }
                                   }}
@@ -1054,7 +1058,7 @@ export function Sidebar({
                                     </span>
                                   </Tooltip>
                                   <span className={rowActionsClass(modSelected)}>
-                                    {!isMobile && (
+                                    {!hoverNone && (
                                       <Tooltip label={t('common.edit')}>
                                         <button
                                           onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setSelectedItem(null); }}
@@ -1078,7 +1082,7 @@ export function Sidebar({
                                       </Tooltip>
                                       {openMenu === `mod:${p}` && (
                                         <div className="absolute right-0 top-full mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
-                                          {isMobile && (
+                                          {hoverNone && (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setOpenMenu(null); setSelectedItem(null); }}
                                               className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
@@ -1130,7 +1134,7 @@ export function Sidebar({
                 <div key={conv.id}>
                   <div
                     onClick={() => {
-                      if (isMobile) {
+                      if (hoverNone) {
                         setSelectedItem(convSelected ? null : `conv:${conv.id}`);
                       }
                       onSelectConv(conv.id);
