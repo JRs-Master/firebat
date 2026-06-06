@@ -160,10 +160,18 @@ impl TokioCronAdapter {
         None
     }
 
+    /// 표준 5-필드 cron(`min hour dom month dow`, 예: `0 22 * * *`)을 cron 크레이트(0.12)가 요구하는
+    /// 6-필드(초 포함 `sec min hour dom month dow`)로 정규화. AI·사용자가 보내는 표준 Unix cron 수용 —
+    /// cron 0.12 는 초 필드 필수라 5-필드를 "Invalid cron expression" 으로 거부하던 버그 fix. 6~7 필드는 그대로.
+    fn normalize_cron(expr: &str) -> String {
+        let t = expr.trim();
+        if t.split_whitespace().count() == 5 { format!("0 {t}") } else { t.to_string() }
+    }
+
     /// 다음 cron 발화 시각 — cron crate 활용.
     fn next_cron_fire(cron_time: &str, tz_name: &str) -> Option<DateTime<Utc>> {
         let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::UTC);
-        let schedule = Schedule::from_str(cron_time).ok()?;
+        let schedule = Schedule::from_str(&Self::normalize_cron(cron_time)).ok()?;
         schedule.upcoming(tz).next().map(|d| d.with_timezone(&Utc))
     }
 
@@ -176,7 +184,7 @@ impl TokioCronAdapter {
             (true, _, _) => {
                 // cron expression 유효성 검증 — 옛 TS `cron.validate(cronTime)` 1:1.
                 let cron_time = opts.cron_time.as_deref().unwrap_or("");
-                Schedule::from_str(cron_time)
+                Schedule::from_str(&Self::normalize_cron(cron_time))
                     .map_err(|e| format!("잘못된 CRON 표현식: {} ({e})", cron_time))?;
                 Ok(CronJobMode::Cron)
             }
@@ -508,7 +516,7 @@ impl ICronPort for TokioCronAdapter {
             match job.mode {
                 CronJobMode::Cron => {
                     if let Some(cron_time) = job.options.cron_time.as_deref() {
-                        if let Ok(schedule) = Schedule::from_str(cron_time) {
+                        if let Ok(schedule) = Schedule::from_str(&Self::normalize_cron(cron_time)) {
                             let start_w = job
                                 .options
                                 .start_at
