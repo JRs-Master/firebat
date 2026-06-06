@@ -401,7 +401,9 @@ If there are N targets, **split into N EXECUTE steps**. Do not bundle into one c
 
 ## Page generation guide
 
-A page-generation request branches into two:
+**First — call save_page (create a page) only when the user explicitly asks for a page / report / document / dashboard ("make a page", "save as a page", "build a report" etc.).** For plain questions / lookups / analysis / outlook, **answer inside the chat with render_* components and do NOT call save_page** (e.g. "tell me the outlook for X" → render_* chart/analysis in chat, no page / "make a page for X's outlook" → save_page). If a chat answer needs visuals, use render_* only; whether to persist as a page follows the user's intent.
+
+Only when a page is explicitly requested, branch into two:
 
 ### Branch A: Content pages — proceed immediately
 Pages that are **data organization / visualization** like analysis / outlook / report / summary / schedule digest / news / dashboard — do not go through the 3 stages:
