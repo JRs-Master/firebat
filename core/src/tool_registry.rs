@@ -16,6 +16,7 @@ use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
 use crate::managers::library::LibraryManager;
+use crate::managers::template::{apply_placeholders, TemplateConfig, TemplateManager};
 use crate::managers::mcp::McpManager;
 use crate::managers::media::MediaManager;
 use crate::managers::module::ModuleManager;
@@ -26,10 +27,12 @@ use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, INetworkPort,
-    IStoragePort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest, SandboxExecuteOpts,
-    SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
+    IStoragePort, IVaultPort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest,
+    SandboxExecuteOpts, SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
+use crate::utils::timezone::resolve_user_tz;
+use chrono::{TimeZone, Utc};
 
 pub struct CoreToolHandlers {
     pub page: Arc<PageManager>,
@@ -57,6 +60,10 @@ pub struct CoreToolHandlers {
     pub secret: Arc<SecretManager>,
     /// HTTP 요청 (network_request) — 옛 MCP 전용 대칭화.
     pub network: Arc<dyn INetworkPort>,
+    /// 페이지 템플릿 CRUD (list/get/save_template). get_template 시 placeholder 치환.
+    pub template: Arc<TemplateManager>,
+    /// 템플릿 placeholder 치환의 날짜/시간 tz resolve 용.
+    pub vault: Arc<dyn IVaultPort>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -76,6 +83,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_task_library_tools(tools, &h);
     register_meta_render_tools(tools, &h);
     register_infra_parity_tools(tools, &h);
+    register_template_tools(tools, &h);
 }
 
 /// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.
@@ -322,6 +330,120 @@ fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             }
         },
     );
+}
+
+/// 템플릿 도구 — list/get/save. get_template 은 placeholder 치환(apply_placeholders) 적용.
+/// owner: 인자 없거나 "admin" = admin scope(None), 그 외 = hub_id. chat·cron 양쪽 AI 사용.
+fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // list_templates — 사용 가능한 템플릿 목록(메타). 반복 형식 페이지 만들 때 먼저 확인.
+    let template = h.template.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "list_templates".to_string(),
+            description: "사용 가능한 페이지 템플릿 목록(slug·name·description·tags). 반복 형식의 페이지(일일 리포트 등)를 만들 땐 먼저 호출해 맞는 틀이 있는지 확인하라.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "owner": { "type": "string" } }
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let template = template.clone();
+            async move {
+                let owner = template_owner_opt(&args);
+                let entries = template.list(owner.as_deref()).await;
+                Ok(serde_json::json!({"success": true, "data": entries}))
+            }
+        },
+    );
+
+    // get_template — 1건 조회 + placeholder({date}/{time} 등) 현재 값 치환.
+    let template = h.template.clone();
+    let vault = h.vault.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "get_template".to_string(),
+            description: "템플릿 1건 조회 — spec(head+body)의 {date}/{time}/{datetime}/{year}/{month}/{day} 가 현재 값으로 치환돼 반환된다. 이 spec.body 를 save_page 의 body 골격으로 쓰고 동적 내용만 채워라. {slug}.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "slug": { "type": "string" }, "owner": { "type": "string" } },
+                "required": ["slug"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let template = template.clone();
+            let vault = vault.clone();
+            async move {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "get_template: slug 필수".to_string())?
+                    .to_string();
+                let owner = template_owner_opt(&args);
+                match template.get(owner.as_deref(), &slug).await {
+                    Some(mut config) => {
+                        let tz = resolve_user_tz(&vault);
+                        let now = tz.from_utc_datetime(&Utc::now().naive_utc());
+                        apply_placeholders(&mut config, now);
+                        Ok(serde_json::json!({"success": true, "data": config}))
+                    }
+                    None => Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!("템플릿 '{slug}' 을(를) 찾을 수 없습니다.")
+                    })),
+                }
+            }
+        },
+    );
+
+    // save_template — 생성/수정(upsert). config = {name, description?, tags?, spec:{head, body}}.
+    let template = h.template.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "save_template".to_string(),
+            description: "페이지 템플릿 생성/수정. {slug, config:{name, description, tags, spec:{head, body}}}. spec.body 는 컴포넌트 배열(save_page 와 동일 형식). 날짜처럼 매번 바뀌는 값은 {date}/{time} placeholder 로 두면 발행 시 치환됨.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": { "type": "string" },
+                    "config": { "type": "object" },
+                    "owner": { "type": "string" }
+                },
+                "required": ["slug", "config"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let template = template.clone();
+            async move {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "save_template: slug 필수".to_string())?
+                    .to_string();
+                let owner = template_owner_opt(&args);
+                let config_val = args
+                    .get("config")
+                    .cloned()
+                    .ok_or_else(|| "save_template: config 필수".to_string())?;
+                let config: TemplateConfig = serde_json::from_value(config_val)
+                    .map_err(|e| format!("save_template: config 형식 오류 — {e}"))?;
+                match template.save(owner.as_deref(), &slug, &config).await {
+                    Ok(()) => Ok(serde_json::json!({"success": true, "data": {"slug": slug}})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+}
+
+/// owner 인자 → Option<String> (없거나 "admin" 이면 None = admin scope).
+fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
+    args.get("owner")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && *s != "admin")
+        .map(String::from)
 }
 
 /// 메타 도구 — render / suggest / propose_plan. ToolManager(FC 모델) 노출용.

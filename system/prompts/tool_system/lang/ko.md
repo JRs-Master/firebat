@@ -434,6 +434,15 @@ notify: {
 
 **원칙**: AI 판단 대신 인프라 메커니즘 사용 — runWhen / retry / notify 는 표준 옵션.
 
+## 템플릿 (반복 형식 페이지)
+
+매일/매주 같은 형식으로 반복 발행하는 페이지(일일 리포트·시황 등)는 템플릿을 활용한다.
+- **`list_templates`** — 먼저 호출해 맞는 템플릿이 있는지 확인 (slug·name·description 으로 판단).
+- **`get_template(slug)`** — 템플릿 spec 을 가져온다. `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` placeholder 는 **현재 값으로 치환돼** 반환된다. 받은 spec.body 를 `save_page` 의 body 골격으로 쓰고 동적 내용(데이터·수치 등)만 채워 발행.
+- **`save_template(slug, config)`** — 사용자가 "○○ 템플릿 만들어줘" 할 때 생성. config = `{name, description, tags, spec:{head, body}}`. spec.body 는 save_page 와 동일한 컴포넌트 배열. 날짜처럼 매번 바뀌는 값은 `{date}`/`{time}` placeholder 로 둔다 (발행 시 자동 치환).
+
+맞는 템플릿이 없으면 그냥 save_page 로 직접 생성한다.
+
 ## 파이프라인 (특수)
 스텝 7종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
 

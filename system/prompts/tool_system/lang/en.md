@@ -363,6 +363,15 @@ notify: {
 
 **Principle**: Use infra mechanisms instead of AI judgment — runWhen / retry / notify are standard options.
 
+## Templates (recurring-format pages)
+
+For pages published repeatedly in the same format (daily reports, market briefs, etc.), use templates.
+- **`list_templates`** — call first to check if a matching template exists (judge by slug·name·description).
+- **`get_template(slug)`** — fetch the template spec. Placeholders `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` are **returned already substituted with current values**. Use the returned spec.body as the `save_page` body skeleton and fill in only the dynamic content (data, figures).
+- **`save_template(slug, config)`** — create when the user asks "make a ○○ template". config = `{name, description, tags, spec:{head, body}}`. spec.body is the same component array as save_page. Put values that change each time (dates, etc.) as `{date}`/`{time}` placeholders (substituted at publish time).
+
+If no matching template exists, just create the page directly with save_page.
+
 ## Pipeline (special)
 Only 7 step types allowed: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
 

@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::ports::{IStoragePort, InfraResult};
+use chrono::{DateTime, Datelike};
+use chrono_tz::Tz;
 
 /// 템플릿 spec — 페이지 발행 시 spec.body 의 backbone.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +152,51 @@ impl TemplateManager {
         let base = Self::base_path(owner)?;
         let path = format!("{}/{}", base, slug);
         self.storage.delete(&path).await
+    }
+}
+
+/// 템플릿 placeholder 치환 — head + body 의 모든 문자열에서 동적 토큰을 now(사용자 tz) 기준 값으로.
+/// 지원: `{date}` (YYYY-MM-DD) / `{time}` (HH:MM) / `{datetime}` / `{year}` / `{month}` / `{day}`.
+/// 템플릿을 페이지로 적용하는 시점에 호출 → 그날 값으로 고정 (렌더 때 매번 바뀌지 않음).
+pub fn apply_placeholders(config: &mut TemplateConfig, now: DateTime<Tz>) {
+    let date = now.format("%Y-%m-%d").to_string();
+    let time = now.format("%H:%M").to_string();
+    let datetime = now.format("%Y-%m-%d %H:%M").to_string();
+    let year = format!("{:04}", now.year());
+    let month = format!("{:02}", now.month());
+    let day = format!("{:02}", now.day());
+    // `{date}` 가 `{datetime}` 안에 부분 매치되지 않음(닫는 `}` 가 구분) → 순서 무관.
+    let subs: [(&str, &str); 6] = [
+        ("{date}", &date),
+        ("{datetime}", &datetime),
+        ("{time}", &time),
+        ("{year}", &year),
+        ("{month}", &month),
+        ("{day}", &day),
+    ];
+    subst_value(&mut config.spec.head, &subs);
+    for block in &mut config.spec.body {
+        subst_value(&mut block.props, &subs);
+    }
+}
+
+/// JSON 값 안의 모든 문자열에 치환 적용 (객체·배열 재귀).
+fn subst_value(v: &mut serde_json::Value, subs: &[(&str, &str)]) {
+    match v {
+        serde_json::Value::String(s) => {
+            if s.contains('{') {
+                let mut out = std::mem::take(s);
+                for (k, val) in subs {
+                    if out.contains(k) {
+                        out = out.replace(k, val);
+                    }
+                }
+                *s = out;
+            }
+        }
+        serde_json::Value::Array(arr) => arr.iter_mut().for_each(|x| subst_value(x, subs)),
+        serde_json::Value::Object(obj) => obj.values_mut().for_each(|x| subst_value(x, subs)),
+        _ => {}
     }
 }
 

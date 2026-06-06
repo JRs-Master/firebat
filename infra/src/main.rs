@@ -605,6 +605,8 @@ async fn main() -> Result<()> {
             library: library_manager.clone(),
             secret: secret_manager.clone(),
             network: network_port.clone(),
+            template: template_manager.clone(),
+            vault: vault.clone(),
         },
     );
 
