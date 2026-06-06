@@ -933,17 +933,19 @@ impl AiManager {
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
-        // Hub visitor 호출 — CLI 모델의 자체 MCP loop 안에서 MCP server handler 가
-        // active_allowed_sysmods() 검사 → 미허용 sysmod / destructive 도구 호출 차단.
-        // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 적용 →
-        // CLI 모델 path 영역의 보안 영역 fix. Guard drop = 자동 unset.
+        // Hub visitor 호출 — 턴별 고유 MCP 토큰 발급 + 컨텍스트 맵 등록 → 그 토큰을 mcp_token 으로 주입.
+        // CLI 의 MCP 호출이 그 토큰으로 자기 컨텍스트만 보게 해 동시 visitor race(답 꼬임/누수) 차단.
+        // MCP server handler 가 토큰으로 컨텍스트를 찾아 owner 격리 + allowed_sysmods 검사. Guard drop = 등록 해제.
         let _hub_guard = ai_opts.hub_context.as_ref().map(|ctx| {
-            crate::utils::hub_context::HubContextGuard::enter(
+            let (guard, token) = crate::utils::hub_context::HubContextGuard::enter(
                 ctx.allowed_sysmods.clone(),
                 ctx.instance_id.clone(),
                 ctx.session_id.clone(),
                 ctx.allowed_references.clone(),
-            )
+            );
+            // shared internal token 대신 이 턴 토큰을 주입 — CLI 가 이 토큰으로 MCP 인증·컨텍스트 조회.
+            effective_opts.mcp_token = Some(token);
+            guard
         });
 
         // Layer 2 per-turn duplicate guard — turn 안에서 같은 (name + args) 두 번째 호출 차단.

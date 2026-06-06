@@ -1,22 +1,18 @@
-//! Hub context 식별 — process-wide static + RAII Guard.
+//! Hub context 식별 — 턴별 토큰 키 맵 + MCP 요청당 task-local 스코프.
 //!
-//! 옛 cron_context.rs 와 같은 패턴 (commit 191b765). CLI 모델의 자체 MCP loop 안에서
-//! sysmod_* 호출이 hub visitor 쪽 호출인지 admin 쪽 호출인지 식별.
+//! CLI 모델의 자체 MCP loop 안에서 sysmod_* / destructive 호출이 어느 hub visitor 쪽인지 식별해
+//! owner 격리 + allowed_sysmods 검사 + 미허용 reject. admin chat = hub_context 미설정 = 무제한 허용.
 //!
-//! 용도:
-//! - admin chat = HubContextGuard 미설정 = mcp handler 쪽 무제한 도구 허용
-//! - hub visitor = HubContextGuard 설정 + allowed_sysmods 지정 = mcp handler 쪽에서 sysmod_* /
-//!   destructive 도구 호출 시 allowed_sysmods 검사 + 미허용 시 reject
+//! 동시 visitor race fix (옛 단일 ActiveHubContext static): hub CLI 는 공유 HTTP MCP(:50052)에 붙어
+//! 동시 visitor 가 같은 전역 1개를 덮어쓰면 A 의 도구 호출이 B 의 owner/context 를 읽어 답이 꼬이고
+//! 자료가 새던 버그가 있었다. 닫는 방식:
+//! - ai.rs 가 턴마다 고유 토큰 발급 → HUB_CONTEXTS 맵에 (토큰→컨텍스트) 등록 + 그 토큰을 mcp_token 으로 주입.
+//! - CLI 가 그 토큰으로 MCP 호출 → handle_rpc 가 토큰으로 컨텍스트를 찾아 요청 단위 task-local(CURRENT_HUB)에 set.
+//! - active_* 는 CURRENT_HUB(task-local)만 읽음 → 동시 요청이 서로 격리.
 //!
-//! ai.rs:669-694 쪽의 hub_context filter 는 `tools.is_empty()` 분기 (API 모델) 에만 적용
-//! CLI 모델 (supports_mcp=true) 사용 시 = auto_tools 빈 배열 + CLI 자체 MCP loop 으로 Firebat
-//! MCP server 호출. 이 경로에서 hub filter 를 적용하지 못해 hub visitor 가 admin 도구 (telegram /
-//! kiwoom / 등) 사용 가능 = 보안 위반. HubContextGuard + MCP server handler wiring 으로 차단.
-//!
-//! 동시 hub 방문자 race 가능성 인정 = 단일 ActiveHubContext 사용 (옛 cron_context 와 동일 방식).
-//! Hub 시스템 운영 초기에 visitor 동시 접속 1 명 이하 가정 — 향후 QueueManager 도입 시점
-//! 별도 처리 (옛 트래커 #1 항목).
+//! ai.rs FC 경로(effective_tools 필터)는 permits_tool 에 allowed_sysmods 를 직접 넘겨 별도 격리(전역 무관).
 
+use std::collections::BTreeMap;
 use std::sync::RwLock;
 
 #[derive(Clone, Debug)]
@@ -31,69 +27,113 @@ pub struct ActiveHubContext {
     pub allowed_references: Vec<String>,
 }
 
-static ACTIVE_HUB_CONTEXT: RwLock<Option<ActiveHubContext>> = RwLock::new(None);
+/// 턴별 토큰 → 컨텍스트. ai.rs HubContextGuard::enter 가 등록, guard drop 시 제거.
+/// MCP verify_token 이 등록 여부로 인증, handle_rpc 가 lookup 해서 요청 단위 CURRENT_HUB 에 주입.
+/// (BTreeMap::new() 는 const-fn 이라 Lazy/once_cell 의존 없이 static 초기화 가능.)
+static HUB_CONTEXTS: RwLock<BTreeMap<String, ActiveHubContext>> = RwLock::new(BTreeMap::new());
 
-/// RAII guard — enter(...) 호출 시 active 설정, drop 시 unset.
-pub struct HubContextGuard;
+tokio::task_local! {
+    /// MCP 요청 1건 동안의 hub 컨텍스트 — handle_rpc 가 토큰으로 lookup 해 scope 로 set.
+    /// None = admin. 스코프 밖(stdio/test/내부 호출) = 미설정 → active_* 가 None(admin) 취급.
+    pub static CURRENT_HUB: Option<ActiveHubContext>;
+}
+
+/// RAII guard — enter(...) 가 턴별 고유 토큰 발급 + 맵 등록, drop 시 등록 해제.
+pub struct HubContextGuard {
+    token: String,
+}
 
 impl HubContextGuard {
+    /// 턴별 고유 토큰 발급 + (토큰→컨텍스트) 맵 등록. `(guard, token)` 반환 — token 을 mcp_token 으로
+    /// 주입하면 그 턴의 CLI MCP 호출이 이 컨텍스트로만 격리된다(동시 visitor race 차단). drop 시 제거.
     pub fn enter(
         allowed_sysmods: Vec<String>,
         instance_id: String,
         session_id: String,
         allowed_references: Vec<String>,
-    ) -> Self {
-        if let Ok(mut guard) = ACTIVE_HUB_CONTEXT.write() {
-            *guard = Some(ActiveHubContext {
-                allowed_sysmods,
-                instance_id,
-                session_id,
-                allowed_references,
-            });
+    ) -> (Self, String) {
+        let token = new_turn_token(&instance_id, &session_id);
+        if let Ok(mut map) = HUB_CONTEXTS.write() {
+            map.insert(
+                token.clone(),
+                ActiveHubContext {
+                    allowed_sysmods,
+                    instance_id,
+                    session_id,
+                    allowed_references,
+                },
+            );
         }
-        Self
+        (Self { token: token.clone() }, token)
     }
-}
-
-/// 현재 활성 hub context 의 (instance_id, session_id) — MCP 경로 owner 주입용. None = admin.
-pub fn active_hub_owner() -> Option<(String, String)> {
-    ACTIVE_HUB_CONTEXT
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| (c.instance_id.clone(), c.session_id.clone())))
-}
-
-/// 현재 활성 hub context 의 admin 공유 reference id 들 — MCP search_library 가 본인 자료에 합쳐 검색.
-/// None = admin 영역(hub 아님), Some(빈) = hub 인데 공유 0.
-pub fn active_allowed_references() -> Option<Vec<String>> {
-    ACTIVE_HUB_CONTEXT
-        .read()
-        .ok()
-        .and_then(|g| g.as_ref().map(|c| c.allowed_references.clone()))
 }
 
 impl Drop for HubContextGuard {
     fn drop(&mut self) {
-        if let Ok(mut guard) = ACTIVE_HUB_CONTEXT.write() {
-            *guard = None;
+        if let Ok(mut map) = HUB_CONTEXTS.write() {
+            map.remove(&self.token);
         }
     }
 }
 
-/// 현재 hub visitor 호출 중인지 — MCP handler 가 destructive / sysmod_* 도구 처리 시 분기.
-pub fn is_hub_context_active() -> bool {
-    ACTIVE_HUB_CONTEXT
+/// 턴별 고유 MCP 토큰 — instance/session + 단조 카운터 + 시각. localhost 내부 상관용(외부 노출 0).
+fn new_turn_token(instance_id: &str, session_id: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "hubturn-{}-{}-{}-{}",
+        instance_id,
+        session_id,
+        crate::utils::time::now_ms(),
+        n
+    )
+}
+
+/// 토큰이 등록된 hub 턴 토큰인지 — MCP verify_token 인증용.
+pub fn is_registered_token(token: &str) -> bool {
+    HUB_CONTEXTS
         .read()
-        .map(|g| g.is_some())
+        .map(|m| m.contains_key(token))
         .unwrap_or(false)
 }
 
-/// 현재 활성 hub_context 의 allowed_sysmods 복제 반환. None = admin 영역 호출.
-pub fn active_allowed_sysmods() -> Option<Vec<String>> {
-    ACTIVE_HUB_CONTEXT
-        .read()
+/// 토큰으로 컨텍스트 조회 — MCP handle_rpc 가 CURRENT_HUB 스코프에 주입.
+pub fn lookup(token: &str) -> Option<ActiveHubContext> {
+    HUB_CONTEXTS.read().ok().and_then(|m| m.get(token).cloned())
+}
+
+/// 현재 요청의 hub context 의 (instance_id, session_id) — MCP 경로 owner 주입용. None = admin.
+pub fn active_hub_owner() -> Option<(String, String)> {
+    CURRENT_HUB
+        .try_with(|c| {
+            c.as_ref()
+                .map(|x| (x.instance_id.clone(), x.session_id.clone()))
+        })
         .ok()
-        .and_then(|g| g.as_ref().map(|c| c.allowed_sysmods.clone()))
+        .flatten()
+}
+
+/// 현재 요청의 admin 공유 reference id 들 — MCP search_library 가 본인 자료에 합쳐 검색.
+/// None = admin 영역(hub 아님), Some(빈) = hub 인데 공유 0.
+pub fn active_allowed_references() -> Option<Vec<String>> {
+    CURRENT_HUB
+        .try_with(|c| c.as_ref().map(|x| x.allowed_references.clone()))
+        .ok()
+        .flatten()
+}
+
+/// 현재 hub visitor 요청 중인지 — MCP handler 가 destructive / sysmod_* 처리 시 분기.
+pub fn is_hub_context_active() -> bool {
+    CURRENT_HUB.try_with(|c| c.is_some()).unwrap_or(false)
+}
+
+/// 현재 요청의 allowed_sysmods 복제 반환. None = admin 영역.
+pub fn active_allowed_sysmods() -> Option<Vec<String>> {
+    CURRENT_HUB
+        .try_with(|c| c.as_ref().map(|x| x.allowed_sysmods.clone()))
+        .ok()
+        .flatten()
 }
 
 /// hub 핵심 사이드바 sysmod — admin 의 per-hub allowed_sysmods 와 무관하게 항상 허용.
@@ -208,34 +248,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_guard_means_admin_context() {
+    fn no_scope_means_admin_context() {
+        // CURRENT_HUB 스코프 밖 = admin (task-local 미설정).
         assert!(!is_hub_context_active());
         assert!(active_allowed_sysmods().is_none());
         assert!(!is_sysmod_blocked_for_hub("telegram"));
     }
 
     #[test]
-    fn guard_activates_and_filters_sysmods() {
-        let _g = HubContextGuard::enter(
-            vec!["notes".to_string(), "calendar".to_string()],
+    fn scope_activates_and_filters_sysmods() {
+        let ctx = ActiveHubContext {
+            allowed_sysmods: vec!["notes".to_string(), "calendar".to_string()],
+            instance_id: "inst".to_string(),
+            session_id: "sess".to_string(),
+            allowed_references: vec![],
+        };
+        CURRENT_HUB.sync_scope(Some(ctx), || {
+            assert!(is_hub_context_active());
+            assert!(!is_sysmod_blocked_for_hub("notes"));
+            assert!(!is_sysmod_blocked_for_hub("calendar"));
+            assert!(is_sysmod_blocked_for_hub("telegram"));
+            assert!(is_sysmod_blocked_for_hub("kiwoom"));
+        });
+        // 스코프를 벗어나면 다시 admin.
+        assert!(!is_hub_context_active());
+    }
+
+    #[test]
+    fn guard_registers_token_and_drop_unregisters() {
+        let (guard, token) = HubContextGuard::enter(
+            vec!["notes".to_string()],
             "inst".to_string(),
             "sess".to_string(),
             vec![],
         );
-        assert!(is_hub_context_active());
-        assert!(!is_sysmod_blocked_for_hub("notes"));
-        assert!(!is_sysmod_blocked_for_hub("calendar"));
-        assert!(is_sysmod_blocked_for_hub("telegram"));
-        assert!(is_sysmod_blocked_for_hub("kiwoom"));
-    }
-
-    #[test]
-    fn guard_drop_clears_context() {
-        {
-            let _g = HubContextGuard::enter(vec!["notes".to_string()], "inst".to_string(), "sess".to_string(), vec![]);
-            assert!(is_hub_context_active());
-        }
-        assert!(!is_hub_context_active());
+        // 등록 — verify_token 인증 + handle_rpc lookup 가능.
+        assert!(is_registered_token(&token));
+        assert!(lookup(&token).is_some());
+        drop(guard);
+        // drop = 등록 해제.
+        assert!(!is_registered_token(&token));
+        assert!(lookup(&token).is_none());
     }
 
     #[test]

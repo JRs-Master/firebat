@@ -226,7 +226,8 @@ fn hub_blocks_tool(name: &str) -> bool {
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
 ///   1. Vault `system:internal-mcp-token` (옛 internal MCP 토큰 — Frontend / CLI 어댑터)
 ///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
-fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<(), StatusCode> {
+/// 검증 성공 시 검증된 토큰 문자열 반환 — handle_rpc 가 이 토큰으로 hub 컨텍스트를 lookup 해 격리.
+fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<String, StatusCode> {
     let auth = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -244,13 +245,18 @@ fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<(), 
         let eq: bool =
             subtle::ConstantTimeEq::ct_eq(token.as_bytes(), stored.as_bytes()).into();
         if eq {
-            return Ok(());
+            return Ok(token.to_string());
         }
+    }
+    // 1.5. hub 턴별 토큰 — ai.rs 가 턴마다 발급·등록한 토큰. 등록돼 있으면 valid(동시 visitor 격리).
+    //      handle_rpc 가 이 토큰으로 hub 컨텍스트를 찾아 CURRENT_HUB 에 주입한다.
+    if firebat_core::utils::hub_context::is_registered_token(token) {
+        return Ok(token.to_string());
     }
     // 2. 외부 사용자 API token 매칭 (AuthManager.validate_api_token).
     if let Some(auth_mgr) = &state.auth {
         if auth_mgr.validate_api_token(token).is_some() {
-            return Ok(());
+            return Ok(token.to_string());
         }
     }
     Err(StatusCode::UNAUTHORIZED)
@@ -261,13 +267,22 @@ async fn handle_rpc(
     headers: HeaderMap,
     Json(req): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
-    if let Err(status) = verify_token(&state, &headers) {
-        return (status, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
-    }
+    let token = match verify_token(&state, &headers) {
+        Ok(t) => t,
+        Err(status) => {
+            return (status, Json(serde_json::json!({"error": "unauthorized"}))).into_response()
+        }
+    };
     if req.jsonrpc != "2.0" {
         return rpc_error(req.id.unwrap_or(Value::Null), -32600, "Invalid Request");
     }
 
+    // hub 턴별 토큰이면 그 컨텍스트를, 아니면 None(admin) 을 이 요청 단위 task-local 에 주입.
+    // active_* (inject_hub_owner / hub_blocks_tool / is_tool_visible / SearchLibraryHandler 등)는
+    // 전역이 아니라 이 CURRENT_HUB 만 읽으므로 동시 요청이 서로 격리된다.
+    let hub_ctx = firebat_core::utils::hub_context::lookup(&token);
+    firebat_core::utils::hub_context::CURRENT_HUB
+        .scope(hub_ctx, async move {
     match req.method.as_str() {
         "initialize" => {
             let id = req.id.unwrap_or(Value::Null);
@@ -374,6 +389,8 @@ async fn handle_rpc(
             &format!("method not found: {}", other),
         ),
     }
+        })
+        .await
 }
 
 fn rpc_success(id: Value, result: Value) -> axum::response::Response {
