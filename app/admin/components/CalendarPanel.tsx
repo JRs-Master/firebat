@@ -11,14 +11,15 @@
  * 데이터: data/calendar/events.jsonl (sysmod_calendar 모듈). cron 잡 linkedJobId 양방향.
  */
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
-import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, Pencil } from 'lucide-react';
 import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 import { confirmDialog, alertDialog } from './Dialog';
-import { apiGet, apiPost } from '../../../lib/api-fetch';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { SaveButton, type SaveButtonState } from './SaveButton';
+import { ScheduleModal, type CronJob } from './CronPanel';
 
 interface CalEvent {
   id: string;
@@ -114,6 +115,7 @@ export function CalendarPanel({
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [cronOccs, setCronOccs] = useState<CronOcc[]>([]);
   const [cronLogs, setCronLogs] = useState<CronLog[]>([]);
+  const [editingCron, setEditingCron] = useState<CronJob | null>(null); // 캘린더에서 cron 스케줄 편집 (ScheduleModal 재사용)
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
@@ -279,6 +281,31 @@ export function CalendarPanel({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showYearPicker, showMonthPicker]);
+
+  // cron 스케줄(투영) 삭제 — cron 이 진실원천이라 /api/cron 잡 해제 호출, 캘린더는 투영만 → refetch.
+  const deleteCronJob = async (jobId: string, title?: string): Promise<boolean> => {
+    if (!await confirmDialog({ title: '스케줄 삭제', message: `"${title || jobId}" 스케줄(cron 잡)을 삭제합니다.`, okLabel: '삭제', cancelLabel: '취소', danger: true })) return false;
+    try {
+      await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'calendar' });
+      await fetchCron();
+      return true;
+    } catch (err: any) {
+      await alertDialog({ title: '삭제 실패', message: err?.message ?? String(err), danger: true });
+      return false;
+    }
+  };
+
+  // cron 스케줄 편집 — jobId 로 전체 CronJob 조회 후 ScheduleModal(CronPanel 재사용) 오픈.
+  const handleEditCron = async (jobId: string) => {
+    try {
+      const res = await apiGet<{ jobs?: CronJob[] }>('/api/cron', { category: 'calendar' });
+      const job = (res.jobs ?? []).find(j => j.jobId === jobId);
+      if (!job) { await alertDialog({ title: '편집 불가', message: '해당 스케줄을 찾지 못했습니다 (이미 종료/삭제됨).' }); await fetchCron(); return; }
+      setEditingCron(job);
+    } catch (err: any) {
+      await alertDialog({ title: '오류', message: err?.message ?? String(err), danger: true });
+    }
+  };
 
   const handleDelete = async (e: CalEvent) => {
     const ok = await confirmDialog({
@@ -541,6 +568,10 @@ export function CalendarPanel({
                     <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
                     <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
                   </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Tooltip label="스케줄 편집"><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 transition-colors"><Pencil size={11} /></button></Tooltip>
+                    <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={11} /></button></Tooltip>
+                  </div>
                 </li>
               ))}
               {selectedLogs.map((l, i) => (
@@ -558,6 +589,17 @@ export function CalendarPanel({
         )}
       </div>
 
+      {editingCron && (() => {
+        const job = editingCron;
+        return (
+          <ScheduleModal
+            job={job}
+            onClose={() => setEditingCron(null)}
+            onSaved={() => { setEditingCron(null); void fetchCron(); }}
+            onDelete={async () => { if (await deleteCronJob(job.jobId)) setEditingCron(null); }}
+          />
+        );
+      })()}
       {showCreate && (
         <CalendarModal
           existing={editing}

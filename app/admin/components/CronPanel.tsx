@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import type { CronRunWhen, CronRetry, CronNotify } from '../../../lib/types/firebat-types';
 
-interface CronJob {
+export interface CronJob {
   jobId: string;
   targetPath: string;
   title?: string;
