@@ -1417,19 +1417,13 @@ export function Sidebar({
   return (
     <>
       {renderActivityBar()}
+      {/* PC: 패널이 열려 있어도 채팅 스크롤·입력 가능 — 옛 invisible click-catcher(채팅 영역 전체를
+          fixed 로 덮어 외부클릭 자동닫힘)가 채팅 스크롤·입력을 가로채던 것 제거. 패널 닫기는 활동 바 탭 재클릭. */}
       {!collapsed && (
-        <>
-          {/* invisible click-catcher — 활동 바(z-50) / panel(z-40) 외 영역만 click 받음.
-              bg dim 사용 X — 사용자 시각 방해 0. */}
-          <div
-            className="fixed top-12 inset-x-0 bottom-0 z-30"
-            onClick={() => setCollapsed(true)}
-          />
-          <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
-            {renderPanelHeader()}
-            {panelBody}
-          </div>
-        </>
+        <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
+          {renderPanelHeader()}
+          {panelBody}
+        </div>
       )}
       {externalModals}
     </>
