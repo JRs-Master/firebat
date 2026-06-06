@@ -76,7 +76,7 @@ CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영
   - 예: 카카오톡 모듈이 401 → refresh_token으로 갱신 → 새 `KAKAO_ACCESS_TOKEN`(+ rotating `KAKAO_REFRESH_TOKEN`)을 `__updateSecrets`로 반환 → Vault 영속 → 다음 실행 시 재사용.
 - **`_cache` envelope + auto-cache 일반화** (2026-05-23): sysmod 응답이 크면 LLM 컨텍스트에 통째로 싣지 않고 SysmodCacheAdapter 에 저장 → AI 는 `_cacheKey` + 작은 preview 만 받고 필요 시 `cache_read` / `cache_grep` / `cache_aggregate` 로 drill-in.
   - **명시 envelope** (모듈 opt-in): 모듈이 `data._cache = {records, sysmod, action, params, ttlSec}` + 풍부한 preview 형제 필드 (예: yfinance 의 `firstDate` / `lastDate`) 를 포함하면 sandbox 가 이를 인식해 cache 저장 + `_cache` 제거 + `_cacheKey` / `_cacheMeta` 주입.
-  - **auto-cache fallback** (모듈 변경 0): 명시 envelope 없을 때 sandbox 가 `data` 의 직접 자식 배열 중 가장 큰 것을 자동 추출 — 길이 `AUTO_CACHE_THRESHOLD`(30) 이상이면 cache 저장 + 첫 `AUTO_CACHE_PREVIEW`(5) 개로 in-place truncate + `_cacheKey` / `_cacheMeta {fieldName, totalCount, autoCached:true}` 주입. 한 응답당 1개. **admin · hub 공통 경로** (모든 sysmod 자동 혜택 — law-search / naver-search / kiwoom 등).
+  - **auto-cache fallback** (모듈 변경 0): 명시 envelope 없을 때 sandbox 가 `data` 의 직접 자식 배열 중 가장 큰 것을 자동 추출 — 길이 `AUTO_CACHE_THRESHOLD`(30) 이상이면 cache 저장 + 첫 `AUTO_CACHE_PREVIEW`(5) 개로 in-place truncate + `_cacheKey` / `_cacheMeta {fieldName, totalCount, autoCached:true}` 주입. **배열이 없으면 가장 큰 문자열**(≥8000자)을 줄 단위 `{line,text}` 레코드로 캐시 + 1500자 프리뷰 (firecrawl 등 긴 본문, 02b0e02) — `cache_grep` 으로 키워드 검색. 한 응답당 1개. **admin · hub 공통 경로** (모든 sysmod 자동 혜택 — law-search / naver-search / firecrawl / kiwoom 등).
   - 명시 envelope 처리에서 `_cacheKey` 가 이미 주입된 경우 auto-cache 는 skip — 모듈 의도 우선.
 
 ### 4. LLM Adapter (`infra/src/llm/adapter.rs` + `infra/src/llm/formats/*.rs`)
@@ -343,7 +343,7 @@ tokio::process::Command::new("python3").arg(module_entry).spawn()
 
 Vultr 호스트에 Node / Python runtime + LLM CLI (Claude Code / Codex / Gemini CLI) 직접 설치.
 
-**Sandbox 운영 결정**: `FIREBAT_SANDBOX=basic` (BasicProcessSandbox) 사용. `tokio::process::Command` + path containment + timeout. `LinuxCgroupsSandboxAdapter` (cgroups + seccomp + namespace) 는 코드 잔존하지만 sysmod libuv / encodings / CLONE_NEWNET 차단 이슈로 미사용. 향후 multi-tenant / 외부 사용자 격리 필요 시점에 seccomp allow list 확장 + 재활성 검토.
+**Sandbox 운영 결정**: `FIREBAT_SANDBOX=basic` (BasicProcessSandbox) 사용. `tokio::process::Command` + path containment + timeout. stdout/stderr 는 `child.wait()` 와 **동시 드레인**(`tokio::join!`) — 출력이 OS 파이프 버퍼(~64KB)를 넘는 sysmod(거대 firecrawl·law-search·증권 대량)가 자식 write 막혀 무한 hang 되던 deadlock 차단(`7609eb4`). `LinuxCgroupsSandboxAdapter` (cgroups + seccomp + namespace) 는 코드 잔존하지만 sysmod libuv / encodings / CLONE_NEWNET 차단 이슈로 미사용. 향후 multi-tenant / 외부 사용자 격리 필요 시점에 seccomp allow list 확장 + 재활성 검토.
 
 ### v1.0 Final 출시 후 (v2.0+)
 

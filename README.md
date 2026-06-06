@@ -166,9 +166,9 @@ Exposes 30+ tools: page CRUD, file CRUD, module execution + introspection (`list
 - **Auto package install**: Declare dependencies in `config.json.packages` — installed on first run
 - **Secret injection**: Vault values passed as env vars — the AI never sees the raw secret
 - **Timeout**: 30 seconds per execution
-- **Auto-cache for large responses**: the sandbox detects a sysmod response's largest top-level array (≥30 items) and stores it in the `SysmodCacheAdapter`, returning a small 5-item preview plus a `_cacheKey` to the model. The AI drills in with `cache_read` / `cache_grep` / `cache_aggregate` instead of paying full-array tokens. Modules need no code change — yfinance's existing explicit `_cache` envelope still takes priority for rich previews.
+- **Auto-cache for large responses**: the sandbox detects a sysmod response's largest top-level array (≥30 items) and stores it in the `SysmodCacheAdapter`, returning a small 5-item preview plus a `_cacheKey` to the model. The AI drills in with `cache_read` / `cache_grep` / `cache_aggregate` instead of paying full-array tokens. Large text fields (≥8000 chars — e.g. firecrawl page bodies) are likewise cached line-by-line with a 1500-char preview. Modules need no code change — yfinance's existing explicit `_cache` envelope still takes priority for rich previews.
 
-> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 30초 타임아웃. **응답 자동 캐싱**: 큰 배열 필드(≥30)는 sandbox가 자동으로 SysmodCacheAdapter에 저장하고 5개 미리보기 + `_cacheKey`만 AI에 전달 → LLM 토큰 절약, 모듈 코드 수정 0.
+> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 30초 타임아웃. **응답 자동 캐싱**: 큰 배열 필드(≥30) 또는 큰 텍스트(≥8000자, firecrawl 본문 등)는 sandbox가 자동으로 SysmodCacheAdapter에 저장하고 미리보기 + `_cacheKey`만 AI에 전달 → LLM 토큰 절약, 모듈 코드 수정 0.
 
 ### Built-in Components
 
