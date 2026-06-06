@@ -468,7 +468,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
                   aiOpen
                     ? 'bg-blue-800 text-white'
-                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-800/20 border border-blue-700/40'
+                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-800/20 border border-slate-700/40'
                 }`}
               >
                 <Bot size={13} /> AI
@@ -595,9 +595,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
           {/* AI 사이드바 (우측) — VSCode Copilot Chat 스타일 */}
           {aiOpen && (
-            <aside className="w-[380px] flex-shrink-0 bg-[#141414] border-l border-blue-800/60 flex flex-col min-h-0">
+            <aside className="w-[380px] flex-shrink-0 bg-[#141414] border-l border-slate-700/60 flex flex-col min-h-0">
               {/* 사이드바 헤더 */}
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-blue-800/40 flex-shrink-0">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/40 flex-shrink-0">
                 <Bot size={14} className="text-blue-400" />
                 <span className="text-[12px] font-bold text-blue-300">AI 어시스트</span>
                 <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
@@ -655,7 +655,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={preset.label}
                           onClick={() => handleAiSubmit(preset.instruction)}
-                          className="text-left bg-slate-800/40 hover:bg-blue-800/20 border border-slate-700/60 hover:border-blue-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
+                          className="text-left bg-slate-800/40 hover:bg-blue-800/20 border border-slate-700/60 hover:border-slate-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
                         >
                           {preset.label}
                         </button>
@@ -675,7 +675,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     )}
                     <div className={`max-w-[85%] ${turn.role === 'user' ? '' : 'flex-1 min-w-0'}`}>
                       {turn.role === 'user' ? (
-                        <div className="bg-blue-800/30 border border-blue-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
+                        <div className="bg-blue-800/30 border border-slate-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
                           {turn.content}
                         </div>
                       ) : (
@@ -752,7 +752,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
               {/* 슬래시 명령어 드롭다운 */}
               {slashOpen && (
-                <div ref={slashMenuRef} className="mx-2 mb-1 bg-[#252526] border border-blue-700/40 rounded-lg overflow-hidden shadow-xl">
+                <div ref={slashMenuRef} className="mx-2 mb-1 bg-[#252526] border border-slate-700/40 rounded-lg overflow-hidden shadow-xl">
                   {slashOpen === 'root' && (
                     <>
                       {SLASH_COMMANDS.filter(c => c.cmd.startsWith(aiInstruction) || aiInstruction === '/').map(c => (
@@ -834,7 +834,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               )}
 
               {/* 입력창 (사이드바 하단) */}
-              <div className="border-t border-blue-800/40 p-2 flex-shrink-0">
+              <div className="border-t border-slate-700/40 p-2 flex-shrink-0">
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={aiInputRef}
@@ -857,7 +857,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     rows={2}
                     disabled={aiLoading}
                     aria-label="AI 수정 지시"
-                    className="flex-1 bg-[#252526] border border-blue-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
+                    className="flex-1 bg-[#252526] border border-slate-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-slate-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
                   />
                   <Tooltip label={t('file_editor.send_enter')}>
                     <button
