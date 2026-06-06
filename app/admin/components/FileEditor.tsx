@@ -144,11 +144,34 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const editorRef   = useRef<any>(null);
   const aiInputRef  = useRef<HTMLTextAreaElement>(null);
   const chatEndRef  = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
 
   // 새 턴 추가 시 스크롤 하단 고정
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chat.length, aiLoading]);
+
+  // 슬래시 메뉴(/model·/thinking·/root 등 전체) — 바깥 클릭 + ESC 로 닫기.
+  // textarea onKeyDown 만으론 포커스가 입력창에 없거나 Monaco 가 ESC 를 먼저 가로채면 안 먹어서,
+  // document capture 단계로 ESC + mousedown 을 잡는다. 메뉴/입력창 내부 클릭은 유지.
+  useEffect(() => {
+    if (!slashOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); setSlashOpen(null); }
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (slashMenuRef.current?.contains(t)) return;  // 메뉴 내부 클릭 — 버튼 onClick 이 닫음
+      if (aiInputRef.current?.contains(t)) return;     // 입력창 클릭 — 유지
+      setSlashOpen(null);
+    };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('mousedown', onDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onDown, true);
+    };
+  }, [slashOpen]);
 
   const isDirty  = content !== original;
   const lang     = isPageMode ? 'json' : detectLanguage(filePath!);
@@ -426,8 +449,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 onClick={openAiPanel}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
                   aiOpen
-                    ? 'bg-violet-600 text-white'
-                    : 'bg-[#2d2d2d] text-violet-400 hover:bg-violet-600/20 border border-violet-700/40'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-[#2d2d2d] text-blue-400 hover:bg-blue-600/20 border border-blue-700/40'
                 }`}
               >
                 <Bot size={13} /> AI
@@ -554,11 +577,11 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
           {/* AI 사이드바 (우측) — VSCode Copilot Chat 스타일 */}
           {aiOpen && (
-            <aside className="w-[380px] flex-shrink-0 bg-[#1a1a2e] border-l border-violet-800/60 flex flex-col min-h-0">
+            <aside className="w-[380px] flex-shrink-0 bg-[#1e1e1e] border-l border-blue-800/60 flex flex-col min-h-0">
               {/* 사이드바 헤더 */}
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-violet-800/40 flex-shrink-0">
-                <Bot size={14} className="text-violet-400" />
-                <span className="text-[12px] font-bold text-violet-300">AI 어시스트</span>
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-blue-800/40 flex-shrink-0">
+                <Bot size={14} className="text-blue-400" />
+                <span className="text-[12px] font-bold text-blue-300">AI 어시스트</span>
                 <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
                 <div className="flex-1" />
                 {chat.length > 0 && (
@@ -606,7 +629,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 {chat.length === 0 && !aiLoading && (
                   <div className="space-y-3 py-2">
                     <div className="text-center text-slate-500 text-[12px]">
-                      <Sparkles size={18} className="mx-auto mb-1.5 text-violet-500/50" />
+                      <Sparkles size={18} className="mx-auto mb-1.5 text-blue-500/50" />
                       빠르게 시작하기
                     </div>
                     <div className="grid grid-cols-2 gap-1.5">
@@ -614,27 +637,27 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                         <button
                           key={preset.label}
                           onClick={() => handleAiSubmit(preset.instruction)}
-                          className="text-left bg-slate-800/40 hover:bg-violet-600/20 border border-slate-700/60 hover:border-violet-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-violet-200 transition-colors"
+                          className="text-left bg-slate-800/40 hover:bg-blue-600/20 border border-slate-700/60 hover:border-blue-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-blue-200 transition-colors"
                         >
                           {preset.label}
                         </button>
                       ))}
                     </div>
                     <div className="text-center text-[10.5px] text-slate-600 pt-2 border-t border-slate-800/60">
-                      <code className="text-violet-400/70">/</code> 로 슬래시 명령어 · <code className="text-violet-400/70">/model</code> · <code className="text-violet-400/70">/thinking</code>
+                      <code className="text-blue-400/70">/</code> 로 슬래시 명령어 · <code className="text-blue-400/70">/model</code> · <code className="text-blue-400/70">/thinking</code>
                     </div>
                   </div>
                 )}
                 {chat.map((turn, idx) => (
                   <div key={turn.id} className={turn.role === 'user' ? 'flex justify-end' : 'flex gap-2'}>
                     {turn.role === 'assistant' && (
-                      <div className="w-6 h-6 rounded-full bg-violet-600/30 text-violet-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
                         <Bot size={13} />
                       </div>
                     )}
                     <div className={`max-w-[85%] ${turn.role === 'user' ? '' : 'flex-1 min-w-0'}`}>
                       {turn.role === 'user' ? (
-                        <div className="bg-violet-600/30 border border-violet-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
+                        <div className="bg-blue-600/30 border border-blue-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
                           {turn.content}
                         </div>
                       ) : (
@@ -692,7 +715,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 ))}
                 {aiLoading && (
                   <div className="flex gap-2">
-                    <div className="w-6 h-6 rounded-full bg-violet-600/30 text-violet-300 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
                       <Bot size={13} />
                     </div>
                     <div className="flex-1 bg-slate-800/40 border border-slate-700/60 rounded-lg px-3 py-2 text-[12px] text-slate-400 flex items-center gap-2">
@@ -711,16 +734,16 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
               {/* 슬래시 명령어 드롭다운 */}
               {slashOpen && (
-                <div className="mx-2 mb-1 bg-[#252540] border border-violet-700/40 rounded-lg overflow-hidden shadow-xl">
+                <div ref={slashMenuRef} className="mx-2 mb-1 bg-[#252526] border border-blue-700/40 rounded-lg overflow-hidden shadow-xl">
                   {slashOpen === 'root' && (
                     <>
                       {SLASH_COMMANDS.filter(c => c.cmd.startsWith(aiInstruction) || aiInstruction === '/').map(c => (
                         <button
                           key={c.cmd}
                           onClick={() => { setAiInstruction(''); setSlashOpen(null); handleAiSubmit(c.instruction); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
                         >
-                          <code className="text-violet-400 font-bold">{c.cmd}</code>
+                          <code className="text-blue-400 font-bold">{c.cmd}</code>
                           <span className="text-slate-300">{c.label}</span>
                           <span className="ml-auto text-[10px] text-slate-500">{c.mode === 'explain' ? '리뷰' : '코드'}</span>
                         </button>
@@ -728,16 +751,16 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                       <div className="border-t border-slate-700/60" />
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('model'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
                       >
-                        <code className="text-violet-400 font-bold">/model</code>
+                        <code className="text-blue-400 font-bold">/model</code>
                         <span className="text-slate-300">모델 변경</span>
                       </button>
                       <button
                         onClick={() => { setAiInstruction(''); setSlashOpen('thinking'); }}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-600/30 transition-colors"
                       >
-                        <code className="text-violet-400 font-bold">/thinking</code>
+                        <code className="text-blue-400 font-bold">/thinking</code>
                         <span className="text-slate-300">추론 강도 변경</span>
                       </button>
                       <button
@@ -751,14 +774,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   )}
                   {slashOpen === 'model' && (
                     <div className="max-h-64 overflow-y-auto">
-                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60 sticky top-0 bg-[#252540]">모델 선택</div>
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60 sticky top-0 bg-[#252526]">모델 선택</div>
                       {AI_MODELS.map(m => (
                         <button
                           key={m.value}
                           onClick={() => { setLocalModel(m.value); setAiInstruction(''); setSlashOpen(null); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-600/30 transition-colors"
                         >
-                          {(localModel ?? aiModel) === m.value && <Check size={11} className="text-violet-400" />}
+                          {(localModel ?? aiModel) === m.value && <Check size={11} className="text-blue-400" />}
                           <span className="text-slate-200">{m.label}</span>
                           <code className="ml-auto text-[10px] text-slate-500">{m.value}</code>
                         </button>
@@ -780,9 +803,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                           <button
                             key={l.value}
                             onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-blue-600/30 transition-colors"
                           >
-                            {localThinking === l.value && <Check size={11} className="text-violet-400" />}
+                            {localThinking === l.value && <Check size={11} className="text-blue-400" />}
                             <span className="text-slate-200">{thinkingLevelLabel(l, thinkingLang)}</span>
                           </button>
                         ))}
@@ -793,7 +816,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               )}
 
               {/* 입력창 (사이드바 하단) */}
-              <div className="border-t border-violet-800/40 p-2 flex-shrink-0">
+              <div className="border-t border-blue-800/40 p-2 flex-shrink-0">
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={aiInputRef}
@@ -816,13 +839,13 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     rows={2}
                     disabled={aiLoading}
                     aria-label="AI 수정 지시"
-                    className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
+                    className="flex-1 bg-[#252526] border border-blue-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-blue-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
                   />
                   <Tooltip label={t('file_editor.send_enter')}>
                     <button
                       onClick={() => handleAiSubmit()}
                       disabled={!aiInstruction.trim() || aiLoading}
-                      className="flex items-center justify-center w-10 h-10 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
+                      className="flex items-center justify-center w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
                     >
                       {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                     </button>
@@ -834,7 +857,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
         </div>
 
         {/* 하단 상태바 */}
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-[#007acc] text-white text-[11px] font-mono flex-shrink-0">
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-blue-700 text-white text-[11px] font-mono flex-shrink-0">
           <span className="uppercase font-bold tracking-wider">{lang}</span>
           <span className="opacity-70">UTF-8</span>
           <span className="opacity-60">Ctrl+K: AI 어시스트</span>

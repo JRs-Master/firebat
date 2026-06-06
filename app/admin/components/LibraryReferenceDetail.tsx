@@ -362,7 +362,7 @@ export function LibraryReferenceDetail({
                       <p className="text-[10px] text-amber-600">설정 → 시크릿에서 Gemini(Google AI Studio) 키를 먼저 등록하시면 활성화됩니다.</p>
                     ) : precise ? (
                       <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-700 pl-5">
-                        <input type="checkbox" checked={qualityBoost} onChange={e => setQualityBoost(e.target.checked)} />
+                        <input type="checkbox" id="lib-quality-boost" name="qualityBoost" checked={qualityBoost} onChange={e => setQualityBoost(e.target.checked)} />
                         <span>품질 향상 (Gemini Pro — 빽빽한 수식에 더 강함, 비용 ↑)</span>
                       </label>
                     ) : (
