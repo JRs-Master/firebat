@@ -157,6 +157,15 @@ impl TokioCronAdapter {
                 }
             }
         }
+        // 날짜만("YYYY-MM-DD") — tz 기준 자정으로 해석. 캘린더 occurrence 조회가 from/to 를 날짜만 보내는데
+        // 위 포맷들은 전부 시간 필수라 파싱 실패 → 예약(occurrence) 이 항상 빈 배열로 안 뜨던 버그 fix.
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
+            if let Some(naive) = date.and_hms_opt(0, 0, 0) {
+                if let chrono::LocalResult::Single(dt) = tz.from_local_datetime(&naive) {
+                    return Some(dt.with_timezone(&Utc));
+                }
+            }
+        }
         None
     }
 
