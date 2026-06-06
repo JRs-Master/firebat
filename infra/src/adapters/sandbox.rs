@@ -344,14 +344,20 @@ impl ProcessSandboxAdapter {
         self
     }
 
-    /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 가장 큰 배열 필드 1개를
-    /// SysmodCacheAdapter 로 저장 + in-place truncate + `_cacheKey` / `_cacheMeta` 형제 필드 주입.
+    /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 큰 필드 1개를 SysmodCacheAdapter 로
+    /// 저장 + in-place 프리뷰 축약 + `_cacheKey` / `_cacheMeta` 형제 필드 주입.
+    ///
+    /// 모든 sysmod 응답이 거치는 단일 choke point — 도구별 코드 0 으로 현재·미래 도구 자동 적용.
+    /// 두 종류를 자동 인식:
+    /// - 큰 **배열** (≥ `AUTO_CACHE_THRESHOLD`(30) 개) → 첫 5개만 남기고 나머지 캐시 (시세 / 공시 목록 등).
+    /// - 큰 **문자열** (≥ `TEXT_CACHE_THRESHOLD`(8000) 자) → 줄 단위 `{line, text}` 레코드로 캐시 +
+    ///   앞 `TEXT_PREVIEW_CHARS`(1500) 자만 프리뷰로 남김 (firecrawl 본문 / law-search 조문 등 긴 텍스트).
+    ///   `cache_grep(field="text", op="contains")` 로 키워드 검색, `cache_read` 로 줄 범위 조회.
     ///
     /// 룰:
     /// - data 가 object 가 아니면 변형 없음
     /// - `_cacheKey` 가 이미 있으면 skip (명시 envelope 처리 결과 우선)
-    /// - 길이 < `AUTO_CACHE_THRESHOLD`(30) 인 배열은 skip
-    /// - 한 응답당 가장 큰 배열 1개만 자동 캐싱
+    /// - 배열 우선 — 자격 배열이 있으면 그것, 없으면 큰 문자열. 한 응답당 1개만.
     /// - cache.data() 실패 시 원본 data 그대로 통과 (warn log)
     fn apply_auto_cache(
         data: serde_json::Value,
@@ -361,6 +367,8 @@ impl ProcessSandboxAdapter {
     ) -> serde_json::Value {
         const AUTO_CACHE_THRESHOLD: usize = 30;
         const AUTO_CACHE_PREVIEW: usize = 5;
+        const TEXT_CACHE_THRESHOLD: usize = 8000;
+        const TEXT_PREVIEW_CHARS: usize = 1500;
         let mut obj = match data.as_object().cloned() {
             Some(o) => o,
             None => return data,
@@ -368,66 +376,142 @@ impl ProcessSandboxAdapter {
         if obj.contains_key("_cacheKey") {
             return serde_json::Value::Object(obj);
         }
-        let largest: Option<(String, usize)> = obj
+        // ── 1) 배열 경로 (우선) — 가장 큰 배열 ≥ 30 개 ──
+        let largest_arr: Option<(String, usize)> = obj
             .iter()
             .filter_map(|(k, v)| v.as_array().map(|a| (k.clone(), a.len())))
             .filter(|(_, l)| *l >= AUTO_CACHE_THRESHOLD)
             .max_by_key(|(_, l)| *l);
-        let (field_name, total_count) = match largest {
-            Some(t) => t,
-            None => return serde_json::Value::Object(obj),
-        };
-        let records = match obj.get(&field_name).and_then(|v| v.as_array()).cloned() {
-            Some(r) => r,
-            None => return serde_json::Value::Object(obj),
-        };
-        let action_label = format!("{}:{}", input_action, field_name);
-        match cache.data(
-            module_name,
-            &action_label,
-            serde_json::Value::Null,
-            records,
-            None,
-        ) {
-            Ok(key) => {
-                if let Some(arr) = obj.get_mut(&field_name).and_then(|v| v.as_array_mut()) {
-                    arr.truncate(AUTO_CACHE_PREVIEW);
+        if let Some((field_name, total_count)) = largest_arr {
+            let records = match obj.get(&field_name).and_then(|v| v.as_array()).cloned() {
+                Some(r) => r,
+                None => return serde_json::Value::Object(obj),
+            };
+            let action_label = format!("{}:{}", input_action, field_name);
+            match cache.data(
+                module_name,
+                &action_label,
+                serde_json::Value::Null,
+                records,
+                None,
+            ) {
+                Ok(key) => {
+                    if let Some(arr) = obj.get_mut(&field_name).and_then(|v| v.as_array_mut()) {
+                        arr.truncate(AUTO_CACHE_PREVIEW);
+                    }
+                    obj.insert(
+                        "_cacheKey".to_string(),
+                        serde_json::Value::String(key.clone()),
+                    );
+                    obj.insert(
+                        "_cacheMeta".to_string(),
+                        serde_json::json!({
+                            "sysmod": module_name,
+                            "action": action_label,
+                            "fieldName": field_name,
+                            "kind": "array",
+                            "totalCount": total_count,
+                            "truncatedTo": AUTO_CACHE_PREVIEW,
+                            "autoCached": true,
+                        }),
+                    );
+                    tracing::info!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        field = %field_name,
+                        cache_key = %key,
+                        total = total_count,
+                        "[sandbox] auto-cache 적용 — 큰 배열 필드를 cache 로 추출"
+                    );
                 }
-                obj.insert(
-                    "_cacheKey".to_string(),
-                    serde_json::Value::String(key.clone()),
-                );
-                obj.insert(
-                    "_cacheMeta".to_string(),
-                    serde_json::json!({
-                        "sysmod": module_name,
-                        "action": action_label,
-                        "fieldName": field_name,
-                        "totalCount": total_count,
-                        "truncatedTo": AUTO_CACHE_PREVIEW,
-                        "autoCached": true,
-                    }),
-                );
-                tracing::info!(
-                    target: "sandbox",
-                    module = module_name,
-                    action = input_action,
-                    field = %field_name,
-                    cache_key = %key,
-                    total = total_count,
-                    "[sandbox] auto-cache 적용 — 큰 배열 필드를 cache 로 추출"
-                );
+                Err(e) => {
+                    tracing::warn!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        error = %e,
+                        "[sandbox] auto-cache 저장 실패 — 폐기"
+                    );
+                }
             }
-            Err(e) => {
-                tracing::warn!(
-                    target: "sandbox",
-                    module = module_name,
-                    action = input_action,
-                    error = %e,
-                    "[sandbox] auto-cache 저장 실패 — 폐기"
-                );
-            }
+            return serde_json::Value::Object(obj);
         }
+
+        // ── 2) 텍스트 경로 — 가장 큰 문자열 ≥ 8000 자 (줄 단위 {line,text} 레코드로 캐시) ──
+        let largest_str: Option<(String, usize)> = obj
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.chars().count())))
+            .filter(|(_, l)| *l >= TEXT_CACHE_THRESHOLD)
+            .max_by_key(|(_, l)| *l);
+        if let Some((field_name, total_chars)) = largest_str {
+            let full = obj
+                .get(&field_name)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let records: Vec<serde_json::Value> = full
+                .lines()
+                .enumerate()
+                .map(|(i, line)| serde_json::json!({ "line": i + 1, "text": line }))
+                .collect();
+            let total_lines = records.len();
+            let action_label = format!("{}:{}", input_action, field_name);
+            match cache.data(
+                module_name,
+                &action_label,
+                serde_json::Value::Null,
+                records,
+                None,
+            ) {
+                Ok(key) => {
+                    let mut preview: String = full.chars().take(TEXT_PREVIEW_CHARS).collect();
+                    if total_chars > TEXT_PREVIEW_CHARS {
+                        preview.push('…');
+                    }
+                    obj.insert(field_name.clone(), serde_json::Value::String(preview));
+                    obj.insert(
+                        "_cacheKey".to_string(),
+                        serde_json::Value::String(key.clone()),
+                    );
+                    obj.insert(
+                        "_cacheMeta".to_string(),
+                        serde_json::json!({
+                            "sysmod": module_name,
+                            "action": action_label,
+                            "fieldName": field_name,
+                            "kind": "text",
+                            "grepField": "text",
+                            "totalChars": total_chars,
+                            "totalLines": total_lines,
+                            "previewChars": TEXT_PREVIEW_CHARS.min(total_chars),
+                            "autoCached": true,
+                        }),
+                    );
+                    tracing::info!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        field = %field_name,
+                        cache_key = %key,
+                        total_chars = total_chars,
+                        total_lines = total_lines,
+                        "[sandbox] auto-cache 적용 — 큰 텍스트 필드를 줄 단위로 cache 로 추출"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "sandbox",
+                        module = module_name,
+                        action = input_action,
+                        error = %e,
+                        "[sandbox] auto-cache(텍스트) 저장 실패 — 폐기"
+                    );
+                }
+            }
+            return serde_json::Value::Object(obj);
+        }
+
         serde_json::Value::Object(obj)
     }
 

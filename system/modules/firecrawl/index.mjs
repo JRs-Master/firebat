@@ -93,18 +93,11 @@ async function handleScrape(apiKey, data) {
   if (!json.success) return outErr('error.scrape_failed', { message: json.error || '' });
 
   const d = json.data || {};
-  const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '30000', 10);
+  const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '100000', 10);
 
-  let text = d.markdown || '';
-  // keyword 후처리
-  if (data.keyword && text) {
-    const idx = text.indexOf(data.keyword);
-    if (idx !== -1) {
-      const start = Math.max(0, idx - 500);
-      const end = Math.min(text.length, idx + 3000);
-      text = text.slice(start, end);
-    }
-  }
+  // 전체 마크다운 반환 — 길이 초과 시 sandbox auto-cache 가 줄 단위로 캐시 + 프리뷰.
+  // AI 는 cache_grep(field="text", op="contains") 로 키워드 검색 (옛 idx 윈도잉보다 정확 — 전체 매치).
+  const text = d.markdown || '';
 
   const result = {
     url: d.metadata?.url || url,
@@ -184,7 +177,7 @@ async function handleCrawl(apiKey, data) {
 
   if (!result) return outErr('error.crawl_timeout', { seconds: String(maxWait / 1000), crawlId });
 
-  const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '30000', 10);
+  const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '100000', 10);
   const pages = (result.data || []).map(p => ({
     url: p.metadata?.url || '',
     title: p.metadata?.title || '',

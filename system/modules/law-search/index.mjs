@@ -94,8 +94,8 @@ async function apiFetch(url) {
       return json;
     } catch (e) {
       if (e instanceof I18nError) throw e;
-      // JSON 파싱 실패 — HTML/XML 응답일 수 있음
-      return { _raw: text.slice(0, 10000) };
+      // JSON 파싱 실패 — HTML/XML 응답일 수 있음. 전체 반환 — 길면 sandbox auto-cache 가 처리.
+      return { _raw: text };
     }
   }
   // 루프가 정상 종료될 일은 없지만(성공 return / throw), 타입 안전망.

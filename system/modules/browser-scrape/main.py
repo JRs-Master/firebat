@@ -101,7 +101,7 @@ def main():
             "data": {
                 "url":       url,
                 "title":     title,
-                "text":      text[:int(os.environ.get('MODULE_MAXTEXTLENGTH', '50000'))],
+                "text":      text[:int(os.environ.get('MODULE_MAXTEXTLENGTH', '100000'))],
                 "links":     links[:10],   # 최대 10개
                 "firstLink": first_link
             }

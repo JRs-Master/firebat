@@ -9,7 +9,7 @@
 //! - cache_grep — 9 op (eq/ne/gt/gte/lt/lte/contains/in/regex)
 //! - cache_aggregate — count/sum/avg/min/max
 //! - cache_drop — 단일 키 또는 전체
-//! - TTL 5분 (만료 시 자동 정리)
+//! - TTL 30분 (만료 시 자동 정리)
 //! - LRU 100개 (capacity 초과 시 가장 오래된 것 정리)
 
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use std::sync::Mutex;
 
 use crate::ports::InfraResult;
 
-const TTL_MS: i64 = 5 * 60 * 1000; // 5분
+const TTL_MS: i64 = 30 * 60 * 1000; // 30분 — drill-in 후속 질문 + 긴 본문 재참조 여유
 const LRU_CAPACITY: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
