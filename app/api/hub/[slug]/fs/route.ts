@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scanProjects, setProjectVisibility, deleteProject } from '../../../../../lib/api-gen/project';
-import { readFile, writeFile, getFileTree } from '../../../../../lib/api-gen/storage';
+import { readFile, writeFile, getFileTree, deleteFile } from '../../../../../lib/api-gen/storage';
 import { authenticate } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -15,6 +15,7 @@ import { logger } from '../../../../../lib/util/logger';
  *  - 'tree' — `{ root: 'user/hub/<id>/modules/<module>' }` 파일 트리
  *  - 'read' — `{ path: 'user/hub/<id>/...' }` 파일 본문
  *  - 'write' — `{ path: 'user/hub/<id>/...', content }` 파일 저장
+ *  - 'delete' — `{ path: 'user/hub/<id>/...' }` 파일/폴더 삭제 (모듈 폴더 등)
  *  - 'set-project-visibility' — `{ project, visibility, password? }` 자기 hub 프로젝트 가시성
  *  - 'delete-project' — `{ project }` 자기 hub 프로젝트 일괄 삭제
  *
@@ -99,6 +100,17 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           return NextResponse.json({ success: false, error: '이 파일에 접근할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await writeFile({ path, content });
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true });
+      }
+      case 'delete': {
+        // 파일/폴더 삭제 (모듈 폴더 등). path 는 user/hub/<id>/ prefix 안이어야 — 다른 hub·admin 자료 삭제 차단.
+        const path = String(body.path ?? '');
+        if (!path) return NextResponse.json({ success: false, error: 'path 필수' }, { status: 400 });
+        if (!isHubScopedPath(path, auth.instanceId)) {
+          return NextResponse.json({ success: false, error: '이 경로를 삭제할 권한이 없습니다.' }, { status: 403 });
+        }
+        const res = await deleteFile({ path });
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
       }

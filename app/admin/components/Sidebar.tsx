@@ -475,10 +475,20 @@ export function Sidebar({
   };
 
   const handleDeleteModule = async (modulePath: string) => {
-    const name = modulePath.replace(/^user\/modules\//, '');
+    const name = modulePath.replace(/^user\/(hub\/[^/]+\/)?modules\//, '');
     if (!await confirmDialog({ title: '모듈 삭제', message: `모듈 "${name}" 폴더 전체를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     try {
-      await apiDelete(`/api/fs?path=${encodeURIComponent(modulePath)}`, { category: 'sidebar' });
+      // 옛엔 admin·hub 모두 존재하지 않는 /api/fs 를 호출해 404 였음. admin = /api/fs/delete,
+      // hub = owner-scoped hub fs route(path 가 자기 hub dir 안인지 route 가 강제).
+      if (hubMode && hubShareContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubShareContext.apiToken, 'X-Session-Id': hubShareContext.sessionId },
+          body: JSON.stringify({ op: 'delete', path: modulePath }),
+        });
+      } else {
+        await apiDelete(`/api/fs/delete?path=${encodeURIComponent(modulePath)}`, { category: 'sidebar' });
+      }
       onRefreshTree();
       refreshAll();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }

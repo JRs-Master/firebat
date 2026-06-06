@@ -1048,7 +1048,11 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const [attachedSaveState, setAttachedSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [attachedSaveError, setAttachedSaveError] = useState<string>('');
 
-  const fetchFileTree = useCallback(async () => {}, []);
+  // 사이드바 갱신 — AI 도구 실행/모듈 삭제/파일 저장 후 패널이 듣는 'firebat-refresh' 발화.
+  // (옛 fetchFileTree no-op 대체 — 워크스페이스 트리는 Sidebar 자체 refreshAll, 그 외 패널은 이 이벤트로 재조회.)
+  const refreshSidebar = useCallback(() => {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('firebat-refresh'));
+  }, []);
 
   // Hub page mode 의 sessionId — localStorage sticky (방문자 동일 세션 유지) + handleNewConv 시 갱신.
   // useState initializer 안에서 동기 처리 — 첫 렌더 직전에 sid 확정. 옛에 useEffect 로 했더니
@@ -1101,7 +1105,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     planMode, setPlanMode,
     inputMode, setInputMode,
     refreshConversations,
-  } = useChat(aiModel, fetchFileTree, hubChatContext);
+  } = useChat(aiModel, refreshSidebar, hubChatContext);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1254,7 +1258,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   return (
     <div className="flex w-full h-full bg-slate-50 overflow-hidden font-sans tracking-tight">
       <Sidebar
-        onRefreshTree={fetchFileTree}
+        onRefreshTree={refreshSidebar}
         conversations={conversations}
         activeConvId={activeConvId}
         activeMessages={messages}
@@ -1511,7 +1515,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             filePath={editingFile}
             aiModel={aiModel}
             onClose={() => setEditingFile(null)}
-            onSaved={() => fetchFileTree()}
+            onSaved={() => refreshSidebar()}
           />
         )}
 
