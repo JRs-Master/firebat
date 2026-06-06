@@ -758,6 +758,7 @@
     "semanticText": "타임라인 연대기 이벤트 이력 히스토리 history timeline 일정 단계 progress steps",
     "propsSchema": {
       "type": "object",
+      "synonyms": { "events": "items" },
       "required": [
         "items"
       ],
@@ -1064,6 +1065,7 @@
     "semanticText": "상태 뱃지 배지 태그 지표 정배열 과열 중립 positive negative warning info label tag chip",
     "propsSchema": {
       "type": "object",
+      "synonyms": { "badges": "items" },
       "required": [
         "items"
       ],
