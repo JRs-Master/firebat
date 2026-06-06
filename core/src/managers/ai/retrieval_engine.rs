@@ -391,19 +391,26 @@ impl RetrievalEngine {
             return Vec::new();
         };
         let owner = opts.owner.as_deref().unwrap_or("admin");
-        // reference_filter 명시 시 그 ID 만 검색 (hub 안 allowed_references 영역).
-        //   - Some(빈 Vec) = library 검색 0 (hub 안 모든 자료 차단)
-        //   - Some(N 개) = 그 N 개 Reference ID 만 검색
-        //   - None = 무제한 (옛 admin 흐름 — owner 영역 전체 Reference, LibraryManager 자연 처리)
-        let reference_ids: Vec<String> = match &opts.reference_filter {
-            Some(ids) if ids.is_empty() => return Vec::new(),
-            Some(ids) => ids.clone(),
-            None => Vec::new(),
-        };
-        match library.search(owner, &reference_ids, query, lim.library).await {
-            Ok(hits) => hits,
-            Err(_) => Vec::new(),
+        // hub = 본인(owner) 자료 ∪ admin 공유(allowed_references). MCP search_library 와 동일 패리티.
+        //   - None(admin) = owner 전체 Reference (옛 흐름)
+        //   - Some(N)(hub) = 본인 owner 전체 + 공유 ID N 개 병합 (위젯 챗봇이 본인+admin 지식베이스 둘 다)
+        //   - Some(빈)(hub, 공유 0) = 본인 것만 (옛엔 Some(empty)→0 이라 본인 자료도 검색 안 되던 버그)
+        let mut hits = library
+            .search(owner, &[], query, lim.library)
+            .await
+            .unwrap_or_default();
+        if let Some(ids) = &opts.reference_filter {
+            if !ids.is_empty() {
+                let shared = library
+                    .search(owner, ids, query, lim.library)
+                    .await
+                    .unwrap_or_default();
+                hits.extend(shared);
+                hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+                hits.truncate(lim.library);
+            }
         }
+        hits
     }
 }
 
