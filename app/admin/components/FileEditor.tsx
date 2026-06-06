@@ -305,7 +305,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     // 지시문 기반 모드 추정 — 백엔드 codeAssist 와 동일 키워드 목록
     const explainKeywords = ['알려줘', '알려달', '설명', '분석', '검토', '리뷰', '뭐가 문제', '왜', '어떻게', '파악', '평가', 'explain', 'review', 'analyze', 'analyse', 'describe'];
     const lowered = raw.toLowerCase();
-    const mode: 'explain' | 'code' = explainKeywords.some(k => raw.includes(k) || lowered.includes(k.toLowerCase())) ? 'explain' : 'code';
+    // 인사·일상 대화(하이/안녕/고마워 등)는 코드 편집이 아니므로 explain(채팅) — code 면 답변이 파일 전체 교체 diff 로 잘못 떠서 적용 시 페이지가 인사말로 덮일 수 있음.
+    const casualGreeting = /^(하이|안녕|반가|고마|감사|ㄳ|ㅎㅇ|ㅇㅋ|ㅋㅋ|굿|좋아|넵|예|오케이|ok|okay|hi|hello|hey|thanks?|thx|땡큐|수고|잘했|훌륭|멋지)/i.test(raw);
+    const mode: 'explain' | 'code' = (casualGreeting || explainKeywords.some(k => raw.includes(k) || lowered.includes(k.toLowerCase()))) ? 'explain' : 'code';
 
     const turnId = Date.now().toString();
     const userTurn: ChatTurn = { id: `u-${turnId}`, role: 'user', content: raw };
@@ -873,7 +875,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
         </div>
 
         {/* 하단 상태바 */}
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-blue-700 text-white text-[11px] font-mono flex-shrink-0">
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-[#252526] text-slate-300 text-[11px] font-mono flex-shrink-0 border-t border-slate-700/60">
           <span className="uppercase font-bold tracking-wider">{lang}</span>
           <span className="opacity-70">UTF-8</span>
           <span className="opacity-60">Ctrl+K: AI 어시스트</span>
