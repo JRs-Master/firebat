@@ -145,6 +145,13 @@ interface FirebatInfraContainer {
 - **TaskManager ↔ ScheduleManager 관계**: TaskManager가 파이프라인 실행 엔진 담당. ScheduleManager는 크론 트리거 시 Core.runTask()로 TaskManager에 위임.
 - 로깅(ILogPort), 네트워크(INetworkPort)는 횡단 관심사 — 매니저 불필요, 포트 직접 사용.
 
+**Hub 보안 모델 (per-device 멀티테넌트 격리 — 멀티유저 전단계, 2026-06 갓벽)**:
+- hub 방문자 = owner `hub:<instance_id>:<session_id>` (기기별 localStorage UUID = 그 기기의 익명 계정). 모든 자료(노트/캘린더/엔티티/페이지/라이브러리/미디어/cron/대화/워크스페이스)가 owner-scoped → admin↔hub / hub↔hub / 기기↔기기 완전 격리. **설정은 admin 전역 공유.** hub 는 admin 사이드바·로직을 그대로 재사용 (파이어뱃 로직 한 번 고치면 admin·hub 둘 다).
+- 권한 = `hub_context::permits_tool` **단일 게이트** (FC=ai.rs effective_tools 필터 + MCP=tools/call dispatch 둘 다 동일 호출 → drift 0): ① 필수-on(notes/calendar 핵심 sysmod + owner-scoped 내장 쓰기 save_entity/save_page/delete_* 등) / ② per-hub `allowed_sysmods` opt-in(외부 sysmod, dash 정규화) / ③ deny(Vault/시크릿/network_request/run_module/execute/admin·시스템·mcp·log 관리).
+- **owner 강제 = Rust core 서비스 레이어** (grpc 핸들러 permission_denied/not_found). 프론트는 owner 만 전달 = 우회 불가. owner 주입은 FC(ai.rs) + MCP(inject_hub_owner) 양쪽. 라이브러리 검색 = 본인 ∪ admin 공유(allowed_references) union.
+- 전역 비활성 모듈 실행 차단 = `ModuleManager.run` 단일 choke point (FC/MCP/cron/파이프라인 전 경로).
+- **다음 단계(멀티유저 본 단계)**: `Principal{identity,owner,policy}` 타입 정식화(인증과 함께 설계) + 세션 인증 토큰(현재는 추측불가 UUID) + 동시 한도(QueueManager) + 사용자 계정.
+
 ### 제2항. Core 주요 메서드 영역
 | 영역 | 메서드 |
 |---|---|

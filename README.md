@@ -259,6 +259,19 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 
 ---
 
+### Hub — Embedded AI Chatbot + Per-device Visitor Isolation
+
+Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot **widget** or a full-screen **page** (`/<slug>`). Each anonymous visitor gets a **per-device account** (localStorage session) with fully isolated data — notes, calendar, recall, library, pages, gallery, cron, conversations — never shared across admin↔visitor, visitor↔visitor, or device↔device.
+
+- **Single shared logic** — hub reuses the admin chat + panels; one fix applies to both (no separate hub patching).
+- **Owner-scoping enforced in Rust core** — every hub op carries `owner = hub:<instance>:<session>`; the gRPC service layer rejects cross-tenant access (`permission_denied`). The frontend only forwards the owner — never bypassable.
+- **Single policy gate** (`permits_tool`, identical for FC and MCP paths) — ① always-on core tools (notes/calendar + owner-scoped writes) / ② per-hub opt-in external sysmods / ③ denied: Vault/secrets, arbitrary network, admin/system tools.
+- **Knowledge-base sharing** — admin grants library references per hub; the widget answers from the admin's docs (visitor's own uploads ∪ admin-shared, in one search).
+
+> 🇰🇷 **Hub** — admin 의 AI(같은 로직·같은 사이드바)를 외부 사이트에 붙이는 **챗봇 위젯** / 풀스크린 **페이지**(`/<slug>`)로 노출. 익명 방문자마다 **기기별 계정**(localStorage 세션) + 자료 완전 격리 (admin↔방문자 / 방문자↔방문자 / 기기↔기기). owner-scoping 은 **Rust core 가 강제**(프론트 우회 불가). 권한은 `permits_tool` 단일 게이트(FC·MCP 동일). admin 이 라이브러리 공유 시 위젯이 admin 지식베이스로 답함. Vault/시크릿/admin 도구는 방문자 차단.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
