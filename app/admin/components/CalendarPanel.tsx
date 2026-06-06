@@ -180,6 +180,11 @@ export function CalendarPanel({
 
   useEffect(() => {
     fetchCron();
+    // 스케줄 등록/변경 시 'firebat-refresh' → cron 투영도 재조회 (mount 외에도 갱신해 stale 차단 —
+    // 스케줄 등록했는데 캘린더에 안 뜨던 것 fix).
+    const onRefresh = () => fetchCron();
+    window.addEventListener('firebat-refresh', onRefresh);
+    return () => window.removeEventListener('firebat-refresh', onRefresh);
   }, [fetchCron]);
 
   // bucket: 'YYYY-MM-DD' → events[]

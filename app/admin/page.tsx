@@ -899,7 +899,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
                       <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
                       {p.status === 'approved' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ 실행됨</span>
+                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? '예약됨' : '실행됨'}</span>
                       ) : p.status === 'rejected' ? (
                         <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-slate-400">취소됨</span>
                       ) : p.status === 'error' ? null : p.status === 'past-runat' ? (
