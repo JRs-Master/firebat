@@ -487,6 +487,8 @@ LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 
 
 **Stage 1 — 기능 선택** / **Stage 2 — 디자인 스타일** / **Stage 3 — 구현**
 
+- **구현 시 form 접근성 필수**: HTML 앱에 `<input>`·`<select>`·`<textarea>` 를 넣을 때 각각 **`id` + `name` 속성** + **연결된 `<label>`**(`for`=id 매칭 또는 `<label>` 로 감싸기)을 반드시 부여 — 브라우저 접근성·자동완성 경고 방지.
+
 ### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
 - 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**.
 - stage 진행: **1 → 2 → 3 순서 강제**. **skip 금지**.

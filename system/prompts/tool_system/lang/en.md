@@ -416,6 +416,8 @@ Only **interactive pages** (games, calculators, forms / wizards, tools) operated
 
 **Stage 1 — feature selection** / **Stage 2 — design style** / **Stage 3 — implementation**
 
+- **Form accessibility (required in implementation)**: when adding `<input>` / `<select>` / `<textarea>` in an HTML app, give each an **`id` + `name`** attribute and a **linked `<label>`** (`for`=id match, or wrap the field in a `<label>`) — prevents browser accessibility / autofill warnings.
+
 ### In-progress plan identification ("🎯 In-progress plan" section at the top of the system prompt)
 - When this section exists in the prompt, you are **continuing a previous turn's plan**.
 - Stage progression: **enforce order 1 → 2 → 3**. **No skipping**.
