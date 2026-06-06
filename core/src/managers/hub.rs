@@ -517,13 +517,16 @@ impl HubManager {
             .process_with_tools_opts_with_emit(user_message, &[], &llm_opts, &ai_opts, emit)
             .await?;
 
-        // AI 응답 영역 hub_messages 영속화. data_json 영역 blocks + tool_results + suggestions 영역.
+        // AI 응답을 hub_messages 에 영속화. data_json = blocks + tool_results + suggestions + pendingActions.
+        // pendingActions(plan 승인 카드 등)도 저장 — reload 시 카드 복원 (옛엔 미영속이라 F5 하면 plan 승인 카드 사라짐).
+        // plan 본체는 plan_store(in-memory)라 같은 세션 내 실행은 정상, 서버 재시작 후엔 plan 만료로 재클릭이 graceful reject.
         let data_payload = serde_json::json!({
             "executedActions": response.executed_actions,
             "toolResults": response.tool_results,
             "blocks": response.blocks,
             "suggestions": response.suggestions,
             "libraryHits": response.library_hits,
+            "pendingActions": response.pending_actions,
         });
         let _ = self
             .append_system_message(

@@ -73,6 +73,9 @@ function mapHubMessages(
       toolResults: d.toolResults,
       libraryHits: d.libraryHits,
       suggestions: d.suggestions,
+      // plan 승인 카드 등 — reload 시 복원. plan 본체는 plan_store(in-memory)라 같은 세션 내 실행 정상,
+      // 재시작 후엔 plan 만료로 재클릭이 graceful reject (이중 실행 없음).
+      pendingActions: d.pendingActions,
       data: d,
     } as Message;
   });
