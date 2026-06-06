@@ -10,6 +10,7 @@ import { apiGet, apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibrarySourceModal } from './LibrarySourceModal';
 import type { LibraryHubContext } from './LibraryPanel';
+import { RowActions, InteractiveRow } from './InteractiveRow';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
@@ -431,48 +432,57 @@ export function LibraryReferenceDetail({
             위 업로드 버튼으로 자료를 추가해 주세요.
           </p>
         ) : (
-          <div className="flex flex-col">
-            {sources.map(src => (
-              <div
-                key={src.id}
-                onClick={() => setPreviewId(src.id)}
-                className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
-              >
-                {typeIcon(src.sourceType)}
-                <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-semibold text-slate-700 truncate">
-                    {src.name}
+          <RowActions>
+            <div className="flex flex-col">
+              {sources.map(src => (
+                <InteractiveRow
+                  key={src.id}
+                  id={String(src.id)}
+                  kind="enter"
+                  onActivate={() => setPreviewId(src.id)}
+                  rowClassName="px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                  className="flex items-center gap-2"
+                  actions={
+                    <>
+                      {!hubContext && (src.sourceType === 'pdf' || IMAGE_EXTS.includes(src.sourceType)) && geminiKeyAvailable && (
+                        <Tooltip label="정밀 재추출 (Gemini)">
+                          <button
+                            onClick={() => handleReextract(src)}
+                            disabled={reextractingId === src.id}
+                            className="p-1 text-slate-400 hover:text-indigo-600 transition-all disabled:opacity-50"
+                          >
+                            {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          </button>
+                        </Tooltip>
+                      )}
+                      <Tooltip label={t('common.delete')}>
+                        <button
+                          onClick={() => handleDelete(src)}
+                          className="p-1 text-slate-400 hover:text-red-600 transition-all"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </Tooltip>
+                    </>
+                  }
+                >
+                  {typeIcon(src.sourceType)}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-slate-700 truncate">
+                      {src.name}
+                    </div>
+                    <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                      <span>{src.sourceType.toUpperCase()}</span>
+                      <span>·</span>
+                      <span>{Number(src.charCount).toLocaleString()} 글자</span>
+                      <span>·</span>
+                      <span>{Number(src.chunkCount)} chunks</span>
+                    </div>
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                    <span>{src.sourceType.toUpperCase()}</span>
-                    <span>·</span>
-                    <span>{Number(src.charCount).toLocaleString()} 글자</span>
-                    <span>·</span>
-                    <span>{Number(src.chunkCount)} chunks</span>
-                  </div>
-                </div>
-                {!hubContext && (src.sourceType === 'pdf' || IMAGE_EXTS.includes(src.sourceType)) && geminiKeyAvailable && (
-                  <Tooltip label="정밀 재추출 (Gemini)">
-                    <button
-                      onClick={e => { e.stopPropagation(); handleReextract(src); }}
-                      disabled={reextractingId === src.id}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 transition-all disabled:opacity-100"
-                    >
-                      {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                    </button>
-                  </Tooltip>
-                )}
-                <Tooltip label={t('common.delete')}>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDelete(src); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </Tooltip>
-              </div>
-            ))}
-          </div>
+                </InteractiveRow>
+              ))}
+            </div>
+          </RowActions>
         )}
       </div>
 
