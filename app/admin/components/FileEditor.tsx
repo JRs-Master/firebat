@@ -134,8 +134,11 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   }, [chatStorageKey]);
 
   // 세션 로컬 override — null 이면 어드민 기본값(aiModel prop) 사용
-  const [localModel, setLocalModel]       = useState<string | null>(null);
-  const [localThinking, setLocalThinking] = useState<string | null>(null);
+  // 영속 — 모나코에서 고른 모델·thinking 저장(전역). 첫 실행은 어드민 기본값(저장 0), 변경 시 저장 → 재방문 유지.
+  const [localModel, setLocalModel]       = useState<string | null>(() => { try { return localStorage.getItem('firebat_editor_model'); } catch { return null; } });
+  const [localThinking, setLocalThinking] = useState<string | null>(() => { try { return localStorage.getItem('firebat_editor_thinking'); } catch { return null; } });
+  const [overrideBadge, setOverrideBadge] = useState(false);  // 모델/thinking 변경 시 잠깐 떴다 사라지는 배지
+  const overrideFirstRun = useRef(true);
   const [slashOpen, setSlashOpen]         = useState<'root' | 'model' | 'thinking' | null>(null);
 
   // Diff 프리뷰 모달 — 코드 모드 턴의 before/after 시각화
@@ -172,6 +175,19 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       document.removeEventListener('mousedown', onDown, true);
     };
   }, [slashOpen]);
+
+  // 모델/thinking 변경 → localStorage 저장 + 잠깐 배지 노출 (마운트 복원 시엔 배지 X).
+  useEffect(() => {
+    try {
+      if (localModel) localStorage.setItem('firebat_editor_model', localModel); else localStorage.removeItem('firebat_editor_model');
+      if (localThinking) localStorage.setItem('firebat_editor_thinking', localThinking); else localStorage.removeItem('firebat_editor_thinking');
+    } catch { /* localStorage 불가 환경 무시 */ }
+    if (overrideFirstRun.current) { overrideFirstRun.current = false; return; }  // 첫 마운트(복원) 은 배지 X
+    if (!localModel && !localThinking) { setOverrideBadge(false); return; }
+    setOverrideBadge(true);
+    const id = setTimeout(() => setOverrideBadge(false), 4000);
+    return () => clearTimeout(id);
+  }, [localModel, localThinking]);
 
   const isDirty  = content !== original;
   const lang     = isPageMode ? 'json' : detectLanguage(filePath!);
@@ -605,7 +621,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               </div>
 
               {/* 모델·thinking override 배지 (기본값과 다를 때만) */}
-              {(localModel || localThinking) && (
+              {(localModel || localThinking) && overrideBadge && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-900/30 border-b border-amber-700/40 text-[11px]">
                   <Cpu size={11} className="text-amber-400" />
                   <span className="text-amber-300">
