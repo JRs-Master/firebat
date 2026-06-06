@@ -528,7 +528,20 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               <MonacoEditor
                 height="100%"
                 language={lang}
-                theme="vs-dark"
+                theme="firebat-dark"
+                beforeMount={(monaco) => {
+                  // 드래그 선택색을 자동 단어강조색과 확실히 분리 (둘이 비슷해 선택이 안 된 것처럼 보이던 것)
+                  monaco.editor.defineTheme('firebat-dark', {
+                    base: 'vs-dark', inherit: true, rules: [],
+                    colors: {
+                      'editor.selectionBackground': '#2f5e96',             // 드래그 선택 — 또렷한 파랑
+                      'editor.inactiveSelectionBackground': '#2f5e9655',
+                      'editor.selectionHighlightBackground': '#ffffff12',  // 선택과 같은 텍스트 — 옅은 흰
+                      'editor.wordHighlightBackground': '#ffffff0f',        // 커서 단어 강조 — 옅은 흰
+                      'editor.wordHighlightStrongBackground': '#ffffff1a',
+                    },
+                  });
+                }}
                 defaultValue={content}
                 onChange={(v) => setContent(v ?? '')}
                 onMount={(editor) => { editorRef.current = editor; }}
