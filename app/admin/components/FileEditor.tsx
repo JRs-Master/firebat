@@ -87,6 +87,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
   const [loading, setLoading]   = useState(true);
+  // 모바일(터치)에선 Monaco 편집 미지원 → 에디터 대신 PC 안내 표시 (모든 편집 진입점이 이 단일 렌더를 거침)
+  const [isMobileDevice] = useState(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches);
   const [saving, setSaving]     = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<'ok' | 'err' | null>(null);
   const [error, setError]       = useState<string | null>(null);
@@ -515,6 +517,11 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             {loading ? (
               <div className="flex-1 flex items-center justify-center h-full bg-[#1e1e1e] text-slate-400">
                 <Loader2 size={20} className="animate-spin mr-2" /> 로딩 중...
+              </div>
+            ) : isMobileDevice ? (
+              <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#1e1e1e] text-center gap-2 px-6">
+                <p className="text-sm font-medium text-slate-300">PC 환경에서 편집할 수 있습니다</p>
+                <p className="text-xs text-slate-500 leading-relaxed">코드 편집기는 모바일 터치를 지원하지 않습니다. 데스크톱에서 열어 주세요.</p>
               </div>
             ) : (
               <MonacoEditor
