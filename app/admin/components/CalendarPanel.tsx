@@ -651,7 +651,7 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
         <div className="px-4 py-3 space-y-3">
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={titleId}>제목</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus name="title" autoComplete="off" id={titleId} />
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="title" autoComplete="off" id={titleId} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>

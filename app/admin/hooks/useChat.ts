@@ -353,11 +353,19 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     if (hubContext) {
       const remote = await convBackend.listConversations();
       if (!remote) return;
-      remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-      setConversations(prev => remote.map(r => ({
-        id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
-        messages: prev.find(p => p.id === r.id)?.messages ?? [],
-      })));
+      setConversations(prev => {
+        const merged = remote.map(r => {
+          const local = prev.find(p => p.id === r.id);
+          return {
+            id: r.id, title: r.title, createdAt: r.createdAt,
+            // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서가 튀는 것 방지.
+            updatedAt: Math.max(r.updatedAt ?? r.createdAt, local?.updatedAt ?? 0),
+            messages: local?.messages ?? [],
+          };
+        });
+        merged.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+        return merged;
+      });
       return;
     }
     // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
