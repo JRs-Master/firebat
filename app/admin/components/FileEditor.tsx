@@ -536,9 +536,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     colors: {
                       'editor.selectionBackground': '#2f5e96',             // 드래그 선택 — 또렷한 파랑
                       'editor.inactiveSelectionBackground': '#2f5e9655',
-                      'editor.selectionHighlightBackground': '#ffffff30',  // 선택과 같은 텍스트 — 옅은 흰
-                      'editor.wordHighlightBackground': '#ffffff2b',        // 커서 단어 강조 — 옅은 흰
-                      'editor.wordHighlightStrongBackground': '#ffffff45',
+                      'editor.selectionHighlightBackground': '#ffffff40',  // 선택과 같은 텍스트 — 옅은 흰
+                      'editor.wordHighlightBackground': '#ffffff3b',        // 커서 단어 강조 — 옅은 흰
+                      'editor.wordHighlightStrongBackground': '#ffffff55',
                     },
                   });
                 }}
