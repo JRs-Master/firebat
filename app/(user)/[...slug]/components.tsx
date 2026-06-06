@@ -71,18 +71,18 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Accordion':     return <AccordionComp items={p.items ?? []} />;
     case 'Progress':      return <ProgressComp value={p.value ?? 0} max={p.max} label={p.label} color={p.color} />;
     case 'Badge':         return <BadgeComp text={p.text ?? ''} color={p.color} />;
-    case 'Alert':         return <AlertComp message={p.message ?? ''} type={p.type} title={p.title} action={p.action} />;
-    case 'Callout':       return <AlertComp message={p.message ?? ''} type={p.type ?? 'info'} title={p.title} action={p.action} />;
+    case 'Alert':         return <AlertComp message={p.message ?? p.content ?? p.text ?? p.body ?? ''} type={p.type} title={p.title} action={p.action} />;
+    case 'Callout':       return <AlertComp message={p.message ?? p.content ?? p.text ?? p.body ?? ''} type={p.type ?? 'info'} title={p.title} action={p.action} />;
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
     case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} series={p.series} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
-    case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
+    case 'Timeline':      return <TimelineComp items={p.items ?? p.events ?? []} />;
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
-    case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
+    case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? p.badges ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
     case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} cone={p.cone} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
@@ -114,9 +114,12 @@ type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 const stripChoiceMarker = (s: string): string =>
   s.replace(/^\s*(?:[①-⑩]|\d+[.)])\s*/u, '');
 
-// 정답 정규화 — answer(1-based, 스키마 정공) 우선, AI 가 answerIndex(0-based)로 보내면 +1 환산.
-const quizAns = (answer?: number, answerIndex?: number): number | undefined =>
-  typeof answer === 'number' ? answer : typeof answerIndex === 'number' ? answerIndex + 1 : undefined;
+// 정답 정규화 — AI 는 answer·answerIndex 둘 다 0-based(choices 인덱스, 첫 보기=0)로 보낸다(실측 2건:
+// answerIndex 3=④, answer 1=②). 내부 ans 는 1-based(보기 번호 = i+1)라 +1 환산. 먼저 온 값 사용.
+const quizAns = (answer?: number, answerIndex?: number): number | undefined => {
+  const idx = typeof answer === 'number' ? answer : typeof answerIndex === 'number' ? answerIndex : undefined;
+  return idx === undefined ? undefined : idx + 1;
+};
 
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
 function QuizBody({
