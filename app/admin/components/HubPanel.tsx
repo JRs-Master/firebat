@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useId } from 'react';
-import { Bot, Plus, Trash2, ChevronRight, Loader2 } from 'lucide-react';
+import { Bot, Plus, Trash2, Loader2 } from 'lucide-react';
+import { RowActions, InteractiveRow } from './InteractiveRow';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -173,32 +174,35 @@ export function HubPanel() {
             "새 Hub" 버튼으로 인스턴스를 만들어주세요.
           </p>
         ) : (
-          <div className="flex flex-col">
-            {instances.map(inst => (
-              <div
-                key={inst.id}
-                className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => setSelectedInstance(inst)}
-              >
-                <div className="flex-1 min-w-0">
+          <RowActions>
+            <div className="flex flex-col">
+              {instances.map(inst => (
+                <InteractiveRow
+                  key={inst.id}
+                  id={String(inst.id)}
+                  kind="enter"
+                  onActivate={() => setSelectedInstance(inst)}
+                  rowClassName="px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                  actions={
+                    <Tooltip label={t('common.delete')}>
+                      <button
+                        onClick={() => handleDelete(inst)}
+                        className="p-1 text-slate-400 hover:text-red-600 transition-all"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </Tooltip>
+                  }
+                >
                   <div className="flex items-center gap-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full ${inst.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     <span className="text-[13px] font-semibold text-slate-700 truncate">{inst.name}</span>
                   </div>
                   <div className="text-[10px] text-slate-400 truncate mt-0.5 font-mono">{inst.slug}</div>
-                </div>
-                <Tooltip label={t('common.delete')}>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDelete(inst); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </Tooltip>
-                <ChevronRight size={14} className="text-slate-300 group-hover:text-slate-500 transition-colors shrink-0" />
-              </div>
-            ))}
-          </div>
+                </InteractiveRow>
+              ))}
+            </div>
+          </RowActions>
         )}
       </div>
     </div>
