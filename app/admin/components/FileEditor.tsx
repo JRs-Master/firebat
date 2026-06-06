@@ -551,6 +551,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   minimap: { enabled: false },
                   scrollBeyondLastLine: false,
                   wordWrap: 'on',
+                  disableMonospaceOptimizations: true,  // 한글(가변폭 fallback)+ASCII 혼합 줄에서 선택 하이라이트가 어긋나던 것 — monospace 최적화 끄고 글자별 정확 측정
                   stopRenderingLineAfter: -1,  // 거대 한 줄(PageSpec HTML)도 끝까지 렌더 — 기본 10000자 컷이라 긴 줄의 선택 하이라이트/텍스트가 끝까지 안 보이던 것
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
