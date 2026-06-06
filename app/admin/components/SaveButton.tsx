@@ -39,6 +39,8 @@ export interface SaveButtonProps {
   type?: 'button' | 'submit';
   /** form attribute — 외부 form 과 연결 시 */
   form?: string;
+  /** 다크 배경(에디터 등)용 — disabled 시 밝은 회색(slate-300) 대신 어두운 회색 */
+  dark?: boolean;
 }
 
 export function SaveButton({
@@ -51,6 +53,7 @@ export function SaveButton({
   title,
   type = 'button',
   form,
+  dark,
 }: SaveButtonProps) {
   const t = useTranslations();
   const isSaving = state === 'saving';
@@ -89,7 +92,7 @@ export function SaveButton({
       onClick={handleClick}
       disabled={isDisabled}
       title={title}
-      className={`inline-flex items-center justify-center gap-1 font-bold text-white rounded transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed ${colorCls} ${sizeCls} ${className}`}
+      className={`inline-flex items-center justify-center gap-1 font-bold text-white rounded transition-colors ${dark ? 'disabled:bg-slate-700 disabled:text-slate-500' : 'disabled:bg-slate-300'} disabled:cursor-not-allowed ${colorCls} ${sizeCls} ${className}`}
     >
       <Icon className={isSaving ? 'animate-spin' : ''} />
       <span>{labelText}</span>

@@ -466,7 +466,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             {/* AI 버튼 */}
             <Tooltip label="AI 어시스트 (Ctrl+K)">
               <button
-                onClick={openAiPanel}
+                onClick={() => { if (aiOpen) setAiOpen(false); else openAiPanel(); }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
                   aiOpen
                     ? 'bg-slate-600 text-white'
@@ -492,6 +492,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             <span className="text-[11px] text-slate-500 font-mono">Ctrl+S</span>
             <SaveButton
               size="md"
+              dark
               state={(
                 saving ? 'saving' :
                 saveFeedback === 'ok' ? 'saved' :
