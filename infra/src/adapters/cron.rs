@@ -511,6 +511,9 @@ impl ICronPort for TokioCronAdapter {
             return Vec::new();
         }
         let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::UTC);
+        // 예정(occurrence)은 **미래만** — 과거 발화는 실행 이력(log)이 담당. 하한을 now 로 막아 (1) cron 생성
+        // 전(과거) occurrence 가 캘린더에 뜨던 것, (2) 이미 발화한 occurrence 가 예정+완료로 중복 표시되던 것 차단.
+        let now_utc = Utc::now();
         // 반복 잡 runaway 방어 — 캘린더는 월 단위 조회라 잡당 500건이면 분 단위 반복도 충분.
         const MAX_PER_JOB: usize = 500;
 
@@ -536,9 +539,11 @@ impl ICronPort for TokioCronAdapter {
                                 .end_at
                                 .as_deref()
                                 .and_then(|e| Self::parse_in_timezone(e, &tz_name));
-                            // schedule.after 는 strictly after — from 직전을 anchor 로.
+                            // schedule.after 는 strictly after — anchor 직후부터. 예정은 미래만이라 하한을
+                            // now 로 막음 (과거 발화는 log 로 표시; 미래 달 조회는 from_dt 가 더 커 그대로).
+                            let occ_from = if from_dt > now_utc { from_dt } else { now_utc };
                             let anchor =
-                                (from_dt - chrono::Duration::seconds(1)).with_timezone(&tz);
+                                (occ_from - chrono::Duration::seconds(1)).with_timezone(&tz);
                             for fire in schedule.after(&anchor).take(MAX_PER_JOB) {
                                 let fire_utc = fire.with_timezone(&Utc);
                                 if fire_utc > to_dt {
