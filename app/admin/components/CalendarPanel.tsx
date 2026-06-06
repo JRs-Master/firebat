@@ -20,6 +20,7 @@ import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { ScheduleModal, type CronJob } from './CronPanel';
+import { useEvents } from '../hooks/events-manager';
 
 interface CalEvent {
   id: string;
@@ -186,6 +187,10 @@ export function CalendarPanel({
     window.addEventListener('firebat-refresh', onRefresh);
     return () => window.removeEventListener('firebat-refresh', onRefresh);
   }, [fetchCron]);
+
+  // cron 실행(StatusManager status:update) 시 cron 투영(예정·실행이력) 자동 갱신 — 스케줄이 실제
+  // 발화하면 캘린더가 열려 있을 때 실시간 반영. admin 전용 (fetchCron 이 hubMode 면 no-op).
+  useEvents(['status:update'], () => { void fetchCron(); });
 
   // bucket: 'YYYY-MM-DD' → events[]
   const eventsByDate = useMemo(() => {
