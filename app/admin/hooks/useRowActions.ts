@@ -21,11 +21,18 @@ export function useRowActions() {
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(hover: none)');
-    setHoverNone(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setHoverNone(e.matches);
+    // (hover: none) 단독은 일부 터치 폰이 hover 가능으로 오보고해 false 가 나옴 → 탭-노출 모드가
+    // 영영 안 켜진다. 주 입력이 터치인지(pointer: coarse) + 좁은 폭(<768)까지 OR 로 묶어 견고하게 판정.
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)');
+    const compute = () => mq.matches || window.innerWidth < 768;
+    setHoverNone(compute());
+    const onChange = () => setHoverNone(compute());
     mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
+    window.addEventListener('resize', onChange);
+    return () => {
+      mq.removeEventListener('change', onChange);
+      window.removeEventListener('resize', onChange);
+    };
   }, []);
 
   const isActive = useCallback((id: string) => activeId === id, [activeId]);
