@@ -25,10 +25,12 @@ interface ComponentRendererProps {
 
 // ── Component 렌더러 ───────────────────────────────────────────────────────
 export function ComponentRenderer({ components, fullHeight }: ComponentRendererProps & { fullHeight?: boolean }) {
+  // Html 단독 블록 = standalone 앱(페이지 전체) → HtmlComp 가 auto-height(단일 스크롤). 다른 블록과 섞이면 embedded(고정).
+  const htmlStandalone = components.length === 1 && ((TYPE_ALIAS[(components[0]?.type || '').toLowerCase()] ?? components[0]?.type) === 'Html');
   return (
     <div className={fullHeight ? 'h-full' : 'flex flex-col gap-6'}>
       {components.map((comp, i) => (
-        <ComponentSwitch key={i} comp={comp} />
+        <ComponentSwitch key={i} comp={comp} standalone={htmlStandalone} />
       ))}
     </div>
   );
@@ -48,7 +50,7 @@ const TYPE_ALIAS: Record<string, string> = {
   quiz: 'Quiz', quizgroup: 'QuizGroup', quiz_group: 'QuizGroup',
 };
 
-function ComponentSwitch({ comp }: { comp: ComponentDef }) {
+function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
   const { type: rawType, props = {} } = comp;
   const p = props as any;
   const type = TYPE_ALIAS[(rawType || '').toLowerCase()] ?? rawType;
@@ -65,7 +67,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
-    case 'Html':          return <HtmlComp content={p.content ?? ''} dependencies={p.dependencies as string[] | undefined} />;
+    case 'Html':          return <HtmlComp content={p.content ?? ''} dependencies={p.dependencies as string[] | undefined} standalone={standalone} />;
     case 'Slider':        return <SliderComp label={p.label} min={p.min} max={p.max} step={p.step} defaultValue={p.defaultValue} unit={p.unit} />;
     case 'Tabs':          return <TabsComp tabs={p.tabs ?? []} />;
     case 'Accordion':     return <AccordionComp items={p.items ?? []} />;
@@ -870,7 +872,19 @@ function sanitizeHtmlBlock(content: string): string {
   return styleTags.join('') + sanitizedBody;
 }
 
-function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
+function HtmlComp({ content, dependencies, standalone }: { content: string; dependencies?: string[]; standalone?: boolean }) {
+  // standalone(페이지 단독 Html = 앱) → postMessage 로 내용 높이를 받아 iframe 자동 높이 = 페이지 단일 스크롤.
+  // embedded(다른 블록과 공존) → 차트처럼 고정 높이 + 내부 스크롤 (페이지 스크롤 리듬 일정).
+  const frameId = useId();
+  const [autoH, setAutoH] = useState<number | null>(null);
+  useEffect(() => {
+    if (!standalone) return;
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'fb-html-h' && e.data?.id === frameId && typeof e.data.height === 'number') setAutoH(e.data.height);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [standalone, frameId]);
   // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
   //        <script> 태그가 있으면 자동 iframe srcDoc — inline DOM 의 DOMPurify 가
   //        XSS 방어 표준으로 <script> 자동 제거하므로 BMI 계산기 등 인터랙티브 페이지
@@ -895,6 +909,8 @@ function HtmlComp({ content, dependencies }: { content: string; dependencies?: s
 
   // CDN library 격리 필요 케이스 — iframe srcDoc 유지.
   const cdnTags = buildCdnTags(dependencies);
+  // standalone 일 때만 — iframe 내용 높이를 부모로 postMessage (sandbox 라 부모가 직접 못 읽음 → 부모가 받아 iframe 높이 세팅).
+  const autoScript = standalone ? `<script>(function(){var id=${JSON.stringify(frameId)};var peak=0;function m(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=m();if(h<=peak)return;peak=h;parent.postMessage({type:'fb-html-h',id:id,height:h},'*');}function a(){if(!document.body)return;if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();}if(document.body)a();else document.addEventListener('DOMContentLoaded',a);window.addEventListener('load',send);[100,500,1500,3000].forEach(function(t){setTimeout(send,t);});})();<\/script>` : '';
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
   // CSP meta — sandbox=allow-scripts 위에 defense-in-depth: script src 화이트리스트 + frame/form/base 차단.
@@ -914,7 +930,7 @@ ${IFRAME_CSP_META}
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; min-height: 100%; overflow: auto; }
+  html, body { margin: 0; padding: 0; min-height: 100%; overflow: ${standalone ? 'hidden' : 'auto'}; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;
@@ -973,7 +989,7 @@ ${cdnTags}
     }
   }
 </style>
-</head><body><div id="firebat-wrap">${content}</div></body></html>`;
+</head><body><div id="firebat-wrap">${content}</div>${autoScript}</body></html>`;
 
   return (
     <iframe
@@ -981,7 +997,8 @@ ${cdnTags}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       loading="lazy"
-      className="w-full min-h-[500px] h-[500px] border-0 bg-white"
+      style={standalone && autoH ? { height: autoH } : undefined}
+      className={standalone ? 'w-full min-h-[400px] border-0 bg-white block' : 'w-full min-h-[500px] h-[500px] border-0 bg-white'}
       title="Html content"
     />
   );
