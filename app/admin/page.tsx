@@ -140,10 +140,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   // 카드 내 aggregate state
   const [toggleValues, setToggleValues] = useState<Record<number, Set<string>>>({});
   const [inputValues, setInputValues] = useState<Record<number, string[]>>({});  // idx → 여러 칸 배열
+  const [customInput, setCustomInput] = useState('');  // 순수 선택지(string-only) 카드의 "직접 입력" 칸
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   // aggregate 항목 (toggle / input / plan-revise) 가 하나라도 있으면 카드 하단 전송 버튼 노출
   const hasAggregate = suggestions.some(it => typeof it !== 'string' && (it.type === 'toggle' || it.type === 'input' || it.type === 'plan-revise'));
+  // 순수 선택지 카드(string 버튼만, 입력/토글/플랜 없음) — AI 가 "원하는 거 말하라"며 입력칸을 안 줘도
+  // UI 가 항상 "직접 입력" 칸을 보장. AI 행동에 의존하지 않음.
+  const pureChoiceCard = suggestions.length > 0 && suggestions.every(it => typeof it === 'string');
 
   // plan-revise 가 카드에 있으면 전송 시 planReviseId 동봉
   const aggregateMeta = (() => {
@@ -164,6 +168,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
     });
     setToggleValues(tInit);
     setInputValues(iInit);
+    setCustomInput('');
   }, [suggestions]);
 
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
@@ -233,6 +238,12 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
     const text = parts.join('\n');
     if (!text) return;
     onSuggestion?.(text, aggregateMeta);
+  };
+
+  // 순수 선택지 카드의 "직접 입력" 전송 — label 없이 사용자가 친 그대로 raw 전송.
+  const submitCustom = () => {
+    const v = customInput.trim();
+    if (v) onSuggestion?.(v);
   };
 
   return (
@@ -339,6 +350,34 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
         }
         return null;
       })}
+      {/* 순수 선택지 카드엔 "직접 입력" 칸을 항상 노출 — AI 가 input 타입을 안 줘도 사용자가 커스텀 입력 가능 */}
+      {pureChoiceCard && (
+        <div className="flex items-start gap-1.5 px-3 py-2.5 border-t border-slate-200 bg-slate-100/40">
+          <textarea
+            ref={el => { textareaRefs.current['__custom'] = el; }}
+            value={customInput}
+            onChange={e => setCustomInput(e.target.value)}
+            onKeyDown={e => {
+              if (isMobile()) return;                                   // 모바일: Enter=줄바꿈, 버튼으로 전송
+              if (e.key === 'Enter' && e.shiftKey) return;              // Shift+Enter=줄바꿈
+              if (e.key === 'Enter') { e.preventDefault(); submitCustom(); } // PC: Enter=전송
+            }}
+            placeholder="또는 직접 입력..."
+            rows={1}
+            style={{ resize: 'none', overflow: 'hidden' }}
+            onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
+            id={`${inlineInputBaseId}-custom`}
+            name="customInput"
+            autoComplete="off"
+            aria-label="직접 입력"
+            className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+          />
+          <button onClick={submitCustom} disabled={loading || !customInput.trim()}
+            className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12px] font-bold rounded-full transition-colors shrink-0">
+            <Send size={12} />
+          </button>
+        </div>
+      )}
       {/* 카드 하단 공통 전송 버튼 — aggregate 항목 있을 때만 */}
       {hasAggregate && (
         <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-slate-100/60 border-t border-slate-200">
