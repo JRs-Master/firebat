@@ -11,13 +11,12 @@
  * dashboard 로 발전.
  */
 import { useState, useEffect, useCallback, useId } from 'react';
-import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network, ChevronRight, ChevronDown } from 'lucide-react';
+import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
-import { rowActionsClass } from '../utils/row-actions';
-import { useRowActions } from '../hooks/useRowActions';
+import { RowActions, InteractiveRow } from './InteractiveRow';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -78,7 +77,6 @@ export function EntitiesPanel({
   hubContext?: EntitiesHubContext;
 } = {}) {
   const t = useTranslations();
-  const rows = useRowActions();
   const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -303,41 +301,37 @@ export function EntitiesPanel({
             {query ? '매칭 없음' : '등록된 엔티티 없음. + 버튼으로 추가'}
           </p>
         ) : (
+          <RowActions>
           <ul className="list-none p-0 m-0">
             {entities.map(e => {
               const isExpanded = expandedId === e.id;
               const facts = timeline[e.id] ?? [];
               return (
                 <li key={e.id} className="border-b border-slate-100">
-                  <div className="group flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
-                    <button
-                      onClick={(ev) => { ev.stopPropagation(); handleExpand(e.id); }}
-                      className="p-1 text-slate-300 hover:text-slate-600 transition-colors shrink-0"
-                      aria-label={isExpanded ? '상세 닫기' : '상세 열기'}
-                    >
-                      {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                    <button
-                      onClick={() => rows.handleRowClick(String(e.id))}
-                      className="flex-1 text-left flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0"
-                    >
-                      <span className="text-[11px] font-bold text-slate-700 truncate">{e.name}</span>
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{e.type}</span>
-                      {(e.factCount ?? 0) > 0 && (
-                        <span className="text-[9px] text-slate-400 tabular-nums shrink-0">{e.factCount}</span>
-                      )}
-                    </button>
-                    <span className={rowActionsClass(rows.isActive(String(e.id)))}>
-                    <Tooltip label={t('common.delete')}>
-                      <button
-                        onClick={() => handleDelete(e)}
-                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </Tooltip>
-                    </span>
-                  </div>
+                  <InteractiveRow
+                    id={String(e.id)}
+                    kind="expand"
+                    expanded={isExpanded}
+                    onActivate={() => handleExpand(e.id)}
+                    rowClassName="px-2 py-1.5 hover:bg-slate-50"
+                    className="flex items-center gap-2"
+                    actions={
+                      <Tooltip label={t('common.delete')}>
+                        <button
+                          onClick={() => handleDelete(e)}
+                          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </Tooltip>
+                    }
+                  >
+                    <span className="text-[11px] font-bold text-slate-700 truncate">{e.name}</span>
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{e.type}</span>
+                    {(e.factCount ?? 0) > 0 && (
+                      <span className="text-[9px] text-slate-400 tabular-nums shrink-0">{e.factCount}</span>
+                    )}
+                  </InteractiveRow>
                   {isExpanded && (
                     <div className="px-3 py-2 bg-slate-50/50 border-t border-slate-100">
                       {e.aliases && e.aliases.length > 0 && (
@@ -417,6 +411,7 @@ export function EntitiesPanel({
               );
             })}
           </ul>
+          </RowActions>
         )}
       </div>
 
@@ -443,7 +438,6 @@ export function EntitiesPanel({
 
 function EventsPanel() {
   const t = useTranslations();
-  const rows = useRowActions();
   const queryId = useId();
   const typeFilterId = useId();
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -522,44 +516,45 @@ function EventsPanel() {
         ) : events.length === 0 ? (
           <p className="px-3 py-4 text-[11px] text-slate-400 italic">사건 없음</p>
         ) : (
+          <RowActions>
           <ul className="list-none p-0 m-0">
             {events.map(e => (
               <li key={e.id} className="border-b border-slate-100">
-                <div className="group flex items-start gap-1 px-2 py-1.5 hover:bg-slate-50">
-                  <button
-                    onClick={() => rows.handleRowClick(String(e.id))}
-                    className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer"
-                  >
-                    <div className="flex items-center gap-1 mb-1">
-                      <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-700 shrink-0 font-bold">{e.type}</span>
-                      <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{e.title}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[9px] text-slate-400">
-                      <Clock size={8} />
-                      <span className="tabular-nums">{formatDate(e.occurredAt)}</span>
-                      {e.who && <span>· {e.who}</span>}
-                      {e.entityIds && e.entityIds.length > 0 && (
-                        <span>· {e.entityIds.length} entities</span>
-                      )}
-                    </div>
-                    {e.description && (
-                      <div className="text-[10px] text-slate-600 mt-0.5 line-clamp-2">{e.description}</div>
+                <InteractiveRow
+                  id={String(e.id)}
+                  kind="none"
+                  rowClassName="px-2 py-1.5 hover:bg-slate-50"
+                  actions={
+                    <Tooltip label={t('common.delete')}>
+                      <button
+                        onClick={() => handleDelete(e.id)}
+                        className="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <Trash2 size={9} />
+                      </button>
+                    </Tooltip>
+                  }
+                >
+                  <div className="flex items-center gap-1 mb-1">
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-700 shrink-0 font-bold">{e.type}</span>
+                    <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{e.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[9px] text-slate-400">
+                    <Clock size={8} />
+                    <span className="tabular-nums">{formatDate(e.occurredAt)}</span>
+                    {e.who && <span>· {e.who}</span>}
+                    {e.entityIds && e.entityIds.length > 0 && (
+                      <span>· {e.entityIds.length} entities</span>
                     )}
-                  </button>
-                  <span className={rowActionsClass(rows.isActive(String(e.id)))}>
-                  <Tooltip label={t('common.delete')}>
-                    <button
-                      onClick={() => handleDelete(e.id)}
-                      className="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <Trash2 size={9} />
-                    </button>
-                  </Tooltip>
-                  </span>
-                </div>
+                  </div>
+                  {e.description && (
+                    <div className="text-[10px] text-slate-600 mt-0.5 line-clamp-2">{e.description}</div>
+                  )}
+                </InteractiveRow>
               </li>
             ))}
           </ul>
+          </RowActions>
         )}
       </div>
     </>

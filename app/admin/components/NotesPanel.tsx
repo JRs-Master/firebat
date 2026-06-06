@@ -7,14 +7,13 @@
  * 데이터: data/notes/*.md (markdown + frontmatter).
  */
 import { useState, useEffect, useCallback, useId } from 'react';
-import { Search, Plus, Trash2, X, NotebookText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
-import { rowActionsClass } from '../utils/row-actions';
-import { useRowActions } from '../hooks/useRowActions';
+import { RowActions, InteractiveRow } from './InteractiveRow';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -73,7 +72,6 @@ export function NotesPanel({
   hubContext?: NotesHubContext;
 } = {}) {
   const t = useTranslations();
-  const rows = useRowActions();
   const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
@@ -185,61 +183,59 @@ export function NotesPanel({
             {query ? '매칭 없음' : '노트 없음. + 버튼으로 추가'}
           </p>
         ) : (
+          <RowActions>
           <ul className="list-none p-0 m-0">
             {notes.map(n => {
               const isExpanded = expandedSlug === n.slug;
               const detail = details[n.slug];
               return (
                 <li key={n.slug} className="border-b border-slate-100">
-                  <div className="group flex items-center gap-1 px-2 py-1.5 hover:bg-slate-50">
-                    <button
-                      onClick={(ev) => { ev.stopPropagation(); handleExpand(n.slug); }}
-                      className="p-1 text-slate-300 hover:text-slate-600 transition-colors shrink-0 self-start"
-                      aria-label={isExpanded ? '상세 닫기' : '상세 열기'}
-                    >
-                      {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                    <button
-                      onClick={() => rows.handleRowClick(String(n.slug))}
-                      className="flex-1 text-left flex items-start gap-2 cursor-pointer bg-transparent border-0 p-0 min-w-0"
-                    >
-                      <NotebookText size={11} className="mt-0.5 shrink-0 text-slate-400" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-slate-700 truncate">{n.title || n.slug}</div>
-                        {n.contentPreview && !isExpanded && (
-                          <div className="text-[10px] text-slate-500 truncate mt-0.5">{n.contentPreview}</div>
-                        )}
-                        {n.tags && n.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-0.5 mt-0.5">
-                            {n.tags.slice(0, 3).map((tag, i) => (
-                              <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{tag}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                    <span className={rowActionsClass(rows.isActive(n.slug))}>
-                    <Tooltip label={t('common.edit')}>
-                      <button
-                        onClick={() => { setEditing(detail || n); setShowCreate(true); }}
-                        className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                    </Tooltip>
-                    <Tooltip label={t('common.delete')}>
-                      <button
-                        onClick={() => handleDelete(n)}
-                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 size={10} />
-                      </button>
-                    </Tooltip>
-                    </span>
-                  </div>
+                  <InteractiveRow
+                    id={String(n.slug)}
+                    kind="expand"
+                    expanded={isExpanded}
+                    onActivate={() => handleExpand(n.slug)}
+                    rowClassName="px-2 py-1.5 hover:bg-slate-50"
+                    className="flex items-start gap-2"
+                    actions={
+                      <>
+                        <Tooltip label={t('common.edit')}>
+                          <button
+                            onClick={() => { setEditing(detail || n); setShowCreate(true); }}
+                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                        </Tooltip>
+                        <Tooltip label={t('common.delete')}>
+                          <button
+                            onClick={() => handleDelete(n)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </Tooltip>
+                      </>
+                    }
+                  >
+                    <NotebookText size={11} className="mt-0.5 shrink-0 text-slate-400" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold text-slate-700 truncate">{n.title || n.slug}</div>
+                      {n.contentPreview && !isExpanded && (
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">{n.contentPreview}</div>
+                      )}
+                      {n.tags && n.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-0.5">
+                          {n.tags.slice(0, 3).map((tag, i) => (
+                            <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{tag}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </InteractiveRow>
                   {isExpanded && detail && (
                     <div className="px-3 py-2 bg-slate-50/50 border-t border-slate-100">
                       <div className="text-[10px] text-slate-500 mb-1.5">
@@ -257,6 +253,7 @@ export function NotesPanel({
               );
             })}
           </ul>
+          </RowActions>
         )}
       </div>
 

@@ -7,13 +7,12 @@
  */
 import { useId, useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, FileCode, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
-import { rowActionsClass } from '../utils/row-actions';
-import { useRowActions } from '../hooks/useRowActions';
+import { RowActions, InteractiveRow } from './InteractiveRow';
 
 interface TemplateEntry {
   slug: string;
@@ -51,7 +50,6 @@ export function TemplatesPanel({
   hubContext?: TemplatesHubContext;
 }) {
   const t = useTranslations();
-  const rows = useRowActions();
   const newSlugId = useId();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -193,40 +191,37 @@ export function TemplatesPanel({
             </button>
           </div>
         ) : (
-          <div className="space-y-0.5 px-2 py-1">
-            {templates.map(tpl => (
-              <div
-                key={tpl.slug}
-                className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                onClick={() => rows.handleRowClick(tpl.slug, rows.hoverNone ? undefined : () => onEditFile?.(`user/templates/${tpl.slug}/template.json`))}
-              >
-                <FileCode size={13} className="shrink-0 text-slate-400" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-bold text-slate-700 truncate">{tpl.name}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{tpl.slug}</div>
-                </div>
-                <span className={rowActionsClass(rows.isActive(tpl.slug))}>
-                  <Tooltip label={t('common.delete')}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(tpl.slug); }}
-                      className="p-1 text-slate-400 hover:text-red-500 transition-colors"
-                      aria-label="삭제"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </Tooltip>
-                </span>
-                {/* > = 명시적 진입(에디터) 버튼. 본문 탭은 모바일에서 액션 노출만. */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); onEditFile?.(`user/templates/${tpl.slug}/template.json`); }}
-                  className="p-1 text-slate-300 hover:text-slate-600 transition-colors shrink-0"
-                  aria-label={t('common.open')}
+          <RowActions>
+            <div className="space-y-0.5 px-2 py-1">
+              {templates.map(tpl => (
+                <InteractiveRow
+                  key={tpl.slug}
+                  id={tpl.slug}
+                  kind="enter"
+                  onActivate={() => onEditFile?.(`user/templates/${tpl.slug}/template.json`)}
+                  rowClassName="px-2 py-1.5 rounded-lg hover:bg-slate-100"
+                  className="flex items-center gap-1.5"
+                  actions={
+                    <Tooltip label={t('common.delete')}>
+                      <button
+                        onClick={() => handleDelete(tpl.slug)}
+                        className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                        aria-label="삭제"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </Tooltip>
+                  }
                 >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
+                  <FileCode size={13} className="shrink-0 text-slate-400" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-bold text-slate-700 truncate">{tpl.name}</div>
+                    <div className="text-[10px] text-slate-400 truncate">{tpl.slug}</div>
+                  </div>
+                </InteractiveRow>
+              ))}
+            </div>
+          </RowActions>
         )}
       </div>
 
