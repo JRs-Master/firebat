@@ -91,7 +91,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
-    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? []} answer={p.answer} answerIndex={p.answerIndex} explanation={p.explanation} view={p.view} />;
+    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex} explanation={p.explanation} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? []} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
@@ -230,7 +230,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
 
 function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive' }: {
   passage?: string; boxes?: string[]; figures?: ComponentDef[];
-  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; answer?: number; answerIndex?: number; explanation?: string; figures?: ComponentDef[] }>;
+  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; options?: string[]; answer?: number; answerIndex?: number; explanation?: string; figures?: ComponentDef[] }>;
   view?: QuizView;
 }) {
   const [selected, setSelected] = useState<Record<number, number>>({});
@@ -253,7 +253,7 @@ function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive
         {qs.map((q, i) => (
           <QuizBody
             key={`q-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
-            choices={q.choices ?? []} answer={q.answer} answerIndex={q.answerIndex} explanation={q.explanation} view={view}
+            choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex} explanation={q.explanation} view={view}
             selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected(s => ({ ...s, [i]: n }))}
           />
         ))}
