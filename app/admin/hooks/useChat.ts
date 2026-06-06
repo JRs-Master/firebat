@@ -553,6 +553,14 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
   const handleNewConv = useCallback(() => {
+    // 빈 새 대화가 이미 있으면 재사용 — "새 대화" 연타로 빈 대화가 무한 생성·저장되던 것 방지.
+    // (메시지가 들어가야 진짜 대화로 목록에 누적되는 흐름 복원)
+    const existingEmpty = conversations.find(c => !(c.messages ?? []).some(m => m.id !== 'system-init' && m.role === 'user'));
+    if (existingEmpty) {
+      setActiveConvId(existingEmpty.id);
+      dispatch({ type: 'LOAD', messages: existingEmpty.messages?.length ? existingEmpty.messages : [INIT_MESSAGE] });
+      return;
+    }
     // admin = client-side makeConv / hub = backend create-conversation. convBackend 가 흡수.
     void (async () => {
       const newConv = await convBackend.createConversation();
@@ -583,6 +591,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     void (async () => {
       const remoteMsgs = cleanMessages(await convBackend.listMessages(id));
       const remoteRealMsgCount = remoteMsgs.filter(m => m.id !== 'system-init').length;
+      // 서버에 실제 메시지가 없으면(빈 새 대화) 로컬 welcome([INIT_MESSAGE])을 []로 덮지 않는다 — 환영문 유지.
+      if (remoteRealMsgCount === 0) return;
       if (!(localRealMsgCount === 0 || remoteRealMsgCount > localRealMsgCount)) return;
       const remoteMerged = preserveLocalPendingStatus(remoteMsgs, conv.messages);
       dispatch({ type: 'LOAD', messages: remoteMerged });
@@ -611,9 +621,10 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           setActiveConvId('');
           dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
         } else {
-          const last = updated[updated.length - 1];
-          setActiveConvId(last.id);
-          dispatch({ type: 'LOAD', messages: last.messages });
+          // 가장 최근(updatedAt) 대화를 활성화 — 배열 마지막(정렬에 따라 가장 오래된 것일 수 있음) 대신.
+          const next = updated.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
+          setActiveConvId(next.id);
+          dispatch({ type: 'LOAD', messages: next.messages });
         }
       }
       return updated;

@@ -1158,7 +1158,7 @@ export function Sidebar({
                       <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(conv.createdAt)}</p>
                     </div>
                     {/* 공유·정리·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 (활성 대화도 force visible) */}
-                    <span className={rowActionsClass(convSelected)}>
+                    <span className={rowActionsClass(convSelected || conv.id === activeConvId)}>
                       <ShareConvButton
                         convId={conv.id}
                         title={conv.title}
