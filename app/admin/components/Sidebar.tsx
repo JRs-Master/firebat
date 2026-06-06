@@ -1138,6 +1138,7 @@ export function Sidebar({
                         setSelectedItem(convSelected ? null : `conv:${conv.id}`);
                       }
                       onSelectConv(conv.id);
+                      if (isMobile) closeSidebar(); // 모바일: 대화 선택 시 사이드바 접힘
                     }}
                     className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
                       conv.id === activeConvId
@@ -1241,7 +1242,7 @@ export function Sidebar({
                         <p className="text-[12px] font-medium truncate text-slate-600">{conv.title}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">30일 후 자동 삭제</p>
                       </div>
-                      <span className={rowActionsClass(false)}>
+                      <span className={rowActionsClass(true)}>
                         <Tooltip label={t('common.restore')}>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRestoreConv(conv.id); }}

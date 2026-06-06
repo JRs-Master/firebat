@@ -110,6 +110,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // 최신 messages ref — queueMicrotask / async 콜백에서 stale closure 회피
   const messagesRef = useRef<Message[]>([INIT_MESSAGE]);
   messagesRef.current = messages;
+  // 대화 load(열어보기)로 채워진 변경은 updatedAt 갱신 안 함 — 단순 열람이 목록 최상단으로 올라가던 #2.
+  // handleSelectConv 가 여는 대화 id 설정, 새 메시지 전송(handleSubmit) 이 해제. (값=대화 id, save effect 가 비교)
+  const suppressBumpRef = useRef<string | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   // 모바일 화면 자동 잠금 방지 — AI 응답 중 SSE 끊김 / "로봇 사라짐" 방지.
@@ -310,9 +313,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       const contentChanged = prevSerialized !== newSerialized;
       // 메시지·제목 모두 동일하면 early return — 불필요한 re-render + 사이드바 깜빡임 방지
       if (!contentChanged && cur.title === title) return prev;
+      // 단순 열어보기(load 채움)면 updatedAt 갱신 안 함 — 메시지 안 보냈는데 목록 최상단 올라가던 #2.
+      const isLoadFill = suppressBumpRef.current === activeConvId;
       const updated = prev.map(c =>
         c.id === activeConvId
-          ? { ...c, messages: cleanMsgs, title, ...(contentChanged ? { updatedAt: now } : {}) }
+          ? { ...c, messages: cleanMsgs, title, ...(contentChanged && !isLoadFill ? { updatedAt: now } : {}) }
           : c,
       );
       updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
@@ -583,6 +588,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
     setActiveConvId(id);
+    suppressBumpRef.current = id; // 열어보기만으로 목록 최상단 올라가는 것 방지(#2) — 새 메시지 전송 시 해제
     dispatch({ type: 'LOAD', messages: cleanMessages(conv.messages) }); // 캐시 즉시 표시
 
     // 서버 최신 messages fetch (admin: /api/conversations / hub: sessions list-messages) — convBackend 단일 경로.
@@ -635,6 +641,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
     const text = overrideText ?? input;
     if (!text.trim() || loading) return;
+    suppressBumpRef.current = null; // 메시지 전송 = 실제 활동 → updatedAt 갱신 허용 (열어보기 suppress 해제)
 
     // AI 모델 미선택 가드 — 사용자 메시지는 표시하되 system bubble 에 안내 에러 즉시 표시.
     // 채팅창은 활성이라 사용자가 자유롭게 입력 가능, 전송 시점에 안내.
