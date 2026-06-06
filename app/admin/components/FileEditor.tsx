@@ -423,7 +423,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       <div className="w-full max-w-5xl h-[85vh] bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-700 flex flex-col overflow-hidden">
 
         {/* 헤더 */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-[#252526] border-b border-slate-700 flex-shrink-0">
+        <div className="flex items-center gap-3 px-4 py-3 bg-[#141414] border-b border-slate-700 flex-shrink-0">
           {isPageMode ? (
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-[10px] font-extrabold tracking-widest text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">
@@ -532,6 +532,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                   wordWrap: 'on',
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
+                  occurrencesHighlight: 'off',  // 커서 놓인 단어와 같은 단어 전부 강조('점심내기 다 선택')는 편집 시 노이즈 → 끔
+                  selectionHighlight: false,    // 선택 텍스트와 같은 텍스트 강조도 끔
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
                   padding: { top: 16, bottom: 16 },
