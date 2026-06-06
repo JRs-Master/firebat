@@ -81,6 +81,29 @@ function mapHubMessages(
   });
 }
 
+/** reload/refresh/select 가 DB(remote) 메시지로 로컬을 교체할 때, 로컬에서 이미 승인/거부/오류로
+ *  확정된 pendingAction status 를 DB 의 pending 으로 되돌리지 않는다. #5 — 승인 직후 폴링·재조회·
+ *  재시작 LOAD 가 in-flight 저장 전 DB(pending)를 불러와 승인 카드가 다시 뜨던 것. 로컬 확정 status
+ *  우선 + 다음 저장에서 DB 도 치유. (hub 는 saveToDb skip 이라 localStorage 가 유일 소스 — init 병합으로 복원) */
+const TERMINAL_PENDING = new Set(['approved', 'rejected', 'error', 'past-runat']);
+function preserveLocalPendingStatus(remote: Message[], local: Message[]): Message[] {
+  if (!local.length) return remote;
+  const localById = new Map(local.map(m => [m.id, m]));
+  return remote.map(rm => {
+    if (!rm.pendingActions?.length) return rm;
+    const lm = localById.get(rm.id);
+    if (!lm?.pendingActions?.length) return rm;
+    const localByPlan = new Map(lm.pendingActions.map(p => [p.planId, p]));
+    return {
+      ...rm,
+      pendingActions: rm.pendingActions.map(rp => {
+        const lp = localByPlan.get(rp.planId);
+        return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : rp;
+      }),
+    };
+  });
+}
+
 export function useChat(aiModel: string, onRefresh: () => void, hubContext?: UseChatHubContext) {
   const t = useTranslations();
   const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
@@ -232,7 +255,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           if (cancelled) return;
         }
         // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입 (save effect bump 방지).
-        const cleanedActive = cleanMessages(activeMessages);
+        // 기존 localStorage 의 확정(approved/rejected) pendingAction status 보존 — reload 시 서버 pending
+        // 으로 되돌려 승인 카드가 재출현하던 #5 차단 (admin·hub 공통; hub 는 localStorage 가 유일 소스).
+        const priorActive = safeJsonParse<Conversation[]>(localStorage.getItem(convStorageKey) ?? '', [])
+          .find(c => c.id === activeId)?.messages ?? [];
+        const cleanedActive = preserveLocalPendingStatus(cleanMessages(activeMessages), priorActive);
         const fullList: Conversation[] = remote.map(r => ({
           id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
           messages: r.id === activeId ? cleanedActive : [],
@@ -427,10 +454,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         return;
       }
       if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
-      dispatch({ type: 'LOAD', messages: remoteMsgs });
+      const remoteMerged = preserveLocalPendingStatus(remoteMsgs, messagesRef.current);
+      dispatch({ type: 'LOAD', messages: remoteMerged });
       setConversations(prev => {
         const updated = prev.map(c => c.id === activeConvId
-          ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
+          ? { ...c, messages: remoteMerged, updatedAt: remoteUpdatedAt }
           : c);
         updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
         localStorage.setItem(convStorageKey, JSON.stringify(updated));
@@ -556,11 +584,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       const remoteMsgs = cleanMessages(await convBackend.listMessages(id));
       const remoteRealMsgCount = remoteMsgs.filter(m => m.id !== 'system-init').length;
       if (!(localRealMsgCount === 0 || remoteRealMsgCount > localRealMsgCount)) return;
-      dispatch({ type: 'LOAD', messages: remoteMsgs });
+      const remoteMerged = preserveLocalPendingStatus(remoteMsgs, conv.messages);
+      dispatch({ type: 'LOAD', messages: remoteMerged });
       setConversations(prev => {
         const cur = prev.find(c => c.id === id);
-        if (cur && JSON.stringify(cur.messages ?? []) === JSON.stringify(remoteMsgs)) return prev;
-        const updated = prev.map(c => (c.id === id ? { ...c, messages: remoteMsgs } : c));
+        if (cur && JSON.stringify(cur.messages ?? []) === JSON.stringify(remoteMerged)) return prev;
+        const updated = prev.map(c => (c.id === id ? { ...c, messages: remoteMerged } : c));
         localStorage.setItem(convStorageKey, JSON.stringify(updated));
         return updated;
       });
