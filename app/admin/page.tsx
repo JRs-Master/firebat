@@ -246,6 +246,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
     if (v) onSuggestion?.(v);
   };
 
+  // 렌더 가능한 항목이 하나도 없으면 빈 테두리 박스(가로선처럼 보임)만 남으니 아예 그리지 않음.
+  // (AI 가 인식 안 되는 형태로 suggest 를 보낸 경우 — 아래 map 의 coerce 와 같은 기준)
+  const canRender = (it: any) =>
+    typeof it === 'string'
+      ? it.trim().length > 0
+      : !!(it && (['plan-confirm', 'toggle', 'input', 'plan-revise'].includes(it.type) || it.label || it.text || it.value || it.title));
+  if (!suggestions.some(canRender)) return null;
+
   return (
     // PC: max-w-md(448px) 로 capped + sm:ml-auto 로 우측 정렬. 모바일: w-full 로 부모 너비 꽉 채움.
     // w-full 없이 max-w-md 만 두면 content 자연 너비로 줄어드는 문제 — 두 클래스 조합 필수.
@@ -346,6 +354,17 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                 <Plus size={12} /> 항목 추가
               </button>
             </div>
+          );
+        }
+        // type 없는/모르는 객체라도 텍스트 필드(label/text/value/title)가 있으면 버튼으로 coerce —
+        // AI 가 비표준 형태로 보낸 옵션이 사라지고 빈 박스만 남던 것 방지 (일반 처리, 케이스 하드코딩 X).
+        const coerced = (item as any).label || (item as any).text || (item as any).value || (item as any).title;
+        if (coerced) {
+          return (
+            <button key={i} onClick={() => onSuggestion?.(String(coerced))} disabled={loading}
+              className="w-full px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
+              {String(coerced)}
+            </button>
           );
         }
         return null;
