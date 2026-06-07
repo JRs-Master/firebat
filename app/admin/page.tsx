@@ -915,15 +915,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         ))}
                       </div>
                     )}
-                    {/* Project Builder — 빌드 중이면 만들어진 페이지를 채팅 안 라이브 프리뷰(iframe) */}
+                    {/* Project Builder — 빌드 중이면 만들어진 페이지를 라이브 프리뷰 (큰 화면 = 아티팩트 드로어) */}
                     {urls.length > 0 && !Array.isArray(msg.data) && (msg.data as any)?.buildSession && (
-                      <div className="mt-2 rounded-xl border border-slate-200 overflow-hidden bg-white">
-                        <div className="px-3 py-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5">
-                          🔨 라이브 프리뷰
-                          <a href={urls[0].openUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-blue-600 hover:underline">새 탭 ↗</a>
-                        </div>
-                        <iframe src={urls[0].openUrl} className="w-full h-[420px] border-0 bg-white" title="빌드 라이브 프리뷰" />
-                      </div>
+                      <BuildPreview url={urls[0].openUrl} />
                     )}
                     {/* MCP 결과는 AI가 reply에서 자연어로 요약 — raw JSON 표시 안 함 */}
                     {/* 실행 결과 JSON은 표시하지 않음 — AI가 reply에서 자연어로 요약 */}
@@ -1088,6 +1082,36 @@ export interface HubContext {
   instanceName: string;
   instanceDescription?: string;
   modelId?: string;
+}
+
+/** Project Builder 라이브 프리뷰 — collapsed=인라인 iframe / "큰 화면"=우측 아티팩트 드로어.
+ *  자체 expanded 상태 (prop-drilling/전역 이벤트 없이 자기완결). split-panel 의 바운디드 버전. */
+function BuildPreview({ url }: { url: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <div className="mt-2 rounded-xl border border-slate-200 overflow-hidden bg-white">
+        <div className="px-3 py-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+          <span>🔨 라이브 프리뷰</span>
+          <button type="button" onClick={() => setExpanded(true)} className="ml-auto text-blue-600 hover:underline">큰 화면 ⛶</button>
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">새 탭 ↗</a>
+        </div>
+        <iframe src={url} className="w-full h-[420px] border-0 bg-white" title="빌드 라이브 프리뷰" />
+      </div>
+      {expanded && (
+        <div className="fixed inset-0 z-[60] bg-black/40 flex" onClick={() => setExpanded(false)}>
+          <div className="ml-auto h-full w-full sm:w-[60%] bg-white flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-2.5 flex items-center gap-2 border-b border-slate-200 bg-slate-50 shrink-0">
+              <span className="text-[13px] font-bold text-slate-600">🔨 빌드 아티팩트</span>
+              <a href={url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[12px] text-blue-600 hover:underline">새 탭 ↗</a>
+              <button type="button" onClick={() => setExpanded(false)} className="text-[12px] font-bold text-slate-500 hover:text-slate-700">닫기 ✕</button>
+            </div>
+            <iframe src={url} className="flex-1 w-full border-0 bg-white" title="빌드 아티팩트" />
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function AdminConsole() {
