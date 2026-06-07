@@ -921,6 +921,41 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 );
               })()}
 
+              {/* Project Builder — 빌드 단계 stepper (활성 빌드 세션). data passthrough 로 buildSession 수신 */}
+              {!Array.isArray(msg.data) && msg.data?.buildSession && (() => {
+                const bs = msg.data.buildSession as { step?: string; tier?: string; status?: string; createdAt?: number };
+                const STEPS = [
+                  { key: 'requirements', label: '요구' },
+                  { key: 'design', label: '설계' },
+                  { key: 'implement', label: '구현' },
+                  { key: 'iterate', label: '반복' },
+                ];
+                const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
+                const done = bs.status === 'completed';
+                const curIdx = STEPS.findIndex(s => s.key === bs.step);
+                return (
+                  <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 mt-2">
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+                      <span>🔨 빌드 진행{bs.tier ? ` · ${bs.tier}` : ''}</span>
+                      {done && <span className="text-emerald-600">✓ 완료</span>}
+                      {expired && <span className="text-slate-400">⏰ 기간이 만료되었습니다</span>}
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {STEPS.map((s, i) => (
+                        <div key={s.key} className="flex items-center gap-1">
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                            done || i < curIdx ? 'bg-emerald-100 text-emerald-700'
+                            : i === curIdx ? 'bg-blue-600 text-white font-bold'
+                            : 'bg-slate-100 text-slate-400'
+                          }`}>{i + 1}. {s.label}</span>
+                          {i < STEPS.length - 1 && <span className="text-slate-300 text-[10px]">→</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Pending Actions — 승인 버튼 (액션 필요, 눈에 띄게 위쪽) */}
               {msg.pendingActions && msg.pendingActions.length > 0 && (
                 <div className="flex flex-col gap-2">
