@@ -456,13 +456,13 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       {projectCustomCss && (
         <style dangerouslySetInnerHTML={{ __html: projectCustomCss }} />
       )}
-      <main className={isApp ? 'h-dvh overflow-hidden bg-white' : 'min-h-screen bg-white'}>
+      <main className="min-h-screen bg-white">
         <div
-          className={isApp ? 'firebat-cms-content h-full' : 'firebat-cms-content'}
+          className="firebat-cms-content"
           data-h1-style={projectH1Style ?? seo.theme?.heading?.h1}
           data-h2-style={projectH2Style ?? seo.theme?.heading?.h2}
           data-h3-style={projectH3Style ?? seo.theme?.heading?.h3}
-          style={isApp ? { ...projectThemeStyle, height: '100%', padding: 0, maxWidth: 'none' } : projectThemeStyle}
+          style={isApp ? { ...projectThemeStyle, padding: 0, maxWidth: 'none' } : projectThemeStyle}
         >
           {/* 콘텐츠 페이지 (project 설정된) 만 — Breadcrumb + Reading time 표시.
            *  Breadcrumb: JSON-LD BreadcrumbList 와 동일 경로 (홈 > seg1 > ... > 현재).
@@ -488,7 +488,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
               })()}
             </>
           )}
-          <ComponentRenderer components={body} fullHeight={isApp} />
+          <ComponentRenderer components={body} />
           {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더. */}
           {spec.project && seo.layout?.showRelatedPosts && (
             <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} siteLang={seo.siteLang} />

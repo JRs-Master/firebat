@@ -875,9 +875,19 @@ function sanitizeHtmlBlock(content: string): string {
 function HtmlComp({ content, dependencies, standalone }: { content: string; dependencies?: string[]; standalone?: boolean }) {
   // standalone(페이지 단독 Html = 앱) → postMessage 로 내용 높이를 받아 iframe 자동 높이 = 페이지 단일 스크롤.
   // embedded(다른 블록과 공존) → 차트처럼 고정 높이 + 내부 스크롤 (페이지 스크롤 리듬 일정).
-  // standalone(앱) = iframe 고정 100dvh(뷰포트). 옛 auto-height(내용 높이를 postMessage 로 받아 iframe
-  // 높이 세팅)는 100vh 쓰는 앱이 자기 높이를 iframe 높이에 맞춰 무한 증가하는 루프라 폐기.
-  // 고정 뷰포트면 100vh 앱 정상 표시 + 내용이 넘치면 iframe 내부 스크롤(페이지=iframe 라 단일 스크롤).
+  // standalone(앱) → 콘텐츠 높이를 로드 후 몇 번만 측정해 iframe 높이 px 고정 (헤더/푸터 유지 + 페이지 단일 스크롤).
+  // ResizeObserver(연속 재측정)는 100vh 앱이 iframe 높이 따라 무한 증가하던 루프 원인이라 제거 —
+  // 로드 + 지연 타임아웃 몇 회만(peak=max) 측정 후 멈춤. 초기 100dvh 로 시작해 100vh 앱도 제대로 측정.
+  const frameId = useId();
+  const [autoH, setAutoH] = useState<number | null>(null);
+  useEffect(() => {
+    if (!standalone) return;
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'fb-html-h' && e.data?.id === frameId && typeof e.data.height === 'number') setAutoH(e.data.height);
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [standalone, frameId]);
   // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
   //        <script> 태그가 있으면 자동 iframe srcDoc — inline DOM 의 DOMPurify 가
   //        XSS 방어 표준으로 <script> 자동 제거하므로 BMI 계산기 등 인터랙티브 페이지
@@ -903,7 +913,8 @@ function HtmlComp({ content, dependencies, standalone }: { content: string; depe
   // CDN library 격리 필요 케이스 — iframe srcDoc 유지.
   const cdnTags = buildCdnTags(dependencies);
   // standalone 일 때만 — iframe 내용 높이를 부모로 postMessage (sandbox 라 부모가 직접 못 읽음 → 부모가 받아 iframe 높이 세팅).
-  const autoScript = ''; // auto-height postMessage 폐기 (100vh 앱 무한 증가 루프) — iframe 고정 100dvh 사용
+  // ResizeObserver 없이 — 로드/지연 타임아웃에만 측정(peak=max) 후 멈춤 → 무한 루프 없음.
+  const autoScript = standalone ? `<script>(function(){var id=${JSON.stringify(frameId)};var peak=0;function m(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=m();if(h<=peak)return;peak=h;parent.postMessage({type:'fb-html-h',id:id,height:h},'*');}if(document.body)send();else document.addEventListener('DOMContentLoaded',send);window.addEventListener('load',send);[150,500,1200,2500].forEach(function(t){setTimeout(send,t);});})();<\/script>` : '';
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
   // CSP meta — sandbox=allow-scripts 위에 defense-in-depth: script src 화이트리스트 + frame/form/base 차단.
@@ -923,7 +934,7 @@ ${IFRAME_CSP_META}
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; min-height: 100%; overflow: auto; }
+  html, body { margin: 0; padding: 0; overflow: ${standalone ? 'hidden' : 'auto'}; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;
@@ -990,8 +1001,8 @@ ${cdnTags}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       loading="lazy"
-      style={standalone ? { height: '100%' } : undefined}
-      className={standalone ? 'w-full h-full border-0 bg-white block' : 'w-full min-h-[500px] h-[500px] border-0 bg-white'}
+      style={standalone ? (autoH ? { height: autoH } : { height: '100dvh' }) : undefined}
+      className={standalone ? 'w-full border-0 bg-white block' : 'w-full min-h-[500px] h-[500px] border-0 bg-white'}
       title="Html content"
     />
   );
