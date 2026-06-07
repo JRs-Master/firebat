@@ -1274,8 +1274,8 @@ export function Sidebar({
   /* ── 외부 모달들 (FileEditor, ScheduleModal, 이름변경, 비밀번호) — PC·모바일 공통. ── */
   const externalModals = (
     <>
-      {/* PageSpec 에디터 모달 — PC에서만 표시 */}
-      {editingPageSlug && !isMobile && (
+      {/* PageSpec 에디터 모달 — 모바일도 마운트(FileEditor 내부 isMobileDevice 가 PC 안내 표시) — 템플릿 편집과 일관 */}
+      {editingPageSlug && (
         <FileEditor
           pageSlug={editingPageSlug}
           aiModel={aiModel}
