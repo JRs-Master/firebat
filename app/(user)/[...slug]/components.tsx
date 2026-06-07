@@ -926,7 +926,10 @@ ${IFRAME_CSP_META}
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
+  ::-webkit-scrollbar { width: 2px; height: 2px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;

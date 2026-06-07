@@ -460,7 +460,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
           iframe 이 100dvh 직접(아래 components.tsx)이라 깊은 wrapper 체인(main>cms-content>renderer)에
           의존 안 함 → 콜랩스/측정 문제 0. 앱 내부만 스크롤(단일). 정적 HTML·콘텐츠 페이지는 일반 레이아웃. */}
       {isApp && (
-        <style dangerouslySetInnerHTML={{ __html: '[data-cms-header],[data-cms-footer]{display:none!important}html,body{margin:0;padding:0;overflow:hidden;height:auto}' }} />
+        <style dangerouslySetInnerHTML={{ __html: '[data-cms-header],[data-cms-footer]{display:none!important}html{scrollbar-gutter:auto}html,body{margin:0;padding:0;overflow:hidden;height:auto}body>main{margin:0;padding:0}.firebat-cms-content{margin:0!important;padding:0!important;max-width:none!important}' }} />
       )}
       <main className={isApp ? 'bg-white' : 'min-h-screen bg-white'}>
         <div
