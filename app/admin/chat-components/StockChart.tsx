@@ -38,7 +38,7 @@ const GRID = '#e2e8f0';
 const ZOOM_DEFAULT_CPS = 90; // 기본 한 화면 캔들 수
 const ZOOM_MAX_BAR = 36;     // 최대 봉 px (줌인 한계 — 그 이상 안 커짐)
 const ZOOM_MIN_BAR = 3;      // 최소 봉 px (줌아웃 한계 — 그 이하 안 작아짐)
-const ZOOM_RIGHT_PAD_SLOTS = 1; // 마지막 캔들 우측 여백 (slot 수)
+const ZOOM_RIGHT_PAD_SLOTS = 3; // 마지막(최신) 캔들 우측 여백 — HTS 처럼 2~3일 띄움 (slot 수)
 
 function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
@@ -199,7 +199,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 줌 = 캔들 폭(barPx) 조절, 데이터는 전체 렌더, 화면 넘치면 가로 스크롤바.
   const priceH = priceChartHeightPx;
   const volH = volChartHeightPx;  // viewBox 높이 = 실제 박스 px. 옛 고정 80 → preserveAspectRatio="none" 에서 거래량 축 라벨 세로 찌그러짐. 동일화로 왜곡 0.
-  const padLeft = 50;
+  const padLeft = 8;  // 좌측 여백 — 가격축 라벨은 우측 거터라 좌측 축이 없음. 옛 50 은 가장 옛날 봉 앞에 며칠치 빈 공간만 만들어 작게.
   // Y축 라벨 폭 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
   // 작은 가격대 (5만, 6자리) = 56 그대로. 큰 가격대 (1억, 11자리) ≈ 78px. 라벨 잘림 0.
   // padRight 는 캔들 스크롤 영역 밖 우측 고정 거터(별도 컬럼) 폭 — 가격축이 캔들 위를 덮지 않게 분리.
@@ -560,11 +560,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               }
               return shortDate(d);
             };
-            return pruned.map(i => {
-              // 마지막(우측 끝) 라벨은 textAnchor=end + W 안으로 clamp — 중앙 정렬 시 우측이 SVG 밖으로 잘리던 것 방지.
+            return pruned.map((i, pi) => {
+              // 양 끝 라벨 — 중앙 정렬 시 SVG 밖으로 잘리므로 안쪽 정렬 + clamp (좌:start / 우:end). padLeft 축소로 좌측 끝도 보강.
               const isLast = i === n - 1;
+              const isFirst = pi === 0;
+              const anchor = isLast ? 'end' : isFirst ? 'start' : 'middle';
+              const lx = isLast ? Math.min(xs[i] + barPx * 0.5, W - 2) : isFirst ? Math.max(xs[i] - barPx * 0.5, 2) : xs[i];
               return (
-                <text key={'xl' + i} x={isLast ? Math.min(xs[i] + barPx * 0.5, W - 2) : xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor={isLast ? 'end' : 'middle'} fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
+                <text key={'xl' + i} x={lx} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor={anchor} fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
               );
             });
           })()}
