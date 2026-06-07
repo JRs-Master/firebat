@@ -319,7 +319,7 @@ fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
                     .unwrap_or_default();
-                match library.search(&owner, &reference_ids, &query, limit).await {
+                match library.search_scoped(&owner, &reference_ids, &query, limit).await {
                     Ok(hits) if hits.is_empty() => Ok(serde_json::json!({
                         "success": true,
                         "data": [],

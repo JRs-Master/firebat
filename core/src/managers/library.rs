@@ -221,6 +221,39 @@ impl LibraryManager {
 
     // ─── 검색 — query → cosine 매치 → top-K LibraryHit ──────────────────────
 
+    /// Owner-scoped variant for the AI `search_library` tool — clamps caller-supplied `reference_ids`
+    /// to the owner's OWN references, so a hub visitor cannot read another tenant's library chunks by
+    /// passing arbitrary reference UUIDs (cross-tenant read leak). Empty `reference_ids` = all of the
+    /// owner's own refs (same as `search`). The passive RetrievalEngine and the admin-shared merge keep
+    /// calling `search` directly with server-trusted ids (those must NOT be clamped).
+    pub async fn search_scoped(
+        &self,
+        owner: &str,
+        reference_ids: &[String],
+        query: &str,
+        top_k: usize,
+    ) -> InfraResult<Vec<LibraryHit>> {
+        if reference_ids.is_empty() {
+            return self.search(owner, &[], query, top_k).await;
+        }
+        let own: std::collections::HashSet<String> = self
+            .library
+            .list_references(owner)
+            .await?
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        let clamped: Vec<String> = reference_ids
+            .iter()
+            .filter(|id| own.contains(*id))
+            .cloned()
+            .collect();
+        if clamped.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.search(owner, &clamped, query, top_k).await
+    }
+
     /// 매 reference_ids 영역의 매 chunk 영역 cosine 매치 → top_k.
     /// reference_ids 미지정 (빈 배열) = 매 admin reference 전체 대상.
     pub async fn search(

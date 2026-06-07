@@ -1392,7 +1392,7 @@ impl McpToolHandler for SearchLibraryHandler {
             .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
             .unwrap_or_default();
         // 본인(owner) 자료 검색
-        let mut hits = match self.library.search(&owner, &reference_ids, &query, limit).await {
+        let mut hits = match self.library.search_scoped(&owner, &reference_ids, &query, limit).await {
             Ok(h) => h,
             Err(e) => return Ok(serde_json::json!({"success": false, "error": e})),
         };
