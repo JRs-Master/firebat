@@ -1377,7 +1377,7 @@ fn parse_generate_image_input(
 fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "search_history".to_string(),
-        description: "이전 대화 검색. Phase B-17+ 임베딩 설정된 후 의미 검색 활성. 현재는 owner='admin' 의 모든 대화 list.".to_string(),
+        description: "Search prior conversations (semantic, owner-scoped) — returns matching Q&A from the caller's own history.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -1393,16 +1393,20 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         make_handler(move |args| {
             let conversation = conversation.clone();
             async move {
-                let _query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
-                let list = conversation.list("admin");
-                let limit = args
-                    .get("limit")
-                    .and_then(|v| v.as_u64())
-                    .map(|n| n as usize)
-                    .unwrap_or(20)
-                    .min(100);
-                let trimmed: Vec<_> = list.into_iter().take(limit).collect();
-                Ok(serde_json::to_value(trimmed).unwrap_or_default())
+                // owner injected by ai.rs hub injection ("hub:<inst>:<sess>") → scopes the semantic
+                // search to the visitor's own conversations. admin = "admin". Mirrors the MCP
+                // SearchHistoryHandler (no drift). Old code hardcoded list("admin") = cross-tenant leak.
+                let owner = args.get("owner").and_then(|v| v.as_str()).unwrap_or("admin").to_string();
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let opts = crate::managers::conversation::SearchHistoryOpts {
+                    current_conv_id: args.get("currentConvId").and_then(|v| v.as_str()).map(String::from),
+                    limit: args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize),
+                    within_days: args.get("withinDays").and_then(|v| v.as_i64()),
+                    min_score: args.get("minScore").and_then(|v| v.as_f64()).map(|v| v as f32),
+                    include_blocks: args.get("includeBlocks").and_then(|v| v.as_bool()).unwrap_or(false),
+                };
+                let matches = conversation.search_history(&owner, &query, opts).await?;
+                Ok(serde_json::to_value(matches).unwrap_or_default())
             }
         }),
     );
