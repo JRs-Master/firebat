@@ -59,6 +59,9 @@
       "source_not_found": "원본 페이지를 찾을 수 없습니다: {{slug}}",
       "spec_serialize_failed": "spec 직렬화에 실패했습니다: {{detail}}"
     },
+    "hub": {
+      "path_denied": "이 경로에 접근할 권한이 없습니다. 본인 작업 폴더 안에서만 가능합니다."
+    },
     "project": {
       "name_empty": "새 프로젝트 이름이 비어 있습니다.",
       "name_same": "기존과 동일한 이름입니다.",

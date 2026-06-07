@@ -879,6 +879,9 @@ pub struct ReadFileHandler {
 impl McpToolHandler for ReadFileHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
+        if let Err(e) = firebat_core::utils::hub_context::confine_hub_path(&args, &path) {
+            return Ok(serde_json::json!({"success": false, "error": e}));
+        }
         match self.storage.read(&path).await {
             Ok(content) => Ok(serde_json::json!({"success": true, "content": content})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
@@ -894,6 +897,9 @@ impl McpToolHandler for WriteFileHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
         let content = obj_str(&args, "content").ok_or_else(|| "content 필수".to_string())?;
+        if let Err(e) = firebat_core::utils::hub_context::confine_hub_path(&args, &path) {
+            return Ok(serde_json::json!({"success": false, "error": e}));
+        }
         match self.storage.write(&path, &content).await {
             Ok(()) => Ok(serde_json::json!({"success": true})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
@@ -913,6 +919,9 @@ impl McpToolHandler for DeleteFileHandler {
             return Ok(r);
         }
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
+        if let Err(e) = firebat_core::utils::hub_context::confine_hub_path(&args, &path) {
+            return Ok(serde_json::json!({"success": false, "error": e}));
+        }
         match self.storage.delete(&path).await {
             Ok(()) => Ok(serde_json::json!({"success": true})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
@@ -927,6 +936,9 @@ pub struct ListDirHandler {
 impl McpToolHandler for ListDirHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let path = obj_str(&args, "path").unwrap_or_else(|| ".".to_string());
+        if let Err(e) = firebat_core::utils::hub_context::confine_hub_path(&args, &path) {
+            return Ok(serde_json::json!({"success": false, "error": e}));
+        }
         match self.storage.list_dir(&path).await {
             Ok(entries) => {
                 let json: Vec<Value> = entries

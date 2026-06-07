@@ -59,6 +59,9 @@
       "source_not_found": "Source page not found: {{slug}}",
       "spec_serialize_failed": "Failed to serialize spec: {{detail}}"
     },
+    "hub": {
+      "path_denied": "You do not have permission to access this path. You can only work within your own workspace folder."
+    },
     "project": {
       "name_empty": "New project name is empty.",
       "name_same": "Project name is identical to the existing one.",

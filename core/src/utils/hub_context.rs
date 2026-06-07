@@ -241,6 +241,44 @@ pub fn is_hub_readonly_tool(name: &str) -> bool {
         || name == "render"
         || name == "suggest"
         || name == "propose_plan"
+        || name == "read_file" // path-confined by confine_hub_path → safe to expose to hub
+}
+
+/// Hub workspace path jail for fs tools (read_file / write_file / delete_file / list_dir / get_file_tree).
+/// When the tool args carry a hub scope, confine the path to `user/hub/<instance_id>/`; otherwise
+/// (admin / stdio / internal — no hub scope key) it is unrestricted (Ok).
+///
+/// IMPORTANT — keyed on ARGS, NOT the `CURRENT_HUB` task-local. `CURRENT_HUB` is set only in the MCP
+/// `handle_rpc` path, so an `active_hub_owner()`-based guard silently no-ops on the FC (Gemini/Vertex)
+/// path and leaves the leak open. The injected keys (`project="hub:<inst>"`, `hubOwner`/`_hubScope`
+/// = `"<inst>:<sess>"`) travel in args on BOTH paths. Mirrors `isHubScopedPath` in
+/// app/api/hub/[slug]/fs/route.ts.
+pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<(), String> {
+    let inst = args
+        .get("project")
+        .and_then(|v| v.as_str())
+        .and_then(|p| p.strip_prefix("hub:"))
+        .map(|s| s.split(':').next().unwrap_or(s).to_string())
+        .or_else(|| {
+            args.get("hubOwner")
+                .or_else(|| args.get("_hubScope"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.split(':').next().unwrap_or(s).to_string())
+        });
+    let Some(inst) = inst.filter(|s| !s.is_empty()) else {
+        return Ok(()); // admin / no hub scope = unrestricted
+    };
+    let norm = path.replace('\\', "/");
+    let norm = norm.trim_start_matches('/');
+    if norm.split('/').any(|seg| seg == "..") {
+        return Err(crate::i18n::t("core.error.hub.path_denied", None, &[]));
+    }
+    let prefix = format!("user/hub/{}/", inst);
+    if norm == format!("user/hub/{}", inst) || norm.starts_with(&prefix) {
+        Ok(())
+    } else {
+        Err(crate::i18n::t("core.error.hub.path_denied", None, &[]))
+    }
 }
 
 #[cfg(test)]
@@ -361,5 +399,33 @@ mod tests {
         // mcp 관리 / 시크릿 변형
         assert!(!permits_tool("mcp_call", &allowed));
         assert!(!permits_tool("vault_get_secret", &allowed));
+    }
+
+    #[test]
+    fn read_file_allowed_for_hub() {
+        // read_file path is jailed by confine_hub_path → safe to expose to hub (deny → readonly).
+        let allowed = vec!["law-search".to_string()];
+        assert!(permits_tool("read_file", &allowed));
+    }
+
+    #[test]
+    fn confine_hub_path_jails_hub_visitors() {
+        use serde_json::json;
+        // hub scope via project key — confined to user/hub/<inst>/
+        let hub = json!({ "project": "hub:inst-A" });
+        assert!(confine_hub_path(&hub, "user/hub/inst-A/modules/x.js").is_ok());
+        assert!(confine_hub_path(&hub, "user/hub/inst-A").is_ok());
+        assert!(confine_hub_path(&hub, "user/pages/admin.json").is_err());
+        assert!(confine_hub_path(&hub, "system/modules/x/config.json").is_err());
+        assert!(confine_hub_path(&hub, "user/hub/OTHER/x").is_err());
+        assert!(confine_hub_path(&hub, "user/hub/inst-A/../../etc").is_err());
+        // hub scope via hubOwner key ("<inst>:<sess>")
+        let hub2 = json!({ "hubOwner": "inst-B:sess-1" });
+        assert!(confine_hub_path(&hub2, "user/hub/inst-B/notes/a.md").is_ok());
+        assert!(confine_hub_path(&hub2, "user/hub/inst-A/x").is_err());
+        // admin / no hub scope key = unrestricted
+        let admin = json!({});
+        assert!(confine_hub_path(&admin, "system/modules/x/config.json").is_ok());
+        assert!(confine_hub_path(&admin, "anywhere/at/all").is_ok());
     }
 }

@@ -696,14 +696,16 @@ impl AiManager {
             //   (5) `save_page` — hub-scoped (project='hub:<slug>' 자동, root /<slug> 노출 0,
             //                     hub 삭제 시 cascade). 사용자 의도 = "지 사이드바 안에서 갖고 놀고 공유 돼야".
             //
-            // 차단 영역 (destructive — admin DB 영구 변경):
-            //   delete_page / delete_file / write_file / write_module /
-            //   schedule_task / cancel_cron_job / run_task / run_module / run_user_module /
-            //   request_secret / mcp_* (admin 권한 도구)
+            // Owner-scoped writes are ALLOWED to hub but CONFINED to the visitor's own scope (not blocked):
+            //   save_page/delete_page (project-match guard) / write_file/delete_file/read_file/list_dir
+            //   (confine_hub_path → user/hub/<inst>/) / save_entity / regenerate_image / save_template, etc.
+            // Truly blocked (settings/auth/background/admin): request_secret / network_request / run_module /
+            //   execute / schedule_task / run_task / run_cron_job / *_module / mcp_* / log.
             if let Some(ctx) = &ai_opts.hub_context {
-                // 단일 권한 게이트 — hosted 경로(mcp_server)와 같은 hub_context::permits_tool 사용 (규칙 drift 0).
-                // 허용 = 핵심 sysmod(notes/calendar) + allowed_sysmods + read-only + render_* + save_page.
-                // 그 외(write/delete/schedule/run/mcp/request_secret 등)는 fail-safe 차단.
+                // Single permission gate — same hub_context::permits_tool as the hosted (mcp_server) path (no drift).
+                // Allow = core sysmods (notes/calendar) + allowed_sysmods + read-only + render_* + owner-scoped writes.
+                // Owner-scoping of the allowed writes is enforced per-tool (confine_hub_path / project-match),
+                // NOT by this name filter — this only decides which tools are exposed.
                 tools_built.retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
             }
             auto_tools = tools_built;
