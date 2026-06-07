@@ -1376,7 +1376,10 @@ impl AiManager {
                             m.insert("owner".to_string(), serde_json::Value::String(format!("hub:{}", scope_id)));
                             m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
                             m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id));
-                            if name == "save_page" {
+                            // project scopes page tools to the hub instance. MCP injects it for ALL
+                            // tools (inject_hub_owner); FC must list the page tools that read it so
+                            // get_page/list_pages are scoped on the FC (Gemini/Vertex) path too.
+                            if matches!(name.as_str(), "save_page" | "get_page" | "list_pages") {
                                 m.insert("project".to_string(), serde_json::Value::String(format!("hub:{}", ctx.instance_id)));
                             }
                         }

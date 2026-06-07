@@ -749,8 +749,9 @@ pub struct ListPagesHandler {
 }
 #[async_trait::async_trait]
 impl McpToolHandler for ListPagesHandler {
-    async fn call(&self, _args: Value) -> Result<Value, String> {
-        let items = self.page.list();
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        // project (hub: injected) → hub visitor sees only their own pages. admin (None) = full list.
+        let items = self.page.list_scoped(obj_str(&args, "project").as_deref());
         Ok(serde_json::json!({"success": true, "data": items}))
     }
 }
@@ -762,7 +763,8 @@ pub struct GetPageHandler {
 impl McpToolHandler for GetPageHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
-        match self.page.get(&slug) {
+        // project (hub: injected) → return None for pages outside the visitor's scope. admin = no check.
+        match self.page.get_scoped(&slug, obj_str(&args, "project").as_deref()) {
             Some(rec) => Ok(serde_json::json!({"success": true, "data": rec})),
             None => Ok(serde_json::json!({"success": false, "error": "page not found"})),
         }

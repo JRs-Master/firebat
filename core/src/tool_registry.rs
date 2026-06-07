@@ -825,9 +825,13 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     let page = h.page.clone();
     tools.register_handler(
         "list_pages",
-        make_handler(move |_args| {
+        make_handler(move |args| {
             let page = page.clone();
-            async move { Ok(serde_json::to_value(page.list()).unwrap_or_default()) }
+            async move {
+                // project (hub: injected) → hub visitor sees only their own pages. admin = full list.
+                Ok(serde_json::to_value(page.list_scoped(args.get("project").and_then(|v| v.as_str())))
+                    .unwrap_or_default())
+            }
         }),
     );
 
@@ -852,7 +856,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
-                match page.get(&slug) {
+                match page.get_scoped(&slug, args.get("project").and_then(|v| v.as_str())) {
                     Some(record) => Ok(serde_json::to_value(record).unwrap_or_default()),
                     None => Ok(serde_json::Value::Null),
                 }

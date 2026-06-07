@@ -50,12 +50,38 @@ impl PageManager {
         self.db.list_pages()
     }
 
+    /// Owner/project-scoped list — `project` Some(non-empty) → only pages with that project; admin
+    /// (None) → full list. Single enforcement point for hub `list_pages` (mirrors delete's gate).
+    pub fn list_scoped(&self, project: Option<&str>) -> Vec<PageListItem> {
+        match project.filter(|p| !p.is_empty()) {
+            Some(p) => self
+                .db
+                .list_pages()
+                .into_iter()
+                .filter(|it| it.project.as_deref() == Some(p))
+                .collect(),
+            None => self.db.list_pages(),
+        }
+    }
+
     pub fn search(&self, query: &str, limit: Option<usize>) -> Vec<PageListItem> {
         self.db.search_pages(query, limit.unwrap_or(50))
     }
 
     pub fn get(&self, slug: &str) -> Option<PageRecord> {
         self.db.get_page(slug)
+    }
+
+    /// Owner/project-scoped get — `project` Some(non-empty) → return None when the page belongs to a
+    /// different scope (hide existence, like delete). admin (None) → no check. For hub `get_page`.
+    pub fn get_scoped(&self, slug: &str, project: Option<&str>) -> Option<PageRecord> {
+        let rec = self.db.get_page(slug)?;
+        if let Some(p) = project.filter(|p| !p.is_empty()) {
+            if rec.project.as_deref() != Some(p) {
+                return None;
+            }
+        }
+        Some(rec)
     }
 
     /// 저장 — DB save + media_usage 인덱스 동기.
