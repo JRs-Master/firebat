@@ -306,7 +306,9 @@ T1=단순 페이지(render/html, 외부 모듈 0) / T2=기존 모듈·서비스 
 T1/T2 = save_page 로 페이지 생성·발행(승인 카드). T3 = 모듈 코드 생성 후 페이지. \
 만들고 프리뷰 확인되면 advance_build 에 결과(slug/url 등, output)를 넘기세요."
             .to_string(),
-        BuildStep::Iterate => "S4 반복: 사용자 피드백을 받아 수정하세요. 추가 수정이 없으면 빌드를 완료하세요."
+        BuildStep::Iterate => "S4 반복: 사용자 피드백을 받아 수정하세요. 데이터가 주기적으로 바뀌는 \
+빌드(시세·날씨·뉴스 등)면 정기 갱신을 위한 cron 등록(schedule_task)을 사용자에게 제안하세요. \
+추가 수정이 없으면 빌드를 완료하세요."
             .to_string(),
         BuildStep::Done => "빌드가 완료되었습니다.".to_string(),
     }
