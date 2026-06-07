@@ -181,6 +181,11 @@ pub struct PendingTool {
     /// epoch ms — 영속 시 JS 의 `Date.now()` 와 동일 단위.
     #[serde(rename = "createdAt")]
     pub created_at: u64,
+    /// Hub visitor scope (`inst:sid`) when this pending was created inside a hub context, else None
+    /// (admin). At hub approval time this is used to (1) verify the approving visitor owns this
+    /// pending (cross-tenant guard) and (2) re-establish the owner scope for execution.
+    #[serde(rename = "hubScope", default, skip_serializing_if = "Option::is_none")]
+    pub hub_scope: Option<String>,
 }
 
 impl PendingTool {
@@ -258,6 +263,13 @@ fn rand4() -> String {
 /// 2026-05-14 A1-full Step 2b: args 가 typed `PendingActionArgs`. 호출 site 는 raw LLM 인자 →
 /// `PendingActionArgs::from_call(name, value)` 로 먼저 parse 후 이 함수 호출.
 pub fn create_pending(args: PendingActionArgs, summary: &str) -> String {
+    create_pending_scoped(args, summary, None)
+}
+
+/// Like `create_pending` but records the hub visitor `hub_scope` (`inst:sid`) so the hub approval
+/// path can cross-tenant-guard + re-establish the owner scope at execution. `None` = admin
+/// (no scope check at approval). Hub pending path (mcp_server `pending_or_passthrough`) passes Some.
+pub fn create_pending_scoped(args: PendingActionArgs, summary: &str, hub_scope: Option<String>) -> String {
     let mut map = match store_lock().lock() {
         Ok(g) => g,
         Err(_) => return String::new(),
@@ -286,6 +298,7 @@ pub fn create_pending(args: PendingActionArgs, summary: &str) -> String {
             args,
             summary: summary.to_string(),
             created_at: now,
+            hub_scope,
         },
     );
     flush(&map);
