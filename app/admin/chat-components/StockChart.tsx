@@ -38,7 +38,7 @@ const GRID = '#e2e8f0';
 const ZOOM_DEFAULT_CPS = 90; // 기본 한 화면 캔들 수
 const ZOOM_MAX_BAR = 36;     // 최대 봉 px (줌인 한계 — 그 이상 안 커짐)
 const ZOOM_MIN_BAR = 3;      // 최소 봉 px (줌아웃 한계 — 그 이하 안 작아짐)
-const ZOOM_RIGHT_PAD_SLOTS = 3; // 마지막(최신) 캔들 우측 여백 — HTS 처럼 2~3일 띄움 (slot 수)
+const ZOOM_RIGHT_PAD_SLOTS = 2; // 마지막(최신) 캔들 우측 여백 — MTS 처럼 2일 띄움 (slot 수)
 
 function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
@@ -156,6 +156,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   // 줌/팬 내부 참조 (isDragging: 임계값 넘어야 팬 시작 — 그 전까지는 툴팁)
   const pinchRef = useRef<{ startDist: number; startCps: number } | null>(null);
+  // 모바일 롱프레스 툴팁 — 1손가락 드래그 = 스크롤, 0.5초 누름 = 툴팁(MTS 표준). 스크롤↔툴팁 충돌 해소.
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipModeRef = useRef(false);   // 롱프레스 진입 후 true — native touchmove 가 스크롤 차단 + 툴팁 추적
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   // 줌: 한 화면 캔들 수(cps) 조정. factor>1 = 줌아웃(많이·좁게), <1 = 줌인(적게·넓게).
   // 위치 앵커는 barPx 비례 scrollLeft 보정(아래 useLayoutEffect)으로 — 보던 구간 유지.
@@ -185,7 +189,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       if (e.touches.length === 2) e.preventDefault();
     };
     const onTouchMoveNative = (e: TouchEvent) => {
-      if (e.touches.length === 2) e.preventDefault();
+      // 2손가락(핀치) 또는 롱프레스 툴팁 모드 = 브라우저 스크롤 차단 (툴팁이 1손가락으로 봉 추적).
+      if (e.touches.length === 2 || tooltipModeRef.current) e.preventDefault();
     };
     el.addEventListener('touchstart', onTouchStartNative, { passive: false });
     el.addEventListener('touchmove', onTouchMoveNative, { passive: false });
@@ -275,6 +280,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [n, barPx, padLeft]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // 터치는 롱프레스(tooltipMode) 일 때만 툴팁 — 일반 터치 드래그는 스크롤(툴팁 X). 마우스는 항상 hover.
+    if (e.pointerType === 'touch' && !tooltipModeRef.current) return;
     lastPointerXRef.current = e.clientX;
     updateHoverFromClientX(e.clientX);
     if (priceBoxRef.current) {
@@ -289,11 +296,26 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (fullN < 2) return;
     if (e.touches.length === 2) {
+      if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+      tooltipModeRef.current = false;
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       pinchRef.current = { startDist: d, startCps: cps };
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
-      updateHoverFromClientX(e.touches[0].clientX);
+      // 1손가락: 바로 툴팁 안 띄움 — 0.5초 누르고 있으면(롱프레스) 툴팁 진입. 그 전 이동은 스크롤.
+      const t = e.touches[0];
+      touchStartRef.current = { x: t.clientX, y: t.clientY };
+      tooltipModeRef.current = false;
+      if (longPressRef.current) clearTimeout(longPressRef.current);
+      longPressRef.current = setTimeout(() => {
+        tooltipModeRef.current = true;
+        const s = touchStartRef.current;
+        if (s) {
+          updateHoverFromClientX(s.x);
+          const el = priceBoxRef.current;
+          if (el) { const r = el.getBoundingClientRect(); setHoverPos({ x: s.x - r.left, y: s.y - r.top }); }
+        }
+      }, 500);
     }
   }, [fullN, cps, updateHoverFromClientX]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -303,10 +325,26 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const next = Math.round(pinchRef.current.startCps * (pinchRef.current.startDist / Math.max(d, 1)));
       setCps(Math.max(5, Math.min(2000, next)));
     } else if (e.touches.length === 1) {
-      updateHoverFromClientX(e.touches[0].clientX);
+      const t = e.touches[0];
+      if (tooltipModeRef.current) {
+        // 롱프레스 진입 후 — 손가락 따라 봉 추적 (스크롤은 native 리스너가 차단).
+        updateHoverFromClientX(t.clientX);
+        const el = priceBoxRef.current;
+        if (el) { const r = el.getBoundingClientRect(); setHoverPos({ x: t.clientX - r.left, y: t.clientY - r.top }); }
+      } else if (touchStartRef.current && longPressRef.current) {
+        // 롱프레스 전 이동 = 스크롤 의도 → 타이머 취소 (툴팁 안 뜸, native 스크롤 유지).
+        const dx = Math.abs(t.clientX - touchStartRef.current.x);
+        const dy = Math.abs(t.clientY - touchStartRef.current.y);
+        if (dx > 8 || dy > 8) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+      }
     }
   }, [updateHoverFromClientX]);
-  const handleTouchEnd = useCallback(() => { pinchRef.current = null; }, []);
+  const handleTouchEnd = useCallback(() => {
+    pinchRef.current = null;
+    if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+    tooltipModeRef.current = false;
+    setHoverIdx(null); setHoverPos(null);
+  }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
   const volTicks = useMemo(() => niceTicks(0, maxV, 3).filter(t => t > 0), [maxV]);
