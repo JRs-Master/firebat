@@ -143,6 +143,10 @@ pub struct AiResponse {
     /// frontend 가 SourceTags 뱃지로 그려 클릭 → LibrarySourceModal 영역 노출.
     #[serde(rename = "libraryHits", default, skip_serializing_if = "Vec::is_empty")]
     pub library_hits: Vec<crate::ports::LibraryHit>,
+    /// Project Builder — 활성 빌드 세션 상태 (frontend stepper/만료 표시용, conv 단위 조회).
+    /// build_session::BuildSession 직렬화 ({id, convId?, tier?, step, status, ...}).
+    #[serde(rename = "buildSession", default, skip_serializing_if = "Option::is_none")]
+    pub build_session: Option<serde_json::Value>,
 }
 
 /// AiResponse 안 모든 사용자 노출 string 필드 안 시크릿 / 토큰 마스킹. process_with_tools_opts
@@ -1045,6 +1049,7 @@ impl AiManager {
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),
                             library_hits: Vec::new(),
+                            build_session: None,
                         }));
                     }
                 }
@@ -1613,6 +1618,13 @@ impl AiManager {
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,
             library_hits: retrieved_library_hits,
+            // Project Builder — 활성 빌드 세션을 프론트로 전달 (stepper/만료 표시). conv 단위 조회.
+            build_session: ai_opts
+                .conversation_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .and_then(|cid| crate::utils::build_session::active_session_for_conv(cid))
+                .and_then(|s| serde_json::to_value(s).ok()),
         };
         Ok(redact_response(response))
     }
