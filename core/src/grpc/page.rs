@@ -170,7 +170,7 @@ impl PageService for PageServiceImpl {
         // hub project scoping — project 지정 시 page.project 일치할 때만. admin(None) 무검사.
         self.ensure_page_project(&args.slug, args.project.as_deref())?;
         self.manager
-            .delete(&args.slug)
+            .delete(&args.slug, args.project.as_deref())
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(PageDeleteResponse {}))
     }

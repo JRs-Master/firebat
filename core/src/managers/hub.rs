@@ -218,7 +218,7 @@ impl HubManager {
             let pages = page.list();
             for p in pages {
                 if p.project.as_deref() == Some(project_key.as_str()) {
-                    let _ = page.delete(&p.slug);
+                    let _ = page.delete(&p.slug, Some(project_key.as_str()));
                 }
             }
         }

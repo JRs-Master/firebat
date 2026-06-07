@@ -861,7 +861,9 @@ impl McpToolHandler for DeletePageHandler {
             return Ok(r);
         }
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
-        match self.page.delete(&slug) {
+        // project (hub: injected by inject_hub_owner) scopes the delete — hub visitor can only delete
+        // their own page. admin (no project) = unscoped. Closes the cross-tenant delete gap.
+        match self.page.delete(&slug, obj_str(&args, "project").as_deref()) {
             Ok(()) => Ok(serde_json::json!({"success": true})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }

@@ -50,6 +50,7 @@
     "page": {
       "save_failed": "페이지 저장에 실패했습니다: {{slug}}",
       "delete_failed": "페이지 삭제에 실패했습니다: {{slug}}",
+      "permission_denied": "이 페이지에 접근할 권한이 없습니다.",
       "visibility_failed": "visibility 설정에 실패했습니다: {{slug}}",
       "slug_empty": "새 slug 가 비어 있습니다.",
       "slug_same": "기존과 동일한 slug 입니다.",

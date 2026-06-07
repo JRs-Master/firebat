@@ -50,6 +50,7 @@
     "page": {
       "save_failed": "Failed to save page: {{slug}}",
       "delete_failed": "Failed to delete page: {{slug}}",
+      "permission_denied": "You do not have permission to access this page.",
       "visibility_failed": "Failed to set page visibility: {{slug}}",
       "slug_empty": "New slug is empty.",
       "slug_same": "Slug is identical to the existing one.",

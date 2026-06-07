@@ -119,8 +119,18 @@ impl PageManager {
         }
     }
 
-    /// 삭제 — DB delete + media_usage 정리.
-    pub fn delete(&self, slug: &str) -> InfraResult<()> {
+    /// Delete a page by slug, then clear its media_usage. When `project` is Some(non-empty), the
+    /// delete only proceeds if the page's project matches — the single owner-scoping enforcement
+    /// point across every caller (gRPC PageService, MCP + FC delete_page tools, hub cascade).
+    /// admin (None/empty) = no check. Mismatch = permission error. This closes the cross-tenant gap
+    /// where the MCP/FC delete_page handlers deleted by slug alone while only the gRPC path guarded.
+    pub fn delete(&self, slug: &str, project: Option<&str>) -> InfraResult<()> {
+        if let Some(p) = project.filter(|p| !p.is_empty()) {
+            match self.get(slug) {
+                Some(rec) if rec.project.as_deref() == Some(p) => {}
+                _ => return Err(crate::i18n::t("core.error.page.permission_denied", None, &[])),
+            }
+        }
         if !self.db.delete_page(slug) {
             return Err(crate::i18n::t(
                 "core.error.page.delete_failed",
@@ -247,7 +257,8 @@ impl PageManager {
             cur.visibility.as_deref(),
             cur.password.as_deref(),
         )?;
-        self.delete(old_slug)?;
+        // internal rename cleanup — scope already validated at the rename entry; old_slug is this page.
+        self.delete(old_slug, None)?;
 
         if set_redirect {
             self.db.upsert_page_redirect(old_slug, &new_slug);

@@ -883,7 +883,9 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
-                page.delete(&slug)?;
+                // project (hub: injected by ai.rs hub owner injection) scopes the delete — hub visitor
+                // can only delete their own page. admin (no project) = unscoped. Cross-tenant guard.
+                page.delete(&slug, args.get("project").and_then(|v| v.as_str()))?;
                 // AI 미개입 자동 hook — 사이드바 SSE 갱신 (옛 TS notifySidebar 패턴).
                 event.notify_sidebar();
                 Ok(serde_json::json!({"deleted": slug}))
