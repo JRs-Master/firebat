@@ -990,8 +990,8 @@ ${cdnTags}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       loading="lazy"
-      style={standalone ? { height: '100dvh' } : undefined}
-      className={standalone ? 'w-full border-0 bg-white block' : 'w-full min-h-[500px] h-[500px] border-0 bg-white'}
+      style={standalone ? { height: '100%' } : undefined}
+      className={standalone ? 'w-full h-full border-0 bg-white block' : 'w-full min-h-[500px] h-[500px] border-0 bg-white'}
       title="Html content"
     />
   );

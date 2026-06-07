@@ -297,6 +297,12 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   const head = spec.head ?? {};
   const body = spec.body ?? [];
+  // 단일 Html + (script/deps) = 인터랙티브 앱(iframe 전체화면) → 페이지를 뷰포트에 잠가
+  // 이중 스크롤(페이지 + iframe) 방지. iframe 이 100% 채우고 앱 내부만 단일 스크롤.
+  // 정적 HTML·콘텐츠 페이지(ads/SEO 인덱싱)는 일반 레이아웃 그대로 유지.
+  const appBlock = body.length === 1 ? body[0] : null;
+  const isApp = !!appBlock && ((appBlock.type || '').toLowerCase() === 'html')
+    && (/<script/i.test(String((appBlock.props as any)?.content ?? '')) || ((appBlock.props as any)?.dependencies?.length > 0));
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = await resolveBaseUrl(seo.siteUrl);
@@ -450,13 +456,13 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       {projectCustomCss && (
         <style dangerouslySetInnerHTML={{ __html: projectCustomCss }} />
       )}
-      <main className="min-h-screen bg-white">
+      <main className={isApp ? 'h-dvh overflow-hidden bg-white' : 'min-h-screen bg-white'}>
         <div
-          className="firebat-cms-content"
+          className={isApp ? 'firebat-cms-content h-full' : 'firebat-cms-content'}
           data-h1-style={projectH1Style ?? seo.theme?.heading?.h1}
           data-h2-style={projectH2Style ?? seo.theme?.heading?.h2}
           data-h3-style={projectH3Style ?? seo.theme?.heading?.h3}
-          style={projectThemeStyle}
+          style={isApp ? { ...projectThemeStyle, height: '100%', padding: 0, maxWidth: 'none' } : projectThemeStyle}
         >
           {/* 콘텐츠 페이지 (project 설정된) 만 — Breadcrumb + Reading time 표시.
            *  Breadcrumb: JSON-LD BreadcrumbList 와 동일 경로 (홈 > seg1 > ... > 현재).
@@ -482,7 +488,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
               })()}
             </>
           )}
-          <ComponentRenderer components={body} />
+          <ComponentRenderer components={body} fullHeight={isApp} />
           {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더. */}
           {spec.project && seo.layout?.showRelatedPosts && (
             <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} siteLang={seo.siteLang} />
