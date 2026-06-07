@@ -1307,7 +1307,9 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
-                let (result, regen_from) = media.regenerate_image_by_slug(&slug).await?;
+                // hubOwner (injected for hub turns) → owner-scoped regen. admin (None) = unscoped.
+                let (result, regen_from) =
+                    media.regenerate_image_owned(&slug, args.get("hubOwner").and_then(|v| v.as_str())).await?;
                 let mut value = serde_json::to_value(&result).unwrap_or_default();
                 if let serde_json::Value::Object(ref mut map) = value {
                     map.insert(

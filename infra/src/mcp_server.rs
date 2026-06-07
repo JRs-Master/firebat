@@ -1476,7 +1476,9 @@ pub struct RegenerateImageHandler {
 impl McpToolHandler for RegenerateImageHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
-        match self.media.regenerate_image_by_slug(&slug).await {
+        // hubOwner (injected for hub turns) → regenerate_image_owned scopes to user/hub/<id>/media/ +
+        // re-saves into the same hub scope. admin (None) = unscoped. Closes the cross-tenant regen leak.
+        match self.media.regenerate_image_owned(&slug, obj_str(&args, "hubOwner").as_deref()).await {
             Ok((result, regen_from)) => {
                 let mut value = serde_json::to_value(&result).unwrap_or_default();
                 if let serde_json::Value::Object(ref mut map) = value {
