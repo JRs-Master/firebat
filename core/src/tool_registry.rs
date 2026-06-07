@@ -494,13 +494,14 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "advance_build".to_string(),
-            description: "현재 빌드 단계 산출물 저장 + 다음 단계로 진행. {sessionId, output, tier?(S1 에서 T1/T2/T3)}. 다음 단계 지시 반환. 엔진이 순서 강제 — 현재 단계 산출물 없으면 거부.".to_string(),
+            description: "현재 빌드 단계 산출물 저장 + 다음 단계로 진행. {sessionId, output, tier?(S1), auto?}. 다음 단계 지시 반환. 엔진이 한 턴에 한 단계만 진행 — 단계 선택지를 suggest 로 제시하고 사용자 응답을 받은 다음에 호출(사용자 선택 전 호출은 거부). auto=true(사용자가 '전부 알아서' 선택)면 이후 멈춤 없이 끝까지 자동.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "sessionId": { "type": "string" },
                     "output": { "description": "현재 단계 산출물(요약/설계/결과 등)" },
-                    "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "S1(요구사항)에서 분류한 복잡도" }
+                    "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "S1(요구사항)에서 분류한 복잡도" },
+                    "auto": { "type": "boolean", "description": "사용자가 '전부 알아서'를 고르면 true — 이후 단계 멈춤 없이 끝까지 자동 진행" }
                 },
                 "required": ["sessionId", "output"]
             }),
@@ -523,6 +524,9 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 if let Some(tier) = tier {
                     build_session::set_tier(&session_id, tier);
                 }
+            }
+            if args.get("auto").and_then(|v| v.as_bool()) == Some(true) {
+                build_session::set_auto_advance(&session_id, true); // 사용자가 '전부 알아서' 선택 → 게이트 우회(한큐).
             }
             build_session::set_step_output(&session_id, output);
             match build_session::advance_step(&session_id) {

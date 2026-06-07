@@ -936,10 +936,12 @@ impl AiManager {
                     else { format!("{}:{}", c.instance_id, c.session_id) }
                 }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
                 if let Some(cid) = build_scope.as_deref() {
+                    // 새 user 턴 시작 — 활성 빌드 세션의 awaiting 게이트 해제(이번 턴 advance 1회 허용 = 인터랙티브 단계 강제).
+                    crate::utils::build_session::reset_awaiting_for_conv(cid);
                     if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
                         let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
                         composed = format!(
-                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n단계 완료 시 advance_build(sessionId=\"{}\", output, tier?) 호출. 사용자가 중단/취소를 원하면 cancel_build(sessionId) 호출.\n\n{}",
+                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n진행은 한 턴에 한 단계만 — 선택지를 suggest 칩으로 제시하고 사용자가 고른 뒤 advance_build(sessionId=\"{}\", output, tier?, auto?) 호출(선택 전 호출은 엔진이 거부). 중단은 cancel_build(sessionId).\n\n{}",
                             sess.id, sess.step.key(), sp, sess.id, composed
                         );
                     }
