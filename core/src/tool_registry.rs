@@ -475,9 +475,11 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
         },
         move |args| async move {
             let request = args.get("request").and_then(|v| v.as_str()).unwrap_or("");
-            // convId 는 ai.rs 가 주입(cross-turn 조회 키) — AI 가 직접 넣지 않음(스키마 비노출).
-            let conv_id = args.get("convId").and_then(|v| v.as_str());
-            let id = build_session::create_session(conv_id, request);
+            // scope 키 — hub(hubOwner=inst:sid, visitor 격리) 우선, 없으면 convId.
+            // ai.rs(FC dispatch) · inject_hub_owner(MCP) 가 주입 — AI 직접 미지정(스키마 비노출).
+            let scope = args.get("hubOwner").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+                .or_else(|| args.get("convId").and_then(|v| v.as_str()));
+            let id = build_session::create_session(scope, request);
             Ok(serde_json::json!({
                 "success": true,
                 "data": {
@@ -538,6 +540,27 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 }
                 Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
             }
+        },
+    );
+
+    tools.register_tool(
+        ToolDefinition {
+            name: "cancel_build".to_string(),
+            description: "진행 중인 빌드 세션을 중단(취소). 사용자가 빌드를 그만두거나 다른 작업으로 전환하려 할 때 호출. {sessionId}.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "sessionId": { "type": "string" } },
+                "required": ["sessionId"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| async move {
+            let session_id = args
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "cancel_build: sessionId 필수".to_string())?;
+            build_session::finish_session(session_id, false);
+            Ok(serde_json::json!({ "success": true, "data": { "sessionId": session_id, "status": "abandoned" } }))
         },
     );
 }

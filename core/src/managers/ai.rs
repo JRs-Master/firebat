@@ -918,11 +918,16 @@ impl AiManager {
                 }
                 // Project Builder — 활성 빌드 세션(conv 단위)이 있으면 현재 단계 prompt 를 prepend.
                 // cross-turn 강제 흐름 — 단계 사이 user 응답에도 AI 가 같은 빌드를 이어가게.
-                if let Some(cid) = ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+                // scope 키 — hub: hubOwner(inst:sid, visitor 격리) / admin: 대화 id.
+                let build_scope: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
+                    if c.session_id.is_empty() { c.instance_id.clone() }
+                    else { format!("{}:{}", c.instance_id, c.session_id) }
+                }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
+                if let Some(cid) = build_scope.as_deref() {
                     if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
                         let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
                         composed = format!(
-                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n단계 완료 시 advance_build(sessionId=\"{}\", output, tier?) 호출.\n\n{}",
+                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n단계 완료 시 advance_build(sessionId=\"{}\", output, tier?) 호출. 사용자가 중단/취소를 원하면 cancel_build(sessionId) 호출.\n\n{}",
                             sess.id, sess.step.key(), sp, sess.id, composed
                         );
                     }
@@ -1618,13 +1623,16 @@ impl AiManager {
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,
             library_hits: retrieved_library_hits,
-            // Project Builder — 활성 빌드 세션을 프론트로 전달 (stepper/만료 표시). conv 단위 조회.
-            build_session: ai_opts
-                .conversation_id
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .and_then(|cid| crate::utils::build_session::active_session_for_conv(cid))
-                .and_then(|s| serde_json::to_value(s).ok()),
+            // Project Builder — 활성 빌드 세션을 프론트로 전달 (stepper/만료 표시).
+            build_session: {
+                // scope 키 — hub: hubOwner / admin: 대화 id (위 주입과 동일 규칙).
+                let scope: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
+                    if c.session_id.is_empty() { c.instance_id.clone() }
+                    else { format!("{}:{}", c.instance_id, c.session_id) }
+                }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
+                scope.and_then(|s| crate::utils::build_session::active_session_for_conv(&s))
+                    .and_then(|sess| serde_json::to_value(sess).ok())
+            },
         };
         Ok(redact_response(response))
     }
