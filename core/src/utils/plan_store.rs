@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-const PLAN_EXPIRE: Duration = Duration::from_secs(3 * 60 * 60); // 3시간
+const PLAN_EXPIRE: Duration = Duration::from_secs(30 * 24 * 60 * 60); // 30일 (pending_tools 와 통일 — 검토 중·자리 비움 후 만료 방지)
 const MAX_SIZE: usize = 50;
 
 /// propose_plan steps 의 한 단계.
