@@ -84,6 +84,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_meta_render_tools(tools, &h);
     register_infra_parity_tools(tools, &h);
     register_template_tools(tools, &h);
+    register_build_tools(tools);
 }
 
 /// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.
@@ -453,6 +454,90 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty() && *s != "admin" && !s.starts_with("hub:"))
         .map(String::from)
+}
+
+/// Project Builder 도구 — start_build / advance_build. build_session 엔진 직접 호출(매니저 의존 0).
+/// 앱/페이지를 표준 단계(요구→설계→구현→반복)로 만들 때. 엔진이 advance 게이트로 순서 강제.
+/// plan mode 와 독립 — on/off 무관하게 앱빌드는 PB 로(프롬프트가 트리거).
+fn register_build_tools(tools: &Arc<ToolManager>) {
+    use crate::utils::build_session::{self, BuildStep, BuildTier};
+
+    tools.register_tool(
+        ToolDefinition {
+            name: "start_build".to_string(),
+            description: "앱/페이지를 표준 단계(요구→설계→구현→반복)로 만들 때 호출 — 새 빌드 세션 + 1단계(요구사항) 지시 반환. plan mode 와 무관하게 다단계 빌드면 이걸로 시작. (단순 1회성 페이지는 save_page 로 충분)".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "request": { "type": "string", "description": "사용자의 빌드 요청" } },
+                "required": ["request"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| async move {
+            let request = args.get("request").and_then(|v| v.as_str()).unwrap_or("");
+            let id = build_session::create_session(request);
+            Ok(serde_json::json!({
+                "success": true,
+                "data": {
+                    "sessionId": id,
+                    "step": BuildStep::Requirements.key(),
+                    "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None)
+                }
+            }))
+        },
+    );
+
+    tools.register_tool(
+        ToolDefinition {
+            name: "advance_build".to_string(),
+            description: "현재 빌드 단계 산출물 저장 + 다음 단계로 진행. {sessionId, output, tier?(S1 에서 T1/T2/T3)}. 다음 단계 지시 반환. 엔진이 순서 강제 — 현재 단계 산출물 없으면 거부.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "output": { "description": "현재 단계 산출물(요약/설계/결과 등)" },
+                    "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "S1(요구사항)에서 분류한 복잡도" }
+                },
+                "required": ["sessionId", "output"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| async move {
+            let session_id = args
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "advance_build: sessionId 필수".to_string())?
+                .to_string();
+            let output = args.get("output").cloned().unwrap_or(serde_json::Value::Null);
+            if let Some(t) = args.get("tier").and_then(|v| v.as_str()) {
+                let tier = match t {
+                    "T1" => Some(BuildTier::T1),
+                    "T2" => Some(BuildTier::T2),
+                    "T3" => Some(BuildTier::T3),
+                    _ => None,
+                };
+                if let Some(tier) = tier {
+                    build_session::set_tier(&session_id, tier);
+                }
+            }
+            build_session::set_step_output(&session_id, output);
+            match build_session::advance_step(&session_id) {
+                Ok(next) => {
+                    let tier = build_session::get_session(&session_id).and_then(|s| s.tier);
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "sessionId": session_id,
+                            "step": next.key(),
+                            "done": next == BuildStep::Done,
+                            "stepPrompt": build_session::step_prompt(next, tier)
+                        }
+                    }))
+                }
+                Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+            }
+        },
+    );
 }
 
 /// 메타 도구 — render / suggest / propose_plan. ToolManager(FC 모델) 노출용.

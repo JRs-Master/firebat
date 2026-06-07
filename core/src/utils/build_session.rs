@@ -263,6 +263,33 @@ pub fn finish_session(id: &str, completed: bool) -> Option<BuildSession> {
     })
 }
 
+/// 단계별 AI 지시 — 도구 결과로 반환돼 AI 를 그 단계에 집중시킴 (엔진이 흐름 강제).
+/// tier 별 힌트 분기(P4 의 시작 — 본격 경로 skip 은 추후).
+pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
+    match step {
+        BuildStep::Requirements => "S1 요구사항: 사용자 요청을 명확히 정리하고 복잡도 tier 를 분류하세요. \
+T1=단순 페이지(render/html, 외부 모듈 0) / T2=기존 모듈·서비스 호출 / T3=새 유저 모듈 필요(코드 생성). \
+애매하면 사용자에게 먼저 질문. 정리되면 advance_build 에 tier 와 요구사항 요약(output)을 넘기세요."
+            .to_string(),
+        BuildStep::Design => {
+            let tier_hint = match tier {
+                Some(BuildTier::T1) => "T1: 컴포넌트(render_*) vs HTML iframe 중 택. 외부 모듈 불요.",
+                Some(BuildTier::T2) => "T2: 필요한 기존 모듈/서비스(sysmod 등)와 호출 방식 명시.",
+                Some(BuildTier::T3) => "T3: 새 유저 모듈의 입출력·로직 설계 (다음 단계서 코드 생성).",
+                None => "tier 미정 — S1 에서 먼저 분류 필요.",
+            };
+            format!("S2 설계: 산출물 구조를 설계하세요. {tier_hint} 설계가 정리되면 advance_build 에 설계 요약(output)을 넘기세요.")
+        }
+        BuildStep::Implement => "S3 구현: 설계대로 실제로 만드세요. \
+T1/T2 = save_page 로 페이지 생성·발행(승인 카드). T3 = 모듈 코드 생성 후 페이지. \
+만들고 프리뷰 확인되면 advance_build 에 결과(slug/url 등, output)를 넘기세요."
+            .to_string(),
+        BuildStep::Iterate => "S4 반복: 사용자 피드백을 받아 수정하세요. 추가 수정이 없으면 빌드를 완료하세요."
+            .to_string(),
+        BuildStep::Done => "빌드가 완료되었습니다.".to_string(),
+    }
+}
+
 /// 디버깅·테스트용.
 pub fn clear_sessions_in_memory() {
     if let Ok(mut map) = store_lock().lock() {

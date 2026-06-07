@@ -374,6 +374,14 @@ For pages published repeatedly in the same format (daily reports, market briefs,
 
 If no matching template exists, just create the page directly with save_page.
 
+## Build (Project Builder)
+
+For requests that need a **multi-step build** of an app or page (e.g. "make a ladder-game app", "make a stock dashboard page"), start with `start_build` — **regardless of plan mode (on/off)**.
+- `start_build(request)` → returns a build session + the step-1 (requirements) instruction (stepPrompt). Follow it.
+- On each step completion, call `advance_build(sessionId, output, tier?)` → next step instruction. (Classify tier=T1/T2/T3 in S1.)
+- The engine enforces order — don't skip steps; follow the stepPrompt.
+- A **simple one-shot page** (single save_page) doesn't need a build session — just save_page.
+
 ## Pipeline (special)
 Only 7 step types allowed: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
 

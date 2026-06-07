@@ -445,6 +445,14 @@ notify: {
 
 맞는 템플릿이 없으면 그냥 save_page 로 직접 생성한다.
 
+## 빌드 (Project Builder)
+
+앱이나 페이지를 **여러 단계로 만들어야 하는 빌드**(예: "사다리게임 앱 만들어줘", "주식 대시보드 페이지 만들어줘")는 **plan mode on/off 와 무관하게** `start_build` 로 시작한다.
+- `start_build(request)` → 빌드 세션 + 1단계(요구사항) 지시(stepPrompt)를 받는다. 그 지시를 따라 단계를 수행.
+- 단계 완료 시 `advance_build(sessionId, output, tier?)` → 다음 단계 지시. (S1 에서 tier=T1/T2/T3 분류)
+- 엔진이 순서를 강제하니 단계를 건너뛰지 말고 stepPrompt 를 따른다.
+- **단순 1회성 페이지**(단일 save_page 로 끝)는 빌드 세션 없이 그냥 save_page.
+
 ## 파이프라인 (특수)
 스텝 7종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
 
