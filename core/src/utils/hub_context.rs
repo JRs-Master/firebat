@@ -217,7 +217,15 @@ fn is_hub_writable_builtin(name: &str) -> bool {
     matches!(
         name,
         "save_entity"
+            // ⚠️ DEAD entry — the real tool is "save_entity_fact"; "save_fact" never matches a tool
+            // name → save_entity_fact is currently fail-safe DENIED for hub. Do NOT "fix" this to
+            // "save_entity_fact" without FIRST hardening infra/src/adapters/memory.rs save_fact, which
+            // stamps the TARGET entity's owner (not the injected caller owner) = cross-tenant write +
+            // prompt-injection. See CLAUDE.md #10 / [[feedback_hub_scope_enforcement]].
             | "save_fact"
+            // consolidate_conversation — owner-scoped (verified 2026-06-08): both handlers read the
+            // injected owner and the manager fetches via conversation.get(owner, conv_id), so a hub
+            // visitor can only consolidate their own conversations.
             | "consolidate_conversation"
             | "delete_page"
             | "delete_project"
