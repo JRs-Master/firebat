@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::managers::task::PipelineStep;
 use crate::ports::{CronNotify, CronRetry, CronRunWhen};
 
-const PENDING_EXPIRE: Duration = Duration::from_secs(10 * 60); // 10분
+const PENDING_EXPIRE: Duration = Duration::from_secs(3 * 60 * 60); // 3시간 (plan_store 와 통일 — 옛 10분은 리포트·플랜 검토 중 만료돼 승인 시 'not found' 다발)
 const MAX_SIZE: usize = 100;
 
 // ── PendingActionArgs — 6 destructive 도구의 typed oneof ─────────────
