@@ -92,6 +92,15 @@ function niceTicks(min: number, max: number, count = 5): number[] {
   return ticks;
 }
 
+// 값을 1/2/5×10^k 로 올림 — 거래량 축 상한용. 보이는 구간 max 에 적용하면 깔끔한 눈금 + 막대 위 약간 여백.
+function niceCeil(v: number): number {
+  if (v <= 0) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * mag;
+}
+
 export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints }: StockChartProps) {
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const volScrollRef = useRef<HTMLDivElement>(null); // 거래량 차트 — 가격과 가로 스크롤 동기화
@@ -253,7 +262,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const rangeP = maxP - minP || 1;
     const pMin = minP - rangeP * 0.05;
     const pMax = maxP + rangeP * 0.05;
-    const maxV = Math.max(...vis.map(d => d.volume), 1);
+    const maxVRaw = Math.max(...vis.map(d => d.volume), 1);
+    const maxV = niceCeil(maxVRaw);  // 거래량 축 상한 = 보이는 구간 max 의 nice 올림 → 구간 바뀌면 함께 변함(동적) + 막대 위 약간 여백.
     // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
     const xs = safeData.map((_, i) => padLeft + i * barPx + barPx / 2);
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
@@ -306,6 +316,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const t = e.touches[0];
       touchStartRef.current = { x: t.clientX, y: t.clientY };
       tooltipModeRef.current = false;
+      lastPointerXRef.current = null;  // 스크롤 중 onScroll 가 옛 커서로 크로스헤어 띄우지 않게.
       if (longPressRef.current) clearTimeout(longPressRef.current);
       longPressRef.current = setTimeout(() => {
         tooltipModeRef.current = true;
@@ -331,11 +342,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         updateHoverFromClientX(t.clientX);
         const el = priceBoxRef.current;
         if (el) { const r = el.getBoundingClientRect(); setHoverPos({ x: t.clientX - r.left, y: t.clientY - r.top }); }
-      } else if (touchStartRef.current && longPressRef.current) {
-        // 롱프레스 전 이동 = 스크롤 의도 → 타이머 취소 (툴팁 안 뜸, native 스크롤 유지).
+      } else if (touchStartRef.current) {
+        // 롱프레스 전 이동 = 스크롤 의도 → 타이머 취소 + 크로스헤어/툴팁·커서참조 제거 (스크롤 중엔 세로 기준선 안 뜸).
         const dx = Math.abs(t.clientX - touchStartRef.current.x);
         const dy = Math.abs(t.clientY - touchStartRef.current.y);
-        if (dx > 8 || dy > 8) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+        if (dx > 8 || dy > 8) {
+          if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+          lastPointerXRef.current = null;
+          setHoverIdx(null); setHoverPos(null);
+        }
       }
     }
   }, [updateHoverFromClientX]);
@@ -347,7 +362,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
-  const volTicks = useMemo(() => niceTicks(0, maxV, 3).filter(t => t > 0), [maxV]);
+  const volTicks = useMemo(() => [maxV / 2, maxV], [maxV]);  // 거래량 축 = 중간·상한 2단계 (maxV = nice 올림된 동적 상한, 라벨 항상 표시).
 
   // 헤더는 전체 데이터 기준 (가격), 기간/고가/저가는 가시 범위 기준
   const latest = fullData[fullN - 1];
@@ -621,14 +636,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           const top = flipUp
             ? Math.max(4, hoverPos.y - tooltipH - 8)
             : Math.min(containerH - tooltipH - 4, Math.max(4, hoverPos.y - 8));
+          // 가로 위치 — 크로스헤어 우측 기본, 우측 넘치면 왼쪽으로. visible 컨테이너 안으로 clamp 후 content 좌표(+scrollX).
+          const tipW = 185;
+          const rightLeft = hoverPos.x + 14;
+          const visLeft = rightLeft + tipW > containerW ? hoverPos.x - tipW - 14 : rightLeft;
+          const tipLeft = Math.max(4, Math.min(visLeft, containerW - tipW - 4)) + scrollX;
           return (
           <div
             className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap z-10"
             style={{
-              left: hoverPos.x + scrollX + 14,
+              left: tipLeft,
               top,
-              transform: hoverPos.x > 0.6 * containerW
-                ? 'translateX(calc(-100% - 28px))' : undefined,
               minWidth: 140,
             }}
           >
