@@ -3,6 +3,19 @@
     "name": "English",
     "code": "en"
   },
+  "plan": {
+    "past_runat": "⏱ The scheduled time has already passed ({{time}}). Choose whether to send now or change the time.",
+    "exec_failed": "⚠ Execution failed: {{error}}",
+    "expired": "⏰ The approval window has expired. Please create it again.",
+    "scheduled": "Scheduled",
+    "executed": "Done",
+    "cancelled": "Cancelled",
+    "send_now": "Send now",
+    "change_time": "Change time",
+    "approve": "Approve",
+    "reject": "Reject",
+    "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)"
+  },
   "error": {
     "module": {
       "invalid_name": "Invalid module name.",

@@ -783,6 +783,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
   /** Hub page mode — share 호출 시 /api/hub/<slug>/share 분기 (anonymous + apiToken). */
   hubContext?: { slug: string; apiToken: string; sessionId: string };
 }) {
+  const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
     return (
@@ -989,29 +990,29 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${isExpired ? 'bg-slate-50 border border-slate-200' : p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       {p.status === 'past-runat' && (
                         <div className="text-[11px] font-bold text-red-600">
-                          ⏱ 예약 시각이 이미 지났습니다 ({p.originalRunAt ? new Date(p.originalRunAt).toLocaleString('ko-KR') : '-'}). 즉시 보낼지 시간을 변경할지 선택하세요.
+                          {t('plan.past_runat', { time: p.originalRunAt ? new Date(p.originalRunAt).toLocaleString('ko-KR') : '-' })}
                         </div>
                       )}
                       {p.status === 'error' && p.errorMessage && (
-                        <div className="text-[11px] font-bold text-red-600 break-all">⚠ 실행 실패: {p.errorMessage}</div>
+                        <div className="text-[11px] font-bold text-red-600 break-all">{t('plan.exec_failed', { error: p.errorMessage })}</div>
                       )}
                       {isExpired && (
-                        <div className="text-[11px] font-bold text-slate-500">⏰ 승인 기간이 만료되었습니다. 다시 생성해 주세요.</div>
+                        <div className="text-[11px] font-bold text-slate-500">{t('plan.expired')}</div>
                       )}
                       <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
                       <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
                       {p.status === 'approved' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? '예약됨' : '실행됨'}</span>
+                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
                       ) : p.status === 'rejected' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-slate-400">취소됨</span>
+                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-slate-400">{t('plan.cancelled')}</span>
                       ) : p.status === 'error' ? null : p.status === 'past-runat' ? (
                         <>
                           <button
                             onClick={() => onApprovePendingAction?.(msg.id, p.planId, 'now')}
                             className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
                           >
-                            즉시 보내기
+                            {t('plan.send_now')}
                           </button>
                           <button
                             onClick={() => {
@@ -1019,7 +1020,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                               const yyyy = cur.getFullYear(), mm = String(cur.getMonth() + 1).padStart(2, '0'), dd = String(cur.getDate()).padStart(2, '0');
                               const hh = String(cur.getHours()).padStart(2, '0'), mi = String(cur.getMinutes()).padStart(2, '0');
                               const suggested = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-                              const input = window.prompt('새 예약 시각 (YYYY-MM-DDTHH:mm)', suggested);
+                              const input = window.prompt(t('plan.reschedule_prompt'), suggested);
                               if (!input) return;
                               // 초·타임존 보정 — 입력값은 사용자 로컬 시각 가정
                               const iso = input.length === 16 ? input + ':00' : input;
@@ -1027,7 +1028,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                             }}
                             className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-bold rounded-lg border border-slate-300 transition-colors"
                           >
-                            시간 변경
+                            {t('plan.change_time')}
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
@@ -1042,13 +1043,13 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                             onClick={() => onApprovePending?.(msg.id, p.planId)}
                             className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
                           >
-                            <Check size={13} /> 승인
+                            <Check size={13} /> {t('plan.approve')}
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
                             className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
                           >
-                            <X size={13} /> 거부
+                            <X size={13} /> {t('plan.reject')}
                           </button>
                         </>
                       )}
