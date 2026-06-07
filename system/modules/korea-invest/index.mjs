@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Firebat System Module: korea-invest (옵션 C 통합, 2026-05-14)
- * 한국투자증권 OPEN API 통합 — 278 REST API. codegen 생성.
+ * Firebat System Module: korea-invest — codegen 자동 생성 (scripts/gen.mjs).
+ * 한국투자증권 OPEN API 통합 (278 REST API).
  *
  * LLM 시점: config.json 의 domains[] 가 9개 별도 도구로 분리 등록.
  * 단일 모듈로 라우팅 — action 으로 API ID 직접 호출, tr_id 자동 분기 (실전/모의).
@@ -1959,15 +1959,6 @@ const API_TABLE = {
   }
 };
 
-/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
-class I18nError extends Error {
-  constructor(key, params) {
-    super(key);
-    this.errorKey = key;
-    this.errorParams = params || {};
-  }
-}
-
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   if (!forceNew) {
     const cached = process.env['KIS_ACCESS_TOKEN'];
@@ -1977,15 +1968,14 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, appsecret: appSecret }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(10000),
   });
-  if (!resp.ok) throw new I18nError('error.token_issue_failed', { status: String(resp.status) });
+  if (!resp.ok) throw new Error(`KIS 토큰 발급 실패: ${resp.status}`);
   const json = await resp.json();
-  if (!json.access_token) throw new I18nError('error.token_response_invalid', { body: JSON.stringify(json) });
+  if (!json.access_token) throw new Error(`KIS 토큰 응답 오류: ${JSON.stringify(json)}`);
   return { token: json.access_token, isNew: true };
 }
 
-// Rate limit: 초당 20회 (한투 공식 한도)
 const RATE_LIMIT = 20;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
@@ -2000,9 +1990,9 @@ async function acquireSlot() {
 
 async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
   const meta = API_TABLE[action];
-  if (!meta) throw new I18nError('error.unknown_api_id', { action });
+  if (!meta) throw new Error(`알 수 없는 API ID: ${action}. 한투 OPEN API 문서 참조.`);
   const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
-  if (isMock && !meta.trIdMock) throw new I18nError('error.mock_unsupported', { action, name: meta.name });
+  if (isMock && !meta.trIdMock) throw new Error(`${action} (${meta.name}) 은 모의투자 미지원입니다.`);
   let url = `${base}${meta.path}`;
   if (meta.method === 'GET' && Object.keys(query).length > 0) {
     const qs = new URLSearchParams(query).toString();
@@ -2017,7 +2007,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     'custtype': 'P',
   };
   await acquireSlot();
-  const init = { method: meta.method, headers, signal: AbortSignal.timeout(45000) };
+  const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
   if (meta.method !== 'GET' && Object.keys(body).length > 0) init.body = JSON.stringify(body);
   const resp = await fetch(url, init);
   if (resp.status === 429 && retry > 0) {
@@ -2026,26 +2016,9 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
-    // KIS 토큰 만료 조건 = HTTP 500 + body 안 rt_cd "1" + msg1 의 'token' / '토큰'.
-    // throw 하지 않고 parsed body 반환 → main 의 isTokenInvalid 분기 통과 → 자동 재발급.
-    if (resp.status === 500) {
-      try {
-        const parsed = JSON.parse(errText);
-        if (parsed?.rt_cd === '1' && /token|토큰/.test(parsed?.msg1 || '')) {
-          return parsed;
-        }
-      } catch {}
-    }
-    throw new I18nError('error.api_status', { status: String(resp.status), statusText: resp.statusText, body: errText });
+    throw new Error(`KIS API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
   return await resp.json();
-}
-
-/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.korea-invest.{key} 로 변환. */
-function outErr(key, params) {
-  const r = { success: false, errorKey: key };
-  if (params && Object.keys(params).length > 0) r.errorParams = params;
-  console.log(JSON.stringify(r));
 }
 
 let raw = '';
@@ -2056,13 +2029,13 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action;
     if (!action) {
-      outErr('error.action_required', {});
+      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 한투 API ID (v1_국내주식-008 등) 를 지정하세요.' }));
       return;
     }
     const appKey = process.env['KIS_APP_KEY'];
     const appSecret = process.env['KIS_APP_SECRET'];
     if (!appKey || !appSecret) {
-      outErr('error.api_key_missing', {});
+      console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
       return;
     }
     const isMock = data.mock === true;
@@ -2079,11 +2052,15 @@ process.stdin.on('end', async () => {
       result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     }
     const meta = API_TABLE[action];
-    const output = { success: true, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
+    // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
+    // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
+    const rtCd = result?.rt_cd;
+    const ok = rtCd === undefined || rtCd === null || rtCd === '0';
+    const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
+    if (!ok) output.error = result?.msg1 || `한투 API 오류 (rt_cd=${rtCd})`;
     if (isNew) output.__updateSecrets = { KIS_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
-    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
-    else outErr('error.runtime', { message: e.message });
+    console.log(JSON.stringify({ success: false, error: e.message }));
   }
 });

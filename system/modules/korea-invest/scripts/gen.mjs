@@ -88,7 +88,17 @@ function build(apis) {
       actions: apis.map((a) => a.id).sort(),
       actionsCount: apis.length,
       actionsDetail: apis
-        .map((a) => `  ${a.id} (TR_ID: ${a.trIdReal || 'N/A'}) — ${a.name}`)
+        .map((a) => {
+          // 필수 query+body 파라미터(+값 가이드 60자) 동봉 — AI 가 호출 전 필수 인자를 알게 (실패 prevention).
+          const reqParams = [...(a.request?.query || []), ...(a.request?.body || [])]
+            .filter((f) => f.required)
+            .map((f) => {
+              const d = (f.desc || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+              return d ? `${f.name}(${d})` : f.name;
+            });
+          const reqStr = reqParams.length ? ` [필수: ${reqParams.join(', ')}]` : '';
+          return `  ${a.id} (TR_ID: ${a.trIdReal || 'N/A'}) — ${a.name}${reqStr}`;
+        })
         .join('\n'),
     }));
 
@@ -255,7 +265,12 @@ process.stdin.on('end', async () => {
       result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     }
     const meta = API_TABLE[action];
-    const output = { success: true, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
+    // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
+    // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
+    const rtCd = result?.rt_cd;
+    const ok = rtCd === undefined || rtCd === null || rtCd === '0';
+    const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
+    if (!ok) output.error = result?.msg1 || \`한투 API 오류 (rt_cd=\${rtCd})\`;
     if (isNew) output.__updateSecrets = { KIS_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
