@@ -475,7 +475,9 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
         },
         move |args| async move {
             let request = args.get("request").and_then(|v| v.as_str()).unwrap_or("");
-            let id = build_session::create_session(request);
+            // convId 는 ai.rs 가 주입(cross-turn 조회 키) — AI 가 직접 넣지 않음(스키마 비노출).
+            let conv_id = args.get("convId").and_then(|v| v.as_str());
+            let id = build_session::create_session(conv_id, request);
             Ok(serde_json::json!({
                 "success": true,
                 "data": {

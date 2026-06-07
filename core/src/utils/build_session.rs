@@ -75,6 +75,9 @@ pub enum BuildStatus {
 #[serde(rename_all = "camelCase")]
 pub struct BuildSession {
     pub id: String,
+    /// 소속 대화 id — cross-turn 에 ai.rs 가 active_session_for_conv 로 조회 (P2b).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conv_id: Option<String>,
     /// 원 사용자 요청.
     pub request: String,
     /// S1 에서 설정 (분류 전 None).
@@ -143,7 +146,8 @@ fn cleanup_expired(map: &mut HashMap<String, BuildSession>) {
 }
 
 /// 새 빌드 세션 생성 — status Active, step Requirements(S1). id 반환.
-pub fn create_session(request: &str) -> String {
+/// conv_id = 소속 대화(cross-turn 조회용, ai.rs 가 주입). None 이면 단일 턴 빌드.
+pub fn create_session(conv_id: Option<&str>, request: &str) -> String {
     let id = format!("build_{}", uuid::Uuid::new_v4().simple());
     let Ok(mut map) = store_lock().lock() else {
         return id;
@@ -163,6 +167,7 @@ pub fn create_session(request: &str) -> String {
         id.clone(),
         BuildSession {
             id: id.clone(),
+            conv_id: conv_id.map(String::from),
             request: request.to_string(),
             tier: None,
             step: BuildStep::Requirements,
@@ -174,6 +179,16 @@ pub fn create_session(request: &str) -> String {
     );
     flush(&map);
     id
+}
+
+/// 해당 대화의 진행 중(Active) 빌드 세션 — cross-turn 단계 주입용 (가장 최근 1건). ai.rs 가 매 턴 조회.
+pub fn active_session_for_conv(conv_id: &str) -> Option<BuildSession> {
+    let mut map = store_lock().lock().ok()?;
+    cleanup_expired(&mut map);
+    map.values()
+        .filter(|s| s.status == BuildStatus::Active && s.conv_id.as_deref() == Some(conv_id))
+        .max_by_key(|s| s.updated_at)
+        .cloned()
 }
 
 /// 세션 조회 (메모리 → 파일 폴백).

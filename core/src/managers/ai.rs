@@ -912,6 +912,17 @@ impl AiManager {
                 if let Some(inst) = plan_instruction {
                     composed = format!("{}\n\n{}", inst, composed);
                 }
+                // Project Builder — 활성 빌드 세션(conv 단위)이 있으면 현재 단계 prompt 를 prepend.
+                // cross-turn 강제 흐름 — 단계 사이 user 응답에도 AI 가 같은 빌드를 이어가게.
+                if let Some(cid) = ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+                    if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
+                        let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
+                        composed = format!(
+                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n단계 완료 시 advance_build(sessionId=\"{}\", output, tier?) 호출.\n\n{}",
+                            sess.id, sess.step.key(), sp, sess.id, composed
+                        );
+                    }
+                }
                 effective_opts.system_prompt = Some(composed);
             }
         }
@@ -1312,29 +1323,40 @@ impl AiManager {
                 //
                 // visitor 가 admin / 다른 visitor 자료에 침투하는 silent leak 차단 — AI 가
                 // 넣은 owner 를 override 강제.
-                let hub_scoped_call: Option<ToolCall>;
-                let effective_call: &ToolCall = if ai_opts.hub_context.is_some() {
-                    let ctx = ai_opts.hub_context.as_ref().unwrap();
-                    let inst_id = ctx.instance_id.clone();
-                    let sid = ctx.session_id.clone();
-                    // visitor 별 격리 owner — sid 빈 string 면 옛 호환 (instance 단위).
-                    let scope_id = if sid.is_empty() { inst_id.clone() } else { format!("{}:{}", inst_id, sid) };
-                    let owner_field = format!("hub:{}", scope_id);
-                    let project_field = format!("hub:{}", inst_id);
-                    let mut new_call = call.clone();
-                    if let serde_json::Value::Object(ref mut m) = new_call.arguments {
-                        m.insert("owner".to_string(), serde_json::Value::String(owner_field));
-                        m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
-                        m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id));
-                        if call.name == "save_page" {
-                            m.insert("project".to_string(), serde_json::Value::String(project_field));
+                // 항상 clone 후 args 주입 — hub owner(visitor 격리) + build convId(Project Builder
+                // cross-turn). 옛 hub-only 분기를 일반화 (start_build convId 도 같은 지점에서).
+                let scoped_call: ToolCall = {
+                    let mut sc = call.clone();
+                    let name = sc.name.clone();
+                    if let serde_json::Value::Object(ref mut m) = sc.arguments {
+                        // Project Builder — start_build 에 convId 주입 (cross-turn 세션 키, AI 미지정).
+                        if name == "start_build" {
+                            if let Some(cid) =
+                                ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty())
+                            {
+                                m.entry("convId".to_string())
+                                    .or_insert_with(|| serde_json::Value::String(cid.to_string()));
+                            }
+                        }
+                        // hub visitor — owner/hubOwner/_hubScope/project 강제 주입 (silent leak 차단,
+                        // AI 가 넣은 owner override). visitor 별 격리 = `<instance_id>:<session_id>`.
+                        if let Some(ctx) = ai_opts.hub_context.as_ref() {
+                            let scope_id = if ctx.session_id.is_empty() {
+                                ctx.instance_id.clone()
+                            } else {
+                                format!("{}:{}", ctx.instance_id, ctx.session_id)
+                            };
+                            m.insert("owner".to_string(), serde_json::Value::String(format!("hub:{}", scope_id)));
+                            m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
+                            m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id));
+                            if name == "save_page" {
+                                m.insert("project".to_string(), serde_json::Value::String(format!("hub:{}", ctx.instance_id)));
+                            }
                         }
                     }
-                    hub_scoped_call = Some(new_call);
-                    hub_scoped_call.as_ref().unwrap()
-                } else {
-                    call
+                    sc
                 };
+                let effective_call: &ToolCall = &scoped_call;
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
                 let cache_key = tool_cache_key(&effective_call.name, &effective_call.arguments);
                 let action = if turn_call_set.contains(&cache_key) {
