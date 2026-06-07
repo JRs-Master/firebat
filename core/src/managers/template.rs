@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::ports::{IStoragePort, InfraResult};
-use chrono::{DateTime, Datelike};
+use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 
 /// 템플릿 spec — 페이지 발행 시 spec.body 의 backbone.
@@ -155,49 +155,88 @@ impl TemplateManager {
     }
 }
 
-/// 템플릿 placeholder 치환 — head + body 의 모든 문자열에서 동적 토큰을 now(사용자 tz) 기준 값으로.
-/// 지원: `{date}` (YYYY-MM-DD) / `{time}` (HH:MM) / `{datetime}` / `{year}` / `{month}` / `{day}`.
+/// 템플릿 placeholder 치환 — head + body 의 모든 문자열을 now(사용자 tz) 기준으로.
+/// (1) 단축형: `{date}` YYYY-MM-DD / `{time}` HH:MM / `{datetime}` / `{year}` / `{month}`(2자리) / `{day}`(2자리).
+/// (2) 자유 포맷: `{date:FORMAT}` — 토큰 YYYY·YY·MM·M·DD·D·HH·mm. 예: `{date:YYYY년 M월 D일}` → 2026년 6월 7일.
 /// 템플릿을 페이지로 적용하는 시점에 호출 → 그날 값으로 고정 (렌더 때 매번 바뀌지 않음).
 pub fn apply_placeholders(config: &mut TemplateConfig, now: DateTime<Tz>) {
+    subst_value(&mut config.spec.head, &now);
+    for block in &mut config.spec.body {
+        subst_value(&mut block.props, &now);
+    }
+}
+
+/// JSON 값 안의 모든 문자열에 치환 적용 (객체·배열 재귀).
+fn subst_value(v: &mut serde_json::Value, now: &DateTime<Tz>) {
+    match v {
+        serde_json::Value::String(s) => {
+            if s.contains('{') {
+                let replaced = substitute_str(s.as_str(), now);
+                *s = replaced;
+            }
+        }
+        serde_json::Value::Array(arr) => arr.iter_mut().for_each(|x| subst_value(x, now)),
+        serde_json::Value::Object(obj) => obj.values_mut().for_each(|x| subst_value(x, now)),
+        _ => {}
+    }
+}
+
+/// 한 문자열 치환 — `{date:FORMAT}` 자유 포맷 먼저, 그다음 단축형 6개.
+/// (`{date}` 단축형은 `{date:` 에 안 걸림 — `:` 가 구분.)
+fn substitute_str(s: &str, now: &DateTime<Tz>) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find("{date:") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + "{date:".len()..];
+        match after.find('}') {
+            Some(end) => {
+                out.push_str(&format_date(now, &after[..end]));
+                rest = &after[end + 1..];
+            }
+            None => {
+                // 닫는 `}` 없음 — 남은 부분 그대로 두고 종료.
+                out.push_str(&rest[start..]);
+                rest = "";
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+
     let date = now.format("%Y-%m-%d").to_string();
     let time = now.format("%H:%M").to_string();
     let datetime = now.format("%Y-%m-%d %H:%M").to_string();
     let year = format!("{:04}", now.year());
     let month = format!("{:02}", now.month());
     let day = format!("{:02}", now.day());
-    // `{date}` 가 `{datetime}` 안에 부분 매치되지 않음(닫는 `}` 가 구분) → 순서 무관.
-    let subs: [(&str, &str); 6] = [
-        ("{date}", &date),
-        ("{datetime}", &datetime),
-        ("{time}", &time),
-        ("{year}", &year),
-        ("{month}", &month),
-        ("{day}", &day),
-    ];
-    subst_value(&mut config.spec.head, &subs);
-    for block in &mut config.spec.body {
-        subst_value(&mut block.props, &subs);
+    for (k, val) in [
+        ("{date}", date.as_str()),
+        ("{datetime}", datetime.as_str()),
+        ("{time}", time.as_str()),
+        ("{year}", year.as_str()),
+        ("{month}", month.as_str()),
+        ("{day}", day.as_str()),
+    ] {
+        if out.contains(k) {
+            out = out.replace(k, val);
+        }
     }
+    out
 }
 
-/// JSON 값 안의 모든 문자열에 치환 적용 (객체·배열 재귀).
-fn subst_value(v: &mut serde_json::Value, subs: &[(&str, &str)]) {
-    match v {
-        serde_json::Value::String(s) => {
-            if s.contains('{') {
-                let mut out = std::mem::take(s);
-                for (k, val) in subs {
-                    if out.contains(k) {
-                        out = out.replace(k, val);
-                    }
-                }
-                *s = out;
-            }
-        }
-        serde_json::Value::Array(arr) => arr.iter_mut().for_each(|x| subst_value(x, subs)),
-        serde_json::Value::Object(obj) => obj.values_mut().for_each(|x| subst_value(x, subs)),
-        _ => {}
-    }
+/// 자유 포맷 — 친화 토큰 → 값. 긴 토큰부터 치환 (YYYY 전 YY, MM 전 M 충돌 방지).
+fn format_date(now: &DateTime<Tz>, fmt: &str) -> String {
+    let mut out = fmt.to_string();
+    out = out.replace("YYYY", &format!("{:04}", now.year()));
+    out = out.replace("YY", &format!("{:02}", now.year().rem_euclid(100)));
+    out = out.replace("MM", &format!("{:02}", now.month()));
+    out = out.replace("DD", &format!("{:02}", now.day()));
+    out = out.replace("HH", &format!("{:02}", now.hour()));
+    out = out.replace("mm", &format!("{:02}", now.minute()));
+    out = out.replace('M', &now.month().to_string());
+    out = out.replace('D', &now.day().to_string());
+    out
 }
 
 /// path traversal 차단 — slug 는 영숫자 / 하이픈 / 언더스코어만.

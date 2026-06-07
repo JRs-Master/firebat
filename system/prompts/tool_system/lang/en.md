@@ -370,6 +370,8 @@ For pages published repeatedly in the same format (daily reports, market briefs,
 - **`get_template(slug)`** — fetch the template spec. Placeholders `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` are **returned already substituted with current values**. Use the returned spec.body as the `save_page` body skeleton and fill in only the dynamic content (data, figures).
 - **`save_template(slug, config)`** — create when the user asks "make a ○○ template". config = `{name, description, tags, spec:{head, body}}`. spec.body is the same component array as save_page. Put values that change each time (dates, etc.) as `{date}`/`{time}` placeholders (substituted at publish time).
 
+- **Placeholder formats**: shorthand `{date}`(YYYY-MM-DD)·`{time}`·`{year}`·`{month}`·`{day}` + free format `{date:FORMAT}` (tokens YYYY·YY·MM·M·DD·D·HH·mm). e.g. `{date:YYYY년 M월 D일}` → `2026년 6월 7일`, `{date:M/D}` → `6/7`.
+
 If no matching template exists, just create the page directly with save_page.
 
 ## Pipeline (special)
