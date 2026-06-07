@@ -949,10 +949,10 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               {!Array.isArray(msg.data) && msg.data?.buildSession && (() => {
                 const bs = msg.data.buildSession as { step?: string; tier?: string; status?: string; createdAt?: number };
                 const STEPS = [
-                  { key: 'requirements', label: '요구' },
-                  { key: 'design', label: '설계' },
-                  { key: 'implement', label: '구현' },
-                  { key: 'iterate', label: '반복' },
+                  { key: 'requirements', label: t('build.step_requirements') },
+                  { key: 'design', label: t('build.step_design') },
+                  { key: 'implement', label: t('build.step_implement') },
+                  { key: 'iterate', label: t('build.step_iterate') },
                 ].filter(s => !(bs.tier === 'T1' && s.key === 'design')); // T1(단순 페이지)은 설계 단계 skip
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
                 const done = bs.status === 'completed';
@@ -960,9 +960,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 return (
                   <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 mt-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
-                      <span>🔨 빌드 진행{bs.tier ? ` · ${bs.tier}` : ''}</span>
-                      {done && <span className="text-emerald-600">✓ 완료</span>}
-                      {expired && <span className="text-slate-400">⏰ 기간이 만료되었습니다</span>}
+                      <span>🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}</span>
+                      {done && <span className="text-emerald-600">✓ {t('build.done')}</span>}
+                      {expired && <span className="text-slate-400">⏰ {t('build.expired')}</span>}
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
                       {STEPS.map((s, i) => (
