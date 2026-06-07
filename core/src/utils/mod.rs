@@ -9,6 +9,7 @@ pub mod render_map;
 pub mod tool_cache;
 pub mod pending_tools;
 pub mod plan_store;
+pub mod build_session;
 pub mod message_merge;
 pub mod tag_utils;
 pub mod http_client;
