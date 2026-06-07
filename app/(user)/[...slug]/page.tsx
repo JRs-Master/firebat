@@ -456,14 +456,15 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       {projectCustomCss && (
         <style dangerouslySetInnerHTML={{ __html: projectCustomCss }} />
       )}
-      {/* 앱(단일 Html+script/deps) = 페이지를 뷰포트에 잠가(overflow hidden) 페이지 스크롤 차단
-          → 헤더/푸터 고정 + 콘텐츠영역(iframe) 하나만 스크롤(단일). 측정 없이 iframe h-full 로 영역 채움. */}
+      {/* 앱(단일 Html+script/deps) = 풀스크린 — 헤더/푸터 숨기고 페이지 스크롤 차단(overflow hidden).
+          iframe 이 100dvh 직접(아래 components.tsx)이라 깊은 wrapper 체인(main>cms-content>renderer)에
+          의존 안 함 → 콜랩스/측정 문제 0. 앱 내부만 스크롤(단일). 정적 HTML·콘텐츠 페이지는 일반 레이아웃. */}
       {isApp && (
-        <style dangerouslySetInnerHTML={{ __html: 'html{height:100%}body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}body>main{flex:1 1 auto;min-height:0;overflow:hidden}' }} />
+        <style dangerouslySetInnerHTML={{ __html: '[data-cms-header],[data-cms-footer]{display:none!important}html,body{margin:0;padding:0;overflow:hidden;height:auto}' }} />
       )}
       <main className={isApp ? 'bg-white' : 'min-h-screen bg-white'}>
         <div
-          className={isApp ? 'firebat-cms-content h-full' : 'firebat-cms-content'}
+          className="firebat-cms-content"
           data-h1-style={projectH1Style ?? seo.theme?.heading?.h1}
           data-h2-style={projectH2Style ?? seo.theme?.heading?.h2}
           data-h3-style={projectH3Style ?? seo.theme?.heading?.h3}
