@@ -81,6 +81,17 @@ impl PageManager {
         if !is_hub_scoped {
             crate::utils::slug_validator::check_reserved(slug)?;
         }
+        // Overwrite scope guard — a hub visitor (project = "hub:...") must not overwrite an existing
+        // page owned by a different scope (admin or another hub). db.save_page is ON CONFLICT DO UPDATE,
+        // so without this a hub save_page(adminSlug) would hijack the admin page + reassign its project.
+        // Only blocks a hub saver overwriting others' slugs; admin and new-slug creation are unaffected.
+        if is_hub_scoped {
+            if let Some(existing) = self.get(slug) {
+                if existing.project.as_deref() != project {
+                    return Err(crate::i18n::t("core.error.page.permission_denied", None, &[]));
+                }
+            }
+        }
         if !self.db.save_page(slug, spec, status, project, visibility, password) {
             return Err(crate::i18n::t(
                 "core.error.page.save_failed",
