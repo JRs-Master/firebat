@@ -939,7 +939,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   { key: 'design', label: '설계' },
                   { key: 'implement', label: '구현' },
                   { key: 'iterate', label: '반복' },
-                ];
+                ].filter(s => !(bs.tier === 'T1' && s.key === 'design')); // T1(단순 페이지)은 설계 단계 skip
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
                 const done = bs.status === 'completed';
                 const curIdx = STEPS.findIndex(s => s.key === bs.step);

@@ -42,6 +42,13 @@ impl BuildStep {
             BuildStep::Iterate | BuildStep::Done => BuildStep::Done,
         }
     }
+    /// tier 별 다음 단계 — T1(단순 페이지)은 설계(Design)를 건너뜀 (요구 → 구현). 그 외 tier 는 선형.
+    pub fn next_for_tier(self, tier: Option<BuildTier>) -> BuildStep {
+        if matches!(tier, Some(BuildTier::T1)) && self == BuildStep::Requirements {
+            return BuildStep::Implement;
+        }
+        self.next()
+    }
     /// step_outputs key — 단계 산출물 저장 + 전환 게이트 체크용.
     pub fn key(self) -> &'static str {
         match self {
@@ -257,7 +264,7 @@ pub fn advance_step(id: &str) -> Result<BuildStep, String> {
             s.step.key()
         ));
     }
-    let next = s.step.next();
+    let next = s.step.next_for_tier(s.tier);
     s.step = next;
     if next == BuildStep::Done {
         s.status = BuildStatus::Completed;
