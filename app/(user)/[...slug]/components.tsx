@@ -8,6 +8,7 @@ import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
 import StockChart from '../../admin/chat-components/StockChart';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
+import { usePublicTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
@@ -2052,6 +2053,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
   estimatedTime?: string;
   risks?: string[];
 }) {
+  const t = usePublicTranslations();
   return (
     <div className="border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 my-2">
       <div className="flex items-center gap-2 mb-3">
@@ -2081,7 +2083,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
       </ol>
       {risks && risks.length > 0 && (
         <div className="mt-3 pt-3 border-t border-indigo-200">
-          <div className="text-[11px] font-bold text-amber-700 mb-1">⚠ 주의사항</div>
+          <div className="text-[11px] font-bold text-amber-700 mb-1">⚠ {t('plan.risks')}</div>
           <ul className="text-[11px] text-amber-800 space-y-0.5 list-disc ml-4">
             {risks.map((r, i) => <li key={i}>{r}</li>)}
           </ul>

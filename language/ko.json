@@ -14,7 +14,8 @@
     "change_time": "시간 변경",
     "approve": "승인",
     "reject": "거부",
-    "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)"
+    "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)",
+    "risks": "주의사항"
   },
   "error": {
     "module": {

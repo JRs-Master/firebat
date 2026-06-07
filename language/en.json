@@ -14,7 +14,8 @@
     "change_time": "Change time",
     "approve": "Approve",
     "reject": "Reject",
-    "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)"
+    "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)",
+    "risks": "Cautions"
   },
   "error": {
     "module": {
