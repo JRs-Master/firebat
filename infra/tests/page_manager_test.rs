@@ -35,8 +35,36 @@ fn save_get_list_delete() {
     assert_eq!(got.project.as_deref(), Some("blog"));
     assert_eq!(mgr.list().len(), 1);
 
-    mgr.delete("p1").unwrap();
+    mgr.delete("p1", None).unwrap();
     assert!(mgr.get("p1").is_none());
+}
+
+#[test]
+fn hub_scope_guards_delete_and_overwrite() {
+    // Regression for the hub cross-tenant page leak — a hub visitor (project = "hub:...") must not
+    // overwrite or delete a page owned by a different scope (admin or another hub).
+    let (mgr, _db, _dir) = make_manager();
+    mgr.save("news", &sample_spec("admin"), "published", Some("blog"), None, None)
+        .unwrap();
+    mgr.save("my-app", &sample_spec("hub"), "published", Some("hub:inst-A"), None, None)
+        .unwrap();
+
+    // hub scope cannot hijack the admin page (overwrite) nor delete it
+    assert!(mgr
+        .save("news", &sample_spec("evil"), "published", Some("hub:inst-A"), None, None)
+        .is_err());
+    assert!(mgr.delete("news", Some("hub:inst-A")).is_err());
+    assert_eq!(mgr.get("news").unwrap().project.as_deref(), Some("blog")); // intact
+
+    // hub scope CAN overwrite + delete its own page
+    mgr.save("my-app", &sample_spec("v2"), "published", Some("hub:inst-A"), None, None)
+        .unwrap();
+    mgr.delete("my-app", Some("hub:inst-A")).unwrap();
+    assert!(mgr.get("my-app").is_none());
+
+    // admin (no project scope) is unrestricted
+    mgr.delete("news", None).unwrap();
+    assert!(mgr.get("news").is_none());
 }
 
 #[test]
