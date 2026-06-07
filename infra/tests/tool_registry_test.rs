@@ -14,6 +14,7 @@ use firebat_core::managers::memory_facade::MemoryFacade;
 use firebat_core::managers::module::ModuleManager;
 use firebat_core::managers::page::PageManager;
 use firebat_core::managers::library::LibraryManager;
+use firebat_core::managers::template::TemplateManager;
 use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::task::{StubTaskExecutor, TaskManager};
@@ -86,6 +87,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     let library_mgr = Arc::new(LibraryManager::new(library_port, embedder));
     let secret_mgr = Arc::new(SecretManager::new(vault.clone(), storage.clone()));
     let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
+    let template_mgr = Arc::new(TemplateManager::new(storage.clone()));
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -106,6 +108,8 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             library: library_mgr,
             secret: secret_mgr,
             network: network_port,
+            template: template_mgr,
+            vault: vault.clone(),
         },
     );
     (tools, dir)

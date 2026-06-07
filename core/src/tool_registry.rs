@@ -438,11 +438,20 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 }
 
-/// owner 인자 → Option<String> (없거나 "admin" 이면 None = admin scope).
+/// owner 결정 — 템플릿은 **per-instance scope**(hub 방문자끼리 공유, route.ts 와 동일).
+/// hub: ai.rs 가 주입한 hubOwner(`<inst>:<sid>`)에서 instance id 만 추출. admin: None.
+/// (per-visitor 가 아니라 instance 단위 — owner=`hub:<scope>` 접두형은 무시)
 fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
+    if let Some(ho) = args
+        .get("hubOwner")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(ho.split(':').next().unwrap_or(ho).to_string());
+    }
     args.get("owner")
         .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty() && *s != "admin")
+        .filter(|s| !s.is_empty() && *s != "admin" && !s.starts_with("hub:"))
         .map(String::from)
 }
 
