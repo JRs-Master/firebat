@@ -463,45 +463,51 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
           )}
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* AI 버튼 */}
-            <Tooltip label="AI 어시스트 (Ctrl+K)">
-              <button
-                onClick={() => { if (aiOpen) setAiOpen(false); else openAiPanel(); }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
-                  aiOpen
-                    ? 'bg-slate-600 text-white'
-                    : 'bg-[#2d2d2d] text-slate-400 hover:bg-slate-600/20 border border-slate-700/40'
-                }`}
-              >
-                <Bot size={13} /> AI
-              </button>
-            </Tooltip>
+            {/* 편집 액션 — 모바일(터치)은 편집 불가라 전부 숨김. flex-shrink-0 라 안 줄어
+                툴바가 넘쳐 닫기(X)가 화면 밖으로 밀리던 것 + AI 가 모바일서 동작하던 것 동시 차단 */}
+            {!isMobileDevice && (
+              <>
+                {/* AI 버튼 */}
+                <Tooltip label="AI 어시스트 (Ctrl+K)">
+                  <button
+                    onClick={() => { if (aiOpen) setAiOpen(false); else openAiPanel(); }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                      aiOpen
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-[#2d2d2d] text-slate-400 hover:bg-slate-600/20 border border-slate-700/40'
+                    }`}
+                  >
+                    <Bot size={13} /> AI
+                  </button>
+                </Tooltip>
 
-            {/* PageSpec 미리보기 */}
-            {isPageMode && (
-              <button
-                onClick={() => setPreviewOpen(!previewOpen)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  previewOpen ? 'bg-slate-600 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
-                }`}
-              >
-                <Eye size={13} /> 미리보기
-              </button>
+                {/* PageSpec 미리보기 */}
+                {isPageMode && (
+                  <button
+                    onClick={() => setPreviewOpen(!previewOpen)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      previewOpen ? 'bg-slate-600 text-white' : 'bg-[#2d2d2d] text-slate-300 hover:bg-slate-600 border border-slate-600'
+                    }`}
+                  >
+                    <Eye size={13} /> 미리보기
+                  </button>
+                )}
+
+                <span className="text-[11px] text-slate-500 font-mono">Ctrl+S</span>
+                <SaveButton
+                  size="md"
+                  dark
+                  state={(
+                    saving ? 'saving' :
+                    saveFeedback === 'ok' ? 'saved' :
+                    saveFeedback === 'err' ? 'error' :
+                    'idle'
+                  ) as SaveButtonState}
+                  disabled={!isDirty || loading || (isPageMode && !!jsonError)}
+                  onClick={handleSave}
+                />
+              </>
             )}
-
-            <span className="text-[11px] text-slate-500 font-mono">Ctrl+S</span>
-            <SaveButton
-              size="md"
-              dark
-              state={(
-                saving ? 'saving' :
-                saveFeedback === 'ok' ? 'saved' :
-                saveFeedback === 'err' ? 'error' :
-                'idle'
-              ) as SaveButtonState}
-              disabled={!isDirty || loading || (isPageMode && !!jsonError)}
-              onClick={handleSave}
-            />
             <button
               onClick={handleClose}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
