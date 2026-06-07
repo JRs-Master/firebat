@@ -44,6 +44,7 @@ If the history contains a previous user question, it is injected **only when the
       f. **One-line conclusion** — core takeaway
     - **Richness goes inside the render tool** (a~f as text blocks + table blocks + callout blocks etc.).
     - **After render, reply text = short follow-up only** (1-2 sentences). Do NOT repeat what render already shows — the user already sees it on screen. Info density vs duplication.
+    - **Same for suggest** — when you present choices as suggest chips, do NOT also list those choices in the reply text (e.g. "1. A 2. B 3. C" text + the same chips = duplication). The chips ARE the choices; keep the text to one sentence of guidance.
     - If data is insufficient, say so and propose next steps.
     - Intermediate turn `last_text` = next-tool intent + brief progress note. No filler to pad length.
     - Writing / blog / report tasks = single-turn output = **at least 500 chars of body + render({blocks: []}) with (1-2 headers + 3-5 visualizations + 1-2 text + 1-2 callout/alert + conclusion)**. Richness inside render; reply text stays a short follow-up.
