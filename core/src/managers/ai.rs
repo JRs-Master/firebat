@@ -732,14 +732,15 @@ impl AiManager {
                         extra_parts.push(ctx);
                     }
                 }
-                // Project Builder admin CLI 보강(#1-lite) — FC 는 ai.rs 가 convId 를 도구 args 에
-                // 주입하지만, CLI(자체 MCP loop)는 그 주입 경로가 없어 빌드 세션이 conv 와 연결 안 됨.
-                // → admin(비-hub) 턴에 한해 AI 가 직접 convId 를 넣도록 힌트. 첫 start_build 만 AI 의존,
-                // 이후엔 엔진 cross-turn(active_session_for_conv)이 인계. (hub 는 hubOwner 키라 제외)
+                // Project Builder admin CLI reinforcement (#1-lite) — for FC, ai.rs injects convId into
+                // the tool args, but the CLI (its own MCP loop) has no such injection path, so the build
+                // session wouldn't link to the conversation.
+                // → On admin (non-hub) turns only, hint the AI to pass convId itself. Only the first
+                // start_build depends on the AI; afterward the engine's cross-turn (active_session_for_conv) takes over. (hub uses the hubOwner key, excluded.)
                 if ai_opts.hub_context.is_none() {
                     if let Some(cid) = ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
                         extra_parts.push(format!(
-                            "[빌드 추적] start_build/advance_build/cancel_build 호출 시 convId=\"{}\" 를 함께 넣어라 (빌드가 다음 턴에도 이어지도록).",
+                            "[Build tracking] When calling start_build/advance_build/cancel_build, also pass convId=\"{}\" (so the build continues across turns).",
                             cid
                         ));
                     }
@@ -928,20 +929,20 @@ impl AiManager {
                 if let Some(inst) = plan_instruction {
                     composed = format!("{}\n\n{}", inst, composed);
                 }
-                // Project Builder — 활성 빌드 세션(conv 단위)이 있으면 현재 단계 prompt 를 prepend.
-                // cross-turn 강제 흐름 — 단계 사이 user 응답에도 AI 가 같은 빌드를 이어가게.
-                // scope 키 — hub: hubOwner(inst:sid, visitor 격리) / admin: 대화 id.
+                // Project Builder — if there is an active build session (per conversation), prepend the current step prompt.
+                // Cross-turn forced flow — keep the AI on the same build even across the user's between-step replies.
+                // scope key — hub: hubOwner (inst:sid, visitor isolation) / admin: conversation id.
                 let build_scope: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
                     if c.session_id.is_empty() { c.instance_id.clone() }
                     else { format!("{}:{}", c.instance_id, c.session_id) }
                 }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
                 if let Some(cid) = build_scope.as_deref() {
-                    // 새 user 턴 시작 — 활성 빌드 세션의 awaiting 게이트 해제(이번 턴 advance 1회 허용 = 인터랙티브 단계 강제).
+                    // New user turn — clear the active build session's awaiting gate (allow one advance this turn = interactive step enforcement).
                     crate::utils::build_session::reset_awaiting_for_conv(cid);
                     if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
                         let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
                         composed = format!(
-                            "[Project Builder 진행 중 — sessionId={}, 현재 단계: {}]\n{}\n진행은 한 턴에 한 단계만 — 선택지를 suggest 칩으로 제시하고 사용자가 고른 뒤 advance_build(sessionId=\"{}\", output, tier?, auto?) 호출(선택 전 호출은 엔진이 거부). 중단은 cancel_build(sessionId).\n\n{}",
+                            "[Project Builder in progress — sessionId={}, current step: {}]\n{}\nOnly one step advances per turn — present the options as suggest chips and, after the user chooses, call advance_build(sessionId=\"{}\", output, tier?, auto?) (calling before selection is rejected by the engine). To stop, call cancel_build(sessionId).\n\n{}",
                             sess.id, sess.step.key(), sp, sess.id, composed
                         );
                     }

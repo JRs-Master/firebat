@@ -456,16 +456,17 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
         .map(String::from)
 }
 
-/// Project Builder 도구 — start_build / advance_build. build_session 엔진 직접 호출(매니저 의존 0).
-/// 앱/페이지를 표준 단계(요구→설계→구현→반복)로 만들 때. 엔진이 advance 게이트로 순서 강제.
-/// plan mode 와 독립 — on/off 무관하게 앱빌드는 PB 로(프롬프트가 트리거).
+/// Project Builder tools — start_build / advance_build / cancel_build. Call the build_session engine
+/// directly (no manager dependency). For building apps/pages via the standard steps
+/// (requirements→design→implement→iterate); the engine enforces the order via the advance gate.
+/// Independent of plan mode — app builds go through PB regardless of on/off (the prompt triggers it).
 fn register_build_tools(tools: &Arc<ToolManager>) {
     use crate::utils::build_session::{self, BuildStep, BuildTier};
 
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "앱/페이지를 표준 단계(요구→설계→구현→반복)로 만들 때 호출 — 새 빌드 세션 + 1단계(요구사항) 지시 반환. plan mode 와 무관하게 다단계 빌드면 이걸로 시작. (단순 1회성 페이지는 save_page 로 충분)".to_string(),
+            description: "Call when building an app/page via the standard steps (requirements→design→implement→iterate) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.)".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "request": { "type": "string", "description": "사용자의 빌드 요청" } },
@@ -475,8 +476,8 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
         },
         move |args| async move {
             let request = args.get("request").and_then(|v| v.as_str()).unwrap_or("");
-            // scope 키 — hub(hubOwner=inst:sid, visitor 격리) 우선, 없으면 convId.
-            // ai.rs(FC dispatch) · inject_hub_owner(MCP) 가 주입 — AI 직접 미지정(스키마 비노출).
+            // scope key — prefer hub (hubOwner=inst:sid, visitor isolation), else convId.
+            // Injected by ai.rs (FC dispatch) · inject_hub_owner (MCP) — not set by the AI directly (not in the schema).
             let scope = args.get("hubOwner").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
                 .or_else(|| args.get("convId").and_then(|v| v.as_str()));
             let id = build_session::create_session(scope, request);
@@ -494,14 +495,14 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "advance_build".to_string(),
-            description: "현재 빌드 단계 산출물 저장 + 다음 단계로 진행. {sessionId, output, tier?(S1), auto?}. 다음 단계 지시 반환. 엔진이 한 턴에 한 단계만 진행 — 단계 선택지를 suggest 로 제시하고 사용자 응답을 받은 다음에 호출(사용자 선택 전 호출은 거부). auto=true(사용자가 '전부 알아서' 선택)면 이후 멈춤 없이 끝까지 자동.".to_string(),
+            description: "Save the current build step's output + advance to the next step. {sessionId, output, tier?(S1), auto?}. Returns the next step's instruction. The engine advances only one step per turn — present the step's options via suggest and call this AFTER the user responds (calling before the user selects is rejected). auto=true (user picked 'just do it all') runs to the end without further pauses.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "sessionId": { "type": "string" },
-                    "output": { "description": "현재 단계 산출물(요약/설계/결과 등)" },
-                    "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "S1(요구사항)에서 분류한 복잡도" },
-                    "auto": { "type": "boolean", "description": "사용자가 '전부 알아서'를 고르면 true — 이후 단계 멈춤 없이 끝까지 자동 진행" }
+                    "output": { "description": "the current step's output (summary/design/result, etc.)" },
+                    "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "complexity classified in S1 (requirements)" },
+                    "auto": { "type": "boolean", "description": "true when the user picks 'just do it all' — runs to the end with no further pauses" }
                 },
                 "required": ["sessionId", "output"]
             }),
@@ -511,7 +512,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             let session_id = args
                 .get("sessionId")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "advance_build: sessionId 필수".to_string())?
+                .ok_or_else(|| "advance_build: sessionId required".to_string())?
                 .to_string();
             let output = args.get("output").cloned().unwrap_or(serde_json::Value::Null);
             if let Some(t) = args.get("tier").and_then(|v| v.as_str()) {
@@ -526,7 +527,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 }
             }
             if args.get("auto").and_then(|v| v.as_bool()) == Some(true) {
-                build_session::set_auto_advance(&session_id, true); // 사용자가 '전부 알아서' 선택 → 게이트 우회(한큐).
+                build_session::set_auto_advance(&session_id, true); // user picked 'just do it all' → bypass the gate (one-shot).
             }
             build_session::set_step_output(&session_id, output);
             match build_session::advance_step(&session_id) {
@@ -550,7 +551,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "cancel_build".to_string(),
-            description: "진행 중인 빌드 세션을 중단(취소). 사용자가 빌드를 그만두거나 다른 작업으로 전환하려 할 때 호출. {sessionId}.".to_string(),
+            description: "Cancel (abandon) an in-progress build session. Call when the user wants to stop the build or switch to another task. {sessionId}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "sessionId": { "type": "string" } },
@@ -562,7 +563,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             let session_id = args
                 .get("sessionId")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "cancel_build: sessionId 필수".to_string())?;
+                .ok_or_else(|| "cancel_build: sessionId required".to_string())?;
             build_session::finish_session(session_id, false);
             Ok(serde_json::json!({ "success": true, "data": { "sessionId": session_id, "status": "abandoned" } }))
         },
