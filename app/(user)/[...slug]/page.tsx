@@ -456,9 +456,14 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       {projectCustomCss && (
         <style dangerouslySetInnerHTML={{ __html: projectCustomCss }} />
       )}
-      <main className="min-h-screen bg-white">
+      {/* 앱(단일 Html+script/deps) = 페이지를 뷰포트에 잠가(overflow hidden) 페이지 스크롤 차단
+          → 헤더/푸터 고정 + 콘텐츠영역(iframe) 하나만 스크롤(단일). 측정 없이 iframe h-full 로 영역 채움. */}
+      {isApp && (
+        <style dangerouslySetInnerHTML={{ __html: 'html{height:100%}body{height:100dvh;overflow:hidden;display:flex;flex-direction:column}body>main{flex:1 1 auto;min-height:0;overflow:hidden}' }} />
+      )}
+      <main className={isApp ? 'bg-white' : 'min-h-screen bg-white'}>
         <div
-          className="firebat-cms-content"
+          className={isApp ? 'firebat-cms-content h-full' : 'firebat-cms-content'}
           data-h1-style={projectH1Style ?? seo.theme?.heading?.h1}
           data-h2-style={projectH2Style ?? seo.theme?.heading?.h2}
           data-h3-style={projectH3Style ?? seo.theme?.heading?.h3}
