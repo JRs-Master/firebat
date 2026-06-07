@@ -116,7 +116,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const chartAreaH = Math.max(cap - headerEstPx, 140);
   const priceChartHeightPx = Math.floor(chartAreaH * 280 / 360);  // 봉 영역 px (옛 280/360 비율)
   const priceChartHeight = `${priceChartHeightPx}px`;
-  const volChartHeight = `${Math.floor(chartAreaH * 80 / 360)}px`;      // 거래량 (옛 80/360 비율)
+  const volChartHeightPx = Math.floor(chartAreaH * 80 / 360);
+  const volChartHeight = `${volChartHeightPx}px`;      // 거래량 (옛 80/360 비율)
 
   // 봉 영역 실제 렌더 width 측정 — viewBox 동적 (찌그러짐 fix). preserveAspectRatio="none" 를 쓴
   // 경우 viewBox aspect (W:priceH) ≠ box aspect (boxW:priceChartHeightPx) 면 봉이 가로/세로 stretch
@@ -197,7 +198,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 차트 치수 — 항상 1:1 스크롤 스타일 (viewBox 가 픽셀과 1:1 → 텍스트 10px 고정, 줌해도 안 바뀜).
   // 줌 = 캔들 폭(barPx) 조절, 데이터는 전체 렌더, 화면 넘치면 가로 스크롤바.
   const priceH = priceChartHeightPx;
-  const volH = 80;
+  const volH = volChartHeightPx;  // viewBox 높이 = 실제 박스 px. 옛 고정 80 → preserveAspectRatio="none" 에서 거래량 축 라벨 세로 찌그러짐. 동일화로 왜곡 0.
   const padLeft = 50;
   // Y축 라벨 폭 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
   // 작은 가격대 (5만, 6자리) = 56 그대로. 큰 가격대 (1억, 11자리) ≈ 78px. 라벨 잘림 0.
@@ -237,15 +238,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   const { xs, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
-    const highs = safeData.map(d => d.high);
-    const lows = safeData.map(d => d.low);
-    const volumes = safeData.map(d => d.volume);
-    const maxP = Math.max(...highs);
-    const minP = Math.min(...lows);
+    // 화면에 보이는 구간(scrollX ~ scrollX+boxW)만 추출 → Y축(가격·거래량)을 그 구간 min/max 로 동적 스케일.
+    // 전체 범위 고정 시 과거 저가 구간 봉이 납작해지던 문제 해결. xs/캔들은 전체 렌더(가로 스크롤) 유지.
+    const firstVis = Math.max(0, Math.floor((scrollX - padLeft) / barPx));
+    const lastVis = Math.min(safeData.length - 1, Math.ceil((scrollX + boxW - padLeft) / barPx));
+    const vis = lastVis >= firstVis ? safeData.slice(firstVis, lastVis + 1) : safeData;
+    const maxP = Math.max(...vis.map(d => d.high));
+    const minP = Math.min(...vis.map(d => d.low));
     const rangeP = maxP - minP || 1;
     const pMin = minP - rangeP * 0.05;
     const pMax = maxP + rangeP * 0.05;
-    const maxV = Math.max(...volumes, 1);
+    const maxV = Math.max(...vis.map(d => d.volume), 1);
     // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
     const xs = safeData.map((_, i) => padLeft + i * barPx + barPx / 2);
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
@@ -259,7 +262,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return { name: ind, d, color: MA_COLORS[ind] };
     });
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH]);
+  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH, scrollX, boxW]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {
@@ -557,9 +560,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               }
               return shortDate(d);
             };
-            return pruned.map(i => (
-              <text key={'xl' + i} x={xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
-            ));
+            return pruned.map(i => {
+              // 마지막(우측 끝) 라벨은 textAnchor=end + W 안으로 clamp — 중앙 정렬 시 우측이 SVG 밖으로 잘리던 것 방지.
+              const isLast = i === n - 1;
+              return (
+                <text key={'xl' + i} x={isLast ? Math.min(xs[i] + barPx * 0.5, W - 2) : xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor={isLast ? 'end' : 'middle'} fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
+              );
+            });
           })()}
 
         </svg>
