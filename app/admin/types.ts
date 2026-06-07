@@ -21,6 +21,7 @@ export type PendingAction = {
   status?: 'pending' | 'approved' | 'rejected' | 'past-runat' | 'error';
   originalRunAt?: string; // PAST_RUNAT 상태일 때 원래 예약 시각
   errorMessage?: string;  // status==='error'일 때 실패 사유
+  createdAt?: number;     // 생성 시각(epoch ms) — 수신 시 stamp, 30일 경과 시 카드에 만료 표시
 };
 
 export type ToolResultSummary = {

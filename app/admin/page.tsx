@@ -924,8 +924,11 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               {/* Pending Actions — 승인 버튼 (액션 필요, 눈에 띄게 위쪽) */}
               {msg.pendingActions && msg.pendingActions.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  {msg.pendingActions.map(p => (
-                    <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                  {msg.pendingActions.map(p => {
+                    // 30일 경과 = 백엔드 pending_tools/plan_store TTL 만료. 종결(승인/거부)된 카드는 제외.
+                    const isExpired = p.status !== 'approved' && p.status !== 'rejected' && !!p.createdAt && Date.now() - p.createdAt > 30 * 24 * 60 * 60 * 1000;
+                    return (
+                    <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${isExpired ? 'bg-slate-50 border border-slate-200' : p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       {p.status === 'past-runat' && (
                         <div className="text-[11px] font-bold text-red-600">
                           ⏱ 예약 시각이 이미 지났습니다 ({p.originalRunAt ? new Date(p.originalRunAt).toLocaleString('ko-KR') : '-'}). 즉시 보낼지 시간을 변경할지 선택하세요.
@@ -933,6 +936,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       )}
                       {p.status === 'error' && p.errorMessage && (
                         <div className="text-[11px] font-bold text-red-600 break-all">⚠ 실행 실패: {p.errorMessage}</div>
+                      )}
+                      {isExpired && (
+                        <div className="text-[11px] font-bold text-slate-500">⏰ 승인 기간이 만료되었습니다. 다시 생성해 주세요.</div>
                       )}
                       <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
@@ -972,7 +978,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                             <X size={13} />
                           </button>
                         </>
-                      ) : (
+                      ) : isExpired ? null : (
                         <>
                           <button
                             onClick={() => onApprovePending?.(msg.id, p.planId)}
@@ -990,7 +996,8 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

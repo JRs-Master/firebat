@@ -98,7 +98,8 @@ function preserveLocalPendingStatus(remote: Message[], local: Message[]): Messag
       ...rm,
       pendingActions: rm.pendingActions.map(rp => {
         const lp = localByPlan.get(rp.planId);
-        return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : rp;
+        // createdAt(로컬 stamp)은 비종결 카드에도 보존 — 리로드 후에도 만료 계산 유지.
+        return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : { ...rp, createdAt: lp?.createdAt ?? rp.createdAt };
       }),
     };
   });
@@ -907,7 +908,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             const stepStart = ev.data.status === 'start';
             dispatch({ type: 'STEP', id: systemId, step: ev.data, isLast: !stepStart });
           } else if (ev.event === 'result') {
-            const pendingActions = ev.data.data?.pendingActions as PendingAction[] | undefined;
+            const pendingActions = (ev.data.data?.pendingActions as PendingAction[] | undefined)
+              ?.map(p => ({ ...p, createdAt: p.createdAt ?? Date.now() })); // 수신 시각 stamp — 카드 만료 표시 기준
             const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
             const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
             const hasAnyOutput = !!(ev.data.executedActions?.length) || hasBlocks || !!(pendingActions?.length);
