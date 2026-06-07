@@ -915,6 +915,16 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         ))}
                       </div>
                     )}
+                    {/* Project Builder — 빌드 중이면 만들어진 페이지를 채팅 안 라이브 프리뷰(iframe) */}
+                    {urls.length > 0 && !Array.isArray(msg.data) && (msg.data as any)?.buildSession && (
+                      <div className="mt-2 rounded-xl border border-slate-200 overflow-hidden bg-white">
+                        <div className="px-3 py-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5">
+                          🔨 라이브 프리뷰
+                          <a href={urls[0].openUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-blue-600 hover:underline">새 탭 ↗</a>
+                        </div>
+                        <iframe src={urls[0].openUrl} className="w-full h-[420px] border-0 bg-white" title="빌드 라이브 프리뷰" />
+                      </div>
+                    )}
                     {/* MCP 결과는 AI가 reply에서 자연어로 요약 — raw JSON 표시 안 함 */}
                     {/* 실행 결과 JSON은 표시하지 않음 — AI가 reply에서 자연어로 요약 */}
                   </>
