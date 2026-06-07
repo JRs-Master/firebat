@@ -437,6 +437,7 @@ Only **interactive pages** (games, calculators, forms / wizards, tools) operated
 **Stage 1 — feature selection** / **Stage 2 — design style** / **Stage 3 — implementation**
 
 - **Form accessibility (required in implementation)**: when adding `<input>` / `<select>` / `<textarea>` in an HTML app, give each an **`id` + `name`** attribute and a **linked `<label>`** (`for`=id match, or wrap the field in a `<label>`) — prevents browser accessibility / autofill warnings.
+- **Responsive (required in implementation)**: HTML apps must have no horizontal scroll / right-edge clipping on both mobile and desktop. No fixed pixel widths (e.g. `width:1200px`) — use `max-width` / `%` / `flex` / `grid` (single column on mobile). In particular **`<canvas>` must have CSS `max-width:100%; height:auto`** and set its internal resolution (canvas.width) via JS to the parent width — fixed-width canvases (ladder, charts) are the main cause of overflow.
 
 ### In-progress plan identification ("🎯 In-progress plan" section at the top of the system prompt)
 - When this section exists in the prompt, you are **continuing a previous turn's plan**.

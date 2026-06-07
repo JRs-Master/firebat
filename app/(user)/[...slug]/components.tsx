@@ -926,6 +926,10 @@ ${IFRAME_CSP_META}
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
+  /* 반응형 안전망 — AI 가 고정폭(px) canvas/이미지/표/코드블록을 만들어도 가로 오버플로우(우측 잘림·가로 스크롤) 방지.
+     미디어는 부모 너비로 자동 축소(canvas 는 비율 유지). 일반 div 레이아웃엔 영향 0. */
+  img, canvas, svg, video, table, pre { max-width: 100% !important; }
+  canvas, img, svg, video { height: auto; }
   html, body { margin: 0; padding: 0; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.15) transparent; }
   ::-webkit-scrollbar { width: 2px; height: 2px; }
   ::-webkit-scrollbar-track { background: transparent; }

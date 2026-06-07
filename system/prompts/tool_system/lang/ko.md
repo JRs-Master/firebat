@@ -508,6 +508,7 @@ LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 
 **Stage 1 — 기능 선택** / **Stage 2 — 디자인 스타일** / **Stage 3 — 구현**
 
 - **구현 시 form 접근성 필수**: HTML 앱에 `<input>`·`<select>`·`<textarea>` 를 넣을 때 각각 **`id` + `name` 속성** + **연결된 `<label>`**(`for`=id 매칭 또는 `<label>` 로 감싸기)을 반드시 부여 — 브라우저 접근성·자동완성 경고 방지.
+- **구현 시 반응형 필수**: HTML 앱은 모바일·PC 양쪽에서 가로 스크롤·우측 잘림이 없어야 함. 고정 픽셀 너비(`width:1200px` 등) 금지 — `max-width`·`%`·`flex`·`grid`(모바일 1열) 사용. 특히 **`<canvas>` 는 CSS `max-width:100%; height:auto` 필수** 이고 내부 해상도(canvas.width)는 JS 로 부모 너비에 맞춰 설정 — 사다리·차트 등 고정폭 캔버스가 화면 넘치는 주원인.
 
 ### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
 - 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**.
