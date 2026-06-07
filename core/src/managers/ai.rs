@@ -732,6 +732,18 @@ impl AiManager {
                         extra_parts.push(ctx);
                     }
                 }
+                // Project Builder admin CLI 보강(#1-lite) — FC 는 ai.rs 가 convId 를 도구 args 에
+                // 주입하지만, CLI(자체 MCP loop)는 그 주입 경로가 없어 빌드 세션이 conv 와 연결 안 됨.
+                // → admin(비-hub) 턴에 한해 AI 가 직접 convId 를 넣도록 힌트. 첫 start_build 만 AI 의존,
+                // 이후엔 엔진 cross-turn(active_session_for_conv)이 인계. (hub 는 hubOwner 키라 제외)
+                if ai_opts.hub_context.is_none() {
+                    if let Some(cid) = ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+                        extra_parts.push(format!(
+                            "[빌드 추적] start_build/advance_build/cancel_build 호출 시 convId=\"{}\" 를 함께 넣어라 (빌드가 다음 턴에도 이어지도록).",
+                            cid
+                        ));
+                    }
+                }
                 // hub 영역 = HistoryResolver 우회 + hub_context.history 직접 format prepend.
                 // hub_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
                 if let Some(ctx) = &ai_opts.hub_context {
