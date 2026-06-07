@@ -90,7 +90,20 @@ function build(apis) {
       capability: DOMAIN_CAPABILITY[name] || 'stock-quote',
       actions: apis.map((a) => a.id).sort(),
       actionsCount: apis.length,
-      actionsDetail: apis.map((a) => `  ${a.id} — ${a.name}`).join('\n'),
+      // 액션 줄에 필수 body 파라미터(+값 가이드) 동봉 — AI 가 호출 전 필수 인자를 알게 (호출 실패 prevention).
+      // 값 desc 는 60자 truncate (토큰 절약). 도메인 도구별로만 노출되므로 per-tool 부담 작음.
+      actionsDetail: apis
+        .map((a) => {
+          const reqParams = (a.request?.body || [])
+            .filter((f) => f.required)
+            .map((f) => {
+              const d = (f.desc || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+              return d ? `${f.name}(${d})` : f.name;
+            });
+          const reqStr = reqParams.length ? ` [필수: ${reqParams.join(', ')}]` : '';
+          return `  ${a.id} — ${a.name}${reqStr}`;
+        })
+        .join('\n'),
     }));
 
   const allActions = apis
@@ -251,7 +264,12 @@ process.stdin.on('end', async () => {
       isNew = true;
       result = await callApi(base, token, action, params);
     }
-    const output = { success: true, data: { apiId: action, name: API_NAMES[action], ...result } };
+    // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
+    // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
+    const rc = result?.return_code;
+    const ok = rc === undefined || rc === null || rc === 0;
+    const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
+    if (!ok) output.error = result?.return_msg || \`키움 API 오류 (return_code=\${rc})\`;
     if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {

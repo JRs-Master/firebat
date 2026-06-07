@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Firebat System Module: kiwoom (옵션 C 통합, 2026-05-14)
- * 키움증권 OPEN API 통합 — 208 REST API. codegen 생성 (infra/data/stock-apis-kiwoom.json).
+ * Firebat System Module: kiwoom — codegen 자동 생성 (scripts/gen.mjs).
+ * 키움증권 OPEN API 통합 (208 REST API).
  *
  * LLM 시점: config.json 의 domains[] 가 MCP register_sysmod_tools 에 의해 8개 별도 도구로 분리 등록
- * (sysmod_kiwoom_account / sysmod_kiwoom_chart / sysmod_kiwoom_quote / ...). 모든 도구가 이 단일
- * 모듈로 라우팅. action 으로 API ID (ka10001 등) 직접 호출.
+ * (sysmod_kiwoom_account / sysmod_kiwoom_chart 등). 모든 도구가 본 단일 모듈로 라우팅. action 으로
+ * API ID (ka10001 등) 직접 호출.
  *
  * OAuth + callApi + throttle (초당 5회) 내장.
  */
@@ -433,15 +433,6 @@ const API_NAMES = {
   "공통": "오류코드"
 };
 
-/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
-class I18nError extends Error {
-  constructor(key, params) {
-    super(key);
-    this.errorKey = key;
-    this.errorParams = params || {};
-  }
-}
-
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   if (!forceNew) {
     const cached = process.env['KIWOOM_ACCESS_TOKEN'];
@@ -451,15 +442,14 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json;charset=UTF-8' },
     body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, secretkey: appSecret }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(10000),
   });
-  if (!resp.ok) throw new I18nError('error.token_issue_failed', { status: String(resp.status) });
+  if (!resp.ok) throw new Error(`토큰 발급 실패: ${resp.status}`);
   const json = await resp.json();
-  if (!json.token) throw new I18nError('error.token_response_invalid', { body: JSON.stringify(json) });
+  if (!json.token) throw new Error(`토큰 응답 오류: ${JSON.stringify(json)}`);
   return { token: json.token, isNew: true };
 }
 
-// Rate limit: 초당 5회 (키움 공식 한도)
 const RATE_LIMIT = 5;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
@@ -474,7 +464,7 @@ async function acquireSlot() {
 
 async function callApi(base, token, apiId, params = {}, retry = 2) {
   const category = URL_CATEGORY[apiId];
-  if (!category) throw new I18nError('error.unknown_api_id', { apiId });
+  if (!category) throw new Error(`알 수 없는 API ID: ${apiId}. 키움 REST API 문서 참조.`);
   const url = `${base}/api/dostk/${category}`;
   await acquireSlot();
   const resp = await fetch(url, {
@@ -487,7 +477,7 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
       'next-key': '',
     },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(45000),
+    signal: AbortSignal.timeout(15000),
   });
   if (resp.status === 429 && retry > 0) {
     await new Promise(r => setTimeout(r, 1100));
@@ -495,16 +485,7 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
-    // 키움 토큰 만료 조건 = HTTP 4xx/5xx + body 안 return_code 3 또는
-    // 'Token이 유효하지 않습니다' / 'token.*invalid' 메시지.
-    // throw 하지 않고 parsed body 반환 → main 의 isTokenInvalid 분기 통과 → 자동 재발급.
-    try {
-      const parsed = JSON.parse(errText);
-      if (parsed?.return_code === 3 || /Token이 유효하지 않습니다|token.*invalid/i.test(parsed?.return_msg || '')) {
-        return parsed;
-      }
-    } catch {}
-    throw new I18nError('error.api_status', { status: String(resp.status), statusText: resp.statusText, body: errText });
+    throw new Error(`키움 API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
   return await resp.json();
 }
@@ -512,25 +493,18 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
-/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.kiwoom.{key} 로 변환. */
-function outErr(key, params) {
-  const r = { success: false, errorKey: key };
-  if (params && Object.keys(params).length > 0) r.errorParams = params;
-  console.log(JSON.stringify(r));
-}
-
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const action = data?.action;
     if (!action) {
-      outErr('error.action_required', {});
+      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 키움 API ID (ka10001 등) 를 지정하세요.' }));
       return;
     }
     const appKey = process.env['KIWOOM_APP_KEY'];
     const appSecret = process.env['KIWOOM_APP_SECRET'];
     if (!appKey || !appSecret) {
-      outErr('error.api_key_missing', {});
+      console.log(JSON.stringify({ success: false, error: 'KIWOOM_APP_KEY / KIWOOM_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kiwoom 에서 등록하세요.' }));
       return;
     }
     const isMock = data.mock === true;
@@ -545,11 +519,15 @@ process.stdin.on('end', async () => {
       isNew = true;
       result = await callApi(base, token, action, params);
     }
-    const output = { success: true, data: { apiId: action, name: API_NAMES[action], ...result } };
+    // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
+    // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
+    const rc = result?.return_code;
+    const ok = rc === undefined || rc === null || rc === 0;
+    const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
+    if (!ok) output.error = result?.return_msg || `키움 API 오류 (return_code=${rc})`;
     if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
-    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
-    else outErr('error.runtime', { message: e.message });
+    console.log(JSON.stringify({ success: false, error: e.message }));
   }
 });
