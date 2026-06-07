@@ -351,7 +351,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                 className={`self-start mt-0.5 flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
                   isRevise ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                 }`}>
-                <Plus size={12} /> 항목 추가
+                <Plus size={12} /> {t('suggest.add_item')}
               </button>
             </div>
           );
@@ -381,14 +381,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
               if (e.key === 'Enter' && e.shiftKey) return;              // Shift+Enter=줄바꿈
               if (e.key === 'Enter') { e.preventDefault(); submitCustom(); } // PC: Enter=전송
             }}
-            placeholder="또는 직접 입력..."
+            placeholder={t('suggest.custom_placeholder')}
             rows={1}
             style={{ resize: 'none', overflow: 'hidden' }}
             onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
             id={`${inlineInputBaseId}-custom`}
             name="customInput"
             autoComplete="off"
-            aria-label="직접 입력"
+            aria-label={t('suggest.custom_aria')}
             className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
           />
           <button onClick={submitCustom} disabled={loading || !customInput.trim()}
@@ -402,7 +402,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
         <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-slate-100/60 border-t border-slate-200">
           <button onClick={handleAggregateSubmit} disabled={loading || !hasAnyContent()}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12px] font-bold rounded-full transition-colors shadow-sm">
-            <Send size={12} /> 전송
+            <Send size={12} /> {t('suggest.send')}
           </button>
         </div>
       )}

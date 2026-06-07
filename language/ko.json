@@ -17,6 +17,12 @@
     "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)",
     "risks": "주의사항"
   },
+  "suggest": {
+    "add_item": "항목 추가",
+    "custom_placeholder": "또는 직접 입력...",
+    "custom_aria": "직접 입력",
+    "send": "전송"
+  },
   "error": {
     "module": {
       "invalid_name": "잘못된 모듈 이름입니다.",

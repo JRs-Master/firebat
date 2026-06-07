@@ -17,6 +17,12 @@
     "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)",
     "risks": "Cautions"
   },
+  "suggest": {
+    "add_item": "Add item",
+    "custom_placeholder": "Or type your own...",
+    "custom_aria": "Custom input",
+    "send": "Send"
+  },
   "error": {
     "module": {
       "invalid_name": "Invalid module name.",
