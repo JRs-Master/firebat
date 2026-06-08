@@ -173,10 +173,11 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 @layer utilities {
-  /* 세련된 스크롤바 커스텀 */
+  /* 세련된 스크롤바 커스텀 — viewport(html)·thin 컨테이너는 위 unlayered 규칙(2px)이 우선, 그 외 일반
+     overflow 컨테이너 기본값. 톤 일관 위해 4px(옛 6px 에서 축소). */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 4px;
+    height: 4px;
   }
 
   ::-webkit-scrollbar-track {
@@ -355,14 +356,14 @@ html::-webkit-scrollbar-thumb:hover,
 
 /* CMS scope scrollbar — overflow 컨테이너만 (Table 가로 스크롤 등). 글로벌 viewport scrollbar 는 기존 유지. */
 .firebat-cms-content *::-webkit-scrollbar-thumb {
-  background: var(--cms-border);
+  background: rgba(0, 0, 0, 0.15);
   border-radius: 4px;
 }
 .firebat-cms-content *::-webkit-scrollbar-thumb:hover {
-  background: var(--cms-text-muted);
+  background: rgba(0, 0, 0, 0.3);
 }
 .firebat-cms-content {
-  scrollbar-color: var(--cms-border) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
 
 /* ── CMS Typography Tokens (P2 디자인 깊이) ──
