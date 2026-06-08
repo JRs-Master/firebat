@@ -122,6 +122,7 @@ function handleToolsMode(
           blocks?: unknown;
           suggestions?: unknown;
           pendingActions?: unknown;
+          buildSession?: unknown;
           data?: unknown;
           error?: string;
         } | null = null;
@@ -164,6 +165,9 @@ function handleToolsMode(
             blocks: result.blocks,
             suggestions: result.suggestions,
             pendingActions: result.pendingActions,
+            // Project Builder stepper — page.tsx reads msg.data.buildSession. 이 mirror 가 없으면 Rust 가
+            // AiResponse.buildSession 을 보내도 frontend 에 전달 안 돼 빌드 카드가 절대 안 뜬다.
+            ...(result.buildSession ? { buildSession: result.buildSession } : {}),
           };
           send('result', {
             success: result.success,
