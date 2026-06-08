@@ -1066,7 +1066,19 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
                       <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{planSummary(p, t)}</span>
                       {p.status === 'approved' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
+                        <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
+                          {p.name === 'save_page' && (() => {
+                            const a = p.args as Record<string, unknown> | undefined;
+                            const slug = typeof a?.slug === 'string' ? (a.slug as string) : '';
+                            return slug ? (
+                              <a href={`/${slug}`} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm">
+                                {t('plan.open')}
+                              </a>
+                            ) : null;
+                          })()}
+                        </span>
                       ) : p.status === 'rejected' ? (
                         <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-slate-400">{t('plan.cancelled')}</span>
                       ) : p.status === 'error' ? null : p.status === 'past-runat' ? (

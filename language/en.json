@@ -14,6 +14,7 @@
     "change_time": "Change time",
     "approve": "Approve",
     "reject": "Reject",
+    "open": "Open",
     "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)",
     "risks": "Cautions",
     "summary_save_page": "Save page: /{slug}",

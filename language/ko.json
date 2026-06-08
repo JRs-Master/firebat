@@ -14,6 +14,7 @@
     "change_time": "시간 변경",
     "approve": "승인",
     "reject": "거부",
+    "open": "열기",
     "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)",
     "risks": "주의사항",
     "summary_save_page": "페이지 저장: /{slug}",
