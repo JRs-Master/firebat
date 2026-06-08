@@ -96,8 +96,10 @@ async fn main() -> Result<()> {
     // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
     firebat_infra::llm::registry_loader::init_from_file();
 
-    // i18n loader — language/{lang}.json + system/modules/*/lang + system/services/*/lang + system/prompts/*/lang 자동 scan.
+    // i18n loader — language/{lang}.json + system/modules/*/lang + system/services/*/lang 자동 scan (UI/error i18n).
     firebat_core::i18n::init(&workspace_root);
+    // System prompts (AI instructions) — single-file English, separate from i18n: system/prompts/{name}.md.
+    firebat_core::prompt_store::init(&workspace_root.join("system").join("prompts"));
 
     // 로그 필터 런타임 reload — SIGHUP 시 data/log-filter.txt 읽어서 EnvFilter 재적용.
     // ssh 에서 `echo "info,law-search=debug" > data/log-filter.txt && systemctl kill -s HUP firebat`

@@ -11,6 +11,7 @@ pub mod ports;
 pub mod managers;
 pub mod grpc;
 pub mod i18n;
+pub mod prompt_store;
 pub mod vault_keys;
 pub mod capabilities;
 pub mod utils;

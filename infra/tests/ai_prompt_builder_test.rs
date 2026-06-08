@@ -13,16 +13,18 @@ use firebat_core::ports::IVaultPort;
 use firebat_core::vault_keys::{VK_SYSTEM_TIMEZONE, VK_SYSTEM_USER_PROMPT};
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 
-static INIT_I18N: Once = Once::new();
+static INIT_ONCE: Once = Once::new();
 
-/// workspace root 기준 `i18n::init` 1회 — CARGO_MANIFEST_DIR = infra/ 의 부모.
-fn init_i18n_once() {
-    INIT_I18N.call_once(|| {
+/// workspace root 기준 i18n + prompt_store init 1회 — CARGO_MANIFEST_DIR = infra/ 의 부모.
+/// 시스템 프롬프트는 단일 영어 파일 system/prompts/{name}.md → prompt_store (2026-06-08, i18n 에서 분리).
+fn init_once() {
+    INIT_ONCE.call_once(|| {
         let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("infra crate 의 parent (workspace root)")
             .to_path_buf();
         firebat_core::i18n::init(&workspace_root);
+        firebat_core::prompt_store::init(&workspace_root.join("system").join("prompts"));
     });
 }
 
@@ -34,7 +36,7 @@ fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
 }
 
 fn pb(v: Arc<dyn IVaultPort>) -> PromptBuilder {
-    init_i18n_once();
+    init_once();
     PromptBuilder::new(v)
 }
 
@@ -43,14 +45,14 @@ fn base_prompt_contains_tool_system_sections() {
     let (v, _dir) = vault();
     let pb = pb(v);
     let prompt = pb.build(None, None);
-    assert!(prompt.contains("Firebat 도구 사용 시스템"));
-    assert!(prompt.contains("도구 사용 원칙"));
-    assert!(prompt.contains("컴포넌트 렌더링"));
-    assert!(prompt.contains("Reusable 5 규칙"));
-    assert!(prompt.contains("스케줄링"));
-    assert!(prompt.contains("파이프라인"));
-    assert!(prompt.contains("페이지 생성 가이드"));
-    assert!(prompt.contains("메타 인지 룰"));
+    assert!(prompt.contains("Firebat tool usage system"));
+    assert!(prompt.contains("Tool usage principles"));
+    assert!(prompt.contains("Component rendering"));
+    assert!(prompt.contains("Reusable 5 rules"));
+    assert!(prompt.contains("Scheduling"));
+    assert!(prompt.contains("Pipeline"));
+    assert!(prompt.contains("Page generation guide"));
+    assert!(prompt.contains("Meta-cognition rules"));
 }
 
 #[test]
@@ -90,7 +92,7 @@ fn timezone_override_via_vault() {
     let pb = pb(v);
     let prompt = pb.build(None, None);
     assert!(prompt.contains("America/New_York"));
-    let scheduling_section_idx = prompt.find("타임존:").expect("타임존 섹션 필요");
+    let scheduling_section_idx = prompt.find("Timezone:").expect("Timezone section required");
     let scheduling_section = &prompt[scheduling_section_idx..scheduling_section_idx + 200];
     assert!(scheduling_section.contains("America/New_York"));
 }
@@ -115,12 +117,12 @@ fn cron_agent_prelude_prepended() {
             title: Some("주간 증시 일정".to_string()),
         }),
     );
-    assert!(prompt.contains("Cron Agent 모드"));
+    assert!(prompt.contains("Cron Agent mode"));
     assert!(prompt.contains("job-2026-04-25-stock-weekly"));
     assert!(prompt.contains("주간 증시 일정"));
-    assert!(prompt.contains("사용자 부재 중"));
-    let prelude_idx = prompt.find("Cron Agent 모드").unwrap();
-    let base_idx = prompt.find("도구 사용 원칙").unwrap();
+    assert!(prompt.contains("while the user is away"));
+    let prelude_idx = prompt.find("Cron Agent mode").unwrap();
+    let base_idx = prompt.find("Tool usage principles").unwrap();
     assert!(prelude_idx < base_idx);
 }
 

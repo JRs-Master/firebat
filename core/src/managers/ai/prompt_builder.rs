@@ -23,7 +23,7 @@ use std::sync::Arc;
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 
-use crate::i18n;
+use crate::prompt_store;
 use crate::ports::IVaultPort;
 use crate::utils::timezone::resolve_user_tz;
 use crate::vault_keys::VK_SYSTEM_USER_PROMPT;
@@ -88,9 +88,8 @@ impl PromptBuilder {
         // 시스템 컨텍스트 — extra_context 설정되어 있으면 그것, 아니면 빈 string
         let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미설정)");
 
-        // i18n::prompt 통한 prompt full-text lookup — task-local 사용자 lang 자동 적용 (interceptor 가 set).
-        // 미설정 시 server-side default lang fallback (`i18n::set_default_lang`).
-        let tool_template = i18n::prompt("tool_system", None);
+        // System prompt full text — single-file English from prompt_store (i18n 분리, lang 무관).
+        let tool_template = prompt_store::get("tool_system");
         let base = tool_template
             .replace("{system_context}", system_context)
             .replace("{user_tz}", user_tz_str)
@@ -104,7 +103,7 @@ impl PromptBuilder {
                 Some(t) => format!("제목: {}", t),
                 None => String::new(),
             };
-            let cron_template = i18n::prompt("cron_agent", None);
+            let cron_template = prompt_store::get("cron_agent");
             let prelude = cron_template
                 .replace("{job_id}", &ctx.job_id)
                 .replace("{job_title_line}", &job_title_line)

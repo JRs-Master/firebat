@@ -122,8 +122,8 @@ fn build_store(workspace_root: &Path) -> I18nStore {
         &mut store,
     );
 
-    // 4. 매 system prompt — system/prompts/{name}/lang/{lang}.md (full text)
-    scan_prompts_dir(&workspace_root.join("system").join("prompts"), &mut store);
+    // System prompts (AI instructions) live in firebat_core::prompt_store (single-file English,
+    // system/prompts/{name}.md) — NOT i18n. i18n = user-facing lang-keyed strings only.
 
     store
 }
@@ -152,33 +152,6 @@ fn scan_namespaced_dir(root: &Path, ns: &str, store: &mut I18nStore) {
             let Ok(raw) = std::fs::read_to_string(&lang_path) else { continue };
             let Ok(parsed) = serde_json::from_str::<JsonValue>(&raw) else { continue };
             insert_namespaced(store, lang, ns, name, parsed);
-        }
-    }
-}
-
-/// `{root}/{name}/lang/{lang}.md` 패턴 scan — system prompt 영역 (full text).
-fn scan_prompts_dir(root: &Path, store: &mut I18nStore) {
-    let Ok(entries) = std::fs::read_dir(root) else { return };
-    for entry in entries.flatten() {
-        let prompt_dir = entry.path();
-        if !prompt_dir.is_dir() {
-            continue;
-        }
-        let Some(name) = prompt_dir.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let lang_dir = prompt_dir.join("lang");
-        let Ok(lang_files) = std::fs::read_dir(&lang_dir) else { continue };
-        for lang_entry in lang_files.flatten() {
-            let lang_path = lang_entry.path();
-            if lang_path.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
-            }
-            let Some(lang) = lang_path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let Ok(text) = std::fs::read_to_string(&lang_path) else { continue };
-            insert_namespaced(store, lang, "prompt", name, JsonValue::String(text));
         }
     }
 }
@@ -216,10 +189,6 @@ pub fn t(key: &str, lang: Option<&str>, params: &[(&str, &str)]) -> String {
     lookup_in_store(store, key, resolved_lang.as_deref(), params)
 }
 
-/// system prompt 의 full text lookup — `prompt.{name}` 형식.
-pub fn prompt(name: &str, lang: Option<&str>) -> String {
-    t(&format!("prompt.{name}"), lang, &[])
-}
 
 /// task-local ACTIVE_LANG read — tonic interceptor 가 설정한 사용자 lang.
 /// task-local 이 없는 시점 (예: 비동기 spawn 한 context 가 없을 때) None 반환.

@@ -11,16 +11,16 @@
 //!
 //! 옛 `IPromptLoaderPort` adapter 영역 폐기 (2026-05-16) — core 가 직접 i18n 사용.
 
-use crate::i18n;
 use crate::ports::PlanMode;
+use crate::prompt_store;
 
 /// PlanMode 별 시스템 프롬프트 prefix. 옛 TS `planModePrefix` 1:1.
 /// 매 호출 시 i18n lookup — 사용자 lang task-local 자동 적용.
 pub fn prefix(mode: PlanMode) -> String {
     match mode {
         PlanMode::Off => String::new(),
-        PlanMode::Auto => i18n::prompt("plan_mode_auto", None),
-        PlanMode::Always => i18n::prompt("plan_mode_always", None),
+        PlanMode::Auto => prompt_store::get("plan_mode_auto"),
+        PlanMode::Always => prompt_store::get("plan_mode_always"),
     }
 }
 

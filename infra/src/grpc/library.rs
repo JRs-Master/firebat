@@ -105,8 +105,8 @@ impl LibraryServiceImpl {
             max_tokens: Some(32000),
             ..Default::default()
         };
-        // 추출 프롬프트는 system/prompts/library_extraction/lang/{lang}.md 외부화 (i18n) — 재빌드 없이 튜닝.
-        let prompt = firebat_core::i18n::prompt("library_extraction", None);
+        // 추출 프롬프트 = system/prompts/library_extraction.md (단일 영어, prompt_store) — 재빌드 없이 튜닝.
+        let prompt = firebat_core::prompt_store::get("library_extraction");
         let resp = self.llm.ask_text(&prompt, &opts).await?;
         Ok(resp.text)
     }
