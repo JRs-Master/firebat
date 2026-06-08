@@ -409,6 +409,7 @@ impl ConsolidationManager {
                     source_conv_id: source_conv_id.map(String::from),
                     ttl_days: None,
                     dedup_threshold: fact_dedup_threshold,
+                    owner: None, // 내부 consolidation — entity 가 이미 같은 owner scope 에서 생성됨
                 })
                 .await
             {

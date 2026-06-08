@@ -674,17 +674,24 @@ impl IEntityPort for SqliteMemoryAdapter {
         if input.content.trim().is_empty() {
             return Err("fact content 누락".to_string());
         }
-        // Entity 존재 검증
+        // Entity 존재 + owner scope 검증 — caller(input.owner) 가 지정되면 대상 entity 가 그 owner 소유일 때만
+        // 허용(hub 방문자가 admin·타 hub 엔티티에 fact 주입 = cross-tenant write + prompt-injection 차단).
+        // admin(owner None/빈값) = 무검사. 미존재·소유 불일치 모두 동일 에러로 존재 은닉.
         {
             let conn = self.conn.lock().unwrap();
-            let entity_exists: bool = conn
+            let entity_owner: Option<String> = conn
                 .query_row(
-                    "SELECT 1 FROM entities WHERE id = ?1",
+                    "SELECT owner FROM entities WHERE id = ?1",
                     params![input.entity_id],
-                    |_| Ok(true),
+                    |r| r.get(0),
                 )
-                .unwrap_or(false);
-            if !entity_exists {
+                .ok();
+            let ok = match (entity_owner, input.owner.as_deref().filter(|o| !o.is_empty())) {
+                (Some(eo), Some(caller)) => eo == caller, // hub: 대상 entity 가 caller 소유여야 허용
+                (Some(_), None) => true,                  // admin: 무검사
+                (None, _) => false,                       // 미존재
+            };
+            if !ok {
                 return Err(format!("entity id={} 미존재", input.entity_id));
             }
         }

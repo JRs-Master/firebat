@@ -196,6 +196,7 @@ impl EntityService for EntityServiceImpl {
                 source_conv_id: args.source_conv_id,
                 ttl_days: args.ttl_days,
                 dedup_threshold: args.dedup_threshold,
+                owner: args.owner, // ensure_entity_owner 이미 검증 — adapter 가드와 이중(defense)
             })
             .await
         {

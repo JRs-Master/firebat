@@ -1236,6 +1236,7 @@ impl McpToolHandler for SaveEntityFactHandler {
             source_conv_id: obj_str(&args, "sourceConvId"),
             ttl_days: obj_i64(&args, "ttlDays"),
             dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
+            owner: obj_str(&args, "owner"),
         };
         match self.entity.save_fact(input).await {
             Ok((id, skipped, sim)) => Ok(serde_json::json!({

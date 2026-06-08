@@ -1715,6 +1715,9 @@ pub struct SaveFactInput {
     pub source_conv_id: Option<String>,
     pub ttl_days: Option<i64>,
     pub dedup_threshold: Option<f64>,
+    /// Caller owner scope — when Some(non-empty), save_fact only proceeds if the target entity
+    /// belongs to this owner (hub cross-tenant write guard). None/empty = admin (no check).
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

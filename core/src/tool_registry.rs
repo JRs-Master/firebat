@@ -1515,6 +1515,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     source_conv_id: None,
                     ttl_days: args.get("ttlDays").and_then(|v| v.as_i64()),
                     dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
+                    owner: args.get("owner").and_then(|v| v.as_str()).map(String::from),
                 };
                 let (id, skipped, sim) = entity.save_fact(parsed).await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))

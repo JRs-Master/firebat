@@ -217,12 +217,11 @@ fn is_hub_writable_builtin(name: &str) -> bool {
     matches!(
         name,
         "save_entity"
-            // ⚠️ DEAD entry — the real tool is "save_entity_fact"; "save_fact" never matches a tool
-            // name → save_entity_fact is currently fail-safe DENIED for hub. Do NOT "fix" this to
-            // "save_entity_fact" without FIRST hardening infra/src/adapters/memory.rs save_fact, which
-            // stamps the TARGET entity's owner (not the injected caller owner) = cross-tenant write +
-            // prompt-injection. See CLAUDE.md #10 / [[feedback_hub_scope_enforcement]].
-            | "save_fact"
+            // save_entity_fact — memory fact write, hub-scoped: the adapter (memory.rs save_fact) verifies
+            // the target entity belongs to the injected owner before writing, so a hub visitor cannot add a
+            // fact to an admin/other-hub entity (cross-tenant write + prompt-injection). Was a latent gap
+            // under the old dead name "save_fact" (≠ real tool); adapter hardened + renamed 2026-06-08.
+            | "save_entity_fact"
             // consolidate_conversation — owner-scoped (verified 2026-06-08): both handlers read the
             // injected owner and the manager fetches via conversation.get(owner, conv_id), so a hub
             // visitor can only consolidate their own conversations.
@@ -374,7 +373,7 @@ mod tests {
         assert!(permits_tool("save_page", &allowed));
         // ① 필수-on owner-scoped 쓰기 (owner 주입으로 visitor 간 격리 → 허용)
         assert!(permits_tool("save_entity", &allowed));
-        assert!(permits_tool("save_fact", &allowed));
+        assert!(permits_tool("save_entity_fact", &allowed));
         assert!(permits_tool("delete_page", &allowed));
         assert!(permits_tool("write_file", &allowed));
         assert!(permits_tool("delete_file", &allowed));
