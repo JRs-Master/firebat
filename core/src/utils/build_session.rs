@@ -212,6 +212,34 @@ pub fn active_session_for_conv(conv_id: &str) -> Option<BuildSession> {
         .cloned()
 }
 
+/// Bind the most-recent orphan (conv_id=None) Active session to this conversation, then return it.
+///
+/// **Admin-only fallback — the caller MUST NOT invoke this for hub turns.** start_build on the admin CLI
+/// path runs via MCP without convId injection (only ai.rs FC dispatch and inject_hub_owner inject the
+/// scope), so the session is created orphaned (conv_id=None) and active_session_for_conv misses it →
+/// no build card + no cross-turn step injection. ai.rs calls this as a fallback for admin so the orphan
+/// gets bound to the current conversation (single active build per turn → at most one orphan). Hub/FC
+/// sessions are already conv-keyed so they never appear as orphans here; binding an admin orphan to a
+/// hub scope would be a cross-tenant leak, hence the admin-only contract.
+pub fn adopt_orphan_for_conv(conv_id: &str) -> Option<BuildSession> {
+    if conv_id.is_empty() {
+        return None;
+    }
+    let mut map = store_lock().lock().ok()?;
+    cleanup_expired(&mut map);
+    let orphan_id = map
+        .values()
+        .filter(|s| s.status == BuildStatus::Active && s.conv_id.is_none())
+        .max_by_key(|s| s.created_at)
+        .map(|s| s.id.clone())?;
+    let s = map.get_mut(&orphan_id)?;
+    s.conv_id = Some(conv_id.to_string());
+    s.updated_at = now_ms();
+    let cloned = s.clone();
+    flush(&map);
+    Some(cloned)
+}
+
 /// Look up a session (memory → file fallback).
 pub fn get_session(id: &str) -> Option<BuildSession> {
     {

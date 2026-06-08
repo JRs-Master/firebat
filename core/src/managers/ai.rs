@@ -1655,11 +1655,18 @@ impl AiManager {
             // Project Builder — 활성 빌드 세션을 프론트로 전달 (stepper/만료 표시).
             build_session: {
                 // scope 키 — hub: hubOwner / admin: 대화 id (위 주입과 동일 규칙).
+                let is_hub = ai_opts.hub_context.is_some();
                 let scope: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
                     if c.session_id.is_empty() { c.instance_id.clone() }
                     else { format!("{}:{}", c.instance_id, c.session_id) }
                 }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
-                scope.and_then(|s| crate::utils::build_session::active_session_for_conv(&s))
+                scope.and_then(|s| {
+                    crate::utils::build_session::active_session_for_conv(&s)
+                        // admin CLI: start_build 가 MCP 경유라 convId 주입이 안 돼 세션이 conv_id=None 고아로
+                        // 생성됨 → 이 conv 에 입양해야 카드 + cross-turn 단계 주입이 동작. hub 는 절대 입양 안 함
+                        // (admin 고아를 hub 방문자에 바인딩 = cross-tenant). hub/FC 는 이미 conv-keyed.
+                        .or_else(|| if is_hub { None } else { crate::utils::build_session::adopt_orphan_for_conv(&s) })
+                })
                     .and_then(|sess| serde_json::to_value(sess).ok())
             },
         };
