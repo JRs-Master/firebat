@@ -34,6 +34,22 @@ const FG = '#0f172a';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
 
+// HTS식 매수/매도 화살표 폴리곤 — 몸통(shaft) + 머리(head). up=true: 위로(매수, 봉 아래서 위 가리킴) /
+// false: 아래로(매도, 봉 위에서 아래). apex(y0)=머리 끝, 몸통이 s 방향으로 len 만큼 뻗음.
+function arrowPath(x: number, y0: number, up: boolean): string {
+  const hw = 7.5, sw = 3.2, hh = 8, len = 13; // 머리 반폭 / 몸통 반폭 / 머리 길이 / 전체 — HTS 식 굵고 짜리몽땅
+  const s = up ? 1 : -1;
+  return ([
+    [x, y0],                  // 머리 끝(apex)
+    [x - hw, y0 + s * hh],    // 머리 좌
+    [x - sw, y0 + s * hh],    // 몸통 좌 위
+    [x - sw, y0 + s * len],   // 몸통 좌 끝
+    [x + sw, y0 + s * len],   // 몸통 우 끝
+    [x + sw, y0 + s * hh],    // 몸통 우 위
+    [x + hw, y0 + s * hh],    // 머리 우
+  ] as [number, number][]).map(p => `${p[0]},${p[1]}`).join(' ');
+}
+
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
 const ZOOM_DEFAULT_CPS = 90; // 기본 한 화면 캔들 수
 const ZOOM_MAX_BAR = 36;     // 최대 봉 px (줌인 한계 — 그 이상 안 커짐)
@@ -491,11 +507,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const idx = bp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(bp.date!).slice(0, 10)) : -1;
             if (idx >= 0) {
               const x = xs[idx];
-              const ay = yPrice(safeData[idx].low) + 9; // 봉 저가 아래
+              const ay = yPrice(safeData[idx].low) + 4; // 봉 저가 아래 — 위로 가리킴
               return (
                 <g key={'bp' + i}>
-                  <polygon points={`${x},${ay} ${x - 4},${ay + 7} ${x + 4},${ay + 7}`} fill={UP} />
-                  {bp.label && <text x={x} y={ay + 18} fill={UP} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
+                  <polygon points={arrowPath(x, ay, true)} fill={UP} />
+                  {bp.label && <text x={x} y={ay + 26} fill={UP} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
                 </g>
               );
             }
@@ -512,11 +528,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const idx = sp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(sp.date!).slice(0, 10)) : -1;
             if (idx >= 0) {
               const x = xs[idx];
-              const ay = yPrice(safeData[idx].high) - 9; // 봉 고가 위
+              const ay = yPrice(safeData[idx].high) - 4; // 봉 고가 위 — 아래로 가리킴
               return (
                 <g key={'sp' + i}>
-                  <polygon points={`${x},${ay} ${x - 4},${ay - 7} ${x + 4},${ay - 7}`} fill={DOWN} />
-                  {sp.label && <text x={x} y={ay - 10} fill={DOWN} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
+                  <polygon points={arrowPath(x, ay, false)} fill={DOWN} />
+                  {sp.label && <text x={x} y={ay - 22} fill={DOWN} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
                 </g>
               );
             }
