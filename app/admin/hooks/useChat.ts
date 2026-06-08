@@ -851,6 +851,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             planMode,
             systemId,
             userId: `u-${id}`,
+            // suggestion 픽 = 히스토리엔 저장하되(AI 맥락) 렌더는 제외 — 백엔드가 user 메시지에 suggestionClick
+            // 플래그를 달게 해서 isSuggestionClickUserMessage 가 리로드 시 버블을 숨김.
+            ...(isSuggestion ? { userSuggestion: true } : {}),
             ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
             ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
             ...(effectiveConvId ? { conversationId: effectiveConvId } : {}),

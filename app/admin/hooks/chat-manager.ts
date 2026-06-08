@@ -90,6 +90,9 @@ export function isSuggestionClickUserMessage(m: unknown): boolean {
   if (!m || typeof m !== 'object') return false;
   const obj = m as Record<string, unknown>;
   if (obj.role !== 'user') return false;
+  // suggestionClick 플래그 = SEND_SUGGESTION 경로 픽(칩 텍스트)을 백엔드가 저장한 표시. 마커(✓/✕/⚙) 없는
+  // 일반 옵션 텍스트도 이 플래그로 렌더 제외 — 리로드 시 픽이 user 말풍선으로 노출되던 것 차단.
+  if (obj.suggestionClick === true) return true;
   return isSuggestionClickContent(obj.content);
 }
 

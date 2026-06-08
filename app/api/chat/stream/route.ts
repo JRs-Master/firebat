@@ -36,7 +36,7 @@ type ChatOpts = {
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], image, previousResponseId, conversationId, planMode, planExecuteId, planReviseId, systemId, userId } = await req.json();
+  const { prompt, config, history = [], image, previousResponseId, conversationId, planMode, planExecuteId, planReviseId, systemId, userId, userSuggestion } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
     userId: typeof userId === 'string' ? userId : undefined,
     userPrompt: prompt,
     image: typeof image === 'string' ? image : undefined,
+    // suggestion 픽이면 저장되는 user 메시지에 suggestionClick 플래그 — 렌더 시 말풍선 숨김 (히스토리엔 유지).
+    userSuggestion: userSuggestion === true,
   };
   return handleToolsMode(prompt, history, opts, req.signal, saveOpts);
 }
@@ -73,7 +75,7 @@ function handleToolsMode(
   _history: Array<{ role: 'user' | 'assistant'; content: string }>,
   opts: ChatOpts,
   abortSignal?: AbortSignal,
-  saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string },
+  saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string; userSuggestion?: boolean },
 ) {
   const encoder = new TextEncoder();
 
@@ -186,7 +188,7 @@ function handleToolsMode(
             try {
               // user 메시지 + system(AI 응답) 메시지 쌍 저장
               const userMsg = saveOpts.userId && saveOpts.userPrompt
-                ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
+                ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}), ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}) }
                 : null;
               // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원.
               // `data` 안 mergedData 그대로 (top-level blocks / suggestions / pendingActions
