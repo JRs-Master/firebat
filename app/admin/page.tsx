@@ -789,7 +789,10 @@ function planSummary(
   }
 }
 
-function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext }: {
+/** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
+type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number };
+
+function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
@@ -801,6 +804,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
   shareContext?: { conversationId: string; turnMessages: unknown[] };
   /** Hub page mode — share 호출 시 /api/hub/<slug>/share 분기 (anonymous + apiToken). */
   hubContext?: { slug: string; apiToken: string; sessionId: string };
+  /** Project Builder — 이 메시지가 빌드 세션의 anchor(첫 등장)면 그 세션의 최신 stepper state. 백엔드 멀티턴이어도
+   *  세션당 카드 1개(첫 자리에서 진행)로 보이게 부모가 그룹핑해 전달. undefined = 카드 안 그림. */
+  buildCard?: BuildSessionView;
 }) {
   const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
@@ -964,9 +970,10 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 );
               })()}
 
-              {/* Project Builder — 빌드 단계 stepper (활성 빌드 세션). data passthrough 로 buildSession 수신 */}
-              {!Array.isArray(msg.data) && msg.data?.buildSession && (() => {
-                const bs = msg.data.buildSession as { step?: string; tier?: string; status?: string; createdAt?: number };
+              {/* Project Builder — 빌드 단계 stepper. 부모가 세션(buildSession.id) 단위로 그룹핑해 anchor(첫 등장)
+                  메시지에만 최신 state 를 buildCard 로 전달 → 백엔드 멀티턴이어도 카드 1개가 첫 자리에서 1→2→3 진행. */}
+              {buildCard && (() => {
+                const bs = buildCard;
                 const STEPS = [
                   { key: 'requirements', label: t('build.step_requirements') },
                   { key: 'design', label: t('build.step_design') },
@@ -1437,7 +1444,26 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         {/* 메시지 목록 */}
         <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
-            {messages.map((msg, idx) => {
+            {(() => {
+              // Project Builder — 빌드 카드 통합: 같은 세션(buildSession.id)은 백엔드 멀티턴이어도 프론트엔 카드
+              // 1개만. 세션별 첫 등장 메시지(anchor)에 최신 state 를 몰아줘 "한 자리에서 진행"처럼 보이게.
+              const buildCardByMsg = new Map<string, BuildSessionView>();
+              {
+                const anchorOf = new Map<string, string>();
+                const latestOf = new Map<string, BuildSessionView>();
+                for (const m of messages) {
+                  if (Array.isArray(m.data)) continue;
+                  const bsv = (m.data as { buildSession?: BuildSessionView } | undefined)?.buildSession;
+                  if (!bsv?.id) continue;
+                  if (!anchorOf.has(bsv.id)) anchorOf.set(bsv.id, m.id);
+                  latestOf.set(bsv.id, bsv);
+                }
+                for (const [sid, anchorId] of anchorOf) {
+                  const st = latestOf.get(sid);
+                  if (st) buildCardByMsg.set(anchorId, st);
+                }
+              }
+              return messages.map((msg, idx) => {
               // 버튼 클릭 흔적 user 메시지 (✓ 실행, ✕ 취소, ⚙ 수정 등) — 과거 SEND_USER 경로로 저장된 잔재.
               // SEND_SUGGESTION 도입 이후 신규 대화에선 생성되지 않지만, 기존 대화 로드 시 잔존 — 렌더에서 숨김.
               if (isSuggestionClickUserMessage(msg)) return null;
@@ -1467,9 +1493,11 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   onRejectPending={handleRejectPending}
                   shareContext={shareContext}
                   hubContext={hubChatContext}
+                  buildCard={buildCardByMsg.get(msg.id)}
                 />
               );
-            })}
+              });
+            })()}
             {/* 하단 spacer = 입력창 오버레이 높이 ≈. 마지막 메시지가 입력창 바로 위에 오게.
                 모바일 입력창(~130px)에 맞춰 h-36(144). 옛 h-48(192) 은 모바일에서 ~60px 빈 틈 발생. */}
             <div className="h-36 sm:h-64 shrink-0 pointer-events-none" />
