@@ -15,7 +15,13 @@
     "approve": "Approve",
     "reject": "Reject",
     "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)",
-    "risks": "Cautions"
+    "risks": "Cautions",
+    "summary_save_page": "Save page: /{{slug}}",
+    "summary_delete_page": "Delete page: /{{slug}}",
+    "summary_write_file": "Write file: {{path}}",
+    "summary_delete_file": "Delete file: {{path}}",
+    "summary_schedule": "Schedule: {{title}}",
+    "summary_cancel_cron": "Cancel schedule: {{job}}"
   },
   "suggest": {
     "add_item": "Add item",

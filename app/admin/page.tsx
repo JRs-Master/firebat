@@ -26,7 +26,7 @@ import { readSetting, writeSetting, setSettingsKeyPrefix } from './hooks/setting
 import { useTranslations } from '../../lib/i18n';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
-import { Message, StepStatus } from './types';
+import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
@@ -770,6 +770,25 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
+/** Localized pending-action summary — rebuilt from name+args so hub visitors (and any non-ko UI) see
+ *  it in their own language. Falls back to the backend-generated p.summary for unknown tool names. */
+function planSummary(
+  p: PendingAction,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): string {
+  const a = (p.args ?? {}) as Record<string, unknown>;
+  const s = (k: string) => (typeof a[k] === 'string' ? (a[k] as string) : '');
+  switch (p.name) {
+    case 'save_page': return t('plan.summary_save_page', { slug: s('slug') });
+    case 'delete_page': return t('plan.summary_delete_page', { slug: s('slug') });
+    case 'write_file': return t('plan.summary_write_file', { path: s('path') });
+    case 'delete_file': return t('plan.summary_delete_file', { path: s('path') });
+    case 'schedule_task': return t('plan.summary_schedule', { title: s('title') || s('targetPath') });
+    case 'cancel_cron_job': return t('plan.summary_cancel_cron', { job: s('jobId') });
+    default: return p.summary || '';
+  }
+}
+
 function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext }: {
   msg: Message;
   loading: boolean;
@@ -1001,7 +1020,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       )}
                       <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
-                      <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
+                      <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{planSummary(p, t)}</span>
                       {p.status === 'approved' ? (
                         <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
                       ) : p.status === 'rejected' ? (

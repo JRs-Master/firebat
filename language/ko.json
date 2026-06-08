@@ -15,7 +15,13 @@
     "approve": "승인",
     "reject": "거부",
     "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)",
-    "risks": "주의사항"
+    "risks": "주의사항",
+    "summary_save_page": "페이지 저장: /{{slug}}",
+    "summary_delete_page": "페이지 삭제: /{{slug}}",
+    "summary_write_file": "파일 저장: {{path}}",
+    "summary_delete_file": "파일 삭제: {{path}}",
+    "summary_schedule": "예약 등록: {{title}}",
+    "summary_cancel_cron": "예약 취소: {{job}}"
   },
   "suggest": {
     "add_item": "항목 추가",
