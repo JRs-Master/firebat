@@ -472,8 +472,9 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         >
           {/* 콘텐츠 페이지 (project 설정된) 만 — Breadcrumb + Reading time 표시.
            *  Breadcrumb: JSON-LD BreadcrumbList 와 동일 경로 (홈 > seg1 > ... > 현재).
-           *  Reading time: 본문 텍스트 추출 후 500자/분. 0분이면 미표시. */}
-          {spec.project && (
+           *  Reading time: 본문 텍스트 추출 후 500자/분. 0분이면 미표시.
+           *  앱(isApp: 단일 Html+script)은 글이 아니라 풀블리드 앱이므로 글 크롬 제외. */}
+          {spec.project && !isApp && (
             <>
               <CmsBreadcrumb slug={slug} title={head.title} siteLang={seo.siteLang} />
               {(() => {
@@ -495,8 +496,9 @@ export default async function DynamicPage({ params, searchParams }: Props) {
             </>
           )}
           <ComponentRenderer components={body} />
-          {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더. */}
-          {spec.project && seo.layout?.showRelatedPosts && (
+          {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더.
+           *  앱(isApp)은 글이 아니므로 제외. */}
+          {spec.project && !isApp && seo.layout?.showRelatedPosts && (
             <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} siteLang={seo.siteLang} />
           )}
         </div>
