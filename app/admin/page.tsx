@@ -1223,13 +1223,14 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
     const cy0 = size / 2;
 
     // 픽셀별 상태 — 현재 위치(x,y)는 프레임 간 유지(이동). tx,ty=유령 자리. bAng=터질 때 바깥 방향.
-    type GP = { x: number; y: number; tx: number; ty: number; gx: number; gy: number; rnd: number; bAng: number };
+    type GP = { x: number; y: number; tx: number; ty: number; gx: number; gy: number; rnd: number; rnd2: number; bAng: number };
     const ps: GP[] = targets.map(t => {
       const tx = t.gx * dot;
       const ty = t.gy * dot;
       const rnd = Math.random();
+      const rnd2 = Math.random();
       const bAng = Math.atan2(ty + dot / 2 - cy0, tx + dot / 2 - cx0) + (rnd - 0.5) * 0.9;
-      return { x: cx0, y: cy0, tx, ty, gx: t.gx, gy: t.gy, rnd, bAng };
+      return { x: cx0, y: cy0, tx, ty, gx: t.gx, gy: t.gy, rnd, rnd2, bAng };
     });
     // 패턴별 등장 순서(0..1). 0~3 = 제자리에서 순서대로 채우기 / 4~5 = 가장자리·아래서 날아와 모임.
     const appearAt = (pattern: number, p: GP): number => {
@@ -1243,11 +1244,15 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
       }
     };
     const isConverge = (pattern: number) => pattern >= 4; // 날아와 모임 vs 제자리 등장
+    // 4 = 네 가장자리(상/하/좌/우) 중 랜덤하게서 날아옴 / 5 = 아래서.
+    const M = dot * 3; // 화면 밖 여유
     const scatterTo = (pattern: number, p: GP) => {
-      const a = pattern === 5 ? Math.PI / 2 + (p.rnd - 0.5) * 1.4 : p.rnd * Math.PI * 2; // 5=아래 / 4=사방
-      const r = size * (0.5 + p.rnd * 0.3);
-      p.x = cx0 + Math.cos(a) * r;
-      p.y = cy0 + Math.sin(a) * r;
+      if (pattern === 5) { p.x = p.rnd * size; p.y = size + M + p.rnd2 * size * 0.3; return; }
+      const edge = Math.floor(p.rnd * 4);
+      if (edge === 0) { p.x = p.rnd2 * size; p.y = -M; }            // 위
+      else if (edge === 1) { p.x = p.rnd2 * size; p.y = size + M; } // 아래
+      else if (edge === 2) { p.x = -M; p.y = p.rnd2 * size; }       // 왼
+      else { p.x = size + M; p.y = p.rnd2 * size; }                 // 오
     };
 
     // 사이클: (제자리 채우기 or 날아와 모임) → 완성 부유 → 펑 분리 → 다음 패턴. 6패턴 순환, 느리게.
@@ -1256,10 +1261,13 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
     const PATTERNS = 6;
     let raf = 0;
     let frame = 0;
+    let pattern = Math.floor(Math.random() * PATTERNS); // 사이클마다 랜덤 선택(순차 X)
     const render = () => {
       const cf = frame % CYCLE;
-      const pattern = Math.floor(frame / CYCLE) % PATTERNS;
       if (cf === 0) {
+        let next = Math.floor(Math.random() * PATTERNS);
+        if (next === pattern) next = (next + 1) % PATTERNS; // 직전 패턴 연속 회피
+        pattern = next;
         for (const p of ps) {
           if (isConverge(pattern)) scatterTo(pattern, p); // 날아오기 = 가장자리서 시작
           else { p.x = p.tx; p.y = p.ty; }                // 제자리 채우기 = 처음부터 자리에(알파로 등장)
