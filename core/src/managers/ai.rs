@@ -942,11 +942,18 @@ impl AiManager {
                     // New user turn — clear the active build session's awaiting gate (allow one advance this turn = interactive step enforcement).
                     crate::utils::build_session::reset_awaiting_for_conv(cid);
                     if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
-                        let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
-                        composed = format!(
-                            "[Project Builder in progress — sessionId={}, current step: {}]\n{}\nOnly one step advances per turn — present the options as suggest chips and, after the user chooses, call advance_build(sessionId=\"{}\", output, tier?, auto?) (calling before selection is rejected by the engine). To stop, call cancel_build(sessionId).\n\n{}",
-                            sess.id, sess.step.key(), sp, sess.id, composed
-                        );
+                        if sess.step == crate::utils::build_session::BuildStep::Implement {
+                            // The build reached its last step (Implement = page built + save_page) on a previous
+                            // turn. Finish it so this fresh turn (e.g. a follow-up or modify request) does NOT
+                            // re-enter the build context — otherwise the 구현 card lingered on later messages.
+                            crate::utils::build_session::finish_session(&sess.id, true);
+                        } else {
+                            let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
+                            composed = format!(
+                                "[Project Builder in progress — sessionId={}, current step: {}]\n{}\nOnly one step advances per turn — present the options as suggest chips and, after the user chooses, call advance_build(sessionId=\"{}\", output, tier?, auto?) (calling before selection is rejected by the engine). To stop, call cancel_build(sessionId).\n\n{}",
+                                sess.id, sess.step.key(), sp, sess.id, composed
+                            );
+                        }
                     }
                 }
                 effective_opts.system_prompt = Some(composed);
