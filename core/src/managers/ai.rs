@@ -92,7 +92,7 @@ use crate::ports::{
     AiRequestOpts, ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, ToolCall,
     ToolDefinition, ToolResult,
 };
-use crate::utils::pending_tools::create_pending;
+use crate::utils::pending_tools::create_pending_scoped;
 use crate::utils::render_map::render_tool_map;
 use crate::utils::tool_cache::{
     get_cached_tool_result, set_cached_tool_result, tool_cache_key,
@@ -1276,7 +1276,16 @@ impl AiManager {
                             // typed args 를 그대로 serialize → frontend pending JSON 에 들어감 (name field 자동 포함).
                             let args_json = serde_json::to_value(&typed_args)
                                 .unwrap_or(serde_json::Value::Null);
-                            let plan_id = create_pending(typed_args, &approval.summary);
+                            // hub visitor — capture scope so /api/hub/<slug>/plan can cross-tenant-guard
+                            // + execute in the visitor's own owner scope (#10). admin = None (no scope check).
+                            let hub_scope = ai_opts.hub_context.as_ref().map(|c| {
+                                if c.session_id.is_empty() {
+                                    c.instance_id.clone()
+                                } else {
+                                    format!("{}:{}", c.instance_id, c.session_id)
+                                }
+                            });
+                            let plan_id = create_pending_scoped(typed_args, &approval.summary, hub_scope);
                             // schedule_task: runAt 이 이미 과거면 처음부터 past-runat 상태로 내려서
                             // 승인 버튼 대신 즉시보내기/시간변경 버튼이 뜨도록 유도 (옛 TS 1:1).
                             let mut pending = serde_json::json!({

@@ -782,13 +782,12 @@ fn pending_or_passthrough(
     tool_name: &str,
     summary_fn: impl FnOnce(&Value) -> String,
 ) -> Option<Value> {
-    // hub visitor / cron 자동 실행 — 승인 게이트 없이 직접 실행 (passthrough).
-    // hub 정책은 dispatch 게이트(hub_blocks_tool → permits_tool)가 이미 적용 → ③deny·배경실행은 여기 도달 전 차단.
-    // 여기 도달한 destructive 도구는 hub 에 허용된 owner-scoped 쓰기(save_page/delete_page/delete_file)뿐이고,
-    // owner 자동 주입으로 자기 scope 만 건드리므로 admin DB 손실 우려 없음 (옛 무조건 차단 = owner-scoping 이전 가드, 폐기).
-    if firebat_core::utils::hub_context::is_hub_context_active()
-        || firebat_core::utils::cron_context::is_cron_context_active()
-    {
+    // cron auto-run = passthrough (no human to approve in a cron context).
+    // hub visitors NOW get the same approval card as admin (#10): the destructive tool is staged as a
+    // pending(hub_scope) instead of executing immediately, and the visitor approves via
+    // /api/hub/<slug>/plan which executes in their own owner scope. (old: hub also passthrough — the
+    // tools are owner-scoped so it was safe, but hub=admin principle → give the approval card.)
+    if firebat_core::utils::cron_context::is_cron_context_active() {
         return None;
     }
     let pending_args = match firebat_core::utils::pending_tools::PendingActionArgs::from_call(
@@ -798,7 +797,13 @@ fn pending_or_passthrough(
         Err(e) => return Some(serde_json::json!({"success": false, "error": e})),
     };
     let summary = summary_fn(args);
-    let plan_id = firebat_core::utils::pending_tools::create_pending(pending_args, &summary);
+    // hub scope (inst:sid) if in a hub context — recorded on the pending so /api/hub/<slug>/plan can
+    // cross-tenant-guard + re-apply the owner scope at commit. None = admin.
+    let hub_scope = firebat_core::utils::hub_context::active_hub_owner().map(|(inst, sid)| {
+        if sid.is_empty() { inst } else { format!("{}:{}", inst, sid) }
+    });
+    let plan_id =
+        firebat_core::utils::pending_tools::create_pending_scoped(pending_args, &summary, hub_scope);
     Some(serde_json::json!({
         "success": true,
         "pending": true,
