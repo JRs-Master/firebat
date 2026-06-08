@@ -274,7 +274,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const values = sma(closes, period);
       const pts = values.map((v, i) => v == null ? null : [xs[i], yPrice(v)] as [number, number]).filter(Boolean) as [number, number][];
       const d = pts.length ? 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ') : '';
-      return { name: ind, d, color: MA_COLORS[ind] };
+      return { name: ind, d, color: MA_COLORS[ind], values };
     });
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
   }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH, scrollX, boxW]);
@@ -396,6 +396,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
+  // 십자선 가로 + 가격축 태그 — hoverPos.y(priceBox px) = viewBox y (priceH=priceChartHeightPx 라 1:1).
+  const hoverY = hoverPos ? Math.max(padTop, Math.min(priceH - padBottom, hoverPos.y)) : null;
+  const hoverPrice = hoverY != null ? minP + ((padTop + plotH - hoverY) / plotH) * (maxP - minP) : null;
+  // 툴팁용 — 호버 봉의 "그려진" 이평선 값만 (indicators 에 있는 것만, null 제외).
+  const hoverMAs = hoverIdx != null
+    ? maLines.map(m => ({ name: m.name, color: m.color, value: m.values[hoverIdx] })).filter(m => m.value != null)
+    : [];
 
   return (
     <div className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm">
@@ -526,6 +533,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           {/* 호버 크로스헤어 */}
           {hoverX != null && (
             <line x1={hoverX} x2={hoverX} y1={padTop} y2={priceH - padBottom} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.35} />
+          )}
+          {/* 십자선 가로 — 마우스 높이(가격 수평선) */}
+          {hoverY != null && (
+            <line x1={padLeft} x2={W} y1={hoverY} y2={hoverY} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.35} />
           )}
 
           {/* X축 라벨 — interval 자동 감지로 단위 분기:
@@ -664,6 +675,16 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                   <span className={row.c}>{row.v}</span>
                 </div>
               ))}
+              {hoverMAs.length > 0 && (
+                <div className="mt-1 pt-1 border-t border-white/15 flex flex-col gap-0.5">
+                  {hoverMAs.map(m => (
+                    <div key={m.name} className="flex items-baseline justify-between gap-4">
+                      <span style={{ color: m.color }}>{m.name}</span>
+                      <span className="tabular-nums" style={{ color: m.color }}>{Math.round(m.value as number).toLocaleString('ko-KR')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           );
@@ -675,6 +696,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           {priceTicks.map(t => (
             <text key={'pa' + t} x={4} y={yPrice(t)} fill={MUTED} fontSize="10" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif" className="tabular-nums">{t.toLocaleString('ko-KR')}</text>
           ))}
+          {/* 호버 가격 태그 — HTS 식, 십자선 높이의 가격을 강조 박스로 */}
+          {hoverY != null && hoverPrice != null && (
+            <g>
+              <rect x={0} y={hoverY - 8} width={padRight} height={16} fill={FG} rx={2} />
+              <text x={4} y={hoverY} fill="#fff" fontSize="10" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif" className="tabular-nums">{Math.round(hoverPrice).toLocaleString('ko-KR')}</text>
+            </g>
+          )}
         </svg>
       </div>
       </div>
