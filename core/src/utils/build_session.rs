@@ -4,7 +4,7 @@
 //! unified with pending_tools/plan_store (single TTL for approval/pending cards, CLAUDE.md #1-9).
 //!
 //! Project Builder = the first **forced-flow engine** — the engine enforces the order of the
-//! app-build steps (S1 requirements → S2 design → S3 implement → S4 iterate). It is a **separate
+//! app-build steps (S1 requirements → S2 design → S3 refine → S4 implement). It is a **separate
 //! layer** next to plan_mode (a flexible prompt prefix), not a replacement (forced procedure only
 //! when the domain has a standard order = SDLC; arbitrary-task plans stay flexible).
 //!
@@ -27,10 +27,10 @@ const MAX_SIZE: usize = 50;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BuildStep {
-    Requirements, // S1 — requirements + tier classification
-    Design,       // S2 — design (component vs html, module pick/creation)
-    Implement,    // S3 — create / save / preview
-    Iterate,      // S4 — iterate / refine
+    Requirements, // S1 — requirements (feature selection) + tier classification
+    Design,       // S2 — design (component vs html, theme/skin)
+    Refine,       // S3 — final additive requests before building (forgotten/new) = pre-build checkpoint
+    Implement,    // S4 — create / save / publish (LAST step)
     Done,         // complete
 }
 
@@ -39,9 +39,9 @@ impl BuildStep {
     pub fn next(self) -> BuildStep {
         match self {
             BuildStep::Requirements => BuildStep::Design,
-            BuildStep::Design => BuildStep::Implement,
-            BuildStep::Implement => BuildStep::Iterate,
-            BuildStep::Iterate | BuildStep::Done => BuildStep::Done,
+            BuildStep::Design => BuildStep::Refine,
+            BuildStep::Refine => BuildStep::Implement,
+            BuildStep::Implement | BuildStep::Done => BuildStep::Done,
         }
     }
     /// Per-tier next step. Design now stays for ALL tiers — apps/games are visual (theme·skin·color·layout
@@ -55,8 +55,8 @@ impl BuildStep {
         match self {
             BuildStep::Requirements => "requirements",
             BuildStep::Design => "design",
+            BuildStep::Refine => "refine",
             BuildStep::Implement => "implement",
-            BuildStep::Iterate => "iterate",
             BuildStep::Done => "done",
         }
     }
@@ -93,7 +93,7 @@ pub struct BuildSession {
     pub tier: Option<BuildTier>,
     pub step: BuildStep,
     pub status: BuildStatus,
-    /// Per-step output (key = BuildStep::key — requirements/design/implement/iterate).
+    /// Per-step output (key = BuildStep::key — requirements/design/refine/implement).
     #[serde(default)]
     pub step_outputs: HashMap<String, serde_json::Value>,
     /// Interactive gate — when true, advance is rejected (awaiting the user's selection). Set by
@@ -373,7 +373,7 @@ pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
         BuildStep::Requirements => "S1 Feature selection: based on the user's request, **present feature options as suggest chips in ONE set** \
 (also include 'proceed with the recommendation' and 'just do it all'). **Ask everything in this single chip set — do NOT split into multiple follow-up questions across turns** (one selection, then advance). \
 At the same time classify the complexity tier — T1=simple page (render/html, no external module) / T2=calls existing modules·services / T3=needs a new user module (code generation). \
-**Do NOT call advance_build before the user selects** (the engine allows only one step per turn). The next step is always Design. \
+**Do NOT call advance_build before the user selects** (the engine allows only one step per turn). The next step is Design. \
 When the user chooses, call advance_build(tier, output=chosen features, auto=true if the user picked 'just do it all')."
             .to_string(),
         BuildStep::Design => {
@@ -384,17 +384,18 @@ When the user chooses, call advance_build(tier, output=chosen features, auto=tru
                 None => "tier undecided — classify in S1 first.",
             };
             format!("S2 Design selection: **present design/theme options as suggest chips** and let the user choose (include 'proceed with the recommendation'). {tier_hint} \
-**No advance_build before selection** — present the chips and wait. When the user chooses, call advance_build(output=design choice).")
+**No advance_build before selection** — present the chips and wait. The next step is Refine (final additions). When the user chooses, call advance_build(output=design choice).")
         }
-        BuildStep::Implement => "S3 Implementation: build it exactly per the chosen features·design. \
-T1/T2 = create·publish the page via save_page. T3 = generate module code, then the page. \
-**save_page is the pause point — call it and STOP this turn. Do NOT call advance_build in the same turn as save_page** \
-(the approval card is the pause; advancing now is rejected by the one-step-per-turn gate and the iterate step's options are lost). \
-Only AFTER the user approves and continues on a later turn, call advance_build(output=slug/url) to move to iterate."
+        BuildStep::Refine => "S3 Refine — final additions before building (NOT a post-build fix loop). Proactively suggest \
+commonly-missed extras for THIS app type (e.g. sound effects, high-score save, mobile touch, difficulty) as suggest chips — \
+use a **multi-select toggle so several can be picked**, plus a free-text **input** for the user's own additions, plus a **'없음 / 바로 만들기' skip** option. \
+**Do NOT call advance_build before the user responds.** When the user picks additions or skips, call advance_build(output=chosen additions or 'none') to start the build."
             .to_string(),
-        BuildStep::Iterate => "S4 Additional requests: ask 'anything else to change? / done' **as suggest chips** and \
-**do not call advance_build before the user selects**. If the build's data changes periodically (quotes·weather·news etc.), propose a recurring-refresh cron (schedule_task). \
-When the user picks 'done', call advance_build to finish the build."
+        BuildStep::Implement => "S4 Implementation (LAST step): build it exactly per the chosen features·design·additions. \
+T1/T2 = create·publish the page via save_page. T3 = generate the user module code, then the page. \
+**save_page is the final action — call it and STOP. Do NOT call advance_build after save_page** \
+(the build completes when the user approves the page; there is no further stage). If the build's data changes periodically \
+(quotes·weather·news etc.), you may propose a recurring-refresh cron (schedule_task) alongside."
             .to_string(),
         BuildStep::Done => "The build is complete.".to_string(),
     }

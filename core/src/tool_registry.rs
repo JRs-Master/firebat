@@ -458,7 +458,7 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
 
 /// Project Builder tools — start_build / advance_build / cancel_build. Call the build_session engine
 /// directly (no manager dependency). For building apps/pages via the standard steps
-/// (requirements→design→implement→iterate); the engine enforces the order via the advance gate.
+/// (requirements→design→refine→implement); the engine enforces the order via the advance gate.
 /// Independent of plan mode — app builds go through PB regardless of on/off (the prompt triggers it).
 fn register_build_tools(tools: &Arc<ToolManager>) {
     use crate::utils::build_session::{self, BuildStep, BuildTier};
@@ -466,7 +466,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "Call when building an app/page via the standard steps (requirements→design→implement→iterate) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.)".to_string(),
+            description: "Call when building an app/page via the standard steps (requirements→design→refine→implement) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.)".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

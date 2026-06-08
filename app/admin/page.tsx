@@ -981,8 +981,8 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 const STEPS = [
                   { key: 'requirements', label: t('build.step_requirements') },
                   { key: 'design', label: t('build.step_design') },
+                  { key: 'refine', label: t('build.step_refine') },
                   { key: 'implement', label: t('build.step_implement') },
-                  { key: 'iterate', label: t('build.step_iterate') },
                 ]; // 전 tier 동일 흐름 — T1 설계 skip 폐기(2026-06-08, 시각 앱/게임도 디자인 단계). Rust next_for_tier 와 sync.
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
                 const done = bs.status === 'completed';
