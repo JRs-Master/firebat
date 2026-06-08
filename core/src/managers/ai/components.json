@@ -7,14 +7,13 @@
     "propsSchema": {
       "type": "object",
       "required": [
-        "symbol",
         "data"
       ],
       "additionalProperties": false,
       "properties": {
         "symbol": {
           "type": "string",
-          "description": "종목 코드 (예: \"005930\")"
+          "description": "종목 코드 (예: \"005930\"). optional — 없으면 title 만 라벨로 사용."
         },
         "title": {
           "type": "string",
@@ -151,7 +150,8 @@
             "bar",
             "line",
             "pie",
-            "doughnut"
+            "doughnut",
+            "donut"
           ]
         },
         "labels": {
