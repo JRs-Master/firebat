@@ -1231,51 +1231,61 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
       const bAng = Math.atan2(ty + dot / 2 - cy0, tx + dot / 2 - cx0) + (rnd - 0.5) * 0.9;
       return { x: cx0, y: cy0, tx, ty, gx: t.gx, gy: t.gy, rnd, bAng };
     });
-    // 모이는 순서(stagger) — 사이클마다 다른 방식: 0 아래→위 / 1 랜덤 / 2 좌→우 / 3 중앙→밖.
+    // 패턴별 등장 순서(0..1). 0~3 = 제자리에서 순서대로 채우기 / 4~5 = 가장자리·아래서 날아와 모임.
     const appearAt = (pattern: number, p: GP): number => {
       switch (pattern) {
-        case 0: return (RES - p.gy) / RES;
-        case 1: return p.rnd;
-        case 2: return p.gx / RES;
-        default: return Math.hypot(p.gx - RES / 2, p.gy - RES / 2) / (RES / 1.3);
+        case 0: return (p.gy + p.gx / RES) / RES;                                  // 가로 줄 (위→아래)
+        case 1: return (p.gx + p.gy / RES) / RES;                                  // 세로 줄 (좌→우)
+        case 2: return p.rnd;                                                       // 랜덤 하나씩
+        case 3: return Math.hypot(p.gx - RES / 2, p.gy - RES / 2) / (RES * 0.72);   // 중앙→밖
+        case 4: return p.rnd;                                                       // 가장자리서 날아옴(랜덤 순)
+        default: return (RES - p.gy) / RES;                                         // 아래서 날아옴
       }
     };
-    // 사이클 시작 시 가장자리로 흩어 재배치 — 패턴별 다른 방향에서 날아오게.
+    const isConverge = (pattern: number) => pattern >= 4; // 날아와 모임 vs 제자리 등장
     const scatterTo = (pattern: number, p: GP) => {
-      let a: number;
-      if (pattern === 0) a = Math.PI / 2 + (p.rnd - 0.5) * 1.4;       // 아래에서
-      else if (pattern === 1) a = p.rnd * Math.PI * 2;                 // 사방
-      else if (pattern === 2) a = Math.PI + (p.rnd - 0.5) * 1.4;       // 왼쪽에서
-      else a = p.bAng;                                                 // 바깥(implode)
+      const a = pattern === 5 ? Math.PI / 2 + (p.rnd - 0.5) * 1.4 : p.rnd * Math.PI * 2; // 5=아래 / 4=사방
       const r = size * (0.5 + p.rnd * 0.3);
       p.x = cx0 + Math.cos(a) * r;
       p.y = cy0 + Math.sin(a) * r;
     };
 
-    // 사이클: scatter → 픽셀이 날아와 모임(형성) → 완성 부유 → 펑 터져 분리 → 다음 패턴 반복.
-    const FILL = 150, HOLD = 42, BURST = 50;
+    // 사이클: (제자리 채우기 or 날아와 모임) → 완성 부유 → 펑 분리 → 다음 패턴. 6패턴 순환, 느리게.
+    const FILL = 250, HOLD = 50, BURST = 60;
     const CYCLE = FILL + HOLD + BURST;
-    const PATTERNS = 4;
+    const PATTERNS = 6;
     let raf = 0;
     let frame = 0;
     const render = () => {
       const cf = frame % CYCLE;
       const pattern = Math.floor(frame / CYCLE) % PATTERNS;
-      if (cf === 0) for (const p of ps) scatterTo(pattern, p); // 새 사이클 = 가장자리로 흩음
+      if (cf === 0) {
+        for (const p of ps) {
+          if (isConverge(pattern)) scatterTo(pattern, p); // 날아오기 = 가장자리서 시작
+          else { p.x = p.tx; p.y = p.ty; }                // 제자리 채우기 = 처음부터 자리에(알파로 등장)
+        }
+      }
       ctx.clearRect(0, 0, size, size);
       ctx.fillStyle = '#2563eb';
       if (cf < FILL) {
-        // 모이는 중 — stagger 시점부터 자리로 lerp 이동(픽셀이 움직여서 형성)
         const t = cf / FILL;
         for (const p of ps) {
-          const started = t >= appearAt(pattern, p) * 0.5;
-          if (started) { p.x += (p.tx - p.x) * 0.16; p.y += (p.ty - p.y) * 0.16; }
-          ctx.globalAlpha = started ? 1 : 0.3; // 출발 전엔 흐릿한 대기 픽셀
-          ctx.fillRect(p.x, p.y, dot + 0.6, dot + 0.6);
+          const aa = appearAt(pattern, p);
+          if (isConverge(pattern)) {
+            const started = t >= aa * 0.5;
+            if (started) { p.x += (p.tx - p.x) * 0.12; p.y += (p.ty - p.y) * 0.12; } // 느린 lerp
+            ctx.globalAlpha = started ? 1 : 0.25;
+            ctx.fillRect(p.x, p.y, dot + 0.6, dot + 0.6);
+          } else {
+            const alpha = Math.min(1, (t - aa * 0.85) / 0.08); // 순서대로 페이드인(제자리)
+            if (alpha <= 0) continue;
+            ctx.globalAlpha = alpha;
+            ctx.fillRect(p.tx, p.ty, dot + 0.6, dot + 0.6);
+          }
         }
       } else if (cf < FILL + HOLD) {
         // 완성 — 자리 정착 + 살짝 부유
-        const hb = Math.sin(frame * 0.08) * 2;
+        const hb = Math.sin(frame * 0.07) * 2;
         ctx.globalAlpha = 1;
         for (const p of ps) {
           p.x += (p.tx - p.x) * 0.3;
@@ -1285,7 +1295,7 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
       } else {
         // 펑 — 바깥으로 가속 분리되며 페이드아웃
         const bt = (cf - FILL - HOLD) / BURST;
-        const spd = 3 + bt * 11;
+        const spd = 2.5 + bt * 9;
         ctx.globalAlpha = Math.max(0, 1 - bt);
         for (const p of ps) {
           p.x += Math.cos(p.bAng) * spd;
