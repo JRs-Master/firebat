@@ -469,7 +469,10 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             description: "Call when building an app/page via the standard steps (requirements→design→implement→iterate) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.)".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
-                "properties": { "request": { "type": "string", "description": "사용자의 빌드 요청" } },
+                "properties": {
+                    "request": { "type": "string", "description": "the user's build request" },
+                    "convId": { "type": "string", "description": "current conversation id (from the [Build tracking] hint). On the CLI path it is NOT auto-injected, so pass it — it keys the build to THIS conversation for cross-turn continuation, so concurrent builds in other conversations/devices never mix up." }
+                },
                 "required": ["request"]
             }),
             source: "core".to_string(),
@@ -500,6 +503,7 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
                 "type": "object",
                 "properties": {
                     "sessionId": { "type": "string" },
+                    "convId": { "type": "string", "description": "current conversation id (optional, from the [Build tracking] hint) — accepted for consistency; sessionId already identifies the build." },
                     "output": { "description": "the current step's output (summary/design/result, etc.)" },
                     "tier": { "type": "string", "enum": ["T1", "T2", "T3"], "description": "complexity classified in S1 (requirements)" },
                     "auto": { "type": "boolean", "description": "true when the user picks 'just do it all' — runs to the end with no further pauses" }
@@ -554,7 +558,10 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             description: "Cancel (abandon) an in-progress build session. Call when the user wants to stop the build or switch to another task. {sessionId}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
-                "properties": { "sessionId": { "type": "string" } },
+                "properties": {
+                    "sessionId": { "type": "string" },
+                    "convId": { "type": "string", "description": "current conversation id (optional, from the [Build tracking] hint) — accepted for consistency; sessionId already identifies the build." }
+                },
                 "required": ["sessionId"]
             }),
             source: "core".to_string(),
