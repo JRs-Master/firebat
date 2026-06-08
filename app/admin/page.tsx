@@ -917,7 +917,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               )}
 
               {/* 선택지 버튼 — past-runat pendingAction 있으면 숨김 (즉시/시간변경 버튼과 중복 방지) */}
-              {msg.suggestions && msg.suggestions.length > 0
+              {!buildCard && msg.suggestions && msg.suggestions.length > 0
                 && !msg.pendingActions?.some(p => p.status === 'past-runat') && (
                 <SuggestionButtons
                   suggestions={msg.suggestions}
@@ -983,6 +983,10 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
                 const done = bs.status === 'completed';
                 const curIdx = STEPS.findIndex(s => s.key === bs.step);
+                const curLabel = curIdx >= 0 ? STEPS[curIdx]?.label : undefined;
+                // A-lite: suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
+                const chips = !!msg.suggestions && msg.suggestions.length > 0
+                  && !msg.pendingActions?.some(p => p.status === 'past-runat');
                 return (
                   <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 mt-2">
                     <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
@@ -1002,6 +1006,18 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         </div>
                       ))}
                     </div>
+                    {!done && curLabel && (
+                      <div className="text-[12px] text-slate-600">{t('build.now_step', { step: curLabel })}</div>
+                    )}
+                    {chips && (
+                      <div className="pt-1.5 border-t border-slate-200/70">
+                        <SuggestionButtons
+                          suggestions={msg.suggestions!}
+                          loading={loading}
+                          onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1455,7 +1471,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   if (Array.isArray(m.data)) continue;
                   const bsv = (m.data as { buildSession?: BuildSessionView } | undefined)?.buildSession;
                   if (!bsv?.id) continue;
-                  if (!anchorOf.has(bsv.id)) anchorOf.set(bsv.id, m.id);
+                  // 카드 위치 = 세션의 최신(마지막) 빌드 메시지 — suggest 칩이 거기 있어 한 카드로 묶이고
+                  // 사용자 시선(하단)에 옴. 이전 턴 stepper 는 suppress → 화면엔 카드 1개만(스택 X).
+                  anchorOf.set(bsv.id, m.id);
                   latestOf.set(bsv.id, bsv);
                 }
                 for (const [sid, anchorId] of anchorOf) {

@@ -36,7 +36,8 @@
     "step_iterate": "Iterate",
     "in_progress": "Building",
     "done": "Done",
-    "expired": "expired"
+    "expired": "expired",
+    "now_step": "Now: {{step}}"
   },
   "error": {
     "module": {

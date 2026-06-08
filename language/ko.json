@@ -36,7 +36,8 @@
     "step_iterate": "반복",
     "in_progress": "빌드 진행",
     "done": "완료",
-    "expired": "기간이 만료되었습니다"
+    "expired": "기간이 만료되었습니다",
+    "now_step": "지금: {{step}} 단계"
   },
   "error": {
     "module": {
