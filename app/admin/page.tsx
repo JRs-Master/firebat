@@ -990,7 +990,6 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 // suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
                 const chips = !!msg.suggestions && msg.suggestions.length > 0
                   && !msg.pendingActions?.some(p => p.status === 'past-runat');
-                const hasBody = !!previewUrl || chips;
                 return (
                   <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
                     {/* 헤더 바 — 제목·tier + 연결 stepper(현재 단계 강조). plan 카드(indigo 그라디언트)와 동일한
@@ -1020,25 +1019,23 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
                       {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
                     </div>
-                    {/* 본문 — 미리보기(메인) + 옵션(우측, 모바일 세로 스택). 둘 중 있는 것만 표시. */}
-                    {hasBody && (
-                      <div className="flex flex-col sm:flex-row gap-3 p-3">
-                        {previewUrl && (
-                          <div className="flex-1 min-w-0">
-                            <BuildPreview url={previewUrl} />
-                          </div>
-                        )}
-                        {chips && (
-                          <div className={previewUrl ? 'sm:w-60 sm:shrink-0' : 'flex-1 min-w-0'}>
-                            <SuggestionButtons
-                              suggestions={msg.suggestions!}
-                              loading={loading}
-                              onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
-                            />
-                          </div>
-                        )}
+                    {/* 본문 — persistent 미리보기(메인): 구현 전엔 유령 픽셀 조립, 완료 시 실물 + 옵션(우측, 모바일 세로). */}
+                    <div className="flex flex-col sm:flex-row gap-3 p-3">
+                      <div className="flex-1 min-w-0">
+                        {previewUrl
+                          ? <BuildPreview url={previewUrl} />
+                          : <FirebatGhostAssembly caption={t('build.preview_pending')} />}
                       </div>
-                    )}
+                      {chips && (
+                        <div className="sm:w-60 sm:shrink-0">
+                          <SuggestionButtons
+                            suggestions={msg.suggestions!}
+                            loading={loading}
+                            onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })()}
@@ -1181,6 +1178,75 @@ export interface HubContext {
 
 /** Project Builder 라이브 프리뷰 — collapsed=인라인 iframe / "큰 화면"=우측 아티팩트 드로어.
  *  자체 expanded 상태 (prop-drilling/전역 이벤트 없이 자기완결). split-panel 의 바운디드 버전. */
+// Firebat 유령(👻) 픽셀 조립 — 빌드 "만들어지는 느낌". 파티클이 랜덤 위치서 모여 유령 실루엣(브랜드 에셋)
+// 완성 → idle float. 구현 완료 전(미리보기 URL 없음)에 persistent 미리보기 영역을 채움. 완료 시 BuildPreview 로 교체.
+const GHOST_BITMAP = [
+  '...#####...',
+  '..#######..',
+  '.#########.',
+  '.##.###.##.',
+  '.##.###.##.',
+  '.#########.',
+  '.#########.',
+  '.#########.',
+  '.#########.',
+  '.#.#.#.#.#.',
+];
+function FirebatGhostAssembly({ size = 150, caption }: { size?: number; caption?: string }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.scale(dpr, dpr);
+
+    const rows = GHOST_BITMAP.length;
+    const cols = GHOST_BITMAP[0].length;
+    const cell = Math.floor(size / (cols + 2));
+    const offX = (size - cell * cols) / 2;
+    const offY = (size - cell * rows) / 2;
+    const dot = Math.max(2, cell - 1);
+
+    type P = { x: number; y: number; tx: number; ty: number };
+    const ps: P[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (GHOST_BITMAP[r][c] !== '#') continue;
+        ps.push({ x: Math.random() * size, y: Math.random() * size, tx: offX + c * cell, ty: offY + r * cell });
+      }
+    }
+
+    let raf = 0;
+    let frame = 0;
+    const render = () => {
+      frame++;
+      const bob = Math.sin(frame * 0.045) * 3; // 조립 후 위아래 부유
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = '#2563eb';
+      for (const p of ps) {
+        const ty = p.ty + bob;
+        p.x += (p.tx - p.x) * 0.08;
+        p.y += (ty - p.y) * 0.08;
+        ctx.fillRect(p.x, p.y, dot, dot); // 사각 픽셀
+      }
+      raf = requestAnimationFrame(render);
+    };
+    render();
+    return () => cancelAnimationFrame(raf);
+  }, [size]);
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border border-blue-100 bg-blue-50/30">
+      <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />
+      {caption && <div className="text-[12px] font-medium text-slate-500">{caption}</div>}
+    </div>
+  );
+}
+
 function BuildPreview({ url }: { url: string }) {
   const [expanded, setExpanded] = useState(false);
   return (

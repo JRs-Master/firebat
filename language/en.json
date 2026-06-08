@@ -38,7 +38,8 @@
     "in_progress": "Building",
     "done": "Done",
     "expired": "expired",
-    "now_step": "Now: {step}"
+    "now_step": "Now: {step}",
+    "preview_pending": "Preview coming up"
   },
   "error": {
     "module": {
