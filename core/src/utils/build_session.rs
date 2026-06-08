@@ -44,11 +44,10 @@ impl BuildStep {
             BuildStep::Iterate | BuildStep::Done => BuildStep::Done,
         }
     }
-    /// Per-tier next step — T1 (simple page) skips Design (requirements → implement). Other tiers are linear.
-    pub fn next_for_tier(self, tier: Option<BuildTier>) -> BuildStep {
-        if matches!(tier, Some(BuildTier::T1)) && self == BuildStep::Requirements {
-            return BuildStep::Implement;
-        }
+    /// Per-tier next step. Design now stays for ALL tiers — apps/games are visual (theme·skin·color·layout
+    /// is a real user choice), so "simple" ≠ "no design". (The AI keeps design light for trivial pages.)
+    /// Was: T1 skipped Design (requirements→implement) — dropped 2026-06-08, the skip was too aggressive.
+    pub fn next_for_tier(self, _tier: Option<BuildTier>) -> BuildStep {
         self.next()
     }
     /// step_outputs key — for storing the step output and checking the transition gate.
@@ -371,10 +370,10 @@ pub fn finish_session(id: &str, completed: bool) -> Option<BuildSession> {
 /// forces the flow). Each interactive step = present options as suggest chips, then stop.
 pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
     match step {
-        BuildStep::Requirements => "S1 Feature selection: based on the user's request, **present feature options as suggest chips** \
-and let the user choose (also include 'proceed with the recommendation' and 'just do it all' options). \
+        BuildStep::Requirements => "S1 Feature selection: based on the user's request, **present feature options as suggest chips in ONE set** \
+(also include 'proceed with the recommendation' and 'just do it all'). **Ask everything in this single chip set — do NOT split into multiple follow-up questions across turns** (one selection, then advance). \
 At the same time classify the complexity tier — T1=simple page (render/html, no external module) / T2=calls existing modules·services / T3=needs a new user module (code generation). \
-**Do NOT call advance_build before the user selects** — present the chips and wait for the response (the engine allows only one step per turn). \
+**Do NOT call advance_build before the user selects** (the engine allows only one step per turn). The next step is always Design. \
 When the user chooses, call advance_build(tier, output=chosen features, auto=true if the user picked 'just do it all')."
             .to_string(),
         BuildStep::Design => {
@@ -388,8 +387,10 @@ When the user chooses, call advance_build(tier, output=chosen features, auto=tru
 **No advance_build before selection** — present the chips and wait. When the user chooses, call advance_build(output=design choice).")
         }
         BuildStep::Implement => "S3 Implementation: build it exactly per the chosen features·design. \
-T1/T2 = create·publish the page via save_page (the approval card is the pause point). T3 = generate module code, then the page. \
-Once published (approved), call advance_build(output=slug/url)."
+T1/T2 = create·publish the page via save_page. T3 = generate module code, then the page. \
+**save_page is the pause point — call it and STOP this turn. Do NOT call advance_build in the same turn as save_page** \
+(the approval card is the pause; advancing now is rejected by the one-step-per-turn gate and the iterate step's options are lost). \
+Only AFTER the user approves and continues on a later turn, call advance_build(output=slug/url) to move to iterate."
             .to_string(),
         BuildStep::Iterate => "S4 Additional requests: ask 'anything else to change? / done' **as suggest chips** and \
 **do not call advance_build before the user selects**. If the build's data changes periodically (quotes·weather·news etc.), propose a recurring-refresh cron (schedule_task). \
