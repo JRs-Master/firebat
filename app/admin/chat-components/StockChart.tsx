@@ -17,8 +17,8 @@ export type StockChartProps = {
   title?: string;
   data: OhlcvBar[];
   indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
-  buyPoints?: Array<{ label: string; price: number; note?: string }>;
-  sellPoints?: Array<{ label: string; price: number; note?: string }>;
+  buyPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
+  sellPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
 };
 
 const MA_COLORS: Record<string, string> = {
@@ -486,8 +486,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             return <line key={t} x1={padLeft} x2={W} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />;
           })}
 
-          {/* 매수 구간 */}
+          {/* 매수 — date 있으면 해당 봉 아래 ↑ 화살표(매수 시점), 없으면 price 레벨 수평선(지지) */}
           {buyPoints?.map((bp, i) => {
+            const idx = bp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(bp.date!).slice(0, 10)) : -1;
+            if (idx >= 0) {
+              const x = xs[idx];
+              const ay = yPrice(safeData[idx].low) + 9; // 봉 저가 아래
+              return (
+                <g key={'bp' + i}>
+                  <polygon points={`${x},${ay} ${x - 4},${ay + 7} ${x + 4},${ay + 7}`} fill={UP} />
+                  {bp.label && <text x={x} y={ay + 18} fill={UP} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
+                </g>
+              );
+            }
             const y = yPrice(bp.price);
             return (
               <g key={'bp' + i}>
@@ -496,7 +507,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               </g>
             );
           })}
+          {/* 매도 — date 있으면 해당 봉 위 ↓ 화살표(매도 시점), 없으면 price 레벨 수평선(저항) */}
           {sellPoints?.map((sp, i) => {
+            const idx = sp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(sp.date!).slice(0, 10)) : -1;
+            if (idx >= 0) {
+              const x = xs[idx];
+              const ay = yPrice(safeData[idx].high) - 9; // 봉 고가 위
+              return (
+                <g key={'sp' + i}>
+                  <polygon points={`${x},${ay} ${x - 4},${ay - 7} ${x + 4},${ay - 7}`} fill={DOWN} />
+                  {sp.label && <text x={x} y={ay - 10} fill={DOWN} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
+                </g>
+              );
+            }
             const y = yPrice(sp.price);
             return (
               <g key={'sp' + i}>

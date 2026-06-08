@@ -85,6 +85,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "봉 날짜(데이터 date 와 일치). 있으면 해당 봉 아래 ↑ 매수 화살표, 없으면 price 레벨 수평선(지지)"
               }
             },
             "required": [
@@ -94,7 +101,7 @@
             ],
             "additionalProperties": false
           },
-          "description": "매수 구간. 없으면 []"
+          "description": "매수 신호. date 있으면 해당 봉에 ↑ 화살표(매수 시점), 없으면 price 레벨 수평선(지지선). 없으면 []"
         },
         "sellPoints": {
           "type": "array",
@@ -112,6 +119,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "봉 날짜(데이터 date 와 일치). 있으면 해당 봉 위 ↓ 매도 화살표, 없으면 price 레벨 수평선(저항)"
               }
             },
             "required": [
@@ -121,7 +135,7 @@
             ],
             "additionalProperties": false
           },
-          "description": "매도 구간. 없으면 []"
+          "description": "매도 신호. date 있으면 해당 봉에 ↓ 화살표(매도 시점), 없으면 price 레벨 수평선(저항선). 없으면 []"
         }
       }
     }
