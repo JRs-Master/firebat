@@ -1180,19 +1180,9 @@ export interface HubContext {
  *  자체 expanded 상태 (prop-drilling/전역 이벤트 없이 자기완결). split-panel 의 바운디드 버전. */
 // Firebat 유령(👻) 픽셀 조립 — 빌드 "만들어지는 느낌". 파티클이 랜덤 위치서 모여 유령 실루엣(브랜드 에셋)
 // 완성 → idle float. 구현 완료 전(미리보기 URL 없음)에 persistent 미리보기 영역을 채움. 완료 시 BuildPreview 로 교체.
-const GHOST_BITMAP = [
-  '...#####...',
-  '..#######..',
-  '.#########.',
-  '###########',
-  '##..###..##',
-  '##..###..##',
-  '###########',
-  '###########',
-  '###########',
-  '###.###.###',
-];
-function FirebatGhostAssembly({ size = 150, caption }: { size?: number; caption?: string }) {
+// Firebat 유령(👻) 픽셀 조립 — lucide Ghost body path 를 Path2D 로 grid 래스터화(로고 정확 일치 + 고해상도,
+// 동기·canvas taint 없음). 눈은 destination-out 으로 파냄. 아래서 위로 "물 차오르듯" 채워 만들어지는 느낌.
+function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -1204,40 +1194,86 @@ function FirebatGhostAssembly({ size = 150, caption }: { size?: number; caption?
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
-    const rows = GHOST_BITMAP.length;
-    const cols = GHOST_BITMAP[0].length;
-    const cell = Math.floor(size / (cols + 2));
-    const offX = (size - cell * cols) / 2;
-    const offY = (size - cell * rows) / 2;
-    const dot = Math.max(2, cell - 1);
-
-    // 픽셀 target — "만드는 동안 쌓이는" 느낌: 아래→위 순서로 등장(같은 행은 좌→우).
-    const targets: { x: number; y: number }[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (GHOST_BITMAP[r][c] !== '#') continue;
-        targets.push({ x: offX + c * cell, y: offY + r * cell });
+    // 1) lucide Ghost 를 RES×RES 그리드로 래스터화 → 채워진 셀 = 픽셀 target.
+    const RES = 26;
+    const off = document.createElement('canvas');
+    off.width = RES;
+    off.height = RES;
+    const octx = off.getContext('2d');
+    const targets: { gx: number; gy: number }[] = [];
+    if (octx) {
+      octx.save();
+      octx.scale(RES / 24, RES / 24); // lucide viewBox 24
+      octx.fillStyle = '#000';
+      octx.fill(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
+      octx.globalCompositeOperation = 'destination-out';
+      octx.beginPath();
+      octx.arc(9, 10, 1.35, 0, Math.PI * 2);  // 왼 눈 파냄
+      octx.arc(15, 10, 1.35, 0, Math.PI * 2); // 오른 눈 파냄
+      octx.fill();
+      octx.restore();
+      const d = octx.getImageData(0, 0, RES, RES).data;
+      for (let gy = 0; gy < RES; gy++) {
+        for (let gx = 0; gx < RES; gx++) {
+          if (d[(gy * RES + gx) * 4 + 3] > 80) targets.push({ gx, gy });
+        }
       }
     }
-    targets.sort((a, b) => b.y - a.y || a.x - b.x); // 바닥부터 쌓아 올림
-    const total = targets.length;
-    const PER = 4;   // 픽셀당 등장 간격(프레임) — 천천히 쌓여 ~4-5초에 완성
-    const FADE = 6;  // 각 픽셀 등장 시 페이드인
-    const buildFrames = total * PER;
+    const dot = size / RES;
+    const cx0 = size / 2;
+    const cy0 = size / 2;
 
+    // 픽셀별 — 캔버스 좌표 + 터질 때 바깥 방향(중심→픽셀 + jitter) + 랜덤시드(패턴용).
+    type GP = { x: number; y: number; gx: number; gy: number; rnd: number; bdx: number; bdy: number };
+    const ps: GP[] = targets.map(t => {
+      const x = t.gx * dot;
+      const y = t.gy * dot;
+      const rnd = Math.random();
+      const ang = Math.atan2((y + dot / 2) - cy0, (x + dot / 2) - cx0) + (rnd - 0.5) * 0.9;
+      return { x, y, gx: t.gx, gy: t.gy, rnd, bdx: Math.cos(ang), bdy: Math.sin(ang) };
+    });
+    // 채움 패턴 — 사이클마다 다른 방식: 0 아래→위 / 1 랜덤 / 2 좌→우 / 3 중앙→밖.
+    const appearAt = (pattern: number, p: GP): number => {
+      switch (pattern) {
+        case 0: return (RES - p.gy) / RES;
+        case 1: return p.rnd;
+        case 2: return p.gx / RES;
+        default: return Math.hypot(p.gx - RES / 2, p.gy - RES / 2) / (RES / 1.3);
+      }
+    };
+
+    // 사이클: 채움 → 잠깐 완성(부유) → 펑 터지며 분리 → 다음 사이클(다른 패턴) 반복.
+    const FILL = 170, HOLD = 45, BURST = 55;
+    const CYCLE = FILL + HOLD + BURST;
+    const PATTERNS = 4;
     let raf = 0;
     let frame = 0;
     const render = () => {
       frame++;
-      const done = frame > buildFrames + FADE;
-      const bob = done ? Math.sin(frame * 0.045) * 3 : 0; // 완성 후 부유
+      const cf = frame % CYCLE;
+      const pattern = Math.floor(frame / CYCLE) % PATTERNS;
       ctx.clearRect(0, 0, size, size);
       ctx.fillStyle = '#2563eb';
-      for (let i = 0; i < total; i++) {
-        const appear = i * PER;
-        if (frame < appear) continue; // 아직 차례 안 됨 = 안 그림(쌓이는 중)
-        ctx.globalAlpha = Math.min(1, (frame - appear) / FADE);
-        ctx.fillRect(targets[i].x, targets[i].y + bob, dot, dot); // 사각 픽셀
+      if (cf < FILL) {
+        // 채우는 중 — 패턴별 등장 순서 + 페이드인
+        const t = cf / FILL;
+        for (const p of ps) {
+          const a = Math.min(1, (t - appearAt(pattern, p) * 0.88) / 0.1);
+          if (a <= 0) continue;
+          ctx.globalAlpha = a;
+          ctx.fillRect(p.x, p.y, dot + 0.6, dot + 0.6);
+        }
+      } else if (cf < FILL + HOLD) {
+        // 완성 — 살짝 부유
+        const hb = Math.sin(frame * 0.08) * 2;
+        ctx.globalAlpha = 1;
+        for (const p of ps) ctx.fillRect(p.x, p.y + hb, dot + 0.6, dot + 0.6);
+      } else {
+        // 펑 — 바깥으로 분리되며 페이드아웃 (가속)
+        const bt = (cf - FILL - HOLD) / BURST;
+        const dist = bt * bt * size * 0.7;
+        ctx.globalAlpha = Math.max(0, 1 - bt);
+        for (const p of ps) ctx.fillRect(p.x + p.bdx * dist, p.y + p.bdy * dist, dot + 0.6, dot + 0.6);
       }
       ctx.globalAlpha = 1;
       raf = requestAnimationFrame(render);
