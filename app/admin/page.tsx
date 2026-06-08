@@ -791,6 +791,8 @@ function planSummary(
 
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
 type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number };
+/** 빌드 카드 1개에 담을 것 — 세션 최신 state + 직전 저장 페이지 미리보기 URL(carry-forward). */
+type BuildCardData = { state: BuildSessionView; previewUrl?: string };
 
 function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard }: {
   msg: Message;
@@ -804,9 +806,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
   shareContext?: { conversationId: string; turnMessages: unknown[] };
   /** Hub page mode — share 호출 시 /api/hub/<slug>/share 분기 (anonymous + apiToken). */
   hubContext?: { slug: string; apiToken: string; sessionId: string };
-  /** Project Builder — 이 메시지가 빌드 세션의 anchor(첫 등장)면 그 세션의 최신 stepper state. 백엔드 멀티턴이어도
-   *  세션당 카드 1개(첫 자리에서 진행)로 보이게 부모가 그룹핑해 전달. undefined = 카드 안 그림. */
-  buildCard?: BuildSessionView;
+  /** Project Builder — 이 메시지가 빌드 세션의 카드 위치(최신 빌드 메시지)면 그 세션의 stepper state + 미리보기.
+   *  백엔드 멀티턴이어도 세션당 카드 1개로 보이게 부모가 그룹핑해 전달. undefined = 카드 안 그림. */
+  buildCard?: BuildCardData;
 }) {
   const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
@@ -961,7 +963,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       </div>
                     )}
                     {/* Project Builder — 빌드 중이면 만들어진 페이지를 라이브 프리뷰 (큰 화면 = 아티팩트 드로어) */}
-                    {urls.length > 0 && !Array.isArray(msg.data) && (msg.data as any)?.buildSession && (
+                    {!buildCard && urls.length > 0 && !Array.isArray(msg.data) && (msg.data as any)?.buildSession && (
                       <BuildPreview url={urls[0].openUrl} />
                     )}
                     {/* MCP 결과는 AI가 reply에서 자연어로 요약 — raw JSON 표시 안 함 */}
@@ -973,7 +975,8 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               {/* Project Builder — 빌드 단계 stepper. 부모가 세션(buildSession.id) 단위로 그룹핑해 anchor(첫 등장)
                   메시지에만 최신 state 를 buildCard 로 전달 → 백엔드 멀티턴이어도 카드 1개가 첫 자리에서 1→2→3 진행. */}
               {buildCard && (() => {
-                const bs = buildCard;
+                const bs = buildCard.state;
+                const previewUrl = buildCard.previewUrl;
                 const STEPS = [
                   { key: 'requirements', label: t('build.step_requirements') },
                   { key: 'design', label: t('build.step_design') },
@@ -1009,6 +1012,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     {!done && curLabel && (
                       <div className="text-[12px] text-slate-600">{t('build.now_step', { step: curLabel })}</div>
                     )}
+                    {previewUrl && <BuildPreview url={previewUrl} />}
                     {chips && (
                       <div className="pt-1.5 border-t border-slate-200/70">
                         <SuggestionButtons
@@ -1463,22 +1467,22 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             {(() => {
               // Project Builder — 빌드 카드 통합: 같은 세션(buildSession.id)은 백엔드 멀티턴이어도 프론트엔 카드
               // 1개만. 세션별 첫 등장 메시지(anchor)에 최신 state 를 몰아줘 "한 자리에서 진행"처럼 보이게.
-              const buildCardByMsg = new Map<string, BuildSessionView>();
+              const buildCardByMsg = new Map<string, BuildCardData>();
               {
-                const anchorOf = new Map<string, string>();
-                const latestOf = new Map<string, BuildSessionView>();
+                // 세션(buildSession.id)당 최신(마지막) 빌드 메시지에 카드 1개 — suggest 칩이 거기 있어 한 카드로
+                // 묶이고 사용자 시선(하단)에 옴. 이전 턴 stepper/칩/프리뷰는 suppress → 화면엔 카드 1개(스택 X).
+                // previewUrl 은 carry-forward(최신 메시지에 url 없어도 직전 저장 페이지 미리보기 유지).
+                const lastOf = new Map<string, { msgId: string; state: BuildSessionView; previewUrl?: string }>();
                 for (const m of messages) {
                   if (Array.isArray(m.data)) continue;
-                  const bsv = (m.data as { buildSession?: BuildSessionView } | undefined)?.buildSession;
+                  const d = m.data as { buildSession?: BuildSessionView; openUrl?: string } | undefined;
+                  const bsv = d?.buildSession;
                   if (!bsv?.id) continue;
-                  // 카드 위치 = 세션의 최신(마지막) 빌드 메시지 — suggest 칩이 거기 있어 한 카드로 묶이고
-                  // 사용자 시선(하단)에 옴. 이전 턴 stepper 는 suppress → 화면엔 카드 1개만(스택 X).
-                  anchorOf.set(bsv.id, m.id);
-                  latestOf.set(bsv.id, bsv);
+                  const prev = lastOf.get(bsv.id);
+                  lastOf.set(bsv.id, { msgId: m.id, state: bsv, previewUrl: d?.openUrl ?? prev?.previewUrl });
                 }
-                for (const [sid, anchorId] of anchorOf) {
-                  const st = latestOf.get(sid);
-                  if (st) buildCardByMsg.set(anchorId, st);
+                for (const { msgId, state, previewUrl } of lastOf.values()) {
+                  buildCardByMsg.set(msgId, { state, previewUrl });
                 }
               }
               return messages.map((msg, idx) => {
