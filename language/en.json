@@ -4,8 +4,8 @@
     "code": "en"
   },
   "plan": {
-    "past_runat": "⏱ The scheduled time has already passed ({{time}}). Choose whether to send now or change the time.",
-    "exec_failed": "⚠ Execution failed: {{error}}",
+    "past_runat": "⏱ The scheduled time has already passed ({time}). Choose whether to send now or change the time.",
+    "exec_failed": "⚠ Execution failed: {error}",
     "expired": "⏰ The approval window has expired. Please create it again.",
     "scheduled": "Scheduled",
     "executed": "Done",
@@ -16,12 +16,12 @@
     "reject": "Reject",
     "reschedule_prompt": "New scheduled time (YYYY-MM-DDTHH:mm)",
     "risks": "Cautions",
-    "summary_save_page": "Save page: /{{slug}}",
-    "summary_delete_page": "Delete page: /{{slug}}",
-    "summary_write_file": "Write file: {{path}}",
-    "summary_delete_file": "Delete file: {{path}}",
-    "summary_schedule": "Schedule: {{title}}",
-    "summary_cancel_cron": "Cancel schedule: {{job}}"
+    "summary_save_page": "Save page: /{slug}",
+    "summary_delete_page": "Delete page: /{slug}",
+    "summary_write_file": "Write file: {path}",
+    "summary_delete_file": "Delete file: {path}",
+    "summary_schedule": "Schedule: {title}",
+    "summary_cancel_cron": "Cancel schedule: {job}"
   },
   "suggest": {
     "add_item": "Add item",
@@ -37,7 +37,7 @@
     "in_progress": "Building",
     "done": "Done",
     "expired": "expired",
-    "now_step": "Now: {{step}}"
+    "now_step": "Now: {step}"
   },
   "error": {
     "module": {

@@ -4,8 +4,8 @@
     "code": "ko"
   },
   "plan": {
-    "past_runat": "⏱ 예약 시각이 이미 지났습니다 ({{time}}). 즉시 보낼지 시간을 변경할지 선택하세요.",
-    "exec_failed": "⚠ 실행 실패: {{error}}",
+    "past_runat": "⏱ 예약 시각이 이미 지났습니다 ({time}). 즉시 보낼지 시간을 변경할지 선택하세요.",
+    "exec_failed": "⚠ 실행 실패: {error}",
     "expired": "⏰ 승인 기간이 만료되었습니다. 다시 생성해 주세요.",
     "scheduled": "예약됨",
     "executed": "실행됨",
@@ -16,12 +16,12 @@
     "reject": "거부",
     "reschedule_prompt": "새 예약 시각 (YYYY-MM-DDTHH:mm)",
     "risks": "주의사항",
-    "summary_save_page": "페이지 저장: /{{slug}}",
-    "summary_delete_page": "페이지 삭제: /{{slug}}",
-    "summary_write_file": "파일 저장: {{path}}",
-    "summary_delete_file": "파일 삭제: {{path}}",
-    "summary_schedule": "예약 등록: {{title}}",
-    "summary_cancel_cron": "예약 취소: {{job}}"
+    "summary_save_page": "페이지 저장: /{slug}",
+    "summary_delete_page": "페이지 삭제: /{slug}",
+    "summary_write_file": "파일 저장: {path}",
+    "summary_delete_file": "파일 삭제: {path}",
+    "summary_schedule": "예약 등록: {title}",
+    "summary_cancel_cron": "예약 취소: {job}"
   },
   "suggest": {
     "add_item": "항목 추가",
@@ -37,7 +37,7 @@
     "in_progress": "빌드 진행",
     "done": "완료",
     "expired": "기간이 만료되었습니다",
-    "now_step": "지금: {{step}} 단계"
+    "now_step": "지금: {step} 단계"
   },
   "error": {
     "module": {
