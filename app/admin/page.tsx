@@ -257,14 +257,15 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   return (
     // PC: max-w-md(448px) 로 capped + sm:ml-auto 로 우측 정렬. 모바일: w-full 로 부모 너비 꽉 채움.
     // w-full 없이 max-w-md 만 두면 content 자연 너비로 줄어드는 문제 — 두 클래스 조합 필수.
-    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 w-full max-w-md sm:ml-auto">
+    <div className="border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full max-w-md sm:ml-auto">
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
           // 단일 버튼 — 즉시 전송
           return (
             <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
-              className="w-full px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
-              {item}
+              className="group w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-blue-50/70 hover:text-blue-800 transition-colors disabled:opacity-50 border-b border-blue-100/70 last:border-b-0">
+              <span className="min-w-0">{item}</span>
+              <span className="shrink-0 text-blue-300 group-hover:text-blue-500 transition-colors" aria-hidden>›</span>
             </button>
           );
         }
@@ -991,10 +992,10 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   && !msg.pendingActions?.some(p => p.status === 'past-runat');
                 const hasBody = !!previewUrl || chips;
                 return (
-                  <div className="mt-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    {/* 헤더 바 — 제목·tier + 연결 stepper(현재 단계 강조). plan 카드(indigo)·승인 카드(amber)와
-                        구분되게 slate+blue 파스텔, 그라디언트 없음. */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-slate-200 bg-slate-50">
+                  <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
+                    {/* 헤더 바 — 제목·tier + 연결 stepper(현재 단계 강조). plan 카드(indigo 그라디언트)와 동일한
+                        그라디언트 스타일로 일관성, 단 blue→slate 색으로 카드 종류 구분. 승인 카드(amber)와도 구분. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
                       <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">
                         🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}
                       </span>

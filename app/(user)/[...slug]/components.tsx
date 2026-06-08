@@ -2055,7 +2055,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
 }) {
   const t = usePublicTranslations();
   return (
-    <div className="border border-indigo-200 bg-indigo-50 rounded-2xl p-4 my-2">
+    <div className="border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 my-2">
       <div className="flex items-center gap-2 mb-3">
         <div className="shrink-0 px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold tracking-wider leading-none flex items-center">PLAN</div>
         <h3 className="text-sm sm:text-base font-bold text-indigo-900 flex-1 min-w-0 truncate">{cleanPlainText(title)}</h3>
