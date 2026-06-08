@@ -1015,13 +1015,29 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
     try {
-      const qs = new URLSearchParams({ planId });
-      if (action) qs.set('action', action);
-      const data: { success: boolean; code?: string; error?: string; originalRunAt?: string } = await apiPost<{ success: boolean; code?: string; error?: string; originalRunAt?: string }>(
-        `/api/plan/commit?${qs.toString()}`,
-        newRunAt ? { runAt: newRunAt } : {},
-        { category: 'useChat' },
-      ).catch((err: any) => ({ success: false, error: err?.message ?? '실행 실패' }));
+      type CommitResult = { success: boolean; code?: string; error?: string; originalRunAt?: string };
+      let data: CommitResult;
+      if (hubContext) {
+        // hub 방문자 — /api/hub/<slug>/plan (op=commit). hub 는 schedule_task 미허용이라 action/runAt 무관.
+        const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/plan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'commit', planId }),
+        });
+        data = await res.json().catch(() => ({ success: false, error: '실행 실패' }));
+      } else {
+        const qs = new URLSearchParams({ planId });
+        if (action) qs.set('action', action);
+        data = await apiPost<CommitResult>(
+          `/api/plan/commit?${qs.toString()}`,
+          newRunAt ? { runAt: newRunAt } : {},
+          { category: 'useChat' },
+        ).catch((err: any) => ({ success: false, error: err?.message ?? '실행 실패' }));
+      }
       if (data.success) {
         dispatch({ type: 'PENDING_APPROVED', msgId, planId });
         onRefresh();
@@ -1036,16 +1052,28 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         persistPendingChange(msgId, planId, { status: 'error', errorMessage });
       }
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [onRefresh, persistPendingChange]);
+  }, [onRefresh, persistPendingChange, hubContext]);
 
   // Pending tool 개별 거부
   const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
     try {
-      await apiPost(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, undefined, { category: 'useChat' });
+      if (hubContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/plan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'reject', planId }),
+        });
+      } else {
+        await apiPost(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, undefined, { category: 'useChat' });
+      }
       dispatch({ type: 'PENDING_REJECTED', msgId, planId });
       persistPendingChange(msgId, planId, { status: 'rejected' });
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [persistPendingChange]);
+  }, [persistPendingChange, hubContext]);
 
   // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + DB 즉시 저장 — 새로고침 시 카드 재등장 차단
   const consumeSuggestions = useCallback((msgId: string) => {
