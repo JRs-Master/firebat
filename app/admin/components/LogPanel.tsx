@@ -30,7 +30,7 @@ export function LogPanel() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [minLevel, setMinLevel] = useState('');
   const [targetPrefix, setTargetPrefix] = useState('');
-  const [limit, setLimit] = useState(200);
+  const [limit, setLimit] = useState(50);
   const [loading, setLoading] = useState(false);
   // 런타임 EnvFilter — ssh `kill -HUP` 대신 UI 에서 즉시 적용 (재빌드/재시작 0).
   const [filterStr, setFilterStr] = useState('info');
@@ -142,7 +142,7 @@ export function LogPanel() {
             name="limit"
             type="number"
             value={limit}
-            onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 200)))}
+            onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 50)))}
             className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -162,15 +162,18 @@ export function LogPanel() {
           <div className="text-center py-8 text-[13px] text-slate-400">{loading ? '조회 중…' : '로그 없음'}</div>
         ) : (
           entries.map((e, i) => (
-            <div key={i} className="flex items-start gap-2 py-1 border-b border-slate-50 last:border-0 text-[12px] font-mono">
-              <span className="text-slate-400 shrink-0 tabular-nums" title={new Date(e.tsMs).toLocaleString('ko-KR', { hour12: false })}>
-                {new Date(e.tsMs).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-              </span>
-              <span className={`shrink-0 px-1 rounded border text-[10px] font-bold ${LEVEL_COLOR[e.level.toUpperCase()] ?? LEVEL_COLOR.INFO}`}>
-                {e.level}
-              </span>
-              <span className="text-indigo-500 shrink-0 max-w-[160px] truncate" title={e.target}>{e.target}</span>
-              <span className="text-slate-700 break-all flex-1">{e.message}</span>
+            <div key={i} className="flex flex-col gap-0.5 py-1.5 border-b border-slate-50 last:border-0 text-[12px] font-mono">
+              {/* 메타 한 줄 (날짜·레벨·타겟) — 메시지는 다음 줄 전체 폭이라 타겟 길이로 폭이 들쭉날쭉하지 않음 */}
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 shrink-0 tabular-nums" title={new Date(e.tsMs).toLocaleString('ko-KR', { hour12: false })}>
+                  {new Date(e.tsMs).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                </span>
+                <span className={`shrink-0 px-1 rounded border text-[10px] font-bold ${LEVEL_COLOR[e.level.toUpperCase()] ?? LEVEL_COLOR.INFO}`}>
+                  {e.level}
+                </span>
+                <span className="text-blue-600 truncate" title={e.target}>{e.target}</span>
+              </div>
+              <span className="text-slate-700 break-all whitespace-pre-wrap pl-0.5">{e.message}</span>
             </div>
           ))
         )}
