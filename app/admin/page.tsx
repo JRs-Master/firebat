@@ -982,44 +982,60 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   { key: 'design', label: t('build.step_design') },
                   { key: 'implement', label: t('build.step_implement') },
                   { key: 'iterate', label: t('build.step_iterate') },
-                ].filter(s => !(bs.tier === 'T1' && s.key === 'design')); // T1(단순 페이지)은 설계 단계 skip
+                ]; // 전 tier 동일 흐름 — T1 설계 skip 폐기(2026-06-08, 시각 앱/게임도 디자인 단계). Rust next_for_tier 와 sync.
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
                 const done = bs.status === 'completed';
                 const curIdx = STEPS.findIndex(s => s.key === bs.step);
-                const curLabel = curIdx >= 0 ? STEPS[curIdx]?.label : undefined;
-                // A-lite: suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
+                // suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
                 const chips = !!msg.suggestions && msg.suggestions.length > 0
                   && !msg.pendingActions?.some(p => p.status === 'past-runat');
+                const hasBody = !!previewUrl || chips;
                 return (
-                  <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 mt-2">
-                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
-                      <span>🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}</span>
-                      {done && <span className="text-emerald-600">✓ {t('build.done')}</span>}
-                      {expired && <span className="text-slate-400">⏰ {t('build.expired')}</span>}
+                  <div className="mt-2 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    {/* 헤더 바 — 제목·tier + 연결 stepper(현재 단계 강조). plan 카드(indigo)·승인 카드(amber)와
+                        구분되게 slate+blue 파스텔, 그라디언트 없음. */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-slate-200 bg-slate-50">
+                      <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">
+                        🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}
+                      </span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {STEPS.map((s, i) => {
+                          const stepDone = done || i < curIdx;
+                          const cur = !done && i === curIdx;
+                          return (
+                            <div key={s.key} className="flex items-center gap-1">
+                              <span className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+                                stepDone ? 'bg-blue-100 text-blue-700'
+                                : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
+                                : 'bg-white text-slate-400 border border-slate-200'
+                              }`}>{stepDone ? '✓ ' : `${i + 1}. `}{s.label}</span>
+                              {i < STEPS.length - 1 && (
+                                <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
+                      {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
                     </div>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {STEPS.map((s, i) => (
-                        <div key={s.key} className="flex items-center gap-1">
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${
-                            done || i < curIdx ? 'bg-emerald-100 text-emerald-700'
-                            : i === curIdx ? 'bg-blue-600 text-white font-bold'
-                            : 'bg-slate-100 text-slate-400'
-                          }`}>{i + 1}. {s.label}</span>
-                          {i < STEPS.length - 1 && <span className="text-slate-300 text-[10px]">→</span>}
-                        </div>
-                      ))}
-                    </div>
-                    {!done && curLabel && (
-                      <div className="text-[12px] text-slate-600">{t('build.now_step', { step: curLabel })}</div>
-                    )}
-                    {previewUrl && <BuildPreview url={previewUrl} />}
-                    {chips && (
-                      <div className="pt-1.5 border-t border-slate-200/70">
-                        <SuggestionButtons
-                          suggestions={msg.suggestions!}
-                          loading={loading}
-                          onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
-                        />
+                    {/* 본문 — 미리보기(메인) + 옵션(우측, 모바일 세로 스택). 둘 중 있는 것만 표시. */}
+                    {hasBody && (
+                      <div className="flex flex-col sm:flex-row gap-3 p-3">
+                        {previewUrl && (
+                          <div className="flex-1 min-w-0">
+                            <BuildPreview url={previewUrl} />
+                          </div>
+                        )}
+                        {chips && (
+                          <div className={previewUrl ? 'sm:w-60 sm:shrink-0' : 'flex-1 min-w-0'}>
+                            <SuggestionButtons
+                              suggestions={msg.suggestions!}
+                              loading={loading}
+                              onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
