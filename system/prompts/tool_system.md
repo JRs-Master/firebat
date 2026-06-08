@@ -368,8 +368,13 @@ notify: {
 
 For pages published repeatedly in the same format (daily reports, market briefs, etc.), use templates.
 - **`list_templates`** — call first to check if a matching template exists (judge by slug·name·description).
-- **`get_template(slug)`** — fetch the template spec. Placeholders `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` are **returned already substituted with current values**. Use the returned spec.body as the `save_page` body skeleton and fill in only the dynamic content (data, figures).
-- **`save_template(slug, config)`** — create when the user asks "make a ○○ template". config = `{name, description, tags, spec:{head, body}}`. spec.body is the same component array as save_page. Put values that change each time (dates, etc.) as `{date}`/`{time}` placeholders (substituted at publish time).
+- **`get_template(slug)`** — fetch the template spec. Placeholders `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` are **returned already substituted with current values**.
+  - **Follow the template structure faithfully** — keep its blocks, their order, and layout exactly. Do NOT improvise a different structure or drop/add sections; only fill content into the given blocks. (A "comprehensive analysis" template applied to a single stock still produces every section the template defines, scoped to that one stock.)
+  - **`_fill` hints** — a block's props may carry a `_fill` field = a per-section instruction (what data to collect, how to write that block). When present: collect that data via the right tools, write the result into the block's real prop (content/data/etc.), then **remove the `_fill` field before save_page** (it is an instruction, never published or displayed). A block with neither `_fill` nor a placeholder is static — keep it verbatim.
+  - Use the resulting spec.body as the `save_page` body.
+- **`save_template(slug, config)`** — create when the user asks "make a ○○ template". config = `{name, description, tags, spec:{head, body}}`. spec.body is the same component array as save_page.
+  - Time-varying values (dates) → `{date}`/`{time}` placeholders (substituted at publish time).
+  - Content that must be **freshly collected/written each publish** (figures, prices, analysis) → leave the prop empty and add a `_fill` instruction on that block, e.g. `{"type":"text","props":{"content":"","_fill":"Query today's KOSPI close via yfinance and write a 3-paragraph market summary"}}`. This makes every publish gather fresh data instead of reusing baked-in text.
 
 - **Placeholder formats**: shorthand `{date}`(YYYY-MM-DD)·`{time}`·`{year}`·`{month}`·`{day}` + free format `{date:FORMAT}` (tokens YYYY·YY·MM·M·DD·D·HH·mm). e.g. `{date:YYYY년 M월 D일}` → `2026년 6월 7일`, `{date:M/D}` → `6/7`.
 

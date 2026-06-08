@@ -1,7 +1,9 @@
 //! TemplateManager — 사용자 정의 페이지 템플릿 CRUD.
 //!
 //! 위치: `user/templates/{slug}/template.json`
-//! cron-agent 가 prompt 에 템플릿 목록 주입 → AI 가 매칭 시 spec.body 그대로 사용 (일관 발행).
+//! AI 에 템플릿 목록 주입 → 매칭 시 get_template 으로 spec.body(스켈레톤) 받아 구조 유지 + 동적 컨텐츠 채움.
+//! `{date}` 류 시간 토큰은 apply_placeholders 가 서버측 치환. 블록 props 의 `_fill` 힌트(per-섹션 수집·작성
+//! 지시)는 AI 가 따라 채우고 save_page 전 제거(프롬프트 규약 — props free-form 이라 저장은 보존, render sanitizer strip).
 //!
 //! 옛 TS TemplateManager (`core/managers/template-manager.ts`) Rust 재구현.
 //! Phase B 변환 룰 (1:1 매핑 X) 적용 — slug 검증, JSON parse 견고성, 일반 로직 유지.
