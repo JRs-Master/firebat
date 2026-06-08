@@ -1211,28 +1211,35 @@ function FirebatGhostAssembly({ size = 150, caption }: { size?: number; caption?
     const offY = (size - cell * rows) / 2;
     const dot = Math.max(2, cell - 1);
 
-    type P = { x: number; y: number; tx: number; ty: number };
-    const ps: P[] = [];
+    // 픽셀 target — "만드는 동안 쌓이는" 느낌: 아래→위 순서로 등장(같은 행은 좌→우).
+    const targets: { x: number; y: number }[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (GHOST_BITMAP[r][c] !== '#') continue;
-        ps.push({ x: Math.random() * size, y: Math.random() * size, tx: offX + c * cell, ty: offY + r * cell });
+        targets.push({ x: offX + c * cell, y: offY + r * cell });
       }
     }
+    targets.sort((a, b) => b.y - a.y || a.x - b.x); // 바닥부터 쌓아 올림
+    const total = targets.length;
+    const PER = 4;   // 픽셀당 등장 간격(프레임) — 천천히 쌓여 ~4-5초에 완성
+    const FADE = 6;  // 각 픽셀 등장 시 페이드인
+    const buildFrames = total * PER;
 
     let raf = 0;
     let frame = 0;
     const render = () => {
       frame++;
-      const bob = Math.sin(frame * 0.045) * 3; // 조립 후 위아래 부유
+      const done = frame > buildFrames + FADE;
+      const bob = done ? Math.sin(frame * 0.045) * 3 : 0; // 완성 후 부유
       ctx.clearRect(0, 0, size, size);
       ctx.fillStyle = '#2563eb';
-      for (const p of ps) {
-        const ty = p.ty + bob;
-        p.x += (p.tx - p.x) * 0.08;
-        p.y += (ty - p.y) * 0.08;
-        ctx.fillRect(p.x, p.y, dot, dot); // 사각 픽셀
+      for (let i = 0; i < total; i++) {
+        const appear = i * PER;
+        if (frame < appear) continue; // 아직 차례 안 됨 = 안 그림(쌓이는 중)
+        ctx.globalAlpha = Math.min(1, (frame - appear) / FADE);
+        ctx.fillRect(targets[i].x, targets[i].y + bob, dot, dot); // 사각 픽셀
       }
+      ctx.globalAlpha = 1;
       raf = requestAnimationFrame(render);
     };
     render();
