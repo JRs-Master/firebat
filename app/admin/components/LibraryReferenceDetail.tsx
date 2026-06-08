@@ -161,18 +161,46 @@ export function LibraryReferenceDetail({
     }
   }, [loadSources, libraryFetch]);
 
-  const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
+  const acceptFile = useCallback((f: File | null) => {
     if (!f) { setPickedFile(null); return; }
     const ext = extOf(f.name);
     if (!SUPPORTED_EXT[ext]) {
-      alertDialog({ title: '지원되지 않는 형식', message: `PDF / TXT / MD 파일만 지원됩니다. (현재: ${ext || '확장자 없음'})`, danger: true });
+      alertDialog({ title: '지원되지 않는 형식', message: `지원: PDF · 문서(docx/pptx/xlsx/xls/ods/odt/odp) · 한글(hwpx) · 텍스트(txt/md/csv) · 이미지(png/jpg/webp/gif). (현재: ${ext || '확장자 없음'})`, danger: true });
       if (fileInputRef.current) fileInputRef.current.value = '';
       setPickedFile(null);
       return;
     }
     setPickedFile(f);
   }, []);
+  const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    acceptFile(e.target.files?.[0] ?? null);
+  }, [acceptFile]);
+  // 파일 선택 — File System Access API(데스크톱 Chromium)면 "이미지/한글/문서…" 카테고리 그룹 다이얼로그,
+  // 미지원(모바일·Firefox·Safari) 또는 타입 오류면 native input(accept) 폴백.
+  const openFilePicker = useCallback(async () => {
+    const w = window as unknown as { showOpenFilePicker?: (o: unknown) => Promise<Array<{ getFile: () => Promise<File> }>> };
+    if (typeof w.showOpenFilePicker === 'function') {
+      try {
+        const [handle] = await w.showOpenFilePicker({
+          multiple: false,
+          excludeAcceptAllOption: false,
+          types: [
+            { description: '이미지 파일', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.gif'] } },
+            { description: 'PDF 파일', accept: { 'application/pdf': ['.pdf'] } },
+            { description: '문서 파일', accept: { 'application/vnd.openxmlformats-officedocument': ['.docx', '.pptx', '.xlsx', '.xls', '.ods', '.odt', '.odp'] } },
+            { description: '한글 파일', accept: { 'application/x-hwp': ['.hwpx'] } },
+            { description: '텍스트 파일', accept: { 'text/plain': ['.txt', '.md', '.csv'] } },
+          ],
+        });
+        if (handle) acceptFile(await handle.getFile());
+        return;
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return; // 사용자 취소
+        // 타입 오류 등 — 아래 native 폴백으로
+      }
+    }
+    fileInputRef.current?.click();
+  }, [acceptFile]);
 
   const submitFile = useCallback(async () => {
     if (!pickedFile) return;
@@ -321,13 +349,20 @@ export function LibraryReferenceDetail({
 
             {mode === 'file' ? (
               <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  className="self-start text-[11px] font-bold px-2.5 py-1.5 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors"
+                >
+                  {pickedFile ? '다른 파일 선택' : '파일 선택'}
+                </button>
                 <input
                   ref={fileInputRef}
                   id={fileBtnId}
                   type="file"
                   accept=".pdf,.txt,.md,.csv,.docx,.pptx,.xlsx,.xls,.ods,.odt,.odp,.hwpx,.png,.jpg,.jpeg,.webp,.gif"
                   onChange={handleFilePick}
-                  className="text-[11px] text-slate-600 file:mr-2 file:px-2 file:py-1 file:text-[11px] file:font-bold file:border-0 file:bg-slate-200 file:text-slate-700 file:rounded hover:file:bg-slate-300"
+                  className="hidden"
                   name="libraryFile"
                 />
                 {pickedFile && (
