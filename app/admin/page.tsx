@@ -842,7 +842,7 @@ function planSummary(
 }
 
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
-type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number };
+type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number; request?: string };
 /** 빌드 세션의 한 단계(슬라이드) — 그 단계 메시지의 state + 칩/픽/pending. */
 type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: Message['suggestions']; pickedSuggestion?: string; pendingActions?: PendingAction[] };
 /** 빌드 카드 1개 = 세션의 단계들(슬라이드 캐러셀). anchor(마지막) 메시지에만 전달, 앞 단계 메시지는 fold. */
@@ -850,10 +850,11 @@ type BuildCardData = { stages: BuildStageEntry[] };
 
 // Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
 // 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=팩맨 로더.
-function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }: {
+function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLockSuggestion }: {
   stages: BuildStageEntry[];
   loading: boolean;
   building?: boolean; // 다음 단계 생성 중 — 최신 슬라이드 본문을 팩맨(대기 애니)으로.
+  buildStatus?: string; // 생성 중 라이브 상태(도구 호출 등) — 팩맨 캡션 "단계 · 상태".
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onLockSuggestion?: (msgId: string, picked: string) => void;
 }) {
@@ -885,6 +886,11 @@ function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }
   const stageImplement = stage.state.step === 'implement' || (onLatest && (done || !!building));
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
+  // 팩맨 캡션 — 생성 중이면 "[생성 중 단계] · [라이브 상태]" (예: 디자인 · render 호출중). 생성 중엔 다음 단계가
+  // 만들어지는 중이라 curIdx+1 단계명 사용. done 은 FirebatPacmanLoader 가 SAVED 로 덮음.
+  const genKey = building && curIdx >= 0 ? STEPS[Math.min(curIdx + 1, STEPS.length - 1)].key : (bs.step ?? 'implement');
+  const genLabel = STEPS.find(s => s.key === genKey)?.label ?? '';
+  const makingCaption = buildStatus ? `${genLabel} · ${buildStatus}` : `${genLabel} ${t('build.making')}`;
   return (
     <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
@@ -913,7 +919,7 @@ function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3 h-[310px] flex items-center justify-center"><FirebatPacmanLoader done={done} /></div>
+        <div className="p-3 h-[310px] flex items-center justify-center"><FirebatPacmanLoader done={done} caption={makingCaption} /></div>
       ) : (
         <div className="flex flex-col gap-2.5 p-3 h-[310px]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
@@ -947,7 +953,7 @@ function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }
   );
 }
 
-function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building }: {
+function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
@@ -964,6 +970,8 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
   buildCard?: BuildCardData;
   /** 이 빌드 카드가 다음 단계 생성 중(loading) — 카드 본문을 팩맨(대기 애니)으로. */
   building?: boolean;
+  /** 생성 중 라이브 상태(도구 호출 등) — 팩맨 캡션 "단계 · 상태". */
+  buildStatus?: string;
 }) {
   const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
@@ -1132,6 +1140,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                   stages={buildCard.stages}
                   loading={loading}
                   building={building}
+                  buildStatus={buildStatus}
                   onSuggestion={onSuggestion}
                   onLockSuggestion={onLockSuggestion}
                 />
@@ -1282,7 +1291,7 @@ export interface HubContext {
 // 파이어뱃 미니 팩맨 로더 — "만드는 중" 동안 파란 착한 유령(우리)이 빨간 나쁜 유령들을 피해 미로를 누비다,
 // 빌드 완료(done)되면 갇힌 팩맨에게 BFS 로 달려가 "구출 성공!". 자동 어트랙트(조작 0). 빨강에 잡히면 깜빡 후
 // 리셋·재시작, 파워펠릿 먹으면 빨강 잠깐 파랗게 질려 도망(닿으면 눈만 남아 집으로 복귀). done 일 땐 무적(반드시 구출).
-function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
+function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; caption?: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const doneRef = useRef(done);
   doneRef.current = done;
@@ -1523,7 +1532,7 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-4 rounded-xl border border-blue-100 bg-slate-900/95 overflow-hidden h-full">
       <canvas ref={ref} aria-hidden className="max-w-full" style={{ width: 'min(100%, 300px)' }} />
-      <div className="text-[12px] font-semibold text-slate-200">{done ? '🎉 PAC-MAN SAVED!' : t('build.making')}</div>
+      <div className="text-[12px] font-semibold text-slate-200 px-3 text-center truncate max-w-full">{done ? '🎉 PAC-MAN SAVED!' : (caption || t('build.making'))}</div>
     </div>
   );
 }
@@ -2015,6 +2024,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
               // 활성 빌드(미완료)가 다음 단계 생성 중(loading)이면 → 그 카드가 팩맨(대기 애니)을 보여주고, 뒤따르는
               // 빌드 외 스트리밍 thinking 메시지는 fold. "원래 대화가 생각중으로" + "팩맨이 구현 *대기 중* 나옴".
               let buildingAnchor: string | null = null;
+              let buildStatus: string | undefined; // 생성 중 라이브 상태(statusText: "render 호출중" 등) → 팩맨 캡션에 표시
               {
                 let latestAnchor: string | null = null;
                 for (let i = messages.length - 1; i >= 0; i--) { if (buildCardByMsg.has(messages[i].id)) { latestAnchor = messages[i].id; break; } }
@@ -2025,6 +2035,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                     || (lt.state.step === 'implement' && (lt.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
                   if (!latestDone) {
                     buildingAnchor = latestAnchor;
+                    buildStatus = messages[messages.length - 1]?.statusText; // 현재 스트리밍 메시지의 라이브 상태(도구 호출 등)
                     const lastMsg = messages[messages.length - 1];
                     if (lastMsg && lastMsg.id !== latestAnchor && lastMsg.role === 'system') {
                       const lastIsBuild = !Array.isArray(lastMsg.data) && !!(lastMsg.data as { buildSession?: BuildSessionView } | undefined)?.buildSession?.id;
@@ -2066,6 +2077,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   hubContext={hubChatContext}
                   buildCard={buildCardByMsg.get(msg.id)}
                   building={msg.id === buildingAnchor}
+                  buildStatus={msg.id === buildingAnchor ? buildStatus : undefined}
                 />
               );
               });
