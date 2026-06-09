@@ -129,10 +129,11 @@ function renderMarkdown(text: string) {
 //   - 키 매핑:
 //     PC (pointer: fine) — Enter=전송(카드 전체), Shift+Enter=해당 칸 줄바꿈, Ctrl/⌘+Enter=새 칸 추가+포커스
 //     Mobile (pointer: coarse) — Enter=해당 칸 줄바꿈, 전송/추가는 버튼 탭
-function SuggestionButtons({ suggestions, loading, onSuggestion }: {
+function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth }: {
   suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
+  fullWidth?: boolean; // 빌드카드 옵션 단계 — 본문 폭 cap(max-w-md) 해제
 }) {
   const t = useTranslations();
   // a11y — 매 카드 안 inline 입력 칸의 stable id base. SuggestionButtons 매 마운트마다 unique.
@@ -257,7 +258,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   return (
     // PC: max-w-md(448px) 로 capped + sm:ml-auto 로 우측 정렬. 모바일: w-full 로 부모 너비 꽉 채움.
     // w-full 없이 max-w-md 만 두면 content 자연 너비로 줄어드는 문제 — 두 클래스 조합 필수.
-    <div className="border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full max-w-md sm:ml-auto">
+    <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
           // 단일 버튼 — 즉시 전송
@@ -1019,23 +1020,33 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
                       {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
                     </div>
-                    {/* 본문 — persistent 미리보기(메인): 구현 전엔 유령 픽셀 조립, 완료 시 실물 + 옵션(우측, 모바일 세로). */}
-                    <div className="flex flex-col sm:flex-row gap-3 p-3">
-                      <div className="flex-1 min-w-0">
+                    {/* 본문 — 단계 적응: 옵션 단계(요구/설계/추가요청)=옵션이 본문(full-width)+작은 유령 악센트 /
+                        구현 단계=PC비율(16:10) 프리뷰가 본문, 옵션 없음(승인 카드는 카드 밖 sibling). 큰 프리뷰와
+                        옵션을 동시에 안 둬서 빈 공간 0. */}
+                    {(bs.step === 'implement' || done) ? (
+                      <div className="p-3">
                         {previewUrl
-                          ? <BuildPreview url={previewUrl} />
-                          : <FirebatGhostAssembly caption={t('build.preview_pending')} />}
+                          ? <BuildPreview url={previewUrl} variant="main" />
+                          : <FirebatGhostAssembly variant="main" caption={t('build.preview_pending')} />}
                       </div>
-                      {chips && (
-                        <div className="sm:w-60 sm:shrink-0">
-                          <SuggestionButtons
-                            suggestions={msg.suggestions!}
-                            loading={loading}
-                            onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
-                          />
+                    ) : (
+                      <div className="flex flex-col gap-2.5 p-3">
+                        <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+                          <FirebatGhostAssembly size={36} variant="accent" />
+                          <span>{t('build.preparing')}</span>
                         </div>
-                      )}
-                    </div>
+                        {chips && (
+                          <div className="max-h-[60vh] overflow-y-auto">
+                            <SuggestionButtons
+                              suggestions={msg.suggestions!}
+                              loading={loading}
+                              fullWidth
+                              onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1182,7 +1193,7 @@ export interface HubContext {
 // 완성 → idle float. 구현 완료 전(미리보기 URL 없음)에 persistent 미리보기 영역을 채움. 완료 시 BuildPreview 로 교체.
 // Firebat 유령(👻) 픽셀 조립 — lucide Ghost body path 를 Path2D 로 grid 래스터화(로고 정확 일치 + 고해상도,
 // 동기·canvas taint 없음). 눈은 destination-out 으로 파냄. 아래서 위로 "물 차오르듯" 채워 만들어지는 느낌.
-function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?: string }) {
+function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?: number; caption?: string; variant?: 'main' | 'accent' }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -1319,15 +1330,20 @@ function FirebatGhostAssembly({ size = 160, caption }: { size?: number; caption?
     return () => cancelAnimationFrame(raf);
   }, [size]);
 
+  if (variant === 'accent') {
+    // 작은 인라인 악센트 (옵션 단계 "준비 중") — 박스/캡션 없이 캔버스만.
+    return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden className="shrink-0" />;
+  }
+  // main — 구현 단계 프리뷰 자리(PC 16:10 비율) 채우며 유령 조립.
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-8 rounded-xl border border-blue-100 bg-blue-50/30">
+    <div className="flex flex-col items-center justify-center gap-2 aspect-[16/10] rounded-xl border border-blue-100 bg-blue-50/30">
       <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />
       {caption && <div className="text-[12px] font-medium text-slate-500">{caption}</div>}
     </div>
   );
 }
 
-function BuildPreview({ url }: { url: string }) {
+function BuildPreview({ url, variant = 'inline' }: { url: string; variant?: 'inline' | 'main' }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <>
@@ -1337,7 +1353,7 @@ function BuildPreview({ url }: { url: string }) {
           <button type="button" onClick={() => setExpanded(true)} className="ml-auto text-blue-600 hover:underline">큰 화면 ⛶</button>
           <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">새 탭 ↗</a>
         </div>
-        <iframe src={url} className="w-full h-[420px] border-0 bg-white" title="빌드 라이브 프리뷰" />
+        <iframe src={url} className={`w-full border-0 bg-white ${variant === 'main' ? 'aspect-[16/10]' : 'h-[420px]'}`} title="빌드 라이브 프리뷰" />
       </div>
       {expanded && (
         <div className="fixed inset-0 z-[60] bg-black/40 flex" onClick={() => setExpanded(false)}>

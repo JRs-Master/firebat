@@ -39,7 +39,8 @@
     "done": "Done",
     "expired": "expired",
     "now_step": "Now: {step}",
-    "preview_pending": "Preview coming up"
+    "preview_pending": "Preview coming up",
+    "preparing": "Preparing"
   },
   "error": {
     "module": {
