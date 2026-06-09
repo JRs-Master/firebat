@@ -1005,7 +1005,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                           return (
                             <div key={s.key} className="flex items-center gap-1">
                               <span className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                                stepDone ? 'bg-blue-100 text-blue-700'
+                                stepDone ? 'bg-emerald-500 text-white font-semibold'
                                 : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
                                 : 'bg-white text-slate-400 border border-slate-200'
                               }`}>{stepDone ? '✓ ' : `${i + 1}. `}{s.label}</span>
@@ -1311,11 +1311,22 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
         for (let i = 0; i < feet; i++) { const fx = x + rad - i * fw; ctx.lineTo(fx - fw / 2, y + rad * 0.5); ctx.lineTo(fx - fw, y + rad * 0.8); }
         ctx.closePath(); ctx.fill();
       }
-      const ex = rad * 0.4, ey = -rad * 0.12, er = rad * 0.26;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(x - ex, y + ey, er, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = fr && !eyesOnly ? '#1e3a8a' : '#1e293b';
-      ctx.beginPath(); ctx.arc(x - ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.fill();
+      if (fr && !eyesOnly) {
+        // 겁먹은 얼굴 — 작은 눈 2개 + 물결 입 (클래식 frightened)
+        ctx.fillStyle = '#1e3a8a';
+        ctx.beginPath(); ctx.arc(x - rad * 0.3, y - rad * 0.12, rad * 0.12, 0, Math.PI * 2); ctx.arc(x + rad * 0.3, y - rad * 0.12, rad * 0.12, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1e3a8a'; ctx.lineWidth = 1.6; ctx.beginPath();
+        const my = y + rad * 0.32, mw = rad * 0.5, segs = 4;
+        ctx.moveTo(x - mw, my);
+        for (let i = 1; i <= segs; i++) ctx.lineTo(x - mw + (mw * 2 * i) / segs, my + (i % 2 === 0 ? -rad * 0.14 : rad * 0.14));
+        ctx.stroke();
+      } else {
+        const ex = rad * 0.4, ey = -rad * 0.12, er = rad * 0.26;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(x - ex, y + ey, er, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath(); ctx.arc(x - ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.fill();
+      }
     };
     const drawPac = (x: number, y: number, rad: number) => {
       const mouth = won > 0 ? Math.abs(Math.sin(frame * 0.2)) * 0.3 : 0.06;
@@ -1325,7 +1336,10 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       ctx.beginPath(); ctx.arc(x, y - rad * 0.4, rad * 0.13, 0, Math.PI * 2); ctx.fill();
     };
 
-    const render = () => {
+    let lastTs = 0;
+    const render = (ts: number) => {
+      if (ts - lastTs < 15) { raf = requestAnimationFrame(render); return; } // 120Hz 등 고주사율서 2배속 방지 — ~60fps 캡
+      lastTs = ts;
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (MAZE[r][c] === '#') { ctx.fillStyle = '#1e40af'; ctx.fillRect(c * CELL + 3, r * CELL + 3, CELL - 6, CELL - 6); }
@@ -1357,6 +1371,7 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       const bc = dots[blue.r]?.[blue.c];
       if (bc) { if (bc.pellet) { bc.pellet = false; for (const rg of reds) if (!rg.eyes) rg.fright = 220; } else if (bc.dot) bc.dot = false; }
       for (const rg of reds) {
+        if (doneRef.current && !rg.eyes) rg.fright = 30; // 구출 런 = 빨강 겁먹고 도망(길 트임, 파랑이 뚫는 그림 X)
         advance(rg, () => redDir(rg), rg.fright > 0 ? SP * 0.55 : SP * 0.9);
         if (rg.fright > 0) rg.fright--;
         if (rg.eyes && rg.c === HOME.c && rg.r === HOME.r && rg.p === 0) rg.eyes = false;
@@ -1371,10 +1386,16 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       }
 
       for (const rg of reds) drawGhost(lx(rg), ly(rg), rad, '#ef4444', rg.fright > 0, rg.eyes);
+      if (doneRef.current) {
+        // 구출 런 — 파랑이 파워업(노란 오라) = 빨강이 겁먹고 도망가는 계기.
+        const g = ctx.createRadialGradient(lx(blue), ly(blue), 2, lx(blue), ly(blue), rad * 2);
+        g.addColorStop(0, 'rgba(250,204,21,0.55)'); g.addColorStop(1, 'rgba(250,204,21,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(lx(blue), ly(blue), rad * 2, 0, Math.PI * 2); ctx.fill();
+      }
       drawGhost(lx(blue), ly(blue), rad, '#3b82f6', false, false);
       frame++; raf = requestAnimationFrame(render);
     };
-    render();
+    raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
