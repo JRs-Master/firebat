@@ -901,7 +901,7 @@ function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }
                     stepDone ? 'bg-blue-100 text-blue-700'
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
-                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}>
+                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-300' : ''}`}>
                   {stepDone ? '✓ ' : `${i + 1}. `}{s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
