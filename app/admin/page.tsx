@@ -259,49 +259,49 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       : !!(it && (['plan-confirm', 'toggle', 'input', 'plan-revise'].includes(it.type) || it.label || it.text || it.value || it.title));
   if (!suggestions.some(canRender)) return null;
 
-  // 잠금 — 픽한 칩(과거 빌드 단계 슬라이드 등): 옵션을 그대로 보여주되 비활성 + 선택된 것 강조(blue)·나머지 흐리게.
-  // picked 텍스트에 그 옵션이 들어있으면 선택으로 간주(toggle 은 ", " 조인이라 includes 로 매칭).
+  // 잠금 — 픽한 칩(과거 빌드 단계 슬라이드 등): 활성 선택 UI 와 똑같은 레이아웃(full-width 버튼) 그대로, 단
+  // 비활성 + 선택된 것 강조·나머지 흐리게. picked 텍스트에 그 옵션이 들어있으면 선택으로 간주(toggle 은 ", " 조인 → includes).
   if (pickedSuggestion) {
     const isPicked = (s: string) => !!s && pickedSuggestion.includes(s);
     return (
-      <div className={`border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/70 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
-        <div className="flex flex-col gap-1.5 p-2.5">
-          {suggestions.map((item, i) => {
-            if (typeof item === 'string') {
-              const sel = isPicked(item);
-              return (
-                <div key={i} className={`text-[13px] px-3 py-1.5 rounded-lg border ${sel ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-400'}`}>
-                  {sel ? '✓ ' : ''}{item}
-                </div>
-              );
-            }
-            if (item.type === 'toggle') {
-              return (
-                <div key={i} className="flex flex-col gap-1">
-                  {item.label && <span className="text-[12px] font-medium text-slate-500 px-1">{item.label}</span>}
-                  <div className="flex flex-wrap gap-1.5">
-                    {(item.options ?? []).map(opt => {
-                      const sel = isPicked(opt);
-                      return (
-                        <span key={opt} className={`text-[12.5px] px-2.5 py-1 rounded-lg border ${sel ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-400'}`}>
-                          {sel ? '✓ ' : ''}{opt}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            }
-            // input / plan-* — 옵션 없는 자유 입력은 픽 텍스트 그대로(첫 항목에서 한 번만).
-            if (i > 0) return null;
+      <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
+        {suggestions.map((item, i) => {
+          if (typeof item === 'string') {
+            const sel = isPicked(item);
             return (
-              <div key={i} className="text-[13px] px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-300 text-blue-700 flex items-start gap-1.5">
-                <span className="font-bold shrink-0">✓</span>
-                <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
+              <div key={i} className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-[13px] font-medium border-b border-blue-100/70 last:border-b-0 ${sel ? 'bg-blue-50 text-blue-700' : 'text-slate-400'}`}>
+                <span className="min-w-0">{item}</span>
+                {sel && <span className="shrink-0 text-blue-500" aria-hidden>✓</span>}
               </div>
             );
-          })}
-        </div>
+          }
+          if (item.type === 'toggle') {
+            return (
+              <div key={i} className="flex flex-col px-4 py-3 border-b border-slate-200 last:border-b-0">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{item.label}</span>
+                <div className="flex flex-col gap-1 mt-2">
+                  {(item.options ?? []).map(opt => {
+                    const sel = isPicked(opt);
+                    return (
+                      <div key={opt} className={`w-full px-4 py-2.5 text-left text-[13px] font-medium rounded-xl border flex items-center justify-between gap-2 ${sel ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-400 border-slate-100'}`}>
+                        <span>{opt}</span>
+                        {sel && <span className="shrink-0 text-blue-500" aria-hidden>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+          // input / plan-* — 옵션 없는 자유 입력은 픽 텍스트 그대로(첫 항목에서 한 번만).
+          if (i > 0) return null;
+          return (
+            <div key={i} className="px-4 py-3 text-[13px] text-blue-700 bg-blue-50/60 flex items-start gap-1.5">
+              <span className="font-bold shrink-0 text-blue-500">✓</span>
+              <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -901,7 +901,7 @@ function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }
                     stepDone ? 'bg-blue-100 text-blue-700'
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
-                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-300' : ''}`}>
+                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}>
                   {stepDone ? '✓ ' : `${i + 1}. `}{s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
@@ -1553,7 +1553,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
       // 브랜드 로고가 '테두리(아웃라인)' 유령이라 fill 대신 stroke 로 윤곽만 래스터화 — 꽉 찬 유령과 톤 불일치 해소.
       octx.strokeStyle = '#000';
-      octx.lineWidth = 1.3;
+      octx.lineWidth = 1.0;
       octx.lineJoin = 'round';
       octx.lineCap = 'round';
       octx.stroke(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
@@ -1567,7 +1567,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
       const d = octx.getImageData(0, 0, RES, RES).data;
       for (let gy = 0; gy < RES; gy++) {
         for (let gx = 0; gx < RES; gx++) {
-          if (d[(gy * RES + gx) * 4 + 3] > 50) targets.push({ gx, gy });
+          if (d[(gy * RES + gx) * 4 + 3] > 40) targets.push({ gx, gy });
         }
       }
     }
