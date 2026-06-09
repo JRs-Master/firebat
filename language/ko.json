@@ -41,7 +41,8 @@
     "now_step": "지금: {step} 단계",
     "preview_pending": "곧 미리보기가 나타나요",
     "preparing": "준비 중",
-    "making": "만드는 중이에요"
+    "making": "만드는 중이에요",
+    "view_latest": "최신으로 →"
   },
   "error": {
     "module": {

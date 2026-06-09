@@ -41,7 +41,8 @@
     "now_step": "Now: {step}",
     "preview_pending": "Preview coming up",
     "preparing": "Preparing",
-    "making": "Building…"
+    "making": "Building…",
+    "view_latest": "Latest →"
   },
   "error": {
     "module": {

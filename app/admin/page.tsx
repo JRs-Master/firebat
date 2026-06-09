@@ -129,11 +129,12 @@ function renderMarkdown(text: string) {
 //   - 키 매핑:
 //     PC (pointer: fine) — Enter=전송(카드 전체), Shift+Enter=해당 칸 줄바꿈, Ctrl/⌘+Enter=새 칸 추가+포커스
 //     Mobile (pointer: coarse) — Enter=해당 칸 줄바꿈, 전송/추가는 버튼 탭
-function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth }: {
+function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pickedSuggestion }: {
   suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   fullWidth?: boolean; // 빌드카드 옵션 단계 — 본문 폭 cap(max-w-md) 해제
+  pickedSuggestion?: string; // set 이면 잠금 — 인터랙티브 칩 대신 선택 결과만 읽기전용으로(과거 빌드 단계 슬라이드 등)
 }) {
   const t = useTranslations();
   // a11y — 매 카드 안 inline 입력 칸의 stable id base. SuggestionButtons 매 마운트마다 unique.
@@ -255,6 +256,17 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth }: {
       : !!(it && (['plan-confirm', 'toggle', 'input', 'plan-revise'].includes(it.type) || it.label || it.text || it.value || it.title));
   if (!suggestions.some(canRender)) return null;
 
+  // 잠금 — 이미 픽한 칩(과거 빌드 단계 슬라이드 등): 인터랙티브 칩 대신 선택 결과만 읽기전용으로.
+  if (pickedSuggestion) {
+    return (
+      <div className={`border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
+        <div className="px-4 py-2.5 text-[13px] text-slate-600 flex items-start gap-1.5">
+          <span className="text-emerald-600 font-bold shrink-0">✓</span>
+          <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     // PC: max-w-md(448px) 로 capped + sm:ml-auto 로 우측 정렬. 모바일: w-full 로 부모 너비 꽉 채움.
     // w-full 없이 max-w-md 만 두면 content 자연 너비로 줄어드는 문제 — 두 클래스 조합 필수.
@@ -793,14 +805,113 @@ function planSummary(
 
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
 type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number };
-/** 빌드 카드 1개에 담을 것 — 세션 최신 state + 직전 저장 페이지 미리보기 URL(carry-forward). */
-type BuildCardData = { state: BuildSessionView; previewUrl?: string };
+/** 빌드 세션의 한 단계(슬라이드) — 그 단계 메시지의 state + 칩/픽/pending. */
+type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: Message['suggestions']; pickedSuggestion?: string; pendingActions?: PendingAction[] };
+/** 빌드 카드 1개 = 세션의 단계들(슬라이드 캐러셀). anchor(마지막) 메시지에만 전달, 앞 단계 메시지는 fold. */
+type BuildCardData = { stages: BuildStageEntry[] };
 
-function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard }: {
+// Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
+// 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=팩맨 로더.
+function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
+  stages: BuildStageEntry[];
+  loading: boolean;
+  onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
+  onLockSuggestion?: (msgId: string, picked: string) => void;
+}) {
+  const t = useTranslations();
+  const last = stages.length - 1;
+  const [viewIdx, setViewIdx] = useState(last);
+  const prevLen = useRef(stages.length);
+  useEffect(() => {
+    // auto-follow — 최신 보던 중이면 새 단계로 따라감 / 과거 리뷰 중이면 유지(+ '최신으로' cue).
+    setViewIdx(v => (v >= prevLen.current - 1 ? stages.length - 1 : v));
+    prevLen.current = stages.length;
+  }, [stages.length]);
+  const vi = Math.min(viewIdx, last);
+  const latest = stages[last];
+  const bs = latest.state;
+  const STEPS = [
+    { key: 'requirements', label: t('build.step_requirements') },
+    { key: 'design', label: t('build.step_design') },
+    { key: 'refine', label: t('build.step_refine') },
+    { key: 'implement', label: t('build.step_implement') },
+  ];
+  const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
+  const done = bs.status === 'completed'
+    || (bs.step === 'implement' && (latest.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
+  const curIdx = STEPS.findIndex(s => s.key === bs.step);
+  const stage = stages[vi];
+  const onLatest = vi === last;
+  const stageImplement = stage.state.step === 'implement' || (onLatest && done);
+  const stageChips = !!stage.suggestions && stage.suggestions.length > 0
+    && !stage.pendingActions?.some(p => p.status === 'past-runat');
+  return (
+    <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
+        <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}</span>
+        <div className="flex items-center gap-1 flex-wrap">
+          {STEPS.map((s, i) => {
+            const stepDone = done || i < curIdx;
+            const cur = !done && i === curIdx;
+            const stageIdx = stages.findIndex(st => st.state.step === s.key);
+            return (
+              <div key={s.key} className="flex items-center gap-1">
+                <button type="button" disabled={stageIdx < 0} onClick={() => { if (stageIdx >= 0) setViewIdx(stageIdx); }}
+                  className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+                    stepDone ? 'bg-emerald-500 text-white font-semibold'
+                    : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
+                    : 'bg-white text-slate-400 border border-slate-200'
+                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-blue-300' : ''}`}>
+                  {stepDone ? '✓ ' : `${i + 1}. `}{s.label}
+                </button>
+                {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
+              </div>
+            );
+          })}
+        </div>
+        {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
+        {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
+      </div>
+      {stageImplement ? (
+        <div className="p-3"><FirebatPacmanLoader done={done} /></div>
+      ) : (
+        <div className="flex flex-col gap-2.5 p-3">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+            <FirebatGhostAssembly size={36} variant="accent" />
+            <span>{onLatest ? t('build.preparing') : (STEPS.find(s => s.key === stage.state.step)?.label ?? '')}</span>
+          </div>
+          {stageChips && (
+            <div className="max-h-[60vh] overflow-y-auto">
+              <SuggestionButtons
+                suggestions={stage.suggestions!}
+                loading={loading}
+                fullWidth
+                pickedSuggestion={stage.pickedSuggestion}
+                onSuggestion={(text, meta) => { onLockSuggestion?.(stage.msgId, text); onSuggestion?.(text, meta); }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {stages.length > 1 && (
+        <div className="flex items-center justify-center gap-3 px-3 py-2 border-t border-blue-200/50 bg-white/40">
+          <button type="button" disabled={vi <= 0} onClick={() => setViewIdx(Math.max(0, vi - 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">←</button>
+          <div className="flex items-center gap-1">
+            {stages.map((_, i) => <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === vi ? 'bg-blue-600' : 'bg-slate-300'}`} />)}
+          </div>
+          <button type="button" disabled={vi >= last} onClick={() => setViewIdx(Math.min(last, vi + 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">→</button>
+          {vi < last && <button type="button" onClick={() => setViewIdx(last)} className="text-[11px] text-blue-600 hover:underline ml-1">{t('build.view_latest')}</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
-  onConsumeSuggestions?: (msgId: string) => void;
+  onLockSuggestion?: (msgId: string, picked: string) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
@@ -926,8 +1037,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                 <SuggestionButtons
                   suggestions={msg.suggestions}
                   loading={loading}
+                  pickedSuggestion={msg.pickedSuggestion}
                   onSuggestion={(text, meta) => {
-                    onConsumeSuggestions?.(msg.id);
+                    onLockSuggestion?.(msg.id, text);
                     onSuggestion?.(text, meta);
                   }}
                 />
@@ -973,82 +1085,14 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 
               {/* Project Builder — 빌드 단계 stepper. 부모가 세션(buildSession.id) 단위로 그룹핑해 anchor(첫 등장)
                   메시지에만 최신 state 를 buildCard 로 전달 → 백엔드 멀티턴이어도 카드 1개가 첫 자리에서 1→2→3 진행. */}
-              {buildCard && (() => {
-                const bs = buildCard.state;
-                const STEPS = [
-                  { key: 'requirements', label: t('build.step_requirements') },
-                  { key: 'design', label: t('build.step_design') },
-                  { key: 'refine', label: t('build.step_refine') },
-                  { key: 'implement', label: t('build.step_implement') },
-                ]; // 전 tier 동일 흐름 — T1 설계 skip 폐기(2026-06-08, 시각 앱/게임도 디자인 단계). Rust next_for_tier 와 sync.
-                const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
-                // 빌드 세션 status 가 'completed' 로 바뀌는 건 다음 턴(ai.rs finish_session)이라, save_page 승인(✓실행됨)
-                // 직후엔 아직 Active → "만드는 중"이 영영 남던 것. 구현 단계 save_page 가 승인되면 바로 완료로 간주.
-                const done = bs.status === 'completed'
-                  || (bs.step === 'implement' && (msg.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
-                const curIdx = STEPS.findIndex(s => s.key === bs.step);
-                // suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
-                const chips = !!msg.suggestions && msg.suggestions.length > 0
-                  && !msg.pendingActions?.some(p => p.status === 'past-runat');
-                return (
-                  <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
-                    {/* 헤더 바 — 제목·tier + 연결 stepper(현재 단계 강조). plan 카드(indigo 그라디언트)와 동일한
-                        그라디언트 스타일로 일관성, 단 blue→slate 색으로 카드 종류 구분. 승인 카드(amber)와도 구분. */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
-                      <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">
-                        🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}
-                      </span>
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {STEPS.map((s, i) => {
-                          const stepDone = done || i < curIdx;
-                          const cur = !done && i === curIdx;
-                          return (
-                            <div key={s.key} className="flex items-center gap-1">
-                              <span className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                                stepDone ? 'bg-emerald-500 text-white font-semibold'
-                                : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
-                                : 'bg-white text-slate-400 border border-slate-200'
-                              }`}>{stepDone ? '✓ ' : `${i + 1}. `}{s.label}</span>
-                              {i < STEPS.length - 1 && (
-                                <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
-                      {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
-                    </div>
-                    {/* 본문 — 단계 적응: 옵션 단계(요구/설계/추가요청)=옵션이 본문(full-width)+작은 유령 악센트 /
-                        구현 단계=PC비율(16:10) 프리뷰가 본문, 옵션 없음(승인 카드는 카드 밖 sibling). 큰 프리뷰와
-                        옵션을 동시에 안 둬서 빈 공간 0. */}
-                    {(bs.step === 'implement' || done) ? (
-                      <div className="p-3">
-                        {/* 만드는 중 = 미니 팩맨(파란 착한 유령이 빨강 피해 미로 누비다 완료 시 갇힌 팩맨 구출). 자동 어트랙트.
-                            미리보기(iframe)는 폐기(2026-06-09) — '우와'는 만드는 동안의 움직임이지 완성 후 iframe 아님. 확인=승인카드 '열기'. */}
-                        <FirebatPacmanLoader done={done} />
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-2.5 p-3">
-                        <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
-                          <FirebatGhostAssembly size={36} variant="accent" />
-                          <span>{t('build.preparing')}</span>
-                        </div>
-                        {chips && (
-                          <div className="max-h-[60vh] overflow-y-auto">
-                            <SuggestionButtons
-                              suggestions={msg.suggestions!}
-                              loading={loading}
-                              fullWidth
-                              onSuggestion={(text, meta) => { onConsumeSuggestions?.(msg.id); onSuggestion?.(text, meta); }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              {buildCard && (
+                <BuildCard
+                  stages={buildCard.stages}
+                  loading={loading}
+                  onSuggestion={onSuggestion}
+                  onLockSuggestion={onLockSuggestion}
+                />
+              )}
 
               {/* Pending Actions — 승인 버튼 (액션 필요, 눈에 띄게 위쪽) */}
               {msg.pendingActions && msg.pendingActions.length > 0 && (
@@ -1687,7 +1731,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit,
-    handleApprovePending, handleRejectPending, handleStop, consumeSuggestions,
+    handleApprovePending, handleRejectPending, handleStop, lockSuggestion,
     planMode, setPlanMode,
     inputMode, setInputMode,
     refreshConversations,
@@ -1873,27 +1917,38 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
               // Project Builder — 빌드 카드 통합: 같은 세션(buildSession.id)은 백엔드 멀티턴이어도 프론트엔 카드
               // 1개만. 세션별 첫 등장 메시지(anchor)에 최신 state 를 몰아줘 "한 자리에서 진행"처럼 보이게.
               const buildCardByMsg = new Map<string, BuildCardData>();
+              const foldedBuildMsgIds = new Set<string>();
               {
-                // 세션(buildSession.id)당 최신(마지막) 빌드 메시지에 카드 1개 — suggest 칩이 거기 있어 한 카드로
-                // 묶이고 사용자 시선(하단)에 옴. 이전 턴 stepper/칩/프리뷰는 suppress → 화면엔 카드 1개(스택 X).
-                // previewUrl 은 carry-forward(최신 메시지에 url 없어도 직전 저장 페이지 미리보기 유지).
-                const lastOf = new Map<string, { msgId: string; state: BuildSessionView; previewUrl?: string }>();
+                // 세션별로 단계(step)당 마지막 메시지를 모아 stages(슬라이드) 구성. anchor(마지막 단계 메시지)에만
+                // 카드 1개를 두고, 그 세션의 나머지 빌드 메시지는 fold(숨김) → 화면엔 카드 1개 + 카드 안 캐러셀.
+                const STEP_ORDER = ['requirements', 'design', 'refine', 'implement'];
+                const byStep = new Map<string, Map<string, BuildStageEntry>>();
+                const msgsBySession = new Map<string, string[]>();
                 for (const m of messages) {
                   if (Array.isArray(m.data)) continue;
-                  const d = m.data as { buildSession?: BuildSessionView; openUrl?: string } | undefined;
+                  const d = m.data as { buildSession?: BuildSessionView } | undefined;
                   const bsv = d?.buildSession;
                   if (!bsv?.id) continue;
-                  const prev = lastOf.get(bsv.id);
-                  lastOf.set(bsv.id, { msgId: m.id, state: bsv, previewUrl: d?.openUrl ?? prev?.previewUrl });
+                  let mids = msgsBySession.get(bsv.id);
+                  if (!mids) { mids = []; msgsBySession.set(bsv.id, mids); }
+                  mids.push(m.id);
+                  let sm = byStep.get(bsv.id);
+                  if (!sm) { sm = new Map<string, BuildStageEntry>(); byStep.set(bsv.id, sm); }
+                  sm.set(bsv.step ?? '', { msgId: m.id, state: bsv, suggestions: m.suggestions, pickedSuggestion: m.pickedSuggestion, pendingActions: m.pendingActions });
                 }
-                for (const { msgId, state, previewUrl } of lastOf.values()) {
-                  buildCardByMsg.set(msgId, { state, previewUrl });
+                for (const [sid, sm] of byStep) {
+                  const stages = STEP_ORDER.filter(s => sm.has(s)).map(s => sm.get(s)!);
+                  if (!stages.length) continue;
+                  const anchor = stages[stages.length - 1].msgId;
+                  buildCardByMsg.set(anchor, { stages });
+                  for (const mid of msgsBySession.get(sid) ?? []) if (mid !== anchor) foldedBuildMsgIds.add(mid);
                 }
               }
               return messages.map((msg, idx) => {
               // 버튼 클릭 흔적 user 메시지 (✓ 실행, ✕ 취소, ⚙ 수정 등) — 과거 SEND_USER 경로로 저장된 잔재.
               // SEND_SUGGESTION 도입 이후 신규 대화에선 생성되지 않지만, 기존 대화 로드 시 잔존 — 렌더에서 숨김.
               if (isSuggestionClickUserMessage(msg)) return null;
+              if (foldedBuildMsgIds.has(msg.id)) return null; // 앞 단계 빌드 메시지 = 카드 안 캐러셀로 fold(숨김)
               // 단일턴 공유용 — system 메시지 바로 앞의 user 메시지 + 현재 system 메시지 쌍
               // 플랜 전체 흐름은 사이드바의 "대화 전체 공유" 로 묶는다 (여기선 턴 단위만).
               // activeConvId 는 단순 참조 (share slug 는 독립) — 없어도 공유 가능
@@ -1914,7 +1969,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   msg={msg}
                   loading={loading}
                   onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
-                  onConsumeSuggestions={consumeSuggestions}
+                  onLockSuggestion={lockSuggestion}
                   onApprovePending={handleApprovePending}
                   onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
                   onRejectPending={handleRejectPending}
