@@ -42,6 +42,11 @@ env:
   RUSTFLAGS: "-Clink-arg=-Wl,--threads=1"
   # 동시 컴파일/링크 잡 4→2 — 동시에 링크되는 거대 바이너리 수를 줄여 피크 메모리 추가 절감.
   CARGO_BUILD_JOBS: "2"
+  # 테스트 바이너리 debug info 제거 — candle/image/pdf/tokenizers 등 무거운 deps 가 매 테스트 바이너리에
+  # 정적 링크되며 debug 심볼까지 붙어 target/debug 가 러너 디스크(~14GB)를 초과(os error 28). debug=0 으로
+  # 바이너리 크기를 대폭 줄여 디스크 + 링크 피크 메모리(위 SIGBUS 영역)를 함께 낮춘다. (테스트 통과/실패엔 무영향)
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
   rust:
@@ -51,6 +56,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space (remove preinstalled SDKs)
+        # 러너 기본 디스크(~14GB free)가 거대 deps 테스트 바이너리로 부족(os error 28). 안 쓰는
+        # 사전설치 SDK(dotnet/android/ghc/CodeQL) 제거로 ~20GB+ 확보.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -83,6 +95,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free disk space (remove preinstalled SDKs)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
