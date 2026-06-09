@@ -1984,7 +1984,7 @@ function CompareComp({ title, left, right }: {
 // 라벨:값 구조적 나열. 종목 정보, 제품 스펙 등.
 function KeyValueComp({ title, items, columns = 2 }: {
   title?: string;
-  items: Array<{ key: string; value: string | number; highlight?: boolean; href?: string }>;
+  items: Array<{ key?: string; label?: string; value: string | number; highlight?: boolean; href?: string }>;
   columns?: number;
 }) {
   const gridCls: Record<number, string> = {
@@ -2005,7 +2005,7 @@ function KeyValueComp({ title, items, columns = 2 }: {
           const rowCls = `flex items-baseline justify-between gap-3 py-2.5 border-b border-gray-100 ${item.href ? 'hover:opacity-70 transition-opacity cursor-pointer no-underline' : ''}`;
           const inner = (
             <>
-              <span className="text-[13px] text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
+              <span className="text-[13px] text-gray-500 shrink-0">{cleanPlainText(item.key || item.label || '')}</span>
               <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>
                 {formatNumberString(item.value)}
               </span>

@@ -969,12 +969,16 @@
           "items": {
             "type": "object",
             "required": [
-              "key",
               "value"
             ],
             "properties": {
               "key": {
-                "type": "string"
+                "type": ["string", "null"],
+                "description": "항목 라벨. label 동의어로 줘도 됨(둘 중 하나 필수)."
+              },
+              "label": {
+                "type": ["string", "null"],
+                "description": "key 의 동의어 — key 대신 label 로 줘도 라벨로 표시됨."
               },
               "value": {
                 "type": [
