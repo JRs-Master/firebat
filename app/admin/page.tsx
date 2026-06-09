@@ -164,7 +164,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth }: {
     const iInit: Record<number, string[]> = {};
     suggestions.forEach((item, i) => {
       if (typeof item === 'string') return;
-      if (item.type === 'toggle') tInit[i] = new Set(item.defaults ?? item.options);
+      if (item.type === 'toggle') tInit[i] = new Set(item.defaults ?? item.options ?? []);
       if (item.type === 'input' || item.type === 'plan-revise') iInit[i] = [''];
     });
     setToggleValues(tInit);
@@ -285,7 +285,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth }: {
             <div key={i} className="flex flex-col px-4 py-3 border-b border-slate-200 last:border-b-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{item.label}</span>
               <div className="flex flex-col gap-1 mt-2">
-                {item.options.map(opt => (
+                {(item.options ?? []).map(opt => (
                   <button key={opt} onClick={() => toggleOption(i, opt)} disabled={loading}
                     className={`w-full px-4 py-2.5 text-left text-[13px] font-medium rounded-xl transition-colors border ${
                       selected.has(opt) ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'
