@@ -911,15 +911,15 @@ function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3 min-h-[280px] flex items-center justify-center"><FirebatPacmanLoader done={done} /></div>
+        <div className="p-3 h-[310px] flex items-center justify-center"><FirebatPacmanLoader done={done} /></div>
       ) : (
-        <div className="flex flex-col gap-2.5 p-3 min-h-[280px]">
-          <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
+        <div className="flex flex-col gap-2.5 p-3 h-[310px]">
+          <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
             <FirebatGhostAssembly size={36} variant="accent" />
             <span>{onLatest ? t('build.preparing') : (STEPS.find(s => s.key === stage.state.step)?.label ?? '')}</span>
           </div>
           {stageChips && (
-            <div className="max-h-[60vh] overflow-y-auto">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <SuggestionButtons
                 suggestions={stage.suggestions!}
                 loading={loading}
@@ -1491,8 +1491,8 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl border border-blue-100 bg-slate-900/95 overflow-hidden">
-      <canvas ref={ref} aria-hidden className="max-w-full" style={{ width: 'min(100%, 340px)' }} />
+    <div className="flex flex-col items-center justify-center gap-2 py-4 rounded-xl border border-blue-100 bg-slate-900/95 overflow-hidden h-full">
+      <canvas ref={ref} aria-hidden className="max-w-full" style={{ width: 'min(100%, 300px)' }} />
       <div className="text-[12px] font-semibold text-slate-200">{done ? '🎉 PAC-MAN SAVED!' : t('build.making')}</div>
     </div>
   );
