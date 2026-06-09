@@ -850,9 +850,10 @@ type BuildCardData = { stages: BuildStageEntry[] };
 
 // Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
 // 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=팩맨 로더.
-function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
+function BuildCard({ stages, loading, building, onSuggestion, onLockSuggestion }: {
   stages: BuildStageEntry[];
   loading: boolean;
+  building?: boolean; // 다음 단계 생성 중 — 최신 슬라이드 본문을 팩맨(대기 애니)으로.
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onLockSuggestion?: (msgId: string, picked: string) => void;
 }) {
@@ -880,7 +881,8 @@ function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
   const curIdx = STEPS.findIndex(s => s.key === bs.step);
   const stage = stages[vi];
   const onLatest = vi === last;
-  const stageImplement = stage.state.step === 'implement' || (onLatest && done);
+  // 구현 단계 OR (최신 슬라이드에서 생성 중/완료) → 팩맨. 생성 중(building)엔 done=false 라 팩맨이 플레이.
+  const stageImplement = stage.state.step === 'implement' || (onLatest && (done || !!building));
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
   return (
@@ -945,7 +947,7 @@ function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
   );
 }
 
-function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard }: {
+function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
@@ -960,6 +962,8 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
   /** Project Builder — 이 메시지가 빌드 세션의 카드 위치(최신 빌드 메시지)면 그 세션의 stepper state + 미리보기.
    *  백엔드 멀티턴이어도 세션당 카드 1개로 보이게 부모가 그룹핑해 전달. undefined = 카드 안 그림. */
   buildCard?: BuildCardData;
+  /** 이 빌드 카드가 다음 단계 생성 중(loading) — 카드 본문을 팩맨(대기 애니)으로. */
+  building?: boolean;
 }) {
   const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
@@ -1127,6 +1131,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                 <BuildCard
                   stages={buildCard.stages}
                   loading={loading}
+                  building={building}
                   onSuggestion={onSuggestion}
                   onLockSuggestion={onLockSuggestion}
                 />
@@ -1293,7 +1298,7 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       '#.#.#.#.#.#',
       '#.........#',
       '#.#.#P#.#.#',
-      '#.........#',
+      '#....#....#',
       '#.#.#.#.#.#',
       '#o.......o#',
       '###########',
@@ -1317,13 +1322,14 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
 
     type Dir = { dc: number; dr: number };
     type Mover = { c: number; r: number; tc: number; tr: number; p: number; ddc: number; ddr: number };
-    type Red = Mover & { fright: number; eyes: boolean };
+    type Red = Mover & { fright: number; eyes: boolean; guard: boolean };
     const mk = (c: number, r: number): Mover => ({ c, r, tc: c, tr: r, p: 0, ddc: 0, ddr: 0 });
     const BLUE0 = { c: 1, r: 3 }, RED0 = [{ c: 9, r: 3 }, { c: 5, r: 7 }, { c: 3, r: 5 }], HOME = { c: 5, r: 1 };
     let blue: Mover, reds: Red[];
     const initChars = () => {
       blue = mk(BLUE0.c, BLUE0.r);
-      reds = RED0.map(s => ({ ...mk(s.c, s.r), fright: 0, eyes: false }));
+      // reds[0] = 가드 — 팩맨 유일 통로(위)를 막아 섬. 나머지는 blue 추격.
+      reds = RED0.map((s, i) => ({ ...mk(s.c, s.r), fright: 0, eyes: false, guard: i === 0 }));
     };
     resetDots(); initChars();
 
@@ -1355,13 +1361,28 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       const danger = (c: number, r: number) => { let m = 99; for (const tt of threat) m = Math.min(m, Math.abs(tt.c - c) + Math.abs(tt.r - r)); return m; };
       const pool = noRev(blue, opts);
       let best = pool[0], bestScore = -Infinity;
-      for (const o of pool) { const s = danger(blue.c + o.dc, blue.r + o.dr) + Math.random() * 2; if (s > bestScore) { bestScore = s; best = o; } }
+      for (const o of pool) {
+        const nc = blue.c + o.dc, nr = blue.r + o.dr;
+        if (nc === pac.c && nr === pac.r) continue; // 플레이 중엔 팩맨 칸 안 들어감 — 도달(구출)은 done(rescue)에서만
+        const s = danger(nc, nr) + Math.random() * 2;
+        if (s > bestScore) { bestScore = s; best = o; }
+      }
       return best;
     };
     const redDir = (rg: Red): Dir => {
       const opts = opensAt(rg);
       if (!opts.length) return { dc: 0, dr: 0 };
       const pool = noRev(rg, opts);
+      // 가드 — done 아니고 안 겁먹었으면 팩맨 유일 통로(팩맨 위 칸)를 지킴. 도착하면 정지(막아섬). done(구출) 시
+      // 아래 fright 로 도망가 길을 터줌.
+      if (rg.guard && !doneRef.current && rg.fright === 0 && !rg.eyes) {
+        const post = { c: pac.c, r: pac.r - 1 };
+        if (rg.c === post.c && rg.r === post.r) return { dc: 0, dr: 0 };
+        const gd = bfs(post.c, post.r);
+        let gbest = pool[0], gbd = Infinity;
+        for (const o of pool) { const v = gd[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < gbd) { gbd = v; gbest = o; } }
+        return gbest;
+      }
       const dist = rg.eyes ? bfs(HOME.c, HOME.r) : bfs(blue.c, blue.r);
       let best = pool[0];
       if (rg.fright > 0 && !rg.eyes) {
@@ -1982,6 +2003,27 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   for (const mid of msgsBySession.get(sid) ?? []) if (mid !== anchor) foldedBuildMsgIds.add(mid);
                 }
               }
+              // 활성 빌드(미완료)가 다음 단계 생성 중(loading)이면 → 그 카드가 팩맨(대기 애니)을 보여주고, 뒤따르는
+              // 빌드 외 스트리밍 thinking 메시지는 fold. "원래 대화가 생각중으로" + "팩맨이 구현 *대기 중* 나옴".
+              let buildingAnchor: string | null = null;
+              {
+                let latestAnchor: string | null = null;
+                for (let i = messages.length - 1; i >= 0; i--) { if (buildCardByMsg.has(messages[i].id)) { latestAnchor = messages[i].id; break; } }
+                if (loading && latestAnchor) {
+                  const st = buildCardByMsg.get(latestAnchor)!.stages;
+                  const lt = st[st.length - 1];
+                  const latestDone = lt.state.status === 'completed'
+                    || (lt.state.step === 'implement' && (lt.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
+                  if (!latestDone) {
+                    buildingAnchor = latestAnchor;
+                    const lastMsg = messages[messages.length - 1];
+                    if (lastMsg && lastMsg.id !== latestAnchor && lastMsg.role === 'system') {
+                      const lastIsBuild = !Array.isArray(lastMsg.data) && !!(lastMsg.data as { buildSession?: BuildSessionView } | undefined)?.buildSession?.id;
+                      if (!lastIsBuild) foldedBuildMsgIds.add(lastMsg.id); // 생성 중 thinking → 카드가 대신 팩맨으로 대기 표시
+                    }
+                  }
+                }
+              }
               return messages.map((msg, idx) => {
               // 버튼 클릭 흔적 user 메시지 (✓ 실행, ✕ 취소, ⚙ 수정 등) — 과거 SEND_USER 경로로 저장된 잔재.
               // SEND_SUGGESTION 도입 이후 신규 대화에선 생성되지 않지만, 기존 대화 로드 시 잔존 — 렌더에서 숨김.
@@ -2014,6 +2056,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   shareContext={shareContext}
                   hubContext={hubChatContext}
                   buildCard={buildCardByMsg.get(msg.id)}
+                  building={msg.id === buildingAnchor}
                 />
               );
               });
