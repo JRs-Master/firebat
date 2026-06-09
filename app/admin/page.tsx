@@ -1332,12 +1332,12 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?
 
   if (variant === 'accent') {
     // 작은 인라인 악센트 (옵션 단계 "준비 중") — 박스/캡션 없이 캔버스만.
-    return <canvas ref={ref} style={{ width: size, height: size }} aria-hidden className="shrink-0" />;
+    return <canvas ref={ref} style={{ width: size, height: size, transform: 'translateZ(0)' }} aria-hidden className="shrink-0" />;
   }
   // main — 구현 단계 프리뷰 자리(PC 16:10 비율) 채우며 유령 조립.
   return (
     <div className="flex flex-col items-center justify-center gap-2 aspect-[16/10] rounded-xl border border-blue-100 bg-blue-50/30">
-      <canvas ref={ref} style={{ width: size, height: size }} aria-hidden />
+      <canvas ref={ref} style={{ width: size, height: size, transform: 'translateZ(0)' }} aria-hidden />
       {caption && <div className="text-[12px] font-medium text-slate-500">{caption}</div>}
     </div>
   );
