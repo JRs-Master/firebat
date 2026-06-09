@@ -964,10 +964,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         ))}
                       </div>
                     )}
-                    {/* Project Builder — 빌드 중이면 만들어진 페이지를 라이브 프리뷰 (큰 화면 = 아티팩트 드로어) */}
-                    {!buildCard && urls.length > 0 && !Array.isArray(msg.data) && (msg.data as any)?.buildSession && (
-                      <BuildPreview url={urls[0].openUrl} />
-                    )}
+                    {/* embedded 라이브 프리뷰 폐기(2026-06-09) — 완성 후 미리보기 불필요. 확인은 위 openUrl '미리보기' 링크. */}
                     {/* MCP 결과는 AI가 reply에서 자연어로 요약 — raw JSON 표시 안 함 */}
                     {/* 실행 결과 JSON은 표시하지 않음 — AI가 reply에서 자연어로 요약 */}
                   </>
@@ -978,7 +975,6 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   메시지에만 최신 state 를 buildCard 로 전달 → 백엔드 멀티턴이어도 카드 1개가 첫 자리에서 1→2→3 진행. */}
               {buildCard && (() => {
                 const bs = buildCard.state;
-                const previewUrl = buildCard.previewUrl;
                 const STEPS = [
                   { key: 'requirements', label: t('build.step_requirements') },
                   { key: 'design', label: t('build.step_design') },
@@ -1025,9 +1021,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         옵션을 동시에 안 둬서 빈 공간 0. */}
                     {(bs.step === 'implement' || done) ? (
                       <div className="p-3">
-                        {previewUrl
-                          ? <BuildPreview url={previewUrl} variant="main" />
-                          : <FirebatGhostAssembly variant="main" caption={t('build.preview_pending')} />}
+                        {/* embedded 미리보기(iframe) 폐기 — '우와'는 만드는 동안 유령이 채워지는 실시간감이지
+                            완성 후 미리보기가 아님(사용자 2026-06-09). 완성 후 확인 = 승인카드 '열기' 링크. 수정 = 별도 수정 PB. */}
+                        <FirebatGhostAssembly variant="main" caption={done ? t('build.done') : t('build.preview_pending')} />
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2.5 p-3">
@@ -1340,34 +1336,6 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?
       <canvas ref={ref} style={{ width: size, height: size, transform: 'translateZ(0)' }} aria-hidden />
       {caption && <div className="text-[12px] font-medium text-slate-500">{caption}</div>}
     </div>
-  );
-}
-
-function BuildPreview({ url, variant = 'inline' }: { url: string; variant?: 'inline' | 'main' }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <>
-      <div className="mt-2 rounded-xl border border-slate-200 overflow-hidden bg-white">
-        <div className="px-3 py-1.5 text-[11px] font-bold text-slate-500 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-          <span>🔨 라이브 프리뷰</span>
-          <button type="button" onClick={() => setExpanded(true)} className="ml-auto text-blue-600 hover:underline">큰 화면 ⛶</button>
-          <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">새 탭 ↗</a>
-        </div>
-        <iframe src={url} className={`w-full border-0 bg-white ${variant === 'main' ? 'aspect-[16/10]' : 'h-[420px]'}`} title="빌드 라이브 프리뷰" />
-      </div>
-      {expanded && (
-        <div className="fixed inset-0 z-[60] bg-black/40 flex" onClick={() => setExpanded(false)}>
-          <div className="ml-auto h-full w-full sm:w-[60%] bg-white flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="px-4 py-2.5 flex items-center gap-2 border-b border-slate-200 bg-slate-50 shrink-0">
-              <span className="text-[13px] font-bold text-slate-600">🔨 빌드 아티팩트</span>
-              <a href={url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[12px] text-blue-600 hover:underline">새 탭 ↗</a>
-              <button type="button" onClick={() => setExpanded(false)} className="text-[12px] font-bold text-slate-500 hover:text-slate-700">닫기 ✕</button>
-            </div>
-            <iframe src={url} className="flex-1 w-full border-0 bg-white" title="빌드 아티팩트" />
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
