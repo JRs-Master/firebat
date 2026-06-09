@@ -1298,7 +1298,7 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       '#.#.#.#.#.#',
       '#.........#',
       '#.#.#P#.#.#',
-      '#....#....#',
+      '#.........#',
       '#.#.#.#.#.#',
       '#o.......o#',
       '###########',
@@ -1322,14 +1322,14 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
 
     type Dir = { dc: number; dr: number };
     type Mover = { c: number; r: number; tc: number; tr: number; p: number; ddc: number; ddr: number };
-    type Red = Mover & { fright: number; eyes: boolean; guard: boolean };
+    type Red = Mover & { fright: number; eyes: boolean; guard: boolean; gt: number };
     const mk = (c: number, r: number): Mover => ({ c, r, tc: c, tr: r, p: 0, ddc: 0, ddr: 0 });
     const BLUE0 = { c: 1, r: 3 }, RED0 = [{ c: 9, r: 3 }, { c: 5, r: 7 }, { c: 3, r: 5 }], HOME = { c: 5, r: 1 };
     let blue: Mover, reds: Red[];
     const initChars = () => {
       blue = mk(BLUE0.c, BLUE0.r);
-      // reds[0] = 가드 — 팩맨 유일 통로(위)를 막아 섬. 나머지는 blue 추격.
-      reds = RED0.map((s, i) => ({ ...mk(s.c, s.r), fright: 0, eyes: false, guard: i === 0 }));
+      // reds[0] = 가드 — 팩맨 세로 통로를 왔다갔다 순찰(gt=순찰 방향). 나머지는 blue 추격.
+      reds = RED0.map((s, i) => ({ ...mk(s.c, s.r), fright: 0, eyes: false, guard: i === 0, gt: 1 }));
     };
     resetDots(); initChars();
 
@@ -1376,12 +1376,21 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       // 가드 — done 아니고 안 겁먹었으면 팩맨 유일 통로(팩맨 위 칸)를 지킴. 도착하면 정지(막아섬). done(구출) 시
       // 아래 fright 로 도망가 길을 터줌.
       if (rg.guard && !doneRef.current && rg.fright === 0 && !rg.eyes) {
-        const post = { c: pac.c, r: pac.r - 1 };
-        if (rg.c === post.c && rg.r === post.r) return { dc: 0, dr: 0 };
-        const gd = bfs(post.c, post.r);
-        let gbest = pool[0], gbd = Infinity;
-        for (const o of pool) { const v = gd[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < gbd) { gbd = v; gbest = o; } }
-        return gbest;
+        // 팩맨 세로 통로(위 칸↔아래 칸, 팩맨 칸 관통)를 왔다갔다 — 빨강은 팩맨 지나도 되니 가운데서 양쪽 다 막음.
+        const top = { c: pac.c, r: pac.r - 1 }, bot = { c: pac.c, r: pac.r + 1 };
+        const inCol = rg.c === pac.c && rg.r >= top.r && rg.r <= bot.r;
+        if (!inCol) {
+          // 통로 밖 — 위 칸으로 진입(최단)
+          const gd = bfs(top.c, top.r);
+          let gbest = pool[0], gbd = Infinity;
+          for (const o of pool) { const v = gd[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < gbd) { gbd = v; gbest = o; } }
+          return gbest;
+        }
+        // 통로 안 — 끝 도달 시 반전하며 위↔아래 순찰
+        if (rg.r <= top.r) rg.gt = 1;
+        else if (rg.r >= bot.r) rg.gt = -1;
+        if (!isWall(rg.c, rg.r + rg.gt)) return { dc: 0, dr: rg.gt };
+        return { dc: 0, dr: -rg.gt };
       }
       const dist = rg.eyes ? bfs(HOME.c, HOME.r) : bfs(blue.c, blue.r);
       let best = pool[0];
