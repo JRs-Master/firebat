@@ -982,7 +982,10 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   { key: 'implement', label: t('build.step_implement') },
                 ]; // 전 tier 동일 흐름 — T1 설계 skip 폐기(2026-06-08, 시각 앱/게임도 디자인 단계). Rust next_for_tier 와 sync.
                 const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
-                const done = bs.status === 'completed';
+                // 빌드 세션 status 가 'completed' 로 바뀌는 건 다음 턴(ai.rs finish_session)이라, save_page 승인(✓실행됨)
+                // 직후엔 아직 Active → "만드는 중"이 영영 남던 것. 구현 단계 save_page 가 승인되면 바로 완료로 간주.
+                const done = bs.status === 'completed'
+                  || (bs.step === 'implement' && (msg.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
                 const curIdx = STEPS.findIndex(s => s.key === bs.step);
                 // suggest 칩도 이 카드 안에 (별도 렌더는 buildCard 시 suppress). past-runat 은 즉시/시간변경 버튼과 중복 회피.
                 const chips = !!msg.suggestions && msg.suggestions.length > 0
