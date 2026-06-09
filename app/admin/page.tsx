@@ -2033,7 +2033,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   const lt = st[st.length - 1];
                   const latestDone = lt.state.status === 'completed'
                     || (lt.state.step === 'implement' && (lt.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
-                  if (!latestDone) {
+                  // 팩맨(생성 대기)은 "구현 생성" 때만 — 요구/설계 단계 전환 땐 칩 유지. 안 그러면 팩맨이 칩을 가려
+                  // 못 고르고("같은 suggest 계속") + thinking fold 로 헤더가 stale "답변완료"로 남아 불일치.
+                  const nearBuild = lt.state.step === 'refine' || lt.state.step === 'implement';
+                  if (!latestDone && nearBuild) {
                     buildingAnchor = latestAnchor;
                     buildStatus = messages[messages.length - 1]?.statusText; // 현재 스트리밍 메시지의 라이브 상태(도구 호출 등)
                     const lastMsg = messages[messages.length - 1];
