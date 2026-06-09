@@ -940,13 +940,22 @@ impl AiManager {
                 }).or_else(|| ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()).map(String::from));
                 if let Some(cid) = build_scope.as_deref() {
                     // New user turn — clear the active build session's awaiting gate (allow one advance this turn = interactive step enforcement).
-                    crate::utils::build_session::reset_awaiting_for_conv(cid);
+                    // was_awaiting = the user is replying to options we presented last turn → advance, do NOT re-present.
+                    let was_awaiting = crate::utils::build_session::reset_awaiting_for_conv(cid);
                     if let Some(sess) = crate::utils::build_session::active_session_for_conv(cid) {
                         if sess.step == crate::utils::build_session::BuildStep::Implement {
                             // The build reached its last step (Implement = page built + save_page) on a previous
                             // turn. Finish it so this fresh turn (e.g. a follow-up or modify request) does NOT
                             // re-enter the build context — otherwise the 구현 card lingered on later messages.
                             crate::utils::build_session::finish_session(&sess.id, true);
+                        } else if was_awaiting {
+                            // The user is replying to the options we presented last turn — advance, do NOT
+                            // re-present. (Re-injecting the step_prompt "present suggest" made the AI re-emit the
+                            // same chips instead of advancing = the loop the user hit.)
+                            composed = format!(
+                                "[Project Builder — sessionId={}, current step: {}] You presented this step's options last turn and the user has now replied. If the reply is a selection (chosen options, or a shortcut like the recommend / all-in chips), call advance_build(sessionId=\"{}\", output=<the user's selection>, tier?, auto=true only for the all-in shortcut) to record it and move on — the NEXT step's options come back in that tool result, so do NOT call suggest for THIS step again (re-presenting the same options is a loop). If the reply is a question or a scope change (not a selection), answer it (you may re-present). To stop, call cancel_build(sessionId).\n\n{}",
+                                sess.id, sess.step.key(), sess.id, composed
+                            );
                         } else {
                             let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
                             composed = format!(

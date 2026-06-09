@@ -301,9 +301,11 @@ pub fn set_auto_advance(id: &str, auto: bool) -> Option<BuildSession> {
 /// Called by ai.rs at the start of each user turn — clears the awaiting gate of the (most recent)
 /// active session, allowing one advance this turn.
 /// (Interactive step enforcement: start/advance lock with awaiting=true, and this unlocks on the next user turn.)
-pub fn reset_awaiting_for_conv(conv_id: &str) {
+/// Returns `was_awaiting` — true means the user is replying to options we presented last turn (so the AI
+/// should advance, not re-present). False means no pending presentation (fresh/mid-step).
+pub fn reset_awaiting_for_conv(conv_id: &str) -> bool {
     let Ok(mut map) = store_lock().lock() else {
-        return;
+        return false;
     };
     let target_id = map
         .values()
@@ -321,7 +323,9 @@ pub fn reset_awaiting_for_conv(conv_id: &str) {
         if changed {
             flush(&map);
         }
+        return changed;
     }
+    false
 }
 
 /// Advance to the next step — gate: the current step must have an output. Per-tier skips in next_for_tier.
