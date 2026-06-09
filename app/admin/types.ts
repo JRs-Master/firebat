@@ -66,6 +66,7 @@ export type Message = {
   executing?: boolean;
   statusText?: string;
   suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] })[];
+  pickedSuggestion?: string; // 칩 픽 시 그 텍스트 — 잠금 강조 + 과거 빌드 슬라이드 표시용 (consumeSuggestions 대신 lockSuggestion 이 설정)
   image?: string;
 };
 

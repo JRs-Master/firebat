@@ -1092,6 +1092,16 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
   }, [activeConvId]);
 
+  // 칩 픽 잠금 — consumeSuggestions(칩 제거)와 달리 칩은 남기고 픽 텍스트만 기록(잠금 강조 렌더용). DB 즉시 저장.
+  const lockSuggestion = useCallback((msgId: string, picked: string) => {
+    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
+    if (convId) {
+      const updated = messagesRef.current.map(m => m.id !== msgId ? m : { ...m, pickedSuggestion: picked });
+      saveToDbRef.current(convId, updated);
+    }
+    dispatch({ type: 'LOCK_SUGGESTION', msgId, picked });
+  }, [activeConvId]);
+
   const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
 
   return {
@@ -1101,7 +1111,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit,
-    handleApprovePending, handleRejectPending, consumeSuggestions,
+    handleApprovePending, handleRejectPending, consumeSuggestions, lockSuggestion,
     handleStop,
     planMode, setPlanMode,
     inputMode, setInputMode,
