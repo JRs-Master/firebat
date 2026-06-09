@@ -1553,7 +1553,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
       // 브랜드 로고가 '테두리(아웃라인)' 유령이라 fill 대신 stroke 로 윤곽만 래스터화 — 꽉 찬 유령과 톤 불일치 해소.
       octx.strokeStyle = '#000';
-      octx.lineWidth = 1.0;
+      octx.lineWidth = 0.8;
       octx.lineJoin = 'round';
       octx.lineCap = 'round';
       octx.stroke(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
@@ -1567,7 +1567,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
       const d = octx.getImageData(0, 0, RES, RES).data;
       for (let gy = 0; gy < RES; gy++) {
         for (let gx = 0; gx < RES; gx++) {
-          if (d[(gy * RES + gx) * 4 + 3] > 40) targets.push({ gx, gy });
+          if (d[(gy * RES + gx) * 4 + 3] > 30) targets.push({ gx, gy });
         }
       }
     }
