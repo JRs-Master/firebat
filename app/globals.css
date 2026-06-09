@@ -8,6 +8,13 @@
 @source "../user/modules/**/*.{js,ts,jsx,tsx}";
 @source "../user/apps/**/*.{js,ts,jsx,tsx}";
 
+/* PB 빌드 스텝퍼 현재 단계 — 블러 번지는 펄스(진행 중 느낌). */
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }
+  50% { box-shadow: 0 0 9px 3px rgba(37, 99, 235, 0.4); }
+}
+.step-pulse { animation: step-pulse 1.6s ease-in-out infinite; }
+
 /* Viewport scrollbar 가 padding 가장자리에 정확히 일치하게 영역 미리 확보.
    일부 모바일 브라우저(Samsung Internet 등) 가 scrollbar 를 content 와 padding 사이에
    그리는 quirk 회피 — `[content][padding][scrollbar]` 정상 순서 보장. */

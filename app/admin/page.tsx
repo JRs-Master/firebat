@@ -159,7 +159,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     return undefined;
   })();
 
-  // suggestions 변경 시 기본값 세팅 — toggle defaults + input 빈 칸 1개
+  // suggestions 변경 시 기본값 세팅 — toggle defaults + input 빈 칸 1개. dep = 내용 기반(sigKey): 매 렌더
+  // suggestions 가 새 ref 여도 내용 같으면 재실행 X → 탭 전환·리렌더 시 진행 중 토글 선택이 초기화되던 버그 fix.
+  const sigKey = JSON.stringify(suggestions);
   useEffect(() => {
     const tInit: Record<number, Set<string>> = {};
     const iInit: Record<number, string[]> = {};
@@ -171,7 +173,8 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     setToggleValues(tInit);
     setInputValues(iInit);
     setCustomInput('');
-  }, [suggestions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigKey]);
 
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
@@ -858,8 +861,8 @@ function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
               <div key={s.key} className="flex items-center gap-1">
                 <button type="button" disabled={stageIdx < 0} onClick={() => { if (stageIdx >= 0) setViewIdx(stageIdx); }}
                   className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                    stepDone ? 'bg-emerald-500 text-white font-semibold'
-                    : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
+                    stepDone ? 'bg-blue-100 text-blue-700'
+                    : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
                   } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-blue-300' : ''}`}>
                   {stepDone ? '✓ ' : `${i + 1}. `}{s.label}
@@ -873,9 +876,9 @@ function BuildCard({ stages, loading, onSuggestion, onLockSuggestion }: {
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3"><FirebatPacmanLoader done={done} /></div>
+        <div className="p-3 min-h-[280px] flex items-center justify-center"><FirebatPacmanLoader done={done} /></div>
       ) : (
-        <div className="flex flex-col gap-2.5 p-3">
+        <div className="flex flex-col gap-2.5 p-3 min-h-[280px]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
             <FirebatGhostAssembly size={36} variant="accent" />
             <span>{onLatest ? t('build.preparing') : (STEPS.find(s => s.key === stage.state.step)?.label ?? '')}</span>
