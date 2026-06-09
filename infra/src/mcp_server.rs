@@ -1904,7 +1904,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // AI 메타
     state.register(McpTool {
         name: "suggest".into(),
-        description: "사용자에게 자동 답변 칩 제시. inputSchema: {suggestions: [string | {type, label, ...}]}.".into(),
+        description: "Present next-action suggestion chips. suggestions = array; each item is one of: a string (single-pick chip — sends immediately on click), or {type:'toggle', label, options:[...], defaults?:[...]} (multi-select — the user checks several then submits once; options is REQUIRED and non-empty), or {type:'input', label, placeholder?} (free text). Pick the type that fits the choice: combinable / pick-many => toggle; single mutually-exclusive => string; open-ended => input. Applies to every suggest use, build steps included.".into(),
         input_schema: schema_object(serde_json::json!({"suggestions": {"type":"array"}})),
         handler: Arc::new(SuggestHandler),
     }).await;

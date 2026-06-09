@@ -370,11 +370,11 @@ pub fn finish_session(id: &str, completed: bool) -> Option<BuildSession> {
 /// forces the flow). Each interactive step = present options as suggest chips, then stop.
 pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
     match step {
-        BuildStep::Requirements => "S1 Feature selection: based on the user's request, **present feature options as suggest chips in ONE set** \
-(also include 'proceed with the recommendation' and 'just do it all'). **Ask everything in this single chip set — do NOT split into multiple follow-up questions across turns** (one selection, then advance). \
+        BuildStep::Requirements => "S1 Feature selection: based on the user's request, present the options as suggest chips in ONE set (+ string-chip shortcuts 'proceed with the recommendation' / 'just do it all'). \
+**Choose the chip type that fits the choice — your call**: when several features are combinable (e.g. a game's penalty + wind + scoreboard) use a multi-select `toggle` so the user checks many then submits once; when it is a single mutually-exclusive pick (one mode/style), plain string chips are fine. **Ask everything in this one set — do NOT split into follow-up questions across turns.** \
 At the same time classify the complexity tier — T1=simple page (render/html, no external module) / T2=calls existing modules·services / T3=needs a new user module (code generation). \
-**Do NOT call advance_build before the user selects** (the engine allows only one step per turn). The next step is Design. \
-When the user chooses, call advance_build(tier, output=chosen features, auto=true if the user picked 'just do it all')."
+**Do NOT call advance_build before the user responds** (the engine allows only one step per turn). The next step is Design. \
+When the user responds (toggle submit or a shortcut), call advance_build(tier, output=chosen features, auto=true if the user picked 'just do it all')."
             .to_string(),
         BuildStep::Design => {
             let tier_hint = match tier {
