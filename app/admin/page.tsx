@@ -1211,20 +1211,27 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     off.width = RES;
     off.height = RES;
     const octx = off.getContext('2d');
-    // 눈 = 중심(12.5) 대칭 2×2 둘. 좌 {9,10} / 우 {15,16}, 행 {10,11}.
-    const isEye = (gx: number, gy: number) =>
-      (gy === 10 || gy === 11) && (gx === 9 || gx === 10 || gx === 15 || gx === 16);
     const targets: { gx: number; gy: number }[] = [];
     if (octx) {
       octx.save();
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
+      // 브랜드 로고가 '테두리(아웃라인)' 유령이라 fill 대신 stroke 로 윤곽만 래스터화 — 꽉 찬 유령과 톤 불일치 해소.
+      octx.strokeStyle = '#000';
+      octx.lineWidth = 2;
+      octx.lineJoin = 'round';
+      octx.lineCap = 'round';
+      octx.stroke(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
+      // 눈 2개 — lucide Ghost 의 점 (9,10)·(15,10). 아웃라인이라 파내지(destination-out) 않고 점으로 채워 그림.
       octx.fillStyle = '#000';
-      octx.fill(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
+      octx.beginPath();
+      octx.arc(9, 10, 1.1, 0, Math.PI * 2);
+      octx.arc(15, 10, 1.1, 0, Math.PI * 2);
+      octx.fill();
       octx.restore();
       const d = octx.getImageData(0, 0, RES, RES).data;
       for (let gy = 0; gy < RES; gy++) {
         for (let gx = 0; gx < RES; gx++) {
-          if (d[(gy * RES + gx) * 4 + 3] > 80 && !isEye(gx, gy)) targets.push({ gx, gy });
+          if (d[(gy * RES + gx) * 4 + 3] > 80) targets.push({ gx, gy });
         }
       }
     }
