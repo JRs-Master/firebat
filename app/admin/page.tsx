@@ -1282,8 +1282,16 @@ function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
       const pool = noRev(rg, opts);
       const dist = rg.eyes ? bfs(HOME.c, HOME.r) : bfs(blue.c, blue.r);
       let best = pool[0];
-      if (rg.fright > 0 && !rg.eyes) { let bd = -Infinity; for (const o of pool) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v > bd) { bd = v; best = o; } } }
-      else { let bd = Infinity; for (const o of pool) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < bd) { bd = v; best = o; } } }
+      if (rg.fright > 0 && !rg.eyes) {
+        // 도망 — 역방향까지 포함해 blue 에서 가장 먼 방향(들, 최대거리 ±1) 중 랜덤. 동점이 항상 오른쪽(DIRS 첫
+        // 방향)으로 몰려 셋 다 우측 행진하던 것 해소 + 겁먹으면 방향 전환 자유(클래식 frightened).
+        let bd = -Infinity;
+        for (const o of opts) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v > bd) bd = v; }
+        const far = opts.filter(o => { const v = dist[rg.r + o.dr][rg.c + o.dc]; return v >= 0 && v >= bd - 1; });
+        return far.length ? far[Math.floor(Math.random() * far.length)] : opts[0];
+      }
+      let bd = Infinity;
+      for (const o of pool) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < bd) { bd = v; best = o; } }
       return best;
     };
 
