@@ -2015,7 +2015,14 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1);
   }
   if (!resp.ok) {
+    // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
+    // 바디가 KIS 에러 envelope 면 throw 하지 말고 그대로 반환 → 상위 rt_cd 검사가 토큰 만료를 감지해
+    // 재발급·재시도하게 한다 (throw 하면 rt_cd 검사 도달 전 빠져나가 자동 재발급이 동작 안 함).
     const errText = await resp.text().catch(() => '');
+    try {
+      const j = JSON.parse(errText);
+      if (j && (j.rt_cd !== undefined || j.msg_cd !== undefined)) return j;
+    } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(`KIS API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
   return await resp.json();

@@ -484,7 +484,14 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
     return callApi(base, token, apiId, params, retry - 1);
   }
   if (!resp.ok) {
+    // 키움은 토큰 만료 등 일부 오류를 HTTP 4xx/5xx + JSON 바디(return_code/return_msg)로 준다. 바디가
+    // 키움 에러 envelope 면 throw 하지 말고 그대로 반환 → 상위 return_code 검사가 토큰 만료를 감지해
+    // 재발급·재시도하게 한다 (throw 하면 검사 도달 전 빠져나가 자동 재발급이 동작 안 함).
     const errText = await resp.text().catch(() => '');
+    try {
+      const j = JSON.parse(errText);
+      if (j && (j.return_code !== undefined || j.return_msg !== undefined)) return j;
+    } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(`키움 API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
   return await resp.json();
