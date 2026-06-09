@@ -1024,9 +1024,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                         옵션을 동시에 안 둬서 빈 공간 0. */}
                     {(bs.step === 'implement' || done) ? (
                       <div className="p-3">
-                        {/* embedded 미리보기(iframe) 폐기 — '우와'는 만드는 동안 유령이 채워지는 실시간감이지
-                            완성 후 미리보기가 아님(사용자 2026-06-09). 완성 후 확인 = 승인카드 '열기' 링크. 수정 = 별도 수정 PB. */}
-                        <FirebatGhostAssembly variant="main" size={180} settled={done} caption={done ? t('build.done') : t('build.making')} />
+                        {/* 만드는 중 = 미니 팩맨(파란 착한 유령이 빨강 피해 미로 누비다 완료 시 갇힌 팩맨 구출). 자동 어트랙트.
+                            미리보기(iframe)는 폐기(2026-06-09) — '우와'는 만드는 동안의 움직임이지 완성 후 iframe 아님. 확인=승인카드 '열기'. */}
+                        <FirebatPacmanLoader done={done} />
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2.5 p-3">
@@ -1192,6 +1192,201 @@ export interface HubContext {
 // 완성 → idle float. 구현 완료 전(미리보기 URL 없음)에 persistent 미리보기 영역을 채움. 완료 시 BuildPreview 로 교체.
 // Firebat 유령(👻) 픽셀 조립 — lucide Ghost body path 를 Path2D 로 grid 래스터화(로고 정확 일치 + 고해상도,
 // 동기·canvas taint 없음). 눈은 destination-out 으로 파냄. 아래서 위로 "물 차오르듯" 채워 만들어지는 느낌.
+// 파이어뱃 미니 팩맨 로더 — "만드는 중" 동안 파란 착한 유령(우리)이 빨간 나쁜 유령들을 피해 미로를 누비다,
+// 빌드 완료(done)되면 갇힌 팩맨에게 BFS 로 달려가 "구출 성공!". 자동 어트랙트(조작 0). 빨강에 잡히면 깜빡 후
+// 리셋·재시작, 파워펠릿 먹으면 빨강 잠깐 파랗게 질려 도망(닿으면 눈만 남아 집으로 복귀). done 일 땐 무적(반드시 구출).
+function FirebatPacmanLoader({ done = false }: { done?: boolean }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const doneRef = useRef(done);
+  doneRef.current = done;
+  const t = useTranslations();
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const MAZE = [
+      '###########',
+      '#o.......o#',
+      '#.#.#.#.#.#',
+      '#.........#',
+      '#.#.#P#.#.#',
+      '#.........#',
+      '#.#.#.#.#.#',
+      '#o.......o#',
+      '###########',
+    ];
+    const ROWS = MAZE.length, COLS = MAZE[0].length, CELL = 22;
+    const W = COLS * CELL, H = ROWS * CELL;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx.scale(dpr, dpr);
+    const isWall = (c: number, r: number) => r < 0 || r >= ROWS || c < 0 || c >= COLS || MAZE[r][c] === '#';
+
+    let pac = { c: 5, r: 4 };
+    let dots: { dot: boolean; pellet: boolean }[][] = [];
+    const resetDots = () => {
+      dots = MAZE.map((row, r) => row.split('').map((ch, c) => {
+        if (ch === 'P') { pac = { c, r }; return { dot: false, pellet: false }; }
+        if (ch === '#') return { dot: false, pellet: false };
+        return { dot: ch !== 'o', pellet: ch === 'o' };
+      }));
+    };
+
+    type Dir = { dc: number; dr: number };
+    type Mover = { c: number; r: number; tc: number; tr: number; p: number; ddc: number; ddr: number };
+    type Red = Mover & { fright: number; eyes: boolean };
+    const mk = (c: number, r: number): Mover => ({ c, r, tc: c, tr: r, p: 0, ddc: 0, ddr: 0 });
+    const BLUE0 = { c: 1, r: 3 }, RED0 = [{ c: 9, r: 3 }, { c: 5, r: 7 }, { c: 3, r: 5 }], HOME = { c: 5, r: 1 };
+    let blue: Mover, reds: Red[];
+    const initChars = () => {
+      blue = mk(BLUE0.c, BLUE0.r);
+      reds = RED0.map(s => ({ ...mk(s.c, s.r), fright: 0, eyes: false }));
+    };
+    resetDots(); initChars();
+
+    const DIRS: Dir[] = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
+    const bfs = (tc: number, tr: number) => {
+      const d = Array.from({ length: ROWS }, () => new Array<number>(COLS).fill(-1));
+      if (isWall(tc, tr)) return d;
+      d[tr][tc] = 0;
+      const q: number[][] = [[tc, tr]];
+      while (q.length) {
+        const cur = q.shift()!; const c = cur[0], r = cur[1];
+        for (const { dc, dr } of DIRS) { const nc = c + dc, nr = r + dr; if (!isWall(nc, nr) && d[nr][nc] < 0) { d[nr][nc] = d[r][c] + 1; q.push([nc, nr]); } }
+      }
+      return d;
+    };
+    const opensAt = (m: Mover) => DIRS.filter(d => !isWall(m.c + d.dc, m.r + d.dr));
+    const noRev = (m: Mover, o: Dir[]) => { const f = o.filter(d => !(d.dc === -m.ddc && d.dr === -m.ddr)); return f.length ? f : o; };
+
+    const blueDir = (): Dir => {
+      const opts = opensAt(blue);
+      if (!opts.length) return { dc: 0, dr: 0 };
+      if (doneRef.current) {
+        const dist = bfs(pac.c, pac.r);
+        let best = opts[0], bd = Infinity;
+        for (const o of opts) { const v = dist[blue.r + o.dr][blue.c + o.dc]; if (v >= 0 && v < bd) { bd = v; best = o; } }
+        return best;
+      }
+      const threat = reds.filter(r => !r.eyes && r.fright === 0);
+      const danger = (c: number, r: number) => { let m = 99; for (const tt of threat) m = Math.min(m, Math.abs(tt.c - c) + Math.abs(tt.r - r)); return m; };
+      const pool = noRev(blue, opts);
+      let best = pool[0], bestScore = -Infinity;
+      for (const o of pool) { const s = danger(blue.c + o.dc, blue.r + o.dr) + Math.random() * 2; if (s > bestScore) { bestScore = s; best = o; } }
+      return best;
+    };
+    const redDir = (rg: Red): Dir => {
+      const opts = opensAt(rg);
+      if (!opts.length) return { dc: 0, dr: 0 };
+      const pool = noRev(rg, opts);
+      const dist = rg.eyes ? bfs(HOME.c, HOME.r) : bfs(blue.c, blue.r);
+      let best = pool[0];
+      if (rg.fright > 0 && !rg.eyes) { let bd = -Infinity; for (const o of pool) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v > bd) { bd = v; best = o; } } }
+      else { let bd = Infinity; for (const o of pool) { const v = dist[rg.r + o.dr][rg.c + o.dc]; if (v >= 0 && v < bd) { bd = v; best = o; } } }
+      return best;
+    };
+
+    const SP = 0.07;
+    let caught = 0, won = 0, raf = 0, frame = 0;
+    const advance = (m: Mover, chooser: () => Dir, spd: number) => {
+      m.p += spd;
+      if (m.p >= 1) {
+        m.c = m.tc; m.r = m.tr; m.p = 0;
+        const d = chooser();
+        if (d.dc === 0 && d.dr === 0) { m.tc = m.c; m.tr = m.r; m.ddc = 0; m.ddr = 0; }
+        else { m.tc = m.c + d.dc; m.tr = m.r + d.dr; m.ddc = d.dc; m.ddr = d.dr; }
+      }
+    };
+    const lx = (m: Mover) => (m.c + (m.tc - m.c) * m.p + 0.5) * CELL;
+    const ly = (m: Mover) => (m.r + (m.tr - m.r) * m.p + 0.5) * CELL;
+
+    const drawGhost = (x: number, y: number, rad: number, body: string, fr: boolean, eyesOnly: boolean) => {
+      if (!eyesOnly) {
+        ctx.fillStyle = fr ? '#bfdbfe' : body;
+        ctx.beginPath();
+        ctx.arc(x, y - rad * 0.15, rad, Math.PI, 0);
+        ctx.lineTo(x + rad, y + rad * 0.8);
+        const feet = 3, fw = (rad * 2) / feet;
+        for (let i = 0; i < feet; i++) { const fx = x + rad - i * fw; ctx.lineTo(fx - fw / 2, y + rad * 0.5); ctx.lineTo(fx - fw, y + rad * 0.8); }
+        ctx.closePath(); ctx.fill();
+      }
+      const ex = rad * 0.4, ey = -rad * 0.12, er = rad * 0.26;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x - ex, y + ey, er, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = fr && !eyesOnly ? '#1e3a8a' : '#1e293b';
+      ctx.beginPath(); ctx.arc(x - ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.arc(x + ex, y + ey, er * 0.5, 0, Math.PI * 2); ctx.fill();
+    };
+    const drawPac = (x: number, y: number, rad: number) => {
+      const mouth = won > 0 ? Math.abs(Math.sin(frame * 0.2)) * 0.3 : 0.06;
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, rad, mouth * Math.PI, (2 - mouth) * Math.PI); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1e293b';
+      ctx.beginPath(); ctx.arc(x, y - rad * 0.4, rad * 0.13, 0, Math.PI * 2); ctx.fill();
+    };
+
+    const render = () => {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H);
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (MAZE[r][c] === '#') { ctx.fillStyle = '#1e40af'; ctx.fillRect(c * CELL + 3, r * CELL + 3, CELL - 6, CELL - 6); }
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const cell = dots[r][c];
+        if (cell.dot) { ctx.fillStyle = '#fcd34d'; ctx.beginPath(); ctx.arc(c * CELL + CELL / 2, r * CELL + CELL / 2, 2, 0, Math.PI * 2); ctx.fill(); }
+        else if (cell.pellet) { ctx.fillStyle = '#fde68a'; ctx.beginPath(); ctx.arc(c * CELL + CELL / 2, r * CELL + CELL / 2, 4 + Math.sin(frame * 0.2), 0, Math.PI * 2); ctx.fill(); }
+      }
+      const rad = CELL * 0.4;
+      drawPac(pac.c * CELL + CELL / 2, pac.r * CELL + CELL / 2, rad * 0.92);
+
+      if (won > 0) {
+        drawGhost(pac.c * CELL + CELL / 2 - CELL * 0.55, pac.r * CELL + CELL / 2, rad, '#3b82f6', false, false);
+        ctx.fillStyle = '#fde68a';
+        const sp = frame % 36;
+        ctx.globalAlpha = Math.max(0, 1 - sp / 36);
+        for (let i = 0; i < 6; i++) { const a = i * 1.05; const rr = 12 + sp; ctx.beginPath(); ctx.arc(pac.c * CELL + CELL / 2 + Math.cos(a) * rr, pac.r * CELL + CELL / 2 + Math.sin(a) * rr, 2.2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.globalAlpha = 1;
+        frame++; raf = requestAnimationFrame(render); return;
+      }
+      if (caught > 0) {
+        if (Math.floor(caught / 5) % 2 === 0) drawGhost(lx(blue), ly(blue), rad, '#3b82f6', false, false);
+        for (const rg of reds) drawGhost(lx(rg), ly(rg), rad, '#ef4444', false, rg.eyes);
+        caught--; if (caught === 0) { resetDots(); initChars(); }
+        frame++; raf = requestAnimationFrame(render); return;
+      }
+
+      advance(blue, blueDir, SP);
+      const bc = dots[blue.r]?.[blue.c];
+      if (bc) { if (bc.pellet) { bc.pellet = false; for (const rg of reds) if (!rg.eyes) rg.fright = 220; } else if (bc.dot) bc.dot = false; }
+      for (const rg of reds) {
+        advance(rg, () => redDir(rg), rg.fright > 0 ? SP * 0.55 : SP * 0.9);
+        if (rg.fright > 0) rg.fright--;
+        if (rg.eyes && rg.c === HOME.c && rg.r === HOME.r && rg.p === 0) rg.eyes = false;
+      }
+      if (doneRef.current && blue.c === pac.c && blue.r === pac.r) won = 1;
+      for (const rg of reds) {
+        if (rg.eyes) continue;
+        if (Math.hypot(lx(blue) - lx(rg), ly(blue) - ly(rg)) < CELL * 0.7) {
+          if (rg.fright > 0) { rg.eyes = true; rg.fright = 0; }
+          else if (!doneRef.current) { caught = 28; break; } // done(구출 런)일 땐 무적
+        }
+      }
+
+      for (const rg of reds) drawGhost(lx(rg), ly(rg), rad, '#ef4444', rg.fright > 0, rg.eyes);
+      drawGhost(lx(blue), ly(blue), rad, '#3b82f6', false, false);
+      frame++; raf = requestAnimationFrame(render);
+    };
+    render();
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl border border-blue-100 bg-slate-900/95 overflow-hidden">
+      <canvas ref={ref} aria-hidden className="max-w-full" style={{ width: 'min(100%, 340px)' }} />
+      <div className="text-[12px] font-semibold text-slate-200">{done ? '🎉 PAC-MAN SAVED!' : t('build.making')}</div>
+    </div>
+  );
+}
+
 function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled = false }: { size?: number; caption?: string; variant?: 'main' | 'accent'; settled?: boolean }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
