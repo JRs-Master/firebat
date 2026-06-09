@@ -433,10 +433,19 @@ const API_NAMES = {
   "공통": "오류코드"
 };
 
+const TOKEN_TTL_MS = 85800 * 1000; // 23시간 50분 — 만료(24h) 직전 1일 1회 선제 갱신(proactive). reactive(만료 후 재발급)는 안전망.
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   if (!forceNew) {
     const cached = process.env['KIWOOM_ACCESS_TOKEN'];
-    if (cached) return { token: cached, isNew: false };
+    if (cached) {
+      // 캐시 형식 = JSON {t, iat}. 발급 후 TTL 안이면 그대로 재사용(호출 1번). TTL 초과면 아래서 선제 재발급.
+      try {
+        const c = JSON.parse(cached);
+        if (c && typeof c.t === 'string' && typeof c.iat === 'number' && Date.now() - c.iat < TOKEN_TTL_MS) {
+          return { token: c.t, isNew: false };
+        }
+      } catch { /* 옛 raw 토큰 형식 → 나이 불명 → 재발급해 JSON 형식으로 전환 */ }
+    }
   }
   const resp = await fetch(`${base}/oauth2/token`, {
     method: 'POST',
@@ -532,7 +541,7 @@ process.stdin.on('end', async () => {
     const ok = rc === undefined || rc === null || rc === 0;
     const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
     if (!ok) output.error = result?.return_msg || `키움 API 오류 (return_code=${rc})`;
-    if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: token };
+    if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: JSON.stringify({ t: token, iat: Date.now() }) };
     console.log(JSON.stringify(output));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

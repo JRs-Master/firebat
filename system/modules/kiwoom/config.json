@@ -19,7 +19,7 @@
     {
       "name": "KIWOOM_ACCESS_TOKEN",
       "type": "token",
-      "lifetimeSec": 82800
+      "lifetimeSec": 85800
     }
   ],
   "tokenCache": {
