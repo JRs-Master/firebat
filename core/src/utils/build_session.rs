@@ -388,6 +388,7 @@ When the user responds (toggle submit or a shortcut), call advance_build(tier, o
                 None => "tier undecided — classify in S1 first.",
             };
             format!("S2 Design selection: **present design/theme options as suggest chips** and let the user choose (include 'proceed with the recommendation'). {tier_hint} \
+**Chip type by the choice's nature — do NOT default everything to a multi-select toggle**: the MAIN visual theme/style is a single mutually-exclusive pick (one theme), so present it as plain **string chips** (one chip per theme; selecting one proceeds) — never a multi-select toggle. Reserve a multi-select **toggle** only for genuinely combinable supplementary options (e.g. dark/light, sound on/off, extra visual effects); those combinable extras also fit the next Refine step well. Judge each option by whether the choices can coexist. \
 **No advance_build before selection** — present the chips and wait. The next step is Refine (final additions). When the user chooses, call advance_build(output=design choice).")
         }
         BuildStep::Refine => "S3 Refine — final additions before building (NOT a post-build fix loop). Proactively suggest \
