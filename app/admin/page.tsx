@@ -1023,7 +1023,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       <div className="p-3">
                         {/* embedded 미리보기(iframe) 폐기 — '우와'는 만드는 동안 유령이 채워지는 실시간감이지
                             완성 후 미리보기가 아님(사용자 2026-06-09). 완성 후 확인 = 승인카드 '열기' 링크. 수정 = 별도 수정 PB. */}
-                        <FirebatGhostAssembly variant="main" caption={done ? t('build.done') : t('build.preview_pending')} />
+                        <FirebatGhostAssembly variant="main" size={180} caption={done ? t('build.done') : t('build.making')} />
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2.5 p-3">
