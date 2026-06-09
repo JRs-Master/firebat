@@ -31,10 +31,10 @@
     "send": "전송"
   },
   "build": {
-    "step_requirements": "요구",
-    "step_design": "설계",
+    "step_requirements": "기능",
+    "step_design": "디자인",
     "step_implement": "구현",
-    "step_refine": "추가요청",
+    "step_refine": "검토",
     "in_progress": "빌드 진행",
     "done": "완료",
     "expired": "기간이 만료되었습니다",

@@ -1026,7 +1026,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                       <div className="p-3">
                         {/* embedded 미리보기(iframe) 폐기 — '우와'는 만드는 동안 유령이 채워지는 실시간감이지
                             완성 후 미리보기가 아님(사용자 2026-06-09). 완성 후 확인 = 승인카드 '열기' 링크. 수정 = 별도 수정 PB. */}
-                        <FirebatGhostAssembly variant="main" size={180} caption={done ? t('build.done') : t('build.making')} />
+                        <FirebatGhostAssembly variant="main" size={180} settled={done} caption={done ? t('build.done') : t('build.making')} />
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2.5 p-3">
@@ -1192,7 +1192,7 @@ export interface HubContext {
 // 완성 → idle float. 구현 완료 전(미리보기 URL 없음)에 persistent 미리보기 영역을 채움. 완료 시 BuildPreview 로 교체.
 // Firebat 유령(👻) 픽셀 조립 — lucide Ghost body path 를 Path2D 로 grid 래스터화(로고 정확 일치 + 고해상도,
 // 동기·canvas taint 없음). 눈은 destination-out 으로 파냄. 아래서 위로 "물 차오르듯" 채워 만들어지는 느낌.
-function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?: number; caption?: string; variant?: 'main' | 'accent' }) {
+function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled = false }: { size?: number; caption?: string; variant?: 'main' | 'accent'; settled?: boolean }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -1273,6 +1273,17 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?
     let frame = 0;
     let pattern = Math.floor(Math.random() * PATTERNS); // 사이클마다 랜덤 선택(순차 X)
     const render = () => {
+      if (settled) {
+        // 완료 — 조립·펑 루프 없이 완성된 유령이 제자리에서 그냥 통통(부유)만.
+        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = '#2563eb';
+        ctx.globalAlpha = 1;
+        const hb = Math.sin(frame * 0.07) * 2;
+        for (const p of ps) ctx.fillRect(p.tx, p.ty + hb, dot + 0.6, dot + 0.6);
+        frame++;
+        raf = requestAnimationFrame(render);
+        return;
+      }
       const cf = frame % CYCLE;
       if (cf === 0) {
         let next = Math.floor(Math.random() * PATTERNS);
@@ -1327,7 +1338,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main' }: { size?
     };
     render();
     return () => cancelAnimationFrame(raf);
-  }, [size]);
+  }, [size, settled]);
 
   if (variant === 'accent') {
     // 작은 인라인 악센트 (옵션 단계 "준비 중") — 박스/캡션 없이 캔버스만.

@@ -31,10 +31,10 @@
     "send": "Send"
   },
   "build": {
-    "step_requirements": "Requirements",
+    "step_requirements": "Features",
     "step_design": "Design",
     "step_implement": "Build",
-    "step_refine": "Additions",
+    "step_refine": "Review",
     "in_progress": "Building",
     "done": "Done",
     "expired": "expired",
