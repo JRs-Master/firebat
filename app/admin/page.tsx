@@ -259,13 +259,48 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       : !!(it && (['plan-confirm', 'toggle', 'input', 'plan-revise'].includes(it.type) || it.label || it.text || it.value || it.title));
   if (!suggestions.some(canRender)) return null;
 
-  // 잠금 — 이미 픽한 칩(과거 빌드 단계 슬라이드 등): 인터랙티브 칩 대신 선택 결과만 읽기전용으로.
+  // 잠금 — 픽한 칩(과거 빌드 단계 슬라이드 등): 옵션을 그대로 보여주되 비활성 + 선택된 것 강조(blue)·나머지 흐리게.
+  // picked 텍스트에 그 옵션이 들어있으면 선택으로 간주(toggle 은 ", " 조인이라 includes 로 매칭).
   if (pickedSuggestion) {
+    const isPicked = (s: string) => !!s && pickedSuggestion.includes(s);
     return (
-      <div className={`border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
-        <div className="px-4 py-2.5 text-[13px] text-slate-600 flex items-start gap-1.5">
-          <span className="text-emerald-600 font-bold shrink-0">✓</span>
-          <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
+      <div className={`border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/70 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
+        <div className="flex flex-col gap-1.5 p-2.5">
+          {suggestions.map((item, i) => {
+            if (typeof item === 'string') {
+              const sel = isPicked(item);
+              return (
+                <div key={i} className={`text-[13px] px-3 py-1.5 rounded-lg border ${sel ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-400'}`}>
+                  {sel ? '✓ ' : ''}{item}
+                </div>
+              );
+            }
+            if (item.type === 'toggle') {
+              return (
+                <div key={i} className="flex flex-col gap-1">
+                  {item.label && <span className="text-[12px] font-medium text-slate-500 px-1">{item.label}</span>}
+                  <div className="flex flex-wrap gap-1.5">
+                    {(item.options ?? []).map(opt => {
+                      const sel = isPicked(opt);
+                      return (
+                        <span key={opt} className={`text-[12.5px] px-2.5 py-1 rounded-lg border ${sel ? 'bg-blue-50 border-blue-300 text-blue-700 font-semibold' : 'bg-white border-slate-200 text-slate-400'}`}>
+                          {sel ? '✓ ' : ''}{opt}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+            // input / plan-* — 옵션 없는 자유 입력은 픽 텍스트 그대로(첫 항목에서 한 번만).
+            if (i > 0) return null;
+            return (
+              <div key={i} className="text-[13px] px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-300 text-blue-700 flex items-start gap-1.5">
+                <span className="font-bold shrink-0">✓</span>
+                <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
