@@ -26,6 +26,8 @@ async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; inst
   const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
   if (!apiToken) return { ok: false, status: 401, error: 'X-Api-Token 헤더가 필요합니다.' };
   if (!sessionId) return { ok: false, status: 400, error: 'X-Session-Id 헤더가 필요합니다.' };
+  // 형식 검증 — _hubScope(`<inst>:<sid>`)에 콜론·traversal·과길이 주입 차단(CAL-1 deterministic 경로 경계 방어, sink 와 이중).
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sessionId)) return { ok: false, status: 400, error: '잘못된 X-Session-Id 형식입니다.' };
   const res = await authenticate({ slug, apiToken, origin, selfHost });
   if (!res.ok) {
     const msg = res.message ?? '인증 실패';
