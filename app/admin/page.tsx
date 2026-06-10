@@ -130,7 +130,7 @@ function renderMarkdown(text: string) {
 //     PC (pointer: fine) — Enter=전송(카드 전체), Shift+Enter=해당 칸 줄바꿈, Ctrl/⌘+Enter=새 칸 추가+포커스
 //     Mobile (pointer: coarse) — Enter=해당 칸 줄바꿈, 전송/추가는 버튼 탭
 function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pickedSuggestion }: {
-  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
+  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[]; single?: boolean } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   fullWidth?: boolean; // 빌드카드 옵션 단계 — 본문 폭 cap(max-w-md) 해제
@@ -167,7 +167,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     const iInit: Record<number, string[]> = {};
     suggestions.forEach((item, i) => {
       if (typeof item === 'string') return;
-      if (item.type === 'toggle') tInit[i] = new Set(item.defaults ?? item.options ?? []);
+      if (item.type === 'toggle') tInit[i] = new Set(item.defaults ?? []); // 기본=빈 선택 (클릭=선택 직관화 — 옛 전체선택은 클릭이 '해제'라 "선택 안 됨" 혼란)
       if (item.type === 'input' || item.type === 'plan-revise') iInit[i] = [''];
     });
     setToggleValues(tInit);
@@ -179,7 +179,10 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
   const toggleOption = (idx: number, opt: string) => {
+    const item = suggestions[idx];
+    const single = typeof item !== 'string' && item.type === 'toggle' && !!item.single;
     setToggleValues(prev => {
+      if (single) return { ...prev, [idx]: new Set([opt]) }; // 단일선택(radio) — 그것만 선택, 나머지 해제
       const set = new Set(prev[idx] ?? []);
       if (set.has(opt)) set.delete(opt);
       else set.add(opt);
@@ -451,7 +454,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       )}
       {/* 카드 하단 공통 전송 버튼 — aggregate 항목 있을 때만 */}
       {hasAggregate && (
-        <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-slate-100/60 border-t border-slate-200">
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 px-3 py-2.5 bg-white border-t border-slate-200">
           <button onClick={handleAggregateSubmit} disabled={loading || !hasAnyContent()}
             className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12px] font-bold rounded-full transition-colors shadow-sm">
             <Send size={12} /> {t('suggest.send')}
@@ -2033,16 +2036,18 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   const lt = st[st.length - 1];
                   const latestDone = lt.state.status === 'completed'
                     || (lt.state.step === 'implement' && (lt.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
-                  // 팩맨(생성 대기)은 "구현 생성" 때만 — 요구/설계 단계 전환 땐 칩 유지. 안 그러면 팩맨이 칩을 가려
-                  // 못 고르고("같은 suggest 계속") + thinking fold 로 헤더가 stale "답변완료"로 남아 불일치.
-                  const nearBuild = lt.state.step === 'refine' || lt.state.step === 'implement';
-                  if (!latestDone && nearBuild) {
-                    buildingAnchor = latestAnchor;
-                    buildStatus = messages[messages.length - 1]?.statusText; // 현재 스트리밍 메시지의 라이브 상태(도구 호출 등)
+                  // 다음 단계 생성 중 = 마지막 메시지가 "빌드 아닌 스트리밍 system"일 때만 → 그 thinking 을 fold 하고
+                  // 현재 카드가 대신 팩맨(생성 대기)으로 표시. 별도 "생각중" 메시지 안 뜨고 현재 카드에서 진행됨
+                  // (thinking-merge 해소). 트레일링 스트림 존재 = 현재 단계 픽이 끝나 잠긴 상태라 활성 칩을 안 가림.
+                  // refine/implement 메시지가 막 도착한 순간은 lastMsg 가 빌드 메시지(lastIsBuild) → building=false →
+                  // 옵션·승인카드 그대로(검토 들어가자마자 깜빡 팩맨 + 옵션/전송 가려지던 것 방지).
+                  if (!latestDone) {
                     const lastMsg = messages[messages.length - 1];
-                    if (lastMsg && lastMsg.id !== latestAnchor && lastMsg.role === 'system') {
-                      const lastIsBuild = !Array.isArray(lastMsg.data) && !!(lastMsg.data as { buildSession?: BuildSessionView } | undefined)?.buildSession?.id;
-                      if (!lastIsBuild) foldedBuildMsgIds.add(lastMsg.id); // 생성 중 thinking → 카드가 대신 팩맨으로 대기 표시
+                    const lastIsBuild = !!lastMsg && !Array.isArray(lastMsg.data) && !!(lastMsg.data as { buildSession?: BuildSessionView } | undefined)?.buildSession?.id;
+                    if (lastMsg && lastMsg.id !== latestAnchor && lastMsg.role === 'system' && !lastIsBuild) {
+                      buildingAnchor = latestAnchor;
+                      buildStatus = lastMsg.statusText;
+                      foldedBuildMsgIds.add(lastMsg.id);
                     }
                   }
                 }
