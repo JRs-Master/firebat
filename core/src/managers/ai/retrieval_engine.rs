@@ -148,9 +148,9 @@ impl RetrievalEngine {
         // Library 영역 (Phase 1, 2026-05-17) — admin 영역 모든 Reference 영역 cosine 매치.
         // 옛 chat 영역 = 매 Reference 자동 검색 (사용자 결정 영역 = 통합 영역).
         let history_fut = self.search_history_safe(query, opts, &lim);
-        let entities_fut = self.search_entities_safe(query, &lim);
-        let facts_fut = self.search_facts_safe(query, &lim);
-        let events_fut = self.search_events_safe(query, &lim);
+        let entities_fut = self.search_entities_safe(query, opts.owner.as_deref(), &lim);
+        let facts_fut = self.search_facts_safe(query, opts.owner.as_deref(), &lim);
+        let events_fut = self.search_events_safe(query, opts.owner.as_deref(), &lim);
         let library_fut = self.search_library_safe(query, opts, &lim);
         let (history, entities, facts, events, library_hits) =
             tokio::join!(history_fut, entities_fut, facts_fut, events_fut, library_fut);
@@ -196,6 +196,7 @@ impl RetrievalEngine {
                             TimelineOpts {
                                 limit: Some(lim.facts_per_entity),
                                 order_by: Some("occurredAt".to_string()),
+                                owner: opts.owner.clone(), // hub 턴이면 그 owner 로 — admin 타임라인 누출 방지
                                 ..Default::default()
                             },
                         ) {
@@ -307,6 +308,7 @@ impl RetrievalEngine {
     async fn search_entities_safe(
         &self,
         query: &str,
+        owner: Option<&str>,
         lim: &ResolvedLimits,
     ) -> Vec<crate::ports::EntityRecord> {
         if lim.entities == 0 {
@@ -319,6 +321,7 @@ impl RetrievalEngine {
             .search_entities(EntitySearchOpts {
                 query: query.to_string(),
                 limit: Some(lim.entities),
+                owner: owner.map(String::from), // 누락 시 adapter 가 'admin' 기본 → hub 턴이 admin 엔티티 읽던 root
                 ..Default::default()
             })
             .await
@@ -331,6 +334,7 @@ impl RetrievalEngine {
     async fn search_facts_safe(
         &self,
         query: &str,
+        owner: Option<&str>,
         lim: &ResolvedLimits,
     ) -> Vec<EntityFactRecord> {
         if lim.facts == 0 {
@@ -343,6 +347,7 @@ impl RetrievalEngine {
             .search_facts(FactSearchOpts {
                 query: query.to_string(),
                 limit: Some(lim.facts),
+                owner: owner.map(String::from), // 누락 시 adapter 가 'admin' 기본 → hub 턴이 admin 사실 읽던 root
                 ..Default::default()
             })
             .await
@@ -355,6 +360,7 @@ impl RetrievalEngine {
     async fn search_events_safe(
         &self,
         query: &str,
+        owner: Option<&str>,
         lim: &ResolvedLimits,
     ) -> Vec<crate::ports::EventRecord> {
         if lim.events == 0 {
@@ -367,6 +373,7 @@ impl RetrievalEngine {
             .search_events(EventSearchOpts {
                 query: query.to_string(),
                 limit: Some(lim.events),
+                owner: owner.map(String::from), // 누락 시 adapter 가 'admin' 기본 → hub 턴이 admin 이벤트 읽던 root
                 ..Default::default()
             })
             .await

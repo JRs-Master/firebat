@@ -49,7 +49,7 @@ async fn save_extracted_creates_entities_and_facts() {
         }],
     };
     let outcome = mgr
-        .save_extracted(extracted, Some("c1"), Some(0.92), Some(0.92))
+        .save_extracted(extracted, Some("c1"), Some(0.92), Some(0.92), None)
         .await
         .unwrap();
     assert_eq!(outcome.saved.entities.len(), 1);
@@ -73,7 +73,7 @@ async fn missing_entity_name_skips_fact() {
         events: vec![],
     };
     let outcome = mgr
-        .save_extracted(extracted, None, None, None)
+        .save_extracted(extracted, None, None, None, None)
         .await
         .unwrap();
     assert_eq!(outcome.saved.facts.len(), 0);
@@ -105,7 +105,7 @@ async fn memory_stats_aggregates_async() {
             entity_names: vec![],
         }],
     };
-    mgr.save_extracted(extracted, None, None, None).await.unwrap();
+    mgr.save_extracted(extracted, None, None, None, None).await.unwrap();
     let stats = mgr.get_memory_stats().unwrap();
     assert_eq!(stats.entities, 2);
     assert_eq!(stats.events, 1);

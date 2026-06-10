@@ -331,7 +331,9 @@ impl ConsolidationManager {
         };
 
         // 5. save_extracted 위임 (이미 설정된 메서드)
-        self.save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92))
+        // owner 를 쓰기 경로까지 전달 — hub 대화 정리가 admin scope 로 저장되던 누수(RECALL-2) fix. empty/"admin" → None(admin).
+        let scope = if owner != "admin" && !owner.is_empty() { Some(owner) } else { None };
+        self.save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92), scope)
             .await
     }
 
@@ -343,6 +345,7 @@ impl ConsolidationManager {
         source_conv_id: Option<&str>,
         fact_dedup_threshold: Option<f64>,
         event_dedup_threshold: Option<f64>,
+        owner: Option<&str>, // 추출 entity/fact/event 저장 scope — hub 면 그 owner, admin 이면 None (RECALL-2 cross-tenant write fix)
     ) -> InfraResult<ConsolidationOutcome> {
         let mut saved = SavedIds::default();
         let mut skipped: usize = 0;
@@ -362,7 +365,7 @@ impl ConsolidationManager {
                     aliases: e.aliases.clone(),
                     metadata: e.metadata.clone(),
                     source_conv_id: source_conv_id.map(String::from),
-                    owner: None,
+                    owner: owner.map(String::from),
                 })
                 .await
             {
@@ -409,7 +412,7 @@ impl ConsolidationManager {
                     source_conv_id: source_conv_id.map(String::from),
                     ttl_days: None,
                     dedup_threshold: fact_dedup_threshold,
-                    owner: None, // 내부 consolidation — entity 가 이미 같은 owner scope 에서 생성됨
+                    owner: owner.map(String::from), // 호출자 owner 전달 — hub 대화 추출물이 admin scope 로 저장되던 것 fix
                 })
                 .await
             {
@@ -456,7 +459,7 @@ impl ConsolidationManager {
                     source_conv_id: source_conv_id.map(String::from),
                     ttl_days: None,
                     dedup_threshold: event_dedup_threshold,
-                    owner: None,
+                    owner: owner.map(String::from),
                 })
                 .await
             {

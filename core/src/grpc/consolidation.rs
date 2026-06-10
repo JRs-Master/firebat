@@ -91,6 +91,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
                 args.source_conv_id.as_deref(),
                 args.fact_dedup_threshold,
                 args.event_dedup_threshold,
+                args.owner.as_deref().filter(|o| !o.is_empty() && *o != "admin"), // save 전용 분기도 owner scope 전달
             )
             .await
         {

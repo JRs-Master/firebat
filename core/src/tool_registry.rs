@@ -1117,9 +1117,14 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     let schedule = h.schedule.clone();
     tools.register_handler(
         "list_cron_jobs",
-        make_handler(move |_args| {
+        make_handler(move |args| {
             let schedule = schedule.clone();
-            async move { Ok(serde_json::to_value(schedule.list()).unwrap_or_default()) }
+            async move {
+                // hub 면 주입된 owner 로 스코프(args-based, CURRENT_HUB 아님) — owner 버리고 list() 호출해 전 테넌트 크론 노출하던 누수(CRON-1) fix
+                let owner = args.get("owner").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+                let jobs = match owner { Some(o) => schedule.list_by_owner(Some(o)), None => schedule.list() };
+                Ok(serde_json::to_value(jobs).unwrap_or_default())
+            }
         }),
     );
 

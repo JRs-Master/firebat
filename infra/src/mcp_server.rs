@@ -1054,8 +1054,10 @@ pub struct ListCronJobsHandler {
 }
 #[async_trait::async_trait]
 impl McpToolHandler for ListCronJobsHandler {
-    async fn call(&self, _args: Value) -> Result<Value, String> {
-        let jobs = self.schedule.list();
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        // hub 면 주입된 owner 로 스코프(args-based) — owner 버리고 list() 호출해 전 테넌트 크론 노출하던 누수(CRON-2) fix
+        let owner = args.get("owner").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+        let jobs = match owner { Some(o) => self.schedule.list_by_owner(Some(o)), None => self.schedule.list() };
         Ok(serde_json::json!({"success": true, "data": jobs}))
     }
 }
