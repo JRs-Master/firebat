@@ -993,7 +993,18 @@ ${cdnTags}
     }
   }
 </style>
-</head><body><div id="firebat-wrap">${content}</div>${autoScript}</body></html>`;
+${standalone ? `<style>
+  /* standalone 앱(페이지 단독 Html) = 자기 레이아웃 소유 — 위 아티클 안전망 무력화. 풀뷰포트 게임/앱이
+     #firebat-wrap(1024 박스·padding)·body 패딩·canvas max-width cap 에 갇혀 PC 어긋남·mobile 잘림 나던 root.
+     iframe 자체가 100dvh 라 앱의 100vh = iframe 높이로 정확. 콘텐츠도 body 직속(아래 wrap div 생략). */
+  body { padding: 0 !important; max-width: none !important; }
+  canvas { max-width: none !important; }
+  @media (max-width: 640px) {
+    body { padding: 0 !important; max-width: none !important; }
+    table { width: auto !important; max-width: 100% !important; position: static !important; left: auto !important; right: auto !important; margin-left: 0 !important; margin-right: 0 !important; }
+  }
+</style>` : ''}
+</head><body>${standalone ? content : `<div id="firebat-wrap">${content}</div>`}${autoScript}</body></html>`;
 
   return (
     <iframe
