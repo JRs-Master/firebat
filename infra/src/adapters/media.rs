@@ -61,6 +61,14 @@ impl LocalMediaAdapter {
         !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     }
 
+    /// hub_owner 전체 형식 검증 — `<inst>` 또는 `<inst>:<sid>` (각 part 안전). effective_dir 과 동일 기준.
+    /// 누수 root: list/save/find 가 콜론 포함 owner 를 is_safe_hub_id(whole-string)로 검증 → 거부 → admin 폴백.
+    fn is_safe_hub_owner(owner: &str) -> bool {
+        if owner.is_empty() { return false; }
+        let parts: Vec<&str> = owner.split(':').collect();
+        (parts.len() == 1 || parts.len() == 2) && parts.iter().all(|p| Self::is_safe_hub_id(p))
+    }
+
     fn ext_from_content_type(content_type: &str) -> &'static str {
         match content_type.to_lowercase().as_str() {
             "image/png" => "png",
@@ -152,7 +160,7 @@ impl LocalMediaAdapter {
     /// 추후 hub-scoped read endpoint 도입 시점에 사용 (현재 dead code 로 보존).
     #[allow(dead_code)]
     async fn find_record_hub(&self, slug: &str, hub_owner: Option<&str>) -> Option<(MediaScope, MediaFileRecord)> {
-        if let Some(id) = hub_owner.filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
+        if let Some(id) = hub_owner.filter(|id| Self::is_safe_hub_owner(id)) {
             let path = self.effective_dir(MediaScope::User, Some(id)).join(format!("{slug}.meta.json"));
             if let Ok(raw) = tokio::fs::read_to_string(&path).await {
                 if let Ok(record) = serde_json::from_str::<MediaFileRecord>(&raw) {
@@ -186,7 +194,7 @@ impl IMediaPort for LocalMediaAdapter {
         let scope = opts.scope.unwrap_or(MediaScope::User);
         let hub_owner = opts.hub_owner.as_deref().filter(|s| !s.is_empty());
         if let Some(id) = hub_owner {
-            if !Self::is_safe_hub_id(id) {
+            if !Self::is_safe_hub_owner(id) {
                 return Err("media hub_owner: 잘못된 형식".to_string());
             }
         }
@@ -332,14 +340,19 @@ impl IMediaPort for LocalMediaAdapter {
 
     async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult> {
         // hub_owner 있으면 `user/hub/<id>/media/` 만 스캔. 없으면 admin scope (user/system).
-        let dirs: Vec<PathBuf> = if let Some(id) = opts.hub_owner.as_deref().filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
-            vec![self.effective_dir(MediaScope::User, Some(id))]
-        } else {
-            let scopes: Vec<MediaScope> = match opts.scope {
-                Some(s) => vec![s],
-                None => vec![MediaScope::User, MediaScope::System],
-            };
-            scopes.into_iter().map(|s| self.scope_dir(s)).collect()
+        // hub_owner 가 있으면(콜론 포함 inst:sess 도) 그 hub dir 만 스캔. 형식 틀린 non-empty owner = deny(빈 결과,
+        // admin 폴백 금지) — 옛 is_safe_hub_id(whole-string)가 콜론 거부→admin 스캔하던 cross-tenant 누수 root fix.
+        let hub_owner = opts.hub_owner.as_deref().filter(|s| !s.is_empty());
+        let dirs: Vec<PathBuf> = match hub_owner {
+            Some(id) if Self::is_safe_hub_owner(id) => vec![self.effective_dir(MediaScope::User, Some(id))],
+            Some(_) => Vec::new(), // 형식 오류 hub_owner — admin 폴백 대신 빈 결과(deny)
+            None => {
+                let scopes: Vec<MediaScope> = match opts.scope {
+                    Some(s) => vec![s],
+                    None => vec![MediaScope::User, MediaScope::System],
+                };
+                scopes.into_iter().map(|s| self.scope_dir(s)).collect()
+            }
         };
         let mut all: Vec<MediaFileRecord> = Vec::new();
         for dir in dirs {

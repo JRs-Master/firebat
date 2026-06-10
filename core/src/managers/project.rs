@@ -230,14 +230,14 @@ impl ProjectManager {
     }
 
     /// hub_id 가 project 를 소유하는지 — set_visibility 등 mutate 전 hub 격리 가드.
+    /// 소유권은 **canonical hub project 키(`hub:<id>`)로만** 판정. 옛 코드는 scan_for_hub 가 읽는
+    /// config.json 의 `project` 필드(방문자가 fs write 로 조작 가능)로 판정 → 'blog' 등 admin/타 인스턴스
+    /// 프로젝트 이름을 심어 visibility/비번 탈취(PROJ-VIS-1). hub 인스턴스는 자기 'hub:<id>' 만 소유한다.
     pub async fn hub_owns_project(&self, hub_id: &str, project: &str) -> bool {
         if !is_safe_name(hub_id) {
             return false;
         }
-        self.scan_for_hub(hub_id)
-            .await
-            .iter()
-            .any(|p| p.name == project)
+        project == format!("hub:{}", hub_id)
     }
 
     pub fn get_visibility(&self, project: &str) -> ProjectVisibility {
