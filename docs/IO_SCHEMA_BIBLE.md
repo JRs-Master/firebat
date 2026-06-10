@@ -1,13 +1,15 @@
 # FIREBAT I/O SCHEMA BIBLE — 전 계층 타입 계약서
 
 > 최종 개정: 2026-05-06 (Phase B-4 cutover)
+>
+> ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (core/src, infra/src). 개념 참고용. 본 문서의 TS interface / Zod 스키마 / FirebatAction / FirebatCore 코드 블록은 historical 기록이며, 타입 개념과 7계층 통신 규약만 유효하다.
 
 ## 전문(前文)
 
 본 문서는 Firebat의 **모든 통신 경계**에서 오가는 데이터의 타입을 엄격히 정의한다.
 
 **🔥 Phase B-4 cutover 후 타입 single source**: 옛 TS Core 의 `core/types/index.ts` 와 `core/ports/index.ts` 폐기. 새 single source 는:
-1. **proto/firebat.proto** (28 services / 208 RPCs) — gRPC 메시지 schema 가 backend ↔ frontend 통신의 wire format
+1. **proto/firebat.proto** (31 services / 262 RPCs) — gRPC 메시지 schema 가 backend ↔ frontend 통신의 wire format
 2. **core/src/ports.rs** — Rust trait 시그니처 (`InfraResult<T>` / `LlmCallOpts` / `CronJobInfo` 등)
 3. **lib/types/firebat-types.ts** — Frontend type-only 정의 (`PageListItem` / `AuthSession` / `FirebatCore`)
 
@@ -399,8 +401,9 @@ interface LlmTransformStep extends PipelineStepBase {
   inputMap?: Record<string, unknown>;
 }
 
-/** 파이프라인 단계 = 4가지 중 하나 */
-type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep;
+/** 파이프라인 단계 = 7가지 중 하나 (EXECUTE / MCP_CALL / NETWORK_REQUEST / LLM_TRANSFORM + CONDITION / SAVE_PAGE / TOOL_CALL) */
+type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep
+  | ConditionStep | SavePageStep | ToolCallStep;
 ```
 
 ### Zod 스키마
@@ -446,8 +449,11 @@ const PipelineStepSchema = z.discriminatedUnion('type', [
   McpCallStepSchema,
   NetworkRequestStepSchema,
   LlmTransformStepSchema,
+  // + ConditionStepSchema / SavePageStepSchema / ToolCallStepSchema (총 7 step)
 ]);
 ```
+
+> 현행 Rust 의 `PIPELINE_STEP_SCHEMA` 는 **7 step** — 위 4종(EXECUTE / MCP_CALL / NETWORK_REQUEST / LLM_TRANSFORM)에 더해 `CONDITION`(분기·early-stop) / `SAVE_PAGE`(페이지 저장) / `TOOL_CALL`(Function Calling 도구, image_gen 등) 포함.
 
 ---
 

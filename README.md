@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js" />
   <img src="https://img.shields.io/badge/TypeScript-6-blue?logo=typescript" alt="TypeScript" />
   <img src="https://img.shields.io/badge/LLM-Multi--Provider-4285F4" alt="Multi-Provider LLM" />
-  <img src="https://img.shields.io/badge/MCP-1.29-purple" alt="MCP" />
+  <img src="https://img.shields.io/badge/MCP-Rust-orange" alt="MCP" />
   <img src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite" alt="SQLite" />
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="License" />
 </p>
@@ -67,7 +67,7 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 │   │  Schedule · Secret · MCP · Capability · Auth       │   │
 │   │  Conversation · Media · Event · Status · Cost · Tool│  │
 │   │  Entity · Episodic · Consolidation (Memory)        │   │
-│   │                    21 Managers                     │   │
+│   │                    23 Managers                     │   │
 │   └────────────────────┬───────────────────────────────┘   │
 │                        │ Ports (Interface)                 │
 │   ┌────────────────────┴───────────────────────────────┐   │
@@ -75,9 +75,9 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 │   │                                                    │   │
 │   │  Storage · Log · Sandbox · LLM · Network · Cron    │   │
 │   │  Database · Vault · MCP Client · Auth · Embedder   │   │
-│   │  ToolRouter · Media · ImageProcessor · ImageGen    │   │
+│   │  Media · ImageProcessor · ImageGen · TracingLog    │   │
 │   │  Entity · Episodic (Memory)                        │   │
-│   │                     17 Adapters                    │   │
+│   │                     20 Adapters                    │   │
 │   └────────────────────────────────────────────────────┘   │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -88,12 +88,12 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 | Principle | Description |
 |---|---|
 | **Core purity** | Core never imports `fs`, `fetch`, DB drivers, or any I/O library directly |
-| **Ports & Adapters** | Core talks to Infra only through 17 interface (Port) definitions |
+| **Ports & Adapters** | Core talks to Infra only through 22 interface (Port) definitions |
 | **Error encapsulation** | Infra never throws — it returns `InfraResult<T>` instead |
-| **Facade pattern** | Every API route goes through the `getCore()` singleton |
+| **Typed gRPC clients** | Every API route calls a per-service typed client (`lib/api-gen/*.ts`) over a shared gRPC transport |
 | **Frontend managers** | UI state transitions concentrated in 3 managers (Chat / Events / Settings) — reducer-based invariants prevent whole classes of UI bugs by construction |
 
-> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 17개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
+> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 22개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 서비스별 typed gRPC client(`lib/api-gen/*.ts`)를 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
 
 ---
 
@@ -113,7 +113,7 @@ User prompt
 [Report] Log + typing animation in the frontend
 ```
 
-- **Multi-provider**: OpenAI GPT-5.4 / Anthropic Claude 4 / Google Gemini 3 / GCP Vertex AI — one `ILlmPort`, add models by dropping a JSON config
+- **Multi-provider**: OpenAI GPT-5.5 / Anthropic Claude 4 / Google Gemini 3 / GCP Vertex AI — one `ILlmPort`, add models by dropping a JSON config
 - **CLI mode**: Subscription-based (Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro) — no API key, runs the local CLI as a child process. Session resume + Claude Code persistent daemon for 2nd-turn speedup
 - **Streaming**: `onChunk` callback → SSE `chunk` event delivers tokens and thinking in real time
 - **Core tools**: File CRUD, page management, module execution, scheduling, secrets, MCP calls, inline component rendering
@@ -131,6 +131,16 @@ User prompt
 - **Dynamic timezone**: Change per installation via settings
 
 > 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. 컨테이너 재시작 시 `data/cron-jobs.json` 으로 자동 복원, 타임존 동적 변경.
+
+### Project Builder
+
+When the user asks to build an app/tool/game, the AI enters a guided build flow instead of one-shot generation — a Rust state machine (`core/src/utils/build_session.rs`) walks the stages **요구 → 설계 → 추가요청 → 구현 (requirements → design → refine → implement)** across turns.
+
+- **Tier-adaptive path** (T1/T2/T3) — simple text pages skip design; visual apps/games keep the full flow.
+- **Single build card** — all stages collapse into one carousel card in chat (stepper + per-stage option chips + a Firebat-ghost "assembling" animation), so a multi-turn backend feels like a single-turn wizard.
+- **build → automation loop** — once an app is published via `save_page`, Firebat can propose a cron job to keep it refreshed (the build feeds the scheduler).
+
+> 🇰🇷 **프로젝트 빌더** — 앱·도구·게임 제작 요청 시 한 번에 뱉지 않고 단계형 빌드 플로우로 진입합니다. Rust 상태 머신(`build_session.rs`)이 **요구 → 설계 → 추가요청 → 구현** 단계를 멀티턴으로 진행하고, tier(T1-T3)에 따라 경로가 적응합니다. 모든 단계는 채팅 안 단일 빌드 카드(stepper + 단계별 옵션 + 유령 조립 애니메이션)로 묶여 single-turn 처럼 보입니다. 완성 후 cron 갱신을 제안해 build→automation 루프를 이룹니다.
 
 ### MCP (Model Context Protocol)
 
@@ -165,16 +175,16 @@ Exposes 30+ tools: page CRUD, file CRUD, module execution + introspection (`list
 - **Language-neutral**: Python, JavaScript, PHP, Rust, WASM, Shell
 - **Auto package install**: Declare dependencies in `config.json.packages` — installed on first run
 - **Secret injection**: Vault values passed as env vars — the AI never sees the raw secret
-- **Timeout**: 30 seconds per execution
+- **Timeout**: 60 seconds per execution (default; per-module override)
 - **Auto-cache for large responses**: the sandbox detects a sysmod response's largest top-level array (≥30 items) and stores it in the `SysmodCacheAdapter`, returning a small 5-item preview plus a `_cacheKey` to the model. The AI drills in with `cache_read` / `cache_grep` / `cache_aggregate` instead of paying full-array tokens. Large text fields (≥8000 chars — e.g. firecrawl page bodies) are likewise cached line-by-line with a 1500-char preview. Modules need no code change — yfinance's existing explicit `_cache` envelope still takes priority for rich previews.
 
-> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 30초 타임아웃. **응답 자동 캐싱**: 큰 배열 필드(≥30) 또는 큰 텍스트(≥8000자, firecrawl 본문 등)는 sandbox가 자동으로 SysmodCacheAdapter에 저장하고 미리보기 + `_cacheKey`만 AI에 전달 → LLM 토큰 절약, 모듈 코드 수정 0.
+> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 60초 타임아웃(기본값, 모듈별 재정의 가능). **응답 자동 캐싱**: 큰 배열 필드(≥30) 또는 큰 텍스트(≥8000자, firecrawl 본문 등)는 sandbox가 자동으로 SysmodCacheAdapter에 저장하고 미리보기 + `_cacheKey`만 AI에 전달 → LLM 토큰 절약, 모듈 코드 수정 0.
 
 ### Built-in Components
 
 Define UI via PageSpec JSON and Firebat renders it automatically. In chat, the AI emits them through a single unified `render({blocks: [{type, props}, ...]})` tool:
 
-`Header` · `Text` · `Card` · `Grid` · `Form` · `Image` · `Button` · `Table` · `Html` · `Divider` · `List` · `Slider` · `Tabs` · `Accordion` · `Progress` · `Badge` · `Alert` · `Callout` · `Carousel` · `Countdown` · `Chart` · `Metric` · `Timeline` · `Compare` · `KeyValue` · `StatusBadge` · `StockChart`
+`Header` · `Text` · `List` · `Divider` · `Card` · `Grid` · `Image` · `Table` · `Badge` · `StatusBadge` · `Callout` · `Progress` · `Metric` · `Countdown` · `KeyValue` · `Compare` · `Timeline` · `Chart` · `StockChart` · `Diagram` · `Math` · `Code` · `Network` · `Map` · `Slideshow` · `Lottie` · `Quiz` · `QuizGroup` · `PlanCard`
 
 Each block's `props` is validated against the component's JSON Schema. A recursive **`sanitize_to_schema`** runs first so the AI's natural output (synonym keys dropped by `additionalProperties:false`, optional enum/type mismatches, nullable required props missing) passes without losing the block: extras are dropped, missing required props are filled from `default` or `null` where allowed, and optional props that still fail validation get pruned so the renderer's default kicks in — recursing into nested objects and arrays. Truly-missing essential props still surface as a `failed[]` entry with `gotKeys` (the original keys the AI sent) so the model can retry with the right shape.
 
@@ -189,11 +199,19 @@ Group multiple modules that perform the same capability, manage priority and fal
 | `web-scrape` | browser-scrape (local), firecrawl (api) |
 | `web-search` | naver-search (api) |
 | `keyword-analytics` | naver-ads (api) |
-| `stock-trading` | korea-invest (api), kiwoom (api), upbit (api, crypto) |
+| `stock-trading` | korea-invest (api), kiwoom (api) |
+| `crypto-trading` | upbit (api) |
+| `stock-data` | yfinance (api) |
 | `notification` | kakao-talk (api), telegram (api, bidirectional bot) |
-| `legal-search` | law-search (api) |
+| `law-search` | law-search (api) |
+| `disclosure` | dart (api) |
+| `real-estate` | molit-realestate (api) |
+| `weather` | kma-weather (api) |
+| `map` | kakao-map (api) |
+| `calendar` | calendar (local) |
+| `note` | notes (local) |
 
-Admins set the provider order in settings; failures cascade to the next provider automatically.
+17 built-in system modules across these capabilities. Admins set the provider order in settings; failures cascade to the next provider automatically.
 
 > 🇰🇷 **Capability-Provider 시스템** — 같은 기능을 수행하는 여러 모듈을 `capability`로 묶고, 관리자가 UI에서 provider 실행 순서를 지정합니다. 실패 시 다음 provider로 자동 폴백.
 
@@ -278,7 +296,7 @@ Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot
 |---|---|
 | **Backend** | Rust (tonic 0.12 + tokio + rusqlite + reqwest + cron crate) — `core/` + `infra/` Cargo workspace |
 | **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 + React Query (TanStack Query 5) |
-| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — @connectrpc/connect-node typed client |
+| **IPC** | gRPC (proto/firebat.proto, 31 services / 262 RPCs) — @connectrpc/connect-node typed client |
 | **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider, JSON registry `system/llm/models.json`) + CLI subscription mode |
 | **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
@@ -319,9 +337,9 @@ cargo run --bin firebat-core
 npm run dev
 ```
 
-Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCoreProxy` → gRPC :50051 로 자동 라우팅.
+Open `http://localhost:3000/admin` for the admin console. Frontend 가 typed gRPC client (`lib/api-gen/*.ts`) → gRPC :50051 로 자동 라우팅.
 
-> 🇰🇷 Rust Core 와 Next.js 를 두 터미널에서 동시 실행. 어드민 콘솔: `http://localhost:3000/admin`. Frontend 가 `RustCoreProxy` 를 통해 자동으로 gRPC 50051 로 호출.
+> 🇰🇷 Rust Core 와 Next.js 를 두 터미널에서 동시 실행. 어드민 콘솔: `http://localhost:3000/admin`. Frontend 가 서비스별 typed gRPC client 를 통해 자동으로 gRPC 50051 로 호출.
 
 ### Configuration
 
@@ -410,13 +428,13 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │   ├── build.rs              #   tonic-build (proto/ → generated stubs)
 │   └── src/
 │       ├── lib.rs            #   crate root + proto module include
-│       ├── ports.rs          #   16 Port traits
+│       ├── ports.rs          #   22 Port traits
 │       ├── capabilities.rs   #   Capability-Provider registry
 │       ├── vault_keys.rs     #   Vault key constants
 │       ├── tool_registry.rs  #   AiManager 의 정적 도구 등록
 │       ├── task_executor_impl.rs
-│       ├── managers/         #   21 domain managers (+ ai/ collaborator subfolder)
-│       ├── services/         #   28 gRPC service impl
+│       ├── managers/         #   23 domain managers (+ ai/ collaborator subfolder)
+│       ├── services/         #   31 gRPC service impl
 │       ├── utils/            #   path_resolve / sanitize / http_client / sysmod_cache 등
 │       └── llm/config.rs     #   LlmModelConfig + builtin_models (UI 노출용 메타)
 │
@@ -425,25 +443,25 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │   └── src/
 │       ├── lib.rs
 │       ├── main.rs           #   firebat-core binary (gRPC server :50051)
-│       ├── adapters/         #   16 어댑터 (storage / vault / auth / log / database / sandbox / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / tracing_log)
-│       ├── llm/              #   ConfigDrivenAdapter + 8 format 핸들러 (5 API + 3 CLI)
+│       ├── adapters/         #   20 어댑터 (storage / vault / auth / log / database / sandbox / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / tracing_log)
+│       ├── llm/              #   ConfigDrivenAdapter + 7 format 핸들러 (4 API + 3 CLI)
 │       └── image_gen/        #   ConfigDrivenImageGenAdapter + 3 format (openai-image / gemini-native-image / cli-codex-image)
 │
 ├── proto/                    # gRPC schema (single source)
-│   └── firebat.proto         #   28 services / 208 RPCs
+│   └── firebat.proto         #   31 services / 262 RPCs
 │
 ├── app/                      # Next.js App Router (TS frontend)
 │   ├── admin/                #   Admin console (chat, settings, editor)
 │   │   └── hooks/            #     Frontend managers: Chat / Events / Settings
 │   ├── (user)/               #   User-facing pages (dynamic render)
-│   └── api/                  #   API routes (Primary Adapter — RustCoreProxy 경유)
+│   └── api/                  #   API routes (Primary Adapter — typed gRPC client 경유)
 │
 ├── lib/                      # TS frontend utilities
-│   ├── singleton.ts          #   getCore() — RustCoreProxy thin wrapper (transparent cutover layer)
-│   ├── rust-core-proxy.ts    #   ARGS_TABLE → callTypedClient() → @connectrpc typed client (Phase B-typed)
-│   ├── grpc-typed-client.ts  #   28 service typed clients + METHOD_TABLE (protoc-gen-es 자동 생성 기반)
-│   ├── proto-gen/            #   protoc-gen-es 산출 (firebat_pb.ts ~7268 LOC, gen:proto 으로 재생성)
-│   ├── types/firebat-types.ts #  type-only 정의 (PageListItem / AuthSession / FirebatCore)
+│   ├── api-gen/              #   31 per-service typed gRPC clients (ai.ts / page.ts / hub.ts ...) — gen:proto 자동 생성
+│   │   ├── _transport.ts     #     @connectrpc/connect-node createGrpcTransport → 127.0.0.1:50051
+│   │   └── _unbigint.ts      #     proto i64 (BigInt) → Number 변환 헬퍼
+│   ├── proto-gen/            #   protoc-gen-es 산출 (firebat_pb.ts ~7268 LOC + vault-keys.ts, gen:proto 으로 재생성)
+│   ├── types/firebat-types.ts #  type-only 정의 (PageListItem / AuthSession 등 frontend 공용 타입)
 │   ├── auth-guard.ts         #   API route 인증 가드
 │   ├── base-url.ts           #   BASE_URL + getBaseUrl(req)
 │   ├── config.ts             #   SESSION_MAX_AGE_SECONDS / OAuth token expiry
@@ -454,7 +472,7 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │
 ├── system/                   # System area (sandbox 모듈)
 │   ├── services/             #   Config-only services (CMS, MCP server)
-│   └── modules/              #   Built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, upbit, kakao-talk, telegram, firecrawl, browser-scrape, law-search, ...)
+│   └── modules/              #   17 built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, upbit, yfinance, dart, molit-realestate, kma-weather, kakao-map, kakao-talk, telegram, firecrawl, browser-scrape, law-search, calendar, notes)
 │
 ├── user/                     # User area (modules, data)
 │   └── modules/              #   User-created modules
@@ -481,7 +499,7 @@ Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + 
 ```
 Frontend  Next.js + React + 29 built-in components
                           ↓
-                RustCoreProxy → @connectrpc typed client → gRPC (Phase B-typed)
+                per-service typed clients (lib/api-gen/*.ts) → @connectrpc gRPC transport (Phase B-typed)
                           ↓
               Vultr VPS (systemd)
               ────────────────────
@@ -494,8 +512,8 @@ Frontend  Next.js + React + 29 built-in components
 
 | Phase | Scope | 상태 |
 |---|---|---|
-| **A. Design** | gRPC schema (28 services / 208 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
-| **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic | ✅ 완료 (2026-05-06) |
+| **A. Design** | gRPC schema (31 services / 262 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
+| **B. Rust Core** | 20 adapters + 23 managers + 31 service impl + frontend typed gRPC clients + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic | ✅ 완료 (2026-05-06) |
 | **B-LLM** | 5 LLM handler 본격 이식 (CLI 3종 + API 2종 + Vertex Service Account JWT) | ✅ 완료 (2026-05-10) |
 | **B-typed** | 93 untyped RPC → typed Request message + protoc-gen-es 자동 생성 + 옛 proto-loader / @grpc/grpc-js 의존성 폐기 | ✅ 완료 (2026-05-12) |
 | **E. MCP Rust cutover** | axum HTTP :50052 + stdio (`firebat-core --mcp-stdio`) + Node `mcp/` 디렉토리 / `@modelcontextprotocol/sdk` 의존성 완전 폐기 | ✅ 완료 (2026-05-12) |
@@ -536,8 +554,8 @@ Firebat itself is an AI-powered VAA — fitting that the platform was built by t
 ## Design Documents
 
 - **[FIREBAT_BIBLE.md](docs/FIREBAT_BIBLE.md)** — Top-level constitution (identity, separation of powers, JSON dogma) · 최고 등급 헌법
-- **[CORE_BIBLE.md](docs/CORE_BIBLE.md)** — Core purity, 15 Ports, 17-Manager backend + 3-Manager frontend, Function Calling pipeline · Core 설계 규격
-- **[INFRA_BIBLE.md](docs/INFRA_BIBLE.md)** — 15 Adapter specs, bootstrap, config constants · Infra 구현 규격
+- **[CORE_BIBLE.md](docs/CORE_BIBLE.md)** — Core purity, 22 Ports, 23-Manager backend + 3-Manager frontend, Function Calling pipeline · Core 설계 규격
+- **[INFRA_BIBLE.md](docs/INFRA_BIBLE.md)** — 20 Adapter specs, bootstrap, config constants · Infra 구현 규격
 - **[MODULE_BIBLE.md](docs/MODULE_BIBLE.md)** — Module system, Capability-Provider pattern · 모듈 시스템 규격
 - **[PAGESPEC_BIBLE.md](docs/PAGESPEC_BIBLE.md)** — PageSpec schema, built-in components, chat rendering · 페이지·렌더링 규약
 - **[IO_SCHEMA_BIBLE.md](docs/IO_SCHEMA_BIBLE.md)** — Module I/O schema reference · 모듈 I/O 스키마 레퍼런스

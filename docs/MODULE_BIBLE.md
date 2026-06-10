@@ -397,7 +397,7 @@ system/modules/<name>/
 
 ---
 
-## 제8장: Capability-Provider 패턴
+## 제9장: Capability-Provider 패턴
 
 같은 기능을 수행하는 모듈이 여러 개 존재할 수 있다 (예: 웹 스크래핑을 로컬 Playwright와 Jina API 두 가지로 구현).
 이를 **Capability(기능) — Provider(제공자)** 패턴으로 관리한다.
@@ -427,7 +427,10 @@ system/modules/<name>/
 - `providerType`: `"local"` (로컬 실행) | `"api"` (외부 API 호출)
 
 ### 제2항. Capability Registry
-Core에 빌트인 capability 목록을 정의한다 (`core/capabilities.ts`).
+Core에 빌트인 capability 목록을 정의한다 (`core/src/capabilities.rs`).
+
+> ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (`core/src/capabilities.rs`). 개념 참고용.
+
 ```typescript
 export const CAPABILITIES = {
   'web-scrape':   { label: '웹 스크래핑', description: 'URL → 텍스트/링크 추출' },
@@ -491,7 +494,7 @@ export const CAPABILITIES = {
 
 ---
 
-## 제9장: 금기 사항
+## 제10장: 금기 사항
 
 1. **화면 렌더링 금지**: 모듈 내부에서 DOM 조작이나 HTML 하드코딩 금지.
 2. **직접 파일 접근 금지**: 모듈은 stdin/stdout 통신만 사용. 파일 시스템 직접 접근 불가.

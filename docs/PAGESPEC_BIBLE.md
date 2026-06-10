@@ -4,7 +4,7 @@
 >
 > Firebat의 모든 **선언적 UI 렌더링**을 다룬다. AI는 React/TSX를 직접 작성하지 않고, PageSpec JSON 혹은 채팅 블록으로 UI를 선언한다.
 >
-> **🔥 Phase B-4 cutover 후 영향 없음** — PageSpec JSON schema + 27 render_* 컴포넌트 + Frontend (`app/(user)/[...slug]/components.tsx`) 모두 동일. 차이: 페이지 저장 backend 가 옛 TS PageManager → Rust `core/src/managers/page.rs`. JSON shape (head/body/seo) 100% 호환.
+> **🔥 Phase B-4 cutover 후 영향 없음** — PageSpec JSON schema + 29 render_* 컴포넌트 + Frontend (`app/(user)/[...slug]/components.tsx`) 모두 동일. 차이: 페이지 저장 backend 가 옛 TS PageManager → Rust `core/src/managers/page.rs`. JSON shape (head/body/seo) 100% 호환.
 
 ## 제1장: PageSpec 스키마
 
@@ -60,10 +60,12 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 
 ---
 
-## 제2장: Page Component 목록 (27종)
+## 제2장: Page Component 목록 (29종)
 
 페이지용 컴포넌트. `save_page`로 DB에 저장 → `app/(user)/[slug]/page.tsx`가 렌더.
-채팅에서는 `render_<name>` 도구로도 직접 렌더 가능.
+채팅에서는 통합 `render` 도구(`{blocks:[{type, props}]}`)로도 직접 렌더 가능.
+
+> 채팅 render 레지스트리(`core/src/managers/ai/components.json`) 기준 29 컴포넌트: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · quiz · quiz_group · key_value · plan_card · status_badge · diagram · math · code · slideshow · lottie · network · map. (아래 표의 Button / Tabs / Accordion / Carousel / Alert / Form / ResultDisplay / Slider / Html / AdSlot 은 PageSpec 페이지 전용 컴포넌트.)
 
 ### 기본 UI
 | Component | 역할 | 주요 Props |
@@ -103,7 +105,7 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 ### 시각화
 | Component | 역할 | 주요 Props |
 |---|---|---|
-| `Chart` | 단순 차트 (색상/팔레트 커스텀) | type(bar/line/pie/doughnut), data, labels, title, color, palette, subtitle, unit, showValues |
+| `Chart` | 단순 차트 (색상/팔레트 커스텀) | chartType(bar/line/pie/doughnut, `donut` alias→doughnut), data/series, labels, title, color, palette, subtitle, unit, showValues |
 | `Html` | 사용자 HTML (iframe sandbox) | content |
 | `AdSlot` | 광고 슬롯 | slotId, format |
 
@@ -120,6 +122,20 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 | Component | 역할 | 주요 Props |
 |---|---|---|
 | `Callout` | 정보 강조 박스 | type(info/success/tip/accent/highlight/neutral), title, content |
+
+### 인터랙티브 · 고급 시각화
+| Component | 역할 | 주요 Props |
+|---|---|---|
+| `Quiz` | 단일 퀴즈 (객관식 채점) | question, choices[], answer(1-based)/answerIndex(0-based), explanation |
+| `QuizGroup` | 퀴즈 묶음 | quizzes[] |
+| `Math` | 수식 (KaTeX) | content, display(block/inline) |
+| `Code` | 코드 블록 (syntax highlight) | code, language |
+| `Diagram` | 다이어그램 (Mermaid 등) | content/definition |
+| `Slideshow` | 슬라이드쇼 | slides[] |
+| `Lottie` | Lottie 애니메이션 | src/data, loop, autoplay |
+| `Network` | 노드-엣지 네트워크 그래프 | nodes[], edges[] |
+| `Map` | 지도 (MapLibre / 카카오 자동 전환) | lat, lng, zoom, markers[] |
+| `PlanCard` | 실행 계획 카드 (propose_plan) | steps[], summary, planId |
 
 ---
 
@@ -188,7 +204,7 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 | 상황 | 방식 |
 |---|---|
 | 독립 페이지 (SEO 필요) | `save_page` → PageSpec Component |
-| 채팅 답변 내 시각화 | `render_pagespec`/`render_stock_chart`/`render_iframe` |
+| 채팅 답변 내 시각화 | 통합 `render`(`{blocks:[{type, props}]}`) / `render_stock_chart` / `render_iframe` |
 | 1회성 차트/표 | 채팅 블록 |
 | 재방문용 대시보드 | PageSpec 페이지 |
 
@@ -216,8 +232,8 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ### 제1항. 우선순위
 1. **주식 관련** → `render_stock_chart`
-2. **정형화된 데이터** (표/카드/뱃지/알림) → `render_pagespec` (추후 구현)
-3. **지도/다이어그램/애니메이션** → `render_iframe` + CDN 라이브러리
+2. **정형화된 데이터** (표/카드/뱃지/알림) → 통합 `render`(`{blocks:[{type, props}]}` — 28→1 단일 도구로 통합 완료, components.json schema 검증)
+3. **지도/다이어그램/애니메이션** → 통합 `render` 의 `map` / `diagram` / `lottie` block (또는 CDN 라이브러리 시 `render_iframe`)
 4. **최후의 수단** → `render_iframe` 자유 HTML (한 섹션, 페이지 본문 통째 아님)
 
 ### 제2항. 금지사항
@@ -231,7 +247,7 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 모든 LLM (Gemini/Claude/Codex/GPT — API·CLI 공통) 응답이 `AiManager.processWithTools` 한 지점을 통과하므로 정제도 이 지점에서만 수행. 프론트 컴포넌트는 받은 값을 그대로 렌더.
 
-- **파일**: `core/utils/sanitize.ts`
+- **파일**: `core/src/utils/sanitize.rs`
 - **진입점**: `AiManager.processWithTools` 최종 return 직전 `sanitizeBlock` / `sanitizeReply` 일괄 적용
 - **규칙 (필드명 기반)**:
   - `TEXT_FIELDS` (label/title/message/description/subLabel/unit/…) → HTML 인라인 태그 + 마크다운 마커(`**`, `*`, `` ` ``) 제거
@@ -250,6 +266,8 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ### 제2항. render_* ↔ 컴포넌트 단일 매핑 (v0.1, 2026-04-21)
 
+> ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (core/src). 개념 참고용. 28→1 통합 후 채팅 시각화는 단일 `render` 도구가 `core/src/managers/ai/components.json` schema 로 직접 검증하며, 컴포넌트 매핑·정규화도 Rust core 안에서 처리.
+
 `lib/render-map.ts` 가 단일 source. 이전엔 4군데 (ai-manager / cli-gemini / cli-claude-code / cli-codex) 에 동일 매핑 hardcode → 모두 import 통합.
 
 ```ts
@@ -258,7 +276,7 @@ export const RENDER_TOOL_MAP = {
   render_table: 'Table',
   render_chart: 'Chart',
   render_metric: 'Metric',
-  // ... 20개
+  // ... 29개
 };
 export function normalizeRenderName(name: string): string | null;
 ```
@@ -273,7 +291,7 @@ export function normalizeRenderName(name: string): string | null;
 
 ### 제3항. 자동 마크다운 변환 (v0.1, 2026-04-21)
 
-AI 가 시스템 프롬프트 무시하고 `|---|` 마크다운 표 / `## 헤더` 그대로 출력하는 케이스 backend 후처리. `core/utils/sanitize.ts` 의 `extractMarkdownStructure(reply)`:
+AI 가 시스템 프롬프트 무시하고 `|---|` 마크다운 표 / `## 헤더` 그대로 출력하는 케이스 backend 후처리. `core/src/utils/sanitize.rs` 의 `extractMarkdownStructure(reply)`:
 
 - reply 를 line 단위로 walk → segments `[text|header|table]` 순서 분할
 - `# ~ ######` 헤더 → `render_header` (level 1~6)
@@ -292,7 +310,7 @@ Metric 도 동일: `valueIsNumeric` 자동 right 정렬 제거. AI 가 `valueAli
 
 ## 제7장: 향후 계획
 
-- [ ] `render_pagespec` 도구 — PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출
+- [x] PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출 — 통합 `render` 도구(`{blocks:[{type, props}]}`)로 완료 (28→1 통합)
 - [ ] `LineChart`/`BarChart` 채팅 전용 컴포넌트 (StockChart 스타일)
 - [ ] 실시간 업데이트 블록 (`component:LiveCard`)
 - [ ] 다국어 라벨 (i18n 통합 시)
