@@ -150,7 +150,9 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "run_cron_job: jobId 필수".to_string())?
                     .to_string();
-                match schedule.trigger_now(&job_id).await {
+                // 주입된 owner 로 스코프 (admin=None=무검사, hub=자기 잡만). 지금 hub 차단이라 미도달이나 latent 방어.
+                let owner = args.get("owner").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+                match schedule.trigger_now_owned(&job_id, owner).await {
                     Ok(()) => Ok(serde_json::json!({"success": true})),
                     Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
                 }
@@ -1149,7 +1151,9 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "jobId")]))?
                     .to_string();
-                schedule.cancel(&job_id).await?;
+                // 주입된 owner 로 스코프 (admin=None=무검사, hub=자기 잡만). latent 방어 (지금 hub 차단이라 미도달).
+                let owner = args.get("owner").and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+                schedule.cancel_owned(&job_id, owner).await?;
                 Ok(serde_json::json!({"cancelled": job_id}))
             }
         }),

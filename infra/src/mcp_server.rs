@@ -1041,7 +1041,8 @@ impl McpToolHandler for CancelCronJobHandler {
             return Ok(r);
         }
         let job_id = obj_str(&args, "jobId").ok_or_else(|| "jobId 필수".to_string())?;
-        match self.schedule.cancel(&job_id).await {
+        let owner = obj_str(&args, "owner").filter(|s| !s.is_empty()); // latent 방어 — admin=None=무검사, hub=자기 잡만
+        match self.schedule.cancel_owned(&job_id, owner.as_deref()).await {
             Ok(true) => Ok(serde_json::json!({"success": true})),
             Ok(false) => Ok(serde_json::json!({"success": false, "error": format!("cron 잡 {} 미등록", job_id)})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
@@ -1069,7 +1070,8 @@ pub struct RunCronJobHandler {
 impl McpToolHandler for RunCronJobHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let job_id = obj_str(&args, "jobId").ok_or_else(|| "jobId 필수".to_string())?;
-        match self.schedule.trigger_now(&job_id).await {
+        let owner = obj_str(&args, "owner").filter(|s| !s.is_empty()); // latent 방어 — admin=None=무검사, hub=자기 잡만
+        match self.schedule.trigger_now_owned(&job_id, owner.as_deref()).await {
             Ok(()) => Ok(serde_json::json!({"success": true})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }
