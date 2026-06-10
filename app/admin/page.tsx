@@ -1558,7 +1558,9 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
 
     // 1) lucide Ghost body 를 RES×RES 그리드로 래스터화 → 채워진 셀 = 픽셀 target. 눈은 grid 정렬 대칭으로
     //    제거(arc 래스터화는 저해상도서 좌우 비대칭·찢김 → 셀 단위로 양쪽 동일하게 빼야 깔끔).
-    const RES = 36;
+    // RES = 그리드 해상도. size 비례로 키워 픽셀(dot)을 ~2.5px 로 작게 유지 → 원래 lucide Ghost 윤곽에 더 가깝게
+    // (옛 고정 36 은 큰 미리보기서 dot ~4.4px 라 뭉툭). 작은 악센트(size 48)는 32 로 floor — sub-pixel 방지.
+    const RES = Math.max(32, Math.round(size / 2.5));
     const off = document.createElement('canvas');
     off.width = RES;
     off.height = RES;
