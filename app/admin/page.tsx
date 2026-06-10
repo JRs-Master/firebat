@@ -1371,12 +1371,14 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
       }
       const threat = reds.filter(r => !r.eyes && r.fright === 0);
       const danger = (c: number, r: number) => { let m = 99; for (const tt of threat) m = Math.min(m, Math.abs(tt.c - c) + Math.abs(tt.r - r)); return m; };
+      const toPac = bfs(pac.c, pac.r); // 팩맨까지 거리 — 파랑이 구출하러 다가감. 단 빨강이 가까우면 회피가 우선.
       const pool = noRev(blue, opts);
       let best = pool[0], bestScore = -Infinity;
       for (const o of pool) {
         const nc = blue.c + o.dc, nr = blue.r + o.dr;
-        if (nc === pac.c && nr === pac.r) continue; // 플레이 중엔 팩맨 칸 안 들어감 — 도달(구출)은 done(rescue)에서만
-        const s = danger(nc, nr) + Math.random() * 2;
+        const dp = toPac[nr]?.[nc] ?? 99;
+        // 빨강 6칸 이내면 회피 지배(겁탈출), 멀면 팩맨에 접근. 팩맨 칸도 후보 — 닿으면 구출(아래 won).
+        const s = Math.min(danger(nc, nr), 6) * 1.5 - dp * 0.5 + Math.random() * 1.0;
         if (s > bestScore) { bestScore = s; best = o; }
       }
       return best;
@@ -1490,7 +1492,9 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
         ctx.globalAlpha = Math.max(0, 1 - sp / 36);
         for (let i = 0; i < 6; i++) { const a = i * 1.05; const rr = 12 + sp; ctx.beginPath(); ctx.arc(pac.c * CELL + CELL / 2 + Math.cos(a) * rr, pac.r * CELL + CELL / 2 + Math.sin(a) * rr, 2.2, 0, Math.PI * 2); ctx.fill(); }
         ctx.globalAlpha = 1;
-        frame++; raf = requestAnimationFrame(render); return;
+        frame++;
+        if (!doneRef.current) { won--; if (won === 0) { resetDots(); initChars(); } } // 플레이 중 구출 = 잠깐 축하 후 재시작(성공 루프). done 은 영구 SAVED.
+        raf = requestAnimationFrame(render); return;
       }
       if (caught > 0) {
         if (Math.floor(caught / 5) % 2 === 0) drawGhost(lx(blue), ly(blue), rad, '#3b82f6', false, false);
@@ -1508,8 +1512,8 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
         if (rg.fright > 0) rg.fright--;
         if (rg.eyes && rg.c === HOME.c && rg.r === HOME.r && rg.p === 0) rg.eyes = false;
       }
-      if (doneRef.current && blue.c === pac.c && blue.r === pac.r) won = 1;
-      for (const rg of reds) {
+      if (blue.c === pac.c && blue.r === pac.r) won = doneRef.current ? 1 : 44; // 구출 도달 — done=영구 SAVED, 플레이=44프레임 축하 후 재시작
+      if (!won) for (const rg of reds) { // 이미 구출(won)이면 catch 무시 — 성공 우선 + 중복 리셋 방지
         if (rg.eyes) continue;
         if (Math.hypot(lx(blue) - lx(rg), ly(blue) - ly(rg)) < CELL * 0.7) {
           if (rg.fright > 0) { rg.eyes = true; rg.fright = 0; }
