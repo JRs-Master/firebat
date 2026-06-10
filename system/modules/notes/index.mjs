@@ -24,15 +24,15 @@ import { join, basename } from 'node:path';
  *  - hub visitor 별 격리 (`<instance_id>:<session_id>` 형태): `data/hub/<instance_id>/<session_id>/notes/`
  *  매 호출 시점 동적 결정 — _hubScope 영역 안 ':' 분리 / 영숫자·하이픈·언더스코어 가드. */
 function resolveNotesDir(hubScope) {
+  // 진짜 부재 = admin (admin 은 _hubScope 를 보내지 않음).
   if (!hubScope || typeof hubScope !== 'string') return 'data/notes';
+  // hubScope 가 "있는데" 형식이 틀리면 admin 으로 폴백하지 말고 거부(throw). calendar 와 동일 admin-fallback root —
+  // 조작된 session id 가 admin notes 에 도달하던 cross-tenant 누수. deny 가 sidebar·chat·FC·MCP 전 경로를 닫음.
   const parts = hubScope.split(':');
-  // 매 part 영역 path traversal 가드.
-  for (const p of parts) {
-    if (!p || !/^[a-zA-Z0-9_-]{1,64}$/.test(p)) return 'data/notes';
+  if (parts.length < 1 || parts.length > 2 || parts.some(p => !/^[a-zA-Z0-9_-]{1,64}$/.test(p))) {
+    throw new Error('invalid _hubScope');
   }
-  if (parts.length === 1) return `data/hub/${parts[0]}/notes`;
-  if (parts.length === 2) return `data/hub/${parts[0]}/${parts[1]}/notes`;
-  return 'data/notes';
+  return parts.length === 1 ? `data/hub/${parts[0]}/notes` : `data/hub/${parts[0]}/${parts[1]}/notes`;
 }
 
 let NOTES_DIR = 'data/notes';

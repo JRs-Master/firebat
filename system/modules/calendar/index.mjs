@@ -24,14 +24,15 @@ import { join } from 'node:path';
  *  - hub instance 단위 (옛 호환): `data/hub/<instance_id>/calendar/`
  *  - hub visitor 별 (`<instance_id>:<session_id>`): `data/hub/<instance_id>/<session_id>/calendar/` */
 function resolveCalDir(hubScope) {
+  // 진짜 부재 = admin (admin 은 _hubScope 를 보내지 않음).
   if (!hubScope || typeof hubScope !== 'string') return 'data/calendar';
+  // hubScope 가 "있는데" 형식이 틀리면 admin 으로 폴백하지 말고 거부(throw). 옛 폴백이 조작된 session id
+  // (예: 'a:b' 3-part / '..' / 64자 초과)로 admin 캘린더에 도달하던 cross-tenant root. deny 가 모든 경로를 닫음.
   const parts = hubScope.split(':');
-  for (const p of parts) {
-    if (!p || !/^[a-zA-Z0-9_-]{1,64}$/.test(p)) return 'data/calendar';
+  if (parts.length < 1 || parts.length > 2 || parts.some(p => !/^[a-zA-Z0-9_-]{1,64}$/.test(p))) {
+    throw new Error('invalid _hubScope');
   }
-  if (parts.length === 1) return `data/hub/${parts[0]}/calendar`;
-  if (parts.length === 2) return `data/hub/${parts[0]}/${parts[1]}/calendar`;
-  return 'data/calendar';
+  return parts.length === 1 ? `data/hub/${parts[0]}/calendar` : `data/hub/${parts[0]}/${parts[1]}/calendar`;
 }
 
 let CAL_DIR = 'data/calendar';
