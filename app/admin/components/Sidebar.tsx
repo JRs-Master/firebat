@@ -3,6 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen } from 'lucide-react';
 import { FileEditor } from './FileEditor';
+import { AnchoredMenu } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
 import { EntitiesPanel } from './EntitiesPanel';
@@ -239,7 +240,7 @@ export function Sidebar({
   const [moduleEntries, setModuleEntries] = useState<Record<string, string>>({});
   // ⋯ 더보기 드롭다운 열린 항목 ID
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   // 비밀번호 입력 모달
   const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
   const [pwInput, setPwInput] = useState('');
@@ -373,18 +374,6 @@ export function Sidebar({
   // AI 액션 완료 (window 'firebat-refresh') + SSE (sidebar:refresh / cron:complete) 통합 수신
   // EventsManager 싱글톤이 EventSource 1개만 유지 — CronPanel 과 공유.
   useSidebarRefresh(() => refreshAllRef.current());
-
-  // ⋯ 메뉴 외부 클릭 닫기
-  useEffect(() => {
-    if (!openMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [openMenu]);
 
   // 페이지 visibility 변경
   const handleSetPageVisibility = async (slug: string, vis: 'public' | 'password' | 'private') => {
@@ -843,9 +832,10 @@ export function Sidebar({
                               </button>
                             </Tooltip>
                           )}
-                          <div className="relative" ref={openMenu === `proj:${mp.name}` ? menuRef : undefined}>
+                          <div className="relative">
                             <Tooltip label={t('common.more')}>
                               <button
+                                ref={openMenu === `proj:${mp.name}` ? triggerRef : undefined}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setOpenMenu(openMenu === `proj:${mp.name}` ? null : `proj:${mp.name}`);
@@ -856,7 +846,7 @@ export function Sidebar({
                               </button>
                             </Tooltip>
                             {openMenu === `proj:${mp.name}` && (
-                              <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                              <AnchoredMenu anchorRef={triggerRef} onClose={() => setOpenMenu(null)} minWidth={144}>
                                 {isSingle && mainSlug && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleEditPage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
@@ -939,7 +929,7 @@ export function Sidebar({
                                     <Trash2 size={11} /> 프로젝트 삭제
                                   </button>
                                 )}
-                              </div>
+                              </AnchoredMenu>
                             )}
                           </div>
                         </span>
@@ -981,9 +971,10 @@ export function Sidebar({
                                         <ExternalLink size={10} />
                                       </button>
                                     </Tooltip>
-                                    <div className="relative" ref={openMenu === `page:${pg.slug}` ? menuRef : undefined}>
+                                    <div className="relative">
                                       <Tooltip label={t('common.more')}>
                                         <button
+                                          ref={openMenu === `page:${pg.slug}` ? triggerRef : undefined}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setOpenMenu(openMenu === `page:${pg.slug}` ? null : `page:${pg.slug}`);
@@ -994,7 +985,7 @@ export function Sidebar({
                                         </button>
                                       </Tooltip>
                                       {openMenu === `page:${pg.slug}` && (
-                                        <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                                        <AnchoredMenu anchorRef={triggerRef} onClose={() => setOpenMenu(null)} minWidth={128}>
                                           <button
                                             onClick={(e) => { e.stopPropagation(); handleEditPage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
@@ -1028,7 +1019,7 @@ export function Sidebar({
                                           >
                                             <Trash2 size={10} /> 삭제
                                           </button>
-                                        </div>
+                                        </AnchoredMenu>
                                       )}
                                     </div>
                                   </span>
@@ -1068,9 +1059,10 @@ export function Sidebar({
                                         </button>
                                       </Tooltip>
                                     )}
-                                    <div className="relative" ref={openMenu === `mod:${p}` ? menuRef : undefined}>
+                                    <div className="relative">
                                       <Tooltip label={t('common.more')}>
                                         <button
+                                          ref={openMenu === `mod:${p}` ? triggerRef : undefined}
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             setOpenMenu(openMenu === `mod:${p}` ? null : `mod:${p}`);
@@ -1081,7 +1073,7 @@ export function Sidebar({
                                         </button>
                                       </Tooltip>
                                       {openMenu === `mod:${p}` && (
-                                        <div className="absolute right-0 top-full mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                                        <AnchoredMenu anchorRef={triggerRef} onClose={() => setOpenMenu(null)} minWidth={112}>
                                           {hoverNone && (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setOpenMenu(null); setSelectedItem(null); }}
@@ -1096,7 +1088,7 @@ export function Sidebar({
                                           >
                                             <Trash2 size={10} /> 삭제
                                           </button>
-                                        </div>
+                                        </AnchoredMenu>
                                       )}
                                     </div>
                                   </span>
