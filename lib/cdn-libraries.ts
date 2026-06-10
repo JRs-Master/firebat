@@ -21,7 +21,7 @@
  */
 export const CDN_LIBRARIES: Record<string, string> = {
   d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',
-  threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>',
+  threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>', // r150+ 는 UMD(build/three.min.js, 전역 THREE) 제거 → r149.0 고정(전역 THREE 로딩 보장, 3D 게임용)
   animejs: '<script src="https://cdn.jsdelivr.net/npm/animejs@3/lib/anime.min.js"></script>',
   tailwindcss: '<script src="https://cdn.tailwindcss.com"></script>',
   marked: '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>',
