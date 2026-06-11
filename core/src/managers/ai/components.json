@@ -1182,9 +1182,14 @@
     "propsSchema": {
       "type": "object",
       "required": [
-        "code",
-        "language"
+        "code"
       ],
+      "synonyms": {
+        "content": "code",
+        "text": "code",
+        "snippet": "code",
+        "body": "code"
+      },
       "properties": {
         "code": {
           "type": "string",

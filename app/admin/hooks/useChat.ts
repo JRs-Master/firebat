@@ -629,23 +629,25 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       await convBackend.deleteConversation(id);
       try { window.dispatchEvent(new Event('firebat-refresh-trash')); } catch { /* SSR 무시 */ }
     })();
+    const wasActive = id === activeConvId;
+    const remaining = conversations.filter(c => c.id !== id);
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
       localStorage.setItem(convStorageKey, JSON.stringify(updated));
-      if (id === activeConvId) {
-        if (updated.length === 0) {
-          setActiveConvId('');
-          dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
-        } else {
-          // 가장 최근(updatedAt) 대화를 활성화 — 배열 마지막(정렬에 따라 가장 오래된 것일 수 있음) 대신.
-          const next = updated.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
-          setActiveConvId(next.id);
-          dispatch({ type: 'LOAD', messages: next.messages });
-        }
-      }
       return updated;
     });
-  }, [activeConvId, setActiveConvId, convBackend, convStorageKey]);
+    if (!wasActive) return;
+    if (remaining.length === 0) {
+      setActiveConvId('');
+      dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
+      return;
+    }
+    // 가장 최근(updatedAt) 대화를 활성화 — handleSelectConv 로 위임(캐시 LOAD + 백엔드 fetch 동일 경로).
+    // 옛엔 next.messages(미오픈 conv = 빈 캐시)만 LOAD → 빈 화면("새 대화") → F5 라야 정상. 이제 select 와 동일하게 서버 채움.
+    // 가드(id===activeConvId)는 next.id != 삭제된 activeConvId 라 통과. activeConvId state 갱신 전이라 OK.
+    const next = remaining.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
+    handleSelectConv(next.id);
+  }, [conversations, activeConvId, setActiveConvId, convBackend, convStorageKey, handleSelectConv]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
