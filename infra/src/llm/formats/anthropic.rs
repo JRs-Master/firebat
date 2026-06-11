@@ -27,9 +27,10 @@ impl AnthropicMessagesHandler {
     }
 
     /// Extended thinking 요청 파라미터 주입 — features.extendedThinking 활성 + thinking_level 실 레벨일 때만.
-    /// body["thinking"]={type:enabled, budget_tokens} + max_tokens 를 (budget + 출력여유) 로 상향 +
-    /// temperature 제거(extended thinking 은 temperature 미지원). 옛엔 모듈 doc 에 매핑만 적혀있고 요청에
-    /// 미구현 → 모델이 thinking 자체를 안 시작 → 추론 0 (추출은 정상이어도 빈값). 이걸 실제 구현.
+    /// 현재 Claude(Opus 4.6+/Sonnet 4.6/Haiku 4.5/Fable) = **adaptive thinking + output_config.effort** 가 정공.
+    /// 옛 budget_tokens(`{type:enabled, budget_tokens}`)는 Opus 4.7/4.8/Fable 에서 폐기 = 400 → adaptive 로 전환.
+    /// 레벨값(low/medium/high/xhigh/max) = effort 값 1:1. effort 는 Haiku 4.5 미지원(400)이라 Haiku 는 adaptive 만.
+    /// temperature 제거(thinking 은 temperature 미지원).
     fn apply_extended_thinking(
         body: &mut serde_json::Value,
         config: &LlmModelConfig,
@@ -38,16 +39,28 @@ impl AnthropicMessagesHandler {
         if !config.features.extended_thinking {
             return;
         }
-        let budget: i64 = match opts.thinking_level.as_deref() {
-            Some("low") => 2048,
-            Some("medium") => 8192,
-            Some("high") => 16384,
-            Some("xhigh") => 24576,
-            Some("max") => 32768,
-            _ => return, // none / minimal / 미설정 → thinking off
+        let level = match opts.thinking_level.as_deref() {
+            Some(l @ ("low" | "medium" | "high" | "xhigh" | "max")) => l,
+            _ => return, // none / minimal / 미설정 → thinking off (param 생략 = 비활성)
         };
-        body["max_tokens"] = serde_json::Value::from(budget + opts.max_tokens.unwrap_or(8192));
-        body["thinking"] = serde_json::json!({ "type": "enabled", "budget_tokens": budget });
+        body["thinking"] = serde_json::json!({ "type": "adaptive" });
+        // effort = Opus/Sonnet 4.6/Fable 지원, Haiku 4.5 미지원(400) → Haiku 는 adaptive 만.
+        if !config.id.contains("haiku") {
+            if let Some(obj) = body.as_object_mut() {
+                let oc = obj
+                    .entry("output_config")
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(oc_map) = oc.as_object_mut() {
+                    oc_map.insert("effort".to_string(), serde_json::Value::from(level));
+                }
+            }
+        }
+        // adaptive 는 thinking 예산이 max_tokens 에 안 섞임 → 출력 여유만 보장(최소 16000).
+        let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        let want = opts.max_tokens.unwrap_or(16000).max(16000);
+        if cur < want {
+            body["max_tokens"] = serde_json::Value::from(want);
+        }
         if let Some(obj) = body.as_object_mut() {
             obj.remove("temperature");
         }
