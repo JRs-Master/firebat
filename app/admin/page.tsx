@@ -270,13 +270,16 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
         {suggestions.map((item, i) => {
           if (typeof item === 'string') {
-            // 액션 마커(✓/✕/⚙) 문자열(실행/취소 등)은 아래 fallback 이 pickedSuggestion 으로 한 번만 표시 → 여기선 skip(중복 방지).
-            if (/^[✓✕✗×⚙]/.test(item.trimStart())) return null;
             const sel = isPicked(item);
+            // 신호등: 선택 항목 — ✕=rose / ✓=emerald / 그 외=blue. 미선택=gray. (마커 string 은 자체 ✕/✓ 라 우측 ✓ 생략.)
+            const mk = item.trimStart();
+            const cancelMk = /^[✕✗×]/.test(mk);
+            const approveMk = /^✓/.test(mk);
+            const selCls = !sel ? 'text-slate-400' : cancelMk ? 'bg-rose-50 text-rose-700' : approveMk ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700';
             return (
-              <div key={i} className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-[13px] font-medium border-b border-blue-100/70 last:border-b-0 ${sel ? 'bg-blue-50 text-blue-700' : 'text-slate-400'}`}>
+              <div key={i} className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-[13px] font-medium border-b border-blue-100/70 last:border-b-0 ${selCls}`}>
                 <span className="min-w-0">{item}</span>
-                {sel && <span className="shrink-0 text-blue-500" aria-hidden>✓</span>}
+                {sel && !cancelMk && !approveMk && <span className="shrink-0 text-blue-500" aria-hidden>✓</span>}
               </div>
             );
           }
@@ -300,6 +303,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
           }
           // input / plan-* — 옵션 없는 자유 입력/액션은 픽 텍스트 그대로(첫 항목에서 한 번만).
           if (i > 0) return null;
+          // pickedSuggestion 이 string 항목(✕ 취소 등)과 동일하면 그 string path 가 이미 표시 → fallback skip(중복 방지).
+          // (승인 픽 "✓ 실행" 은 string 아님 → fallback 이 표시 + 취소 string 은 gray 로 같이 보임.)
+          if (suggestions.some(it => typeof it === 'string' && it.trim() === pickedSuggestion.trim())) return null;
           // pickedSuggestion 이 이미 마커(✓ 실행 / ✕ 취소 / ⚙ 수정) 포함 시 별도 ✓ prepend 금지(✓✓ 중복 방지).
           // 신호등: ✕ 취소 = rose(빨강) / ✓ 승인 = emerald(녹색) / 그 외 = blue(일반 픽). 플랜카드 soft 톤 매칭.
           const trimmedPick = pickedSuggestion.trimStart();
@@ -2010,7 +2016,8 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         hubShareContext={hubChatContext}
       />
 
-      <div className="flex-1 flex flex-col min-w-0 h-full relative">
+      <div className="flex-1 flex flex-col min-w-0 h-full relative"
+        onMouseDown={() => window.dispatchEvent(new Event('firebat-collapse-sidebar'))}>
         {/* PC 상단 그라디언트 */}
         <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 

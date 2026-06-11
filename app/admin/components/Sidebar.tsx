@@ -229,6 +229,13 @@ export function Sidebar({
     }
   }, [mobileOpen, isMobile]);
 
+  // PC: 채팅창 클릭 시 사이드바 접기 (page.tsx 가 'firebat-collapse-sidebar' 발화). 모바일은 mobileOpen 이 제어하므로 제외.
+  useEffect(() => {
+    const collapse = () => { if (!isMobile) setCollapsed(true); };
+    window.addEventListener('firebat-collapse-sidebar', collapse);
+    return () => window.removeEventListener('firebat-collapse-sidebar', collapse);
+  }, [isMobile]);
+
 
   // ── 프로젝트 & 페이지 ──
   const [projects, setProjects] = useState<Project[]>([]);
