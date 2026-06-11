@@ -270,6 +270,8 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
         {suggestions.map((item, i) => {
           if (typeof item === 'string') {
+            // 액션 마커(✓/✕/⚙) 문자열(실행/취소 등)은 아래 fallback 이 pickedSuggestion 으로 한 번만 표시 → 여기선 skip(중복 방지).
+            if (/^[✓✕✗×⚙]/.test(item.trimStart())) return null;
             const sel = isPicked(item);
             return (
               <div key={i} className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-[13px] font-medium border-b border-blue-100/70 last:border-b-0 ${sel ? 'bg-blue-50 text-blue-700' : 'text-slate-400'}`}>
@@ -299,12 +301,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
           // input / plan-* — 옵션 없는 자유 입력/액션은 픽 텍스트 그대로(첫 항목에서 한 번만).
           if (i > 0) return null;
           // pickedSuggestion 이 이미 마커(✓ 실행 / ✕ 취소 / ⚙ 수정) 포함 시 별도 ✓ prepend 금지(✓✓ 중복 방지).
-          // 색은 마커로 구분 — ✕ 취소 = slate(중립) / 그 외 = blue(승인·일반 픽).
+          // 신호등: ✕ 취소 = rose(빨강) / ✓ 승인 = emerald(녹색) / 그 외 = blue(일반 픽). 플랜카드 soft 톤 매칭.
           const trimmedPick = pickedSuggestion.trimStart();
           const cancelPick = /^[✕✗×]/.test(trimmedPick);
+          const approvePick = /^✓/.test(trimmedPick);
           const markedPick = /^[✓✕✗×⚙]/.test(trimmedPick);
+          const pickTone = cancelPick ? 'text-rose-700 bg-rose-50/60' : approvePick ? 'text-emerald-700 bg-emerald-50/60' : 'text-blue-700 bg-blue-50/60';
           return (
-            <div key={i} className={`px-4 py-3 text-[13px] flex items-start gap-1.5 ${cancelPick ? 'text-slate-500 bg-slate-50/70' : 'text-blue-700 bg-blue-50/60'}`}>
+            <div key={i} className={`px-4 py-3 text-[13px] flex items-start gap-1.5 ${pickTone}`}>
               {!markedPick && <span className="font-bold shrink-0 text-blue-500">✓</span>}
               <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
             </div>
@@ -319,12 +323,21 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
-          // 단일 버튼 — 즉시 전송
+          // 단일 버튼 — 즉시 전송. 신호등: ✓=emerald(승인) / ✕=rose(취소) / 그 외=기본(blue). 플랜카드 soft 톤 매칭.
+          const mk = item.trimStart();
+          const isCancel = /^[✕✗×]/.test(mk);
+          const isApprove = /^✓/.test(mk);
+          const btnCls = isCancel
+            ? 'text-rose-700 bg-rose-50/50 hover:bg-rose-100 hover:text-rose-800'
+            : isApprove
+              ? 'text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 hover:text-emerald-800'
+              : 'text-slate-700 hover:bg-blue-50/70 hover:text-blue-800';
+          const arrowCls = isCancel ? 'text-rose-300 group-hover:text-rose-500' : isApprove ? 'text-emerald-300 group-hover:text-emerald-500' : 'text-blue-300 group-hover:text-blue-500';
           return (
             <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
-              className="group w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-blue-50/70 hover:text-blue-800 transition-colors disabled:opacity-50 border-b border-blue-100/70 last:border-b-0">
+              className={`group w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-medium transition-colors disabled:opacity-50 border-b border-blue-100/70 last:border-b-0 ${btnCls}`}>
               <span className="min-w-0">{item}</span>
-              <span className="shrink-0 text-blue-300 group-hover:text-blue-500 transition-colors" aria-hidden>›</span>
+              <span className={`shrink-0 transition-colors ${arrowCls}`} aria-hidden>›</span>
             </button>
           );
         }
@@ -1191,7 +1204,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                           })()}
                         </span>
                       ) : p.status === 'rejected' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-slate-400">{t('plan.cancelled')}</span>
+                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-rose-500">{t('plan.cancelled')}</span>
                       ) : p.status === 'error' ? null : p.status === 'past-runat' ? (
                         <>
                           <button
@@ -1218,7 +1231,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-400 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
+                            className="flex items-center gap-1 px-2 py-1.5 bg-white hover:bg-rose-50 text-rose-500 text-[12px] font-bold rounded-lg border border-rose-200 transition-colors"
                           >
                             <X size={13} />
                           </button>
@@ -1233,7 +1246,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
                           >
                             <X size={13} /> {t('plan.reject')}
                           </button>
