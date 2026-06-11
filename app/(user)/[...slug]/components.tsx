@@ -2013,11 +2013,12 @@ function KeyValueComp({ title, items, columns = 2 }: {
       )}
       <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-6 px-4 py-1`}>
         {items.map((item, i) => {
-          const rowCls = `flex items-baseline justify-between gap-3 py-2.5 border-b border-gray-100 ${item.href ? 'hover:opacity-70 transition-opacity cursor-pointer no-underline' : ''}`;
+          // 모바일: key↑value↓ 세로 스택(값이 카드 폭 다 씀 → 한글 char-wrap 해도 한글자씩 안 됨). sm+: key|value 가로.
+          const rowCls = `flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3 py-2.5 border-b border-gray-100 ${item.href ? 'hover:opacity-70 transition-opacity cursor-pointer no-underline' : ''}`;
           const inner = (
             <>
               <span className="text-[13px] text-gray-500 shrink-0">{cleanPlainText(item.key || item.label || '')}</span>
-              <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>
+              <span className={`text-sm text-left sm:text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>
                 {formatNumberString(item.value)}
               </span>
             </>

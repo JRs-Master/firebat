@@ -296,11 +296,16 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
               </div>
             );
           }
-          // input / plan-* — 옵션 없는 자유 입력은 픽 텍스트 그대로(첫 항목에서 한 번만).
+          // input / plan-* — 옵션 없는 자유 입력/액션은 픽 텍스트 그대로(첫 항목에서 한 번만).
           if (i > 0) return null;
+          // pickedSuggestion 이 이미 마커(✓ 실행 / ✕ 취소 / ⚙ 수정) 포함 시 별도 ✓ prepend 금지(✓✓ 중복 방지).
+          // 색은 마커로 구분 — ✕ 취소 = slate(중립) / 그 외 = blue(승인·일반 픽).
+          const trimmedPick = pickedSuggestion.trimStart();
+          const cancelPick = /^[✕✗×]/.test(trimmedPick);
+          const markedPick = /^[✓✕✗×⚙]/.test(trimmedPick);
           return (
-            <div key={i} className="px-4 py-3 text-[13px] text-blue-700 bg-blue-50/60 flex items-start gap-1.5">
-              <span className="font-bold shrink-0 text-blue-500">✓</span>
+            <div key={i} className={`px-4 py-3 text-[13px] flex items-start gap-1.5 ${cancelPick ? 'text-slate-500 bg-slate-50/70' : 'text-blue-700 bg-blue-50/60'}`}>
+              {!markedPick && <span className="font-bold shrink-0 text-blue-500">✓</span>}
               <span className="whitespace-pre-wrap break-words">{pickedSuggestion}</span>
             </div>
           );
