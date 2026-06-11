@@ -260,32 +260,52 @@ pub fn is_hub_readonly_tool(name: &str) -> bool {
 /// path and leaves the leak open. The injected keys (`project="hub:<inst>"`, `hubOwner`/`_hubScope`
 /// = `"<inst>:<sess>"`) travel in args on BOTH paths. Mirrors `isHubScopedPath` in
 /// app/api/hub/[slug]/fs/route.ts.
-pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<(), String> {
-    let inst = args
+pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<String, String> {
+    // 전체 스코프 추출(project(hub:<...>) 우선, 없으면 hubOwner/_hubScope). 옛 코드는 split(':').next() 로 instance 만
+    // 떼 fs 가 인스턴스 공유였음 → 전체 scope(`<inst>:<sid>`) 보존 + 경로를 세션 디렉토리로 rewrite 해 세션 격리.
+    // 반환 = confine/rewrite 된 경로(콜러가 이걸 써야 세션 디렉토리 user/hub/<inst>/<sid>/ 로 저장됨).
+    let scope = args
         .get("project")
         .and_then(|v| v.as_str())
         .and_then(|p| p.strip_prefix("hub:"))
-        .map(|s| s.split(':').next().unwrap_or(s).to_string())
+        .map(String::from)
         .or_else(|| {
             args.get("hubOwner")
                 .or_else(|| args.get("_hubScope"))
                 .and_then(|v| v.as_str())
-                .map(|s| s.split(':').next().unwrap_or(s).to_string())
-        });
-    let Some(inst) = inst.filter(|s| !s.is_empty()) else {
-        return Ok(()); // admin / no hub scope = unrestricted
+                .map(String::from)
+        })
+        .filter(|s| !s.is_empty());
+    let Some(scope) = scope else {
+        return Ok(path.to_string()); // admin / no hub scope = unrestricted
     };
     let norm = path.replace('\\', "/");
-    let norm = norm.trim_start_matches('/');
+    let norm = norm.trim_start_matches('/').to_string();
     if norm.split('/').any(|seg| seg == "..") {
         return Err(crate::i18n::t("core.error.hub.path_denied", None, &[]));
     }
-    let prefix = format!("user/hub/{}/", inst);
-    if norm == format!("user/hub/{}", inst) || norm.starts_with(&prefix) {
-        Ok(())
-    } else {
-        Err(crate::i18n::t("core.error.hub.path_denied", None, &[]))
+    let mut sp = scope.splitn(2, ':');
+    let inst = sp.next().unwrap_or(scope.as_str());
+    let sid = sp.next().filter(|s| !s.is_empty()); // 세션 (없으면 instance-only — 옛 호환)
+    let inst_root = format!("user/hub/{}", inst);
+    // 반드시 인스턴스 루트 안 (다른 인스턴스/시스템 경로 차단).
+    if norm != inst_root && !norm.starts_with(&format!("{}/", inst_root)) {
+        return Err(crate::i18n::t("core.error.hub.path_denied", None, &[]));
     }
+    let Some(sid) = sid else {
+        return Ok(norm); // instance-only scope — 그대로
+    };
+    let session_dir = format!("{}/{}", inst_root, sid);
+    // 이미 세션 스코프면 그대로.
+    if norm == session_dir || norm.starts_with(&format!("{}/", session_dir)) {
+        return Ok(norm);
+    }
+    // 인스턴스 경로(세션 누락) → 내 세션 디렉토리 밑으로 rewrite (인스턴스 공유 차단 + 다른 세션 sid 줘도 내 세션 밑 confine).
+    if norm == inst_root {
+        return Ok(session_dir);
+    }
+    let rest = norm.strip_prefix(&format!("{}/", inst_root)).unwrap_or(&norm);
+    Ok(format!("{}/{}", session_dir, rest))
 }
 
 #[cfg(test)]
@@ -426,9 +446,10 @@ mod tests {
         assert!(confine_hub_path(&hub, "system/modules/x/config.json").is_err());
         assert!(confine_hub_path(&hub, "user/hub/OTHER/x").is_err());
         assert!(confine_hub_path(&hub, "user/hub/inst-A/../../etc").is_err());
-        // hub scope via hubOwner key ("<inst>:<sess>")
+        // hub scope via hubOwner key ("<inst>:<sess>") — 세션 디렉토리로 rewrite (인스턴스 공유 차단).
         let hub2 = json!({ "hubOwner": "inst-B:sess-1" });
-        assert!(confine_hub_path(&hub2, "user/hub/inst-B/notes/a.md").is_ok());
+        assert_eq!(confine_hub_path(&hub2, "user/hub/inst-B/notes/a.md").unwrap(), "user/hub/inst-B/sess-1/notes/a.md");
+        assert_eq!(confine_hub_path(&hub2, "user/hub/inst-B/sess-1/x.js").unwrap(), "user/hub/inst-B/sess-1/x.js");
         assert!(confine_hub_path(&hub2, "user/hub/inst-A/x").is_err());
         // admin / no hub scope key = unrestricted
         let admin = json!({});

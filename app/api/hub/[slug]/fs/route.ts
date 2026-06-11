@@ -43,9 +43,9 @@ async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; inst
 }
 
 /** path 가 `user/hub/<instance_id>/` prefix 안인지 검증 — path traversal + 다른 hub 자료 접근 차단. */
-function isHubScopedPath(path: string, instanceId: string): boolean {
-  const prefix = `user/hub/${instanceId}/`;
-  // normalize — 옛 leading slash / 중복 slash 정리
+function isHubScopedPath(path: string, instanceId: string, sessionId: string): boolean {
+  // 세션 디렉토리(user/hub/<inst>/<sid>/) 안만 허용 — 같은 인스턴스 다른 세션 fs 자료 접근 차단(STEP 2 세션격리).
+  const prefix = `user/hub/${instanceId}/${sessionId}/`;
   const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
   if (normalized.includes('..')) return false;
   return normalized.startsWith(prefix);
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'tree': {
         const root = String(body.root ?? '');
         if (!root) return NextResponse.json({ success: false, error: 'root 필수' }, { status: 400 });
-        if (!isHubScopedPath(root + '/', auth.instanceId)) {
+        if (!isHubScopedPath(root + '/', auth.instanceId, auth.sessionId)) {
           return NextResponse.json({ success: false, error: '이 경로에 접근할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await getFileTree({ path: root });
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'read': {
         const path = String(body.path ?? '');
         if (!path) return NextResponse.json({ success: false, error: 'path 필수' }, { status: 400 });
-        if (!isHubScopedPath(path, auth.instanceId)) {
+        if (!isHubScopedPath(path, auth.instanceId, auth.sessionId)) {
           return NextResponse.json({ success: false, error: '이 파일에 접근할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await readFile({ path });
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         if (!path || content === undefined) {
           return NextResponse.json({ success: false, error: 'path 와 content 필수' }, { status: 400 });
         }
-        if (!isHubScopedPath(path, auth.instanceId)) {
+        if (!isHubScopedPath(path, auth.instanceId, auth.sessionId)) {
           return NextResponse.json({ success: false, error: '이 파일에 접근할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await writeFile({ path, content });
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         // 파일/폴더 삭제 (모듈 폴더 등). path 는 user/hub/<id>/ prefix 안이어야 — 다른 hub·admin 자료 삭제 차단.
         const path = String(body.path ?? '');
         if (!path) return NextResponse.json({ success: false, error: 'path 필수' }, { status: 400 });
-        if (!isHubScopedPath(path, auth.instanceId)) {
+        if (!isHubScopedPath(path, auth.instanceId, auth.sessionId)) {
           return NextResponse.json({ success: false, error: '이 경로를 삭제할 권한이 없습니다.' }, { status: 403 });
         }
         const res = await deleteFile({ path });

@@ -122,18 +122,18 @@ impl ProjectManager {
         }
         // hub_scope = `<inst>` 또는 세션 `<inst>:<sid>`. 페이지 프로젝트 키 = **전체 스코프**(세션 격리).
         let hub_project_key = format!("hub:{}", hub_scope);
-        // 모듈 fs 경로는 instance 단위 (STEP 1 — fs 파일 세션화는 STEP 2). scope 의 instance part 사용.
-        let inst = hub_scope.split(':').next().unwrap_or(hub_scope);
+        // 모듈 fs 경로 = 세션 디렉토리 (콜론을 경로 구분자로: `<inst>/<sid>`). confine_hub_path 와 일관(STEP 2 — fs 세션화).
+        let scope_path = hub_scope.replace(':', "/");
         let mut map: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
 
-        // user/hub/<inst>/modules/*/config.json
-        let modules_dir = format!("user/hub/{}/modules", inst);
+        // user/hub/<inst>/<sid>/modules/*/config.json
+        let modules_dir = format!("user/hub/{}/modules", scope_path);
         if let Ok(entries) = self.storage.list_dir(&modules_dir).await {
             for entry in entries {
                 if !entry.is_directory {
                     continue;
                 }
-                let path = format!("user/hub/{}/modules/{}/config.json", inst, entry.name);
+                let path = format!("user/hub/{}/modules/{}/config.json", scope_path, entry.name);
                 let Ok(content) = self.storage.read(&path).await else { continue };
                 let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content)
                 else { continue };
@@ -145,7 +145,7 @@ impl ProjectManager {
                 map.entry(project_name)
                     .or_insert_with(|| (Vec::new(), Vec::new()))
                     .0
-                    .push(format!("user/hub/{}/modules/{}", inst, entry.name));
+                    .push(format!("user/hub/{}/modules/{}", scope_path, entry.name));
             }
         }
 

@@ -1001,7 +1001,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
-                crate::utils::hub_context::confine_hub_path(&args, &path)?;
+                let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 let content = storage.read(&path).await?;
                 Ok(serde_json::json!({"path": path, "content": content}))
             }
@@ -1037,7 +1037,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "content")]))?
                     .to_string();
-                crate::utils::hub_context::confine_hub_path(&args, &path)?;
+                let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 storage.write(&path, &content).await?;
                 Ok(serde_json::json!({"path": path, "written": content.len()}))
             }
@@ -1065,7 +1065,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
-                crate::utils::hub_context::confine_hub_path(&args, &path)?;
+                let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 let entries = storage.list_dir(&path).await?;
                 let json: Vec<serde_json::Value> = entries
                     .into_iter()
@@ -1097,7 +1097,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
-                crate::utils::hub_context::confine_hub_path(&args, &path)?;
+                let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 storage.delete(&path).await?;
                 Ok(serde_json::json!({"deleted": path}))
             }
