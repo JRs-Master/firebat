@@ -206,8 +206,9 @@ fn inject_hub_owner(args: &mut Value) {
     if let Some(obj) = args.as_object_mut() {
         obj.insert("owner".into(), Value::String(format!("hub:{}", scope_id)));
         obj.insert("hubOwner".into(), Value::String(scope_id.clone()));
-        obj.insert("_hubScope".into(), Value::String(scope_id));
-        obj.insert("project".into(), Value::String(format!("hub:{}", inst_id)));
+        obj.insert("_hubScope".into(), Value::String(scope_id.clone()));
+        // project 도 세션 스코프(`hub:<inst>:<sid>`) — owner 와 동일. 옛 `hub:<inst>`(인스턴스)는 같은 위젯 세션끼리 페이지 공유 root.
+        obj.insert("project".into(), Value::String(format!("hub:{}", scope_id)));
     }
 }
 

@@ -116,21 +116,24 @@ impl ProjectManager {
 
     /// hub-scoped 프로젝트 스캔 — `user/hub/<id>/modules/*/config.json` + DB pages 안 project=`hub:<id>` 매칭.
     /// admin 자료 노출 0 — visitor 자기 hub 영역만.
-    pub async fn scan_for_hub(&self, hub_id: &str) -> Vec<ProjectEntry> {
-        if !is_safe_name(hub_id) {
+    pub async fn scan_for_hub(&self, hub_scope: &str) -> Vec<ProjectEntry> {
+        if !is_safe_name(hub_scope) {
             return Vec::new();
         }
-        let hub_project_key = format!("hub:{}", hub_id);
+        // hub_scope = `<inst>` 또는 세션 `<inst>:<sid>`. 페이지 프로젝트 키 = **전체 스코프**(세션 격리).
+        let hub_project_key = format!("hub:{}", hub_scope);
+        // 모듈 fs 경로는 instance 단위 (STEP 1 — fs 파일 세션화는 STEP 2). scope 의 instance part 사용.
+        let inst = hub_scope.split(':').next().unwrap_or(hub_scope);
         let mut map: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
 
-        // user/hub/<id>/modules/*/config.json
-        let modules_dir = format!("user/hub/{}/modules", hub_id);
+        // user/hub/<inst>/modules/*/config.json
+        let modules_dir = format!("user/hub/{}/modules", inst);
         if let Ok(entries) = self.storage.list_dir(&modules_dir).await {
             for entry in entries {
                 if !entry.is_directory {
                     continue;
                 }
-                let path = format!("user/hub/{}/modules/{}/config.json", hub_id, entry.name);
+                let path = format!("user/hub/{}/modules/{}/config.json", inst, entry.name);
                 let Ok(content) = self.storage.read(&path).await else { continue };
                 let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content)
                 else { continue };
@@ -142,7 +145,7 @@ impl ProjectManager {
                 map.entry(project_name)
                     .or_insert_with(|| (Vec::new(), Vec::new()))
                     .0
-                    .push(format!("user/hub/{}/modules/{}", hub_id, entry.name));
+                    .push(format!("user/hub/{}/modules/{}", inst, entry.name));
             }
         }
 

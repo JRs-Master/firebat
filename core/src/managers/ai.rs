@@ -1400,12 +1400,14 @@ impl AiManager {
                             };
                             m.insert("owner".to_string(), serde_json::Value::String(format!("hub:{}", scope_id)));
                             m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
-                            m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id));
+                            m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id.clone()));
                             // project scopes page tools to the hub instance. MCP injects it for ALL
                             // tools (inject_hub_owner); FC must list the page tools that read it so
                             // get_page/list_pages are scoped on the FC (Gemini/Vertex) path too.
                             if matches!(name.as_str(), "save_page" | "get_page" | "list_pages") {
-                                m.insert("project".to_string(), serde_json::Value::String(format!("hub:{}", ctx.instance_id)));
+                                // project 도 owner/_hubScope 와 동일하게 **세션 스코프**(`hub:<inst>:<sid>`) — 옛 `hub:<inst>`(인스턴스)는
+                                // 같은 위젯의 다른 세션끼리 페이지 공유되던 버그. scope_id = <inst>:<sid> (위 1396-1400).
+                                m.insert("project".to_string(), serde_json::Value::String(format!("hub:{}", scope_id)));
                             }
                         }
                     }

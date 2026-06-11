@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 
 interface Ctx { params: Promise<{ slug: string }> }
 
-async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; instanceId: string } | { ok: false; status: number; error: string }> {
+async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; instanceId: string; sessionId: string } | { ok: false; status: number; error: string }> {
   const apiToken = req.headers.get('x-api-token') ?? '';
   const sessionId = req.headers.get('x-session-id') ?? '';
   const origin = req.headers.get('origin') ?? '';
@@ -39,7 +39,7 @@ async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; inst
     return { ok: false, status: 401, error: msg };
   }
   if (!res.data?.instance) return { ok: false, status: 500, error: 'instance 조회 실패' };
-  return { ok: true, instanceId: res.data.instance.id };
+  return { ok: true, instanceId: res.data.instance.id, sessionId };
 }
 
 /** path 가 `user/hub/<instance_id>/` prefix 안인지 검증 — path traversal + 다른 hub 자료 접근 차단. */
@@ -55,6 +55,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const auth = await authHub(req, slug);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  // 프로젝트/페이지 op = 세션 스코프(`<inst>:<sid>`)로 격리 (같은 위젯 다른 세션끼리 안 보임).
+  // fs 파일 op(read/write/tree/delete)는 STEP 2 까지 instance 단위 유지(isHubScopedPath).
+  const hubScope = `${auth.instanceId}:${auth.sessionId}`;
 
   let body: Record<string, any> = {};
   try { body = await req.json(); }
@@ -65,7 +68,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     switch (op) {
       case 'projects': {
-        const res = await scanProjects({ hubId: auth.instanceId });
+        const res = await scanProjects({ hubId: hubScope });
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true, projects: res.data ?? [] });
       }
@@ -125,7 +128,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           return NextResponse.json({ success: false, error: 'password 모드에서는 비밀번호가 필요합니다.' }, { status: 400 });
         }
         // hub scoping = Rust core(ProjectService.setVisibility)가 hub_id 로 강제 — 미소유 시 거부.
-        const res = await setProjectVisibility({ project, visibility, password: body.password ?? undefined, hubId: auth.instanceId } as any);
+        const res = await setProjectVisibility({ project, visibility, password: body.password ?? undefined, hubId: hubScope } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
       }
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const project = String(body.project ?? '');
         if (!project) return NextResponse.json({ success: false, error: 'project 필수' }, { status: 400 });
         // hub scoping = Rust core(ProjectService.delete → delete_owned)가 hub_id 로 강제 — 미소유 시 거부.
-        const res = await deleteProject({ project, hubId: auth.instanceId } as any);
+        const res = await deleteProject({ project, hubId: hubScope } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
       }
