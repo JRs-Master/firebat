@@ -875,8 +875,49 @@ type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: M
 /** 빌드 카드 1개 = 세션의 단계들(슬라이드 캐러셀). anchor(마지막) 메시지에만 전달, 앞 단계 메시지는 fold. */
 type BuildCardData = { stages: BuildStageEntry[] };
 
+// 빌드 라이브 상태 — 팩맨(루프·게임) 대신 실제 진행을 피드로. status(="도구 호출 중: render" 등 = lastMsg.statusText)가
+// 바뀔 때마다 누적해 ✓도구 / ⟳현재 로 표시. thinking 의존 0 (CLI stream-json 회귀로 thinking 비어도 status·도구는 옴).
+// 완료 시 ✓ 로 끝(루프 X). 가짜 % 아님 — 실제 호출된 도구만 보여줌.
+function BuildLiveStatus({ status, done }: { status?: string; done?: boolean }) {
+  const t = useTranslations();
+  const [hist, setHist] = useState<string[]>([]);
+  useEffect(() => {
+    const cur = (status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').replace(/_/g, ' ').trim();
+    if (!cur) return;
+    setHist(h => (h[h.length - 1] === cur ? h : [...h.slice(-5), cur])); // 최근 6개 — 직전과 다르면 누적
+  }, [status]);
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
+      <FirebatGhostAssembly size={56} variant="accent" />
+      <div className="w-full max-w-[240px] flex flex-col gap-1">
+        {hist.length === 0 ? (
+          <div className="flex items-center gap-1.5 text-[12px]">
+            <span className="text-blue-500 animate-pulse" aria-hidden>⟳</span>
+            <span className="text-slate-600 font-medium">{t('build.making')}</span>
+          </div>
+        ) : hist.map((h, i) => {
+          const isCur = i === hist.length - 1 && !done;
+          return (
+            <div key={`${i}-${h}`} className="flex items-center gap-1.5 text-[12px]">
+              <span className={`shrink-0 ${isCur ? 'text-blue-500 animate-pulse' : 'text-emerald-500'}`} aria-hidden>{isCur ? '⟳' : '✓'}</span>
+              <span className={`truncate ${isCur ? 'text-slate-700 font-semibold' : 'text-slate-400'}`}>{h}</span>
+            </div>
+          );
+        })}
+      </div>
+      {!done ? (
+        <div className="w-full max-w-[240px] h-1 rounded-full bg-slate-200/70 overflow-hidden">
+          <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-blue-300 to-blue-500 animate-pulse" />
+        </div>
+      ) : (
+        <div className="text-[12px] font-bold text-emerald-600">✓ {t('build.done')}</div>
+      )}
+    </div>
+  );
+}
+
 // Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
-// 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=팩맨 로더.
+// 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=라이브 상태 피드.
 function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLockSuggestion }: {
   stages: BuildStageEntry[];
   loading: boolean;
@@ -909,13 +950,12 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
   const curIdx = STEPS.findIndex(s => s.key === bs.step);
   const stage = stages[vi];
   const onLatest = vi === last;
-  // 구현 단계 OR (최신 슬라이드에서 생성 중/완료) → 팩맨. 생성 중(building)엔 done=false 라 팩맨이 플레이.
-  const stageImplement = stage.state.step === 'implement' || (onLatest && (done || !!building));
+  // 로더(라이브 상태)는 **구현(앱 빌드)** 때만 — 구현 단계 OR 최신서 (완료 OR 구현 생성 중). 옛 `onLatest && building`
+  // 은 디자인→검토 같은 옵션 단계 생성에도 떠서(사용자: "디자인부터 팩맨") 다음 생성 단계가 implement 일 때로 한정.
+  const genNextImplement = !!building && curIdx >= 0 && STEPS[Math.min(curIdx + 1, STEPS.length - 1)].key === 'implement';
+  const stageImplement = stage.state.step === 'implement' || (onLatest && (done || genNextImplement));
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
-  // 팩맨 캡션 — 단계는 위 stepper 가 강조 표시하므로 캡션엔 라이브 활동만(실제 thinking tail / 상태). 옛 "[단계] 만드는중"
-  // 식 표현(예: "검토 만드는중")은 단계를 "만든다"로 읽혀 어색 → 제거. buildStatus 가 thinking 우선 채움(아래 참조).
-  const makingCaption = buildStatus || t('build.making');
   return (
     <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
@@ -944,7 +984,7 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3 h-[310px] flex items-center justify-center"><FirebatPacmanLoader done={done} caption={makingCaption} /></div>
+        <div className="p-3 h-[310px] flex items-center justify-center"><BuildLiveStatus done={done} status={buildStatus} /></div>
       ) : (
         <div className="flex flex-col gap-2.5 p-3 h-[310px]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
@@ -1316,6 +1356,7 @@ export interface HubContext {
 // 파이어뱃 미니 팩맨 로더 — "만드는 중" 동안 파란 착한 유령(우리)이 빨간 나쁜 유령들을 피해 미로를 누비다,
 // 빌드 완료(done)되면 갇힌 팩맨에게 BFS 로 달려가 "구출 성공!". 자동 어트랙트(조작 0). 빨강에 잡히면 깜빡 후
 // 리셋·재시작, 파워펠릿 먹으면 빨강 잠깐 파랗게 질려 도망(닿으면 눈만 남아 집으로 복귀). done 일 땐 무적(반드시 구출).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 보관: 현재 라이브 상태 피드로 대체, 추후 fun 자리에 재사용
 function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; caption?: string }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const doneRef = useRef(done);
@@ -1602,7 +1643,7 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     //    제거(arc 래스터화는 저해상도서 좌우 비대칭·찢김 → 셀 단위로 양쪽 동일하게 빼야 깔끔).
     // RES = 그리드 해상도. size 비례로 키워 픽셀(dot)을 ~2.5px 로 작게 유지 → 원래 lucide Ghost 윤곽에 더 가깝게
     // (옛 고정 36 은 큰 미리보기서 dot ~4.4px 라 뭉툭). 작은 악센트(size 48)는 32 로 floor — sub-pixel 방지.
-    const RES = Math.max(32, Math.round(size / 2.5));
+    const RES = Math.max(40, Math.round(size / 1.8));
     const off = document.createElement('canvas');
     off.width = RES;
     off.height = RES;
