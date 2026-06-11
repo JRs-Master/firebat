@@ -913,11 +913,9 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
   const stageImplement = stage.state.step === 'implement' || (onLatest && (done || !!building));
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
-  // 팩맨 캡션 — 생성 중이면 "[생성 중 단계] · [라이브 상태]" (예: 디자인 · render 호출중). 생성 중엔 다음 단계가
-  // 만들어지는 중이라 curIdx+1 단계명 사용. done 은 FirebatPacmanLoader 가 SAVED 로 덮음.
-  const genKey = building && curIdx >= 0 ? STEPS[Math.min(curIdx + 1, STEPS.length - 1)].key : (bs.step ?? 'implement');
-  const genLabel = STEPS.find(s => s.key === genKey)?.label ?? '';
-  const makingCaption = buildStatus ? `${genLabel} · ${buildStatus}` : `${genLabel} ${t('build.making')}`;
+  // 팩맨 캡션 — 단계는 위 stepper 가 강조 표시하므로 캡션엔 라이브 활동만(실제 thinking tail / 상태). 옛 "[단계] 만드는중"
+  // 식 표현(예: "검토 만드는중")은 단계를 "만든다"로 읽혀 어색 → 제거. buildStatus 가 thinking 우선 채움(아래 참조).
+  const makingCaption = buildStatus || t('build.making');
   return (
     <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
@@ -1352,7 +1350,7 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
       dots = MAZE.map((row, r) => row.split('').map((ch, c) => {
         if (ch === 'P') { pac = { c, r }; return { dot: false, pellet: false }; }
         if (ch === '#') return { dot: false, pellet: false };
-        return { dot: ch !== 'o', pellet: ch === 'o' };
+        return { dot: true, pellet: false }; // 'o'/'.' 모두 일반 점 — 파워펠릿은 placePellet 이 blue 먼 곳에 1개만 배치
       }));
     };
 
@@ -1360,14 +1358,34 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
     type Mover = { c: number; r: number; tc: number; tr: number; p: number; ddc: number; ddr: number };
     type Red = Mover & { fright: number; eyes: boolean; guard: boolean; gt: number };
     const mk = (c: number, r: number): Mover => ({ c, r, tc: c, tr: r, p: 0, ddc: 0, ddr: 0 });
-    const BLUE0 = { c: 1, r: 3 }, RED0 = [{ c: 9, r: 3 }, { c: 5, r: 7 }, { c: 3, r: 5 }], HOME = { c: 5, r: 1 };
+    const HOME = { c: 5, r: 1 };
+    // 매 게임 랜덤 시작 — 고정 루트 탈피. walkable = pac 제외 통행 가능 칸(미로·pac 고정이라 1회 산출).
+    const walkable: { c: number; r: number }[] = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (!isWall(c, r) && !(c === pac.c && r === pac.r)) walkable.push({ c, r });
+    const rand = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+    const md = (a: { c: number; r: number }, b: { c: number; r: number }) => Math.abs(a.c - b.c) + Math.abs(a.r - b.r);
     let blue: Mover, reds: Red[];
     const initChars = () => {
-      blue = mk(BLUE0.c, BLUE0.r);
-      // reds[0] = 가드 — 팩맨 세로 통로를 왔다갔다 순찰(gt=순찰 방향). 나머지는 blue 추격.
-      reds = RED0.map((s, i) => ({ ...mk(s.c, s.r), fright: 0, eyes: false, guard: i === 0, gt: 1 }));
+      const bs = rand(walkable); // blue 랜덤 시작 → 매 게임 다른 루트
+      blue = mk(bs.c, bs.r);
+      // reds 3 — blue 에서 3칸 이상 떨어진 칸 랜덤(즉사 방지). reds[0] = 가드(팩맨 통로 순찰). 풀 부족 시 전체서.
+      const pool = walkable.filter(w => md(w, bs) >= 3);
+      const bag = pool.length >= 3 ? [...pool] : [...walkable];
+      const picks: { c: number; r: number }[] = [];
+      for (let i = 0; i < 3 && bag.length; i++) picks.push(bag.splice(Math.floor(Math.random() * bag.length), 1)[0]);
+      while (picks.length < 3) picks.push(rand(walkable));
+      reds = picks.map((s, i) => ({ ...mk(s.c, s.r), fright: 0, eyes: false, guard: i === 0, gt: 1 }));
     };
-    resetDots(); initChars();
+    // 파워펠릿 1개만 — blue 에서 먼 칸(거리 상위 35%) 중 랜덤. blue 가 시작하자마자 못 먹게(추격·회피 플레이 지속).
+    const placePellet = () => {
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (dots[r][c].pellet) { dots[r][c].pellet = false; dots[r][c].dot = true; }
+      const cand = walkable.filter(w => !(w.c === pac.c && w.r === pac.r));
+      const sorted = [...cand].sort((a, b) => md(b, blue) - md(a, blue));
+      const topFar = sorted.slice(0, Math.max(1, Math.ceil(sorted.length * 0.35)));
+      const cell = rand(topFar);
+      dots[cell.r][cell.c] = { dot: false, pellet: true };
+    };
+    resetDots(); initChars(); placePellet();
 
     const DIRS: Dir[] = [{ dc: 1, dr: 0 }, { dc: -1, dr: 0 }, { dc: 0, dr: 1 }, { dc: 0, dr: -1 }];
     const bfs = (tc: number, tr: number) => {
@@ -1517,13 +1535,13 @@ function FirebatPacmanLoader({ done = false, caption }: { done?: boolean; captio
         for (let i = 0; i < 6; i++) { const a = i * 1.05; const rr = 12 + sp; ctx.beginPath(); ctx.arc(pac.c * CELL + CELL / 2 + Math.cos(a) * rr, pac.r * CELL + CELL / 2 + Math.sin(a) * rr, 2.2, 0, Math.PI * 2); ctx.fill(); }
         ctx.globalAlpha = 1;
         frame++;
-        if (!doneRef.current) { won--; if (won === 0) { resetDots(); initChars(); } } // 플레이 중 구출 = 잠깐 축하 후 재시작(성공 루프). done 은 영구 SAVED.
+        if (!doneRef.current) { won--; if (won === 0) { resetDots(); initChars(); placePellet(); } } // 플레이 중 구출 = 잠깐 축하 후 재시작(성공 루프). done 은 영구 SAVED.
         raf = requestAnimationFrame(render); return;
       }
       if (caught > 0) {
         if (Math.floor(caught / 5) % 2 === 0) drawGhost(lx(blue), ly(blue), rad, '#3b82f6', false, false);
         for (const rg of reds) drawGhost(lx(rg), ly(rg), rad, '#ef4444', false, rg.eyes);
-        caught--; if (caught === 0) { resetDots(); initChars(); }
+        caught--; if (caught === 0) { resetDots(); initChars(); placePellet(); }
         frame++; raf = requestAnimationFrame(render); return;
       }
 
@@ -2077,7 +2095,12 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                     const lastIsBuild = !!lastMsg && !Array.isArray(lastMsg.data) && !!(lastMsg.data as { buildSession?: BuildSessionView } | undefined)?.buildSession?.id;
                     if (lastMsg && lastMsg.id !== latestAnchor && lastMsg.role === 'system' && !lastIsBuild) {
                       buildingAnchor = latestAnchor;
-                      buildStatus = lastMsg.statusText;
+                      // 실제 thinking 내용 우선(라이브 추론의 마지막 줄), 없으면 generic statusText → 팩맨 캡션에 표시.
+                      const _tt = lastMsg.thinkingText;
+                      const _real = _tt && !(Object.values(THINKING_STATUS) as string[]).includes(_tt)
+                        ? (_tt.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('[도구') && !l.startsWith('[계획')).slice(-1)[0] || '')
+                        : '';
+                      buildStatus = _real || lastMsg.statusText;
                       foldedBuildMsgIds.add(lastMsg.id);
                     }
                   }
