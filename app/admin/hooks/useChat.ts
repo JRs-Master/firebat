@@ -380,10 +380,52 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
+  // 활성 conv 의 DB 메시지를 로컬과 머지·LOAD — admin·hub **공통 reconcile** (refreshConversations 가 백엔드별로
+  // fetch 후 호출 → 한 곳 고치면 양쪽 적용). 모바일 백그라운드 throttle 로 SSE 끊겨도 백엔드는 완주·영속
+  // (admin=/api/chat/stream route save / hub=grpc detached spawn append_system_message) → 복귀 시 DB 완료본 복구.
+  // preserveLocalPendingStatus 로 승인 status 보존. hub_messages 도 full data(blocks/suggestions/pendingActions)라 퇴화 0.
+  // (잔여: 로컬이 streaming:true 로 멈춰있고 hub 로컬 id ≠ 백엔드 uuid 면 force-load 미발동 — 별도 id 정렬 안건.)
+  const reconcileActiveConv = useCallback((remoteMsgsRaw: Message[], remoteUpdatedAt: number) => {
+    if (!activeConvId) return;
+    const convMeta = conversations.find(c => c.id === activeConvId);
+    if (!convMeta) return;
+    const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
+    const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
+    const hasFallback = messagesRef.current.some(m =>
+      m.role === 'system' && !m.isThinking && isFallbackContent(m.content),
+    );
+    const remoteMsgs = cleanMessages(remoteMsgsRaw);
+    // per-message 보강 체크 — 로컬이 fallback/inflight 이고 DB 에 완료본 있으면 force LOAD.
+    const shouldForceLoad = (hasInflight || hasFallback) && remoteMsgs.some(rm => {
+      const local = messagesRef.current.find(lm => lm.id === rm.id);
+      if (!local) return false;
+      const localEmpty = !local.content?.trim() && !(local.data as any)?.blocks?.length;
+      const localIsError = isFallbackContent(local.content);
+      const localInflight = local.isThinking || local.executing || local.streaming;
+      const remoteHasContent = (typeof rm.content === 'string' && rm.content.trim().length > 0) || ((rm.data as any)?.blocks?.length ?? 0) > 0;
+      return (localEmpty || localIsError || localInflight) && remoteHasContent;
+    });
+    // 스트리밍 진행 중인데 DB 완료본 없으면 스킵 (LOAD 시 in-flight 메시지 유실 방지).
+    if (hasInflight && !shouldForceLoad) {
+      dispatch({ type: 'LOAD', messages: messagesRef.current.map(m => ({ ...m })) });
+      return;
+    }
+    if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
+    const remoteMerged = preserveLocalPendingStatus(remoteMsgs, messagesRef.current);
+    dispatch({ type: 'LOAD', messages: remoteMerged });
+    setConversations(prev => {
+      const updated = prev.map(c => c.id === activeConvId
+        ? { ...c, messages: remoteMerged, updatedAt: remoteUpdatedAt }
+        : c);
+      updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+      localStorage.setItem(convStorageKey, JSON.stringify(updated));
+      return updated;
+    });
+  }, [activeConvId, conversations, convStorageKey]);
+
   const refreshConversations = useCallback(async () => {
-    // hub mode — convBackend(/api/hub/<slug>/sessions)로 대화 목록 재조회 (휴지통 복원·삭제 후 사이드바 즉시 반영).
-    // 옛엔 early-return 이라 복원해도 F5 전엔 목록에 안 떴음. 아래 admin 로직(/api/conversations)은 hub 에 안 맞아 분리.
     if (hubContext) {
+      // hub: 목록 재조회(휴지통 복원·삭제 즉시 반영) + 활성 대화 메시지 reconcile(background-resume).
       const remote = await convBackend.listConversations();
       if (!remote) return;
       setConversations(prev => {
@@ -391,7 +433,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           const local = prev.find(p => p.id === r.id);
           return {
             id: r.id, title: r.title, createdAt: r.createdAt,
-            // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서가 튀는 것 방지.
+            // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서 튐 방지.
             updatedAt: Math.max(r.updatedAt ?? r.createdAt, local?.updatedAt ?? 0),
             messages: local?.messages ?? [],
           };
@@ -399,16 +441,15 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         merged.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
         return merged;
       });
+      // 활성 대화 메시지 재조회 — admin 과 동일 reconcile. 옛엔 목록만 갱신·메시지는 local 보존이라 미복구였음.
+      if (activeConvId) {
+        const remoteUpdatedAt = remote.find(r => r.id === activeConvId)?.updatedAt ?? 0;
+        const remoteMsgs = await convBackend.listMessages(activeConvId);
+        reconcileActiveConv(remoteMsgs, remoteUpdatedAt);
+      }
       return;
     }
-    // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
-    // SSE 가 조용히 끊어진 경우 DB 쪽이 진짜 응답 보유. 아래 per-message 비교로 판단.
-    const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
-    // 로컬 메시지에 에러·빈 응답 fallback 이 설정되어 있는지 — 있으면 DB 가 진짜 응답일 가능성 높음
-    const hasFallback = messagesRef.current.some(m =>
-      m.role === 'system' && !m.isThinking && isFallbackContent(m.content),
-    );
-    // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
+    // admin: 1) 목록 재조회 — 타기기에서 삭제된 대화 제거.
     try {
       const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string }> }>(
         '/api/conversations',
@@ -429,49 +470,17 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         });
       }
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-    // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영 / 백엔드 최종 응답 복구
+    // 2) 활성 conv 단일 갱신 — 공통 reconcile 로 위임.
     if (!activeConvId) return;
-    const convMeta = conversations.find(c => c.id === activeConvId);
-    if (!convMeta) return;
-    const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
     try {
       const data = await apiGet<{ success?: boolean; conversation?: { messages?: Message[]; updatedAt?: number } }>(
         `/api/conversations?id=${encodeURIComponent(activeConvId)}`,
         { category: 'useChat' },
       ).catch(() => null);
-      if (!data) return;
-      if (!data.success || !data.conversation) return;
-      const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
-      const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
-      // per-message 보강 체크 — 로컬이 fallback/inflight 이고 DB 에 완료본 있으면 force LOAD
-      //  - 모바일 백그라운드 throttling 으로 프론트가 에러 박제 / SSE 누락했지만 백엔드는 완주한 케이스 복구
-      const shouldForceLoad = (hasInflight || hasFallback) && remoteMsgs.some(rm => {
-        const local = messagesRef.current.find(lm => lm.id === rm.id);
-        if (!local) return false;
-        const localEmpty = !local.content?.trim() && !(local.data as any)?.blocks?.length;
-        const localIsError = isFallbackContent(local.content);
-        const localInflight = local.isThinking || local.executing || local.streaming;
-        const remoteHasContent = (typeof rm.content === 'string' && rm.content.trim().length > 0) || ((rm.data as any)?.blocks?.length ?? 0) > 0;
-        return (localEmpty || localIsError || localInflight) && remoteHasContent;
-      });
-      // 스트리밍 진행 중인데 DB 에 완료본이 없으면 스킵 (현재 로컬 state 보존 — LOAD 시 in-flight 메시지 유실 방지)
-      if (hasInflight && !shouldForceLoad) {
-        dispatch({ type: 'LOAD', messages: messagesRef.current.map(m => ({ ...m })) });
-        return;
-      }
-      if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
-      const remoteMerged = preserveLocalPendingStatus(remoteMsgs, messagesRef.current);
-      dispatch({ type: 'LOAD', messages: remoteMerged });
-      setConversations(prev => {
-        const updated = prev.map(c => c.id === activeConvId
-          ? { ...c, messages: remoteMerged, updatedAt: remoteUpdatedAt }
-          : c);
-        updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-        localStorage.setItem(convStorageKey, JSON.stringify(updated));
-        return updated;
-      });
+      if (!data || !data.success || !data.conversation) return;
+      reconcileActiveConv(data.conversation.messages ?? [], data.conversation.updatedAt ?? 0);
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [activeConvId, conversations, hubContext, convBackend]);
+  }, [activeConvId, hubContext, convBackend, convStorageKey, reconcileActiveConv]);
 
   // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
