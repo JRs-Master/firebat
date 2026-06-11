@@ -450,7 +450,7 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Some(ho.split(':').next().unwrap_or(ho).to_string());
+        return Some(ho.to_string()); // 전체 세션 스코프(`<inst>:<sid>`) — 옛 split(':').next() 는 instance 만 추출 → 같은 위젯 세션끼리 템플릿 공유 버그
     }
     args.get("owner")
         .and_then(|v| v.as_str())

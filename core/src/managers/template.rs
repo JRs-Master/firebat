@@ -63,16 +63,18 @@ impl TemplateManager {
     }
 
     /// owner 기준 base path — None = admin (`user/templates/`),
-    /// Some(hub_id) = `user/hub/<id>/templates/` (hub 방문자 격리).
-    /// hub_id 가 path traversal 안전한 형태인지 검증.
+    /// Some(scope) = `<inst>` → `user/hub/<inst>/templates/`, 세션 `<inst>:<sid>` → `user/hub/<inst>/<sid>/templates/`.
+    /// 각 part path traversal 검증. 세션 스코프 격리 = 같은 위젯 다른 세션끼리 템플릿 안 보임.
     fn base_path(owner: Option<&str>) -> InfraResult<String> {
         match owner {
             None => Ok("user/templates".to_string()),
-            Some(hub_id) => {
-                if !is_safe_slug(hub_id) {
+            Some(scope) => {
+                // scope 콜론 split — 각 part 안전성 검증(콜론을 경로에 직접 쓰면 깨짐). 형식 오류 = deny(admin 폴백 없음).
+                let parts: Vec<&str> = scope.split(':').collect();
+                if parts.is_empty() || parts.len() > 2 || !parts.iter().all(|p| is_safe_slug(p)) {
                     return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
                 }
-                Ok(format!("user/hub/{}/templates", hub_id))
+                Ok(format!("user/hub/{}/templates", parts.join("/")))
             }
         }
     }

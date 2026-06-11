@@ -42,7 +42,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   const instance = authRes.data?.instance;
   if (!instance) return jsonResponse(500, { error: 'instance 조회 실패' });
-  const hubOwner = instance.id;
+  // 세션 스코프(`<inst>:<sid>`) — 같은 위젯 다른 세션끼리 템플릿 격리. 옛 instance.id(인스턴스)는 세션 공유 버그.
+  const hubOwner = `${instance.id}:${sessionId}`;
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); }
