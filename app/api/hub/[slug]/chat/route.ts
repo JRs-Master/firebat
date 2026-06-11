@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return jsonResponse(400, { error: 'X-Session-Id 헤더가 필요합니다.' });
   }
 
-  let body: { message?: string; planMode?: string; planExecuteId?: string; planReviseId?: string } = {};
+  let body: { message?: string; planMode?: string; planExecuteId?: string; planReviseId?: string; userMsgId?: string; aiMsgId?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -66,8 +66,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // 시스템 프롬프트 안 plan_to_instruction / plan_to_revise_instruction 주입.
   const planExecuteId = typeof body.planExecuteId === 'string' ? body.planExecuteId : '';
   const planReviseId = typeof body.planReviseId === 'string' ? body.planReviseId : '';
+  // 클라 발급 메시지 id — 프론트 로컬 메시지와 hub_messages 정렬(admin systemId 패턴). 빈 값 = uuid fallback.
+  const userMsgId = typeof body.userMsgId === 'string' ? body.userMsgId : '';
+  const aiMsgId = typeof body.aiMsgId === 'string' ? body.aiMsgId : '';
 
-  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, abortSignal: req.signal });
+  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, abortSignal: req.signal });
 }
 
 function streamResponse(args: {
@@ -80,9 +83,11 @@ function streamResponse(args: {
   planMode: string;
   planExecuteId: string;
   planReviseId: string;
+  userMsgId: string;
+  aiMsgId: string;
   abortSignal: AbortSignal;
 }) {
-  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, abortSignal } = args;
+  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, userMsgId, aiMsgId, abortSignal } = args;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -124,6 +129,8 @@ function streamResponse(args: {
           planMode,
           planExecuteId,
           planReviseId,
+          userMsgId,
+          aiMsgId,
         } as any);
 
         let finalResult: Record<string, unknown> | null = null;

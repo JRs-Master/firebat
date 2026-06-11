@@ -416,7 +416,7 @@ impl HubService for HubServiceImpl {
         let args = req.into_inner();
         let message_id = self
             .manager
-            .append_user_message(&args.conversation_id, &args.content)
+            .append_user_message(&args.conversation_id, &args.content, None)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubAppendUserMessageResponse {
@@ -433,7 +433,7 @@ impl HubService for HubServiceImpl {
         let data_json = if args.data_json.is_empty() { None } else { Some(args.data_json) };
         let message_id = self
             .manager
-            .append_system_message(&args.conversation_id, content, data_json)
+            .append_system_message(&args.conversation_id, content, data_json, None)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubAppendSystemMessageResponse {
@@ -492,7 +492,7 @@ impl HubService for HubServiceImpl {
         // 3. user 메시지 영속화 (선반영 — AI 실패해도 흐름 보존)
         let _ = self
             .manager
-            .append_user_message(&conversation_id, &args.user_message)
+            .append_user_message(&conversation_id, &args.user_message, None)
             .await;
 
         // 4. AI 호출 (가드 + history + 영속화 통합). visitor 의 plan_mode + plan_execute_id /
@@ -522,6 +522,7 @@ impl HubService for HubServiceImpl {
                 plan_mode,
                 plan_execute_id,
                 plan_revise_id,
+                None, // ai_msg_id — unary HubSendMessage 는 클라 id 미동봉(uuid fallback)
                 None, // unary — 스트리밍 emit 없음
             )
             .await
@@ -571,9 +572,12 @@ impl HubService for HubServiceImpl {
             .ensure_conversation(&instance.id, &args.session_id)
             .await
             .map_err(TonicStatus::internal)?;
+        // 클라이언트 발급 메시지 id — 프론트 로컬 메시지와 hub_messages 정렬(admin systemId 패턴). 빈 string = uuid fallback.
+        let user_msg_id = if args.user_msg_id.is_empty() { None } else { Some(args.user_msg_id.clone()) };
+        let ai_msg_id = if args.ai_msg_id.is_empty() { None } else { Some(args.ai_msg_id.clone()) };
         let _ = self
             .manager
-            .append_user_message(&conversation_id, &args.user_message)
+            .append_user_message(&conversation_id, &args.user_message, user_msg_id)
             .await;
 
         let plan_mode = match args.plan_mode.as_str() {
@@ -610,6 +614,7 @@ impl HubService for HubServiceImpl {
                     plan_mode,
                     plan_execute_id,
                     plan_revise_id,
+                    ai_msg_id,
                     Some(event_tx),
                 )
                 .await;

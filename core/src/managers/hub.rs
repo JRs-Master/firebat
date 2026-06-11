@@ -362,8 +362,12 @@ impl HubManager {
         &self,
         conversation_id: &str,
         content: &str,
+        id: Option<String>,
     ) -> InfraResult<String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        // 클라이언트 발급 id 우선(프론트 로컬 메시지와 hub_messages 정렬 — admin systemId 패턴), 없으면 uuid fallback.
+        let id = id
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let msg = HubMessage {
             id: id.clone(),
             conversation_id: conversation_id.to_string(),
@@ -382,8 +386,12 @@ impl HubManager {
         conversation_id: &str,
         content: Option<String>,
         data_json: Option<String>,
+        id: Option<String>,
     ) -> InfraResult<String> {
-        let id = uuid::Uuid::new_v4().to_string();
+        // 클라이언트 발급 id 우선(프론트 systemId 정렬), 없으면 uuid fallback. background-resume reconcile 매칭용.
+        let id = id
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let msg = HubMessage {
             id: id.clone(),
             conversation_id: conversation_id.to_string(),
@@ -421,6 +429,7 @@ impl HubManager {
         plan_mode: crate::ports::PlanMode,
         plan_execute_id: Option<String>,
         plan_revise_id: Option<String>,
+        ai_msg_id: Option<String>,
         emit: Option<tokio::sync::mpsc::Sender<crate::managers::ai::AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
@@ -533,6 +542,7 @@ impl HubManager {
                 conversation_id,
                 Some(response.reply.clone()),
                 Some(data_payload.to_string()),
+                ai_msg_id,
             )
             .await;
 

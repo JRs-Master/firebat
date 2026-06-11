@@ -2857,6 +2857,10 @@ message HubSendMessageStreamRequest {
   string plan_mode = 7;
   string plan_execute_id = 8;
   string plan_revise_id = 9;
+  // 클라이언트 발급 메시지 id — 프론트 로컬 메시지와 hub_messages id 정렬용(admin systemId 패턴).
+  // 빈 string = 미동봉(백엔드 uuid fallback). 정렬되면 background-resume reconcile 이 stuck 케이스도 매칭.
+  string user_msg_id = 10;
+  string ai_msg_id = 11;
 }
 // streaming 응답 이벤트 — AiStreamEventPb 와 동일 shape (sub-event 메시지 재사용). top-level 만 분리.
 message HubStreamEventPb {

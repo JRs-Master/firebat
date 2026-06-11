@@ -849,6 +849,10 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         ? {
             message: userPrompt,
             planMode,
+            // 클라 발급 메시지 id — admin systemId/userId 패턴 미러. hub_messages id 가 로컬과 정렬되어
+            // background-resume reconcile 이 streaming-stuck 케이스도 매칭(옛엔 백엔드 uuid 라 불일치).
+            aiMsgId: systemId,
+            userMsgId: `u-${id}`,
             ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
             ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
           }
