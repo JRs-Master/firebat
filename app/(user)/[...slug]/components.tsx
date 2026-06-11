@@ -493,7 +493,7 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white border border-gray-100 rounded-xl p-4 sm:p-6 shadow-sm space-y-4">
         {inputs.map(input => (
           <div key={input.name} className="flex flex-col gap-1.5">
             <label htmlFor={`f-${input.name}`} className="text-sm font-semibold text-gray-700">
@@ -527,7 +527,7 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
         </div>
       )}
       {result && (
-        <div className="bg-green-50 border border-green-200 p-5 rounded-xl">
+        <div className="bg-green-50 border border-green-200 p-4 sm:p-5 rounded-xl">
           {typeof result === 'object' ? (
             <div className="space-y-2">
               {Object.entries(result).map(([key, val]) => (
@@ -720,7 +720,7 @@ function CardComp({ children = [], align, image, footer, link, title, content, b
         // eslint-disable-next-line @next/next/no-img-element
         <img src={image.src} alt={image.alt ?? ''} className="w-full h-48 object-cover" />
       )}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {badge && (
           <span className="inline-block mb-2 px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">{cleanPlainText(badge)}</span>
         )}
@@ -1093,7 +1093,7 @@ function AccordionComp({ items }: { items: { title: string; children: ComponentD
         <div key={i}>
           <button
             onClick={() => setOpenIndex(openIndex === i ? null : i)}
-            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center justify-between px-4 sm:px-5 py-4 text-left hover:bg-gray-50 transition-colors"
           >
             <span className="text-sm font-semibold text-gray-800">{item.title}</span>
             <svg
@@ -1104,7 +1104,7 @@ function AccordionComp({ items }: { items: { title: string; children: ComponentD
             </svg>
           </button>
           {openIndex === i && (
-            <div className="px-5 pb-4">
+            <div className="px-4 sm:px-5 pb-4">
               <ComponentRenderer components={item.children ?? []} />
             </div>
           )}
