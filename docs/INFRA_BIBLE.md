@@ -84,18 +84,18 @@ CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영
 - **모델 registry** (`system/llm/models.json` + 사용자 `*.json` merge, override 우선): 모델당 1개 항목. 새 LLM 도입 시 JSON 추가만으로 확장.
   - 필수: `id`, `displayName`, `provider`, `format`, `endpoint`, `apiKeyVaultKey`.
   - 선택: `features` (mcpConnector/strictTools/reasoning/thinking/extendedThinking/toolSearch/promptCache 등), `pricing`, `extraHeaders`.
-- **포맷 핸들러 8종** (`infra/src/llm/formats/*.rs`) — API 5(reqwest 직접 호출) + CLI 3(자식 프로세스). API 어댑터는 SDK 없이 reqwest 로 각 프로바이더 HTTP API 직접 호출:
+- **포맷 핸들러 7종** (`infra/src/llm/formats/*.rs`) — API 4(reqwest 직접 호출) + CLI 3(자식 프로세스). `openai-chat` 은 2026-05-10 폐기(핸들러 미등록). API 어댑터는 SDK 없이 reqwest 로 각 프로바이더 HTTP API 직접 호출:
   | format | transport / 실행 | 용도 |
   |---|---|---|
   | `openai-responses` | reqwest (`/v1/responses`) | OpenAI Responses API — GPT-5.x (MCP connector, previous_response_id, `reasoning.effort`). 토큰 회계: `usage.input_tokens` + `input_tokens_details.cached_tokens` |
-  | `anthropic-messages` | reqwest (`/v1/messages`) | Claude Messages API — MCP connector, extended thinking(`thinking.budget_tokens`), **prompt caching 토글** (`VK_LLM_ANTHROPIC_CACHE`, 기본 OFF — 같은 prefix 5분 재호출 시 ON 권장). 토큰: input + cache_creation + cache_read 합산, cached=cache_read |
+  | `anthropic-messages` | reqwest (`/v1/messages`) | Claude Messages API — MCP connector, extended thinking(`thinking.type:adaptive` + `output_config.effort` — 옛 `budget_tokens` 는 Opus 4.7/4.8/Fable 에서 400, 2026-06-11 전환 `cc0c71a`), **prompt caching 토글** (`VK_LLM_ANTHROPIC_CACHE`, 기본 OFF — 같은 prefix 5분 재호출 시 ON 권장). 토큰: input + cache_creation + cache_read 합산, cached=cache_read |
   | `gemini-native` | reqwest (generativelanguage API) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 (rawModelParts 보존), `thinkingConfig`. 토큰: promptTokenCount / candidates+thoughts / cachedContentTokenCount |
   | `vertex-gemini` | reqwest (Vertex AI) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 (JWT). usage 매핑 gemini-native 와 동일 |
-  | `openai-chat` | reqwest (`/v1/chat/completions`) | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 예비) |
   | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. `--print --output-format stream-json --verbose --allowed-tools 'mcp__firebat__*' --mcp-config <json> --effort <level>`. 줄 단위 streaming 파싱 — thinking/tool_use 실시간 emit, `result.usage` 토큰 + `total_cost_usd` |
   | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME/config.toml` ([mcp_servers.firebat]) + env, `--json --skip-git-repo-check --full-auto -c model_reasoning_effort="<level>"`. 이벤트: `thread.started` / `turn.{started,completed}` / `item.{started,completed}`. `turn.completed.usage` 토큰 |
   | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. `workspace/.gemini/settings.json` (프로젝트 로컬 MCP) + `GEMINI.md` + cwd. `--output-format stream-json --approval-mode yolo`. 도구 이름 `mcp_firebat_` 접두사. `result.stats.models[*].tokens` |
 
+- **CLI 모델 유도** (2026-06-12 fix `76f59d5`): `opts.cli_model`(--model 값)은 요청 단계에서 안 채워지므로(프론트 미전송) `ConfigDrivenAdapter.enrich_opts_for_format` 가 `config.id` → provider 모델 문자열 자동 유도 — `cli-claude-code-{X}`→`claude-{X}` / `cli-gemini-{X}`→`gemini-{X}` / `cli-codex-{X}`→`{X}`(이미 gpt-) / `*-auto`→None(CLI 기본 모델). 이전엔 미할당이라 3 CLI 모두 --model 미전송 → CLI 기본 모델로 돌아 "모델 선택이 cosmetic" 이던 버그. 효과: 모델 선택 실동작 + sonnet-4-6/opus-4-6 선택 시 thinking 표시(그 모델 기본 `display:summarized`).
 - **CLI 세션 resume** (3사 공통):
   - DB: `conversations` 테이블 `cli_session_id`, `cli_model` 컬럼. 모델 변경 시 자동 무효화.
   - 플래그: Claude `--resume <uuid>`, Codex `exec resume <id>`, Gemini `--resume <uuid>`

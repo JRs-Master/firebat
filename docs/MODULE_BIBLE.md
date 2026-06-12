@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-05-06 (Phase B-4 cutover — 모듈 규격 영향 0)
+> 최종 개정: 2026-05-24 (secrets 항목 schema string|object union · settings_fields lang 분리 등. Phase B-4 cutover 모듈 규격 영향 0)
 
 ## 전문(前文)
 
