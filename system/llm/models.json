@@ -69,6 +69,55 @@
       "category": "api-anthropic"
     },
     {
+      "id": "claude-fable-5",
+      "displayName": "Claude Fable 5",
+      "provider": "Anthropic",
+      "format": "anthropic-messages",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyVaultKey": "system:anthropic:api-key",
+      "features": {
+        "mcpConnector": true,
+        "extendedThinking": true,
+        "imageInput": true,
+        "promptCache": true
+      },
+      "extraHeaders": {
+        "anthropic-version": "2023-06-01"
+      },
+      "pricing": {
+        "input": 10,
+        "output": 50,
+        "cachedInput": 1
+      },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          {
+            "value": "low",
+            "labels": { "ko": "Low (낮음)", "en": "Low" }
+          },
+          {
+            "value": "medium",
+            "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" }
+          },
+          {
+            "value": "high",
+            "labels": { "ko": "High (높음)", "en": "High" }
+          },
+          {
+            "value": "xhigh",
+            "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" }
+          },
+          {
+            "value": "max",
+            "labels": { "ko": "Max (최대 예산)", "en": "Max (highest budget)" }
+          }
+        ]
+      },
+      "execMode": "api",
+      "category": "api-anthropic"
+    },
+    {
       "id": "claude-sonnet-4-6",
       "displayName": "Claude Sonnet 4.6",
       "provider": "Anthropic",
@@ -796,6 +845,30 @@
               "en": "Max (highest budget)"
             }
           }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "claude",
+      "category": "cli-claude"
+    },
+    {
+      "id": "cli-claude-code-fable-5",
+      "displayName": "Claude Code CLI (Fable 5)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": {
+        "mcpConnector": true,
+        "extendedThinking": true
+      },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low", "labels": { "ko": "Low (낮음)", "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high", "labels": { "ko": "High (높음)", "en": "High" } },
+          { "value": "xhigh", "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max", "labels": { "ko": "Max (최대 예산)", "en": "Max (highest budget)" } }
         ]
       },
       "execMode": "cli",
