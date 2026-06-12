@@ -37,6 +37,9 @@ export const RENDER_TOOL_MAP: Record<string, string> = {
   render_slideshow: 'Slideshow',
   render_lottie: 'Lottie',
   render_network: 'Network',
+  render_quiz: 'Quiz',
+  render_quiz_group: 'QuizGroup',
+  render_plan_card: 'PlanCard',
 };
 
 /** 변형 매칭 helper — AI 가 다양한 형태로 호출해도 자동 정규화.

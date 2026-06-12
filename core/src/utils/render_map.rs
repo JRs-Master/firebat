@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// `render_*` 도구 이름 → 컴포넌트 타입 매핑.
-/// 옛 TS `RENDER_TOOL_MAP` 1:1 (27 entries).
+/// components.json render 컴포넌트 동기 (30 entries — quiz/quiz_group/plan_card 포함, 2026-06-12).
 pub fn render_tool_map() -> &'static HashMap<&'static str, &'static str> {
     static MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     MAP.get_or_init(|| {
@@ -45,6 +45,9 @@ pub fn render_tool_map() -> &'static HashMap<&'static str, &'static str> {
         m.insert("render_slideshow", "Slideshow");
         m.insert("render_lottie", "Lottie");
         m.insert("render_network", "Network");
+        m.insert("render_quiz", "Quiz");
+        m.insert("render_quiz_group", "QuizGroup");
+        m.insert("render_plan_card", "PlanCard");
         m
     })
 }
@@ -96,9 +99,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn render_map_has_27_entries() {
-        // 옛 TS 1:1 — 27 컴포넌트 (Step 2 image 영역 별도)
-        assert_eq!(render_tool_map().len(), 27);
+    fn render_map_has_30_entries() {
+        // components.json render 컴포넌트와 동기 — quiz/quiz_group/plan_card 추가(2026-06-12) + render_alert alias.
+        assert_eq!(render_tool_map().len(), 30);
     }
 
     #[test]

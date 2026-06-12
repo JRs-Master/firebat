@@ -168,7 +168,7 @@ Exposes 30+ tools: page CRUD, file CRUD, module execution + introspection (`list
 
 **MCP Client** — Firebat calls out to external MCP servers (Gmail, Slack, KakaoTalk, …). Tools are auto-registered and the AI invokes them without extra wiring.
 
-> 🇰🇷 **MCP (Model Context Protocol)** — 외부 AI가 Firebat을 조작하는 **서버**(stdio / Streamable HTTP)와, Firebat이 Gmail·Slack·카톡 같은 외부 서비스를 호출하는 **클라이언트**를 모두 제공합니다. 서버는 36개의 빌트인 도구(+ 시스템 모듈·렌더 동적 등록)를 노출하고 Bearer 토큰으로 보호됩니다.
+> 🇰🇷 **MCP (Model Context Protocol)** — 외부 AI가 Firebat을 조작하는 **서버**(stdio / Streamable HTTP)와, Firebat이 Gmail·Slack·카톡 같은 외부 서비스를 호출하는 **클라이언트**를 모두 제공합니다. 서버는 30여 개의 빌트인 도구(+ 시스템 모듈·렌더 동적 등록)를 노출하고 Bearer 토큰으로 보호됩니다.
 
 ### Sandbox Execution
 
