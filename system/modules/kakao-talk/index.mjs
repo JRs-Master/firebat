@@ -27,50 +27,23 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action || 'send-me';
 
-    let accessToken = process.env['KAKAO_ACCESS_TOKEN'];
-    const refreshToken = process.env['KAKAO_REFRESH_TOKEN'];
-    const restApiKey = process.env['KAKAO_REST_API_KEY'];
-    const clientSecret = process.env['KAKAO_CLIENT_SECRET'];
-
+    // 토큰 = 인프라(TokenProvider)가 refresh_token grant 로 발급·선제갱신해 env 로 주입한 raw access token.
+    // 401 무효 시엔 인프라가 응답 data._apiStatus 를 보고 재발급 후 1회 재시도하고, 회전된 refresh_token 도
+    // 인프라가 영속한다 — sysmod 는 받아쓰기만 한다 (토큰 코드 0).
+    const accessToken = process.env['KAKAO_ACCESS_TOKEN'];
     if (!accessToken) return outErr('error.access_token_missing', {});
 
-    // 토큰 자동 갱신 래퍼
-    // - 핸들러가 { _errorKey, _errorParams? } 반환 → 검증 에러 (i18n)
-    // - 핸들러가 { _status, _statusBody } 반환 → kapi 호출 실패 (401이면 토큰 갱신 후 재시도)
-    // - 핸들러가 { _ok: data } 반환 → 성공 데이터 (변환된 형태)
-    // - 핸들러가 그 외 객체 반환 → 원본 kapi 응답 (성공, 변환 없음)
-    let refreshedAccessToken = null;   // 401 재시도 성공 시 새 access token
-    let refreshedRefreshToken = null;  // 카카오가 rotating한 새 refresh token (있으면)
-    const withRetry = async (fn) => {
-      let r = await fn(accessToken);
-      if (r && r._status === 401 && refreshToken && restApiKey) {
-        process.stderr.write('[kakao-talk] 토큰 만료, 갱신 시도...\n');
-        const refreshed = await refreshAccessToken(restApiKey, refreshToken, clientSecret);
-        if (refreshed) {
-          accessToken = refreshed.accessToken;
-          refreshedAccessToken = refreshed.accessToken;
-          if (refreshed.refreshToken) refreshedRefreshToken = refreshed.refreshToken;
-          r = await fn(accessToken);
-        } else {
-          return { _errorKey: 'error.token_refresh_failed', _errorParams: {} };
-        }
-      }
-      return r;
-    };
-
-    // 응답 객체에 __updateSecrets 주입 → sandbox가 Vault에 반영
-    const withTokenUpdate = (obj) => {
-      if (!refreshedAccessToken) return obj;
-      const secrets = { KAKAO_ACCESS_TOKEN: refreshedAccessToken };
-      if (refreshedRefreshToken) secrets.KAKAO_REFRESH_TOKEN = refreshedRefreshToken;
-      return { ...obj, __updateSecrets: secrets };
-    };
+    // 핸들러 반환 규약:
+    // - { _errorKey, _errorParams? } → 검증 에러 (i18n)
+    // - { _status, _statusBody } → kapi 호출 실패. 401 은 data._apiStatus 로도 노출 → 인프라 reactive 가 재발급·재시도.
+    // - { _ok: data } → 성공 데이터 (변환된 형태)
+    // - 그 외 객체 → 원본 kapi 응답 (성공)
     const run = async (fn) => {
-      const r = await withRetry(fn);
-      if (!r) return outRaw(withTokenUpdate({ success: false, errorKey: 'error.unknown', errorParams: {} }));
-      if (r._errorKey) return outRaw(withTokenUpdate({ success: false, errorKey: r._errorKey, errorParams: r._errorParams || {} }));
-      if (r._status) return outRaw(withTokenUpdate({ success: false, errorKey: 'error.api_status', errorParams: { status: String(r._status), body: r._statusBody || '' } }));
-      return outRaw(withTokenUpdate({ success: true, data: r._ok !== undefined ? r._ok : r }));
+      const r = await fn(accessToken);
+      if (!r) return outRaw({ success: false, errorKey: 'error.unknown', errorParams: {} });
+      if (r._errorKey) return outRaw({ success: false, errorKey: r._errorKey, errorParams: r._errorParams || {} });
+      if (r._status) return outRaw({ success: false, errorKey: 'error.api_status', errorParams: { status: String(r._status), body: r._statusBody || '' }, data: { _apiStatus: r._status } });
+      return outRaw({ success: true, data: r._ok !== undefined ? r._ok : r });
     };
 
     switch (action) {
@@ -383,20 +356,5 @@ async function handleListEvents(token, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  토큰 갱신
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-/** 갱신 응답: { access_token, refresh_token? } 반환 (refresh_token은 rotating 시에만) */
-async function refreshAccessToken(restApiKey, refreshToken, clientSecret) {
-  try {
-    const params = { grant_type: 'refresh_token', client_id: restApiKey, refresh_token: refreshToken };
-    if (clientSecret) params.client_secret = clientSecret;
-    const resp = await fetch('https://kauth.kakao.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params),
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (!data.access_token) return null;
-    return { accessToken: data.access_token, refreshToken: data.refresh_token || null };
-  } catch { return null; }
-}
+/** 토큰 발급·갱신(refresh_token grant)·회전 영속은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리.
+ *  sysmod 는 env 로 주입된 raw access token 을 받아쓰기만 한다 (토큰 코드 0). */

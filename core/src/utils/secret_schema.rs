@@ -61,6 +61,13 @@ pub struct OAuthSpec {
     pub body: serde_json::Map<String, serde_json::Value>,
     /// 응답 JSON 에서 토큰을 꺼낼 필드명 (예: access_token / token).
     pub token_field: String,
+    /// (옵션) refresh_token grant 에서 회전된 refresh_token 을 응답에서 꺼낼 필드 (예: kakao 의 refresh_token).
+    /// 함께 `refresh_token_secret` 이 있으면, 발급 시 그 값을 vault 에 영속한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token_field: Option<String>,
+    /// (옵션) 회전된 refresh_token 을 영속할 vault secret 이름 (`user:{name}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token_secret: Option<String>,
     /// 응답이 "토큰 무효" 임을 판정하는 규칙 — reactive 재발급 trigger. 없으면 reactive 안 함.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invalid_when: Option<InvalidWhen>,

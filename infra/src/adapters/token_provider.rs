@@ -96,13 +96,23 @@ impl OAuthTokenProvider {
             }
         }
 
-        let token = self.fetch_token(name, spec, mock).await?;
+        let (token, rotated_refresh) = self.fetch_token(name, spec, mock).await?;
         let serialized = serde_json::to_string(&TokenCache {
             t: token.clone(),
             iat: now_ms(),
         })
         .map_err(|e| format!("token cache 직렬화 실패: {e}"))?;
         self.vault.set_secret(&key, &serialized);
+        // refresh_token grant(예: kakao)에서 회전된 refresh_token 을 돌려주면 vault 에 영속 (raw).
+        // 안 하면 옛 refresh_token 이 만료돼 인증이 영구히 깨진다.
+        if let (Some(rt), Some(rt_secret)) =
+            (rotated_refresh.as_deref(), spec.refresh_token_secret.as_deref())
+        {
+            if !rt.is_empty() {
+                self.vault.set_secret(&format!("user:{rt_secret}"), rt);
+                tracing::info!(target: "token", secret = %name, refresh_secret = %rt_secret, "refresh_token 회전 영속");
+            }
+        }
         // 발급 이벤트만 기록 (토큰 값은 절대 X) — proactive/reactive 갱신 가시화 + 검증.
         tracing::info!(target: "token", secret = %name, mock, force, "OAuth 토큰 발급·갱신 + Vault 영속");
         Ok(token)
@@ -146,7 +156,7 @@ impl OAuthTokenProvider {
         name: &str,
         spec: &OAuthSpec,
         mock: bool,
-    ) -> Result<String, String> {
+    ) -> Result<(String, Option<String>), String> {
         let base = if mock {
             spec.base_mock
                 .as_deref()
@@ -185,10 +195,17 @@ impl OAuthTokenProvider {
             // body·토큰 로깅 금지 — status 만.
             return Err(format!("OAuth {name}: HTTP {}", status.as_u16()));
         }
-        json.get(&spec.token_field)
+        let access = json
+            .get(&spec.token_field)
             .and_then(|v| v.as_str())
             .map(String::from)
-            .ok_or_else(|| format!("OAuth {name}: 응답에 토큰 필드 '{}' 없음", spec.token_field))
+            .ok_or_else(|| format!("OAuth {name}: 응답에 토큰 필드 '{}' 없음", spec.token_field))?;
+        // refresh_token grant 회전 — 응답에 새 refresh_token 이 있으면 같이 반환 (없으면 None).
+        let rotated_refresh = spec
+            .refresh_token_field
+            .as_deref()
+            .and_then(|f| json.get(f).and_then(|v| v.as_str()).map(String::from));
+        Ok((access, rotated_refresh))
     }
 
     /// body 의 `${VAR}` placeholder 를 vault `user:VAR` 로 치환. 미해결은 빈 문자열 + 이름만 warn
@@ -200,11 +217,18 @@ impl OAuthTokenProvider {
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut out = serde_json::Map::new();
         for (k, v) in body {
-            let nv = match v.as_str() {
-                Some(s) => serde_json::Value::String(self.substitute(name, s)),
-                None => v.clone(),
-            };
-            out.insert(k.clone(), nv);
+            match v.as_str() {
+                Some(s) => {
+                    let sub = self.substitute(name, s);
+                    // 치환 결과가 빈 값인 파라미터는 생략 (예: kakao client_secret 미설정 시 — 빈 값 전송 회피).
+                    if !sub.is_empty() {
+                        out.insert(k.clone(), serde_json::Value::String(sub));
+                    }
+                }
+                None => {
+                    out.insert(k.clone(), v.clone());
+                }
+            }
         }
         out
     }
@@ -265,6 +289,8 @@ mod tests {
             content_type: "application/json".into(),
             body: serde_json::Map::new(),
             token_field: "token".into(),
+            refresh_token_field: None,
+            refresh_token_secret: None,
             invalid_when,
         }
     }

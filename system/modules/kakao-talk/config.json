@@ -10,7 +10,18 @@
   "secrets": [
     { "name": "KAKAO_REST_API_KEY",   "type": "key" },
     { "name": "KAKAO_CLIENT_SECRET",  "type": "key" },
-    { "name": "KAKAO_ACCESS_TOKEN",   "type": "token", "lifetimeSec": 21600,   "refreshFrom": "KAKAO_REFRESH_TOKEN" },
+    {
+      "name": "KAKAO_ACCESS_TOKEN", "type": "token", "lifetimeSec": 21000, "refreshFrom": "KAKAO_REFRESH_TOKEN",
+      "oauth": {
+        "base": "https://kauth.kakao.com",
+        "path": "/oauth/token", "method": "POST", "contentType": "application/x-www-form-urlencoded",
+        "body": { "grant_type": "refresh_token", "client_id": "${KAKAO_REST_API_KEY}", "refresh_token": "${KAKAO_REFRESH_TOKEN}", "client_secret": "${KAKAO_CLIENT_SECRET}" },
+        "tokenField": "access_token",
+        "refreshTokenField": "refresh_token",
+        "refreshTokenSecret": "KAKAO_REFRESH_TOKEN",
+        "invalidWhen": { "match": "any", "conditions": [ { "field": "_apiStatus", "equals": 401 } ] }
+      }
+    },
     { "name": "KAKAO_REFRESH_TOKEN",  "type": "token", "lifetimeSec": 5184000 }
   ],
   "settings_fields": [
