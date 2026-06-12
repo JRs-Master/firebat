@@ -282,6 +282,22 @@ impl ConfigDrivenAdapter {
                 .unwrap_or(false);
             enriched.anthropic_cache_enabled = Some(cache_enabled);
         }
+        // CLI 모델 유도 — 레지스트리 id(예: "cli-claude-code-sonnet-4-6")는 Firebat id 지 provider 모델 문자열이 아님.
+        // opts.cli_model 은 요청에 안 실려(프론트 미전송) 항상 None → 3 CLI(claude/codex/gemini) 모두 --model 미전송
+        // → 각 CLI 기본 모델로 돌아 "모델 선택이 무시되던" 버그. 여기서 id → 실제 모델 문자열 유도(한 곳에서 3 CLI fix).
+        // "*-auto" 는 None 유지(CLI 기본 모델). claude 는 "claude-{}" 가 --model 값임이 실측 검증됨.
+        if enriched.cli_model.is_none() && !config.id.ends_with("-auto") {
+            let id = config.id.as_str();
+            let derived = match config.format.as_str() {
+                "cli-claude-code" => id.strip_prefix("cli-claude-code-").map(|r| format!("claude-{r}")),
+                "cli-gemini" => id.strip_prefix("cli-gemini-").map(|r| format!("gemini-{r}")),
+                "cli-codex" => id.strip_prefix("cli-codex-").map(|r| r.to_string()),
+                _ => None,
+            };
+            if let Some(m) = derived {
+                enriched.cli_model = Some(m);
+            }
+        }
         enriched
     }
 }
