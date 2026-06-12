@@ -123,9 +123,23 @@ function build(apis) {
     secrets: [
       { name: 'KIWOOM_APP_KEY',      type: 'key' },
       { name: 'KIWOOM_APP_SECRET',   type: 'key' },
-      { name: 'KIWOOM_ACCESS_TOKEN', type: 'token', lifetimeSec: 82800 },
+      {
+        name: 'KIWOOM_ACCESS_TOKEN', type: 'token', lifetimeSec: 85800,
+        // 토큰 생명주기는 인프라 TokenProvider 가 본 oauth 스펙으로 관리 (발급·선제갱신·재발급·Vault 영속).
+        // sysmod 는 env 로 주입된 raw 토큰을 받아쓰기만 — 토큰 코드 0.
+        oauth: {
+          base: 'https://api.kiwoom.com',
+          baseMock: 'https://mockapi.kiwoom.com',
+          path: '/oauth2/token', method: 'POST', contentType: 'application/json;charset=UTF-8',
+          body: { grant_type: 'client_credentials', appkey: '${KIWOOM_APP_KEY}', secretkey: '${KIWOOM_APP_SECRET}' },
+          tokenField: 'token',
+          invalidWhen: { match: 'any', conditions: [
+            { field: 'return_code', equals: 3 },
+            { field: 'return_msg', regex: '(?i)Token이 유효하지 않습니다|token.*invalid' },
+          ] },
+        },
+      },
     ],
-    tokenCache: { secretName: 'KIWOOM_ACCESS_TOKEN', ttlHours: 23 },
     domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
       name,
       description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
@@ -178,22 +192,8 @@ const URL_CATEGORY = ${JSON.stringify(urlCategory, null, 2)};
 // API ID → 한글명 (에러 메시지 + 결과 enrichment)
 const API_NAMES = ${JSON.stringify(apiNames, null, 2)};
 
-async function getAccessToken(base, appKey, appSecret, forceNew = false) {
-  if (!forceNew) {
-    const cached = process.env['KIWOOM_ACCESS_TOKEN'];
-    if (cached) return { token: cached, isNew: false };
-  }
-  const resp = await fetch(\`\${base}/oauth2/token\`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json;charset=UTF-8' },
-    body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, secretkey: appSecret }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) throw new Error(\`토큰 발급 실패: \${resp.status}\`);
-  const json = await resp.json();
-  if (!json.token) throw new Error(\`토큰 응답 오류: \${JSON.stringify(json)}\`);
-  return { token: json.token, isNew: true };
-}
+// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
+// sysmod 는 env 로 주입된 raw 토큰(KIWOOM_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
 
 const RATE_LIMIT = 5;
 const WINDOW_MS = 1000;
@@ -229,7 +229,13 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
     return callApi(base, token, apiId, params, retry - 1);
   }
   if (!resp.ok) {
+    // 키움은 토큰 만료 등 일부 오류를 HTTP 4xx/5xx + JSON 바디(return_code/return_msg)로 준다.
+    // 바디가 키움 에러 envelope 면 throw 말고 반환 → 상위 return_code 검사(인프라 reactive)가 토큰 무효를 감지.
     const errText = await resp.text().catch(() => '');
+    try {
+      const j = JSON.parse(errText);
+      if (j && (j.return_code !== undefined || j.return_msg !== undefined)) return j;
+    } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(\`키움 API \${resp.status}: \${resp.statusText} \${errText}\`.trim());
   }
   return await resp.json();
@@ -252,25 +258,23 @@ process.stdin.on('end', async () => {
       console.log(JSON.stringify({ success: false, error: 'KIWOOM_APP_KEY / KIWOOM_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kiwoom 에서 등록하세요.' }));
       return;
     }
+    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
+    // 응답의 return_code/return_msg 를 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
+    const token = process.env['KIWOOM_ACCESS_TOKEN'];
+    if (!token) {
+      console.log(JSON.stringify({ success: false, error: '키움 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
+      return;
+    }
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    let { token, isNew } = await getAccessToken(base, appKey, appSecret);
     const params = data.params || {};
-    let result = await callApi(base, token, action, params);
-    const isTokenInvalid = result?.return_code === 3 || /Token이 유효하지 않습니다|token.*invalid/i.test(result?.return_msg || '');
-    if (isTokenInvalid && !isNew) {
-      const fresh = await getAccessToken(base, appKey, appSecret, true);
-      token = fresh.token;
-      isNew = true;
-      result = await callApi(base, token, action, params);
-    }
+    const result = await callApi(base, token, action, params);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
     const rc = result?.return_code;
     const ok = rc === undefined || rc === null || rc === 0;
     const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
     if (!ok) output.error = result?.return_msg || \`키움 API 오류 (return_code=\${rc})\`;
-    if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

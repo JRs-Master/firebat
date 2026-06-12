@@ -19,13 +19,35 @@
     {
       "name": "KIWOOM_ACCESS_TOKEN",
       "type": "token",
-      "lifetimeSec": 85800
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://api.kiwoom.com",
+        "baseMock": "https://mockapi.kiwoom.com",
+        "path": "/oauth2/token",
+        "method": "POST",
+        "contentType": "application/json;charset=UTF-8",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIWOOM_APP_KEY}",
+          "secretkey": "${KIWOOM_APP_SECRET}"
+        },
+        "tokenField": "token",
+        "invalidWhen": {
+          "match": "any",
+          "conditions": [
+            {
+              "field": "return_code",
+              "equals": 3
+            },
+            {
+              "field": "return_msg",
+              "regex": "(?i)Token이 유효하지 않습니다|token.*invalid"
+            }
+          ]
+        }
+      }
     }
   ],
-  "tokenCache": {
-    "secretName": "KIWOOM_ACCESS_TOKEN",
-    "ttlHours": 23
-  },
   "domains": [
     {
       "name": "account",
