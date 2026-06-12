@@ -16,7 +16,7 @@ use firebat_infra::adapters::{
     image_processor::{ImageRsProcessorAdapter, StubImageProcessorAdapter},
     mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
     memory::SqliteMemoryAdapter, network::ReqwestNetworkAdapter,
-    sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter,
+    sandbox::ProcessSandboxAdapter, token_provider::OAuthTokenProvider, storage::LocalStorageAdapter,
     tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
 };
 use firebat_core::{
@@ -386,6 +386,7 @@ async fn main() -> Result<()> {
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(
         ProcessSandboxAdapter::new(workspace_root.clone())
             .with_vault(vault.clone())
+            .with_token_provider(Arc::new(OAuthTokenProvider::new(vault.clone())))
             .with_status(status_manager.clone())
             .with_cache(cache_adapter.clone()),
     );

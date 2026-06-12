@@ -23,7 +23,11 @@ use firebat_core::ports::{
 };
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 
+use crate::adapters::token_provider::OAuthTokenProvider;
+
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+/// OAuth 토큰 lifetimeSec 미지정 시 기본 (23h50m — 24h 만료 직전 선제 갱신).
+const DEFAULT_TOKEN_LIFETIME_SEC: u64 = 85800;
 const PYPI_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 /// PyPI registry 안 최신 버전 캐시 — 매 polling 시 network 호출 부담 차단. 1시간 TTL.
@@ -283,6 +287,9 @@ pub struct ProcessSandboxAdapter {
     /// LLM context 에 넣지 않고 cacheKey 받아 cache_read / cache_grep / cache_aggregate 도구 사용.
     /// 미설정 시 `_cache` 가 있는 응답도 그대로 통과 (옛 호환).
     cache: Option<Arc<SysmodCacheAdapter>>,
+    /// OAuthTokenProvider — config.json token secret 의 `oauth` 스펙으로 인프라가 토큰 발급·갱신.
+    /// 미설정 시 토큰 자동발급 비활성 (sysmod 자체 관리 옛 동작).
+    token_provider: Option<Arc<OAuthTokenProvider>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
     /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
     /// 미설정 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 설정 (2026-05-06).
@@ -332,6 +339,7 @@ impl ProcessSandboxAdapter {
             vault: None,
             status: None,
             cache: None,
+            token_provider: None,
             #[cfg(target_os = "linux")]
             pre_exec_hook: None,
         }
@@ -529,6 +537,35 @@ impl ProcessSandboxAdapter {
         self
     }
 
+    /// OAuthTokenProvider 주입 — config.json token secret 의 `oauth` 스펙으로 인프라가 토큰
+    /// 발급·TTL 선제 갱신(proactive)·무효 시 재발급(reactive)·Vault 영속을 처리한다.
+    /// 미설정 시 sysmod 자체 토큰 관리 (옛 동작).
+    pub fn with_token_provider(mut self, provider: Arc<OAuthTokenProvider>) -> Self {
+        self.token_provider = Some(provider);
+        self
+    }
+
+    /// config.json 의 token 타입 secret 중 oauth 스펙이 있는 것만 (name, spec, lifetime_sec).
+    /// proactive/reactive 토큰 갱신 대상.
+    fn oauth_token_secrets(
+        module_dir: &Path,
+    ) -> Vec<(String, firebat_core::utils::secret_schema::OAuthSpec, u64)> {
+        let manifest = module_dir.join("config.json");
+        let Ok(raw) = std::fs::read_to_string(&manifest) else {
+            return Vec::new();
+        };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            return Vec::new();
+        };
+        firebat_core::utils::secret_schema::parse_secrets(&parsed)
+            .into_iter()
+            .filter_map(|m| {
+                let spec = m.oauth?;
+                Some((m.name, spec, m.lifetime_sec.unwrap_or(DEFAULT_TOKEN_LIFETIME_SEC)))
+            })
+            .collect()
+    }
+
     /// StatusManager 주입 — 매 패키지 install 의 진행 상태를 ActiveJobsIndicator + 설정 화면이
     /// polling 가능한 형태로 노출합니다.
     ///
@@ -564,7 +601,7 @@ impl ProcessSandboxAdapter {
     /// 2. 각 키마다 Vault `user:KEY` 조회 → env 저장
     /// 3. 모듈 settings (`system:module:<name>:settings`) 의 모든 필드 → `MODULE_<KEY>` env 주입
     /// 4. tokenCache.secretName 으로 vault 조회 → env 주입 (옛 OAuth token cache 로드)
-    fn load_secrets_env(&self, module_dir: &Path) -> HashMap<String, String> {
+    fn load_secrets_env(&self, module_dir: &Path, mock: bool) -> HashMap<String, String> {
         let mut env: HashMap<String, String> = HashMap::new();
         let Some(vault) = &self.vault else {
             return env;
@@ -578,23 +615,33 @@ impl ProcessSandboxAdapter {
         };
 
         // 1. secrets 배열 → user: 접두사로 Vault 조회.
-        // string entry (옛 호환) + object entry ({name, type, lifetimeSec?, refreshFrom?}) 양쪽 지원.
-        // type=token 영역도 동일하게 env 주입 — sysmod 가 cached token 으로 즉시 사용 가능.
+        // - key entry: 값 verbatim.
+        // - 인프라 관리 token (type=token + oauth + provider 설정): mock 별 슬롯에서 `{t,iat}` 를 읽어
+        //   raw 토큰(.t)만 주입 — sysmod 는 `Bearer ${env.TOKEN}` 로 바로 사용 (토큰 코드 0).
+        // - oauth 없는 옛 token: verbatim (sysmod 자체 {t,iat} 관리 — 옛 동작 유지).
+        use firebat_core::utils::secret_schema::SecretKind;
         for meta in firebat_core::utils::secret_schema::parse_secrets(&parsed) {
-            if let Some(value) = vault.get_secret(&format!("user:{}", meta.name)) {
+            let infra_managed = meta.kind == SecretKind::Token
+                && meta.oauth.is_some()
+                && self.token_provider.is_some();
+            let value = if infra_managed {
+                let key = if mock {
+                    format!("user:{}__mock", meta.name)
+                } else {
+                    format!("user:{}", meta.name)
+                };
+                vault.get_secret(&key).map(|raw| {
+                    // `{t,iat}` JSON → raw .t. non-JSON(옛 raw 형식) → 그대로.
+                    serde_json::from_str::<serde_json::Value>(&raw)
+                        .ok()
+                        .and_then(|j| j.get("t").and_then(|t| t.as_str()).map(String::from))
+                        .unwrap_or(raw)
+                })
+            } else {
+                vault.get_secret(&format!("user:{}", meta.name))
+            };
+            if let Some(value) = value {
                 env.insert(meta.name, value);
-            }
-        }
-
-        // 1b. tokenCache.secretName 으로 vault 조회 → env 주입.
-        // 옛 OAuth token (예: KIS_ACCESS_TOKEN / KIWOOM_ACCESS_TOKEN) 이 매 호출마다
-        // 토큰 발급 호출을 일으키지 않도록 — 한투 / 키움 측 rate limit 403 issue 방어. cached token 이 있으면
-        // 즉시 사용 + 만료된 경우 sysmod 자체에서 forceNew 재시도.
-        if let Some(token_cache) = parsed.get("tokenCache").and_then(|v| v.as_object()) {
-            if let Some(secret_name) = token_cache.get("secretName").and_then(|v| v.as_str()) {
-                if let Some(value) = vault.get_secret(&format!("user:{secret_name}")) {
-                    env.insert(secret_name.to_string(), value);
-                }
             }
         }
 
@@ -1154,11 +1201,48 @@ impl ISandboxPort for ProcessSandboxAdapter {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.workspace_root.clone());
 
+        // OAuth 토큰 — proactive 선제 갱신 (호출 전). config token secret 의 oauth 스펙 기반.
+        // 실패는 pass-through (유효 캐시가 있으면 그걸로 진행 — 블로킹 금지).
+        let mock = input_data.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+        let token_secrets = Self::oauth_token_secrets(&module_dir);
+        if let Some(tp) = &self.token_provider {
+            for (name, spec, life) in &token_secrets {
+                if let Err(e) = tp.ensure_fresh(name, spec, *life, mock, false).await {
+                    tracing::warn!(target: "sandbox", secret = %name, error = %e, "proactive 토큰 갱신 실패 — 캐시로 진행");
+                }
+            }
+        }
+
         // 단일 시도 — silent install path 폐기 (사용자 결정 2026-05-16).
         // 패키지 누락 시 채팅 에러 뱃지 + 설정 화면 [설치] 버튼으로 명시 install.
-        let result = self
+        let mut result = self
             .run_once(&full_path, &runtime, &module_dir, input_data, opts)
             .await?;
+
+        // reactive — 응답이 oauth.invalidWhen 규칙에 매치(토큰 무효)하면 강제 재발급 후 정확히 1회 재시도.
+        // run_once 가 load_secrets_env 로 vault 의 갱신된 토큰을 다시 읽으므로 env 재주입 불요. 루프 없음.
+        if let Some(tp) = &self.token_provider {
+            let invalid = token_secrets
+                .iter()
+                .any(|(_, spec, _)| tp.is_invalid(spec, &result.data));
+            if invalid {
+                let mut refreshed = false;
+                for (name, spec, life) in &token_secrets {
+                    if tp.is_invalid(spec, &result.data) {
+                        match tp.ensure_fresh(name, spec, *life, mock, true).await {
+                            Ok(_) => refreshed = true,
+                            Err(e) => tracing::warn!(target: "sandbox", secret = %name, error = %e, "reactive 토큰 재발급 실패"),
+                        }
+                    }
+                }
+                if refreshed {
+                    tracing::info!(target: "sandbox", "토큰 무효 감지 → 재발급 후 1회 재시도");
+                    result = self
+                        .run_once(&full_path, &runtime, &module_dir, input_data, opts)
+                        .await?;
+                }
+            }
+        }
 
         // 패키지 누락 감지 → `core.module.packages_missing` envelope errorKey
         let err_msg = if !result.success {
@@ -1280,8 +1364,9 @@ impl ProcessSandboxAdapter {
         let _ = std::fs::create_dir_all(&pw_browsers);
         cmd.env("PLAYWRIGHT_BROWSERS_PATH", pw_browsers.to_string_lossy().to_string());
 
-        // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1)
-        for (k, v) in self.load_secrets_env(module_dir) {
+        // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1). 인프라 관리 토큰은 mock 별 슬롯 raw 주입.
+        let mock = input_data.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+        for (k, v) in self.load_secrets_env(module_dir, mock) {
             cmd.env(k, v);
         }
         // 명시 env 가 secrets 위에 (사용자 명시 우선)
@@ -1662,7 +1747,7 @@ mod tests {
 
         let sandbox =
             ProcessSandboxAdapter::new(tmp.path().to_path_buf()).with_vault(vault);
-        let env = sandbox.load_secrets_env(&module_dir);
+        let env = sandbox.load_secrets_env(&module_dir, false);
         // secrets 배열에 설정된 키만 주입
         assert_eq!(env.get("KIWOOM_APP_KEY").map(|s| s.as_str()), Some("test-app-key"));
         assert_eq!(
@@ -1687,7 +1772,7 @@ mod tests {
 
         // Vault 미설정 → empty env (회귀 안전)
         let sandbox = ProcessSandboxAdapter::new(tmp.path().to_path_buf());
-        let env = sandbox.load_secrets_env(&module_dir);
+        let env = sandbox.load_secrets_env(&module_dir, false);
         assert!(env.is_empty());
     }
 
@@ -1720,7 +1805,7 @@ mod tests {
 
         let sandbox =
             ProcessSandboxAdapter::new(tmp.path().to_path_buf()).with_vault(vault);
-        let env = sandbox.load_secrets_env(&module_dir);
+        let env = sandbox.load_secrets_env(&module_dir, false);
         // 정상 settings 는 MODULE_<UPPER> 형태로 주입
         assert_eq!(
             env.get("MODULE_ENDPOINT").map(|s| s.as_str()),

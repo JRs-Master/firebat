@@ -119,9 +119,23 @@ function build(apis) {
     secrets: [
       { name: 'KIS_APP_KEY',      type: 'key' },
       { name: 'KIS_APP_SECRET',   type: 'key' },
-      { name: 'KIS_ACCESS_TOKEN', type: 'token', lifetimeSec: 82800 },
+      {
+        name: 'KIS_ACCESS_TOKEN', type: 'token', lifetimeSec: 85800,
+        // 토큰 생명주기는 인프라 TokenProvider 가 본 oauth 스펙으로 관리 (발급·선제갱신·재발급·Vault 영속).
+        // sysmod 는 env 로 주입된 raw 토큰을 받아쓰기만 — 토큰 코드 0.
+        oauth: {
+          base: 'https://openapi.koreainvestment.com:9443',
+          baseMock: 'https://openapivts.koreainvestment.com:29443',
+          path: '/oauth2/tokenP', method: 'POST', contentType: 'application/json',
+          body: { grant_type: 'client_credentials', appkey: '${KIS_APP_KEY}', appsecret: '${KIS_APP_SECRET}' },
+          tokenField: 'access_token',
+          invalidWhen: { match: 'all', conditions: [
+            { field: 'rt_cd', equals: '1' },
+            { field: 'msg1', regex: 'token|토큰' },
+          ] },
+        },
+      },
     ],
-    tokenCache: { secretName: 'KIS_ACCESS_TOKEN', ttlHours: 23 },
     domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
       name,
       description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
@@ -172,22 +186,8 @@ const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
 
 const API_TABLE = ${JSON.stringify(apiTable, null, 2)};
 
-async function getAccessToken(base, appKey, appSecret, forceNew = false) {
-  if (!forceNew) {
-    const cached = process.env['KIS_ACCESS_TOKEN'];
-    if (cached) return { token: cached, isNew: false };
-  }
-  const resp = await fetch(\`\${base}/oauth2/tokenP\`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, appsecret: appSecret }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) throw new Error(\`KIS 토큰 발급 실패: \${resp.status}\`);
-  const json = await resp.json();
-  if (!json.access_token) throw new Error(\`KIS 토큰 응답 오류: \${JSON.stringify(json)}\`);
-  return { token: json.access_token, isNew: true };
-}
+// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
+// sysmod 는 env 로 주입된 raw 토큰(KIS_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
 
 const RATE_LIMIT = 20;
 const WINDOW_MS = 1000;
@@ -228,7 +228,13 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1);
   }
   if (!resp.ok) {
+    // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
+    // 바디가 KIS 에러 envelope 면 throw 말고 반환 → 상위 rt_cd 검사(인프라 reactive)가 토큰 무효를 감지.
     const errText = await resp.text().catch(() => '');
+    try {
+      const j = JSON.parse(errText);
+      if (j && (j.rt_cd !== undefined || j.msg_cd !== undefined)) return j;
+    } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(\`KIS API \${resp.status}: \${resp.statusText} \${errText}\`.trim());
   }
   return await resp.json();
@@ -251,19 +257,18 @@ process.stdin.on('end', async () => {
       console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
       return;
     }
+    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
+    // 응답의 rt_cd/msg1 을 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
+    const token = process.env['KIS_ACCESS_TOKEN'];
+    if (!token) {
+      console.log(JSON.stringify({ success: false, error: 'KIS 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
+      return;
+    }
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    let { token, isNew } = await getAccessToken(base, appKey, appSecret);
     const query = data.query || {};
     const body = data.body || {};
-    let result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
-    const isTokenInvalid = result?.rt_cd === '1' && /token|토큰/.test(result?.msg1 || '');
-    if (isTokenInvalid && !isNew) {
-      const fresh = await getAccessToken(base, appKey, appSecret, true);
-      token = fresh.token;
-      isNew = true;
-      result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
-    }
+    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     const meta = API_TABLE[action];
     // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
     // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
@@ -271,7 +276,6 @@ process.stdin.on('end', async () => {
     const ok = rtCd === undefined || rtCd === null || rtCd === '0';
     const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
     if (!ok) output.error = result?.msg1 || \`한투 API 오류 (rt_cd=\${rtCd})\`;
-    if (isNew) output.__updateSecrets = { KIS_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod log;
 pub mod database;
 pub mod sandbox;
+pub mod token_provider;
 pub mod library;
 pub mod hub;
 pub mod mcp_client;

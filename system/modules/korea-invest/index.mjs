@@ -1959,31 +1959,8 @@ const API_TABLE = {
   }
 };
 
-const TOKEN_TTL_MS = 85800 * 1000; // 23시간 50분 — 만료(24h) 직전 1일 1회 선제 갱신(proactive). reactive(만료 후 재발급)는 안전망.
-async function getAccessToken(base, appKey, appSecret, forceNew = false) {
-  if (!forceNew) {
-    const cached = process.env['KIS_ACCESS_TOKEN'];
-    if (cached) {
-      // 캐시 형식 = JSON {t, iat}. 발급 후 TTL 안이면 그대로 재사용(호출 1번). TTL 초과면 아래서 선제 재발급.
-      try {
-        const c = JSON.parse(cached);
-        if (c && typeof c.t === 'string' && typeof c.iat === 'number' && Date.now() - c.iat < TOKEN_TTL_MS) {
-          return { token: c.t, isNew: false };
-        }
-      } catch { /* 옛 raw 토큰 형식 → 나이 불명 → 재발급해 JSON 형식으로 전환 */ }
-    }
-  }
-  const resp = await fetch(`${base}/oauth2/tokenP`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, appsecret: appSecret }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) throw new Error(`KIS 토큰 발급 실패: ${resp.status}`);
-  const json = await resp.json();
-  if (!json.access_token) throw new Error(`KIS 토큰 응답 오류: ${JSON.stringify(json)}`);
-  return { token: json.access_token, isNew: true };
-}
+// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
+// sysmod 는 env 로 주입된 raw 토큰(KIS_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
 
 const RATE_LIMIT = 20;
 const WINDOW_MS = 1000;
@@ -2025,8 +2002,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   }
   if (!resp.ok) {
     // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
-    // 바디가 KIS 에러 envelope 면 throw 하지 말고 그대로 반환 → 상위 rt_cd 검사가 토큰 만료를 감지해
-    // 재발급·재시도하게 한다 (throw 하면 rt_cd 검사 도달 전 빠져나가 자동 재발급이 동작 안 함).
+    // 바디가 KIS 에러 envelope 면 throw 말고 반환 → 상위 rt_cd 검사(인프라 reactive)가 토큰 무효를 감지.
     const errText = await resp.text().catch(() => '');
     try {
       const j = JSON.parse(errText);
@@ -2054,19 +2030,18 @@ process.stdin.on('end', async () => {
       console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
       return;
     }
+    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
+    // 응답의 rt_cd/msg1 을 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
+    const token = process.env['KIS_ACCESS_TOKEN'];
+    if (!token) {
+      console.log(JSON.stringify({ success: false, error: 'KIS 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
+      return;
+    }
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    let { token, isNew } = await getAccessToken(base, appKey, appSecret);
     const query = data.query || {};
     const body = data.body || {};
-    let result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
-    const isTokenInvalid = result?.rt_cd === '1' && /token|토큰/.test(result?.msg1 || '');
-    if (isTokenInvalid && !isNew) {
-      const fresh = await getAccessToken(base, appKey, appSecret, true);
-      token = fresh.token;
-      isNew = true;
-      result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
-    }
+    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     const meta = API_TABLE[action];
     // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
     // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
@@ -2074,7 +2049,6 @@ process.stdin.on('end', async () => {
     const ok = rtCd === undefined || rtCd === null || rtCd === '0';
     const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
     if (!ok) output.error = result?.msg1 || `한투 API 오류 (rt_cd=${rtCd})`;
-    if (isNew) output.__updateSecrets = { KIS_ACCESS_TOKEN: JSON.stringify({ t: token, iat: Date.now() }) };
     console.log(JSON.stringify(output));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

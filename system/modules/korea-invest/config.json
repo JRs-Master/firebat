@@ -19,13 +19,35 @@
     {
       "name": "KIS_ACCESS_TOKEN",
       "type": "token",
-      "lifetimeSec": 85800
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://openapi.koreainvestment.com:9443",
+        "baseMock": "https://openapivts.koreainvestment.com:29443",
+        "path": "/oauth2/tokenP",
+        "method": "POST",
+        "contentType": "application/json",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIS_APP_KEY}",
+          "appsecret": "${KIS_APP_SECRET}"
+        },
+        "tokenField": "access_token",
+        "invalidWhen": {
+          "match": "all",
+          "conditions": [
+            {
+              "field": "rt_cd",
+              "equals": "1"
+            },
+            {
+              "field": "msg1",
+              "regex": "token|토큰"
+            }
+          ]
+        }
+      }
     }
   ],
-  "tokenCache": {
-    "secretName": "KIS_ACCESS_TOKEN",
-    "ttlHours": 23
-  },
   "domains": [
     {
       "name": "bond",
