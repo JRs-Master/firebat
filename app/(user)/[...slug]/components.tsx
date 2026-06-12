@@ -1483,13 +1483,12 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   const flatData = series.flatMap(s => s.values);
   if (flatData.length === 0) return null;
   const maxVal = Math.max(...flatData, 1);
-  const minVal = Math.min(...flatData, 0);
   // 단일 series 의 첫 series.values — bar/pie/doughnut 등 single-series chart 에서 사용
   const firstSeriesData = series[0].values;
 
   // line chart — multi-series 자연 지원
   if (type === 'line') {
-    return <LineChartInteractive series={series} labels={labels} title={title} unit={unit} minVal={minVal} maxVal={maxVal} palette={palette} />;
+    return <LineChartInteractive series={series} labels={labels} title={title} unit={unit} palette={palette} />;
   }
   // bar/pie/doughnut — 현재 single-series 만 지원. multi 시 첫 series 사용 + 콘솔 경고.
   if (series.length > 1) {
@@ -1530,11 +1529,36 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   return <BarChartInteractive data={firstSeriesData} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} negBarColor={negBarColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
 }
 
+/** "보기 좋은" 축 — 데이터 min/max 를 1/2/5×10ⁿ 간격으로 반올림해 깔끔한 눈금 생성 (D3 nice 동일 알고리즘).
+ *  전부 양수면 바닥이 음수로 내려가지 않고(주가 등 보호), 음수가 섞이면 바닥도 음수 nice 값까지 자연 확장. */
+function niceAxis(dataMin: number, dataMax: number, tickCount = 4): { min: number; max: number; step: number; ticks: number[] } {
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax)) return { min: 0, max: 1, step: 1, ticks: [0, 1] };
+  // 평탄(전부 동일 값) 가드 — 임의 폭 부여
+  if (dataMax <= dataMin) {
+    const pad = Math.abs(dataMax) > 0 ? Math.abs(dataMax) * 0.1 : 1;
+    dataMin -= pad; dataMax += pad;
+  }
+  const niceNum = (range: number, round: boolean): number => {
+    const exp = Math.floor(Math.log10(range));
+    const frac = range / Math.pow(10, exp);
+    const nf = round
+      ? (frac < 1.5 ? 1 : frac < 3 ? 2 : frac < 7 ? 5 : 10)
+      : (frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10);
+    return nf * Math.pow(10, exp);
+  };
+  const step = niceNum((dataMax - dataMin) / tickCount, true);
+  const min = Math.floor(dataMin / step) * step;
+  const max = Math.ceil(dataMax / step) * step;
+  const n = Math.round((max - min) / step);
+  const ticks = Array.from({ length: n + 1 }, (_, i) => min + i * step);
+  return { min, max, step, ticks };
+}
+
 /** Multi-series line chart — series 1개일 때 single line + area gradient (기존 동작 보존),
  *  2개 이상일 때 각 series 별 path + 색 (palette) + legend + hover tooltip 에 모든 series 값 표시.
  *  area gradient 는 single 일 때만 (multi 시 겹쳐 가독성 저하). */
-function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, palette }: {
-  series: ChartSeries[]; labels: string[]; title?: string; unit?: string; minVal: number; maxVal: number; palette?: string;
+function LineChartInteractive({ series, labels, title, unit, palette }: {
+  series: ChartSeries[]; labels: string[]; title?: string; unit?: string; palette?: string;
 }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
@@ -1544,9 +1568,13 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
   const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
-  const range = maxVal - minVal || 1;
-  const yMin = minVal - range * 0.05;
-  const yMax = maxVal + range * 0.05;
+  // Y 도메인 — 실제 데이터 min/max 기반 nice 축 (전달 props 가 아닌 series 직접 계산).
+  // bar 용 minVal 은 0 강제라 가격축이 음수로 내려가고 눈금도 raw 4등분이라 안 떨어지던 것 동시 해결.
+  const flatVals = series.flatMap(s => s.values);
+  const dataMin = flatVals.length ? Math.min(...flatVals) : 0;
+  const dataMax = flatVals.length ? Math.max(...flatVals) : 1;
+  const { min: yMin, max: yMax, step: yStep, ticks: yTickVals } = niceAxis(dataMin, dataMax);
+  const yDec = yStep > 0 && yStep < 1 ? Math.min(4, Math.ceil(-Math.log10(yStep))) : 0;
   // x-축 길이 — 모든 series 공유. 가장 긴 series 의 length 사용 (짧은 series 는 그 길이까지만 그림).
   const xLen = Math.max(...series.map(s => s.values.length), 1);
   const xs = Array.from({ length: xLen }, (_, i) => padL + (xLen <= 1 ? 0 : (i / (xLen - 1)) * plotW));
@@ -1562,8 +1590,6 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
     return { name: s.name, values: s.values, ys, path, area, color };
   });
   const isMulti = series.length > 1;
-  const ticks = 4;
-  const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yMax - yMin) * (i / ticks));
   const xStep = Math.max(1, Math.floor(xLen / 6));
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -1614,12 +1640,12 @@ function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, pal
               </linearGradient>
             )}
           </defs>
-          {yTicks.map((t, i) => {
-            const y = padT + plotH - (i / ticks) * plotH;
+          {yTickVals.map((t, i) => {
+            const y = padT + plotH - ((t - yMin) / (yMax - yMin)) * plotH;
             return (
               <g key={i}>
                 <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />
-                <text x={padL - 6} y={y} fill="#94a3b8" fontSize="10" textAnchor="end" dominantBaseline="middle">{Math.round(t).toLocaleString('ko-KR')}</text>
+                <text x={padL - 6} y={y} fill="#94a3b8" fontSize="10" textAnchor="end" dominantBaseline="middle">{t.toLocaleString('ko-KR', { maximumFractionDigits: yDec })}</text>
               </g>
             );
           })}
