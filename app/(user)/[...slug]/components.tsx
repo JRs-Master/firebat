@@ -1864,6 +1864,8 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
     {};
   const deltaColor = deltaType === 'neutral' || !deltaType ? 'text-gray-500' : '';
   const deltaArrow = deltaType === 'up' ? '▲' : deltaType === 'down' ? '▼' : '';
+  // AI 가 delta 값에 화살표(▲▼↑↓ 등)를 이미 넣어 보내면 deltaArrow 와 겹쳐 "▲▲ 22%p" 중복 → 앞 화살표 제거.
+  const deltaText = String(delta ?? '').replace(/^\s*[▲▼△▽↑↓⬆⬇⇧⇩]+\s*/, '');
   const valStr = formatNumberString(value);
 
   // value 가 숫자 패턴인지 (콤마·부호·단위·approximate prefix 허용)
@@ -1890,7 +1892,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
       </div>
       {delta != null && (
         <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`} style={deltaStyle}>
-          {deltaArrow} {formatNumberString(delta)}
+          {deltaArrow} {formatNumberString(deltaText)}
         </div>
       )}
       {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{cleanPlainText(subLabel)}</div>}
