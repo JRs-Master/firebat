@@ -163,9 +163,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const fullData = useMemo(() => {
     if (!Array.isArray(data) || data.length === 0) return [];
-    const valid = data.filter(d =>
-      d && isNum(d.open) && isNum(d.high) && isNum(d.low) && isNum(d.close) && isNum(d.volume)
-    );
+    // close + date 만 있으면 렌더 — 누락 OHLC 는 close 로 폴백(플랫 캔들), volume 누락은 0. 옛 isNum(전부) filter 는
+    // AI 가 close-only/부분 OHLCV 보내면 전부 버려 빈 차트(silent skip)였음.
+    const valid = data
+      .filter(d => d && isNum(d.close) && !!d.date)
+      .map(d => {
+        const c = d.close;
+        const o = isNum(d.open) ? d.open : c;
+        return {
+          ...d,
+          open: o,
+          high: isNum(d.high) ? d.high : Math.max(o, c),
+          low: isNum(d.low) ? d.low : Math.min(o, c),
+          close: c,
+          volume: isNum(d.volume) ? d.volume : 0,
+        };
+      });
     return [...valid].sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
   }, [data]);
   const fullN = fullData.length;

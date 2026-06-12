@@ -46,15 +46,11 @@
             },
             "required": [
               "date",
-              "open",
-              "high",
-              "low",
-              "close",
-              "volume"
+              "close"
             ],
             "additionalProperties": false
           },
-          "description": "OHLCV 배열 — 오래된 → 최신 순서. 최소 10일 이상 권장"
+          "description": "OHLCV 배열 — 오래된 → 최신 순서. 최소 10일 이상 권장. open/high/low/volume 누락 시 close 로 폴백(플랫 캔들)"
         },
         "indicators": {
           "type": "array",
