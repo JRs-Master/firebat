@@ -17,3 +17,4 @@ export * from './url';
 export * from './logger';
 export * from './normalize';
 export * from './module';
+export * from './number';

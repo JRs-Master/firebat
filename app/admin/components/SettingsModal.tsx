@@ -18,6 +18,7 @@ import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { TIME } from '../../../lib/util/time';
+import { formatCompactNumber, formatTokenCount } from '../../../lib/util/number';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 
@@ -2819,6 +2820,9 @@ function CostTabContent() {
 
   const fmtNum = (n: number) => n.toLocaleString(uiLang === 'ko' ? 'ko-KR' : 'en-US');
   const fmtUsd = (n: number) => `$${n.toFixed(4)}`;
+  // 표시는 축약(좁은 칸 넘침 방지), 정확값은 title(hover). 호출 수=일반 로케일 축약 / 토큰=항상 M(공급사 가격 단위).
+  const fmtCompact = (n: number) => formatCompactNumber(n, uiLang === 'ko' ? 'ko' : 'en');
+  const fmtTok = (n: number) => formatTokenCount(n);
 
   return (
     <div className="flex flex-col gap-4">
@@ -2840,10 +2844,10 @@ function CostTabContent() {
       {stats && !loading && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_calls')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCalls)}</p></div>
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_input_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalInputTokens)}</p></div>
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_cached_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCachedTokens)}</p></div>
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_output_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalOutputTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_calls')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums" title={fmtNum(stats.totalCalls)}>{fmtCompact(stats.totalCalls)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_input_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums" title={fmtNum(stats.totalInputTokens)}>{fmtTok(stats.totalInputTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_cached_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums" title={fmtNum(stats.totalCachedTokens)}>{fmtTok(stats.totalCachedTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_output_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums" title={fmtNum(stats.totalOutputTokens)}>{fmtTok(stats.totalOutputTokens)}</p></div>
             <div className="border border-blue-200 bg-blue-50 rounded-lg p-3"><p className="text-[10px] font-bold text-blue-500 uppercase">{t('settings_modal.cost_metric_cost_usd')}</p><p className="text-[18px] font-bold text-blue-700 tabular-nums">{fmtUsd(stats.totalCostUsd)}</p></div>
           </div>
 
@@ -2865,9 +2869,9 @@ function CostTabContent() {
                     {modelTotals.map(r => (
                       <tr key={r.model} className="border-t border-slate-100">
                         <td className="px-3 py-2 text-slate-700 font-mono text-[11px]">{r.model}</td>
-                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtNum(r.calls)}</td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.inputTokens)}</td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.outputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums" title={fmtNum(r.calls)}>{fmtCompact(r.calls)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums" title={fmtNum(r.inputTokens)}>{fmtTok(r.inputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums" title={fmtNum(r.outputTokens)}>{fmtTok(r.outputTokens)}</td>
                         <td className="px-3 py-2 text-right text-blue-700 font-bold tabular-nums">{fmtUsd(r.costUsd)}</td>
                       </tr>
                     ))}
@@ -2895,9 +2899,9 @@ function CostTabContent() {
                     {dailyTotals.map(r => (
                       <tr key={r.date} className="border-t border-slate-100">
                         <td className="px-3 py-2 text-slate-700 tabular-nums">{r.date}</td>
-                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtNum(r.calls)}</td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.inputTokens)}</td>
-                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.outputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums" title={fmtNum(r.calls)}>{fmtCompact(r.calls)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums" title={fmtNum(r.inputTokens)}>{fmtTok(r.inputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums" title={fmtNum(r.outputTokens)}>{fmtTok(r.outputTokens)}</td>
                         <td className="px-3 py-2 text-right text-blue-700 font-bold tabular-nums">{fmtUsd(r.costUsd)}</td>
                       </tr>
                     ))}
