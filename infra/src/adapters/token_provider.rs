@@ -103,6 +103,8 @@ impl OAuthTokenProvider {
         })
         .map_err(|e| format!("token cache 직렬화 실패: {e}"))?;
         self.vault.set_secret(&key, &serialized);
+        // 발급 이벤트만 기록 (토큰 값은 절대 X) — proactive/reactive 갱신 가시화 + 검증.
+        tracing::info!(target: "token", secret = %name, mock, force, "OAuth 토큰 발급·갱신 + Vault 영속");
         Ok(token)
     }
 
