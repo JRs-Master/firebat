@@ -24,7 +24,7 @@ use crate::ports::{
 
 /// AI Assistant model 의 default — `llm::registry::assistant_default_model()` (JSON 산출).
 /// 옛 `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` const → JSON registry 로 이동 (Phase 5, 2026-05-13).
-use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
+use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
@@ -333,18 +333,9 @@ impl ConsolidationManager {
         // 3. LLM 호출 — model_id 미설정 시 AI Assistant model 자동 사용 (메인 채팅 모델 X).
         // Vault `system:ai-router:model` (default = `vault_keys::AI_ASSISTANT_DEFAULT_MODEL`)
         // → 메인 채팅 모델 (Claude Sonnet 등) 이 아닌 fast/cheap 모델로 비용 절감 (~$0.001/대화).
-        let resolved_model = model_id.map(String::from).or_else(|| {
-            hook.vault
-                .get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL)
-                .filter(|v| !v.is_empty())
-        });
         let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
         let opts = LlmCallOpts {
-            model: Some(
-                resolved_model.unwrap_or_else(|| {
-                    crate::llm::registry::assistant_default_model().to_string()
-                }),
-            ),
+            model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
             thinking_level: Some("minimal".to_string()),
             ..Default::default()
         };
@@ -660,15 +651,10 @@ impl ConsolidationManager {
             return Ok(());
         }
 
-        // 모델 — AI Assistant model (메인 채팅 모델 X). Stage 3 에서 "현재 모델" sentinel 추가 예정.
-        let resolved_model = hook
-            .vault
-            .get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL)
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| crate::llm::registry::assistant_default_model().to_string());
+        // 모델 — worker 모델 해석 ("current"=메인/CLI 무료, 미설정+CLI=메인, 그 외 저비용 default).
         let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
         let opts = LlmCallOpts {
-            model: Some(resolved_model),
+            model: Some(resolve_worker_model(hook.vault.as_ref(), None)),
             thinking_level: Some("minimal".to_string()),
             ..Default::default()
         };
@@ -804,6 +790,41 @@ fn format_transcript(messages: &[serde_json::Value]) -> String {
         lines.push(format!("{role_label}: {truncated}"));
     }
     lines.join("\n\n")
+}
+
+/// Worker 모델 해석 (Stage 3) — 답변 후 추출/consolidation 이 쓸 모델.
+/// 우선순위: explicit(어드민 수동 trigger) > AI Assistant 설정 > 스마트 기본.
+/// - `"current"` sentinel → 메인 채팅 모델(`VK_SYSTEM_AI_MODEL`; CLI 메인 = 구독 무료).
+/// - 설정 비었고 메인이 CLI → 메인(무료가 기본). 메인이 API → assistant_default(저비용).
+/// 메인 모델로 추출하면 CLI 구독은 비용 0, API 는 비싸므로 저비용 모델이 기본 — "부담없이 켜기".
+fn resolve_worker_model(vault: &dyn IVaultPort, explicit: Option<&str>) -> String {
+    if let Some(m) = explicit.map(str::trim).filter(|v| !v.is_empty()) {
+        return m.to_string();
+    }
+    let assistant = vault.get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL).unwrap_or_default();
+    let assistant = assistant.trim();
+    let main = vault.get_secret(VK_SYSTEM_AI_MODEL).unwrap_or_default();
+    let main = main.trim();
+    if assistant == "current" {
+        // 명시 sentinel — 메인 모델 사용 (API 메인이어도 사용자 선택 존중).
+        if !main.is_empty() {
+            return main.to_string();
+        }
+    } else if !assistant.is_empty() {
+        return assistant.to_string();
+    } else if !main.is_empty() && main_is_cli(main) {
+        // 미설정 + CLI 메인 → 메인(구독 무료)이 기본. (API 메인은 아래 저비용 default 로.)
+        return main.to_string();
+    }
+    crate::llm::registry::assistant_default_model().to_string()
+}
+
+/// 모델 id 가 CLI 포맷(cli-claude-code / cli-codex / cli-gemini)인지 — registry lookup.
+fn main_is_cli(id: &str) -> bool {
+    crate::llm::registry::current()
+        .find_model(id)
+        .map(|m| m.format.starts_with("cli-"))
+        .unwrap_or(false)
 }
 
 /// ```json ... ``` 코드 블록 fence 제거. JSON 파싱 직전 호출.

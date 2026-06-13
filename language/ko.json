@@ -529,6 +529,7 @@
     "ai_assistant_cache_note": "결과는 캐시되어 시간이 지날수록 LLM 호출이 줄어듭니다.",
     "ai_assistant_no_key_warning": "⚠️ 선택한 모델의 제공자 API 키를 먼저 등록하세요 (OpenAI / Gemini(Google AI Studio) / Vertex / Anthropic 중 하나).",
     "ai_assistant_model_label": "AI Assistant 모델",
+    "ai_assistant_model_current": "현재 모델 (추가 비용 없음)",
     "user_prompt_label": "사용자 지시사항",
     "user_prompt_scope_note": "(User AI 전용)",
     "user_prompt_help": "User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입됩니다. 비어두면 주입되지 않으며 모델 본연의 응답이 사용됩니다. Code Assistant·AI Assistant 에는 적용되지 않습니다.",

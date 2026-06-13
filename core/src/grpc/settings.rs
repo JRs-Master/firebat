@@ -226,7 +226,19 @@ impl SettingsService for SettingsServiceImpl {
         // models.json `assistantModels` 지정 목록을 단일 소스로. 미지정 시 non-CLI 전체로 폴백.
         let all = crate::llm::config::builtin_models();
         let allowed = crate::llm::registry::assistant_models();
-        let models = if allowed.is_empty() {
+        // "current" sentinel — CLI 메인일 때만 worker 선택지로 노출 (메인 모델로 추출 = 구독 무료,
+        // "부담없이 켜기"). API 메인은 메인=비싼 API 라 백그라운드용 무의미 → 제외. resolve_worker_model
+        // (consolidation.rs)이 "current" → VK_SYSTEM_AI_MODEL(메인)로 해석. display_name = 메인 모델 표시명
+        // (프론트가 "현재 모델 · 추가 비용 없음" 라벨로 표시).
+        let main_id = self.vault.get_secret(VK_SYSTEM_AI_MODEL).unwrap_or_default();
+        let current_opt = all
+            .iter()
+            .find(|m| m.id == main_id && m.format.starts_with("cli-"))
+            .map(|m| AiAssistantModelPb {
+                id: "current".to_string(),
+                display_name: m.display_name.clone(),
+            });
+        let mut models = if allowed.is_empty() {
             all.into_iter()
                 .filter(|m| !m.format.starts_with("cli-"))
                 .map(|m| AiAssistantModelPb {
@@ -246,6 +258,9 @@ impl SettingsService for SettingsServiceImpl {
                 })
                 .collect::<Vec<_>>()
         };
+        if let Some(c) = current_opt {
+            models.insert(0, c);
+        }
         Ok(Response::new(
             SettingsGetAvailableAiAssistantModelsResponse { models },
         ))

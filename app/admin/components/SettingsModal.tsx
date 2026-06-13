@@ -189,10 +189,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // AI 어시스턴트 라우터 (Self-learning Flash Lite)
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
-  const [aiAssistantModel, setAiAssistantModel] = useState('gemini-3.1-flash-lite-preview');
-  // Backend `getAvailableAiAssistantModels()` 응답이 truth source — 이 fallback list 는
-  // 첫 fetch 전 / API 실패 시점만 사용. 단일 디폴트 (gemini-3.1-flash-lite-preview) 만 저장.
-  const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview']);
+  const [aiAssistantModel, setAiAssistantModel] = useState('gemini-3.1-flash-lite');
+  // Backend `getAvailableAiAssistantModels()` 응답이 truth source ({id, displayName} 객체 배열) —
+  // 이 fallback list 는 첫 fetch 전 / API 실패 시점만 사용. (옛 string[] 취급 = [object Object] 잠복 버그였음.)
+  const [aiAssistantModels, setAiAssistantModels] = useState<{ id: string; displayName: string }[]>([
+    { id: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
+  ]);
   // AI 모델 carousel — useAiModels 컴포넌트 상단 (L57) 에서 호출. 중복 hoist 회피 — 단일 reference.
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
@@ -1346,9 +1348,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <SelectInput
                             value={aiAssistantModel}
                             onChange={setAiAssistantModel}
-                            options={aiAssistantModels.map(id => ({
-                              value: id,
-                              label: id === 'gemini-3.1-flash-lite-preview' ? 'Gemini 3.1 Flash Lite' : id,
+                            options={aiAssistantModels.map(m => ({
+                              value: m.id,
+                              label: m.id === 'current' ? t('settings_modal.ai_assistant_model_current') : m.displayName,
                             }))}
                           />
                         </Field>
