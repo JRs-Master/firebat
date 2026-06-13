@@ -185,7 +185,12 @@ impl ClaudeCodeCliHandler {
         let mut args: Vec<String> = Vec::new();
         // Claude Code 내장 도구 차단 — Firebat MCP 만 허용. 옛 TS 1:1.
         const ALLOWED_TOOLS: &str = "mcp__firebat__*";
-        const DISALLOWED_TOOLS: &str = "Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource";
+        // 내장 도구 denylist — Firebat 액션이 아닌 Claude Code 자체 도구 차단. ⚠️ 하드코딩 목록이라
+        // 신규 내장(예: DesignSync)이 추가되면 lag → 모델이 시도(실행은 --allowed-tools 로 차단되나
+        // tool_use 가 emit 됨). 실제 USER 노출 차단은 stream 파서의 "mcp 접두사 없는 tool_use 제외"
+        // 일반 가드가 담당(staleness 무관). 여기 추가는 모델의 헛시도를 줄이는 보조.
+        // TaskCreate/TaskUpdate/TaskGet/TaskList 는 is_native_plan_tool 의 "계획 정리"용이라 의도적 미차단.
+        const DISALLOWED_TOOLS: &str = "Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource,DesignSync";
 
         if has_image {
             // stream-json input 모드 — stdin 으로 user message 전달. -p (print) 는 query 인자 없이 사용.
@@ -426,6 +431,13 @@ impl ClaudeCodeCliHandler {
                                             });
                                         }
                                     }
+                                    continue;
+                                }
+                                // CLI 자체 내장 도구(DesignSync/Read/Bash/WebSearch 등) — Firebat 도구가
+                                // 아님 + `--allowed-tools mcp__firebat__*` 로 실행 차단(모델이 시도만 함).
+                                // mcp 접두사 없는 tool_use 는 Firebat 액션이 아니므로 뱃지·tool_results 제외.
+                                // DISALLOWED_TOOLS 하드코딩 목록 staleness 와 무관하게 일반 차단(새 내장 자동 안전).
+                                if !raw_name.starts_with("mcp__") {
                                     continue;
                                 }
                                 outcome.used_tools.push(bare.clone());

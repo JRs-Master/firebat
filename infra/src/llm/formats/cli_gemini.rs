@@ -414,6 +414,12 @@ impl GeminiCliHandler {
                     }
                     continue;
                 }
+                // mcp 접두사 없음(strip 무변화) = Gemini CLI 자체 내장 도구(read_file/web_search 등) —
+                // Firebat 액션 아님. 뱃지·tool_results 제외 (claude_code 의 DesignSync 누수와 동일 부류,
+                // CLI 내장 도구 일반 차단). Firebat MCP 도구는 항상 mcp_firebat_/mcp__ 접두사라 통과.
+                if bare == raw_name {
+                    continue;
+                }
                 outcome.used_tools.push(bare.clone());
                 // 도구 호출 마커 — frontend ThinkingBlock 본문에 누적 표시.
                 // 옛 Node 의 onChunk({type:'thinking', content:'[도구 호출: name]'}) 와 동등.
