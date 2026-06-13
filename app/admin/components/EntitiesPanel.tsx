@@ -356,7 +356,7 @@ export function EntitiesPanel({
                               <div className="text-[10px] text-slate-700 leading-snug whitespace-pre-wrap break-words">{f.content}</div>
                               <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
                                 {f.factType && <span className="px-1 rounded bg-slate-100 text-slate-600">{f.factType}</span>}
-                                {f.tags.map((tag, i) => (
+                                {(f.tags ?? []).map((tag, i) => (
                                   <span key={i} className="inline-flex items-center gap-0.5 px-1 rounded bg-blue-50 text-blue-600">
                                     <Tag size={8} />{tag}
                                   </span>
