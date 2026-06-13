@@ -232,6 +232,38 @@ fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             }
         }),
     );
+
+    // memory_grep — substring search over entry bodies (+ name/description).
+    tools.register(ToolDefinition {
+        name: "memory_grep".to_string(),
+        description: "Search operational-memory bodies by substring (case-insensitive). \
+            Returns matching entries with only the matching lines. Use when the index \
+            (<OPERATIONAL_MEMORY>) hints an entry is relevant and you want the detail \
+            without reading the whole file."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "query": {"type": "string"} },
+            "required": ["query"]
+        }),
+        source: "core".to_string(),
+    });
+    let mf = h.memory_file.clone();
+    tools.register_handler(
+        "memory_grep",
+        make_handler(move |args| {
+            let mf = mf.clone();
+            async move {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "memory_grep: query required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let hits = mf.grep(owner, query).await?;
+                serde_json::to_value(hits).map_err(|e| e.to_string())
+            }
+        }),
+    );
 }
 
 /// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.

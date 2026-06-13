@@ -29,6 +29,15 @@ pub struct MemoryEntry {
     pub content: String,
 }
 
+/// One grep hit — entry identity + matching body lines (empty if matched on name/description only).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MemoryGrepHit {
+    pub name: String,
+    pub category: String,
+    pub description: String,
+    pub matches: Vec<String>,
+}
+
 pub struct MemoryFileManager {
     storage: Arc<dyn IStoragePort>,
     /// Workspace-relative base directory — default `data/memory`.
@@ -87,6 +96,37 @@ impl MemoryFileManager {
     pub async fn get_index(&self, owner: Option<&str>) -> InfraResult<String> {
         let entries = self.list(owner).await?;
         Ok(build_index(&entries))
+    }
+
+    /// Substring search over entry bodies (+ name/description), case-insensitive. Returns
+    /// matching entries with only the matching body lines — the relevant snippet, not full
+    /// bodies. "Know what exists from the index, dig with grep" (mirrors how Claude works).
+    pub async fn grep(&self, owner: Option<&str>, query: &str) -> InfraResult<Vec<MemoryGrepHit>> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut hits = Vec::new();
+        for e in self.list(owner).await? {
+            let lines: Vec<String> = e
+                .content
+                .lines()
+                .filter(|l| l.to_lowercase().contains(&q))
+                .map(|l| l.trim().to_string())
+                .collect();
+            let meta_match =
+                e.name.to_lowercase().contains(&q) || e.description.to_lowercase().contains(&q);
+            if lines.is_empty() && !meta_match {
+                continue;
+            }
+            hits.push(MemoryGrepHit {
+                name: e.name,
+                category: e.category,
+                description: e.description,
+                matches: lines,
+            });
+        }
+        Ok(hits)
     }
 }
 

@@ -85,7 +85,7 @@ Do not do domain-specific cases — the patterns above apply to any sysmod combi
 ## Memory — operational knowledge (`memory_*`) vs facts (`save_entity*`)
 
 Two distinct memory layers — route by purpose, do not conflate them:
-- **Memory** (`memory_save` / `memory_read` / `memory_list` / `memory_delete`): durable **operational knowledge** — reusable lessons, how-to, rules, conventions, the user's stated preferences about how you should operate. This is what you should *always follow*. The `<OPERATIONAL_MEMORY>` block injected each turn is this memory's index.
+- **Memory** (`memory_save` / `memory_read` / `memory_list` / `memory_grep` / `memory_delete`): durable **operational knowledge** — reusable lessons, how-to, rules, conventions, the user's stated preferences about how you should operate. This is what you should *always follow*. The `<OPERATIONAL_MEMORY>` block injected each turn is this memory's index — read a full entry with `memory_read`, or use `memory_grep` to pull just the relevant lines across entries.
 - **Recall** (`save_entity` / `save_entity_fact` / `save_event`): **facts about domain things** — entities (a stock, a person, a project, a concept), their time-stamped facts, and events that happened. This is what you *look up when relevant*.
 
 **Routing test**: "a rule I should always follow → `memory_save` (Memory); a fact I'd look up when relevant → `save_entity*` (Recall)." Examples: "Samsung is a chipmaker" / "KOSPI fell 2% yesterday" → Recall. "This user dislikes purple UI" / "drill into large outputs with cache_read" → Memory.

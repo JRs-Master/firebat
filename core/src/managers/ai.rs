@@ -860,10 +860,8 @@ impl AiManager {
                         };
                         let result = engine.retrieve(&retrieve_opts).await;
                         if !result.context_summary.is_empty() {
-                            extra_parts.push(format!(
-                                "<RETRIEVED_CONTEXT>\n{}\n</RETRIEVED_CONTEXT>",
-                                result.context_summary
-                            ));
+                            // RetrievalEngine already wraps in <RETRIEVED_CONTEXT> — push as-is (no double-wrap).
+                            extra_parts.push(result.context_summary);
                         }
                         // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
                         if !result.library_hits.is_empty() {

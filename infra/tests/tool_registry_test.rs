@@ -197,9 +197,9 @@ async fn registered_tool_count() {
     // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
-    // memory_file: 4 (memory_save/read/list/delete) = 53
-    assert_eq!(stats.total, 53);
-    assert_eq!(stats.by_source.get("core").copied(), Some(53));
+    // memory_file: 5 (memory_save/read/list/delete/grep) = 54
+    assert_eq!(stats.total, 54);
+    assert_eq!(stats.by_source.get("core").copied(), Some(54));
 }
 
 #[tokio::test]
