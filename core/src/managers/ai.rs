@@ -823,50 +823,42 @@ impl AiManager {
                     }
                 }
 
-                // RetrievalEngine 자동 prepend — vault `system:ai-router:enabled` 토글 ON 시점만.
-                // 옛 사용자 결정 (2026-05-17): AI Assistant 토글 = recall + consolidation 통합 제어.
-                // 매 사용자 query 시점 4-tier (history + entities + facts + events) 통합 검색 →
-                // context_summary → `<RETRIEVED_CONTEXT>` 영역 시스템 프롬프트 prepend.
+                // RetrievalEngine 자동 prepend (Recall 회상) — **토글 무관 항상** (Phase C split, 2026-06-14).
+                // 회상(읽기)은 E5 라 싸고 "저장한 건 써야" → 늘 주입. 토글(VK_SYSTEM_AI_ROUTER_ENABLED)은
+                // 이제 자동 *쓰기*(cron consolidation 추출)만 게이트한다 (옛엔 read+write 통합 게이트였음).
+                // owner-scope = retrieve_opts.owner (hub = 자기 hub Recall), library = reference_filter 로
+                // hub allowed_references 제한 → cross-tenant 안전.
                 if let Some(engine) = &self.retrieval_engine {
-                    let router_enabled = self
-                        .vault
+                    let owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .map(String::from);
+                    let conv_id = effective_opts
+                        .conversation_id
+                        .as_deref()
+                        .or(ai_opts.conversation_id.as_deref())
+                        .map(String::from);
+                    // hub_context 가 있으면 library 검색을 allowed_references 로 제한.
+                    let reference_filter = ai_opts
+                        .hub_context
                         .as_ref()
-                        .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED))
-                        .map(|v| v == "true" || v == "1")
-                        .unwrap_or(false);
-                    if router_enabled {
-                        let owner = effective_opts
-                            .owner
-                            .as_deref()
-                            .or(ai_opts.owner.as_deref())
-                            .map(String::from);
-                        let conv_id = effective_opts
-                            .conversation_id
-                            .as_deref()
-                            .or(ai_opts.conversation_id.as_deref())
-                            .map(String::from);
-                        // hub_context 가 있으면 library 검색을 allowed_references 로 제한.
-                        // None = 옛 admin 흐름 (owner 전체 Reference 자연 처리).
-                        let reference_filter = ai_opts
-                            .hub_context
-                            .as_ref()
-                            .map(|c| c.allowed_references.clone());
-                        let retrieve_opts = retrieval_engine::RetrieveOpts {
-                            query: prompt.to_string(),
-                            owner,
-                            current_conv_id: conv_id,
-                            limits: retrieval_engine::RetrievalLimits::default(),
-                            reference_filter,
-                        };
-                        let result = engine.retrieve(&retrieve_opts).await;
-                        if !result.context_summary.is_empty() {
-                            // RetrievalEngine already wraps in <RETRIEVED_CONTEXT> — push as-is (no double-wrap).
-                            extra_parts.push(result.context_summary);
-                        }
-                        // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
-                        if !result.library_hits.is_empty() {
-                            retrieved_library_hits = result.library_hits;
-                        }
+                        .map(|c| c.allowed_references.clone());
+                    let retrieve_opts = retrieval_engine::RetrieveOpts {
+                        query: prompt.to_string(),
+                        owner,
+                        current_conv_id: conv_id,
+                        limits: retrieval_engine::RetrievalLimits::default(),
+                        reference_filter,
+                    };
+                    let result = engine.retrieve(&retrieve_opts).await;
+                    if !result.context_summary.is_empty() {
+                        // RetrievalEngine already wraps in <RETRIEVED_CONTEXT> — push as-is (no double-wrap).
+                        extra_parts.push(result.context_summary);
+                    }
+                    // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
+                    if !result.library_hits.is_empty() {
+                        retrieved_library_hits = result.library_hits;
                     }
                 }
 
