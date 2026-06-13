@@ -24,14 +24,13 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::managers::cost::CostManager;
-use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
 use crate::managers::status::StatusManager;
 use crate::ports::{
     FitMode, IImageGenPort, IImageProcessorPort, ILogPort, IMediaPort, IVaultPort, ImageFormat,
     ImageGenCallOpts, ImageGenOpts, ImageModelInfo, ImageReferenceImage, InfraResult,
     MediaFileRecord, MediaListOpts, MediaListResult, MediaSaveOptions, MediaSaveResult,
-    MediaScope, MediaVariant, MediaVariantMeta, ResizeOpts, SaveEventInput,
+    MediaScope, MediaVariant, MediaVariantMeta, ResizeOpts,
 };
 use crate::vault_keys::{vk_module_settings, VK_IMAGE_MODEL, VK_IMAGE_QUALITY, VK_IMAGE_SIZE};
 
@@ -292,11 +291,9 @@ pub struct MediaManager {
     /// - cost: ImageGenResult.cost_usd 설정되어 있으면 자동 record_llm_cost (CostManager)
     /// - status: 이미지 생성 시작 → start, 완료 → done, 실패 → fail (StatusManager / 어드민 ActiveJobsIndicator)
     /// - event: 갤러리 SSE refresh + status 변경 broadcast (EventManager / GalleryPanel)
-    /// - episodic: 'image_gen' 사건 자동 리콜 누적 (EpisodicManager / AI 미개입)
     cost: Option<Arc<CostManager>>,
     status: Option<Arc<StatusManager>>,
     event: Option<Arc<EventManager>>,
-    episodic: Option<Arc<EpisodicManager>>,
 }
 
 impl MediaManager {
@@ -310,7 +307,6 @@ impl MediaManager {
             cost: None,
             status: None,
             event: None,
-            episodic: None,
         }
     }
 
@@ -347,11 +343,6 @@ impl MediaManager {
 
     pub fn with_event(mut self, event: Arc<EventManager>) -> Self {
         self.event = Some(event);
-        self
-    }
-
-    pub fn with_episodic(mut self, episodic: Arc<EpisodicManager>) -> Self {
-        self.episodic = Some(episodic);
         self
     }
 
@@ -851,35 +842,7 @@ impl MediaManager {
                             cost.record(&success.model_id, 0, 0, 0, usd, Some("image_gen"));
                         }
                     }
-                    // Cross-call hook 5: episodic.save_event — image_gen 사건 자동 리콜 (AI 미개입)
-                    if let Some(episodic) = &mgr.episodic {
-                        let prompt_preview: String =
-                            mgr.recall_prompt_for(&success.slug).await.unwrap_or_default();
-                        let _ = episodic
-                            .save_event(SaveEventInput {
-                                event_type: "image_gen".to_string(),
-                                title: format!(
-                                    "이미지 생성: {}",
-                                    prompt_preview.chars().take(60).collect::<String>()
-                                ),
-                                description: None,
-                                who: Some("media:start_generate".to_string()),
-                                context: Some(serde_json::json!({
-                                    "slug": success.slug,
-                                    "model": success.model_id,
-                                    "scope": bg_scope.as_str(),
-                                    "promptPreview": prompt_preview.chars().take(200).collect::<String>(),
-                                    "costUsd": success.cost_usd,
-                                })),
-                                occurred_at: None,
-                                entity_ids: vec![],
-                                source_conv_id: None,
-                                ttl_days: None,
-                                dedup_threshold: None,
-                                owner: None,
-                            })
-                            .await;
-                    }
+                    // image_gen 자동 event hook 제거 (2026-06-14) — 루틴 생성 = Recall 사건 노이즈.
                 }
                 Err(e) => {
                     // Cross-call hook 2 (실패): status.fail
@@ -910,16 +873,6 @@ impl MediaManager {
         });
 
         Ok((saved.slug, saved.url))
-    }
-
-    /// `recall_prompt_for(slug)` — episodic 리콜 시 prompt 메타 추출 (실패 시 빈 string).
-    async fn recall_prompt_for(&self, slug: &str) -> Option<String> {
-        self.media
-            .stat(slug)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|r| r.prompt)
     }
 
     /// AI image_gen 도구 → MediaManager.generate_image → 생성 + 후처리 + 저장.
@@ -1292,32 +1245,7 @@ impl MediaManager {
                     cost.record(&result.model_id, 0, 0, 0, usd, Some("image_gen"));
                 }
             }
-            // episodic.save_event — image_gen 사건 자동 리콜 (AI 미개입)
-            if let Some(episodic) = &self.episodic {
-                let prompt_preview: String = input.prompt.chars().take(60).collect();
-                let prompt_full: String = input.prompt.chars().take(200).collect();
-                let _ = episodic
-                    .save_event(SaveEventInput {
-                        event_type: "image_gen".to_string(),
-                        title: format!("이미지 생성: {prompt_preview}"),
-                        description: None,
-                        who: Some("media:generate_image".to_string()),
-                        context: Some(serde_json::json!({
-                            "slug": result.slug,
-                            "model": result.model_id,
-                            "scope": scope.as_str(),
-                            "promptPreview": prompt_full,
-                            "costUsd": result.cost_usd,
-                        })),
-                        occurred_at: None,
-                        entity_ids: vec![],
-                        source_conv_id: None,
-                        ttl_days: None,
-                        dedup_threshold: None,
-                        owner: None,
-                    })
-                    .await;
-            }
+            // image_gen 자동 event hook 제거 (2026-06-14) — 루틴 생성 = Recall 사건 노이즈.
         }
 
         Ok(result)

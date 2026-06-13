@@ -1086,8 +1086,8 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 
     // save_page — PageSpec JSON 저장 (publish / draft / private). AdSense 글 발행 핵심.
-    // AI 미개입 자동 hook — 페이지 발행 성공 시 EpisodicManager.save_event(type='page_publish') 자동.
-    // 옛 TS Core facade 의 savePage 패턴 1:1 port — sysmod 에 LLM 거치지 않고 결정론적 누적.
+    // (옛 page_publish 자동 event hook 제거 2026-06-14 — 매 발행 = 사건 노이즈, 페이지 자체가 기록.
+    //  사이드바 SSE 갱신 hook 만 유지. Recall events = 의미 있는 happening 만, 루틴 운영 제외.)
     tools.register(ToolDefinition {
         name: "save_page".to_string(),
         description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션.".to_string(),
@@ -1106,13 +1106,11 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         source: "core".to_string(),
     });
     let page = h.page.clone();
-    let episodic_for_page = h.episodic.clone();
     let event_for_save_page = h.event.clone();
     tools.register_handler(
         "save_page",
         make_handler(move |args| {
             let page = page.clone();
-            let episodic = episodic_for_page.clone();
             let event = event_for_save_page.clone();
             async move {
                 let slug = args
@@ -1139,18 +1137,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let password = args.get("password").and_then(|v| v.as_str());
                 page.save(&slug, &spec_str, status, project, visibility, password)?;
 
-                // AI 미개입 자동 hook 1: page_publish event 저장. silent fail (page save 성공 보장).
-                if status == "published" {
-                    let _ = episodic
-                        .save_event(crate::ports::SaveEventInput {
-                            event_type: "page_publish".to_string(),
-                            title: slug.clone(),
-                            description: project.map(|p| format!("project={p}")),
-                            ..Default::default()
-                        })
-                        .await;
-                }
-                // AI 미개입 자동 hook 2: 사이드바 SSE 갱신 (옛 TS core/index.ts:858 notifySidebar).
+                // AI 미개입 자동 hook: 사이드바 SSE 갱신 (옛 TS core/index.ts:858 notifySidebar).
                 event.notify_sidebar();
                 Ok(serde_json::json!({"slug": slug, "saved": true}))
             }

@@ -430,7 +430,6 @@ async fn main() -> Result<()> {
     //   - cost: 이미지 cost_usd 자동 record (image_gen purpose)
     //   - status: rendering → done/error 가시화 (어드민 ActiveJobsIndicator)
     //   - event: 갤러리 SSE refresh (placeholder 등장 + 백그라운드 swap 시점 모두)
-    //   - episodic: image_gen 사건 자동 리콜 누적 (AI 미개입)
     let media_manager = Arc::new(
         MediaManager::new(media.clone())
             .with_image_gen(image_gen.clone())
@@ -442,8 +441,7 @@ async fn main() -> Result<()> {
             )))
             .with_cost(cost_manager.clone())
             .with_status(status_manager.clone())
-            .with_event(event_manager.clone())
-            .with_episodic(episodic_manager.clone()),
+            .with_event(event_manager.clone()),
     );
     // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 설정된 채로:
     // - 시스템 프롬프트 자동 주입
