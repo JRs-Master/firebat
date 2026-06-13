@@ -417,7 +417,7 @@ async fn main() -> Result<()> {
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
     let entity_manager = Arc::new(EntityManager::new(entity_port));
     let episodic_manager = Arc::new(EpisodicManager::new(episodic_port));
-    // 메모리 4-tier facade — ConsolidationManager 가 EntityManager + EpisodicManager 를 직접
+    // Recall facade — ConsolidationManager 가 EntityManager + EpisodicManager 를 직접
     // 의존하던 BIBLE 위반 (매니저 간 직접 호출) 정정 (2026-05-06).
     let memory_facade: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(
         entity_manager.clone(),

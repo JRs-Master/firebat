@@ -1,5 +1,5 @@
 /**
- * Episodic API — 메모리 시스템 Episodic tier (Phase 2).
+ * Episodic API — Recall, Episodic tier.
  *
  * /api/events 는 SSE stream 용 — Episodic 메모리 events 는 별도 namespace `episodic` 사용.
  *

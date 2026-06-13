@@ -1917,7 +1917,7 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
     // get_memory_stats — 4-tier 통계 (어드민 health stats)
     tools.register(ToolDefinition {
         name: "get_memory_stats".to_string(),
-        description: "메모리 4-tier 통계 (entities / facts / events 총수 + byType 분포).".to_string(),
+        description: "Recall 통계 (entities / facts / events 총수 + byType 분포).".to_string(),
         parameters: serde_json::json!({"type": "object", "properties": {}}),
         source: "core".to_string(),
     });
@@ -1937,7 +1937,7 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
     // ConsolidationManager.set_ai_hook 설정된 후 활성.
     tools.register(ToolDefinition {
         name: "consolidate_conversation".to_string(),
-        description: "대화 1개 LLM 후처리 → entity/fact/event 자동 추출 + 저장. 메모리 4-tier 자동 누적용.".to_string(),
+        description: "대화 1개 LLM 후처리 → entity/fact/event 자동 추출 + 저장. Recall 자동 누적용.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

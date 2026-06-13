@@ -1,7 +1,7 @@
 //! MemoryFacade — `IMemoryFacadePort` 의 EntityManager + EpisodicManager wrapper.
 //!
 //! ConsolidationManager 가 두 매니저를 직접 의존하던 BIBLE 위반 (매니저 간 직접 호출) 정정.
-//! Facade pattern 으로 4-tier memory (history + entities + facts + events) 의 통계·정리
+//! Facade pattern 으로 Recall (entities + facts + events) 의 통계·정리
 //! 메서드만 trait 으로 격리. Mutation (saveEntity / saveEvent / etc) 은 각 매니저 직접 호출
 //! (Core facade gRPC service 가 외부 진입점).
 //!

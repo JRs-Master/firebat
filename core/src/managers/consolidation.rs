@@ -1,4 +1,4 @@
-//! ConsolidationManager — 메모리 4-tier Phase 4 (자동 누적 엔진).
+//! ConsolidationManager — Recall, Consolidation engine (자동 누적).
 //!
 //! 옛 TS `core/managers/consolidation-manager.ts` Rust 재구현 (Phase B-12 minimum).
 //!
@@ -196,7 +196,7 @@ pub struct MemoryStats {
 }
 
 pub struct ConsolidationManager {
-    /// 메모리 4-tier facade — Entity + Episodic 통합 port (BIBLE 매니저 간 직접 호출 금지 정정).
+    /// Recall facade — Entity + Episodic 통합 port (BIBLE 매니저 간 직접 호출 금지 정정).
     /// 옛 `entity_mgr` + `episodic_mgr` 직접 의존 → trait object 로 추출 (2026-05-06).
     memory: Arc<dyn IMemoryFacadePort>,
     /// AI hook (옵션, 늦게 설정할 수 있게 Mutex) — consolidate_conversation 의 LLM 자동 추출.

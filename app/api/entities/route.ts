@@ -1,5 +1,5 @@
 /**
- * Entities API — 메모리 시스템 Entity tier (Phase 1).
+ * Entities API — Recall, Entity tier.
  *
  * GET /api/entities                        — list / search (query, type, nameLike, limit)
  * POST /api/entities                       — create (name, type, aliases?, metadata?)

@@ -1,4 +1,4 @@
-//! EpisodicManager — 메모리 4-tier Phase 2 (Episodic tier).
+//! EpisodicManager — Recall, Episodic tier.
 //!
 //! 옛 TS `core/managers/episodic-manager.ts` Rust 재구현. 시간순 사건 추적 +
 //! Entity 와 m2m link.

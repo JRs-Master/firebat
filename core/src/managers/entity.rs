@@ -1,4 +1,4 @@
-//! EntityManager — 메모리 4-tier Phase 1 (Entity tier).
+//! EntityManager — Recall, Entity tier.
 //!
 //! 옛 TS `core/managers/entity-manager.ts` Rust 재구현. 종목·인물·프로젝트 단위 영속 추적.
 //! IEntityPort 위 thin facade — 매니저는 자체 추가 로직 없이 어댑터에 위임.

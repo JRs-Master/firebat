@@ -1199,7 +1199,7 @@ impl McpToolHandler for McpCallHandler {
     }
 }
 
-// ── EntityService / EpisodicService 도구 (메모리 4-tier) ──────────────────
+// ── EntityService / EpisodicService 도구 (Recall) ──────────────────
 
 pub struct SaveEntityHandler {
     pub entity: Arc<EntityManager>,

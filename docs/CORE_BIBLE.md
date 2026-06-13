@@ -61,8 +61,8 @@ Core가 Infra에게 요구하는 22개 포트 인터페이스. 모두 `core/src/
 | 16 | `IMediaPort` | 미디어 저장/조회 (save/list/remove/save_variant/update_meta/save_error_record + 임시 첨부) |
 | 17 | `IImageProcessorPort` | sharp 이미지 후처리 (resize/format convert/blurhash) |
 | 18 | `IImageGenPort` | 이미지 생성 (OpenAI gpt-image / Gemini Image) |
-| 19 | `IEntityPort` | 메모리 시스템 — Entity tier (entities + entity_facts CRUD, semantic search, dedup threshold) |
-| 20 | `IEpisodicPort` | 메모리 시스템 — Episodic tier (events + event_entities m2m CRUD, 시간순 사건 검색, dedup threshold) |
+| 19 | `IEntityPort` | Recall — Entity tier (entities + entity_facts CRUD, semantic search, dedup threshold) |
+| 20 | `IEpisodicPort` | Recall — Episodic tier (events + event_entities m2m CRUD, 시간순 사건 검색, dedup threshold) |
 | 21 | `IMemoryFacadePort` | Entity + Episodic 통합 facade (ConsolidationManager 가 매니저 직접 의존 대신 이 포트 경유) |
 | 22 | `IHubPort` | Hub (외부 위젯·방문자) — 인스턴스 / 대화 / 메시지 CRUD |
 
@@ -94,8 +94,8 @@ interface FirebatInfraContainer {
   media: IMediaPort;
   imageProcessor: IImageProcessorPort;
   imageGen: IImageGenPort;
-  entity: IEntityPort;          // 메모리 시스템 Phase 1 (4-tier 의 Entity tier)
-  episodic: IEpisodicPort;      // 메모리 시스템 Phase 2 (4-tier 의 Episodic tier)
+  entity: IEntityPort;          // Recall — Entity tier
+  episodic: IEpisodicPort;      // Recall — Episodic tier
 }
 ```
 
@@ -109,12 +109,12 @@ interface FirebatInfraContainer {
 외부에서 `core.infra.storage` 등 포트를 직접 호출하지 않는다.
 모든 API route는 `getCore()` → Core 메서드 호출 패턴을 따른다.
 
-### 제1-1항. 23-Manager 아키텍처 (2026-04-20 출발 → 메모리 4-tier 3 매니저 + Hub/Library/Template 추가하며 23)
+### 제1-1항. 23-Manager 아키텍처 (2026-04-20 출발 → Recall 3 매니저 + Hub/Library/Template 추가하며 23)
 `FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 23개 도메인 매니저에 위임한다.
 
 | 매니저 | 인프라 포트 | Core 참조 | 역할 |
 |---|---|---|---|
-| AiManager | ILlmPort, ILogPort, IDatabasePort, ToolRouterFactory | ✅ | AI 채팅 멀티턴 도구 루프, Function Calling 오케스트레이터. RetrievalEngine 으로 4-tier 메모리 자동 prepend |
+| AiManager | ILlmPort, ILogPort, IDatabasePort, ToolRouterFactory | ✅ | AI 채팅 멀티턴 도구 루프, Function Calling 오케스트레이터. RetrievalEngine 으로 Retrieval(회상) 자동 prepend |
 | StorageManager | IStoragePort | ✗ | 파일 CRUD |
 | PageManager | IDatabasePort, IStoragePort | ✗ | 페이지 CRUD + media_usage 인덱스 |
 | ProjectManager | IStoragePort, IDatabasePort | ✗ | 프로젝트 스캔/삭제 |
@@ -131,9 +131,9 @@ interface FirebatInfraContainer {
 | StatusManager | ILogPort, EventManager | ✗ | Long-running job 상태 단일 source (UI 진행도 + AI 비동기 도구 backbone). Image/Cron/Task 마이그레이션 완료 |
 | CostManager | IVaultPort, ILogPort | ✗ | LLM 호출 token·비용 누적 (60초 dirty flush) |
 | ToolManager | ILogPort | ✗ | 도구 등록·dispatch 단일 source (Step 1-3 + Step 5 완료 / Step 4 AiManager Phase 6c 와 묶음, v1.x) |
-| **EntityManager** | IEntityPort | ✗ | **메모리 시스템 Entity tier** — 추적 대상(종목·인물·프로젝트) 단위 fact 누적 (entities + entity_facts), semantic search, retrieveContext (entity + timeline) |
-| **EpisodicManager** | IEpisodicPort | ✗ | **메모리 시스템 Episodic tier** — 시간순 사건(자동매매·발행·cron·도구 호출) 추적 (events + event_entities m2m), entity link 자동 |
-| **ConsolidationManager** | — | ✅ | **메모리 시스템 Consolidation engine** — 대화 → LLM 후처리 → entity/fact/event 자동 추출. cron 자동 (6시간 비활성) + manual + AI 도구. dedupThreshold=0.92 cosine 중복 자동 skip |
+| **EntityManager** | IEntityPort | ✗ | **Recall — Entity tier** — 추적 대상(종목·인물·프로젝트) 단위 fact 누적 (entities + entity_facts), semantic search, retrieveContext (entity + timeline) |
+| **EpisodicManager** | IEpisodicPort | ✗ | **Recall — Episodic tier** — 시간순 사건(자동매매·발행·cron·도구 호출) 추적 (events + event_entities m2m), entity link 자동 |
+| **ConsolidationManager** | — | ✅ | **Recall — Consolidation engine** — 대화 → LLM 후처리 → entity/fact/event 자동 추출. cron 자동 (6시간 비활성) + manual + AI 도구. dedupThreshold=0.92 cosine 중복 자동 skip |
 | **TemplateManager** | IStoragePort | ✗ | CMS 템플릿 CRUD (owner 기준 path — admin / hub-scoped 분리) |
 | **LibraryManager** | ILibraryPort, IEmbedderPort | ✗ | 라이브러리 하이브리드 RAG — Reference/Source/Chunk CRUD + 경계 청킹 + dense(E5)·sparse(BM25) 검색 |
 | **HubManager** | IHubPort (+ PageManager cascade) | ✗ | Hub (외부 위젯·방문자) 인스턴스/대화/메시지 CRUD. 인스턴스 삭제 시 hub-scoped page cascade |
@@ -311,19 +311,19 @@ type PipelineStep =
 - 시스템 내부 자기진화용 AI. v0.1 스텁은 레거시 `requestAction` 을 참조했으나 2026-04-22 삭제.
 - v1.0 재활성화 시 Function Calling (`requestActionWithTools`) 경로 위에서 새로 설계.
 
-### EntityManager (메모리 시스템 — Entity tier)
+### EntityManager (Recall — Entity tier)
 - 종목·인물·프로젝트·이벤트·개념 등 추적 대상 (entity) + 그 entity 에 link 된 정제된 사실 (entity_facts) 관리.
 - IEntityPort 직접 주입 (어댑터 swap 자유 — Phase 3 Vector store 도입 시 sqlite-vec / Qdrant 등으로 교체 가능, 인터페이스 그대로).
 - 핵심 메서드: `saveEntity` (upsert by name+type), `findEntityByName` (canonical + alias 매칭), `searchEntities` (semantic), `saveFact` (entity link, dedupThreshold 옵션), `getEntityTimeline` (occurredAt 정렬), `searchFacts` (다중 필터), `retrieveContext` (entity + recent facts 통합 — RetrievalEngine 의 base).
 - 임베딩 자동 생성 — name+aliases / fact content. SQLite cosine search.
 
-### EpisodicManager (메모리 시스템 — Episodic tier)
+### EpisodicManager (Recall — Episodic tier)
 - 시간순 사건 (events): 자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
 - IEpisodicPort 직접 주입.
 - 핵심 메서드: `saveEvent` (entityIds 넘기면 m2m link, dedupThreshold 옵션), `searchEvents` (type/who/시간범위/entityId 다중 필터), `listRecentEvents` (occurredAt DESC), `linkEntity` / `unlinkEntity`.
 - **자동 훅** — 매니저 직접 호출 X. Core facade 의 `savePage` / `handleCronTrigger` / `generateImage` 가 manager 호출 후 자동 `saveEvent` (BIBLE 일관성).
 
-### ConsolidationManager (메모리 시스템 — Consolidation engine)
+### ConsolidationManager (Recall — Consolidation engine)
 - 대화 1개 → LLM 후처리 → entity/fact/event JSON 추출 → 자동 save.
 - Core 참조 받음 (LLM + entity + episodic 다 호출). 인프라 포트 직접 X.
 - 호출 경로 3가지:

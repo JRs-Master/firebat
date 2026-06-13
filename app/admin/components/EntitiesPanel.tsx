@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * EntitiesPanel — 메모리 시스템 어드민 UI (Phase 1.5 + 2.6).
+ * EntitiesPanel — Recall 어드민 UI (Phase 1.5 + 2.6).
  *
  * 사이드바 메모리 탭 통합 — Entity (영속 추적 대상) + Event (시간순 사건) 두 sub-tab.
  * Entity tab: list / 검색 / 추가 / 삭제 / timeline 조회.

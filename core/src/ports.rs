@@ -2434,7 +2434,7 @@ pub trait IEpisodicPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// IMemoryFacadePort — 메모리 4-tier facade.
+// IMemoryFacadePort — Recall facade (Entity + Episodic). (심볼명 rename = Task 2 Phase A breaking)
 //
 // ConsolidationManager 가 EntityManager + EpisodicManager 를 직접 의존하던 BIBLE 위반
 // (매니저 간 직접 호출) 정정. trait 추출로 hexagonal port-adapter 정신 정확 복구.
