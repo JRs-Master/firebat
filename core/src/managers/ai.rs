@@ -226,6 +226,10 @@ pub struct AiManager {
     /// 남아 있어 slug URL 그대로 가면 decode fail → LLM API "could not be processed" 결과.
     /// 본 layer 가 LLM 호출 전 image 부분을 data URL 형태로 강제 변환.
     media: Option<Arc<dyn crate::ports::IMediaPort>>,
+    /// MemoryFileManager (옵션) — data/memory 운영 메모리 인덱스를 매 턴 시스템 프롬프트에
+    /// `<OPERATIONAL_MEMORY>` 로 prepend. ai-router 토글과 무관하게 항상 주입 (큐레이트 운영지식은
+    /// CLAUDE.md 처럼 늘 효력). 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF). 미설정 시 주입 skip.
+    memory_file: Option<Arc<crate::managers::memory_file::MemoryFileManager>>,
 }
 
 impl AiManager {
@@ -249,7 +253,18 @@ impl AiManager {
             config_port: None,
             retrieval_engine: None,
             media: None,
+            memory_file: None,
         }
+    }
+
+    /// MemoryFileManager 설정 — data/memory 운영 메모리 인덱스 항상 주입 (토글 무관, owner=="admin").
+    /// 미설정 시 주입 skip.
+    pub fn with_memory_file(
+        mut self,
+        memory_file: Arc<crate::managers::memory_file::MemoryFileManager>,
+    ) -> Self {
+        self.memory_file = Some(memory_file);
+        self
     }
 
     /// IMediaPort 설정 — opts.image 가 slug URL 일 때 fs read + base64 data URL 변환 활성.
@@ -852,6 +867,38 @@ impl AiManager {
                         // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
                         if !result.library_hits.is_empty() {
                             retrieved_library_hits = result.library_hits;
+                        }
+                    }
+                }
+
+                // Operational memory (data/memory) — 큐레이트 운영지식 인덱스. ai-router 토글과
+                // 무관하게 *항상* 주입 (CLAUDE.md 가 늘 로드되듯). 위 RetrievalEngine(Recall) 은
+                // 자동/의미 store 라 토글 게이트지만, 이건 손으로 관리(+자동 distill)한 운영지식이라
+                // 켜든 끄든 항상 효력. 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF).
+                if let Some(mf) = &self.memory_file {
+                    let owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .unwrap_or("admin");
+                    if owner == "admin" {
+                        if let Ok(index) = mf.get_index(None).await {
+                            if !index.trim().is_empty() {
+                                const MEM_INDEX_CAP: usize = 4000;
+                                let body = if index.chars().count() > MEM_INDEX_CAP {
+                                    let truncated: String =
+                                        index.chars().take(MEM_INDEX_CAP).collect();
+                                    format!(
+                                        "{truncated}\n… (truncated — use memory_read for full entries)"
+                                    )
+                                } else {
+                                    index
+                                };
+                                extra_parts.push(format!(
+                                    "<OPERATIONAL_MEMORY>\n{}\n</OPERATIONAL_MEMORY>",
+                                    body
+                                ));
+                            }
                         }
                     }
                 }

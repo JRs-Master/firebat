@@ -88,6 +88,9 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     let secret_mgr = Arc::new(SecretManager::new(vault.clone(), storage.clone()));
     let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
     let template_mgr = Arc::new(TemplateManager::new(storage.clone()));
+    let memory_file_mgr = Arc::new(
+        firebat_core::managers::memory_file::MemoryFileManager::new(storage.clone()),
+    );
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -110,6 +113,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             network: network_port,
             template: template_mgr,
             vault: vault.clone(),
+            memory_file: memory_file_mgr,
         },
     );
     (tools, dir)

@@ -1,19 +1,17 @@
-//! gRPC MemoryService impl — Claude memory file system (옛 TS 설정).
+//! gRPC MemoryService impl — thin delegate to `MemoryFileManager`.
 //!
-//! 위치: `<workspace>/data/memory/` 디렉토리. MEMORY.md 가 index, 그 외 *.md 가 individual entries.
-//! 사용자 / feedback / project / reference 4 type 메모리.
+//! Location: `<workspace>/data/memory/`. MEMORY.md is the (dynamically built) index;
+//! the other *.md files are individual entries. Four categories: user / feedback /
+//! project / reference.
 //!
-//! Phase B-17.5c minimum: 5 RPC (GetIndex / ReadFile / ListFiles / SaveFile / DeleteFile).
-//!
-//! Step 3 (typed RPC) — JsonValue raw 폐기.
-//! 2026-05-15 unique RPC message — Empty/StringRequest/RawJsonPb shared 폐기 + RPC 별 명시 message.
-//! ReadFile / ListFiles 응답은 동적 schema → raw JSON 유지. GetIndex 는 단순 content string.
+//! This service is the admin tab's CRUD path — always admin scope (None owner). The AI
+//! `memory_*` tools call `MemoryFileManager` directly with their own owner. All file logic
+//! (frontmatter, index, owner scoping) lives in the manager so both paths stay in sync.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::ports::IStoragePort;
+use crate::managers::memory_file::{MemoryEntry, MemoryFileManager};
 use crate::proto::{
     memory_service_server::MemoryService, MemoryDeleteFileRequest, MemoryDeleteFileResponse,
     MemoryGetIndexRequest, MemoryGetIndexResponse, MemoryListFilesRequest,
@@ -22,31 +20,12 @@ use crate::proto::{
 };
 
 pub struct MemoryServiceImpl {
-    storage: Arc<dyn IStoragePort>,
-    /// memory 디렉토리 (workspace 상대 경로) — default `data/memory`
-    memory_dir: PathBuf,
+    manager: Arc<MemoryFileManager>,
 }
 
 impl MemoryServiceImpl {
-    pub fn new(storage: Arc<dyn IStoragePort>) -> Self {
-        Self {
-            storage,
-            memory_dir: PathBuf::from("data/memory"),
-        }
-    }
-
-    fn resolve_path(&self, name: &str) -> Result<String, String> {
-        // path traversal 방어 — `..` / 절대경로 차단
-        if name.contains("..") || name.starts_with('/') || name.starts_with('\\') {
-            return Err(format!("invalid memory file name: {name}"));
-        }
-        // .md 확장자 자동 추가
-        let normalized = if name.ends_with(".md") {
-            name.to_string()
-        } else {
-            format!("{name}.md")
-        };
-        Ok(self.memory_dir.join(normalized).to_string_lossy().to_string())
+    pub fn new(manager: Arc<MemoryFileManager>) -> Self {
+        Self { manager }
     }
 }
 
@@ -60,14 +39,8 @@ impl MemoryService for MemoryServiceImpl {
         &self,
         _req: Request<MemoryGetIndexRequest>,
     ) -> Result<Response<MemoryGetIndexResponse>, TonicStatus> {
-        // MEMORY.md — 인덱스 파일. 없으면 빈 string.
-        let path = self.memory_dir.join("MEMORY.md").to_string_lossy().to_string();
-        match self.storage.read(&path).await {
-            Ok(content) => Ok(Response::new(MemoryGetIndexResponse { content })),
-            Err(_) => Ok(Response::new(MemoryGetIndexResponse {
-                content: String::new(),
-            })),
-        }
+        let content = self.manager.get_index(None).await.unwrap_or_default();
+        Ok(Response::new(MemoryGetIndexResponse { content }))
     }
 
     async fn read_file(
@@ -75,12 +48,9 @@ impl MemoryService for MemoryServiceImpl {
         req: Request<MemoryReadFileRequest>,
     ) -> Result<Response<MemoryReadFileResponse>, TonicStatus> {
         let name = req.into_inner().name;
-        let path = self
-            .resolve_path(&name)
-            .map_err(TonicStatus::invalid_argument)?;
-        match self.storage.read(&path).await {
-            Ok(content) => Ok(Response::new(MemoryReadFileResponse {
-                raw_json: to_raw_json(&serde_json::json!({"name": name, "content": content})),
+        match self.manager.read(None, &name).await {
+            Ok(entry) => Ok(Response::new(MemoryReadFileResponse {
+                raw_json: to_raw_json(&entry),
             })),
             Err(e) => Err(TonicStatus::not_found(e)),
         }
@@ -90,20 +60,9 @@ impl MemoryService for MemoryServiceImpl {
         &self,
         _req: Request<MemoryListFilesRequest>,
     ) -> Result<Response<MemoryListFilesResponse>, TonicStatus> {
-        let dir = self.memory_dir.to_string_lossy().to_string();
-        let entries = self
-            .storage
-            .list_dir(&dir)
-            .await
-            .unwrap_or_default();
-        // *.md 만 필터, MEMORY.md 제외 (인덱스는 별도)
-        let files: Vec<String> = entries
-            .into_iter()
-            .filter(|e| !e.is_directory && e.name.ends_with(".md") && e.name != "MEMORY.md")
-            .map(|e| e.name)
-            .collect();
+        let entries = self.manager.list(None).await.unwrap_or_default();
         Ok(Response::new(MemoryListFilesResponse {
-            raw_json: to_raw_json(&files),
+            raw_json: to_raw_json(&entries),
         }))
     }
 
@@ -112,11 +71,14 @@ impl MemoryService for MemoryServiceImpl {
         req: Request<MemorySaveFileRequest>,
     ) -> Result<Response<MemorySaveFileResponse>, TonicStatus> {
         let args = req.into_inner();
-        let path = self
-            .resolve_path(&args.name)
-            .map_err(TonicStatus::invalid_argument)?;
-        self.storage
-            .write(&path, &args.content)
+        let entry = MemoryEntry {
+            category: args.category,
+            name: args.name,
+            description: args.description,
+            content: args.content,
+        };
+        self.manager
+            .save(None, &entry)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(MemorySaveFileResponse {}))
@@ -127,11 +89,8 @@ impl MemoryService for MemoryServiceImpl {
         req: Request<MemoryDeleteFileRequest>,
     ) -> Result<Response<MemoryDeleteFileResponse>, TonicStatus> {
         let name = req.into_inner().name;
-        let path = self
-            .resolve_path(&name)
-            .map_err(TonicStatus::invalid_argument)?;
-        self.storage
-            .delete(&path)
+        self.manager
+            .delete(None, &name)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(MemoryDeleteFileResponse {}))

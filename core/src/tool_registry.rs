@@ -16,6 +16,7 @@ use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
 use crate::managers::library::LibraryManager;
+use crate::managers::memory_file::{MemoryEntry, MemoryFileManager};
 use crate::managers::template::{apply_placeholders, TemplateConfig, TemplateManager};
 use crate::managers::mcp::McpManager;
 use crate::managers::media::MediaManager;
@@ -64,6 +65,9 @@ pub struct CoreToolHandlers {
     pub template: Arc<TemplateManager>,
     /// 템플릿 placeholder 치환의 날짜/시간 tz resolve 용.
     pub vault: Arc<dyn IVaultPort>,
+    /// 운영 메모리 (data/memory 파일) — memory_save / memory_read / memory_list / memory_delete.
+    /// owner-scoped (hub_context 활성 시 AiManager 가 owner 주입).
+    pub memory_file: Arc<MemoryFileManager>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -77,6 +81,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_entity_tools(tools, &h);
     register_episodic_tools(tools, &h);
     register_consolidation_tools(tools, &h);
+    register_memory_file_tools(tools, &h);
     register_module_tools(tools, &h);
     register_mcp_tools(tools, &h);
     register_cache_tools(tools, &h);
@@ -85,6 +90,145 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_infra_parity_tools(tools, &h);
     register_template_tools(tools, &h);
     register_build_tools(tools);
+}
+
+/// Operational memory tools (data/memory files): save / read / list (index) / delete.
+/// This is the curated, always-relevant operational knowledge — distinct from Recall
+/// (entity/fact semantic store). The index is injected into the system prompt every turn;
+/// use memory_read to pull a full entry on demand. `owner` is injected by AiManager when a
+/// hub context is active (visitor isolation); admin omits it.
+fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // memory_save — create or update one operational-memory entry (overwrites same name).
+    tools.register(ToolDefinition {
+        name: "memory_save".to_string(),
+        description: "Save a durable operational-memory entry (reusable lesson / how-to / preference). \
+            Overwrites an entry with the same name. category ∈ user|feedback|project|reference. \
+            description = one-line summary (shown in the index). content = full body. \
+            Use only for stable operational knowledge, not transient facts (use save_entity_fact for facts)."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "short slug, also the filename"},
+                "category": {"type": "string", "enum": ["user", "feedback", "project", "reference"]},
+                "description": {"type": "string", "description": "one-line summary for the index"},
+                "content": {"type": "string", "description": "full body"}
+            },
+            "required": ["name", "content"]
+        }),
+        source: "core".to_string(),
+    });
+    let mf = h.memory_file.clone();
+    tools.register_handler(
+        "memory_save",
+        make_handler(move |args| {
+            let mf = mf.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct SaveArgs {
+                    name: String,
+                    #[serde(default)]
+                    category: String,
+                    #[serde(default)]
+                    description: String,
+                    #[serde(default)]
+                    content: String,
+                    #[serde(default)]
+                    owner: Option<String>,
+                }
+                let a: SaveArgs = serde_json::from_value(args)
+                    .map_err(|e| format!("memory_save args: {e}"))?;
+                let entry = MemoryEntry {
+                    category: a.category,
+                    name: a.name,
+                    description: a.description,
+                    content: a.content,
+                };
+                mf.save(a.owner.as_deref(), &entry).await?;
+                Ok(serde_json::json!({"ok": true, "name": entry.name}))
+            }
+        }),
+    );
+
+    // memory_read — full entry by name.
+    tools.register(ToolDefinition {
+        name: "memory_read".to_string(),
+        description: "Read one operational-memory entry by name (full body). \
+            Names come from the index (the <OPERATIONAL_MEMORY> block or memory_list)."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "name": {"type": "string"} },
+            "required": ["name"]
+        }),
+        source: "core".to_string(),
+    });
+    let mf = h.memory_file.clone();
+    tools.register_handler(
+        "memory_read",
+        make_handler(move |args| {
+            let mf = mf.clone();
+            async move {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "memory_read: name required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let entry = mf.read(owner, name).await?;
+                serde_json::to_value(entry).map_err(|e| e.to_string())
+            }
+        }),
+    );
+
+    // memory_list — the index (one line per entry, grouped by category).
+    tools.register(ToolDefinition {
+        name: "memory_list".to_string(),
+        description: "List operational memory as an index (name + one-line description per entry, \
+            grouped by category). Use memory_read for a full entry."
+            .to_string(),
+        parameters: serde_json::json!({ "type": "object", "properties": {} }),
+        source: "core".to_string(),
+    });
+    let mf = h.memory_file.clone();
+    tools.register_handler(
+        "memory_list",
+        make_handler(move |args| {
+            let mf = mf.clone();
+            async move {
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let index = mf.get_index(owner).await?;
+                Ok(serde_json::json!({"index": index}))
+            }
+        }),
+    );
+
+    // memory_delete — remove one entry by name.
+    tools.register(ToolDefinition {
+        name: "memory_delete".to_string(),
+        description: "Delete one operational-memory entry by name.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "name": {"type": "string"} },
+            "required": ["name"]
+        }),
+        source: "core".to_string(),
+    });
+    let mf = h.memory_file.clone();
+    tools.register_handler(
+        "memory_delete",
+        make_handler(move |args| {
+            let mf = mf.clone();
+            async move {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "memory_delete: name required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                mf.delete(owner, name).await?;
+                Ok(serde_json::json!({"ok": true}))
+            }
+        }),
+    );
 }
 
 /// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.

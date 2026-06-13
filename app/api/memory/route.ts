@@ -32,9 +32,8 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (typeof content !== 'string') {
     return NextResponse.json({ success: false, error: 'content 필수' }, { status: 400 });
   }
-  // MemorySaveFileRequest { name, content } — proxy 는 1·2번째 positional 인자만 사용했음.
-  // 옛 호출 형태 `(category, name, description, content)` → `{name: category, content: name.trim()}` 매핑 보존.
-  const res = await saveMemoryFile({ name: category, content: name.trim() } as any);
+  // MemorySaveFileRequest { name, content, category, description } — frontmatter 로 저장.
+  const res = await saveMemoryFile({ name: name.trim(), content, category, description });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });

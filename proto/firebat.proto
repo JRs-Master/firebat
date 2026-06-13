@@ -2392,17 +2392,21 @@ message MemoryReadFileRequest {
   string name = 1;
 }
 message MemoryReadFileResponse {
-  // { name, content } JSON.
+  // { category, name, description, content } JSON (frontmatter 파싱).
   string raw_json = 1;
 }
 message MemoryListFilesRequest {}
 message MemoryListFilesResponse {
-  // *.md 파일명 배열 JSON (MEMORY.md 제외).
+  // [{ category, name, description }] JSON (MEMORY.md 제외, frontmatter 파싱).
   string raw_json = 1;
 }
 message MemorySaveFileRequest {
   string name = 1;
   string content = 2;
+  // 카테고리 (user/feedback/project/reference) — frontmatter 에 기록.
+  string category = 3;
+  // 한 줄 요약 — 인덱스 노출 + frontmatter 에 기록.
+  string description = 4;
 }
 message MemorySaveFileResponse {}
 message MemoryDeleteFileRequest {

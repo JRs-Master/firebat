@@ -513,6 +513,12 @@ async fn main() -> Result<()> {
             .with_mcp(mcp_manager.clone()),
     );
 
+    // MemoryFileManager — data/memory 파일 운영 메모리. 어드민 탭 gRPC + memory_* AI 도구 +
+    // AiManager 인덱스 주입이 같은 인스턴스 공유.
+    let memory_file_manager = Arc::new(
+        firebat_core::managers::memory_file::MemoryFileManager::new(storage.clone()),
+    );
+
     let ai_manager = Arc::new(
         AiManager::new(
             llm.clone(),
@@ -523,6 +529,7 @@ async fn main() -> Result<()> {
             )),
         )
             .with_prompt_builder(vault.clone())
+            .with_memory_file(memory_file_manager.clone())
             .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
@@ -610,6 +617,7 @@ async fn main() -> Result<()> {
             network: network_port.clone(),
             template: template_manager.clone(),
             vault: vault.clone(),
+            memory_file: memory_file_manager.clone(),
         },
     );
 
@@ -702,7 +710,7 @@ async fn main() -> Result<()> {
     // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
     // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).
     let database_service = grpc::database::DatabaseServiceImpl::new(db.clone());
-    let memory_file_service = grpc::memory_file::MemoryServiceImpl::new(storage.clone());
+    let memory_file_service = grpc::memory_file::MemoryServiceImpl::new(memory_file_manager.clone());
 
     let lifecycle_service = grpc::lifecycle::LifecycleServiceImpl::new(vec![
         "AiManager".to_string(),
