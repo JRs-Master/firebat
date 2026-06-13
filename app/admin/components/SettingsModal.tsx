@@ -1302,10 +1302,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {/* AI 어시스턴트 라우터 */}
                 {(() => {
-                  // AI Assistant 는 Gemini/Vertex 뿐 아니라 GPT(OpenAI)·Claude 모델도 선택 가능 →
-                  // 제공자 키 중 하나라도 있으면 활성 가능. 옛엔 Gemini/Vertex 만 봐서 OpenAI 키만 있는
-                  // 경우 토글이 안 먹던 버그. (geminiApiKey state = OpenAI 키, 레거시 이름)
-                  const hasAssistantKey = !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey;
+                  // Toggle is enableable when: (1) main model is CLI → worker resolves to the current
+                  // CLI model (subscription = free; resolve_worker_model maps "current" that way) so NO
+                  // API key is required; or (2) a cheap API worker key (gpt/gemini) is registered.
+                  // (geminiApiKey state = OpenAI key, legacy name / vertexSaJson = Gemini via Vertex.)
+                  // Old logic gated only on API keys → CLI-only operators could never enable it.
+                  const hasAssistantKey =
+                    execMode === 'cli' || !!geminiApiKey || !!googleApiKey || !!vertexSaJson;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
                       <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
