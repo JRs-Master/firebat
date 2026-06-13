@@ -648,6 +648,7 @@
     "memory_category_feedback": "Feedback",
     "memory_category_project": "Project",
     "memory_category_reference": "Reference",
+    "memory_category_idea": "Improvement ideas (AI-logged)",
     "memory_edit_title": "Edit: {{name}}",
     "memory_category_label": "Category",
     "memory_name_label": "Name (English, snake_case)",

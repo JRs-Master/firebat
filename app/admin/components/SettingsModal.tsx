@@ -2440,12 +2440,13 @@ interface CostStats {
 
 // ── Memory tab — Firebat AI 자율 메모리 CRUD ──
 type MemoryItem = { category: string; name: string; description: string; content: string };
-const MEMORY_CATEGORY_KEYS = ['user', 'feedback', 'project', 'reference'] as const;
+const MEMORY_CATEGORY_KEYS = ['user', 'feedback', 'project', 'reference', 'idea'] as const;
 const MEMORY_CATEGORY_I18N: Record<string, string> = {
   user: 'settings_modal.memory_category_user',
   feedback: 'settings_modal.memory_category_feedback',
   project: 'settings_modal.memory_category_project',
   reference: 'settings_modal.memory_category_reference',
+  idea: 'settings_modal.memory_category_idea',
 };
 
 function MemoryTabContent() {
@@ -2488,7 +2489,7 @@ function MemoryTabContent() {
     void load();
   };
 
-  const grouped: Record<string, MemoryItem[]> = { user: [], feedback: [], project: [], reference: [] };
+  const grouped: Record<string, MemoryItem[]> = { user: [], feedback: [], project: [], reference: [], idea: [] };
   for (const it of items) {
     if (grouped[it.category]) grouped[it.category].push(it);
   }

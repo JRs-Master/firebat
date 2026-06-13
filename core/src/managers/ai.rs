@@ -230,10 +230,6 @@ pub struct AiManager {
     /// `<OPERATIONAL_MEMORY>` 로 prepend. ai-router 토글과 무관하게 항상 주입 (큐레이트 운영지식은
     /// CLAUDE.md 처럼 늘 효력). 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF). 미설정 시 주입 skip.
     memory_file: Option<Arc<crate::managers::memory_file::MemoryFileManager>>,
-    /// IPostTurnExtractor (옵션, 늦게 바인딩) — 답변 완료 후 백그라운드 메모리 추출 (Stage 2).
-    /// ConsolidationManager 와 상호 Arc 참조라 둘 다 생성된 뒤 set_post_turn_extractor 로 설정.
-    /// 미설정 / 토글 OFF / hub / cron 시 spawn skip.
-    post_turn_extractor: std::sync::Mutex<Option<Arc<dyn crate::ports::IPostTurnExtractor>>>,
 }
 
 impl AiManager {
@@ -258,7 +254,6 @@ impl AiManager {
             retrieval_engine: None,
             media: None,
             memory_file: None,
-            post_turn_extractor: std::sync::Mutex::new(None),
         }
     }
 
@@ -272,15 +267,6 @@ impl AiManager {
         self
     }
 
-    /// IPostTurnExtractor 늦게 바인딩 (Stage 2) — ConsolidationManager 와 상호 Arc 참조라 둘 다
-    /// 생성된 뒤 호출. 미설정 시 답변 후 추출 skip.
-    pub fn set_post_turn_extractor(&self, ext: Arc<dyn crate::ports::IPostTurnExtractor>) {
-        let mut guard = self
-            .post_turn_extractor
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        *guard = Some(ext);
-    }
 
     /// IMediaPort 설정 — opts.image 가 slug URL 일 때 fs read + base64 data URL 변환 활성.
     /// 미설정 시 변환 skip (옛 동작 — base64 가정 코드 그대로).
@@ -1751,55 +1737,6 @@ impl AiManager {
             },
         };
 
-        // Stage 2 — 답변 완료 후 백그라운드 메모리 추출 (Recall 사실 + Memory 교훈).
-        // detached spawn → 답변 속도 0 영향. 가드: ai-router 토글 ON + owner==admin (hub 게이트 OFF) +
-        // cron 아님 + extractor 설정됨. 추출의 LLM 호출(ask_text)은 이 함수를 안 거치므로 재귀 0.
-        {
-            let extractor = {
-                let guard = self
-                    .post_turn_extractor
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner());
-                guard.clone()
-            };
-            if let Some(extractor) = extractor {
-                let owner = effective_opts
-                    .owner
-                    .as_deref()
-                    .or(ai_opts.owner.as_deref())
-                    .unwrap_or("admin");
-                let router_enabled = self
-                    .vault
-                    .as_ref()
-                    .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED))
-                    .map(|v| v == "true" || v == "1")
-                    .unwrap_or(false);
-                if router_enabled
-                    && owner == "admin"
-                    && ai_opts.cron_agent.is_none()
-                    && ai_opts.hub_context.is_none()
-                {
-                    let owner_owned = owner.to_string();
-                    let conv_id = effective_opts
-                        .conversation_id
-                        .as_deref()
-                        .or(ai_opts.conversation_id.as_deref())
-                        .map(String::from);
-                    let user_msg = prompt.to_string();
-                    let assistant_msg = response.reply.clone();
-                    tokio::spawn(async move {
-                        extractor
-                            .extract_after_turn(
-                                &owner_owned,
-                                conv_id.as_deref(),
-                                &user_msg,
-                                &assistant_msg,
-                            )
-                            .await;
-                    });
-                }
-            }
-        }
         Ok(redact_response(response))
     }
 

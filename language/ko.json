@@ -648,6 +648,7 @@
     "memory_category_feedback": "행동 룰 (Feedback)",
     "memory_category_project": "프로젝트 (Project)",
     "memory_category_reference": "외부 참조 (Reference)",
+    "memory_category_idea": "개선 제안 (AI 운영 중 발견)",
     "memory_edit_title": "편집: {{name}}",
     "memory_category_label": "카테고리",
     "memory_name_label": "이름 (영문, snake_case)",

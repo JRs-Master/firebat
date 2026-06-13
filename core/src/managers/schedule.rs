@@ -10,7 +10,6 @@
 use std::sync::Arc;
 
 use crate::managers::ai::AiManager;
-use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
 use crate::managers::status::StatusManager;
 use crate::managers::task::{PipelineStep, TaskManager};
@@ -18,7 +17,7 @@ use crate::managers::tool::ToolManager;
 use crate::ports::{
     CronJobInfo, CronJobResult, CronLogEntry, CronNotification, CronOccurrence,
     CronScheduleOptions, CronTriggerCallback, CronTriggerInfo, ICronPort, ILogPort, ISandboxPort,
-    InfraResult, LlmCallOpts, SandboxExecuteOpts, SaveEventInput,
+    InfraResult, LlmCallOpts, SandboxExecuteOpts,
 };
 use crate::utils::condition::evaluate_condition;
 use crate::utils::path_resolve::resolve_field_path;
@@ -28,7 +27,6 @@ const DEFAULT_RETRY_DELAY_MS: i64 = 30_000;
 
 /// Schedule trigger 의 외부 dependency. `with_hooks()` 설정 후 handle_trigger 의 4 모드 + runWhen
 /// + notify 활성. 미설정 시 sandbox-only fallback (page URL 알림 만 동작).
-/// episodic 설정 시 AI 미개입 자동 hook 활성 — cron 발화 시 save_event(type='cron_trigger') 자동.
 #[derive(Clone)]
 pub struct ScheduleHooks {
     pub task: Arc<TaskManager>,
@@ -36,7 +34,6 @@ pub struct ScheduleHooks {
     pub sandbox: Arc<dyn ISandboxPort>,
     pub tools: Arc<ToolManager>,
     pub log: Arc<dyn ILogPort>,
-    pub episodic: Arc<EpisodicManager>,
     /// StatusManager — cron job 가시화 (옛 TS core/index.ts:1368 statusMgr.start/done/error 패턴).
     pub status: Arc<StatusManager>,
     /// EventManager — cron 완료 SSE 발행 (옛 TS core/index.ts:1384 notifyCronComplete 패턴).
@@ -296,36 +293,10 @@ impl ScheduleManager {
             let _ = self.cron.cancel(&info.job_id).await;
         }
 
-        // 5. AI 미개입 자동 hook 1: cron 발화 사실 자체를 리콜에 저장.
-        // 옛 TS Core facade 의 saveEvent 자동 호출 패턴 1:1. silent 실패 (event 저장 실패해도 cron
-        // result 영향 X). type='cron_trigger' / title=jobId / description=success/error 요약.
-        if let Some(hooks) = &self.hooks {
-            let description = if final_result.success {
-                crate::i18n::t(
-                    "core.error.schedule.success_summary",
-                    None,
-                    &[("duration_ms", &final_result.duration_ms.to_string())],
-                )
-            } else {
-                crate::i18n::t(
-                    "core.error.schedule.fail_summary",
-                    None,
-                    &[(
-                        "detail",
-                        final_result.error.as_deref().unwrap_or("(unknown)"),
-                    )],
-                )
-            };
-            let _ = hooks
-                .episodic
-                .save_event(SaveEventInput {
-                    event_type: "cron_trigger".to_string(),
-                    title: info.job_id.clone(),
-                    description: Some(description),
-                    ..Default::default()
-                })
-                .await;
-        }
+        // 5. cron 발화는 episodic(Recall 사건)에 저장하지 않음 (사용자 결정 2026-06-13).
+        // cron 성공/실패는 cron-logs + 일정 + StatusManager(아래) + 알림이 이미 기록 → Recall 사건에
+        // 또 넣으면 "124687ms 정상" 류 노이즈가 진짜 happening 을 묻음. events = 의미있는 일어남만.
+        // (cron 이 *무엇을 했나*(페이지 발행 등) 결과를 recall 하려면 그 결과를 별도 event 로 — 미래 opt-in.)
 
         // 6. AI 미개입 자동 hook 2: StatusManager done/error 발행 (옛 TS core/index.ts:1375 패턴).
         if let (Some(hooks), Some(job_id)) = (&self.hooks, status_job_id) {

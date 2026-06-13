@@ -554,12 +554,10 @@ async fn main() -> Result<()> {
         Some(cost_manager.clone()),
     );
 
-    // Stage 2 — 답변 후 백그라운드 메모리 추출 배선.
-    // (1) ConsolidationManager 가 운영 교훈(lessons)을 data/memory 로 저장하도록 MemoryFileManager 연결.
-    // (2) AiManager 가 답변 완료 후 ConsolidationManager(IPostTurnExtractor)로 추출을 detached 호출.
-    //     둘 다 상호 Arc 참조라 set_ai_hook 처럼 양쪽 생성 후 늦게 바인딩.
+    // 메모리 자동 추출의 Memory(운영 교훈) 저장 대상 연결 — ConsolidationManager.save_extracted 가
+    // lessons 를 data/memory 로 저장. consolidate_conversation(6h cron 백스톱)이 이 경로로 implicit
+    // 교훈을 보강(주 경로는 메인 모델 inline memory_save). set_ai_hook 뒤 늦게 바인딩.
     consolidation_manager.set_memory_file(memory_file_manager.clone());
-    ai_manager.set_post_turn_extractor(consolidation_manager.clone());
 
     // 정적 도구 dispatch 등록은 task_manager 생성 뒤로 이동 (run_task = TaskManager 의존).
     // tool_manager 는 dispatch 시점(부팅 후)에만 읽히므로 등록을 미뤄도 안전.
@@ -643,7 +641,6 @@ async fn main() -> Result<()> {
                     logger.clone(),
                     "cron",
                 )),
-                episodic: episodic_manager.clone(),
                 status: status_manager.clone(),
                 event: event_manager.clone(),
             },

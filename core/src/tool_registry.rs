@@ -102,15 +102,18 @@ fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "memory_save".to_string(),
         description: "Save a durable operational-memory entry (reusable lesson / how-to / preference). \
-            Overwrites an entry with the same name. category ∈ user|feedback|project|reference. \
-            description = one-line summary (shown in the index). content = full body. \
-            Use only for stable operational knowledge, not transient facts (use save_entity_fact for facts)."
+            Overwrites an entry with the same name. description = one-line summary (shown in the index). \
+            content = full body. category: user|feedback|project|reference = operational knowledge \
+            (injected into your context every turn — what you should always follow). \
+            category 'idea' = a developer-facing Firebat improvement suggestion you log while operating \
+            (friction/missing feature/awkward flow); it is NOT injected back, the operator reviews it. \
+            Use this for stable knowledge & ideas, not transient facts (use save_entity_fact for facts)."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "short slug, also the filename"},
-                "category": {"type": "string", "enum": ["user", "feedback", "project", "reference"]},
+                "category": {"type": "string", "enum": ["user", "feedback", "project", "reference", "idea"]},
                 "description": {"type": "string", "description": "one-line summary for the index"},
                 "content": {"type": "string", "description": "full body"}
             },

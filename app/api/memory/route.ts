@@ -20,8 +20,8 @@ export const GET = withAuth(async () => {
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
   const { category, name, description, content } = body || {};
-  if (!category || !['user', 'feedback', 'project', 'reference'].includes(category)) {
-    return NextResponse.json({ success: false, error: 'category 필수 (user/feedback/project/reference)' }, { status: 400 });
+  if (!category || !['user', 'feedback', 'project', 'reference', 'idea'].includes(category)) {
+    return NextResponse.json({ success: false, error: 'category 필수 (user/feedback/project/reference/idea)' }, { status: 400 });
   }
   if (!name || typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ success: false, error: 'name 필수' }, { status: 400 });

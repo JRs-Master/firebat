@@ -211,9 +211,11 @@ fn build_index(entries: &[MemoryEntry]) -> String {
         }
     }
     // Legacy entries with a non-canonical category land under "other".
+    // `idea` is excluded entirely — those are developer-facing improvement suggestions
+    // (the AI logs them while operating), not operational knowledge to inject into the AI.
     let other: Vec<&MemoryEntry> = entries
         .iter()
-        .filter(|e| !MEMORY_CATEGORIES.contains(&e.category.as_str()))
+        .filter(|e| !MEMORY_CATEGORIES.contains(&e.category.as_str()) && e.category != "idea")
         .collect();
     if !other.is_empty() {
         out.push_str("\n## other\n");
