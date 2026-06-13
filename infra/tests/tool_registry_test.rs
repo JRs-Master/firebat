@@ -192,14 +192,14 @@ async fn registered_tool_count() {
     let (tools, _dir) = make_setup().await;
     let stats = tools.stats();
     // page: 4 + storage: 4 + schedule: 3 + media: 3 (search/image_gen/regenerate) +
-    // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 +
+    // conversation: 2 (search_history/search_memory) + entity: 5 + episodic: 3 + consolidation: 2 +
     // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
     // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
-    // memory_file: 5 (memory_save/read/list/delete/grep) = 54
-    assert_eq!(stats.total, 54);
-    assert_eq!(stats.by_source.get("core").copied(), Some(54));
+    // memory_file: 5 (memory_save/read/list/delete/grep) = 55
+    assert_eq!(stats.total, 55);
+    assert_eq!(stats.by_source.get("core").copied(), Some(55));
 }
 
 #[tokio::test]

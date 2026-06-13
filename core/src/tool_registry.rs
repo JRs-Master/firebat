@@ -1605,6 +1605,59 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             }
         }),
     );
+
+    // search_memory — unified recall across history + Recall (entities/facts/events) + Library in
+    // one call (RetrievalEngine — the same merge that auto-injects when the AI-assistant toggle is
+    // on). Built here from the handler's own managers so the AI can trigger it on demand; no shared
+    // state with AiManager's instance.
+    let engine = Arc::new(
+        crate::managers::ai::retrieval_engine::RetrievalEngine::new()
+            .with_conversation(h.conversation.clone())
+            .with_entity(h.entity.clone())
+            .with_episodic(h.episodic.clone())
+            .with_library(h.library.clone()),
+    );
+    tools.register(ToolDefinition {
+        name: "search_memory".to_string(),
+        description: "Unified recall — searches conversation history + Recall (entities/facts/events) \
+            + Library in one call and returns the merged relevant context for a query. Use this to \
+            look up what you know across all memory sources at once (same retrieval that auto-injects \
+            when the AI-assistant toggle is on). For a single source, use search_history / \
+            search_entities / search_library instead."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "query": {"type": "string"} },
+            "required": ["query"]
+        }),
+        source: "core".to_string(),
+    });
+    tools.register_handler(
+        "search_memory",
+        make_handler(move |args| {
+            let engine = engine.clone();
+            async move {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "search_memory: query required".to_string())?;
+                let opts = crate::managers::ai::retrieval_engine::RetrieveOpts {
+                    query: query.to_string(),
+                    owner: args.get("owner").and_then(|v| v.as_str()).map(String::from),
+                    current_conv_id: args
+                        .get("currentConvId")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    ..Default::default()
+                };
+                let result = engine.retrieve(&opts).await;
+                Ok(serde_json::json!({
+                    "context": result.context_summary,
+                    "stats": serde_json::to_value(result.stats).unwrap_or_default(),
+                }))
+            }
+        }),
+    );
 }
 
 fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
