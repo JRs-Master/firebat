@@ -1302,13 +1302,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {/* AI 어시스턴트 라우터 */}
                 {(() => {
-                  // Toggle is enableable when: (1) main model is CLI → worker resolves to the current
-                  // CLI model (subscription = free; resolve_worker_model maps "current" that way) so NO
-                  // API key is required; or (2) a cheap API worker key (gpt/gemini) is registered.
-                  // (geminiApiKey state = OpenAI key, legacy name / vertexSaJson = Gemini via Vertex.)
-                  // Old logic gated only on API keys → CLI-only operators could never enable it.
+                  // Toggle is enableable when ANY model can be the worker: main is CLI ("current" worker
+                  // = the CLI main, free), OR any provider API key is registered (so an API worker — incl.
+                  // "current" if main is that API model — can run). Since there's always a main model, this
+                  // is effectively "is any model usable". (geminiApiKey state = OpenAI key, legacy name.)
                   const hasAssistantKey =
-                    execMode === 'cli' || !!geminiApiKey || !!googleApiKey || !!vertexSaJson;
+                    execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
                       <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
@@ -1330,10 +1329,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
                             <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
                             <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_tool_select') }} />
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_component_select') }} />
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_history_rewrite') }} />
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_history_rerank') }} />
                           </ul>
                           <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_cli_note') }} />
                           <div className="text-[11px] text-slate-400 mt-1.5">
@@ -1351,10 +1346,26 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <SelectInput
                             value={aiAssistantModel}
                             onChange={setAiAssistantModel}
-                            options={aiAssistantModels.map(m => ({
-                              value: m.id,
-                              label: m.id === 'current' ? t('settings_modal.ai_assistant_model_current') : m.displayName,
-                            }))}
+                            options={aiAssistantModels
+                              // 싼 API worker 는 해당 제공자 키 등록 시에만 노출. "current"(= 메인 모델)는 항상.
+                              // (geminiApiKey state = OpenAI 키, 레거시 이름.)
+                              .filter(m =>
+                                m.id === 'current'
+                                  ? true
+                                  : m.id.includes('gpt')
+                                    ? !!geminiApiKey
+                                    : m.id.includes('gemini')
+                                      ? !!googleApiKey
+                                      : true,
+                              )
+                              .map(m => ({
+                                value: m.id,
+                                label:
+                                  m.id === 'current'
+                                    ? t('settings_modal.ai_assistant_model_current') +
+                                      (execMode === 'cli' ? t('settings_modal.ai_assistant_model_current_free') : '')
+                                    : m.displayName,
+                              }))}
                           />
                         </Field>
                       )}
