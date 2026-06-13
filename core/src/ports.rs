@@ -2434,6 +2434,26 @@ pub trait IEpisodicPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// IPostTurnExtractor — 답변 완료 후 백그라운드 메모리 추출 (Stage 2).
+//
+// AiManager 가 한 턴(멀티턴 도구 루프 포함) 응답을 끝낸 뒤 detached 로 1회 호출. 방금 exchange 에서
+// Recall 사실 + Memory 교훈을 추출·저장. AiManager → ConsolidationManager 직접 의존(Arc 사이클)을
+// 피하려 port 로 추출 — AiManager 는 trait 만 의존. 구현은 ConsolidationManager.
+// fire-and-forget — 에러는 구현부 로깅, 반환 없음.
+// ──────────────────────────────────────────────────────────────────────────
+
+#[async_trait::async_trait]
+pub trait IPostTurnExtractor: Send + Sync {
+    async fn extract_after_turn(
+        &self,
+        owner: &str,
+        conv_id: Option<&str>,
+        user_msg: &str,
+        assistant_msg: &str,
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // IMemoryFacadePort — 메모리 4-tier facade.
 //
 // ConsolidationManager 가 EntityManager + EpisodicManager 를 직접 의존하던 BIBLE 위반

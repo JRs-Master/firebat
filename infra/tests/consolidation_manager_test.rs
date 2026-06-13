@@ -47,6 +47,7 @@ async fn save_extracted_creates_entities_and_facts() {
             occurred_at: Some(1_700_001_000_000),
             entity_names: vec!["삼성전자".to_string()],
         }],
+        lessons: vec![],
     };
     let outcome = mgr
         .save_extracted(extracted, Some("c1"), Some(0.92), Some(0.92), None)
@@ -71,6 +72,7 @@ async fn missing_entity_name_skips_fact() {
             tags: vec![],
         }],
         events: vec![],
+        lessons: vec![],
     };
     let outcome = mgr
         .save_extracted(extracted, None, None, None, None)
@@ -104,6 +106,7 @@ async fn memory_stats_aggregates_async() {
             occurred_at: Some(1),
             entity_names: vec![],
         }],
+        lessons: vec![],
     };
     mgr.save_extracted(extracted, None, None, None, None).await.unwrap();
     let stats = mgr.get_memory_stats().unwrap();

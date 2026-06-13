@@ -16,9 +16,10 @@ use std::sync::Arc;
 use crate::managers::ai::AiManager;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::cost::CostManager;
+use crate::managers::memory_file::{MemoryEntry, MemoryFileManager};
 use crate::ports::{
-    IMemoryFacadePort, IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput,
-    SaveFactInput,
+    IMemoryFacadePort, IPostTurnExtractor, IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput,
+    SaveEventInput, SaveFactInput,
 };
 
 /// AI Assistant model 의 default — `llm::registry::assistant_default_model()` (JSON 산출).
@@ -49,13 +50,20 @@ const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미�
    - occurredAt: ms epoch
    - entityNames: link 할 entity 이름 배열
 
+4. **lessons** (운영 교훈): Firebat 운영·도구 사용·작업 방식에 대해 새로 깨달은 *안정적* 지식
+   (다음에도 적용될 것만 — 일시적 시세·수치·일회성 사실은 facts 로).
+   - name: 짧은 슬러그 (영문 kebab-case 권장 — 파일명 겸 dedup 키)
+   - category: user / feedback / project / reference 중 하나
+   - description: 한 줄 요약 (인덱스 노출)
+   - content: 재사용 가능한 교훈·how-to 본문
+
 추출 안 할 것:
 - 잡담·인사·기술 질문
 - 추측·가정 (확인 안 된)
 - 메타 발화 (모델 변경·설정 같은 시스템 운영)
 
 JSON 응답 형식 (정확히 이 구조, 그 외 텍스트 금지):
-{"entities": [...], "facts": [...], "events": [...]}
+{"entities": [...], "facts": [...], "events": [...], "lessons": [...]}
 
 빈 카테고리는 빈 배열.
 
@@ -107,6 +115,19 @@ pub struct ExtractedEvent {
     pub entity_names: Vec<String>,
 }
 
+/// 운영 교훈 (data/memory 로 저장) — entity/fact 와 별개로 MemoryFileManager 에 누적.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtractedLesson {
+    pub name: String,
+    #[serde(default)]
+    pub category: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub content: String,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtractionResult {
@@ -116,6 +137,8 @@ pub struct ExtractionResult {
     pub facts: Vec<ExtractedFact>,
     #[serde(default)]
     pub events: Vec<ExtractedEvent>,
+    #[serde(default)]
+    pub lessons: Vec<ExtractedLesson>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -180,6 +203,9 @@ pub struct ConsolidationManager {
     /// 미설정 시 LLM 추출 비활성, save_extracted 만 가능.
     /// AiManager 설정된 후 set_ai_hook 으로 등록 (Arc 안에서도 가능).
     ai_hook: std::sync::Mutex<Option<ConsolidationAiHook>>,
+    /// MemoryFileManager (옵션) — extract_exchange 의 운영 교훈(lessons) 저장 대상.
+    /// 늦게 바인딩(set_memory_file). 미설정 시 lessons skip (Recall 만 저장).
+    memory_file: std::sync::Mutex<Option<Arc<MemoryFileManager>>>,
 }
 
 /// AI 의존성 묶음 — ConversationManager (대화 fetch) + AiManager (LLM 호출) + Vault (AI Assistant
@@ -201,6 +227,7 @@ impl ConsolidationManager {
         Self {
             memory,
             ai_hook: std::sync::Mutex::new(None),
+            memory_file: std::sync::Mutex::new(None),
         }
     }
 
@@ -216,6 +243,12 @@ impl ConsolidationManager {
     ) {
         let mut guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
         *guard = Some(ConsolidationAiHook { ai, conversation, vault, cost });
+    }
+
+    /// MemoryFileManager 설정 — extract_exchange 의 lessons 저장 활성. 미설정 시 lessons skip.
+    pub fn set_memory_file(&self, memory_file: Arc<MemoryFileManager>) {
+        let mut guard = self.memory_file.lock().unwrap_or_else(|p| p.into_inner());
+        *guard = Some(memory_file);
     }
 
     /// 대화 1개 자동 정리 — 옛 TS consolidateConversation 1:1 port.
@@ -572,6 +605,129 @@ impl ConsolidationManager {
         }
     }
 
+    /// 답변 완료 후 백그라운드 1회 추출 (Stage 2) — 방금 exchange(user+assistant)에서
+    /// Recall 사실 + Memory 교훈 추출·저장. consolidate_conversation 과 달리 전체 대화를
+    /// 다시 읽지 않고 최신 exchange 만 처리(매 턴 재처리 비용·quota 회피).
+    /// 토글(ai-router) OFF / hook 미설정 / 예산 초과 시 즉시 skip. owner 는 쓰기 scope.
+    pub async fn extract_exchange(
+        &self,
+        owner: &str,
+        conv_id: Option<&str>,
+        user_msg: &str,
+        assistant_msg: &str,
+    ) -> InfraResult<()> {
+        let hook = {
+            let guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
+            guard.clone()
+        };
+        let Some(hook) = hook else {
+            return Ok(());
+        };
+
+        // 토글 — auto 추출은 항상 ai-router 게이트 (수동 override 없음).
+        let enabled = hook
+            .vault
+            .get_secret(VK_SYSTEM_AI_ROUTER_ENABLED)
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        if !enabled {
+            return Ok(());
+        }
+
+        // 예산 가드 — 한도 초과 시 즉시 skip.
+        if let Some(cost) = &hook.cost {
+            let check = cost.check_budget();
+            if !check.within_budget {
+                tracing::warn!(
+                    target: "ai",
+                    reason = check.reason.as_deref().unwrap_or("한도 초과"),
+                    "extract_exchange skip — 예산 한도 초과"
+                );
+                return Ok(());
+            }
+        }
+
+        // transcript — 최신 exchange 만 (1500자 trim).
+        let u = user_msg.trim();
+        let a = assistant_msg.trim();
+        if u.is_empty() && a.is_empty() {
+            return Ok(());
+        }
+        let u_trim: String = u.chars().take(MESSAGE_TRIM_LIMIT).collect();
+        let a_trim: String = a.chars().take(MESSAGE_TRIM_LIMIT).collect();
+        let transcript = format!("사용자: {u_trim}\n\nAI: {a_trim}");
+        if transcript.len() < MIN_TRANSCRIPT_LEN {
+            return Ok(());
+        }
+
+        // 모델 — AI Assistant model (메인 채팅 모델 X). Stage 3 에서 "현재 모델" sentinel 추가 예정.
+        let resolved_model = hook
+            .vault
+            .get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL)
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| crate::llm::registry::assistant_default_model().to_string());
+        let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
+        let opts = LlmCallOpts {
+            model: Some(resolved_model),
+            thinking_level: Some("minimal".to_string()),
+            ..Default::default()
+        };
+        let response_text = hook.ai.ask_text(&full_prompt, &opts).await?;
+
+        let cleaned = strip_json_fence(&response_text);
+        let extracted: ExtractionResult = match serde_json::from_str(&cleaned) {
+            Ok(v) => v,
+            Err(_) => return Ok(()),
+        };
+
+        // 1. Recall (entities/facts/events) — owner scope (save_extracted 는 lessons 무시).
+        let scope = if owner != "admin" && !owner.is_empty() {
+            Some(owner)
+        } else {
+            None
+        };
+        let lessons = extracted.lessons.clone();
+        let outcome = self
+            .save_extracted(extracted, conv_id, Some(0.92), Some(0.92), scope)
+            .await?;
+
+        // 2. Memory 교훈 → MemoryFileManager (owner scope, name 충돌 시 덮어쓰기 = dedup).
+        let mf = {
+            let guard = self.memory_file.lock().unwrap_or_else(|p| p.into_inner());
+            guard.clone()
+        };
+        let mut lessons_saved = 0usize;
+        if let Some(mf) = mf {
+            for l in &lessons {
+                if l.name.trim().is_empty() || l.content.trim().is_empty() {
+                    continue;
+                }
+                let entry = MemoryEntry {
+                    category: l.category.clone(),
+                    name: l.name.clone(),
+                    description: l.description.clone(),
+                    content: l.content.clone(),
+                };
+                if mf.save(scope, &entry).await.is_ok() {
+                    lessons_saved += 1;
+                }
+            }
+        }
+
+        let saved_recall = outcome.saved.entities.len()
+            + outcome.saved.facts.len()
+            + outcome.saved.events.len();
+        if saved_recall > 0 || lessons_saved > 0 {
+            tracing::info!(
+                target: "ai",
+                recall = saved_recall,
+                lessons = lessons_saved,
+                "extract_exchange 저장 완료"
+            );
+        }
+        Ok(())
+    }
+
     /// 일반 LLM text 호출 — 옛 TS Core.askLlmText 1:1 port. AiManager 설정되어 있을 때만 작동.
     pub async fn ask_llm_text(
         &self,
@@ -590,6 +746,25 @@ impl ConsolidationManager {
             ));
         };
         hook.ai.ask_text(prompt, opts).await
+    }
+}
+
+#[async_trait::async_trait]
+impl IPostTurnExtractor for ConsolidationManager {
+    /// AiManager 가 답변 완료 후 detached 로 호출 — extract_exchange 위임 + 에러 로깅(fire-and-forget).
+    async fn extract_after_turn(
+        &self,
+        owner: &str,
+        conv_id: Option<&str>,
+        user_msg: &str,
+        assistant_msg: &str,
+    ) {
+        if let Err(e) = self
+            .extract_exchange(owner, conv_id, user_msg, assistant_msg)
+            .await
+        {
+            tracing::warn!(target: "ai", error = %e, "extract_after_turn 실패");
+        }
     }
 }
 
