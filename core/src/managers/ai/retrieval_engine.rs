@@ -1,11 +1,11 @@
-//! RetrievalEngine — 메모리 시스템 4-tier 통합 검색.
+//! RetrievalEngine — 통합 회상(retrieval): history + Recall(엔티티·사실·사건) + Library 병렬 검색.
 //!
 //! 사용자 query → 병렬 검색 (history + entities + events + entity_facts) → 통합
-//! contextSummary 반환. AiManager 가 시스템 프롬프트에 `<MEMORY_CONTEXT>` 섹션 prepend.
+//! contextSummary 반환. AiManager 가 시스템 프롬프트에 `<RETRIEVED_CONTEXT>` 섹션 prepend.
 //!
 //! vs HistoryResolver:
 //!   - HistoryResolver: search_history 만 (대화 raw, spread 판정)
-//!   - RetrievalEngine: 4-tier 통합 (history + 메모리 시스템). HistoryResolver 결과
+//!   - RetrievalEngine: 통합 회상 (history + Recall + Library). HistoryResolver 결과
 //!     포함 후 entity/event/fact 추가.
 //!
 //! Token budget — limits 설정되어 있으면 그대로, 미설정 시 default. 빈 결과 자동 skip.
@@ -262,7 +262,7 @@ impl RetrievalEngine {
         }
 
         let context_summary = format!(
-            "<MEMORY_CONTEXT>\n{}\n</MEMORY_CONTEXT>",
+            "<RETRIEVED_CONTEXT>\n{}\n</RETRIEVED_CONTEXT>",
             sections.join("\n\n")
         );
         RetrievalResult {

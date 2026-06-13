@@ -99,7 +99,7 @@ async fn entity_match_appears_in_summary() {
         })
         .await;
     assert!(r.stats.entities >= 1, "entity 매칭 안 됨");
-    assert!(r.context_summary.contains("MEMORY_CONTEXT"));
+    assert!(r.context_summary.contains("RETRIEVED_CONTEXT"));
     assert!(r.context_summary.contains("관련 엔티티"));
     assert!(r.context_summary.contains("삼성전자"));
 }

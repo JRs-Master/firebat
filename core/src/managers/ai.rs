@@ -214,8 +214,8 @@ pub struct AiManager {
     /// IConfigPort (옵션) — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
     /// FIREBAT_MCP_BASE_URL 등 env 영역 read. 미설정 시 env 조회 안 함 (Vault / hardcoded fallback 동작).
     config_port: Option<Arc<dyn crate::ports::IConfigPort>>,
-    /// RetrievalEngine (옵션) — 매 사용자 query 시점 4-tier 메모리 통합 검색 (history + entities +
-    /// facts + events) → context_summary → 시스템 프롬프트 `<MEMORY_CONTEXT>` 영역 prepend.
+    /// RetrievalEngine (옵션) — 매 사용자 query 시점 4-tier 통합 회상 (history + entities +
+    /// facts + events) → context_summary → 시스템 프롬프트 `<RETRIEVED_CONTEXT>` 영역 prepend.
     /// vault 의 `system:ai-router:enabled` 토글 검사 — ConsolidationManager 와 동일 토글 통합 제어
     /// (옛 사용자 결정 2026-05-17). 미설정 또는 토글 false 시 호출 skip.
     retrieval_engine: Option<Arc<retrieval_engine::RetrievalEngine>>,
@@ -826,7 +826,7 @@ impl AiManager {
                 // RetrievalEngine 자동 prepend — vault `system:ai-router:enabled` 토글 ON 시점만.
                 // 옛 사용자 결정 (2026-05-17): AI Assistant 토글 = recall + consolidation 통합 제어.
                 // 매 사용자 query 시점 4-tier (history + entities + facts + events) 통합 검색 →
-                // context_summary → `<MEMORY_CONTEXT>` 영역 시스템 프롬프트 prepend.
+                // context_summary → `<RETRIEVED_CONTEXT>` 영역 시스템 프롬프트 prepend.
                 if let Some(engine) = &self.retrieval_engine {
                     let router_enabled = self
                         .vault
@@ -861,7 +861,7 @@ impl AiManager {
                         let result = engine.retrieve(&retrieve_opts).await;
                         if !result.context_summary.is_empty() {
                             extra_parts.push(format!(
-                                "<MEMORY_CONTEXT>\n{}\n</MEMORY_CONTEXT>",
+                                "<RETRIEVED_CONTEXT>\n{}\n</RETRIEVED_CONTEXT>",
                                 result.context_summary
                             ));
                         }

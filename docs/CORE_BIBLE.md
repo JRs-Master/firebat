@@ -334,8 +334,8 @@ type PipelineStep =
 
 ### RetrievalEngine (AiManager 내부 collaborator, 매니저 X)
 - `core/src/managers/ai/retrieval_engine.rs` — AiManager 만 사용 (외부 import 금지).
-- 사용자 query → **5-source 병렬 검색**: 4 memory tier (search_history + searchEntities + searchEntityFacts + searchEvents) + **Library RAG** → 통합 `<MEMORY_CONTEXT>` 시스템 프롬프트 자동 prepend.
-- AiManager 가 매 turn 호출 (Vault `system:ai-router:enabled` = AI Assistant 토글 ON 시) — AI 가 도구 호출 없이도 관련 메모리·자료 자동 컨텍스트.
+- 사용자 query → **5-source 병렬 검색**: history(search_history) + Recall(searchEntities + searchEntityFacts + searchEvents) + **Library RAG** → 통합 `<RETRIEVED_CONTEXT>` 시스템 프롬프트 자동 prepend.
+- AiManager 가 매 turn 호출 (Vault `system:ai-router:enabled` = AI Assistant 토글 ON 시) — AI 가 도구 호출 없이도 관련 Recall·자료 자동 컨텍스트.
 
 ### Library RAG (2026-05-17 도입, 2026-06-01 하이브리드)
 - `LibraryManager` + `SqliteLibraryAdapter` (memory.db 안 library_references / library_sources / library_chunks + FTS5 `library_chunks_fts`). NotebookLM 식 — Reference(자료 그룹) > Source(자료) > Chunk(임베딩 단위).

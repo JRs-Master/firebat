@@ -224,7 +224,7 @@ CrewAI / Mem0 식 4-tier memory — **dialogue ends, facts persist**. Continuous
 | **Short-term** | Active conversation turns | ConversationManager (existing) — embeddings search |
 | **Episodic** | Time-stamped events (auto-trading executions, page publishes, cron triggers, tool calls) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
 | **Entity** | Tracked subjects (stocks, people, projects, concepts) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
-| **Contextual** | 5-source merged retrieval (4 memory tiers + Library RAG) | `RetrievalEngine` — every user prompt → parallel search → `<MEMORY_CONTEXT>` auto-prepended (when the AI Assistant toggle is on) |
+| **Contextual** | 5-source merged retrieval (history + Recall entities/facts/events + Library RAG) | `RetrievalEngine` — every user prompt → parallel search → `<RETRIEVED_CONTEXT>` auto-prepended (when the AI Assistant toggle is on) |
 
 **Auto-accumulation, zero manual work**:
 - Core hooks fire `saveEvent` on every `savePage` / `handleCronTrigger` / `generateImage`.
