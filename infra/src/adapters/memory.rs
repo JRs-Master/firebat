@@ -401,7 +401,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             .embed_text_passage(&Self::entity_passage_text(&input.name, &input.aliases))
             .await;
         if embedding.is_some() {
-            tracing::info!(category = "memory", "메모리 임베딩 저장 — entity");
+            tracing::info!(category = "recall", "Recall 임베딩 저장 — entity");
         }
 
         let now = now_ms();
@@ -474,7 +474,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                 }
                 if let Some((id, ref into_name, _)) = found {
                     tracing::info!(
-                        category = "memory",
+                        category = "recall",
                         entity_id = id,
                         new_name = %input.name,
                         into_name = %into_name,
@@ -659,7 +659,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         // Cosine 모드 — query 설정되어 있고 embedder 설정되어 있으면 후보 row + embedding 가져와 cosine 정렬.
         // 옛 TS searchEntities 의 hasSemanticQuery 분기 1:1.
         if has_query && has_embedder {
-            tracing::info!(category = "memory", "메모리 검색 — entity query='{}'", opts.query);
+            tracing::info!(category = "recall", "Recall 검색 — entity query='{}'", opts.query);
             let embedder = self.embedder.as_ref().expect("checked above");
             let q_vec = embedder
                 .embed_query(&opts.query)
@@ -783,7 +783,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         // 임베딩 자동 — content → embed_passage. embedder 미설정 시 None (silent fail OK).
         let embedding: Option<Vec<u8>> = self.embed_text_passage(&input.content).await;
         if embedding.is_some() {
-            tracing::info!(category = "memory", "메모리 임베딩 저장 — fact");
+            tracing::info!(category = "recall", "Recall 임베딩 저장 — fact");
         }
 
         // dedup_threshold cosine — 옛 TS 패턴: 같은 entity 의 기존 active fact 와 cosine 비교.
@@ -1012,7 +1012,7 @@ impl IEntityPort for SqliteMemoryAdapter {
 
         // ── Cosine 모드 — embedder 설정되어 있고 query 설정되어 있을 때
         if has_query && has_embedder {
-            tracing::info!(category = "memory", "메모리 검색 — fact query='{}'", opts.query);
+            tracing::info!(category = "recall", "Recall 검색 — fact query='{}'", opts.query);
             let embedder = self.embedder.as_ref().expect("checked above");
             let q_vec = embedder
                 .embed_query(&opts.query)
@@ -1174,7 +1174,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let passage = Self::event_passage_text(&input.title, input.description.as_deref());
         let embedding: Option<Vec<u8>> = self.embed_text_passage(&passage).await;
         if embedding.is_some() {
-            tracing::info!(category = "memory", "메모리 임베딩 저장 — event");
+            tracing::info!(category = "recall", "Recall 임베딩 저장 — event");
         }
 
         // dedup_threshold cosine — 옛 TS 패턴: 같은 type + occurred_at 7일 이내 active event 와 비교.
@@ -1421,7 +1421,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
 
         // ── Cosine 모드 — embedder + query 설정되어 있을 때
         if has_query && has_embedder {
-            tracing::info!(category = "memory", "메모리 검색 — event query='{}'", opts.query);
+            tracing::info!(category = "recall", "Recall 검색 — event query='{}'", opts.query);
             let embedder = self.embedder.as_ref().expect("checked above");
             let q_vec = embedder
                 .embed_query(&opts.query)
