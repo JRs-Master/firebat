@@ -1651,7 +1651,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity — name+type upsert
     tools.register(ToolDefinition {
         name: "save_entity".to_string(),
-        description: "Save the identity of a tracked subject. An entity is just who/what it is — everything you know about it goes in facts (save_entity_fact), not here. The name must be the pure subject, never the subject combined with an attribute. Merges into an existing entity when the name or any alias matches, so the same subject never duplicates.".to_string(),
+        description: "Save the identity of a tracked subject — one thing you'll want to recall later. The `name` is the BARE NOUN for the thing itself (it answers 'what is it?') — NOT what it's doing, its current state, a plan/strategy/method applied to it, a time period, or any other qualifier. All of those go in facts (save_entity_fact), never in the name. Self-check: if the name reads as 'THING + descriptor' (a thing plus a method/activity/status/attribute), keep ONLY the thing as the entity and move the descriptor to a fact. Merges into an existing entity when the name or any alias matches, so the same subject never duplicates — a qualifier baked into the name silently splits one subject into separate entities and breaks recall.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

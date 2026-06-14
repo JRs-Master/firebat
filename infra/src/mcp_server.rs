@@ -1819,8 +1819,11 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Memory tier
     state.register(McpTool {
         name: "save_entity".into(),
-        description: "Entity 저장 (추적 대상). inputSchema: {name, type, aliases?, metadata?, sourceConvId?}.".into(),
-        input_schema: schema_object(serde_json::json!({"name": {"type":"string"}, "type": {"type":"string"}})),
+        description: "Save the identity of a tracked subject — one thing you'll want to recall later. The `name` is the BARE NOUN for the thing itself (answers 'what is it?') — NOT what it's doing, its state, a plan/strategy/method applied to it, a time period, or any qualifier; those go in facts (save_entity_fact), never the name. Self-check: if the name reads as 'THING + descriptor', keep ONLY the thing as the entity and move the descriptor to a fact. Name + aliases is the dedup key — a qualifier baked into the name splits one subject into duplicates and breaks recall.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "name": {"type":"string", "description": "Bare canonical noun for the subject itself — no method/strategy/status/time/attribute mixed in (those are facts). Stable across mentions (dedup key)."},
+            "aliases": {"type":"array", "items": {"type":"string"}, "description": "Alternative forms of the same subject — abbreviations, codes/tickers, alternate spellings, language variants — so later mentions merge instead of duplicating."}
+        })),
         handler: Arc::new(SaveEntityHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
