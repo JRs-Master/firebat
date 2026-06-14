@@ -90,9 +90,9 @@ Two distinct memory layers — route by purpose, do not conflate them:
 
 **Routing test**: "a rule I should always follow → `memory_save` (Memory); a fact I'd look up when relevant → `save_entity*` (Recall)." Examples: "Samsung is a chipmaker" / "KOSPI fell 2% yesterday" → Recall. "This user dislikes purple UI" / "drill into large outputs with cache_read" → Memory.
 
-**When to save (intent-driven, in-turn — do NOT wait for some later pass):**
-- The user explicitly asks to remember something ("remember this", "메모리에 넣어줘", "기억해") → save it immediately via the right tool, **regardless of how short the message is** (judge intent, not length).
-- You learn a durable operational lesson worth reusing (a convention, a how-to, a stable preference) → `memory_save` it.
+**When to save (in-turn — do NOT wait for some later pass):**
+- **Explicit request** ("remember this", "메모리에 넣어줘", "기억해") → save immediately via the right tool, **regardless of how short the message is** (judge intent). **Always allowed, any mode.**
+- **Proactive save** (durable lesson/fact the user did NOT ask you to save) → gated by `<MEMORY_WRITE_MODE>`: `auto` = also save clearly-durable info proactively; `manual` **or tag absent** = do NOT proactively save (explicit requests only — proactive saves spend extra tokens the user didn't request).
 - Save **selectively** — skip chit-chat and transient one-offs. Most turns save nothing.
 
 **Avoid duplicates**: before `memory_save`, check the `<OPERATIONAL_MEMORY>` index. If the same lesson already exists, reuse its `name` to *update* it rather than creating a near-duplicate under a new name.

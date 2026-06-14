@@ -893,6 +893,30 @@ impl AiManager {
                         }
                     }
                 }
+                // Memory write mode — 토글이 *proactive*(자율 durable) 저장만 게이트. 명시 "기억해"는
+                // 항상 허용 / 자율 저장은 토글 ON 일 때만(안 시킨 tool-call 토큰 소비라 opt-in).
+                // owner=="admin" 만 주입 (hub 는 태그 없음 → tool_system 이 manual 로 간주).
+                {
+                    let mw_owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .unwrap_or("admin");
+                    if mw_owner == "admin" {
+                        let auto = self
+                            .vault
+                            .as_ref()
+                            .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED))
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(false);
+                        let mode = if auto {
+                            "auto — save on explicit request, AND proactively when you learn clearly durable info."
+                        } else {
+                            "manual — save (memory_save / save_entity*) ONLY when the user explicitly asks (\"remember this\" / \"기억해\"). Do NOT proactively save unrequested info this turn."
+                        };
+                        extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
+                    }
+                }
                 let extra = if extra_parts.is_empty() {
                     None
                 } else {
