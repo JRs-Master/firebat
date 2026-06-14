@@ -53,7 +53,7 @@ function arrowPath(x: number, y0: number, up: boolean): string {
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
 // 기본 줌 = 봉 폭(슬롯 px)을 고정 → 한 화면 개수는 화면 폭에 맞춰 자동(넓으면 많이·좁으면 적게).
 // 봉 크기가 화면·데이터에 따라 들쭉날쭉하지 않게(주식차트 가독). 보기 좋은 값으로 디바이스별 분리.
-const DEFAULT_BAR_PX_PC = 9;      // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×)
+const DEFAULT_BAR_PX_PC = 12;     // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×) — 9px 에서 휠 줌인 2스텝(×1.15²≈1.32) 크기
 const DEFAULT_BAR_PX_MOBILE = 11; // 모바일 — 터치·가독 위해 약간 굵게 (→ 한 화면 개수도 더 적음)
 const ZOOM_MAX_BAR = 36;     // 줌인 한계 (봉 ~36px, 그 이상 안 커짐)
 const ZOOM_MIN_BAR = 3;      // 줌아웃 한계 (봉 ~3px, 그 이하 안 작아짐)
@@ -425,13 +425,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         const rect = pel.getBoundingClientRect();
         const midVX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
         const bp = barPxRef.current;
-        zoomAnchorRef.current = { idx: bp > 0 ? (midVX + pel.scrollLeft - padLeft) / bp : 0, offsetX: midVX };
+        zoomAnchorRef.current = { idx: bp > 0 ? (midVX + pel.scrollLeft - leftPadRef.current) / bp : 0, offsetX: midVX };
         pinnedRightRef.current = false;
       }
       markZooming();
       // 핀치 벌림(d↑) = 줌인(적게·넓게) = cps↓. startCps × (startDist / d).
       const b = zoomBoundsRef.current;
       const next = Math.round(pinchRef.current.startCps * (pinchRef.current.startDist / Math.max(d, 1)));
+      setUserZoomed(true);  // 핀치 줌 진입 → 폭 기반 기본 대신 cps 사용 (모바일 줌 동작 — 옛 누락 fix).
       setCps(Math.max(b.min, Math.min(b.max, next)));
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
