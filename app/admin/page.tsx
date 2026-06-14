@@ -1241,7 +1241,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                             const slug = typeof a?.slug === 'string' ? (a.slug as string) : '';
                             return slug ? (
                               <a href={`/${slug}`} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm">
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[12px] font-bold rounded-lg border border-blue-200 transition-colors">
                                 {t('plan.open')}
                               </a>
                             ) : null;
@@ -1284,13 +1284,13 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                         <>
                           <button
                             onClick={() => onApprovePending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[12px] font-bold rounded-lg border border-emerald-200 transition-colors"
                           >
                             <Check size={13} /> {t('plan.approve')}
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[12px] font-bold rounded-lg border border-rose-200 transition-colors"
                           >
                             <X size={13} /> {t('plan.reject')}
                           </button>
