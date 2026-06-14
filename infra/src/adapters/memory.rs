@@ -406,72 +406,87 @@ impl IEntityPort for SqliteMemoryAdapter {
 
         let now = now_ms();
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
-
         let dedup_on = input.dedup_threshold.is_some();
         let conn = self.conn.lock().unwrap();
-
-        // 1. exact (name, type, owner) → 그 row update (원래 upsert).
-        let exact: Option<i64> = conn
-            .query_row(
-                "SELECT id FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",
-                params![input.name, input.entity_type, owner],
-                |r| r.get(0),
-            )
-            .ok();
-        // 2. else 같은 이름 OR 별칭(aliases) 겹침(대소문자·앞뒤공백 무시, type 무관) → 그 엔티티에 병합.
-        //    삼성전자/stock ↔ 삼성전자/종목 합치고, 약어·표기변형(삼전·엘전)은 AI 가 aliases 에 넣어두면 매칭.
-        //    이름 임베딩 cosine 은 'X전자' 류를 다른 회사(삼성↔LG)까지 합쳐 부적합(실측 0.95) → 정확 이름·별칭 매칭.
-        //    type 의미동등(stock≈종목 vs stock≉product)도 임베딩 분리 불가(실측 0.837 vs 0.823)라 폐기.
         let norm = |s: &str| s.trim().to_lowercase();
-        let merge: Option<(i64, String, Vec<String>)> = if exact.is_none() && dedup_on {
-            let new_keys: std::collections::HashSet<String> = std::iter::once(norm(&input.name))
-                .chain(input.aliases.iter().map(|a| norm(a)))
-                .filter(|s| !s.is_empty())
-                .collect();
-            let mut stmt = conn
-                .prepare("SELECT id, name, aliases FROM entities WHERE owner = ?1")
-                .map_err(|e| format!("entity dedup prepare: {e}"))?;
-            let rows = stmt
-                .query_map(params![owner], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, Option<String>>(2)?,
-                    ))
-                })
-                .map_err(|e| format!("entity dedup query: {e}"))?;
-            let mut found = None;
-            for row in rows.filter_map(|r| r.ok()) {
-                let (id, name, aliases_raw) = row;
-                let ex_aliases: Vec<String> = aliases_raw
-                    .as_deref()
-                    .and_then(|s| serde_json::from_str(s).ok())
-                    .unwrap_or_default();
-                let ex_keys: std::collections::HashSet<String> = std::iter::once(norm(&name))
-                    .chain(ex_aliases.iter().map(|a| norm(a)))
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                if new_keys.intersection(&ex_keys).next().is_some() {
-                    found = Some((id, name, ex_aliases));
-                    break;
-                }
-            }
-            found
-        } else {
-            None
+        let parse_aliases = |raw: Option<String>| -> Vec<String> {
+            raw.as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default()
         };
-        if let Some((id, ref into_name, _)) = merge {
-            tracing::info!(
-                category = "memory",
-                entity_id = id,
-                new_name = %input.name,
-                into_name = %into_name,
-                "엔티티 dedup — 같은 이름/별칭에 병합 (새 row 생성 안 함)"
-            );
-        }
 
-        // 병합 시 별칭 누적 — 기존 별칭 ∪ 새 이름 ∪ 새 별칭 (정식명 제외) → 다음 변형 저장도 매칭.
-        let update_aliases_json = if let Some((_, ref canon_name, ref ex_aliases)) = merge {
+        // 갱신 대상 엔티티 + 그 정식명·기존 별칭을 정한다. 둘 중 하나로 매칭:
+        //   1. exact (name, type, owner) — 원래 upsert / dedup-off 경로 (대소문자까지 정확, 인덱스).
+        //   2. else dedup: 정규화(trim+lower) 이름 OR 별칭 겹침 (type 무관) → 그 엔티티에 병합.
+        //      삼성전자/stock ↔ 삼성전자/종목 합치고, 약어·티커(삼전·005930)는 별칭으로 매칭.
+        //      cosine 폐기 — 'X전자' 류를 다른 회사(삼성↔LG name_sim 0.95)까지 합치고, type
+        //      의미동등(stock≈종목 0.837 vs stock≉제품 0.823)도 임베딩 분리 불가였음.
+        let target_row: Option<(i64, String, Vec<String>)> = {
+            let exact = conn
+                .query_row(
+                    "SELECT id, name, aliases FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",
+                    params![input.name, input.entity_type, owner],
+                    |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                        ))
+                    },
+                )
+                .ok()
+                .map(|(id, name, raw)| (id, name, parse_aliases(raw)));
+
+            if exact.is_some() {
+                exact
+            } else if dedup_on {
+                let new_keys: std::collections::HashSet<String> =
+                    std::iter::once(norm(&input.name))
+                        .chain(input.aliases.iter().map(|a| norm(a)))
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                let mut stmt = conn
+                    .prepare("SELECT id, name, aliases FROM entities WHERE owner = ?1")
+                    .map_err(|e| format!("entity dedup prepare: {e}"))?;
+                let rows = stmt
+                    .query_map(params![owner], |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, Option<String>>(2)?,
+                        ))
+                    })
+                    .map_err(|e| format!("entity dedup query: {e}"))?;
+                let mut found = None;
+                for (id, name, raw) in rows.filter_map(|r| r.ok()) {
+                    let ex_aliases = parse_aliases(raw);
+                    let ex_keys: std::collections::HashSet<String> =
+                        std::iter::once(norm(&name))
+                            .chain(ex_aliases.iter().map(|a| norm(a)))
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    if new_keys.intersection(&ex_keys).next().is_some() {
+                        found = Some((id, name, ex_aliases));
+                        break;
+                    }
+                }
+                if let Some((id, ref into_name, _)) = found {
+                    tracing::info!(
+                        category = "memory",
+                        entity_id = id,
+                        new_name = %input.name,
+                        into_name = %into_name,
+                        "엔티티 dedup — 같은 이름/별칭에 병합 (새 row 생성 안 함)"
+                    );
+                }
+                found
+            } else {
+                None
+            }
+        };
+
+        if let Some((id, ref canon_name, ref ex_aliases)) = target_row {
+            // 별칭 누적 — 기존 별칭 ∪ 새 이름 ∪ 새 별칭 (정식명 제외). exact 재저장도 변형을 잃지 않음.
             let canon_lc = norm(canon_name);
             let mut set: Vec<String> = ex_aliases.clone();
             for a in std::iter::once(input.name.clone()).chain(input.aliases.iter().cloned()) {
@@ -483,14 +498,8 @@ impl IEntityPort for SqliteMemoryAdapter {
                     set.push(al.to_string());
                 }
             }
-            serde_json::to_string(&set).unwrap_or_else(|_| aliases_json.clone())
-        } else {
-            aliases_json.clone()
-        };
-
-        let target = exact.or(merge.map(|(id, _, _)| id));
-
-        if let Some(id) = target {
+            let aliases_out =
+                serde_json::to_string(&set).unwrap_or_else(|_| aliases_json.clone());
             // embedding 업데이트 — 새 임베딩 설정되었으면 갱신, 미설정이면 기존값 유지 (COALESCE)
             conn.execute(
                 "UPDATE entities SET
@@ -501,7 +510,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                     updated_at = ?5
                  WHERE id = ?6",
                 params![
-                    update_aliases_json,
+                    aliases_out,
                     metadata_json,
                     embedding,
                     input.source_conv_id,
