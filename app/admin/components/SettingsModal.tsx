@@ -2817,7 +2817,8 @@ function CostTabContent() {
   }, [stats]);
 
   const fmtNum = (n: number) => n.toLocaleString(uiLang === 'ko' ? 'ko-KR' : 'en-US');
-  const fmtUsd = (n: number) => `$${n.toFixed(4)}`;
+  // 비용 표시 — $1000 미만은 소수 둘째자리, $1000 이상은 컴팩트($1.2K/$1.5M). 토큰·호출 셀과 일관.
+  const fmtUsd = (n: number) => (n >= 1000 ? `$${formatCompactNumber(n, 'en')}` : `$${n.toFixed(2)}`);
   // 표시는 축약(좁은 칸 넘침 방지), 정확값은 title(hover). 호출 수=일반 로케일 축약 / 토큰=항상 M(공급사 가격 단위).
   const fmtCompact = (n: number) => formatCompactNumber(n, uiLang === 'ko' ? 'ko' : 'en');
   const fmtTok = (n: number) => formatTokenCount(n);
