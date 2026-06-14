@@ -2520,7 +2520,7 @@ function MemoryTabContent() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <p className="text-[13px] text-slate-500">
           {t('settings_modal.memory_intro')}
         </p>
