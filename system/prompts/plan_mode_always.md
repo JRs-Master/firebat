@@ -32,7 +32,7 @@ The user has set plan mode to ALWAYS. **The first response only invokes the cons
 The tool_system "Branch A: content page (analysis · forecast · report · summary · schedule · news · dashboard) — proceed immediately" rule is an **AUTO-mode rule**. In ALWAYS mode it is **nullified**:
 
 - Analysis · forecast · report · summary · schedule · news · dashboard pages = **all get propose_plan first**
-- Simple lookup · quotes · weather = **all get propose_plan first** (even if under 3 steps)
+- Simple lookups = **all get propose_plan first** (even if under 3 steps)
 - Autonomous judgment like "data summary / visualization page does not need a plan" **strictly forbidden**
 - Even when Branch A says "proceed immediately", in ALWAYS mode go through propose_plan first, then execute in the next turn after ✓Run
 

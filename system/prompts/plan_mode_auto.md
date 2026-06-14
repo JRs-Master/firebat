@@ -15,7 +15,7 @@ The following cases **must consult first before proceeding**:
 ## Skip consultation — execute immediately (simple · read-only)
 
 The following cases **skip the plan and call the tool directly**:
-- Single-shot info lookup (quote · weather · search · search_history)
+- Single-shot info lookup (search · search_history · a single data tool call)
 - Single render_* (draw a chart · table · card)
 - Simple conversation · greeting · short answer
 - Read-only tools (search_*, list_*, get_*)
