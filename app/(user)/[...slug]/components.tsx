@@ -1667,22 +1667,67 @@ function LineChartInteractive({ series, labels, title, unit, palette }: {
   const isMulti = series.length > 1;
   const xStep = Math.max(1, Math.floor(xLen / 6));
   const containerRef = React.useRef<HTMLDivElement>(null);
+  // 모바일 롱프레스 툴팁 — 1손가락 드래그=스크롤, 0.5초 누름=툴팁 (StockChart/MTS 표준). 스크롤↔툴팁 충돌 해소.
+  const longPressRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tooltipModeRef = React.useRef(false);  // 롱프레스 진입 후 true — native touchmove 가 스크롤 차단 + 툴팁 추적
+  const touchStartRef = React.useRef<{ x: number; y: number } | null>(null);
 
-  // 가장 가까운 x index 찾기 (SVG viewBox 좌표계 기준)
-  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  // clientX/Y → 가장 가까운 x index + 커서/flip 갱신 (마우스·터치 공용, SVG viewBox 좌표계 기준)
+  const pointTo = (clientX: number, clientY: number) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    const relX = ((clientX - rect.left) / rect.width) * W;
     let minDist = Infinity, idx = -1;
     for (let i = 0; i < xs.length; i++) {
       const d = Math.abs(xs[i] - relX);
       if (d < minDist) { minDist = d; idx = i; }
     }
     if (idx >= 0) setHovered(idx);
-    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const px = clientX - rect.left, py = clientY - rect.top;
     setCursorPos({ x: px, y: py });
     // 오른쪽/아래 가장자리 근처(툴팁 폭·높이 추정만큼 공간 부족)면 반대쪽으로 뒤집어 표시.
     setFlip({ x: px > rect.width - 170, y: py > rect.height - 90 });
+  };
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => pointTo(e.clientX, e.clientY);
+  const clearTip = () => { setHovered(null); setCursorPos(null); };
+
+  // native touchmove — 툴팁 모드일 때만 스크롤 차단(passive:false). 그 외엔 페이지 스크롤 허용.
+  React.useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onMove = (e: TouchEvent) => { if (tooltipModeRef.current) e.preventDefault(); };
+    el.addEventListener('touchmove', onMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onMove);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY };
+    if (longPressRef.current) clearTimeout(longPressRef.current);
+    longPressRef.current = setTimeout(() => {
+      tooltipModeRef.current = true;
+      const s = touchStartRef.current;
+      if (s) pointTo(s.x, s.y);
+    }, 500);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (tooltipModeRef.current) {
+      pointTo(t.clientX, t.clientY);  // 롱프레스 진입 후 — 손가락 추적
+    } else if (touchStartRef.current) {
+      // 0.5초 전 8px 이상 이동 = 스크롤 의도 → 롱프레스 취소 (툴팁 안 띄움)
+      const dx = Math.abs(t.clientX - touchStartRef.current.x);
+      const dy = Math.abs(t.clientY - touchStartRef.current.y);
+      if ((dx > 8 || dy > 8) && longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+    }
+  };
+  const handleTouchEnd = () => {
+    if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
+    tooltipModeRef.current = false;
+    touchStartRef.current = null;
+    clearTip();
   };
 
   return (
@@ -1703,7 +1748,12 @@ function LineChartInteractive({ series, labels, title, unit, palette }: {
         ref={containerRef}
         className="relative"
         onMouseMove={handleMove}
-        onMouseLeave={() => { setHovered(null); setCursorPos(null); }}
+        onMouseLeave={clearTip}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        style={{ touchAction: 'pan-y' }}
       >
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
           <defs>
