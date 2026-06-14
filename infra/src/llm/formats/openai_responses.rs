@@ -166,7 +166,7 @@ impl FormatHandler for OpenAiResponsesHandler {
             body["temperature"] = serde_json::Value::from(t);
         }
         // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
-        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
+        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         Self::apply_reasoning(&mut body, config, opts);
 
         let response = http_client()
@@ -262,7 +262,7 @@ impl FormatHandler for OpenAiResponsesHandler {
             }
         }
         // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
-        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
+        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         Self::apply_reasoning(&mut body, config, opts);
 
         let response = http_client()

@@ -6,6 +6,7 @@
   "models": [
     {
       "id": "claude-opus-4-8",
+      "maxOutput": 64000,
       "displayName": "Claude Opus 4.8",
       "provider": "Anthropic",
       "format": "anthropic-messages",
@@ -70,6 +71,7 @@
     },
     {
       "id": "claude-fable-5",
+      "maxOutput": 128000,
       "displayName": "Claude Fable 5",
       "provider": "Anthropic",
       "format": "anthropic-messages",
@@ -119,6 +121,7 @@
     },
     {
       "id": "claude-sonnet-4-6",
+      "maxOutput": 64000,
       "displayName": "Claude Sonnet 4.6",
       "provider": "Anthropic",
       "format": "anthropic-messages",
@@ -247,6 +250,7 @@
     },
     {
       "id": "gemini-3.1-pro",
+      "maxOutput": 64000,
       "displayName": "Gemini 3.1 Pro",
       "provider": "Google",
       "format": "gemini-native",
@@ -295,6 +299,7 @@
     },
     {
       "id": "gemini-3.5-flash",
+      "maxOutput": 64000,
       "displayName": "Gemini 3.5 Flash",
       "provider": "Google",
       "format": "gemini-native",
@@ -358,6 +363,7 @@
     },
     {
       "id": "vertex-gemini-3.1-pro",
+      "maxOutput": 64000,
       "displayName": "Gemini 3.1 Pro (Vertex)",
       "provider": "Vertex",
       "format": "vertex-gemini",
@@ -406,6 +412,7 @@
     },
     {
       "id": "vertex-gemini-3.5-flash",
+      "maxOutput": 64000,
       "displayName": "Gemini 3.5 Flash (Vertex)",
       "provider": "Vertex",
       "format": "vertex-gemini",
@@ -469,6 +476,7 @@
     },
     {
       "id": "gpt-5.5",
+      "maxOutput": 64000,
       "displayName": "GPT-5.5",
       "provider": "OpenAI",
       "format": "openai-responses",
@@ -538,6 +546,7 @@
     },
     {
       "id": "gpt-5.4",
+      "maxOutput": 64000,
       "displayName": "GPT-5.4",
       "provider": "OpenAI",
       "format": "openai-responses",

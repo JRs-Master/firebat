@@ -255,7 +255,7 @@ impl GeminiNativeHandler {
             gen["temperature"] = serde_json::Value::from(t);
         }
         // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
-        gen["maxOutputTokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
+        gen["maxOutputTokens"] = serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         // thinking — config.features.thinking 활성 모델만
         let thinking_enabled = config.features.thinking;
         if thinking_enabled {

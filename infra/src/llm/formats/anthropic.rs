@@ -57,7 +57,7 @@ impl AnthropicMessagesHandler {
         }
         // adaptive 는 thinking 예산이 max_tokens 에 안 섞임 → 출력 여유만 보장(최소 16000).
         let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-        let want = opts.max_tokens.unwrap_or(16000).max(16000);
+        let want = opts.max_tokens.or(config.max_output).unwrap_or(16000).max(16000);
         if cur < want {
             body["max_tokens"] = serde_json::Value::from(want);
         }
@@ -184,7 +184,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
         let mut body = serde_json::json!({
             "model": config.id,
-            "max_tokens": opts.max_tokens.unwrap_or(8192),
+            "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),
             "messages": [{"role": "user", "content": prompt}],
         });
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
@@ -322,7 +322,7 @@ impl FormatHandler for AnthropicMessagesHandler {
 
         let mut body = serde_json::json!({
             "model": config.id,
-            "max_tokens": opts.max_tokens.unwrap_or(8192),
+            "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),
             "messages": messages,
             "tools": tool_defs,
         });

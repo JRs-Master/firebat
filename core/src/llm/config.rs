@@ -29,6 +29,12 @@ pub struct LlmModelConfig {
     #[serde(rename = "apiKeyVaultKey", default, skip_serializing_if = "Option::is_none")]
     pub api_key_vault_key: Option<String>,
 
+    /// Max output tokens cap (per-model). API formats use it as the max_tokens / maxOutputTokens
+    /// default — a high ceiling so the model judges actual length via the prompt, not an artificial
+    /// cap. Unset → conservative 8192 fallback. CLI formats ignore this (the CLI manages output).
+    #[serde(rename = "maxOutput", default, skip_serializing_if = "Option::is_none")]
+    pub max_output: Option<i64>,
+
     /// 모델 features 토글 — 모델별 quirk 명시.
     #[serde(default)]
     pub features: LlmFeatures,
@@ -144,6 +150,7 @@ impl LlmModelConfig {
             thinking: None,
             exec_mode: "api".to_string(),
             cli_provider: None,
+            max_output: None,
             category: String::new(),
         }
     }
@@ -178,6 +185,7 @@ fn anthropic_api(id: &str, name: &str, input_price: f64, output_price: f64) -> L
         thinking: None,
         exec_mode: "api".to_string(),
         cli_provider: None,
+        max_output: None,
         category: "api-anthropic".to_string(),
     }
 }
@@ -332,6 +340,7 @@ impl Default for LlmModelConfig {
             thinking: None,
             exec_mode: "api".to_string(),
             cli_provider: None,
+            max_output: None,
             category: String::new(),
         }
     }
