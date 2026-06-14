@@ -186,9 +186,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 줌 = 한 화면 캔들 수(cps). 데이터(slice)는 항상 전체 — 줌은 캔들 폭만 바꾸고, 화면에 다 안
   // 들어가면 가로 스크롤. (옛 slice 기반 줌 폐기 — "보여줄 개수"가 아니라 "캔들 폭/밀도")
   const [cps, setCps] = useState(ZOOM_DEFAULT_CPS);
+  const [zoomEndTick, setZoomEndTick] = useState(0);  // 줌 종료 시 +1 → Y축 라이브 재계산 트리거
   useEffect(() => { setCps(ZOOM_DEFAULT_CPS); pinnedRightRef.current = true; /* 데이터 변경 시 기본 줌 + 최신 보기 */ }, [fullN]);
   // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
+  // 현재 barPx 미러 — native wheel 핸들러(stale closure)가 최신 barPx 를 읽게.
+  const barPxRef = useRef(0);
+  // Y축 freeze — 줌 제스처 중엔 직전 라이브 Y 유지(가로 줌인데 세로 출렁임 방지), 끝나면 재스케일.
+  const zoomingRef = useRef(false);
+  const frozenYRef = useRef<{ pMin: number; pMax: number; maxV: number } | null>(null);
+  const zoomEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markZooming = useCallback(() => {
+    zoomingRef.current = true;
+    if (zoomEndTimerRef.current) clearTimeout(zoomEndTimerRef.current);
+    zoomEndTimerRef.current = setTimeout(() => {
+      zoomingRef.current = false;
+      setZoomEndTick(t => t + 1);  // 줌 종료 → 라이브 Y 재계산
+    }, 220);
+  }, []);
   const safeData = fullData;
   const n = fullN;
 
@@ -213,11 +228,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const onWheel = (e: WheelEvent) => {
       if (fullN < 2) return;
       e.preventDefault();
+      // 커서 밑 캔들을 줌 후에도 커서 위치에 고정 — 줌 직전 {분수 idx, 커서 뷰포트 x} 저장.
+      const bp = barPxRef.current;
+      const rect = el.getBoundingClientRect();
+      const cursorVX = e.clientX - rect.left;
+      zoomAnchorRef.current = { idx: bp > 0 ? (cursorVX + el.scrollLeft - padLeft) / bp : 0, offsetX: cursorVX };
+      pinnedRightRef.current = false;
+      markZooming();
       zoomAround(e.deltaY > 0 ? 1.15 : 1 / 1.15);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [zoomAround, fullN]);
+  }, [zoomAround, fullN, markZooming]);
 
   // 모바일 2손가락 핀치: 브라우저 viewport 줌 차단 (차트 자체 핀치로 처리)
   useEffect(() => {
@@ -259,6 +281,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 최대 줌아웃 (봉 ~3px)
   const effCps = Math.max(cpsMin, Math.min(cpsMax, Math.min(cps, fullN)));  // 실제 한 화면 캔들 수
   const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px
+  barPxRef.current = barPx;
   // 전체 W = 좌측 inset + 봉 전체 + 우측 여백 슬롯. box 보다 넓으면 가로 스크롤. 좁으면(소량 데이터) box 채움.
   const W = Math.max(Math.round(boxW), Math.round(padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
   const plotH = priceH - padTop - padBottom;
@@ -271,7 +294,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   useLayoutEffect(() => {
     const el = priceBoxRef.current;
     if (!el) return;
-    if (pinnedRightRef.current) {
+    if (zoomAnchorRef.current) {
+      // 커서/핀치 앵커 — 저장한 캔들이 줌 후에도 같은 화면 위치에 오게 scrollLeft 직접 계산(왕복 없음).
+      const { idx, offsetX } = zoomAnchorRef.current;
+      el.scrollLeft = padLeft + idx * barPx - offsetX;
+      zoomAnchorRef.current = null;
+    } else if (pinnedRightRef.current) {
       el.scrollLeft = el.scrollWidth;
     } else if (prevBarRef.current && prevBarRef.current !== barPx) {
       el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);
@@ -286,13 +314,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const firstVis = Math.max(0, Math.floor((scrollX - padLeft) / barPx));
     const lastVis = Math.min(safeData.length - 1, Math.ceil((scrollX + boxW - padLeft) / barPx));
     const vis = lastVis >= firstVis ? safeData.slice(firstVis, lastVis + 1) : safeData;
-    const maxP = Math.max(...vis.map(d => d.high));
-    const minP = Math.min(...vis.map(d => d.low));
-    const rangeP = maxP - minP || 1;
-    const pMin = minP - rangeP * 0.05;
-    const pMax = maxP + rangeP * 0.05;
-    const maxVRaw = Math.max(...vis.map(d => d.volume), 1);
-    const maxV = niceCeil(maxVRaw);  // 거래량 축 상한 = 보이는 구간 max 의 nice 올림 → 구간 바뀌면 함께 변함(동적) + 막대 위 약간 여백.
+    const liveMaxP = Math.max(...vis.map(d => d.high));
+    const liveMinP = Math.min(...vis.map(d => d.low));
+    const rangeP = liveMaxP - liveMinP || 1;
+    const livePMin = liveMinP - rangeP * 0.05;
+    const livePMax = liveMaxP + rangeP * 0.05;
+    const liveMaxV = niceCeil(Math.max(...vis.map(d => d.volume), 1));  // 거래량 축 상한 = 보이는 구간 max 의 nice 올림.
+    // Y축 freeze — 줌 제스처 중엔 직전 라이브 Y 유지(가로 줌인데 세로 출렁임 방지), 끝나면(zoomEndTick) 라이브 재스케일.
+    let pMin = livePMin, pMax = livePMax, maxV = liveMaxV;
+    if (zoomingRef.current && frozenYRef.current) {
+      ({ pMin, pMax, maxV } = frozenYRef.current);
+    } else {
+      frozenYRef.current = { pMin: livePMin, pMax: livePMax, maxV: liveMaxV };
+    }
     // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
     const xs = safeData.map((_, i) => padLeft + i * barPx + barPx / 2);
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
@@ -306,7 +340,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return { name: ind, d, color: MA_COLORS[ind], values };
     });
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH, scrollX, boxW]);
+  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH, scrollX, boxW, zoomEndTick]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {
@@ -361,6 +395,16 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchRef.current) {
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      // 핀치 중심 밑 캔들 고정 — 두 손가락 중점을 앵커로.
+      const pel = priceBoxRef.current;
+      if (pel) {
+        const rect = pel.getBoundingClientRect();
+        const midVX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const bp = barPxRef.current;
+        zoomAnchorRef.current = { idx: bp > 0 ? (midVX + pel.scrollLeft - padLeft) / bp : 0, offsetX: midVX };
+        pinnedRightRef.current = false;
+      }
+      markZooming();
       // 핀치 벌림(d↑) = 줌인(적게·넓게) = cps↓. startCps × (startDist / d).
       const next = Math.round(pinchRef.current.startCps * (pinchRef.current.startDist / Math.max(d, 1)));
       setCps(Math.max(5, Math.min(2000, next)));
@@ -382,7 +426,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         }
       }
     }
-  }, [updateHoverFromClientX]);
+  }, [updateHoverFromClientX, markZooming]);
   const handleTouchEnd = useCallback(() => {
     pinchRef.current = null;
     if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
