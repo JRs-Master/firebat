@@ -2209,16 +2209,20 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             {t('common.close')}
           </button>
-          <SaveButton
-            size="md"
-            state={(
-              mainSaveState === 'loading' ? 'saving' :
-              mainSaveState === 'ok' ? 'saved' :
-              mainSaveState === 'err' ? 'error' :
-              'idle'
-            ) as SaveButtonState}
-            onClick={handleSave}
-          />
+          {/* 전역 저장은 handleSave 가 실제로 저장하는 탭(일반 = timezone·admin / AI>LLM = 모델·토글·키)에서만 노출.
+              나머지 탭(프롬프트·이미지·비용·메모리·시크릿·MCP·시스템·로그)은 자체 인라인 저장이 있어 중복 버튼 제거. */}
+          {(settingsTab === 'general' || (settingsTab === 'ai' && aiSubTab === 'llm')) && (
+            <SaveButton
+              size="md"
+              state={(
+                mainSaveState === 'loading' ? 'saving' :
+                mainSaveState === 'ok' ? 'saved' :
+                mainSaveState === 'err' ? 'error' :
+                'idle'
+              ) as SaveButtonState}
+              onClick={handleSave}
+            />
+          )}
         </div>
       </div>
     </div>
