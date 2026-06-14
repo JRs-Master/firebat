@@ -2521,7 +2521,7 @@ function MemoryTabContent() {
         </p>
         <button
           onClick={() => setCreating(true)}
-          className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center gap-1"
+          className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center gap-1 shrink-0 whitespace-nowrap"
         >
           <Plus size={12} /> {t('settings_modal.memory_new')}
         </button>
