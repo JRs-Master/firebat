@@ -34,18 +34,17 @@ What to keep — judge by this principle, not by a fixed list of kinds:
 - SKIP: things that only matter in the moment, unverified guesses, and anything a system already records elsewhere (logs, schedules, the conversation itself).
 The four shapes below are *how* to store, not *what* to store — decide what with the principle above. Classify freely; do not force any preset category.
 
-1. **entities** (subjects worth tracking): any recurring subject explicitly present in the conversation.
-   - name: the full canonical name, never an abbreviation or ticker (e.g. "삼성전자", not "삼전" or "005930"). This name plus aliases is the dedup key, so keep it stable across mentions.
-   - type: free-form classification natural to the subject
-   - aliases: every other way this subject is referred to — abbreviations, tickers, alternate spellings, English/Korean variants. Put each variant here so later mentions merge into one entity instead of creating duplicates.
+1. **entities** (subjects worth tracking): the *identity* of a recurring subject. An entity is just who/what it is; everything you know about it goes in facts, not here.
+   - name: the full canonical name of the subject — never an abbreviation, code/ticker, or the subject combined with an attribute. Keep it identical across mentions, since name plus aliases is the dedup key.
+   - aliases: every alternative form of the same subject — abbreviations, codes, alternate spellings, language variants. Put each here so later mentions merge into one entity instead of creating duplicates.
    - metadata: optional object of attributes
 
-2. **facts** (time-stamped statements linked to an entity):
+2. **facts** (statements linked to an entity — this is where classification lives):
    - entityName: which entity (matches a name in entities)
    - content: 1-2 natural sentences — state time, figures, outcome when present
-   - factType: free-form classification natural to the fact
+   - factType: the kind of statement — this is how an entity's facts are grouped. Reuse the same label for the same kind so they group together; keep it consistent across mentions.
    - occurredAt: ms epoch (only when a clear time is stated; omit otherwise)
-   - tags: optional array
+   - tags: optional array for cross-cutting labels that span fact types. A fact may carry several.
 
 3. **events** (something that happened or is scheduled at a point in time and is worth recalling later):
    - type: free-form classification natural to the event
@@ -77,7 +76,8 @@ const MIN_TRANSCRIPT_LEN: usize = 50;
 #[serde(rename_all = "camelCase")]
 pub struct ExtractedEntity {
     pub name: String,
-    #[serde(rename = "type")]
+    // 엔티티 = 정체성(이름+별칭). 분류는 사실 type/태그에. type 은 휴면(선택) — 없으면 빈 문자열.
+    #[serde(rename = "type", default)]
     pub entity_type: String,
     #[serde(default)]
     pub aliases: Vec<String>,
@@ -400,7 +400,8 @@ impl ConsolidationManager {
 
         // 1. Entities — saveEntity 가 upsert 라 중복 자연 처리
         for e in &extracted.entities {
-            if e.name.trim().is_empty() || e.entity_type.trim().is_empty() {
+            // 엔티티 = 이름이 정체성. type 은 휴면(선택)이라 비어도 저장.
+            if e.name.trim().is_empty() {
                 skipped += 1;
                 continue;
             }

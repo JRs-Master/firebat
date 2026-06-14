@@ -31,14 +31,15 @@ export const GET = withAuth(async (req: NextRequest) => {
 
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
-  if (!body?.name || !body?.type) return NextResponse.json({ success: false, error: 'name + type 필수' }, { status: 400 });
+  // 엔티티 = 이름 + 별칭이 정체성. type 은 휴면(선택) — 이름만 필수.
+  if (!body?.name) return NextResponse.json({ success: false, error: 'name 필수' }, { status: 400 });
   const aliases = Array.isArray(body.aliases) ? body.aliases.filter((s: any) => typeof s === 'string') : [];
   const metadataJson = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? JSON.stringify(body.metadata)
     : undefined;
   const res = await saveEntity({
     name: body.name,
-    entityType: body.type,
+    entityType: typeof body.type === 'string' ? body.type : '',
     aliases,
     metadataJson,
   } as any);

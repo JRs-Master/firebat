@@ -10,8 +10,8 @@
  * Phase 6 어드민 UI 전체 강화 시 entity 그래프 + episode timeline + memory health
  * dashboard 로 발전.
  */
-import { useState, useEffect, useCallback, useId } from 'react';
-import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
+import { useState, useEffect, useCallback, useId, useMemo } from 'react';
+import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network, ChevronRight } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -327,7 +327,6 @@ export function EntitiesPanel({
                     }
                   >
                     <span className="text-[11px] font-bold text-slate-700 truncate">{e.name}</span>
-                    <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{e.type}</span>
                     {(e.factCount ?? 0) > 0 && (
                       <span className="text-[9px] text-slate-400 tabular-nums shrink-0">{e.factCount}</span>
                     )}
@@ -345,30 +344,9 @@ export function EntitiesPanel({
                       <div className="text-[9px] text-slate-400 mb-2 flex items-center gap-2">
                         <Clock size={9} /> {formatDate(e.updatedAt)}
                       </div>
-                      {/* Timeline */}
+                      {/* Timeline — 사실을 type 별로 묶고 태그로 교차 필터 */}
                       <div className="text-[10px] font-bold text-slate-500 mb-1">Timeline ({facts.length})</div>
-                      {facts.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 italic">기록 없음</p>
-                      ) : (
-                        <ul className="list-none p-0 m-0 space-y-1.5">
-                          {facts.map(f => (
-                            <li key={f.id} className="bg-white border border-slate-200 rounded p-1.5">
-                              <div className="text-[10px] text-slate-700 leading-snug whitespace-pre-wrap break-words">{f.content}</div>
-                              <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
-                                {f.factType && <span className="px-1 rounded bg-slate-100 text-slate-600">{f.factType}</span>}
-                                {(f.tags ?? []).map((tag, i) => (
-                                  <span key={i} className="inline-flex items-center gap-0.5 px-1 rounded bg-blue-50 text-blue-600">
-                                    <Tag size={8} />{tag}
-                                  </span>
-                                ))}
-                                <span className="ml-auto tabular-nums">
-                                  {formatDate(f.occurredAt ?? f.createdAt)}
-                                </span>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
+                      <EntityTimeline facts={facts} />
                       <CreateFactInline
                         entityId={e.id}
                         onCreated={async () => {
@@ -561,24 +539,107 @@ function EventsPanel() {
   );
 }
 
+// 사실 타임라인 — type 별 그룹(접기/펴기) + 태그 교차 필터. 엔티티 = 정체성, 분류는 여기서.
+function EntityTimeline({ facts }: { facts: Fact[] }) {
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const allTags = useMemo(() => {
+    const s = new Set<string>();
+    facts.forEach(f => (f.tags ?? []).forEach(t => { if (t.trim()) s.add(t); }));
+    return [...s];
+  }, [facts]);
+
+  const groups = useMemo(() => {
+    const shown = tagFilter ? facts.filter(f => (f.tags ?? []).includes(tagFilter)) : facts;
+    const m = new Map<string, Fact[]>();
+    shown.forEach(f => {
+      const key = (f.factType ?? '').trim() || '기타';
+      (m.get(key) ?? m.set(key, []).get(key)!).push(f);
+    });
+    return [...m.entries()];
+  }, [facts, tagFilter]);
+
+  if (facts.length === 0) return <p className="text-[10px] text-slate-400 italic">기록 없음</p>;
+
+  return (
+    <div>
+      {allTags.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap items-center gap-1">
+          {allTags.map(t => (
+            <button
+              key={t}
+              onClick={() => setTagFilter(tagFilter === t ? null : t)}
+              className={`inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded border ${tagFilter === t ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100'}`}
+            >
+              <Tag size={8} />{t}
+            </button>
+          ))}
+          {tagFilter && (
+            <button onClick={() => setTagFilter(null)} className="text-[9px] text-slate-400 hover:text-slate-600">필터 해제</button>
+          )}
+        </div>
+      )}
+      <div className="space-y-1">
+        {groups.map(([type, fs]) => {
+          const isCollapsed = collapsed.has(type);
+          return (
+            <div key={type}>
+              <button
+                onClick={() => setCollapsed(prev => { const n = new Set(prev); if (n.has(type)) n.delete(type); else n.add(type); return n; })}
+                className="w-full flex items-center gap-1 text-[10px] font-bold text-slate-600 hover:text-slate-800 py-0.5"
+              >
+                <ChevronRight size={10} className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+                <span>{type}</span>
+                <span className="text-[9px] text-slate-400 tabular-nums">{fs.length}</span>
+              </button>
+              {!isCollapsed && (
+                <ul className="list-none p-0 m-0 space-y-1 pl-3">
+                  {fs.map(f => (
+                    <li key={f.id} className="bg-white border border-slate-200 rounded p-1.5">
+                      <div className="text-[10px] text-slate-700 leading-snug whitespace-pre-wrap break-words">{f.content}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
+                        {(f.tags ?? []).map((tag, i) => (
+                          <span key={i} className="inline-flex items-center gap-0.5 px-1 rounded bg-blue-50 text-blue-600">
+                            <Tag size={8} />{tag}
+                          </span>
+                        ))}
+                        <span className="ml-auto tabular-nums">{formatDate(f.occurredAt ?? f.createdAt)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated: () => void }) {
   const contentId = useId();
   const factTypeId = useId();
+  const tagsId = useId();
   const [content, setContent] = useState('');
   const [factType, setFactType] = useState('');
+  const [tags, setTags] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
     if (!content.trim()) return;
     setSubmitting(true);
     try {
+      const tagList = tags.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       await apiPost(
         `/api/entities/${entityId}/timeline`,
-        { content, factType: factType.trim() || undefined },
+        { content, factType: factType.trim() || undefined, tags: tagList.length > 0 ? tagList : undefined },
         { category: 'entities' },
       );
       setContent('');
       setFactType('');
+      setTags('');
       onCreated();
     } catch {
       // silent
@@ -602,10 +663,20 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
           type="text"
           value={factType}
           onChange={(e) => setFactType(e.target.value)}
-          placeholder="type 필터 (선택)"
+          placeholder="type (선택)"
           aria-label="사실 type"
           className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id={factTypeId}
         />
+        <input
+          type="text"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          placeholder="태그 (콤마, 선택)"
+          aria-label="태그"
+          className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factTags" autoComplete="off" id={tagsId}
+        />
+      </div>
+      <div className="flex justify-end mt-1">
         <SaveButton
           state={(submitting ? 'saving' : 'idle') as SaveButtonState}
           disabled={!content.trim()}
@@ -624,24 +695,22 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
   onCreated: () => void;
 }) {
   const nameId = useId();
-  const typeId = useId();
   const aliasesId = useId();
   const [name, setName] = useState('');
-  const [type, setType] = useState('');
   const [aliases, setAliases] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [merged, setMerged] = useState(false);
 
+  // 엔티티 = 이름 + 별칭(정체성). 분류는 사실 type/태그에 — 만들 때 type 안 받음.
   const entitySchema = z.object({
-    name: z.string().trim().min(1, '이름과 type 필수'),
-    type: z.string().trim().min(1, '이름과 type 필수'),
+    name: z.string().trim().min(1, '이름 필수'),
   });
 
   const submit = async () => {
-    const parsed = validateForm(entitySchema, { name, type });
+    const parsed = validateForm(entitySchema, { name });
     if (!parsed.success) {
-      setError(Object.values(parsed.errors)[0] ?? '이름과 type 필수');
+      setError(Object.values(parsed.errors)[0] ?? '이름 필수');
       return;
     }
     setError('');
@@ -652,14 +721,12 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
       const data = hubMode && hubContext
         ? await hubFetch('save', {
             name: parsed.data.name,
-            type: parsed.data.type,
             aliases: aliasList.length > 0 ? aliasList : undefined,
           })
         : await apiPost<{ success: boolean; error?: string; created?: boolean }>(
             '/api/entities',
             {
               name: parsed.data.name,
-              type: parsed.data.type,
               aliases: aliasList.length > 0 ? aliasList : undefined,
             },
             { category: 'entities' },
@@ -706,16 +773,6 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={typeId}>Type</label>
-            <input
-              type="text"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-              placeholder="person / company / project / concept / event 등 자유 분류"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off" id={typeId}
-            />
-          </div>
-          <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={aliasesId}>별칭 (선택)</label>
             <textarea
               value={aliases}
@@ -726,20 +783,18 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
-          {merged && (
-            <p className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1.5 leading-relaxed">
-              같은 이름이나 별칭의 엔티티가 이미 있어, 새로 만들지 않고 기존 항목에 합쳐졌습니다. 입력하신 별칭은 추가됐습니다.
-            </p>
-          )}
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
           {merged ? (
-            <button
-              onClick={onCreated}
-              className="px-3 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
-            >
-              확인
-            </button>
+            <>
+              <p className="flex-1 text-[10px] text-blue-700 leading-snug">기존 항목에 합쳐졌습니다 (별칭 추가됨).</p>
+              <button
+                onClick={onCreated}
+                className="px-3 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded shrink-0"
+              >
+                확인
+              </button>
+            </>
           ) : (
             <>
               <button
@@ -751,7 +806,7 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
               <SaveButton
                 state={(submitting ? 'saving' : 'idle') as SaveButtonState}
                 label="추가"
-                disabled={!name.trim() || !type.trim()}
+                disabled={!name.trim()}
                 onClick={submit}
               />
             </>

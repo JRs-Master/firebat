@@ -67,10 +67,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         return NextResponse.json({ success: true, entities: (res.data as unknown[]) ?? [] });
       }
       case 'save': {
-        if (!body.name || !body.type) return jsonResponse(400, { error: 'name + type 필수' });
+        // 엔티티 = 이름+별칭 정체성. type 은 휴면(선택) — 이름만 필수.
+        if (!body.name) return jsonResponse(400, { error: 'name 필수' });
         const res = await saveEntity({
           name: String(body.name),
-          entityType: String(body.type),
+          entityType: typeof body.type === 'string' ? body.type : '',
           aliases: Array.isArray(body.aliases) ? body.aliases : [],
           metadataJson: body.metadata ? JSON.stringify(body.metadata) : undefined,
           owner: hubOwner,

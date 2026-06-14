@@ -1651,16 +1651,15 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity — name+type upsert
     tools.register(ToolDefinition {
         name: "save_entity".to_string(),
-        description: "Save a tracked subject (stock, person, project, etc.). Upserts by name and merges into an existing entity when the name or any alias matches, so the same subject never duplicates.".to_string(),
+        description: "Save the identity of a tracked subject. An entity is just who/what it is — everything you know about it goes in facts (save_entity_fact), not here. The name must be the pure subject, never the subject combined with an attribute. Merges into an existing entity when the name or any alias matches, so the same subject never duplicates.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Full canonical name, never an abbreviation or ticker (e.g. \"삼성전자\", not \"삼전\" or \"005930\"). Name + aliases is the dedup key, so keep it stable across mentions."},
-                "type": {"type": "string", "description": "Free-form classification natural to the subject."},
-                "aliases": {"type": "array", "items": {"type": "string"}, "description": "Every other way this subject is referred to — abbreviations, tickers, alternate spellings, English/Korean variants. Listing them here merges later mentions into one entity instead of creating duplicates."},
+                "name": {"type": "string", "description": "Full canonical name of the subject — never an abbreviation, code/ticker, or the subject combined with an attribute. Name + aliases is the dedup key, so keep it stable across mentions."},
+                "aliases": {"type": "array", "items": {"type": "string"}, "description": "Every alternative form of the same subject — abbreviations, codes, alternate spellings, language variants. Listing them here merges later mentions into one entity instead of creating duplicates."},
                 "metadata": {"type": "object"}
             },
-            "required": ["name", "type"]
+            "required": ["name"]
         }),
         source: "core".to_string(),
     });
@@ -1673,7 +1672,8 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 #[derive(serde::Deserialize)]
                 struct Args {
                     name: String,
-                    #[serde(rename = "type")]
+                    // 엔티티 type 은 휴면(선택) — 스키마에서 뺐으므로 보통 미전송, 와도 받되 기본은 빈 문자열.
+                    #[serde(rename = "type", default)]
                     entity_type: String,
                     #[serde(default)]
                     aliases: Vec<String>,
