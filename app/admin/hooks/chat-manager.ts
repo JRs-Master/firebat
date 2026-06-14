@@ -463,6 +463,20 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
 // ── 저장용 메시지 정리 ─────────────────────────────────────────────────────
 // 진행 중 상태 (isThinking/executing/streaming) 제거 — 다른 기기에서 "중단되었습니다"
 // 로 박제되는 문제 차단.
+/** 영속(DB·localStorage) 시 pendingActions[].args 의 중첩 객체/배열 제거 — save_page 의 spec.body 등
+ *  페이지 본문이 채팅 프리뷰(data.blocks)와 승인 args(spec)에 **이중 저장**되어 대화 본문이 비대해지면
+ *  저장 요청 자체가 실패(Failed to fetch, body 거대)한다. 전체 args 는 백엔드 plan_store 가 planId 로
+ *  보관하고 승인은 planId 로 처리하며, 카드 표시는 slug/path/title/jobId 등 scalar 만 읽으므로 scalar 만
+ *  남기고 중첩은 drop (일반 규칙 — 도구별 하드코딩 X). 거대 페이지 발행 대화도 저장 성공 → cross-device 동기. */
+function leanPendingArgs(args?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!args || typeof args !== 'object') return args;
+  const lean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (v === null || typeof v !== 'object') lean[k] = v;
+  }
+  return lean;
+}
+
 export function cleanMessages(msgs: Message[]): Message[] {
   return msgs.filter(m =>
     !m.isThinking && !m.executing && !m.streaming
@@ -471,5 +485,9 @@ export function cleanMessages(msgs: Message[]): Message[] {
     // 쓰이면 진짜 답을 덮어써서 "F5 해도 계속 SSE 에러" 영구화. 이제 fallback 은 세션 내 표시만 하고
     // 영속 0 → 서버 완료 후 refresh/F5 시 진짜 답이 단독 source 라 안정 복구.
     && !(m.role === 'system' && isFallbackContent(m.content)),
+  ).map(m =>
+    m.pendingActions?.some(p => p.args && typeof p.args === 'object')
+      ? { ...m, pendingActions: m.pendingActions.map(p => p.args ? { ...p, args: leanPendingArgs(p.args) } : p) }
+      : m,
   );
 }
