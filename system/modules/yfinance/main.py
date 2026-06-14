@@ -71,6 +71,24 @@ def df_to_records(df):
     return records
 
 
+def normalize_period(p):
+    """yfinance period 정규화 — 무효 입력(2mo/4mo 등)을 가장 가까운 유효 버킷으로 올림.
+    yfinance 는 1/3/6mo 버킷만 받음. AI 가 자연스럽게 쓰는 '2개월' 등을 흡수(올림 → limit 으로 행 수 cut)."""
+    valid = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+    p = (p or "1mo").strip().lower()
+    if p in valid:
+        return p
+    import re as _re
+    m = _re.match(r"^(\d+)\s*(d|wk|mo|y)$", p)
+    if not m:
+        return "1mo"
+    days = int(m.group(1)) * {"d": 1, "wk": 7, "mo": 30, "y": 365}[m.group(2)]
+    for name, d in (("1d", 1), ("5d", 5), ("1mo", 30), ("3mo", 90), ("6mo", 180), ("1y", 365), ("2y", 730), ("5y", 1825), ("10y", 3650)):
+        if days <= d:
+            return name
+    return "max"
+
+
 def history_records(df, limit):
     """yfinance Ticker.history() DataFrame → 표준 OHLCV records. limit 마지막 N개 cut."""
     import pandas as pd
@@ -107,7 +125,7 @@ def main():
         symbols = data.get('symbols') or []
         if not symbols:
             return out_err('error.download_symbols_required')
-        period = data.get('period', '1mo')
+        period = normalize_period(data.get('period', '1mo'))
         interval = data.get('interval', '1d')
         limit = data.get('limit', 50)
         df = yf.download(' '.join(symbols), period=period, interval=interval, progress=False, group_by='ticker', auto_adjust=True)
@@ -183,7 +201,7 @@ def main():
         })
 
     if action == 'history':
-        period = data.get('period', '1mo')
+        period = normalize_period(data.get('period', '1mo'))
         interval = data.get('interval', '1d')
         start = data.get('start')
         end = data.get('end')

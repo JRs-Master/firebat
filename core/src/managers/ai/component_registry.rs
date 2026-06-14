@@ -110,6 +110,49 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
             }
         }
 
+        // 0.5 columnar → row — schema 가 선언한 `columnar` 디렉티브로 평행 배열(dates[],open[],...)을
+        //     객체 배열(target)로 zip. AI 가 OHLCV 등을 컬럼 형태로 보내는 케이스 흡수.
+        //     synonym 뒤·extras drop 앞 (소스 컬럼 키가 미지 키로 삭제되기 전에 소비). 데이터 기반 — 컴포넌트명 하드코딩 0.
+        if let Some(columnar) = schema.get("columnar").and_then(|v| v.as_object()) {
+            if let (Some(target), Some(map)) = (
+                columnar.get("target").and_then(|v| v.as_str()),
+                columnar.get("map").and_then(|v| v.as_object()),
+            ) {
+                let target_filled = obj
+                    .get(target)
+                    .and_then(|v| v.as_array())
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+                if !target_filled {
+                    let cols: Vec<(String, String, Vec<serde_json::Value>)> = map
+                        .iter()
+                        .filter_map(|(src, dst)| {
+                            let dst = dst.as_str()?;
+                            let arr = obj.get(src)?.as_array()?;
+                            Some((src.clone(), dst.to_string(), arr.clone()))
+                        })
+                        .collect();
+                    if !cols.is_empty() {
+                        let len = cols.iter().map(|(_, _, a)| a.len()).max().unwrap_or(0);
+                        let mut rows = Vec::with_capacity(len);
+                        for i in 0..len {
+                            let mut row = serde_json::Map::new();
+                            for (_, dst, arr) in &cols {
+                                if let Some(v) = arr.get(i) {
+                                    row.insert(dst.clone(), v.clone());
+                                }
+                            }
+                            rows.push(serde_json::Value::Object(row));
+                        }
+                        obj.insert(target.to_string(), serde_json::Value::Array(rows));
+                        for (src, _, _) in &cols {
+                            obj.remove(src);
+                        }
+                    }
+                }
+            }
+        }
+
         // 1. additionalProperties:false 면 properties 에 없는 키 전부 drop.
         if additional_false {
             if let Some(known) = properties {
