@@ -631,6 +631,7 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
   const [aliases, setAliases] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [merged, setMerged] = useState(false);
 
   const entitySchema = z.object({
     name: z.string().trim().min(1, '이름과 type 필수'),
@@ -654,7 +655,7 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
             type: parsed.data.type,
             aliases: aliasList.length > 0 ? aliasList : undefined,
           })
-        : await apiPost<{ success: boolean; error?: string }>(
+        : await apiPost<{ success: boolean; error?: string; created?: boolean }>(
             '/api/entities',
             {
               name: parsed.data.name,
@@ -665,6 +666,11 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
           );
       if (!data?.success) {
         setError(data?.error || '실패');
+        return;
+      }
+      // created === false → 같은 이름·별칭의 엔티티가 이미 있어 그쪽에 병합됨. 직접 등록일 때만 안내(AI 경로는 무관).
+      if (data.created === false) {
+        setMerged(true);
         return;
       }
       onCreated();
@@ -720,20 +726,36 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
+          {merged && (
+            <p className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1.5 leading-relaxed">
+              같은 이름이나 별칭의 엔티티가 이미 있어, 새로 만들지 않고 기존 항목에 합쳐졌습니다. 입력하신 별칭은 추가됐습니다.
+            </p>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded"
-          >
-            취소
-          </button>
-          <SaveButton
-            state={(submitting ? 'saving' : 'idle') as SaveButtonState}
-            label="추가"
-            disabled={!name.trim() || !type.trim()}
-            onClick={submit}
-          />
+          {merged ? (
+            <button
+              onClick={onCreated}
+              className="px-3 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
+            >
+              확인
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onClose}
+                className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded"
+              >
+                취소
+              </button>
+              <SaveButton
+                state={(submitting ? 'saving' : 'idle') as SaveButtonState}
+                label="추가"
+                disabled={!name.trim() || !type.trim()}
+                onClick={submit}
+              />
+            </>
+          )}
         </div>
       </div>
     </div>
