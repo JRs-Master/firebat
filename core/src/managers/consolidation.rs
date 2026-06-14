@@ -59,6 +59,8 @@ The four shapes below are *how* to store, not *what* to store — decide what wi
    - description: one-line summary (shown in the index — keep it self-sufficient)
    - content: the reusable lesson / how-to body
 
+**Language — IMPORTANT**: this extracted content is shown to the user, so write every human-readable value in {LANG}: entity `name` (use its {LANG} form when the subject has one — but keep proper codes/tickers as `aliases`), fact `content`, event `title`/`description`, lesson `description`/`content`, and `factType`/`type` labels. Keep these EXACTLY as-is regardless of language: lesson `category` (must stay one of user / feedback / project / reference), lesson `name` (kebab-case ascii slug — it is the filename and dedup key), `aliases` (codes / tickers / alternate spellings), and all JSON keys.
+
 Response format (exactly this structure, no other text):
 {"entities": [...], "facts": [...], "events": [...], "lessons": [...]}
 
@@ -356,7 +358,16 @@ impl ConsolidationManager {
                 "\n\n[이미 저장된 운영 메모리 — lessons 추출 시 같은 교훈이면 같은 name 으로 갱신(중복 생성 금지)]\n{mem_index}"
             )
         };
-        let full_prompt = format!("{}\n{}{}", EXTRACTION_PROMPT, transcript, mem_note);
+        // 추출 결과(엔티티·사실·사건·교훈)는 사용자 노출 콘텐츠라 사용자 설정 언어로 작성하게 지시.
+        // (시스템 프롬프트 자체는 영어 유지 — 글로벌 영어 룰. 산출물 산문만 사용자 언어.)
+        let lang_code = crate::i18n::current_default_lang();
+        let lang_name = match lang_code.as_str() {
+            "ko" => "Korean (한국어)",
+            "en" => "English",
+            _ => lang_code.as_str(),
+        };
+        let prompt_with_lang = EXTRACTION_PROMPT.replace("{LANG}", lang_name);
+        let full_prompt = format!("{}\n{}{}", prompt_with_lang, transcript, mem_note);
         let opts = LlmCallOpts {
             model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
             thinking_level: Some("minimal".to_string()),
