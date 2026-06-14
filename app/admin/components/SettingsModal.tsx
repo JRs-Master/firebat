@@ -199,8 +199,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
-  const [userPromptSaving, setUserPromptSaving] = useState(false);
-  const [userPromptSaved, setUserPromptSaved] = useState(false);
 
   // Anthropic prompt caching 토글 — Claude API 모드에서만 노출
   const [anthropicCacheEnabled, setAnthropicCacheEnabled] = useState(false);
@@ -365,17 +363,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   }, []);
 
   // 사용자 커스텀 프롬프트 저장
-  const saveUserPrompt = useCallback(async () => {
-    setUserPromptSaving(true);
-    try {
-      await apiPatch('/api/settings', { userPrompt }, { category: 'settings' });
-      setUserPromptSaved(true);
-      setTimeout(() => setUserPromptSaved(false), 1500);
-    } catch {
-      // silent — UI 가 stale state 그대로
-    } finally { setUserPromptSaving(false); }
-  }, [userPrompt]);
-
   // 시크릿
   const fetchSecrets = useCallback(async () => {
     try {
@@ -717,6 +704,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         aiThinkingLevel: thinkingLevel,
         aiRouterEnabled,
         aiAssistantModel,
+        imageModel,
+        imageDefaultSize,
+        imageDefaultQuality,
+        userPrompt,
       },
       { category: 'settings' },
     ).catch(() => {});
@@ -1384,10 +1375,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / {USER_PROMPT_MAX_CHARS}</span>
-                      <SaveButton
-                        state={(userPromptSaving ? 'saving' : userPromptSaved ? 'saved' : 'idle') as SaveButtonState}
-                        onClick={saveUserPrompt}
-                      />
                     </div>
                   </div>
                   <Textarea
@@ -1425,18 +1412,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     const modelsForProvider = modelsInMode.filter(m => m.provider === activeProvider);
                     const currentModel = currentModelEntry || modelsForProvider[0];
 
-                    const savePartial = (patch: Record<string, unknown>) => {
-                      apiPatch('/api/settings', patch, { category: 'settings' }).catch(() => {});
-                    };
+                    // 변경은 상태에 staging만 — 영속은 LLM 탭과 동일하게 하단 전역 저장 버튼으로 (UX 통일).
                     const saveImageModel = (modelId: string) => {
                       setImageModelState(modelId);
                       // 모델 바뀌면 사이즈/품질 호환성 재검증 — 지원 안 하는 값이면 리셋
                       const newModel = imageModels.find(m => m.id === modelId);
-                      const newSize = newModel?.sizes?.includes(imageDefaultSize) ? imageDefaultSize : '';
-                      const newQuality = newModel?.qualities?.includes(imageDefaultQuality) ? imageDefaultQuality : '';
-                      setImageDefaultSize(newSize);
-                      setImageDefaultQuality(newQuality);
-                      savePartial({ imageModel: modelId, imageDefaultSize: newSize, imageDefaultQuality: newQuality });
+                      setImageDefaultSize(newModel?.sizes?.includes(imageDefaultSize) ? imageDefaultSize : '');
+                      setImageDefaultQuality(newModel?.qualities?.includes(imageDefaultQuality) ? imageDefaultQuality : '');
                     };
                     const switchMode = (mode: 'api' | 'cli') => {
                       if (mode === imageExecMode) return;
@@ -1447,14 +1429,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const firstOfProv = modelsInMode.find(m => m.provider === prov);
                       if (firstOfProv) saveImageModel(firstOfProv.id);
                     };
-                    const saveSize = (v: string) => {
-                      setImageDefaultSize(v);
-                      savePartial({ imageDefaultSize: v });
-                    };
-                    const saveQuality = (v: string) => {
-                      setImageDefaultQuality(v);
-                      savePartial({ imageDefaultQuality: v });
-                    };
+                    const saveSize = (v: string) => setImageDefaultSize(v);
+                    const saveQuality = (v: string) => setImageDefaultQuality(v);
 
                     const providerLabels: Record<string, string> = {
                       anthropic: 'Anthropic', google: 'Google', openai: 'OpenAI',
@@ -2212,7 +2188,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           </button>
           {/* 전역 저장은 handleSave 가 실제로 저장하는 탭(일반 = timezone·admin / AI>LLM = 모델·토글·키)에서만 노출.
               나머지 탭(프롬프트·이미지·비용·메모리·시크릿·MCP·시스템·로그)은 자체 인라인 저장이 있어 중복 버튼 제거. */}
-          {(settingsTab === 'general' || (settingsTab === 'ai' && aiSubTab === 'llm')) && (
+          {(settingsTab === 'general' || (settingsTab === 'ai' && (aiSubTab === 'llm' || aiSubTab === 'image' || aiSubTab === 'prompt'))) && (
             <SaveButton
               size="md"
               state={(
