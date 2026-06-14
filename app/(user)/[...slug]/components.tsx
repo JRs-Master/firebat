@@ -1440,13 +1440,21 @@ function normalizeChartData(
 ): ChartSeries[] {
   // explicitSeries — {name,values}(우리식) 또는 {label,data}(Chart.js datasets) 둘 다 흡수.
   if (Array.isArray(explicitSeries) && explicitSeries.length > 0) {
-    return explicitSeries
+    const mapped = explicitSeries
       .map((s) => {
         const any = s as { name?: string; label?: string; values?: number[]; data?: number[]; color?: string };
         const values = Array.isArray(any.values) ? any.values : Array.isArray(any.data) ? any.data : [];
         return { name: any.name ?? any.label ?? '', values, color: any.color };
       })
       .filter((s) => s.values.length > 0);
+    if (mapped.length > 0) return mapped;
+    // series carried only metadata (e.g. [{name:"종가"}]) with no values, but a flat `data` array
+    // holds them — a common AI shape. Use the flat data under the first series' name.
+    if (Array.isArray(data) && (data as unknown[]).length > 0) {
+      const first = explicitSeries[0] as { name?: string; label?: string };
+      return [{ name: first?.name ?? first?.label ?? '', values: data as number[] }];
+    }
+    // else fall through to the generic data handling below
   }
   if (Array.isArray(data)) return [{ name: '', values: data as number[] }];
   if (data && typeof data === 'object') {
