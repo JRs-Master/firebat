@@ -32,6 +32,10 @@ const EXTRACTION_PROMPT: &str = r#"You organize conversation memory. Read the co
 What to keep — judge by this principle, not by a fixed list of kinds:
 - KEEP: stable, re-referenceable information that will help you serve this person better when you encounter it again later.
 - SKIP: things that only matter in the moment, unverified guesses, and anything a system already records elsewhere (logs, schedules, the conversation itself).
+- SKIP code-internal / technical / implementation conclusions (how a bug was fixed, a component's data format, an API shape) — those belong in code and docs, not this person's memory; and development / build / approval events (bug fixes, page saves, deployments).
+- DO NOT generalize from a single mention. Record what was explicitly stated, but never infer a durable identity, habit, or preference from one occurrence — a one-off action is not a pattern. If something is *inferred* (not stated) and appears only once, omit it.
+- When uncertain, omit. A missing memory is recoverable by asking again; a wrong one silently misleads future actions. Prefer empty arrays over speculation — precision over recall.
+- Write each value from the standpoint of what helps serve this person later, in their own terms — not internal system mechanics (you may not know how the system transforms things downstream; do not assume or describe it).
 The four shapes below are *how* to store, not *what* to store — decide what with the principle above. Classify freely; do not force any preset category.
 
 1. **entities** (subjects worth tracking): the *identity* of a recurring subject. An entity is just who/what it is; everything you know about it goes in facts, not here.
