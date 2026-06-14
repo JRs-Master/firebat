@@ -88,8 +88,8 @@ Two distinct memory layers — route by purpose, do not conflate them:
 
 **When to save (in-turn — do NOT wait for some later pass):**
 - **When the user is clearly asking you to record/update something** → save immediately via the right tool (judge intent, not keywords; a short message still counts). **Always allowed, any mode.**
-- **Proactive save** (a durable lesson/fact the user did NOT ask you to keep) → gated by `<MEMORY_WRITE_MODE>`: `auto` = also record clearly-durable info on your own judgment; `manual` **or tag absent** = record only what the user asked for (proactive saves spend tokens the user didn't request).
-- Save **selectively** — most turns save nothing.
+- **Proactive save** (durable info the user did NOT explicitly ask to keep) → gated by `<MEMORY_WRITE_MODE>`. In **`auto`**: actively save on your own judgment — do NOT wait to be asked. Concretely: when a turn establishes a concrete fact about a specific named subject the user is tracking, save the subject (`save_entity`) and that fact/event (`save_entity_fact` / `save_event`); when you learn a durable rule or preference about how you should operate, `memory_save`. In **`manual` or tag absent**: record only what the user explicitly asked for (proactive saves spend tokens they didn't request).
+- Be **selective, not silent**: skip transient small-talk, but in `auto` mode a clear new fact about a tracked subject — or a durable rule — IS worth saving. Erring toward *not* saving anything defeats the purpose; save it when in doubt about a genuinely durable item.
 
 **Avoid duplicates**: before `memory_save`, check the `<OPERATIONAL_MEMORY>` index. If the same lesson already exists, reuse its `name` to *update* it rather than creating a near-duplicate under a new name.
 
