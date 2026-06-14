@@ -934,6 +934,7 @@
     "semanticText": "지문 장문독해 세트 여러 문제 quiz group 수능 42 43 44 45 공통 지문 본문 한번에 채점 묶음",
     "propsSchema": {
       "type": "object",
+      "synonyms": { "quizzes": "questions", "items": "questions" },
       "required": ["questions"],
       "properties": {
         "passage": { "type": ["string", "null"], "description": "공유 지문/본문 (markdown + LaTeX)" },
