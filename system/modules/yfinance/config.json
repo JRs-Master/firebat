@@ -29,7 +29,8 @@
       },
       "period": {
         "type": "string",
-        "description": "history/download period. Valid: 1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max (a non-standard value like '2mo' auto-rounds up to the nearest valid bucket). Max limits per interval: 1m=7 days / 2m,5m,15m,30m,90m=60 days / 60m,1h=730 days / 1d and above=unlimited. Defaults to 1mo if omitted."
+        "enum": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"],
+        "description": "history/download period. Use ONLY a value from the enum (no in-between buckets exist). For an in-between range, pick the next larger enum value and cap rows with limit. Max limits per interval: 1m=7 days / 2m,5m,15m,30m,90m=60 days / 60m,1h=730 days / 1d and above=unlimited. Defaults to 1mo if omitted."
       },
       "interval": {
         "type": "string",
