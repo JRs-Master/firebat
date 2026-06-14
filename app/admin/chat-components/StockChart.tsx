@@ -192,6 +192,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
   // 현재 barPx 미러 — native wheel 핸들러(stale closure)가 최신 barPx 를 읽게.
   const barPxRef = useRef(0);
+  // 줌 경계 미러 — 현재 effCps(클램프됨) + 유효 [min, max]. 줌을 raw cps 가 아니라 화면에 실제
+  // 보이는 effCps 기준으로 → cps 상태가 범위 밖에 떠 휠이 헛도는 dead-zone 제거.
+  const zoomBoundsRef = useRef<{ eff: number; min: number; max: number }>({ eff: ZOOM_DEFAULT_CPS, min: 2, max: 2000 });
   // Y축 freeze — 줌 제스처 중엔 직전 라이브 Y 유지(가로 줌인데 세로 출렁임 방지), 끝나면 재스케일.
   const zoomingRef = useRef(false);
   const frozenYRef = useRef<{ pMin: number; pMax: number; maxV: number } | null>(null);
@@ -218,7 +221,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 위치 앵커는 barPx 비례 scrollLeft 보정(아래 useLayoutEffect)으로 — 보던 구간 유지.
   const zoomAround = useCallback((factor: number) => {
     if (fullN < 2) return;
-    setCps(c => Math.max(5, Math.min(2000, Math.round(c * factor))));
+    // 현재 화면에 보이는 effCps 기준으로 줌 (raw cps 아님) → 매 휠이 즉시 반영, dead-zone 0.
+    const b = zoomBoundsRef.current;
+    const next = Math.round((b.eff || ZOOM_DEFAULT_CPS) * factor);
+    setCps(Math.max(b.min, Math.min(b.max, next)));
   }, [fullN]);
 
   // PC 휠 줌 (preventDefault 필요 → native listener)
@@ -282,6 +288,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const effCps = Math.max(cpsMin, Math.min(cpsMax, Math.min(cps, fullN)));  // 실제 한 화면 캔들 수
   const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px
   barPxRef.current = barPx;
+  zoomBoundsRef.current = { eff: effCps, min: cpsMin, max: Math.min(cpsMax, fullN) };
   // 전체 W = 좌측 inset + 봉 전체 + 우측 여백 슬롯. box 보다 넓으면 가로 스크롤. 좁으면(소량 데이터) box 채움.
   const W = Math.max(Math.round(boxW), Math.round(padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
   const plotH = priceH - padTop - padBottom;
@@ -372,7 +379,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       if (longPressRef.current) { clearTimeout(longPressRef.current); longPressRef.current = null; }
       tooltipModeRef.current = false;
       const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      pinchRef.current = { startDist: d, startCps: cps };
+      pinchRef.current = { startDist: d, startCps: zoomBoundsRef.current.eff };
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
       // 1손가락: 바로 툴팁 안 띄움 — 0.5초 누르고 있으면(롱프레스) 툴팁 진입. 그 전 이동은 스크롤.
@@ -406,8 +413,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       }
       markZooming();
       // 핀치 벌림(d↑) = 줌인(적게·넓게) = cps↓. startCps × (startDist / d).
+      const b = zoomBoundsRef.current;
       const next = Math.round(pinchRef.current.startCps * (pinchRef.current.startDist / Math.max(d, 1)));
-      setCps(Math.max(5, Math.min(2000, next)));
+      setCps(Math.max(b.min, Math.min(b.max, next)));
     } else if (e.touches.length === 1) {
       const t = e.touches[0];
       if (tooltipModeRef.current) {
