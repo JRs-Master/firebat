@@ -275,7 +275,7 @@ export function CronPanel({
                   {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
               </div>
-              <span className={rowActionsClass(jobSelected)}>
+              <span className={rowActionsClass(jobSelected || running === job.jobId)}>
                 <Tooltip label={t('common.run_now')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
