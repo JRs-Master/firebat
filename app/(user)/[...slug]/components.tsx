@@ -1438,6 +1438,41 @@ const PALETTE_MAP: Record<string, string[]> = {
 type ChartSeries = { name: string; values: number[]; color?: string };
 
 /** data 입력 (3가지 형태) → 정규화된 series 배열 */
+/** 값 하나를 숫자로 강제 — number 그대로 / "1,234" 같은 숫자 문자열 흡수 / 그 외 null. */
+function coerceChartNum(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string') {
+    const n = Number(v.replace(/,/g, '').trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+// 레코드 배열을 series 로 풀 때 라벨 축으로 쓰일 키 (값 series 에서 제외).
+const CHART_LABEL_KEYS = new Set(['label', 'name', 'x', 'date', 'category', 'key', 'axis', 'group', 'period', 'year']);
+// 단일 값 레코드({label, value})에서 값으로 쓸 키 우선순위.
+const CHART_VALUE_KEYS = ['value', 'y', 'amount', 'count', 'total', 'val', 'num'];
+
+/** 객체 배열 → series. AI 가 차트 data 를 레코드 배열로 보내는 흔한 모양 흡수.
+ *  (1) {label,value}/{x,y} 류 = 단일 series / (2) {x, metric1, metric2...} 다중 metric = 키별 series. */
+function seriesFromObjectArray(arr: Record<string, unknown>[]): ChartSeries[] {
+  // (1) 명시적 단일 값 필드가 있으면 그것만 — 키 하드코딩 아니라 우선순위 탐색.
+  for (const vk of CHART_VALUE_KEYS) {
+    if (arr.some((o) => coerceChartNum(o?.[vk]) !== null)) {
+      return [{ name: '', values: arr.map((o) => coerceChartNum(o?.[vk]) ?? 0) }];
+    }
+  }
+  // (2) 라벨 키를 뺀 모든 숫자 키를 각각 series 로 pivot (다중 metric 레코드).
+  const keys: string[] = [];
+  for (const o of arr) {
+    for (const k of Object.keys(o ?? {})) {
+      if (!CHART_LABEL_KEYS.has(k.toLowerCase()) && !keys.includes(k) && coerceChartNum(o[k]) !== null) keys.push(k);
+    }
+  }
+  if (keys.length) return keys.map((k) => ({ name: k, values: arr.map((o) => coerceChartNum(o?.[k]) ?? 0) }));
+  return [];
+}
+
 function normalizeChartData(
   data: number[] | Record<string, number[]> | unknown,
   explicitSeries?: ChartSeries[]
@@ -1456,11 +1491,25 @@ function normalizeChartData(
     // holds them — a common AI shape. Use the flat data under the first series' name.
     if (Array.isArray(data) && (data as unknown[]).length > 0) {
       const first = explicitSeries[0] as { name?: string; label?: string };
-      return [{ name: first?.name ?? first?.label ?? '', values: data as number[] }];
+      return [{ name: first?.name ?? first?.label ?? '', values: (data as unknown[]).map((v) => coerceChartNum(v) ?? 0) }];
     }
     // else fall through to the generic data handling below
   }
-  if (Array.isArray(data)) return [{ name: '', values: data as number[] }];
+  if (Array.isArray(data)) {
+    const arr = data as unknown[];
+    if (arr.length === 0) return [];
+    // 숫자(또는 "1,234" 숫자 문자열) 배열 — 단일 series.
+    if (arr.every((v) => coerceChartNum(v) !== null)) {
+      return [{ name: '', values: arr.map((v) => coerceChartNum(v) as number) }];
+    }
+    // 객체 배열 — {label,value} / 다중 metric 레코드 자동 흡수 ([object Object] 방지).
+    if (arr.every((v) => v && typeof v === 'object' && !Array.isArray(v))) {
+      const s = seriesFromObjectArray(arr as Record<string, unknown>[]);
+      if (s.length) return s;
+    }
+    // 혼합 — 숫자만 강제(비숫자는 0)해 라벨 정합 유지.
+    return [{ name: '', values: arr.map((v) => coerceChartNum(v) ?? 0) }];
+  }
   if (data && typeof data === 'object') {
     return Object.entries(data as Record<string, unknown>)
       .filter(([, v]) => Array.isArray(v))
