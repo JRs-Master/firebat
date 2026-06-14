@@ -910,9 +910,9 @@ impl AiManager {
                             .map(|v| v == "true" || v == "1")
                             .unwrap_or(false);
                         let mode = if auto {
-                            "auto — save on explicit request, AND proactively when you learn clearly durable info."
+                            "auto — record what's worth remembering using your judgment: both when the user asks and when you recognize clearly durable information."
                         } else {
-                            "manual — save (memory_save / save_entity*) ONLY when the user explicitly asks (\"remember this\" / \"기억해\"). Do NOT proactively save unrequested info this turn."
+                            "manual — record only what the user is clearly asking you to keep. Do NOT proactively save anything they didn't ask you to remember this turn."
                         };
                         extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
                     }

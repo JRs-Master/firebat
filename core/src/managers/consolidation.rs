@@ -27,48 +27,45 @@ use crate::ports::{
 use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
-const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
+const EXTRACTION_PROMPT: &str = r#"You organize conversation memory. Read the conversation and extract information worth tracking, as JSON.
 
-추출 카테고리:
-1. **entities** (추적 대상): 종목·인물·프로젝트·개념·이벤트. 대화에 명시 등장한 것만.
-   - name: 정식 명칭 (한국어 / 영어 OK)
-   - type: stock / company / person / project / concept / event 자유
-   - aliases: 별칭·약자 (선택, 배열)
-   - metadata: ticker / industry / sector 같은 부가 (선택, 객체)
+What to keep — judge by this principle, not by a fixed list of kinds:
+- KEEP: stable, re-referenceable information that will help you serve this person better when you encounter it again later.
+- SKIP: things that only matter in the moment, unverified guesses, and anything a system already records elsewhere (logs, schedules, the conversation itself).
+The four shapes below are *how* to store, not *what* to store — decide what with the principle above. Classify freely; do not force any preset category.
 
-2. **facts** (사실): entity 에 link 된 시간 stamped 사실.
-   - entityName: 어느 entity 의 fact (entities 의 name 과 일치)
-   - content: 자연어 1-2 문장 — 시간·수치·결과 명시
-   - factType: recommendation / transaction / analysis / observation / event / report 자유
-   - occurredAt: ms epoch (대화에서 명확한 시간 언급 시. 미설정되어 있으면 미포함)
-   - tags: 자유 태그 (배열)
+1. **entities** (subjects worth tracking): any recurring subject explicitly present in the conversation.
+   - name: canonical name
+   - type: free-form classification natural to the subject
+   - aliases: optional array of nicknames/abbreviations
+   - metadata: optional object of attributes
 
-3. **events** (사건): *의미 있는* 시간순 사건만 — 실거래·중요 분석·notable 발생. 루틴 운영(발행·cron·단순 조회)은 제외(로그·일정이 커버).
-   - type: transaction / analysis / decision / notable 자유 (cron_trigger·page_publish 같은 루틴 운영 타입 금지)
-   - title: 짧은 요약
-   - description: 상세 (선택)
+2. **facts** (time-stamped statements linked to an entity):
+   - entityName: which entity (matches a name in entities)
+   - content: 1-2 natural sentences — state time, figures, outcome when present
+   - factType: free-form classification natural to the fact
+   - occurredAt: ms epoch (only when a clear time is stated; omit otherwise)
+   - tags: optional array
+
+3. **events** (something that happened or is scheduled at a point in time and is worth recalling later):
+   - type: free-form classification natural to the event
+   - title: short summary
+   - description: optional detail
    - occurredAt: ms epoch
-   - entityNames: link 할 entity 이름 배열
+   - entityNames: array of linked entity names
 
-4. **lessons** (운영 교훈): Firebat 운영·도구 사용·작업 방식에 대해 새로 깨달은 *안정적* 지식
-   (다음에도 적용될 것만 — 일시적 시세·수치·일회성 사실은 facts 로).
-   - name: 짧은 슬러그 (영문 kebab-case 권장 — 파일명 겸 dedup 키)
-   - category: user / feedback / project / reference 중 하나
-   - description: 한 줄 요약 (인덱스 노출)
-   - content: 재사용 가능한 교훈·how-to 본문
+4. **lessons** (durable operational knowledge — preferences and ways of working that will apply again):
+   - name: short kebab-case slug (also the filename and dedup key)
+   - category: one of user / feedback / project / reference
+   - description: one-line summary (shown in the index — keep it self-sufficient)
+   - content: the reusable lesson / how-to body
 
-추출 안 할 것:
-- 잡담·인사·기술 질문
-- 추측·가정 (확인 안 된)
-- 메타 발화 (모델 변경·설정 같은 시스템 운영)
-- 루틴 운영 사건 (페이지 발행·cron 실행/실패·반복되는 단순 조회) — 로그·일정이 커버, events 아님
-
-JSON 응답 형식 (정확히 이 구조, 그 외 텍스트 금지):
+Response format (exactly this structure, no other text):
 {"entities": [...], "facts": [...], "events": [...], "lessons": [...]}
 
-빈 카테고리는 빈 배열.
+Empty categories must be empty arrays.
 
-대화:
+Conversation:
 "#;
 
 /// 메시지 1개당 trim 한도 (옛 TS 와 동일 — 1500자).
