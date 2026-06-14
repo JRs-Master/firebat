@@ -1654,6 +1654,15 @@ function LineChartInteractive({ series, labels, title, unit, palette }: {
   // 툴팁이 항상 커서 우/하단에 붙으면 우측·하단 포인트에서 컨테이너 밖으로 밀려 글자가 1자씩
   // 찌그러진다 → 가장자리 근처면 커서 반대쪽으로 뒤집어 표시 (공간 확보).
   const [flip, setFlip] = React.useState<{ x: boolean; y: boolean }>({ x: false, y: false });
+  // 모바일은 SVG 가 축소 렌더돼 선·점이 더 가늘게 보임 → viewBox 단위를 키워 보정 (PC 1px/점2 · 모바일 2px/점4).
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
   const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
@@ -1794,8 +1803,8 @@ function LineChartInteractive({ series, labels, title, unit, palette }: {
           )}
           {seriesPaths.map((sp, si) => (
             <g key={si}>
-              <path d={sp.path} fill="none" stroke={sp.color} strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
-              {sp.ys.map((y, i) => hovered === i ? <circle key={i} cx={xs[i]} cy={y} r={1.5} fill={sp.color} /> : null)}
+              <path d={sp.path} fill="none" stroke={sp.color} strokeWidth={isMobile ? 2 : 1} strokeLinecap="round" strokeLinejoin="round" />
+              {sp.ys.map((y, i) => hovered === i ? <circle key={i} cx={xs[i]} cy={y} r={isMobile ? 4 : 2} fill={sp.color} /> : null)}
             </g>
           ))}
           {labels.map((_, i) => i % xStep === 0 || i === xLen - 1 ? (
