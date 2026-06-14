@@ -23,6 +23,13 @@ use firebat_core::ports::{
 /// 같은 type 의 event dedup 검출 시 — 7일 이내 occurredAt 한정 (옛 TS 동등).
 const EVENT_DEDUP_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
+/// Entity dedup — when two candidate entities share a near-identical name but carry *different*
+/// type labels, this is the cosine threshold on their type strings deciding "same concept?".
+/// e.g. stock ≈ 종목 (merge) / stock ≉ product (keep separate). No hardcoded synonym map — pure
+/// embedding similarity. Conservative; tune via 실측 (if stock+종목 don't merge, lower it; if
+/// unrelated types merge, raise it).
+const ENTITY_TYPE_DEDUP_THRESHOLD: f32 = 0.70;
+
 pub struct SqliteMemoryAdapter {
     conn: Mutex<Connection>,
     /// IEmbedderPort 옵션 — 설정되면 자동 임베딩 + cosine 검색 활성. 없으면 substring 매칭.
@@ -406,18 +413,87 @@ impl IEntityPort for SqliteMemoryAdapter {
 
         let now = now_ms();
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
+
+        // Cosine dedup — when threshold + embedder + new embedding all present, find a near-duplicate
+        // existing entity (high name similarity + an equivalent type) to merge into, instead of
+        // inserting a near-identical new row. Candidates are read under a scoped lock; async type
+        // embedding then runs OUTSIDE the lock (the conn guard is never held across .await).
+        let mut merge_id: Option<i64> = None;
+        if let (Some(threshold), Some(new_blob), Some(embedder)) =
+            (input.dedup_threshold, embedding.as_ref(), self.embedder.as_ref())
+        {
+            if threshold > 0.0 {
+                let candidates: Vec<(i64, String, Vec<u8>)> = {
+                    let conn = self.conn.lock().unwrap();
+                    let mut stmt = conn
+                        .prepare(
+                            "SELECT id, type, embedding FROM entities
+                             WHERE owner = ?1 AND embedding IS NOT NULL",
+                        )
+                        .map_err(|e| format!("entity dedup prepare: {e}"))?;
+                    let rows = stmt
+                        .query_map(params![owner], |r| {
+                            Ok((
+                                r.get::<_, i64>(0)?,
+                                r.get::<_, String>(1)?,
+                                r.get::<_, Vec<u8>>(2)?,
+                            ))
+                        })
+                        .map_err(|e| format!("entity dedup query: {e}"))?;
+                    rows.filter_map(|r| r.ok()).collect()
+                };
+                let new_vec = embedder.bytes_to_vec(new_blob);
+                let new_type_lc = input.entity_type.trim().to_lowercase();
+                let mut best: Option<(i64, f32)> = None;
+                for (id, cand_type, cand_blob) in candidates {
+                    let name_sim = embedder.cosine(&new_vec, &embedder.bytes_to_vec(&cand_blob));
+                    if name_sim < threshold as f32 {
+                        continue;
+                    }
+                    // Type equivalence: exact (case-insensitive) OR type-string cosine ≥ threshold.
+                    let type_ok = if cand_type.trim().to_lowercase() == new_type_lc {
+                        true
+                    } else {
+                        match (
+                            embedder.embed_passage(&input.entity_type).await,
+                            embedder.embed_passage(&cand_type).await,
+                        ) {
+                            (Ok(a), Ok(b)) => {
+                                embedder.cosine(&a, &b) >= ENTITY_TYPE_DEDUP_THRESHOLD
+                            }
+                            _ => false,
+                        }
+                    };
+                    if type_ok && best.map_or(true, |(_, s)| name_sim > s) {
+                        best = Some((id, name_sim));
+                    }
+                }
+                if let Some((id, sim)) = best {
+                    merge_id = Some(id);
+                    tracing::info!(
+                        category = "memory",
+                        entity_id = id,
+                        name_sim = sim,
+                        "엔티티 dedup — 유사 엔티티에 병합 (새 row 생성 안 함)"
+                    );
+                }
+            }
+        }
+
         let conn = self.conn.lock().unwrap();
 
-        // upsert by UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 을 가질 수 있어야 함.
-        let existing: Option<i64> = conn
+        // Exact UNIQUE(name, type, owner) match takes priority; else merge into the cosine-deduped
+        // near-duplicate (merge_id); else insert a new row.
+        let exact: Option<i64> = conn
             .query_row(
                 "SELECT id FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",
                 params![input.name, input.entity_type, owner],
                 |r| r.get(0),
             )
             .ok();
+        let target = exact.or(merge_id);
 
-        if let Some(id) = existing {
+        if let Some(id) = target {
             // embedding 업데이트 — 새 임베딩 설정되었으면 갱신, 미설정이면 기존값 유지 (COALESCE)
             conn.execute(
                 "UPDATE entities SET
@@ -1591,6 +1667,7 @@ mod tests {
                 aliases: vec!["005930".to_string(), "Samsung".to_string()],
                 metadata: Some(serde_json::json!({"sector": "tech"})),
                 source_conv_id: Some("c1".to_string()),
+                dedup_threshold: None,
                 owner: None,
             })
             .await

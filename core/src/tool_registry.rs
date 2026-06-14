@@ -1692,6 +1692,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         aliases: parsed.aliases,
                         metadata: parsed.metadata,
                         source_conv_id: None,
+                        dedup_threshold: Some(0.92),
                         owner: parsed.owner,
                     })
                     .await?;

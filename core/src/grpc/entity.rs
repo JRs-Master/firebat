@@ -75,6 +75,7 @@ impl EntityService for EntityServiceImpl {
                 aliases: args.aliases,
                 metadata,
                 source_conv_id: args.source_conv_id,
+                dedup_threshold: Some(0.92),
                 owner: args.owner.filter(|s| !s.is_empty()),
             })
             .await;

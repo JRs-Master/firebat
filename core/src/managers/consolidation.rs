@@ -412,6 +412,7 @@ impl ConsolidationManager {
                     aliases: e.aliases.clone(),
                     metadata: e.metadata.clone(),
                     source_conv_id: source_conv_id.map(String::from),
+                    dedup_threshold: Some(0.92),
                     owner: owner.map(String::from),
                 })
                 .await

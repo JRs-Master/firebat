@@ -1693,6 +1693,10 @@ pub struct SaveEntityInput {
     pub aliases: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub source_conv_id: Option<String>,
+    /// Cosine dedup threshold — when Some(>0) and an embedder is set, a near-duplicate existing
+    /// entity (high name similarity + a type judged equivalent by embedding) is merged into
+    /// instead of inserting a new row. None/0 = old exact (name,type) upsert only.
+    pub dedup_threshold: Option<f64>,
     /// None = admin (default), Some("hub:<id>") = 해당 hub.
     pub owner: Option<String>,
 }

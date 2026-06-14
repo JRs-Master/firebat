@@ -1218,6 +1218,7 @@ impl McpToolHandler for SaveEntityHandler {
                 .unwrap_or_default(),
             metadata: args.get("metadata").cloned(),
             source_conv_id: obj_str(&args, "sourceConvId"),
+            dedup_threshold: Some(0.92),
             owner: obj_str(&args, "owner"),
         };
         match self.entity.save_entity(input).await {
