@@ -1347,25 +1347,26 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             value={aiAssistantModel}
                             onChange={setAiAssistantModel}
                             options={aiAssistantModels
-                              // 싼 API worker 는 해당 제공자 키 등록 시에만 노출. "current"(= 메인 모델)는 항상.
-                              // (geminiApiKey state = OpenAI 키, 레거시 이름.)
-                              .filter(m =>
-                                m.id === 'current'
-                                  ? true
-                                  : m.id.includes('gpt')
-                                    ? !!geminiApiKey
-                                    : m.id.includes('gemini')
-                                      ? !!googleApiKey
-                                      : true,
-                              )
-                              .map(m => ({
-                                value: m.id,
-                                label:
+                              // 싼 API worker 는 목록엔 항상 표시하되 해당 제공자 키 없으면 선택 불가(disabled).
+                              // "current"(= 메인 모델)는 항상 가능. (geminiApiKey state = OpenAI 키, 레거시 이름.)
+                              .map(m => {
+                                const needsKey =
                                   m.id === 'current'
-                                    ? t('settings_modal.ai_assistant_model_current') +
-                                      (execMode === 'cli' ? t('settings_modal.ai_assistant_model_current_free') : '')
-                                    : m.displayName,
-                              }))}
+                                    ? false
+                                    : m.id.includes('gpt')
+                                      ? !geminiApiKey
+                                      : m.id.includes('gemini')
+                                        ? !googleApiKey
+                                        : false;
+                                return {
+                                  value: m.id,
+                                  label:
+                                    m.id === 'current'
+                                      ? t('settings_modal.ai_assistant_model_current')
+                                      : m.displayName + (needsKey ? t('settings_modal.ai_assistant_model_needs_key') : ''),
+                                  disabled: needsKey,
+                                };
+                              })}
                           />
                         </Field>
                       )}

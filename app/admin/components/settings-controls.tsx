@@ -100,7 +100,7 @@ export function Textarea({
 
 export function SelectInput<T extends string>({
   value, onChange, options, placeholder, id, name,
-}: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; placeholder?: string; id?: string; name?: string }) {
+}: { value: T; onChange: (v: T) => void; options: { value: T; label: string; disabled?: boolean }[]; placeholder?: string; id?: string; name?: string }) {
   const ctxId = useFieldId();
   const inputId = id ?? ctxId;
   return (
@@ -112,7 +112,7 @@ export function SelectInput<T extends string>({
       className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
     >
       {placeholder && <option value="">{placeholder}</option>}
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      {options.map(o => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}
     </select>
   );
 }
