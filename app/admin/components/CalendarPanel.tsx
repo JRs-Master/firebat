@@ -80,6 +80,11 @@ async function callCalendar(
   return json.data;
 }
 
+// cron 실행 기록 태그 — main.rs 콜백이 매 cron 발화 후 sysmod_calendar add({tags:['실행기록', '완료'|'실패']}).
+// 이 태그 이벤트 = 영속 실행 이력(cron 로그 버퍼·잡 삭제와 무관). 일정과 분리해 스케줄 섹션에 표시.
+const EXEC_TAG = '실행기록';
+const isExecRecord = (e: CalEvent) => (e.tags ?? []).includes(EXEC_TAG);
+
 const MONTH_NAMES = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 const WEEKDAY_HEADERS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -115,7 +120,7 @@ export function CalendarPanel({
   const [selectedDate, setSelectedDate] = useState<string>(ymd(today)); // 'YYYY-MM-DD'
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [cronOccs, setCronOccs] = useState<CronOcc[]>([]);
-  const [cronLogs, setCronLogs] = useState<CronLog[]>([]);
+  // cron 실행 이력은 더 이상 휘발 로그(/api/cron logs)가 아니라 캘린더 영속 이벤트('실행기록' 태그)에서 읽음 (execByDate).
   const [editingCron, setEditingCron] = useState<CronJob | null>(null); // 캘린더에서 cron 스케줄 편집 (ScheduleModal 재사용)
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -163,7 +168,7 @@ export function CalendarPanel({
   // cron 잡 투영 — admin 전용 (cron 은 owner-scoped, hub 방문자엔 미노출). /api/cron 이 from/to 구간
   // occurrences + 실행 로그 반환. cron 이 진실원천이라 캘린더는 비추기만 (중복 저장 0).
   const fetchCron = useCallback(async () => {
-    if (hubMode) { setCronOccs([]); setCronLogs([]); return; }
+    if (hubMode) { setCronOccs([]); return; }
     try {
       const now = new Date();
       const from = ymd(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
@@ -173,7 +178,6 @@ export function CalendarPanel({
         { category: 'calendar' },
       );
       setCronOccs(res.occurrences ?? []);
-      setCronLogs(res.logs ?? []);
     } catch (err) {
       logger.debug('calendar', 'cron 투영 fetch 실패', { error: err });
     }
@@ -196,6 +200,7 @@ export function CalendarPanel({
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
+      if (isExecRecord(e)) continue; // 실행기록은 일정과 분리(execByDate) — 스케줄 섹션에만 표시.
       const d = new Date(e.startAt);
       if (isNaN(d.getTime())) continue;
       const key = ymd(d);
@@ -205,6 +210,23 @@ export function CalendarPanel({
     // 같은 날 안 시간순 정렬
     for (const arr of map.values()) {
       arr.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    }
+    return map;
+  }, [events]);
+
+  // cron 실행 이력 = '실행기록' 태그 캘린더 이벤트(영속). 날짜 버킷, 최신순.
+  const execByDate = useMemo(() => {
+    const map = new Map<string, CalEvent[]>();
+    for (const e of events) {
+      if (!isExecRecord(e)) continue;
+      const d = new Date(e.startAt);
+      if (isNaN(d.getTime())) continue;
+      const key = ymd(d);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(e);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
     }
     return map;
   }, [events]);
@@ -224,19 +246,6 @@ export function CalendarPanel({
     }
     return map;
   }, [cronOccs]);
-
-  // cron 실행 이력 → 날짜 버킷 (완료/실패 표시).
-  const logsByDate = useMemo(() => {
-    const map = new Map<string, CronLog[]>();
-    for (const l of cronLogs) {
-      const d = new Date(l.triggeredAt);
-      if (isNaN(d.getTime())) continue;
-      const key = ymd(d);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(l);
-    }
-    return map;
-  }, [cronLogs]);
 
   // 그리드 셀 — 6주 × 7일 = 42 cells
   const gridCells = useMemo(() => {
@@ -259,7 +268,7 @@ export function CalendarPanel({
   const todayKey = ymd(today);
   const selectedEvents = eventsByDate.get(selectedDate) ?? [];
   const selectedOccs = cronByDate.get(selectedDate) ?? [];
-  const selectedLogs = logsByDate.get(selectedDate) ?? [];
+  const selectedExec = execByDate.get(selectedDate) ?? [];
 
   const goPrevMonth = () => {
     if (cursorMonth === 0) {
@@ -478,14 +487,14 @@ export function CalendarPanel({
                 </span>
               )}
               {/* cron 투영 마커 — 예약(보라) / 완료(초록) / 실패(빨강). 일정 점(파랑)과 별도 줄. */}
-              {(cronByDate.get(cell.key)?.length || logsByDate.get(cell.key)?.length) ? (
+              {(cronByDate.get(cell.key)?.length || execByDate.get(cell.key)?.length) ? (
                 <span className="flex items-center gap-0.5 mt-0.5">
                   {cronByDate.get(cell.key)?.length ? (
                     <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-violet-500'}`} />
                   ) : null}
-                  {logsByDate.get(cell.key)?.some(l => !l.success) ? (
+                  {execByDate.get(cell.key)?.some(e => (e.tags ?? []).includes('실패')) ? (
                     <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-red-500'}`} />
-                  ) : logsByDate.get(cell.key)?.length ? (
+                  ) : execByDate.get(cell.key)?.length ? (
                     <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-green-500'}`} />
                   ) : null}
                 </span>
@@ -576,10 +585,10 @@ export function CalendarPanel({
         )}
 
         {/* 스케줄(cron) 투영 — 선택 날짜의 예약 발화 + 실행 이력. cron 이 진실원천, 캘린더는 read-only 표시. */}
-        {(selectedOccs.length > 0 || selectedLogs.length > 0) && (
+        {(selectedOccs.length > 0 || selectedExec.length > 0) && (
           <div className="border-t border-violet-100">
             <div className="px-2 py-1.5 bg-violet-50/60 text-[11px] font-bold text-violet-700 flex items-center gap-1">
-              <Clock size={11} /> 스케줄 ({selectedOccs.length + selectedLogs.length})
+              <Clock size={11} /> 스케줄 ({selectedOccs.length + selectedExec.length})
             </div>
             <RowActions>
             <ul className="list-none p-0 m-0">
@@ -606,16 +615,31 @@ export function CalendarPanel({
                   </InteractiveRow>
                 </li>
               ))}
-              {selectedLogs.map((l, i) => (
-                <li key={`log-${i}`} className="border-b border-slate-100 px-2 py-1.5 flex items-start gap-1.5">
-                  <span className="mt-0.5 shrink-0">{l.success ? <CheckCircle2 size={11} className="text-green-600" /> : <XCircle size={11} className="text-red-600" />}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] text-slate-700 truncate">{l.title || l.jobId}</div>
-                    <div className="text-[10px] text-slate-400 tabular-nums">{formatTime(l.triggeredAt)} · {l.success ? '완료' : '실패'}</div>
-                    {!l.success && l.error && <div className="text-[10px] text-red-500 line-clamp-1 break-words">{l.error}</div>}
-                  </div>
+              {selectedExec.map((l) => {
+                const failed = (l.tags ?? []).includes('실패');
+                return (
+                <li key={l.id} className="border-b border-slate-100">
+                  <InteractiveRow
+                    id={l.id}
+                    kind="none"
+                    rowClassName="px-2 py-1.5 hover:bg-slate-50"
+                    className="flex items-start gap-1.5"
+                    actions={
+                      <Tooltip label={t('common.delete')}>
+                        <button onClick={() => handleDelete(l)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={10} /></button>
+                      </Tooltip>
+                    }
+                  >
+                    <span className="mt-0.5 shrink-0">{failed ? <XCircle size={11} className="text-red-600" /> : <CheckCircle2 size={11} className="text-green-600" />}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] text-slate-700 truncate">{l.title}</div>
+                      <div className="text-[10px] text-slate-400 tabular-nums">{formatTime(l.startAt)} · {failed ? '실패' : '완료'}</div>
+                      {failed && l.description && <div className="text-[10px] text-red-500 line-clamp-1 break-words">{l.description}</div>}
+                    </div>
+                  </InteractiveRow>
                 </li>
-              ))}
+                );
+              })}
             </ul>
             </RowActions>
           </div>
