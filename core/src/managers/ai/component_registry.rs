@@ -217,7 +217,28 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         let Some(arr) = value.as_array_mut() else {
             return;
         };
+        // items 가 "단일 required 필드 객체"인데 항목이 문자열로 오면 {그 필드: 문자열} 로 coerce.
+        // AI 가 steps/항목을 객체 대신 문자열 배열로 보내도 흡수 (render robustness, 일반 규칙 — 컴포넌트명 하드코딩 0).
+        // 예: plan_card steps required=["title"] → "단계명" → {title: "단계명"}. required 2개+면 모호 → 미적용.
+        let str_key: Option<String> = if schema_allows_type(items_schema, "object") {
+            items_schema
+                .get("required")
+                .and_then(|r| r.as_array())
+                .filter(|r| r.len() == 1)
+                .and_then(|r| r[0].as_str())
+                .map(|s| s.to_string())
+        } else {
+            None
+        };
         for item in arr.iter_mut() {
+            if let Some(key) = &str_key {
+                if item.is_string() {
+                    let s = item.take();
+                    let mut obj = serde_json::Map::new();
+                    obj.insert(key.clone(), s);
+                    *item = serde_json::Value::Object(obj);
+                }
+            }
             sanitize_to_schema(item, items_schema);
         }
     } else if schema_allows_type(schema, "string") {
