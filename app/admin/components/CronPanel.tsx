@@ -268,14 +268,14 @@ export function CronPanel({
               onClick={() => setSelectedJobId(jobSelected ? null : job.jobId)}
               className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
             >
-              {modeIcon(job.mode)}
+              {running === job.jobId ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" /> : modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
                 <p className="text-[12px] font-semibold text-slate-700 truncate">{job.title || job.jobId}</p>
                 <p className="text-[10px] text-slate-400 truncate">
                   {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
               </div>
-              <span className={rowActionsClass(jobSelected || running === job.jobId)}>
+              <span className={rowActionsClass(jobSelected)}>
                 <Tooltip label={t('common.run_now')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}

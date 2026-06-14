@@ -98,8 +98,8 @@ export function ActiveJobsIndicator() {
       next.set(job.id, job);
       return next;
     });
-    // 종료 작업은 retention 후 자동 제거
-    if (change === 'completed' || change === 'failed') {
+    // 종료 작업은 retention 후 자동 제거 — change 라벨 + terminal status 둘 다 인정(완료 후 안 사라지던 것 견고화).
+    if (change === 'completed' || change === 'failed' || job.status === 'done' || job.status === 'error') {
       setTimeout(() => {
         setJobs(prev => {
           const next = new Map(prev);

@@ -581,19 +581,29 @@ export function CalendarPanel({
             <div className="px-2 py-1.5 bg-violet-50/60 text-[11px] font-bold text-violet-700 flex items-center gap-1">
               <Clock size={11} /> 스케줄 ({selectedOccs.length + selectedLogs.length})
             </div>
+            <RowActions>
             <ul className="list-none p-0 m-0">
               {selectedOccs.map((o, i) => (
-                <li key={`occ-${i}`} className="border-b border-slate-100 px-2 py-1.5 flex items-start gap-1.5">
-                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(o.occursAt)}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
-                    <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <Tooltip label="즉시 실행"><button onClick={() => runCronNow(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-emerald-600 transition-colors"><Play size={11} /></button></Tooltip>
-                    <Tooltip label="스케줄 편집"><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 transition-colors"><Pencil size={11} /></button></Tooltip>
-                    <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={11} /></button></Tooltip>
-                  </div>
+                <li key={`occ-${i}`} className="border-b border-slate-100">
+                  <InteractiveRow
+                    id={`occ-${o.jobId}-${i}`}
+                    kind="none"
+                    rowClassName="px-2 py-1.5 hover:bg-slate-50"
+                    className="flex items-start gap-1.5"
+                    actions={
+                      <>
+                        <Tooltip label="즉시 실행"><button onClick={() => runCronNow(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Play size={11} /></button></Tooltip>
+                        <Tooltip label="스케줄 편집"><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded"><Pencil size={11} /></button></Tooltip>
+                        <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={11} /></button></Tooltip>
+                      </>
+                    }
+                  >
+                    <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(o.occursAt)}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
+                      <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
+                    </div>
+                  </InteractiveRow>
                 </li>
               ))}
               {selectedLogs.map((l, i) => (
@@ -607,6 +617,7 @@ export function CalendarPanel({
                 </li>
               ))}
             </ul>
+            </RowActions>
           </div>
         )}
       </div>

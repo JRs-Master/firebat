@@ -188,14 +188,16 @@ impl ScheduleManager {
         // AI 미개입 cross-call hook — cron job StatusManager 시작 (옛 TS core/index.ts:1368
         // statusMgr.start 패턴 1:1). 어드민 UI 의 ActiveJobsIndicator 가 자동 표시.
         let status_job_id = self.hooks.as_ref().map(|h| {
+            // 뱃지 메시지 = 읽기 좋은 제목(없으면 jobId). run-now·스케줄 공통 단일 status 소스.
+            let label = info
+                .title
+                .clone()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| info.job_id.clone());
             let job = h.status.start(
                 Some(format!("cron-{}", info.job_id)),
                 "cron".to_string(),
-                Some(crate::i18n::t(
-                    "core.error.schedule.trigger_event",
-                    None,
-                    &[("job_id", &info.job_id)],
-                )),
+                Some(format!("실행: {label}")),
                 None,
                 serde_json::json!({"jobId": info.job_id, "trigger": format!("{:?}", info.trigger)}),
             );
