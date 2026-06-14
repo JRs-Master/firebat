@@ -1604,12 +1604,22 @@ message EventListAuditLogResponse {
   string raw_json = 1;
 }
 
+// 실시간 이벤트 구독 — Rust EventManager → Frontend SSE 다리.
+message EventSubscribeRequest {}
+message EventStreamPb {
+  // 이벤트 type — 'status:update' / 'cron:complete' / 'gallery:refresh' / 'sidebar:refresh' 등.
+  string type = 1;
+  // 이벤트 payload (JSON 직렬화). Frontend 가 JSON.parse 해서 SSE data 로 전달.
+  string data_json = 2;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 14. EventService — EventManager (SSE 이벤트 + audit log)
 // ──────────────────────────────────────────────────────────────────────────
 service EventService {
   rpc ListAuditLog(EventListAuditLogRequest) returns (EventListAuditLogResponse);
-  // 추후 streaming RPC: rpc Subscribe(JsonArgs) returns (stream EventListAuditLogResponse);
+  // 실시간 이벤트 server-stream — 연결 끊김 시 Rust 가 자동 unsubscribe (stream drop guard).
+  rpc Subscribe(EventSubscribeRequest) returns (stream EventStreamPb);
 }
 
 // ─── StatusService typed Request messages ───────────────────────────────────
