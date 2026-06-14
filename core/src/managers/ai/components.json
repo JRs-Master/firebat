@@ -1012,7 +1012,7 @@
   {
     "name": "plan_card",
     "componentType": "PlanCard",
-    "description": "복잡 다단계 작업 실행 전 사용자 승인용 플랜 카드. 제목 + 단계 체크리스트 + 예상 시간 + 리스크. AI 가 5개+ 도구 호출 예상될 때 이걸 먼저 제시 → suggest 로 [\"실행\",\"수정\",\"취소\"] 받아 진행.",
+    "description": "다단계 작업을 *실행하기 전* 사용자 승인을 받는 플랜 카드 — propose_plan 도구가 생성한다(render 로 직접 그리지 마라). 5개+ 도구 호출 예상 시 propose_plan 으로 먼저 제시 → suggest [실행/수정/취소]. 완료·결과 요약엔 쓰지 마라(그건 text/list/callout). steps 는 객체 배열 [{title, description?}] — 문자열 배열 아님.",
     "semanticText": "플랜 계획 로드맵 단계 step 체크리스트 todo 예정 로드맵 plan approve execute workflow 승인",
     "propsSchema": {
       "type": "object",
