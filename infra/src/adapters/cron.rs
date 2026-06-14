@@ -459,13 +459,15 @@ impl ICronPort for TokioCronAdapter {
         // run-now → StatusManager job 등록(있으면) → ActiveJobsIndicator 뱃지 + 완료 추적.
         let sm = self.status.lock().unwrap().clone();
         let status_job = sm.as_ref().map(|sm| {
-            sm.start(
+            let job = sm.start(
                 None,
                 "cron".to_string(),
                 Some(format!("실행: {}", title.as_deref().unwrap_or("작업"))),
                 None,
                 serde_json::json!({ "jobId": job_id_str.clone(), "trigger": "run-now" }),
-            )
+            );
+            sm.update(&job.id, None, None, None); // Queued → Running (뱃지에 실행중 표시)
+            job
         });
 
         let result = match cb {

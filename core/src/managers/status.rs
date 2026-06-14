@@ -86,11 +86,14 @@ impl StatusManager {
         crate::utils::time::now_ms()
     }
 
-    fn emit_update(&self, job: &JobStatus) {
+    /// SSE status:update — 프론트(ActiveJobsIndicator)가 `{ job, change }` 형태를 기대.
+    /// change = started / updated / completed / failed (retention·렌더 분기에 사용).
+    /// 옛 버그: data=job(bare) 를 보내 프론트의 `data.job` 가 undefined → 뱃지가 절대 안 떴음.
+    fn emit_update(&self, job: &JobStatus, change: &str) {
         if let Some(ev) = &self.event {
             ev.emit(FirebatEvent {
                 event_type: "status:update".to_string(),
-                data: serde_json::to_value(job).unwrap_or(serde_json::Value::Null),
+                data: serde_json::json!({ "job": job, "change": change }),
             });
         }
     }
@@ -127,7 +130,7 @@ impl StatusManager {
             Self::gc(&mut state, now);
         }
         drop(state);
-        self.emit_update(&job);
+        self.emit_update(&job, "started");
         job
     }
 
@@ -156,7 +159,7 @@ impl StatusManager {
         job.updated_at = Self::now_ms();
         let snapshot = job.clone();
         drop(state);
-        self.emit_update(&snapshot);
+        self.emit_update(&snapshot, "updated");
         Some(snapshot)
     }
 
@@ -172,7 +175,7 @@ impl StatusManager {
         job.done_at = Some(now);
         let snapshot = job.clone();
         drop(state);
-        self.emit_update(&snapshot);
+        self.emit_update(&snapshot, "completed");
         Some(snapshot)
     }
 
@@ -187,7 +190,7 @@ impl StatusManager {
         job.done_at = Some(now);
         let snapshot = job.clone();
         drop(state);
-        self.emit_update(&snapshot);
+        self.emit_update(&snapshot, "failed");
         Some(snapshot)
     }
 

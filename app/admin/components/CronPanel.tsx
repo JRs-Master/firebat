@@ -332,7 +332,8 @@ export function CronPanel({
           </div>
           {showLogs && (
             <div className="px-2 pb-2 space-y-1 max-h-60 overflow-y-auto">
-              {[...logs].reverse().slice(0, 20).map((log, i) => {
+              {/* 최신 실행이 위로 — triggeredAt(ISO) 내림차순 명시 정렬(백엔드 순서 의존 X). */}
+              {[...logs].sort((a, b) => b.triggeredAt.localeCompare(a.triggeredAt)).slice(0, 20).map((log, i) => {
                 // output 요약 — savedSlug 우선 표시. warning 있으면 경고 색상
                 const out = log.output || {};
                 const savedSlug = out.savedSlug as string | undefined;
