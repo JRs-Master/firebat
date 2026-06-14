@@ -23,13 +23,6 @@ use firebat_core::ports::{
 /// 같은 type 의 event dedup 검출 시 — 7일 이내 occurredAt 한정 (옛 TS 동등).
 const EVENT_DEDUP_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
-/// Entity dedup — when two candidate entities share a near-identical name but carry *different*
-/// type labels, this is the cosine threshold on their type strings deciding "same concept?".
-/// e.g. stock ≈ 종목 (merge) / stock ≉ product (keep separate). No hardcoded synonym map — pure
-/// embedding similarity. Conservative; tune via 실측 (if stock+종목 don't merge, lower it; if
-/// unrelated types merge, raise it).
-const ENTITY_TYPE_DEDUP_THRESHOLD: f32 = 0.70;
-
 pub struct SqliteMemoryAdapter {
     conn: Mutex<Connection>,
     /// IEmbedderPort 옵션 — 설정되면 자동 임베딩 + cosine 검색 활성. 없으면 substring 매칭.
@@ -414,86 +407,10 @@ impl IEntityPort for SqliteMemoryAdapter {
         let now = now_ms();
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
 
-        // Cosine dedup — when threshold + embedder + new embedding all present, find a near-duplicate
-        // existing entity (high name similarity + an equivalent type) to merge into, instead of
-        // inserting a near-identical new row. Candidates are read under a scoped lock; async type
-        // embedding then runs OUTSIDE the lock (the conn guard is never held across .await).
-        let mut merge_id: Option<i64> = None;
-        if let (Some(threshold), Some(new_blob), Some(embedder)) =
-            (input.dedup_threshold, embedding.as_ref(), self.embedder.as_ref())
-        {
-            if threshold > 0.0 {
-                let candidates: Vec<(i64, String, Vec<u8>)> = {
-                    let conn = self.conn.lock().unwrap();
-                    let mut stmt = conn
-                        .prepare(
-                            "SELECT id, type, embedding FROM entities
-                             WHERE owner = ?1 AND embedding IS NOT NULL",
-                        )
-                        .map_err(|e| format!("entity dedup prepare: {e}"))?;
-                    let rows = stmt
-                        .query_map(params![owner], |r| {
-                            Ok((
-                                r.get::<_, i64>(0)?,
-                                r.get::<_, String>(1)?,
-                                r.get::<_, Vec<u8>>(2)?,
-                            ))
-                        })
-                        .map_err(|e| format!("entity dedup query: {e}"))?;
-                    rows.filter_map(|r| r.ok()).collect()
-                };
-                let new_vec = embedder.bytes_to_vec(new_blob);
-                let new_type_lc = input.entity_type.trim().to_lowercase();
-                let mut best: Option<(i64, f32)> = None;
-                for (id, cand_type, cand_blob) in candidates {
-                    let name_sim = embedder.cosine(&new_vec, &embedder.bytes_to_vec(&cand_blob));
-                    if name_sim < threshold as f32 {
-                        continue;
-                    }
-                    // Type equivalence: exact (case-insensitive) OR type-string cosine ≥ threshold.
-                    let type_ok = if cand_type.trim().to_lowercase() == new_type_lc {
-                        true
-                    } else {
-                        match (
-                            embedder.embed_passage(&input.entity_type).await,
-                            embedder.embed_passage(&cand_type).await,
-                        ) {
-                            (Ok(a), Ok(b)) => {
-                                let ts = embedder.cosine(&a, &b);
-                                // 진단 — type 의미동등 cosine 측정 (stock≈종목 vs stock≉product 분리 가능 임계 튜닝용).
-                                tracing::info!(
-                                    category = "memory",
-                                    new_type = %input.entity_type,
-                                    cand_type = %cand_type,
-                                    type_sim = ts,
-                                    threshold = ENTITY_TYPE_DEDUP_THRESHOLD,
-                                    "엔티티 type 의미동등 검사 (cosine)"
-                                );
-                                ts >= ENTITY_TYPE_DEDUP_THRESHOLD
-                            }
-                            _ => false,
-                        }
-                    };
-                    if type_ok && best.map_or(true, |(_, s)| name_sim > s) {
-                        best = Some((id, name_sim));
-                    }
-                }
-                if let Some((id, sim)) = best {
-                    merge_id = Some(id);
-                    tracing::info!(
-                        category = "memory",
-                        entity_id = id,
-                        name_sim = sim,
-                        "엔티티 dedup — 유사 엔티티에 병합 (새 row 생성 안 함)"
-                    );
-                }
-            }
-        }
-
+        let dedup_on = input.dedup_threshold.is_some();
         let conn = self.conn.lock().unwrap();
 
-        // Exact UNIQUE(name, type, owner) match takes priority; else merge into the cosine-deduped
-        // near-duplicate (merge_id); else insert a new row.
+        // 1. exact (name, type, owner) → 그 row update (원래 upsert).
         let exact: Option<i64> = conn
             .query_row(
                 "SELECT id FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",
@@ -501,7 +418,77 @@ impl IEntityPort for SqliteMemoryAdapter {
                 |r| r.get(0),
             )
             .ok();
-        let target = exact.or(merge_id);
+        // 2. else 같은 이름 OR 별칭(aliases) 겹침(대소문자·앞뒤공백 무시, type 무관) → 그 엔티티에 병합.
+        //    삼성전자/stock ↔ 삼성전자/종목 합치고, 약어·표기변형(삼전·엘전)은 AI 가 aliases 에 넣어두면 매칭.
+        //    이름 임베딩 cosine 은 'X전자' 류를 다른 회사(삼성↔LG)까지 합쳐 부적합(실측 0.95) → 정확 이름·별칭 매칭.
+        //    type 의미동등(stock≈종목 vs stock≉product)도 임베딩 분리 불가(실측 0.837 vs 0.823)라 폐기.
+        let norm = |s: &str| s.trim().to_lowercase();
+        let merge: Option<(i64, String, Vec<String>)> = if exact.is_none() && dedup_on {
+            let new_keys: std::collections::HashSet<String> = std::iter::once(norm(&input.name))
+                .chain(input.aliases.iter().map(|a| norm(a)))
+                .filter(|s| !s.is_empty())
+                .collect();
+            let mut stmt = conn
+                .prepare("SELECT id, name, aliases FROM entities WHERE owner = ?1")
+                .map_err(|e| format!("entity dedup prepare: {e}"))?;
+            let rows = stmt
+                .query_map(params![owner], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .map_err(|e| format!("entity dedup query: {e}"))?;
+            let mut found = None;
+            for row in rows.filter_map(|r| r.ok()) {
+                let (id, name, aliases_raw) = row;
+                let ex_aliases: Vec<String> = aliases_raw
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_default();
+                let ex_keys: std::collections::HashSet<String> = std::iter::once(norm(&name))
+                    .chain(ex_aliases.iter().map(|a| norm(a)))
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if new_keys.intersection(&ex_keys).next().is_some() {
+                    found = Some((id, name, ex_aliases));
+                    break;
+                }
+            }
+            found
+        } else {
+            None
+        };
+        if let Some((id, ref into_name, _)) = merge {
+            tracing::info!(
+                category = "memory",
+                entity_id = id,
+                new_name = %input.name,
+                into_name = %into_name,
+                "엔티티 dedup — 같은 이름/별칭에 병합 (새 row 생성 안 함)"
+            );
+        }
+
+        // 병합 시 별칭 누적 — 기존 별칭 ∪ 새 이름 ∪ 새 별칭 (정식명 제외) → 다음 변형 저장도 매칭.
+        let update_aliases_json = if let Some((_, ref canon_name, ref ex_aliases)) = merge {
+            let canon_lc = norm(canon_name);
+            let mut set: Vec<String> = ex_aliases.clone();
+            for a in std::iter::once(input.name.clone()).chain(input.aliases.iter().cloned()) {
+                let al = a.trim();
+                if al.is_empty() || norm(al) == canon_lc {
+                    continue;
+                }
+                if !set.iter().any(|e| norm(e) == norm(al)) {
+                    set.push(al.to_string());
+                }
+            }
+            serde_json::to_string(&set).unwrap_or_else(|_| aliases_json.clone())
+        } else {
+            aliases_json.clone()
+        };
+
+        let target = exact.or(merge.map(|(id, _, _)| id));
 
         if let Some(id) = target {
             // embedding 업데이트 — 새 임베딩 설정되었으면 갱신, 미설정이면 기존값 유지 (COALESCE)
@@ -514,7 +501,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                     updated_at = ?5
                  WHERE id = ?6",
                 params![
-                    aliases_json,
+                    update_aliases_json,
                     metadata_json,
                     embedding,
                     input.source_conv_id,

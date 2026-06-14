@@ -1651,13 +1651,13 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity — name+type upsert
     tools.register(ToolDefinition {
         name: "save_entity".to_string(),
-        description: "Entity 저장 (name+type upsert). 종목·인물·프로젝트 추적 대상.".to_string(),
+        description: "Save a tracked subject (stock, person, project, etc.). Upserts by name and merges into an existing entity when the name or any alias matches, so the same subject never duplicates.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string"},
-                "type": {"type": "string"},
-                "aliases": {"type": "array", "items": {"type": "string"}},
+                "name": {"type": "string", "description": "Full canonical name, never an abbreviation or ticker (e.g. \"삼성전자\", not \"삼전\" or \"005930\"). Name + aliases is the dedup key, so keep it stable across mentions."},
+                "type": {"type": "string", "description": "Free-form classification natural to the subject."},
+                "aliases": {"type": "array", "items": {"type": "string"}, "description": "Every other way this subject is referred to — abbreviations, tickers, alternate spellings, English/Korean variants. Listing them here merges later mentions into one entity instead of creating duplicates."},
                 "metadata": {"type": "object"}
             },
             "required": ["name", "type"]

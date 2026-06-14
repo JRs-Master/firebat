@@ -35,9 +35,9 @@ What to keep — judge by this principle, not by a fixed list of kinds:
 The four shapes below are *how* to store, not *what* to store — decide what with the principle above. Classify freely; do not force any preset category.
 
 1. **entities** (subjects worth tracking): any recurring subject explicitly present in the conversation.
-   - name: canonical name
+   - name: the full canonical name, never an abbreviation or ticker (e.g. "삼성전자", not "삼전" or "005930"). This name plus aliases is the dedup key, so keep it stable across mentions.
    - type: free-form classification natural to the subject
-   - aliases: optional array of nicknames/abbreviations
+   - aliases: every other way this subject is referred to — abbreviations, tickers, alternate spellings, English/Korean variants. Put each variant here so later mentions merge into one entity instead of creating duplicates.
    - metadata: optional object of attributes
 
 2. **facts** (time-stamped statements linked to an entity):
