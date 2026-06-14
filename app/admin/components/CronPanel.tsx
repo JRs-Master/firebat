@@ -297,7 +297,7 @@ export function CronPanel({
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
                     disabled={running === job.jobId}
-                    className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                    className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
                   >
                     {running === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
                   </button>
