@@ -1722,13 +1722,14 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         description: "크론 / 일회성 작업 예약 — 특정 시각·주기에 작업을 자동 실행한다(스케줄). 단지 날짜·약속을 기록만 할 거면 sysmod_calendar(캘린더)를 써라. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
         input_schema: schema_object(serde_json::json!({
             "jobId": {"type": "string", "description": "고유 job id (이미 있는 jobId 면 덮어쓰기)"},
-            "targetPath": {"type": "string", "description": "agent | <pipeline 식별자>"},
+            "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 아래 pipeline 필드 사용(이때 targetPath 는 라벨)"},
             "cronTime": {"type": "string", "description": "반복 cron 표현식 (분 시 일 월 요일). 없으면 runAt/delaySec 중 하나 지정"},
             "runAt": {"type": "string", "description": "1회 실행 ISO 8601 (반드시 timezone offset 포함, 예: +09:00)"},
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
-            "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 받는 자연어 지시문"},
-            "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "pipeline(기본 — step 배열 결정적 실행) 또는 agent(매 trigger 마다 LLM Function Calling)"}
+            "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차면 pipeline(권장 — 결정적, 런타임 LLM 0회 또는 합성 1회), 매 trigger 런타임 판단 필요하면 agent(매번 LLM 루프)"},
+            "pipeline": {"type": "array", "description": "executionMode=pipeline 의 결정적 step 배열. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. 이전 step 출력은 inputMap/$prev 로 참조. 임계·규칙 판정은 CONDITION. 요약·리포트 합성이 필요하면 LLM_TRANSFORM 한 step(자동 컨텍스트 없으니 형식·구조 지시는 instruction 에 명시)", "items": {"type": "object"}},
+            "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 매 trigger 받는 자연어 지시문"}
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),
     }).await;

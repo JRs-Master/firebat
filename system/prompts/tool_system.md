@@ -344,12 +344,14 @@ save_page(slug:"...", spec:{
 
 ### Execution mode selection (executionMode) — AI judges autonomously at job registration
 
-| Classification | executionMode | Use |
-|---|---|---|
-| Can be expressed deterministically as a step JSON — simple lookup → notify, threshold buy, fixed transform | `pipeline` (default) | step array in `pipeline` field |
-| Needs different data verification / search / creation per trigger — blog / report / schedule digest / news summary | `agent` | natural-language instruction in `agentPrompt` |
+The axis is **fixed vs adaptive**, not simple vs complex. Prefer `pipeline` whenever the procedure is fixed.
 
-**Heuristic**: "same input → same output" guaranteed → pipeline. "needs search / verification per trigger" → agent. If ambiguous, agent (quality first).
+- **Fixed** → **`pipeline`** (step array in `pipeline`). Every trigger runs the *same procedure*: collect the same sources → process/format the same way → output. Use it **even when the task is elaborate**. Cost: **zero LLM** for pure data→output (`EXECUTE`/`MCP_CALL`/`NETWORK_REQUEST`/`CONDITION`/`SAVE_PAGE`), or **one LLM call** when prose synthesis is needed — add a single **`LLM_TRANSFORM`** step (its `instruction` + prior steps' data pulled in via `inputMap`). Anything expressible as a threshold/rule belongs in a `CONDITION` step.
+- **Adaptive** → **`agent`** (natural-language `agentPrompt`). Reserve for triggers that need *runtime judgment*: deciding which tools to call based on what the data shows, branching on findings, open-ended investigation that can't be fixed in advance.
+
+**Why prefer pipeline**: `agent` re-runs the whole LLM loop on every trigger (multiple calls, non-deterministic, costly); a fixed pipeline does the deterministic work with 0 LLM and at most one synthesis call. A task that *produces a report/summary on a fixed schedule from fixed sources* is **fixed → pipeline + one `LLM_TRANSFORM`**, not agent. Choose `agent` only when runtime adaptation is genuinely required.
+
+**`LLM_TRANSFORM` has no auto-context** — it is a lean text transform; it does NOT inherit memory, skills, the system prompt, or retrieval the way a chat turn does. So bake any required output format / structure / style **explicitly into its `instruction`** at registration time.
 
 ### Cron standard mechanisms
 **For holiday / guard-like cases, instead of enumerating holidays**, generalize with `runWhen`:

@@ -1332,12 +1332,15 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "jobId": {"type": "string"},
-                "targetPath": {"type": "string"},
+                "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 pipeline 필드 사용(targetPath 는 라벨)"},
                 "cronTime": {"type": "string"},
                 "runAt": {"type": "string"},
                 "delaySec": {"type": "integer"},
                 "title": {"type": "string"},
-                "description": {"type": "string"}
+                "description": {"type": "string"},
+                "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차=pipeline(권장 — 런타임 LLM 0 또는 합성 1회) / 매 trigger 런타임 판단 필요=agent"},
+                "pipeline": {"type": "array", "items": {"type": "object"}, "description": "executionMode=pipeline 결정적 step 배열 (EXECUTE/MCP_CALL/NETWORK_REQUEST/CONDITION/LLM_TRANSFORM/SAVE_PAGE/TOOL_CALL). 이전 step 은 inputMap/$prev 참조. 합성(요약/리포트)은 LLM_TRANSFORM 1 step(형식 지시는 instruction 에)"},
+                "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 매 trigger 받는 자연어 지시문"}
             },
             "required": ["jobId", "targetPath"]
         }),
