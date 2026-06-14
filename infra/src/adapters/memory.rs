@@ -459,7 +459,17 @@ impl IEntityPort for SqliteMemoryAdapter {
                             embedder.embed_passage(&cand_type).await,
                         ) {
                             (Ok(a), Ok(b)) => {
-                                embedder.cosine(&a, &b) >= ENTITY_TYPE_DEDUP_THRESHOLD
+                                let ts = embedder.cosine(&a, &b);
+                                // 진단 — type 의미동등 cosine 측정 (stock≈종목 vs stock≉product 분리 가능 임계 튜닝용).
+                                tracing::info!(
+                                    category = "memory",
+                                    new_type = %input.entity_type,
+                                    cand_type = %cand_type,
+                                    type_sim = ts,
+                                    threshold = ENTITY_TYPE_DEDUP_THRESHOLD,
+                                    "엔티티 type 의미동등 검사 (cosine)"
+                                );
+                                ts >= ENTITY_TYPE_DEDUP_THRESHOLD
                             }
                             _ => false,
                         }
