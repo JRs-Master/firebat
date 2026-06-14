@@ -408,7 +408,9 @@ impl IEntityPort for SqliteMemoryAdapter {
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
         let dedup_on = input.dedup_threshold.is_some();
         let conn = self.conn.lock().unwrap();
-        let norm = |s: &str| s.trim().to_lowercase();
+        // dedup 키 정규화 — 모든 공백 제거 + 소문자. "LG전자" = "LG 전자" = "LG  전자" = "lg전자".
+        // split_whitespace 는 전각 공백(U+3000) 포함 Unicode 공백을 전부 흡수.
+        let norm = |s: &str| s.split_whitespace().collect::<String>().to_lowercase();
         let parse_aliases = |raw: Option<String>| -> Vec<String> {
             raw.as_deref()
                 .and_then(|s| serde_json::from_str(s).ok())
@@ -417,7 +419,7 @@ impl IEntityPort for SqliteMemoryAdapter {
 
         // 갱신 대상 엔티티 + 그 정식명·기존 별칭을 정한다. 둘 중 하나로 매칭:
         //   1. exact (name, type, owner) — 원래 upsert / dedup-off 경로 (대소문자까지 정확, 인덱스).
-        //   2. else dedup: 정규화(trim+lower) 이름 OR 별칭 겹침 (type 무관) → 그 엔티티에 병합.
+        //   2. else dedup: 정규화(공백 제거+소문자) 이름 OR 별칭 겹침 (type 무관) → 그 엔티티에 병합.
         //      삼성전자/stock ↔ 삼성전자/종목 합치고, 약어·티커(삼전·005930)는 별칭으로 매칭.
         //      cosine 폐기 — 'X전자' 류를 다른 회사(삼성↔LG name_sim 0.95)까지 합치고, type
         //      의미동등(stock≈종목 0.837 vs stock≉제품 0.823)도 임베딩 분리 불가였음.
