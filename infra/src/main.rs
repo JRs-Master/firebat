@@ -761,6 +761,7 @@ async fn main() -> Result<()> {
             ("__sys_consolidation", "0 0 */6 * * *", "consolidation", "Intelligence 통합 (회상·교훈 추출)"),
             ("__sys_retention", "0 30 */6 * * *", "retention", "30일 정리 (휴지통·임시파일)"),
         ];
+        let mut overdue_jids: Vec<String> = Vec::new();
         for (jid, cron, kind, title) in sys_jobs {
             if !existing.contains(jid) {
                 let opts = firebat_core::ports::CronScheduleOptions {
@@ -775,16 +776,27 @@ async fn main() -> Result<()> {
                     Err(e) => tracing::warn!(job = jid, error = %e, "[system-cron] 등록 실패"),
                 }
             }
-            // overdue 캐치업 — 마지막 성공 실행이 6h 초과(또는 기록 없음)면 부팅 직후 1회만.
+            // overdue 캐치업 대상 수집 — 마지막 성공 실행이 6h 초과(또는 기록 없음)면 부팅 후 1회.
             let last = vault_sj
                 .get_secret(&format!("system:cron:lastrun:{kind}"))
                 .and_then(|v| v.parse::<i64>().ok())
                 .unwrap_or(0);
             if chrono::Utc::now().timestamp_millis() - last >= 6 * 60 * 60 * 1000 {
-                if let Err(e) = sched.trigger_now(jid).await {
-                    tracing::warn!(job = jid, error = %e, "[system-cron] overdue 캐치업 실패");
-                }
+                overdue_jids.push(jid.to_string());
             }
+        }
+        // overdue 캐치업은 백그라운드로 분리 — trigger_now 가 콜백(consolidation→claude --print 등)을
+        // inline await 하므로 startup(serve 전)에서 돌리면 gRPC listening 까지 블록돼 서버 기동이 수 분
+        // 지연된다. 등록(schedule)은 빠르니 동기 유지, 무거운 실행만 spawn 으로 떼어 서버부터 띄운다.
+        if !overdue_jids.is_empty() {
+            let sched_bg = schedule_manager_with_hooks.clone();
+            tokio::spawn(async move {
+                for jid in overdue_jids {
+                    if let Err(e) = sched_bg.trigger_now(&jid).await {
+                        tracing::warn!(job = %jid, error = %e, "[system-cron] overdue 캐치업 실패");
+                    }
+                }
+            });
         }
     }
 
