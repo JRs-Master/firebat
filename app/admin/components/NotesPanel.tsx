@@ -128,6 +128,23 @@ export function NotesPanel({
     }
   };
 
+  // 편집 — 목록은 contentPreview 만 갖고 본문은 펼칠 때만 read 로 fetch 된다. 안 펼치고 바로 편집하면
+  // 본문이 빈 채로 열리던 버그 → 편집 시 캐시(details)에 본문 없으면 먼저 read 로 가져와 폼을 채운다.
+  const handleEdit = async (n: Note) => {
+    let full = details[n.slug];
+    if (!full) {
+      try {
+        const result = await callNotes('read', { slug: n.slug }, hubContext);
+        if (result?.note) {
+          full = result.note as Note;
+          setDetails(prev => ({ ...prev, [n.slug]: result.note as Note }));
+        }
+      } catch { /* ignore */ }
+    }
+    setEditing(full ?? n);
+    setShowCreate(true);
+  };
+
   const handleDelete = async (note: Note) => {
     const ok = await confirmDialog({
       title: '노트 삭제',
@@ -201,7 +218,7 @@ export function NotesPanel({
                       <>
                         <Tooltip label={t('common.edit')}>
                           <button
-                            onClick={() => { setEditing(detail || n); setShowCreate(true); }}
+                            onClick={() => handleEdit(n)}
                             className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
