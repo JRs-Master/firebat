@@ -7,7 +7,7 @@
   "runtime": "python",
   "capability": "stock-data",
   "providerType": "api",
-  "packages": ["yfinance==1.3.0"],
+  "packages": ["yfinance==1.4.1"],
   "secrets": [],
   "input": {
     "type": "object",
