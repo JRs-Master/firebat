@@ -135,16 +135,16 @@ process.stdin.on('end', async () => {
       console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다 (예: prices, candles, accounts, create-order).' }));
       return;
     }
-    const clientId = process.env['TOSS_CLIENT_ID'];
-    const clientSecret = process.env['TOSS_CLIENT_SECRET'];
-    if (!clientId || !clientSecret) {
-      console.log(JSON.stringify({ success: false, error: 'TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 미설정. 설정 > 시스템 모듈 > toss-invest 에서 등록하세요.' }));
+    const apiKey = process.env['TOSS_API_KEY'];
+    const secretKey = process.env['TOSS_SECRET_KEY'];
+    if (!apiKey || !secretKey) {
+      console.log(JSON.stringify({ success: false, error: 'TOSS_API_KEY / TOSS_SECRET_KEY 미설정. 설정 > 시스템 모듈 > toss-invest 에서 등록하세요.' }));
       return;
     }
     // 인프라 TokenProvider 가 발급·선제 갱신해 env 로 주입한 raw 토큰. 모듈은 받아쓰기만.
     const token = process.env['TOSS_ACCESS_TOKEN'];
     if (!token) {
-      console.log(JSON.stringify({ success: false, error: '토스 액세스 토큰 미발급 — 인프라 토큰 발급 실패 또는 client_id/secret 오류.' }));
+      console.log(JSON.stringify({ success: false, error: '토스 액세스 토큰 미발급 — 인프라 토큰 발급 실패 또는 API Key/Secret Key 오류.' }));
       return;
     }
 

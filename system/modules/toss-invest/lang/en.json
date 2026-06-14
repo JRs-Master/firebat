@@ -1,8 +1,8 @@
 {
   "error": {
     "action_required": "data.action field is required (e.g., prices, candles).",
-    "api_key_missing": "TOSS_CLIENT_ID / TOSS_CLIENT_SECRET not set. Register under Settings > System Modules > toss-invest.",
-    "token_missing": "Toss access token not issued — infra token issuance failed or invalid client_id/secret.",
+    "api_key_missing": "TOSS_API_KEY / TOSS_SECRET_KEY not set. Register under Settings > System Modules > toss-invest.",
+    "token_missing": "Toss access token not issued — infra token issuance failed or invalid API Key/Secret Key.",
     "unknown_action": "Unknown action: {{action}}. See the Toss Securities Open API docs.",
     "param_required": "{{action}}: {{param}} is required.",
     "account_required": "{{action}}: accountSeq required (call accounts first for X-Tossinvest-Account).",
