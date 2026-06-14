@@ -527,6 +527,7 @@ mod tests {
             thinking: None,
             exec_mode: "api".to_string(),
             cli_provider: None,
+            max_output: None,
             category: "vertex-google".to_string(),
         }
     }
