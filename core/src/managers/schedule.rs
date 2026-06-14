@@ -83,6 +83,15 @@ impl ScheduleManager {
     }
 
     pub async fn cancel(&self, job_id: &str) -> InfraResult<bool> {
+        // 시스템 스케줄(인프라 관리 내장 작업)은 삭제 불가 — 비활성은 토글로(런타임 게이트 + UI 회색).
+        if self
+            .cron
+            .list()
+            .into_iter()
+            .any(|j| j.job_id == job_id && j.options.system == Some(true))
+        {
+            return Err("시스템 스케줄은 삭제할 수 없습니다.".to_string());
+        }
         self.cron.cancel(job_id).await
     }
 
@@ -101,8 +110,20 @@ impl ScheduleManager {
         &self,
         job_id: &str,
         target_path: &str,
-        opts: CronScheduleOptions,
+        mut opts: CronScheduleOptions,
     ) -> InfraResult<()> {
+        // 기존 job 메타 보존 — 시스템 스케줄 편집(주기 변경)이 system/builtin_kind 를 유실(재생성 시 None)
+        // 시키지 않게. show_in_calendar 도 update 가 미전달하면 기존 값 유지. (cron.cancel 직접 호출이라
+        // cancel 의 system 삭제 가드는 우회 = 편집은 허용, 삭제만 차단.)
+        if let Some(existing) = self.cron.list().into_iter().find(|j| j.job_id == job_id) {
+            if existing.options.system == Some(true) {
+                opts.system = existing.options.system;
+                opts.builtin_kind = existing.options.builtin_kind.clone();
+            }
+            if opts.show_in_calendar.is_none() {
+                opts.show_in_calendar = existing.options.show_in_calendar;
+            }
+        }
         let _ = self.cron.cancel(job_id).await; // 미존재 OK
         self.schedule(job_id, target_path, opts).await
     }
@@ -140,13 +161,26 @@ impl ScheduleManager {
 
     /// 캘린더 투영 — [from, to] 구간 내 cron 발화 시각 전개 (owner 필터). cron 잡이 진실원천이고
     /// 캘린더는 read-only 투영이라 중복 저장/드리프트 0.
+    /// 캘린더 표시 opt-in — show_in_calendar==true 인 사용자 잡만 투영(시스템 스케줄 제외). 미체크/기존 잡은
+    /// 일괄 투영 안 함(사용자가 "캘린더에 표시" 켠 것만 보이게).
     pub fn list_occurrences(
         &self,
         from_iso: &str,
         to_iso: &str,
         owner: Option<&str>,
     ) -> Vec<CronOccurrence> {
-        self.cron.list_occurrences(from_iso, to_iso, owner)
+        let visible: std::collections::HashSet<String> = self
+            .cron
+            .list()
+            .into_iter()
+            .filter(|j| j.options.show_in_calendar == Some(true) && j.options.system != Some(true))
+            .map(|j| j.job_id)
+            .collect();
+        self.cron
+            .list_occurrences(from_iso, to_iso, owner)
+            .into_iter()
+            .filter(|o| visible.contains(&o.job_id))
+            .collect()
     }
 
     pub fn clear_logs(&self) {

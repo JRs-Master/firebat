@@ -1995,6 +1995,15 @@ pub struct CronScheduleOptions {
     /// 익명 hub endpoint 는 owner='hub:<instance.id>' 강제.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// 시스템 스케줄 — 인프라가 관리하는 내장 작업. true 면 삭제 잠금 + 캘린더 제외 + (builtin_kind 별) 토글 게이트.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<bool>,
+    /// 시스템 스케줄 종류 — "consolidation" | "retention". cron 발화 시 내장 실행 분기 키.
+    #[serde(rename = "builtinKind", default, skip_serializing_if = "Option::is_none")]
+    pub builtin_kind: Option<String>,
+    /// 캘린더 표시 opt-in — true 인 사용자 크론만 캘린더 투영·실행기록. 미설정/false = 캘린더 제외. 시스템 스케줄은 항상 제외.
+    #[serde(rename = "showInCalendar", default, skip_serializing_if = "Option::is_none")]
+    pub show_in_calendar: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2037,6 +2046,12 @@ pub struct CronTriggerInfo {
     pub execution_mode: Option<String>,
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
     pub agent_prompt: Option<String>,
+    /// 시스템 스케줄 종류 — Some 이면 cron 콜백이 내장 실행(consolidation/retention)으로 분기, handle_trigger 우회.
+    #[serde(rename = "builtinKind", default, skip_serializing_if = "Option::is_none")]
+    pub builtin_kind: Option<String>,
+    /// 캘린더 표시 opt-in — 콜백이 실행기록을 캘린더에 남길지 결정 (Some(true) 만 기록).
+    #[serde(rename = "showInCalendar", default, skip_serializing_if = "Option::is_none")]
+    pub show_in_calendar: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

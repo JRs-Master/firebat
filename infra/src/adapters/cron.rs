@@ -236,6 +236,8 @@ impl TokioCronAdapter {
             notify: job.options.notify.clone(),
             execution_mode: job.options.execution_mode.clone(),
             agent_prompt: job.options.agent_prompt.clone(),
+            builtin_kind: job.options.builtin_kind.clone(),
+            show_in_calendar: job.options.show_in_calendar,
         }
     }
 

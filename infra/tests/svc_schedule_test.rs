@@ -46,6 +46,7 @@ async fn schedule_then_list_via_grpc() {
         notify_json: None,
         execution_mode: None,
         agent_prompt: None,
+        show_in_calendar: None,
     }))
     .await
     .unwrap();

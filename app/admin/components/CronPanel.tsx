@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Settings, Play } from 'lucide-react';
+import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Settings, Play, Lock } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
@@ -38,6 +38,9 @@ export interface CronJob {
   notify?: CronNotify;
   executionMode?: 'pipeline' | 'agent';
   agentPrompt?: string;
+  system?: boolean;            // 시스템 스케줄 (인프라 관리, 삭제 잠금)
+  builtinKind?: string;        // "consolidation" | "retention"
+  showInCalendar?: boolean;    // 캘린더 표시 opt-in
 }
 
 interface CronLog {
@@ -100,6 +103,13 @@ export function CronPanel({
   });
   const jobs = cronData?.jobs ?? [];
   const logs = cronData?.logs ?? [];
+  // AI assistant 토글 — consolidation 시스템 스케줄의 "회색 비활성" 판단용 (OFF 면 발화해도 inert).
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings', 'ai-router'],
+    queryFn: () => apiGet<{ aiRouterEnabled?: boolean }>('/api/settings', { category: 'cron' }).catch(() => ({ aiRouterEnabled: false })),
+    enabled: !hubMode,
+  });
+  const aiRouterEnabled = settingsData?.aiRouterEnabled ?? false;
   const invalidateCron = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['cron'] }),
     [queryClient],
@@ -262,15 +272,21 @@ export function CronPanel({
         <div className="pb-2 px-2 space-y-0.5">
           {jobs.map(job => {
             const jobSelected = selectedJobId === job.jobId;
+            // consolidation 시스템 스케줄은 AI 토글 OFF 면 회색(비활성) — retention 은 항상 활성.
+            const gatedOff = job.builtinKind === 'consolidation' && !aiRouterEnabled;
             return (
             <div
               key={job.jobId}
               onClick={() => setSelectedJobId(jobSelected ? null : job.jobId)}
-              className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
+              className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'} ${gatedOff ? 'opacity-50' : ''}`}
             >
               {running === job.jobId ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" /> : modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-slate-700 truncate">{job.title || job.jobId}</p>
+                <p className="text-[12px] font-semibold text-slate-700 truncate flex items-center gap-1">
+                  {job.system && <Lock size={9} className="text-slate-400 shrink-0" />}
+                  <span className="truncate">{job.title || job.jobId}</span>
+                  {job.system && <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{gatedOff ? '비활성' : '시스템'}</span>}
+                </p>
                 <p className="text-[10px] text-slate-400 truncate">
                   {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
@@ -293,15 +309,17 @@ export function CronPanel({
                     <Settings size={11} />
                   </button>
                 </Tooltip>
-                <Tooltip label={t('common.deactivate')}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleCancel(job.jobId); setSelectedJobId(null); }}
-                    disabled={cancelling === job.jobId}
-                    className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  >
-                    {cancelling === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                  </button>
-                </Tooltip>
+                {!job.system && (
+                  <Tooltip label={t('common.deactivate')}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCancel(job.jobId); setSelectedJobId(null); }}
+                      disabled={cancelling === job.jobId}
+                      className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    >
+                      {cancelling === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                    </button>
+                  </Tooltip>
+                )}
               </span>
             </div>
             );
@@ -405,11 +423,15 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     notify?: CronNotify;
     executionMode?: 'pipeline' | 'agent';
     agentPrompt?: string;
+    system?: boolean;
+    showInCalendar?: boolean;
   } | null;
   onClose: () => void;
   onSaved: () => void;
   onDelete?: () => void;
 }) {
+  // 시스템 스케줄 — 주기만 편집(실행방식·고급·종료·삭제·캘린더 숨김). builtin_kind/system 은 백엔드가 보존.
+  const isSystem = !!job?.system;
   const endAtId = useId();
   const advancedCronId = useId();
   const freqIntervalId = useId();
@@ -445,6 +467,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   const [delaySec, setDelaySec] = useState(job?.delaySec ? String(job.delaySec) : '');
   const [endAt, setEndAt] = useState(job?.endAt ? toLocalInput(job.endAt) : '');
   const [permanent, setPermanent] = useState(!job?.endAt);
+  const [showInCalendar, setShowInCalendar] = useState<boolean>(!!job?.showInCalendar);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -557,6 +580,9 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       body.executionMode = parsed.data.executionMode;
       body.agentPrompt = parsed.data.executionMode === 'agent' ? parsed.data.agentPrompt.trim() : undefined;
 
+      // 캘린더 표시 opt-in (시스템 스케줄은 항상 false).
+      body.showInCalendar = isSystem ? false : showInCalendar;
+
       try {
         await apiPut('/api/cron', body, { category: 'cron' });
         onSaved();
@@ -605,7 +631,13 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
             </div>
           )}
 
-          {/* 실행 모드 */}
+          {isSystem && (
+            <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-500">
+              시스템 스케줄입니다. 실행 주기만 변경할 수 있어요.
+            </div>
+          )}
+          {/* 실행 방식 — 시스템 스케줄은 항상 반복(cron)이라 숨김 */}
+          {!isSystem && (
           <div>
             <label className="text-[11px] font-semibold text-slate-500 mb-1.5 block">실행 방식</label>
             <div className="flex gap-1">
@@ -614,6 +646,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               ))}
             </div>
           </div>
+          )}
 
           {/* 반복 설정 */}
           {mode === 'cron' && (
@@ -709,8 +742,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
             </div>
           )}
 
-          {/* 종료 시각 */}
-          {mode === 'cron' && (
+          {/* 종료 시각 — 시스템 스케줄은 무기한이라 숨김 */}
+          {mode === 'cron' && !isSystem && (
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <label className="text-[11px] font-semibold text-slate-500" htmlFor={endAtId}>종료 시각</label>
@@ -736,6 +769,14 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               </pre>
             </div>
           )}
+
+          {/* 캘린더 표시 opt-in + 실행 모드 + 고급 — 시스템 스케줄은 모두 숨김(주기만 편집) */}
+          {!isSystem && (<>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showInCalendar} onChange={e => setShowInCalendar(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-slate-300" name="showInCalendar" autoComplete="off" aria-label="캘린더에 표시" />
+            <span className="text-[11px] text-slate-600">캘린더에 표시 <span className="text-slate-400">— 이 스케줄의 일정·실행기록을 캘린더에 표시</span></span>
+          </label>
 
           {/* 실행 모드 (pipeline / agent) */}
           <div>
@@ -844,6 +885,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               </div>
             )}
           </div>
+          </>)}
 
           {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
         </div>
@@ -852,7 +894,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
         >
-          {onDelete ? (
+          {onDelete && !isSystem ? (
             <button onClick={onDelete} className="px-3 py-1.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
               삭제
             </button>

@@ -88,7 +88,7 @@ export const PUT = withAuth(async (req: NextRequest) => {
   const body = await req.json();
   const {
     jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline,
-    title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt,
+    title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt, showInCalendar,
   } = body;
   if (!jobId) {
     return NextResponse.json({ error: 'jobId 필수' }, { status: 400 });
@@ -113,6 +113,7 @@ export const PUT = withAuth(async (req: NextRequest) => {
     notifyJson: notify !== undefined ? JSON.stringify(notify) : undefined,
     executionMode,
     agentPrompt,
+    showInCalendar,
   });
   if (!res.ok) {
     const status = res.code === 'INVALID_ARGUMENT' ? 400 : 500;

@@ -84,6 +84,7 @@ struct ScheduleArgs {
     notify_json: Option<String>,
     execution_mode: Option<String>,
     agent_prompt: Option<String>,
+    show_in_calendar: Option<bool>,
 }
 
 impl From<ScheduleCronRequest> for ScheduleArgs {
@@ -96,7 +97,7 @@ impl From<ScheduleCronRequest> for ScheduleArgs {
             title: r.title, description: r.description, one_shot: r.one_shot,
             run_when_json: r.run_when_json, retry_json: r.retry_json,
             notify_json: r.notify_json, execution_mode: r.execution_mode,
-            agent_prompt: r.agent_prompt,
+            agent_prompt: r.agent_prompt, show_in_calendar: r.show_in_calendar,
         }
     }
 }
@@ -110,7 +111,7 @@ impl From<UpdateCronRequest> for ScheduleArgs {
             title: r.title, description: r.description, one_shot: r.one_shot,
             run_when_json: r.run_when_json, retry_json: r.retry_json,
             notify_json: r.notify_json, execution_mode: r.execution_mode,
-            agent_prompt: r.agent_prompt,
+            agent_prompt: r.agent_prompt, show_in_calendar: r.show_in_calendar,
         }
     }
 }
@@ -134,6 +135,10 @@ fn parse_schedule_args(args: ScheduleArgs) -> Result<(String, String, CronSchedu
         agent_prompt: args.agent_prompt,
         // admin RPC 호출 = owner None. hub 익명 endpoint 가 직접 owner='hub:<id>' 주입.
         owner: None,
+        // 시스템 스케줄은 이 RPC 로 만들지 않음(인프라가 직접 생성). 사용자 크론은 캘린더 opt-in 만 전달.
+        system: None,
+        builtin_kind: None,
+        show_in_calendar: args.show_in_calendar,
     };
     Ok((args.job_id.unwrap_or_default(), args.target_path, opts))
 }
@@ -179,6 +184,9 @@ impl From<CronJobInfo> for CronJobPb {
             execution_mode: o.execution_mode.clone(),
             agent_prompt: o.agent_prompt.clone(),
             owner: o.owner.clone(),
+            system: o.system,
+            builtin_kind: o.builtin_kind.clone(),
+            show_in_calendar: o.show_in_calendar,
         }
     }
 }

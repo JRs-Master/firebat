@@ -650,33 +650,96 @@ async fn main() -> Result<()> {
     //   무관하게 남는 실행 이력. 캘린더에서 개별 삭제 가능. best-effort(실패해도 cron 결과 영향 0).
     let schedule_arc = schedule_manager_with_hooks.clone();
     let cal_modmgr = module_manager.clone();
+    // 시스템 스케줄 내장 실행 + 캘린더 gating 용 clone.
+    let vault_cb = vault.clone();
+    let consolidation_cb = consolidation_manager.clone();
+    let conv_cb = conversation_manager.clone();
+    let media_cb = media_manager.clone();
+    let hub_cb = hub_manager.clone();
     let trigger_callback: firebat_core::ports::CronTriggerCallback = std::sync::Arc::new(move |info| {
         let mgr = schedule_arc.clone();
         let modmgr = cal_modmgr.clone();
+        let vault_b = vault_cb.clone();
+        let consolidation_b = consolidation_cb.clone();
+        let conv_b = conv_cb.clone();
+        let media_b = media_cb.clone();
+        let hub_b = hub_cb.clone();
         Box::pin(async move {
             // handle_trigger 가 info 를 소비하므로 기록 메타를 먼저 추출.
+            let builtin = info.builtin_kind.clone();
+            let show_cal = info.show_in_calendar == Some(true);
             let title = info
                 .title
                 .clone()
                 .filter(|t| !t.trim().is_empty())
                 .unwrap_or_else(|| info.job_id.clone());
             let job_id = info.job_id.clone();
+            let target_path = info.target_path.clone();
+            let trigger = info.trigger.clone();
+
+            // 시스템 스케줄(내장 작업) — handle_trigger 우회 + 캘린더 제외.
+            if let Some(kind) = builtin {
+                let start = std::time::Instant::now();
+                let (success, error): (bool, Option<String>) = match kind.as_str() {
+                    "consolidation" => {
+                        // AI assistant 토글 OFF 면 inert(=UI 회색). ON 이면 비활성 대화에서 회상·교훈 추출.
+                        let on = vault_b
+                            .get_secret(firebat_core::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED)
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(false);
+                        if on {
+                            let _ = consolidation_b
+                                .consolidate_inactive_conversations(None, None, None)
+                                .await;
+                        }
+                        (true, None)
+                    }
+                    "retention" => {
+                        const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+                        conv_b.cleanup_old_deleted(RETENTION_MS);
+                        let _ = media_b.cleanup_old_attachments(RETENTION_MS).await;
+                        let _ = hub_b.cleanup_old_deleted_conversations(RETENTION_MS).await;
+                        (true, None)
+                    }
+                    other => (false, Some(format!("알 수 없는 시스템 스케줄 종류: {other}"))),
+                };
+                // 마지막 실행 시각 기록 — 부팅 시 overdue 캐치업 판단용.
+                let _ = vault_b.set_secret(
+                    &format!("system:cron:lastrun:{kind}"),
+                    &chrono::Utc::now().timestamp_millis().to_string(),
+                );
+                return firebat_core::ports::CronJobResult {
+                    job_id,
+                    target_path,
+                    trigger,
+                    success,
+                    duration_ms: start.elapsed().as_millis() as i64,
+                    error,
+                    output: None,
+                    steps_executed: None,
+                    steps_total: None,
+                };
+            }
+
             let result = mgr.handle_trigger(info).await;
-            let desc = if result.success {
-                serde_json::Value::Null
-            } else {
-                serde_json::Value::String(result.error.clone().unwrap_or_default())
-            };
-            let cal_input = serde_json::json!({
-                "action": "add",
-                "title": title,
-                "startAt": chrono::Utc::now().to_rfc3339(),
-                "tags": ["실행기록", if result.success { "완료" } else { "실패" }],
-                "linkedJobId": job_id,
-                "description": desc,
-            });
-            // sysmod_calendar add — admin scope(_hubScope 없음). hub cron 별도 scope 는 추후.
-            let _ = modmgr.run("calendar", &cal_input).await;
+            // 캘린더 기록 — 사용자가 "캘린더에 표시" 체크한 잡만 (시스템·미체크 잡 제외).
+            if show_cal {
+                let desc = if result.success {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::Value::String(result.error.clone().unwrap_or_default())
+                };
+                let cal_input = serde_json::json!({
+                    "action": "add",
+                    "title": title,
+                    "startAt": chrono::Utc::now().to_rfc3339(),
+                    "tags": ["실행기록", if result.success { "완료" } else { "실패" }],
+                    "linkedJobId": job_id,
+                    "description": desc,
+                });
+                // sysmod_calendar add — admin scope(_hubScope 없음). hub cron 별도 scope 는 추후.
+                let _ = modmgr.run("calendar", &cal_input).await;
+            }
             result
         })
     });
@@ -684,6 +747,46 @@ async fn main() -> Result<()> {
 
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager_with_hooks.restore().await;
+
+    // ── 시스템 스케줄 보장 — 인프라 관리 내장 작업(consolidation/retention) 멱등 등록 + overdue 캐치업 ──
+    // 고정 cron(6h: 00·06·12·18시, retention 은 :30 오프셋). 이미 있으면 건너뜀(사용자 주기 편집 보존).
+    // 삭제 불가(ScheduleManager.cancel 가드). consolidation 은 AI 토글 OFF 면 발화해도 inert(UI 회색).
+    {
+        let sched = schedule_manager_with_hooks.clone();
+        let vault_sj = vault.clone();
+        let existing: std::collections::HashSet<String> =
+            sched.list().into_iter().map(|j| j.job_id).collect();
+        // (job_id, cron, builtin_kind, title)
+        let sys_jobs = [
+            ("__sys_consolidation", "0 0 */6 * * *", "consolidation", "Intelligence 통합 (회상·교훈 추출)"),
+            ("__sys_retention", "0 30 */6 * * *", "retention", "30일 정리 (휴지통·임시파일)"),
+        ];
+        for (jid, cron, kind, title) in sys_jobs {
+            if !existing.contains(jid) {
+                let opts = firebat_core::ports::CronScheduleOptions {
+                    cron_time: Some(cron.to_string()),
+                    title: Some(title.to_string()),
+                    system: Some(true),
+                    builtin_kind: Some(kind.to_string()),
+                    ..Default::default()
+                };
+                match sched.schedule(jid, &format!("builtin:{kind}"), opts).await {
+                    Ok(_) => tracing::info!(job = jid, "[system-cron] 시스템 스케줄 등록"),
+                    Err(e) => tracing::warn!(job = jid, error = %e, "[system-cron] 등록 실패"),
+                }
+            }
+            // overdue 캐치업 — 마지막 성공 실행이 6h 초과(또는 기록 없음)면 부팅 직후 1회만.
+            let last = vault_sj
+                .get_secret(&format!("system:cron:lastrun:{kind}"))
+                .and_then(|v| v.parse::<i64>().ok())
+                .unwrap_or(0);
+            if chrono::Utc::now().timestamp_millis() - last >= 6 * 60 * 60 * 1000 {
+                if let Err(e) = sched.trigger_now(jid).await {
+                    tracing::warn!(job = jid, error = %e, "[system-cron] overdue 캐치업 실패");
+                }
+            }
+        }
+    }
 
     // schedule_manager 변수 alias — 이후 wiring 동일 이름으로 사용
     let schedule_manager = schedule_manager_with_hooks;
@@ -800,39 +903,8 @@ async fn main() -> Result<()> {
         );
     };
 
-    // ── 30일 retention internal cron — 6h 마다 휴지통 + 임시 첨부 cascade cleanup ──
-    // 사용자 cron 과 별개 (ScheduleManager 의 cron-jobs.json 무관). main binary 의 background task.
-    // 첫 tick = 부팅 직후 즉시 발화 → 다음부터 6h interval.
-    {
-        let conv_mgr = conversation_manager.clone();
-        let media_mgr = media_manager.clone();
-        let hub_mgr = hub_manager.clone();
-        tokio::spawn(async move {
-            const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-            const INTERVAL_SECS: u64 = 6 * 60 * 60;
-            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(INTERVAL_SECS));
-            loop {
-                ticker.tick().await;
-                let removed_convs = conv_mgr.cleanup_old_deleted(RETENTION_MS);
-                let removed_atts = media_mgr
-                    .cleanup_old_attachments(RETENTION_MS)
-                    .await
-                    .unwrap_or(0);
-                let removed_hub_convs = hub_mgr
-                    .cleanup_old_deleted_conversations(RETENTION_MS)
-                    .await
-                    .unwrap_or(0);
-                if removed_convs > 0 || removed_atts > 0 || removed_hub_convs > 0 {
-                    tracing::info!(
-                        removed_convs,
-                        removed_atts,
-                        removed_hub_convs,
-                        "[30d cleanup] 휴지통 + 임시 첨부 + hub 휴지통 cascade 삭제 완료"
-                    );
-                }
-            }
-        });
-    }
+    // 30일 retention cleanup 은 위 "시스템 스케줄"(builtin "retention", 6h)로 이전 — 옛 숨은 tokio 타이머 폐기.
+    // 이제 스케줄 목록에 보이고(삭제 잠금) 실행기록도 남는다. 로직 동일(conv/media/hub cleanup_old_*).
 
     // MCP HTTP server (Phase E, 2026-05-12) — firebat-core binary 안 별도 axum endpoint.
     // 2026-05-14 default true — 옛 dual-run 의도 (Node mcp/internal-server.ts 와 동시 운영)

@@ -757,6 +757,10 @@ message CronJobPb {
   optional string agent_prompt = 19;
   // 빈 string = admin (default), "hub:<id>" = hub visitor 소유.
   optional string owner = 20;
+  // 시스템 스케줄 — 인프라 관리 내장 작업(삭제 잠금·캘린더 제외·토글 게이트).
+  optional bool system = 21;
+  optional string builtin_kind = 22;       // "consolidation" | "retention"
+  optional bool show_in_calendar = 23;     // 사용자 크론 캘린더 표시 opt-in (시스템=항상 false)
 }
 
 message CronJobListPb {
@@ -833,6 +837,7 @@ message ScheduleCronRequest {
   optional string notify_json = 16;
   optional string execution_mode = 17;
   optional string agent_prompt = 18;
+  optional bool show_in_calendar = 19;     // 캘린더 표시 opt-in (사용자 크론)
 }
 message ScheduleCronResponse {}
 message CancelCronRequest {
@@ -861,6 +866,7 @@ message UpdateCronRequest {
   optional string notify_json = 16;
   optional string execution_mode = 17;
   optional string agent_prompt = 18;
+  optional bool show_in_calendar = 19;     // 캘린더 표시 opt-in (편집 시 보존/변경)
 }
 message UpdateCronResponse {}
 message ListCronRequest {}
