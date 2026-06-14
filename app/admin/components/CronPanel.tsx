@@ -278,11 +278,12 @@ export function CronPanel({
             <div
               key={job.jobId}
               onClick={() => setSelectedJobId(jobSelected ? null : job.jobId)}
-              className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'} ${gatedOff ? 'opacity-50' : ''}`}
+              className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
             >
               {running === job.jobId ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" /> : modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-slate-700 truncate flex items-center gap-1">
+                {/* 게이트 OFF(비활성) 는 제목만 흐리게 신호 — 배지·실행 버튼은 또렷(수동 실행은 비활성이어도 동작). */}
+                <p className={`text-[12px] font-semibold truncate flex items-center gap-1 ${gatedOff ? 'text-slate-400' : 'text-slate-700'}`}>
                   {job.system && <Lock size={9} className="text-slate-400 shrink-0" />}
                   <span className="truncate">{job.title || job.jobId}</span>
                   {job.system && <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{gatedOff ? '비활성' : '시스템'}</span>}
@@ -296,12 +297,12 @@ export function CronPanel({
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
                     disabled={running === job.jobId}
-                    className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                    className="p-1 rounded text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
                   >
                     {running === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
                   </button>
                 </Tooltip>
-                <Tooltip label={t('common.settings')}>
+                <Tooltip label={t('common.edit')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditing(job); setSelectedJobId(null); }}
                     className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -581,7 +582,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       body.agentPrompt = parsed.data.executionMode === 'agent' ? parsed.data.agentPrompt.trim() : undefined;
 
       // 캘린더 표시 opt-in (시스템 스케줄은 항상 false).
-      body.showInCalendar = isSystem ? false : showInCalendar;
+      body.showInCalendar = showInCalendar;
 
       try {
         await apiPut('/api/cron', body, { category: 'cron' });
@@ -770,14 +771,15 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
             </div>
           )}
 
-          {/* 캘린더 표시 opt-in + 실행 모드 + 고급 — 시스템 스케줄은 모두 숨김(주기만 편집) */}
-          {!isSystem && (<>
+          {/* 캘린더 표시 opt-in — 시스템 포함 모든 스케줄. 체크 시 예정 occurrence + 실행기록을 캘린더에 투영. */}
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={showInCalendar} onChange={e => setShowInCalendar(e.target.checked)}
               className="w-3.5 h-3.5 rounded border-slate-300" name="showInCalendar" autoComplete="off" aria-label="캘린더에 표시" />
             <span className="text-[11px] text-slate-600">캘린더에 표시 <span className="text-slate-400">— 이 스케줄의 일정·실행기록을 캘린더에 표시</span></span>
           </label>
 
+          {/* 실행 모드 + 고급 — 시스템 스케줄은 숨김(주기만 편집) */}
+          {!isSystem && (<>
           {/* 실행 모드 (pipeline / agent) */}
           <div>
             <label className="text-[11px] font-semibold text-slate-500 mb-1.5 block">실행 모드</label>

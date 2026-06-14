@@ -13,6 +13,7 @@ import { SaveButton, type SaveButtonState } from './SaveButton';
 import { confirmDialog, alertDialog } from './Dialog';
 import { LogPanel } from './LogPanel';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
+import { useQueryClient } from '@tanstack/react-query';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
@@ -55,6 +56,7 @@ export function SettingsModal(props: Props) {
 
 function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const t = useTranslations();
+  const queryClient = useQueryClient();
   const { lang: uiLang, setLang: setUiLang } = useLang();
   // a11y — 안정 form field id (DevTools "Duplicate form field id" 회피 + label-input 매칭).
   const userTimezoneId = useId();
@@ -711,6 +713,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       },
       { category: 'settings' },
     ).catch(() => {});
+
+    // AI assistant 토글 등 설정 저장 후 사이드바(CronPanel 의 ['settings','ai-router'] 등) 즉시 갱신 — F5 불필요.
+    queryClient.invalidateQueries({ queryKey: ['settings'] });
 
     const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
       if (!value || value.includes('...') || value === '***') return;

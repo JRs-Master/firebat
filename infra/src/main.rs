@@ -708,6 +708,18 @@ async fn main() -> Result<()> {
                     &format!("system:cron:lastrun:{kind}"),
                     &chrono::Utc::now().timestamp_millis().to_string(),
                 );
+                // 캘린더 표시 체크 시 시스템 잡도 실행기록을 캘린더에 남긴다(사용자 cron 과 동일).
+                if show_cal {
+                    let cal_input = serde_json::json!({
+                        "action": "add",
+                        "title": title,
+                        "startAt": chrono::Utc::now().to_rfc3339(),
+                        "tags": ["실행기록", if success { "완료" } else { "실패" }],
+                        "linkedJobId": job_id,
+                        "description": error.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::Null),
+                    });
+                    let _ = modmgr.run("calendar", &cal_input).await;
+                }
                 return firebat_core::ports::CronJobResult {
                     job_id,
                     target_path,

@@ -173,7 +173,7 @@ impl ScheduleManager {
             .cron
             .list()
             .into_iter()
-            .filter(|j| j.options.show_in_calendar == Some(true) && j.options.system != Some(true))
+            .filter(|j| j.options.show_in_calendar == Some(true))
             .map(|j| j.job_id)
             .collect();
         self.cron
