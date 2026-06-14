@@ -1501,6 +1501,16 @@ function normalizeChartData(
       })
       .filter((s) => s.values.length > 0);
     if (mapped.length > 0) return mapped;
+    // series = 이름 배열(문자열 또는 값 없는 메타) + data = number[][] (병렬 배열) → 이름·배열 zip 으로 다중 series.
+    //  (AI 가 series:["종가","MA5",...] + data:[[...],[...]] 로 보내는 모양 — 명확해서 안전하게 흡수.)
+    if (Array.isArray(data) && (data as unknown[]).length > 0 && (data as unknown[]).every((d) => Array.isArray(d))) {
+      return (data as unknown[][]).map((vals, i) => {
+        const nm = explicitSeries[i] as unknown;
+        const name = typeof nm === 'string' ? nm
+          : (nm as { name?: string; label?: string } | undefined)?.name ?? (nm as { label?: string } | undefined)?.label ?? `시리즈 ${i + 1}`;
+        return { name, values: vals.map((v) => coerceChartNum(v) ?? 0) };
+      });
+    }
     // series carried only metadata (e.g. [{name:"종가"}]) with no values, but a flat `data` array
     // holds them — a common AI shape. Use the flat data under the first series' name.
     if (Array.isArray(data) && (data as unknown[]).length > 0) {
@@ -1515,6 +1525,10 @@ function normalizeChartData(
     // 숫자(또는 "1,234" 숫자 문자열) 배열 — 단일 series.
     if (arr.every((v) => coerceChartNum(v) !== null)) {
       return [{ name: '', values: arr.map((v) => coerceChartNum(v) as number) }];
+    }
+    // number[][] (배열의 배열) — 이름 없는 다중 series (series 미동봉 시).
+    if (arr.every((v) => Array.isArray(v))) {
+      return (arr as unknown[][]).map((vals, i) => ({ name: `시리즈 ${i + 1}`, values: vals.map((v) => coerceChartNum(v) ?? 0) }));
     }
     // 객체 배열 — {label,value} / 다중 metric 레코드 자동 흡수 ([object Object] 방지).
     if (arr.every((v) => v && typeof v === 'object' && !Array.isArray(v))) {
