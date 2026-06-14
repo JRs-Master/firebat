@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Settings, Play, Lock } from 'lucide-react';
+import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
@@ -307,7 +307,7 @@ export function CronPanel({
                     onClick={(e) => { e.stopPropagation(); setEditing(job); setSelectedJobId(null); }}
                     className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                   >
-                    <Settings size={11} />
+                    <Pencil size={11} />
                   </button>
                 </Tooltip>
                 {!job.system && (

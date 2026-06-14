@@ -602,7 +602,7 @@ export function CalendarPanel({
                     actions={
                       <>
                         <Tooltip label="즉시 실행"><button onClick={() => runCronNow(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Play size={11} /></button></Tooltip>
-                        <Tooltip label="스케줄 편집"><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded"><Pencil size={11} /></button></Tooltip>
+                        <Tooltip label={t('common.edit')}><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded"><Pencil size={11} /></button></Tooltip>
                         <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={11} /></button></Tooltip>
                       </>
                     }
