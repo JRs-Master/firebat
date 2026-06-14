@@ -269,7 +269,7 @@ async fn main() -> Result<()> {
         std::env::set_var("FIREBAT_TZ", &default_timezone);
         std::env::set_var("TZ", &default_timezone);
     }
-    let cron_adapter: Arc<dyn ICronPort> = TokioCronAdapter::new(
+    let cron_concrete = TokioCronAdapter::new(
         cron_jobs_path,
         cron_logs_path,
         cron_notifications_path,
@@ -277,6 +277,7 @@ async fn main() -> Result<()> {
     )
     .map_err(anyhow::Error::msg)
     .context("Cron 어댑터 초기화 실패")?;
+    let cron_adapter: Arc<dyn ICronPort> = cron_concrete.clone();
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
 
     // Phase B-18 Step 2 — IImageProcessorPort + IImageGenPort.
@@ -363,6 +364,8 @@ async fn main() -> Result<()> {
         logger.clone(),
     ));
     let status_manager = Arc::new(StatusManager::new(Some(event_manager.clone())));
+    // run-now(즉시 실행) cron 트리거가 StatusManager job 등록 → ActiveJobsIndicator 뱃지 + 완료 추적.
+    cron_concrete.set_status_manager(status_manager.clone());
 
     // SysmodCacheAdapter — sysmod 응답 안 `_cache` envelope (50행+ 큰 시계열) 자동 저장.
     // sandbox 가 envelope 인식 → cacheKey 가 들어간 응답으로 변환 → AI 가 cache_read / cache_grep /

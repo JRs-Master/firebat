@@ -145,8 +145,8 @@ export function CronPanel({
   const handleRunNow = async (jobId: string) => {
     setRunning(jobId);
     try {
-      // fire-and-forget — 백엔드가 비동기 트리거. 결과는 cron-logs SSE 로 반영.
-      // setTimeout 으로 spinner 잠깐 보여주고 자동 해제 (UX 안정).
+      // run RPC 는 실행 완료까지 블록(schedule→cron→callback 전부 await) → resolve = 작업 끝.
+      // 스피너는 그때까지 돈다(완료 추적). 실행 상태/결과는 StatusManager 뱃지(ActiveJobsIndicator)로도 표시.
       // hub 모드 = hub 라우트(owner-scoped run). owner scoping 은 Rust core 가 강제.
       if (hubMode && hubContext) {
         await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
@@ -157,7 +157,7 @@ export function CronPanel({
       } else {
         await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
       }
-      setTimeout(() => setRunning(null), 1500);
+      setRunning(null);
     } catch {
       setRunning(null);
     }

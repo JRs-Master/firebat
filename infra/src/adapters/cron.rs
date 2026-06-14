@@ -53,6 +53,8 @@ pub struct TokioCronAdapter {
     notifications: Mutex<Vec<CronNotification>>,
     /// timezone (default Asia/Seoul, vault override)
     timezone: Mutex<String>,
+    /// StatusManager (옵션) — run-now(trigger_now) 시 job 등록 → ActiveJobsIndicator 뱃지 + 완료 추적.
+    status: Mutex<Option<Arc<firebat_core::managers::status::StatusManager>>>,
 }
 
 impl TokioCronAdapter {
@@ -108,7 +110,13 @@ impl TokioCronAdapter {
             logs: Mutex::new(logs),
             notifications: Mutex::new(notifications),
             timezone: Mutex::new(default_timezone.to_string()),
+            status: Mutex::new(None),
         }))
+    }
+
+    /// StatusManager 연결 — run-now 트리거가 job 등록(뱃지/완료추적) 하도록. main.rs 에서 양쪽 생성 후 호출.
+    pub fn set_status_manager(&self, sm: Arc<firebat_core::managers::status::StatusManager>) {
+        *self.status.lock().unwrap() = Some(sm);
     }
 
     fn flush_jobs(&self, jobs: &HashMap<String, CronJobInfo>) {
@@ -448,6 +456,18 @@ impl ICronPort for TokioCronAdapter {
         let target_path = info.target_path.clone();
         let job_id_str = info.job_id.clone();
 
+        // run-now → StatusManager job 등록(있으면) → ActiveJobsIndicator 뱃지 + 완료 추적.
+        let sm = self.status.lock().unwrap().clone();
+        let status_job = sm.as_ref().map(|sm| {
+            sm.start(
+                None,
+                "cron".to_string(),
+                Some(format!("실행: {}", title.as_deref().unwrap_or("작업"))),
+                None,
+                serde_json::json!({ "jobId": job_id_str.clone(), "trigger": "run-now" }),
+            )
+        });
+
         let result = match cb {
             Some(callback) => callback(info).await,
             None => CronJobResult {
@@ -462,6 +482,14 @@ impl ICronPort for TokioCronAdapter {
                 steps_total: None,
             },
         };
+
+        if let (Some(sm), Some(sj)) = (sm.as_ref(), status_job.as_ref()) {
+            if result.success {
+                sm.complete(&sj.id, result.output.clone());
+            } else {
+                sm.fail(&sj.id, result.error.clone().unwrap_or_default());
+            }
+        }
 
         let entry = CronLogEntry {
             job_id: job_id_str,
