@@ -450,7 +450,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
       })}
       {/* 순수 선택지 카드엔 "직접 입력" 칸을 항상 노출 — AI 가 input 타입을 안 줘도 사용자가 커스텀 입력 가능 */}
       {pureChoiceCard && (
-        <div className="flex items-start gap-1.5 px-3 py-2.5 border-t border-slate-200 bg-slate-100/40">
+        <div className="flex items-center gap-1.5 px-3 py-2.5 border-t border-slate-200 bg-slate-100/40">
           <textarea
             ref={el => { textareaRefs.current['__custom'] = el; }}
             value={customInput}
