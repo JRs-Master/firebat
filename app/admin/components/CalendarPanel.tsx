@@ -476,21 +476,21 @@ export function CalendarPanel({
                     dayEvents.slice(0, 3).map((_, i) => (
                       <span
                         key={i}
-                        className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-500'}`}
+                        className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-violet-500'}`}
                       />
                     ))
                   ) : (
-                    <span className={`text-[8px] font-bold tabular-nums ${isSelected ? 'text-white' : 'text-blue-500'}`}>
+                    <span className={`text-[8px] font-bold tabular-nums ${isSelected ? 'text-white' : 'text-violet-500'}`}>
                       {dayEvents.length}
                     </span>
                   )}
                 </span>
               )}
-              {/* cron 투영 마커 — 예약(보라) / 완료(초록) / 실패(빨강). 일정 점(파랑)과 별도 줄. */}
+              {/* cron 투영 마커 — 예약(파랑=스케줄색) / 완료(초록) / 실패(빨강). 일정 점(보라=캘린더색)과 별도 줄. */}
               {(cronByDate.get(cell.key)?.length || execByDate.get(cell.key)?.length) ? (
                 <span className="flex items-center gap-0.5 mt-0.5">
                   {cronByDate.get(cell.key)?.length ? (
-                    <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-violet-500'}`} />
+                    <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-500'}`} />
                   ) : null}
                   {execByDate.get(cell.key)?.some(e => (e.tags ?? []).includes('실패')) ? (
                     <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-red-500'}`} />
@@ -531,7 +531,7 @@ export function CalendarPanel({
                       <Tooltip label={t('common.edit')}>
                         <button
                           onClick={() => { setEditing(e); setShowCreate(true); }}
-                          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                          className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded"
                         >
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
@@ -550,7 +550,7 @@ export function CalendarPanel({
                     </>
                   }
                 >
-                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(e.startAt)}</span>
+                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(e.startAt)}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-bold text-slate-700 truncate">{e.title}</div>
                     {e.endAt && (
@@ -586,8 +586,8 @@ export function CalendarPanel({
 
         {/* 스케줄(cron) 투영 — 선택 날짜의 예약 발화 + 실행 이력. cron 이 진실원천, 캘린더는 read-only 표시. */}
         {(selectedOccs.length > 0 || selectedExec.length > 0) && (
-          <div className="border-t border-violet-100">
-            <div className="px-2 py-1.5 bg-violet-50/60 text-[11px] font-bold text-violet-700 flex items-center gap-1">
+          <div className="border-t border-blue-100">
+            <div className="px-2 py-1.5 bg-blue-50/60 text-[11px] font-bold text-blue-700 flex items-center gap-1">
               <Clock size={11} /> 스케줄 ({selectedOccs.length + selectedExec.length})
             </div>
             <RowActions>
@@ -602,15 +602,15 @@ export function CalendarPanel({
                     actions={
                       <>
                         <Tooltip label="즉시 실행"><button onClick={() => runCronNow(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"><Play size={11} /></button></Tooltip>
-                        <Tooltip label={t('common.edit')}><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded"><Pencil size={11} /></button></Tooltip>
+                        <Tooltip label={t('common.edit')}><button onClick={() => handleEditCron(o.jobId)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"><Pencil size={11} /></button></Tooltip>
                         <Tooltip label="스케줄 삭제"><button onClick={() => deleteCronJob(o.jobId, o.title)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 size={11} /></button></Tooltip>
                       </>
                     }
                   >
-                    <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(o.occursAt)}</span>
+                    <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(o.occursAt)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
-                      <span className="text-[9px] px-1 rounded bg-violet-50 text-violet-600">예정 · {o.mode}</span>
+                      <span className="text-[9px] px-1 rounded bg-blue-50 text-blue-600">예정 · {o.mode}</span>
                     </div>
                   </InteractiveRow>
                 </li>
