@@ -185,9 +185,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   // 줌 = 한 화면 캔들 수(cps). 데이터(slice)는 항상 전체 — 줌은 캔들 폭만 바꾸고, 화면에 다 안
   // 들어가면 가로 스크롤. (옛 slice 기반 줌 폐기 — "보여줄 개수"가 아니라 "캔들 폭/밀도")
+  // 기본 한 화면 캔들 수 — 모바일은 절반(봉을 더 굵게). 헤더 추정용 뷰포트 폭 재사용.
+  const isMobileChart = (_vwForHeader ?? 1024) < 640;
+  const defaultCps = isMobileChart ? Math.round(ZOOM_DEFAULT_CPS / 2) : ZOOM_DEFAULT_CPS;
   const [cps, setCps] = useState(ZOOM_DEFAULT_CPS);
   const [zoomEndTick, setZoomEndTick] = useState(0);  // 줌 종료 시 +1 → Y축 라이브 재계산 트리거
-  useEffect(() => { setCps(ZOOM_DEFAULT_CPS); pinnedRightRef.current = true; /* 데이터 변경 시 기본 줌 + 최신 보기 */ }, [fullN]);
+  // 데이터 변경 또는 모바일/PC 전환 시 기본 줌 + 최신 보기로 복원.
+  useEffect(() => { setCps(defaultCps); pinnedRightRef.current = true; }, [fullN, defaultCps]);
   // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
   // 현재 barPx 미러 — native wheel 핸들러(stale closure)가 최신 barPx 를 읽게.
@@ -746,27 +750,31 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         {hoverBar && hoverPos && (() => {
           const containerH = priceBoxRef.current?.clientHeight ?? 280;
           const containerW = priceBoxRef.current?.clientWidth ?? 800;
-          const tooltipH = 130;
+          const compact = isMobileChart;  // 모바일 — 폰트·여백·폭 축소
+          // 실제 높이 추정(행 수 기반) — 옛 고정 130 underestimate 라 컨테이너(overflow-y-hidden)서 MA20 행이 잘리던 것.
+          const rowCount = 5 + hoverMAs.length;  // 시·고·저·종·거래량 + 그려진 이평선
+          const rowH = compact ? 14 : 17;
+          const tooltipH = (compact ? 26 : 38) + rowCount * rowH + (hoverMAs.length ? (compact ? 8 : 10) : 0);
           const flipUp = hoverPos.y + tooltipH + 16 > containerH;
           const top = flipUp
             ? Math.max(4, hoverPos.y - tooltipH - 8)
             : Math.min(containerH - tooltipH - 4, Math.max(4, hoverPos.y - 8));
           // 가로 위치 — 크로스헤어 우측 기본, 우측 넘치면 왼쪽으로. visible 컨테이너 안으로 clamp 후 content 좌표(+scrollX).
-          const tipW = 185;
+          const tipW = compact ? 128 : 185;
           const rightLeft = hoverPos.x + 14;
           const visLeft = rightLeft + tipW > containerW ? hoverPos.x - tipW - 14 : rightLeft;
           const tipLeft = Math.max(4, Math.min(visLeft, containerW - tipW - 4)) + scrollX;
           return (
           <div
-            className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap z-10"
+            className={`absolute pointer-events-none bg-slate-900/95 text-white rounded-lg shadow-lg whitespace-nowrap z-10 ${compact ? 'px-2 py-1.5 text-[10px]' : 'px-3 py-2 text-[11px]'}`}
             style={{
               left: tipLeft,
               top,
-              minWidth: 140,
+              minWidth: compact ? 104 : 140,
             }}
           >
-            <div className="font-bold text-[11px] text-slate-300 mb-1.5">{normalizeDate(hoverBar.date)}</div>
-            <div className="flex flex-col gap-0.5 tabular-nums">
+            <div className={`font-bold text-slate-300 ${compact ? 'mb-1 text-[10px]' : 'mb-1.5 text-[11px]'}`}>{normalizeDate(hoverBar.date)}</div>
+            <div className={`flex flex-col tabular-nums leading-tight ${compact ? 'gap-0' : 'gap-0.5'}`}>
               {[
                 { k: '시가', v: hoverBar.open.toLocaleString('ko-KR'), c: '' },
                 { k: '고가', v: hoverBar.high.toLocaleString('ko-KR'), c: 'text-red-300' },
@@ -774,15 +782,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                 { k: '종가', v: hoverBar.close.toLocaleString('ko-KR'), c: 'font-bold' },
                 { k: '거래량', v: compactKorean(hoverBar.volume), c: 'text-slate-300' },
               ].map((row, i) => (
-                <div key={i} className="flex items-baseline justify-between gap-4">
+                <div key={i} className={`flex items-baseline justify-between ${compact ? 'gap-2' : 'gap-4'}`}>
                   <span className="text-slate-400">{row.k}</span>
                   <span className={row.c}>{row.v}</span>
                 </div>
               ))}
               {hoverMAs.length > 0 && (
-                <div className="mt-1 pt-1 border-t border-white/15 flex flex-col gap-0.5">
+                <div className={`border-t border-white/15 flex flex-col leading-tight ${compact ? 'mt-0.5 pt-0.5 gap-0' : 'mt-1 pt-1 gap-0.5'}`}>
                   {hoverMAs.map(m => (
-                    <div key={m.name} className="flex items-baseline justify-between gap-4">
+                    <div key={m.name} className={`flex items-baseline justify-between ${compact ? 'gap-2' : 'gap-4'}`}>
                       <span style={{ color: m.color }}>{m.name}</span>
                       <span className="tabular-nums" style={{ color: m.color }}>{Math.round(m.value as number).toLocaleString('ko-KR')}</span>
                     </div>
@@ -836,7 +844,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       <div className="absolute top-0 right-0 pointer-events-none" style={{ width: padRight, height: volChartHeight }}>
         <svg viewBox={`0 0 ${padRight} ${volH}`} className="block" width={padRight} preserveAspectRatio="none" style={{ height: volChartHeight }}>
           {volTicks.map(t => (
-            <text key={'va' + t} x={4} y={yVol(t)} fill={MUTED} fontSize="9" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{compactKorean(t)}</text>
+            // 상단 라벨(maxV)은 y≈4 라 middle baseline 시 윗부분이 viewBox 위로 잘림 → 최소 y 클램프.
+            <text key={'va' + t} x={4} y={Math.max(7, yVol(t))} fill={MUTED} fontSize="9" textAnchor="start" dominantBaseline="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{compactKorean(t)}</text>
           ))}
         </svg>
       </div>
