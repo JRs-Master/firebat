@@ -43,3 +43,7 @@ pnpm-lock.yaml
 /target/
 core/target/
 infra/target/
+
+# Python 바이트코드 캐시 (py_compile / 모듈 실행 산물)
+__pycache__/
+*.pyc
