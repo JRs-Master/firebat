@@ -1,5 +1,5 @@
 {
-  "defaultAssistantModel": "gemini-3.1-flash-lite",
+  "defaultAssistantModel": "current",
   "assistantModels": ["gemini-3.1-flash-lite", "gpt-5.4-nano"],
   "defaultLibraryExtractionModel": "gemini-3.5-flash",
   "libraryExtractionProModel": "gemini-3.1-pro",

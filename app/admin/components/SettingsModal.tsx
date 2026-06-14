@@ -189,7 +189,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // AI 어시스턴트 라우터 (Self-learning Flash Lite)
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
-  const [aiAssistantModel, setAiAssistantModel] = useState('gemini-3.1-flash-lite');
+  const [aiAssistantModel, setAiAssistantModel] = useState('current');
   // Backend `getAvailableAiAssistantModels()` 응답이 truth source ({id, displayName} 객체 배열) —
   // 이 fallback list 는 첫 fetch 전 / API 실패 시점만 사용. (옛 string[] 취급 = [object Object] 잠복 버그였음.)
   const [aiAssistantModels, setAiAssistantModels] = useState<{ id: string; displayName: string }[]>([
