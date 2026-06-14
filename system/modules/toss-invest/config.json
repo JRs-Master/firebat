@@ -1,0 +1,121 @@
+{
+  "name": "toss-invest",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "토스증권 Open API (openapi.tossinvest.com) — 국내(KRX/NXT)·미국 주식 통합. OAuth2 client_credentials (액세스 토큰 24h, 인프라가 자동 발급·갱신, 토큰 코드 0). 도메인별 별도 LLM 도구로 분리 노출.\n\n**사용 분담** (한투/키움/yfinance/dart 와 보완):\n- toss 강점: **국내 + 미국 주식을 단일 토큰**으로 시세·캔들·호가·체결 조회. 환율(KRW↔USD)·장 운영 캘린더 내장. 가벼운 OAuth(client_credentials, 사용자 로그인 없이 서버 인증).\n- 한투/키움 우선: 한국 특유 수급(외인/기관)·정밀 주문·다양한 TR.\n- dart 우선: 공시·재무제표.\n- yfinance 우선: 글로벌 백테스트·재무 시계열.\n\n**도메인**: market-data(시세·캔들·호가·체결·상하한가) / stock-info(종목 기본정보·매수 유의사항) / market-info(환율·장 운영 캘린더). 계좌·주문 도메인은 토스 Open API 확장 시 추가 예정.\n\n**심볼**: 국내=6자리 종목코드(예 005930), 미국=티커(예 AAPL). prices/stocks 는 콤마로 최대 200건 다건 조회.",
+  "runtime": "node",
+  "capability": "stock-quote",
+  "providerType": "api",
+  "secrets": [
+    {
+      "name": "TOSS_CLIENT_ID",
+      "type": "key"
+    },
+    {
+      "name": "TOSS_CLIENT_SECRET",
+      "type": "key"
+    },
+    {
+      "name": "TOSS_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://openapi.tossinvest.com",
+        "path": "/oauth2/token",
+        "method": "POST",
+        "contentType": "application/x-www-form-urlencoded",
+        "body": {
+          "grant_type": "client_credentials",
+          "client_id": "${TOSS_CLIENT_ID}",
+          "client_secret": "${TOSS_CLIENT_SECRET}"
+        },
+        "tokenField": "access_token"
+      }
+    }
+  ],
+  "domains": [
+    {
+      "name": "market-data",
+      "description": "토스증권 시세 — 국내(KRX/NXT)·미국 주식 실시간성 데이터. 호가/현재가/최근 체결/상·하한가/캔들(1분봉·일봉). 계좌 없이 토큰만으로 조회.\n  orderbook (GET /api/v1/orderbook) — 호가 [symbol]\n  prices (GET /api/v1/prices) — 현재가, 콤마로 최대 200건 [symbols]\n  trades (GET /api/v1/trades) — 최근 체결 (당일, 최대 50) [symbol, count]\n  price-limits (GET /api/v1/price-limits) — 당일 상/하한가 (미국은 null) [symbol]\n  candles (GET /api/v1/candles) — 캔들 OHLCV (최대 200봉) [symbol, interval(1m/1d), count, before, adjusted]",
+      "capability": "stock-quote",
+      "actions": ["orderbook", "prices", "trades", "price-limits", "candles"]
+    },
+    {
+      "name": "stock-info",
+      "description": "토스증권 종목 정보 — 영업일 단위 갱신 (짧은 폴링 금지, 진입 시 1회 캐시 권장).\n  stocks (GET /api/v1/stocks) — 종목 기본정보 (종목명/시장/통화/상장상태/발행주식수), 콤마로 최대 200건 [symbols]\n  stock-warnings (GET /api/v1/stocks/{symbol}/warnings) — 매수 유의사항·VI 발동 (정리매매/단기과열/투자경고·위험/VI/신주인수권) [symbol]",
+      "capability": "stock-info",
+      "actions": ["stocks", "stock-warnings"]
+    },
+    {
+      "name": "market-info",
+      "description": "토스증권 시장 정보 — 계좌 무관, 토큰만으로 조회.\n  exchange-rate (GET /api/v1/exchange-rate) — KRW↔USD 환율 (1분 갱신, 참고용) [baseCurrency, quoteCurrency, dateTime]\n  market-calendar (GET /api/v1/market-calendar/{market}) — 장 운영 캘린더 (전일/당일/익일, 프리/정규/애프터 세션 시간). market=KR(KRX+NXT 통합) 또는 US [market, date]",
+      "capability": "market-info",
+      "actions": ["exchange-rate", "market-calendar"]
+    }
+  ],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["orderbook", "prices", "trades", "price-limits", "candles", "stocks", "stock-warnings", "exchange-rate", "market-calendar"],
+        "description": "호출할 토스증권 API. 도메인별 도구에서 해당 도메인 action 만 노출됨."
+      },
+      "symbol": {
+        "type": "string",
+        "description": "단일 종목 심볼. 국내=6자리 종목코드(예 005930), 미국=티커(예 AAPL). orderbook/trades/price-limits/candles/stock-warnings 에서 사용."
+      },
+      "symbols": {
+        "type": "string",
+        "description": "다건 종목 심볼 — 콤마 구분, 최대 200건 (예: '005930,000660' 또는 'AAPL,MSFT'). prices/stocks 에서 사용."
+      },
+      "count": {
+        "type": "integer",
+        "description": "조회 건수. trades=최대 50(기본 50), candles=최대 200(기본 100)."
+      },
+      "interval": {
+        "type": "string",
+        "enum": ["1m", "1d"],
+        "description": "candles 봉 단위. 1m=1분봉 / 1d=일봉."
+      },
+      "before": {
+        "type": "string",
+        "description": "candles 페이지네이션 상한 (ISO 8601, exclusive). 이전 응답의 nextBefore 값을 전달해 다음 페이지 조회."
+      },
+      "adjusted": {
+        "type": "boolean",
+        "description": "candles 수정주가 적용 여부 (기본 true)."
+      },
+      "baseCurrency": {
+        "type": "string",
+        "enum": ["KRW", "USD"],
+        "description": "exchange-rate 기준 통화."
+      },
+      "quoteCurrency": {
+        "type": "string",
+        "enum": ["KRW", "USD"],
+        "description": "exchange-rate 표시 통화 (기준과 달라야 함)."
+      },
+      "dateTime": {
+        "type": "string",
+        "description": "exchange-rate 조회 시각 (ISO 8601). 미지정 시 현재 유효 환율."
+      },
+      "market": {
+        "type": "string",
+        "enum": ["KR", "US"],
+        "description": "market-calendar 시장. KR=국내(KRX+NXT 통합) / US=미국."
+      },
+      "date": {
+        "type": "string",
+        "description": "market-calendar 조회 기준일 (YYYY-MM-DD). 미지정 시 오늘."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "description": "액션별 result. prices → {result:[{symbol,lastPrice,currency,timestamp}]} / candles → {result:{candles:[{timestamp,openPrice,highPrice,lowPrice,closePrice,volume,currency}],nextBefore}} / orderbook → {result:{asks:[{price,volume}],bids:[...]}} / stocks → {result:[{symbol,name,market,currency,status,...}]} / exchange-rate → {result:{rate,...}} 등. 가격·수량은 문자열로 반환됨."
+  }
+}
