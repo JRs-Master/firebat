@@ -10,6 +10,7 @@
     "scheduled": "Scheduled",
     "executed": "Done",
     "cancelled": "Cancelled",
+    "pending": "Pending",
     "send_now": "Send now",
     "change_time": "Change time",
     "approve": "Approve",

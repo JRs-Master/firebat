@@ -320,6 +320,21 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
             </div>
           );
         })}
+        {/* 직접 입력 — 순수 선택지 카드("직접 입력" 칸)에 친 커스텀 텍스트는 어떤 칩과도 안 맞아 위 map 에
+            안 잡힌다. 그 픽을 파란 줄로 카드 맨 밑에 표시(뭘 보냈는지 보이게). input/plan-* 카드는 위
+            fallback 이 이미 픽을 표시하므로 string-only 카드일 때만. */}
+        {(() => {
+          if (suggestions.some(it => typeof it !== 'string')) return null;
+          const txt = pickedSuggestion.trim();
+          if (!txt) return null;
+          if (suggestions.some(it => typeof it === 'string' && pickedSuggestion.includes(it.trim()))) return null;
+          return (
+            <div className="px-4 py-3 text-[13px] flex items-start gap-1.5 text-blue-700 bg-blue-50/60 border-t border-blue-100/70">
+              <span className="font-bold shrink-0 text-blue-500">✓</span>
+              <span className="whitespace-pre-wrap break-words">{txt}</span>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -2193,7 +2208,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         </div>
 
         {/* 입력창 */}
-        <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-10">
+        {/* z-30 — 채팅 내용이 이 오버레이 밑으로 스크롤되는 구조라, 테이블 sticky 헤더/코너셀(z-20)이
+            입력창 위로 떠 보이던 문제. 입력 오버레이를 테이블 sticky 위로 올려 가린다. */}
+        <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-30">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto relative pointer-events-auto flex flex-col">
             <div className="flex w-full gap-4">
               <div className="w-11 shrink-0 opacity-0 pointer-events-none hidden md:block" />

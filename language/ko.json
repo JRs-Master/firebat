@@ -10,6 +10,7 @@
     "scheduled": "예약됨",
     "executed": "실행됨",
     "cancelled": "취소됨",
+    "pending": "대기",
     "send_now": "즉시 보내기",
     "change_time": "시간 변경",
     "approve": "승인",
