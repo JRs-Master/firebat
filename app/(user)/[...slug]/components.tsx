@@ -1803,8 +1803,8 @@ function LineChartInteractive({ series, labels, title, unit, palette }: {
           )}
           {seriesPaths.map((sp, si) => (
             <g key={si}>
-              <path d={sp.path} fill="none" stroke={sp.color} strokeWidth={isMobile ? 2 : 1} strokeLinecap="round" strokeLinejoin="round" />
-              {sp.ys.map((y, i) => hovered === i ? <circle key={i} cx={xs[i]} cy={y} r={isMobile ? 4 : 2} fill={sp.color} /> : null)}
+              <path d={sp.path} fill="none" stroke={sp.color} strokeWidth={isMobile ? 2 : 1.5} strokeLinecap="round" strokeLinejoin="round" />
+              {sp.ys.map((y, i) => hovered === i ? <circle key={i} cx={xs[i]} cy={y} r={isMobile ? 4 : 3} fill={sp.color} /> : null)}
             </g>
           ))}
           {labels.map((_, i) => i % xStep === 0 || i === xLen - 1 ? (
