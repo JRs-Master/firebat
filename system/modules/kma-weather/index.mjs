@@ -128,11 +128,13 @@ function ultraShortBaseTime(d = new Date()) {
   return { baseDate: todayYmd(d), baseTime: `${pad(h)}30` };
 }
 
-/** 중기예보 발표 시각 — 매일 06시·18시 발표 */
+/** 중기예보 발표 시각 — 매일 06시·18시 발표 (제공 시작 ~10분 후). 현재 시각 직전 발표분 자동 선택.
+ *  06:00~06:10 / 18:00~18:10 의 짧은 lag 구간엔 아직 미발표라 직전 발표분 사용 (NO_DATA 회피). */
 function mediumTmFc(d = new Date()) {
   const h = d.getHours();
-  if (h >= 18) return `${todayYmd(d)}1800`;
-  if (h >= 6) return `${todayYmd(d)}0600`;
+  const m = d.getMinutes();
+  if (h > 18 || (h === 18 && m >= 10)) return `${todayYmd(d)}1800`;
+  if (h > 6 || (h === 6 && m >= 10)) return `${todayYmd(d)}0600`;
   const yesterday = new Date(d);
   yesterday.setDate(yesterday.getDate() - 1);
   return `${todayYmd(yesterday)}1800`;
@@ -269,7 +271,7 @@ async function main() {
 
     if (action === 'medium-fcst') {
       if (!stnId) return outErr('error.medium_fcst_stnId_required', {});
-      const t = tmFc || mediumTmFc();
+      const t = mediumTmFc(); // 항상 현재 시각 기준 최신 발표분 — AI 가 잘못된 tmFc 넘겨 NO_DATA 나던 것 방지
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidFcst', {
         numOfRows: limit, pageNo: 1, stnId, tmFc: t,
       });
@@ -279,7 +281,7 @@ async function main() {
 
     if (action === 'medium-land') {
       if (!regId) return outErr('error.medium_land_regId_required', {});
-      const t = tmFc || mediumTmFc();
+      const t = mediumTmFc(); // 항상 현재 시각 기준 최신 발표분 — AI 가 잘못된 tmFc 넘겨 NO_DATA 나던 것 방지
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidLandFcst', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
@@ -289,7 +291,7 @@ async function main() {
 
     if (action === 'medium-ta') {
       if (!regId) return outErr('error.medium_ta_regId_required', {});
-      const t = tmFc || mediumTmFc();
+      const t = mediumTmFc(); // 항상 현재 시각 기준 최신 발표분 — AI 가 잘못된 tmFc 넘겨 NO_DATA 나던 것 방지
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidTa', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
@@ -299,7 +301,7 @@ async function main() {
 
     if (action === 'medium-sea') {
       if (!regId) return outErr('error.medium_sea_regId_required', {});
-      const t = tmFc || mediumTmFc();
+      const t = mediumTmFc(); // 항상 현재 시각 기준 최신 발표분 — AI 가 잘못된 tmFc 넘겨 NO_DATA 나던 것 방지
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidSeaFcst', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
