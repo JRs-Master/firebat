@@ -131,8 +131,8 @@ interface FirebatInfraContainer {
 | StatusManager | ILogPort, EventManager | ✗ | Long-running job 상태 단일 source (UI 진행도 + AI 비동기 도구 backbone). Image/Cron/Task 마이그레이션 완료 |
 | CostManager | IVaultPort, ILogPort | ✗ | LLM 호출 token·비용 누적 (60초 dirty flush) |
 | ToolManager | ILogPort | ✗ | 도구 등록·dispatch 단일 source (Step 1-3 + Step 5 완료 / Step 4 AiManager Phase 6c 와 묶음, v1.x) |
-| **EntityManager** | IEntityPort | ✗ | **Recall — Entity tier** — 추적 대상(종목·인물·프로젝트) 단위 fact 누적 (entities + entity_facts), semantic search, retrieveContext (entity + timeline) |
-| **EpisodicManager** | IEpisodicPort | ✗ | **Recall — Episodic tier** — 시간순 사건(자동매매·발행·cron·도구 호출) 추적 (events + event_entities m2m), entity link 자동 |
+| **EntityManager** | IEntityPort | ✗ | **Recall — Entity tier** — 추적 대상(인물·프로젝트·개념 등) 단위 fact 누적 (entities + entity_facts), semantic search, retrieveContext (entity + timeline) |
+| **EpisodicManager** | IEpisodicPort | ✗ | **Recall — Episodic tier** — 시간순 사건(발행·cron·도구 호출 등) 추적 (events + event_entities m2m), entity link 자동 |
 | **ConsolidationManager** | — | ✅ | **Recall — Consolidation engine** — 대화 → LLM 후처리 → entity/fact/event 자동 추출. cron 자동 (6시간 비활성) + manual + AI 도구. dedupThreshold=0.92 cosine 중복 자동 skip |
 | **TemplateManager** | IStoragePort | ✗ | CMS 템플릿 CRUD (owner 기준 path — admin / hub-scoped 분리) |
 | **LibraryManager** | ILibraryPort, IEmbedderPort | ✗ | 라이브러리 하이브리드 RAG — Reference/Source/Chunk CRUD + 경계 청킹 + dense(E5)·sparse(BM25) 검색 |
@@ -312,13 +312,13 @@ type PipelineStep =
 - v1.0 재활성화 시 Function Calling (`requestActionWithTools`) 경로 위에서 새로 설계.
 
 ### EntityManager (Recall — Entity tier)
-- 종목·인물·프로젝트·이벤트·개념 등 추적 대상 (entity) + 그 entity 에 link 된 정제된 사실 (entity_facts) 관리.
+- 인물·프로젝트·이벤트·개념 등 추적 대상 (entity) + 그 entity 에 link 된 정제된 사실 (entity_facts) 관리.
 - IEntityPort 직접 주입 (어댑터 swap 자유 — Phase 3 Vector store 도입 시 sqlite-vec / Qdrant 등으로 교체 가능, 인터페이스 그대로).
 - 핵심 메서드: `saveEntity` (upsert by name+type), `findEntityByName` (canonical + alias 매칭), `searchEntities` (semantic), `saveFact` (entity link, dedupThreshold 옵션), `getEntityTimeline` (occurredAt 정렬), `searchFacts` (다중 필터), `retrieveContext` (entity + recent facts 통합 — RetrievalEngine 의 base).
 - 임베딩 자동 생성 — name+aliases / fact content. SQLite cosine search.
 
 ### EpisodicManager (Recall — Episodic tier)
-- 시간순 사건 (events): 자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
+- 시간순 사건 (events): 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
 - IEpisodicPort 직접 주입.
 - 핵심 메서드: `saveEvent` (entityIds 넘기면 m2m link, dedupThreshold 옵션), `searchEvents` (type/who/시간범위/entityId 다중 필터), `listRecentEvents` (occurredAt DESC), `linkEntity` / `unlinkEntity`.
 - **자동 훅** — 매니저 직접 호출 X. Core facade 의 `savePage` / `handleCronTrigger` / `generateImage` 가 manager 호출 후 자동 `saveEvent` (BIBLE 일관성).

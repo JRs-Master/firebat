@@ -217,13 +217,13 @@ Group multiple modules that perform the same capability, manage priority and fal
 
 ### Memory System (4-tier)
 
-CrewAI / Mem0-style Recall + retrieval system — **dialogue ends, facts persist**. Continuous operation (auto-trading / blog publishing) accumulates entity timelines without manual save.
+CrewAI / Mem0-style Recall + retrieval system — **dialogue ends, facts persist**. Continuous use accumulates entity timelines without manual save.
 
 | Tier | Role | Implementation |
 |---|---|---|
 | **Short-term** | Active conversation turns | ConversationManager (existing) — embeddings search |
-| **Episodic** | Time-stamped events (auto-trading executions, page publishes, cron triggers, tool calls) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
-| **Entity** | Tracked subjects (stocks, people, projects, concepts) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
+| **Episodic** | Time-stamped events (page publishes, cron triggers, tool calls, user actions) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
+| **Entity** | Tracked subjects (people, projects, concepts, etc.) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
 | **Contextual** | 5-source merged retrieval (history + Recall entities/facts/events + Library RAG) | `RetrievalEngine` — every user prompt → parallel search → `<RETRIEVED_CONTEXT>` auto-prepended (when the AI Assistant toggle is on) |
 
 **Auto-accumulation, zero manual work**:
@@ -232,9 +232,9 @@ CrewAI / Mem0-style Recall + retrieval system — **dialogue ends, facts persist
 - `dedupThreshold=0.92` cosine similarity check — re-running consolidation is naturally idempotent.
 - 5 AI tools (`save_entity` / `save_entity_fact` / `search_entities` / `get_entity_timeline` / `search_entity_facts`) + 3 episodic tools + `consolidate_conversation` — both Function Calling and CLI MCP exposed.
 
-After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recommendations → buys → results) without asking for context. The memory layer fills itself.
+After a week of continuous use, "How did that turn out?" returns the full timeline without asking for context. The memory layer fills itself.
 
-> 🇰🇷 **Recall · 회상(retrieval) 시스템** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
+> 🇰🇷 **Recall · 회상(retrieval) 시스템** — 대화는 휘발해도 사실은 영속. 쓸수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "1주 전에 본 그건 어떻게 됐지?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
 
 > 🇰🇷 **Library RAG** (2026-05-17, 2026-06-01 하이브리드) — 사용자 업로드 자료(PDF/TXT/MD/URL) NotebookLM 식 RAG. **dense(E5) + sparse(BM25/SQLite FTS5) 하이브리드 + RRF** 검색 — 의미 + 정확 토큰(고유명사·법조문 코드)까지. parent-doc 맥락 확장 + 경계 인식 청킹. RetrievalEngine 5번째 source 로 자동 주입(AI Assistant 토글 ON 시) + `search_library` 도구로 AI 능동 검색. 쿼리당 LLM 비용 0 — ANN/벡터DB 없이 SQLite 만으로.
 
@@ -525,9 +525,9 @@ Frontend  Next.js + React + 29 built-in components
 - ✅ 93 RPC typed 정공 + 옛 proto-loader 폐기
 - ✅ MCP Rust 단일 binary 통합
 - 🟡 1+ week of personal use on Rust without incidents
-- 🟡 자동매매 실측 시작
+- 🟡 실사용 안정화 측정 시작
 
-> 🇰🇷 **v1.0 Final 로드맵** — Rust Core + Next.js Frontend, Vultr systemd 2 unit + Caddy 자동 TLS. 본인 사용 안정성이 release gate. 자동매매 / 블로그 / 일상 사용 실측 1주+ 무사고 도달 시 v1.0 Final 출시. 외부 사용자 진입 / 멀티 distribution / 데스크톱 앱 같은 안건은 v2.0+ 영역.
+> 🇰🇷 **v1.0 Final 로드맵** — Rust Core + Next.js Frontend, Vultr systemd 2 unit + Caddy 자동 TLS. 본인 사용 안정성이 release gate. 본인 실사용 1주+ 무사고 도달 시 v1.0 Final 출시. 외부 사용자 진입 / 멀티 distribution / 데스크톱 앱 같은 안건은 v2.0+ 영역.
 
 ---
 
