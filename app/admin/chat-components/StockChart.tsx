@@ -53,7 +53,7 @@ function arrowPath(x: number, y0: number, up: boolean): string {
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
 // 기본 줌 = 봉 폭(슬롯 px)을 고정 → 한 화면 개수는 화면 폭에 맞춰 자동(넓으면 많이·좁으면 적게).
 // 봉 크기가 화면·데이터에 따라 들쭉날쭉하지 않게(주식차트 가독). 보기 좋은 값으로 디바이스별 분리.
-const DEFAULT_BAR_PX_PC = 12;     // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×) — 9px 에서 휠 줌인 2스텝(×1.15²≈1.32) 크기
+const DEFAULT_BAR_PX_PC = 18;     // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×≈11px) — 넓은 화면서 보기 좋은 굵기
 const DEFAULT_BAR_PX_MOBILE = 11; // 모바일 — 터치·가독 위해 약간 굵게 (→ 한 화면 개수도 더 적음)
 const ZOOM_MAX_BAR = 36;     // 줌인 한계 (봉 ~36px, 그 이상 안 커짐)
 const ZOOM_MIN_BAR = 3;      // 줌아웃 한계 (봉 ~3px, 그 이하 안 작아짐)
