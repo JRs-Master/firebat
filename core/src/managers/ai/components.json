@@ -13,11 +13,11 @@
       "properties": {
         "symbol": {
           "type": "string",
-          "description": "종목 코드 (예: \"005930\"). optional — 없으면 title 만 라벨로 사용."
+          "description": "종목 코드. optional — 없으면 title 만 라벨로 사용."
         },
         "title": {
           "type": "string",
-          "description": "종목 한글명 (예: \"삼성전자\") — 심볼 코드 금지"
+          "description": "종목 한글명 — 심볼 코드 금지"
         },
         "data": {
           "type": "array",
@@ -1077,7 +1077,7 @@
   {
     "name": "status_badge",
     "componentType": "StatusBadge",
-    "description": "의미 기반 상태 뱃지 세트. 여러 상태를 한 줄에. 예: \"정배열\"(positive), \"과열\"(warning).",
+    "description": "의미 기반 상태 뱃지 세트 (positive/negative/neutral/warning/info). 여러 상태를 한 줄에.",
     "semanticText": "상태 뱃지 배지 태그 지표 정배열 과열 중립 positive negative warning info label tag chip",
     "propsSchema": {
       "type": "object",
@@ -1429,7 +1429,7 @@
                   "string",
                   "null"
                 ],
-                "description": "마커 위 라벨. \\n 으로 multi-line 가능 (예: '2026-05-27 18:00\\n오키나와 남남서 해상\\n중심기압: 980 hPa\\n최대풍속: 35 m/s' — 기상청 태풍 예보 형태). 없어도 마커는 표시됨."
+                "description": "마커 위 라벨. \\n 으로 multi-line 가능. 없어도 마커는 표시됨."
               },
               "popup": {
                 "type": [
@@ -1515,7 +1515,7 @@
               },
               "label": {
                 "type": ["string", "null"],
-                "description": "선 영역 라벨 (옵션) — 예: '태풍 12 호'"
+                "description": "선 영역 라벨 (옵션)"
               }
             }
           }
@@ -1542,7 +1542,7 @@
               },
               "radius": {
                 "type": "number",
-                "description": "반경 m (예: 1500 = 1.5km). 태풍 = kma_weather typhoon-forecast 의 radPr(확률반경 km) × 1000."
+                "description": "반경 m (예: 1500 = 1.5km). 값은 sysmod 결과에서 가져올 것."
               },
               "color": {
                 "type": [
@@ -1596,7 +1596,7 @@
             "array",
             "null"
           ],
-          "description": "범례 — 우상단 오버레이. 마커 색상의 의미를 설명할 때 사용 (예: 빨강=아파트, 초록=실거래 매칭).",
+          "description": "범례 — 우상단 오버레이. 마커 색상의 의미를 설명할 때 사용.",
           "items": {
             "type": "object",
             "required": [

@@ -76,10 +76,6 @@ Naturally connecting one tool's output as another tool's input is the core patte
   - AI-auto-extracted entity·fact·event → `save_entity` / `save_entity_fact` / `save_event` (memory system, structured)
   - These are different layers — notes are free user text, memory is refined facts. Do not force integration. The AI sees user intent and stores in the appropriate place.
 
-**chain examples (general)**:
-- "Register the schedules written in a note" → `sysmod_notes(search)` → parse body → for each item: `schedule_task` (runs automatically) → `sysmod_calendar(add, linkedJobId)` (shows on the calendar)
-- "Summarize last week's trading results" → `search_events(type='transaction', occurredAfter)` → extract entityId → for each entity `get_entity_timeline` → render({blocks:[{type:"table",...}]}) synthesis
-
 Do not do domain-specific cases — the patterns above apply to any sysmod combination.
 
 ## Memory — operational knowledge (`memory_*`) vs facts (`save_entity*`)
@@ -108,8 +104,8 @@ Two distinct memory layers — route by purpose, do not conflate them:
 ```
 render({
   blocks: [
-    { type: "header", props: { text: "Analysis", level: 2 } },
-    { type: "metric", props: { label: "Current price", value: 75000, unit: "KRW", delta: "+1.2%", deltaType: "up" } },
+    { type: "header", props: { text: "<section title>", level: 2 } },
+    { type: "metric", props: { label: "<label>", value: 0, unit: "<unit>", delta: "+0.0%", deltaType: "up" } },
     { type: "table", props: { headers: ["A","B"], rows: [["1","2"]], stickyCol: false } }
   ]
 })
@@ -126,15 +122,15 @@ The old 26 individual `render_*` tools are retired — unified into a single `re
 **Sections / layout**
 - `header` — single-line section title. **Required props only**: `text` (string) + `level` (integer 1-6). Extra props like `title` / `subtitle` are forbidden (schema validation rejects).
   - Example: `{type:"header", props:{text:"Analysis result", level:2}}`
-  - For title+subtitle, use two header blocks (different levels): `[{type:"header", props:{text:"Samsung quote", level:1}}, {type:"header", props:{text:"As of 2026-05-15 close", level:3}}]`
+  - For title+subtitle, use two header blocks (different levels): `[{type:"header", props:{text:"<title>", level:1}}, {type:"header", props:{text:"<subtitle>", level:3}}]`
 - `divider` — visual separator between sections
 - `grid` — grid layout for multiple cards / metrics (2~4 columns). Often used to **compose a KPI dashboard by placing multiple metrics**
   - **Required props**: `columns` + `children` (each item `{type, props}`). Missing children triggers validation rejection — enforces the pattern of placing N components like metric inside
-  - Example: `{type:"grid", props:{columns:3, children:[{type:"metric", props:{label:"Current price", value:75000, unit:"KRW"}}, {type:"metric", props:{label:"PER", value:15.2}}, {type:"metric", props:{label:"PBR", value:1.1}}]}}`
+  - Example: `{type:"grid", props:{columns:3, children:[{type:"metric", props:{label:"<label>", value:0, unit:"<unit>"}}, {type:"metric", props:{label:"<label>", value:0}}, {type:"metric", props:{label:"<label>", value:0}}]}}`
 - `card` — a generic container holding free children
 
 **Metrics / data**
-- `metric` — **single metric card** (label + value + delta arrow + icon). Prefer for **a single number** like "current price / PER / holding ratio / achievement". Don't put 3 Texts inside a Card
+- `metric` — **single metric card** (label + value + delta arrow + icon). Prefer for **a single number**. Don't put 3 Texts inside a Card
   - Do not cram two or more equal data points into one metric. value is one main number, subLabel is only a short auxiliary description.
   - For 2+ equal items: expand grid slots and place metrics in parallel, or use table / key_value
 - `key_value` — label:value structured list (stock specs / product info)
@@ -153,9 +149,8 @@ The old 26 individual `render_*` tools are retired — unified into a single `re
 
 **Specialized visualization components**
 - map → `map` (Korean coords + JS key → Kakao map, otherwise Leaflet+OSM auto branch).
-  **Fill markers[].lat AND lon strictly from sysmod results** — call sysmod geocoding tools
-  (`kakao-map` for Korea, `molit_realestate`, `kma_weather`, etc.) and use the returned
-  coordinates verbatim. Never invent coordinates from training memory, never fill only lat
+  **Fill markers[].lat AND lon strictly from sysmod results** — call the appropriate
+  geocoding sysmod and use the returned coordinates verbatim. Never invent coordinates from training memory, never fill only lat
   while leaving lon empty, never use alternate names like lng. Any marker missing lat or lon
   fails schema validation → the entire render tool call fails → nothing renders for the user.
 - diagram → `diagram` (mermaid DSL — flowchart/sequence/gantt/class etc.)
@@ -358,11 +353,11 @@ save_page(slug:"...", spec:{
 ```
 schedule_task({
   cronTime: "0 9 * * *",
-  runWhen: { check: { sysmod: "korea-invest", action: "국내주식-040", inputData: { query: { BASS_DT: "20260514", CTX_AREA_NK: "", CTX_AREA_FK: "" } } }, field: "$prev.output[0].opnd_yn", op: "==", value: "Y" },
+  runWhen: { check: { sysmod: "<module>", action: "<action>", inputData: { ... } }, field: "$prev.output[0].<field>", op: "==", value: "<expected>" },
   ...
 })
 ```
-Note: convenience aliases of old single-sysmod (is-business-day etc.) are retired. Single sysmod + domain branching — the `sysmod` field in `runWhen` is the module name (kiwoom / korea-invest). LLM tools are exposed by domain branching (sysmod_korea_invest_stock_quote etc.). Korea Investment holiday = action `국내주식-040` (CTCA0903R).
+Note: convenience aliases of old single-sysmod guards (is-business-day etc.) are retired. The `sysmod` field in `runWhen` is the module name — use whichever sysmod + action returns the condition you need to check.
 If runWhen is unsatisfied, the trigger itself is skipped (not a failure). No hardcoding of holiday arrays.
 
 **Transient failures (network timeout / rate limit / 503)** are auto-recovered by `retry`:

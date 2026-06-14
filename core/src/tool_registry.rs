@@ -855,7 +855,7 @@ fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // cache_read — pagination 으로 records 가져오기
     tools.register(ToolDefinition {
         name: "cache_read".to_string(),
-        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 (yfinance/한투/키움/DART 등) 응답에서 일부만 가져올 때 사용. offset/limit 으로 자르기.".to_string(),
+        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 응답에서 일부만 가져올 때 사용. offset/limit 으로 자르기.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -1433,7 +1433,7 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "prompt": {"type": "string", "description": "이미지 설명 (영어 권장). 스타일·구도·색감·텍스트 힌트 포함."},
                 "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536", "auto"]},
                 "quality": {"type": "string", "enum": ["low", "medium", "high"]},
-                "filenameHint": {"type": "string", "description": "파일명 힌트 (예: 'blog-hero-samsung-2026')"},
+                "filenameHint": {"type": "string", "description": "파일명 힌트"},
                 "aspectRatio": {"type": "string", "description": "16:9 / 1:1 / 4:5 / 3:2 등 — 지정 시 sharp 가 focusPoint 전략으로 crop"},
                 "focusPoint": {"description": "'attention' / 'entropy' / 'center' 또는 {x, y} 객체"},
                 "referenceImage": {
