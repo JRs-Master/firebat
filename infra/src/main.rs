@@ -788,13 +788,16 @@ async fn main() -> Result<()> {
                     Err(e) => tracing::warn!(job = jid, error = %e, "[system-cron] 등록 실패"),
                 }
             }
-            // overdue 캐치업 대상 수집 — 마지막 성공 실행이 6h 초과(또는 기록 없음)면 부팅 후 1회.
-            let last = vault_sj
+            // overdue 캐치업 대상 수집 — 과거에 실행된 적이 있고(lastrun 존재) 그게 6h 초과 = 진짜 놓친
+            // 실행이므로 1회 보충. 기록이 없으면(첫 배포/한 번도 안 돎) 놓친 게 없으니 캐치업 안 함 —
+            // 다음 정기 발화가 첫 실행이 된다(첫 부팅 불필요 실행·부하 방지).
+            if let Some(last) = vault_sj
                 .get_secret(&format!("system:cron:lastrun:{kind}"))
                 .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
-            if chrono::Utc::now().timestamp_millis() - last >= 6 * 60 * 60 * 1000 {
-                overdue_jids.push(jid.to_string());
+            {
+                if chrono::Utc::now().timestamp_millis() - last >= 6 * 60 * 60 * 1000 {
+                    overdue_jids.push(jid.to_string());
+                }
             }
         }
         // overdue 캐치업은 백그라운드로 분리 — trigger_now 가 콜백(consolidation→claude --print 등)을
