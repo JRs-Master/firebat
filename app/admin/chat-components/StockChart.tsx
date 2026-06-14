@@ -51,10 +51,13 @@ function arrowPath(x: number, y0: number, up: boolean): string {
 }
 
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
-const ZOOM_DEFAULT_CPS = 90; // 기본 한 화면 캔들 수
-const ZOOM_MAX_BAR = 36;     // 최대 봉 px (줌인 한계 — 그 이상 안 커짐)
-const ZOOM_MIN_BAR = 3;      // 최소 봉 px (줌아웃 한계 — 그 이하 안 작아짐)
-const ZOOM_RIGHT_PAD_SLOTS = 2; // 마지막(최신) 캔들 우측 여백 — MTS 처럼 2일 띄움 (slot 수)
+// 기본 줌 = 봉 폭(슬롯 px)을 고정 → 한 화면 개수는 화면 폭에 맞춰 자동(넓으면 많이·좁으면 적게).
+// 봉 크기가 화면·데이터에 따라 들쭉날쭉하지 않게(주식차트 가독). 보기 좋은 값으로 디바이스별 분리.
+const DEFAULT_BAR_PX_PC = 9;      // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×)
+const DEFAULT_BAR_PX_MOBILE = 11; // 모바일 — 터치·가독 위해 약간 굵게 (→ 한 화면 개수도 더 적음)
+const ZOOM_MAX_BAR = 36;     // 줌인 한계 (봉 ~36px, 그 이상 안 커짐)
+const ZOOM_MIN_BAR = 3;      // 줌아웃 한계 (봉 ~3px, 그 이하 안 작아짐)
+const ZOOM_RIGHT_PAD_SLOTS = 2; // 최신 캔들 우측 여백(slot 수) — 데이터 적으면 이 여백 맞춰 우측 정렬.
 
 function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
@@ -183,22 +186,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [data]);
   const fullN = fullData.length;
 
-  // 줌 = 한 화면 캔들 수(cps). 데이터(slice)는 항상 전체 — 줌은 캔들 폭만 바꾸고, 화면에 다 안
-  // 들어가면 가로 스크롤. (옛 slice 기반 줌 폐기 — "보여줄 개수"가 아니라 "캔들 폭/밀도")
-  // 기본 한 화면 캔들 수 — 모바일은 절반(봉을 더 굵게). 헤더 추정용 뷰포트 폭 재사용.
+  // 줌 모델 — 봉 폭(슬롯 px)이 기본, 한 화면 개수는 화면 폭에 맞춰 자동. 사용자가 휠/핀치로 줌하면
+  // 그때부터 cps(개수)를 사용(확대·축소 동작). 데이터 바뀌면 기본 줌으로 복원. 헤더용 뷰포트 폭 재사용해 PC/모바일 구분.
   const isMobileChart = (_vwForHeader ?? 1024) < 640;
-  const defaultCps = isMobileChart ? Math.round(ZOOM_DEFAULT_CPS / 2) : ZOOM_DEFAULT_CPS;
-  const [cps, setCps] = useState(ZOOM_DEFAULT_CPS);
+  const [cps, setCps] = useState(60);                   // seed — 실제 기본 줌은 폭 기반 baseCps. 사용자 줌 시에만 사용.
+  const [userZoomed, setUserZoomed] = useState(false);  // true = 휠/핀치로 줌함 → cps 사용. false = 폭 기반 기본 줌.
   const [zoomEndTick, setZoomEndTick] = useState(0);  // 줌 종료 시 +1 → Y축 라이브 재계산 트리거
-  // 데이터 변경 또는 모바일/PC 전환 시 기본 줌 + 최신 보기로 복원.
-  useEffect(() => { setCps(defaultCps); pinnedRightRef.current = true; }, [fullN, defaultCps]);
+  // 데이터 변경 시 기본 줌(폭 기반)·최신 보기로 복원.
+  useEffect(() => { setUserZoomed(false); pinnedRightRef.current = true; }, [fullN]);
   // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
   // 현재 barPx 미러 — native wheel 핸들러(stale closure)가 최신 barPx 를 읽게.
   const barPxRef = useRef(0);
+  // 캔들 시작 x(좌측 여백 포함) 미러 — sparse 우측 정렬 시 native/callback 핸들러가 최신 leftPad 를 읽게.
+  const leftPadRef = useRef(0);
   // 줌 경계 미러 — 현재 effCps(클램프됨) + 유효 [min, max]. 줌을 raw cps 가 아니라 화면에 실제
   // 보이는 effCps 기준으로 → cps 상태가 범위 밖에 떠 휠이 헛도는 dead-zone 제거.
-  const zoomBoundsRef = useRef<{ eff: number; min: number; max: number }>({ eff: ZOOM_DEFAULT_CPS, min: 2, max: 2000 });
+  const zoomBoundsRef = useRef<{ eff: number; min: number; max: number }>({ eff: 60, min: 2, max: 2000 });
   // Y축 freeze — 줌 제스처 중엔 직전 라이브 Y 유지(가로 줌인데 세로 출렁임 방지), 끝나면 재스케일.
   const zoomingRef = useRef(false);
   const frozenYRef = useRef<{ pMin: number; pMax: number; maxV: number } | null>(null);
@@ -227,7 +231,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     if (fullN < 2) return;
     // 현재 화면에 보이는 effCps 기준으로 줌 (raw cps 아님) → 매 휠이 즉시 반영, dead-zone 0.
     const b = zoomBoundsRef.current;
-    const next = Math.round((b.eff || ZOOM_DEFAULT_CPS) * factor);
+    const next = Math.round((b.eff || 60) * factor);
+    setUserZoomed(true);  // 사용자 줌 진입 → 폭 기반 기본 대신 cps 사용 (확대·축소 동작).
     setCps(Math.max(b.min, Math.min(b.max, next)));
   }, [fullN]);
 
@@ -242,7 +247,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const bp = barPxRef.current;
       const rect = el.getBoundingClientRect();
       const cursorVX = e.clientX - rect.left;
-      zoomAnchorRef.current = { idx: bp > 0 ? (cursorVX + el.scrollLeft - padLeft) / bp : 0, offsetX: cursorVX };
+      zoomAnchorRef.current = { idx: bp > 0 ? (cursorVX + el.scrollLeft - leftPadRef.current) / bp : 0, offsetX: cursorVX };
       pinnedRightRef.current = false;
       markZooming();
       zoomAround(e.deltaY > 0 ? 1.15 : 1 / 1.15);
@@ -287,14 +292,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // boxW = 캔들 스크롤 뷰포트 폭 (부모 paddingRight 로 거터 제외됨). plot 폭 = boxW - padLeft.
   // 줌(한 화면 캔들 수) → 캔들 폭(barPx). 봉 폭 캡 [MIN_BAR, MAX_BAR] 안.
   const plotBoxW = Math.max(1, Math.round(boxW) - padLeft); // box 에 보이는 plot 폭 (우측 거터는 외부)
-  const cpsMin = Math.max(2, Math.round(plotBoxW / ZOOM_MAX_BAR));         // 최대 줌인 (봉 ~36px)
-  const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 최대 줌아웃 (봉 ~3px)
-  const effCps = Math.max(cpsMin, Math.min(cpsMax, Math.min(cps, fullN)));  // 실제 한 화면 캔들 수
-  const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px
+  const cpsMin = Math.max(2, Math.round(plotBoxW / ZOOM_MAX_BAR));         // 줌인 한계 (봉 ~36px)
+  const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 줌아웃 한계 (봉 ~3px)
+  // 기본 줌 = 디바이스별 고정 봉 폭 → 한 화면 개수 자동(넓을수록 많이·좁을수록 적게, 봉 크기는 일정).
+  const baseCps = Math.round(plotBoxW / (isMobileChart ? DEFAULT_BAR_PX_MOBILE : DEFAULT_BAR_PX_PC));
+  const targetCps = userZoomed ? cps : baseCps;  // 사용자 줌 시 cps, 아니면 폭 기반 기본.
+  // 데이터 수와 무관하게 봉 폭 고정 (옛 min(cps, fullN) 폐기 — 데이터 적다고 봉이 커지지 않게).
+  const effCps = Math.max(cpsMin, Math.min(cpsMax, targetCps));            // 한 화면 캔들 수
+  const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px (기본 = 고정 폭)
   barPxRef.current = barPx;
-  zoomBoundsRef.current = { eff: effCps, min: cpsMin, max: Math.min(cpsMax, fullN) };
-  // 전체 W = 좌측 inset + 봉 전체 + 우측 여백 슬롯. box 보다 넓으면 가로 스크롤. 좁으면(소량 데이터) box 채움.
-  const W = Math.max(Math.round(boxW), Math.round(padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx));
+  zoomBoundsRef.current = { eff: effCps, min: cpsMin, max: cpsMax };
+  // 데이터가 화면보다 적으면 봉을 늘리지 않고 우측 정렬 — 우측 여백 슬롯 맞춰 끝에서 시작, 남는 만큼 좌측 여백.
+  const contentW = padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx;
+  const slack = Math.max(0, Math.round(boxW) - Math.round(contentW));
+  const leftPad = padLeft + slack;                                          // 캔들 시작 x (sparse 시 우측 정렬)
+  leftPadRef.current = leftPad;
+  const W = Math.max(Math.round(boxW), Math.round(contentW));
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
 
@@ -308,7 +321,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     if (zoomAnchorRef.current) {
       // 커서/핀치 앵커 — 저장한 캔들이 줌 후에도 같은 화면 위치에 오게 scrollLeft 직접 계산(왕복 없음).
       const { idx, offsetX } = zoomAnchorRef.current;
-      el.scrollLeft = padLeft + idx * barPx - offsetX;
+      el.scrollLeft = leftPad + idx * barPx - offsetX;
       zoomAnchorRef.current = null;
     } else if (pinnedRightRef.current) {
       el.scrollLeft = el.scrollWidth;
@@ -316,14 +329,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);
     }
     prevBarRef.current = barPx;
-  }, [barPx, boxW, fullN]);
+  }, [barPx, boxW, fullN, leftPad]);
 
   const { xs, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
     // 화면에 보이는 구간(scrollX ~ scrollX+boxW)만 추출 → Y축(가격·거래량)을 그 구간 min/max 로 동적 스케일.
     // 전체 범위 고정 시 과거 저가 구간 봉이 납작해지던 문제 해결. xs/캔들은 전체 렌더(가로 스크롤) 유지.
-    const firstVis = Math.max(0, Math.floor((scrollX - padLeft) / barPx));
-    const lastVis = Math.min(safeData.length - 1, Math.ceil((scrollX + boxW - padLeft) / barPx));
+    const firstVis = Math.max(0, Math.floor((scrollX - leftPad) / barPx));
+    const lastVis = Math.min(safeData.length - 1, Math.ceil((scrollX + boxW - leftPad) / barPx));
     const vis = lastVis >= firstVis ? safeData.slice(firstVis, lastVis + 1) : safeData;
     const liveMaxP = Math.max(...vis.map(d => d.high));
     const liveMinP = Math.min(...vis.map(d => d.low));
@@ -339,7 +352,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       frozenYRef.current = { pMin: livePMin, pMax: livePMax, maxV: liveMaxV };
     }
     // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
-    const xs = safeData.map((_, i) => padLeft + i * barPx + barPx / 2);
+    const xs = safeData.map((_, i) => leftPad + i * barPx + barPx / 2);
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
     const candleW = Math.max(1.5, barPx * 0.6);
@@ -351,7 +364,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return { name: ind, d, color: MA_COLORS[ind], values };
     });
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, indicators, barPx, plotH, padLeft, padTop, volPlotH, scrollX, boxW, zoomEndTick]);
+  }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {
@@ -359,9 +372,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     if (!el || n === 0) return;
     const rect = el.getBoundingClientRect();
     const contentX = (clientX - rect.left) + el.scrollLeft; // 1:1 이라 콘텐츠 px = svg 단위
-    const idx = Math.round((contentX - padLeft - barPx / 2) / barPx);
+    const idx = Math.round((contentX - leftPadRef.current - barPx / 2) / barPx);
     setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
-  }, [n, barPx, padLeft]);
+  }, [n, barPx]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     // 터치는 롱프레스(tooltipMode) 일 때만 툴팁 — 일반 터치 드래그는 스크롤(툴팁 X). 마우스는 항상 hover.
