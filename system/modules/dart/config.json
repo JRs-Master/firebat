@@ -8,7 +8,7 @@
   "capability": "disclosure",
   "providerType": "api",
   "packages": [
-    "requests==2.32.3"
+    "requests==2.34.2"
   ],
   "secrets": [
     "DART_API_KEY"
