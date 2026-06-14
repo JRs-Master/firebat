@@ -83,7 +83,12 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
-    case 'Chart':         return <ChartComp type={(p.chartType === 'donut' ? 'doughnut' : p.chartType) ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} series={p.series} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
+    case 'Chart': {
+      // 동의어 흡수 — 발행 페이지는 Rust sanitize(synonyms)를 안 거치므로 여기서 chartType←type /
+      // data←values / series←datasets 를 직접 받아 components.json 의 선언 동의어를 발행에서도 보장.
+      const ct = p.chartType ?? p.type;
+      return <ChartComp type={(ct === 'donut' ? 'doughnut' : ct) ?? 'bar'} data={p.data ?? p.values ?? []} labels={p.labels ?? []} series={p.series ?? p.datasets} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
+    }
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? p.events ?? []} />;
@@ -1456,6 +1461,15 @@ const CHART_VALUE_KEYS = ['value', 'y', 'amount', 'count', 'total', 'val', 'num'
 /** 객체 배열 → series. AI 가 차트 data 를 레코드 배열로 보내는 흔한 모양 흡수.
  *  (1) {label,value}/{x,y} 류 = 단일 series / (2) {x, metric1, metric2...} 다중 metric = 키별 series. */
 function seriesFromObjectArray(arr: Record<string, unknown>[]): ChartSeries[] {
+  // (0) Chart.js datasets / series 모양: 각 원소 = {label|name, data|values: number[]}.
+  //  AI 가 series/datasets 대신 data 에 datasets 배열을 넣는 흔한 모양 ([object Object]→0 의 실제 원인).
+  const datasets = arr.map((o) => {
+    const vals = Array.isArray(o?.values) ? o.values : Array.isArray(o?.data) ? (o.data as unknown[]) : null;
+    if (!vals) return null;
+    const nm = typeof o?.name === 'string' ? o.name : typeof o?.label === 'string' ? (o.label as string) : '';
+    return { name: nm, values: vals.map((x) => coerceChartNum(x) ?? 0) };
+  });
+  if (datasets.length > 0 && datasets.every(Boolean)) return datasets as ChartSeries[];
   // (1) 명시적 단일 값 필드가 있으면 그것만 — 키 하드코딩 아니라 우선순위 탐색.
   for (const vk of CHART_VALUE_KEYS) {
     if (arr.some((o) => coerceChartNum(o?.[vk]) !== null)) {

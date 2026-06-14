@@ -140,7 +140,7 @@
   {
     "name": "chart",
     "componentType": "Chart",
-    "description": "일반 차트 (막대/선/원형/도넛). 수치 비교·추이·분포 시각화. 주식 시세는 stock_chart 사용.",
+    "description": "일반 차트 (막대/선/원형/도넛). 수치 비교·추이·분포 시각화. 주식 시세는 stock_chart 사용.\n- chartType: 추세·시계열(이동평균·가격 추이)=line / 항목 비교=bar / 비중=pie·doughnut.\n- 단일 series → data 에 숫자 배열만 (number[]). 다중 series(이평선 5·20·60, 매출·영업이익·순이익 등) → series 에 [{name, data:[숫자]}]. ⚠️ series 객체를 data 에 넣지 마라 (그러면 값이 0 으로 렌더됨).",
     "semanticText": "차트 그래프 막대 바 선 라인 원형 파이 도넛 시각화 비교 추이 분포 퍼센트 비율 통계 수치 데이터",
     "propsSchema": {
       "type": "object",
@@ -176,7 +176,7 @@
             "array",
             "null"
           ],
-          "description": "단일 series 수치 배열 (number[]). 다중 series 면 data 대신 series 사용.",
+          "description": "단일 series 의 순수 숫자 배열 — number[] 만. 예: [100, 200, 300]. ⚠️ {name/label, data} 같은 series 객체를 여기 넣지 마라 — 다중 series 는 반드시 series 필드. (객체 배열을 data 에 넣으면 값이 0 으로 렌더됨.)",
           "items": {
             "type": "number"
           }
@@ -186,7 +186,7 @@
             "array",
             "null"
           ],
-          "description": "다중 series. 각 항목 = { label(또는 name), data(또는 values): number[] }. Chart.js datasets 형식도 그대로 허용.",
+          "description": "다중 series 배열. 각 항목 = {name, data: number[]} (label/values 도 허용). 예: [{name:'매출',data:[2792,3334,3471]},{name:'영업이익',data:[425,585,591]}]. 이동평균·가격추이 등 시계열은 chartType='line'. 여러 지표를 한 차트에 = 반드시 series (data 아님).",
           "items": {
             "type": "object"
           }
