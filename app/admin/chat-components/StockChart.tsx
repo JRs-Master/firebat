@@ -168,7 +168,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     if (!Array.isArray(data) || data.length === 0) return [];
     // close + date 만 있으면 렌더 — 누락 OHLC 는 close 로 폴백(플랫 캔들), volume 누락은 0. 옛 isNum(전부) filter 는
     // AI 가 close-only/부분 OHLCV 보내면 전부 버려 빈 차트(silent skip)였음.
-    const valid = data
+    // 튜플 형태 [date, open, high, low, close, volume] 도 수용 — AI 가 배열로 보낼 때 객체로 변환.
+    const rows = (data as unknown[]).map((d) =>
+      Array.isArray(d)
+        ? { date: d[0], open: d[1], high: d[2], low: d[3], close: d[4], volume: d[5] }
+        : d,
+    ) as Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
+    const valid = rows
       .filter(d => d && isNum(d.close) && !!d.date)
       .map(d => {
         const c = d.close;

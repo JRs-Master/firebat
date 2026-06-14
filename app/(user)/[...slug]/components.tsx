@@ -7,6 +7,7 @@ import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
 import StockChart from '../../admin/chat-components/StockChart';
+import { BlockErrorBoundary } from '../../admin/components/BlockErrorBoundary';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
@@ -31,7 +32,10 @@ export function ComponentRenderer({ components, fullHeight }: ComponentRendererP
   return (
     <div className={fullHeight ? 'h-full' : 'flex flex-col gap-6'}>
       {components.map((comp, i) => (
-        <ComponentSwitch key={i} comp={comp} standalone={htmlStandalone} />
+        // 블록 하나가 throw 해도 페이지 전체가 죽지 않게 격리 — 그 블록만 inline 에러, 나머지 정상 렌더.
+        <BlockErrorBoundary key={i} label={comp?.type}>
+          <ComponentSwitch comp={comp} standalone={htmlStandalone} />
+        </BlockErrorBoundary>
       ))}
     </div>
   );
@@ -1958,12 +1962,12 @@ function TimelineComp({ items }: {
     <div className="relative pl-6">
       <div className="absolute left-[11px] top-2 bottom-2 w-px bg-gray-200" />
       <div className="space-y-5">
-        {items.map((item, i) => {
+        {(items ?? []).filter(Boolean).map((item, i) => {
           const inner = (
             <>
               <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
-              <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>
-              <div className="font-bold text-sm text-gray-900"><InlineMd text={item.title} /></div>
+              <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date ?? '')}</div>
+              <div className="font-bold text-sm text-gray-900"><InlineMd text={item.title ?? ''} /></div>
               {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed"><InlineMd text={item.description} /></div>}
             </>
           );
