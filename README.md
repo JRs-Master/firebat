@@ -311,12 +311,10 @@ Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot
 
 ### Prerequisites
 
-- **Rust** stable (1.79+) — backend core/infra 빌드
+- **Rust** stable (1.79+) — builds the backend core/infra
 - **Node.js** 20+ — Next.js frontend
 - **Python** 3.10+ — module sandbox
-- **protoc** 자동 동봉 (protoc-bin-vendored crate, 별도 설치 불필요)
-
-> 🇰🇷 Rust stable / Node.js 20 이상 / Python 3.10 이상 / protoc 는 빌드 시 자동 동봉.
+- **protoc** — vendored automatically (protoc-bin-vendored crate, no separate install)
 
 ### Installation
 
@@ -324,42 +322,38 @@ Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot
 git clone https://github.com/JRs-Master/firebat.git
 cd firebat
 npm install
-cargo build --release -p firebat-infra --bin firebat-core   # Rust Core 빌드
+cargo build --release -p firebat-infra --bin firebat-core   # build the Rust core
 ```
 
 ### Development
 
 ```bash
-# Terminal 1: Rust Core gRPC server (port 50051)
+# Terminal 1: Rust core gRPC server (port 50051)
 cargo run --bin firebat-core
 
 # Terminal 2: Next.js frontend
 npm run dev
 ```
 
-Open `http://localhost:3000/admin` for the admin console. Frontend 가 typed gRPC client (`lib/api-gen/*.ts`) → gRPC :50051 로 자동 라우팅.
-
-> 🇰🇷 Rust Core 와 Next.js 를 두 터미널에서 동시 실행. 어드민 콘솔: `http://localhost:3000/admin`. Frontend 가 서비스별 typed gRPC client 를 통해 자동으로 gRPC 50051 로 호출.
+Open `http://localhost:3000/admin` for the admin console. The frontend routes to gRPC :50051 automatically through its per-service typed gRPC clients (`lib/api-gen/*.ts`).
 
 ### Configuration
 
-**First boot — SetupWizard** (vault 에 admin 자격증명 미설정 시 자동 표시):
-1. Open `http://SERVER/login` → SetupWizard 화면
-2. Interface language (ko/en) — navigator 자동 감지, 토글로 즉시 화면 전환
+**First boot — SetupWizard** (shown automatically when the vault has no admin credentials):
+1. Open `http://SERVER/login` → the SetupWizard screen
+2. Interface language (ko/en) — auto-detected from the browser, toggle to switch instantly
 3. Admin ID + password (8 chars + 3 of upper/lower/digit/special, strength meter + match indicator)
 4. Timezone (browser auto-detect, fallback UTC)
-5. Submit → vault 저장 + 자동 로그인 → `/admin` 진입
+5. Submit → saved to the vault + auto-login → land on `/admin`
 
-**Subsequent settings** (어드민 진입 후):
+**Subsequent settings** (after entering the admin console):
 1. **AI model**: Settings → AI tab → execution mode (API/CLI) → provider (OpenAI/Google/Anthropic) → model
    - **API mode**: Enter the provider API key (`sk-proj-…`, `AIza…`, `sk-ant-…`) or a Vertex Service Account JSON
    - **CLI mode**: Run `claude auth login` / `codex login` / `gemini auth login` on the server and click **"Check status"**
-2. **Interface language**: Settings → General tab (ko/en toggle, also CMS siteLang free-form text for ja/zh-CN etc)
+2. **Interface language**: Settings → General tab (ko/en toggle, plus CMS siteLang free-form text for ja/zh-CN etc.)
 3. **Timezone**: Settings → General tab (35 IANA options, shared with SetupWizard via `lib/timezones.ts`)
-4. **Admin credentials change**: Settings → General tab → 현재 비번 검증 (argon2 verify_admin_password RPC) + 새 비번 동일 정책
+4. **Admin credentials change**: Settings → General tab → verify the current password (argon2 verify_admin_password RPC); the new password follows the same policy
 5. **MCP token**: Sidebar → SYSTEM → Firebat MCP Server → generate a bearer token for external AI clients
-
-> 🇰🇷 **첫 부팅** — SetupWizard 가 자동 표시 (admin / 언어 / 시간대 입력 → 자동 로그인). **이후 설정** — AI 탭에서 모드·공급자·모델, 일반 탭에서 인터페이스 언어·타임존·관리자 계정 변경, 사이드바 SYSTEM 에서 MCP 토큰 생성.
 
 ## Production Deployment — systemd 2 units + Caddy
 
