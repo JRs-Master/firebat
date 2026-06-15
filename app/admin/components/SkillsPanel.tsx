@@ -223,7 +223,7 @@ export function SkillsPanel({
                 value={newSlug}
                 onChange={e => setNewSlug(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !submitting) submitCreate(); if (e.key === 'Escape' && !submitting) setCreating(false); }}
-                placeholder="slug (예: stock-report)"
+                placeholder="slug (영문·숫자·하이픈)"
                 disabled={submitting}
                 aria-label="스킬 slug"
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100" name="newSlug" autoComplete="off" id={newSlugId}

@@ -233,6 +233,12 @@ fn is_hub_writable_builtin(name: &str) -> bool {
             | "regenerate_image"
             | "save_template"
             | "delete_template"
+            // operational memory (data/memory) writes — owner-scoped (handler reads injected owner from
+            // args → data/memory/hub/<inst>/<sid>/), so a hub visitor only writes/deletes their own.
+            // Completes the bb040a4 per-owner read fix: without these, "remember X" was silently denied.
+            // write-mode stays manual for hub (no MEMORY_WRITE_MODE tag → no autonomous accumulation).
+            | "memory_save"
+            | "memory_delete"
     )
 }
 
@@ -249,6 +255,12 @@ pub fn is_hub_readonly_tool(name: &str) -> bool {
         || name == "suggest"
         || name == "propose_plan"
         || name == "read_file" // path-confined by confine_hub_path → safe to expose to hub
+        // operational memory (data/memory) reads — owner-scoped (the handler reads the injected
+        // owner from args), so a hub turn only touches its own data/memory/hub/<inst>/<sid>/.
+        // Don't match a memory_ prefix blanket: memory_save/delete are writes (see is_hub_writable_builtin).
+        || name == "memory_read"
+        || name == "memory_list"
+        || name == "memory_grep"
 }
 
 /// Hub workspace path jail for fs tools (read_file / write_file / delete_file / list_dir / get_file_tree).
@@ -399,6 +411,13 @@ mod tests {
         assert!(permits_tool("delete_file", &allowed));
         assert!(permits_tool("save_template", &allowed));
         assert!(permits_tool("regenerate_image", &allowed));
+        // operational memory (data/memory) — owner-scoped (handler reads injected owner from args).
+        // hub turn touches only its own data/memory/hub/<inst>/<sid>/. "remember X" + recall works.
+        assert!(permits_tool("memory_save", &allowed));
+        assert!(permits_tool("memory_read", &allowed));
+        assert!(permits_tool("memory_list", &allowed));
+        assert!(permits_tool("memory_grep", &allowed));
+        assert!(permits_tool("memory_delete", &allowed));
     }
 
     #[test]
