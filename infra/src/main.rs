@@ -42,6 +42,7 @@ use firebat_core::{
         log_service_server::LogServiceServer,
         auth_service_server::AuthServiceServer,
         memory_service_server::MemoryServiceServer,
+        skill_service_server::SkillServiceServer,
         capability_service_server::CapabilityServiceServer,
         cache_service_server::CacheServiceServer,
         database_service_server::DatabaseServiceServer,
@@ -880,6 +881,7 @@ async fn main() -> Result<()> {
     // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).
     let database_service = grpc::database::DatabaseServiceImpl::new(db.clone());
     let memory_file_service = grpc::memory_file::MemoryServiceImpl::new(memory_file_manager.clone());
+    let skill_file_service = grpc::skill::SkillServiceImpl::new(skill_file_manager.clone());
 
     let lifecycle_service = grpc::lifecycle::LifecycleServiceImpl::new(vec![
         "AiManager".to_string(),
@@ -1071,6 +1073,7 @@ async fn main() -> Result<()> {
         .add_service(TelegramServiceServer::new(telegram_service))
         .add_service(DatabaseServiceServer::new(database_service))
         .add_service(MemoryServiceServer::new(memory_file_service))
+        .add_service(SkillServiceServer::new(skill_file_service))
         .add_service(LogServiceServer::new(
             firebat_infra::log_service::LogServiceImpl::new(log_db_path, log_reload_handle.clone()),
         ))

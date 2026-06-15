@@ -2439,6 +2439,43 @@ service MemoryService {
   rpc DeleteFile(MemoryDeleteFileRequest) returns (MemoryDeleteFileResponse);
 }
 
+// ─── SkillService — on-demand case manuals (admin tab CRUD) ─────────────────
+message SkillListFilesRequest {}
+message SkillListFilesResponse {
+  // [{ slug, name, kind, description, source }] JSON (frontmatter 파싱, system∪user 병합).
+  string raw_json = 1;
+}
+message SkillReadFileRequest {
+  // 슬러그 (확장자 생략 가능 — .md 자동 추가).
+  string slug = 1;
+}
+message SkillReadFileResponse {
+  // { slug, name, kind, description, content, source } JSON.
+  string raw_json = 1;
+}
+message SkillSaveFileRequest {
+  string slug = 1;
+  string name = 2;
+  // kind (design/tool-usage/procedure/persona/policy) — frontmatter 에 기록.
+  string kind = 3;
+  // 한 줄 "언제 쓰나" — 인덱스 노출 + frontmatter.
+  string description = 4;
+  string content = 5;
+}
+message SkillSaveFileResponse {}
+message SkillDeleteFileRequest {
+  string slug = 1;
+}
+message SkillDeleteFileResponse {}
+
+/** Skill — on-demand case manual 시스템 (어드민 CRUD; AI 는 skill_* 도구로 직접) */
+service SkillService {
+  rpc ListFiles(SkillListFilesRequest) returns (SkillListFilesResponse);
+  rpc ReadFile(SkillReadFileRequest) returns (SkillReadFileResponse);
+  rpc SaveFile(SkillSaveFileRequest) returns (SkillSaveFileResponse);
+  rpc DeleteFile(SkillDeleteFileRequest) returns (SkillDeleteFileResponse);
+}
+
 // ─── LifecycleService typed Request / Response messages ────────────────────
 message LifecycleHealthRequest {}
 message LifecycleCaptureExceptionRequest {

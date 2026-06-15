@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
@@ -10,6 +10,7 @@ import { EntitiesPanel } from './EntitiesPanel';
 import { NotesPanel } from './NotesPanel';
 import { CalendarPanel } from './CalendarPanel';
 import { TemplatesPanel } from './TemplatesPanel';
+import { SkillsPanel } from './SkillsPanel';
 import { LibraryPanel } from './LibraryPanel';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
@@ -36,13 +37,14 @@ export type ConversationMeta = {
   updatedAt?: number;
 };
 
-type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'entities' | 'notes' | 'calendar' | 'library';
+type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
 
 const TABS: { id: TabId; label: string; Icon: typeof FolderTree; tooltip: string }[] = [
   { id: 'workspace', label: '워크스페이스', Icon: FolderTree, tooltip: 'Workspace' },
   { id: 'chats', label: '대화', Icon: MessageSquare, tooltip: '대화 목록' },
   { id: 'gallery', label: '갤러리', Icon: ImageIcon, tooltip: '갤러리' },
   { id: 'templates', label: '템플릿', Icon: LayoutTemplate, tooltip: '템플릿' },
+  { id: 'skills', label: '스킬', Icon: BookText, tooltip: '스킬 — 케이스별 사용 매뉴얼' },
   { id: 'library', label: 'Library', Icon: BookOpen, tooltip: 'Library — 자료 영역 + RAG 검색' },
   { id: 'entities', label: 'Recall', Icon: Sparkles, tooltip: 'Recall (엔티티 + 사건)' },
   { id: 'notes', label: '노트', Icon: NotebookText, tooltip: '노트' },
@@ -670,7 +672,9 @@ export function Sidebar({
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
   // 모든 탭 노출. 각 panel 컴포넌트가 hubMode prop 받아 hub_scope 분리 (별도 RPC scope 사용).
-  const visibleTabs = TABS;
+  // skills 탭은 v1 어드민 UI 만 — hub UI 패널은 SkillService proto 에 owner 추가 선행 필요(follow-up).
+  // hub 방문자의 스킬 자체(저장/발견/사용)는 AI 도구·인덱스 주입이 이미 hub owner-scope 로 처리.
+  const visibleTabs = hubMode ? TABS.filter(t => t.id !== 'skills') : TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
@@ -759,6 +763,8 @@ export function Sidebar({
         <GalleryPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'templates' ? (
         <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} hubContext={hubShareContext} />
+      ) : tab === 'skills' ? (
+        <SkillsPanel onEditFile={onEditFile} hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'library' ? (
         <LibraryPanel hubContext={hubShareContext} />
       ) : tab === 'entities' ? (
