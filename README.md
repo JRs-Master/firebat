@@ -363,48 +363,109 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 typed gRP
 
 ### Production — Vultr systemd 2 unit + Caddy
 
-Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js standalone (:3000) — systemd 별도 unit 운영. Caddy 가 reverse proxy + Let's Encrypt 자동 TLS.
+Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js standalone (:3000) run as two separate systemd units. Caddy reverse-proxies with automatic Let's Encrypt TLS.
+
+**Prerequisites**: a fresh Ubuntu/Debian LTS box with root. Step 1 runs on **your own machine** (use Git Bash / WSL on Windows); steps 2+ run **on the server** over SSH.
 
 ```bash
-# 1. 디렉 구조 + source 영역 symlink (system + language 두 영역)
+# 1. (your PC) push your SSH key to the server
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -C "you@example.com" -N ""
+cat ~/.ssh/id_ed25519.pub | ssh root@SERVER_IP \
+  "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+ssh root@SERVER_IP          # everything below runs on the server
+
+# 2. base packages + firewall
+apt update && apt upgrade -y
+apt install -y curl wget git ufw htop ca-certificates python3-pip rsync
+ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw --force enable
+
+# 3. swap — required on 1GB-RAM plans (skip if 2GB+); also prevents OOM during `npm run build`
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+# 4. Caddy (official repo)
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key'        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy && systemctl enable caddy
+
+# 5. Node.js (current LTS via NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt install -y nodejs
+
+# 6. directories + source (system/ + language/ are symlinked so `git pull` updates them in place)
 mkdir -p /opt/firebat/{data,user/media,frontend}
-ln -sfn /opt/firebat-src/system /opt/firebat/system
+cd /opt && git clone https://github.com/JRs-Master/firebat.git firebat-src
+ln -sfn /opt/firebat-src/system   /opt/firebat/system
 ln -sfn /opt/firebat-src/language /opt/firebat/language
 
-# 2. Python (sysmod 런타임용 — yfinance / playwright 등) + pip.
-#    모듈 패키지 설치 = 시스템 pip 의 `pip install --target python_modules` (sandbox.rs) — venv 안 씀.
-sudo apt install python3-pip
-
-# 3. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
-cp target/release/firebat-core /opt/firebat/firebat-core
+# 7. firebat-core binary
+#    GitHub -> Actions -> ci-rust -> latest green run -> Artifacts -> firebat-core-linux-x86_64, unzip it,
+#    then from your PC:  scp firebat-core root@SERVER_IP:/opt/firebat/firebat-core
+#    (or build on a capable machine: `cargo build --release` -> target/release/firebat-core)
 chmod +x /opt/firebat/firebat-core
 
-# 4. Next.js standalone build + 배치
+# 8. frontend build + deploy (3 rsync targets: standalone + static + language)
 cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
-# E5 임베딩 모델(~470MB)은 Rust core 가 첫 임베딩 사용 시 hf-hub 로 자동 다운로드(lazy) —
-# 옛 npm postinstall prefetch 는 폐기됨(2026-05-17). FIREBAT_EMBEDDER=stub 으로 임베딩 비활성 가능.
 rsync -a .next/standalone/ /opt/firebat/frontend/
-rsync -a .next/static/ /opt/firebat/frontend/.next/static/
-rsync -a language/ /opt/firebat/frontend/language/
+rsync -a .next/static/     /opt/firebat/frontend/.next/static/
+rsync -a language/         /opt/firebat/frontend/language/
+#    The E5 embedding model (~470MB) downloads lazily on first use (hf-hub -> ~/.cache/huggingface/hub/).
+#    Set FIREBAT_EMBEDDER=stub to disable embeddings.
 
-# 5. systemd unit 등록 (`/etc/systemd/system/firebat.service` + `firebat-frontend.service`)
-systemctl daemon-reload
-systemctl enable --now firebat firebat-frontend
+# 9. systemd units
+cat > /etc/systemd/system/firebat.service <<'EOF'
+[Unit]
+Description=Firebat Core (Rust gRPC + MCP)
+After=network.target
+[Service]
+ExecStartPre=/bin/chmod +x /opt/firebat/firebat-core
+ExecStart=/opt/firebat/firebat-core
+WorkingDirectory=/opt/firebat
+Restart=on-failure
+RestartSec=5s
+Environment="RUST_LOG=info"
+[Install]
+WantedBy=multi-user.target
+EOF
 
-# 6. Caddy reverse proxy (자동 HTTPS)
-cp caddy/Caddyfile.example /etc/caddy/Caddyfile
-# /etc/caddy/Caddyfile 안 your-domain.com / 이메일 실 값 치환 후
+cat > /etc/systemd/system/firebat-frontend.service <<'EOF'
+[Unit]
+Description=Firebat Frontend (Next.js standalone)
+After=network.target firebat.service
+Wants=firebat.service
+[Service]
+ExecStart=/usr/bin/node /opt/firebat/frontend/server.js
+WorkingDirectory=/opt/firebat/frontend
+Restart=on-failure
+RestartSec=5s
+Environment="PORT=3000"
+Environment="HOSTNAME=127.0.0.1"
+Environment="NODE_ENV=production"
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload && systemctl enable --now firebat firebat-frontend
+
+# 10. Caddy — IP first (plain HTTP)
+cat > /etc/caddy/Caddyfile <<'EOF'
+:80 {
+    reverse_proxy 127.0.0.1:3000
+}
+EOF
 systemctl reload caddy
 ```
 
-**Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP / `cargo build` (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
+Open `http://SERVER_IP` and finish the **SetupWizard** (admin password + timezone). **With a domain** (DNS A record → SERVER_IP): replace `:80` with `your-domain.com` in the Caddyfile and `systemctl reload caddy` — Caddy auto-issues + renews Let's Encrypt.
 
-**System dependencies** (Vultr Debian 표준):
-- `python3` / `python3-pip` — sysmod (yfinance / playwright / etc) 런타임 + 모듈 패키지 설치 (`pip install --target python_modules`)
-- E5 임베딩 모델(~470MB) = 별도 의존성 0 — Rust core 가 hf-hub 로 첫 사용 시 자동 다운로드 (`~/.cache/huggingface/hub/` 캐시)
+**Verify** — `systemctl status firebat firebat-frontend caddy --no-pager` + `journalctl -u firebat -n 50 --no-pager`. After `reboot`, all three should be `enabled` + `active (running)`.
 
-**Self-contained 패턴** — 매 의존성 (sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
+**Update flow** — `git pull`, then frontend `npm run build` + the 3 rsync; Rust `cargo build` / new artifact upload; finally `systemctl restart firebat firebat-frontend`.
+
+**Notes**
+- `python3` runs the sysmods (yfinance / playwright / …); `pip` installs their packages via `pip install --target python_modules` — no venv (isolation is per-directory; `python3-pip` pulls `python3` as a dependency).
+- Every dependency (python_modules / playwright_browsers / node_modules) stays inside the Firebat workspace — nothing lands in the user home except the HuggingFace model cache (`~/.cache/huggingface/hub/`).
 
 ### MCP Server (Rust 단일 binary 안 통합)
 
