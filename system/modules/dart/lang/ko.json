@@ -8,7 +8,7 @@
     "runtime": "{{type}}: {{message}}",
     "corp_code_required": "action='{{action}}' 에는 corp_code 필수 (또는 query/stock_code 로 자동 변환)",
     "corp_codes_required": "다중회사 액션에는 corp_codes 필수 (회사명/종목코드/corp_code 배열)",
-    "period_required": "재무/정기보고서 액션에는 bsns_year(YYYY) + reprt_code(1011/1012/1013/1014) 필수",
+    "period_required": "재무/정기보고서 액션에는 bsns_year(YYYY) + reprt_code(11011/11012/11013/11014) 필수",
     "idx_cl_code_required": "재무지표 액션에는 idx_cl_code 필수 (M210000 수익성 / M220000 안정성 / M230000 성장성 / M240000 활동성)",
     "sj_div_required": "xbrlTaxonomy 액션에는 sj_div 필수 (BS1/IS1/CF1 등 재무제표 구분)"
   }

@@ -8,7 +8,7 @@
     "runtime": "{{type}}: {{message}}",
     "corp_code_required": "action='{{action}}' requires corp_code (or query/stock_code for auto resolve).",
     "corp_codes_required": "Multi-company action requires corp_codes (array of corp names / stock codes / corp_codes).",
-    "period_required": "Financial/periodic actions require bsns_year(YYYY) + reprt_code(1011/1012/1013/1014).",
+    "period_required": "Financial/periodic actions require bsns_year(YYYY) + reprt_code(11011/11012/11013/11014).",
     "idx_cl_code_required": "Financial-index action requires idx_cl_code (M210000 profitability / M220000 stability / M230000 growth / M240000 activity).",
     "sj_div_required": "xbrlTaxonomy action requires sj_div (financial-statement division: BS1/IS1/CF1 etc)."
   }
