@@ -6,6 +6,7 @@
 
 import {
   SkillDeleteFileRequestSchema,
+  SkillListFilesRequestSchema,
   SkillReadFileRequestSchema,
   SkillSaveFileRequestSchema,
   SkillService,
@@ -18,9 +19,9 @@ import { unBigInt } from './_unbigint';
 
 const skillClient = createClient(SkillService, transport);
 
-export async function listFiles(): Promise<RpcResult<unknown>> {
+export async function listFiles(args: MessageInitShape<typeof SkillListFilesRequestSchema>): Promise<RpcResult<unknown>> {
   try {
-      const response = await skillClient.listFiles({});
+      const response = await skillClient.listFiles(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);

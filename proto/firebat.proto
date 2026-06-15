@@ -2440,14 +2440,18 @@ service MemoryService {
 }
 
 // ─── SkillService — on-demand case manuals (admin tab CRUD) ─────────────────
-message SkillListFilesRequest {}
+// owner: empty/"admin" => base dir; "hub:<inst>:<sid>" => per-session nested (hub sidebar).
+message SkillListFilesRequest {
+  string owner = 1;
+}
 message SkillListFilesResponse {
-  // [{ slug, name, kind, description, source }] JSON (frontmatter 파싱, system∪user 병합).
+  // [{ slug, name, kind, description, source }] JSON (frontmatter 파싱, system∪owner 병합).
   string raw_json = 1;
 }
 message SkillReadFileRequest {
   // 슬러그 (확장자 생략 가능 — .md 자동 추가).
   string slug = 1;
+  string owner = 2;
 }
 message SkillReadFileResponse {
   // { slug, name, kind, description, content, source } JSON.
@@ -2461,10 +2465,12 @@ message SkillSaveFileRequest {
   // 한 줄 "언제 쓰나" — 인덱스 노출 + frontmatter.
   string description = 4;
   string content = 5;
+  string owner = 6;
 }
 message SkillSaveFileResponse {}
 message SkillDeleteFileRequest {
   string slug = 1;
+  string owner = 2;
 }
 message SkillDeleteFileResponse {}
 

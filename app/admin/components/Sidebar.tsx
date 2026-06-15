@@ -672,9 +672,7 @@ export function Sidebar({
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
   // 모든 탭 노출. 각 panel 컴포넌트가 hubMode prop 받아 hub_scope 분리 (별도 RPC scope 사용).
-  // skills 탭은 v1 어드민 UI 만 — hub UI 패널은 SkillService proto 에 owner 추가 선행 필요(follow-up).
-  // hub 방문자의 스킬 자체(저장/발견/사용)는 AI 도구·인덱스 주입이 이미 hub owner-scope 로 처리.
-  const visibleTabs = hubMode ? TABS.filter(t => t.id !== 'skills') : TABS;
+  const visibleTabs = TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">

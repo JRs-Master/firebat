@@ -91,6 +91,9 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     let memory_file_mgr = Arc::new(
         firebat_core::managers::memory_file::MemoryFileManager::new(storage.clone()),
     );
+    let skill_file_mgr = Arc::new(
+        firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
+    );
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -114,6 +117,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             template: template_mgr,
             vault: vault.clone(),
             memory_file: memory_file_mgr,
+            skill_file: skill_file_mgr,
         },
     );
     (tools, dir)
@@ -197,9 +201,10 @@ async fn registered_tool_count() {
     // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
-    // memory_file: 5 (memory_save/read/list/delete/grep) = 55
-    assert_eq!(stats.total, 55);
-    assert_eq!(stats.by_source.get("core").copied(), Some(55));
+    // memory_file: 5 (memory_save/read/list/delete/grep) +
+    // skill_file: 5 (get/list/save/delete_skill + search_skills) = 60
+    assert_eq!(stats.total, 60);
+    assert_eq!(stats.by_source.get("core").copied(), Some(60));
 }
 
 #[tokio::test]

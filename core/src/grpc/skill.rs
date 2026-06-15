@@ -1,10 +1,11 @@
 //! gRPC SkillService impl — thin delegate to `SkillFileManager`.
 //!
-//! Admin tab CRUD path — always admin scope (None owner). The AI `skill_*` tools call
-//! `SkillFileManager` directly with their own owner (hub injection). All file logic
-//! (frontmatter, kind index, system∪user merge, owner scoping) lives in the manager so both
-//! paths stay in sync. `save`/`delete` only touch the writable user dir; shipped system skills
-//! are repo-managed.
+//! Sidebar CRUD path — admin (empty owner) or hub (`hub:<inst>:<sid>`, per-session). The
+//! sidebar is reused in hub, so skills (a sidebar panel, like templates) are owner-scoped here
+//! too; the hub route injects the session owner. The AI `skill_*` tools call `SkillFileManager`
+//! directly with their own owner. All file logic (frontmatter, kind index, system∪owner merge,
+//! owner scoping) lives in the manager so both paths stay in sync. `save`/`delete` only touch the
+//! writable user/owner dir; shipped system skills are repo-managed.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -30,13 +31,26 @@ fn to_raw_json(value: &impl serde::Serialize) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
+/// Empty / "admin" => admin scope (None); otherwise the hub session owner.
+fn owner_opt(owner: &str) -> Option<&str> {
+    match owner.trim() {
+        "" | "admin" => None,
+        o => Some(o),
+    }
+}
+
 #[tonic::async_trait]
 impl SkillService for SkillServiceImpl {
     async fn list_files(
         &self,
-        _req: Request<SkillListFilesRequest>,
+        req: Request<SkillListFilesRequest>,
     ) -> Result<Response<SkillListFilesResponse>, TonicStatus> {
-        let entries = self.manager.list(None).await.unwrap_or_default();
+        let owner = req.into_inner().owner;
+        let entries = self
+            .manager
+            .list(owner_opt(&owner))
+            .await
+            .unwrap_or_default();
         Ok(Response::new(SkillListFilesResponse {
             raw_json: to_raw_json(&entries),
         }))
@@ -46,8 +60,8 @@ impl SkillService for SkillServiceImpl {
         &self,
         req: Request<SkillReadFileRequest>,
     ) -> Result<Response<SkillReadFileResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
-        match self.manager.read(None, &slug).await {
+        let a = req.into_inner();
+        match self.manager.read(owner_opt(&a.owner), &a.slug).await {
             Ok(entry) => Ok(Response::new(SkillReadFileResponse {
                 raw_json: to_raw_json(&entry),
             })),
@@ -74,7 +88,7 @@ impl SkillService for SkillServiceImpl {
             source: "user".to_string(),
         };
         self.manager
-            .save(None, &entry)
+            .save(owner_opt(&a.owner), &entry)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(SkillSaveFileResponse {}))
@@ -84,9 +98,9 @@ impl SkillService for SkillServiceImpl {
         &self,
         req: Request<SkillDeleteFileRequest>,
     ) -> Result<Response<SkillDeleteFileResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
+        let a = req.into_inner();
         self.manager
-            .delete(None, &slug)
+            .delete(owner_opt(&a.owner), &a.slug)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(SkillDeleteFileResponse {}))

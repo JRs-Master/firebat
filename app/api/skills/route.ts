@@ -14,7 +14,7 @@ import { withAuth } from '../../../lib/with-api-error';
 const KINDS = ['design', 'tool-usage', 'procedure', 'persona', 'policy'];
 
 export const GET = withAuth(async () => {
-  const res = await listFiles();
+  const res = await listFiles({});
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, items: res.data });
 });
