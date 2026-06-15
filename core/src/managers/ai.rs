@@ -230,6 +230,9 @@ pub struct AiManager {
     /// `<OPERATIONAL_MEMORY>` 로 prepend. ai-router 토글과 무관하게 항상 주입 (큐레이트 운영지식은
     /// CLAUDE.md 처럼 늘 효력). 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF). 미설정 시 주입 skip.
     memory_file: Option<Arc<crate::managers::memory_file::MemoryFileManager>>,
+    /// SkillFileManager (옵션) — 스킬 인덱스(`<SKILLS_AVAILABLE>`)를 매 턴 시스템 프롬프트에 주입.
+    /// 메모리와 달리 인덱스(슬러그+설명)만 상시, 본문은 온디맨드(get_skill). 미설정 시 주입 skip.
+    skill_file: Option<Arc<crate::managers::skill_file::SkillFileManager>>,
 }
 
 impl AiManager {
@@ -254,6 +257,7 @@ impl AiManager {
             retrieval_engine: None,
             media: None,
             memory_file: None,
+            skill_file: None,
         }
     }
 
@@ -264,6 +268,15 @@ impl AiManager {
         memory_file: Arc<crate::managers::memory_file::MemoryFileManager>,
     ) -> Self {
         self.memory_file = Some(memory_file);
+        self
+    }
+
+    /// SkillFileManager 설정 — 스킬 인덱스(`<SKILLS_AVAILABLE>`) 매 턴 주입. 미설정 시 skip.
+    pub fn with_skill_file(
+        mut self,
+        skill_file: Arc<crate::managers::skill_file::SkillFileManager>,
+    ) -> Self {
+        self.skill_file = Some(skill_file);
         self
     }
 
@@ -890,6 +903,31 @@ impl AiManager {
                                     body
                                 ));
                             }
+                        }
+                    }
+                }
+                // Skills (case 매뉴얼) 인덱스 — 슬러그+설명만 상시 주입, 본문은 온디맨드(get_skill).
+                // 메모리와 달리 admin + hub 둘 다(owner 전달 → system ∪ owner 스킬). 토글 무관.
+                if let Some(sf) = &self.skill_file {
+                    let owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .unwrap_or("admin");
+                    if let Ok(index) = sf.get_index(Some(owner)).await {
+                        if !index.trim().is_empty() {
+                            const SKILL_INDEX_CAP: usize = 4000;
+                            let body = if index.chars().count() > SKILL_INDEX_CAP {
+                                let truncated: String =
+                                    index.chars().take(SKILL_INDEX_CAP).collect();
+                                format!("{truncated}\n… (truncated — use list_skills / search_skills)")
+                            } else {
+                                index
+                            };
+                            extra_parts.push(format!(
+                                "<SKILLS_AVAILABLE>\n{}\n</SKILLS_AVAILABLE>",
+                                body
+                            ));
                         }
                     }
                 }

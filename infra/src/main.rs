@@ -534,6 +534,7 @@ async fn main() -> Result<()> {
         )
             .with_prompt_builder(vault.clone())
             .with_memory_file(memory_file_manager.clone())
+            .with_skill_file(skill_file_manager.clone())
             .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
