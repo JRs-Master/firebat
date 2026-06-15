@@ -361,7 +361,7 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 typed gRP
 
 > 🇰🇷 **첫 부팅** — SetupWizard 가 자동 표시 (admin / 언어 / 시간대 입력 → 자동 로그인). **이후 설정** — AI 탭에서 모드·공급자·모델, 일반 탭에서 인터페이스 언어·타임존·관리자 계정 변경, 사이드바 SYSTEM 에서 MCP 토큰 생성.
 
-### Production — Vultr systemd 2 unit + Caddy
+## Production Deployment — systemd 2 units + Caddy
 
 Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js standalone (:3000) run as two separate systemd units. Caddy reverse-proxies with automatic Let's Encrypt TLS.
 
@@ -467,7 +467,7 @@ Open `http://SERVER_IP` and finish the **SetupWizard** (admin password + timezon
 - `python3` runs the sysmods (yfinance / playwright / …); `pip` installs their packages via `pip install --target python_modules` — no venv (isolation is per-directory; `python3-pip` pulls `python3` as a dependency).
 - Every dependency (python_modules / playwright_browsers / node_modules) stays inside the Firebat workspace — nothing lands in the user home except the HuggingFace model cache (`~/.cache/huggingface/hub/`).
 
-### MCP Server (Rust 단일 binary 안 통합)
+## MCP Server (Rust 단일 binary 안 통합)
 
 ```bash
 # stdio mode — Claude Desktop / Cursor / 외부 AI client 진입
