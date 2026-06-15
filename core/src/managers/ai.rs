@@ -878,31 +878,31 @@ impl AiManager {
                 // Operational memory (data/memory) — 큐레이트 운영지식 인덱스. ai-router 토글과
                 // 무관하게 *항상* 주입 (CLAUDE.md 가 늘 로드되듯). 위 RetrievalEngine(Recall) 은
                 // 자동/의미 store 라 토글 게이트지만, 이건 손으로 관리(+자동 distill)한 운영지식이라
-                // 켜든 끄든 항상 효력. 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF).
+                // 켜든 끄든 항상 효력. per-owner: admin => 자기 data/memory / hub:<inst>:<sid> =>
+                // 그 세션 것만 (누수 0). 어드민 편집 UI 는 설정 모달이라 hub 엔 없지만(설정 부재),
+                // 기능 자체는 hub 도 동작 — 방문자 턴이 manual 로 저장한 메모리가 회상됨.
                 if let Some(mf) = &self.memory_file {
                     let owner = effective_opts
                         .owner
                         .as_deref()
                         .or(ai_opts.owner.as_deref())
                         .unwrap_or("admin");
-                    if owner == "admin" {
-                        if let Ok(index) = mf.get_index(None).await {
-                            if !index.trim().is_empty() {
-                                const MEM_INDEX_CAP: usize = 4000;
-                                let body = if index.chars().count() > MEM_INDEX_CAP {
-                                    let truncated: String =
-                                        index.chars().take(MEM_INDEX_CAP).collect();
-                                    format!(
-                                        "{truncated}\n… (truncated — use memory_read for full entries)"
-                                    )
-                                } else {
-                                    index
-                                };
-                                extra_parts.push(format!(
-                                    "<OPERATIONAL_MEMORY>\n{}\n</OPERATIONAL_MEMORY>",
-                                    body
-                                ));
-                            }
+                    if let Ok(index) = mf.get_index(Some(owner)).await {
+                        if !index.trim().is_empty() {
+                            const MEM_INDEX_CAP: usize = 4000;
+                            let body = if index.chars().count() > MEM_INDEX_CAP {
+                                let truncated: String =
+                                    index.chars().take(MEM_INDEX_CAP).collect();
+                                format!(
+                                    "{truncated}\n… (truncated — use memory_read for full entries)"
+                                )
+                            } else {
+                                index
+                            };
+                            extra_parts.push(format!(
+                                "<OPERATIONAL_MEMORY>\n{}\n</OPERATIONAL_MEMORY>",
+                                body
+                            ));
                         }
                     }
                 }
