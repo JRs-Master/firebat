@@ -371,8 +371,9 @@ mkdir -p /opt/firebat/{data,user/media,frontend}
 ln -sfn /opt/firebat-src/system /opt/firebat/system
 ln -sfn /opt/firebat-src/language /opt/firebat/language
 
-# 2. Python (sysmod 런타임용 — yfinance / playwright 등). 모듈 설치 시 venv 자동 생성.
-sudo apt install python3-venv
+# 2. Python (sysmod 런타임용 — yfinance / playwright 등) + pip.
+#    모듈 패키지 설치 = 시스템 pip 의 `pip install --target python_modules` (sandbox.rs) — venv 안 씀.
+sudo apt install python3-pip
 
 # 3. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
 cp target/release/firebat-core /opt/firebat/firebat-core
@@ -400,10 +401,10 @@ systemctl reload caddy
 **Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP / `cargo build` (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
 
 **System dependencies** (Vultr Debian 표준):
-- `python3` / `python3-venv` — sysmod (yfinance / playwright / etc) 런타임 + 모듈 설치 venv host
+- `python3` / `python3-pip` — sysmod (yfinance / playwright / etc) 런타임 + 모듈 패키지 설치 (`pip install --target python_modules`)
 - E5 임베딩 모델(~470MB) = 별도 의존성 0 — Rust core 가 hf-hub 로 첫 사용 시 자동 다운로드 (`~/.cache/huggingface/hub/` 캐시)
 
-**Self-contained 패턴** — 매 의존성 (venv / sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
+**Self-contained 패턴** — 매 의존성 (sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
 
 ### MCP Server (Rust 단일 binary 안 통합)
 
