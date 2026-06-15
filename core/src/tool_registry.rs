@@ -17,6 +17,7 @@ use crate::managers::episodic::EpisodicManager;
 use crate::managers::event::EventManager;
 use crate::managers::library::LibraryManager;
 use crate::managers::memory_file::{MemoryEntry, MemoryFileManager};
+use crate::managers::skill_file::{SkillEntry, SkillFileManager};
 use crate::managers::template::{apply_placeholders, TemplateConfig, TemplateManager};
 use crate::managers::mcp::McpManager;
 use crate::managers::media::MediaManager;
@@ -68,6 +69,9 @@ pub struct CoreToolHandlers {
     /// 운영 메모리 (data/memory 파일) — memory_save / memory_read / memory_list / memory_delete.
     /// owner-scoped (hub_context 활성 시 AiManager 가 owner 주입).
     pub memory_file: Arc<MemoryFileManager>,
+    /// 스킬 (case 매뉴얼, */skills 파일) — list/get/save/delete/search_skill. 인덱스 상시주입 +
+    /// 본문 온디맨드. owner-scoped (hub_context 활성 시 owner 주입). system∪user 병합.
+    pub skill_file: Arc<SkillFileManager>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -82,6 +86,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_episodic_tools(tools, &h);
     register_consolidation_tools(tools, &h);
     register_memory_file_tools(tools, &h);
+    register_skill_tools(tools, &h);
     register_module_tools(tools, &h);
     register_mcp_tools(tools, &h);
     register_cache_tools(tools, &h);
@@ -260,6 +265,189 @@ fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .ok_or_else(|| "memory_grep: query required".to_string())?;
                 let owner = args.get("owner").and_then(|v| v.as_str());
                 let hits = mf.grep(owner, query).await?;
+                serde_json::to_value(hits).map_err(|e| e.to_string())
+            }
+        }),
+    );
+}
+
+/// Skill tools (*/skills files): get / list (index) / save / delete / search. Skills are on-demand
+/// case manuals (how to use tools/templates for a case). The index (<SKILLS_AVAILABLE>) is injected
+/// every turn; get_skill pulls a full manual on demand. `owner` is injected by AiManager for hub.
+fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // get_skill — full manual by slug. The main on-demand load (slug from the <SKILLS_AVAILABLE> index).
+    tools.register(ToolDefinition {
+        name: "get_skill".to_string(),
+        description: "Load the full manual for a skill by slug. Slugs come from the \
+            <SKILLS_AVAILABLE> index. Before doing a task that matches an available skill, get it and \
+            follow it. A skill is a case manual — how to use tools/templates for that case (design \
+            themes, tool-usage procedures, response styles, etc.)."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "slug": {"type": "string"} },
+            "required": ["slug"]
+        }),
+        source: "core".to_string(),
+    });
+    let sf = h.skill_file.clone();
+    tools.register_handler(
+        "get_skill",
+        make_handler(move |args| {
+            let sf = sf.clone();
+            async move {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "get_skill: slug required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let entry = sf.read(owner, slug).await?;
+                serde_json::to_value(entry).map_err(|e| e.to_string())
+            }
+        }),
+    );
+
+    // list_skills — the index (slug + description per skill, grouped by kind).
+    tools.register(ToolDefinition {
+        name: "list_skills".to_string(),
+        description: "List available skills as an index (slug + one-line description, grouped by \
+            kind). Same content as the always-injected <SKILLS_AVAILABLE> block; use get_skill for a \
+            full manual."
+            .to_string(),
+        parameters: serde_json::json!({ "type": "object", "properties": {} }),
+        source: "core".to_string(),
+    });
+    let sf = h.skill_file.clone();
+    tools.register_handler(
+        "list_skills",
+        make_handler(move |args| {
+            let sf = sf.clone();
+            async move {
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let index = sf.get_index(owner).await?;
+                Ok(serde_json::json!({"index": index}))
+            }
+        }),
+    );
+
+    // save_skill — create or update one skill (overwrites same slug). Authoring.
+    tools.register(ToolDefinition {
+        name: "save_skill".to_string(),
+        description: "Save a skill (case manual) — overwrites the same slug. kind = design | \
+            tool-usage | procedure | persona | policy. description = one-line 'when to use' (the \
+            discovery trigger — make it specific). content = the manual (markdown: which tools/ \
+            templates, steps, output). Use when you've worked out a reusable way to handle a \
+            recurring case. Context-conditional guidance belongs here (a skill), not always-on memory_save."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "slug": {"type": "string", "description": "short slug, also the filename"},
+                "name": {"type": "string"},
+                "kind": {"type": "string", "enum": ["design", "tool-usage", "procedure", "persona", "policy"]},
+                "description": {"type": "string", "description": "one-line 'when to use' trigger"},
+                "content": {"type": "string", "description": "the manual (markdown)"}
+            },
+            "required": ["slug", "content"]
+        }),
+        source: "core".to_string(),
+    });
+    let sf = h.skill_file.clone();
+    tools.register_handler(
+        "save_skill",
+        make_handler(move |args| {
+            let sf = sf.clone();
+            async move {
+                #[derive(serde::Deserialize)]
+                struct SaveArgs {
+                    slug: String,
+                    #[serde(default)]
+                    name: String,
+                    #[serde(default)]
+                    kind: String,
+                    #[serde(default)]
+                    description: String,
+                    #[serde(default)]
+                    content: String,
+                    #[serde(default)]
+                    owner: Option<String>,
+                }
+                let a: SaveArgs =
+                    serde_json::from_value(args).map_err(|e| format!("save_skill args: {e}"))?;
+                let name = if a.name.trim().is_empty() {
+                    a.slug.clone()
+                } else {
+                    a.name
+                };
+                let entry = SkillEntry {
+                    slug: a.slug,
+                    name,
+                    kind: a.kind,
+                    description: a.description,
+                    content: a.content,
+                    source: "user".to_string(),
+                };
+                sf.save(a.owner.as_deref(), &entry).await?;
+                Ok(serde_json::json!({"ok": true, "slug": entry.slug}))
+            }
+        }),
+    );
+
+    // delete_skill — remove one skill by slug (writable owner dir; system skills are repo-managed).
+    tools.register(ToolDefinition {
+        name: "delete_skill".to_string(),
+        description: "Delete one skill by slug (your own; shipped system skills are managed in the repo)."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "slug": {"type": "string"} },
+            "required": ["slug"]
+        }),
+        source: "core".to_string(),
+    });
+    let sf = h.skill_file.clone();
+    tools.register_handler(
+        "delete_skill",
+        make_handler(move |args| {
+            let sf = sf.clone();
+            async move {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "delete_skill: slug required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                sf.delete(owner, slug).await?;
+                Ok(serde_json::json!({"ok": true}))
+            }
+        }),
+    );
+
+    // search_skills — substring search over skill manuals (+ name/description).
+    tools.register(ToolDefinition {
+        name: "search_skills".to_string(),
+        description: "Search skill manuals by substring (case-insensitive). Returns matching skills \
+            with only the matching lines. Use to find a relevant skill when the <SKILLS_AVAILABLE> \
+            index slug isn't obvious."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": { "query": {"type": "string"} },
+            "required": ["query"]
+        }),
+        source: "core".to_string(),
+    });
+    let sf = h.skill_file.clone();
+    tools.register_handler(
+        "search_skills",
+        make_handler(move |args| {
+            let sf = sf.clone();
+            async move {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "search_skills: query required".to_string())?;
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let hits = sf.grep(owner, query).await?;
                 serde_json::to_value(hits).map_err(|e| e.to_string())
             }
         }),

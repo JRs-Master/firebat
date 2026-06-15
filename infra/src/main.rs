@@ -517,6 +517,12 @@ async fn main() -> Result<()> {
         firebat_core::managers::memory_file::MemoryFileManager::new(storage.clone()),
     );
 
+    // SkillFileManager — */skills 케이스 매뉴얼. skill_* AI 도구 + (추후) 어드민 탭 gRPC +
+    // AiManager 인덱스 주입이 같은 인스턴스 공유. system∪user 병합, hub owner-scope.
+    let skill_file_manager = Arc::new(
+        firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
+    );
+
     let ai_manager = Arc::new(
         AiManager::new(
             llm.clone(),
@@ -621,6 +627,7 @@ async fn main() -> Result<()> {
             template: template_manager.clone(),
             vault: vault.clone(),
             memory_file: memory_file_manager.clone(),
+            skill_file: skill_file_manager.clone(),
         },
     );
 

@@ -25,5 +25,6 @@ pub mod ai;
 pub mod storage;
 pub mod memory_facade;
 pub mod memory_file;
+pub mod skill_file;
 pub mod library;
 pub mod hub;
