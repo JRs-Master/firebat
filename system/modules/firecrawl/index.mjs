@@ -6,7 +6,6 @@
  */
 
 const API = 'https://api.firecrawl.dev/v1';
-const TIMEOUT = 60000;
 
 let raw = '';
 process.stdin.setEncoding('utf-8');
@@ -62,7 +61,11 @@ async function handleScrape(apiKey, data) {
   // 요청 옵션
   if (data.headers) body.headers = data.headers;
   if (data.waitFor !== undefined) body.waitFor = data.waitFor;
-  if (data.timeout !== undefined) body.timeout = data.timeout;
+  // scrape 타임아웃 — 미지정 시 generous 기본값(45s). Firecrawl 기본(~30s)은 무거운 JS·느린 페이지
+  // (DCInside 등)서 SCRAPE_TIMEOUT(408) 빈발. **샌드박스 실행 한도(60s)가 천장**이라 그 안에서 캡(48s) —
+  // 더 높여도 샌드박스가 60s 에 프로세스를 죽이므로 무의미. >60s 스크랩은 샌드박스 타임아웃 상향(Rust) 필요.
+  const scrapeTimeout = Math.min(data.timeout ?? 45000, 48000);
+  body.timeout = scrapeTimeout;
   if (data.mobile !== undefined) body.mobile = data.mobile;
   if (data.skipTlsVerification !== undefined) body.skipTlsVerification = data.skipTlsVerification;
 
@@ -81,7 +84,9 @@ async function handleScrape(apiKey, data) {
   const resp = await fetch(`${API}/scrape`, {
     method: 'POST', headers: authHeaders(apiKey),
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT),
+    // 로컬 abort 는 Firecrawl 타임아웃보다 길어야(렌더 후 결과 패키징·네트워크 여유) + 샌드박스 60s
+    // hard-kill 직전(56s)에 우리 에러로 graceful 종료. 로컬이 먼저 끊으면 timeout 상향이 무용.
+    signal: AbortSignal.timeout(56000),
   });
 
   if (!resp.ok) {

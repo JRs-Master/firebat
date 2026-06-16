@@ -70,8 +70,8 @@
       },
       "timeout": {
         "type": "integer",
-        "default": 30000,
-        "description": "[scrape] Request timeout (ms)"
+        "default": 45000,
+        "description": "[scrape] Render timeout (ms). Default 45000. Raise for slow / heavy-JS pages, but capped at 48000 (sandbox run limit is 60s)."
       },
       "mobile": {
         "type": "boolean",
