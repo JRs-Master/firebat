@@ -1318,13 +1318,13 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                         <>
                           <button
                             onClick={() => onApprovePending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg shadow-sm transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-200 hover:bg-emerald-300 text-emerald-800 text-[12px] font-bold rounded-lg border border-emerald-300 transition-colors"
                           >
                             <Check size={13} /> {t('plan.approve')}
                           </button>
                           <button
                             onClick={() => onRejectPending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-bold rounded-lg shadow-sm transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 bg-rose-200 hover:bg-rose-300 text-rose-800 text-[12px] font-bold rounded-lg border border-rose-300 transition-colors"
                           >
                             <X size={13} /> {t('plan.reject')}
                           </button>
