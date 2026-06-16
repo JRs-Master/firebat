@@ -636,9 +636,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   const cycleSort = useCallback((ci: number) => {
     if (sortCol !== ci) { setSortCol(ci); setSortDir('asc'); }
     else if (sortDir === 'asc') setSortDir('desc');
-    else setSortCol(null); // 내림 다음 = 원래 순서로 복귀
+    else setSortCol(null); // 내림 다음 = 원래 순서로 복귀 (별도 reset 버튼 없이 3번째 클릭이 기본순서)
   }, [sortCol, sortDir]);
-  const resetSort = useCallback(() => setSortCol(null), []);
   // 보이는 열(원본 인덱스 유지) — align/cellAlign 은 원본 ci 로 인덱싱하므로 원본 보존이 중요.
   const visibleCols = headers.map((_, i) => i).filter(i => !hiddenCols.has(i));
   const q = query.trim().toLowerCase();
@@ -710,8 +709,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
 
   return (
     <div className="space-y-2">
-      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 또는 정렬 중. 클라 전용. */}
-      {(filterable || columnToggle || sortCol !== null) && (
+      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 시만. 클라 전용. */}
+      {(filterable || columnToggle) && (
         <div className="flex flex-wrap items-center gap-2">
           {filterable && (
             <div className="relative flex-1 min-w-[140px] max-w-xs">
@@ -747,15 +746,6 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
           {filterable && q && (
             <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{shownRows.length} / {rows.length}</span>
           )}
-          {sortCol !== null && (
-            <button
-              type="button"
-              onClick={resetSort}
-              className="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-            >
-              ↺ {t('table.reset_sort')}
-            </button>
-          )}
         </div>
       )}
       {/* 박스 max-height = JS 측정 픽셀 (toolbar 변동 무관). SSR fallback = 70vh. */}
@@ -774,15 +764,18 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                   <th
                     key={ci}
                     onClick={() => cycleSort(ci)}
-                    title={t('table.sort_hint')}
-                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단). 클릭=정렬, hover 시 ↕ 표시.
+                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단). 클릭=정렬(툴팁 없음).
                     className={`group cursor-pointer select-none px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 hover:bg-gray-100 sticky top-0 min-w-[120px] ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                   >
                     <span className="inline-flex items-center gap-1 align-middle">
                       {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
-                      <span className={`text-[10px] leading-none ${active ? 'text-blue-600' : 'text-gray-300 opacity-0 group-hover:opacity-100'}`} aria-hidden>
-                        {active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-                      </span>
+                      {active ? (
+                        // 활성 정렬 — 현재 방향 한쪽만 진한 파랑.
+                        <span className="text-[11px] leading-none text-blue-600" aria-hidden>{sortDir === 'asc' ? '↑' : '↓'}</span>
+                      ) : (
+                        // 정렬 가능 표시 — 위·아래 한쌍 기호(⇅ = 화살표 2개가 한 글자). 데스크톱=hover 시, **모바일=항상**(hover 없음). gray-400 로 셀 배경과 구분.
+                        <span className="text-[12px] leading-none text-gray-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100" aria-hidden>⇅</span>
+                      )}
                     </span>
                   </th>
                 );
