@@ -477,3 +477,20 @@ html::-webkit-scrollbar-thumb:hover,
 .firebat-bar-slide {
   animation: firebat-bar-slide 1.2s ease-in-out infinite;
 }
+
+/* 형광펜(==강조==) — 마커 스윕 질감: 각진 그라데이션(불균일 잉크) + 비대칭 둥근 끝 + 반투명(텍스트 비침).
+   sysmod 인디고 칩과 구분되는 노랑/핑크/보라/초록 4색. 채팅·발행·공유 공통(rehypeRaw native <mark>). */
+mark[class^="fbhl-"] {
+  border-radius: 0.5em 0.15em 0.45em 0.2em;
+  padding: 0.02em 0.18em;
+  color: inherit;
+  background-repeat: no-repeat;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.fbhl-yellow { background-image: linear-gradient(-100deg, hsla(50, 98%, 62%, 0.25), hsla(50, 98%, 62%, 0.7) 92%, hsla(50, 98%, 62%, 0.2)); }
+.fbhl-pink   { background-image: linear-gradient(-100deg, hsla(330, 90%, 72%, 0.25), hsla(330, 90%, 72%, 0.66) 92%, hsla(330, 90%, 72%, 0.2)); }
+.fbhl-purple { background-image: linear-gradient(-100deg, hsla(270, 85%, 75%, 0.25), hsla(270, 85%, 75%, 0.6) 92%, hsla(270, 85%, 75%, 0.2)); }
+.fbhl-green  { background-image: linear-gradient(-100deg, hsla(140, 68%, 56%, 0.25), hsla(140, 68%, 56%, 0.62) 92%, hsla(140, 68%, 56%, 0.2)); }
+.fbhl-orange { background-image: linear-gradient(-100deg, hsla(28, 95%, 62%, 0.25), hsla(28, 95%, 62%, 0.6) 92%, hsla(28, 95%, 62%, 0.2)); }
+.fbhl-sky    { background-image: linear-gradient(-100deg, hsla(199, 92%, 64%, 0.25), hsla(199, 92%, 64%, 0.55) 92%, hsla(199, 92%, 64%, 0.2)); }

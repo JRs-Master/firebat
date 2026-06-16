@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { maskMath } from '../../lib/util/md';
+import { maskMath, highlightMarksToHtml } from '../../lib/util/md';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -113,10 +113,13 @@ function renderMarkdown(text: string) {
   // **bold** 가 한국어/괄호 인접 시 commonmark 인식 실패(raw ** 노출) → 명시적 <strong> 변환 (user TextComp 동일).
   // 수식($...$) 보호 → escapeHtmlTagMentions + **bold** 주입이 LaTeX 안 건드리게 → 복원 → remark-math 파싱.
   const { masked, restore } = maskMath(cleanMarkdown(text));
+  // ==강조== → <mark>(형광펜). escape 뒤라 inner HTML-safe → rehypeRaw native <mark> 렌더(globals.css .fbhl-*).
   const withStrong = restore(
-    escapeHtmlTagMentions(masked)
-      .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*\*/g, ''),
+    highlightMarksToHtml(
+      escapeHtmlTagMentions(masked)
+        .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*\*/g, ''),
+    ),
   );
   return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{withStrong}</ReactMarkdown>;
 }

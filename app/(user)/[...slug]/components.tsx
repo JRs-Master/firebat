@@ -13,7 +13,7 @@ import { usePublicTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown, maskMath } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml } from '../../../lib/util/md';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -1310,7 +1310,8 @@ const alertMdComponents = {
 /** **bold** → <strong> 변환 — 한국어/괄호 인접 시 commonmark 가 인식 못해 raw "**" 노출되는 것 보강.
  *  rehypeRaw 와 함께 사용. mdReady 안에서 escape 뒤에 호출. */
 function mdBoldFix(s: string): string {
-  return s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '');
+  // **bold**→<strong> + ==강조==→<mark>(형광펜). 둘 다 escape 뒤 주입이라 rehypeRaw 가 native 렌더.
+  return highlightMarksToHtml(s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, ''));
 }
 
 // 인식되는 HTML 태그만 (math 의 `<` 는 안 건드림). admin chat-manager 의 escapeHtmlTagMentions 와 동일 취지.

@@ -10,6 +10,22 @@
  * 입력이 `**` 든 `<strong>` 든 같은 결과가 되도록 하는 게 목적(no-hardcoding). 코드펜스(```) 안의
  * 태그 예시는 건드리지 않는다.
  */
+/**
+ * `==강조==` / `==색:강조==` → `<mark class="fbhl-색">` (형광펜). **escape 단계 뒤에** 호출해야 주입한
+ * `<mark>` 가 literal 로 안 죽고 rehypeRaw 가 native 렌더(globals.css `.fbhl-*` 마커 질감 스타일).
+ * 색: yellow(기본)/green/pink/orange/sky/purple. `blue` = `sky` 별칭. 채팅·발행·공유 공통.
+ * 여는 `==` 뒤·닫는 `==` 앞 공백 금지 + 한 줄 안(`[^\n=]`)으로 매칭해 오탐(수식·구분선 등) 줄임.
+ */
+export function highlightMarksToHtml(s: string): string {
+  if (!s || !s.includes('==')) return s;
+  return s.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
+    const cm = inner.match(/^(yellow|green|pink|orange|sky|blue|purple):([\s\S]+)$/);
+    let color = cm ? cm[1] : 'yellow';
+    if (color === 'blue') color = 'sky';
+    return `<mark class="fbhl-${color}">${cm ? cm[2] : inner}</mark>`;
+  });
+}
+
 export function inlineFormatTagsToMarkdown(text: string): string {
   if (!text) return text;
   // 코드펜스 블록은 건너뛰고 바깥 텍스트만 변환 (HTML 태그 설명 예시 보존).
