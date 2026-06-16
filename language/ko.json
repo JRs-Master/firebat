@@ -43,7 +43,17 @@
     "preview_pending": "곧 미리보기가 나타나요",
     "preparing": "준비 중",
     "making": "만드는 중이에요",
-    "view_latest": "최신으로 →"
+    "completed": "완성했어요",
+    "view_latest": "최신으로 →",
+    "tool": {
+      "write": "파일 작성 중",
+      "save_page": "페이지 저장 중",
+      "render": "화면 구성 중",
+      "run_module": "모듈 실행 중",
+      "build": "빌드 진행 중",
+      "plan": "계획 세우는 중",
+      "search": "컴포넌트 찾는 중"
+    }
   },
   "error": {
     "module": {

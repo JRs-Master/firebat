@@ -468,3 +468,12 @@ html::-webkit-scrollbar-thumb:hover,
   font-size: 20px;
   font-weight: 700;
 }
+
+/* PB 빌드 라이브 상태 진행바 — 슬라이딩 indeterminate(좌→우 흐름). 한 자리 펄스(stuck 처럼 보임) 대체. */
+@keyframes firebat-bar-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(360%); }
+}
+.firebat-bar-slide {
+  animation: firebat-bar-slide 1.2s ease-in-out infinite;
+}

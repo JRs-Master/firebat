@@ -890,42 +890,61 @@ type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: M
 /** 빌드 카드 1개 = 세션의 단계들(슬라이드 캐러셀). anchor(마지막) 메시지에만 전달, 앞 단계 메시지는 fold. */
 type BuildCardData = { stages: BuildStageEntry[] };
 
+// 빌드 라이브 상태 도구명 → 친숙어 i18n 키 매핑. 매핑 없으면 정리된 이름(공백) fallback.
+// (옛엔 raw 도구 id 가 그대로 노출돼 "write file" 같은 영문이 보였음 — 사용자 지적.)
+const BUILD_TOOL_LABEL: Record<string, string> = {
+  write_file: 'build.tool.write',
+  save_page: 'build.tool.save_page',
+  render: 'build.tool.render',
+  run_module: 'build.tool.run_module',
+  start_build: 'build.tool.build',
+  advance_build: 'build.tool.build',
+  propose_plan: 'build.tool.plan',
+  search_components: 'build.tool.search',
+};
+
 // 빌드 라이브 상태 — 팩맨(루프·게임) 대신 실제 진행을 피드로. status(="도구 호출 중: render" 등 = lastMsg.statusText)가
 // 바뀔 때마다 누적해 ✓도구 / ⟳현재 로 표시. thinking 의존 0 (CLI stream-json 회귀로 thinking 비어도 status·도구는 옴).
-// 완료 시 ✓ 로 끝(루프 X). 가짜 % 아님 — 실제 호출된 도구만 보여줌.
+// 완료 시 단일 "완성했어요" 로 끝(루프 X). 진행바 = 슬라이딩 indeterminate(가짜 % 아님, "작업 중" 표시).
 function BuildLiveStatus({ status, done }: { status?: string; done?: boolean }) {
   const t = useTranslations();
   const [hist, setHist] = useState<string[]>([]);
   useEffect(() => {
-    const cur = (status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').replace(/_/g, ' ').trim();
-    if (!cur) return;
-    setHist(h => (h[h.length - 1] === cur ? h : [...h.slice(-5), cur])); // 최근 6개 — 직전과 다르면 누적
-  }, [status]);
+    const raw = (status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').trim();
+    if (!raw) return;
+    const key = BUILD_TOOL_LABEL[raw];
+    const label = key ? t(key) : raw.replace(/_/g, ' ').trim();
+    setHist(h => (h[h.length - 1] === label ? h : [...h.slice(-5), label])); // 최근 6개 — 직전과 다르면 누적
+  }, [status, t]);
   return (
     <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
-      <FirebatGhostAssembly size={56} variant="accent" />
-      <div className="w-full max-w-[240px] flex flex-col gap-1">
-        {hist.length === 0 ? (
-          <div className="flex items-center gap-1.5 text-[12px]">
-            <span className="text-blue-500 animate-pulse" aria-hidden>⟳</span>
-            <span className="text-slate-600 font-medium">{t('build.making')}</span>
-          </div>
-        ) : hist.map((h, i) => {
-          const isCur = i === hist.length - 1 && !done;
-          return (
-            <div key={`${i}-${h}`} className="flex items-center gap-1.5 text-[12px]">
-              <span className={`shrink-0 ${isCur ? 'text-blue-500 animate-pulse' : 'text-emerald-500'}`} aria-hidden>{isCur ? '⟳' : '✓'}</span>
-              <span className={`truncate ${isCur ? 'text-slate-700 font-semibold' : 'text-slate-400'}`}>{h}</span>
-            </div>
-          );
-        })}
-      </div>
-      {!done ? (
-        <div className="w-full max-w-[240px] h-1 rounded-full bg-slate-200/70 overflow-hidden">
-          <div className="h-full w-1/2 rounded-full bg-gradient-to-r from-blue-300 to-blue-500 animate-pulse" />
-        </div>
+      <FirebatGhostAssembly size={56} variant="accent" settled={done} />
+      {done ? (
+        // 완료 — 단일 "완성했어요" (옛 "만드는 중이에요" + "✓ 완료" 중복 제거).
+        <div className="text-[13px] font-bold text-emerald-600">✓ {t('build.completed')}</div>
       ) : (
-        <div className="text-[12px] font-bold text-emerald-600">✓ {t('build.done')}</div>
+        <>
+          <div className="w-full max-w-[240px] flex flex-col gap-1">
+            {hist.length === 0 ? (
+              <div className="flex items-center gap-1.5 text-[12px]">
+                <span className="text-blue-500 animate-pulse" aria-hidden>⟳</span>
+                <span className="text-slate-600 font-medium">{t('build.making')}</span>
+              </div>
+            ) : hist.map((h, i) => {
+              const isCur = i === hist.length - 1;
+              return (
+                <div key={`${i}-${h}`} className="flex items-center gap-1.5 text-[12px]">
+                  <span className={`shrink-0 ${isCur ? 'text-blue-500 animate-pulse' : 'text-emerald-500'}`} aria-hidden>{isCur ? '⟳' : '✓'}</span>
+                  <span className={`truncate ${isCur ? 'text-slate-700 font-semibold' : 'text-slate-400'}`}>{h}</span>
+                </div>
+              );
+            })}
+          </div>
+          {/* 슬라이딩 indeterminate — 한 자리서 펄스(stuck 처럼 보임) 대신 좌→우로 흘러 "작업 중" 표현. */}
+          <div className="w-full max-w-[240px] h-1 rounded-full bg-slate-200/70 overflow-hidden">
+            <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-300 to-blue-500 firebat-bar-slide" />
+          </div>
+        </>
       )}
     </div>
   );
@@ -1667,17 +1686,15 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     if (octx) {
       octx.save();
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
-      // 브랜드 로고가 '테두리(아웃라인)' 유령이라 fill 대신 stroke 로 윤곽만 래스터화 — 꽉 찬 유령과 톤 불일치 해소.
-      octx.strokeStyle = '#000';
-      octx.lineWidth = 0.8;
-      octx.lineJoin = 'round';
-      octx.lineCap = 'round';
-      octx.stroke(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
-      // 눈 2개 — lucide Ghost 의 점 (9,10)·(15,10). 아웃라인이라 파내지(destination-out) 않고 점으로 채워 그림.
+      // 채운 실루엣 — 머리(반원 돔)가 둥글게 보이게 fill 로 래스터화. 옛 stroke(얇은 아웃라인)는 저해상도서
+      // 곡선이 stair-step 으로 삐쭉했음. 채우면 돔이 솔리드 → 둥근 머리. 눈은 destination-out 으로 파내(클래식 유령).
       octx.fillStyle = '#000';
+      octx.fill(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
+      // 눈 2개 = 구멍(파냄) → 그 자리 픽셀 없음 = 배경 비침(블루 유령의 흰 눈 효과).
+      octx.globalCompositeOperation = 'destination-out';
       octx.beginPath();
-      octx.arc(9, 10, 1.1, 0, Math.PI * 2);
-      octx.arc(15, 10, 1.1, 0, Math.PI * 2);
+      octx.arc(9, 10, 1.5, 0, Math.PI * 2);
+      octx.arc(15, 10, 1.5, 0, Math.PI * 2);
       octx.fill();
       octx.restore();
       const d = octx.getImageData(0, 0, RES, RES).data;

@@ -43,7 +43,17 @@
     "preview_pending": "Preview coming up",
     "preparing": "Preparing",
     "making": "Building…",
-    "view_latest": "Latest →"
+    "completed": "All done!",
+    "view_latest": "Latest →",
+    "tool": {
+      "write": "Writing files",
+      "save_page": "Saving page",
+      "render": "Composing view",
+      "run_module": "Running module",
+      "build": "Building",
+      "plan": "Planning",
+      "search": "Finding components"
+    }
   },
   "error": {
     "module": {
