@@ -1675,9 +1675,9 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
 
     // 1) lucide Ghost body 를 RES×RES 그리드로 래스터화 → 채워진 셀 = 픽셀 target. 눈은 grid 정렬 대칭으로
     //    제거(arc 래스터화는 저해상도서 좌우 비대칭·찢김 → 셀 단위로 양쪽 동일하게 빼야 깔끔).
-    // RES = 그리드 해상도. size 비례로 키워 픽셀(dot)을 ~2.5px 로 작게 유지 → 원래 lucide Ghost 윤곽에 더 가깝게
-    // (옛 고정 36 은 큰 미리보기서 dot ~4.4px 라 뭉툭). 작은 악센트(size 48)는 32 로 floor — sub-pixel 방지.
-    const RES = Math.max(40, Math.round(size / 1.8));
+    // RES = 그리드 해상도. **초고해상도(size×2)** 로 키워 곡선 윤곽이 매끈한 동그란 머리가 되게 한다
+    // (저해상도 stroke 는 점점이 끊겨 각졌음 — dot 이 sub-pixel 로 작아져 인접 dot 이 겹치며 부드러운 선).
+    const RES = Math.min(240, Math.max(64, Math.round(size * 2)));
     const off = document.createElement('canvas');
     off.width = RES;
     off.height = RES;
@@ -1686,15 +1686,21 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     if (octx) {
       octx.save();
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
-      // 채운 실루엣 — 머리(반원 돔)가 둥글게 보이게 fill 로 래스터화. 옛 stroke(얇은 아웃라인)는 저해상도서
-      // 곡선이 stair-step 으로 삐쭉했음. 채우면 돔이 솔리드 → 둥근 머리. 눈은 destination-out 으로 파내(클래식 유령).
+      // 브랜드 = 아웃라인(테두리) 유령 — fill(꽉 채움) 대신 stroke 로 윤곽만 래스터화(브랜드 일관).
+      // 머리(반원 돔)가 저해상도서 stair-step 으로 삐쭉하던 건 stroke 를 두껍게(1.6) + 둥근 join/cap 으로 완화
+      // → 윤곽 밴드가 인접 셀을 더 채워 곡선이 둥글게 읽힘(얇은 0.8 은 점점이 끊겨 각져 보였음).
+      octx.strokeStyle = '#000';
+      // RES 가 커질수록 stroke 폭(scaled 좌표)을 반비례로 줄여 오프스크린 ~1.8px 가는 윤곽 일정 유지
+      // (RES 무관 일정 두께 → 고해상도여도 윤곽이 뭉치지 않고 매끈한 가는 곡선).
+      octx.lineWidth = 43.2 / RES;
+      octx.lineJoin = 'round';
+      octx.lineCap = 'round';
+      octx.stroke(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
+      // 눈 2개 — 아웃라인이라 점으로 채워 그림(파내지 않음).
       octx.fillStyle = '#000';
-      octx.fill(new Path2D('M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z'));
-      // 눈 2개 = 구멍(파냄) → 그 자리 픽셀 없음 = 배경 비침(블루 유령의 흰 눈 효과).
-      octx.globalCompositeOperation = 'destination-out';
       octx.beginPath();
-      octx.arc(9, 10, 1.5, 0, Math.PI * 2);
-      octx.arc(15, 10, 1.5, 0, Math.PI * 2);
+      octx.arc(9, 10, 1.1, 0, Math.PI * 2);
+      octx.arc(15, 10, 1.1, 0, Math.PI * 2);
       octx.fill();
       octx.restore();
       const d = octx.getImageData(0, 0, RES, RES).data;
@@ -2131,6 +2137,13 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   const d = m.data as { buildSession?: BuildSessionView } | undefined;
                   const bsv = d?.buildSession;
                   if (!bsv?.id) continue;
+                  // 내용 없는 빌드 메시지는 stage 로 치지 않음 — 옵션 칩·승인카드 0 이고 구현/완료도 아닌 메시지
+                  // (예: "지금 만들라는 건 아니고" 같이 빌드세션이 재주입됐지만 빌드 내용은 안 나온 턴)는
+                  // 빈 카드가 뜨거나 앵커를 빼앗아 원래 카드를 fold 시키던 root. 그냥 일반 답변으로 렌더되게 skip.
+                  const hasStageContent = (m.suggestions?.length ?? 0) > 0
+                    || (m.pendingActions?.length ?? 0) > 0
+                    || bsv.step === 'implement' || bsv.status === 'completed';
+                  if (!hasStageContent) continue;
                   let mids = msgsBySession.get(bsv.id);
                   if (!mids) { mids = []; msgsBySession.set(bsv.id, mids); }
                   mids.push(m.id);
