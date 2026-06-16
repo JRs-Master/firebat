@@ -344,10 +344,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     const convMeta = conversations.find(c => c.id === convId);
     const createdAt = convMeta?.createdAt ?? Date.now();
     const body = JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt });
-    // **CRITICAL**: keepalive: true 는 브라우저 64KB body 한도 강제 — 초과 시 fetch 즉시 TypeError.
-    // 큰 대화 (Html block 누적 시 60KB+ 흔함) 는 keepalive 끄고 일반 fetch 사용.
-    // 한도 안일 때만 keepalive 적용 — 페이지 unload 시점 저장 안전망 유지.
-    const useKeepalive = body.length < KEEPALIVE_BODY_LIMIT_BYTES;
+    // **CRITICAL**: keepalive: true 는 브라우저 64KB body 한도 강제 — 초과 시 fetch 즉시 TypeError(Failed to fetch).
+    // 큰 대화 (Html block 누적 / 한글 많은 인터랙티브 데모 등 60KB+ 흔함) 는 keepalive 끄고 일반 fetch 사용.
+    // ⚠️ 한도는 **바이트** 기준 — `body.length`(문자 수, UTF-16)로 재면 한글(1자=3바이트)이 많을 때
+    //    문자 수는 한도 미만인데 실제 바이트는 초과해 keepalive 가 켜진 채 TypeError 나던 버그. byte 로 측정.
+    const bodyBytes = new TextEncoder().encode(body).length;
+    const useKeepalive = bodyBytes < KEEPALIVE_BODY_LIMIT_BYTES;
     const attempt = (retries: number): Promise<void> => fetch('/api/conversations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
       ...(useKeepalive ? { keepalive: true } : {}),
