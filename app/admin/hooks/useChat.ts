@@ -367,23 +367,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         return;
       }
       if (!res.ok && retries > 0) {
-        logger.warn('useChat', `DB save HTTP ${res.status} — ${retries}회 재시도`);
+        logger.warn('useChat', `DB save HTTP ${res.status} — ${retries}회 재시도`, { bodyBytes, keepalive });
         return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, keepalive).finally(resolve), 500));
       }
-      if (!res.ok) logger.error('useChat', `DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험`, null);
+      if (!res.ok) logger.error('useChat', `DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험 (body ${bodyBytes}B)`, null);
     }).catch(err => {
-      // keepalive fetch 실패(주로 동시 keepalive 누적 64KB 한도 → TypeError "Failed to fetch") 는
-      // **일반 fetch 로 graceful 전환** — 일반 fetch 는 본문 한도가 없어 보통 성공. 겁주는 "영구 손실"
-      // 경고는 그 일반 fetch 까지 실패할 때만 (사용자: keepalive→일반 전환을 손실로 오인하지 않게).
+      // 진단 로그 3단계 — "용량 초과(keepalive 한도)" vs "진짜 버그/네트워크" 를 bodyBytes 로 구분.
+      //  ① keepalive 실패 → ② 일반 fetch 로 graceful 전환(본문 한도 없음, 보통 성공) → ③ 그것도 실패면 경고.
       if (keepalive) {
-        logger.debug('useChat', 'keepalive 저장 실패 → 일반 fetch 로 전환', { error: err });
+        // ①+② — body 가 한도(60KB) 미만인데도 keepalive 실패 = 동시 keepalive 누적 64KB 초과 또는 네트워크.
+        logger.warn('useChat', `DB save: ① keepalive 실패 → ② 일반 fetch 로 전환 (body ${bodyBytes}B / keepalive 한도 ~64KB 누적)`, { bodyBytes, error: err });
         return attempt(1, false);
       }
       if (retries > 0) {
-        logger.warn('useChat', `DB save network 실패 — ${retries}회 재시도`, { error: err });
+        logger.warn('useChat', `DB save: 일반 fetch 실패 — ${retries}회 재시도 (body ${bodyBytes}B)`, { bodyBytes, error: err });
         return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, false).finally(resolve), 500));
       }
-      logger.error('useChat', 'DB save 최종 실패 — pending status 손실 위험', err);
+      // ③ — 일반 fetch(한도 없음)까지 실패 = 진짜 문제(서버 다운/프록시/본문 거부). bodyBytes 로 용량 원인 판별.
+      logger.error('useChat', `DB save 최종 실패 ③ 일반 fetch 도 실패 — pending status 손실 위험 (body ${bodyBytes}B)`, err);
     });
     void attempt(1, useKeepalive);
   };
