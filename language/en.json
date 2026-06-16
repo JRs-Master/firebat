@@ -245,6 +245,10 @@
     "locked_reason": "5 failed sign-in attempts",
     "checking": "Checking initial state…"
   },
+  "auth": {
+    "lock_title": "Firebat login locked",
+    "lock_body": "5 consecutive failed sign-ins. IP: {{ip}}. Locked for 60s.\nIf this wasn't you, change your password."
+  },
   "setup": {
     "title": "Firebat Initial Setup",
     "subtitle": "Configure administrator account, language, and timezone",

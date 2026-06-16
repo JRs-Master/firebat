@@ -268,16 +268,13 @@ impl AuthManager {
         if just_locked {
             if let Some(notifier) = self.notifier.clone() {
                 let key_owned = attempt_key.to_string();
+                // admin 언어로 발송 — alert 수신자는 운영자라 attempter 의 요청 lang 이 아니라 default(admin) lang.
+                // spawn 이라 task-local 이 끊기지만 명시 전달로 admin 언어 고정. 메시지 = i18n(접속 IP / 60초 차단 / 본인 아니면 비번 변경).
+                let lang = crate::i18n::current_default_lang();
                 tokio::spawn(async move {
-                    notifier
-                        .notify(
-                            NotifyLevel::Critical,
-                            "Firebat 로그인 잠금 발생",
-                            &format!(
-                                "5회 연속 로그인 실패 — attempt_key={key_owned} 차단 (60초). brute force 시도 의심. 어드민 설정에서 비밀번호 강도 점검 권장."
-                            ),
-                        )
-                        .await;
+                    let title = crate::i18n::t("core.auth.lock_title", Some(&lang), &[]);
+                    let body = crate::i18n::t("core.auth.lock_body", Some(&lang), &[("ip", &key_owned)]);
+                    notifier.notify(NotifyLevel::Critical, &title, &body).await;
                 });
             }
         }

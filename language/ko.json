@@ -245,6 +245,10 @@
     "locked_reason": "로그인 5회 실패",
     "checking": "초기 상태 확인 중…"
   },
+  "auth": {
+    "lock_title": "Firebat 로그인 잠금 발생",
+    "lock_body": "5회 연속 로그인 실패. 접속 IP: {{ip}}. 60초 로그인 차단.\n본인이 아니면 비밀번호를 변경하세요."
+  },
   "setup": {
     "title": "Firebat 초기 설정",
     "subtitle": "관리자 계정 · 언어 · 시간대를 설정합니다",
