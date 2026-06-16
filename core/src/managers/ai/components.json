@@ -203,8 +203,8 @@
   {
     "name": "table",
     "componentType": "Table",
-    "description": "표/테이블 — **여러 대상/레코드**(여러 종목 × 여러 지표, 여러 행) 를 행·열로 나열·비교. 수치 3개 이상 비교 시 필수. **단일 대상 1개의 속성만** 보여줄 때는 key_value(단일 대상 테이블)가 더 적합 — 대상 여러 개를 key_value 카드로 쪼개지 말고 table 한 개로(대상=열 또는 행). 마크다운 |---| 금지. 열 많을 때 stickyCol=true 로 첫 열 고정. 행 많을 때 striped=true 로 zebra (가독성 ↑), stickyHeader=true 로 헤더 고정 (긴 표 스크롤 시).",
-    "semanticText": "표 테이블 grid 행 열 헤더 나열 비교 정리 스프레드시트 데이터 목록 항목 필드 매출 지표 순위 리스트 여러 종목 비교",
+    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns).",
+    "semanticText": "table grid rows columns headers list compare spreadsheet data ranking metrics revenue multiple stocks 표 테이블 행 열 헤더 나열 비교 정리 데이터 목록 항목 필드 매출 지표 순위 여러 종목 비교",
     "propsSchema": {
       "type": "object",
       "required": [
@@ -219,7 +219,7 @@
           "items": {
             "type": "string"
           },
-          "description": "열 헤더"
+          "description": "column headers"
         },
         "rows": {
           "type": "array",
@@ -229,28 +229,42 @@
               "type": "string"
             }
           },
-          "description": "행 데이터 (각 행은 문자열 배열)"
+          "description": "row data (each row is an array of strings)"
         },
         "stickyCol": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "true면 첫 열 고정. 기본 false."
+          "description": "true pins the first column. default false."
         },
         "striped": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "true면 짝수 행 배경 살짝 어둡게 (zebra). 기본 false."
+          "description": "true shades even rows slightly (zebra). default false."
         },
         "stickyHeader": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "true면 헤더 행 sticky (긴 표 세로 스크롤 시 헤더 고정). 기본 false."
+          "description": "true keeps the header row sticky (header stays visible while scrolling a long table). default false."
+        },
+        "filterable": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true shows a row-search box above the table — only rows containing the typed text (matched across all cells, case-insensitive). Good for long tables / mobile to narrow to the rows you want. default false."
+        },
+        "columnToggle": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true shows column chips above the table — tap to show only the columns you want (narrow a wide table on mobile). Recommended for many-column tables. default false."
         }
       }
     }

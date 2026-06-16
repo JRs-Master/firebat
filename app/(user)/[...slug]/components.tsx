@@ -68,7 +68,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable} columnToggle={p.columnToggle} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
@@ -601,7 +601,7 @@ function hasInlineMd(s: string): boolean {
   return /\*\*[^\n*]+\*\*|<\/?(?:strong|b|em|i)\b/i.test(s);
 }
 
-function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign }: {
+function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign, filterable, columnToggle }: {
   headers: string[]; rows: string[][]; stickyCol?: boolean;
   /** zebra 행 — 짝수 row 배경 살짝 어둡게. 행 많을 때 가독성 ↑. 기본 false. */
   striped?: boolean;
@@ -609,13 +609,35 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   align?: (AlignOpt | null | undefined)[];
   /** 셀별 정렬 override — cellAlign[ri][ci]. 특정 행·셀만 따로 조절할 때 사용. */
   cellAlign?: ((AlignOpt | null | undefined)[] | null | undefined)[];
+  /** 행 검색 — 표 위 검색칸. 입력어가 포함된 행만(셀 전체 대상, 대소문자 무시). 긴 표·모바일에 유용. 기본 false. */
+  filterable?: boolean;
+  /** 컬럼 토글 — 표 위 컬럼 칩. 보고 싶은 열만 표시(모바일서 넓은 표 좁히기). 기본 false. */
+  columnToggle?: boolean;
 }) {
+  const t = usePublicTranslations();
   // 헤더 행은 항상 sticky (세로 스크롤 시)
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
   // viewport quirk 우회 — 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
   const maxHeightPx = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+
+  // 뷰 인터랙티브 (클라 전용, 서버 호출 0): 행 필터 + 컬럼 토글.
+  const [query, setQuery] = useState('');
+  const [hiddenCols, setHiddenCols] = useState<Set<number>>(() => new Set());
+  const toggleCol = useCallback((i: number) => setHiddenCols(prev => {
+    const n = new Set(prev);
+    if (n.has(i)) n.delete(i); else n.add(i);
+    return n;
+  }), []);
+  // 보이는 열(원본 인덱스 유지) — align/cellAlign 은 원본 ci 로 인덱싱하므로 원본 보존이 중요.
+  const visibleCols = headers.map((_, i) => i).filter(i => !hiddenCols.has(i));
+  const q = query.trim().toLowerCase();
+  // 필터된 행 — 원본 ri 보존({row,origRi}) → cellAlign 정합 유지. striped 는 표시 순서로.
+  const shownRows = (filterable && q)
+    ? rows.map((row, origRi) => ({ row, origRi })).filter(({ row }) =>
+        row.some(cell => String(cell ?? '').toLowerCase().includes(q)))
+    : rows.map((row, origRi) => ({ row, origRi }));
 
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
@@ -648,58 +670,98 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
 
   return (
-    // 박스 max-height = JS 측정 픽셀 (toolbar 변동 무관). SSR fallback = 70vh.
-    // overscroll-behavior 글로벌 미지정 = default auto → 끝 도달 시 페이지 chain 자연.
-    <div
-      className="overflow-auto rounded-xl border border-gray-100 shadow-sm scrollbar-thin"
-      style={{ maxHeight: maxHeightPx ? `${maxHeightPx}px` : '70vh' }}
-    >
-      <table className="min-w-full border-separate border-spacing-0">
-        <thead>
-          <tr>
-            {headers.map((h, i) => {
-              const isStickyCell = firstColSticky && i === 0;
-              const headerText = cleanPlainText(h);
-              return (
-                <th
-                  key={i}
-                  // border-b 한 줄만 — 이전엔 thead.bg + th.bg + th.border-b + 첫 td.border-b 가
-                  // 시각적으로 두 줄처럼 보이던 buf. bg 는 th 만 명시 (thead 의 bg 제거).
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
-                >
-                  {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, ri) => (
-            <tr
-              key={ri}
-              className={`hover:bg-gray-50 transition-colors ${striped && ri % 2 === 1 ? 'bg-gray-50/40' : ''}`}
-            >
-              {row.map((cell, ci) => {
-                const isStickyCell = firstColSticky && ci === 0;
-                const s = typeof cell === 'string' ? cell.trim() : String(cell);
-                // 색상만 유지 — ▲▼ 패턴 (등락 시각화). 정렬은 column 단위 AI 명시.
-                const isPositive = /^[▲+]/.test(s);
-                const isNegative = /^[▼\-−]/.test(s);
-                const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
-                const displayCell = formatNumberString(cell);
+    <div className="space-y-2">
+      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 시만. 클라 전용. */}
+      {(filterable || columnToggle) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {filterable && (
+            <div className="relative flex-1 min-w-[140px] max-w-xs">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
+              <input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={t('common.search')}
+                aria-label={t('common.search')}
+                className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          )}
+          {columnToggle && (
+            <div className="flex flex-wrap gap-1.5">
+              {headers.map((h, i) => {
+                const shown = !hiddenCols.has(i);
                 return (
-                  <td
-                    key={ci}
-                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => toggleCol(i)}
+                    aria-pressed={shown}
+                    className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${shown ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400 line-through'}`}
                   >
-                    {typeof cell === 'string' && hasInlineMd(cell) ? <InlineMd text={cell} /> : displayCell}
-                  </td>
+                    {cleanPlainText(h)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {filterable && q && (
+            <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{shownRows.length} / {rows.length}</span>
+          )}
+        </div>
+      )}
+      {/* 박스 max-height = JS 측정 픽셀 (toolbar 변동 무관). SSR fallback = 70vh. */}
+      <div
+        className="overflow-auto rounded-xl border border-gray-100 shadow-sm scrollbar-thin"
+        style={{ maxHeight: maxHeightPx ? `${maxHeightPx}px` : '70vh' }}
+      >
+        <table className="min-w-full border-separate border-spacing-0">
+          <thead>
+            <tr>
+              {visibleCols.map((ci, pos) => {
+                const isStickyCell = firstColSticky && pos === 0;
+                const headerText = cleanPlainText(headers[ci]);
+                return (
+                  <th
+                    key={ci}
+                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단).
+                    className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
+                  >
+                    {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
+                  </th>
                 );
               })}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shownRows.map(({ row, origRi }, pos) => (
+              <tr
+                key={origRi}
+                className={`hover:bg-gray-50 transition-colors ${striped && pos % 2 === 1 ? 'bg-gray-50/40' : ''}`}
+              >
+                {visibleCols.map((ci, cpos) => {
+                  const cell = row[ci] ?? '';
+                  const isStickyCell = firstColSticky && cpos === 0;
+                  const s = typeof cell === 'string' ? cell.trim() : String(cell);
+                  // 색상만 유지 — ▲▼ 패턴 (등락 시각화). 정렬은 column 단위 AI 명시.
+                  const isPositive = /^[▲+]/.test(s);
+                  const isNegative = /^[▼\-−]/.test(s);
+                  const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
+                  const displayCell = formatNumberString(cell);
+                  return (
+                    <td
+                      key={ci}
+                      className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, origRi)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
+                    >
+                      {typeof cell === 'string' && hasInlineMd(cell) ? <InlineMd text={cell} /> : displayCell}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
