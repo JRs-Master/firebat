@@ -1738,5 +1738,118 @@
         }
       }
     }
+  },
+  {
+    "name": "button",
+    "componentType": "Button",
+    "description": "A styled button/link. With href it navigates to a URL on click. variant = primary | secondary | outline. For an action that calls a backend, use a form instead.",
+    "semanticText": "button link cta navigate action click 버튼 링크 이동 클릭 액션",
+    "propsSchema": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "description": "button label" },
+        "href": { "type": ["string", "null"], "description": "URL to navigate to on click (optional)" },
+        "variant": { "type": ["string", "null"], "description": "primary | secondary | outline (default primary)" }
+      }
+    }
+  },
+  {
+    "name": "slider",
+    "componentType": "Slider",
+    "description": "A range slider the user drags; shows the selected value live. Client-side display only — the value does not drive other components. For interactive calculation use an html app or a form.",
+    "semanticText": "slider range drag value picker 슬라이더 범위 값 조절 선택",
+    "propsSchema": {
+      "type": "object",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": ["string", "null"], "description": "label shown above the slider" },
+        "min": { "type": ["number", "null"], "description": "minimum (default 0)" },
+        "max": { "type": ["number", "null"], "description": "maximum (default 100)" },
+        "step": { "type": ["number", "null"], "description": "step (default 1)" },
+        "defaultValue": { "type": ["number", "null"], "description": "initial value (default = min)" },
+        "unit": { "type": ["string", "null"], "description": "suffix after the value, e.g. % or kg" }
+      }
+    }
+  },
+  {
+    "name": "tabs",
+    "componentType": "Tabs",
+    "description": "Tabbed sections — click a tab to switch the shown content. Each tab has a label and its own child blocks. Good for organizing a lot of content compactly.",
+    "semanticText": "tabs tabbed sections switch panel 탭 전환 구분 분류 섹션",
+    "propsSchema": {
+      "type": "object",
+      "required": ["tabs"],
+      "additionalProperties": false,
+      "properties": {
+        "tabs": {
+          "type": "array",
+          "description": "tab list",
+          "items": {
+            "type": "object",
+            "required": ["label", "children"],
+            "properties": {
+              "label": { "type": "string", "description": "tab label" },
+              "children": {
+                "type": "array",
+                "description": "blocks shown when this tab is active",
+                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "accordion",
+    "componentType": "Accordion",
+    "description": "Collapsible sections — click a title to expand/collapse its content. Great for FAQs, long content, and mobile. Each item has a title and its own child blocks.",
+    "semanticText": "accordion collapse expand toggle faq 아코디언 접기 펼치기 토글 자주묻는질문 섹션",
+    "propsSchema": {
+      "type": "object",
+      "required": ["items"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "description": "collapsible items",
+          "items": {
+            "type": "object",
+            "required": ["title", "children"],
+            "properties": {
+              "title": { "type": "string", "description": "section title (the clickable header)" },
+              "children": {
+                "type": "array",
+                "description": "blocks shown when this item is expanded",
+                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "carousel",
+    "componentType": "Carousel",
+    "description": "A slideshow the user swipes/clicks through, one child block per slide. Optionally auto-plays. Good for image galleries or stepping through content.",
+    "semanticText": "carousel slideshow swipe gallery slides 캐러셀 슬라이드 갤러리 넘기기 슬라이드쇼",
+    "propsSchema": {
+      "type": "object",
+      "required": ["children"],
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "type": "array",
+          "description": "one block per slide",
+          "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+        },
+        "autoPlay": { "type": ["boolean", "null"], "description": "auto-advance slides (default false)" },
+        "interval": { "type": ["number", "null"], "description": "auto-play interval in ms (default 5000)" }
+      }
+    }
   }
 ]

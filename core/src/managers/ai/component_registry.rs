@@ -32,7 +32,8 @@ pub struct ComponentDef {
     pub props_schema: serde_json::Value,
 }
 
-/// 30개 component 정의 (components.json) — 27 + quiz/quiz_group(exam-prep) + form(인터랙티브).
+/// 35개 component 정의 (components.json) — 27 + quiz/quiz_group(exam-prep)
+/// + 인터랙티브 6 (form/button/slider/tabs/accordion/carousel).
 /// 첫 호출 시 lazy init. 이후 cached.
 pub fn components() -> &'static Vec<ComponentDef> {
     static CACHE: OnceLock<Vec<ComponentDef>> = OnceLock::new();
@@ -262,8 +263,8 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — 27 + quiz/quiz_group(exam-prep) + form(인터랙티브) = 30.
-        assert_eq!(comps.len(), 30, "components.json 의 30개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6(form/button/slider/tabs/accordion/carousel) = 35.
+        assert_eq!(comps.len(), 35, "components.json 의 35개 컴포넌트 모두 설정되어야");
     }
 
     #[test]
@@ -306,7 +307,7 @@ mod tests {
     #[test]
     fn component_names_returns_all() {
         let names = component_names();
-        assert_eq!(names.len(), 30);
+        assert_eq!(names.len(), 35);
         assert!(names.contains(&"stock_chart"));
         assert!(names.contains(&"table"));
         assert!(names.contains(&"network"));
