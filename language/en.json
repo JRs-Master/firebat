@@ -241,6 +241,7 @@
     "continue": "Continue",
     "failed_title": "Sign-in failed",
     "failed_message": "Invalid username or password.",
+    "locked": "Too many attempts — you can try again in {sec}s.",
     "checking": "Checking initial state…"
   },
   "setup": {

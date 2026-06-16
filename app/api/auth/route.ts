@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
   }
   const lr = res.data;
 
-  // 잠금 — LoginResponsePb.code === 'LOGIN_LOCKED'
+  // 잠금 — LoginResponsePb.code === 'LOGIN_LOCKED'. retryAfterSec 를 body 로 내려 클라가 카운트다운
+  // (문구는 클라에서 i18n 포맷). error='locked' = 코드.
   if (lr.code === 'LOGIN_LOCKED') {
     const retryAfterSec = lr.retryAfterSec ?? 60;
     return NextResponse.json(
-      { success: false, error: `로그인 시도 한도 초과 — ${retryAfterSec}초 후 다시 시도하세요` },
+      { success: false, error: 'locked', retryAfterSec },
       { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
     );
   }

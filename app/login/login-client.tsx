@@ -11,6 +11,8 @@ export function LoginInner() {
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // brute-force 잠금 — 남은 초. >0 이면 "N초 후 로그인 가능" 표시 + 제출 차단, 매초 감소.
+  const [lockRemaining, setLockRemaining] = useState(0);
   // setupState: 'checking' (초기) / 'needed' (SetupWizard 노출) / 'done' (정상 login form)
   const [setupState, setSetupState] = useState<'checking' | 'needed' | 'done'>('checking');
 
@@ -25,16 +27,29 @@ export function LoginInner() {
     })();
   }, []);
 
+  // 잠금 카운트다운 — lockRemaining 이 바뀔 때마다 1초 뒤 1 감소, 0 되면 멈춤(가드).
+  useEffect(() => {
+    if (lockRemaining <= 0) return;
+    const timer = setTimeout(() => setLockRemaining((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [lockRemaining]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return; // alertDialog open 중 또는 fetch 진행 중 재제출 → backdrop 누적 차단
+    if (submitting || lockRemaining > 0) return; // 진행 중 / 잠금 중 재제출 차단
     setSubmitting(true);
     try {
       await apiPost('/api/auth', { id, password }, { category: 'login' });
       window.location.href = '/admin';
     } catch (err) {
       if (err instanceof ApiError) {
-        await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true });
+        if (err.status === 429) {
+          // brute-force 잠금 — 남은 초로 카운트다운 시작 (틀림 alert 대신).
+          const sec = (err.responseBody as { retryAfterSec?: number } | undefined)?.retryAfterSec ?? 60;
+          setLockRemaining(sec);
+        } else {
+          await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true });
+        }
       }
     } finally {
       setSubmitting(false);
@@ -69,9 +84,14 @@ export function LoginInner() {
                 className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
             <div className="pt-2">
-              <button type="submit" disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
+              <button type="submit" disabled={submitting || lockRemaining > 0} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
                 {t('login.continue')}
               </button>
+              {lockRemaining > 0 && (
+                <p className="mt-2 text-center text-sm font-medium text-rose-600" role="status" aria-live="polite">
+                  {t('login.locked', { sec: lockRemaining })}
+                </p>
+              )}
             </div>
           </form>
         </div>

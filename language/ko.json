@@ -241,6 +241,7 @@
     "continue": "계속",
     "failed_title": "로그인 실패",
     "failed_message": "아이디 또는 비밀번호가 올바르지 않습니다.",
+    "locked": "로그인 시도가 많아 잠겼습니다 — {sec}초 후 다시 시도할 수 있습니다.",
     "checking": "초기 상태 확인 중…"
   },
   "setup": {
