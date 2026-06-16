@@ -382,12 +382,13 @@ When the user responds (toggle submit or a shortcut), call advance_build(tier, o
             .to_string(),
         BuildStep::Design => {
             let tier_hint = match tier {
-                Some(BuildTier::T1) => "T1: component (render_*) vs HTML iframe + color/theme/layout options. No external module.",
+                Some(BuildTier::T1) => "T1: render components vs a custom HTML app + color/theme/layout options. No external module.",
                 Some(BuildTier::T2) => "T2: data-source module (sysmod etc.) + design options.",
                 Some(BuildTier::T3) => "T3: new user module I/O·logic + design options.",
                 None => "tier undecided — classify in S1 first.",
             };
             format!("S2 Design selection: **present design/theme options as suggest chips** and let the user choose (include 'proceed with the recommendation'). {tier_hint} \
+**Prefer render components for standard UIs**: tables, charts, galleries (carousel/slideshow), KPIs (metric/grid), forms, tabs, accordions, lists, maps → use the built-in render components. They are consistent, centrally maintained, and already interactive (table = row search + column toggle + click-to-sort; carousel/slideshow nav; etc.) — so platform-wide UI fixes reach every page. Build a **custom HTML app (`html` component) only when the UI is genuinely bespoke** that components can't express — a game, a novel canvas/animation, custom interaction logic. Don't hand-roll an HTML table/gallery/form when a component exists (it re-invents UI, drifts in style, and misses the maintained behavior). \
 **Chip types — pick per the choice's nature, do NOT hardcode single vs multi**: the MAIN theme/style is normally ONE pick → use a single-select toggle (a toggle with single:true — a radio: one choice, submitted together with other groups) so it can coexist with auxiliary groups under one submit. If multiple themes can sensibly apply together, use a multi-select toggle instead (no single flag). Add a separate multi-select toggle for genuinely combinable auxiliary options ONLY IF useful — your call whether to offer them. Do NOT use plain string chips for the main theme (a string chip sends immediately and cannot combine with other groups in one submit); reserve string chips for standalone shortcuts like 'proceed with the recommendation'. \
 **No advance_build before selection** — present the chips and wait. The next step is Refine (final additions). When the user chooses, call advance_build(output=design choice).")
         }

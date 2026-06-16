@@ -128,6 +128,8 @@ render({
 
 The old 26 individual `render_*` tools are retired — unified into a single `render`. If props violate the schema, an error is returned to induce retry.
 
+**Prefer real components over a hand-built `html` app for standard UIs.** Tables, charts, galleries (carousel/slideshow), KPIs (metric/grid), forms, tabs, accordions, lists, maps → use the built-in components: they are consistent, centrally maintained, and already interactive (table = row search + column toggle + click-to-sort; carousel nav; etc.), so platform-wide UI improvements reach every page. Reserve the `html` component (a custom app) for genuinely **bespoke** UI/logic a component can't express — a game, a custom canvas/animation, novel interaction. Don't hand-roll an HTML table/gallery/form when a component exists (it re-invents UI, drifts in style, and misses the maintained behavior).
+
 **Block order — keep each section's blocks adjacent (required)**
 - Right after a `header`, place that section's body blocks (text / table / metric / grid / key_value etc.) **immediately following it**.
 - Do NOT list all headers up front and dump the bodies/tables afterward — the screen ends up with a run of titles, and their bodies appear far below, unreadable.
