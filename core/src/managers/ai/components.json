@@ -2,7 +2,7 @@
   {
     "name": "stock_chart",
     "componentType": "StockChart",
-    "description": "주식 캔들 차트 (OHLCV 일봉·분봉). 주가 시세 시각화 시 사용. 매수/매도 포인트, 이동평균선 표시 가능. 필수 props: symbol(코드) + data(OHLCV 배열). title 은 optional (있으면 종목 한글명, 없으면 symbol 사용). 'name' 키 사용 금지 — 종목 한글명은 'title' prop 사용.",
+    "description": "Stock candlestick chart (OHLCV, daily/intraday). Use for visualizing stock prices. Can show buy/sell points and moving averages. Required props: symbol (code) + data (OHLCV array). title is optional (the stock's display name if present, otherwise symbol is shown). Do NOT use a 'name' key — put the display name in 'title'.",
     "semanticText": "주식 종목 시세 주가 캔들 일봉 분봉 차트 OHLCV 이동평균 MA 골든크로스 데드크로스 거래량 저항 지지 매수 매도 포인트 005930 삼성전자 코스피 코스닥 투자 분석",
     "propsSchema": {
       "type": "object",
@@ -14,11 +14,11 @@
       "properties": {
         "symbol": {
           "type": "string",
-          "description": "종목 코드. optional — 없으면 title 만 라벨로 사용."
+          "description": "stock code. optional — if omitted, only title is used as the label."
         },
         "title": {
           "type": "string",
-          "description": "종목 한글명 — 심볼 코드 금지"
+          "description": "stock display name — not the symbol code"
         },
         "data": {
           "type": "array",
@@ -27,7 +27,7 @@
             "properties": {
               "date": {
                 "type": "string",
-                "description": "YYYY-MM-DD 또는 YYYYMMDD"
+                "description": "YYYY-MM-DD or YYYYMMDD"
               },
               "open": {
                 "type": "number"
@@ -51,7 +51,7 @@
             ],
             "additionalProperties": false
           },
-          "description": "OHLCV 배열 — 오래된 → 최신 순서. 최소 10일 이상 권장. open/high/low/volume 누락 시 close 로 폴백(플랫 캔들)"
+          "description": "OHLCV array — oldest → newest order. 10+ days recommended. If open/high/low/volume are missing, falls back to close (flat candle)."
         },
         "indicators": {
           "type": "array",
@@ -64,7 +64,7 @@
               "MA60"
             ]
           },
-          "description": "이동평균선. 기본 [\"MA5\",\"MA20\"]. 불필요하면 []"
+          "description": "moving averages. default [\"MA5\",\"MA20\"]. use [] if not needed."
         },
         "buyPoints": {
           "type": "array",
@@ -88,7 +88,7 @@
                   "string",
                   "null"
                 ],
-                "description": "봉 날짜(데이터 date 와 일치). 있으면 해당 봉 아래 ↑ 매수 화살표, 없으면 price 레벨 수평선(지지)"
+                "description": "candle date (must match a data date). With it, an ↑ buy arrow below that candle; without it, a horizontal line at the price level (support)."
               }
             },
             "required": [
@@ -98,7 +98,7 @@
             ],
             "additionalProperties": false
           },
-          "description": "매수 신호. date 있으면 해당 봉에 ↑ 화살표(매수 시점), 없으면 price 레벨 수평선(지지선). 없으면 []"
+          "description": "buy signals. With date, draws an ↑ arrow on that candle (buy timing); without date, a horizontal line at the price level (support). use [] if none."
         },
         "sellPoints": {
           "type": "array",
@@ -122,7 +122,7 @@
                   "string",
                   "null"
                 ],
-                "description": "봉 날짜(데이터 date 와 일치). 있으면 해당 봉 위 ↓ 매도 화살표, 없으면 price 레벨 수평선(저항)"
+                "description": "candle date (must match a data date). With it, a ↓ sell arrow above that candle; without it, a horizontal line at the price level (resistance)."
               }
             },
             "required": [
@@ -132,7 +132,7 @@
             ],
             "additionalProperties": false
           },
-          "description": "매도 신호. date 있으면 해당 봉에 ↓ 화살표(매도 시점), 없으면 price 레벨 수평선(저항선). 없으면 []"
+          "description": "sell signals. With date, draws a ↓ arrow on that candle (sell timing); without date, a horizontal line at the price level (resistance). use [] if none."
         }
       }
     }
@@ -140,7 +140,7 @@
   {
     "name": "chart",
     "componentType": "Chart",
-    "description": "일반 차트 (막대/선/원형/도넛). 수치 비교·추이·분포 시각화. 주식 시세는 stock_chart 사용.\n- chartType: 추세·시계열(이동평균·가격 추이)=line / 항목 비교=bar / 비중=pie·doughnut.\n- 단일 series → data 에 숫자 배열만 (number[]). 다중 series(이평선 5·20·60, 매출·영업이익·순이익 등) → series 에 [{name, data:[숫자]}]. ⚠️ series 객체를 data 에 넣지 마라 (그러면 값이 0 으로 렌더됨).",
+    "description": "General chart (bar/line/pie/doughnut). Visualize numeric comparison, trend, or distribution. For stock prices use stock_chart.\n- chartType: trend / time-series (moving averages, price trend) = line / item comparison = bar / share = pie·doughnut.\n- Single series → put a plain number array in data (number[]). Multiple series (MA 5·20·60, revenue / operating-profit / net-income, etc.) → series as [{name, data:[numbers]}]. ⚠️ Do NOT put series objects in data (they render as 0).",
     "semanticText": "차트 그래프 막대 바 선 라인 원형 파이 도넛 시각화 비교 추이 분포 퍼센트 비율 통계 수치 데이터",
     "propsSchema": {
       "type": "object",
@@ -176,7 +176,7 @@
             "array",
             "null"
           ],
-          "description": "단일 series 의 순수 숫자 배열 — number[] 만. 예: [100, 200, 300]. ⚠️ {name/label, data} 같은 series 객체를 여기 넣지 마라 — 다중 series 는 반드시 series 필드. (객체 배열을 data 에 넣으면 값이 0 으로 렌더됨.)",
+          "description": "Plain number array for a single series — number[] only. e.g. [100, 200, 300]. ⚠️ Do NOT put series objects like {name/label, data} here — multiple series must go in the series field. (Object arrays in data render as 0.)",
           "items": {
             "type": "number"
           }
@@ -186,7 +186,7 @@
             "array",
             "null"
           ],
-          "description": "다중 series 배열. 각 항목 = {name, data: number[]} (label/values 도 허용). 예: [{name:'매출',data:[2792,3334,3471]},{name:'영업이익',data:[425,585,591]}]. 이동평균·가격추이 등 시계열은 chartType='line'. 여러 지표를 한 차트에 = 반드시 series (data 아님).",
+          "description": "Array of multiple series. Each item = {name, data: number[]} (label/values also accepted). e.g. [{name:'Revenue',data:[2792,3334,3471]},{name:'Operating profit',data:[425,585,591]}]. For time series (moving averages, price trend) use chartType='line'. Multiple metrics in one chart = must use series (not data).",
           "items": {
             "type": "object"
           }
@@ -272,7 +272,7 @@
   {
     "name": "badge",
     "componentType": "Badge",
-    "description": "작은 태그/뱃지. 상태·카테고리·라벨 표시.",
+    "description": "Small tag/badge. Shows a status, category, or label.",
     "semanticText": "뱃지 배지 태그 레이블 라벨 상태 카테고리 표시 마크 chip pill",
     "propsSchema": {
       "type": "object",
@@ -295,7 +295,7 @@
             "string",
             "null"
           ],
-          "description": "색상/상태. 색 이름(blue/red/green/yellow/purple/gray/orange) 또는 의미값(success/warning/error/danger/info/neutral). 생략 시 기본 blue."
+          "description": "Color/status. A color name (blue/red/green/yellow/purple/gray/orange) or a semantic value (success/warning/error/danger/info/neutral). Defaults to blue."
         }
       }
     }
@@ -303,7 +303,7 @@
   {
     "name": "callout",
     "componentType": "Callout",
-    "description": "정보 강조 박스. 본문 안 팁·주의·참고 강조용. info/success/warning/error/tip/accent/highlight/neutral 타입 (AlertComp 재사용).",
+    "description": "Info highlight box — for tips, cautions, or notes within the body. Types: info/success/warning/error/tip/accent/highlight/neutral (reuses AlertComp).",
     "semanticText": "콜아웃 callout 정보 강조 박스 알림 팁 참고 주의 info success warning error",
     "propsSchema": {
       "type": "object",
@@ -321,7 +321,7 @@
       "properties": {
         "message": {
           "type": "string",
-          "description": "본문 텍스트 (마크다운 일부 지원)"
+          "description": "body text (partial markdown support)"
         },
         "type": {
           "type": [
@@ -329,21 +329,21 @@
             "null"
           ],
           "enum": ["info", "success", "warning", "warn", "error", "danger", "tip", "accent", "highlight", "neutral", null],
-          "description": "콜아웃 타입. info(파랑·기본) / success(녹색) / warning(주황) / error(빨강) / tip(보라·💡) / accent(주황·🔥) / highlight(노랑·⭐) / neutral(회색·📎)"
+          "description": "Callout type. info (blue, default) / success (green) / warning (orange) / error (red) / tip (purple·💡) / accent (orange·🔥) / highlight (yellow·⭐) / neutral (gray·📎)"
         },
         "title": {
           "type": [
             "string",
             "null"
           ],
-          "description": "상단 제목 (옵션)"
+          "description": "top title (optional)"
         },
         "action": {
           "type": [
             "object",
             "null"
           ],
-          "description": "CTA 버튼 — { label, href } 지정 시 본문 아래 버튼",
+          "description": "CTA button — when { label, href } is set, shows a button below the body",
           "properties": {
             "label": { "type": "string" },
             "href": { "type": "string" }
@@ -355,7 +355,7 @@
   {
     "name": "progress",
     "componentType": "Progress",
-    "description": "진행률 바. 0~100% 표시. 태스크 완료율, 로딩, 예산 사용률 등.",
+    "description": "Progress bar. Shows 0–100%. Task completion, loading, budget usage, etc.",
     "semanticText": "프로그래스 진행률 진행도 완료율 퍼센트 비율 로딩 바 progress bar 달성률",
     "propsSchema": {
       "type": "object",
@@ -372,7 +372,7 @@
         },
         "max": {
           "type": "number",
-          "description": "기본 100"
+          "description": "default 100"
         },
         "label": {
           "type": [
@@ -392,7 +392,7 @@
   {
     "name": "header",
     "componentType": "Header",
-    "description": "섹션 제목 (h1~h6). 구조적 타이틀.",
+    "description": "Section heading (h1–h6). A structural title.",
     "semanticText": "제목 헤더 타이틀 섹션 h1 h2 h3 h4 h5 h6 구분 heading title 챕터",
     "propsSchema": {
       "type": "object",
@@ -416,7 +416,7 @@
             6
           ],
           "default": 2,
-          "description": "기본 2"
+          "description": "default 2"
         }
       }
     }
@@ -424,7 +424,7 @@
   {
     "name": "text",
     "componentType": "Text",
-    "description": "본문 텍스트 블록. 명시 구조가 필요할 때만. 일반 답변은 그냥 텍스트.",
+    "description": "Body text block. Only when explicit structure is needed; for a normal answer just reply with text.",
     "semanticText": "텍스트 본문 문단 paragraph 내용 글 설명 description",
     "propsSchema": {
       "type": "object",
@@ -442,7 +442,7 @@
   {
     "name": "list",
     "componentType": "List",
-    "description": "목록 (3개 이상 권장). 순서있는 번호 리스트 또는 글머리 리스트.",
+    "description": "List (3+ items recommended). Ordered (numbered) or bulleted.",
     "semanticText": "리스트 목록 항목 나열 bullet ordered unordered 번호 1 2 3 체크 체크리스트 todo",
     "propsSchema": {
       "type": "object",
@@ -461,7 +461,7 @@
         "ordered": {
           "type": "boolean",
           "default": false,
-          "description": "번호 매기기 (true) 또는 글머리 (false). 기본 false."
+          "description": "numbered (true) or bulleted (false). default false."
         }
       }
     }
@@ -469,7 +469,7 @@
   {
     "name": "divider",
     "componentType": "Divider",
-    "description": "섹션 구분선.",
+    "description": "Section divider.",
     "semanticText": "구분선 경계선 divider hr 수평선 separator 분리",
     "propsSchema": {
       "type": "object",
@@ -481,7 +481,7 @@
   {
     "name": "countdown",
     "componentType": "Countdown",
-    "description": "특정 시각까지 카운트다운 타이머.",
+    "description": "Countdown timer to a specific time.",
     "semanticText": "카운트다운 타이머 시간 제한 남은시간 디데이 D-DAY deadline 마감 timer",
     "propsSchema": {
       "type": "object",
@@ -493,7 +493,7 @@
       "properties": {
         "targetDate": {
           "type": "string",
-          "description": "ISO 8601 (예: \"2026-12-31T23:59:59\")"
+          "description": "ISO 8601 (e.g. \"2026-12-31T23:59:59\")"
         },
         "label": {
           "type": [
@@ -507,7 +507,7 @@
   {
     "name": "image",
     "componentType": "Image",
-    "description": "이미지. src URL과 alt 필수.",
+    "description": "Image. src URL and alt are required.",
     "semanticText": "이미지 그림 사진 picture photo img 썸네일 thumbnail",
     "propsSchema": {
       "type": "object",
@@ -622,7 +622,7 @@
           "properties": {
             "src": {
               "type": "string",
-              "description": "이미지 URL — /user/media/... 또는 https://..."
+              "description": "image URL — /user/media/... or https://..."
             },
             "alt": {
               "type": "string",
@@ -656,7 +656,7 @@
   {
     "name": "grid",
     "componentType": "Grid",
-    "description": "그리드 레이아웃 (n열로 children 배치).",
+    "description": "Grid layout (arranges children into n columns).",
     "semanticText": "그리드 격자 레이아웃 2열 3열 4열 columns 나열 배치 layout",
     "propsSchema": {
       "type": "object",
@@ -667,7 +667,7 @@
       "properties": {
         "columns": {
           "type": "integer",
-          "description": "열 수 (2, 3, 4)"
+          "description": "number of columns (2, 3, 4)"
         },
         "children": {
           "type": "array",
@@ -779,7 +779,7 @@
   {
     "name": "timeline",
     "componentType": "Timeline",
-    "description": "연대기 / 이벤트 타임라인. 날짜 + 제목 + 설명 세로 배치.",
+    "description": "Chronology / event timeline. Date + title + description laid out vertically.",
     "semanticText": "타임라인 연대기 이벤트 이력 히스토리 history timeline 일정 단계 progress steps",
     "propsSchema": {
       "type": "object",
@@ -821,14 +821,14 @@
                   "warning",
                   "error"
                 ],
-                "description": "점 색상 구분 (생략 가능)"
+                "description": "dot color category (optional)"
               },
               "href": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "항목 전체 클릭 시 이동 URL (선택). 설정하면 항목이 anchor 로 wrap."
+                "description": "URL to navigate to when the whole item is clicked (optional). When set, the item is wrapped in an anchor."
               }
             }
           }
@@ -839,7 +839,7 @@
   {
     "name": "compare",
     "componentType": "Compare",
-    "description": "A vs B 대조. 두 대상의 속성별 비교를 표 형태로.",
+    "description": "A-vs-B comparison. Compares two targets attribute by attribute in a table form.",
     "semanticText": "비교 대조 vs AB 선택 옵션 compare versus 장단점 대비",
     "propsSchema": {
       "type": "object",
@@ -937,32 +937,32 @@
         "answer": { "type": ["number", "null"], "description": "정답 보기의 0-based 인덱스 (choices 배열 위치 — 첫 보기=0, 둘째=1 …). answerIndex 와 동일" },
         "answerIndex": { "type": ["number", "null"], "description": "정답 보기의 0-based 인덱스 (answer 와 동일 — 둘 중 하나만)" },
         "explanation": { "type": ["string", "null"], "description": "해설 (markdown + LaTeX)" },
-        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
+        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
       }
     }
   },
   {
     "name": "quiz_group",
     "componentType": "QuizGroup",
-    "description": "한 지문에 여러 문제가 딸린 세트 (수능 42~45 등). passage(공유 지문)+boxes/figures(공유 자극)+questions[] (각 문항: question/choices/answer/explanation/statements/figures). view 는 quiz 와 동일 (interactive 면 전부 풀고 한 번에 채점).",
+    "description": "A set of questions sharing one passage (e.g. Korean SAT items 42–45). passage (shared text) + boxes/figures (shared stimulus) + questions[] (each: question/choices/answer/explanation/statements/figures). Same view as quiz (in interactive mode, answer all then grade at once).",
     "semanticText": "지문 장문독해 세트 여러 문제 quiz group 수능 42 43 44 45 공통 지문 본문 한번에 채점 묶음",
     "propsSchema": {
       "type": "object",
       "synonyms": { "quizzes": "questions", "items": "questions" },
       "required": ["questions"],
       "properties": {
-        "passage": { "type": ["string", "null"], "description": "공유 지문/본문 (markdown + LaTeX)" },
-        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "공유 본문 박스 (무채색)" },
-        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "공유 그림/표/그래프" },
-        "questions": { "type": "array", "items": { "type": "object", "synonyms": { "options": "choices" }, "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "answerIndex": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "문항 배열 (각 {question, choices(=options), answer 또는 answerIndex(둘 다 0-based 정답 인덱스), explanation?, statements?, figures?})" },
-        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (기본 interactive)" }
+        "passage": { "type": ["string", "null"], "description": "shared passage/text (markdown + LaTeX)" },
+        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "shared body boxes (neutral/grayscale)" },
+        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "shared figures/tables/graphs" },
+        "questions": { "type": "array", "items": { "type": "object", "synonyms": { "options": "choices" }, "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "answerIndex": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "array of items (each {question, choices(=options), answer or answerIndex (both 0-based correct index), explanation?, statements?, figures?})" },
+        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
       }
     }
   },
   {
     "name": "key_value",
     "componentType": "KeyValue",
-    "description": "**단일 대상 1개**의 속성을 라벨:값으로 나열 = 단일 대상 테이블 (한 종목 스펙·제품 정보·재무지표 등). columns 2/3 로 한 줄에 여러 쌍 배치. **여러 대상을 비교**할 땐 key_value 를 대상 수만큼 쪼개지 말고 table 을 써라 (대상=열, 속성=행). item.highlight=값 강조, item.href=행 클릭 이동.",
+    "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",
     "semanticText": "키밸류 라벨 값 속성 정보 스펙 spec 정보 info 필드 단일 대상 한 종목 한 제품",
     "propsSchema": {
       "type": "object",
@@ -986,11 +986,11 @@
             "properties": {
               "key": {
                 "type": ["string", "null"],
-                "description": "항목 라벨. label 동의어로 줘도 됨(둘 중 하나 필수)."
+                "description": "item label. may be given as the synonym 'label' (one of the two is required)."
               },
               "label": {
                 "type": ["string", "null"],
-                "description": "key 의 동의어 — key 대신 label 로 줘도 라벨로 표시됨."
+                "description": "synonym for key — giving label instead of key still shows it as the label."
               },
               "value": {
                 "type": [
@@ -1009,7 +1009,7 @@
                   "string",
                   "null"
                 ],
-                "description": "항목 클릭 시 이동 URL (선택). 설정하면 row 가 anchor 로 wrap."
+                "description": "URL to navigate to on item click (optional). When set, the row is wrapped in an anchor."
               }
             }
           }
@@ -1019,7 +1019,7 @@
             "integer",
             "null"
           ],
-          "description": "1/2/3 (기본 2)"
+          "description": "1/2/3 (default 2)"
         }
       }
     }
@@ -1027,7 +1027,7 @@
   {
     "name": "plan_card",
     "componentType": "PlanCard",
-    "description": "다단계 작업을 *실행하기 전* 사용자 승인을 받는 플랜 카드 — propose_plan 도구가 생성한다(render 로 직접 그리지 마라). 5개+ 도구 호출 예상 시 propose_plan 으로 먼저 제시 → suggest [실행/수정/취소]. 완료·결과 요약엔 쓰지 마라(그건 text/list/callout). steps 는 객체 배열 [{title, description?}] — 문자열 배열 아님.",
+    "description": "A plan card that gets user approval *before* running a multi-step task — generated by the propose_plan tool (do NOT draw it directly with render). When 5+ tool calls are expected, propose first with propose_plan → suggest [run/revise/cancel]. Don't use it for completion or result summaries (use text/list/callout). steps is an array of objects [{title, description?}] — not an array of strings.",
     "semanticText": "플랜 계획 로드맵 단계 step 체크리스트 todo 예정 로드맵 plan approve execute workflow 승인",
     "propsSchema": {
       "type": "object",
@@ -1038,11 +1038,11 @@
       "properties": {
         "title": {
           "type": "string",
-          "description": "플랜 제목 (간결히)"
+          "description": "plan title (concise)"
         },
         "steps": {
           "type": "array",
-          "description": "실행 단계 순서",
+          "description": "ordered execution steps",
           "items": {
             "type": "object",
             "required": [
@@ -1051,21 +1051,21 @@
             "properties": {
               "title": {
                 "type": "string",
-                "description": "단계 제목"
+                "description": "step title"
               },
               "description": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "간단 설명 (선택)"
+                "description": "short description (optional)"
               },
               "tool": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "사용할 주요 도구명 (참고용)"
+                "description": "the main tool to use (for reference)"
               }
             }
           }
@@ -1075,14 +1075,14 @@
             "string",
             "null"
           ],
-          "description": "예상 소요. 예: \"2~3분\""
+          "description": "estimated time. e.g. \"2–3 min\""
         },
         "risks": {
           "type": [
             "array",
             "null"
           ],
-          "description": "주의사항·리스크",
+          "description": "cautions / risks",
           "items": {
             "type": "string"
           }
@@ -1093,7 +1093,7 @@
   {
     "name": "status_badge",
     "componentType": "StatusBadge",
-    "description": "의미 기반 상태 뱃지 세트 (positive/negative/neutral/warning/info). 여러 상태를 한 줄에.",
+    "description": "Semantic status-badge set (positive/negative/neutral/warning/info). Several statuses in one row.",
     "semanticText": "상태 뱃지 배지 태그 지표 정배열 과열 중립 positive negative warning info label tag chip",
     "propsSchema": {
       "type": "object",
@@ -1134,7 +1134,7 @@
   {
     "name": "diagram",
     "componentType": "Diagram",
-    "description": "Mermaid 다이어그램 — flowchart / sequence / gantt / classDiagram / stateDiagram / mindmap / timeline / pie. text DSL 만 설정하면 자동 렌더. iframe + inline JS 보다 token 절감 + 안정.",
+    "description": "Mermaid diagram — flowchart / sequence / gantt / classDiagram / stateDiagram / mindmap / timeline / pie. Just set the text DSL and it renders. Fewer tokens + more stable than iframe + inline JS.",
     "semanticText": "다이어그램 diagram mermaid flowchart sequence gantt class state mindmap pie 워크플로우 의사결정 트리",
     "propsSchema": {
       "type": "object",
@@ -1144,14 +1144,14 @@
       "properties": {
         "code": {
           "type": "string",
-          "description": "Mermaid DSL (예: \"flowchart TD\\n  A-->B\"). 공식 문서 https://mermaid.js.org/"
+          "description": "Mermaid DSL (e.g. \"flowchart TD\\n  A-->B\"). Docs: https://mermaid.js.org/"
         },
         "theme": {
           "type": [
             "string",
             "null"
           ],
-          "description": "default / dark / forest / neutral (기본 default)"
+          "description": "default / dark / forest / neutral (default: default)"
         }
       }
     }
@@ -1159,7 +1159,7 @@
   {
     "name": "math",
     "componentType": "Math",
-    "description": "KaTeX 수식 — LaTeX 문자열 inline 또는 block. 수학·통계·재무 공식 표시. iframe 보다 단순.",
+    "description": "KaTeX formula — a LaTeX string, inline or block. For math / statistics / finance formulas. Simpler than an iframe.",
     "semanticText": "수식 math 수학 LaTeX katex 공식 수학식 통계 재무 적분 미분 시그마",
     "propsSchema": {
       "type": "object",
@@ -1174,14 +1174,14 @@
       "properties": {
         "expression": {
           "type": "string",
-          "description": "LaTeX 수식 (예: \"\\\\frac{a}{b}\", \"\\\\int_0^1 x^2 dx\")"
+          "description": "LaTeX formula (e.g. \"\\\\frac{a}{b}\", \"\\\\int_0^1 x^2 dx\")"
         },
         "block": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "true=block (centered, large), false=inline. 기본 true"
+          "description": "true = block (centered, large), false = inline. default true"
         }
       }
     }
@@ -1189,7 +1189,7 @@
   {
     "name": "code",
     "componentType": "Code",
-    "description": "코드 스니펫 — highlight.js syntax highlight 자동. language 명시 시 정확. 블로그·문서·README 자주.",
+    "description": "Code snippet — automatic highlight.js syntax highlighting. Accurate when language is set. Common in blogs, docs, READMEs.",
     "semanticText": "코드 code 스니펫 snippet syntax highlight 프로그래밍 javascript python typescript SQL hljs",
     "propsSchema": {
       "type": "object",
@@ -1205,25 +1205,25 @@
       "properties": {
         "code": {
           "type": "string",
-          "description": "코드 내용 (multi-line OK)"
+          "description": "code content (multi-line OK)"
         },
         "language": {
           "type": "string",
-          "description": "javascript / typescript / python / sql / json / bash / html / css 등 hljs 지원 언어"
+          "description": "javascript / typescript / python / sql / json / bash / html / css, etc. (any hljs-supported language)"
         },
         "showLineNumbers": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "줄 번호 표시 (기본 true)"
+          "description": "show line numbers (default true)"
         },
         "title": {
           "type": [
             "string",
             "null"
           ],
-          "description": "코드 블록 위 제목 (예: \"main.py\")"
+          "description": "title above the code block (e.g. \"main.py\")"
         }
       }
     }
@@ -1231,7 +1231,7 @@
   {
     "name": "slideshow",
     "componentType": "Slideshow",
-    "description": "Swiper 이미지 슬라이드쇼 — 가로 슬라이드 + 페이지네이션 + 자동재생 옵션. 마케팅·갤러리·히어로 페이지. (children 기반 카드 캐러셀은 render_carousel 별도)",
+    "description": "Swiper image slideshow — horizontal slides + pagination + optional autoplay. For marketing, galleries, hero pages. (For a children-based card carousel, use render_carousel instead.)",
     "semanticText": "슬라이드 slide 슬라이드쇼 slideshow swiper 갤러리 gallery 이미지 슬라이더 hero 마케팅",
     "propsSchema": {
       "type": "object",
@@ -1249,7 +1249,7 @@
             "properties": {
               "src": {
                 "type": "string",
-                "description": "이미지 URL — /user/media/... 또는 https://..."
+                "description": "image URL — /user/media/... or https://..."
               },
               "alt": {
                 "type": [
@@ -1262,7 +1262,7 @@
                   "string",
                   "null"
                 ],
-                "description": "이미지 위 캡션 (선택)"
+                "description": "caption over the image (optional)"
               }
             }
           }
@@ -1272,21 +1272,21 @@
             "boolean",
             "null"
           ],
-          "description": "자동재생 (기본 false)"
+          "description": "autoplay (default false)"
         },
         "autoplayDelay": {
           "type": [
             "integer",
             "null"
           ],
-          "description": "자동재생 간격 ms (기본 3000)"
+          "description": "autoplay interval in ms (default 3000)"
         },
         "height": {
           "type": [
             "string",
             "null"
           ],
-          "description": "슬라이드 높이 (예: \"400px\"). 기본 400px"
+          "description": "slide height (e.g. \"400px\"). default 400px"
         }
       }
     }
@@ -1294,7 +1294,7 @@
   {
     "name": "lottie",
     "componentType": "Lottie",
-    "description": "Lottie JSON 애니메이션 — Adobe After Effects 의 lottie-web 형식. JSON URL 설정하면 자동 재생. 마케팅·온보딩·일러스트.",
+    "description": "Lottie JSON animation — the lottie-web format from Adobe After Effects. Set a JSON URL and it plays automatically. For marketing, onboarding, illustrations.",
     "semanticText": "Lottie 애니메이션 animation 일러스트 illustration JSON 모션 motion graphic AE",
     "propsSchema": {
       "type": "object",
@@ -1304,28 +1304,28 @@
       "properties": {
         "src": {
           "type": "string",
-          "description": "Lottie JSON 파일 URL (lottiefiles.com 또는 자체 호스팅)"
+          "description": "Lottie JSON file URL (lottiefiles.com or self-hosted)"
         },
         "loop": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "루프 재생 (기본 true)"
+          "description": "loop playback (default true)"
         },
         "autoplay": {
           "type": [
             "boolean",
             "null"
           ],
-          "description": "자동재생 (기본 true)"
+          "description": "autoplay (default true)"
         },
         "height": {
           "type": [
             "string",
             "null"
           ],
-          "description": "높이 (예: \"300px\"). 기본 300px"
+          "description": "height (e.g. \"300px\"). default 300px"
         }
       }
     }
@@ -1333,7 +1333,7 @@
   {
     "name": "network",
     "componentType": "Network",
-    "description": "Cytoscape 네트워크 그래프 — 노드 + 간선 시각화. 관계도·조직도·데이터 흐름·시스템 아키텍처.",
+    "description": "Cytoscape network graph — nodes + edges visualization. For relationship maps, org charts, data flows, system architecture.",
     "semanticText": "네트워크 network 그래프 graph cytoscape 노드 node 간선 edge 관계도 조직도 의존성 시스템",
     "propsSchema": {
       "type": "object",
@@ -1362,7 +1362,7 @@
                   "string",
                   "null"
                 ],
-                "description": "노드 색 (red / blue / green / orange / purple)"
+                "description": "node color (red / blue / green / orange / purple)"
               }
             }
           }
@@ -1378,18 +1378,18 @@
             "properties": {
               "source": {
                 "type": "string",
-                "description": "nodes 의 id"
+                "description": "id from nodes"
               },
               "target": {
                 "type": "string",
-                "description": "nodes 의 id"
+                "description": "id from nodes"
               },
               "label": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "간선 라벨 (선택)"
+                "description": "edge label (optional)"
               }
             }
           }
@@ -1399,14 +1399,14 @@
             "string",
             "null"
           ],
-          "description": "cose (기본, 자동 배치) / circle / grid / breadthfirst"
+          "description": "cose (default, auto-layout) / circle / grid / breadthfirst"
         },
         "height": {
           "type": [
             "string",
             "null"
           ],
-          "description": "높이 (기본 400px)"
+          "description": "height (default 400px)"
         }
       }
     }
@@ -1734,7 +1734,7 @@
             "string",
             "null"
           ],
-          "description": "submit button label (default 실행)"
+          "description": "submit button label (default \"실행\")"
         }
       }
     }
