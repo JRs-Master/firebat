@@ -203,7 +203,7 @@
   {
     "name": "table",
     "componentType": "Table",
-    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns).",
+    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns). Set sortable=true ONLY when sorting is meaningful (many rows + comparable columns like price/count/ranking) — not for small or fixed-order tables.",
     "semanticText": "table grid rows columns headers list compare spreadsheet data ranking metrics revenue multiple stocks 표 테이블 행 열 헤더 나열 비교 정리 데이터 목록 항목 필드 매출 지표 순위 여러 종목 비교",
     "propsSchema": {
       "type": "object",
@@ -218,7 +218,8 @@
         "search": "filterable",
         "filter": "filterable",
         "columnSelect": "columnToggle",
-        "selectableColumns": "columnToggle"
+        "selectableColumns": "columnToggle",
+        "sort": "sortable"
       },
       "properties": {
         "headers": {
@@ -272,6 +273,13 @@
             "null"
           ],
           "description": "true shows column chips above the table — tap to show only the columns you want (narrow a wide table on mobile). Recommended for many-column tables. default false."
+        },
+        "sortable": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true makes column headers click-to-sort (asc → desc → original). Opt-in — set ONLY when sorting is meaningful: many rows + comparable columns (prices, counts, ranking, dates). Do NOT set for small tables, single-target attribute tables, or where row order itself is the meaning. default false."
         }
       }
     }

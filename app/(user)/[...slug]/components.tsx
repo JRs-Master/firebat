@@ -68,7 +68,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? p.label ?? p.title ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
@@ -601,7 +601,7 @@ function hasInlineMd(s: string): boolean {
   return /\*\*[^\n*]+\*\*|<\/?(?:strong|b|em|i)\b/i.test(s);
 }
 
-function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign, filterable, columnToggle }: {
+function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign, filterable, columnToggle, sortable }: {
   headers: string[]; rows: string[][]; stickyCol?: boolean;
   /** zebra 행 — 짝수 row 배경 살짝 어둡게. 행 많을 때 가독성 ↑. 기본 false. */
   striped?: boolean;
@@ -613,6 +613,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   filterable?: boolean;
   /** 컬럼 토글 — 표 위 컬럼 칩. 보고 싶은 열만 표시(모바일서 넓은 표 좁히기). 기본 false. */
   columnToggle?: boolean;
+  /** 헤더 클릭 정렬 — opt-in. 정렬이 의미 있는 표(여러 행 + 비교 가능 컬럼)만 AI 가 켬. 기본 false (정렬 불필요한 표에 ⇅ 노이즈 방지). */
+  sortable?: boolean;
 }) {
   const t = usePublicTranslations();
   // 헤더 행은 항상 sticky (세로 스크롤 시)
@@ -763,19 +765,19 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                 return (
                   <th
                     key={ci}
-                    onClick={() => cycleSort(ci)}
-                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단). 클릭=정렬(툴팁 없음).
-                    className={`group cursor-pointer select-none px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 hover:bg-gray-100 sticky top-0 min-w-[120px] ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
+                    onClick={sortable ? () => cycleSort(ci) : undefined}
+                    // border-b 한 줄만. **sortable 일 때만** 클릭 정렬(cursor·hover·⇅) — 아니면 정적 헤더(정렬 노이즈 0).
+                    className={`select-none px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${sortable ? 'group cursor-pointer hover:bg-gray-100' : ''} ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                   >
                     <span className="inline-flex items-center gap-1 align-middle">
                       {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
-                      {active ? (
+                      {sortable && (active ? (
                         // 활성 정렬 — 현재 방향 한쪽만 진한 파랑.
                         <span className="text-[11px] leading-none text-blue-600" aria-hidden>{sortDir === 'asc' ? '↑' : '↓'}</span>
                       ) : (
-                        // 정렬 가능 표시 — 위·아래 한쌍 기호(⇅ = 화살표 2개가 한 글자). 데스크톱=hover 시, **모바일=항상**(hover 없음). gray-400 로 셀 배경과 구분.
+                        // 정렬 가능 표시 — 위·아래 한쌍 기호(⇅). 데스크톱=hover 시, 모바일=항상. gray-400 로 셀 배경과 구분.
                         <span className="text-[12px] leading-none text-gray-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100" aria-hidden>⇅</span>
-                      )}
+                      ))}
                     </span>
                   </th>
                 );
@@ -2355,11 +2357,13 @@ function StatusBadgeComp({ items }: {
 // suggest 버튼(실행/수정/취소)이 같이 표시됨.
 function PlanCardComp({ title, steps, estimatedTime, risks }: {
   title: string;
-  steps: Array<{ title: string; description?: string; tool?: string }>;
+  // AI 가 steps 를 문자열 배열(["계좌 조회", …])로 보내기도 함 → {title} 객체로 coerce(안 하면 제목만 뜸).
+  steps: Array<string | { title: string; description?: string; tool?: string }>;
   estimatedTime?: string;
   risks?: string[];
 }) {
   const t = usePublicTranslations();
+  const stepObjs = (steps ?? []).map(s => (typeof s === 'string' ? { title: s } : (s ?? { title: '' })));
   return (
     <div className="border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 my-2">
       <div className="flex items-center gap-2 mb-3">
@@ -2372,7 +2376,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
         )}
       </div>
       <ol className="space-y-2">
-        {steps.map((s, i) => (
+        {stepObjs.map((s, i) => (
           <li key={i} className="flex gap-3 items-start">
             <div className="shrink-0 w-5 h-5 rounded-full bg-white border-2 border-indigo-400 text-indigo-700 text-[10px] font-bold flex items-center justify-center leading-none tabular-nums">
               {i + 1}

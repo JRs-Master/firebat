@@ -14,15 +14,23 @@
  * `==강조==` / `==색:강조==` → `<mark class="fbhl-색">` (형광펜). **escape 단계 뒤에** 호출해야 주입한
  * `<mark>` 가 literal 로 안 죽고 rehypeRaw 가 native 렌더(globals.css `.fbhl-*` 마커 질감 스타일).
  * 색: yellow(기본)/green/pink/orange/sky/purple. `blue` = `sky` 별칭. 채팅·발행·공유 공통.
+ * 색 지정 형태 2가지 모두 수용: `sky:텍스트`(색이름:콜론) / `color:sky 텍스트`(CSS식, AI 가 자주 씀).
+ * ⚠️ 콜론 없는 `sky 텍스트`(공백)는 안 받음 — "green tea" 같은 정상 텍스트를 색으로 오인하는 것 방지.
  * 여는 `==` 뒤·닫는 `==` 앞 공백 금지 + 한 줄 안(`[^\n=]`)으로 매칭해 오탐(수식·구분선 등) 줄임.
  */
+const FBHL_COLORS = 'yellow|green|pink|orange|sky|blue|purple';
 export function highlightMarksToHtml(s: string): string {
   if (!s || !s.includes('==')) return s;
   return s.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
-    const cm = inner.match(/^(yellow|green|pink|orange|sky|blue|purple):([\s\S]+)$/);
-    let color = cm ? cm[1] : 'yellow';
+    let color = 'yellow';
+    let text = inner;
+    // CSS식 `color:sky 텍스트` / `color:sky:텍스트` (AI 가 자주 쓰는 형태).
+    let cm = inner.match(new RegExp(`^color\\s*:\\s*(${FBHL_COLORS})\\s*[:\\s]\\s*(\\S[\\s\\S]*)$`, 'i'));
+    // `sky:텍스트` (색이름 뒤 콜론 — 모호하지 않음).
+    if (!cm) cm = inner.match(new RegExp(`^(${FBHL_COLORS})\\s*:\\s*(\\S[\\s\\S]*)$`, 'i'));
+    if (cm) { color = cm[1].toLowerCase(); text = cm[2]; }
     if (color === 'blue') color = 'sky';
-    return `<mark class="fbhl-${color}">${cm ? cm[2] : inner}</mark>`;
+    return `<mark class="fbhl-${color}">${text}</mark>`;
   });
 }
 
