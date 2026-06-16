@@ -1677,12 +1677,14 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     //    제거(arc 래스터화는 저해상도서 좌우 비대칭·찢김 → 셀 단위로 양쪽 동일하게 빼야 깔끔).
     // RES = 그리드 해상도. **초고해상도(size×2)** 로 키워 곡선 윤곽이 매끈한 동그란 머리가 되게 한다
     // (저해상도 stroke 는 점점이 끊겨 각졌음 — dot 이 sub-pixel 로 작아져 인접 dot 이 겹치며 부드러운 선).
-    const RES = Math.min(240, Math.max(64, Math.round(size * 2)));
+    const RES = Math.min(280, Math.max(72, Math.round(size * 2.4)));
     const off = document.createElement('canvas');
     off.width = RES;
     off.height = RES;
     const octx = off.getContext('2d');
-    const targets: { gx: number; gy: number }[] = [];
+    // a = 원본 래스터화 알파(0~1) = 안티앨리어싱 커버리지. 점을 이 값으로 가중 렌더 → 가장자리가
+    // 계단(전부 100%)이 아니라 부드럽게 falloff → 점 기반인데도 매끈한 곡선("반듯").
+    const targets: { gx: number; gy: number; a: number }[] = [];
     if (octx) {
       octx.save();
       octx.scale(RES / 24, RES / 24); // lucide viewBox 24
@@ -1706,7 +1708,9 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
       const d = octx.getImageData(0, 0, RES, RES).data;
       for (let gy = 0; gy < RES; gy++) {
         for (let gx = 0; gx < RES; gx++) {
-          if (d[(gy * RES + gx) * 4 + 3] > 30) targets.push({ gx, gy });
+          const a = d[(gy * RES + gx) * 4 + 3];
+          // 임계 낮춤(8) — 옅은 AA 가장자리 셀도 포함하되 알파로 가중 렌더(전부 100% 아님)라 부드러운 falloff.
+          if (a > 8) targets.push({ gx, gy, a: a / 255 });
         }
       }
     }
@@ -1715,14 +1719,14 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
     const cy0 = size / 2;
 
     // 픽셀별 상태 — 현재 위치(x,y)는 프레임 간 유지(이동). tx,ty=유령 자리. bAng=터질 때 바깥 방향.
-    type GP = { x: number; y: number; tx: number; ty: number; gx: number; gy: number; rnd: number; rnd2: number; bAng: number };
+    type GP = { x: number; y: number; tx: number; ty: number; gx: number; gy: number; rnd: number; rnd2: number; bAng: number; a: number };
     const ps: GP[] = targets.map(t => {
       const tx = t.gx * dot;
       const ty = t.gy * dot;
       const rnd = Math.random();
       const rnd2 = Math.random();
       const bAng = Math.atan2(ty + dot / 2 - cy0, tx + dot / 2 - cx0) + (rnd - 0.5) * 0.9;
-      return { x: cx0, y: cy0, tx, ty, gx: t.gx, gy: t.gy, rnd, rnd2, bAng };
+      return { x: cx0, y: cy0, tx, ty, gx: t.gx, gy: t.gy, rnd, rnd2, bAng, a: t.a };
     });
     // 패턴별 등장 순서(0..1). 0~3 = 제자리에서 순서대로 채우기 / 4~5 = 가장자리·아래서 날아와 모임.
     const appearAt = (pattern: number, p: GP): number => {
@@ -1759,9 +1763,9 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
         // 완료 — 조립·펑 루프 없이 완성된 유령이 제자리에서 그냥 통통(부유)만.
         ctx.clearRect(0, 0, size, size);
         ctx.fillStyle = '#2563eb';
-        ctx.globalAlpha = 1;
         const hb = Math.sin(frame * 0.07) * 2;
-        for (const p of ps) ctx.fillRect(p.tx, p.ty + hb, dot + 0.6, dot + 0.6);
+        for (const p of ps) { ctx.globalAlpha = p.a; ctx.fillRect(p.tx, p.ty + hb, dot + 0.6, dot + 0.6); }
+        ctx.globalAlpha = 1;
         frame++;
         raf = requestAnimationFrame(render);
         return;
@@ -1785,32 +1789,33 @@ function FirebatGhostAssembly({ size = 160, caption, variant = 'main', settled =
           if (isConverge(pattern)) {
             const started = t >= aa * 0.5;
             if (started) { p.x += (p.tx - p.x) * 0.12; p.y += (p.ty - p.y) * 0.12; } // 느린 lerp
-            ctx.globalAlpha = started ? 1 : 0.25;
+            ctx.globalAlpha = (started ? 1 : 0.25) * p.a;
             ctx.fillRect(p.x, p.y, dot + 0.6, dot + 0.6);
           } else {
             const alpha = Math.min(1, (t - aa * 0.85) / 0.08); // 순서대로 페이드인(제자리)
             if (alpha <= 0) continue;
-            ctx.globalAlpha = alpha;
+            ctx.globalAlpha = alpha * p.a;
             ctx.fillRect(p.tx, p.ty, dot + 0.6, dot + 0.6);
           }
         }
       } else if (cf < FILL + HOLD) {
         // 완성 — 자리 정착 + 살짝 부유
         const hb = Math.sin(frame * 0.07) * 2;
-        ctx.globalAlpha = 1;
         for (const p of ps) {
           p.x += (p.tx - p.x) * 0.3;
           p.y += (p.ty - p.y) * 0.3;
+          ctx.globalAlpha = p.a;
           ctx.fillRect(p.x, p.y + hb, dot + 0.6, dot + 0.6);
         }
       } else {
         // 펑 — 바깥으로 가속 분리되며 페이드아웃
         const bt = (cf - FILL - HOLD) / BURST;
         const spd = 2.5 + bt * 9;
-        ctx.globalAlpha = Math.max(0, 1 - bt);
+        const ba = Math.max(0, 1 - bt);
         for (const p of ps) {
           p.x += Math.cos(p.bAng) * spd;
           p.y += Math.sin(p.bAng) * spd;
+          ctx.globalAlpha = ba * p.a;
           ctx.fillRect(p.x, p.y, dot + 0.6, dot + 0.6);
         }
       }
