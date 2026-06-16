@@ -55,6 +55,10 @@
       "search": "Finding components"
     }
   },
+  "table": {
+    "reset_sort": "Reset order",
+    "sort_hint": "Click to sort (asc → desc → default)"
+  },
   "error": {
     "module": {
       "invalid_name": "Invalid module name.",

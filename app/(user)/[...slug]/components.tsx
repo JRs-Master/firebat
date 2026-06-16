@@ -630,6 +630,15 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
     if (n.has(i)) n.delete(i); else n.add(i);
     return n;
   }), []);
+  // 헤더 클릭 정렬 — 같은 열 재클릭: 오름 → 내림 → **원래 순서(reset)** 3단 순환. sortCol=null = 기본 순서.
+  const [sortCol, setSortCol] = useState<number | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const cycleSort = useCallback((ci: number) => {
+    if (sortCol !== ci) { setSortCol(ci); setSortDir('asc'); }
+    else if (sortDir === 'asc') setSortDir('desc');
+    else setSortCol(null); // 내림 다음 = 원래 순서로 복귀
+  }, [sortCol, sortDir]);
+  const resetSort = useCallback(() => setSortCol(null), []);
   // 보이는 열(원본 인덱스 유지) — align/cellAlign 은 원본 ci 로 인덱싱하므로 원본 보존이 중요.
   const visibleCols = headers.map((_, i) => i).filter(i => !hiddenCols.has(i));
   const q = query.trim().toLowerCase();
@@ -638,6 +647,20 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
     ? rows.map((row, origRi) => ({ row, origRi })).filter(({ row }) =>
         row.some(cell => String(cell ?? '').toLowerCase().includes(q)))
     : rows.map((row, origRi) => ({ row, origRi }));
+  // 정렬된 행 — sortCol 지정 시만. 숫자 인식(쉼표·%·단위·화살표 제거 후 수치) → 수치 비교, 미인식 → 가나다(numeric).
+  // 기본 순서(sortCol=null)는 shownRows 그대로 = "기본값 되돌리기".
+  const parseSortNum = (v: unknown): number | null => {
+    const c = String(v ?? '').replace(/[^0-9.\-]/g, '');
+    if (c === '' || c === '-' || c === '.') return null;
+    const n = parseFloat(c);
+    return Number.isFinite(n) ? n : null;
+  };
+  const sortedRows = sortCol === null ? shownRows : [...shownRows].sort((a, b) => {
+    const av = a.row[sortCol] ?? '', bv = b.row[sortCol] ?? '';
+    const an = parseSortNum(av), bn = parseSortNum(bv);
+    const cmp = (an !== null && bn !== null) ? an - bn : String(av).localeCompare(String(bv), 'ko', { numeric: true });
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
 
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
@@ -671,8 +694,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
 
   return (
     <div className="space-y-2">
-      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 시만. 클라 전용. */}
-      {(filterable || columnToggle) && (
+      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 또는 정렬 중. 클라 전용. */}
+      {(filterable || columnToggle || sortCol !== null) && (
         <div className="flex flex-wrap items-center gap-2">
           {filterable && (
             <div className="relative flex-1 min-w-[140px] max-w-xs">
@@ -708,6 +731,15 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
           {filterable && q && (
             <span className="text-[11px] text-gray-400 tabular-nums shrink-0">{shownRows.length} / {rows.length}</span>
           )}
+          {sortCol !== null && (
+            <button
+              type="button"
+              onClick={resetSort}
+              className="ml-auto shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            >
+              ↺ {t('table.reset_sort')}
+            </button>
+          )}
         </div>
       )}
       {/* 박스 max-height = JS 측정 픽셀 (toolbar 변동 무관). SSR fallback = 70vh. */}
@@ -721,20 +753,28 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
               {visibleCols.map((ci, pos) => {
                 const isStickyCell = firstColSticky && pos === 0;
                 const headerText = cleanPlainText(headers[ci]);
+                const active = sortCol === ci;
                 return (
                   <th
                     key={ci}
-                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단).
-                    className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
+                    onClick={() => cycleSort(ci)}
+                    title={t('table.sort_hint')}
+                    // border-b 한 줄만 (bg 는 th 만 명시 — thead bg 제거로 이중선 buf 차단). 클릭=정렬, hover 시 ↕ 표시.
+                    className={`group cursor-pointer select-none px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 hover:bg-gray-100 sticky top-0 min-w-[120px] ${headerAlignClass(ci, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                   >
-                    {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
+                    <span className="inline-flex items-center gap-1 align-middle">
+                      {hasInlineMd(headerText) ? <InlineMd text={headerText} /> : headerText}
+                      <span className={`text-[10px] leading-none ${active ? 'text-blue-600' : 'text-gray-300 opacity-0 group-hover:opacity-100'}`} aria-hidden>
+                        {active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                      </span>
+                    </span>
                   </th>
                 );
               })}
             </tr>
           </thead>
           <tbody>
-            {shownRows.map(({ row, origRi }, pos) => (
+            {sortedRows.map(({ row, origRi }, pos) => (
               <tr
                 key={origRi}
                 className={`hover:bg-gray-50 transition-colors ${striped && pos % 2 === 1 ? 'bg-gray-50/40' : ''}`}
