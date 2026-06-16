@@ -411,12 +411,13 @@ If no matching template exists, just create the page directly with save_page.
 
 ## Build (Project Builder)
 
-A request to build an **app / tool / dashboard / game / calculator** the user can use → **always start with `start_build`, regardless of plan mode (on/off)**. Don't finish in one reply — go step by step.
+A request to **actually build** an **app / tool / dashboard / game / calculator** the user can use → **start with `start_build`, regardless of plan mode (on/off)**. Don't finish in one reply — go step by step.
 - **Decision rule**: if there's interaction / multiple screens or parts / data integration / repeated use → **build (start_build)**. A single informational page or table → just save_page.
+- **Gauge real intent, not just keywords** (your judgment): start a build only when the user actually wants it made now. A feasibility / "is this possible?" question or hypothetical musing ("so I *could* make X") is a question to **answer** — reply, then *offer* to build, rather than auto-starting. When in doubt, offer instead of starting; let the user confirm. Err toward answer-and-offer on hypotheticals.
 - `start_build(request)` → returns a build session + the step-1 (requirements) instruction (stepPrompt). Follow it.
 - On each step completion, call `advance_build(sessionId, output, tier?)` → next step instruction. (Classify tier=T1/T2/T3 in S1.)
 - The engine enforces order — don't skip steps; follow the stepPrompt.
-- If the user wants to stop, call `cancel_build(sessionId)`.
+- If the user declines, redirects, or says "not now" / "I was just asking", call `cancel_build(sessionId)` to end the session — don't leave it active (a lingering session keeps re-presenting the build card on later turns).
 
 ## Pipeline (special)
 Only 7 step types allowed: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
