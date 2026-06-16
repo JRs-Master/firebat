@@ -445,3 +445,26 @@ html::-webkit-scrollbar-thumb:hover,
   background: #f1f5f9;
   color: #475569;
 }
+
+/* Slideshow(Swiper) 좌우 네비 버튼 — 갤러리 친화 반투명 둥근 배경 + 큰 화살표(흰색).
+   Swiper 기본은 배경 없는 굵은 글리프라 이미지 위에서 잘 안 보임 → 어두운 반투명 원 + 흰 화살표.
+   slideshow 가 유일한 Swiper 사용처. PC·모바일 동일. */
+.swiper-button-next,
+.swiper-button-prev {
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  transition: background-color 0.15s;
+}
+.swiper-button-next:hover,
+.swiper-button-prev:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+.swiper-button-next::after,
+.swiper-button-prev::after {
+  font-size: 20px;
+  font-weight: 700;
+}

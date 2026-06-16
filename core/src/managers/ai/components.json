@@ -213,6 +213,13 @@
         "stickyCol"
       ],
       "additionalProperties": false,
+      "synonyms": {
+        "searchable": "filterable",
+        "search": "filterable",
+        "filter": "filterable",
+        "columnSelect": "columnToggle",
+        "selectableColumns": "columnToggle"
+      },
       "properties": {
         "headers": {
           "type": "array",
@@ -1246,6 +1253,11 @@
             "required": [
               "src"
             ],
+            "synonyms": {
+              "url": "src",
+              "image": "src",
+              "imageUrl": "src"
+            },
             "properties": {
               "src": {
                 "type": "string",
@@ -1680,6 +1692,11 @@
         "inputs"
       ],
       "additionalProperties": false,
+      "synonyms": {
+        "fields": "inputs",
+        "submitLabel": "submitText",
+        "submit": "submitText"
+      },
       "properties": {
         "bindModule": {
           "type": [
@@ -1748,6 +1765,7 @@
       "type": "object",
       "required": ["text"],
       "additionalProperties": false,
+      "synonyms": { "label": "text", "title": "text" },
       "properties": {
         "text": { "type": "string", "description": "button label" },
         "href": { "type": ["string", "null"], "description": "URL to navigate to on click (optional)" },
@@ -1790,12 +1808,13 @@
           "items": {
             "type": "object",
             "required": ["label", "children"],
+            "synonyms": { "blocks": "children", "content": "children", "items": "children" },
             "properties": {
               "label": { "type": "string", "description": "tab label" },
               "children": {
                 "type": "array",
                 "description": "blocks shown when this tab is active",
-                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type"] }
               }
             }
           }
@@ -1818,13 +1837,16 @@
           "description": "collapsible items",
           "items": {
             "type": "object",
-            "required": ["title", "children"],
+            "required": ["title"],
+            "synonyms": { "blocks": "children", "body": "content", "answer": "content" },
             "properties": {
               "title": { "type": "string", "description": "section title (the clickable header)" },
+              "content": { "type": ["string", "null"], "description": "plain text/markdown shown when expanded (simplest case — e.g. an FAQ answer). Use this OR children, not both." },
+              "text": { "type": ["string", "null"], "description": "alias for content" },
               "children": {
                 "type": "array",
-                "description": "blocks shown when this item is expanded",
-                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+                "description": "blocks shown when this item is expanded (use instead of content when you need rich blocks)",
+                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type"] }
               }
             }
           }

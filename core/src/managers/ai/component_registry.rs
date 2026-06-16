@@ -218,6 +218,17 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         let Some(arr) = value.as_array_mut() else {
             return;
         };
+        // 컨테이너 자식 블록 배열(grid/tabs/accordion/carousel/card 의 children) 자동 감지 —
+        // items 스키마가 `{type:string, props:object}` 시그니처면 각 항목을 *실제 컴포넌트 스키마*로
+        // 재귀 정규화한다(synonyms/defaults/extras-drop/props 자동채움이 깊이 무관 작동). 한 곳=N곳.
+        // 옛에는 자식 props 가 불투명(additionalProperties:true)이라 자식 컴포넌트의 동의어·기본값이
+        // 안 먹어 tabs 안 table 의 searchable→filterable, button label→text 가 깨졌다.
+        if is_child_block_schema(items_schema) {
+            for item in arr.iter_mut() {
+                sanitize_child_block(item);
+            }
+            return;
+        }
         // items 가 "단일 required 필드 객체"인데 항목이 문자열로 오면 {그 필드: 문자열} 로 coerce.
         // AI 가 steps/항목을 객체 대신 문자열 배열로 보내도 흡수 (render robustness, 일반 규칙 — 컴포넌트명 하드코딩 0).
         // 예: plan_card steps required=["title"] → "단계명" → {title: "단계명"}. required 2개+면 모호 → 미적용.
@@ -254,6 +265,62 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         }
     }
     // scalar: no-op.
+}
+
+/// items 스키마가 "자식 블록"(`{type:string, props:object}`) 시그니처인지 판정.
+/// grid/tabs/accordion/carousel/card 의 children 배열이 공통으로 이 형태 → 자동 감지.
+fn is_child_block_schema(items_schema: &serde_json::Value) -> bool {
+    let Some(props) = items_schema.get("properties").and_then(|v| v.as_object()) else {
+        return false;
+    };
+    let has_type = props
+        .get("type")
+        .map(|t| schema_allows_type(t, "string"))
+        .unwrap_or(false);
+    let has_props = props
+        .get("props")
+        .map(|p| schema_allows_type(p, "object"))
+        .unwrap_or(false);
+    has_type && has_props
+}
+
+/// 컨테이너 자식 블록 1개 정규화 — top-level render_blocks 와 동일 규칙을 깊이에 적용:
+///  - 문자열 항목 → text 블록 coerce (AI 가 children 에 문자열을 직접 넣는 경우).
+///  - props 누락 → `{}` 채움 (divider 등 props 없는 컴포넌트 검증 통과).
+///  - `type` 으로 실제 컴포넌트 lookup 후 props 를 그 스키마로 재귀 sanitize
+///    (synonyms/defaults/extras-drop + 중첩 컨테이너까지 전파).
+fn sanitize_child_block(item: &mut serde_json::Value) {
+    // 문자열 → text 블록.
+    if let Some(s) = item.as_str() {
+        let s = s.to_string();
+        *item = serde_json::json!({ "type": "text", "props": { "content": s } });
+    }
+    let Some(obj) = item.as_object_mut() else {
+        return;
+    };
+    // props 누락 보정.
+    if !obj.contains_key("props") {
+        obj.insert("props".to_string(), serde_json::json!({}));
+    }
+    let type_name = obj
+        .get("type")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let (Some(t), Some(props)) = (type_name, obj.get_mut("props")) else {
+        return;
+    };
+    let Some(comp) = find_component(&t) else {
+        return;
+    };
+    // name→title (top-level render_blocks 와 동일 보정).
+    if let Some(p) = props.as_object_mut() {
+        if !p.contains_key("title") {
+            if let Some(name_val) = p.remove("name") {
+                p.insert("title".to_string(), name_val);
+            }
+        }
+    }
+    sanitize_to_schema(props, &comp.props_schema);
 }
 
 #[cfg(test)]
@@ -403,5 +470,57 @@ mod tests {
             validate_value(&props, schema).is_ok(),
             "coerce 후 list 검증 통과해야 함"
         );
+    }
+
+    #[test]
+    fn sanitize_tabs_recurses_child_blocks_with_real_schema() {
+        // 채팅 인터랙티브 깨짐 root — tabs 안 자식 블록이 자기 컴포넌트 스키마로 정규화되어야:
+        //  - tab 항목의 `blocks` → `children` (synonym)
+        //  - 자식 table 의 `searchable` → `filterable` (자식 실제 스키마 synonym, 깊이 적용)
+        //  - 자식 divider 의 props 누락 → `{}` 자동 채움
+        //  → 통째 검증 통과 (옛에는 silent skip 되어 화면 누락).
+        let schema = &find_component("tabs").unwrap().props_schema;
+        let mut props = json!({
+            "tabs": [
+                {
+                    "label": "시세",
+                    "blocks": [
+                        { "type": "table", "props": { "headers": ["A"], "rows": [["1"]], "searchable": true } },
+                        { "type": "divider" }
+                    ]
+                }
+            ]
+        });
+        sanitize_to_schema(&mut props, schema);
+
+        let tab0 = &props["tabs"][0];
+        assert!(tab0.get("blocks").is_none(), "`blocks` 가 `children` 으로 rename 되어야");
+        let children = tab0["children"].as_array().unwrap();
+        assert_eq!(
+            children[0]["props"]["filterable"], json!(true),
+            "자식 table 의 `searchable` 가 `filterable` 로 정규화되어야 (깊이 적용)"
+        );
+        assert!(
+            children[0]["props"].get("searchable").is_none(),
+            "원본 `searchable` 키는 제거되어야"
+        );
+        assert!(
+            children[1]["props"].is_object(),
+            "props 없는 divider 에 `{{}}` 가 채워져야"
+        );
+        assert!(
+            validate_value(&props, schema).is_ok(),
+            "sanitize 후 tabs 전체 검증 통과해야 함"
+        );
+    }
+
+    #[test]
+    fn sanitize_button_label_synonym() {
+        // button: AI 가 자주 쓰는 `label` → 표준 `text`.
+        let schema = &find_component("button").unwrap().props_schema;
+        let mut props = json!({ "label": "문의하기", "variant": "primary" });
+        sanitize_to_schema(&mut props, schema);
+        assert_eq!(props["text"], json!("문의하기"), "`label` 이 `text` 로 정규화되어야");
+        assert!(validate_value(&props, schema).is_ok(), "sanitize 후 button 검증 통과해야 함");
     }
 }

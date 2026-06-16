@@ -64,11 +64,11 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} align={p.align} />;
     case 'Text':          return <TextComp content={p.content ?? ''} />;
     case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} variants={p.variants} blurhash={p.blurhash} thumbnailUrl={p.thumbnailUrl} />;
-    case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? []} submitText={p.submitText} />;
+    case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? p.fields ?? []} submitText={p.submitText ?? p.submitLabel} />;
     case 'ResultDisplay': return null;
-    case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
+    case 'Button':        return <ButtonComp text={p.text ?? p.label ?? p.title ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable} columnToggle={p.columnToggle} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
@@ -715,7 +715,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
         className="overflow-auto rounded-xl border border-gray-100 shadow-sm scrollbar-thin"
         style={{ maxHeight: maxHeightPx ? `${maxHeightPx}px` : '70vh' }}
       >
-        <table className="min-w-full border-separate border-spacing-0">
+        <table className="w-max min-w-full border-separate border-spacing-0">
           <thead>
             <tr>
               {visibleCols.map((ci, pos) => {
@@ -1126,7 +1126,8 @@ function SliderComp({ label, min = 0, max = 100, step = 1, defaultValue, unit = 
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
-function TabsComp({ tabs }: { tabs: { label: string; children: ComponentDef[] }[] }) {
+// 발행 page 는 Rust sanitize(synonyms blocks→children)를 안 거치므로 여기서 children ?? blocks 직접 수용.
+function TabsComp({ tabs }: { tabs: { label: string; children?: ComponentDef[]; blocks?: ComponentDef[] }[] }) {
   const [active, setActive] = useState(0);
   if (tabs.length === 0) return null;
 
@@ -1148,14 +1149,15 @@ function TabsComp({ tabs }: { tabs: { label: string; children: ComponentDef[] }[
         ))}
       </div>
       <div className="pt-4">
-        <ComponentRenderer components={tabs[active].children ?? []} />
+        <ComponentRenderer components={tabs[active].children ?? tabs[active].blocks ?? []} />
       </div>
     </div>
   );
 }
 
 // ── Accordion ───────────────────────────────────────────────────────────────
-function AccordionComp({ items }: { items: { title: string; children: ComponentDef[] }[] }) {
+// children(블록) 우선, 없으면 content/text 문자열을 마크다운으로 렌더 (FAQ 답변 = 가장 자연스러운 형태).
+function AccordionComp({ items }: { items: { title: string; children?: ComponentDef[]; blocks?: ComponentDef[]; content?: string; text?: string }[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
@@ -1176,7 +1178,9 @@ function AccordionComp({ items }: { items: { title: string; children: ComponentD
           </button>
           {openIndex === i && (
             <div className="px-4 sm:px-5 pb-4">
-              <ComponentRenderer components={item.children ?? []} />
+              {(item.children ?? item.blocks)
+                ? <ComponentRenderer components={item.children ?? item.blocks ?? []} />
+                : <TextComp content={item.content ?? item.text ?? ''} />}
             </div>
           )}
         </div>
@@ -1393,18 +1397,20 @@ function CarouselComp({ children, autoPlay = false, interval = 5000 }: {
         <>
           <button
             onClick={() => go(-1)}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 shadow flex items-center justify-center hover:bg-white transition-colors"
+            aria-label="이전"
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/25 hover:bg-black/40 backdrop-blur-sm flex items-center justify-center transition-colors"
           >
-            <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg className="w-6 h-6 text-white drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
           <button
             onClick={() => go(1)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 shadow flex items-center justify-center hover:bg-white transition-colors"
+            aria-label="다음"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/25 hover:bg-black/40 backdrop-blur-sm flex items-center justify-center transition-colors"
           >
-            <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <svg className="w-6 h-6 text-white drop-shadow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
           </button>
           <div className="flex justify-center gap-1.5 mt-3">
@@ -3239,7 +3245,8 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
       <div className="swiper-wrapper">
         {images.map((img, i) => (
           <div key={i} className="swiper-slide flex items-center justify-center bg-gray-50 relative">
-            <img src={img.src} alt={img.alt ?? ''} className="max-w-full max-h-full object-contain" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={img.src ?? (img as any).url ?? ''} alt={img.alt ?? ''} className="max-w-full max-h-full object-contain" />
             {img.caption && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white p-3 text-sm">{img.caption}</div>
             )}
