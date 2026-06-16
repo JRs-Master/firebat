@@ -85,11 +85,11 @@ export function LoginInner() {
             </div>
             <div className="pt-2">
               <button type="submit" disabled={submitting || lockRemaining > 0} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
-                {t('login.continue')}
+                {lockRemaining > 0 ? t('login.locked', { sec: lockRemaining }) : t('login.continue')}
               </button>
               {lockRemaining > 0 && (
                 <p className="mt-2 text-center text-sm font-medium text-rose-600" role="status" aria-live="polite">
-                  {t('login.locked', { sec: lockRemaining })}
+                  {t('login.locked_reason')}
                 </p>
               )}
             </div>

@@ -238,10 +238,11 @@
     "subtitle": "Enter your administrator credentials",
     "username": "Username",
     "password": "Password",
-    "continue": "Continue",
+    "continue": "Sign in",
     "failed_title": "Sign-in failed",
     "failed_message": "Invalid username or password.",
-    "locked": "Too many attempts — you can try again in {sec}s.",
+    "locked": "Try again in {sec}s",
+    "locked_reason": "5 failed sign-in attempts",
     "checking": "Checking initial state…"
   },
   "setup": {
