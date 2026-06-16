@@ -350,9 +350,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     //    문자 수는 한도 미만인데 실제 바이트는 초과해 keepalive 가 켜진 채 TypeError 나던 버그. byte 로 측정.
     const bodyBytes = new TextEncoder().encode(body).length;
     const useKeepalive = bodyBytes < KEEPALIVE_BODY_LIMIT_BYTES;
-    const attempt = (retries: number): Promise<void> => fetch('/api/conversations', {
+    const attempt = (retries: number, keepalive: boolean): Promise<void> => fetch('/api/conversations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-      ...(useKeepalive ? { keepalive: true } : {}),
+      ...(keepalive ? { keepalive: true } : {}),
     }).then(res => {
       if (res.status === 409) {
         setConversations(prev => {
@@ -368,17 +368,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       }
       if (!res.ok && retries > 0) {
         logger.warn('useChat', `DB save HTTP ${res.status} — ${retries}회 재시도`);
-        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
+        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, keepalive).finally(resolve), 500));
       }
       if (!res.ok) logger.error('useChat', `DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험`, null);
     }).catch(err => {
+      // keepalive fetch 실패(주로 동시 keepalive 누적 64KB 한도 → TypeError "Failed to fetch") 는
+      // **일반 fetch 로 graceful 전환** — 일반 fetch 는 본문 한도가 없어 보통 성공. 겁주는 "영구 손실"
+      // 경고는 그 일반 fetch 까지 실패할 때만 (사용자: keepalive→일반 전환을 손실로 오인하지 않게).
+      if (keepalive) {
+        logger.debug('useChat', 'keepalive 저장 실패 → 일반 fetch 로 전환', { error: err });
+        return attempt(1, false);
+      }
       if (retries > 0) {
         logger.warn('useChat', `DB save network 실패 — ${retries}회 재시도`, { error: err });
-        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
+        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, false).finally(resolve), 500));
       }
       logger.error('useChat', 'DB save 최종 실패 — pending status 손실 위험', err);
     });
-    void attempt(1);
+    void attempt(1, useKeepalive);
   };
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
