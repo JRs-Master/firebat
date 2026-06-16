@@ -93,14 +93,16 @@ impl INotifierPort for TelegramNotifierAdapter {
             }
         };
 
-        // 3. Telegram Bot API 호출
+        // 3. Telegram Bot API 호출.
+        //    parse_mode 미지정 = 평문 전송. 레거시 "Markdown" 은 동적 본문(attempt_key 등)에
+        //    `_ * [` 백틱 같은 특수문자가 섞이면 `400 Bad Request: can't parse entities` 로 거부된다
+        //    (sysmod_telegram 도 호출자가 명시할 때만 parse_mode 를 붙여 기본 평문 → 항상 성공).
         let emoji = Self::level_emoji(level);
-        let text = format!("{emoji} *{title}*\n\n{message}");
+        let text = format!("{emoji} {title}\n\n{message}");
         let url = format!("https://api.telegram.org/bot{token}/sendMessage");
         let body = serde_json::json!({
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "Markdown",
             "disable_web_page_preview": true,
         });
         let result = self.http.post(&url).json(&body).send().await;

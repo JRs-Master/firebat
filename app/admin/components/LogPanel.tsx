@@ -30,7 +30,9 @@ export function LogPanel() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [minLevel, setMinLevel] = useState('');
   const [targetPrefix, setTargetPrefix] = useState('');
-  const [limit, setLimit] = useState(50);
+  // 입력 중 자유롭게 비울 수 있게 문자열 상태 — 조회 시점에만 1~2000 보정.
+  // (옛 숫자 상태 + `Number("")||50` 은 "50" 의 5 를 지우면 즉시 50 으로 복귀 → 200 입력 불가였음)
+  const [limit, setLimit] = useState('50');
   const [loading, setLoading] = useState(false);
   // 런타임 EnvFilter — ssh `kill -HUP` 대신 UI 에서 즉시 적용 (재빌드/재시작 0).
   const [filterStr, setFilterStr] = useState('info');
@@ -42,7 +44,7 @@ export function LogPanel() {
       const params = new URLSearchParams();
       if (minLevel) params.set('minLevel', minLevel);
       if (targetPrefix.trim()) params.set('targetPrefix', targetPrefix.trim());
-      params.set('limit', String(limit));
+      params.set('limit', String(Math.max(1, Math.min(2000, Number(limit) || 50))));
       const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
         `/api/logs?${params.toString()}`,
         { category: 'logs' },
@@ -142,7 +144,7 @@ export function LogPanel() {
             name="limit"
             type="number"
             value={limit}
-            onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 50)))}
+            onChange={e => setLimit(e.target.value)}
             className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
