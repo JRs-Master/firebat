@@ -98,6 +98,13 @@ class EventBusSingleton {
 // 모듈 스코프 싱글톤 — 페이지 전체에서 1 EventSource
 const bus = new EventBusSingleton();
 
+/** 모듈 레벨 영속 구독 — bus 에 직접 리스너 등록(컴포넌트 unmount 와 무관하게 살아있는 store 용).
+ *  active-jobs 처럼 패널 전환에도 상태를 유지해야 하는 싱글톤 store 가 사용. 반환 unsubscribe 는
+ *  보통 호출하지 않음(앱 수명 동안 유지 — 그래야 화면을 떠나 있어도 작업 상태가 누락되지 않음). */
+export function subscribeServerEvents(listener: Listener): () => void {
+  return bus.subscribe(listener);
+}
+
 // hub page mode 플래그 — true 면 admin SSE `/api/events` 구독 차단 (익명 visitor 인증 없음).
 // ConsoleLayoutInner (hub mode) 가 mount 시 setEventsHubMode(true) 호출.
 let eventsHubMode = false;

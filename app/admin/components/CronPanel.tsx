@@ -6,6 +6,7 @@ import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, Chec
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
+import { useRunningCronJobs } from '../hooks/active-jobs';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -70,6 +71,9 @@ export function CronPanel({
   const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
+  // 전역 status 기반 실행중 판정 — 어디서 트리거하든(캘린더/워크스페이스/스케줄)·패널 전환에도
+  // 해당 잡 row 스피너 유지. 로컬 `running` 은 클릭 직후 즉시 피드백(아래 OR 로 합침).
+  const isCronRunning = useRunningCronJobs();
   const [showLogs, setShowLogs] = useState(false);
   const [editing, setEditing] = useState<CronJob | null>(null);
   // 모바일 select-to-show 패턴 — Sidebar 와 동일. PC 에선 무시 (group-hover 가 처리).
@@ -280,7 +284,7 @@ export function CronPanel({
               onClick={() => setSelectedJobId(jobSelected ? null : job.jobId)}
               className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
             >
-              {running === job.jobId ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" /> : modeIcon(job.mode)}
+              {(running === job.jobId || isCronRunning(job.jobId)) ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" /> : modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
                 {/* 게이트 OFF(비활성) 는 제목만 흐리게 신호 — 배지·실행 버튼은 또렷(수동 실행은 비활성이어도 동작). */}
                 <p className={`text-[12px] font-semibold truncate flex items-center gap-1 ${gatedOff ? 'text-slate-400' : 'text-slate-700'}`}>
@@ -296,10 +300,10 @@ export function CronPanel({
                 <Tooltip label={t('common.run_now')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
-                    disabled={running === job.jobId}
+                    disabled={running === job.jobId || isCronRunning(job.jobId)}
                     className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
                   >
-                    {running === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+                    {(running === job.jobId || isCronRunning(job.jobId)) ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
                   </button>
                 </Tooltip>
                 <Tooltip label={t('common.edit')}>

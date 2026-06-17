@@ -13,35 +13,13 @@
  *   - SSE 만으로 list 유지. 페이지 reload 직후 진행 중이던 작업이 다음 update 이벤트 시
  *     자동으로 list 에 등장 (별도 API 조회 불필요)
  */
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, X } from 'lucide-react';
-import { useEvents } from '../hooks/events-manager';
-import { STALE_RUNNING_MS } from '../../../lib/config';
-import { usePolling } from '../../../lib/hooks/use-polling';
-import { TIME } from '../../../lib/util/time';
-
-interface JobStatus {
-  id: string;
-  type: string;
-  status: 'queued' | 'running' | 'done' | 'error';
-  progress?: number;
-  message?: string;
-  startedAt: number;
-  updatedAt: number;
-  doneAt?: number;
-  result?: unknown;
-  error?: string;
-  parentJobId?: string;
-  meta?: Record<string, unknown>;
-}
-
-const FINISHED_RETENTION_MS = 5_000;
-// STALE_RUNNING_MS = 5분 (lib/config.ts). SSE drop (모바일 백그라운드) 시 'completed' 이벤트
-// 놓쳐서 영구 running 으로 남는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
+import { useActiveJobs, type JobStatus } from '../hooks/active-jobs';
 
 export function ActiveJobsIndicator() {
-  const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());
+  const jobsList = useActiveJobs();
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [coords, setCoords] = useState<{ left: number; bottom: number } | null>(null);
@@ -69,54 +47,15 @@ export function ActiveJobsIndicator() {
     };
   }, [open]);
 
-  // stale running 잡 청소 — visibilitychange visible 복귀 + 30초 주기 검사.
-  // SSE drop (모바일 백그라운드·네트워크 끊김) 시 'completed' 못 받아서 running 박제 방지.
-  const sweepStale = useCallback(() => {
-    const now = Date.now();
-    setJobs(prev => {
-      let changed = false;
-      const next = new Map(prev);
-      for (const [id, j] of next) {
-        if ((j.status === 'running' || j.status === 'queued') && (now - j.updatedAt) > STALE_RUNNING_MS) {
-          next.delete(id);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, []);
-
-  // 30s 주기 sweep — usePolling 의 pauseOnHidden 이 visibilitychange resume 와 동시에 자연스레 sweep 실행.
-  usePolling({ interval: 30 * TIME.SECOND_MS, onTick: sweepStale });
-
-  useEvents(['status:update'], (ev) => {
-    const payload = ev.data as { job: JobStatus; change: string } | undefined;
-    if (!payload?.job) return;
-    const { job, change } = payload;
-    setJobs(prev => {
-      const next = new Map(prev);
-      next.set(job.id, job);
-      return next;
-    });
-    // 종료 작업은 retention 후 자동 제거 — change 라벨 + terminal status 둘 다 인정(완료 후 안 사라지던 것 견고화).
-    if (change === 'completed' || change === 'failed' || job.status === 'done' || job.status === 'error') {
-      setTimeout(() => {
-        setJobs(prev => {
-          const next = new Map(prev);
-          next.delete(job.id);
-          return next;
-        });
-      }, FINISHED_RETENTION_MS);
-    }
-  });
-
+  // 작업 상태는 모듈 레벨 store(useActiveJobs)가 유지 — 패널 전환/언마운트에도 살아있어 뱃지가
+  // 사라지지 않음. SSE 구독·retention·stale sweep 전부 store 내부에서 처리.
   const activeJobs = useMemo(
-    () => Array.from(jobs.values()).filter(j => j.status === 'running' || j.status === 'queued'),
-    [jobs],
+    () => jobsList.filter(j => j.status === 'running' || j.status === 'queued'),
+    [jobsList],
   );
   const finishedJobs = useMemo(
-    () => Array.from(jobs.values()).filter(j => j.status === 'done' || j.status === 'error'),
-    [jobs],
+    () => jobsList.filter(j => j.status === 'done' || j.status === 'error'),
+    [jobsList],
   );
 
   // 활성·종료 모두 0 = 인디케이터 자체 숨김

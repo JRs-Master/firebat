@@ -229,7 +229,10 @@ impl ScheduleManager {
                 .filter(|t| !t.trim().is_empty())
                 .unwrap_or_else(|| info.job_id.clone());
             let job = h.status.start(
-                Some(format!("cron-{}", info.job_id)),
+                // run 마다 unique id 자동생성(None) — 같은 잡을 동시/연속 즉시실행해도 뱃지에서
+                // 병합되지 않게(옛 `cron-<jobId>` 고정 id 는 매 run 같아 Map 에서 덮어써짐).
+                // 프론트는 meta.jobId 로 어느 cron 잡인지 매칭(스피너).
+                None,
                 "cron".to_string(),
                 Some(format!("실행: {label}")),
                 None,
