@@ -147,12 +147,12 @@ function QuizBody({
   const ans = quizAns(answer, answerIndex); // 1-based
   const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
   return (
-    <div className="text-[14px] sm:text-[15px] text-slate-800">
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 sm:px-5 sm:py-4 text-[14px] sm:text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
       {view === 'answers' ? (
         number != null && <div className="text-[12px] font-bold text-slate-500 mb-1">{typeof number === 'number' ? `${number}번` : String(number)}</div>
       ) : (
-        <div className="font-semibold mb-2">
-          {numLabel && <span className="mr-1">{numLabel}</span>}
+        <div className="font-semibold mb-3 text-[15px] sm:text-[16px] leading-snug">
+          {numLabel && <span className="mr-1.5 text-indigo-600">{numLabel}</span>}
           <InlineMd text={question} />
         </div>
       )}
@@ -175,7 +175,7 @@ function QuizBody({
         </div>
       )}
       {view !== 'answers' && (
-        <div className="flex flex-col gap-1 my-2">
+        <div className="flex flex-col gap-2 my-3">
           {choices.map((c, i) => {
             const num = i + 1;
             const isAns = ans === num;
@@ -191,7 +191,7 @@ function QuizBody({
                 type="button"
                 disabled={!interactive || revealed}
                 onClick={() => onSelect?.(num)}
-                className={`text-left flex gap-2 items-start px-2.5 py-1.5 rounded-md border transition-colors ${cls} ${interactive && !revealed ? 'cursor-pointer' : 'cursor-default'}`}
+                className={`text-left flex gap-2.5 items-start px-3.5 py-2.5 rounded-lg border transition-colors ${cls} ${interactive && !revealed ? 'cursor-pointer hover:border-slate-300' : 'cursor-default'}`}
               >
                 <span className="shrink-0">{QUIZ_CIRCLED[i] ?? `${num}.`}</span>
                 <span className="flex-1"><InlineMd text={stripChoiceMarker(c)} /></span>
@@ -203,11 +203,14 @@ function QuizBody({
         </div>
       )}
       {showAnswer && (
-        <div className="mt-2">
-          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-1">정답: {QUIZ_CIRCLED[ans - 1] ?? ans}</div>}
+        <div className="mt-3.5">
+          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {QUIZ_CIRCLED[ans - 1] ?? ans}</div>}
           {explanation && (
-            <div className="border-l-2 border-indigo-300 pl-3 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
-              <TextComp content={explanation} />
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 sm:p-3.5">
+              <div className="text-[11px] font-bold text-indigo-500 tracking-wide mb-1.5">해설</div>
+              <div className="text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
+                <TextComp content={explanation} />
+              </div>
             </div>
           )}
         </div>
