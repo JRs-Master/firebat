@@ -484,6 +484,9 @@ mark[class^="fbhl-"] {
   border-radius: 0.5em 0.15em 0.45em 0.2em;
   padding: 0.02em 0.18em;
   color: inherit;
+  /* <mark> 브라우저 기본 배경 = 노랑. 반투명 그라디언트(background-image)만 깔면 그 노랑이 비쳐
+     sky·pink 등이 노랑과 겹쳐 보임 → 기본 배경을 투명으로 덮어 색이 정확히 나오게. */
+  background-color: transparent;
   background-repeat: no-repeat;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
