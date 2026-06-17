@@ -1755,6 +1755,9 @@ impl AiManager {
             if blocks.is_null() {
                 continue; // 파싱 실패 fence — frontend 가 raw 로 표시하므로 별도 뱃지 불요.
             }
+            // 칩(뱃지)은 executed_actions 에서 — ActionTags(page.tsx)가 actions 를 칩으로 렌더.
+            executed_actions.push(serde_json::Value::String("render".to_string()));
+            // tool_results 는 그 칩에 input(내용)을 이름 매칭으로 붙임 → 클릭 시 render 블록 확인(디버그).
             tool_results_summary.push(crate::ports::ToolResultSummary {
                 name: "render".to_string(),
                 success: true,
