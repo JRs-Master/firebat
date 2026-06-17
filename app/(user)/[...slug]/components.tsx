@@ -236,6 +236,16 @@ const SENT_ROLE: Record<string, { ko: string; border: string; tag: string }> = {
   O: { ko: '목적어', border: 'border-emerald-400', tag: 'bg-emerald-50 text-emerald-600' },
   C: { ko: '보어', border: 'border-amber-400', tag: 'bg-amber-50 text-amber-600' },
   M: { ko: '수식어', border: 'border-slate-300', tag: 'bg-slate-100 text-slate-500' },
+  ADV: { ko: '부사어', border: 'border-cyan-400', tag: 'bg-cyan-50 text-cyan-600' },
+};
+// AI 가 mod/modifier/adverbial/subject 등 다양한 표기로 보내도 canonical(S/V/O/C/M/ADV)로 흡수.
+const ROLE_ALIAS: Record<string, string> = {
+  SUBJECT: 'S', VERB: 'V', PREDICATE: 'V', OBJECT: 'O', OBJ: 'O', COMPLEMENT: 'C', COMP: 'C',
+  MOD: 'M', MODIFIER: 'M', ADJ: 'M', ADJECTIVE: 'M', ADVERBIAL: 'ADV', ADVERB: 'ADV', A: 'ADV',
+};
+const canonRole = (raw?: string): string => {
+  const u = (raw || '').toUpperCase();
+  return ROLE_ALIAS[u] ?? u;
 };
 
 // SVO 문장 구조 — 천일문식 끊어읽기. 성분을 탭하면 역할(S/V/O/C/M)·직독직해(gloss)가 공개,
@@ -243,20 +253,20 @@ const SENT_ROLE: Record<string, { ko: string; border: string; tag: string }> = {
 function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string }> }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const revealable = tokens
-    .map((t, i) => ({ i, ok: !!SENT_ROLE[(t.role || '').toUpperCase()] || !!t.gloss }))
+    .map((t, i) => ({ i, ok: !!SENT_ROLE[canonRole(t.role)] || !!t.gloss }))
     .filter((x) => x.ok);
   const allShown = revealable.length > 0 && revealable.every((x) => shown.has(x.i));
   const toggleAll = () => setShown(allShown ? new Set() : new Set(revealable.map((x) => x.i)));
   const toggleOne = (i: number) =>
     setShown((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   const usedRoles = [...new Set(
-    tokens.filter((_, i) => shown.has(i)).map((t) => (t.role || '').toUpperCase()).filter((r) => SENT_ROLE[r]),
+    tokens.filter((_, i) => shown.has(i)).map((t) => canonRole(t.role)).filter((r) => SENT_ROLE[r]),
   )];
   return (
     <div>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-3 text-[16px] sm:text-[17px] leading-none">
         {tokens.map((t, i) => {
-          const role = (t.role || '').toUpperCase();
+          const role = canonRole(t.role);
           const r = SENT_ROLE[role];
           const canReveal = !!r || !!t.gloss;
           const open = shown.has(i) || !canReveal;

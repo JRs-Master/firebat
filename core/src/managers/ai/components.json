@@ -984,7 +984,7 @@
       "synonyms": { "chunks": "tokens", "grammar": "notes", "words": "vocab" },
       "properties": {
         "sentence": { "type": ["string", "null"], "description": "the full English sentence (fallback shown when tokens absent)" },
-        "tokens": { "type": ["array", "null"], "items": { "type": "object", "properties": { "text": { "type": "string" }, "role": { "type": ["string", "null"] }, "gloss": { "type": ["string", "null"] } } }, "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (one of S/V/O/C/M = 주어/동사/목적어/보어/수식어, uppercase; omit for plain connecting words), gloss (this chunk's Korean meaning = 직독직해)." },
+        "tokens": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "meaning": "gloss", "ko": "gloss", "trans": "gloss", "translation": "gloss", "kor": "gloss", "word": "text", "en": "text" }, "properties": { "text": { "type": "string" }, "role": { "type": ["string", "null"] }, "gloss": { "type": ["string", "null"] } } }, "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (S/V/O/C/M/ADV = 주어/동사/목적어/보어/수식어/부사어, uppercase; also accepts mod/modifier/adverbial/subject/object etc.; omit for plain connecting words), gloss (this chunk's Korean meaning = 직독직해)." },
         "pattern": { "type": ["string", "null"], "description": "sentence pattern label, e.g. '3형식 (S+V+O)' or '5형식'" },
         "translation": { "type": ["string", "null"], "description": "natural full Korean translation (자연스러운 해석, markdown)" },
         "notes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "grammar points (준동사·시제·관계사 등), each a markdown string" },
