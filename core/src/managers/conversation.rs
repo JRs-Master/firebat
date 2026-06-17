@@ -514,9 +514,10 @@ fn message_to_text(msg: &serde_json::Value) -> Option<ParsedMessage> {
     // 1. content 최우선
     if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
         if !content.trim().is_empty() {
+            // firebat-render fence(X: render 가 content 에 상주) → 텍스트 값만 추출(임베딩이 raw JSON 안 먹게).
             return Some(ParsedMessage {
                 role,
-                text: content.to_string(),
+                text: crate::managers::ai::render_exec::fence_to_plaintext(content),
             });
         }
     }

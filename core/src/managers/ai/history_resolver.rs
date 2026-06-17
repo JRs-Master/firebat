@@ -176,7 +176,10 @@ impl HistoryResolver {
                                 "assistant" | "system" => "AI",
                                 _ => continue,
                             };
-                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            // firebat-render fence(X) → 텍스트 값만 (회상에 raw JSON 안 보이게).
+                            let content = super::render_exec::fence_to_plaintext(
+                                msg.get("content").and_then(|v| v.as_str()).unwrap_or(""),
+                            );
                             if !content.trim().is_empty() {
                                 lines.push(format!("[{}]: {}", label, content));
                                 got_full = true;
@@ -229,10 +232,10 @@ impl HistoryResolver {
                 "assistant" => "AI",
                 _ => continue, // system / tool 메시지는 컨텍스트에서 제외
             };
-            let content = msg
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            // firebat-render fence(X) → 텍스트 값만 (직전 대화 주입에 raw JSON 안 섞이게).
+            let content = super::render_exec::fence_to_plaintext(
+                msg.get("content").and_then(|v| v.as_str()).unwrap_or(""),
+            );
             // 직전 대화는 full 에 가깝게 (1200자 상한) — 옛 200자 trim 이 "단편적 기억" 원인.
             let preview: String = content.chars().take(RECENT_FULL_MAX).collect();
             if !preview.trim().is_empty() {

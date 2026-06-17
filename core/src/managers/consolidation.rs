@@ -704,7 +704,9 @@ fn format_transcript(messages: &[serde_json::Value]) -> String {
             "assistant" => "AI",
             _ => continue,
         };
-        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        let raw = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        // firebat-render fence(X: render 가 content 에 상주) → 텍스트 값만 (추출 transcript 에 raw JSON 안 섞이게).
+        let content = crate::managers::ai::render_exec::fence_to_plaintext(raw);
         if content.trim().is_empty() {
             continue;
         }

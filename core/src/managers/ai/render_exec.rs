@@ -223,3 +223,72 @@ pub fn restore_fences(text: &str, fences: &[String]) -> String {
     }
     out
 }
+
+/// Convert `firebat-render` fences in a message's `content` to plain human-readable text — the block
+/// values only, not the JSON. Used by anything that READS chat content for memory/recall (extraction
+/// transcript, embedding, history injection): with X (render lives in `content` as a fence) those
+/// readers would otherwise ingest raw render JSON → noisy embeddings, mis-extracted "facts", and raw
+/// JSON shown back in recall. This strips the JSON structure, keeping the Korean/text values so the
+/// memory layer sees clean prose. Non-fence text passes through unchanged (additive).
+pub fn fence_to_plaintext(text: &str) -> String {
+    const OPEN: &str = "```firebat-render";
+    if !text.contains(OPEN) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        let Some(nl) = after.find('\n') else {
+            out.push_str(after);
+            rest = "";
+            break;
+        };
+        let body_and_rest = &after[nl + 1..];
+        let Some(close_rel) = body_and_rest.find("```") else {
+            out.push_str(after);
+            rest = "";
+            break;
+        };
+        let body = &body_and_rest[..close_rel];
+        match serde_json::from_str::<Value>(body.trim()) {
+            Ok(v) => {
+                let mut collected = String::new();
+                collect_text_values(&v, "", &mut collected);
+                out.push_str(collected.trim());
+            }
+            // parse 실패 = 그냥 본문(JSON 마커만 떼고) — raw JSON 보다 나음.
+            Err(_) => out.push_str(body.trim()),
+        }
+        rest = &rest[start + nl + 1 + close_rel + 3..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Recursively collect human-readable string values from a render block tree, skipping structural
+/// identifier values (`type` / `name` = component ids like "header"/"component", pure noise).
+fn collect_text_values(v: &Value, key: &str, out: &mut String) {
+    match v {
+        Value::String(s) => {
+            if !matches!(key, "type" | "name") && !s.trim().is_empty() {
+                if !out.is_empty() {
+                    out.push(' ');
+                }
+                out.push_str(s.trim());
+            }
+        }
+        Value::Object(o) => {
+            for (k, val) in o {
+                collect_text_values(val, k, out);
+            }
+        }
+        Value::Array(a) => {
+            for val in a {
+                collect_text_values(val, key, out);
+            }
+        }
+        _ => {}
+    }
+}
