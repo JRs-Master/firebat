@@ -497,3 +497,12 @@ mark[class^="fbhl-"] {
 .fbhl-green  { background-image: linear-gradient(-100deg, hsla(140, 68%, 56%, 0.25), hsla(140, 68%, 56%, 0.62) 92%, hsla(140, 68%, 56%, 0.2)); }
 .fbhl-orange { background-image: linear-gradient(-100deg, hsla(28, 95%, 62%, 0.25), hsla(28, 95%, 62%, 0.6) 92%, hsla(28, 95%, 62%, 0.2)); }
 .fbhl-sky    { background-image: linear-gradient(-100deg, hsla(199, 92%, 64%, 0.25), hsla(199, 92%, 64%, 0.55) 92%, hsla(199, 92%, 64%, 0.2)); }
+
+/* KaTeX display 수식($$식$$) — 기본 간격이 좁아 연속된 식의 분수가 다음 줄에 거의 붙어 보임.
+   세로 여백 + 분수 높이 여유 + 긴 식 가로 스크롤(모바일). AI 가 식을 따로 잘 넣어도 필요(렌더 간격). */
+.katex-display {
+  margin: 0.95em 0;
+  padding: 0.15em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
