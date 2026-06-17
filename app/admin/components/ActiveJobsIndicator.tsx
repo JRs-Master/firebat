@@ -58,6 +58,15 @@ export function ActiveJobsIndicator() {
     [jobsList],
   );
 
+  // 경과 시간 실시간 갱신 — 드롭다운 열림 + 진행 중 작업 있으면 1초마다 리렌더(JobRow elapsed tick).
+  // cron 은 진행 중 중간 이벤트가 없어(started/completed 2발뿐) 안 그러면 경과 시간이 멈춰 보임.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!open || activeJobs.length === 0) return;
+    const id = setInterval(() => tick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [open, activeJobs.length]);
+
   // 활성·종료 모두 0 = 인디케이터 자체 숨김
   if (activeJobs.length === 0 && finishedJobs.length === 0) return null;
 

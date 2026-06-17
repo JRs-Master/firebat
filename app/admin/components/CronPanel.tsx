@@ -299,11 +299,12 @@ export function CronPanel({
               <span className={rowActionsClass(jobSelected)}>
                 <Tooltip label={t('common.run_now')}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
-                    disabled={running === job.jobId || isCronRunning(job.jobId)}
-                    className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                    onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); }}
+                    className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
                   >
-                    {(running === job.jobId || isCronRunning(job.jobId)) ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+                    {/* 실행 버튼은 스피너 X — 연속 즉시실행 가능(실행 중 표시는 leading 아이콘이 담당).
+                        클릭 후 행 선택도 유지해 버튼이 사라지지 않게(연속 클릭). */}
+                    <Play size={11} />
                   </button>
                 </Tooltip>
                 <Tooltip label={t('common.edit')}>
