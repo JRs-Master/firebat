@@ -516,11 +516,16 @@ function TextComp({ content }: { content: string }) {
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
       {segments.length === 1 && 'md' in segments[0]
         ? md(segments[0].md)
-        : segments.map((s, i) =>
-            'blocks' in s
-              ? <ComponentRenderer key={i} components={s.blocks} />
-              : <React.Fragment key={i}>{md(s.md)}</React.Fragment>,
-          )}
+        : (
+          // fence(render 블록) ↔ 텍스트 간격 일관화 — gap-6(ComponentRenderer 내부 블록 간격과 동일).
+          <div className="flex flex-col gap-6">
+            {segments.map((s, i) =>
+              'blocks' in s
+                ? <ComponentRenderer key={i} components={s.blocks} />
+                : <div key={i}>{md(s.md)}</div>,
+            )}
+          </div>
+        )}
     </div>
   );
 }

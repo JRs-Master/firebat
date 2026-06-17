@@ -72,6 +72,25 @@ const mdComponents = {
 // 발행 페이지 컴포넌트(PlanCard 등)가 쓰는 공개 i18n 과 동일 메커니즘 + admin 과 같은 키 재사용.
 
 // suggest 선택 결과 — admin 잠긴 카드(pickedSuggestion 경로)와 동일 톤. 칩에 안 잡힌 픽(직접 입력)은 파란 줄로.
+// firebat-render fence(텍스트 채널 render) + 텍스트 혼합 렌더 — admin renderMarkdown 과 동일 규칙.
+// 단일 텍스트면 그대로, fence 섞이면 gap-6 로 균일 배치(ComponentRenderer 블록 간격과 일관).
+function renderShareSegments(text: string) {
+  const segments = splitFirebatRender(text);
+  const md = (s: string) => (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(s)}</ReactMarkdown>
+  );
+  if (segments.length === 1 && 'md' in segments[0]) return <div className="space-y-1">{md(segments[0].md)}</div>;
+  return (
+    <div className="flex flex-col gap-6">
+      {segments.map((s, i) =>
+        'blocks' in s
+          ? <ComponentRenderer key={i} components={s.blocks} />
+          : <div key={i} className="space-y-1">{md(s.md)}</div>,
+      )}
+    </div>
+  );
+}
+
 function ReadonlySuggestCard({ suggestions, picked }: { suggestions: ShareSuggestion[]; picked?: string }) {
   const pick = (picked ?? '').trim();
   const isPicked = (s: string) => !!s && !!pick && pick.includes(s);
@@ -246,14 +265,10 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
             if (b.type === 'text' && b.text) {
               return (
-                <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>
-                  {/* text 블록도 firebat-render fence 분리 — 메시지가 단일 text 블록(전체 답변)으로 와도
-                      fence 가 raw 코드로 안 보이게(admin renderMarkdown 과 동일). */}
-                  {splitFirebatRender(b.text).map((s, j) =>
-                    'blocks' in s
-                      ? <ComponentRenderer key={j} components={s.blocks} />
-                      : <ReactMarkdown key={j} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(s.md)}</ReactMarkdown>,
-                  )}
+                <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed ${wrapCls}`}>
+                  {/* text 블록도 firebat-render fence 분리 — 단일 text 블록(전체 답변)으로 와도 fence 가
+                      raw 코드로 안 보이게 + 블록↔텍스트 간격 일관(admin renderMarkdown 과 동일). */}
+                  {renderShareSegments(b.text)}
                 </div>
               );
             }
@@ -280,13 +295,9 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             return null;
           })
         ) : msg.content ? (
-          <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-            {/* firebat-render fence(텍스트 채널 render)는 ComponentRenderer 직접, 나머지만 마크다운 */}
-            {splitFirebatRender(msg.content ?? '').map((s, i) =>
-              'blocks' in s
-                ? <ComponentRenderer key={i} components={s.blocks} />
-                : <ReactMarkdown key={i} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(s.md)}</ReactMarkdown>,
-            )}
+          <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed">
+            {/* firebat-render fence(텍스트 채널 render)는 ComponentRenderer 직접, 나머지만 마크다운 + 간격 일관 */}
+            {renderShareSegments(msg.content ?? '')}
           </div>
         ) : null}
         {/* 읽기전용 결과 카드 — PB 진행 / suggest 선택 결과(직접 입력 포함) / 발행·예약 결과. 대화 맥락 유지. */}

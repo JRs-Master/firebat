@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo, useId, Fragment } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -130,14 +130,16 @@ function renderMarkdownInner(text: string) {
 function renderMarkdown(text: string) {
   const segments = splitFirebatRender(text);
   if (segments.length === 1 && 'md' in segments[0]) return renderMarkdownInner(segments[0].md);
+  // fence(render 블록) ↔ 텍스트 간격 일관화 — 세그먼트를 gap-6 로 균일 배치(ComponentRenderer 내부
+  // 블록 간격 gap-6 와 동일). 텍스트 세그먼트 내부는 space-y-1 로 평소 문단 리듬 유지.
   return (
-    <>
+    <div className="flex flex-col gap-6">
       {segments.map((s, i) =>
         'blocks' in s
           ? <ComponentRenderer key={i} components={s.blocks} />
-          : <Fragment key={i}>{renderMarkdownInner(s.md)}</Fragment>,
+          : <div key={i} className="space-y-1">{renderMarkdownInner(s.md)}</div>,
       )}
-    </>
+    </div>
   );
 }
 
