@@ -51,6 +51,7 @@ const mdComponents = {
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
   a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  hr: () => <hr className="border-slate-200 my-3" />, // 미정의 시 브라우저 기본 hr(진한 inset)이라 어드민과 톤 맞춤(light)
   code: ({ inline, className, children, ...props }: any) => {
     if (inline) return <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>;
     return <pre className="bg-slate-50 text-slate-800 p-4 overflow-x-auto text-[13px] font-mono rounded-xl border border-slate-200"><code {...props}>{children}</code></pre>;
