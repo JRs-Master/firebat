@@ -11,7 +11,7 @@
  * 데이터: data/calendar/events.jsonl (sysmod_calendar 모듈). cron 잡 linkedJobId 양방향.
  */
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
-import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, Pencil, Play } from 'lucide-react';
+import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, Pencil, Play, Loader2 } from 'lucide-react';
 import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
 import { RowActions, InteractiveRow } from './InteractiveRow';
@@ -21,6 +21,7 @@ import { logger } from '../../../lib/util/logger';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { ScheduleModal, type CronJob } from './CronPanel';
 import { useEvents } from '../hooks/events-manager';
+import { useRunningCronJobs } from '../hooks/active-jobs';
 
 interface CalEvent {
   id: string;
@@ -120,6 +121,8 @@ export function CalendarPanel({
   const [selectedDate, setSelectedDate] = useState<string>(ymd(today)); // 'YYYY-MM-DD'
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [cronOccs, setCronOccs] = useState<CronOcc[]>([]);
+  // 캘린더의 cron 예정도 실행 중이면 표시 — 워크스페이스와 동일 전역 status(meta.jobId) 소스.
+  const isCronRunning = useRunningCronJobs();
   // cron 실행 이력은 더 이상 휘발 로그(/api/cron logs)가 아니라 캘린더 영속 이벤트('실행기록' 태그)에서 읽음 (execByDate).
   const [editingCron, setEditingCron] = useState<CronJob | null>(null); // 캘린더에서 cron 스케줄 편집 (ScheduleModal 재사용)
   const [loading, setLoading] = useState(false);
@@ -610,7 +613,9 @@ export function CalendarPanel({
                     <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(o.occursAt)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
-                      <span className="text-[9px] px-1 rounded bg-blue-50 text-blue-600">예정 · {o.mode}</span>
+                      {isCronRunning(o.jobId)
+                        ? <span className="text-[9px] px-1 rounded bg-emerald-50 text-emerald-600 inline-flex items-center gap-0.5"><Loader2 size={9} className="animate-spin" /> 실행 중</span>
+                        : <span className="text-[9px] px-1 rounded bg-blue-50 text-blue-600">예정 · {o.mode}</span>}
                     </div>
                   </InteractiveRow>
                 </li>

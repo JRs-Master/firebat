@@ -279,12 +279,14 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
               className={`inline-flex flex-col items-center gap-1 ${canReveal ? 'cursor-pointer' : 'cursor-default'}`}
             >
               <span className={r ? `border-b-2 pb-0.5 text-slate-800 ${open ? r.border : 'border-dashed border-slate-300'}` : 'text-slate-800'}>{t.text}</span>
-              {r && (open
-                ? <span className={`text-[10px] font-bold px-1 rounded ${r.tag}`}>{role}</span>
-                : <span className="text-[10px] font-bold px-1 rounded bg-slate-100 text-slate-400">?</span>)}
-              {t.gloss && (open
-                ? <span className="text-[11px] text-slate-500 leading-tight">{t.gloss}</span>
-                : <span className="text-[11px] text-transparent bg-[#e9e0c8] rounded px-1 select-none leading-tight">{t.gloss}</span>)}
+              {/* 공개↔가림은 *색만* 토글 — 박스(px·rounded·min-w·leading) 동일 = 탭 시 세로/가로 흔들림 0.
+                  엘리먼트 교체(ternary 로 다른 span) 대신 단일 span 색 토글이라 박스 변화가 없다. */}
+              {r && (
+                <span className={`text-[10px] font-bold px-1 rounded leading-none inline-block min-w-[1.4rem] text-center ${open ? r.tag : 'bg-slate-100 text-slate-400'}`}>{open ? role : '?'}</span>
+              )}
+              {t.gloss && (
+                <span className={`text-[11px] leading-tight px-1 rounded ${open ? 'text-slate-600' : 'bg-[#e9e0c8] text-transparent select-none'}`}>{t.gloss}</span>
+              )}
             </button>
           );
         })}

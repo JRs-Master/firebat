@@ -38,6 +38,7 @@ export interface JobStatus {
 
 const FINISHED_RETENTION_MS = 5_000;
 const SWEEP_INTERVAL_MS = 30_000;
+const LS_KEY = 'firebat:active-jobs'; // F5(reload) 직후 진행 중 작업 복원용 — store 는 in-memory 라.
 
 class ActiveJobsStore {
   private jobs = new Map<string, JobStatus>();
@@ -48,17 +49,19 @@ class ActiveJobsStore {
   private ensureStarted() {
     if (this.started) return;
     this.started = true;
+    this.restore(); // F5(reload) 직후 진행 중이던 작업 복원 — 안 하면 store 가 비어 뱃지·스피너 사라짐.
     subscribeServerEvents((ev) => {
       if (ev.type !== 'status:update') return;
       const payload = ev.data as { job: JobStatus; change: string } | undefined;
       if (!payload?.job) return;
       const { job, change } = payload;
       this.jobs.set(job.id, job);
+      this.persist();
       this.notify();
       // 종료 작업은 retention 후 자동 제거 (사용자가 결과 인지). 라벨 + terminal status 둘 다 인정.
       if (change === 'completed' || change === 'failed' || job.status === 'done' || job.status === 'error') {
         setTimeout(() => {
-          if (this.jobs.delete(job.id)) this.notify();
+          if (this.jobs.delete(job.id)) { this.persist(); this.notify(); }
         }, FINISHED_RETENTION_MS);
       }
     });
@@ -73,9 +76,35 @@ class ActiveJobsStore {
             changed = true;
           }
         }
-        if (changed) this.notify();
+        if (changed) { this.persist(); this.notify(); }
       }, SWEEP_INTERVAL_MS);
     }
+  }
+
+  // F5 영속 — 진행 중(running/queued) 작업만 localStorage 에 저장. 종료/없음이면 키 제거.
+  private persist() {
+    if (typeof window === 'undefined') return;
+    try {
+      const live = Array.from(this.jobs.values()).filter((j) => j.status === 'running' || j.status === 'queued');
+      if (live.length) localStorage.setItem(LS_KEY, JSON.stringify(live));
+      else localStorage.removeItem(LS_KEY);
+    } catch { /* quota / private mode 무시 */ }
+  }
+
+  // reload 직후 복원 — 진행 중 + 아직 stale 아닌 것만(완료됐는데 reload 로 completed 못 받은 좀비 제외).
+  private restore() {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      const now = Date.now();
+      for (const j of Array.isArray(arr) ? (arr as JobStatus[]) : []) {
+        if (j && j.id && (j.status === 'running' || j.status === 'queued') && now - (j.updatedAt || 0) < STALE_RUNNING_MS) {
+          this.jobs.set(j.id, j);
+        }
+      }
+    } catch { /* 무시 */ }
   }
 
   subscribe(cb: () => void): () => void {
@@ -99,8 +128,9 @@ const store = new ActiveJobsStore();
 export function useActiveJobs(): JobStatus[] {
   const [jobs, setJobs] = useState<JobStatus[]>(() => store.list());
   useEffect(() => {
-    setJobs(store.list()); // mount 시점 스냅샷 동기 (이미 진행 중인 작업 복원)
-    return store.subscribe(() => setJobs(store.list()));
+    const unsub = store.subscribe(() => setJobs(store.list())); // subscribe 가 ensureStarted→restore 트리거
+    setJobs(store.list()); // restore 직후 스냅샷 → F5 로 복원된 작업도 즉시 표시
+    return unsub;
   }, []);
   return jobs;
 }
