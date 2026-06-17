@@ -605,8 +605,10 @@ function ThinkingBlock({
       {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {bodyLine && (
+        // 모바일은 좁아 라벨(단일 상태) 옆 reasoning ticker 가 "도구 호출 중 ↔ 답변 준비 중"이 겹쳐
+        // 보이게 함 → 모바일은 단일 상태 라벨만, 데스크톱(sm+)만 ticker 표시(공간 여유).
         <span
-          className="text-[12px] text-slate-400 flex-1 min-w-0 truncate text-left"
+          className="hidden sm:block text-[12px] text-slate-400 flex-1 min-w-0 truncate text-left"
           style={{ direction: 'rtl' }}
         >
           <bdi style={{ direction: 'ltr' }}>{bodyLine}</bdi>
