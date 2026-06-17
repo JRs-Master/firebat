@@ -988,7 +988,7 @@
         "pattern": { "type": ["string", "null"], "description": "sentence pattern label, e.g. '3형식 (S+V+O)' or '5형식'" },
         "translation": { "type": ["string", "null"], "description": "natural full Korean translation (자연스러운 해석, markdown)" },
         "notes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "grammar points (준동사·시제·관계사 등), each a markdown string" },
-        "vocab": { "type": ["array", "null"], "items": { "type": "object", "properties": { "word": { "type": "string" }, "meaning": { "type": "string" } } }, "description": "vocab flashcards: word (English) + meaning (Korean). Rendered as memorize-then-reveal." }
+        "vocab": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "en": "word", "term": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "mean": "meaning", "trans": "meaning" }, "properties": { "word": { "type": "string" }, "meaning": { "type": "string" } } }, "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Each: word (English) + meaning (Korean). Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence." }
       }
     }
   },

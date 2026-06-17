@@ -353,12 +353,15 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab }: 
   pattern?: string;
   translation?: string;
   notes?: string[];
-  vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string }>;
+  vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
   const noteList = Array.isArray(notes) ? notes.filter(Boolean) : [];
   const vocabList = (Array.isArray(vocab) ? vocab : [])
-    .map((w) => ({ word: (w?.word ?? w?.en ?? '') as string, meaning: (w?.meaning ?? w?.ko ?? '') as string }))
+    .map((w) => ({
+      word: (w?.word ?? w?.en ?? w?.term ?? '') as string,
+      meaning: (w?.meaning ?? w?.ko ?? w?.kor ?? w?.definition ?? w?.def ?? '') as string,
+    }))
     .filter((w) => w.word || w.meaning);
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
