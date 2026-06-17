@@ -1742,12 +1742,26 @@ impl AiManager {
         // firebat-render fence(텍스트 채널 render)를 마스킹·sanitize 후 reply 정제 → 복원.
         // fence 안 JSON 이 sanitize_reply / 마크다운 구조 추출에 안 망가지게 보호 + render_blocks 검증.
         // 모델이 도구 인자 대신 텍스트로 render 를 보내 한국어 깨짐 회피 + content 상주(메모리 회상).
-        let (masked_for_reply, render_fences) = render_exec::mask_and_sanitize_fences(&last_text);
+        let (masked_for_reply, render_fences, render_block_groups) =
+            render_exec::mask_and_sanitize_fences(&last_text);
         let sanitized_reply = crate::utils::sanitize::sanitize_reply(&masked_for_reply);
         let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
         let (clean_reply_masked, extracted_blocks) =
             crate::utils::sanitize::segments_to_blocks(segments);
         let clean_reply = render_exec::restore_fences(&clean_reply_masked, &render_fences);
+        // render 뱃지 — fence 로 그린 것도 옛 render 도구처럼 tool_results 에 노출(뱃지 + 내용 = 디버그 편의).
+        // fence 는 도구 호출이 아니지만, 사용자에게 "render 했음 + 그 내용"을 보여주면 픽스할 때 편하다.
+        for blocks in &render_block_groups {
+            if blocks.is_null() {
+                continue; // 파싱 실패 fence — frontend 가 raw 로 표시하므로 별도 뱃지 불요.
+            }
+            tool_results_summary.push(crate::ports::ToolResultSummary {
+                name: "render".to_string(),
+                success: true,
+                error: None,
+                input: Some(serde_json::json!({ "blocks": blocks })),
+            });
+        }
 
         // 누적된 blocks (도구 결과 render_*) 와 markdown segments 변환 결과 병합.
         // 옛 TS 와 동일하게 — 도구 결과 blocks 가 먼저, 마지막 final reply 의 markdown 변환이 뒤.
