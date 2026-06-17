@@ -30,7 +30,13 @@ export function highlightMarksToHtml(s: string): string {
     if (!cm) cm = inner.match(new RegExp(`^(${FBHL_COLORS})\\s*:\\s*(\\S[\\s\\S]*)$`, 'i'));
     if (cm) { color = cm[1].toLowerCase(); text = cm[2]; }
     if (color === 'blue') color = 'sky';
-    return `<mark class="fbhl-${color}">${text}</mark>`;
+    // 마커 질감 변형(v1~v4 = 칠한 각도·모서리 다름) — 매번 같은 패턴이면 기계적이라 손으로 그은 듯
+    // 다양하게. 단 텍스트 해시 기반(결정적)이라 같은 글자=같은 변형 → SSR/클라 hydration 안전
+    // (Math.random 은 server↔client 불일치로 mismatch).
+    let h = 0;
+    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+    const v = (h % 4) + 1;
+    return `<mark class="fbhl-${color} fbhl-v${v}">${text}</mark>`;
   });
 }
 

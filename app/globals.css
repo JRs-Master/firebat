@@ -481,22 +481,40 @@ html::-webkit-scrollbar-thumb:hover,
 /* 형광펜(==강조==) — 마커 스윕 질감: 각진 그라데이션(불균일 잉크) + 비대칭 둥근 끝 + 반투명(텍스트 비침).
    sysmod 인디고 칩과 구분되는 노랑/핑크/보라/초록 4색. 채팅·발행·공유 공통(rehypeRaw native <mark>). */
 mark[class^="fbhl-"] {
-  border-radius: 0.5em 0.15em 0.45em 0.2em;
   padding: 0.02em 0.18em;
   color: inherit;
-  /* <mark> 브라우저 기본 배경 = 노랑. 반투명 그라디언트(background-image)만 깔면 그 노랑이 비쳐
-     sky·pink 등이 노랑과 겹쳐 보임 → 기본 배경을 투명으로 덮어 색이 정확히 나오게. */
+  /* <mark> 브라우저 기본 배경 = 노랑. 반투명 그라디언트만 깔면 그 노랑이 비쳐 sky·pink 등이 겹쳐
+     보임 → 투명으로 덮어 색 정확히. */
   background-color: transparent;
   background-repeat: no-repeat;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+  border-radius: 0.5em 0.15em 0.45em 0.2em; /* v1 기본 — 변형(v2~v4)이 override */
+  /* 손으로 칠한 형광펜 질감 — 균일 그라디언트 대신 군데군데 진한 점(두세 번 덧칠한 듯 불균일).
+     색 = --fbhl-c(hue sat light), 칠한 각도(--fbhl-a)·진한 점 위치(--fbhl-p1~4) = 변형이 정함.
+     md.ts 가 텍스트 해시로 v1~v4 배정 → 같은 표시도 매번 다른 stroke, 사람이 칠한 듯. */
+  background-image: linear-gradient(
+    var(--fbhl-a, -100deg),
+    hsl(var(--fbhl-c) / 0.18) 0%,
+    hsl(var(--fbhl-c) / 0.64) var(--fbhl-p1, 14%),
+    hsl(var(--fbhl-c) / 0.30) var(--fbhl-p2, 38%),
+    hsl(var(--fbhl-c) / 0.72) var(--fbhl-p3, 58%),
+    hsl(var(--fbhl-c) / 0.32) var(--fbhl-p4, 80%),
+    hsl(var(--fbhl-c) / 0.56) 94%,
+    hsl(var(--fbhl-c) / 0.20) 100%
+  );
 }
-.fbhl-yellow { background-image: linear-gradient(-100deg, hsla(50, 98%, 62%, 0.25), hsla(50, 98%, 62%, 0.7) 92%, hsla(50, 98%, 62%, 0.2)); }
-.fbhl-pink   { background-image: linear-gradient(-100deg, hsla(330, 90%, 72%, 0.25), hsla(330, 90%, 72%, 0.66) 92%, hsla(330, 90%, 72%, 0.2)); }
-.fbhl-purple { background-image: linear-gradient(-100deg, hsla(270, 85%, 75%, 0.25), hsla(270, 85%, 75%, 0.6) 92%, hsla(270, 85%, 75%, 0.2)); }
-.fbhl-green  { background-image: linear-gradient(-100deg, hsla(140, 68%, 56%, 0.25), hsla(140, 68%, 56%, 0.62) 92%, hsla(140, 68%, 56%, 0.2)); }
-.fbhl-orange { background-image: linear-gradient(-100deg, hsla(28, 95%, 62%, 0.25), hsla(28, 95%, 62%, 0.6) 92%, hsla(28, 95%, 62%, 0.2)); }
-.fbhl-sky    { background-image: linear-gradient(-100deg, hsla(199, 92%, 64%, 0.25), hsla(199, 92%, 64%, 0.55) 92%, hsla(199, 92%, 64%, 0.2)); }
+.fbhl-yellow { --fbhl-c: 50 98% 62%; }
+.fbhl-pink   { --fbhl-c: 330 90% 72%; }
+.fbhl-purple { --fbhl-c: 270 85% 75%; }
+.fbhl-green  { --fbhl-c: 140 68% 56%; }
+.fbhl-orange { --fbhl-c: 28 95% 62%; }
+.fbhl-sky    { --fbhl-c: 199 92% 64%; }
+/* 변형 4종 — 각도·진한 점 위치·모서리 다르게 해서 손글씨 같은 다양성(매번 같은 패턴 방지). */
+.fbhl-v1 { --fbhl-a: -100deg; --fbhl-p1: 14%; --fbhl-p2: 38%; --fbhl-p3: 58%; --fbhl-p4: 80%; border-radius: 0.5em 0.15em 0.45em 0.2em; }
+.fbhl-v2 { --fbhl-a: -93deg;  --fbhl-p1: 22%; --fbhl-p2: 31%; --fbhl-p3: 67%; --fbhl-p4: 88%; border-radius: 0.2em 0.5em 0.25em 0.4em; }
+.fbhl-v3 { --fbhl-a: -107deg; --fbhl-p1: 10%; --fbhl-p2: 46%; --fbhl-p3: 53%; --fbhl-p4: 74%; border-radius: 0.4em 0.2em 0.5em 0.15em; }
+.fbhl-v4 { --fbhl-a: -96deg;  --fbhl-p1: 18%; --fbhl-p2: 33%; --fbhl-p3: 63%; --fbhl-p4: 86%; border-radius: 0.15em 0.45em 0.2em 0.5em; }
 
 /* KaTeX display 수식($$식$$) — 기본 간격이 좁아 연속된 식의 분수가 다음 줄에 거의 붙어 보임.
    세로 여백 + 분수 높이 여유 + 긴 식 가로 스크롤(모바일). AI 가 식을 따로 잘 넣어도 필요(렌더 간격). */
