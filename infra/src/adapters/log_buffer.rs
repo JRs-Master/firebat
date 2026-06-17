@@ -134,8 +134,14 @@ impl<S: Subscriber> Layer<S> for LogBufferLayer {
             message.push_str(&visitor.fields.join(" "));
         }
         // message cap — 거대 로그가 db 부풀리는 것 차단.
+        // String::truncate 는 byte index 가 char 경계가 아니면 panic → 한글(3byte) 로그가 4000byte 를
+        // 넘으면 글자 중간을 잘라 크래시(코어덤프). 4000 이하의 가장 큰 char 경계로 안전하게 자른다.
         if message.len() > 4000 {
-            message.truncate(4000);
+            let mut end = 4000;
+            while end > 0 && !message.is_char_boundary(end) {
+                end -= 1;
+            }
+            message.truncate(end);
         }
         // category field 가 있으면 (CategoryLogger 경유 매니저 로그) target 으로 승격 —
         // admin 로그 탭의 prefix 필터가 매니저 category 단위로 동작. 없으면 meta.target() (tracing 직접 호출).
