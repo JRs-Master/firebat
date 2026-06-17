@@ -725,7 +725,7 @@ async fn main() -> Result<()> {
                         "startAt": chrono::Utc::now().to_rfc3339(),
                         "tags": ["실행기록", if success { "완료" } else { "실패" }],
                         "linkedJobId": job_id,
-                        "description": error.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::Null),
+                        "description": serde_json::Value::String(error.clone().unwrap_or_default()),
                     });
                     let _ = modmgr.run("calendar", &cal_input).await;
                 }
@@ -746,11 +746,10 @@ async fn main() -> Result<()> {
             // 캘린더 기록 — 사용자가 "캘린더에 표시" 체크한 잡만 (시스템·미체크 잡 제외).
             // 진단: show_cal 값 + add 결과를 남긴다(옛 silent `let _` 라 실패/미실행이 안 보였음).
             if show_cal {
-                let desc = if result.success {
-                    serde_json::Value::Null
-                } else {
-                    serde_json::Value::String(result.error.clone().unwrap_or_default())
-                };
+                // description 은 항상 string — calendar add 스키마가 string 요구(null 거부 → 성공 잡이 기록 안 됨).
+                let desc = serde_json::Value::String(
+                    if result.success { String::new() } else { result.error.clone().unwrap_or_default() },
+                );
                 let cal_input = serde_json::json!({
                     "action": "add",
                     "title": title,
