@@ -975,6 +975,24 @@
     }
   },
   {
+    "name": "sentence",
+    "componentType": "Sentence",
+    "description": "English syntax-reading study card (구문독해 / 천일문 style): one sentence split into reading chunks with grammar roles (S/V/O/C/M) + per-chunk 직독직해 Korean gloss + sentence pattern (1~5형식) + grammar notes (준동사 etc.) + vocab flashcards. Interactive: tap a chunk to reveal its role + gloss (hidden by default = self-test); vocab meanings stay hidden (memorize) until tapped. Renders on a cream exam-paper background. Use for English study / 영어 해설 / 문장 분석.",
+    "semanticText": "영어 구문독해 천일문 문장분석 직독직해 끊어읽기 문장구조 성분 S V O C M 주어 동사 목적어 보어 수식어 5형식 문장형식 준동사 to부정사 동명사 분사 관계사 문법 해설 영어 단어 암기 어휘 vocabulary grammar sentence syntax reading",
+    "propsSchema": {
+      "type": "object",
+      "synonyms": { "chunks": "tokens", "grammar": "notes", "words": "vocab" },
+      "properties": {
+        "sentence": { "type": ["string", "null"], "description": "the full English sentence (fallback shown when tokens absent)" },
+        "tokens": { "type": ["array", "null"], "items": { "type": "object", "properties": { "text": { "type": "string" }, "role": { "type": ["string", "null"] }, "gloss": { "type": ["string", "null"] } } }, "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (one of S/V/O/C/M = 주어/동사/목적어/보어/수식어, uppercase; omit for plain connecting words), gloss (this chunk's Korean meaning = 직독직해)." },
+        "pattern": { "type": ["string", "null"], "description": "sentence pattern label, e.g. '3형식 (S+V+O)' or '5형식'" },
+        "translation": { "type": ["string", "null"], "description": "natural full Korean translation (자연스러운 해석, markdown)" },
+        "notes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "grammar points (준동사·시제·관계사 등), each a markdown string" },
+        "vocab": { "type": ["array", "null"], "items": { "type": "object", "properties": { "word": { "type": "string" }, "meaning": { "type": "string" } } }, "description": "vocab flashcards: word (English) + meaning (Korean). Rendered as memorize-then-reveal." }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",

@@ -53,6 +53,7 @@ const TYPE_ALIAS: Record<string, string> = {
   diagram: 'Diagram', math: 'Math', code: 'Code', slideshow: 'Slideshow',
   lottie: 'Lottie', network: 'Network', map: 'Map',
   quiz: 'Quiz', quizgroup: 'QuizGroup', quiz_group: 'QuizGroup',
+  sentence: 'Sentence', sentence_analysis: 'Sentence', syntax: 'Sentence',
 };
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
@@ -105,6 +106,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
     case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? []} view={p.view} />;
+    case 'Sentence':      return <SentenceComp sentence={p.sentence} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar} vocab={p.vocab ?? p.words} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -134,6 +136,12 @@ const quizAns = (answer?: number, answerIndex?: number): number | undefined => {
 };
 
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
+// 시험지/해설지 미색지 종이 질감 — SVG fractalNoise 를 아주 옅게(미색 위 미세 그레인).
+// 배경 색은 className(bg-[#faf8f0])이, 그레인은 이 backgroundImage 가 담당(겹침).
+const PAPER_NOISE =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)' opacity='0.05'/%3E%3C/svg%3E\")";
+const PAPER_STYLE = { backgroundImage: PAPER_NOISE } as const;
+
 function QuizBody({
   number, question, boxes, figures, statements, choices, answer, answerIndex, explanation,
   view, selected, revealed, onSelect,
@@ -147,7 +155,7 @@ function QuizBody({
   const ans = quizAns(answer, answerIndex); // 1-based
   const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 sm:px-5 sm:py-4 text-[14px] sm:text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 text-[14px] sm:text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       {view === 'answers' ? (
         number != null && <div className="text-[12px] font-bold text-slate-500 mb-1">{typeof number === 'number' ? `${number}번` : String(number)}</div>
       ) : (
@@ -157,7 +165,7 @@ function QuizBody({
         </div>
       )}
       {view !== 'answers' && (boxes ?? []).map((b, i) => (
-        <div key={`b-${i}`} className="border border-slate-400 bg-white rounded-md p-3 my-2 text-[13px] sm:text-[14px] leading-relaxed">
+        <div key={`b-${i}`} className="border border-[#d9cdae] rounded-md p-3 my-2 text-[13px] sm:text-[14px] leading-relaxed">
           <TextComp content={b} />
         </div>
       ))}
@@ -165,7 +173,7 @@ function QuizBody({
         <div className="my-2"><ComponentRenderer components={figures} /></div>
       )}
       {view !== 'answers' && statements && statements.length > 0 && (
-        <div className="border border-slate-400 bg-white rounded-md p-3 my-2 flex flex-col gap-1 text-[13px] sm:text-[14px]">
+        <div className="border border-[#d9cdae] rounded-md p-3 my-2 flex flex-col gap-1 text-[13px] sm:text-[14px]">
           {statements.map((s, i) => (
             <div key={`s-${i}`} className="flex gap-1.5">
               <span className="font-bold shrink-0">{QUIZ_KOR[i] ?? `${i + 1}`}.</span>
@@ -206,7 +214,7 @@ function QuizBody({
         <div className="mt-3.5">
           {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {QUIZ_CIRCLED[ans - 1] ?? ans}</div>}
           {explanation && (
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 sm:p-3.5">
+            <div className="rounded-lg border border-[#d9cdae] p-3 sm:p-3.5">
               <div className="text-[11px] font-bold text-indigo-500 tracking-wide mb-1.5">해설</div>
               <div className="text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
                 <TextComp content={explanation} />
@@ -214,6 +222,157 @@ function QuizBody({
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sentence (영어 문장 구조 분석 — 문제집 해설 스타일) ────────────────────────
+// 토큰별 문법 역할(S/V/O/C/M)을 색 밑줄 + 태그로 표시 + 범례 + 해석 + 문법 노트.
+// 보라색은 반사적 기본 회피([[feedback_no_purple_default]]) — 보어(C)는 amber.
+const SENT_ROLE: Record<string, { ko: string; border: string; tag: string }> = {
+  S: { ko: '주어', border: 'border-blue-400', tag: 'bg-blue-50 text-blue-600' },
+  V: { ko: '동사', border: 'border-rose-400', tag: 'bg-rose-50 text-rose-600' },
+  O: { ko: '목적어', border: 'border-emerald-400', tag: 'bg-emerald-50 text-emerald-600' },
+  C: { ko: '보어', border: 'border-amber-400', tag: 'bg-amber-50 text-amber-600' },
+  M: { ko: '수식어', border: 'border-slate-300', tag: 'bg-slate-100 text-slate-500' },
+};
+
+// SVO 문장 구조 — 천일문식 끊어읽기. 성분을 탭하면 역할(S/V/O/C/M)·직독직해(gloss)가 공개,
+// 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "직독직해/가리기" 토글로 한 번에. 역할 없는 단어는 평문.
+function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string }> }) {
+  const [shown, setShown] = useState<Set<number>>(new Set());
+  const revealable = tokens
+    .map((t, i) => ({ i, ok: !!SENT_ROLE[(t.role || '').toUpperCase()] || !!t.gloss }))
+    .filter((x) => x.ok);
+  const allShown = revealable.length > 0 && revealable.every((x) => shown.has(x.i));
+  const toggleAll = () => setShown(allShown ? new Set() : new Set(revealable.map((x) => x.i)));
+  const toggleOne = (i: number) =>
+    setShown((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const usedRoles = [...new Set(
+    tokens.filter((_, i) => shown.has(i)).map((t) => (t.role || '').toUpperCase()).filter((r) => SENT_ROLE[r]),
+  )];
+  return (
+    <div>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-3 text-[16px] sm:text-[17px] leading-none">
+        {tokens.map((t, i) => {
+          const role = (t.role || '').toUpperCase();
+          const r = SENT_ROLE[role];
+          const canReveal = !!r || !!t.gloss;
+          const open = shown.has(i) || !canReveal;
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!canReveal}
+              onClick={() => toggleOne(i)}
+              className={`inline-flex flex-col items-center gap-1 ${canReveal ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+              <span className={r ? `border-b-2 pb-0.5 text-slate-800 ${open ? r.border : 'border-dashed border-slate-300'}` : 'text-slate-800'}>{t.text}</span>
+              {r && (open
+                ? <span className={`text-[10px] font-bold px-1 rounded ${r.tag}`}>{role}</span>
+                : <span className="text-[10px] font-bold px-1 rounded bg-slate-100 text-slate-400">?</span>)}
+              {t.gloss && (open
+                ? <span className="text-[11px] text-slate-500 leading-tight">{t.gloss}</span>
+                : <span className="text-[11px] text-transparent bg-[#e9e0c8] rounded px-1 select-none leading-tight">{t.gloss}</span>)}
+            </button>
+          );
+        })}
+      </div>
+      {revealable.length > 0 && (
+        <div className="flex items-center justify-between gap-2 mt-3">
+          <div className="flex flex-wrap gap-1.5 text-[11px] min-h-[18px]">
+            {usedRoles.length > 0
+              ? usedRoles.map((r) => (
+                  <span key={r} className={`px-1.5 py-0.5 rounded font-medium ${SENT_ROLE[r].tag}`}>{r} · {SENT_ROLE[r].ko}</span>
+                ))
+              : <span className="text-slate-400">성분을 탭해 역할·뜻을 확인하세요</span>}
+          </div>
+          <button type="button" onClick={toggleAll} className="shrink-0 text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
+            {allShown ? '가리기' : '직독직해'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 단어 암기 — 인터랙티브 플래시카드. 의미는 미색 redaction 바로 가려두고(외우기), 탭하면 공개.
+// "모두 보기/가리기" 토글. 기본 = 전부 가림(암기 모드).
+function VocabList({ items }: { items: Array<{ word: string; meaning: string }> }) {
+  const [shown, setShown] = useState<Set<number>>(new Set());
+  const allShown = items.length > 0 && shown.size === items.length;
+  const toggleAll = () => setShown(allShown ? new Set() : new Set(items.map((_, i) => i)));
+  const toggleOne = (i: number) =>
+    setShown((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  return (
+    <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold text-indigo-500">단어 암기</div>
+        <button type="button" onClick={toggleAll} className="text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
+          {allShown ? '의미 가리기' : '모두 보기'}
+        </button>
+      </div>
+      <ul className="flex flex-col divide-y divide-[#e6ddc6]">
+        {items.map((w, i) => {
+          const open = shown.has(i);
+          return (
+            <li key={i} className="flex items-baseline gap-3 py-1.5 first:pt-0 last:pb-0">
+              <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
+              <button
+                type="button"
+                onClick={() => toggleOne(i)}
+                title={open ? '탭하여 가리기' : '탭하여 의미 보기'}
+                className={`flex-1 text-left text-[13px] sm:text-[14px] rounded px-1.5 transition-colors ${open ? 'text-slate-600 cursor-pointer' : 'bg-[#e9e0c8] text-transparent hover:bg-[#e2d6b8] cursor-pointer select-none'}`}
+              >
+                {open ? <InlineMd text={w.meaning} /> : <span className="opacity-0">{w.meaning || '•••'}</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab }: {
+  sentence?: string;
+  tokens?: Array<{ text: string; role?: string; gloss?: string }>;
+  pattern?: string;
+  translation?: string;
+  notes?: string[];
+  vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string }>;
+}) {
+  const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
+  const noteList = Array.isArray(notes) ? notes.filter(Boolean) : [];
+  const vocabList = (Array.isArray(vocab) ? vocab : [])
+    .map((w) => ({ word: (w?.word ?? w?.en ?? '') as string, meaning: (w?.meaning ?? w?.ko ?? '') as string }))
+    .filter((w) => w.word || w.meaning);
+  return (
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      {pattern && (
+        <div className="mb-2.5">
+          <span className="inline-block text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-2 py-0.5">{pattern}</span>
+        </div>
+      )}
+      {toks.length > 0 ? (
+        <SvoTokens tokens={toks} />
+      ) : sentence ? (
+        <div className="text-[16px] sm:text-[17px] text-slate-800">{sentence}</div>
+      ) : null}
+      {translation && (
+        <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
+          <div className="text-[11px] font-bold text-indigo-500 mb-1">해석</div>
+          <div className="text-[14px] sm:text-[15px] text-slate-700"><InlineMd text={translation} /></div>
+        </div>
+      )}
+      {vocabList.length > 0 && <VocabList items={vocabList} />}
+      {noteList.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-1.5 text-[13px] sm:text-[14px] text-slate-600">
+          {noteList.map((n, i) => (
+            <li key={i} className="flex gap-1.5"><span className="text-indigo-400 shrink-0">•</span><span className="flex-1"><InlineMd text={n} /></span></li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -227,7 +386,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
   const [selected, setSelected] = useState<number | undefined>(undefined);
   const [revealed, setRevealed] = useState(false);
   return (
-    <div className="border border-slate-300 rounded-lg p-3 sm:p-4 bg-white my-2">
+    <div className="my-2">
       {points != null && (
         <div className="text-[11px] text-slate-400 mb-1 text-right">[{typeof points === 'number' ? `${points}점` : String(points)}]</div>
       )}
@@ -237,7 +396,9 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
         selected={selected} revealed={revealed} onSelect={setSelected}
       />
       {view === 'interactive' && !revealed && (
-        <button type="button" onClick={() => setRevealed(true)} className="mt-2 px-3 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">채점</button>
+        <div className="flex justify-end mt-2">
+          <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">정답 확인</button>
+        </div>
       )}
     </div>
   );
@@ -252,14 +413,14 @@ function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive
   const [revealed, setRevealed] = useState(false);
   const qs = questions ?? [];
   return (
-    <div className="border border-slate-300 rounded-lg p-3 sm:p-4 bg-white my-2">
+    <div style={PAPER_STYLE} className="border border-[#e9e2d0] rounded-lg p-3 sm:p-4 bg-[#faf8f0] my-2">
       {view !== 'answers' && passage && (
-        <div className="border border-slate-400 bg-white rounded-md p-3 mb-3 text-[13px] sm:text-[14px] leading-relaxed">
+        <div className="border border-[#d9cdae] rounded-md p-3 mb-3 text-[13px] sm:text-[14px] leading-relaxed">
           <TextComp content={passage} />
         </div>
       )}
       {view !== 'answers' && (boxes ?? []).map((b, i) => (
-        <div key={`gb-${i}`} className="border border-slate-400 bg-white rounded-md p-3 mb-2 text-[13px] sm:text-[14px] leading-relaxed"><TextComp content={b} /></div>
+        <div key={`gb-${i}`} className="border border-[#d9cdae] rounded-md p-3 mb-2 text-[13px] sm:text-[14px] leading-relaxed"><TextComp content={b} /></div>
       ))}
       {view !== 'answers' && figures && figures.length > 0 && (
         <div className="mb-3"><ComponentRenderer components={figures} /></div>
@@ -274,7 +435,9 @@ function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive
         ))}
       </div>
       {view === 'interactive' && !revealed && (
-        <button type="button" onClick={() => setRevealed(true)} className="mt-3 px-3 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 채점</button>
+        <div className="flex justify-end mt-3">
+          <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 정답 확인</button>
+        </div>
       )}
     </div>
   );
