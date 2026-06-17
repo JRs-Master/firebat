@@ -246,7 +246,13 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             if (b.type === 'text' && b.text) {
               return (
                 <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(b.text)}</ReactMarkdown>
+                  {/* text 블록도 firebat-render fence 분리 — 메시지가 단일 text 블록(전체 답변)으로 와도
+                      fence 가 raw 코드로 안 보이게(admin renderMarkdown 과 동일). */}
+                  {splitFirebatRender(b.text).map((s, j) =>
+                    'blocks' in s
+                      ? <ComponentRenderer key={j} components={s.blocks} />
+                      : <ReactMarkdown key={j} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(s.md)}</ReactMarkdown>,
+                  )}
                 </div>
               );
             }
