@@ -138,3 +138,81 @@ pub fn render_blocks(args: &Value) -> Result<Value, String> {
         "failed": failed,
     }))
 }
+
+/// Mask `firebat-render` fences (render blocks the model wrote into its TEXT reply instead of calling
+/// the `render` tool) with `@@FBRENDER<n>@@` placeholders, validating/normalizing each fence's blocks
+/// through `render_blocks`. Masking protects the fence JSON from the reply post-processing that
+/// follows (sanitize_reply / markdown-structure extraction would otherwise mangle the JSON's quotes,
+/// brackets, `**`, `<>` etc.). Returns `(masked_text, fences)` where `fences[n]` is the rebuilt,
+/// sanitized fence string to splice back via `restore_fences` after that post-processing.
+///
+/// Why the text channel: the model corrupts Korean spelling inside tool_use JSON arguments but not in
+/// free text — so routing render through text fixes the corruption AND keeps render content inside
+/// `reply`/content so it is embedded + recalled (no amnesia). See CLAUDE.md 한국어 깨짐 진단 (2026-06-17).
+pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>) {
+    const OPEN: &str = "```firebat-render";
+    if !text.contains(OPEN) {
+        return (text.to_string(), Vec::new());
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut store: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        // Body begins right after the opening line's newline.
+        let Some(nl) = after.find('\n') else {
+            out.push_str(after); // unterminated fence — keep raw
+            rest = "";
+            break;
+        };
+        let body_start_rel = nl + 1;
+        let body_and_rest = &after[body_start_rel..];
+        let Some(close_rel) = body_and_rest.find("```") else {
+            out.push_str(after); // no closing fence — keep raw
+            rest = "";
+            break;
+        };
+        let body = &body_and_rest[..close_rel];
+        store.push(format!("```firebat-render\n{}\n```", sanitize_fence_body(body)));
+        out.push_str(&format!("@@FBRENDER{}@@", store.len() - 1));
+        rest = &rest[start + body_start_rel + close_rel + 3..]; // past closing ```
+    }
+    out.push_str(rest);
+    (out, store)
+}
+
+/// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
+/// On parse/validation failure, returns the trimmed original so the frontend renders it raw
+/// (visible + debuggable, never silently dropped).
+fn sanitize_fence_body(body: &str) -> String {
+    let trimmed = body.trim();
+    let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
+        return trimmed.to_string();
+    };
+    let args = if parsed.is_array() {
+        serde_json::json!({ "blocks": parsed })
+    } else {
+        parsed
+    };
+    match render_blocks(&args) {
+        Ok(result) => result
+            .get("blocks")
+            .map(|b| serde_json::to_string(b).unwrap_or_else(|_| trimmed.to_string()))
+            .unwrap_or_else(|| trimmed.to_string()),
+        Err(_) => trimmed.to_string(),
+    }
+}
+
+/// Restore `@@FBRENDER<n>@@` placeholders left by `mask_and_sanitize_fences` with their sanitized
+/// fence strings.
+pub fn restore_fences(text: &str, fences: &[String]) -> String {
+    if fences.is_empty() {
+        return text.to_string();
+    }
+    let mut out = text.to_string();
+    for (i, fence) in fences.iter().enumerate() {
+        out = out.replace(&format!("@@FBRENDER{}@@", i), fence);
+    }
+    out
+}

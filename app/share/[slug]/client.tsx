@@ -10,7 +10,7 @@ import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
-import { maskMath } from '../../../lib/util/md';
+import { maskMath, splitFirebatRender } from '../../../lib/util/md';
 
 /** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML 태그 escape + **bold** 주입 → 복원 (admin renderMarkdown 과 동일 취지). */
 function prepShare(s: string): string {
@@ -274,7 +274,12 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
           })
         ) : msg.content ? (
           <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(msg.content ?? '')}</ReactMarkdown>
+            {/* firebat-render fence(텍스트 채널 render)는 ComponentRenderer 직접, 나머지만 마크다운 */}
+            {splitFirebatRender(msg.content ?? '').map((s, i) =>
+              'blocks' in s
+                ? <ComponentRenderer key={i} components={s.blocks} />
+                : <ReactMarkdown key={i} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{prepShare(s.md)}</ReactMarkdown>,
+            )}
           </div>
         ) : null}
         {/* 읽기전용 결과 카드 — PB 진행 / suggest 선택 결과(직접 입력 포함) / 발행·예약 결과. 대화 맥락 유지. */}

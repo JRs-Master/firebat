@@ -1739,10 +1739,15 @@ impl AiManager {
         // 1. sanitize_reply — Unicode escape / HTML 태그 / 마크다운 강조 마커 제거
         // 2. extract_markdown_structure — `## 헤더` / `|---|` 표 → render_header / render_table 자동 변환
         // 3. segments_to_blocks — text segment 만 reply 에 남기고 header/table 은 blocks 로 분리
-        let sanitized_reply = crate::utils::sanitize::sanitize_reply(&last_text);
+        // firebat-render fence(텍스트 채널 render)를 마스킹·sanitize 후 reply 정제 → 복원.
+        // fence 안 JSON 이 sanitize_reply / 마크다운 구조 추출에 안 망가지게 보호 + render_blocks 검증.
+        // 모델이 도구 인자 대신 텍스트로 render 를 보내 한국어 깨짐 회피 + content 상주(메모리 회상).
+        let (masked_for_reply, render_fences) = render_exec::mask_and_sanitize_fences(&last_text);
+        let sanitized_reply = crate::utils::sanitize::sanitize_reply(&masked_for_reply);
         let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
-        let (clean_reply, extracted_blocks) =
+        let (clean_reply_masked, extracted_blocks) =
             crate::utils::sanitize::segments_to_blocks(segments);
+        let clean_reply = render_exec::restore_fences(&clean_reply_masked, &render_fences);
 
         // 누적된 blocks (도구 결과 render_*) 와 markdown segments 변환 결과 병합.
         // 옛 TS 와 동일하게 — 도구 결과 blocks 가 먼저, 마지막 final reply 의 markdown 변환이 뒤.

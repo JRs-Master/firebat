@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, useId, Fragment } from 'react';
 import { useRouter } from 'next/navigation';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { maskMath, highlightMarksToHtml } from '../../lib/util/md';
+import { maskMath, highlightMarksToHtml, splitFirebatRender } from '../../lib/util/md';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -108,7 +108,7 @@ function cleanMarkdown(text: string): string {
   return cleaned;
 }
 
-function renderMarkdown(text: string) {
+function renderMarkdownInner(text: string) {
   // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
   // **bold** 가 한국어/괄호 인접 시 commonmark 인식 실패(raw ** 노출) → 명시적 <strong> 변환 (user TextComp 동일).
   // 수식($...$) 보호 → escapeHtmlTagMentions + **bold** 주입이 LaTeX 안 건드리게 → 복원 → remark-math 파싱.
@@ -122,6 +122,23 @@ function renderMarkdown(text: string) {
     ),
   );
   return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={mdComponents}>{withStrong}</ReactMarkdown>;
+}
+
+// `firebat-render` fence(= 모델이 텍스트 채널로 보낸 render 블록)는 ComponentRenderer 로 직접 렌더해
+// 마크다운 변환 파이프라인을 우회한다(JSON 안 깨짐). 나머지 텍스트만 renderMarkdownInner 가 처리.
+// fence 없으면 segments 길이 1 → 기존과 100% 동일(additive). 텍스트 채널 = 도구 인자 한국어 깨짐 회피.
+function renderMarkdown(text: string) {
+  const segments = splitFirebatRender(text);
+  if (segments.length === 1 && 'md' in segments[0]) return renderMarkdownInner(segments[0].md);
+  return (
+    <>
+      {segments.map((s, i) =>
+        'blocks' in s
+          ? <ComponentRenderer key={i} components={s.blocks} />
+          : <Fragment key={i}>{renderMarkdownInner(s.md)}</Fragment>,
+      )}
+    </>
+  );
 }
 
 // ─── 선택지 버튼 (단일 버튼 + 카드 aggregate: toggle + multi-input + plan-revise) ───

@@ -13,7 +13,7 @@ import { usePublicTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender } from '../../../lib/util/md';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -341,10 +341,20 @@ function formatNumberString(v: string | number | null | undefined): string {
 function TextComp({ content }: { content: string }) {
   // mdReady = 개행 정규화 + AI raw HTML escape + **bold** 주입 단일 로직. escape 후라 AI 가 쓴
   // raw <strong> 등은 literal 텍스트로 보이고(번짐 차단), 한국어 인접 **bold** 는 <strong> 렌더.
-  const withStrong = mdReady(content);
+  // firebat-render fence(= 텍스트 채널 render) 는 ComponentRenderer 직접 렌더(마크다운 변환 우회).
+  const segments = splitFirebatRender(content);
+  const md = (s: string) => (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(s)}</ReactMarkdown>
+  );
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{withStrong}</ReactMarkdown>
+      {segments.length === 1 && 'md' in segments[0]
+        ? md(segments[0].md)
+        : segments.map((s, i) =>
+            'blocks' in s
+              ? <ComponentRenderer key={i} components={s.blocks} />
+              : <React.Fragment key={i}>{md(s.md)}</React.Fragment>,
+          )}
     </div>
   );
 }

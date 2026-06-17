@@ -79,3 +79,51 @@ export function maskMath(s: string): { masked: string; restore: (t: string) => s
     t.replace(/@@FBMATH(\d+)@@/g, (_x, i) => store[Number(i)] ?? '');
   return { masked, restore };
 }
+
+export type MdSegment = { md: string } | { blocks: Array<{ type: string; props: Record<string, any> }> };
+
+/**
+ * Split body text on ```firebat-render ... ``` fences (= intentional render blocks the model wrote
+ * into its TEXT reply instead of calling the `render` tool). Each fence is rendered directly by
+ * ComponentRenderer, bypassing the markdown text pipeline entirely — so its JSON is never mangled by
+ * cleanMarkdown's hallucination-strip / escape / bold / highlight transforms. Only the surrounding
+ * markdown segments go through the normal pipeline. No fence → `[{ md: whole }]` = identical to the
+ * old behavior (additive, zero regression).
+ *
+ * Why text channel: the model corrupts Korean spelling (옳→옵) when generating it inside tool_use
+ * JSON arguments, but free text (even JSON-shaped) is clean — so routing render through text fixes
+ * both the corruption and the recall amnesia (render content now lives in `content`). See CLAUDE.md
+ * 한국어 깨짐 진단 (2026-06-17).
+ *
+ * Note: bare component-JSON dumps WITHOUT this fence stay in the md segments → cleanMarkdown still
+ * strips them as hallucinations (intended vs accidental render disambiguated by the explicit fence).
+ */
+export function splitFirebatRender(text: string): MdSegment[] {
+  if (!text || !text.includes('firebat-render')) return [{ md: text }];
+  const out: MdSegment[] = [];
+  const re = /```firebat-render[^\n]*\n([\s\S]*?)```/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) out.push({ md: text.slice(last, m.index) });
+    try {
+      const parsed = JSON.parse(m[1].trim());
+      const raw: any[] = Array.isArray(parsed) ? parsed : (parsed?.blocks ?? []);
+      const blocks = raw
+        .filter((b) => b && typeof b === 'object')
+        .map((b: any) =>
+          b.type === 'component'
+            ? { type: String(b.name ?? ''), props: b.props ?? {} } // render_blocks output shape
+            : { type: String(b.type ?? b.name ?? ''), props: b.props ?? {} }, // direct {type,props}
+        )
+        .filter((b) => b.type);
+      if (blocks.length) out.push({ blocks });
+      else out.push({ md: m[0] }); // empty/invalid → keep raw so it's visible
+    } catch {
+      out.push({ md: m[0] }); // parse failure → keep raw (debuggable, not silently dropped)
+    }
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push({ md: text.slice(last) });
+  return out;
+}
