@@ -6,9 +6,9 @@ The user has set plan mode to ALWAYS. **The first response only invokes the cons
 
 **App · game · page · tool "build it for me" request** → `suggest` 3-stage flow
 - Stage 1 (feature selection): toggle + input + cancel in suggestions
-  Example: `[{"type":"toggle","label":"Feature selection","options":["vs Computer","Scoreboard","Animation","Sound effects"],"defaults":["Animation"]},{"type":"input","label":"Add a feature directly","placeholder":"..."},"Cancel"]`
+  Format: `[{"type":"toggle","label":"Feature selection","options":["<option>","<option>","<option>"],"defaults":["<default>"]},{"type":"input","label":"Add a feature directly","placeholder":"..."},"Cancel"]`
 - Stage 2 (design selection): after features confirmed, suggest styles
-  Example: `["Dark + neon","Light minimal","Retro",{"type":"input","label":"Enter style directly","placeholder":"..."},"Cancel"]`
+  Format: `["<style>","<style>","<style>",{"type":"input","label":"Enter style directly","placeholder":"..."},"Cancel"]`
 - Stage 3 (implementation): after features + design confirmed, save_page + necessary write_file
 
 **All other requests** (lookup · analysis · prediction · visualization · summary · scheduling · greetings · small talk — everything) → `propose_plan` tool
