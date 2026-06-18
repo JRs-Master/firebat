@@ -217,13 +217,13 @@ A **skill** is a case manual: how to use tools/templates for a specific kind of 
 Large responses (50+ row time series, etc) — main context token saving. Sandbox automatically detects the `_cache` envelope in sysmod responses → stores via SysmodCacheAdapter → injects `_cacheKey` + `_cacheMeta` into the response. AI receives only `_cacheKey` instead of the full records, then uses cache_* tools to fetch in chunks.
 
 **sysmod response shapes**:
-- **inline** (small result, < 50 rows): `{success, data: {symbol: "005930", records: [...]}}` — AI uses records directly.
-- **cache** (large result, 50+ rows): `{success, data: {symbol: "005930", period: "3mo", firstDate: "...", lastDate: "...", _cacheKey: "yfinance-history-xxx-1234", _cacheMeta: {sysmod: "yfinance", action: "history", recordCount: 59, ttlSec: 600}}}`. No records inline, only `_cacheKey`.
+- **inline** (small result, < 50 rows): `{success, data: {records: [...]}}` — AI uses records directly.
+- **cache** (large result, 50+ rows): `{success, data: {<summary fields>, _cacheKey: "<module>-<action>-1234", _cacheMeta: {sysmod: "<module>", action: "<action>", recordCount: 59, ttlSec: 600}}}`. No records inline, only `_cacheKey`.
 
 **Flow on receiving `_cacheKey`**:
 - Need part only → `cache_read({cacheKey: "...", offset: 0, limit: 50})` (pagination).
-- Condition filter → `cache_grep({cacheKey: "...", field: "close", op: "gt", value: 200000})` (op: eq/ne/gt/gte/lt/lte/contains/in).
-- Aggregation → `cache_aggregate({cacheKey: "...", field: "close", op: "avg"})` (count/sum/avg/min/max).
+- Condition filter → `cache_grep({cacheKey: "...", field: "<field>", op: "gt", value: <n>})` (op: eq/ne/gt/gte/lt/lte/contains/in).
+- Aggregation → `cache_aggregate({cacheKey: "...", field: "<field>", op: "avg"})` (count/sum/avg/min/max).
 - When done → `cache_drop({cacheKey: "..."})` (optional, 5min TTL auto-expires).
 
 **Important — tool argument naming**: schema parameter name is `cacheKey` (no underscore). Response field name is `_cacheKey` (with underscore). Extract the value from `_cacheKey` in the response, then pass it to the tool as the `cacheKey` argument.
@@ -232,11 +232,11 @@ Large responses (50+ row time series, etc) — main context token saving. Sandbo
 - cache_* on a response without `_cacheKey` (if records is inline, use directly).
 - Small results (fewer than 50 rows) — use inline records.
 
-**Example (yfinance 60-day daily candle)**:
-1. Call `sysmod_yfinance({action: "history", symbol: "005930.KS", period: "3mo"})`
-2. Response = `{success, data: {symbol, period, firstDate, lastDate, _cacheKey: "yfinance-history-xxx", _cacheMeta: {recordCount: 59, ...}}}`
-3. Call `cache_read({cacheKey: "yfinance-history-xxx", offset: 0, limit: 60})` → receive 60 records
-4. Pass records to render tool → draw chart
+**Example flow**:
+1. Call a sysmod whose result is a large series (50+ rows).
+2. Response = `{success, data: {<summary>, _cacheKey: "<key>", _cacheMeta: {recordCount: 59, ...}}}` — no records inline.
+3. Call `cache_read({cacheKey: "<key>", offset: 0, limit: 60})` → receive the records.
+4. Pass the records into the render fence → draw the chart / table.
 
 ## Module authoring (special)
 - I/O: stdin JSON → last line of stdout {"success":true,"data":{...}}. No sys.argv.

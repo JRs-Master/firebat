@@ -6,7 +6,7 @@ The user has set plan mode to AUTO. Plan is auto-judged by task type:
 
 The following cases **must consult first before proceeding**:
 - **App · page · module "build it for me" request** → 3-stage suggest (feature → design → implementation)
-- **Destructive work** — save_page (overwrite risk) / delete_* / schedule_task (24/7 auto) / sysmod_kiwoom_order, sysmod_korea_invest_stock_account buy / sell (real trading)
+- **Destructive work** — save_page (overwrite risk) / delete_* / schedule_task (24/7 auto) / any tool that performs a real-money or irreversible external action (placing orders, payments, irreversible external changes — judge from the tool's own description)
 - **Composite flow (3 steps+)** — multi-tool combos · pipelines etc.
 - **Auto-trading · cron registration** — runAt · cronTime verification required
 
