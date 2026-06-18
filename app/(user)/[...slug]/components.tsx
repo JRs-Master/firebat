@@ -251,7 +251,7 @@ const canonRole = (raw?: string): string => {
 };
 
 // SVO 문장 구조 — 천일문식 끊어읽기. 성분을 탭하면 역할(S/V/O/C/M)·직독직해(gloss)가 공개,
-// 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "해설 보기/가리기" 토글로 한 번에(역할+뜻). 역할 없는 단어는 평문.
+// 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "모두 보기/가리기" 토글로 한 번에(역할+뜻). 역할 없는 단어는 평문.
 function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string }> }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const revealable = tokens
@@ -303,7 +303,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
               : <span className="text-slate-400">성분을 탭해 역할·뜻을 확인하세요</span>}
           </div>
           <button type="button" onClick={toggleAll} className="shrink-0 text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
-            {allShown ? '가리기' : '해설 보기'}
+            {allShown ? '가리기' : '모두 보기'}
           </button>
         </div>
       )}
