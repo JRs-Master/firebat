@@ -388,6 +388,17 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
       ) : sentence ? (
         <div className="text-[16px] sm:text-[17px] text-slate-800">{sentence}</div>
       ) : null}
+      {/* 직독직해 — 각 청크의 뜻을 영어 어순 그대로(왼→오) 이어 읽는 줄. 한국식 어순 재배열이 아니라
+          끊어읽기 순서대로. 토큰 gloss 에서 파생(AI 부담 0). natural 번역은 아래 '전체 해석' 으로 분리. */}
+      {(() => {
+        const direct = toks.filter((t) => t.gloss).map((t) => t.gloss as string);
+        return direct.length >= 2 ? (
+          <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
+            <div className="text-[11px] font-bold text-indigo-500 mb-1">직독직해</div>
+            <div className="text-[14px] sm:text-[15px] text-slate-700 leading-relaxed">{direct.join(' / ')}</div>
+          </div>
+        ) : null;
+      })()}
       {groupList.length > 0 && (
         <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
           <div className="text-[11px] font-bold text-indigo-500 mb-2">구·절 구조</div>
@@ -404,7 +415,7 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
       )}
       {translation && (
         <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
-          <div className="text-[11px] font-bold text-indigo-500 mb-1">해석</div>
+          <div className="text-[11px] font-bold text-indigo-500 mb-1">전체 해석</div>
           <div className="text-[14px] sm:text-[15px] text-slate-700"><InlineMd text={translation} /></div>
         </div>
       )}
