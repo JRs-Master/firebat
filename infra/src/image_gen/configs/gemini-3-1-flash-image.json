@@ -1,9 +1,9 @@
 {
-  "id": "gemini-3.1-flash-image-preview",
+  "id": "gemini-3.1-flash-image",
   "displayName": "Gemini 3.1 Flash Image",
   "provider": "google",
   "format": "gemini-native-image",
-  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent",
   "apiKeyVaultKey": "GEMINI_API_KEY",
   "features": {
     "multilingualText": true,
