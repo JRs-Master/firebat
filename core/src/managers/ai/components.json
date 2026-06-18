@@ -981,7 +981,7 @@
     "semanticText": "영어 구문독해 천일문 문장분석 직독직해 끊어읽기 문장구조 성분 S V O C M 주어 동사 목적어 보어 수식어 5형식 문장형식 준동사 to부정사 동명사 분사 관계사 문법 해설 영어 단어 암기 어휘 vocabulary grammar sentence syntax reading",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "chunks": "tokens", "grammar": "notes", "words": "vocab", "structure": "groups", "phrases": "groups" },
+      "synonyms": { "chunks": "tokens", "grammar": "notes", "words": "vocab", "structure": "groups", "phrases": "groups", "original": "sentence", "text": "sentence", "english": "sentence", "eng": "sentence", "points": "notes", "note": "notes", "grammarPoints": "notes", "analysis": "notes" },
       "properties": {
         "sentence": { "type": ["string", "null"], "description": "the full English sentence (fallback shown when tokens absent)" },
         "tokens": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "meaning": "gloss", "ko": "gloss", "trans": "gloss", "translation": "gloss", "kor": "gloss", "word": "text", "en": "text" }, "properties": { "text": { "type": "string" }, "role": { "type": ["string", "null"] }, "gloss": { "type": ["string", "null"] } } }, "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (S/V/O/C/M/ADV = 주어/동사/목적어/보어/수식어/부사어, uppercase; also accepts mod/modifier/adverbial/subject/object etc.; omit for plain connecting words), gloss (this chunk's Korean meaning = 직독직해)." },
