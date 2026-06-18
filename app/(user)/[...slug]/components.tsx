@@ -105,7 +105,16 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
     case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} view={p.view} />;
-    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
+    case 'QuizGroup': {
+      const qgQuestions = p.questions ?? p.quizzes ?? p.items ?? [];
+      // TEMP diagnostic — QuizGroup 이 문항 0개로 렌더되는 원인 추적(코드·데이터는 정상인데 빈 케이스).
+      // 비어 있을 때만 1회 — 실제 들어온 props 키/타입을 F12 로 노출. 원인 확정 후 제거.
+      if (typeof window !== 'undefined' && (!Array.isArray(qgQuestions) || qgQuestions.length === 0)) {
+        // eslint-disable-next-line no-console
+        console.warn('[QGdiag]', JSON.stringify({ keys: Object.keys(p || {}), qType: typeof p.questions, qIsArr: Array.isArray(p.questions), qLen: Array.isArray(p.questions) ? p.questions.length : null }).slice(0, 400));
+      }
+      return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={qgQuestions} view={p.view} />;
+    }
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
