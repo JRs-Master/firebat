@@ -106,7 +106,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
     case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? []} view={p.view} />;
-    case 'Sentence':      return <SentenceComp sentence={p.sentence} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar} vocab={p.vocab ?? p.words} />;
+    case 'Sentence':      return <SentenceComp sentence={p.sentence} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -349,15 +349,20 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string }> 
   );
 }
 
-function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab }: {
+function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, groups }: {
   sentence?: string;
   tokens?: Array<{ text: string; role?: string; gloss?: string }>;
   pattern?: string;
   translation?: string;
   notes?: string[];
   vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
+  groups?: Array<{ label?: string; role?: string; text?: string; depth?: number }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
+  // 구·절 구조(끊어읽기) — AI 부담 줄이려 토큰 인덱스 매칭 대신 text+depth 직접(Phase 2, 화살표는 Phase 3).
+  const groupList = (Array.isArray(groups) ? groups : [])
+    .map((g) => ({ label: (g?.label ?? g?.role ?? '') as string, text: (g?.text ?? '') as string, depth: Math.max(0, Math.min(Number(g?.depth) || 0, 4)) }))
+    .filter((g) => g.text);
   const noteList = Array.isArray(notes) ? notes.filter(Boolean) : [];
   const vocabList = (Array.isArray(vocab) ? vocab : [])
     .map((w) => ({
@@ -377,6 +382,19 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab }: 
       ) : sentence ? (
         <div className="text-[16px] sm:text-[17px] text-slate-800">{sentence}</div>
       ) : null}
+      {groupList.length > 0 && (
+        <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
+          <div className="text-[11px] font-bold text-indigo-500 mb-2">구·절 구조</div>
+          <div className="flex flex-col gap-1">
+            {groupList.map((g, i) => (
+              <div key={i} className="flex items-baseline gap-2 text-[13px] sm:text-[14px]" style={{ paddingLeft: `${g.depth * 14}px` }}>
+                {g.label && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{g.label}</span>}
+                <span className="text-slate-700"><InlineMd text={g.text} /></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {translation && (
         <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
           <div className="text-[11px] font-bold text-indigo-500 mb-1">해석</div>
@@ -385,11 +403,14 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab }: 
       )}
       {vocabList.length > 0 && <VocabList items={vocabList} />}
       {noteList.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1.5 text-[13px] sm:text-[14px] text-slate-600">
-          {noteList.map((n, i) => (
-            <li key={i} className="flex gap-1.5"><span className="text-indigo-400 shrink-0">•</span><span className="flex-1"><InlineMd text={n} /></span></li>
-          ))}
-        </ul>
+        <div className="mt-3.5 rounded-lg border border-[#d9cdae] p-3">
+          <div className="text-[11px] font-bold text-indigo-500 mb-1.5">문법 포인트</div>
+          <ul className="flex flex-col gap-1.5 text-[13px] sm:text-[14px] text-slate-600">
+            {noteList.map((n, i) => (
+              <li key={i} className="flex gap-1.5"><span className="text-indigo-400 shrink-0">•</span><span className="flex-1"><InlineMd text={n} /></span></li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );
