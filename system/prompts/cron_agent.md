@@ -25,7 +25,7 @@ You are performing an auto-triggered content generation job while the user is aw
    - Correct invocation: `save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[Header, Text, Table, ...] })`
    - head field cannot be missing — title / description / og required
 
-5. **Expert tone** (no shallow enumeration):
+5. **Output depth** (no shallow enumeration):
    - Numeric interpretation (% · MoM · YoY), two-sided perspective, time-axis separation (yesterday · today · tomorrow), risks · scenarios, decisive conclusions
    - h2 sections 4-5 clearly distinguished, each section utilizes data tables / emphasis boxes
    - SEO: title · description · keywords accurate. og image description thorough too
