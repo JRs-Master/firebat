@@ -991,11 +991,12 @@ function BuildLiveStatus({ status, phase }: { status?: string; phase: 'building'
 
 // Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
 // 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=라이브 상태 피드.
-function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLockSuggestion }: {
+function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggestion, onLockSuggestion }: {
   stages: BuildStageEntry[];
   loading: boolean;
   building?: boolean; // 다음 단계 생성 중 — 최신 슬라이드 본문을 팩맨(대기 애니)으로.
   buildStatus?: string; // 생성 중 라이브 상태(도구 호출 등) — 팩맨 캡션 "단계 · 상태".
+  liveStep?: string; // 생성 중 라이브 빌드 step — buildSession 이 턴 끝에만 와서 frozen 이던 stepper 를 즉시 갱신.
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onLockSuggestion?: (msgId: string, picked: string) => void;
 }) {
@@ -1024,7 +1025,11 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
   const awaiting = !published && bs.step === 'implement' && !!savePage && savePage.status !== 'rejected';
   const done = published; // 스텝퍼 전부 ✓ + 헤더 완료 배지 = 발행 시점.
   const buildPhase: 'building' | 'awaiting' | 'published' = published ? 'published' : awaiting ? 'awaiting' : 'building';
-  const curIdx = STEPS.findIndex(s => s.key === bs.step);
+  // liveStep(턴 도중 advance_build 가 올린 step, buildingAnchor 일 때만 전달됨)이 있으면 우선 사용 —
+  // buildSession 은 최종 AiResponse 에만 실려서, 없으면 생성 내내(one-shot 13분) stepper/로더가 직전
+  // step 에 frozen. 턴 끝나면 liveStep=undefined 라 실제 bs.step 으로 복귀.
+  const liveIdx = liveStep ? STEPS.findIndex(s => s.key === liveStep) : -1;
+  const curIdx = liveIdx >= 0 ? liveIdx : STEPS.findIndex(s => s.key === bs.step);
   const stage = stages[vi];
   const onLatest = vi === last;
   // 로더(라이브 상태)는 **구현(앱 빌드)** 때만 — 구현 단계 OR 최신서 (완료 OR 구현 생성 중). 옛 `onLatest && building`
@@ -1095,7 +1100,7 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
   );
 }
 
-function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus }: {
+function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext, buildCard, building, buildStatus, liveStep }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
@@ -1114,6 +1119,8 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
   building?: boolean;
   /** 생성 중 라이브 상태(도구 호출 등) — 팩맨 캡션 "단계 · 상태". */
   buildStatus?: string;
+  /** 생성 중 라이브 빌드 step(advance_build 가 턴 도중 올린 것) — 카드 stepper/로더가 "구현" 표시. */
+  liveStep?: string;
 }) {
   const t = useTranslations();
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
@@ -1283,6 +1290,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                   loading={loading}
                   building={building}
                   buildStatus={buildStatus}
+                  liveStep={liveStep}
                   onSuggestion={onSuggestion}
                   onLockSuggestion={onLockSuggestion}
                 />
@@ -2211,6 +2219,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
               // 빌드 외 스트리밍 thinking 메시지는 fold. "원래 대화가 생각중으로" + "팩맨이 구현 *대기 중* 나옴".
               let buildingAnchor: string | null = null;
               let buildStatus: string | undefined; // 생성 중 라이브 상태(statusText: "render 호출중" 등) → 팩맨 캡션에 표시
+              let liveStep: string | undefined; // 생성 중 라이브 빌드 step(advance_build 가 턴 도중 올린 것) → 카드 stepper/로더가 "구현" 표시
               {
                 let latestAnchor: string | null = null;
                 for (let i = messages.length - 1; i >= 0; i--) { if (buildCardByMsg.has(messages[i].id)) { latestAnchor = messages[i].id; break; } }
@@ -2235,6 +2244,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                         ? (_tt.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('[도구') && !l.startsWith('[계획')).slice(-1)[0] || '')
                         : '';
                       buildStatus = _real || lastMsg.statusText;
+                      liveStep = lastMsg.liveBuildStep;
                       foldedBuildMsgIds.add(lastMsg.id);
                     }
                   }
@@ -2274,6 +2284,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   buildCard={buildCardByMsg.get(msg.id)}
                   building={msg.id === buildingAnchor}
                   buildStatus={msg.id === buildingAnchor ? buildStatus : undefined}
+                  liveStep={msg.id === buildingAnchor ? liveStep : undefined}
                 />
               );
               });

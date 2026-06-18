@@ -194,6 +194,7 @@ export type ChatAction =
   // SSE 이벤트 (Function Calling 모드. 레거시 'plan' 이벤트는 v0.1, 2026-04-22 삭제됨)
   | { type: 'CHUNK_TEXT'; id: string; content: string }
   | { type: 'CHUNK_THINKING'; id: string; content: string }
+  | { type: 'BUILD_STEP'; id: string; step: string }
   | { type: 'STEP'; id: string; step: StepStatus; isLast: boolean }
   | { type: 'RESULT'; id: string; payload: ResultPayload; hasAnimation: boolean; lastTextIdx: number }
   | { type: 'RESULT_ANIM_TICK'; id: string; partial: string; lastTextIdx: number }
@@ -280,6 +281,12 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
         ? { ...m, isThinking: true, streaming: false, statusText: undefined, thinkingText: (m.thinkingText || '') + c }
         : m);
     }
+
+    case 'BUILD_STEP':
+      // Project Builder — advance_build 가 턴 도중 step 을 올릴 때 그 라이브 step 을 스트리밍 메시지에 기록.
+      // buildSession 은 최종 AiResponse 에만 실려서, 없으면 빌드 카드 stepper/로더가 생성 내내(one-shot 13분)
+      // 직전 step 에 frozen. statusText/thinkingText 와 별개 필드 = 카드 그룹핑(buildCardByMsg) 불간섭.
+      return state.map(m => m.id === action.id ? { ...m, liveBuildStep: action.step } : m);
 
     case 'STEP': {
       // 도구 step 진행은 단일 상태줄로 — 마지막 step = '답변 준비 중', 그 외 = '도구 호출 중: <도구명>'.

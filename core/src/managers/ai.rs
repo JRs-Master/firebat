@@ -1606,6 +1606,28 @@ impl AiManager {
                             description: Some(tool_label(&effective_call.name)),
                             error_message: result.error.clone(),
                         });
+                        // Project Builder — stream the advanced build step mid-turn. buildSession only
+                        // rides the FINAL AiResponse, so without this the frontend stepper/loader freeze
+                        // at the prior step for the whole long one-shot turn (the AI advances to Implement
+                        // early then generates for minutes). Reuses the chunk channel (event_type
+                        // "build_step", content = serialized session) = no proto/gRPC changes.
+                        if matches!(effective_call.name.as_str(), "start_build" | "advance_build") {
+                            if let Some(sid) = result
+                                .result
+                                .get("data")
+                                .and_then(|d| d.get("sessionId"))
+                                .and_then(|v| v.as_str())
+                            {
+                                if let Some(sess) = crate::utils::build_session::get_session(sid) {
+                                    if let Ok(json) = serde_json::to_string(&sess) {
+                                        emit_event(AiStreamEvent::Chunk {
+                                            event_type: "build_step".to_string(),
+                                            content: json,
+                                        });
+                                    }
+                                }
+                            }
+                        }
                         result
                     }
                 };

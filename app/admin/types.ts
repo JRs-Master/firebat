@@ -65,6 +65,7 @@ export type Message = {
   steps?: StepStatus[];
   executing?: boolean;
   statusText?: string;
+  liveBuildStep?: string; // Project Builder — advance_build 가 턴 도중 올린 라이브 빌드 step (스트리밍 카드 stepper/로더용)
   suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[]; single?: boolean })[];
   pickedSuggestion?: string; // 칩 픽 시 그 텍스트 — 잠금 강조 + 과거 빌드 슬라이드 표시용 (consumeSuggestions 대신 lockSuggestion 이 설정)
   image?: string;

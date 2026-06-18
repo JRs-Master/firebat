@@ -927,9 +927,18 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
         for (const ev of parsed.events) {
           if (ev.event === 'chunk') {
-            const chunkType = ev.data.type as 'text' | 'thinking';
+            const chunkType = ev.data.type as 'text' | 'thinking' | 'build_step';
             const chunkContent = (ev.data.content as string) ?? '';
             if (!chunkContent) continue;
+            if (chunkType === 'build_step') {
+              // Project Builder — 턴 도중 advance_build 가 올린 라이브 빌드 step. 본문/생각 누적 X,
+              // 카드 stepper/로더만 갱신(생성 13분 동안 "구현" 표시 → frozen 해소).
+              try {
+                const sess = JSON.parse(chunkContent) as { step?: string };
+                if (sess?.step) dispatch({ type: 'BUILD_STEP', id: systemId, step: sess.step });
+              } catch { /* malformed build_step — 무시 */ }
+              continue;
+            }
             if (chunkType === 'thinking') dispatch({ type: 'CHUNK_THINKING', id: systemId, content: chunkContent });
             else dispatch({ type: 'CHUNK_TEXT', id: systemId, content: chunkContent });
           } else if (ev.event === 'step') {
