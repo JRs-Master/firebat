@@ -930,24 +930,40 @@ const BUILD_TOOL_LABEL: Record<string, string> = {
 // 빌드 라이브 상태 — 팩맨(루프·게임) 대신 실제 진행을 피드로. status(="도구 호출 중: render" 등 = lastMsg.statusText)가
 // 바뀔 때마다 누적해 ✓도구 / ⟳현재 로 표시. thinking 의존 0 (CLI stream-json 회귀로 thinking 비어도 status·도구는 옴).
 // 완료 시 단일 "완성했어요" 로 끝(루프 X). 진행바 = 슬라이딩 indeterminate(가짜 % 아님, "작업 중" 표시).
-function BuildLiveStatus({ status, done }: { status?: string; done?: boolean }) {
+function BuildLiveStatus({ status, phase }: { status?: string; phase: 'building' | 'awaiting' | 'published' }) {
   const t = useTranslations();
   const [hist, setHist] = useState<string[]>([]);
   useEffect(() => {
+    if (phase !== 'building') return; // 생성 중에만 라이브 도구 피드 누적.
     const raw = (status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').trim();
     if (!raw) return;
     const key = BUILD_TOOL_LABEL[raw];
     const label = key ? t(key) : raw.replace(/_/g, ' ').trim();
     setHist(h => (h[h.length - 1] === label ? h : [...h.slice(-5), label])); // 최근 6개 — 직전과 다르면 누적
-  }, [status, t]);
+  }, [status, t, phase]);
+  // 발행 완료(승인됨) — 조용한 종료 상태: ✓·녹색 제거하고 평이한 색 ("발행했어요").
+  if (phase === 'published') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
+        <FirebatGhostAssembly size={56} variant="accent" settled />
+        <div className="text-[13px] font-medium text-slate-600">{t('build.published')}</div>
+      </div>
+    );
+  }
+  // 생성 끝 · 승인 대기 (save_page pending) — 빌드 완성 마일스톤 ("완성했어요", 승인하면 발행).
+  if (phase === 'awaiting') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
+        <FirebatGhostAssembly size={56} variant="accent" settled />
+        <div className="text-[13px] font-bold text-emerald-600">{t('build.completed')}</div>
+      </div>
+    );
+  }
+  // 생성 중 — 라이브 도구 피드 + 슬라이딩 바.
   return (
     <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
-      <FirebatGhostAssembly size={56} variant="accent" settled={done} />
-      {done ? (
-        // 완료 — 단일 "완성했어요" (옛 "만드는 중이에요" + "✓ 완료" 중복 제거).
-        <div className="text-[13px] font-bold text-emerald-600">✓ {t('build.completed')}</div>
-      ) : (
-        <>
+      <FirebatGhostAssembly size={56} variant="accent" />
+      <>
           <div className="w-full max-w-[240px] flex flex-col gap-1">
             {hist.length === 0 ? (
               <div className="flex items-center gap-1.5 text-[12px]">
@@ -969,7 +985,6 @@ function BuildLiveStatus({ status, done }: { status?: string; done?: boolean }) 
             <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-300 to-blue-500 firebat-bar-slide" />
           </div>
         </>
-      )}
     </div>
   );
 }
@@ -1003,8 +1018,12 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
     { key: 'implement', label: t('build.step_implement') },
   ];
   const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
-  const done = bs.status === 'completed'
-    || (bs.step === 'implement' && (latest.pendingActions ?? []).some(p => p.name === 'save_page' && p.status === 'approved'));
+  // 빌드 단계 = 만드는 중 / 완성(승인 대기, save_page pending) / 발행(승인됨). 캡션·종료 표시 분기.
+  const savePage = (latest.pendingActions ?? []).find(p => p.name === 'save_page');
+  const published = bs.status === 'completed' || savePage?.status === 'approved';
+  const awaiting = !published && bs.step === 'implement' && !!savePage && savePage.status !== 'rejected';
+  const done = published; // 스텝퍼 전부 ✓ + 헤더 완료 배지 = 발행 시점.
+  const buildPhase: 'building' | 'awaiting' | 'published' = published ? 'published' : awaiting ? 'awaiting' : 'building';
   const curIdx = STEPS.findIndex(s => s.key === bs.step);
   const stage = stages[vi];
   const onLatest = vi === last;
@@ -1042,7 +1061,7 @@ function BuildCard({ stages, loading, building, buildStatus, onSuggestion, onLoc
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3 h-[310px] flex items-center justify-center"><BuildLiveStatus done={done} status={buildStatus} /></div>
+        <div className="p-3 h-[310px] flex items-center justify-center"><BuildLiveStatus phase={buildPhase} status={buildStatus} /></div>
       ) : (
         <div className="flex flex-col gap-2.5 p-3 h-[310px]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
