@@ -1,4 +1,4 @@
-//! Gemini Native API 이미지 생성 — gemini-3.1-flash-image-preview (Nano Banana 후속).
+//! Gemini Native API 이미지 생성 — gemini-3.1-flash-image / gemini-3.1-pro-image (Nano Banana 2 / Pro, GA).
 //!
 //! 옛 TS `infra/image/formats/gemini-native-image.ts` 1:1 port.
 //! POST `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`

@@ -74,7 +74,7 @@ pub fn compute_image_cost(config: &ImageGenModelConfig, quality: Option<&str>) -
 
 /// Builtin carousel — 빌드 타임 설정. 사용자 추가 모델은 디렉토리 로드로.
 /// 2026-05-10: gpt-image-1 종료 → gpt-image-1.5 / gpt-image-2 신설.
-/// 2026-05-10: gemini-3-pro-image-preview (Nano Banana Pro) 추가 — Google 공식 docs 기반.
+/// 2026-06-18: gemini 이미지 preview → GA (gemini-3.1-flash-image[Nano Banana 2] / gemini-3.1-pro-image[Nano Banana Pro]) — preview 엔드포인트 6/25 중단 대응.
 pub fn builtin_configs() -> Vec<ImageGenModelConfig> {
     const GPT_IMAGE_1_5: &str = include_str!("configs/gpt-image-1-5.json");
     const GPT_IMAGE_2: &str = include_str!("configs/gpt-image-2.json");
@@ -143,8 +143,8 @@ mod tests {
         let ids: Vec<&str> = configs.iter().map(|c| c.id.as_str()).collect();
         assert!(ids.contains(&"gpt-image-1.5"));
         assert!(ids.contains(&"gpt-image-2"));
-        assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
-        assert!(ids.contains(&"gemini-3-pro-image-preview"));
+        assert!(ids.contains(&"gemini-3.1-flash-image"));
+        assert!(ids.contains(&"gemini-3.1-pro-image"));
         assert!(ids.contains(&"cli-codex-image"));
     }
 
@@ -164,7 +164,7 @@ mod tests {
         let configs = builtin_configs();
         let gemini = configs
             .iter()
-            .find(|c| c.id == "gemini-3.1-flash-image-preview")
+            .find(|c| c.id == "gemini-3.1-flash-image")
             .unwrap();
         // perImage 설정되어 있으면 quality 무관 동일 단가
         assert_eq!(compute_image_cost(gemini, None), Some(0.039));

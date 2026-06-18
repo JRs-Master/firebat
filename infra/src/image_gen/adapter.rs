@@ -209,8 +209,8 @@ mod tests {
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"gpt-image-1.5"));
         assert!(ids.contains(&"gpt-image-2"));
-        assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
-        assert!(ids.contains(&"gemini-3-pro-image-preview"));
+        assert!(ids.contains(&"gemini-3.1-flash-image"));
+        assert!(ids.contains(&"gemini-3.1-pro-image"));
         assert!(ids.contains(&"cli-codex-image"));
     }
 
@@ -241,10 +241,10 @@ mod tests {
         // Vault 설정 → 그 값 우선 (옛 TS 와 동일 패턴 — 사용자가 모델 swap)
         adapter
             .vault
-            .set_secret("system:image:model", "gemini-3.1-flash-image-preview");
+            .set_secret("system:image:model", "gemini-3.1-flash-image");
         assert_eq!(
             adapter.get_model_id(),
-            "gemini-3.1-flash-image-preview"
+            "gemini-3.1-flash-image"
         );
     }
 
