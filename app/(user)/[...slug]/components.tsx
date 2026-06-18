@@ -138,8 +138,10 @@ const quizAns = (answer?: number, answerIndex?: number): number | undefined => {
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
 // 시험지/해설지 미색지 종이 질감 — SVG fractalNoise 를 아주 옅게(미색 위 미세 그레인).
 // 배경 색은 className(bg-[#faf8f0])이, 그레인은 이 backgroundImage 가 담당(겹침).
+// 종이 질감 — fractalNoise 를 grayscale(saturate 0)로 변환해 회색 그레인(컬러 노이즈 방지) +
+// opacity 0.16 으로 "느껴지게"(옛 0.05 는 거의 안 보였음). 촘촘한 그레인(octaves 4).
 const PAPER_NOISE =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)' opacity='0.05'/%3E%3C/svg%3E\")";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23p)' opacity='0.16'/%3E%3C/svg%3E\")";
 const PAPER_STYLE = { backgroundImage: PAPER_NOISE } as const;
 
 function QuizBody({

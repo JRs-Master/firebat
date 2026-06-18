@@ -18,10 +18,38 @@
  * ⚠️ 콜론 없는 `sky 텍스트`(공백)는 안 받음 — "green tea" 같은 정상 텍스트를 색으로 오인하는 것 방지.
  * 여는 `==` 뒤·닫는 `==` 앞 공백 금지 + 한 줄 안(`[^\n=]`)으로 매칭해 오탐(수식·구분선 등) 줄임.
  */
+// 용어 칩 — `[[term]]` / `[[color:term]]` / `[[term^주석]]` / `[[color:term^주석]]`.
+// 형광펜(마커칠)과 별개 = 테두리 pill 로 "이 용어/조각"을 콕 집고, `^` 뒤는 루비(위 주석).
+// indigo 는 sysmod/도구명 전용색이라 팔레트에서 제외(시각 구분). 별칭 green→emerald 등.
+const FBCHIP_COLOR: Record<string, string> = {
+  slate: 'slate', gray: 'slate', grey: 'slate', blue: 'blue', sky: 'sky',
+  emerald: 'emerald', green: 'emerald', rose: 'rose', red: 'rose', pink: 'rose',
+  amber: 'amber', orange: 'amber', yellow: 'amber', cyan: 'cyan', teal: 'cyan',
+};
+export function chipMarksToHtml(s: string): string {
+  if (!s || !s.includes('[[')) return s;
+  return s.replace(/\[\[([^\]\n]+?)\]\]/g, (_m, inner: string) => {
+    let term = inner;
+    let annotation = '';
+    const caret = inner.indexOf('^');
+    if (caret >= 0) { term = inner.slice(0, caret); annotation = inner.slice(caret + 1).trim(); }
+    let color = 'slate';
+    const cm = term.match(/^([a-zA-Z]+)\s*:\s*([\s\S]+)$/);
+    if (cm && FBCHIP_COLOR[cm[1].toLowerCase()]) { color = FBCHIP_COLOR[cm[1].toLowerCase()]; term = cm[2]; }
+    term = term.trim();
+    if (!term) return _m; // 빈 칩 = 원문 유지(오탐 방지)
+    const body = annotation ? `<ruby>${term}<rt>${annotation}</rt></ruby>` : term;
+    return `<span class="fbchip fbchip-${color}">${body}</span>`;
+  });
+}
+
 const FBHL_COLORS = 'yellow|green|pink|orange|sky|blue|purple';
 export function highlightMarksToHtml(s: string): string {
-  if (!s || !s.includes('==')) return s;
-  return s.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
+  if (!s) return s;
+  // 칩(`[[...]]`)은 `==` 없어도 처리 — 형광펜과 같은 inline-마크업 패스에서 함께.
+  let out = s.includes('[[') ? chipMarksToHtml(s) : s;
+  if (!out.includes('==')) return out;
+  out = out.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
     let color = 'yellow';
     let text = inner;
     // CSS식 `color:sky 텍스트` / `color:sky:텍스트` (AI 가 자주 쓰는 형태).
@@ -38,6 +66,7 @@ export function highlightMarksToHtml(s: string): string {
     const v = (h % 4) + 1;
     return `<mark class="fbhl-${color} fbhl-v${v}">${text}</mark>`;
   });
+  return out;
 }
 
 export function inlineFormatTagsToMarkdown(text: string): string {

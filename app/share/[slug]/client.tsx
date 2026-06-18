@@ -10,15 +10,18 @@ import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
-import { maskMath, splitFirebatRender } from '../../../lib/util/md';
+import { maskMath, splitFirebatRender, highlightMarksToHtml } from '../../../lib/util/md';
 
-/** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML 태그 escape + **bold** 주입 → 복원 (admin renderMarkdown 과 동일 취지). */
+/** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML escape + **bold** 주입 → 형광펜/용어칩 → 복원
+ *  (admin renderMarkdown 과 동일 취지). 옛엔 highlightMarksToHtml 누락이라 공유에선 ==형광펜== / [[칩]] 미렌더. */
 function prepShare(s: string): string {
   const { masked, restore } = maskMath(s);
   return restore(
-    escapeHtmlTagMentions(masked)
-      .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*\*/g, ''),
+    highlightMarksToHtml(
+      escapeHtmlTagMentions(masked)
+        .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*\*/g, ''),
+    ),
   );
 }
 
