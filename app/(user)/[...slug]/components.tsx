@@ -356,12 +356,18 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   translation?: string;
   notes?: string[];
   vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
-  groups?: Array<{ label?: string; role?: string; text?: string; depth?: number }>;
+  groups?: Array<{ label?: string; role?: string; text?: string; depth?: number; modifies?: string; head?: string }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
-  // 구·절 구조(끊어읽기) — AI 부담 줄이려 토큰 인덱스 매칭 대신 text+depth 직접(Phase 2, 화살표는 Phase 3).
+  // 구·절 구조(끊어읽기) — AI 부담 줄이려 토큰 인덱스 매칭 대신 text+depth 직접. depth=절 중첩,
+  // modifies=수식 관계(어느 구/머리말을 꾸미나). 천일문 곡선 화살표 대신 관계 라벨(반응형 견고).
   const groupList = (Array.isArray(groups) ? groups : [])
-    .map((g) => ({ label: (g?.label ?? g?.role ?? '') as string, text: (g?.text ?? '') as string, depth: Math.max(0, Math.min(Number(g?.depth) || 0, 4)) }))
+    .map((g) => ({
+      label: (g?.label ?? g?.role ?? '') as string,
+      text: (g?.text ?? '') as string,
+      depth: Math.max(0, Math.min(Number(g?.depth) || 0, 4)),
+      modifies: (g?.modifies ?? g?.head ?? '') as string,
+    }))
     .filter((g) => g.text);
   const noteList = Array.isArray(notes) ? notes.filter(Boolean) : [];
   const vocabList = (Array.isArray(vocab) ? vocab : [])
@@ -389,7 +395,8 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
             {groupList.map((g, i) => (
               <div key={i} className="flex items-baseline gap-2 text-[13px] sm:text-[14px]" style={{ paddingLeft: `${g.depth * 14}px` }}>
                 {g.label && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{g.label}</span>}
-                <span className="text-slate-700"><InlineMd text={g.text} /></span>
+                <span className="flex-1 min-w-0 text-slate-700"><InlineMd text={g.text} /></span>
+                {g.modifies && <span className="shrink-0 text-[10px] font-medium text-cyan-600 self-center" title="수식 대상">→ {g.modifies}</span>}
               </div>
             ))}
           </div>
