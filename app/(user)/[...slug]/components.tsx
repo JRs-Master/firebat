@@ -251,7 +251,7 @@ const canonRole = (raw?: string): string => {
 };
 
 // SVO 문장 구조 — 천일문식 끊어읽기. 성분을 탭하면 역할(S/V/O/C/M)·직독직해(gloss)가 공개,
-// 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "직독직해/가리기" 토글로 한 번에. 역할 없는 단어는 평문.
+// 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "해설 보기/가리기" 토글로 한 번에(역할+뜻). 역할 없는 단어는 평문.
 function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string }> }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const revealable = tokens
@@ -295,7 +295,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
       </div>
       {revealable.length > 0 && (
         <div className="flex items-center justify-between gap-2 mt-3">
-          <div className="flex flex-wrap gap-1.5 text-[11px] min-h-[18px]">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] min-h-[22px]">
             {usedRoles.length > 0
               ? usedRoles.map((r) => (
                   <span key={r} className={`px-1.5 py-0.5 rounded font-medium ${SENT_ROLE[r].tag}`}>{r} · {SENT_ROLE[r].ko}</span>
@@ -303,7 +303,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
               : <span className="text-slate-400">성분을 탭해 역할·뜻을 확인하세요</span>}
           </div>
           <button type="button" onClick={toggleAll} className="shrink-0 text-[11px] font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
-            {allShown ? '가리기' : '직독직해'}
+            {allShown ? '가리기' : '해설 보기'}
           </button>
         </div>
       )}
@@ -313,7 +313,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
 
 // 단어 암기 — 인터랙티브 플래시카드. 의미는 미색 redaction 바로 가려두고(외우기), 탭하면 공개.
 // "모두 보기/가리기" 토글. 기본 = 전부 가림(암기 모드).
-function VocabList({ items }: { items: Array<{ word: string; meaning: string }> }) {
+function VocabList({ items }: { items: Array<{ word: string; meaning: string; pos?: string }> }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const allShown = items.length > 0 && shown.size === items.length;
   const toggleAll = () => setShown(allShown ? new Set() : new Set(items.map((_, i) => i)));
@@ -332,7 +332,10 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string }> 
           const open = shown.has(i);
           return (
             <li key={i} className="flex items-baseline gap-3 py-1.5 first:pt-0 last:pb-0">
-              <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
+              <span className="shrink-0 flex items-baseline gap-1">
+                <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px]">{w.word}</span>
+                {w.pos && <span className="text-[11px] text-indigo-400 font-medium">{w.pos}</span>}
+              </span>
               <button
                 type="button"
                 onClick={() => toggleOne(i)}
@@ -355,7 +358,7 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   pattern?: string;
   translation?: string;
   notes?: string[];
-  vocab?: Array<{ word?: string; meaning?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
+  vocab?: Array<{ word?: string; meaning?: string; pos?: string; partOfSpeech?: string; en?: string; ko?: string; term?: string; kor?: string; definition?: string; def?: string }>;
   groups?: Array<{ label?: string; role?: string; text?: string; depth?: number; modifies?: string; head?: string }>;
 }) {
   const toks = Array.isArray(tokens) ? tokens.filter((t) => t && t.text) : [];
@@ -373,6 +376,7 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   const vocabList = (Array.isArray(vocab) ? vocab : [])
     .map((w) => ({
       word: (w?.word ?? w?.en ?? w?.term ?? '') as string,
+      pos: (w?.pos ?? w?.partOfSpeech ?? '') as string,
       meaning: (w?.meaning ?? w?.ko ?? w?.kor ?? w?.definition ?? w?.def ?? '') as string,
     }))
     .filter((w) => w.word || w.meaning);
