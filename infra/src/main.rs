@@ -12,6 +12,7 @@ use tonic::transport::Server;
 use firebat_infra::adapters::{
     auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
     embedder::{ArcticLocalEmbedderAdapter, E5LocalEmbedderAdapter, StubEmbedderAdapter},
+    embedder_cache::FileEmbedderCacheAdapter,
     image_gen::StubImageGenAdapter,
     image_processor::{ImageRsProcessorAdapter, StubImageProcessorAdapter},
     mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
@@ -31,7 +32,8 @@ use firebat_core::{
         tool::ToolManager,
     },
     ports::{
-        IAuthPort, ICronPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort,
+        IAuthPort, ICronPort, IDatabasePort, IEmbedderCachePort, IEmbedderPort, IEntityPort,
+        IEpisodicPort,
         IImageGenPort, IImageProcessorPort, ILlmPort, ILogPort, IMcpClientPort, IMediaPort,
         IMemoryFacadePort, INetworkPort, ISandboxPort, IStoragePort, IVaultPort,
     },
@@ -245,6 +247,10 @@ async fn main() -> Result<()> {
             Arc::new(StubEmbedderAdapter::new())
         }
     };
+
+    // search_components(query) E5 인덱스 캐시 — 컴포넌트 semanticText 임베딩을 data/ 에 영속(첫 호출 빌드).
+    let component_cache_port: Arc<dyn IEmbedderCachePort> =
+        Arc::new(FileEmbedderCacheAdapter::discover());
 
     // Phase B-18 Step 1.5 — SqliteMemoryAdapter 에 embedder 주입 →
     // saveEntity / saveFact / saveEvent 자동 임베딩 + searchEntities/Facts/Events cosine 활성.
@@ -544,7 +550,11 @@ async fn main() -> Result<()> {
             .with_vault(vault.clone())
             .with_media(media.clone())
             .with_tool_dispatcher(tool_dispatcher.clone())
-            .with_retrieval_engine(retrieval_engine),
+            .with_retrieval_engine(retrieval_engine)
+            // search_components(query) 도구 등록 — 옛 production 배선 누락(테스트만 호출)이라
+            // CLI(MCP)·FC 모델 둘 다 컴포넌트 propsSchema 검색 불가였음. ToolManager 등록 →
+            // register_builtin_tools auto-sync 가 MCP(hosted) 에도 자동 노출(source="core").
+            .register_search_components_tool(embedder.clone(), component_cache_port.clone()),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.
