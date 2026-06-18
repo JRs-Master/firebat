@@ -776,6 +776,16 @@ impl AiManager {
                         ));
                     }
                 }
+                // PB 빌드 세션 진행 중이면 지식 retrieval(벡터 history + Recall/library) skip — 빌드 진행 칩
+                // ("Just do it all"·"advance" 등)이 그대로 prompt 라 검색이 헛돌고 엉뚱한 컨텍스트가 주입됨
+                // (낭비 + 빌드 방해). recent 연속성(resolve)·hub history 는 유지.
+                let build_active = effective_opts
+                    .conversation_id
+                    .as_deref()
+                    .or(ai_opts.conversation_id.as_deref())
+                    .filter(|s| !s.is_empty())
+                    .map(|cid| crate::utils::build_session::active_session_for_conv(cid).is_some())
+                    .unwrap_or(false);
                 // hub 영역 = HistoryResolver 우회 + hub_context.history 직접 format prepend.
                 // hub_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
                 if let Some(ctx) = &ai_opts.hub_context {
@@ -822,17 +832,20 @@ impl AiManager {
                     }
                     // 관련 과거 회상 — 벡터(E5) 검색. embedder 만 있으면 작동 (ai-router 토글 무관 —
                     // 4-tier RetrievalEngine 과 별개). 현재 대화 밖 의미 매칭 대화를 full Q&A 로 주입.
-                    let search = hr
-                        .compress_history_with_search(
-                            prompt,
-                            &history_resolver::CompressHistoryOpts {
-                                owner: Some(owner.to_string()),
-                                current_conv_id: conv_id.map(String::from),
-                            },
-                        )
-                        .await;
-                    if !search.context_summary.is_empty() {
-                        extra_parts.push(search.context_summary);
+                    // 빌드 세션 중엔 skip — 빌드 진행 칩이 prompt 라 검색이 헛돔.
+                    if !build_active {
+                        let search = hr
+                            .compress_history_with_search(
+                                prompt,
+                                &history_resolver::CompressHistoryOpts {
+                                    owner: Some(owner.to_string()),
+                                    current_conv_id: conv_id.map(String::from),
+                                },
+                            )
+                            .await;
+                        if !search.context_summary.is_empty() {
+                            extra_parts.push(search.context_summary);
+                        }
                     }
                 }
 
@@ -841,7 +854,8 @@ impl AiManager {
                 // 이제 자동 *쓰기*(cron consolidation 추출)만 게이트한다 (옛엔 read+write 통합 게이트였음).
                 // owner-scope = retrieve_opts.owner (hub = 자기 hub Recall), library = reference_filter 로
                 // hub allowed_references 제한 → cross-tenant 안전.
-                if let Some(engine) = &self.retrieval_engine {
+                // 빌드 세션 중엔 Recall/library 회상 skip (filter) — 빌드 진행 칩이 prompt 라 무의미.
+                if let Some(engine) = self.retrieval_engine.as_ref().filter(|_| !build_active) {
                     let owner = effective_opts
                         .owner
                         .as_deref()
