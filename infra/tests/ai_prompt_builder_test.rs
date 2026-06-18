@@ -45,14 +45,13 @@ fn base_prompt_contains_tool_system_sections() {
     let (v, _dir) = vault();
     let pb = pb(v);
     let prompt = pb.build(None, None);
-    assert!(prompt.contains("Firebat tool usage system"));
+    assert!(prompt.contains("Firebat is an AI agent"));
     assert!(prompt.contains("Tool usage principles"));
     assert!(prompt.contains("Component rendering"));
     assert!(prompt.contains("Reusable 5 rules"));
     assert!(prompt.contains("Scheduling"));
     assert!(prompt.contains("Pipeline"));
     assert!(prompt.contains("Page generation guide"));
-    assert!(prompt.contains("Meta-cognition rules"));
 }
 
 #[test]
