@@ -43,6 +43,15 @@ export function chipMarksToHtml(s: string): string {
   });
 }
 
+/** AI 가 닫는 </script> 를 JS-문자열 escape 형태 `<\/script>` 로 내보내는 습관 — iframe srcdoc(독립 문서)
+ *  에선 스크립트가 안 닫혀 JS 전체가 죽음(디자인만 뜨고 버튼 무반응). 진짜 </script> 닫기가 *없을 때만*
+ *  (=스크립트 미닫힘) `<\/script>`→`</script>` 정규화. JS 문자열 안 legit escape(진짜 닫기가 따로 있는
+ *  경우)는 안 건드림. iframe srcdoc 생성 직전에 적용(HtmlComp / AutoResizeIframe / 공유). */
+export function closeStrayScript(html: string): string {
+  if (!html || !html.includes('script')) return html;
+  return /<\/script\s*>/i.test(html) ? html : html.replace(/<\\+\/script\s*>/gi, '</script>');
+}
+
 const FBHL_COLORS = 'yellow|green|pink|orange|sky|blue|purple';
 export function highlightMarksToHtml(s: string): string {
   if (!s) return s;

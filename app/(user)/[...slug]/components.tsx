@@ -13,7 +13,7 @@ import { usePublicTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../../lib/util/md';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -1256,6 +1256,8 @@ function HtmlComp({ content, dependencies, standalone }: { content: string; depe
   const cdnTags = buildCdnTags(dependencies);
   // standalone 일 때만 — iframe 내용 높이를 부모로 postMessage (sandbox 라 부모가 직접 못 읽음 → 부모가 받아 iframe 높이 세팅).
   const autoScript = ''; // 높이 측정 안 함 — iframe h-full 로 콘텐츠영역 채움 (page.tsx 뷰포트 flex-lock)
+  // AI 의 `<\/script>` escape 습관 → srcdoc 에서 스크립트 미닫힘 방지 (closeStrayScript, 공용).
+  const safeContent = closeStrayScript(content);
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
   // CSP meta — sandbox=allow-scripts 위에 defense-in-depth: script src 화이트리스트 + frame/form/base 차단.
@@ -1352,7 +1354,7 @@ ${standalone ? `<style>
     table { width: auto !important; max-width: 100% !important; position: static !important; left: auto !important; right: auto !important; margin-left: 0 !important; margin-right: 0 !important; }
   }
 </style>` : ''}
-</head><body>${standalone ? content : `<div id="firebat-wrap">${content}</div>`}${autoScript}</body></html>`;
+</head><body>${standalone ? safeContent : `<div id="firebat-wrap">${safeContent}</div>`}${autoScript}</body></html>`;
 
   return (
     <iframe

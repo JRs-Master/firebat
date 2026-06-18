@@ -9,7 +9,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { maskMath, highlightMarksToHtml, splitFirebatRender } from '../../lib/util/md';
+import { maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../lib/util/md';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -534,7 +534,9 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
   // srcdoc 은 src 가 실제로 바뀔 때만 재계산 — 답변 애니메이션 중 부모 리렌더 때마다
   // 새 srcdoc 문자열을 생성해서 iframe 이 리로드되던 문제 (leaflet 지도 깜빡임 등) 방지
   const srcdoc = useMemo(() => {
-    const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
+    // AI 의 `<\/script>` escape 습관 → srcdoc 에서 스크립트 미닫힘 방지 (closeStrayScript, 공용).
+    const s = closeStrayScript(src);
+    const isFullDoc = s.trim().toLowerCase().startsWith('<!doctype') || s.trim().toLowerCase().startsWith('<html');
     // dependencies 배열 → CDN 태그 합성 (lib/cdn-libraries.ts 카탈로그). AI 가 직접 하지 말고 키만 선언.
     const cdnTags = dependencies && dependencies.length > 0
       ? dependencies.map(k => CDN_LIBRARIES[k]).filter(Boolean).join('\n')
@@ -544,11 +546,11 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
     // CSP meta — sandbox=allow-scripts 위에 defense-in-depth.
     // isFullDoc 케이스도 CSP 주입 — AI 가 직접 짠 doc 도 동일 보호. 이미 CSP 설정되어 있으면 중복 무해 (브라우저가 강한 정책 채택).
     return isFullDoc
-      ? src
+      ? s
           .replace(/<head[^>]*>/i, m => `${m}${IFRAME_CSP_META}`)
           .replace(/<\/head>/i, baseStyle + '</head>')
           .replace(/<\/body>/i, autoScript + '</body>')
-      : `<!DOCTYPE html><html><head>${IFRAME_CSP_META}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:4px;max-width:100vw}img,table{max-width:100%!important;height:auto}canvas{max-width:100%}</style></head><body>${src}${autoScript}</body></html>`;
+      : `<!DOCTYPE html><html><head>${IFRAME_CSP_META}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:4px;max-width:100vw}img,table{max-width:100%!important;height:auto}canvas{max-width:100%}</style></head><body>${s}${autoScript}</body></html>`;
   }, [src]);
 
   useEffect(() => {

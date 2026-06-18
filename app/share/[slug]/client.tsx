@@ -10,7 +10,7 @@ import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
-import { maskMath, splitFirebatRender, highlightMarksToHtml } from '../../../lib/util/md';
+import { maskMath, splitFirebatRender, highlightMarksToHtml, closeStrayScript } from '../../../lib/util/md';
 
 /** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML escape + **bold** 주입 → 형광펜/용어칩 → 복원
  *  (admin renderMarkdown 과 동일 취지). 옛엔 highlightMarksToHtml 누락이라 공유에선 ==형광펜== / [[칩]] 미렌더. */
@@ -280,7 +280,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
               return (
                 <iframe
                   key={i}
-                  srcDoc={b.htmlContent}
+                  srcDoc={closeStrayScript(b.htmlContent)}
                   sandbox="allow-scripts"
                   className={`w-full border border-slate-200 rounded-xl bg-white block ${wrapCls}`}
                   style={{ height: b.htmlHeight || iframeDefaultHeight }}
