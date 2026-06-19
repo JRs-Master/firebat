@@ -227,6 +227,8 @@ impl GeminiCliHandler {
         if let Some(ws) = &workspace {
             cmd.current_dir(ws);
         }
+        // 턴 종료/취소/SSE 끊김으로 future 가 drop 되면 gemini 자식을 kill — orphan 누적(메모리→OOM) 방지.
+        cmd.kill_on_drop(true);
 
         let child = cmd.spawn().map_err(|e| {
             cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
@@ -236,10 +238,23 @@ impl GeminiCliHandler {
             )
         })?;
 
-        let output = child.wait_with_output().await.map_err(|e| {
-            cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-            format!("Gemini CLI wait 실패: {e}")
-        })?;
+        // 턴 타임아웃 — gemini 가 hang 하면 wait_with_output 이 무한 블록. 초과 시 future drop → child drop
+        // → kill_on_drop 이 프로세스 kill(orphan→OOM 방지). 배치(스트리밍 X)라 총 시간 기준, 정상 긴
+        // 에이전트 턴(수분~십수분) 안 끊기게 넉넉히 20분.
+        const GEMINI_TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1200);
+        let output = match tokio::time::timeout(GEMINI_TURN_TIMEOUT, child.wait_with_output()).await {
+            Ok(r) => r.map_err(|e| {
+                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
+                format!("Gemini CLI wait 실패: {e}")
+            })?,
+            Err(_) => {
+                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
+                return Err(format!(
+                    "Gemini CLI turn timeout — {}초 초과로 종료(hang/orphan 방지)",
+                    GEMINI_TURN_TIMEOUT.as_secs()
+                ));
+            }
+        };
 
         cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
 

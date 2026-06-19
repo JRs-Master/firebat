@@ -684,10 +684,17 @@ impl ClaudeCodeCliHandler {
                     outcome.tokens_out = get_u("output_tokens");
                     outcome.cached_tokens = cache_read;
                 }
+                // result = 턴의 terminal 신호 → 즉시 break (EOF/idle 안 기다림). claude 가 result 후
+                // stdout 을 열어둔 채 exit 안 하면 EOF 가 안 와 hang→orphan 이던 root. 시간이 아니라
+                // 프로토콜로 끊는 정공 — 아래 start_kill 이 잔존 프로세스 정리.
+                break;
             }
         }
 
-        // stdout 스트림 종료 → 프로세스 wait + stderr 수거 + 캐시 청소.
+        // 루프 종료(result-break/EOF/idle) → claude 종료 보장 후 wait reap + stderr + 캐시 청소.
+        // result-break/idle 로 빠진 경우 claude 가 아직 살아있을 수 있어 start_kill (이미 죽었으면 무해).
+        // 이로써 child.wait() 가 절대 hang 하지 않음(항상 빠르게 reap) — orphan→OOM 차단의 마지막 빗장.
+        let _ = child.start_kill();
         let status = child
             .wait()
             .await
