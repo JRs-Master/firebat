@@ -183,14 +183,13 @@ impl ClaudeCodeCliHandler {
         with_tools: bool,
     ) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
-        // Claude Code 내장 도구 차단 — Firebat MCP 만 허용. 옛 TS 1:1.
+        // Claude Code 내장 도구 차단 — allowlist 로 Firebat MCP 만 허용(나머지 전부 비허용 = 실행 차단).
+        // ⚠️ 2026-06-19: 옛 --disallowed-tools 하드코딩 목록(Bash,SlashCommand,...)은 *폐기* — claude CLI
+        // 업데이트로 "SlashCommand" 등이 "Permission deny rule matches no known tool" 거부 → claude 비정상
+        // 종료(채팅 전체 다운) staleness crash 의 root 였음. allowlist(mcp__firebat__*) 하나면 내장도구
+        // 실행 차단 + 버전 무관(도구명 목록 유지 불필요), USER 노출은 stream 파서의 "mcp 접두사 없는
+        // tool_use 제외" 가 담당. denylist 는 원래 "헛시도 줄이는 보조" 였으므로 보안 동일.
         const ALLOWED_TOOLS: &str = "mcp__firebat__*";
-        // 내장 도구 denylist — Firebat 액션이 아닌 Claude Code 자체 도구 차단. ⚠️ 하드코딩 목록이라
-        // 신규 내장(예: DesignSync)이 추가되면 lag → 모델이 시도(실행은 --allowed-tools 로 차단되나
-        // tool_use 가 emit 됨). 실제 USER 노출 차단은 stream 파서의 "mcp 접두사 없는 tool_use 제외"
-        // 일반 가드가 담당(staleness 무관). 여기 추가는 모델의 헛시도를 줄이는 보조.
-        // TaskCreate/TaskUpdate/TaskGet/TaskList 는 is_native_plan_tool 의 "계획 정리"용이라 의도적 미차단.
-        const DISALLOWED_TOOLS: &str = "Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource,DesignSync";
 
         if has_image {
             // stream-json input 모드 — stdin 으로 user message 전달. -p (print) 는 query 인자 없이 사용.
@@ -208,16 +207,13 @@ impl ClaudeCodeCliHandler {
             args.push("--verbose".to_string());
         }
 
-        // Claude Code 내장 도구 차단 — 채팅(with_tools)이든 tool-less(consolidation/ask_text 등)든 *항상* 적용.
-        // ⚠️ 2026-06-19 root: 이 차단을 `if with_tools` 안에만 둬서 tool-less 경로가 통째로 건너뜀 →
-        // consolidation worker 가 기본 내장도구(Bash/find/sqlite/firebat-core db query)로 서버를 100+ 명령
-        // 탐색 → 사용자가 안 써도 Claude 세션 한도 ~30%/회 소모 + 1.9GB orphan OOM 의 root.
-        // allowlist(mcp__firebat__*)는 MCP 미설정 tool-less 에선 매칭 0 = 도구 0(순수 텍스트 완성),
-        // 채팅에선 firebat MCP 만 허용. denylist 는 보조. → 두 경로 다 내장도구(Bash 등) 실행 차단.
+        // 도구 제한 — 채팅(with_tools)이든 tool-less(consolidation/ask_text 등)든 *항상* allowlist 적용.
+        // ⚠️ 2026-06-19 root: 옛날엔 이 제한이 `if with_tools` 안에만 있어 tool-less(consolidation)가
+        // 통째로 건너뜀 → worker 가 내장 Bash/find/sqlite 로 서버를 100+ 명령 탐색 → 세션 한도 ~30%/회
+        // 소모 + 1.9GB orphan OOM. → allowlist 를 항상 적용해 두 경로 다 내장도구 실행 차단.
+        // (MCP 미설정 tool-less 에선 allowlist 매칭 0 = 도구 0 = 순수 텍스트 완성.)
         args.push("--allowed-tools".to_string());
         args.push(ALLOWED_TOOLS.to_string());
-        args.push("--disallowed-tools".to_string());
-        args.push(DISALLOWED_TOOLS.to_string());
         if with_tools {
             // 권한 모드 — non-interactive subprocess 환경. default 의 모든 도구 사용 전
             // 사용자 prompt → stream-json output 으로 prompt 미노출 → LLM 이 "권한 승인" 응답으로
