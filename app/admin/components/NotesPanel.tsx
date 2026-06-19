@@ -369,7 +369,7 @@ function NoteModal({ existing, hubContext, onClose, onSaved }: { existing: Note 
               type="text"
               value={tagsRaw}
               onChange={(e) => setTagsRaw(e.target.value)}
-              placeholder="아이디어, todo, 매매"
+              placeholder="태그 (콤마, 선택)"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId}
             />
           </div>

@@ -777,7 +777,7 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
           </div>
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={tagsRawId}>태그 (콤마 분리)</label>
-            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="공모주, 매매, 미팅" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId} />
+            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="태그 (콤마, 선택)" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId} />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
         </div>

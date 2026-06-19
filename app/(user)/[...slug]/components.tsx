@@ -295,10 +295,10 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
       </div>
       {revealable.length > 0 && (
         <div className="flex items-center justify-between gap-2 mt-3">
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] min-h-[22px]">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] min-h-[18px]">
             {usedRoles.length > 0
               ? usedRoles.map((r) => (
-                  <span key={r} className={`px-1.5 py-0.5 rounded font-medium ${SENT_ROLE[r].tag}`}>{r} · {SENT_ROLE[r].ko}</span>
+                  <span key={r} className={`px-1.5 py-0.5 leading-none rounded font-medium ${SENT_ROLE[r].tag}`}>{r} · {SENT_ROLE[r].ko}</span>
                 ))
               : <span className="text-slate-400">성분을 탭해 역할·뜻을 확인하세요</span>}
           </div>
@@ -332,17 +332,16 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string; po
           const open = shown.has(i);
           return (
             <li key={i} className="flex items-baseline gap-3 py-1.5 first:pt-0 last:pb-0">
-              <span className="shrink-0 flex items-baseline gap-1">
-                <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px]">{w.word}</span>
-                {w.pos && <span className="text-[11px] text-indigo-400 font-medium">{w.pos}</span>}
-              </span>
+              <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
               <button
                 type="button"
                 onClick={() => toggleOne(i)}
                 title={open ? '탭하여 가리기' : '탭하여 의미 보기'}
                 className={`flex-1 text-left text-[13px] sm:text-[14px] rounded px-1.5 transition-colors ${open ? 'text-slate-600 cursor-pointer' : 'bg-[#e9e0c8] text-transparent hover:bg-[#e2d6b8] cursor-pointer select-none'}`}
               >
-                {open ? <InlineMd text={w.meaning} /> : <span className="opacity-0">{w.meaning || '•••'}</span>}
+                {open
+                  ? <span>{w.pos && <span className="text-indigo-400 font-medium">{w.pos} </span>}<InlineMd text={w.meaning} /></span>
+                  : <span className="opacity-0">{w.pos ? `${w.pos} ` : ''}{w.meaning || '•••'}</span>}
               </button>
             </li>
           );
