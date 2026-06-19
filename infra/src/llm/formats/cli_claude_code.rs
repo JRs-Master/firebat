@@ -208,17 +208,23 @@ impl ClaudeCodeCliHandler {
             args.push("--verbose".to_string());
         }
 
+        // Claude Code 내장 도구 차단 — 채팅(with_tools)이든 tool-less(consolidation/ask_text 등)든 *항상* 적용.
+        // ⚠️ 2026-06-19 root: 이 차단을 `if with_tools` 안에만 둬서 tool-less 경로가 통째로 건너뜀 →
+        // consolidation worker 가 기본 내장도구(Bash/find/sqlite/firebat-core db query)로 서버를 100+ 명령
+        // 탐색 → 사용자가 안 써도 Claude 세션 한도 ~30%/회 소모 + 1.9GB orphan OOM 의 root.
+        // allowlist(mcp__firebat__*)는 MCP 미설정 tool-less 에선 매칭 0 = 도구 0(순수 텍스트 완성),
+        // 채팅에선 firebat MCP 만 허용. denylist 는 보조. → 두 경로 다 내장도구(Bash 등) 실행 차단.
+        args.push("--allowed-tools".to_string());
+        args.push(ALLOWED_TOOLS.to_string());
+        args.push("--disallowed-tools".to_string());
+        args.push(DISALLOWED_TOOLS.to_string());
         if with_tools {
-            args.push("--allowed-tools".to_string());
-            args.push(ALLOWED_TOOLS.to_string());
-            args.push("--disallowed-tools".to_string());
-            args.push(DISALLOWED_TOOLS.to_string());
             // 권한 모드 — non-interactive subprocess 환경. default 의 모든 도구 사용 전
             // 사용자 prompt → stream-json output 으로 prompt 미노출 → LLM 이 "권한 승인" 응답으로
             // 우회 시도 → sysmod 도구 호출 silent skip. Firebat 자체 approval gate (destructive
             // 도구 검증) 가 있어 CLI 권한 모드 우회 정공.
             // bypassPermissions 는 root/sudo 거부 → acceptEdits 사용 (file edit 자동 승인 +
-            // mcp 도구 자동 호출 + Firebat approval gate 여전히 동작).
+            // mcp 도구 자동 호출 + Firebat approval gate 여전히 동작). 도구 쓰는 경로만 필요.
             args.push("--permission-mode".to_string());
             args.push("acceptEdits".to_string());
         }
