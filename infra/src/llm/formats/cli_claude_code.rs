@@ -336,12 +336,31 @@ impl ClaudeCodeCliHandler {
         let mut plan_noted = false;
         let mut error_msg: Option<String> = None;
 
+        // claude hang 감지 — stdout 이 이 시간 동안 무응답이면 kill. 정상 긴 빌드는 thinking/tool_use 가
+        // 주기적으로 stdout 에 흐르므로 안 걸린다(개별 도구 최대 ~60s 의 5배 여유). kill_on_drop(future drop
+        // 케이스)과 보완 — claude 가 hang 하고 firebat 가 무한 대기하면(future 미drop) kill_on_drop 이 안 터지므로.
+        const CLAUDE_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
         let mut reader = BufReader::new(stdout_pipe).lines();
-        while let Some(line) = reader
-            .next_line()
-            .await
-            .map_err(|e| format!("Claude Code CLI stdout 읽기 실패: {e}"))?
-        {
+        loop {
+            let line = match tokio::time::timeout(CLAUDE_IDLE_TIMEOUT, reader.next_line()).await {
+                Ok(read_result) => match read_result
+                    .map_err(|e| format!("Claude Code CLI stdout 읽기 실패: {e}"))?
+                {
+                    Some(line) => line,
+                    None => break, // EOF — claude 정상 종료
+                },
+                Err(_elapsed) => {
+                    // stdout 무응답 = claude hang(출력 0) → 명시 kill (orphan→OOM 방지).
+                    // 아래 child.wait() 가 죽은 프로세스를 reap, errored 분기가 에러 반환.
+                    let _ = child.start_kill();
+                    errored = true;
+                    error_msg = Some(format!(
+                        "Claude Code CLI idle timeout — stdout {}초 무응답으로 종료(hang/orphan 방지)",
+                        CLAUDE_IDLE_TIMEOUT.as_secs()
+                    ));
+                    break;
+                }
+            };
             if line.trim().is_empty() {
                 continue;
             }
