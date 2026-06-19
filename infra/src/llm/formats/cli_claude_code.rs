@@ -334,6 +334,9 @@ impl ClaudeCodeCliHandler {
         let mut current_text = String::new();
         let mut pending_tool_uses: HashMap<String, PendingToolUse> = HashMap::new();
         let mut errored = false;
+        // result 이벤트 수신 여부 — claude 가 최종 결과를 전달했으면 true. 이후 우리가 start_kill 로 죽인
+        // 종료(signal, exit code None)는 crash 가 아니라 의도된 정리이므로, status 비정상 체크를 건너뛴다.
+        let mut got_result = false;
         // CLI 네이티브 계획 도구(TaskCreate 등)는 turn 당 한 번만 "계획 정리" 표시로 통합.
         let mut plan_noted = false;
         let mut error_msg: Option<String> = None;
@@ -686,9 +689,10 @@ impl ClaudeCodeCliHandler {
                     outcome.tokens_out = get_u("output_tokens");
                     outcome.cached_tokens = cache_read;
                 }
+                got_result = true;
                 // result = 턴의 terminal 신호 → 즉시 break (EOF/idle 안 기다림). claude 가 result 후
                 // stdout 을 열어둔 채 exit 안 하면 EOF 가 안 와 hang→orphan 이던 root. 시간이 아니라
-                // 프로토콜로 끊는 정공 — 아래 start_kill 이 잔존 프로세스 정리.
+                // 프로토콜로 끊는 정공 — 아래 start_kill 이 잔존 프로세스 정리(got_result 라 crash 아님).
                 break;
             }
         }
@@ -711,8 +715,11 @@ impl ClaudeCodeCliHandler {
         if outcome.text.is_empty() && !current_text.is_empty() {
             outcome.text = current_text;
         }
-        // exit code 비정상
-        if !status.success() {
+        // exit code 비정상 — 단 result 를 받았으면(got_result) claude 가 정상적으로 최종 결과를 냈고,
+        // 위 start_kill 로 *우리가* 죽인 것(signal → exit code None)이라 crash 가 아니다. 결과 없이
+        // 비정상 종료(진짜 spawn/실행 실패)한 경우만 에러로 보고. (2026-06-19: start_kill 도입으로 정상
+        // 턴까지 "비정상 종료 (exit None)" 오판하던 회귀 fix.)
+        if !status.success() && !got_result {
             return Err(format!(
                 "Claude Code 비정상 종료 (exit {:?}): {}",
                 status.code(),
