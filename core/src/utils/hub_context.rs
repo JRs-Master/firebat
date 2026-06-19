@@ -174,6 +174,7 @@ pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
     }
     is_hub_readonly_tool(name)
         || is_hub_writable_builtin(name)
+        || is_hub_build_tool(name)
         || name.starts_with("render_")
         || name == "save_page"
 }
@@ -240,6 +241,15 @@ fn is_hub_writable_builtin(name: &str) -> bool {
             | "memory_save"
             | "memory_delete"
     )
+}
+
+/// hub visitor 의 Project Builder 빌드 진행 도구 — start_build/advance_build/cancel_build.
+/// 빌드 세션은 hubOwner(inst:sid)로 scope 됨(start_build 핸들러가 args 의 hubOwner 를 세션 키로 사용,
+/// MCP 경로는 inject_hub_owner 가 주입, FC 경로는 ai.rs 가 주입) → visitor 격리되어 허용 안전.
+/// advance/cancel 은 서버 발급 sessionId(UUID)로만 동작 → 타 visitor 세션 접근 불가. PB 가 hub 에서
+/// 동작하려면 필수 (옛 default-deny 라 start_build 가 "not allowed in this hub" 거부되던 root, 2026-06-19).
+pub fn is_hub_build_tool(name: &str) -> bool {
+    matches!(name, "start_build" | "advance_build" | "cancel_build")
 }
 
 /// hub visitor 에게 허용할 read-only/안전 도구 판정 — **단일 소스**.
@@ -403,6 +413,10 @@ mod tests {
         assert!(permits_tool("suggest", &allowed));
         assert!(permits_tool("propose_plan", &allowed));
         assert!(permits_tool("save_page", &allowed));
+        // Project Builder 빌드 도구 — 빌드 세션 hubOwner scope 라 visitor 격리 → 허용 (2026-06-19)
+        assert!(permits_tool("start_build", &allowed));
+        assert!(permits_tool("advance_build", &allowed));
+        assert!(permits_tool("cancel_build", &allowed));
         // ① 필수-on owner-scoped 쓰기 (owner 주입으로 visitor 간 격리 → 허용)
         assert!(permits_tool("save_entity", &allowed));
         assert!(permits_tool("save_entity_fact", &allowed));

@@ -1619,6 +1619,9 @@ impl McpToolHandler for ToolManagerProxyHandler {
         // 도구는 명시 핸들러로 등록해야 하며 auto-sync 대상이 아니다(아래 register 루프 skip 로직 참고).
         if firebat_core::utils::hub_context::is_hub_context_active()
             && !firebat_core::utils::hub_context::is_hub_readonly_tool(&self.name)
+            // Project Builder 빌드 도구(start_build/advance_build/cancel_build)도 허용 — 빌드 세션은
+            // hubOwner 로 scope(start_build 핸들러 + inject_hub_owner) 라 visitor 격리. permits_tool 과 짝.
+            && !firebat_core::utils::hub_context::is_hub_build_tool(&self.name)
         {
             return Ok(serde_json::json!({
                 "success": false,
