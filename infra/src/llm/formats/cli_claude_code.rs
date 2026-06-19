@@ -282,6 +282,10 @@ impl ClaudeCodeCliHandler {
         }
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+        // 턴 종료/취소/SSE 끊김으로 streaming future 가 drop 되면 claude 자식 프로세스를 kill —
+        // orphan 누적(메모리 미해제 → OOM) 방지. 2026-06-19 OOM root: 끝난 턴의 claude 가
+        // ~5.8h 안 죽고 1.9GB 쥔 채 떠 있다 박스 터뜨림(orphan claude 2개 누적).
+        cmd.kill_on_drop(true);
 
         let mut child: Child = cmd.spawn().map_err(|e| {
             format!(

@@ -461,6 +461,9 @@ impl ProcessSandboxAdapter {
             let records: Vec<serde_json::Value> = full
                 .lines()
                 .enumerate()
+                // 빈/공백 줄 제외 — newline 많은 콘텐츠(마크다운·위키 등)에서 레코드 폭발 방지.
+                // 2026-06-19: 56k자가 15778레코드로 터진 건. line 번호는 원본 유지(gap 허용 = 위치 정확).
+                .filter(|(_, line)| !line.trim().is_empty())
                 .map(|(i, line)| serde_json::json!({ "line": i + 1, "text": line }))
                 .collect();
             let total_lines = records.len();
