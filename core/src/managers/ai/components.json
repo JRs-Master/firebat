@@ -1711,7 +1711,7 @@
   {
     "name": "form",
     "componentType": "Form",
-    "description": "Interactive input form backed by a sysmod. The user fills the fields and submits; the form calls `bindModule` with the field values ({field name: value}) and renders the returned data. Use to build an interactive frontend over a sysmod — e.g. a stock-price lookup, a unit/currency converter, a search box. For purely client-side widgets with no backend, use an html app instead. Currently usable in the admin console; public published-page support is pending.",
+    "description": "Interactive input form backed by a sysmod. The user fills the fields and submits; the form calls `bindModule` with the field values ({field name: value}) and renders the returned data. Use to build an interactive frontend over a sysmod — e.g. a data lookup, a unit/currency converter, a search box. For purely client-side widgets with no backend, use an html app instead. Currently usable in the admin console; public published-page support is pending.",
     "semanticText": "form input submit interactive 입력 폼 제출 인터랙티브 도구 계산기 변환기 조회 검색 lookup 종목검색 모듈 호출 sysmod frontend 양식 버튼",
     "propsSchema": {
       "type": "object",
