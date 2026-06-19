@@ -176,6 +176,10 @@ function streamResponse(args: {
             blocks: result.blocks,
             suggestions: result.suggestions,
             pendingActions: result.pendingActions,
+            // Project Builder stepper — page.tsx 가 msg.data.buildSession 을 읽음. admin route 엔
+            // 있는데(2af946b) hub 엔 빠져 있어, start_build 가 불려도 PB 카드가 hub 에서 절대 안 떴음
+            // (2026-06-19 진단). admin 과 동일 미러.
+            ...(result.buildSession ? { buildSession: result.buildSession } : {}),
           };
           send('result', {
             success: result.success !== false,
