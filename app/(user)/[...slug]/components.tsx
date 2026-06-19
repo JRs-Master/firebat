@@ -252,7 +252,7 @@ const canonRole = (raw?: string): string => {
 
 // SVO 문장 구조 — 천일문식 끊어읽기. 성분을 탭하면 역할(S/V/O/C/M)·직독직해(gloss)가 공개,
 // 가렸을 땐 점선 밑줄 + "?"(직접 맞혀보기). "모두 보기/가리기" 토글로 한 번에(역할+뜻). 역할 없는 단어는 평문.
-function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string }> }) {
+function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gloss?: string; form?: string }> }) {
   const [shown, setShown] = useState<Set<number>>(new Set());
   const revealable = tokens
     .map((t, i) => ({ i, ok: !!SENT_ROLE[canonRole(t.role)] || !!t.gloss }))
@@ -284,7 +284,7 @@ function SvoTokens({ tokens }: { tokens: Array<{ text: string; role?: string; gl
               {/* 공개↔가림은 *색만* 토글 — 박스(px·rounded·min-w·leading) 동일 = 탭 시 세로/가로 흔들림 0.
                   엘리먼트 교체(ternary 로 다른 span) 대신 단일 span 색 토글이라 박스 변화가 없다. */}
               {r && (
-                <span className={`text-[10px] font-bold px-1 rounded leading-none inline-block min-w-[1.4rem] text-center ${open ? r.tag : 'bg-slate-100 text-slate-400'}`}>{open ? role : '?'}</span>
+                <span className={`text-[10px] font-bold px-1 rounded leading-none inline-block min-w-[1.4rem] text-center whitespace-nowrap ${open ? r.tag : 'bg-slate-100 text-slate-400'}`}>{open ? (t.form ? `${role} (${t.form})` : role) : '?'}</span>
               )}
               {t.gloss && (
                 <span className={`text-[11px] leading-tight px-1 rounded ${open ? 'text-slate-600' : 'bg-[#e9e0c8] text-transparent select-none'}`}>{t.gloss}</span>
@@ -353,7 +353,7 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string; po
 
 function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, groups }: {
   sentence?: string;
-  tokens?: Array<{ text: string; role?: string; gloss?: string }>;
+  tokens?: Array<{ text: string; role?: string; gloss?: string; form?: string }>;
   pattern?: string;
   translation?: string;
   notes?: string[];
