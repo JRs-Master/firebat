@@ -2304,17 +2304,6 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             입력창 위로 떠 보이던 문제. 입력 오버레이를 테이블 sticky 위로 올려 가린다. */}
         <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-30">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto relative pointer-events-auto flex flex-col">
-            {/* 입력창 접기/펼치기 (앵커식) — 접으면 입력 박스 숨고 얇은 핸들만 남아 답변 읽기 공간 확보 */}
-            <div className="flex justify-center mb-1">
-              <button
-                type="button"
-                onClick={(e) => { setComposerCollapsed((c) => !c); (e.currentTarget as HTMLButtonElement).blur(); }}
-                aria-label={composerCollapsed ? '입력창 펼치기' : '입력창 접기'}
-                className="flex items-center justify-center w-12 h-[18px] rounded-full bg-white/90 border border-slate-200 text-slate-400 shadow-sm transition-colors active:text-blue-600 hover-blue"
-              >
-                {composerCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              </button>
-            </div>
             {!composerCollapsed && (
             <div className="flex w-full gap-4">
               <div className="w-11 shrink-0 opacity-0 pointer-events-none hidden md:block" />
@@ -2488,6 +2477,17 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
               </div>
             </div>
             )}
+            {/* 입력창 접기/펼치기 (앵커식) — 입력창 아래. 접으면 입력 박스 숨고 얇은 핸들만 남아 답변 읽기 공간 확보 */}
+            <div className="flex justify-center mt-1">
+              <button
+                type="button"
+                onClick={(e) => { setComposerCollapsed((c) => !c); (e.currentTarget as HTMLButtonElement).blur(); }}
+                aria-label={composerCollapsed ? '입력창 펼치기' : '입력창 접기'}
+                className="flex items-center justify-center w-12 h-[18px] rounded-full bg-white/90 border border-slate-200 text-slate-400 shadow-sm transition-colors active:text-blue-600 hover-blue"
+              >
+                {composerCollapsed ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
+            </div>
             {!composerCollapsed && (
             <div className="mt-2 sm:mt-4 text-center pb-1 sm:pb-2">
               <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase">
