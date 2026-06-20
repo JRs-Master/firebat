@@ -56,6 +56,7 @@ const TYPE_ALIAS: Record<string, string> = {
   lottie: 'Lottie', network: 'Network', map: 'Map',
   quiz: 'Quiz', quizgroup: 'QuizGroup', quiz_group: 'QuizGroup',
   sentence: 'Sentence', sentence_analysis: 'Sentence', syntax: 'Sentence',
+  vocab: 'Vocab', vocabulary: 'Vocab', wordlist: 'Vocab', flashcards: 'Vocab', flashcard: 'Vocab',
 };
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
@@ -109,6 +110,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
+    case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -349,6 +351,244 @@ function VocabList({ items }: { items: Array<{ word: string; meaning: string; po
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+// ── Vocab (어휘 암기) — 인출연습(active recall) + 세션 내 Leitner 적응형 간격 ──────────
+// 근거: 시험효과(Roediger·Karpicke) 가림→인출→공개 / Leitner 틀린건 곧 재등장·외운건 뒤로 /
+// 양방향(영↔한, 산출=generation effect) / 정교화(예문 맥락·니모닉·어원=Craik·Lockhart 처리수준) /
+// 메타인지 자가평가 / 음운 부호화(브라우저 TTS) / 이중부호화(이미지, Paivio).
+// 세션 간 SRS·진도 추적은 앱 몫 — 컴포넌트는 stateless(한 세션 안에서만 적응).
+type VocabWord = {
+  word: string; meaning: string; pos?: string | null; pronunciation?: string | null;
+  example?: string | null; exampleMeaning?: string | null; mnemonic?: string | null;
+  etymology?: string | null; synonyms?: string[] | null; antonyms?: string[] | null; image?: string | null;
+};
+const VOCAB_MASTER = 2; // 연속 정답 N회 = 외움(큐에서 제거)
+
+function speakWord(text: string) {
+  try {
+    const synth = window.speechSynthesis;
+    if (!synth || !text) return;
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US'; u.rate = 0.9;
+    synth.speak(u);
+  } catch { /* TTS 미지원 = 무시 */ }
+}
+
+// 예문 안 표제어(+활용형) 강조 — 맥락 속 학습
+function highlightWord(text: string, word: string): React.ReactNode {
+  if (!word) return text;
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.split(new RegExp(`(${esc}\\w*)`, 'gi')).map((p, i) =>
+    p.toLowerCase().startsWith(word.toLowerCase())
+      ? <strong key={i} className="text-blue-700 font-bold">{p}</strong>
+      : <span key={i}>{p}</span>);
+}
+
+// 🔊 발음 (브라우저 TTS) — 음운 부호화
+function SpeakBtn({ word }: { word: string }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); speakWord(word); }}
+      title="발음 듣기" aria-label="발음 듣기"
+      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z" /></svg>
+    </button>
+  );
+}
+
+// 공개 시 정교화 레이어 — 예문(맥락)·니모닉(암기 고리)·어원·유의어/반의어·이미지(이중부호화)
+function WordReveal({ w }: { w: VocabWord }) {
+  const syn = Array.isArray(w.synonyms) ? w.synonyms.filter(Boolean) : [];
+  const ant = Array.isArray(w.antonyms) ? w.antonyms.filter(Boolean) : [];
+  if (!w.example && !w.mnemonic && !w.etymology && !syn.length && !ant.length && !w.image) return null;
+  return (
+    <div className="mt-3 space-y-2 text-left text-[13px] sm:text-[14px]">
+      {w.image && <img src={w.image} alt={w.word} loading="lazy" className="max-h-40 rounded-lg border border-[#e9e2d0] mx-auto" />}
+      {w.example && (
+        <div className="rounded-lg bg-[#f3eedd] px-3 py-2">
+          <div className="text-slate-800 leading-relaxed">{highlightWord(w.example, w.word)}</div>
+          {w.exampleMeaning && <div className="text-slate-500 text-[12px] sm:text-[13px] mt-1"><InlineMd text={w.exampleMeaning} /></div>}
+        </div>
+      )}
+      {w.mnemonic && (
+        <div className="flex items-start gap-1.5 text-slate-700">
+          <span className="shrink-0">💡</span>
+          <span><span className="font-semibold text-amber-700">암기 </span><InlineMd text={w.mnemonic} /></span>
+        </div>
+      )}
+      {w.etymology && (
+        <div className="flex items-start gap-1.5 text-slate-600">
+          <span className="font-semibold text-indigo-500 shrink-0 text-[12px] mt-0.5">어원</span>
+          <span><InlineMd text={w.etymology} /></span>
+        </div>
+      )}
+      {(syn.length > 0 || ant.length > 0) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] sm:text-[13px]">
+          {syn.length > 0 && <div><span className="font-semibold text-emerald-600">유의어 </span><span className="text-slate-600">{syn.join(', ')}</span></div>}
+          {ant.length > 0 && <div><span className="font-semibold text-rose-500">반의어 </span><span className="text-slate-600">{ant.join(', ')}</span></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 플래시카드 엔진 — 인출 + 세션 내 Leitner(틀린건 곧·외운건 뒤로) + 양방향 + 자가평가
+function VocabFlashcard({ list }: { list: VocabWord[] }) {
+  const [dir, setDir] = useState<'en2ko' | 'ko2en'>('en2ko');
+  const [boxes, setBoxes] = useState<number[]>(() => list.map(() => 0));
+  const [queue, setQueue] = useState<number[]>(() => list.map((_, i) => i));
+  const [revealed, setRevealed] = useState(false);
+
+  const total = list.length;
+  const mastered = boxes.filter((b) => b >= VOCAB_MASTER).length;
+  const curIdx = queue[0];
+  const cur = curIdx != null ? list[curIdx] : null;
+
+  const grade = (g: 'again' | 'hard' | 'good') => {
+    if (curIdx == null) return;
+    const willMaster = g === 'good' && boxes[curIdx] + 1 >= VOCAB_MASTER;
+    setBoxes((prev) => {
+      const nb = [...prev];
+      nb[curIdx] = g === 'good' ? Math.min(VOCAB_MASTER, nb[curIdx] + 1) : g === 'again' ? 0 : nb[curIdx];
+      return nb;
+    });
+    setQueue((prev) => {
+      const [head, ...rest] = prev;
+      if (head == null) return prev;
+      if (willMaster) return rest;
+      // again=곧 다시(2번째 뒤) / hard=중간 / good=맨 뒤 → 확장 인출(expanding retrieval)
+      const pos = g === 'again' ? 2 : g === 'hard' ? Math.ceil(rest.length / 2) : rest.length;
+      const nq = [...rest];
+      nq.splice(Math.min(pos, nq.length), 0, head);
+      return nq;
+    });
+    setRevealed(false);
+  };
+
+  const switchDir = () => { setDir((d) => (d === 'en2ko' ? 'ko2en' : 'en2ko')); setRevealed(false); };
+  const shuffle = () => {
+    setQueue((q) => { const a = [...q]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; });
+    setRevealed(false);
+  };
+  const reset = () => { setBoxes(list.map(() => 0)); setQueue(list.map((_, i) => i)); setRevealed(false); };
+
+  if (!cur) {
+    return (
+      <div className="text-center py-8">
+        <div className="text-3xl mb-2">🎉</div>
+        <div className="font-bold text-slate-800 mb-1">{total}개 단어 다 외웠어요</div>
+        <div className="text-[13px] text-slate-500 mb-4">며칠 뒤 다시 인출하면 장기기억으로 굳어집니다</div>
+        <button type="button" onClick={reset} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-[13px] font-semibold hover:bg-blue-700 transition-colors">다시 외우기</button>
+      </div>
+    );
+  }
+
+  const front = dir === 'en2ko' ? cur.word : cur.meaning;
+  const pct = total > 0 ? Math.round((mastered / total) * 100) : 0;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <div className="flex-1 h-1.5 rounded-full bg-[#e6ddc6] overflow-hidden">
+          <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="text-[11px] font-semibold text-slate-500 shrink-0">{mastered}/{total} 외움 · {queue.length} 남음</span>
+      </div>
+
+      <div
+        onClick={() => !revealed && setRevealed(true)}
+        className={`rounded-xl border border-[#e9e2d0] bg-white px-5 py-6 min-h-[180px] flex flex-col items-center justify-center text-center shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
+      >
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          {cur.pos && dir === 'ko2en' && <span className="text-[12px] text-indigo-400 font-medium">{cur.pos}</span>}
+          <span className="text-[22px] sm:text-[26px] font-bold text-slate-800">{front}</span>
+          {dir === 'en2ko' && <SpeakBtn word={cur.word} />}
+        </div>
+        {dir === 'en2ko' && cur.pronunciation && <div className="text-[13px] text-slate-400 mt-1">{cur.pronunciation}</div>}
+        {dir === 'en2ko' && cur.pos && <div className="text-[12px] text-indigo-400 font-medium mt-0.5">{cur.pos}</div>}
+
+        {!revealed ? (
+          <div className="mt-4 text-[13px] text-slate-400">{dir === 'en2ko' ? '뜻을 떠올려 보세요 · 탭하면 공개' : '영단어를 떠올려 보세요 · 탭하면 공개'}</div>
+        ) : (
+          <div className="mt-4 w-full">
+            <div className="flex items-center justify-center gap-2 flex-wrap pt-3 border-t border-[#eee6d2]">
+              <span className="text-[18px] sm:text-[20px] font-bold text-blue-700">{dir === 'en2ko' ? cur.meaning : cur.word}</span>
+              {dir === 'ko2en' && <SpeakBtn word={cur.word} />}
+              {dir === 'ko2en' && cur.pronunciation && <span className="text-[12px] text-slate-400">{cur.pronunciation}</span>}
+            </div>
+            <WordReveal w={cur} />
+          </div>
+        )}
+      </div>
+
+      {revealed ? (
+        <div className="grid grid-cols-3 gap-2 mt-3">
+          <button type="button" onClick={() => grade('again')} className="py-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[13px] font-semibold hover:bg-rose-100 transition-colors">모름</button>
+          <button type="button" onClick={() => grade('hard')} className="py-2.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[13px] font-semibold hover:bg-amber-100 transition-colors">애매</button>
+          <button type="button" onClick={() => grade('good')} className="py-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[13px] font-semibold hover:bg-emerald-100 transition-colors">외움</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-4 mt-3 text-[12px] text-slate-500">
+          <button type="button" onClick={switchDir} className="hover:text-blue-600 transition-colors font-medium">{dir === 'en2ko' ? '영→한' : '한→영'} 전환</button>
+          <button type="button" onClick={shuffle} className="hover:text-blue-600 transition-colors font-medium">섞기</button>
+          <button type="button" onClick={reset} className="hover:text-blue-600 transition-colors font-medium">처음부터</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 목록 보기 — 빠른 복습/훑기 (각 행 탭 공개 + 정교화)
+function VocabListView({ list }: { list: VocabWord[] }) {
+  const [shown, setShown] = useState<Set<number>>(new Set());
+  const allShown = list.length > 0 && shown.size === list.length;
+  const toggleAll = () => setShown(allShown ? new Set() : new Set(list.map((_, i) => i)));
+  const toggleOne = (i: number) => setShown((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  return (
+    <div>
+      <div className="flex justify-end mb-2">
+        <button type="button" onClick={toggleAll} className="text-[12px] font-semibold text-slate-500 hover:text-blue-600 transition-colors">{allShown ? '의미 가리기' : '모두 보기'}</button>
+      </div>
+      <ul className="flex flex-col divide-y divide-[#e6ddc6]">
+        {list.map((w, i) => {
+          const open = shown.has(i);
+          return (
+            <li key={i} className="py-2 first:pt-0">
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
+                <SpeakBtn word={w.word} />
+                {w.pos && <span className="text-[11px] text-indigo-400 font-medium shrink-0">{w.pos}</span>}
+                <button type="button" onClick={() => toggleOne(i)} className={`flex-1 text-left text-[13px] sm:text-[14px] rounded px-1.5 transition-colors cursor-pointer ${open ? 'text-slate-600' : 'bg-[#e9e0c8] text-transparent hover:bg-[#e2d6b8] select-none'}`}>
+                  {open ? <InlineMd text={w.meaning} /> : <span className="opacity-0">{w.meaning || '•••'}</span>}
+                </button>
+              </div>
+              {open && <div className="pl-1 mt-1"><WordReveal w={w} /></div>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// 어휘 암기 카드 — 카드(인출 엔진) / 목록(복습) 두 뷰
+function VocabComp({ title, words, mode }: { title?: string | null; words: VocabWord[]; mode?: string | null }) {
+  const list = (Array.isArray(words) ? words : []).filter((w) => w && w.word);
+  const [view, setView] = useState<'flashcard' | 'list'>(mode === 'list' ? 'list' : 'flashcard');
+  if (list.length === 0) return null;
+  return (
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 flex items-center gap-1.5"><span>📖</span>{title || '단어 암기'}</div>
+        <div className="flex rounded-lg border border-[#e0d7bf] overflow-hidden text-[12px] font-semibold shrink-0">
+          <button type="button" onClick={() => setView('flashcard')} className={`px-3 py-1 transition-colors ${view === 'flashcard' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-[#efe8d4]'}`}>카드</button>
+          <button type="button" onClick={() => setView('list')} className={`px-3 py-1 transition-colors ${view === 'list' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-[#efe8d4]'}`}>목록</button>
+        </div>
+      </div>
+      {view === 'flashcard' ? <VocabFlashcard list={list} /> : <VocabListView list={list} />}
     </div>
   );
 }

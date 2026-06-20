@@ -994,6 +994,43 @@
     }
   },
   {
+    "name": "vocab",
+    "componentType": "Vocab",
+    "description": "Vocabulary memorization study card for English exam prep (영단어 암기 — 토익·토플·수능·공무원). Evidence-based engine: active recall (meaning hidden → recall → tap to reveal), within-session Leitner adaptive spacing (wrong words resurface soon, mastered words drop out), bidirectional (영→한 recognition / 한→영 production = generation effect), elaborative reveal (example sentence with the word auto-highlighted + mnemonic 암기 고리 + etymology + synonyms/antonyms + optional image), 🔊 pronunciation via browser TTS, metacognitive self-grade (모름/애매/외움). Two views: flashcard (study engine) + list (quick review). Renders on cream exam-paper. Provide a words array; the component runs all study interaction with no backend. Cross-session spaced repetition / progress is the consuming app's job. Use for 단어 암기 / 단어장 / vocabulary study.",
+    "semanticText": "단어 암기 어휘 영단어 단어장 보카 vocabulary vocab 토익 토플 수능 공무원 텝스 지텔프 플래시카드 flashcard 암기법 인출연습 능동회상 라이트너 leitner 경선식 니모닉 mnemonic 발음 어원 etymology 유의어 반의어 영어 단어 외우기 spaced repetition 단어시험 word memorize",
+    "propsSchema": {
+      "type": "object",
+      "required": ["words"],
+      "synonyms": { "vocabulary": "words", "wordList": "words", "cards": "words" },
+      "properties": {
+        "title": { "type": ["string", "null"] },
+        "mode": { "type": ["string", "null"], "description": "'flashcard' (default — recall + Leitner study engine) or 'list' (quick scannable review)" },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["word", "meaning"],
+            "synonyms": { "en": "word", "term": "word", "english": "word", "headword": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "mean": "meaning", "partOfSpeech": "pos", "ipa": "pronunciation", "phonetic": "pronunciation", "sentence": "example", "exampleSentence": "example", "usage": "example", "exampleKo": "exampleMeaning", "exampleTranslation": "exampleMeaning", "memory": "mnemonic", "hook": "mnemonic", "association": "mnemonic", "origin": "etymology", "roots": "etymology", "synonym": "synonyms", "antonym": "antonyms", "img": "image", "imageUrl": "image" },
+            "properties": {
+              "word": { "type": "string", "description": "the English word / headword" },
+              "meaning": { "type": "string", "description": "Korean meaning (markdown ok)" },
+              "pos": { "type": ["string", "null"], "description": "part-of-speech abbrev — n. v. a. adv. prep. conj." },
+              "pronunciation": { "type": ["string", "null"], "description": "phonetic e.g. /juːˈbɪkwɪtəs/ (tap 🔊 also speaks it via browser TTS)" },
+              "example": { "type": ["string", "null"], "description": "example sentence USING the word — shown on reveal with the word auto-highlighted (context learning)" },
+              "exampleMeaning": { "type": ["string", "null"], "description": "Korean translation of the example sentence" },
+              "mnemonic": { "type": ["string", "null"], "description": "memory hook — keyword/sound association (경선식식 소리연상) linking the word to its meaning. Strong for hard/abstract words; omit when it would be forced." },
+              "etymology": { "type": ["string", "null"], "description": "word roots / origin for deep encoding, e.g. 'ubi(어디든)+que → 어디에나'" },
+              "synonyms": { "type": ["array", "null"], "items": { "type": "string" } },
+              "antonyms": { "type": ["array", "null"], "items": { "type": "string" } },
+              "image": { "type": ["string", "null"], "description": "optional image URL (dual coding — best for concrete words; NOT auto-fetched, the author/app provides it)" }
+            }
+          },
+          "description": "the word list. word + meaning required per item; pos / pronunciation / example(+exampleMeaning) / mnemonic / etymology / synonyms / antonyms / image are optional and each layer deepens encoding. Add a mnemonic + example for hard words. 5–20 words per card works well."
+        }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",
