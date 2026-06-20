@@ -69,10 +69,11 @@ impl TtsAdapter {
     fn voices_for_gender(provider: &str, gender: Option<&str>) -> &'static [&'static str] {
         let female = gender.map(Self::is_female);
         match (provider, female) {
-            ("gemini", Some(true)) => &["Kore", "Aoede", "Leda", "Zephyr"],
+            // 큐레이션 = 스타일 확실히 다른 보이스(설정 picker 와 일치). 억양은 style 프롬프트로 미국식.
+            ("gemini", Some(true)) => &["Kore", "Leda", "Aoede", "Sulafat"],
             ("gemini", Some(false)) => &["Puck", "Charon", "Fenrir", "Orus"],
             ("gemini", None) => &[
-                "Kore", "Puck", "Charon", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr",
+                "Kore", "Puck", "Leda", "Charon", "Aoede", "Fenrir", "Sulafat", "Orus",
             ],
             (_, Some(true)) => &["nova", "shimmer", "coral"],
             (_, Some(false)) => &["onyx", "echo", "ash"],
@@ -477,7 +478,15 @@ impl ITtsPort for TtsAdapter {
                     .unwrap_or_else(|| list[0].to_string());
             }
         } else {
-            // 화자별 voice 자동배정 — 성별(AI 주입) 기반 + 같은 성별끼리 다른 보이스(성별별 rotation).
+            // 화자별 voice 자동배정 — 성별(AI 주입) 기반 + 같은 성별끼리 다른 보이스.
+            // 스크립트 해시로 시작 offset → 문제(스크립트)마다 보이스가 달라져 "다양한 스피커 연습"
+            // (토익/학습용 의도). 같은 스크립트 = 같은 배정(캐시 일관). 같은 성별 화자끼린 distinct.
+            let seed = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                req.text.hash(&mut h);
+                h.finish() as usize
+            };
             let mut gcount: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
             for sp in req.speakers.iter_mut() {
                 if !sp.voice.is_empty() {
@@ -487,7 +496,7 @@ impl ITtsPort for TtsAdapter {
                 let i = gcount
                     .entry(sp.gender.clone().unwrap_or_default())
                     .or_insert(0);
-                sp.voice = list[*i % list.len()].to_string();
+                sp.voice = list[(seed + *i) % list.len()].to_string();
                 *i += 1;
             }
         }

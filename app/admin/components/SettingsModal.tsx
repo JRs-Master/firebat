@@ -1613,9 +1613,18 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 </div>
                 )}
                 {aiSubTab === 'tts' && (() => {
-                  const TTS_META: Record<string, { models: string[]; voices: { female: string[]; male: string[] } }> = {
-                    openai: { models: ['gpt-4o-mini-tts'], voices: { female: ['nova', 'shimmer', 'coral'], male: ['onyx', 'echo', 'ash'] } },
-                    gemini: { models: ['gemini-3.1-flash-tts-preview'], voices: { female: ['Kore', 'Aoede', 'Leda', 'Zephyr'], male: ['Puck', 'Charon', 'Fenrir', 'Orus'] } },
+                  // 큐레이션 = 미국식 억양 + 스타일이 서로 확실히 다른 보이스만(들어보고 1명 선택).
+                  // 라벨 = 캐릭터 가이드(Gemini 는 공식 character, OpenAI 는 특성) — 실제 톤은 🔊 로 확인.
+                  type V = { id: string; label: string };
+                  const TTS_META: Record<string, { models: string[]; voices: { female: V[]; male: V[] } }> = {
+                    openai: { models: ['gpt-4o-mini-tts'], voices: {
+                      female: [{ id: 'nova', label: '밝고 활기찬' }, { id: 'shimmer', label: '부드럽고 차분한' }, { id: 'coral', label: '친근하고 따뜻한' }],
+                      male: [{ id: 'onyx', label: '깊고 묵직한' }, { id: 'echo', label: '차분하고 또렷한' }, { id: 'ash', label: '단단하고 자신감 있는' }],
+                    } },
+                    gemini: { models: ['gemini-3.1-flash-tts-preview'], voices: {
+                      female: [{ id: 'Kore', label: '단단한' }, { id: 'Leda', label: '발랄한' }, { id: 'Aoede', label: '산뜻한' }, { id: 'Sulafat', label: '따뜻한' }],
+                      male: [{ id: 'Puck', label: '경쾌한' }, { id: 'Charon', label: '안정적인' }, { id: 'Fenrir', label: '활기찬' }, { id: 'Orus', label: '단단한' }],
+                    } },
                   };
                   const switchTtsProvider = (p: string) => {
                     if (p === 'openai' && !hasOpenaiKey) return;
@@ -1625,12 +1634,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     const m = TTS_META[p];
                     setTtsModel(m.models.includes(ttsModel) ? ttsModel : m.models[0]);
                     const all = [...m.voices.female, ...m.voices.male];
-                    setTtsVoice(all.includes(ttsVoice) ? ttsVoice : m.voices.female[0]);
+                    setTtsVoice(all.some(v => v.id === ttsVoice) ? ttsVoice : m.voices.female[0].id);
                   };
                   const meta = TTS_META[ttsProvider];
                   const curModel = meta ? (meta.models.includes(ttsModel) ? ttsModel : meta.models[0]) : '';
                   const curVoice = meta
-                    ? (() => { const all = [...meta.voices.female, ...meta.voices.male]; return all.includes(ttsVoice) ? ttsVoice : meta.voices.female[0]; })()
+                    ? (() => { const all = [...meta.voices.female, ...meta.voices.male]; return all.some(v => v.id === ttsVoice) ? ttsVoice : meta.voices.female[0].id; })()
                     : '';
                   return (
                     <div className="flex flex-col gap-3">
@@ -1669,21 +1678,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                   </div>
                                   <div className="flex flex-wrap gap-1.5">
                                     {meta.voices[g].map(v => {
-                                      const active = curVoice === v;
+                                      const active = curVoice === v.id;
                                       return (
                                         <span
-                                          key={v}
-                                          onClick={() => setTtsVoice(v)}
+                                          key={v.id}
+                                          onClick={() => setTtsVoice(v.id)}
                                           className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'}`}
                                         >
-                                          {v}
+                                          <span>{v.id}<span className={`ml-1 font-normal ${active ? 'text-white/75' : 'text-slate-400'}`}>{v.label}</span></span>
                                           <button
                                             type="button"
-                                            onClick={(e) => { e.stopPropagation(); playTtsSample(ttsProvider, curModel, v); }}
-                                            aria-label={t('settings_modal.tts_play_sample', { voice: v })}
+                                            onClick={(e) => { e.stopPropagation(); playTtsSample(ttsProvider, curModel, v.id); }}
+                                            aria-label={t('settings_modal.tts_play_sample', { voice: v.id })}
                                             className={`rounded-full p-0.5 transition-colors ${active ? 'text-white/85 hover:bg-white/20' : 'text-slate-400 hover:text-blue-500'}`}
                                           >
-                                            {ttsSampleVoice === v ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+                                            {ttsSampleVoice === v.id ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
                                           </button>
                                         </span>
                                       );
