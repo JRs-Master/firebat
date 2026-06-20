@@ -325,12 +325,12 @@ impl TtsAdapter {
                 words: slice.to_vec(),
             });
         }
-        // Sanity gate — STT(특히 Gemini)가 오디오 길이를 크게 초과하는 엉터리 타임스탬프를 주면(실측:
-        // 39.76초 오디오에 56초 LRC = 40% 초과) 단어 클릭·fill 이 통째로 밀린다. 그런 정렬은 버려서(빈 Vec)
-        // 컴포넌트가 *실제 오디오 길이* 기반 글자수 추정으로 fallback — garbage 보다 정확. Whisper 는 정밀해 통과.
+        // Sanity gate(양방향) — STT 타임스탬프가 실제 오디오 길이의 0.85~1.15배 밖이면 엉터리로 보고 버림
+        // (빈 Vec → 컴포넌트가 실제 길이 기반 글자수 추정 fallback). 오버슈트(2.5-flash 52초) + 언더슈트
+        // (3.5-flash 가끔 32초) 둘 다 차단. 정상 범위는 그대로 사용(3.5-flash 대부분 39~40초).
         if let Some(d) = wav_duration_secs(audio, content_type) {
             let max_end = out.iter().map(|l| l.end).fold(0.0_f64, f64::max);
-            if d > 0.5 && max_end > d * 1.15 {
+            if d > 0.5 && (max_end > d * 1.15 || max_end < d * 0.85) {
                 return Vec::new();
             }
         }
@@ -438,12 +438,10 @@ impl TtsAdapter {
             ]}],
             "generationConfig": { "responseModalities": ["TEXT"], "responseMimeType": "application/json" }
         });
-        // STT 모델 = gemini-pro-latest (최신 pro 별칭 = deprecation-proof). 실측(40초 wav): pro-latest
-        // 39.7초·2.5-pro 39.1~39.3초로 정확. flash 계열은 24kHz서 다 부정확(2.5-flash 52·3.5-flash 32·
-        // flash-latest 36~38·lite 29). Gemini 가 오디오를 16kHz 내부 다운샘플(1초=32토큰)하는데 pro 는
-        // 입력 rate 를 올바로 보정, flash 는 못 함. pro 는 24kHz 그대로 정확(리샘플 불요). 정렬=오디오당
-        // 1회+캐시라 pro 비용 무시(~$0.002). 만약 별칭이 부정확 모델로 바뀌어도 sanity gate 가 버리고 fallback.
-        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-latest:generateContent";
+        // STT 모델 = gemini-3.5-flash. 실측(40초 wav, 여러 회): 24kHz서 6/7 회 39~40초로 정확 + flash 라
+        // pro 대비 ~10배 쌈(₩3/오디오, 1회+캐시). 가끔 32~36 으로 튀나 양방향 sanity gate(0.85~1.15배 벗어나면
+        // 버리고 추정 fallback)가 잡음. (pro/pro-latest 는 항상 정확하나 오버킬, 3.1-pro=404, flash-lite=엉터리.)
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
         let resp = self
             .client
             .post(url)
