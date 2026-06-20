@@ -1162,18 +1162,35 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
               <div className="flex flex-col gap-0.5">
                 {lrc ? lrc.map((ln, i) => {
-                  // 현재 재생 줄 = 연한 박스 + 진한 fill 이 왼→오로 쭉 이어짐(문장 단위, 부드럽게).
-                  // 단어별 칠하기 폐기(드리프트·산만). 줄 탭 = 그 줄부터 재생. 표시는 스크립트 원문(ln.text,
-                  // STT 단어 매핑 드리프트로 엉뚱한 줄에 단어 섞이던 것 방지).
+                  // 현재 재생 줄 = 연한 박스 + 진한 fill 이 왼→오로 **한 줄 연속 sweep**.
+                  // fill 위치 = 단어 타이밍으로 계산(말하는 단어까지 글자 비례로 차오름) → 끊김 없이
+                  // 부드럽되 단어 정확. 단어 탭 = 그 단어부터 재생. (STT=gemini-pro 라 단어 정확.)
                   const active = curLrc === i;
-                  const span = Math.max(ln.end - ln.start, 0.1);
-                  const fillPct = active ? Math.max(0, Math.min(((cur - ln.start) / span) * 100, 100)) : 0;
+                  const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
+                  let fillPct = 0;
+                  if (active) {
+                    const total = words.reduce((a, w) => a + w.word.length + 1, 0) || 1;
+                    let done = 0;
+                    for (const w of words) {
+                      const f = cur >= w.end ? 1 : cur <= w.start ? 0 : (cur - w.start) / Math.max(w.end - w.start, 0.05);
+                      done += (w.word.length + 1) * f;
+                      if (f < 1) break;
+                    }
+                    fillPct = Math.min((done / total) * 100, 100);
+                  }
                   return (
-                    <div key={i} onClick={() => seekTo(ln.start)} className={`relative rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-white/60'}`}>
-                      {active && <div className="absolute inset-y-0 left-0 rounded bg-blue-300/40 pointer-events-none" style={{ width: `${fillPct}%` }} />}
-                      <div className="relative flex gap-1.5">
+                    <div key={i} className={`rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
+                      <div className="flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
-                        <span className="flex-1"><InlineMd text={ln.text} /></span>
+                        <span className="relative flex-1">
+                          {/* 연속 fill — 텍스트 위 한 줄 sweep(단어 타이밍 기반 글자 위치) */}
+                          {active && <span className="absolute inset-y-0 left-0 rounded bg-blue-300/45 pointer-events-none" style={{ width: `${fillPct}%` }} />}
+                          <span className="relative">
+                            {words.map((w, wi) => (
+                              <span key={wi} onClick={() => seekTo(w.start)} className="cursor-pointer rounded hover:bg-blue-200/40">{w.word} </span>
+                            ))}
+                          </span>
+                        </span>
                       </div>
                     </div>
                   );
