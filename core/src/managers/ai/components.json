@@ -939,8 +939,8 @@
     "semanticText": "문제 객관식 시험 퀴즈 quiz 보기 선택지 정답 해설 수능 공무원 기출 사법고시 ①②③④⑤ ㄱㄴㄷ 합답형 시험지 해설지 exam",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "options": "choices" },
-      "required": ["question", "choices"],
+      "synonyms": { "options": "choices", "format": "type", "quizType": "type" },
+      "required": ["question"],
       "properties": {
         "number": { "type": ["number", "string", "null"], "description": "question number" },
         "points": { "type": ["number", "string", "null"], "description": "points" },
@@ -948,9 +948,10 @@
         "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "0–N body boxes (grayscale exam style, markdown+LaTeX). Includes the 2-box case." },
         "statements": { "type": ["array", "null"], "items": { "type": "string" }, "description": "ㄱㄴㄷ combined-answer statements (auto ㄱ/ㄴ/ㄷ/ㄹ labels). choices reference them as 'ㄱ,ㄴ' etc." },
         "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "visual stimuli like figures/tables/graphs — an array of other components (image/table/chart, etc.)" },
-        "choices": { "type": "array", "items": { "type": "string" }, "description": "2–8 choices (markdown+LaTeX). The component auto-numbers ①②③, so don't put numbers in the choice text (text only)." },
-        "answer": { "type": ["number", "null"], "description": "0-based index of the correct choice (position in the choices array — first = 0, second = 1 …). Same as answerIndex." },
-        "answerIndex": { "type": ["number", "null"], "description": "0-based index of the correct choice (same as answer — use only one of the two)." },
+        "choices": { "type": ["array", "null"], "items": { "type": "string" }, "description": "2–8 choices for MC (markdown+LaTeX). Auto-numbered ①②③, so no numbers in the text. Omit for ox/tfng (O/X·True/False/Not Given auto-rendered)." },
+        "answer": { "type": ["number", "string", "null"], "description": "MC: 0-based index of the correct choice. OX/TFNG: the correct label — 'O'/'X' (일치/불일치) or 'True'/'False'/'Not Given'." },
+        "answerIndex": { "type": ["number", "null"], "description": "0-based index of the correct choice (same as answer — MC only)." },
+        "type": { "type": ["string", "null"], "description": "format: omit/'mc' = multiple choice (use choices). 'ox' = O/X true-false (일치/불일치 — answer 'O'|'X', choices 불필요). 'tfng' = True/False/Not Given (TOEFL/IELTS — answer 'True'|'False'|'Not Given')." },
         "explanation": { "type": ["string", "null"], "description": "explanation (markdown + LaTeX)" },
         "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
       }
@@ -969,7 +970,8 @@
         "passage": { "type": ["string", "null"], "description": "shared passage/text (markdown + LaTeX)" },
         "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "shared body boxes (neutral/grayscale)" },
         "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "shared figures/tables/graphs" },
-        "questions": { "type": "array", "items": { "type": "object", "synonyms": { "options": "choices" }, "required": ["question", "choices"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": "array", "items": { "type": "string" } }, "answer": { "type": ["number", "null"] }, "answerIndex": { "type": ["number", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "array of items (each {question, choices(=options), answer or answerIndex (both 0-based correct index), explanation?, statements?, figures?})" },
+        "questions": { "type": "array", "items": { "type": "object", "synonyms": { "options": "choices" }, "required": ["question"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": ["array", "null"], "items": { "type": "string" } }, "answer": { "type": ["number", "string", "null"] }, "answerIndex": { "type": ["number", "null"] }, "type": { "type": ["string", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "array of items (each {question, choices(=options) for MC OR type:'ox'/'tfng', answer (0-based index for MC / 'O'·'X'·'True'·'False'·'Not Given' for ox·tfng), explanation?, statements?, figures?})" },
+        "type": { "type": ["string", "null"], "description": "group-level format default applied to all questions — 'ox' or 'tfng' (per-question type overrides). e.g. a whole TFNG reading set." },
         "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
       }
     }

@@ -109,8 +109,8 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
-    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} view={p.view} />;
-    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
+    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} type={p.type ?? p.format ?? p.quizType} view={p.view} />;
+    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} type={p.type ?? p.format} view={p.view} />;
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
@@ -143,6 +143,32 @@ const quizAns = (answer?: number, answerIndex?: number): number | undefined => {
   return idx === undefined ? undefined : idx + 1;
 };
 
+// OX(일치/불일치) / TFNG(True·False·Not Given) 모드 — 라벨 + 정답 인덱스(1-based).
+// answer 가 'O'/'X'/true/false/'T'/'F'/'NG'/숫자 등 다양하게 와도 흡수(하드코딩 회피, 폭넓게 수용).
+function oxConfig(type?: string, answer?: number | string, answerIndex?: number): { labels: string[]; ans?: number } | null {
+  const t = (type || '').toLowerCase().replace(/[\s_-]/g, '');
+  let labels: string[] | null = null;
+  if (t === 'ox' || t === 'tf' || t === 'truefalse' || t === 'oux') labels = ['O', 'X'];
+  else if (t === 'tfng' || t === 'tfn' || t === 'truefalsenotgiven') labels = ['True', 'False', 'Not Given'];
+  if (!labels) return null;
+  const raw = answer ?? answerIndex;
+  let ans: number | undefined;
+  if (typeof raw === 'number') ans = raw + 1; // 0-based → 1-based
+  else if (typeof raw === 'boolean') ans = raw ? 1 : 2;
+  else if (typeof raw === 'string') {
+    const s = raw.trim().toLowerCase();
+    if (labels.length === 2) {
+      if (['o', 'true', 't', 'yes', 'y', '참', '맞음', '일치', '○', 'ㅇ'].includes(s)) ans = 1;
+      else if (['x', 'false', 'f', 'no', 'n', '거짓', '틀림', '불일치'].includes(s)) ans = 2;
+    } else {
+      if (['true', 't', '참', '일치'].includes(s)) ans = 1;
+      else if (['false', 'f', '거짓', '불일치'].includes(s)) ans = 2;
+      else if (['ng', 'notgiven', '언급없음', 'na', 'n'].includes(s.replace(/[\s/]/g, ''))) ans = 3;
+    }
+  }
+  return { labels, ans };
+}
+
 /** 단일 문항 본문 — controlled (selected/revealed/onSelect). quiz 단독 + quiz_group 의 각 문항 공용. */
 // 시험지/해설지 미색지 종이 질감 — SVG fractalNoise 를 아주 옅게(미색 위 미세 그레인).
 // 배경 색은 className(bg-[#faf8f0])이, 그레인은 이 backgroundImage 가 담당(겹침).
@@ -153,16 +179,17 @@ const PAPER_NOISE =
 const PAPER_STYLE = { backgroundImage: PAPER_NOISE } as const;
 
 function QuizBody({
-  number, question, boxes, figures, statements, choices, answer, answerIndex, explanation,
+  number, question, boxes, figures, statements, choices, answer, answerIndex, explanation, type,
   view, selected, revealed, onSelect,
 }: {
   number?: number | string; question: string; boxes?: string[]; figures?: ComponentDef[];
-  statements?: string[]; choices: string[]; answer?: number; answerIndex?: number; explanation?: string;
+  statements?: string[]; choices: string[]; answer?: number | string; answerIndex?: number; explanation?: string; type?: string;
   view: QuizView; selected?: number; revealed: boolean; onSelect?: (i: number) => void;
 }) {
   const showAnswer = view === 'answers' || view === 'full' || (view === 'interactive' && revealed);
   const interactive = view === 'interactive';
-  const ans = quizAns(answer, answerIndex); // 1-based
+  const ox = oxConfig(type, answer, answerIndex); // OX/TFNG 모드면 라벨+정답, 아니면 null
+  const ans = ox ? ox.ans : quizAns(typeof answer === 'number' ? answer : undefined, answerIndex); // 1-based
   const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 text-[14px] sm:text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
@@ -192,7 +219,29 @@ function QuizBody({
           ))}
         </div>
       )}
-      {view !== 'answers' && (
+      {view !== 'answers' && ox && (
+        <div className={`grid gap-2 my-3 ${ox.labels.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+          {ox.labels.map((label, i) => {
+            const num = i + 1;
+            const isAns = ans === num;
+            const isSel = selected === num;
+            let cls = 'border-slate-200 text-slate-700';
+            if (showAnswer && isAns) cls = 'border-green-500 bg-green-50 text-green-800 font-bold';
+            else if (showAnswer && isSel && !isAns) cls = 'border-red-400 bg-red-50 text-red-700';
+            else if (interactive && isSel && !revealed) cls = 'border-blue-500 bg-blue-50 text-blue-700 font-semibold';
+            else if (interactive && !revealed) cls = 'hover:bg-slate-50';
+            return (
+              <button key={`ox-${i}`} type="button" disabled={!interactive || revealed} onClick={() => onSelect?.(num)}
+                className={`px-3 py-3 rounded-lg border font-semibold text-[15px] transition-colors flex items-center justify-center gap-1.5 ${cls} ${interactive && !revealed ? 'cursor-pointer hover:border-slate-300' : 'cursor-default'}`}>
+                <span>{label}</span>
+                {showAnswer && isAns && <span className="text-green-600">✓</span>}
+                {showAnswer && isSel && !isAns && <span className="text-red-500">✗</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {view !== 'answers' && !ox && (
         <div className="flex flex-col gap-2 my-3">
           {choices.map((c, i) => {
             const num = i + 1;
@@ -222,7 +271,7 @@ function QuizBody({
       )}
       {showAnswer && (
         <div className="mt-3.5">
-          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {QUIZ_CIRCLED[ans - 1] ?? ans}</div>}
+          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {ox ? (ox.labels[ans - 1] ?? ans) : (QUIZ_CIRCLED[ans - 1] ?? ans)}</div>}
           {explanation && (
             <div className="rounded-lg border border-[#d9cdae] p-3 sm:p-3.5">
               <div className="text-[11px] font-bold text-indigo-500 tracking-wide mb-1.5">해설</div>
@@ -863,10 +912,10 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   );
 }
 
-function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, answerIndex, explanation, view = 'interactive' }: {
+function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, answerIndex, explanation, type, view = 'interactive' }: {
   number?: number | string; points?: number | string; question: string; boxes?: string[];
-  figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number; answerIndex?: number;
-  explanation?: string; view?: QuizView;
+  figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number | string; answerIndex?: number;
+  explanation?: string; type?: string; view?: QuizView;
 }) {
   const [selected, setSelected] = useState<number | undefined>(undefined);
   const [revealed, setRevealed] = useState(false);
@@ -877,7 +926,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
       )}
       <QuizBody
         number={number} question={question} boxes={boxes} figures={figures} statements={statements}
-        choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} view={view}
+        choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} type={type} view={view}
         selected={selected} revealed={revealed} onSelect={setSelected}
       />
       {view === 'interactive' && !revealed && (
@@ -889,10 +938,10 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
   );
 }
 
-function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive' }: {
+function QuizGroupComp({ passage, boxes, figures, questions, type, view = 'interactive' }: {
   passage?: string; boxes?: string[]; figures?: ComponentDef[];
-  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; options?: string[]; answer?: number; answerIndex?: number; correctIndex?: number; explanation?: string; figures?: ComponentDef[] }>;
-  view?: QuizView;
+  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; options?: string[]; answer?: number | string; answerIndex?: number; correctIndex?: number; explanation?: string; type?: string; figures?: ComponentDef[] }>;
+  type?: string; view?: QuizView;
 }) {
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [revealed, setRevealed] = useState(false);
@@ -914,7 +963,7 @@ function QuizGroupComp({ passage, boxes, figures, questions, view = 'interactive
         {qs.map((q, i) => (
           <QuizBody
             key={`q-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
-            choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} view={view}
+            choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type ?? type} view={view}
             selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected(s => ({ ...s, [i]: n }))}
           />
         ))}
