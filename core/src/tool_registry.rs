@@ -107,9 +107,10 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         name: "tts".to_string(),
         description: "Generate listening audio (TTS) from a script and return a playable URL — for \
             listening-comprehension practice (put the url in a `listening` component's audioUrl). You \
-            choose only the script and, for dialogues, each speaker's accent; the provider and concrete \
-            voices come from settings / auto-assignment. Assign per-speaker accents realistic to the \
-            target test or context. Multi-speaker: write the script as 'Name: line' per turn and list \
+            choose only the script and, for dialogues, each speaker's accent + gender (inferred from the \
+            dialogue); the provider and concrete voices come from settings / auto-assignment. Assign \
+            per-speaker accents realistic to the target test or context. Multi-speaker: write the script \
+            as 'Name: line' per turn and list \
             those names in `speakers`. Cached — the same script+voice is reused without re-generating. \
             Returns { url }."
             .to_string(),
@@ -119,10 +120,11 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name)."},
                 "speakers": {
                     "type": "array",
-                    "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?}.",
+                    "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?, gender?}.",
                     "items": {"type": "object", "properties": {
                         "name": {"type": "string", "description": "Speaker name as written in the script 'Name:' lines."},
-                        "accent": {"type": "string", "description": "Accent/style, free text (e.g. 'American accent', 'female British accent')."}
+                        "accent": {"type": "string", "description": "Accent, free text (e.g. 'American accent', 'British accent')."},
+                        "gender": {"type": "string", "description": "'male' or 'female' — infer from the dialogue/role; picks a matching voice."}
                     }}
                 },
                 "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."}
@@ -178,7 +180,13 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                                     .unwrap_or("")
                                     .trim()
                                     .to_string();
-                                Some(crate::ports::TtsSpeaker { speaker: name, voice, style: st })
+                                let gender = o
+                                    .get("gender")
+                                    .or_else(|| o.get("sex"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.trim().to_string())
+                                    .filter(|s| !s.is_empty());
+                                Some(crate::ports::TtsSpeaker { speaker: name, voice, style: st, gender })
                             })
                             .collect()
                     })
@@ -205,6 +213,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 for sp in &speakers {
                     sp.speaker.hash(&mut hasher);
                     sp.style.hash(&mut hasher);
+                    sp.gender.hash(&mut hasher);
                 }
                 style.hash(&mut hasher);
                 let name = format!("tts-{:016x}.{ext}", hasher.finish());

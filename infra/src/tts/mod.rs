@@ -65,14 +65,25 @@ impl TtsAdapter {
         (provider, model)
     }
 
-    /// provider 기본 보이스 목록 — 화자별 voice 미지정 시 rotation 자동 배정.
-    fn voices_for(provider: &str) -> &'static [&'static str] {
-        match provider {
-            "gemini" => &[
+    /// provider·성별 보이스 목록 — gender 주입 시 그 성별, 없으면 전체. 화자별 voice 미지정 시 자동배정.
+    fn voices_for_gender(provider: &str, gender: Option<&str>) -> &'static [&'static str] {
+        let female = gender.map(Self::is_female);
+        match (provider, female) {
+            ("gemini", Some(true)) => &["Kore", "Aoede", "Leda", "Zephyr"],
+            ("gemini", Some(false)) => &["Puck", "Charon", "Fenrir", "Orus"],
+            ("gemini", None) => &[
                 "Kore", "Puck", "Charon", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr",
             ],
-            _ => &["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+            (_, Some(true)) => &["nova", "shimmer", "coral"],
+            (_, Some(false)) => &["onyx", "echo", "ash"],
+            (_, None) => &["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
         }
+    }
+
+    /// gender 문자열 → 여성 여부(영/한). 미상이면 남성 취급(false).
+    fn is_female(g: &str) -> bool {
+        let l = g.to_lowercase();
+        l.contains("female") || l.contains("woman") || l.contains("girl") || l.contains('여')
     }
 
     /// OpenAI /v1/audio/speech 1회 — 단일 voice mp3. style → instructions(말투/억양).
@@ -266,16 +277,23 @@ impl ITtsPort for TtsAdapter {
                 req.model = m;
             }
         }
-        let voices = Self::voices_for(&req.provider);
         if req.speakers.is_empty() {
             if req.voice.is_empty() {
-                req.voice = voices[0].to_string();
+                req.voice = Self::voices_for_gender(&req.provider, None)[0].to_string();
             }
         } else {
-            for (i, sp) in req.speakers.iter_mut().enumerate() {
-                if sp.voice.is_empty() {
-                    sp.voice = voices[i % voices.len()].to_string();
+            // 화자별 voice 자동배정 — 성별(AI 주입) 기반 + 같은 성별끼리 다른 보이스(성별별 rotation).
+            let mut gcount: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for sp in req.speakers.iter_mut() {
+                if !sp.voice.is_empty() {
+                    continue;
                 }
+                let list = Self::voices_for_gender(&req.provider, sp.gender.as_deref());
+                let i = gcount
+                    .entry(sp.gender.clone().unwrap_or_default())
+                    .or_insert(0);
+                sp.voice = list[*i % list.len()].to_string();
+                *i += 1;
             }
         }
         match req.provider.as_str() {

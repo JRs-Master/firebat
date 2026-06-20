@@ -2472,13 +2472,15 @@ pub struct TtsRequest {
     pub style: Option<String>,
 }
 
-/// 멀티스피커 화자 설정 — 토익 등 화자별 억양 다름.
+/// 멀티스피커 화자 설정 — 토익 등 화자별 억양·성별 다름.
 #[derive(Debug, Clone)]
 pub struct TtsSpeaker {
     pub speaker: String, // 화자 이름(text 의 "Name:" 매칭)
     pub voice: String,
     /// 이 화자 억양/말투(free-text, 예: "British accent").
     pub style: Option<String>,
+    /// 성별 — AI 가 대화 내용 따라 주입("male"/"female"/"남"/"여"). 핸들러가 그 성별 보이스 자동배정.
+    pub gender: Option<String>,
 }
 
 /// TTS 결과 — 오디오 + 포맷.
