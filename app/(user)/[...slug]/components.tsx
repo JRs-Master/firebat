@@ -937,29 +937,12 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const browserMode = !!browserTts && !audioUrl;
   const [bSpeaking, setBSpeaking] = useState(false);
   const [bSpeed, setBSpeed] = useState(1);
-  const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 클릭(낭독)한 문장 하이라이트
+  const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 현재 낭독 중 문장(하이라이트)
   const [bVol, setBVol] = useState(1);
-  const bTextRef = useRef(''); // 현재 낭독 중 텍스트 (속도 변경 시 재시작용)
-  const bCharRef = useRef(0); // 현재 낭독 위치(boundary charIndex)
-  const speakBrowser = (text: string, fromChar = 0) => {
-    if (typeof window === 'undefined' || !window.speechSynthesis || !text.trim()) return;
-    window.speechSynthesis.cancel();
-    bTextRef.current = text;
-    if (fromChar === 0) bCharRef.current = 0;
-    const u = new SpeechSynthesisUtterance(fromChar > 0 ? text.slice(fromChar) : text);
-    u.rate = bSpeed;
-    u.volume = bVol;
-    u.lang = 'en-US';
-    u.onboundary = (e) => { bCharRef.current = fromChar + (e.charIndex || 0); };
-    u.onend = () => setBSpeaking(false);
-    setBSpeaking(true);
-    window.speechSynthesis.speak(u);
-  };
-  // 재생 중 속도 변경 → 현재 위치(boundary)부터 새 속도로 재시작(Web Speech 는 mid-utterance rate 변경 불가).
-  useEffect(() => {
-    if (bSpeaking) speakBrowser(bTextRef.current, bCharRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bSpeed]);
+  const bSpeedRef = useRef(1); bSpeedRef.current = bSpeed;
+  const bVolRef = useRef(1); bVolRef.current = bVol;
+  const bPlayRef = useRef(false); // 재생 의도(cancel 시 false → 자동 다음 문장 중단)
+  const bGenRef = useRef(0); // utterance 세대 토큰(재시작 시 옛 onend 무효화)
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
@@ -997,6 +980,29 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   // 받아쓰기 채점 결과 — 확인 눌렀을 때만 계산(스크립트 전체 vs typed).
   const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
+  // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
+  // 속도·볼륨 바꾸면 현재 문장을 새 설정으로 재시작+이어감(전체 처음 X). onboundary 모바일 불안정이라 문장 단위.
+  const bPlayFrom = (idx: number) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const gen = ++bGenRef.current;
+    window.speechSynthesis.cancel();
+    if (idx < 0 || idx >= segments.length) { bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return; }
+    bPlayRef.current = true;
+    setBSpeaking(true);
+    setBSeg(idx);
+    const u = new SpeechSynthesisUtterance(segments[idx].text);
+    u.rate = bSpeedRef.current;
+    u.volume = bVolRef.current;
+    u.lang = 'en-US';
+    u.onend = () => { if (bGenRef.current === gen && bPlayRef.current) bPlayFrom(idx + 1); };
+    window.speechSynthesis.speak(u);
+  };
+  const bStop = () => { bPlayRef.current = false; bGenRef.current++; if (typeof window !== 'undefined') window.speechSynthesis?.cancel(); setBSpeaking(false); };
+  // 재생 중 속도/볼륨 변경 → 현재 문장을 새 설정으로 재시작 + 이어감.
+  useEffect(() => {
+    if (bPlayRef.current && bSeg >= 0) bPlayFrom(bSeg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bSpeed, bVol]);
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
@@ -1006,7 +1012,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       ) : browserMode ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
-            onClick={() => { if (bSpeaking) { window.speechSynthesis?.cancel(); setBSpeaking(false); } else { setBSeg(-1); speakBrowser(segments.map((s) => s.text).join(' ')); } }}
+            onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{bSpeaking ? '❚❚' : '▶'}</button>
           <div className="flex items-center gap-1 text-[11px]">
             <span className="text-slate-400">속도</span>
@@ -1036,7 +1042,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               <textarea value={typed}
                 onChange={(e) => { setTyped(e.target.value); setDictChecked(false); const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; }}
                 rows={3}
-                className="w-full rounded-lg border border-[#d9cdae] bg-white/60 px-2.5 py-2 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed resize-none overflow-hidden focus:outline-none focus:border-blue-400" />
+                className="w-full min-h-[5.5rem] rounded-lg border border-[#d9cdae] bg-white/60 px-2.5 py-2 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed resize-none overflow-hidden focus:outline-none focus:border-blue-400" />
               <div className="flex items-center justify-between mt-1.5">
                 <span className="text-[11px] text-slate-400">{dictResult && (<>정확도 <span className="font-bold text-blue-600">{dictResult.accuracy}%</span> · <span className="text-emerald-600">맞음</span> / <span className="text-rose-500">놓침</span></>)}</span>
                 <button type="button" onClick={() => setDictChecked(true)} disabled={!typed.trim()} className="px-3 py-1 text-[12px] font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40">받아쓰기 확인</button>
@@ -1055,7 +1061,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
               <div className="flex flex-col">
                 {segments.map((s, i: number) => (
-                  <button key={i} type="button" onClick={() => { if (browserMode) { setBSeg(i); speakBrowser(s.text); } else seekLine(i); }}
+                  <button key={i} type="button" onClick={() => { if (browserMode) bPlayFrom(i); else seekLine(i); }}
                     className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${(browserMode ? bSeg === i : curLine === i) ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
                     {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                     <span className="flex-1"><InlineMd text={s.text} /></span>
