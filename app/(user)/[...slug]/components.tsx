@@ -971,6 +971,11 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   );
 }
 
+// 가이드 멘트(exam directions) — "Questions 31 through 33 refer to..." 류. 오디오엔 낭독되고 스크립트엔
+// 보이지만, 받아쓰기 채점·노래방 현재위치 하이라이트에선 제외(실제 시험처럼 안내문은 받아쓰지 않음).
+const lineIsGuide = (l: any) => !!(l?.guide ?? l?.instruction ?? l?.narration ?? l?.directions);
+const lcNorm = (t: string) => String(t || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
 function ListeningComp({ title, audioUrl, image, script, questions, browserTts, mode, view = 'interactive' }: {
   title?: string | null; audioUrl?: string | null; image?: string | null; script?: any; questions?: any; browserTts?: boolean; mode?: string; view?: QuizView;
 }) {
@@ -1023,16 +1028,19 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       : [];
   // 문장 단위 세그먼트 — 클릭 재생 granular(담화 한 문단도 문장별로 쪼갬). speaker 는 turn 첫 문장에만.
   const segments = useMemo(() => {
-    const segs: Array<{ text: string; speaker?: string; start?: number }> = [];
+    const segs: Array<{ text: string; speaker?: string; start?: number; guide?: boolean }> = [];
     for (const l of effectiveLines as any[]) {
       const raw = String(l.text ?? l.line ?? '').trim();
       if (!raw) continue;
+      const g = lineIsGuide(l);
       const parts = raw.split(/(?<=[.!?])\s+(?=[A-Z"'(])/).map((s) => s.trim()).filter(Boolean);
       const list = parts.length ? parts : [raw];
-      list.forEach((s, si) => segs.push({ text: s, speaker: si === 0 ? (l.speaker ?? l.role) : undefined, start: si === 0 ? l.start : undefined }));
+      list.forEach((s, si) => segs.push({ text: s, speaker: si === 0 ? (l.speaker ?? l.role) : undefined, start: si === 0 ? l.start : undefined, guide: g }));
     }
     return segs;
   }, [effectiveLines]);
+  // 가이드 줄 텍스트 집합 — LRC 사이드카 줄 매칭용(사이드카엔 guide 플래그 없으니 텍스트로 식별).
+  const guideLineTexts = useMemo(() => new Set((effectiveLines as any[]).filter(lineIsGuide).map((l) => lcNorm(String(l.text ?? l.line ?? '')))), [effectiveLines]);
   // 세그먼트별 시작 시각 — start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 문장 하이라이트용.
   const lineStarts = useMemo(() => {
     if (segments.some((s) => typeof s.start === 'number')) return segments.map((s) => (typeof s.start === 'number' ? s.start! : 0));
@@ -1076,7 +1084,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     return () => cancelAnimationFrame(raf);
   }, [lrc]);
   // 받아쓰기 채점 결과 — 확인 눌렀을 때만 계산(스크립트 전체 vs typed).
-  const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
+  const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.filter((s) => !s.guide).map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
   // 속도·볼륨 바꾸면 현재 문장을 새 설정으로 재시작+이어감(전체 처음 X). onboundary 모바일 불안정이라 문장 단위.
   const bPlayFrom = (idx: number) => {
@@ -1164,7 +1172,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                 {lrc ? lrc.map((ln, i) => {
                   // 현재 재생 줄 = 연한 박스 + 진한 fill 이 왼→오로 **한 줄 연속 sweep**.
                   // fill 위치 = 단어 타이밍으로 계산(말하는 단어까지 글자 비례로 차오름) → 끊김 없이
-                  // 부드럽되 단어 정확. 단어 탭 = 그 단어부터 재생. (STT=gemini-pro 라 단어 정확.)
+                  // 부드럽되 단어 정확. 단어 탭 = 그 단어부터 재생. (사이드카 = Whisper 정렬일 때만 생성 — 정밀.
+                  //  Gemini 는 단어 정렬 불안정이라 사이드카 없이 글자수 추정 fallback 으로 감.)
+                  // 가이드 안내문(예: "Questions 31 through 33 refer to...") = 음소거 표시(하이라이트·fill 제외).
+                  const guide = guideLineTexts.has(lcNorm(ln.text));
+                  if (guide) return (
+                    <div key={i} className="rounded px-1.5 py-1 text-[12px] sm:text-[13px] italic text-slate-400 leading-relaxed">{ln.text}</div>
+                  );
                   const active = curLrc === i;
                   const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
                   let fillPct = 0;
@@ -1195,11 +1209,15 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                     </div>
                   );
                 }) : segments.map((s, i: number) => (
+                  s.guide ? (
+                    <div key={i} className="px-1.5 py-1 text-[12px] sm:text-[13px] italic text-slate-400 leading-relaxed">{s.text}</div>
+                  ) : (
                   <button key={i} type="button" onClick={() => { if (browserMode) bPlayFrom(i); else seekLine(i); }}
                     className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${(browserMode ? bSeg === i : curLine === i) ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
                     {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                     <span className="flex-1"><InlineMd text={s.text} /></span>
                   </button>
+                  )
                 ))}
               </div>
             </div>
