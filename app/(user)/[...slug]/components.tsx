@@ -949,6 +949,20 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
+  // LRC 정렬 — tts 가 저장한 sidecar(audioUrl + ".lrc.json"). 줄별 [start,end] + 단어별 시각.
+  // 있으면 현재 문장 박스 + fill 와이프 + 단어 클릭 seek(정확). 없으면 글자수 추정 fallback.
+  type LrcLine = { speaker?: string | null; text: string; start: number; end: number; words?: Array<{ word: string; start: number; end: number }> };
+  const [lrc, setLrc] = useState<LrcLine[] | null>(null);
+  useEffect(() => {
+    setLrc(null);
+    if (!audioUrl) return;
+    let alive = true;
+    fetch(`${audioUrl}.lrc.json`)
+      .then((r) => (r.ok ? r.text() : Promise.reject()))
+      .then((t) => { const arr = JSON.parse(t); if (alive && Array.isArray(arr) && arr.length) setLrc(arr); })
+      .catch(() => { /* 정렬 없음 — 추정 fallback */ });
+    return () => { alive = false; };
+  }, [audioUrl]);
   const isStatic = view !== 'interactive';
   // 시험 모드(mode='exam') = 1회청취(속도·반복·받아쓰기 숨김). 기본 = 학습(study, 전 기능). AI 가 page 발행 등에서 'exam' 지정.
   const isStudy = mode !== 'exam';
@@ -1005,6 +1019,15 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     return idx;
   }, [cur, lineStarts]);
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
+  // LRC 임의 시각 seek(단어 클릭) — 그 시각으로 이동 + 재생 시작.
+  const seekTo = (t: number) => { const a = audioRef.current; if (a && isFinite(t)) { a.currentTime = t; if (a.paused) void a.play(); } };
+  // LRC 현재 줄 — start≤cur<end (정확). 단어 클릭/줄 fill 의 활성 줄.
+  const curLrc = useMemo(() => {
+    if (!lrc) return -1;
+    let idx = -1;
+    for (let i = 0; i < lrc.length; i++) if (cur >= lrc[i].start - 0.15) idx = i;
+    return idx;
+  }, [cur, lrc]);
   // 받아쓰기 채점 결과 — 확인 눌렀을 때만 계산(스크립트 전체 vs typed).
   const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
@@ -1087,9 +1110,28 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
           )}
           {showScript && (
             <div className="rounded-lg border border-[#d9cdae] p-2.5">
-              <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
-              <div className="flex flex-col">
-                {segments.map((s, i: number) => (
+              <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· {lrc ? '단어를 탭하면 그 단어부터 재생' : '줄을 탭하면 그 구간부터 재생'}</span></div>
+              <div className="flex flex-col gap-0.5">
+                {lrc ? lrc.map((ln, i) => {
+                  // 현재 재생 줄만 연한 박스 + 진한 fill 와이프(왼→오). 단어는 클릭 시 그 단어부터 재생.
+                  const active = curLrc === i;
+                  const span = Math.max(ln.end - ln.start, 0.1);
+                  const fillPct = active ? Math.max(0, Math.min(((cur - ln.start) / span) * 100, 100)) : 0;
+                  const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
+                  return (
+                    <div key={i} className={`relative rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
+                      {active && <div className="absolute inset-y-0 left-0 rounded bg-blue-300/40 pointer-events-none transition-[width] duration-200 ease-linear" style={{ width: `${fillPct}%` }} />}
+                      <div className="relative flex gap-1.5">
+                        {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
+                        <span className="flex-1">
+                          {words.map((w, wi) => (
+                            <span key={wi} onClick={() => seekTo(w.start)} className="cursor-pointer rounded hover:bg-blue-200/60 transition-colors">{w.word} </span>
+                          ))}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }) : segments.map((s, i: number) => (
                   <button key={i} type="button" onClick={() => { if (browserMode) bPlayFrom(i); else seekLine(i); }}
                     className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${(browserMode ? bSeg === i : curLine === i) ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
                     {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
