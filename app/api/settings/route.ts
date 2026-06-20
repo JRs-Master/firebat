@@ -28,7 +28,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     aiAssistantModelRes, aiAssistantModelsRes, aiModelsRes, userPromptRes, lastModelByCategoryRes,
     imageModelRes, imageModelsRes, imageDefaultSizeRes, imageDefaultQualityRes,
     anthropicCacheEnabledRes, subAgentEnabledRes, uiLangRes,
-    ttsProviderRes, ttsModelRes, ttsVoiceRes,
+    ttsProviderRes, ttsModelRes, ttsVoiceRes, ttsAlignRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone(),
@@ -49,6 +49,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     getGeminiKey({ key: 'system:tts:provider' }),
     getGeminiKey({ key: 'system:tts:model' }),
     getGeminiKey({ key: 'system:tts:voice' }),
+    getGeminiKey({ key: 'system:tts:align_provider' }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -75,6 +76,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     ttsProvider: ttsProviderRes.ok ? (ttsProviderRes.data || '') : '',
     ttsModel: ttsModelRes.ok ? (ttsModelRes.data || '') : '',
     ttsVoice: ttsVoiceRes.ok ? (ttsVoiceRes.data || '') : '',
+    ttsAlignProvider: ttsAlignRes.ok ? (ttsAlignRes.data || '') : '',
   });
 });
 
@@ -132,6 +134,9 @@ export const PATCH = withAuth(async (req: NextRequest) => {
   }
   if (typeof body.ttsVoice === 'string') {
     await setGeminiKey({ key: 'system:tts:voice', value: body.ttsVoice });
+  }
+  if (typeof body.ttsAlignProvider === 'string') {
+    await setGeminiKey({ key: 'system:tts:align_provider', value: body.ttsAlignProvider });
   }
 
   return NextResponse.json({ success: true });

@@ -228,9 +228,18 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     voice: String::new(),
                     speakers,
                     style,
+                    align: true, // listening 오디오 — LRC 정렬(노래방·단어 seek)
                 };
                 let result = tts.synthesize(&req).await?;
                 let url = media.save_conv_attachment(&conv, &name, &result.audio).await?;
+                // LRC sidecar — 단어별 타임스탬프(정독 노래방 fill·단어 클릭 seek). 컴포넌트가
+                // audioUrl + ".lrc.json" 으로 유도해 fetch. best-effort(정렬 실패 시 줄 0 → 미저장).
+                if !result.lines.is_empty() {
+                    if let Ok(json) = serde_json::to_vec(&result.lines) {
+                        let lrc_name = format!("{name}.lrc.json");
+                        let _ = media.save_conv_attachment(&conv, &lrc_name, &json).await;
+                    }
+                }
                 Ok(serde_json::json!({ "url": url, "cached": false }))
             }
         }),

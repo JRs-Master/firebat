@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::Engine;
-use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsRequest, TtsResult};
+use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsLine, TtsRequest, TtsResult, TtsWord};
 
 pub struct TtsAdapter {
     vault: Arc<dyn IVaultPort>,
@@ -166,6 +166,7 @@ impl TtsAdapter {
             audio,
             content_type: "audio/mpeg".to_string(),
             ext: "mp3".to_string(),
+            lines: Vec::new(),
         })
     }
 
@@ -255,7 +256,196 @@ impl TtsAdapter {
             audio: pcm_to_wav(&pcm, 24000, 1, 16),
             content_type: "audio/wav".to_string(),
             ext: "wav".to_string(),
+            lines: Vec::new(),
         })
+    }
+
+    /// LRC 정렬 — 합성된 오디오를 STT(타임스탬프)로 전사 → 단어별 시각 → 스크립트 줄에 매핑.
+    /// best-effort: STT 키 없음/실패 시 빈 Vec (컴포넌트가 글자수 비례 추정으로 fallback).
+    /// provider 선택 = Whisper(OpenAI, 단어 정밀) 우선 → 없으면 Gemini STT. TTS provider 와 독립.
+    async fn align(&self, audio: &[u8], content_type: &str, req: &TtsRequest) -> Vec<TtsLine> {
+        // 스크립트를 줄(turn) 단위로 — "Name: utterance" 면 speaker/utterance 분리.
+        let parsed: Vec<(Option<String>, String)> = req
+            .text
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                if !req.speakers.is_empty() {
+                    if let Some((a, b)) = l.split_once(':') {
+                        let spk = a.trim();
+                        if req.speakers.iter().any(|s| s.speaker.eq_ignore_ascii_case(spk)) {
+                            return (Some(spk.to_string()), b.trim().to_string());
+                        }
+                    }
+                }
+                (None, l.to_string())
+            })
+            .filter(|(_, t)| !t.is_empty())
+            .collect();
+        if parsed.is_empty() {
+            return Vec::new();
+        }
+        // 단어별 타임스탬프 전사 (Whisper 우선, 없으면 Gemini). 실패 = 빈 → fallback.
+        let words = self.transcribe_words(audio, content_type).await;
+        if words.is_empty() {
+            return Vec::new();
+        }
+        // 순차 매핑 — 스크립트 줄 = 오디오 순서. 각 줄의 발화 단어 수만큼 전사 단어를 소비.
+        // (구두점/병합 차이로 미세 드리프트 가능하나 깨끗한 합성음 + 알려진 순서라 충분.)
+        let mut idx = 0usize;
+        let mut out: Vec<TtsLine> = Vec::with_capacity(parsed.len());
+        for (speaker, text) in parsed {
+            let n = text.split_whitespace().count().max(1);
+            if idx >= words.len() {
+                break;
+            }
+            let take = n.min(words.len() - idx);
+            let slice = &words[idx..idx + take];
+            idx += take;
+            let start = slice.first().map(|w| w.start).unwrap_or(0.0);
+            let end = slice.last().map(|w| w.end).unwrap_or(start);
+            out.push(TtsLine {
+                speaker,
+                text,
+                start,
+                end,
+                words: slice.to_vec(),
+            });
+        }
+        out
+    }
+
+    /// 단어별 타임스탬프 전사 — 설정 `system:tts:align_provider`(openai/gemini/빈=auto) 따름.
+    /// auto = Whisper(OpenAI, 정밀) 우선 → 없으면 Gemini. 명시 provider 면 그것만(키 없으면 빈→fallback).
+    async fn transcribe_words(&self, audio: &[u8], content_type: &str) -> Vec<TtsWord> {
+        let pref = self
+            .first_secret(&["system:tts:align_provider"])
+            .unwrap_or_default();
+        let has_openai = self
+            .first_secret(&["system:openai:api-key", "OPENAI_API_KEY"])
+            .is_some();
+        let has_gemini = self
+            .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
+            .is_some();
+        if pref == "openai" {
+            if has_openai {
+                if let Ok(w) = self.whisper_words(audio, content_type).await {
+                    return w;
+                }
+            }
+            return Vec::new();
+        }
+        if pref == "gemini" {
+            if has_gemini {
+                if let Ok(w) = self.gemini_words(audio, content_type).await {
+                    return w;
+                }
+            }
+            return Vec::new();
+        }
+        // auto — Whisper 우선(정밀), 실패/없으면 Gemini.
+        if has_openai {
+            if let Ok(w) = self.whisper_words(audio, content_type).await {
+                if !w.is_empty() {
+                    return w;
+                }
+            }
+        }
+        if has_gemini {
+            if let Ok(w) = self.gemini_words(audio, content_type).await {
+                return w;
+            }
+        }
+        Vec::new()
+    }
+
+    /// OpenAI Whisper — `/v1/audio/transcriptions` verbose_json + word 타임스탬프(정밀).
+    async fn whisper_words(&self, audio: &[u8], content_type: &str) -> InfraResult<Vec<TtsWord>> {
+        let key = self
+            .first_secret(&["system:openai:api-key", "OPENAI_API_KEY"])
+            .ok_or("OpenAI 키 없음")?;
+        let ext = if content_type.contains("wav") { "wav" } else { "mp3" };
+        let part = reqwest::multipart::Part::bytes(audio.to_vec())
+            .file_name(format!("audio.{ext}"))
+            .mime_str(content_type)
+            .map_err(|e| format!("whisper part: {e}"))?;
+        let form = reqwest::multipart::Form::new()
+            .text("model", "whisper-1")
+            .text("response_format", "verbose_json")
+            .text("timestamp_granularities[]", "word")
+            .part("file", part);
+        let resp = self
+            .client
+            .post("https://api.openai.com/v1/audio/transcriptions")
+            .header("Authorization", format!("Bearer {key}"))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| format!("whisper 요청: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("whisper {}", resp.status()));
+        }
+        let json: serde_json::Value = resp.json().await.map_err(|e| format!("whisper 파싱: {e}"))?;
+        Ok(json["words"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|w| {
+                        Some(TtsWord {
+                            word: w.get("word")?.as_str()?.trim().to_string(),
+                            start: w.get("start")?.as_f64()?,
+                            end: w.get("end")?.as_f64().unwrap_or(0.0),
+                        })
+                    })
+                    .filter(|w| !w.word.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// Gemini STT — generateContent 에 오디오 + "단어별 타임스탬프 JSON" 요청(덜 정밀, fallback).
+    async fn gemini_words(&self, audio: &[u8], content_type: &str) -> InfraResult<Vec<TtsWord>> {
+        let key = self
+            .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
+            .ok_or("Gemini 키 없음")?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(audio);
+        let body = serde_json::json!({
+            "contents": [{ "parts": [
+                { "inlineData": { "mimeType": content_type, "data": b64 } },
+                { "text": "Transcribe this audio. Output ONLY a JSON array of every spoken word in order with timings in seconds: [{\"word\":\"...\",\"start\":0.0,\"end\":0.0}]. No markdown, no commentary." }
+            ]}],
+            "generationConfig": { "responseModalities": ["TEXT"], "responseMimeType": "application/json" }
+        });
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        let resp = self
+            .client
+            .post(url)
+            .header("x-goog-api-key", &key)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("gemini STT 요청: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("gemini STT {}", resp.status()));
+        }
+        let json: serde_json::Value = resp.json().await.map_err(|e| format!("gemini STT 파싱: {e}"))?;
+        let text = json["candidates"][0]["content"]["parts"][0]["text"]
+            .as_str()
+            .unwrap_or("[]");
+        let arr: Vec<serde_json::Value> = serde_json::from_str(text).unwrap_or_default();
+        Ok(arr
+            .iter()
+            .filter_map(|w| {
+                Some(TtsWord {
+                    word: w.get("word")?.as_str()?.trim().to_string(),
+                    start: w.get("start")?.as_f64()?,
+                    end: w.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                })
+            })
+            .filter(|w| !w.word.is_empty())
+            .collect())
     }
 }
 
@@ -301,11 +491,18 @@ impl ITtsPort for TtsAdapter {
                 *i += 1;
             }
         }
-        match req.provider.as_str() {
-            "openai" => self.openai(&req).await,
-            "gemini" => self.gemini(&req).await,
-            other => Err(format!("알 수 없는 TTS provider: {other}")),
+        let mut result = match req.provider.as_str() {
+            "openai" => self.openai(&req).await?,
+            "gemini" => self.gemini(&req).await?,
+            other => return Err(format!("알 수 없는 TTS provider: {other}")),
+        };
+        // LRC 정렬 — 합성된 오디오를 STT(타임스탬프)로 전사 → 단어별 시각. best-effort: 실패 시 빈 lines
+        // (컴포넌트가 글자수 비례 추정으로 graceful fallback). 정독 노래방 fill·단어 클릭 seek 의 소스.
+        // 샘플 미리듣기(align=false)는 짧은 문장이라 정렬 불필요(STT 콜 낭비 회피).
+        if req.align {
+            result.lines = self.align(&result.audio, &result.content_type, &req).await;
         }
+        Ok(result)
     }
 }
 

@@ -226,6 +226,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [ttsProvider, setTtsProvider] = useState<string>('browser');
   const [ttsModel, setTtsModel] = useState<string>('');
   const [ttsVoice, setTtsVoice] = useState<string>('');
+  // 타임스탬프(자막 동기) provider — '' = 자동(Whisper 우선) / 'openai'(Whisper) / 'gemini'. 키 게이팅.
+  const [ttsAlignProvider, setTtsAlignProvider] = useState<string>('');
   const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   // 보이스 샘플 미리듣기 — 현재 합성 중인 voice id (스피너 표시).
@@ -376,6 +378,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           if (typeof data.ttsProvider === 'string' && data.ttsProvider) setTtsProvider(data.ttsProvider);
           if (typeof data.ttsModel === 'string') setTtsModel(data.ttsModel);
           if (typeof data.ttsVoice === 'string') setTtsVoice(data.ttsVoice);
+          if (typeof data.ttsAlignProvider === 'string') setTtsAlignProvider(data.ttsAlignProvider);
         }
       })
       .catch(() => {});
@@ -742,6 +745,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         ttsProvider,
         ttsModel,
         ttsVoice,
+        ttsAlignProvider,
         lastModelByCategory: nextLastModelByCategory,
       },
       { category: 'settings' },
@@ -1688,6 +1692,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 </div>
                               ))}
                             </div>
+                          </Field>
+                          <Field label={t('settings_modal.tts_align_label')} help={t('settings_modal.tts_align_help')}>
+                            <SegButtons<string>
+                              value={ttsAlignProvider || 'auto'}
+                              onChange={(p) => {
+                                if (p === 'openai' && !hasOpenaiKey) return;
+                                if (p === 'gemini' && !hasGeminiKey) return;
+                                setTtsAlignProvider(p === 'auto' ? '' : p);
+                              }}
+                              options={[
+                                { value: 'auto', label: t('settings_modal.tts_align_auto') },
+                                { value: 'openai', label: hasOpenaiKey ? 'OpenAI (Whisper)' : `OpenAI${t('settings_modal.tts_key_required_suffix')}` },
+                                { value: 'gemini', label: hasGeminiKey ? 'Gemini' : `Gemini${t('settings_modal.tts_key_required_suffix')}` },
+                              ]}
+                            />
                           </Field>
                         </>
                       ) : null}

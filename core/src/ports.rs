@@ -2470,6 +2470,8 @@ pub struct TtsRequest {
     /// 전역 말투/억양 지시(단일 화자 또는 공통). OpenAI instructions / Gemini 프롬프트 스타일.
     /// 억양은 free-text(예: "American accent" / "British accent") — 하드코딩 enum 아님, AI 가 시험별 배정.
     pub style: Option<String>,
+    /// LRC 정렬(STT 타임스탬프) 수행 여부 — listening 오디오=true(노래방·단어 seek), 샘플 미리듣기=false(낭비 회피).
+    pub align: bool,
 }
 
 /// 멀티스피커 화자 설정 — 토익 등 화자별 억양·성별 다름.
@@ -2483,12 +2485,31 @@ pub struct TtsSpeaker {
     pub gender: Option<String>,
 }
 
-/// TTS 결과 — 오디오 + 포맷.
+/// LRC 단어 — 정렬(STT)이 채운 단어별 타임스탬프(초). 노래방 fill·단어 클릭 seek 용.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TtsWord {
+    pub word: String,
+    pub start: f64,
+    pub end: f64,
+}
+
+/// LRC 줄 — 줄(turn)별 타이밍 + 단어 배열. 현재 문장 박스/fill = start~end, 단어 클릭 seek = words[].start.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TtsLine {
+    pub speaker: Option<String>,
+    pub text: String,
+    pub start: f64,
+    pub end: f64,
+    pub words: Vec<TtsWord>,
+}
+
+/// TTS 결과 — 오디오 + 포맷 + (선택) LRC 정렬 줄. lines 비었으면 정렬 못 함(컴포넌트는 추정 fallback).
 #[derive(Debug, Clone)]
 pub struct TtsResult {
     pub audio: Vec<u8>,
     pub content_type: String, // audio/mpeg | audio/wav
     pub ext: String,          // mp3 | wav
+    pub lines: Vec<TtsLine>,
 }
 
 /// ITtsPort — text-to-speech 합성. LC(리스닝) 오디오 생성용. provider API 호출(키는 adapter 가
