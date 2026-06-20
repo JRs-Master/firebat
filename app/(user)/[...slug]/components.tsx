@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef, useId } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -828,40 +828,124 @@ function ConceptComp({ title, intro, steps, example, misconception, check }: {
 // ── Listening (LC 리스닝) — 오디오 재생 + 스크립트 가림(받아쓰기) + 문제(QuizBody 재사용) ──────
 // 오디오 = cloud TTS mp3(audioUrl, tts sysmod 가 conv-scoped 저장). 문제는 quiz 와 동일 렌더(MC/OX/TFNG).
 // quiz_group 의 audio 판 — passage 대신 audio + 스크립트 가림.
+// 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
+// (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
+function ListeningPlayer({ src, audioRef, onTime, onDur }: {
+  src: string;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+  onTime: (t: number) => void;
+  onDur: (d: number) => void;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [vol, setVol] = useState(1);
+  const [loop, setLoop] = useState(false);
+  const [abA, setAbA] = useState<number | null>(null);
+  const [abB, setAbB] = useState<number | null>(null);
+  useEffect(() => {
+    const a = audioRef.current; if (!a) return;
+    const onT = () => {
+      setCur(a.currentTime); onTime(a.currentTime);
+      if (abA != null && abB != null && abB > abA && a.currentTime >= abB) a.currentTime = abA; // A-B 구간반복
+    };
+    const onMeta = () => { setDur(a.duration || 0); onDur(a.duration || 0); };
+    const onEnd = () => { if (!a.loop) setPlaying(false); };
+    a.addEventListener('timeupdate', onT); a.addEventListener('loadedmetadata', onMeta); a.addEventListener('ended', onEnd);
+    return () => { a.removeEventListener('timeupdate', onT); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd); };
+  }, [audioRef, abA, abB, onTime, onDur]);
+  useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
+  useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
+  const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); } };
+  const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); const x = Math.floor(s % 60); return `${m}:${x.toString().padStart(2, '0')}`; };
+  const pill = (on: boolean) => `px-1.5 py-0.5 rounded leading-none transition-colors ${on ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`;
+  return (
+    <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5">
+      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{playing ? '❚❚' : '▶'}</button>
+        <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
+        <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
+        <span className="text-slate-400">속도</span>
+        {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
+        <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
+        <span className="text-slate-400 ml-1">구간</span>
+        <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
+        <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
+        {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+        <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
+        <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
+      </div>
+    </div>
+  );
+}
+
 function ListeningComp({ title, audioUrl, script, questions, view = 'interactive' }: {
   title?: string | null; audioUrl?: string | null; script?: any; questions?: any; view?: QuizView;
 }) {
-  const [showScript, setShowScript] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [cur, setCur] = useState(0);
+  const [dur, setDur] = useState(0);
+  const isStatic = view !== 'interactive';
+  const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
+  const [dictation, setDictation] = useState(false);
+  const [typed, setTyped] = useState('');
   const [selected, setSelected] = useState<Record<number, number>>({});
-  const [revealed, setRevealed] = useState(false);
+  const [revealed, setRevealed] = useState(isStatic);
   const lines = (Array.isArray(script) ? script : typeof script === 'string' ? script.split('\n').map((t: string) => ({ text: t })) : [])
-    .map((l: any) => (typeof l === 'string' ? { text: l } : l)).filter((l: any) => l && l.text);
+    .map((l: any) => (typeof l === 'string' ? { text: l } : l)).filter((l: any) => l && (l.text || l.line));
   const qs = Array.isArray(questions) ? questions : [];
+  // 줄별 시작 시각 — line.start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 줄 하이라이트용.
+  const lineStarts = useMemo(() => {
+    if (lines.some((l: any) => typeof l.start === 'number')) return lines.map((l: any) => (typeof l.start === 'number' ? l.start : 0));
+    const lens = lines.map((l: any) => ((l.text || l.line || '').length || 1));
+    const total = lens.reduce((a: number, b: number) => a + b, 0) || 1;
+    let acc = 0;
+    return lens.map((len: number) => { const s = (acc / total) * dur; acc += len; return s; });
+  }, [lines, dur]);
+  const curLine = useMemo(() => {
+    let idx = -1;
+    for (let i = 0; i < lineStarts.length; i++) if (cur >= lineStarts[i] - 0.2) idx = i;
+    return idx;
+  }, [cur, lineStarts]);
+  const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
-      {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span>🎧</span>{title}</div>}
+      {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {audioUrl
-        ? <audio controls src={audioUrl} className="w-full" />
+        ? <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
         : <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>}
       {lines.length > 0 && (
         <div className="mt-3">
-          {showScript ? (
-            <div className="rounded-lg border border-[#d9cdae] p-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-indigo-500">스크립트</span>
-                <button type="button" onClick={() => setShowScript(false)} className="text-[11px] font-semibold text-slate-400 transition-colors hover-blue">숨기기</button>
-              </div>
-              <div className="flex flex-col gap-1 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
+          {!isStatic && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
+              <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>
+              <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
+              <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>
+            </div>
+          )}
+          {dictation && !isStatic && (
+            <textarea value={typed} onChange={(e) => setTyped(e.target.value)} rows={3} placeholder="들은 내용을 적어보세요... (듣기 → 적기 → 스크립트로 확인)"
+              className="w-full mb-2 rounded-lg border border-[#d9cdae] bg-white/60 px-2.5 py-2 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed resize-y focus:outline-none focus:border-blue-400" />
+          )}
+          {showScript && (
+            <div className="rounded-lg border border-[#d9cdae] p-2.5">
+              <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
+              <div className="flex flex-col">
                 {lines.map((l: any, i: number) => (
-                  <div key={i} className="flex gap-1.5">
-                    {l.speaker && <span className="font-bold text-slate-500 shrink-0">{l.speaker}:</span>}
-                    <span className="flex-1"><InlineMd text={l.text} /></span>
-                  </div>
+                  <button key={i} type="button" onClick={() => seekLine(i)}
+                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${curLine === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
+                    {(l.speaker || l.role) && <span className="font-bold text-slate-500 shrink-0">{l.speaker ?? l.role}:</span>}
+                    <span className="flex-1"><InlineMd text={l.text ?? l.line} /></span>
+                  </button>
                 ))}
               </div>
             </div>
-          ) : (
-            <button type="button" onClick={() => setShowScript(true)} className="text-[12px] font-medium text-slate-400 transition-colors hover-blue">스크립트 보기 (받아쓰기 후 확인) ▸</button>
           )}
         </div>
       )}
