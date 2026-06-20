@@ -110,7 +110,12 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
     case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
-    case 'Quiz':          return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} type={p.type ?? p.format ?? p.quizType} view={p.view} />;
+    case 'Quiz':
+      // AI 가 quiz(단일)에 questions 배열(복수)을 넣으면 quiz_group 으로 위임 — quiz=단일/quiz_group=복수
+      // 혼동 흡수(QuizComp 는 questions 를 무시해 빈 박스가 됐던 root). single question 은 그대로 QuizComp.
+      if (Array.isArray(p.questions) && p.questions.length > 0)
+        return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions} type={p.type ?? p.format} view={p.view} />;
+      return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} type={p.type ?? p.format ?? p.quizType} view={p.view} />;
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} type={p.type ?? p.format} view={p.view} />;
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
