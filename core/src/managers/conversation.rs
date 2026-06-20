@@ -511,54 +511,33 @@ fn message_to_text(msg: &serde_json::Value) -> Option<ParsedMessage> {
         return None;
     }
 
-    // 1. content 최우선
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. content (X: render fence 가 content 에 상주) → 텍스트 값만 추출(임베딩이 raw JSON 안 먹게).
     if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-        if !content.trim().is_empty() {
-            // firebat-render fence(X: render 가 content 에 상주) → 텍스트 값만 추출(임베딩이 raw JSON 안 먹게).
-            return Some(ParsedMessage {
-                role,
-                text: crate::managers::ai::render_exec::fence_to_plaintext(content),
-            });
+        let t = crate::managers::ai::render_exec::fence_to_plaintext(content);
+        if !t.trim().is_empty() {
+            parts.push(t);
         }
     }
 
-    // 2. blocks 의 text / Image 메타 추출 — 일반 로직 (모든 Image 동등 처리, AI 생성/업로드 무관)
-    let mut parts: Vec<String> = Vec::new();
+    // 2. data.blocks — block(render 도구) 경로 render 도 메모리·회상에 잡히게 content 와 병합.
+    //    fence 가 주 경로지만 html/code/math/diagram 등은 block 으로 남아, 옛 content-first early-return
+    //    이 그 리치 콘텐츠를 메모리에서 빠뜨리던 구멍을 일반 직렬화로 메운다(기억상실 보완).
     if let Some(blocks) = obj
         .get("data")
         .and_then(|d| d.get("blocks"))
         .and_then(|b| b.as_array())
     {
         for b in blocks {
-            let Some(bo) = b.as_object() else { continue };
-            let block_type = bo.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            match block_type {
-                "text" => {
-                    if let Some(t) = bo.get("text").and_then(|v| v.as_str()) {
-                        if !t.trim().is_empty() {
-                            parts.push(t.to_string());
-                        }
-                    }
+            if let Some(t) = block_to_text(b) {
+                if !t.trim().is_empty() {
+                    parts.push(t);
                 }
-                "Image" => {
-                    // 일반 로직: alt / prompt / filenameHint 합쳐 [이미지] prefix
-                    let mut img_parts: Vec<String> = Vec::new();
-                    for k in ["alt", "prompt", "filenameHint"] {
-                        if let Some(v) = bo.get(k).and_then(|v| v.as_str()) {
-                            let trimmed = v.trim();
-                            if !trimmed.is_empty() {
-                                img_parts.push(trimmed.to_string());
-                            }
-                        }
-                    }
-                    if !img_parts.is_empty() {
-                        parts.push(format!("[이미지] {}", img_parts.join(" ")));
-                    }
-                }
-                _ => {}
             }
         }
     }
+
     if !parts.is_empty() {
         return Some(ParsedMessage {
             role,
@@ -575,6 +554,80 @@ fn message_to_text(msg: &serde_json::Value) -> Option<ParsedMessage> {
     }
 
     None
+}
+
+/// 단일 render 블록 → 메모리/회상용 텍스트. 타입별 하드코딩 없이 일반 추출:
+/// text=본문 / Image=마커+메타 / 큰 raw 아티팩트(html/code/math/diagram/mermaid)=마커만(원본
+/// 마크업·코드·수식은 임베딩 노이즈) / 그 외 리치 컴포넌트(sentence/table/quiz 등)=props 의 prose
+/// string 값을 일반 수집.
+fn block_to_text(b: &serde_json::Value) -> Option<String> {
+    let bo = b.as_object()?;
+    let block_type = bo.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    match block_type {
+        "text" => bo
+            .get("text")
+            .and_then(|v| v.as_str())
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| t.to_string()),
+        "Image" | "image" => {
+            let mut img_parts: Vec<String> = Vec::new();
+            for k in ["alt", "prompt", "filenameHint"] {
+                if let Some(v) = bo.get(k).and_then(|v| v.as_str()) {
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        img_parts.push(trimmed.to_string());
+                    }
+                }
+            }
+            if img_parts.is_empty() {
+                Some("[이미지]".to_string())
+            } else {
+                Some(format!("[이미지] {}", img_parts.join(" ")))
+            }
+        }
+        // 큰 raw 아티팩트 — 원본은 임베딩 노이즈라 마커만(회상은 보통 주변 산문으로 충분).
+        "html" | "code" | "math" | "diagram" | "mermaid" => Some(format!("[{block_type}]")),
+        // 리치 컴포넌트 — props 의 prose string 값 일반 수집(타입별 하드코딩 0).
+        _ => {
+            let mut acc: Vec<String> = Vec::new();
+            collect_prose(b, &mut acc);
+            if acc.is_empty() {
+                None
+            } else {
+                Some(acc.join(" "))
+            }
+        }
+    }
+}
+
+/// 객체/배열을 재귀하며 prose string 값만 수집. 구조·비텍스트 키(type/name/url/색 등)는 제외.
+fn collect_prose(v: &serde_json::Value, acc: &mut Vec<String>) {
+    const SKIP_KEYS: &[&str] = &[
+        "type", "name", "url", "src", "href", "color", "icon", "id", "slug", "variant", "lang",
+        "language",
+    ];
+    match v {
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if !t.is_empty() {
+                acc.push(t.to_string());
+            }
+        }
+        serde_json::Value::Array(a) => {
+            for x in a {
+                collect_prose(x, acc);
+            }
+        }
+        serde_json::Value::Object(m) => {
+            for (k, x) in m {
+                if SKIP_KEYS.contains(&k.as_str()) {
+                    continue;
+                }
+                collect_prose(x, acc);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// `sha1(version:text)` → hex. 옛 TS 와 동일 (모델 교체 시 cache 자동 무효화).
