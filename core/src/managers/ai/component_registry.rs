@@ -330,8 +330,8 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept(이론 설명) = 39.
-        assert_eq!(comps.len(), 39, "components.json 의 39개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept + listening(LC) = 40.
+        assert_eq!(comps.len(), 40, "components.json 의 40개 컴포넌트 모두 설정되어야");
     }
 
     #[test]

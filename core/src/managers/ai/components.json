@@ -1111,6 +1111,27 @@
     }
   },
   {
+    "name": "listening",
+    "componentType": "Listening",
+    "description": "Listening-comprehension card (LC 리스닝 — 토익·토플·IELTS·지텔프·텝스·수능). Audio player + hide-then-reveal transcript (받아쓰기/dictation, speaker labels) + questions (reuses the quiz renderer — MC, ox, tfng all work). Like quiz_group but with audio instead of a text passage. audioUrl = a cloud-TTS-generated mp3 (the tts sysmod produces it, conversation-scoped). Provide script (transcript lines) + questions; the component plays + reveals + grades. Cream study paper. (Audio generation is the tts sysmod's job — this component only plays the URL.)",
+    "semanticText": "리스닝 듣기 LC listening comprehension 토익 토플 IELTS 아이엘츠 지텔프 텝스 수능 오디오 받아쓰기 dictation 스크립트 transcript 대화 담화 멀티스피커 음성 듣기평가 audio 청해",
+    "propsSchema": {
+      "type": "object",
+      "synonyms": { "transcript": "script", "lines": "script", "audio": "audioUrl", "url": "audioUrl", "quizzes": "questions", "items": "questions" },
+      "properties": {
+        "title": { "type": ["string", "null"] },
+        "audioUrl": { "type": ["string", "null"], "description": "the mp3 URL (cloud TTS, conversation-scoped via the tts sysmod). Omit while audio is being generated → shows a 'generating' placeholder." },
+        "script": {
+          "type": ["array", "null"],
+          "items": { "type": "object", "synonyms": { "spk": "speaker", "name": "speaker", "line": "text", "en": "text" }, "properties": { "speaker": { "type": ["string", "null"], "description": "speaker label M/W/A/B (multi-speaker dialogue)" }, "text": { "type": "string" } } },
+          "description": "transcript lines (받아쓰기 — hidden until the learner taps to check after dictation). Each: text + optional speaker label. Also accepts an array of plain strings."
+        },
+        "questions": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "options": "choices" }, "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "choices": { "type": ["array", "null"], "items": { "type": "string" } }, "answer": { "type": ["number", "string", "null"] }, "answerIndex": { "type": ["number", "null"] }, "type": { "type": ["string", "null"] }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "questions about the audio (same shape as quiz_group questions — MC choices, or type:'ox'/'tfng', answer, explanation)." },
+        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",

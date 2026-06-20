@@ -59,6 +59,7 @@ const TYPE_ALIAS: Record<string, string> = {
   vocab: 'Vocab', vocabulary: 'Vocab', wordlist: 'Vocab', flashcards: 'Vocab', flashcard: 'Vocab',
   passage: 'Passage', reading: 'Passage', reading_comprehension: 'Passage',
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
+  listening: 'Listening', lc: 'Listening',
 };
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
@@ -115,6 +116,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
+    case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -822,6 +824,64 @@ function ConceptComp({ title, intro, steps, example, misconception, check }: {
       {example && example.problem && example.solution && <ConceptExample problem={example.problem} solution={example.solution} />}
       {misconception && misconception.wrong && misconception.right && <ConceptMisconception wrong={misconception.wrong} right={misconception.right} />}
       {check && check.question && check.answer && <ConceptCheck question={check.question} answer={check.answer} />}
+    </div>
+  );
+}
+
+// ── Listening (LC 리스닝) — 오디오 재생 + 스크립트 가림(받아쓰기) + 문제(QuizBody 재사용) ──────
+// 오디오 = cloud TTS mp3(audioUrl, tts sysmod 가 conv-scoped 저장). 문제는 quiz 와 동일 렌더(MC/OX/TFNG).
+// quiz_group 의 audio 판 — passage 대신 audio + 스크립트 가림.
+function ListeningComp({ title, audioUrl, script, questions, view = 'interactive' }: {
+  title?: string | null; audioUrl?: string | null; script?: any; questions?: any; view?: QuizView;
+}) {
+  const [showScript, setShowScript] = useState(false);
+  const [selected, setSelected] = useState<Record<number, number>>({});
+  const [revealed, setRevealed] = useState(false);
+  const lines = (Array.isArray(script) ? script : typeof script === 'string' ? script.split('\n').map((t: string) => ({ text: t })) : [])
+    .map((l: any) => (typeof l === 'string' ? { text: l } : l)).filter((l: any) => l && l.text);
+  const qs = Array.isArray(questions) ? questions : [];
+  return (
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
+      {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span>🎧</span>{title}</div>}
+      {audioUrl
+        ? <audio controls src={audioUrl} className="w-full" />
+        : <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>}
+      {lines.length > 0 && (
+        <div className="mt-3">
+          {showScript ? (
+            <div className="rounded-lg border border-[#d9cdae] p-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-bold text-indigo-500">스크립트</span>
+                <button type="button" onClick={() => setShowScript(false)} className="text-[11px] font-semibold text-slate-400 transition-colors hover-blue">숨기기</button>
+              </div>
+              <div className="flex flex-col gap-1 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">
+                {lines.map((l: any, i: number) => (
+                  <div key={i} className="flex gap-1.5">
+                    {l.speaker && <span className="font-bold text-slate-500 shrink-0">{l.speaker}:</span>}
+                    <span className="flex-1"><InlineMd text={l.text} /></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setShowScript(true)} className="text-[12px] font-medium text-slate-400 transition-colors hover-blue">스크립트 보기 (받아쓰기 후 확인) ▸</button>
+          )}
+        </div>
+      )}
+      {qs.length > 0 && (
+        <div className="flex flex-col gap-4 mt-3">
+          {qs.map((q: any, i: number) => (
+            <QuizBody key={`lq-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
+              choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type} view={view}
+              selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected((s) => ({ ...s, [i]: n }))} />
+          ))}
+          {view === 'interactive' && !revealed && (
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 정답 확인</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
