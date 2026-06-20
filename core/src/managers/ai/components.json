@@ -1031,6 +1031,39 @@
     }
   },
   {
+    "name": "passage",
+    "componentType": "Passage",
+    "description": "Reading-comprehension STUDY card (독해 지문 능동 읽기) for English RC (토익·토플·수능·공무원). Active reading, NOT testing — use quiz_group for questions; passage is the reading-study companion. Features: in-context vocab (the component finds the words in the passage and makes them tap-to-reveal = 맥락 어휘 학습), per-paragraph main idea (요지 — hidden; learner predicts then taps to check, RC's #1 skill), overall thesis/key idea (주제, reveal), full Korean translation (해석, reveal). Renders on cream exam-paper. Evidence-based: vocab-in-context retention + main-idea identification + self-explanation (predict→check). Provide paragraphs (+ optional vocab/keyIdea/translation); the component runs all reading interaction with no backend. Use for 독해 / 지문 읽기 / reading study.",
+    "semanticText": "독해 지문 리딩 reading comprehension RC 영어독해 토익 토플 수능 공무원 텝스 지텔프 능동읽기 직독직해 해석 문단 요지 주제 main idea 단어 맥락 어휘 vocab passage 지문분석 문단요약 글읽기",
+    "propsSchema": {
+      "type": "object",
+      "required": ["paragraphs"],
+      "synonyms": { "text": "paragraphs", "body": "paragraphs", "content": "paragraphs", "words": "vocab", "thesis": "keyIdea", "mainIdea": "keyIdea", "trans": "translation" },
+      "properties": {
+        "title": { "type": ["string", "null"] },
+        "paragraphs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "synonyms": { "para": "text", "english": "text", "eng": "text", "sentence": "text", "point": "mainIdea", "summary": "mainIdea", "idea": "mainIdea", "ko": "mainIdea" },
+            "properties": {
+              "text": { "type": "string", "description": "the paragraph (English)" },
+              "mainIdea": { "type": ["string", "null"], "description": "this paragraph's main point (Korean) — hidden; learner predicts then taps to check (요지 파악)" }
+            }
+          },
+          "description": "the passage split into paragraphs (문단별). Each: text (English) + optional mainIdea (요지, tap-to-reveal). Split at natural paragraph breaks; 1 paragraph is fine for a short passage."
+        },
+        "vocab": {
+          "type": ["array", "null"],
+          "items": { "type": "object", "synonyms": { "en": "word", "term": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "partOfSpeech": "pos" }, "properties": { "word": { "type": "string" }, "pos": { "type": ["string", "null"] }, "meaning": { "type": "string" } } },
+          "description": "key/difficult words in the passage. The component finds each word in the paragraph text and makes that occurrence tap-to-reveal (맥락 어휘 — tap the word in the passage → meaning inline). word + meaning required, pos optional."
+        },
+        "keyIdea": { "type": ["string", "null"], "description": "the passage's overall thesis / main idea (주제 — Korean, tap-to-reveal)" },
+        "translation": { "type": ["string", "null"], "description": "full Korean translation of the passage (해석 — markdown, tap-to-reveal)" }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",

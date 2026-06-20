@@ -57,6 +57,7 @@ const TYPE_ALIAS: Record<string, string> = {
   quiz: 'Quiz', quizgroup: 'QuizGroup', quiz_group: 'QuizGroup',
   sentence: 'Sentence', sentence_analysis: 'Sentence', syntax: 'Sentence',
   vocab: 'Vocab', vocabulary: 'Vocab', wordlist: 'Vocab', flashcards: 'Vocab', flashcard: 'Vocab',
+  passage: 'Passage', reading: 'Passage', reading_comprehension: 'Passage',
 };
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
@@ -111,6 +112,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
+    case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -547,15 +549,15 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
       </div>
 
       {/* 버튼 영역 높이 고정 — 공개 시 채점 버튼이 컨트롤보다 커서 아래가 점프하던 것 방지(min-h reserve) */}
-      <div className="mt-3 min-h-[44px] flex items-center">
+      <div className="mt-3 h-[46px]">
         {revealed ? (
-          <div className="grid grid-cols-3 gap-2 w-full">
-            <button type="button" onClick={() => grade('again')} className="py-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[13px] font-semibold hover:bg-rose-100 transition-colors">모름</button>
-            <button type="button" onClick={() => grade('hard')} className="py-2.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[13px] font-semibold hover:bg-amber-100 transition-colors">애매</button>
-            <button type="button" onClick={() => grade('good')} className="py-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[13px] font-semibold hover:bg-emerald-100 transition-colors">외움</button>
+          <div className="grid grid-cols-3 gap-2 h-full">
+            <button type="button" onClick={() => grade('again')} className="h-full flex items-center justify-center rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[13px] font-semibold hover:bg-rose-100 transition-colors">모름</button>
+            <button type="button" onClick={() => grade('hard')} className="h-full flex items-center justify-center rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[13px] font-semibold hover:bg-amber-100 transition-colors">애매</button>
+            <button type="button" onClick={() => grade('good')} className="h-full flex items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[13px] font-semibold hover:bg-emerald-100 transition-colors">외움</button>
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-4 w-full text-[12px] text-slate-500">
+          <div className="flex items-center justify-center gap-4 h-full text-[12px] text-slate-500">
             <button type="button" onClick={switchDir} className="hover-blue transition-colors font-medium">{dir === 'en2ko' ? '영→한' : '한→영'} 전환</button>
             <button type="button" onClick={shuffle} className="hover-blue transition-colors font-medium">섞기</button>
             <button type="button" onClick={reset} className="hover-blue transition-colors font-medium">처음부터</button>
@@ -616,6 +618,84 @@ function VocabComp({ title, words, mode }: { title?: string | null; words: Vocab
         </div>
       </div>
       {view === 'flashcard' ? <VocabFlashcard list={list} /> : <VocabListView list={list} />}
+    </div>
+  );
+}
+
+// ── Passage (독해 지문 능동 읽기) — 맥락 어휘 탭 + 문단 요지 자가확인 + 주제/해석 reveal ──────
+// 근거: 맥락 어휘 학습(고립 X) / 요지 파악(RC #1 스킬, 예측→확인 자기설명) / 인출. 테스트는 quiz_group.
+// 지문 안 vocab 단어를 찾아 탭-공개로 만든다(맥락에서 뜻 확인).
+function PassageText({ text, vocab }: { text: string; vocab: VocabWord[] }) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  if (!vocab.length) return <>{text}</>;
+  const byLower = new Map(vocab.map((v) => [v.word.toLowerCase(), v]));
+  const escaped = vocab.map((v) => v.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const segs = text.split(new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi'));
+  return (
+    <>
+      {segs.map((seg, i) => {
+        if (i % 2 === 1) {
+          const v = byLower.get(seg.toLowerCase());
+          if (!v) return <span key={i}>{seg}</span>;
+          const isOpen = open.has(i);
+          return (
+            <button key={i} type="button"
+              onClick={(e) => { e.stopPropagation(); setOpen((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; }); (e.currentTarget as HTMLButtonElement).blur(); }}
+              className="underline decoration-dotted decoration-indigo-300 underline-offset-2 font-medium text-slate-800 hover-blue">
+              {seg}{isOpen && <span className="text-indigo-500 text-[0.85em] font-medium"> ({v.meaning})</span>}
+            </button>
+          );
+        }
+        return <span key={i}>{seg}</span>;
+      })}
+    </>
+  );
+}
+function PassageParagraph({ p, vocab }: { p: { text: string; mainIdea?: string | null }; vocab: VocabWord[] }) {
+  const [showIdea, setShowIdea] = useState(false);
+  return (
+    <div className="mb-3.5 last:mb-0">
+      <p className="text-[14px] sm:text-[15px] leading-relaxed text-slate-800"><PassageText text={p.text} vocab={vocab} /></p>
+      {p.mainIdea && (
+        <button type="button" onClick={() => setShowIdea((s) => !s)} className="mt-1.5 text-left text-[12px] font-medium transition-colors hover-blue">
+          {showIdea
+            ? <span className="text-indigo-600">요지 · <InlineMd text={p.mainIdea} /></span>
+            : <span className="text-slate-400">요지 떠올린 뒤 탭하여 확인 ▸</span>}
+        </button>
+      )}
+    </div>
+  );
+}
+function PassageReveal({ label, content, markdown }: { label: string; content: string; markdown?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 pt-3 border-t border-[#eee6d2]">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="text-[12px] font-semibold text-slate-500 transition-colors hover-blue">{label} {open ? '▴' : '▾'}</button>
+      {open && <div className="mt-1.5 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed">{markdown ? <InlineMd text={content} /> : content}</div>}
+    </div>
+  );
+}
+function PassageComp({ title, paragraphs, vocab, keyIdea, translation }: {
+  title?: string | null;
+  paragraphs?: any;
+  vocab?: VocabWord[] | null; keyIdea?: string | null; translation?: string | null;
+}) {
+  // 입력 robust — paragraphs 가 객체배열 / 문자열배열 / 단일 문자열(빈 줄로 분리) 다 수용
+  const arr = Array.isArray(paragraphs)
+    ? paragraphs
+    : typeof paragraphs === 'string'
+      ? (paragraphs as string).split(/\n\n+/).map((t) => ({ text: t }))
+      : [];
+  const paras = arr.map((p: any) => (typeof p === 'string' ? { text: p } : p)).filter((p: any) => p && p.text);
+  const vlist = (Array.isArray(vocab) ? vocab : []).filter((v) => v && v.word);
+  if (paras.length === 0) return null;
+  return (
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
+      {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span>📖</span>{title}</div>}
+      <div>{paras.map((p, i) => <PassageParagraph key={i} p={p} vocab={vlist} />)}</div>
+      {keyIdea && <PassageReveal label="주제" content={keyIdea} />}
+      {translation && <PassageReveal label="해석" content={translation} markdown />}
+      {vlist.length > 0 && <div className="mt-2 text-[10px] text-slate-400">밑줄 단어를 탭하면 뜻이 나와요</div>}
     </div>
   );
 }
