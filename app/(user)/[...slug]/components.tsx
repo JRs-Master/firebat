@@ -1191,6 +1191,11 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
 }) {
   const [selected, setSelected] = useState<number | undefined>(undefined);
   const [revealed, setRevealed] = useState(false);
+  // 빈 quiz(question·choices·statements·boxes 전부 없음) = AI 가 구조화 필드 미채움 → 죽은 박스(질문 0 + 정답확인 버튼만)
+  // 대신 안 띄움(정직). listening 빈 script 와 동일 처리.
+  const hasContent = (question?.trim()?.length ?? 0) > 0
+    || (choices?.length ?? 0) > 0 || (statements?.length ?? 0) > 0 || (boxes?.length ?? 0) > 0;
+  if (!hasContent) return null;
   return (
     <div className="my-2">
       {points != null && (
@@ -1217,7 +1222,9 @@ function QuizGroupComp({ passage, boxes, figures, questions, type, view = 'inter
 }) {
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [revealed, setRevealed] = useState(false);
-  const qs = questions ?? [];
+  const qs = (questions ?? []).filter((q) => q && ((q.question?.trim()?.length ?? 0) > 0 || (q.choices?.length ?? 0) > 0 || (q.options?.length ?? 0) > 0 || (q.statements?.length ?? 0) > 0));
+  // 내용 있는 문항 0 + 공유 지문/도표도 없음 = 빈 quiz_group → 죽은 박스 대신 안 띄움(정직).
+  if (qs.length === 0 && !passage && !(boxes?.length) && !(figures?.length)) return null;
   return (
     <div style={PAPER_STYLE} className="border border-[#e9e2d0] rounded-lg p-3 sm:p-4 bg-[#faf8f0] my-2">
       {view !== 'answers' && passage && (
