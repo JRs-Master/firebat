@@ -640,6 +640,7 @@ async fn main() -> Result<()> {
             vault: vault.clone(),
             memory_file: memory_file_manager.clone(),
             skill_file: skill_file_manager.clone(),
+            tts: Arc::new(firebat_infra::tts::TtsAdapter::new(vault.clone())),
         },
     );
 

@@ -118,6 +118,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             vault: vault.clone(),
             memory_file: memory_file_mgr,
             skill_file: skill_file_mgr,
+            tts: Arc::new(firebat_infra::tts::TtsAdapter::new(vault.clone())),
         },
     );
     (tools, dir)
@@ -202,9 +203,9 @@ async fn registered_tool_count() {
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
-    // skill_file: 5 (get/list/save/delete_skill + search_skills) = 60
-    assert_eq!(stats.total, 60);
-    assert_eq!(stats.by_source.get("core").copied(), Some(60));
+    // skill_file: 5 (get/list/save/delete_skill + search_skills) + tts: 1 = 61
+    assert_eq!(stats.total, 61);
+    assert_eq!(stats.by_source.get("core").copied(), Some(61));
 }
 
 #[tokio::test]

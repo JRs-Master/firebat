@@ -1498,8 +1498,8 @@ impl AiManager {
                     let mut sc = call.clone();
                     let name = sc.name.clone();
                     if let serde_json::Value::Object(ref mut m) = sc.arguments {
-                        // Project Builder — start_build 에 convId 주입 (cross-turn 세션 키, AI 미지정).
-                        if name == "start_build" {
+                        // convId 주입 — Project Builder(cross-turn 세션 키) + tts(오디오 conv-scoped 저장·삭제 cascade). AI 미지정.
+                        if name == "start_build" || name == "tts" {
                             if let Some(cid) =
                                 ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty())
                             {

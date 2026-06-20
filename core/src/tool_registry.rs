@@ -29,7 +29,7 @@ use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, INetworkPort,
-    IStoragePort, IVaultPort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest,
+    IStoragePort, ITtsPort, IVaultPort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest,
     SandboxExecuteOpts, SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
@@ -72,6 +72,8 @@ pub struct CoreToolHandlers {
     /// 스킬 (case 매뉴얼, */skills 파일) — list/get/save/delete/search_skill. 인덱스 상시주입 +
     /// 본문 온디맨드. owner-scoped (hub_context 활성 시 owner 주입). system∪user 병합.
     pub skill_file: Arc<SkillFileManager>,
+    /// TTS 합성 (tts 도구) — LC 오디오 생성. provider/voice 는 어댑터가 설정·키에서 해석.
+    pub tts: Arc<dyn ITtsPort>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -94,7 +96,131 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_meta_render_tools(tools, &h);
     register_infra_parity_tools(tools, &h);
     register_template_tools(tools, &h);
+    register_tts_tool(tools, &h);
     register_build_tools(tools);
+}
+
+/// TTS 도구 — 스크립트 + 화자 억양으로 LC 오디오 생성. provider/voice 는 설정·자동배정(AI 는 억양만).
+/// 캐시: 같은 (provider+script+화자+style) = 같은 파일 재사용(switch-back 재생성 0). conv-scoped 저장(대화 삭제 시 cascade).
+fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    tools.register(ToolDefinition {
+        name: "tts".to_string(),
+        description: "Generate listening audio (TTS) from a script and return a playable URL — for \
+            listening-comprehension practice (put the url in a `listening` component's audioUrl). You \
+            choose only the script and, for dialogues, each speaker's accent; the provider and concrete \
+            voices come from settings / auto-assignment. For test-realistic accents assign per speaker \
+            (e.g. TOEIC: American/Canadian/British/Australian, G-TELP/TEPS: American, IELTS: all five). \
+            Multi-speaker: write the script as 'Name: line' per turn and list those names in `speakers`. \
+            Cached — the same script+voice is reused without re-generating. Returns { url }."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "script": {"type": "string", "description": "Spoken text. Multi-speaker dialogue = one 'Name: line' per line (names match speakers[].name)."},
+                "speakers": {
+                    "type": "array",
+                    "description": "Dialogue speakers (omit for single-voice monologue). Each = {name, accent?}.",
+                    "items": {"type": "object", "properties": {
+                        "name": {"type": "string", "description": "Speaker name as written in the script 'Name:' lines."},
+                        "accent": {"type": "string", "description": "Accent/style, free text (e.g. 'American accent', 'female British accent')."}
+                    }}
+                },
+                "style": {"type": "string", "description": "Global accent/delivery instruction (single voice or common to all)."}
+            },
+            "required": ["script"]
+        }),
+        source: "core".to_string(),
+    });
+    let tts = h.tts.clone();
+    let media = h.media.clone();
+    tools.register_handler(
+        "tts",
+        make_handler(move |args| {
+            let tts = tts.clone();
+            let media = media.clone();
+            async move {
+                use std::hash::{Hash, Hasher};
+                let script = args
+                    .get("script")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "script")])
+                    })?;
+                let style = args
+                    .get("style")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let speakers: Vec<crate::ports::TtsSpeaker> = args
+                    .get("speakers")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| {
+                                let o = s.as_object()?;
+                                let name = o
+                                    .get("name")
+                                    .or_else(|| o.get("speaker"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.trim().to_string())
+                                    .filter(|s| !s.is_empty())?;
+                                let st = o
+                                    .get("accent")
+                                    .or_else(|| o.get("style"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.trim().to_string())
+                                    .filter(|s| !s.is_empty());
+                                let voice = o
+                                    .get("voice")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string();
+                                Some(crate::ports::TtsSpeaker { speaker: name, voice, style: st })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // conv 스코프(저장 + 대화삭제 cascade). FC=convId 주입 / MCP=currentConvId / 둘 다 없으면
+                // 공유(_shared — 캐시는 동작, cascade 만 skip = best-effort).
+                let conv = args
+                    .get("convId")
+                    .or_else(|| args.get("currentConvId"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("_shared")
+                    .to_string();
+                // effective provider → 캐시키·확장자. provider 바뀌면 키 달라져 새 파일(switch-back=캐시히트).
+                let (provider, model) = tts.effective_config();
+                let ext = if provider == "openai" { "mp3" } else { "wav" };
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                provider.hash(&mut hasher);
+                script.hash(&mut hasher);
+                for sp in &speakers {
+                    sp.speaker.hash(&mut hasher);
+                    sp.style.hash(&mut hasher);
+                }
+                style.hash(&mut hasher);
+                let name = format!("tts-{:016x}.{ext}", hasher.finish());
+                if let Some(url) = media.conv_attachment_url(&conv, &name).await? {
+                    return Ok(serde_json::json!({ "url": url, "cached": true }));
+                }
+                let req = crate::ports::TtsRequest {
+                    provider,
+                    model,
+                    text: script,
+                    voice: String::new(),
+                    speakers,
+                    style,
+                };
+                let result = tts.synthesize(&req).await?;
+                let url = media.save_conv_attachment(&conv, &name, &result.audio).await?;
+                Ok(serde_json::json!({ "url": url, "cached": false }))
+            }
+        }),
+    );
 }
 
 /// Operational memory tools (data/memory files): save / read / list (index) / delete.

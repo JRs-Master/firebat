@@ -2494,7 +2494,11 @@ pub struct TtsResult {
 #[async_trait::async_trait]
 pub trait ITtsPort: Send + Sync {
     /// 합성 — 오디오 바이트 + content_type + ext(mp3/wav). provider/model/voice/speakers/style 는 req.
+    /// req.provider/model 비었으면 어댑터가 설정·키에서 해석, voice 미지정이면 자동배정.
     async fn synthesize(&self, req: &TtsRequest) -> InfraResult<TtsResult>;
+
+    /// 현재 effective (provider, model) — 도구가 캐시키·확장자(mp3/wav) 산정에 사용(합성 전 결정).
+    fn effective_config(&self) -> (String, String);
 }
 
 /// IEpisodicPort — Phase 2 episodic tier port.

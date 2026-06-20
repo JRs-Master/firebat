@@ -34,6 +34,41 @@ impl TtsAdapter {
         None
     }
 
+    /// 설정·키에서 effective (provider, model) 해석. req.provider 비었을 때 + 도구의 캐시키/ext 산정에 사용.
+    /// provider = 설정값(system:tts:provider) → 없으면 키 보유로 자동(gemini 우선) → 둘 다 없으면 openai.
+    fn resolve_config(&self) -> (String, String) {
+        let provider = self
+            .first_secret(&["system:tts:provider"])
+            .filter(|p| matches!(p.as_str(), "openai" | "gemini"))
+            .unwrap_or_else(|| {
+                if self
+                    .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
+                    .is_some()
+                {
+                    "gemini".to_string()
+                } else {
+                    "openai".to_string()
+                }
+            });
+        let model = self.first_secret(&["system:tts:model"]).unwrap_or_else(|| {
+            match provider.as_str() {
+                "gemini" => "gemini-3.1-flash-tts-preview".to_string(),
+                _ => "gpt-4o-mini-tts".to_string(),
+            }
+        });
+        (provider, model)
+    }
+
+    /// provider 기본 보이스 목록 — 화자별 voice 미지정 시 rotation 자동 배정.
+    fn voices_for(provider: &str) -> &'static [&'static str] {
+        match provider {
+            "gemini" => &[
+                "Kore", "Puck", "Charon", "Aoede", "Fenrir", "Leda", "Orus", "Zephyr",
+            ],
+            _ => &["alloy", "echo", "fable", "onyx", "nova", "shimmer"],
+        }
+    }
+
     /// OpenAI /v1/audio/speech 1회 — 단일 voice mp3. style → instructions(말투/억양).
     async fn openai_one(
         &self,
@@ -209,10 +244,37 @@ impl TtsAdapter {
 
 #[async_trait]
 impl ITtsPort for TtsAdapter {
+    fn effective_config(&self) -> (String, String) {
+        self.resolve_config()
+    }
+
     async fn synthesize(&self, req: &TtsRequest) -> InfraResult<TtsResult> {
+        // provider/model 비었으면 설정·키에서 해석. 화자/단일 voice 미지정 시 provider 기본 보이스 자동배정.
+        let mut req = req.clone();
+        if req.provider.is_empty() || req.model.is_empty() {
+            let (p, m) = self.resolve_config();
+            if req.provider.is_empty() {
+                req.provider = p;
+            }
+            if req.model.is_empty() {
+                req.model = m;
+            }
+        }
+        let voices = Self::voices_for(&req.provider);
+        if req.speakers.is_empty() {
+            if req.voice.is_empty() {
+                req.voice = voices[0].to_string();
+            }
+        } else {
+            for (i, sp) in req.speakers.iter_mut().enumerate() {
+                if sp.voice.is_empty() {
+                    sp.voice = voices[i % voices.len()].to_string();
+                }
+            }
+        }
         match req.provider.as_str() {
-            "openai" => self.openai(req).await,
-            "gemini" => self.gemini(req).await,
+            "openai" => self.openai(&req).await,
+            "gemini" => self.gemini(&req).await,
             other => Err(format!("알 수 없는 TTS provider: {other}")),
         }
     }
