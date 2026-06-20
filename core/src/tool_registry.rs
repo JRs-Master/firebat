@@ -194,6 +194,10 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .to_string();
                 // effective provider → 캐시키·확장자. provider 바뀌면 키 달라져 새 파일(switch-back=캐시히트).
                 let (provider, model) = tts.effective_config();
+                // browser = 키 없음/브라우저 선택 → 서버 파일 생성 0. listening 컴포넌트가 클라 Web Speech 로 낭독.
+                if provider == "browser" {
+                    return Ok(serde_json::json!({ "browser": true }));
+                }
                 let ext = if provider == "openai" { "mp3" } else { "wav" };
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 provider.hash(&mut hasher);

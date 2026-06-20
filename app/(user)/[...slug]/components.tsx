@@ -116,7 +116,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
-    case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} view={p.view} />;
+    case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -885,13 +885,27 @@ function ListeningPlayer({ src, audioRef, onTime, onDur }: {
   );
 }
 
-function ListeningComp({ title, audioUrl, script, questions, view = 'interactive' }: {
-  title?: string | null; audioUrl?: string | null; script?: any; questions?: any; view?: QuizView;
+function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 'interactive' }: {
+  title?: string | null; audioUrl?: string | null; script?: any; questions?: any; browserTts?: boolean; view?: QuizView;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
   const isStatic = view !== 'interactive';
+  // 브라우저 TTS 모드 — API 키 없을 때 fallback. 클라 Web Speech 가 스크립트 낭독(단일 음성, 파일 없음).
+  const browserMode = !!browserTts && !audioUrl;
+  const [bSpeaking, setBSpeaking] = useState(false);
+  const [bSpeed, setBSpeed] = useState(1);
+  const speakBrowser = (text: string) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis || !text.trim()) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = bSpeed;
+    u.lang = 'en-US';
+    u.onend = () => setBSpeaking(false);
+    setBSpeaking(true);
+    window.speechSynthesis.speak(u);
+  };
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
@@ -917,9 +931,23 @@ function ListeningComp({ title, audioUrl, script, questions, view = 'interactive
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
-      {audioUrl
-        ? <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
-        : <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>}
+      {audioUrl ? (
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
+      ) : browserMode ? (
+        <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex items-center gap-2">
+          <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
+            onClick={() => { if (bSpeaking) { window.speechSynthesis?.cancel(); setBSpeaking(false); } else speakBrowser(lines.map((l: any) => l.text ?? l.line).filter(Boolean).join('\n')); }}
+            className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{bSpeaking ? '❚❚' : '▶'}</button>
+          <span className="text-[11px] text-slate-500">브라우저 음성 · 키 없이 재생(단일 음성)</span>
+          <div className="ml-auto flex items-center gap-1 text-[11px]">
+            {[0.5, 0.75, 1, 1.25].map((s) => (
+              <button key={s} type="button" onClick={() => setBSpeed(s)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bSpeed === s ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{s}×</button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>
+      )}
       {lines.length > 0 && (
         <div className="mt-3">
           {!isStatic && (
@@ -938,8 +966,8 @@ function ListeningComp({ title, audioUrl, script, questions, view = 'interactive
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
               <div className="flex flex-col">
                 {lines.map((l: any, i: number) => (
-                  <button key={i} type="button" onClick={() => seekLine(i)}
-                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${curLine === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
+                  <button key={i} type="button" onClick={() => (browserMode ? speakBrowser(l.text ?? l.line) : seekLine(i))}
+                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${!browserMode && curLine === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
                     {(l.speaker || l.role) && <span className="font-bold text-slate-500 shrink-0">{l.speaker ?? l.role}:</span>}
                     <span className="flex-1"><InlineMd text={l.text ?? l.line} /></span>
                   </button>

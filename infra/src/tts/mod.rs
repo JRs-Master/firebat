@@ -39,15 +39,21 @@ impl TtsAdapter {
     fn resolve_config(&self) -> (String, String) {
         let provider = self
             .first_secret(&["system:tts:provider"])
-            .filter(|p| matches!(p.as_str(), "openai" | "gemini"))
+            .filter(|p| matches!(p.as_str(), "browser" | "openai" | "gemini"))
             .unwrap_or_else(|| {
+                // 설정 없으면 키 보유로 자동: gemini → openai → 키 0 이면 browser(클라 Web Speech) fallback.
                 if self
                     .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
                     .is_some()
                 {
                     "gemini".to_string()
-                } else {
+                } else if self
+                    .first_secret(&["system:openai:api-key", "OPENAI_API_KEY"])
+                    .is_some()
+                {
                     "openai".to_string()
+                } else {
+                    "browser".to_string()
                 }
             });
         let model = self.first_secret(&["system:tts:model"]).unwrap_or_else(|| {
