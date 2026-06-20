@@ -393,7 +393,7 @@ function SpeakBtn({ word }: { word: string }) {
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); speakWord(word); (e.currentTarget as HTMLButtonElement).blur(); }}
       title="발음 듣기" aria-label="발음 듣기"
-      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 transition-colors shrink-0 active:text-blue-700 [@media(hover:hover)]:hover:text-blue-600 [@media(hover:hover)]:hover:bg-blue-50">
+      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 transition-colors shrink-0 active:text-blue-700 hover-blue">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z" /></svg>
     </button>
   );
@@ -476,6 +476,17 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
     setRevealed(false);
   };
   const reset = () => { setBoxes(list.map(() => 0)); setQueue(list.map((_, i) => i)); setRevealed(false); };
+  // 키보드 단축키 (카드 포커스 시만 — 채팅 입력과 충돌 0). ↓/Space/Enter=공개, 공개 후 ←모름 ↑애매 →외움 (1/2/3 대체).
+  const onKey = (e: React.KeyboardEvent) => {
+    const k = e.key;
+    if (!revealed) {
+      if (k === ' ' || k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); setRevealed(true); }
+      return;
+    }
+    if (k === 'ArrowLeft' || k === '1') { e.preventDefault(); grade('again'); }
+    else if (k === 'ArrowUp' || k === '2') { e.preventDefault(); grade('hard'); }
+    else if (k === 'ArrowRight' || k === '3') { e.preventDefault(); grade('good'); }
+  };
 
   if (!cur) {
     return (
@@ -503,8 +514,10 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
       {/* 고정 높이 + 내부 스크롤 — 카드 크기 점프 방지 + 채점 버튼이 항상 같은 자리(인출 리듬) */}
       <div
         onClick={() => !revealed && setRevealed(true)}
+        onKeyDown={onKey}
+        tabIndex={0}
         style={{ height: cardH ? `${cardH}px` : '320px' }}
-        className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
+        className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] kb-ring ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
       >
         <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-hide">
           <div className="min-h-full flex flex-col items-center justify-center text-center px-5 py-5">
@@ -533,19 +546,23 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
         </div>
       </div>
 
-      {revealed ? (
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          <button type="button" onClick={() => grade('again')} className="py-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[13px] font-semibold hover:bg-rose-100 transition-colors">모름</button>
-          <button type="button" onClick={() => grade('hard')} className="py-2.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[13px] font-semibold hover:bg-amber-100 transition-colors">애매</button>
-          <button type="button" onClick={() => grade('good')} className="py-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[13px] font-semibold hover:bg-emerald-100 transition-colors">외움</button>
-        </div>
-      ) : (
-        <div className="flex items-center justify-center gap-4 mt-3 text-[12px] text-slate-500">
-          <button type="button" onClick={switchDir} className="hover:text-blue-600 transition-colors font-medium">{dir === 'en2ko' ? '영→한' : '한→영'} 전환</button>
-          <button type="button" onClick={shuffle} className="hover:text-blue-600 transition-colors font-medium">섞기</button>
-          <button type="button" onClick={reset} className="hover:text-blue-600 transition-colors font-medium">처음부터</button>
-        </div>
-      )}
+      {/* 버튼 영역 높이 고정 — 공개 시 채점 버튼이 컨트롤보다 커서 아래가 점프하던 것 방지(min-h reserve) */}
+      <div className="mt-3 min-h-[44px] flex items-center">
+        {revealed ? (
+          <div className="grid grid-cols-3 gap-2 w-full">
+            <button type="button" onClick={() => grade('again')} className="py-2.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[13px] font-semibold hover:bg-rose-100 transition-colors">모름</button>
+            <button type="button" onClick={() => grade('hard')} className="py-2.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[13px] font-semibold hover:bg-amber-100 transition-colors">애매</button>
+            <button type="button" onClick={() => grade('good')} className="py-2.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 text-[13px] font-semibold hover:bg-emerald-100 transition-colors">외움</button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-4 w-full text-[12px] text-slate-500">
+            <button type="button" onClick={switchDir} className="hover-blue transition-colors font-medium">{dir === 'en2ko' ? '영→한' : '한→영'} 전환</button>
+            <button type="button" onClick={shuffle} className="hover-blue transition-colors font-medium">섞기</button>
+            <button type="button" onClick={reset} className="hover-blue transition-colors font-medium">처음부터</button>
+          </div>
+        )}
+      </div>
+      <div className="hidden sm:block text-center text-[10px] text-slate-400 mt-2">키보드 — Space/↓ 공개 · ← 모름 · ↑ 애매 · → 외움</div>
     </div>
   );
 }

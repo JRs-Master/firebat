@@ -2308,9 +2308,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             <div className="flex justify-center mb-1">
               <button
                 type="button"
-                onClick={() => setComposerCollapsed((c) => !c)}
+                onClick={(e) => { setComposerCollapsed((c) => !c); (e.currentTarget as HTMLButtonElement).blur(); }}
                 aria-label={composerCollapsed ? '입력창 펼치기' : '입력창 접기'}
-                className="flex items-center gap-1 px-3 py-0.5 rounded-full bg-white/90 border border-slate-200 text-slate-400 text-[11px] font-medium shadow-sm transition-colors active:text-blue-700 [@media(hover:hover)]:hover:text-blue-600 [@media(hover:hover)]:hover:border-blue-200"
+                className="flex items-center gap-1 px-3 py-0.5 rounded-full bg-white/90 border border-slate-200 text-slate-400 text-[11px] font-medium shadow-sm transition-colors active:text-blue-700 hover-blue"
               >
                 {composerCollapsed ? <><ChevronUp size={14} /><span>입력창</span></> : <ChevronDown size={14} />}
               </button>

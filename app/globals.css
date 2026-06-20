@@ -53,6 +53,12 @@ html::-webkit-scrollbar-thumb:hover,
   .scrollbar-hide { scrollbar-width: none; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
 }
+/* 마우스(fine pointer) 기기에서만 hover/focus 파랑 — 터치 탭 후 sticky '파란불' 방지.
+   Tailwind hover: 가 일부 기기서 hover:hover 로 잡혀 sticky 되던 것을 pointer:fine 로 터치 확실히 배제. */
+@media (hover: hover) and (pointer: fine) {
+  .hover-blue:hover { color: rgb(37 99 235); }
+  .kb-ring:focus { outline: none; box-shadow: 0 0 0 2px rgb(147 197 253); }
+}
 
 /* CMS Design Tokens — 사이트 전역 디자인 default.
    user route SSR 시점에 사용자 설정 토큰이 inline <style> 로 :root override.
