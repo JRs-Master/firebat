@@ -59,7 +59,7 @@ const mdComponents = {
     // react-markdown v10 은 inline prop 미제공 → language- 클래스/줄바꿈으로 블록 판별(인라인 코드가 블록 카드로 떨어지던 버그)
     const text = String(children).replace(/\n$/, '');
     const isBlock = /language-/.test(className || '') || text.includes('\n');
-    if (!isBlock) return <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>;
+    if (!isBlock) return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
     return <pre className="bg-slate-50 text-slate-800 p-4 overflow-x-auto text-[13px] font-mono rounded-xl border border-slate-200"><code {...props}>{children}</code></pre>;
   },
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,

@@ -66,7 +66,7 @@ const mdComponents = {
       if (TOOL_NAMES.has(text) || text.startsWith('sysmod_') || text.startsWith('mcp_')) {
         return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
       }
-      return <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>;
+      return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
     }
     const lang = className?.replace('language-', '') || '';
     return (
