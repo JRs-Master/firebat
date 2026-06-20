@@ -438,9 +438,10 @@ impl TtsAdapter {
             ]}],
             "generationConfig": { "responseModalities": ["TEXT"], "responseMimeType": "application/json" }
         });
-        // STT 모델 = gemini-flash-latest — 실측: gemini-2.5-flash 는 타임스탬프 엉터리(40초→52초),
-        // flash-latest/2.5-pro 는 정확(~39초). latest 별칭이라 deprecation-proof + flash=빠르고 쌈.
-        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+        // STT 모델 = gemini-2.5-pro — 실측(40초 wav, 반복): 2.5-pro 만 39.1~39.3초로 일관·정확.
+        // flash 계열은 다 부정확/변동(2.5-flash 52초·3.5-flash 32초·flash-latest 36~38초·lite 29초).
+        // 타임스탬프엔 newer flash 보다 pro 가 정확. 정렬은 오디오당 1회(후 캐시)라 pro 비용·지연 무방.
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent";
         let resp = self
             .client
             .post(url)
