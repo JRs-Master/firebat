@@ -828,6 +828,47 @@ function ConceptComp({ title, intro, steps, example, misconception, check }: {
 // ── Listening (LC 리스닝) — 오디오 재생 + 스크립트 가림(받아쓰기) + 문제(QuizBody 재사용) ──────
 // 오디오 = cloud TTS mp3(audioUrl, tts sysmod 가 conv-scoped 저장). 문제는 quiz 와 동일 렌더(MC/OX/TFNG).
 // quiz_group 의 audio 판 — passage 대신 audio + 스크립트 가림.
+// 숫자-단어 ↔ 숫자 정규화(first↔1st↔1, three↔3, tenth↔10th↔10). 단일 단어 케이스(0~20·십단위·서수).
+const DICT_NUM_WORDS: Record<string, string> = {
+  zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+  eleven: '11', twelve: '12', thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17', eighteen: '18', nineteen: '19', twenty: '20',
+  thirty: '30', forty: '40', fifty: '50', sixty: '60', seventy: '70', eighty: '80', ninety: '90', hundred: '100', thousand: '1000',
+  first: '1', second: '2', third: '3', fourth: '4', fifth: '5', sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10',
+  eleventh: '11', twelfth: '12', thirteenth: '13', fourteenth: '14', fifteenth: '15', sixteenth: '16', seventeenth: '17', eighteenth: '18', nineteenth: '19', twentieth: '20',
+  thirtieth: '30', fortieth: '40', fiftieth: '50',
+};
+function dictNorm(w: string): string {
+  const s = w.toLowerCase().replace(/[^a-z0-9]/g, ''); // 콤마·마침표·하이픈 등 구두점 무시
+  if (!s) return '';
+  const ord = s.match(/^(\d+)(st|nd|rd|th)$/); // 10th → 10
+  if (ord) return ord[1];
+  return DICT_NUM_WORDS[s] ?? s; // three → 3, first → 1
+}
+
+// 받아쓰기 자동 채점 — 들은 내용(typed) vs 스크립트 단어별 LCS 정렬. 맞은 스크립트 단어 표시 + 정확도%.
+// 런타임 LLM 0(클라 문자열 비교). 구두점 무시 + 숫자-단어 동치(first↔1st) + 하이픈=단어 분리.
+function dictationDiff(script: string, typed: string) {
+  const sWords = script.split(/[\s‐-―-]+/).filter(Boolean);
+  const sNorm = sWords.map(dictNorm);
+  const tWords = typed.split(/[\s‐-―-]+/).map(dictNorm).filter(Boolean);
+  const n = sNorm.length;
+  const m = tWords.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 1; i <= n; i++)
+    for (let j = 1; j <= m; j++)
+      dp[i][j] = sNorm[i - 1] && sNorm[i - 1] === tWords[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const matched = new Set<number>();
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    if (sNorm[i - 1] && sNorm[i - 1] === tWords[j - 1]) { matched.add(i - 1); i--; j--; }
+    else if (dp[i - 1][j] >= dp[i][j - 1]) i--;
+    else j--;
+  }
+  const scorable = sNorm.filter(Boolean).length || 1;
+  return { sWords, matched, accuracy: Math.round((matched.size / scorable) * 100) };
+}
+
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
 function ListeningPlayer({ src, audioRef, onTime, onDur }: {
@@ -898,20 +939,31 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
   const [bSpeed, setBSpeed] = useState(1);
   const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 클릭(낭독)한 문장 하이라이트
   const [bVol, setBVol] = useState(1);
-  const speakBrowser = (text: string) => {
+  const bTextRef = useRef(''); // 현재 낭독 중 텍스트 (속도 변경 시 재시작용)
+  const bCharRef = useRef(0); // 현재 낭독 위치(boundary charIndex)
+  const speakBrowser = (text: string, fromChar = 0) => {
     if (typeof window === 'undefined' || !window.speechSynthesis || !text.trim()) return;
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    bTextRef.current = text;
+    if (fromChar === 0) bCharRef.current = 0;
+    const u = new SpeechSynthesisUtterance(fromChar > 0 ? text.slice(fromChar) : text);
     u.rate = bSpeed;
     u.volume = bVol;
     u.lang = 'en-US';
+    u.onboundary = (e) => { bCharRef.current = fromChar + (e.charIndex || 0); };
     u.onend = () => setBSpeaking(false);
     setBSpeaking(true);
     window.speechSynthesis.speak(u);
   };
+  // 재생 중 속도 변경 → 현재 위치(boundary)부터 새 속도로 재시작(Web Speech 는 mid-utterance rate 변경 불가).
+  useEffect(() => {
+    if (bSpeaking) speakBrowser(bTextRef.current, bCharRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bSpeed]);
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
+  const [dictChecked, setDictChecked] = useState(false);
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [revealed, setRevealed] = useState(isStatic);
   const lines = (Array.isArray(script) ? script : typeof script === 'string' ? script.split('\n').map((t: string) => ({ text: t })) : [])
@@ -943,6 +995,8 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
     return idx;
   }, [cur, lineStarts]);
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
+  // 받아쓰기 채점 결과 — 확인 눌렀을 때만 계산(스크립트 전체 vs typed).
+  const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
@@ -977,8 +1031,23 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
             </div>
           )}
           {dictation && !isStatic && (
-            <textarea value={typed} onChange={(e) => setTyped(e.target.value)} rows={3} placeholder="들은 내용을 적어보세요... (듣기 → 적기 → 스크립트로 확인)"
-              className="w-full mb-2 rounded-lg border border-[#d9cdae] bg-white/60 px-2.5 py-2 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed resize-y focus:outline-none focus:border-blue-400" />
+            <div className="mb-2">
+              <textarea value={typed}
+                onChange={(e) => { setTyped(e.target.value); setDictChecked(false); const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; }}
+                rows={3}
+                className="w-full rounded-lg border border-[#d9cdae] bg-white/60 px-2.5 py-2 text-[13px] sm:text-[14px] text-slate-700 leading-relaxed resize-none overflow-hidden focus:outline-none focus:border-blue-400" />
+              <div className="flex items-center justify-between mt-1.5">
+                <span className="text-[11px] text-slate-400">{dictResult && (<>정확도 <span className="font-bold text-blue-600">{dictResult.accuracy}%</span> · <span className="text-emerald-600">맞음</span> / <span className="text-rose-500">놓침</span></>)}</span>
+                <button type="button" onClick={() => setDictChecked(true)} disabled={!typed.trim()} className="px-3 py-1 text-[12px] font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40">받아쓰기 확인</button>
+              </div>
+              {dictResult && (
+                <div className="mt-2 rounded-lg border border-[#d9cdae] bg-white/50 p-2.5 text-[13px] sm:text-[14px] leading-relaxed">
+                  {dictResult.sWords.map((w, i) => (
+                    <span key={i} className={dictResult.matched.has(i) ? 'text-emerald-700' : 'text-rose-500 font-semibold'}>{w} </span>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {showScript && (
             <div className="rounded-lg border border-[#d9cdae] p-2.5">
