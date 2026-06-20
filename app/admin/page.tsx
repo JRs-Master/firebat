@@ -56,13 +56,16 @@ const mdComponents = {
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
   a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
-  code: ({ inline, className, children, ...props }: any) => {
+  code: ({ className, children, ...props }: any) => {
     const text = String(children).replace(/\n$/, '');
-    const TOOL_NAMES = new Set(['render_iframe','execute','write_file','read_file','save_page','delete_page','delete_file','list_dir','list_pages','get_page','schedule_task','cancel_task','run_task','request_secret','suggest','mcp_call','network_request','list_cron_jobs','list_files']);
-    if (TOOL_NAMES.has(text) || text.startsWith('sysmod_') || text.startsWith('mcp_')) {
-      return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
-    }
-    if (inline) {
+    // react-markdown v10 은 inline prop 을 안 넘김 → language- 클래스 또는 줄바꿈 유무로 블록 판별
+    // (옛 `if (inline)` 는 항상 undefined → 인라인 코드가 전부 블록 카드로 떨어지던 버그)
+    const isBlock = /language-/.test(className || '') || text.includes('\n');
+    if (!isBlock) {
+      const TOOL_NAMES = new Set(['render_iframe','execute','write_file','read_file','save_page','delete_page','delete_file','list_dir','list_pages','get_page','schedule_task','cancel_task','run_task','request_secret','suggest','mcp_call','network_request','list_cron_jobs','list_files']);
+      if (TOOL_NAMES.has(text) || text.startsWith('sysmod_') || text.startsWith('mcp_')) {
+        return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
+      }
       return <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>;
     }
     const lang = className?.replace('language-', '') || '';
