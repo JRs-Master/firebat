@@ -1064,6 +1064,51 @@
     }
   },
   {
+    "name": "concept",
+    "componentType": "Concept",
+    "description": "Concept/theory EXPLAINER card (개념·이론 설명) grounded in learning science — NOT passive text. Active engagement: segmented steps each optionally hiding its explanation behind a self-explanation/prediction prompt (learner predicts → taps to reveal = generation effect), an optional worked example (문제 → 풀이 reveal, worked-example effect), a common-misconception refutation (흔한 오해 → 사실 — refutation text is proven effective), and a final retrieval check (답 예측 → 공개). Use to TEACH a concept/principle/how-something-works (수학·과학·문법·경제 원리 등) — not for exam questions (use quiz) or reading passages (use passage). Cream study paper. Provide intro + steps (+ optional example/misconception/check); the component runs all reveal interaction with no backend.",
+    "semanticText": "개념 설명 이론 원리 강의 lesson concept explain 설명 가르치다 자기설명 self-explanation 예측 오개념 흔한오해 misconception refutation 단계 세그먼트 인출 확인문제 worked example 워크드예제 학습 교육 왜 원리 how it works 메커니즘",
+    "propsSchema": {
+      "type": "object",
+      "required": ["steps"],
+      "synonyms": { "sections": "steps", "parts": "steps", "overview": "intro", "summary": "intro" },
+      "properties": {
+        "title": { "type": ["string", "null"] },
+        "intro": { "type": ["string", "null"], "description": "1–2 sentence framing of the concept (always visible, markdown)" },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "synonyms": { "explanation": "body", "content": "body", "text": "body", "detail": "body", "hint": "predict", "prompt": "predict", "question": "predict", "title": "heading", "label": "heading" },
+            "properties": {
+              "heading": { "type": ["string", "null"], "description": "short step heading (optional)" },
+              "predict": { "type": ["string", "null"], "description": "self-explanation/prediction prompt (왜?·다음은?) — when given, the body is hidden until the learner predicts then taps to reveal (generation effect). Omit to show the body directly." },
+              "body": { "type": "string", "description": "the explanation for this step (markdown)" }
+            }
+          },
+          "description": "the explanation broken into digestible steps (세그먼팅). Each: body (required) + optional heading + optional predict (예측→공개 게이트)."
+        },
+        "example": {
+          "type": ["object", "null"],
+          "synonyms": { "problem": "problem", "q": "problem", "solution": "solution", "answer": "solution" },
+          "properties": { "problem": { "type": "string", "description": "a worked-example problem (shown)" }, "solution": { "type": "string", "description": "the worked solution (hidden → reveal, markdown)" } },
+          "description": "optional worked example — problem shown, solution revealed on tap (worked-example effect)."
+        },
+        "misconception": {
+          "type": ["object", "null"],
+          "synonyms": { "myth": "wrong", "mistake": "wrong", "wrong": "wrong", "truth": "right", "fact": "right", "correction": "right", "right": "right" },
+          "properties": { "wrong": { "type": "string", "description": "the common wrong belief (흔한 오해)" }, "right": { "type": "string", "description": "the correction + why (사실은, hidden → reveal, markdown)" } },
+          "description": "optional misconception refutation — states a common wrong idea, reveals the correction (proven effective)."
+        },
+        "check": {
+          "type": ["object", "null"],
+          "properties": { "question": { "type": "string", "description": "a quick retrieval-check question" }, "answer": { "type": "string", "description": "the answer (hidden → reveal, markdown)" } },
+          "description": "optional final retrieval check — question shown, answer revealed after the learner predicts (active recall)."
+        }
+      }
+    }
+  },
+  {
     "name": "key_value",
     "componentType": "KeyValue",
     "description": "Lists **a single target's** attributes as label:value = a single-target table (one stock's specs, product info, financial metrics, etc.). Use columns 2/3 to place several pairs per row. To **compare multiple targets**, don't split into one key_value per target — use a table (targets = columns, attributes = rows). item.highlight = emphasize the value, item.href = navigate on row click.",

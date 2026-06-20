@@ -330,8 +330,8 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab(어휘) + passage(독해) = 38.
-        assert_eq!(comps.len(), 38, "components.json 의 38개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept(이론 설명) = 39.
+        assert_eq!(comps.len(), 39, "components.json 의 39개 컴포넌트 모두 설정되어야");
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn component_names_returns_all() {
         let names = component_names();
-        assert_eq!(names.len(), 38);
+        assert_eq!(names.len(), 39);
         assert!(names.contains(&"stock_chart"));
         assert!(names.contains(&"table"));
         assert!(names.contains(&"network"));

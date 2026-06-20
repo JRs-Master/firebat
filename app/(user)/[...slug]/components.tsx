@@ -58,6 +58,7 @@ const TYPE_ALIAS: Record<string, string> = {
   sentence: 'Sentence', sentence_analysis: 'Sentence', syntax: 'Sentence',
   vocab: 'Vocab', vocabulary: 'Vocab', wordlist: 'Vocab', flashcards: 'Vocab', flashcard: 'Vocab',
   passage: 'Passage', reading: 'Passage', reading_comprehension: 'Passage',
+  concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
 };
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
@@ -113,6 +114,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
+    case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -696,6 +698,79 @@ function PassageComp({ title, paragraphs, vocab, keyIdea, translation }: {
       {keyIdea && <PassageReveal label="주제" content={keyIdea} />}
       {translation && <PassageReveal label="해석" content={translation} markdown />}
       {vlist.length > 0 && <div className="mt-2 text-[10px] text-slate-400">밑줄 단어를 탭하면 뜻이 나와요</div>}
+    </div>
+  );
+}
+
+// ── Concept (개념·이론 설명) — 학습과학 기반 능동 설명 ──────────────────────────────
+// 세그먼팅 + 예측→공개(generation effect) + 워크드 예제 + 오개념 반박(refutation) + 인출 확인.
+// 가르치기용(시험=quiz, 독해=passage 와 구분). 전부 클라 reveal, 런타임 LLM 0.
+function ConceptStep({ step, idx }: { step: { heading?: string | null; predict?: string | null; body: string }; idx: number }) {
+  const [open, setOpen] = useState(!step.predict);
+  return (
+    <div className="mb-3.5 last:mb-0">
+      {step.heading && <div className="font-bold text-slate-800 text-[13px] sm:text-[14px] mb-1">{idx}. {step.heading}</div>}
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)} className="text-left text-[13px] sm:text-[14px] transition-colors hover-blue">
+          <span className="text-indigo-500 font-medium">🤔 {step.predict}</span>
+          <span className="text-slate-400"> — 떠올린 뒤 탭하여 확인 ▸</span>
+        </button>
+      ) : (
+        <div className="text-[13px] sm:text-[14px] text-slate-700 leading-relaxed"><InlineMd text={step.body} /></div>
+      )}
+    </div>
+  );
+}
+function ConceptExample({ problem, solution }: { problem: string; solution: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 rounded-lg bg-[#f3eedd] px-3 py-2.5">
+      <div className="text-[13px] text-slate-800"><span className="font-bold text-slate-500 text-[11px]">예제 </span><InlineMd text={problem} /></div>
+      {open
+        ? <div className="mt-1.5 pt-1.5 border-t border-[#e6ddc6] text-[13px] text-slate-700"><span className="font-bold text-emerald-600 text-[11px]">풀이 </span><InlineMd text={solution} /></div>
+        : <button type="button" onClick={() => setOpen(true)} className="mt-1 text-[12px] font-medium text-slate-400 transition-colors hover-blue">풀이 떠올린 뒤 탭하여 확인 ▸</button>}
+    </div>
+  );
+}
+function ConceptMisconception({ wrong, right }: { wrong: string; right: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2.5">
+      <div className="text-[13px] text-slate-700"><span className="font-bold text-rose-500">흔한 오해 </span><InlineMd text={wrong} /></div>
+      {open
+        ? <div className="mt-1.5 text-[13px] text-slate-700"><span className="font-bold text-emerald-600">사실은 </span><InlineMd text={right} /></div>
+        : <button type="button" onClick={() => setOpen(true)} className="mt-1 text-[12px] font-medium text-slate-400 transition-colors hover-blue">사실은? ▸</button>}
+    </div>
+  );
+}
+function ConceptCheck({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 pt-3 border-t border-[#eee6d2]">
+      <div className="text-[13px] font-semibold text-slate-700"><span className="text-indigo-500">✅ 확인 </span><InlineMd text={question} /></div>
+      {open
+        ? <div className="mt-1.5 text-[13px] font-medium text-blue-700"><InlineMd text={answer} /></div>
+        : <button type="button" onClick={() => setOpen(true)} className="mt-1 text-[12px] font-medium text-slate-400 transition-colors hover-blue">답 떠올린 뒤 탭하여 확인 ▸</button>}
+    </div>
+  );
+}
+function ConceptComp({ title, intro, steps, example, misconception, check }: {
+  title?: string | null; intro?: string | null;
+  steps?: any;
+  example?: { problem?: string; solution?: string } | null;
+  misconception?: { wrong?: string; right?: string } | null;
+  check?: { question?: string; answer?: string } | null;
+}) {
+  const stepList = (Array.isArray(steps) ? steps : []).filter((s: any) => s && s.body);
+  if (stepList.length === 0 && !intro) return null;
+  return (
+    <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] my-2">
+      {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span>💡</span>{title}</div>}
+      {intro && <div className="text-[13px] sm:text-[14px] text-slate-700 leading-relaxed mb-3"><InlineMd text={intro} /></div>}
+      {stepList.map((s: any, i: number) => <ConceptStep key={i} step={s} idx={i + 1} />)}
+      {example && example.problem && example.solution && <ConceptExample problem={example.problem} solution={example.solution} />}
+      {misconception && misconception.wrong && misconception.right && <ConceptMisconception wrong={misconception.wrong} right={misconception.right} />}
+      {check && check.question && check.answer && <ConceptCheck question={check.question} answer={check.answer} />}
     </div>
   );
 }

@@ -101,7 +101,7 @@ A **skill** is a case manual: how to use tools/templates for a specific kind of 
 
 ## Component rendering — `firebat-render` fenced block
 
-**Invocation**: emit **data / text / visualization** components as a fenced block **in your reply text** — a ` ```firebat-render ` fence whose body is a JSON array of blocks — written directly into your message so it renders in place, interleaved with your prose. (table, chart, metric, grid, key_value, text, callout, list, timeline, badge, compare, progress, countdown, stock_chart, map, image, quiz, sentence, vocab, passage, etc.)
+**Invocation**: emit **data / text / visualization** components as a fenced block **in your reply text** — a ` ```firebat-render ` fence whose body is a JSON array of blocks — written directly into your message so it renders in place, interleaved with your prose. (table, chart, metric, grid, key_value, text, callout, list, timeline, badge, compare, progress, countdown, stock_chart, map, image, quiz, sentence, vocab, passage, concept, etc.)
 
 > **Exception — code/markup-heavy components use the `render` TOOL, not the fence**: `html` (apps/games), `code`, `math`, `diagram`. These hold large raw HTML/JS / LaTeX / DSL full of quotes, newlines and backslashes — hand-escaping that as JSON inside a text fence breaks it. Call `render({blocks:[...]})` as a tool for these; the function-calling layer escapes the arguments safely. (They carry code, not Korean prose, so the text-channel corruption doesn't apply to them anyway.)
 
