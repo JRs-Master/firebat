@@ -2456,6 +2456,47 @@ pub trait IMediaPort: Send + Sync {
     async fn delete_conv_attachments(&self, conv: &str) -> InfraResult<()>;
 }
 
+/// TTS 합성 요청 — capability 가 config(provider/model) + 스크립트 + 보이스/억양으로 구성.
+#[derive(Debug, Clone)]
+pub struct TtsRequest {
+    pub provider: String, // "openai" | "gemini"
+    pub model: String,    // gpt-4o-mini-tts / gemini-3.1-flash-tts-preview
+    /// 대사 텍스트. 멀티스피커면 "Name: ..." 줄 형식(speakers 의 speaker 와 매칭).
+    pub text: String,
+    /// 단일 화자 보이스(speakers 비었을 때). openai: alloy.. / gemini: Kore..
+    pub voice: String,
+    /// 멀티스피커(비었으면 단일). 각 화자 보이스 + 억양.
+    pub speakers: Vec<TtsSpeaker>,
+    /// 전역 말투/억양 지시(단일 화자 또는 공통). OpenAI instructions / Gemini 프롬프트 스타일.
+    /// 억양은 free-text(예: "American accent" / "British accent") — 하드코딩 enum 아님, AI 가 시험별 배정.
+    pub style: Option<String>,
+}
+
+/// 멀티스피커 화자 설정 — 토익 등 화자별 억양 다름.
+#[derive(Debug, Clone)]
+pub struct TtsSpeaker {
+    pub speaker: String, // 화자 이름(text 의 "Name:" 매칭)
+    pub voice: String,
+    /// 이 화자 억양/말투(free-text, 예: "British accent").
+    pub style: Option<String>,
+}
+
+/// TTS 결과 — 오디오 + 포맷.
+#[derive(Debug, Clone)]
+pub struct TtsResult {
+    pub audio: Vec<u8>,
+    pub content_type: String, // audio/mpeg | audio/wav
+    pub ext: String,          // mp3 | wav
+}
+
+/// ITtsPort — text-to-speech 합성. LC(리스닝) 오디오 생성용. provider API 호출(키는 adapter 가
+/// Vault 에서). 빌트인 capability(image_gen 미러)가 이 포트로 오디오 생성 → conv-scoped 저장.
+#[async_trait::async_trait]
+pub trait ITtsPort: Send + Sync {
+    /// 합성 — 오디오 바이트 + content_type + ext(mp3/wav). provider/model/voice/speakers/style 는 req.
+    async fn synthesize(&self, req: &TtsRequest) -> InfraResult<TtsResult>;
+}
+
 /// IEpisodicPort — Phase 2 episodic tier port.
 ///
 /// save_event / search_events 2개는 async — IEmbedderPort 호출 (`embed_passage` 자동
