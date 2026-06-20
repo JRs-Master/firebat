@@ -215,6 +215,25 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
         let Some(items_schema) = schema.get("items") else {
             return;
         };
+        // array 기대 위치에 문자열이 오면 배열로 coerce — AI 가 paragraphs/choices/항목을 한 덩어리
+        // 문자열로 보내도 흡수(빈 줄 = 원소 분리, 없으면 단일 원소). 이후 str_key 가 각 문자열 원소를
+        // {field} 객체로 감싼다. (render robustness 일반 규칙 — 컴포넌트명 하드코딩 0.)
+        if let Some(s) = value.as_str() {
+            let split: Vec<String> = s
+                .split("\n\n")
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect();
+            let parts = if split.len() > 1 {
+                split
+            } else {
+                let t = s.trim().to_string();
+                if t.is_empty() { Vec::new() } else { vec![t] }
+            };
+            *value = serde_json::Value::Array(
+                parts.into_iter().map(serde_json::Value::String).collect(),
+            );
+        }
         let Some(arr) = value.as_array_mut() else {
             return;
         };

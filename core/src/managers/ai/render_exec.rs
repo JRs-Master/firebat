@@ -149,17 +149,20 @@ pub fn render_blocks(args: &Value) -> Result<Value, String> {
 /// Why the text channel: the model corrupts Korean spelling inside tool_use JSON arguments but not in
 /// free text — so routing render through text fixes the corruption AND keeps render content inside
 /// `reply`/content so it is embedded + recalled (no amnesia). See CLAUDE.md 한국어 깨짐 진단 (2026-06-17).
-/// Returns `(masked_text, fences, block_groups)`: `fences[n]` = rebuilt sanitized fence string to
-/// restore; `block_groups[n]` = the parsed/sanitized blocks array of fence n (or `Null` if it failed
-/// to parse) — used to surface a "render" action badge with its content (debug convenience).
-pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>) {
+/// Returns `(masked_text, fences, block_groups, failed_groups)`: `fences[n]` = rebuilt sanitized fence
+/// string to restore; `block_groups[n]` = the parsed/sanitized blocks array of fence n (or `Null` if it
+/// failed to parse); `failed_groups[n]` = the array of blocks that FAILED validation in fence n (each
+/// `{idx,type,error,gotKeys}`) — surfaced as a `success:false` "render" badge so a dropped block is
+/// visible to the user, not just a journald warn (debug convenience).
+pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>, Vec<Value>) {
     const OPEN: &str = "```firebat-render";
     if !text.contains(OPEN) {
-        return (text.to_string(), Vec::new(), Vec::new());
+        return (text.to_string(), Vec::new(), Vec::new(), Vec::new());
     }
     let mut out = String::with_capacity(text.len());
     let mut store: Vec<String> = Vec::new();
     let mut block_groups: Vec<Value> = Vec::new();
+    let mut failed_groups: Vec<Value> = Vec::new();
     let mut rest = text;
     while let Some(start) = rest.find(OPEN) {
         out.push_str(&rest[..start]);
@@ -178,23 +181,24 @@ pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>)
             break;
         };
         let body = &body_and_rest[..close_rel];
-        let (sanitized, blocks) = sanitize_fence_body(body);
+        let (sanitized, blocks, failed) = sanitize_fence_body(body);
         store.push(format!("```firebat-render\n{}\n```", sanitized));
         block_groups.push(blocks);
+        failed_groups.push(failed);
         out.push_str(&format!("@@FBRENDER{}@@", store.len() - 1));
         rest = &rest[start + body_start_rel + close_rel + 3..]; // past closing ```
     }
     out.push_str(rest);
-    (out, store, block_groups)
+    (out, store, block_groups, failed_groups)
 }
 
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
 /// Returns `(json_string, blocks_value)`. On parse/validation failure, returns the trimmed original
 /// string + `Null` blocks so the frontend renders it raw (visible + debuggable, never silently dropped).
-fn sanitize_fence_body(body: &str) -> (String, Value) {
+fn sanitize_fence_body(body: &str) -> (String, Value, Value) {
     let trimmed = body.trim();
     let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
-        return (trimmed.to_string(), Value::Null);
+        return (trimmed.to_string(), Value::Null, Value::Null);
     };
     let args = if parsed.is_array() {
         serde_json::json!({ "blocks": parsed })
@@ -204,10 +208,11 @@ fn sanitize_fence_body(body: &str) -> (String, Value) {
     match render_blocks(&args) {
         Ok(result) => {
             let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));
+            let failed = result.get("failed").cloned().unwrap_or_else(|| serde_json::json!([]));
             let s = serde_json::to_string(&blocks).unwrap_or_else(|_| trimmed.to_string());
-            (s, blocks)
+            (s, blocks, failed)
         }
-        Err(_) => (trimmed.to_string(), Value::Null),
+        Err(_) => (trimmed.to_string(), Value::Null, Value::Null),
     }
 }
 

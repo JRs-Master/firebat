@@ -1048,6 +1048,7 @@
           "items": {
             "type": "object",
             "synonyms": { "para": "text", "english": "text", "eng": "text", "sentence": "text", "point": "mainIdea", "summary": "mainIdea", "idea": "mainIdea", "ko": "mainIdea" },
+            "required": ["text"],
             "properties": {
               "text": { "type": "string", "description": "the paragraph (English)" },
               "mainIdea": { "type": ["string", "null"], "description": "this paragraph's main point (Korean) — hidden; learner predicts then taps to check (요지 파악)" }

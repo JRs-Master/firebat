@@ -1783,7 +1783,7 @@ impl AiManager {
         // firebat-render fence(텍스트 채널 render)를 마스킹·sanitize 후 reply 정제 → 복원.
         // fence 안 JSON 이 sanitize_reply / 마크다운 구조 추출에 안 망가지게 보호 + render_blocks 검증.
         // 모델이 도구 인자 대신 텍스트로 render 를 보내 한국어 깨짐 회피 + content 상주(메모리 회상).
-        let (masked_for_reply, render_fences, render_block_groups) =
+        let (masked_for_reply, render_fences, render_block_groups, render_failed_groups) =
             render_exec::mask_and_sanitize_fences(&last_text);
         let sanitized_reply = crate::utils::sanitize::sanitize_reply(&masked_for_reply);
         let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
@@ -1804,6 +1804,32 @@ impl AiManager {
                 success: true,
                 error: None,
                 input: Some(serde_json::json!({ "blocks": blocks })),
+            });
+        }
+        // 검증 실패 fence 블록 — 옛엔 silent skip(로그 warn 만)이라 사용자가 "왜 빠졌나" 몰랐음.
+        // 실패도 render 뱃지(success:false=빨강)로 노출 → 어떤 블록이 왜 누락됐는지 화면에서 확인.
+        for failed in &render_failed_groups {
+            let Some(arr) = failed.as_array() else { continue };
+            if arr.is_empty() {
+                continue;
+            }
+            let errs: Vec<String> = arr
+                .iter()
+                .map(|f| {
+                    let t = f.get("type").and_then(|v| v.as_str()).unwrap_or("?");
+                    let e = f
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("검증 실패");
+                    format!("{t}: {e}")
+                })
+                .collect();
+            executed_actions.push(serde_json::Value::String("render".to_string()));
+            tool_results_summary.push(crate::ports::ToolResultSummary {
+                name: "render".to_string(),
+                success: false,
+                error: Some(errs.join(" / ")),
+                input: Some(serde_json::json!({ "failed": failed })),
             });
         }
 
