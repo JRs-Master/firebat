@@ -154,15 +154,18 @@ pub struct AiResponse {
 /// AIza* / Telegram bot token 등이 도구 결과 / 에러 메시지 / reply / blocks 안에 그대로 흘러가
 /// 사용자 채팅 화면 노출되는 사고 차단.
 fn redact_response(mut r: AiResponse) -> AiResponse {
-    use crate::utils::redactor::{redact_string, redact_value};
+    use crate::utils::redactor::{redact_string, redact_value, redact_value_content};
     r.reply = redact_string(&r.reply);
     if let Some(ref err) = r.error.clone() {
         r.error = Some(redact_string(err));
     }
-    r.blocks = r.blocks.into_iter().map(|v| redact_value(&v)).collect();
-    r.executed_actions = r.executed_actions.into_iter().map(|v| redact_value(&v)).collect();
-    r.suggestions = r.suggestions.into_iter().map(|v| redact_value(&v)).collect();
-    r.pending_actions = r.pending_actions.into_iter().map(|v| redact_value(&v)).collect();
+    // AI 가 만든 렌더 콘텐츠 — 값 패턴만 마스킹(키 이름 마스킹 X). 'tokens' 등 콘텐츠 필드명이
+    // 시크릿 needle 과 겹쳐 멀쩡한 컴포넌트가 통째 [REDACTED] 되던 false-positive 차단.
+    r.blocks = r.blocks.into_iter().map(|v| redact_value_content(&v)).collect();
+    r.executed_actions = r.executed_actions.into_iter().map(|v| redact_value_content(&v)).collect();
+    r.suggestions = r.suggestions.into_iter().map(|v| redact_value_content(&v)).collect();
+    r.pending_actions = r.pending_actions.into_iter().map(|v| redact_value_content(&v)).collect();
+    // tool 결과/입력 = 외부 API 데이터 → strict(키 이름 마스킹 유지).
     r.tool_results = r
         .tool_results
         .into_iter()

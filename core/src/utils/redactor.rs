@@ -261,11 +261,21 @@ fn mask_key_value(s: &str, key: &str) -> String {
 /// / `secret` / `api_key` / `authorization` / `bearer` / `credential` / `access_token` /
 /// `refresh_token` / `private_key` / `client_secret` / `session_id` / `cookie` / `vault`)
 /// 의 value 는 통째 마스킹.
+/// 외부 tool 결과·입력용 — 객체 키 이름이 시크릿 패턴이면 value 통째 마스킹(api-key 등 비표준 포맷
+/// 시크릿도 키 이름으로 잡기 위함).
 pub fn redact_value(val: &Value) -> Value {
-    redact_value_inner(val, 0)
+    redact_value_inner(val, 0, true)
 }
 
-fn redact_value_inner(val: &Value, depth: u32) -> Value {
+/// AI 가 만든 렌더 콘텐츠용(blocks/suggestions/pending) — 키 이름 마스킹은 하지 않는다. 콘텐츠
+/// 필드명('tokens' = sentence S/V/O 청크 등)이 시크릿 needle 과 부분일치해 멀쩡한 콘텐츠를 통째
+/// 마스킹하던 false-positive 차단. string '값'은 그대로 패턴(sk-*/JWT/Bearer/Telegram 등)으로
+/// 마스킹 → 진짜 시크릿이 콘텐츠에 섞여 흘러도 키 이름이 아니라 값으로 잡힌다.
+pub fn redact_value_content(val: &Value) -> Value {
+    redact_value_inner(val, 0, false)
+}
+
+fn redact_value_inner(val: &Value, depth: u32, mask_keys: bool) -> Value {
     const MAX_DEPTH: u32 = 16;
     if depth > MAX_DEPTH {
         return Value::String("[max depth]".to_string());
@@ -275,16 +285,16 @@ fn redact_value_inner(val: &Value, depth: u32) -> Value {
         Value::String(s) => Value::String(redact_string(s)),
         Value::Array(arr) => Value::Array(
             arr.iter()
-                .map(|v| redact_value_inner(v, depth + 1))
+                .map(|v| redact_value_inner(v, depth + 1, mask_keys))
                 .collect(),
         ),
         Value::Object(map) => {
             let mut out = serde_json::Map::new();
             for (k, v) in map {
-                if is_sensitive_key(k) {
+                if mask_keys && is_sensitive_key(k) {
                     out.insert(k.clone(), Value::String(MASK.to_string()));
                 } else {
-                    out.insert(k.clone(), redact_value_inner(v, depth + 1));
+                    out.insert(k.clone(), redact_value_inner(v, depth + 1, mask_keys));
                 }
             }
             Value::Object(out)
@@ -324,9 +334,8 @@ fn is_sensitive_key(k: &str) -> bool {
         "access_license",
     ]
     .iter()
-    // strict 부분일치 — 'tokens' 같은 콘텐츠 필드도 마스킹하지만, 진짜 시크릿이 'tokens' 등으로
-    // 흘러도 확실히 가린다(보안 우선). 컴포넌트는 시크릿 패턴과 겹치는 필드명을 쓰지 말 것
-    // (예: sentence 의 S/V/O 청크는 'tokens' 가 아니라 'chunks' 사용).
+    // strict 부분일치 — tool 결과/입력(외부 API 데이터)에만 쓴다. AI 렌더 콘텐츠엔
+    // redact_value_content(키 이름 마스킹 안 함)를 써서 'tokens' 같은 콘텐츠 필드 false-positive 회피.
     .any(|needle| lower.contains(needle))
 }
 
