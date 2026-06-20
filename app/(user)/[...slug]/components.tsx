@@ -916,16 +916,21 @@ function ListeningPlayer({ src, audioRef, onTime, onDur }: {
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
-        <span className="text-slate-400">속도</span>
-        {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
-        <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
-        <span className="text-slate-400 ml-1">구간</span>
-        <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
-        <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
-        {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
-        <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
-        <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
+      {/* 컨트롤 2그룹 — 모바일: 속도 줄 / 반복·구간·볼륨 줄(속도 그룹이 w-full 이라 다음 그룹이 줄바꿈). 데스크톱: 한 줄. */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <span className="text-slate-400">속도</span>
+          {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
+          <span className="text-slate-400 ml-1">구간</span>
+          <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
+          <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
+          {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+          <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
+          <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
+        </div>
       </div>
     </div>
   );
