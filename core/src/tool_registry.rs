@@ -191,8 +191,9 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                             .collect()
                     })
                     .unwrap_or_default();
-                // conv 스코프(저장 + 대화삭제 cascade). FC=convId 주입 / MCP=currentConvId / 둘 다 없으면
-                // 공유(_shared — 캐시는 동작, cascade 만 skip = best-effort).
+                // conv 스코프(저장 + 대화삭제 cascade). FC=ai.rs 가 convId 자동주입 / CLI(MCP)=AI 가
+                // [Conversation id] 힌트로 convId 전달 / 둘 다 없으면 공유(_shared — 캐시는 동작,
+                // cascade 만 skip = best-effort).
                 let conv = args
                     .get("convId")
                     .or_else(|| args.get("currentConvId"))

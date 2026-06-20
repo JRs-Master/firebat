@@ -766,15 +766,17 @@ impl AiManager {
                         extra_parts.push(ctx);
                     }
                 }
-                // Project Builder admin CLI reinforcement (#1-lite) — for FC, ai.rs injects convId into
-                // the tool args, but the CLI (its own MCP loop) has no such injection path, so the build
-                // session wouldn't link to the conversation.
-                // → On admin (non-hub) turns only, hint the AI to pass convId itself. Only the first
-                // start_build depends on the AI; afterward the engine's cross-turn (active_session_for_conv) takes over. (hub uses the hubOwner key, excluded.)
+                // Admin CLI convId reinforcement (#1-lite + #4) — for FC, ai.rs injects convId into the
+                // tool args, but the CLI (its own MCP loop) has no such injection path. So on admin
+                // (non-hub) turns, hint the AI to pass convId itself for the tools that key off the
+                // conversation: start_build/advance_build/cancel_build (cross-turn build continuity) and
+                // tts (generated audio is stored per-conversation so it is cleaned up when the conversation
+                // is deleted — without it the audio lands in a shared bucket and never cascades).
+                // (hub uses the hubOwner key, excluded.)
                 if ai_opts.hub_context.is_none() {
                     if let Some(cid) = ai_opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
                         extra_parts.push(format!(
-                            "[Build tracking] When calling start_build/advance_build/cancel_build, also pass convId=\"{}\" (so the build continues across turns).",
+                            "[Conversation id] When calling start_build/advance_build/cancel_build (build continuity) or tts (so the generated audio is tied to this conversation), also pass convId=\"{}\".",
                             cid
                         ));
                     }
