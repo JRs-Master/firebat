@@ -896,11 +896,14 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
   const browserMode = !!browserTts && !audioUrl;
   const [bSpeaking, setBSpeaking] = useState(false);
   const [bSpeed, setBSpeed] = useState(1);
+  const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 클릭(낭독)한 문장 하이라이트
+  const [bVol, setBVol] = useState(1);
   const speakBrowser = (text: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis || !text.trim()) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.rate = bSpeed;
+    u.volume = bVol;
     u.lang = 'en-US';
     u.onend = () => setBSpeaking(false);
     setBSpeaking(true);
@@ -914,14 +917,26 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
   const lines = (Array.isArray(script) ? script : typeof script === 'string' ? script.split('\n').map((t: string) => ({ text: t })) : [])
     .map((l: any) => (typeof l === 'string' ? { text: l } : l)).filter((l: any) => l && (l.text || l.line));
   const qs = Array.isArray(questions) ? questions : [];
-  // 줄별 시작 시각 — line.start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 줄 하이라이트용.
+  // 문장 단위 세그먼트 — 클릭 재생 granular(담화 한 문단도 문장별로 쪼갬). speaker 는 turn 첫 문장에만.
+  const segments = useMemo(() => {
+    const segs: Array<{ text: string; speaker?: string; start?: number }> = [];
+    for (const l of lines as any[]) {
+      const raw = String(l.text ?? l.line ?? '').trim();
+      if (!raw) continue;
+      const parts = raw.split(/(?<=[.!?])\s+(?=[A-Z"'(])/).map((s) => s.trim()).filter(Boolean);
+      const list = parts.length ? parts : [raw];
+      list.forEach((s, si) => segs.push({ text: s, speaker: si === 0 ? (l.speaker ?? l.role) : undefined, start: si === 0 ? l.start : undefined }));
+    }
+    return segs;
+  }, [lines]);
+  // 세그먼트별 시작 시각 — start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 문장 하이라이트용.
   const lineStarts = useMemo(() => {
-    if (lines.some((l: any) => typeof l.start === 'number')) return lines.map((l: any) => (typeof l.start === 'number' ? l.start : 0));
-    const lens = lines.map((l: any) => ((l.text || l.line || '').length || 1));
-    const total = lens.reduce((a: number, b: number) => a + b, 0) || 1;
+    if (segments.some((s) => typeof s.start === 'number')) return segments.map((s) => (typeof s.start === 'number' ? s.start! : 0));
+    const lens = segments.map((s) => s.text.length || 1);
+    const total = lens.reduce((a, b) => a + b, 0) || 1;
     let acc = 0;
-    return lens.map((len: number) => { const s = (acc / total) * dur; acc += len; return s; });
-  }, [lines, dur]);
+    return lens.map((len) => { const t = (acc / total) * dur; acc += len; return t; });
+  }, [segments, dur]);
   const curLine = useMemo(() => {
     let idx = -1;
     for (let i = 0; i < lineStarts.length; i++) if (cur >= lineStarts[i] - 0.2) idx = i;
@@ -934,15 +949,19 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
       {audioUrl ? (
         <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
       ) : browserMode ? (
-        <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex items-center gap-2">
+        <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
-            onClick={() => { if (bSpeaking) { window.speechSynthesis?.cancel(); setBSpeaking(false); } else speakBrowser(lines.map((l: any) => l.text ?? l.line).filter(Boolean).join('\n')); }}
+            onClick={() => { if (bSpeaking) { window.speechSynthesis?.cancel(); setBSpeaking(false); } else { setBSeg(-1); speakBrowser(segments.map((s) => s.text).join(' ')); } }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{bSpeaking ? '❚❚' : '▶'}</button>
-          <span className="text-[11px] text-slate-500">브라우저 음성 · 키 없이 재생(단일 음성)</span>
-          <div className="ml-auto flex items-center gap-1 text-[11px]">
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="text-slate-400">속도</span>
             {[0.5, 0.75, 1, 1.25].map((s) => (
               <button key={s} type="button" onClick={() => setBSpeed(s)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bSpeed === s ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{s}×</button>
             ))}
+          </div>
+          <div className="ml-auto flex items-center gap-1 text-[11px]">
+            <span className="text-slate-400" aria-hidden>🔊</span>
+            <input type="range" min={0} max={1} step={0.05} value={bVol} onChange={(e) => setBVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
           </div>
         </div>
       ) : (
@@ -965,11 +984,11 @@ function ListeningComp({ title, audioUrl, script, questions, browserTts, view = 
             <div className="rounded-lg border border-[#d9cdae] p-2.5">
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
               <div className="flex flex-col">
-                {lines.map((l: any, i: number) => (
-                  <button key={i} type="button" onClick={() => (browserMode ? speakBrowser(l.text ?? l.line) : seekLine(i))}
-                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${!browserMode && curLine === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
-                    {(l.speaker || l.role) && <span className="font-bold text-slate-500 shrink-0">{l.speaker ?? l.role}:</span>}
-                    <span className="flex-1"><InlineMd text={l.text ?? l.line} /></span>
+                {segments.map((s, i: number) => (
+                  <button key={i} type="button" onClick={() => { if (browserMode) { setBSeg(i); speakBrowser(s.text); } else seekLine(i); }}
+                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${(browserMode ? bSeg === i : curLine === i) ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
+                    {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
+                    <span className="flex-1"><InlineMd text={s.text} /></span>
                   </button>
                 ))}
               </div>
