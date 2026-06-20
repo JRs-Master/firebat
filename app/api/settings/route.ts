@@ -28,6 +28,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     aiAssistantModelRes, aiAssistantModelsRes, aiModelsRes, userPromptRes, lastModelByCategoryRes,
     imageModelRes, imageModelsRes, imageDefaultSizeRes, imageDefaultQualityRes,
     anthropicCacheEnabledRes, subAgentEnabledRes, uiLangRes,
+    ttsProviderRes, ttsModelRes, ttsVoiceRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone(),
@@ -45,6 +46,9 @@ export const GET = withAuth(async (_req: NextRequest) => {
     getAnthropicCacheEnabled(),
     isSubAgentEnabled(),
     getGeminiKey({ key: VK_SYSTEM_UI_LANG }),
+    getGeminiKey({ key: 'system:tts:provider' }),
+    getGeminiKey({ key: 'system:tts:model' }),
+    getGeminiKey({ key: 'system:tts:voice' }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -68,6 +72,9 @@ export const GET = withAuth(async (_req: NextRequest) => {
     anthropicCacheEnabled: anthropicCacheEnabledRes.ok ? anthropicCacheEnabledRes.data : false,
     subAgentEnabled: subAgentEnabledRes.ok ? subAgentEnabledRes.data : false,
     interfaceLang,
+    ttsProvider: ttsProviderRes.ok ? (ttsProviderRes.data || '') : '',
+    ttsModel: ttsModelRes.ok ? (ttsModelRes.data || '') : '',
+    ttsVoice: ttsVoiceRes.ok ? (ttsVoiceRes.data || '') : '',
   });
 });
 
@@ -116,6 +123,15 @@ export const PATCH = withAuth(async (req: NextRequest) => {
   if (body.interfaceLang === 'ko' || body.interfaceLang === 'en') {
     // 어드민 UI 언어 vault 저장 — i18n hook 의 LangProvider 가 fetch 시 활용.
     await setGeminiKey({ key: VK_SYSTEM_UI_LANG, value: body.interfaceLang });
+  }
+  if (typeof body.ttsProvider === 'string') {
+    await setGeminiKey({ key: 'system:tts:provider', value: body.ttsProvider });
+  }
+  if (typeof body.ttsModel === 'string') {
+    await setGeminiKey({ key: 'system:tts:model', value: body.ttsModel });
+  }
+  if (typeof body.ttsVoice === 'string') {
+    await setGeminiKey({ key: 'system:tts:voice', value: body.ttsVoice });
   }
 
   return NextResponse.json({ success: true });

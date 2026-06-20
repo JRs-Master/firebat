@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText, Volume2 } from 'lucide-react';
 import { McpServer } from '../types';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
@@ -222,9 +222,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [imageDefaultSize, setImageDefaultSize] = useState<string>('');
   const [imageDefaultQuality, setImageDefaultQuality] = useState<string>('');
 
-  // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 비용(한도·통계) / 메모리(AI Recall 메타).
+  // 음성(TTS) — provider(browser/openai/gemini) + 모델 + 기본 보이스. openai/gemini 는 키 있을 때만 선택 가능.
+  const [ttsProvider, setTtsProvider] = useState<string>('browser');
+  const [ttsModel, setTtsModel] = useState<string>('');
+  const [ttsVoice, setTtsVoice] = useState<string>('');
+  const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  // 보이스 샘플 미리듣기 — 현재 합성 중인 voice id (스피너 표시).
+  const [ttsSampleVoice, setTtsSampleVoice] = useState<string | null>(null);
+  const ttsSampleAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 음성(TTS) / 비용(한도·통계) / 메모리(AI Recall 메타).
   // initialTab='cost'/'memory' 는 SettingsModal entry 시점에 settingsTab='ai' + aiSubTab 으로 자동 변환.
-  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'cost' | 'memory'>(() => {
+  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
     if (initialTab === 'cost') return 'cost';
     if (initialTab === 'memory') return 'memory';
     return 'llm';
@@ -348,6 +358,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
           if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
           if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
+          if (typeof data.ttsProvider === 'string' && data.ttsProvider) setTtsProvider(data.ttsProvider);
+          if (typeof data.ttsModel === 'string') setTtsModel(data.ttsModel);
+          if (typeof data.ttsVoice === 'string') setTtsVoice(data.ttsVoice);
         }
       })
       .catch(() => {});
@@ -356,6 +369,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     apiGet<{ success?: boolean; keys?: Record<string, { hasKey?: boolean; maskedKey?: string }> }>('/api/vault', { category: 'settings' })
       .then(data => {
         if (!data?.success) return;
+        setHasOpenaiKey(!!data.keys?.openai_api_key?.hasKey);
+        setHasGeminiKey(!!data.keys?.gemini_api_key?.hasKey);
         if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey ?? '');
         if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey ?? '');
         if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey ?? '');
@@ -710,6 +725,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         imageDefaultSize,
         imageDefaultQuality,
         userPrompt,
+        ttsProvider,
+        ttsModel,
+        ttsVoice,
       },
       { category: 'settings' },
     ).catch(() => {});
@@ -766,6 +784,37 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     setMainSaveState('ok');
     setTimeout(() => setMainSaveState(null), 2000);
   };
+
+  // 보이스 샘플 미리듣기 — 후보 보이스로 짧은 문장 합성 → data URL <audio> 재생. browser provider 는 호출 안 함.
+  const playTtsSample = useCallback(async (provider: string, model: string, voice: string) => {
+    if (!provider || provider === 'browser') return;
+    // 재생 중이면 중지
+    if (ttsSampleAudioRef.current) {
+      ttsSampleAudioRef.current.pause();
+      ttsSampleAudioRef.current = null;
+    }
+    setTtsSampleVoice(voice);
+    try {
+      const data = await apiPost<{ success?: boolean; audioBase64?: string; contentType?: string; error?: string }>(
+        '/api/tts/sample',
+        { provider, model, voice, text: 'Hello, this is a sample of my voice. I hope you like it.' },
+        { category: 'settings' },
+      );
+      if (!data?.success || !data.audioBase64) {
+        logger.warn('tts', `보이스 샘플 실패: ${data?.error ?? 'unknown'}`);
+        setTtsSampleVoice(null);
+        return;
+      }
+      const audio = new Audio(`data:${data.contentType || 'audio/mpeg'};base64,${data.audioBase64}`);
+      ttsSampleAudioRef.current = audio;
+      audio.onended = () => { setTtsSampleVoice(null); ttsSampleAudioRef.current = null; };
+      audio.onerror = () => { setTtsSampleVoice(null); ttsSampleAudioRef.current = null; };
+      await audio.play().catch(() => { setTtsSampleVoice(null); });
+    } catch (e) {
+      logger.warn('tts', `보이스 샘플 오류: ${String(e)}`);
+      setTtsSampleVoice(null);
+    }
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
@@ -1002,6 +1051,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     { v: 'llm', label: 'LLM' },
                     { v: 'prompt', label: t('settings_modal.ai_sub_tab_prompt') },
                     { v: 'image', label: t('settings_modal.ai_sub_tab_image') },
+                    { v: 'tts', label: t('settings_modal.ai_sub_tab_tts') },
                     { v: 'cost', label: t('settings_modal.ai_sub_tab_cost') },
                     { v: 'memory', label: t('settings_modal.ai_sub_tab_memory') },
                   ] as const).map(tab => (
@@ -1540,6 +1590,92 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   })()}
                 </div>
                 )}
+                {aiSubTab === 'tts' && (() => {
+                  const TTS_META: Record<string, { models: string[]; voices: { female: string[]; male: string[] } }> = {
+                    openai: { models: ['gpt-4o-mini-tts'], voices: { female: ['nova', 'shimmer', 'coral'], male: ['onyx', 'echo', 'ash'] } },
+                    gemini: { models: ['gemini-3.1-flash-tts-preview'], voices: { female: ['Kore', 'Aoede', 'Leda', 'Zephyr'], male: ['Puck', 'Charon', 'Fenrir', 'Orus'] } },
+                  };
+                  const switchTtsProvider = (p: string) => {
+                    if (p === 'openai' && !hasOpenaiKey) return;
+                    if (p === 'gemini' && !hasGeminiKey) return;
+                    setTtsProvider(p);
+                    if (p === 'browser') { setTtsModel(''); setTtsVoice(''); return; }
+                    const m = TTS_META[p];
+                    setTtsModel(m.models.includes(ttsModel) ? ttsModel : m.models[0]);
+                    const all = [...m.voices.female, ...m.voices.male];
+                    setTtsVoice(all.includes(ttsVoice) ? ttsVoice : m.voices.female[0]);
+                  };
+                  const meta = TTS_META[ttsProvider];
+                  const curModel = meta ? (meta.models.includes(ttsModel) ? ttsModel : meta.models[0]) : '';
+                  const curVoice = meta
+                    ? (() => { const all = [...meta.voices.female, ...meta.voices.male]; return all.includes(ttsVoice) ? ttsVoice : meta.voices.female[0]; })()
+                    : '';
+                  return (
+                    <div className="flex flex-col gap-3">
+                      <FieldLabel>{t('settings_modal.tts_title')}</FieldLabel>
+                      <HelpText>{t('settings_modal.tts_help')}</HelpText>
+                      <Field label={t('settings_modal.provider_label')}>
+                        <SegButtons<string>
+                          value={ttsProvider}
+                          onChange={switchTtsProvider}
+                          options={[
+                            { value: 'browser', label: t('settings_modal.tts_provider_browser') },
+                            { value: 'openai', label: hasOpenaiKey ? 'OpenAI' : `OpenAI${t('settings_modal.tts_key_required_suffix')}` },
+                            { value: 'gemini', label: hasGeminiKey ? 'Gemini' : `Gemini${t('settings_modal.tts_key_required_suffix')}` },
+                          ]}
+                        />
+                      </Field>
+                      {ttsProvider === 'browser' ? (
+                        <div className="text-[12px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-relaxed">
+                          {t('settings_modal.tts_browser_note')}
+                        </div>
+                      ) : meta ? (
+                        <>
+                          <Field label={t('settings_modal.model_label')}>
+                            <SelectInput
+                              value={curModel}
+                              onChange={setTtsModel}
+                              options={meta.models.map(m => ({ value: m, label: m }))}
+                            />
+                          </Field>
+                          <Field label={t('settings_modal.tts_default_voice')} help={t('settings_modal.tts_default_voice_help')}>
+                            <div className="flex flex-col gap-2">
+                              {(['female', 'male'] as const).map(g => (
+                                <div key={g}>
+                                  <div className="text-[11px] font-bold text-slate-500 mb-1">
+                                    {g === 'female' ? t('settings_modal.tts_female') : t('settings_modal.tts_male')}
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {meta.voices[g].map(v => {
+                                      const active = curVoice === v;
+                                      return (
+                                        <span
+                                          key={v}
+                                          onClick={() => setTtsVoice(v)}
+                                          className={`inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-[12px] font-medium border cursor-pointer transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'}`}
+                                        >
+                                          {v}
+                                          <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); playTtsSample(ttsProvider, curModel, v); }}
+                                            aria-label={t('settings_modal.tts_play_sample', { voice: v })}
+                                            className={`rounded-full p-0.5 transition-colors ${active ? 'text-white/85 hover:bg-white/20' : 'text-slate-400 hover:text-blue-500'}`}
+                                          >
+                                            {ttsSampleVoice === v ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+                                          </button>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </Field>
+                        </>
+                      ) : null}
+                    </div>
+                  );
+                })()}
               </>
             );
           })()}
@@ -2193,7 +2329,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           </button>
           {/* 전역 저장은 handleSave 가 실제로 저장하는 탭(일반 = timezone·admin / AI>LLM = 모델·토글·키)에서만 노출.
               나머지 탭(프롬프트·이미지·비용·메모리·시크릿·MCP·시스템·로그)은 자체 인라인 저장이 있어 중복 버튼 제거. */}
-          {(settingsTab === 'general' || (settingsTab === 'ai' && (aiSubTab === 'llm' || aiSubTab === 'image' || aiSubTab === 'prompt'))) && (
+          {(settingsTab === 'general' || (settingsTab === 'ai' && (aiSubTab === 'llm' || aiSubTab === 'image' || aiSubTab === 'prompt' || aiSubTab === 'tts'))) && (
             <SaveButton
               size="md"
               state={(

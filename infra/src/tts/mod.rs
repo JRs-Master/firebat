@@ -279,7 +279,12 @@ impl ITtsPort for TtsAdapter {
         }
         if req.speakers.is_empty() {
             if req.voice.is_empty() {
-                req.voice = Self::voices_for_gender(&req.provider, None)[0].to_string();
+                // 단일 화자 = 설정 기본 보이스(system:tts:voice, 현 provider 목록에 있을 때만) → 없으면 provider 첫 보이스.
+                let list = Self::voices_for_gender(&req.provider, None);
+                req.voice = self
+                    .first_secret(&["system:tts:voice"])
+                    .filter(|v| list.contains(&v.as_str()))
+                    .unwrap_or_else(|| list[0].to_string());
             }
         } else {
             // 화자별 voice 자동배정 — 성별(AI 주입) 기반 + 같은 성별끼리 다른 보이스(성별별 rotation).

@@ -11,7 +11,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::media::{GenerateImageInput, GenerateImageResult, MediaManager};
 use crate::ports::{
-    ImageModelInfo, MediaFileRecord, MediaListOpts, MediaSaveOptions, MediaSaveResult, MediaVariant,
+    ITtsPort, ImageModelInfo, MediaFileRecord, MediaListOpts, MediaSaveOptions, MediaSaveResult,
+    MediaVariant, TtsRequest,
 };
 use crate::proto::{
     media_service_server::MediaService, ImageModelListPb, ImageModelPb, MediaGenerateResponse,
@@ -29,15 +30,26 @@ use crate::proto::{
     MediaSetImageDefaultQualityRequest, MediaSetImageDefaultQualityResponse,
     MediaSetImageDefaultSizeRequest, MediaSetImageDefaultSizeResponse, MediaSetImageModelRequest,
     MediaSetImageModelResponse, MediaStartGenerationRequest, MediaVariantPb, StartGenerationPb,
+    TtsSampleRequest, TtsSampleResponse,
 };
 
 pub struct MediaServiceImpl {
     manager: Arc<MediaManager>,
+    tts: Option<Arc<dyn ITtsPort>>,
 }
 
 impl MediaServiceImpl {
     pub fn new(manager: Arc<MediaManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            tts: None,
+        }
+    }
+
+    /// TTS 어댑터 주입 — 보이스 샘플 미리듣기(SynthesizeSample) 용. 미주입 시 unavailable.
+    pub fn with_tts(mut self, tts: Arc<dyn ITtsPort>) -> Self {
+        self.tts = Some(tts);
+        self
     }
 }
 
@@ -447,6 +459,37 @@ impl MediaService for MediaServiceImpl {
                 found: false,
                 binary: Vec::new(),
                 content_type: String::new(),
+            })),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn synthesize_sample(
+        &self,
+        req: Request<TtsSampleRequest>,
+    ) -> Result<Response<TtsSampleResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let tts = self
+            .tts
+            .as_ref()
+            .ok_or_else(|| TonicStatus::unavailable("TTS 어댑터 미구성"))?;
+        let text = if args.text.trim().is_empty() {
+            "Hello, this is a sample of my voice.".to_string()
+        } else {
+            args.text
+        };
+        let request = TtsRequest {
+            provider: args.provider,
+            model: args.model,
+            text,
+            voice: args.voice,
+            speakers: Vec::new(),
+            style: None,
+        };
+        match tts.synthesize(&request).await {
+            Ok(r) => Ok(Response::new(TtsSampleResponse {
+                audio_base64: base64_simple_encode(&r.audio),
+                content_type: r.content_type,
             })),
             Err(e) => Err(TonicStatus::internal(e)),
         }

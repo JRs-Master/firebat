@@ -1577,6 +1577,16 @@ message MediaReadConvAttachmentResponse {
   bytes binary = 2;
   string content_type = 3;
 }
+message TtsSampleRequest {
+  string provider = 1;       // browser/openai/gemini — browser 는 클라가 직접 처리(여기 도달 X).
+  string model = 2;          // 빈 문자열이면 설정·키 기반 자동 해석.
+  string voice = 3;          // 미리듣기 대상 보이스.
+  string text = 4;           // 샘플 문장.
+}
+message TtsSampleResponse {
+  string audio_base64 = 1;   // 합성 오디오 base64 (data URL 로 클라 <audio> 재생).
+  string content_type = 2;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // 13. MediaService — MediaManager
@@ -1610,6 +1620,9 @@ service MediaService {
   /// conv-scoped 첨부 read — `/user/attachments/<conv>/<name>` URL handler 가 호출.
   /// 채팅에 붙은 미디어(TTS 오디오 등) — 대화와 함께 살고 영구삭제 시 cascade.
   rpc ReadConvAttachment(MediaReadConvAttachmentRequest) returns (MediaReadConvAttachmentResponse);
+  /// TTS 보이스 샘플 미리듣기 — 어드민 설정 보이스 picker 에서 후보 보이스로 짧은 문장 합성.
+  /// 저장 안 함 (transient). browser provider 는 클라 Web Speech 라 여기 안 옴.
+  rpc SynthesizeSample(TtsSampleRequest) returns (TtsSampleResponse);
 }
 
 // ─── EventService typed Request / Response messages ────────────────────────

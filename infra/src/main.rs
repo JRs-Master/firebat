@@ -613,6 +613,10 @@ async fn main() -> Result<()> {
     // (아래 network_service / BuiltinDeps 도 이 인스턴스 공유).
     let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
 
+    // ITtsPort — tts 도구 + MediaService 보이스 샘플 미리듣기 공유 인스턴스.
+    let tts_adapter: Arc<dyn firebat_core::ports::ITtsPort> =
+        Arc::new(firebat_infra::tts::TtsAdapter::new(vault.clone()));
+
     // Phase B-17a/c — 정적 도구 dispatch 등록. LLM stub 위에서도 도구 호출 e2e 동작.
     // task_manager 생성 뒤 — run_task(파이프라인)·search_library 가 각각 TaskManager·LibraryManager 의존.
     // schedule_manager 는 여기서 아직 pre-hooks 버전이나, schedule/list/cancel 는 hooks 무관이라 안전
@@ -640,7 +644,7 @@ async fn main() -> Result<()> {
             vault: vault.clone(),
             memory_file: memory_file_manager.clone(),
             skill_file: skill_file_manager.clone(),
-            tts: Arc::new(firebat_infra::tts::TtsAdapter::new(vault.clone())),
+            tts: tts_adapter.clone(),
         },
     );
 
@@ -880,7 +884,8 @@ async fn main() -> Result<()> {
         .with_task_manager(task_manager.clone());
     let task_service = grpc::task::TaskServiceImpl::new(task_manager.clone());
     // .clone() — internal 30d cleanup cron 과 같은 manager 참조 공유.
-    let media_service = grpc::media::MediaServiceImpl::new(media_manager.clone());
+    let media_service = grpc::media::MediaServiceImpl::new(media_manager.clone())
+        .with_tts(tts_adapter.clone());
     let ai_service = grpc::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).

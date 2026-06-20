@@ -29,6 +29,8 @@ import {
   MediaSetImageModelRequestSchema,
   MediaStartGenerationRequestSchema,
   StartGenerationPb,
+  TtsSampleRequestSchema,
+  TtsSampleResponse,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -212,6 +214,15 @@ export async function readTempAttachment(args: MessageInitShape<typeof MediaRead
 export async function readConvAttachment(args: MessageInitShape<typeof MediaReadConvAttachmentRequestSchema>): Promise<RpcResult<MediaReadConvAttachmentResponse>> {
   try {
       const response = await mediaClient.readConvAttachment(args ?? {});
+      return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function synthesizeSample(args: MessageInitShape<typeof TtsSampleRequestSchema>): Promise<RpcResult<TtsSampleResponse>> {
+  try {
+      const response = await mediaClient.synthesizeSample(args ?? {});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
