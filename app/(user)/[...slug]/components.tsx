@@ -876,13 +876,15 @@ function dictationDiff(script: string, typed: string) {
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
-function ListeningPlayer({ src, audioRef, onTime, onDur, study = true }: {
+function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [] }: {
   src: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onTime: (t: number) => void;
   onDur: (d: number) => void;
   /** 학습 모드 = 속도·전체반복·구간반복 노출. 시험 모드(false) = 재생+위치+볼륨만(1회청취). */
   study?: boolean;
+  /** LRC 단어 [start,end] — A-B 구간을 단어 경계로 snap(단어 중간 잘림 방지). 없으면 raw 시간. */
+  words?: Array<{ start: number; end: number }>;
 }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -892,11 +894,37 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true }: {
   const [loop, setLoop] = useState(false);
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
+  const loopingRef = useRef(false); // A-B 루프 0.5초 딜레이 중 재트리거 방지.
+  // A-B 단어 경계 snap — t 가 든 단어로(있으면), 빈음이면 A=다음 단어 start / B=이전 단어 end.
+  const snapStart = (t: number) => {
+    if (!words.length) return t;
+    const inw = words.find((w) => t >= w.start && t < w.end);
+    if (inw) return inw.start;
+    const next = words.find((w) => w.start >= t);
+    return next ? next.start : t;
+  };
+  const snapEnd = (t: number) => {
+    if (!words.length) return t;
+    const inw = words.find((w) => t >= w.start && t < w.end);
+    if (inw) return inw.end;
+    let prev: { start: number; end: number } | undefined;
+    for (const w of words) { if (w.end <= t) prev = w; else break; }
+    return prev ? prev.end : t;
+  };
   useEffect(() => {
     const a = audioRef.current; if (!a) return;
     const onT = () => {
       setCur(a.currentTime); onTime(a.currentTime);
-      if (abA != null && abB != null && abB > abA && a.currentTime >= abB) a.currentTime = abA; // A-B 구간반복
+      // A-B 구간반복 — B 도달 시 0.5초 숨돌린 뒤 A 부터(바로 또 시작하면 못 따라감, 정독 청취).
+      if (abA != null && abB != null && abB > abA && a.currentTime >= abB && !loopingRef.current) {
+        loopingRef.current = true;
+        a.pause();
+        setTimeout(() => {
+          const aa = audioRef.current;
+          if (aa) { aa.currentTime = abA; void aa.play(); }
+          loopingRef.current = false;
+        }, 500);
+      }
     };
     const onMeta = () => { setDur(a.duration || 0); onDur(a.duration || 0); };
     const onEnd = () => { if (!a.loop) setPlaying(false); };
@@ -931,8 +959,8 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true }: {
           {study && <>
             <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
             <span className="text-slate-400 ml-1">구간</span>
-            <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
-            <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
+            <button type="button" onClick={() => setAbA(snapStart(cur))} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) — 단어 경계로 맞춤">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
+            <button type="button" onClick={() => setAbB(snapEnd(cur))} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) — 단어 경계로 맞춤">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
             {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
           </>}
           <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
@@ -1021,6 +1049,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   // LRC 임의 시각 seek(단어 클릭) — 그 시각으로 이동 + 재생 시작.
   const seekTo = (t: number) => { const a = audioRef.current; if (a && isFinite(t)) { a.currentTime = t; if (a.paused) void a.play(); } };
+  // LRC 단어 평탄화 — 플레이어 A-B 단어 경계 snap 용([start,end] 목록).
+  const lrcWords = useMemo(() => (lrc ? lrc.flatMap((l) => l.words ?? []) : []), [lrc]);
   // LRC 현재 줄 — start≤cur<end (정확). 단어 클릭/줄 fill 의 활성 줄.
   const curLrc = useMemo(() => {
     if (!lrc) return -1;
@@ -1075,7 +1105,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
-        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} />
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} />
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
