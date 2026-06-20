@@ -324,6 +324,9 @@ fn is_sensitive_key(k: &str) -> bool {
         "access_license",
     ]
     .iter()
+    // strict 부분일치 — 'tokens' 같은 콘텐츠 필드도 마스킹하지만, 진짜 시크릿이 'tokens' 등으로
+    // 흘러도 확실히 가린다(보안 우선). 컴포넌트는 시크릿 패턴과 겹치는 필드명을 쓰지 말 것
+    // (예: sentence 의 S/V/O 청크는 'tokens' 가 아니라 'chunks' 사용).
     .any(|needle| lower.contains(needle))
 }
 
