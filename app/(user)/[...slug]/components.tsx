@@ -1028,6 +1028,23 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     for (let i = 0; i < lrc.length; i++) if (cur >= lrc[i].start - 0.15) idx = i;
     return idx;
   }, [cur, lrc]);
+  // v2 단어별 정확 fill — 재생 중 rAF 로 cur 를 ~30fps 갱신(단어가 말해지는 순간 채워지게).
+  // LRC 있을 때만(노래방), 재생 중에만 setCur(일시정지면 변화 0 → 재렌더 0).
+  useEffect(() => {
+    if (!lrc) return;
+    let raf = 0;
+    let last = -1;
+    const tick = () => {
+      const a = audioRef.current;
+      if (a && !a.paused) {
+        const t = a.currentTime;
+        if (Math.abs(t - last) > 0.03) { last = t; setCur(t); }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [lrc]);
   // 받아쓰기 채점 결과 — 확인 눌렀을 때만 계산(스크립트 전체 vs typed).
   const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
@@ -1113,20 +1130,29 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· {lrc ? '단어를 탭하면 그 단어부터 재생' : '줄을 탭하면 그 구간부터 재생'}</span></div>
               <div className="flex flex-col gap-0.5">
                 {lrc ? lrc.map((ln, i) => {
-                  // 현재 재생 줄만 연한 박스 + 진한 fill 와이프(왼→오). 단어는 클릭 시 그 단어부터 재생.
+                  // 현재 재생 줄 = 연한 박스. 그 안 단어가 말해지는 순간 하나씩 채워짐(v2 단어별 정확 fill).
+                  // 단어 클릭 = 그 단어부터 재생(seek). 지난 단어=꽉 / 현재 단어=비례 / 다음 단어=빔.
                   const active = curLrc === i;
-                  const span = Math.max(ln.end - ln.start, 0.1);
-                  const fillPct = active ? Math.max(0, Math.min(((cur - ln.start) / span) * 100, 100)) : 0;
                   const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
                   return (
-                    <div key={i} className={`relative rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
-                      {active && <div className="absolute inset-y-0 left-0 rounded bg-blue-300/40 pointer-events-none transition-[width] duration-200 ease-linear" style={{ width: `${fillPct}%` }} />}
-                      <div className="relative flex gap-1.5">
+                    <div key={i} className={`rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
+                      <div className="flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
                         <span className="flex-1">
-                          {words.map((w, wi) => (
-                            <span key={wi} onClick={() => seekTo(w.start)} className="cursor-pointer rounded hover:bg-blue-200/60 transition-colors">{w.word} </span>
-                          ))}
+                          {words.map((w, wi) => {
+                            const wspan = Math.max(w.end - w.start, 0.05);
+                            const wpct = active
+                              ? (cur >= w.end ? 100 : cur <= w.start ? 0 : Math.max(0, Math.min(((cur - w.start) / wspan) * 100, 100)))
+                              : 0;
+                            return (
+                              <span key={wi}>
+                                <span onClick={() => seekTo(w.start)} className="relative inline-block cursor-pointer rounded hover:bg-blue-200/50">
+                                  {wpct > 0 && <span className="absolute inset-y-0 left-0 rounded bg-blue-400/45 pointer-events-none" style={{ width: `${wpct}%` }} />}
+                                  <span className="relative">{w.word}</span>
+                                </span>{' '}
+                              </span>
+                            );
+                          })}
                         </span>
                       </div>
                     </div>
