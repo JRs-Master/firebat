@@ -438,7 +438,9 @@ impl TtsAdapter {
             ]}],
             "generationConfig": { "responseModalities": ["TEXT"], "responseMimeType": "application/json" }
         });
-        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+        // STT 모델 = gemini-flash-latest — 실측: gemini-2.5-flash 는 타임스탬프 엉터리(40초→52초),
+        // flash-latest/2.5-pro 는 정확(~39초). latest 별칭이라 deprecation-proof + flash=빠르고 쌈.
+        let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
         let resp = self
             .client
             .post(url)
