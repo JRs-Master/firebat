@@ -473,13 +473,34 @@ impl MediaService for MediaServiceImpl {
             .tts
             .as_ref()
             .ok_or_else(|| TonicStatus::unavailable("TTS 어댑터 미구성"))?;
+        // generate-once 캐시 — 같은 (provider, voice) 샘플은 파일 1개 재사용 → 재생 즉시(딜레이 0).
+        // 서버 리셋 시 _tts-samples 디렉토리 통째 소멸(찌꺼기 자동 정리). 30일 cleanup 은 subdir 제외라 유지.
+        let provider = args.provider.clone();
+        let ext = if provider == "openai" { "mp3" } else { "wav" };
+        let content_type = if ext == "mp3" { "audio/mpeg" } else { "audio/wav" };
+        let safe_voice: String = args
+            .voice
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
+        let voice_key = if safe_voice.is_empty() { "default".to_string() } else { safe_voice };
+        let name = format!("sample-{provider}-{voice_key}.{ext}");
+        let conv = "_tts-samples";
+        // 1. 파일 체크 — 있으면 그 URL(합성·API 콜 0).
+        if let Ok(Some(url)) = self.manager.conv_attachment_url(conv, &name).await {
+            return Ok(Response::new(TtsSampleResponse {
+                url,
+                content_type: content_type.to_string(),
+            }));
+        }
+        // 2. 없으면 API 호출 → 저장 → URL.
         let text = if args.text.trim().is_empty() {
             "Hello, this is a sample of my voice.".to_string()
         } else {
             args.text
         };
         let request = TtsRequest {
-            provider: args.provider,
+            provider,
             model: args.model,
             text,
             voice: args.voice,
@@ -489,10 +510,17 @@ impl MediaService for MediaServiceImpl {
             align: false, // 보이스 샘플 미리듣기 — 짧은 문장, LRC 정렬 불필요
         };
         match tts.synthesize(&request).await {
-            Ok(r) => Ok(Response::new(TtsSampleResponse {
-                audio_base64: base64_simple_encode(&r.audio),
-                content_type: r.content_type,
-            })),
+            Ok(r) => {
+                let url = self
+                    .manager
+                    .save_conv_attachment(conv, &name, &r.audio)
+                    .await
+                    .map_err(TonicStatus::internal)?;
+                Ok(Response::new(TtsSampleResponse {
+                    url,
+                    content_type: r.content_type,
+                }))
+            }
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

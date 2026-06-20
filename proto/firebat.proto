@@ -1584,7 +1584,7 @@ message TtsSampleRequest {
   string text = 4;           // 샘플 문장.
 }
 message TtsSampleResponse {
-  string audio_base64 = 1;   // 합성 오디오 base64 (data URL 로 클라 <audio> 재생).
+  string url = 1;            // 저장된 샘플 파일 URL — generate-once 캐시(같은 provider+voice 재생 즉시).
   string content_type = 2;
 }
 

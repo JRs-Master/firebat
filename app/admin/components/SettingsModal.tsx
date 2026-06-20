@@ -817,17 +817,18 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     }
     setTtsSampleVoice(voice);
     try {
-      const data = await apiPost<{ success?: boolean; audioBase64?: string; contentType?: string; error?: string }>(
+      const data = await apiPost<{ success?: boolean; url?: string; contentType?: string; error?: string }>(
         '/api/tts/sample',
         { provider, model, voice, text: 'Hello, this is a sample of my voice. I hope you like it.' },
         { category: 'settings' },
       );
-      if (!data?.success || !data.audioBase64) {
+      if (!data?.success || !data.url) {
         logger.warn('tts', `보이스 샘플 실패: ${data?.error ?? 'unknown'}`);
         setTtsSampleVoice(null);
         return;
       }
-      const audio = new Audio(`data:${data.contentType || 'audio/mpeg'};base64,${data.audioBase64}`);
+      // generate-once 파일 URL — 같은 보이스 재생 시 브라우저 캐시로 즉시.
+      const audio = new Audio(data.url);
       ttsSampleAudioRef.current = audio;
       audio.onended = () => { setTtsSampleVoice(null); ttsSampleAudioRef.current = null; };
       audio.onerror = () => { setTtsSampleVoice(null); ttsSampleAudioRef.current = null; };

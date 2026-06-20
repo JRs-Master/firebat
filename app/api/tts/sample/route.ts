@@ -30,9 +30,10 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
+  // generate-once 캐시 파일 URL — 같은 보이스 재생 시 브라우저가 캐시해 즉시.
   return NextResponse.json({
     success: true,
-    audioBase64: result.data.audioBase64,
+    url: result.data.url,
     contentType: result.data.contentType,
   });
 });
