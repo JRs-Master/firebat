@@ -1129,11 +1129,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       )}
       {segments.length > 0 && (
         <div className="mt-3">
-          {!isStatic && (
+          {/* 시험 모드(study=false)는 정답 확인(revealed) 전엔 받아쓰기·스크립트 숨김(시험 조건 = 컨닝 X).
+              정답 확인 후엔 스크립트 복습 허용. 학습 모드는 항상 노출. */}
+          {!isStatic && (isStudy || revealed) && (
             <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
               {isStudy && <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>}
               <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
-              <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>
+              {isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
             </div>
           )}
           {dictation && !isStatic && (
@@ -1157,33 +1159,21 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
           )}
           {showScript && (
             <div className="rounded-lg border border-[#d9cdae] p-2.5">
-              <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· {lrc ? '단어를 탭하면 그 단어부터 재생' : '줄을 탭하면 그 구간부터 재생'}</span></div>
+              <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
               <div className="flex flex-col gap-0.5">
                 {lrc ? lrc.map((ln, i) => {
-                  // 현재 재생 줄 = 연한 박스. 그 안 단어가 말해지는 순간 하나씩 채워짐(v2 단어별 정확 fill).
-                  // 단어 클릭 = 그 단어부터 재생(seek). 지난 단어=꽉 / 현재 단어=비례 / 다음 단어=빔.
+                  // 현재 재생 줄 = 연한 박스 + 진한 fill 이 왼→오로 쭉 이어짐(문장 단위, 부드럽게).
+                  // 단어별 칠하기 폐기(드리프트·산만). 줄 탭 = 그 줄부터 재생. 표시는 스크립트 원문(ln.text,
+                  // STT 단어 매핑 드리프트로 엉뚱한 줄에 단어 섞이던 것 방지).
                   const active = curLrc === i;
-                  const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
+                  const span = Math.max(ln.end - ln.start, 0.1);
+                  const fillPct = active ? Math.max(0, Math.min(((cur - ln.start) / span) * 100, 100)) : 0;
                   return (
-                    <div key={i} className={`rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
-                      <div className="flex gap-1.5">
+                    <div key={i} onClick={() => seekTo(ln.start)} className={`relative rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-white/60'}`}>
+                      {active && <div className="absolute inset-y-0 left-0 rounded bg-blue-300/40 pointer-events-none" style={{ width: `${fillPct}%` }} />}
+                      <div className="relative flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
-                        <span className="flex-1">
-                          {words.map((w, wi) => {
-                            const wspan = Math.max(w.end - w.start, 0.05);
-                            const wpct = active
-                              ? (cur >= w.end ? 100 : cur <= w.start ? 0 : Math.max(0, Math.min(((cur - w.start) / wspan) * 100, 100)))
-                              : 0;
-                            return (
-                              <span key={wi}>
-                                <span onClick={() => seekTo(w.start)} className="relative inline-block cursor-pointer rounded hover:bg-blue-200/50">
-                                  {wpct > 0 && <span className="absolute inset-y-0 left-0 rounded bg-blue-400/45 pointer-events-none" style={{ width: `${wpct}%` }} />}
-                                  <span className="relative">{w.word}</span>
-                                </span>{' '}
-                              </span>
-                            );
-                          })}
-                        </span>
+                        <span className="flex-1"><InlineMd text={ln.text} /></span>
                       </div>
                     </div>
                   );
