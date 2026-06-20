@@ -48,7 +48,7 @@ fn default_library_extraction_model() -> String {
     "gemini-3.5-flash".to_string()
 }
 fn default_library_extraction_pro_model() -> String {
-    "gemini-3.1-pro".to_string()
+    "gemini-3.1-pro-preview".to_string()
 }
 
 impl LlmRegistry {

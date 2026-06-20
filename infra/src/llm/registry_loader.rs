@@ -18,7 +18,7 @@ fn stub_registry() -> LlmRegistry {
         default_assistant_model: "gemini-3.1-flash-lite".to_string(),
         assistant_models: Vec::new(),
         default_library_extraction_model: "gemini-3.5-flash".to_string(),
-        library_extraction_pro_model: "gemini-3.1-pro".to_string(),
+        library_extraction_pro_model: "gemini-3.1-pro-preview".to_string(),
         models: Vec::new(),
     }
     // 실제 값은 models.json 에서 로드 — 이건 파일 부재 시 폴백 stub.

@@ -2,7 +2,7 @@
   "defaultAssistantModel": "current",
   "assistantModels": ["gemini-3.1-flash-lite", "gpt-5.4-nano"],
   "defaultLibraryExtractionModel": "gemini-3.5-flash",
-  "libraryExtractionProModel": "gemini-3.1-pro",
+  "libraryExtractionProModel": "gemini-3.1-pro-preview",
   "models": [
     {
       "id": "claude-opus-4-8",
@@ -249,7 +249,7 @@
       "category": "api-anthropic"
     },
     {
-      "id": "gemini-3.1-pro",
+      "id": "gemini-3.1-pro-preview",
       "maxOutput": 64000,
       "displayName": "Gemini 3.1 Pro",
       "provider": "Google",
