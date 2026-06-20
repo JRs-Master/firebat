@@ -531,8 +531,8 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
     setRevealed(false);
   };
   const reset = () => { setBoxes(list.map(() => 0)); setQueue(list.map((_, i) => i)); setRevealed(false); };
-  // 키보드 단축키 (카드 포커스 시만 — 채팅 입력과 충돌 0). ↓/Space/Enter=공개, 공개 후 ←모름 ↑애매 →외움 (1/2/3 대체).
-  const onKey = (e: React.KeyboardEvent) => {
+  // 키보드 단축키 = 전체화면 study 모드 구현 후 거기서 활성(인라인 채팅선 포커스 마찰 커서 보류). 복원용 보존.
+  /* const onKey = (e: React.KeyboardEvent) => {
     const k = e.key;
     if (!revealed) {
       if (k === ' ' || k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); setRevealed(true); }
@@ -542,7 +542,7 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
     if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === '3') { e.preventDefault(); grade('good'); }
     else if (k === 'ArrowLeft' || k === '1') { e.preventDefault(); grade('again'); }
     else if (k === 'ArrowUp' || k === '2') { e.preventDefault(); grade('hard'); }
-  };
+  }; */
 
   if (!cur) {
     return (
@@ -570,11 +570,8 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
       {/* 고정 높이 + 내부 스크롤 — 카드 크기 점프 방지 + 채점 버튼이 항상 같은 자리(인출 리듬) */}
       <div
         onClick={() => !revealed && setRevealed(true)}
-        onKeyDown={onKey}
-        onMouseEnter={(e) => { const a = document.activeElement; if (!(a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement)) e.currentTarget.focus(); }}
-        tabIndex={0}
         style={{ height: cardH ? `${cardH}px` : '320px' }}
-        className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] kb-ring ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
+        className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
       >
         <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-hide">
           <div className="min-h-full flex flex-col items-center justify-center text-center px-5 py-5">
@@ -619,7 +616,7 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
           </div>
         )}
       </div>
-      <div className="hidden sm:block text-center text-[10px] text-slate-400 mt-2">키보드 — Space/↓ 공개 · ← 모름 · ↑ 애매 · → 외움</div>
+      {/* 키보드 힌트 = 전체화면 study 모드 구현 후 복원 (Space/↓ 공개 · ← 모름 · ↑ 애매 · → 외움) */}
     </div>
   );
 }
