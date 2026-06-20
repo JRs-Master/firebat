@@ -314,6 +314,15 @@ impl TtsAdapter {
                 words: slice.to_vec(),
             });
         }
+        // Sanity gate — STT(특히 Gemini)가 오디오 길이를 크게 초과하는 엉터리 타임스탬프를 주면(실측:
+        // 39.76초 오디오에 56초 LRC = 40% 초과) 단어 클릭·fill 이 통째로 밀린다. 그런 정렬은 버려서(빈 Vec)
+        // 컴포넌트가 *실제 오디오 길이* 기반 글자수 추정으로 fallback — garbage 보다 정확. Whisper 는 정밀해 통과.
+        if let Some(d) = wav_duration_secs(audio, content_type) {
+            let max_end = out.iter().map(|l| l.end).fold(0.0_f64, f64::max);
+            if d > 0.5 && max_end > d * 1.15 {
+                return Vec::new();
+            }
+        }
         out
     }
 
@@ -513,6 +522,19 @@ impl ITtsPort for TtsAdapter {
         }
         Ok(result)
     }
+}
+
+/// WAV 길이(초) — 헤더 byte_rate(28..32) 로 data 길이 나눔. LRC sanity gate 용(mp3 는 None → 검사 skip,
+/// Whisper 정밀이라 무관). 헤더가 RIFF/WAVE 면만.
+fn wav_duration_secs(audio: &[u8], content_type: &str) -> Option<f64> {
+    if !content_type.contains("wav") || audio.len() < 44 || &audio[0..4] != b"RIFF" {
+        return None;
+    }
+    let byte_rate = u32::from_le_bytes([audio[28], audio[29], audio[30], audio[31]]) as f64;
+    if byte_rate <= 0.0 {
+        return None;
+    }
+    Some((audio.len() as f64 - 44.0) / byte_rate)
 }
 
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.
