@@ -391,9 +391,9 @@ function highlightWord(text: string, word: string): React.ReactNode {
 // 🔊 발음 (브라우저 TTS) — 음운 부호화
 function SpeakBtn({ word }: { word: string }) {
   return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); speakWord(word); }}
+    <button type="button" onClick={(e) => { e.stopPropagation(); speakWord(word); (e.currentTarget as HTMLButtonElement).blur(); }}
       title="발음 듣기" aria-label="발음 듣기"
-      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors shrink-0">
+      className="inline-flex items-center justify-center w-6 h-6 rounded-full text-slate-400 transition-colors shrink-0 active:text-blue-700 [@media(hover:hover)]:hover:text-blue-600 [@media(hover:hover)]:hover:bg-blue-50">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z" /></svg>
     </button>
   );
@@ -441,6 +441,8 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
   const [boxes, setBoxes] = useState<number[]>(() => list.map(() => 0));
   const [queue, setQueue] = useState<number[]>(() => list.map((_, i) => i));
   const [revealed, setRevealed] = useState(false);
+  // 차트·지도·슬라이드쇼와 동일한 세로 cap (모바일 320 / PC 480) — 비주얼 블록 높이 통일
+  const cardH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
 
   const total = list.length;
   const mastered = boxes.filter((b) => b >= VOCAB_MASTER).length;
@@ -498,30 +500,37 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
         <span className="text-[11px] font-semibold text-slate-500 shrink-0">{mastered}/{total} 외움 · {queue.length} 남음</span>
       </div>
 
+      {/* 고정 높이 + 내부 스크롤 — 카드 크기 점프 방지 + 채점 버튼이 항상 같은 자리(인출 리듬) */}
       <div
         onClick={() => !revealed && setRevealed(true)}
-        className={`rounded-xl border border-[#e9e2d0] bg-white px-5 py-6 min-h-[180px] flex flex-col items-center justify-center text-center shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
+        style={{ height: cardH ? `${cardH}px` : '320px' }}
+        className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
       >
-        <div className="flex items-center justify-center gap-2 flex-wrap">
-          {cur.pos && dir === 'ko2en' && <span className="text-[12px] text-indigo-400 font-medium">{cur.pos}</span>}
-          <span className="text-[22px] sm:text-[26px] font-bold text-slate-800">{front}</span>
-          {dir === 'en2ko' && <SpeakBtn word={cur.word} />}
-        </div>
-        {dir === 'en2ko' && cur.pronunciation && <div className="text-[13px] text-slate-400 mt-1">{cur.pronunciation}</div>}
-        {dir === 'en2ko' && cur.pos && <div className="text-[12px] text-indigo-400 font-medium mt-0.5">{cur.pos}</div>}
-
-        {!revealed ? (
-          <div className="mt-4 text-[13px] text-slate-400">{dir === 'en2ko' ? '뜻을 떠올려 보세요 · 탭하면 공개' : '영단어를 떠올려 보세요 · 탭하면 공개'}</div>
-        ) : (
-          <div className="mt-4 w-full">
-            <div className="flex items-center justify-center gap-2 flex-wrap pt-3 border-t border-[#eee6d2]">
-              <span className="text-[18px] sm:text-[20px] font-bold text-blue-700">{dir === 'en2ko' ? cur.meaning : cur.word}</span>
-              {dir === 'ko2en' && <SpeakBtn word={cur.word} />}
-              {dir === 'ko2en' && cur.pronunciation && <span className="text-[12px] text-slate-400">{cur.pronunciation}</span>}
+        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-hide">
+          <div className="min-h-full flex flex-col items-center justify-center text-center px-5 py-5">
+            {/* 앞면 — pos 없음(떠올릴 때 힌트 X) */}
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-[22px] sm:text-[26px] font-bold text-slate-800">{front}</span>
+              {dir === 'en2ko' && <SpeakBtn word={cur.word} />}
             </div>
-            <WordReveal w={cur} />
+            {dir === 'en2ko' && cur.pronunciation && <div className="text-[13px] text-slate-400 mt-1">{cur.pronunciation}</div>}
+
+            {!revealed ? (
+              <div className="mt-5 text-[13px] text-slate-400">{dir === 'en2ko' ? '뜻은? · 탭하여 확인' : '영단어는? · 탭하여 확인'}</div>
+            ) : (
+              <div className="mt-4 w-full">
+                {/* pos 는 항상 정답(공개)면에 — en→ko: 'n. 뜻' / ko→en: 'v. word' */}
+                <div className="flex items-center justify-center gap-1.5 flex-wrap pt-3 border-t border-[#eee6d2]">
+                  {dir === 'ko2en' && <SpeakBtn word={cur.word} />}
+                  {cur.pos && <span className="text-[13px] text-indigo-400 font-medium">{cur.pos}</span>}
+                  <span className="text-[18px] sm:text-[20px] font-bold text-blue-700">{dir === 'en2ko' ? cur.meaning : cur.word}</span>
+                  {dir === 'ko2en' && cur.pronunciation && <span className="text-[12px] text-slate-400">{cur.pronunciation}</span>}
+                </div>
+                <WordReveal w={cur} />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {revealed ? (
@@ -560,9 +569,10 @@ function VocabListView({ list }: { list: VocabWord[] }) {
               <div className="flex items-baseline gap-2">
                 <span className="font-semibold text-slate-800 text-[14px] sm:text-[15px] shrink-0">{w.word}</span>
                 <SpeakBtn word={w.word} />
-                {w.pos && <span className="text-[11px] text-indigo-400 font-medium shrink-0">{w.pos}</span>}
                 <button type="button" onClick={() => toggleOne(i)} className={`flex-1 text-left text-[13px] sm:text-[14px] rounded px-1.5 transition-colors cursor-pointer ${open ? 'text-slate-600' : 'bg-[#e9e0c8] text-transparent hover:bg-[#e2d6b8] select-none'}`}>
-                  {open ? <InlineMd text={w.meaning} /> : <span className="opacity-0">{w.meaning || '•••'}</span>}
+                  {open
+                    ? <span>{w.pos && <span className="text-indigo-400 font-medium">{w.pos} </span>}<InlineMd text={w.meaning} /></span>
+                    : <span className="opacity-0">{w.pos ? `${w.pos} ` : ''}{w.meaning || '•••'}</span>}
                 </button>
               </div>
               {open && <div className="pl-1 mt-1"><WordReveal w={w} /></div>}

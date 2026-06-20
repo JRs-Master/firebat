@@ -47,6 +47,12 @@ html::-webkit-scrollbar-thumb:hover,
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
 }
+/* 모바일에서만 스크롤바 숨김 — 터치 스크롤이라 시각 노이즈 제거(깔쌈). scrollbar-thin 과 같이 쓰면
+   PC 는 얇은 바 유지(스크롤 affordance), 모바일은 hidden. */
+@media (max-width: 639px) {
+  .scrollbar-hide { scrollbar-width: none; }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+}
 
 /* CMS Design Tokens — 사이트 전역 디자인 default.
    user route SSR 시점에 사용자 설정 토큰이 inline <style> 로 :root override.
