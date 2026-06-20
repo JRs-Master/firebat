@@ -340,6 +340,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     }
   }, []);
 
+  // Vault 키 현황 로드 — mount + 저장 직후(키 추가 시 게이팅 실시간 반영, F5 불필요).
+  const refreshVaultKeys = useCallback(() => {
+    return apiGet<{ success?: boolean; keys?: Record<string, { hasKey?: boolean; maskedKey?: string }> }>('/api/vault', { category: 'settings' })
+      .then(data => {
+        if (!data?.success) return;
+        setHasOpenaiKey(!!data.keys?.openai_api_key?.hasKey);
+        setHasGeminiKey(!!data.keys?.gemini_api_key?.hasKey);
+        if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey ?? '');
+        if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey ?? '');
+        if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey ?? '');
+        if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey ?? '');
+      })
+      .catch(() => {});
+  }, []);
+
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
     // 타임존 + thinking level
@@ -365,19 +380,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       })
       .catch(() => {});
 
-    // Vault 키
-    apiGet<{ success?: boolean; keys?: Record<string, { hasKey?: boolean; maskedKey?: string }> }>('/api/vault', { category: 'settings' })
-      .then(data => {
-        if (!data?.success) return;
-        setHasOpenaiKey(!!data.keys?.openai_api_key?.hasKey);
-        setHasGeminiKey(!!data.keys?.gemini_api_key?.hasKey);
-        if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey ?? '');
-        if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey ?? '');
-        if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey ?? '');
-        if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey ?? '');
-      })
-      .catch(() => {});
-  }, []);
+    // Vault 키 현황
+    refreshVaultKeys();
+  }, [refreshVaultKeys]);
 
   // 사용자 커스텀 프롬프트 저장
   // 시크릿
@@ -713,6 +718,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     setMainSaveState('loading');
     writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
 
+    // 카테고리별 마지막 선택 모델 기록 — 공급자/모드 전환 후 복귀 시 직전 모델 복원(restoreOrFirst).
+    // 저장 시점에만 갱신(미리보기 클릭은 안 건드림, 2026-05-10 설계). 옛 코드에 호출이 누락돼
+    // 카테고리 전환마다 첫 모델(기본)으로 리셋되던 버그 fix. localStorage(즉시) + 백엔드(멀티기기) 둘 다.
+    const saveCat = aiModel ? categoryOf(aiModel) : '';
+    const nextLastModelByCategory = saveCat
+      ? { ...lastModelByCategory, [saveCat]: aiModel }
+      : lastModelByCategory;
+    if (saveCat) setLastModelByCategory(nextLastModelByCategory);
+
     await apiPatch(
       '/api/settings',
       {
@@ -728,6 +742,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         ttsProvider,
         ttsModel,
         ttsVoice,
+        lastModelByCategory: nextLastModelByCategory,
       },
       { category: 'settings' },
     ).catch(() => {});
@@ -743,6 +758,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     await saveProviderKey('gemini', googleApiKey);
     await saveProviderKey('anthropic', anthropicApiKey);
     await saveProviderKey('vertex', vertexSaJson);
+    // 키 저장 직후 게이팅(hasOpenaiKey/hasGeminiKey + 마스킹값) 갱신 — TTS 탭 provider 활성화 등이
+    // F5 없이 즉시 반영(mount 때만 읽던 것 보완).
+    await refreshVaultKeys();
 
     // 계정 변경 — currentPassword 입력 시점에만 trigger. server validate_password_policy 가 authoritative.
     if (adminCurrentPw) {
