@@ -520,6 +520,7 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
       <div
         onClick={() => !revealed && setRevealed(true)}
         onKeyDown={onKey}
+        onMouseEnter={(e) => { const a = document.activeElement; if (!(a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement)) e.currentTarget.focus(); }}
         tabIndex={0}
         style={{ height: cardH ? `${cardH}px` : '320px' }}
         className={`rounded-xl border border-[#e9e2d0] bg-white flex flex-col overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)] kb-ring ${!revealed ? 'cursor-pointer hover:border-blue-200' : ''}`}
