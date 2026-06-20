@@ -1087,8 +1087,8 @@
       "category": "cli-gemini"
     },
     {
-      "id": "cli-gemini-3-flash",
-      "displayName": "Gemini CLI (3 Flash)",
+      "id": "cli-gemini-3.5-flash",
+      "displayName": "Gemini CLI (3.5 Flash)",
       "provider": "CLI",
       "format": "cli-gemini",
       "endpoint": "gemini",
