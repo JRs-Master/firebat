@@ -2312,7 +2312,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                 aria-label={composerCollapsed ? '입력창 펼치기' : '입력창 접기'}
                 className="flex items-center gap-1 px-3 py-0.5 rounded-full bg-white/90 border border-slate-200 text-slate-400 text-[11px] font-medium shadow-sm transition-colors active:text-blue-700 hover-blue"
               >
-                {composerCollapsed ? <><ChevronUp size={14} /><span>입력창</span></> : <ChevronDown size={14} />}
+                {composerCollapsed ? <><ChevronUp size={14} /><span>입력창</span></> : <><ChevronDown size={14} /><span>입력창</span></>}
               </button>
             </div>
             {!composerCollapsed && (
