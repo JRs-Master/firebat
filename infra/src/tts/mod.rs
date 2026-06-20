@@ -247,14 +247,25 @@ impl TtsAdapter {
             .json()
             .await
             .map_err(|e| format!("Gemini TTS 응답 파싱: {e}"))?;
-        let b64 = json["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
+        let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
+        let b64 = inline["data"]
             .as_str()
             .ok_or_else(|| "Gemini TTS 응답에 오디오 데이터 없음".to_string())?;
+        // 샘플레이트 = 응답 mimeType 의 rate= 에서 읽음("audio/L16;codec=pcm;rate=24000").
+        // 옛엔 24000 하드코딩 → 모델이 다른 rate(예 16kHz)면 WAV 가 1.5배 빨라지고 길이·LRC 가 통째 어긋남.
+        let mime = inline["mimeType"].as_str().unwrap_or("");
+        let rate = mime
+            .split(';')
+            .find_map(|s| s.trim().strip_prefix("rate="))
+            .and_then(|r| r.trim().parse::<u32>().ok())
+            .filter(|r| *r >= 8000 && *r <= 48000)
+            .unwrap_or(24000);
+        tracing::info!(target: "tts", mime = %mime, rate = rate, "Gemini TTS PCM 샘플레이트");
         let pcm = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("Gemini PCM 디코드: {e}"))?;
         Ok(TtsResult {
-            audio: pcm_to_wav(&pcm, 24000, 1, 16),
+            audio: pcm_to_wav(&pcm, rate, 1, 16),
             content_type: "audio/wav".to_string(),
             ext: "wav".to_string(),
             lines: Vec::new(),
