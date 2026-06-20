@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react'
 import { useRouter } from 'next/navigation';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { CodeComp } from '@/app/components/CodeBlock';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -68,14 +69,11 @@ const mdComponents = {
       }
       return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
     }
-    const lang = className?.replace('language-', '') || '';
-    return (
-      <div className="rounded-xl border border-slate-200 overflow-hidden mb-2">
-        {lang && <div className="px-4 py-1.5 bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide">{lang}</div>}
-        <pre className="bg-slate-50 text-slate-800 p-4 overflow-x-auto text-[13px] font-mono"><code {...props}>{children}</code></pre>
-      </div>
-    );
+    const lang = className?.replace('language-', '') || 'plaintext';
+    return <CodeComp code={text} language={lang} showLineNumbers={false} />;
   },
+  // 펜스 블록의 기본 <pre> 래퍼 제거 — code override(CodeComp)가 자체 <pre> 카드를 그림(중첩 pre 방지).
+  pre: ({ children }: any) => <>{children}</>,
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
   table: (props: any) => <MarkdownTableBox {...props} />,
   th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,

@@ -2,6 +2,7 @@
 
 import { Ghost } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { CodeComp } from '@/app/components/CodeBlock';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
@@ -60,8 +61,11 @@ const mdComponents = {
     const text = String(children).replace(/\n$/, '');
     const isBlock = /language-/.test(className || '') || text.includes('\n');
     if (!isBlock) return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
-    return <pre className="bg-slate-50 text-slate-800 p-4 overflow-x-auto text-[13px] font-mono rounded-xl border border-slate-200"><code {...props}>{children}</code></pre>;
+    const lang = className?.replace('language-', '') || 'plaintext';
+    return <CodeComp code={text} language={lang} showLineNumbers={false} />;
   },
+  // 펜스 블록 기본 <pre> 래퍼 제거 — CodeComp 가 자체 <pre> 카드를 그림(중첩 pre 방지).
+  pre: ({ children }: any) => <>{children}</>,
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
   table: (props: any) => (
     <div className="overflow-auto mb-2 rounded-xl border border-slate-200">

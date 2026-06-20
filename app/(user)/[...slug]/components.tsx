@@ -14,6 +14,8 @@ import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
 import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../../lib/util/md';
+import { loadCdn } from '@/lib/util/load-cdn';
+import { CodeComp } from '@/app/components/CodeBlock';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -3370,36 +3372,7 @@ function MapComp({
 
 // ── 동적 CDN 로드 헬퍼 ───────────────────────────────────────────────────────
 /** CDN script + CSS 동적 로드. 이미 설정되어 있으면 skip. onload 보장. */
-function loadCdn(opts: { js?: string[]; css?: string[]; globalCheck?: () => boolean }): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof window === 'undefined') return resolve();
-    if (opts.globalCheck?.()) return resolve();
-    for (const css of opts.css ?? []) {
-      if (!document.querySelector(`link[href="${css}"]`)) {
-        const l = document.createElement('link');
-        l.rel = 'stylesheet'; l.href = css;
-        document.head.appendChild(l);
-      }
-    }
-    const jsList = opts.js ?? [];
-    if (jsList.length === 0) return resolve();
-    let pending = jsList.length;
-    const onDone = () => { pending--; if (pending === 0) resolve(); };
-    for (const js of jsList) {
-      const existing = document.querySelector(`script[src="${js}"]`) as HTMLScriptElement | null;
-      if (existing) {
-        if ((existing as any)._loaded) onDone();
-        else existing.addEventListener('load', onDone);
-      } else {
-        const s = document.createElement('script');
-        s.src = js;
-        s.onload = () => { (s as any)._loaded = true; onDone(); };
-        s.onerror = onDone;
-        document.head.appendChild(s);
-      }
-    }
-  });
-}
+// loadCdn → @/lib/util/load-cdn (추출 — mermaid/katex/highlight 공용 lazy 로더).
 
 // ── Diagram (mermaid) ───────────────────────────────────────────────────────
 function DiagramComp({ code, theme }: { code: string; theme?: string | null }) {
@@ -3457,53 +3430,7 @@ function MathComp({ expression, block }: { expression: string; block: boolean })
   return <span ref={ref} className="inline-block max-w-full overflow-x-auto align-bottom" />;
 }
 
-// ── Code (highlight.js) ─────────────────────────────────────────────────────
-function CodeComp({ code, language, showLineNumbers, title }: {
-  code: string; language: string; showLineNumbers: boolean; title?: string | null;
-}) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (!ref.current || !code) return;
-    const target = ref.current;
-    loadCdn({
-      js: ['https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js'],
-      css: ['https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css'],
-      globalCheck: () => !!(window as any).hljs,
-    }).then(() => {
-      const w = window as any;
-      if (!w.hljs) return;
-      try {
-        const langClass = w.hljs.getLanguage(language) ? language : 'plaintext';
-        const result = w.hljs.highlight(code, { language: langClass });
-        target.innerHTML = result.value;
-        target.className = `hljs language-${langClass}`;
-      } catch {
-        target.textContent = code;
-      }
-    });
-  }, [code, language]);
-
-  const lines = showLineNumbers ? code.split('\n') : [];
-  return (
-    <div className="my-3 rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-      {title && (
-        <div className="bg-gray-50 px-4 py-2 text-[12px] font-mono text-gray-600 border-b border-gray-100">
-          {title}
-        </div>
-      )}
-      <div className="flex">
-        {showLineNumbers && (
-          <div className="bg-gray-50 px-3 py-3 text-[12px] font-mono text-gray-400 select-none text-right border-r border-gray-100">
-            {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
-          </div>
-        )}
-        <pre className="flex-1 p-3 text-[13px] overflow-x-auto" style={{ margin: 0 }}>
-          <code ref={ref}>{code}</code>
-        </pre>
-      </div>
-    </div>
-  );
-}
+// CodeComp → @/app/components/CodeBlock (추출 — render code 컴포넌트 + 채팅/공유 마크다운 펜스 공용).
 
 // ── Slideshow (Swiper) ──────────────────────────────────────────────────────
 type SlideImage = { src: string; alt?: string | null; caption?: string | null };
