@@ -2430,6 +2430,30 @@ pub trait IMediaPort: Send + Sync {
     /// 30일 retention cleanup — `cutoff_ms` 보다 mtime 이 오래된 임시 첨부 일괄 삭제.
     /// 응답: 삭제된 파일 개수.
     async fn cleanup_old_attachments(&self, cutoff_ms: i64) -> InfraResult<i64>;
+
+    /// conv-scoped 첨부 저장 — `<root>/user/attachments/<conv>/<name>`. 채팅에 붙은 미디어(TTS 오디오·
+    /// 업로드 이미지)는 대화와 함께 살고, 대화 영구삭제 시 delete_conv_attachments 로 cascade 삭제.
+    /// 30일 cleanup 대상 아님(서브디렉토리 = is_file 가드가 건너뜀 = 대화 수명 따름).
+    /// name = 호출자 지정 파일명(TTS = 캐시키 hash+provider+voice + ext). 반환 = URL.
+    async fn save_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+        binary: &[u8],
+    ) -> InfraResult<String>;
+
+    /// conv-scoped 첨부 존재 시 URL (캐시 히트 확인 — 없으면 None). 재생성 방지용.
+    async fn conv_attachment_url(&self, conv: &str, name: &str) -> InfraResult<Option<String>>;
+
+    /// conv-scoped 첨부 read — `/user/attachments/<conv>/<name>` serve handler 가 호출.
+    async fn read_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>>;
+
+    /// 대화 영구삭제 cascade — 그 대화의 첨부 디렉토리 통째 삭제(없으면 no-op).
+    async fn delete_conv_attachments(&self, conv: &str) -> InfraResult<()>;
 }
 
 /// IEpisodicPort — Phase 2 episodic tier port.

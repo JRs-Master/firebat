@@ -578,6 +578,127 @@ impl IMediaPort for LocalMediaAdapter {
         }
         Ok(removed)
     }
+
+    /// conv-scoped 첨부 저장 — `<root>/user/attachments/<conv>/<name>`. 채팅에 붙은 미디어(TTS 오디오·
+    /// 업로드 이미지)는 대화와 함께 살고, 대화 영구삭제 시 delete_conv_attachments 로 cascade 삭제된다.
+    /// 30일 cleanup 대상 아님 — cleanup_old_attachments 의 is_file 가드가 conv 서브디렉토리를 건너뜀
+    /// (= 대화 수명 따름). name = 호출자 지정 파일명(TTS = 캐시키 hash+provider+voice + ext).
+    async fn save_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+        binary: &[u8],
+    ) -> InfraResult<String> {
+        let conv = sanitize_path_seg(conv);
+        let name = sanitize_path_seg(name);
+        if conv.is_empty() || name.is_empty() {
+            return Err("conv/name path segment 무효".to_string());
+        }
+        let dir = self.root.join("user").join("attachments").join(&conv);
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| format!("conv attachment dir 생성: {e}"))?;
+        tokio::fs::write(dir.join(&name), binary)
+            .await
+            .map_err(|e| format!("conv attachment write: {e}"))?;
+        Ok(format!("/user/attachments/{conv}/{name}"))
+    }
+
+    /// conv-scoped 첨부 존재 시 URL (캐시 히트 확인 — 없으면 None). TTS 재생성 방지용.
+    async fn conv_attachment_url(&self, conv: &str, name: &str) -> InfraResult<Option<String>> {
+        let conv = sanitize_path_seg(conv);
+        let name = sanitize_path_seg(name);
+        if conv.is_empty() || name.is_empty() {
+            return Ok(None);
+        }
+        let path = self
+            .root
+            .join("user")
+            .join("attachments")
+            .join(&conv)
+            .join(&name);
+        Ok(if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            Some(format!("/user/attachments/{conv}/{name}"))
+        } else {
+            None
+        })
+    }
+
+    /// conv-scoped 첨부 read — `/user/attachments/<conv>/<name>` serve handler 가 호출.
+    async fn read_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>> {
+        let conv = sanitize_path_seg(conv);
+        let name = sanitize_path_seg(name);
+        if conv.is_empty() || name.is_empty() {
+            return Ok(None);
+        }
+        let path = self
+            .root
+            .join("user")
+            .join("attachments")
+            .join(&conv)
+            .join(&name);
+        let binary = match tokio::fs::read(&path).await {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("conv attachment read: {e}")),
+        };
+        let ext = name.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+        Ok(Some((binary, attachment_content_type(ext))))
+    }
+
+    /// 대화 영구삭제 cascade — 그 대화의 첨부 디렉토리 통째 삭제(없으면 no-op).
+    async fn delete_conv_attachments(&self, conv: &str) -> InfraResult<()> {
+        let conv = sanitize_path_seg(conv);
+        if conv.is_empty() {
+            return Ok(());
+        }
+        let dir = self.root.join("user").join("attachments").join(&conv);
+        match tokio::fs::remove_dir_all(&dir).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("conv attachments 삭제: {e}")),
+        }
+    }
+}
+
+/// path segment 안전화 — traversal/구분자 방어. [a-zA-Z0-9._-] 만 남기고 나머지는 '_'.
+/// 순수 `.`/`..` 또는 빈 결과는 무효(빈 문자열) 처리해 부모 디렉토리 탈출 차단.
+fn sanitize_path_seg(s: &str) -> String {
+    let out: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() || out == "." || out == ".." {
+        String::new()
+    } else {
+        out
+    }
+}
+
+/// 확장자 → content-type (이미지 + 오디오). conv 첨부 serve 용.
+fn attachment_content_type(ext: &str) -> String {
+    match ext.to_lowercase().as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" | "aac" => "audio/mp4",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 #[cfg(test)]
