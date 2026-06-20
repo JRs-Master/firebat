@@ -365,17 +365,17 @@ impl TtsAdapter {
             }
             return Vec::new();
         }
-        // auto — Whisper 우선(정밀), 실패/없으면 Gemini.
+        // auto — Whisper(OpenAI, word 타임스탬프 전용 설계)만. Gemini 는 단어 정렬이 불안정해 auto 폴백에서 제외.
+        // 실측(같은 39.76초 wav, 스크립트·길이까지 준 forced-align 2회): 단어별 start MAE 2.7초 + 뒤로 갈수록
+        // 드리프트(마지막 단어 35.5초 vs 실제 발화 끝 39.3초) = 개수·끝점만 맞고 중간 위치는 추측. → OpenAI 키
+        // 없으면 빈 Vec → 컴포넌트가 실제 길이 기반 글자수 추정(결정적, 끝점 정확, 드리프트 0).
+        // (Gemini 정렬을 굳이 쓰려면 system:tts:align_provider='gemini' 명시 = 짧은 오디오 opt-in.)
+        let _ = has_gemini;
         if has_openai {
             if let Ok(w) = self.whisper_words(audio, content_type).await {
                 if !w.is_empty() {
                     return w;
                 }
-            }
-        }
-        if has_gemini {
-            if let Ok(w) = self.gemini_words(audio, content_type).await {
-                return w;
             }
         }
         Vec::new()
