@@ -22,6 +22,7 @@ use crate::proto::{
     MediaGetImageDefaultSizeRequest, MediaGetImageDefaultSizeResponse, MediaGetImageModelRequest,
     MediaGetImageModelResponse, MediaGetImageSettingsRequest, MediaIsReadyRequest,
     MediaIsReadyResponse, MediaListRequest, MediaListResultPb, MediaReadPb, MediaReadRequest,
+    MediaReadConvAttachmentRequest, MediaReadConvAttachmentResponse,
     MediaReadTempAttachmentRequest, MediaReadTempAttachmentResponse,
     MediaRegenerateRequest, MediaRemoveRequest, MediaRemoveResponse, MediaSaveRequest,
     MediaSaveResultPb, MediaSaveTempAttachmentRequest, MediaSaveTempAttachmentResponse,
@@ -419,6 +420,30 @@ impl MediaService for MediaServiceImpl {
                 }))
             }
             Ok(None) => Ok(Response::new(MediaReadTempAttachmentResponse {
+                found: false,
+                binary: Vec::new(),
+                content_type: String::new(),
+            })),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn read_conv_attachment(
+        &self,
+        req: Request<MediaReadConvAttachmentRequest>,
+    ) -> Result<Response<MediaReadConvAttachmentResponse>, TonicStatus> {
+        let args = req.into_inner();
+        match self
+            .manager
+            .read_conv_attachment(&args.conv, &args.name)
+            .await
+        {
+            Ok(Some((binary, content_type))) => Ok(Response::new(MediaReadConvAttachmentResponse {
+                found: true,
+                binary,
+                content_type,
+            })),
+            Ok(None) => Ok(Response::new(MediaReadConvAttachmentResponse {
                 found: false,
                 binary: Vec::new(),
                 content_type: String::new(),

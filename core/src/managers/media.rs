@@ -587,6 +587,40 @@ impl MediaManager {
         self.media.cleanup_old_attachments(cutoff).await
     }
 
+    /// conv-scoped 첨부 저장 — `/user/attachments/<conv>/<name>`. 대화와 함께 살고 cascade 삭제됨
+    /// (30일 cleanup 대상 아님). TTS 오디오 등 호출자 생성 미디어용 (caller 가 콘텐츠 신뢰성 책임).
+    pub async fn save_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+        binary: &[u8],
+    ) -> InfraResult<String> {
+        self.media.save_conv_attachment(conv, name, binary).await
+    }
+
+    /// conv-scoped 첨부 존재 시 URL (캐시 히트 확인 — 없으면 None). 재생성 방지용.
+    pub async fn conv_attachment_url(
+        &self,
+        conv: &str,
+        name: &str,
+    ) -> InfraResult<Option<String>> {
+        self.media.conv_attachment_url(conv, name).await
+    }
+
+    /// conv-scoped 첨부 read — `/user/attachments/<conv>/<name>` serve handler 가 호출.
+    pub async fn read_conv_attachment(
+        &self,
+        conv: &str,
+        name: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>> {
+        self.media.read_conv_attachment(conv, name).await
+    }
+
+    /// 대화 영구삭제 cascade — 그 대화의 첨부 디렉토리 삭제.
+    pub async fn delete_conv_attachments(&self, conv: &str) -> InfraResult<()> {
+        self.media.delete_conv_attachments(conv).await
+    }
+
     pub async fn save_error_record(
         &self,
         opts: MediaSaveOptions,

@@ -11,6 +11,8 @@ import {
   MediaIsReadyRequestSchema,
   MediaListRequestSchema,
   MediaListResultPb,
+  MediaReadConvAttachmentRequestSchema,
+  MediaReadConvAttachmentResponse,
   MediaReadPb,
   MediaReadRequestSchema,
   MediaReadTempAttachmentRequestSchema,
@@ -201,6 +203,15 @@ export async function cleanupOldAttachments(): Promise<RpcResult<bigint>> {
 export async function readTempAttachment(args: MessageInitShape<typeof MediaReadTempAttachmentRequestSchema>): Promise<RpcResult<MediaReadTempAttachmentResponse>> {
   try {
       const response = await mediaClient.readTempAttachment(args ?? {});
+      return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function readConvAttachment(args: MessageInitShape<typeof MediaReadConvAttachmentRequestSchema>): Promise<RpcResult<MediaReadConvAttachmentResponse>> {
+  try {
+      const response = await mediaClient.readConvAttachment(args ?? {});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);

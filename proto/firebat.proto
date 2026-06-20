@@ -1568,6 +1568,15 @@ message MediaReadTempAttachmentResponse {
   bytes binary = 2;
   string content_type = 3;
 }
+message MediaReadConvAttachmentRequest {
+  string conv = 1;           // conversation id — path seg 가드는 adapter 안.
+  string name = 2;           // <name>.<ext>
+}
+message MediaReadConvAttachmentResponse {
+  bool found = 1;
+  bytes binary = 2;
+  string content_type = 3;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // 13. MediaService — MediaManager
@@ -1598,6 +1607,9 @@ service MediaService {
   rpc CleanupOldAttachments(MediaCleanupOldAttachmentsRequest) returns (MediaCleanupOldAttachmentsResponse);
   /// 채팅 첨부 read — `/user/attachments/<filename>` URL handler 가 호출. binary + content_type 반환.
   rpc ReadTempAttachment(MediaReadTempAttachmentRequest) returns (MediaReadTempAttachmentResponse);
+  /// conv-scoped 첨부 read — `/user/attachments/<conv>/<name>` URL handler 가 호출.
+  /// 채팅에 붙은 미디어(TTS 오디오 등) — 대화와 함께 살고 영구삭제 시 cascade.
+  rpc ReadConvAttachment(MediaReadConvAttachmentRequest) returns (MediaReadConvAttachmentResponse);
 }
 
 // ─── EventService typed Request / Response messages ────────────────────────

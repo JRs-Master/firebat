@@ -859,7 +859,8 @@ async fn main() -> Result<()> {
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =
         grpc::conversation::ConversationServiceImpl::new(conversation_manager.clone())
-            .with_db(db.clone());
+            .with_db(db.clone())
+            .with_media(media_manager.clone());
     let mcp_service = grpc::mcp::McpServiceImpl::new(mcp_manager.clone());
     let entity_service = grpc::entity::EntityServiceImpl::new(entity_manager.clone());
     let episodic_service = grpc::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
@@ -871,7 +872,8 @@ async fn main() -> Result<()> {
     // Hub — Phase 1 (2026-05-17). core/grpc/hub.rs 영역. SendMessage RPC 안 AiManager 의존
     // (외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 가드 + 영속화 한 RPC 안 흐름).
     let hub_service =
-        grpc::hub::HubServiceImpl::new(hub_manager.clone(), ai_manager.clone());
+        grpc::hub::HubServiceImpl::new(hub_manager.clone(), ai_manager.clone())
+            .with_media(media_manager.clone());
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
     let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());

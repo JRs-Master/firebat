@@ -29,6 +29,9 @@ pub struct ConversationServiceImpl {
     /// IDatabasePort (옵션) — shared_conversations 테이블 RPC (create_share / get_share /
     /// cleanup_expired_shares). 미설정 시 stub 반환.
     db: Option<Arc<dyn IDatabasePort>>,
+    /// MediaManager (옵션) — 대화 영구삭제 시 conv-scoped 첨부 미디어(TTS 오디오 등) cascade.
+    /// 미설정 시 cascade skip.
+    media: Option<Arc<crate::managers::media::MediaManager>>,
 }
 
 impl ConversationServiceImpl {
@@ -36,12 +39,19 @@ impl ConversationServiceImpl {
         Self {
             manager,
             db: None,
+            media: None,
         }
     }
 
     /// IDatabasePort 설정한 채로 부팅 — 공유 대화 RPC 활성.
     pub fn with_db(mut self, db: Arc<dyn IDatabasePort>) -> Self {
         self.db = Some(db);
+        self
+    }
+
+    /// MediaManager 설정 — 대화 영구삭제 시 첨부 미디어 cascade 활성.
+    pub fn with_media(mut self, media: Arc<crate::managers::media::MediaManager>) -> Self {
+        self.media = Some(media);
         self
     }
 }
@@ -311,6 +321,12 @@ impl ConversationService for ConversationServiceImpl {
         self.manager
             .permanent_delete(&args.owner, &args.id)
             .map_err(TonicStatus::internal)?;
+        // cascade: 그 대화의 conv-scoped 첨부 미디어(TTS 오디오 등) 삭제 — best-effort(실패해도 막지 않음).
+        if let Some(media) = &self.media {
+            if let Err(e) = media.delete_conv_attachments(&args.id).await {
+                tracing::warn!(target: "media", "conv 첨부 cascade 삭제 실패 (conv={}): {e}", args.id);
+            }
+        }
         Ok(Response::new(ConversationPermanentDeleteResponse {}))
     }
 

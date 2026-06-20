@@ -38,11 +38,23 @@ use crate::proto::{
 pub struct HubServiceImpl {
     manager: Arc<HubManager>,
     ai: Arc<AiManager>,
+    /// MediaManager (옵션) — hub 대화 영구삭제 시 conv-scoped 첨부 미디어 cascade. 미설정 시 skip.
+    media: Option<Arc<crate::managers::media::MediaManager>>,
 }
 
 impl HubServiceImpl {
     pub fn new(manager: Arc<HubManager>, ai: Arc<AiManager>) -> Self {
-        Self { manager, ai }
+        Self {
+            manager,
+            ai,
+            media: None,
+        }
+    }
+
+    /// MediaManager 설정 — hub 대화 영구삭제 시 첨부 cascade 활성.
+    pub fn with_media(mut self, media: Arc<crate::managers::media::MediaManager>) -> Self {
+        self.media = Some(media);
+        self
     }
 
     /// hub visitor 격리 — instance_id/session_id 지정 시 conv 의 그것과 모두 일치할 때만 통과.
@@ -390,6 +402,12 @@ impl HubService for HubServiceImpl {
             .permanent_delete_conversation(&args.id)
             .await
             .map_err(TonicStatus::internal)?;
+        // cascade: hub 대화의 conv-scoped 첨부 미디어(TTS 오디오 등) 삭제 — best-effort.
+        if let Some(media) = &self.media {
+            if let Err(e) = media.delete_conv_attachments(&args.id).await {
+                tracing::warn!(target: "media", "hub conv 첨부 cascade 삭제 실패 (conv={}): {e}", args.id);
+            }
+        }
         Ok(Response::new(HubPermanentDeleteConversationResponse {}))
     }
 
