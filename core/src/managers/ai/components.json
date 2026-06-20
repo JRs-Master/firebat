@@ -1124,11 +1124,12 @@
         "audioUrl": { "type": ["string", "null"], "description": "the mp3 URL (cloud TTS, conversation-scoped via the tts sysmod). Omit while audio is being generated → shows a 'generating' placeholder." },
         "script": {
           "type": ["array", "null"],
-          "items": { "type": "object", "synonyms": { "spk": "speaker", "name": "speaker", "line": "text", "en": "text" }, "properties": { "speaker": { "type": ["string", "null"], "description": "speaker label M/W/A/B (multi-speaker dialogue)" }, "text": { "type": "string" } } },
+          "items": { "type": "object", "synonyms": { "spk": "speaker", "name": "speaker", "line": "text", "en": "text" }, "properties": { "speaker": { "type": ["string", "null"], "description": "speaker label M/W/A/B (multi-speaker dialogue)" }, "text": { "type": "string" }, "start": { "type": ["number", "null"], "description": "optional start time in seconds for tap-to-replay sync (LRC). Usually left unset — the tts pipeline fills it." } } },
           "description": "transcript lines (받아쓰기 — hidden until the learner taps to check after dictation). Each: text + optional speaker label. Also accepts an array of plain strings."
         },
         "questions": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "options": "choices" }, "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "choices": { "type": ["array", "null"], "items": { "type": "string" } }, "answer": { "type": ["number", "string", "null"] }, "answerIndex": { "type": ["number", "null"] }, "type": { "type": ["string", "null"] }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "questions about the audio (same shape as quiz_group questions — MC choices, or type:'ox'/'tfng', answer, explanation)." },
-        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
+        "mode": { "type": ["string", "null"], "description": "'study' (default — speed/repeat/A-B/dictation for self-study) or 'exam' (test conditions — single listen, no repeat/speed/dictation controls). Use 'exam' for published test/exam pages." },
+        "view": { "type": ["string", "null"], "description": "answers / full / interactive (default interactive)" }
       }
     }
   },

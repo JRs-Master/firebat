@@ -121,7 +121,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
-    case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} view={p.view} />;
+    case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -876,11 +876,13 @@ function dictationDiff(script: string, typed: string) {
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
-function ListeningPlayer({ src, audioRef, onTime, onDur }: {
+function ListeningPlayer({ src, audioRef, onTime, onDur, study = true }: {
   src: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onTime: (t: number) => void;
   onDur: (d: number) => void;
+  /** 학습 모드 = 속도·전체반복·구간반복 노출. 시험 모드(false) = 재생+위치+볼륨만(1회청취). */
+  study?: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -916,18 +918,23 @@ function ListeningPlayer({ src, audioRef, onTime, onDur }: {
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
       </div>
-      {/* 컨트롤 2그룹 — 모바일: 속도 줄 / 반복·구간·볼륨 줄(속도 그룹이 w-full 이라 다음 그룹이 줄바꿈). 데스크톱: 한 줄. */}
+      {/* 컨트롤 2그룹 — 모바일: 속도 줄 / 반복·구간·볼륨 줄(속도 그룹이 w-full 이라 다음 그룹이 줄바꿈). 데스크톱: 한 줄.
+          시험 모드(study=false)면 속도·전체반복·구간반복 숨김(1회청취), 볼륨만 유지. */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
-        <div className="flex items-center gap-1.5 w-full sm:w-auto">
-          <span className="text-slate-400">속도</span>
-          {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
-        </div>
+        {study && (
+          <div className="flex items-center gap-1.5 w-full sm:w-auto">
+            <span className="text-slate-400">속도</span>
+            {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
-          <span className="text-slate-400 ml-1">구간</span>
-          <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
-          <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
-          {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+          {study && <>
+            <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
+            <span className="text-slate-400 ml-1">구간</span>
+            <button type="button" onClick={() => setAbA(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) 지정">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
+            <button type="button" onClick={() => setAbB(cur)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) 지정">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
+            {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+          </>}
           <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
           <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
         </div>
@@ -936,13 +943,15 @@ function ListeningPlayer({ src, audioRef, onTime, onDur }: {
   );
 }
 
-function ListeningComp({ title, audioUrl, image, script, questions, browserTts, view = 'interactive' }: {
-  title?: string | null; audioUrl?: string | null; image?: string | null; script?: any; questions?: any; browserTts?: boolean; view?: QuizView;
+function ListeningComp({ title, audioUrl, image, script, questions, browserTts, mode, view = 'interactive' }: {
+  title?: string | null; audioUrl?: string | null; image?: string | null; script?: any; questions?: any; browserTts?: boolean; mode?: string; view?: QuizView;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
   const isStatic = view !== 'interactive';
+  // 시험 모드(mode='exam') = 1회청취(속도·반복·받아쓰기 숨김). 기본 = 학습(study, 전 기능). AI 가 page 발행 등에서 'exam' 지정.
+  const isStudy = mode !== 'exam';
   // 브라우저 TTS 모드 — API 키 없을 때 fallback. 클라 Web Speech 가 스크립트 낭독(단일 음성, 파일 없음).
   const browserMode = !!browserTts && !audioUrl;
   const [bSpeaking, setBSpeaking] = useState(false);
@@ -1026,18 +1035,20 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
-        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} />
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
             onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{bSpeaking ? '❚❚' : '▶'}</button>
-          <div className="flex items-center gap-1 text-[11px]">
-            <span className="text-slate-400">속도</span>
-            {[0.5, 0.75, 1, 1.25].map((s) => (
-              <button key={s} type="button" onClick={() => setBSpeed(s)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bSpeed === s ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{s}×</button>
-            ))}
-          </div>
+          {isStudy && (
+            <div className="flex items-center gap-1 text-[11px]">
+              <span className="text-slate-400">속도</span>
+              {[0.5, 0.75, 1, 1.25].map((s) => (
+                <button key={s} type="button" onClick={() => setBSpeed(s)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bSpeed === s ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{s}×</button>
+              ))}
+            </div>
+          )}
           <div className="ml-auto flex items-center gap-1 text-[11px]">
             <span className="text-slate-400" aria-hidden>🔊</span>
             <input type="range" min={0} max={1} step={0.05} value={bVol} onChange={(e) => setBVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
@@ -1050,7 +1061,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
         <div className="mt-3">
           {!isStatic && (
             <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
-              <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>
+              {isStudy && <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>}
               <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
               <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>
             </div>
