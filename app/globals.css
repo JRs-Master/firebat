@@ -97,6 +97,15 @@ html::-webkit-scrollbar-thumb:hover,
 .firebat-cms-content h6 {
   font-family: var(--cms-font-heading);
 }
+/* 인라인 코드 = 은은한 칩. 발행 페이지는 테마(다크/커스텀)가 적용되므로 고정색 대신 currentColor
+   기반으로 글자색에 맞춰 적응(라이트/다크 모두 자연). pre 안 블록 코드는 제외(:not(pre) > code). */
+.firebat-cms-content :not(pre) > code {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0.375rem;
+  padding: 0.1em 0.4em;
+  font-size: 0.875em;
+}
 
 /* ── Heading 스타일 6 옵션 — h1/h2/h3 각자 별도 적용.
    layout.tsx 가 data-h1-style="..." 등 attribute 설정하면 해당 style 적용. */
