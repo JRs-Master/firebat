@@ -952,10 +952,18 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const lines = (Array.isArray(script) ? script : typeof script === 'string' ? script.split('\n').map((t: string) => ({ text: t })) : [])
     .map((l: any) => (typeof l === 'string' ? { text: l } : l)).filter((l: any) => l && (l.text || l.line));
   const qs = Array.isArray(questions) ? questions : [];
+  // Part 1(사진 묘사) 안전망 — script 가 비고 image + 선택지만 있으면 그 선택지(= 낭독될 4문장)를 스크립트로.
+  // image 게이트라 Part 3/4(이미지 없음 + 선택지=정답옵션)엔 적용 안 함(낭독 텍스트는 항상 script 가 정공).
+  const firstChoices = qs[0] ? (qs[0].choices ?? qs[0].options) : null;
+  const effectiveLines = lines.length > 0
+    ? lines
+    : (image && Array.isArray(firstChoices) && firstChoices.length > 0)
+      ? firstChoices.map((c: any) => ({ text: typeof c === 'string' ? c : (c?.text ?? c?.label ?? '') })).filter((l: any) => l.text)
+      : [];
   // 문장 단위 세그먼트 — 클릭 재생 granular(담화 한 문단도 문장별로 쪼갬). speaker 는 turn 첫 문장에만.
   const segments = useMemo(() => {
     const segs: Array<{ text: string; speaker?: string; start?: number }> = [];
-    for (const l of lines as any[]) {
+    for (const l of effectiveLines as any[]) {
       const raw = String(l.text ?? l.line ?? '').trim();
       if (!raw) continue;
       const parts = raw.split(/(?<=[.!?])\s+(?=[A-Z"'(])/).map((s) => s.trim()).filter(Boolean);
@@ -963,7 +971,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       list.forEach((s, si) => segs.push({ text: s, speaker: si === 0 ? (l.speaker ?? l.role) : undefined, start: si === 0 ? l.start : undefined }));
     }
     return segs;
-  }, [lines]);
+  }, [effectiveLines]);
   // 세그먼트별 시작 시각 — start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 문장 하이라이트용.
   const lineStarts = useMemo(() => {
     if (segments.some((s) => typeof s.start === 'number')) return segments.map((s) => (typeof s.start === 'number' ? s.start! : 0));
@@ -1009,7 +1017,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
         <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} />
-      ) : browserMode ? (
+      ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
             onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
@@ -1028,7 +1036,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       ) : (
         <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>
       )}
-      {lines.length > 0 && (
+      {segments.length > 0 && (
         <div className="mt-3">
           {!isStatic && (
             <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
