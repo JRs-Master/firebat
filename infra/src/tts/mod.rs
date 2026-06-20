@@ -298,7 +298,13 @@ impl TtsAdapter {
         if parsed.is_empty() {
             return Vec::new();
         }
-        // 단어별 타임스탬프 전사 (Whisper 우선, 없으면 Gemini). 실패 = 빈 → fallback.
+        // 1순위 = 순수 신호 정렬(STT·API 0): WAV 에너지로 문장 쉼 검출 → 문장 앵커(실측 발화 재개 지점,
+        // char 추정보다 정확) + 문장 안 음절가중 단어 분배(노래방 fill). 우리 LC 오디오(TTS WAV)의 정답.
+        // 측정(자연 오디오 문장-시작 MAE): 검출 앵커≈정확 / char 추정 0.30s / Gemini-forced 0.48s / open 2.18s.
+        if let Some(lines) = signal_align(audio, content_type, &parsed) {
+            return lines;
+        }
+        // 2순위(비-WAV mp3 등) = Whisper(OpenAI 키 있을 때). 없으면 빈 → 컴포넌트 글자수 추정.
         let words = self.transcribe_words(audio, content_type).await;
         if words.is_empty() {
             return Vec::new();
@@ -549,6 +555,172 @@ fn wav_duration_secs(audio: &[u8], content_type: &str) -> Option<f64> {
         return None;
     }
     Some((audio.len() as f64 - 44.0) / byte_rate)
+}
+
+/// 단어 음절 수(모음 그룹 추정) — char 길이보다 발화 길이에 비례. 축약형(It's/let's)=1음절이라 짧게 잡힘.
+fn syllables(word: &str) -> usize {
+    let w: String = word.to_lowercase().chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if w.is_empty() {
+        return 1;
+    }
+    let mut n = 0usize;
+    let mut prev_v = false;
+    for c in w.chars() {
+        let v = matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y');
+        if v && !prev_v {
+            n += 1;
+        }
+        prev_v = v;
+    }
+    if w.ends_with('e') && n > 1 {
+        n -= 1; // silent trailing e
+    }
+    n.max(1)
+}
+
+/// 순수 신호 정렬 (STT·API 0) — WAV 에너지에서 문장 쉼을 검출해 문장 앵커(실측 발화 재개 지점)를 잡고,
+/// 문장 안은 음절가중으로 단어를 분배(노래방 fill). 우리 LC 오디오(TTS 생성 WAV)의 정답 — 측정상 문장 경계
+/// 검출은 깨끗(top N-1 긴 쉼, 6/6)하고 char 추정보다 정확하며, 단어는 연결발화라 무음 분리가 불가(4/7)해서
+/// 음절 분배가 정공. WAV·16bit 아니면(mp3 등) None → 상위에서 Whisper/추정 폴백.
+fn signal_align(
+    audio: &[u8],
+    content_type: &str,
+    parsed: &[(Option<String>, String)],
+) -> Option<Vec<TtsLine>> {
+    if !content_type.contains("wav") || audio.len() < 46 || &audio[0..4] != b"RIFF" {
+        return None;
+    }
+    let channels = u16::from_le_bytes([audio[22], audio[23]]).max(1) as usize;
+    let rate = u32::from_le_bytes([audio[24], audio[25], audio[26], audio[27]]) as usize;
+    let bits = u16::from_le_bytes([audio[34], audio[35]]);
+    if bits != 16 || rate == 0 {
+        return None;
+    }
+    let data = &audio[44..];
+    let frame_bytes = channels * 2;
+    let nsamp = data.len() / frame_bytes;
+    if nsamp < rate / 2 {
+        return None; // 0.5초 미만 = 의미 없음
+    }
+    // mono mean-abs amplitude per 5ms frame
+    let fr = (rate / 200).max(1);
+    let total = nsamp as f64 / rate as f64;
+    let fsec = fr as f64 / rate as f64;
+    let mut env: Vec<f64> = Vec::with_capacity(nsamp / fr + 1);
+    let mut k = 0usize;
+    while k + fr <= nsamp {
+        let mut s: i64 = 0;
+        for i in k..k + fr {
+            let mut acc = 0i32;
+            for c in 0..channels {
+                let o = i * frame_bytes + c * 2;
+                acc += i16::from_le_bytes([data[o], data[o + 1]]) as i32;
+            }
+            s += (acc / channels as i32).unsigned_abs() as i64;
+        }
+        env.push(s as f64 / fr as f64);
+        k += fr;
+    }
+    if env.is_empty() {
+        return None;
+    }
+    let mx = env.iter().cloned().fold(0.0_f64, f64::max);
+    if mx <= 0.0 {
+        return None;
+    }
+    let thr = mx * 0.06;
+    // interior silence gaps (양 끝 무음 제외)
+    let mut gaps: Vec<(f64, f64, f64)> = Vec::new(); // (start_s, end_s, dur)
+    let mut i = 0usize;
+    while i < env.len() {
+        if env[i] < thr {
+            let a = i;
+            while i < env.len() && env[i] < thr {
+                i += 1;
+            }
+            if a > 0 && i < env.len() {
+                gaps.push((a as f64 * fsec, i as f64 * fsec, (i - a) as f64 * fsec));
+            }
+        } else {
+            i += 1;
+        }
+    }
+    let onset0 = env
+        .iter()
+        .position(|&v| v >= thr)
+        .map(|p| p as f64 * fsec)
+        .unwrap_or(0.0);
+    let offset = env
+        .iter()
+        .rposition(|&v| v >= thr)
+        .map(|p| (p + 1) as f64 * fsec)
+        .unwrap_or(total);
+    let nsent = parsed.len();
+    // 문장 앵커 = 긴 쉼(≥250ms) 중 시간 길이 top (N-1) → 시간순. 부족하면 char 추정(드문 경우).
+    let (starts, ends): (Vec<f64>, Vec<f64>) = if nsent <= 1 {
+        (vec![onset0], vec![offset])
+    } else {
+        let mut long: Vec<&(f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).collect();
+        if long.len() >= nsent - 1 {
+            long.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+            let mut sb: Vec<&(f64, f64, f64)> = long.into_iter().take(nsent - 1).collect();
+            sb.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            let mut st = vec![onset0];
+            let mut en = Vec::new();
+            for g in &sb {
+                st.push(g.1);
+                en.push(g.0);
+            }
+            en.push(offset);
+            (st, en)
+        } else {
+            // 쉼 부족 → char 추정 문장 경계
+            let lens: Vec<f64> = parsed
+                .iter()
+                .map(|(_, t)| t.chars().count().max(1) as f64)
+                .collect();
+            let tot: f64 = lens.iter().sum::<f64>().max(1.0);
+            let span = (offset - onset0).max(0.1);
+            let mut st = Vec::new();
+            let mut en = Vec::new();
+            let mut acc = 0.0;
+            for l in &lens {
+                st.push(onset0 + acc / tot * span);
+                acc += l;
+                en.push(onset0 + acc / tot * span);
+            }
+            (st, en)
+        }
+    };
+    // 문장 안 음절가중 단어 분배
+    let mut out: Vec<TtsLine> = Vec::with_capacity(nsent);
+    for (idx, (speaker, text)) in parsed.iter().enumerate() {
+        let s0 = starts.get(idx).copied().unwrap_or(onset0);
+        let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let weights: Vec<f64> = words.iter().map(|w| syllables(w) as f64).collect();
+        let tw: f64 = weights.iter().sum::<f64>().max(1.0);
+        let mut acc = 0.0;
+        let mut wl: Vec<TtsWord> = Vec::with_capacity(words.len());
+        for (k2, w) in words.iter().enumerate() {
+            let ws = s0 + acc / tw * (s1 - s0);
+            acc += weights[k2];
+            let we = s0 + acc / tw * (s1 - s0);
+            wl.push(TtsWord {
+                word: (*w).to_string(),
+                start: ws,
+                end: we,
+            });
+        }
+        out.push(TtsLine {
+            speaker: speaker.clone(),
+            text: text.clone(),
+            start: s0,
+            end: s1,
+            words: wl,
+        });
+    }
+    Some(out)
 }
 
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.
