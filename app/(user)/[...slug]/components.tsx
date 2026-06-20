@@ -487,9 +487,10 @@ function VocabFlashcard({ list }: { list: VocabWord[] }) {
       if (k === ' ' || k === 'Enter' || k === 'ArrowDown') { e.preventDefault(); setRevealed(true); }
       return;
     }
-    if (k === 'ArrowLeft' || k === '1') { e.preventDefault(); grade('again'); }
+    // 공개 후: Space/Enter/→ = 외움(good, Anki식 공개→외움 연타) / ← 모름 / ↑ 애매. 전부 preventDefault(스크롤 차단).
+    if (k === ' ' || k === 'Enter' || k === 'ArrowRight' || k === '3') { e.preventDefault(); grade('good'); }
+    else if (k === 'ArrowLeft' || k === '1') { e.preventDefault(); grade('again'); }
     else if (k === 'ArrowUp' || k === '2') { e.preventDefault(); grade('hard'); }
-    else if (k === 'ArrowRight' || k === '3') { e.preventDefault(); grade('good'); }
   };
 
   if (!cur) {
