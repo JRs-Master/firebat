@@ -832,6 +832,156 @@ fn line_weight(text: &str) -> f64 {
     (syl + commas as f64 * 2.0 + inner_ends as f64 * 3.0).max(1.0)
 }
 
+/// [a,b] 에서 무음(gaps) 뺀 발화 구간들 — speech-time 매핑용(무음 건너뛰기).
+fn subtract_gaps(a: f64, b: f64, gaps: &[(f64, f64, f64)]) -> Vec<(f64, f64)> {
+    let mut segs = Vec::new();
+    let mut cur = a;
+    for g in gaps {
+        let (gs, ge) = (g.0, g.1);
+        if ge <= a || gs >= b {
+            continue;
+        }
+        let gs = gs.max(a);
+        let ge = ge.min(b);
+        if gs > cur {
+            segs.push((cur, gs));
+        }
+        cur = cur.max(ge);
+    }
+    if cur < b {
+        segs.push((cur, b));
+    }
+    segs
+}
+
+/// speech-fraction(0..1) → 실제 시각(무음 구간 건너뜀).
+fn seg_frac_to_time(frac: f64, segs: &[(f64, f64)], total: f64) -> f64 {
+    let target = frac.clamp(0.0, 1.0) * total;
+    let mut acc = 0.0;
+    for &(a, b) in segs {
+        let d = b - a;
+        if acc + d >= target {
+            return a + (target - acc);
+        }
+        acc += d;
+    }
+    segs.last().map(|s| s.1).unwrap_or(0.0)
+}
+
+/// coarse-to-fine 문장 경계 — 큰 pause(≥2s, 답안 pause 등)를 하드 앵커로 박아 블록 분할 후, 각 블록
+/// 안에서만 local expected(speech-time 누적가중) + prominence(쉼 길이) snap. 옛 wall-clock 누적비례는
+/// 큰 무음이 뒤에 몰리면 앞 줄(긴 Directions 등)을 과배정 → cascade 로 전 줄 어긋났다. 앵커가 기준을
+/// 리셋하고 speech-time 이 무음 분포 왜곡을 제거. 큰 pause 없으면(일반 대화) 단일 블록 = 옛 동작과 등가.
+fn coarse_to_fine_lines(
+    parsed: &[(Option<String>, String)],
+    cand: &[(f64, f64, f64)],
+    gaps: &[(f64, f64, f64)],
+    onset0: f64,
+    offset: f64,
+) -> (Vec<f64>, Vec<f64>) {
+    let n = parsed.len();
+    let nb = n - 1;
+    let big_thr = 2.0_f64;
+    let wt: Vec<f64> = parsed.iter().map(|(_, t)| line_weight(t)).collect();
+    let totw: f64 = wt.iter().sum::<f64>().max(1.0);
+    let gsegs = subtract_gaps(onset0, offset, gaps);
+    let gsp = gsegs.iter().map(|(a, b)| b - a).sum::<f64>().max(1e-3);
+    let mut cum: Vec<f64> = Vec::with_capacity(nb);
+    let mut acc = 0.0;
+    for s in wt.iter().take(nb) {
+        acc += *s;
+        cum.push(acc);
+    }
+    let exp: Vec<f64> = cum.iter().map(|ck| seg_frac_to_time(ck / totw, &gsegs, gsp)).collect();
+    // 큰 pause → 가장 가까운 기대 경계 idx 에 단조 배정(하드 앵커).
+    let mut anchor: Vec<Option<(f64, f64, f64)>> = vec![None; nb];
+    let mut lo = 0usize;
+    for bg in cand.iter().filter(|g| g.2 >= big_thr) {
+        let mut best: Option<usize> = None;
+        let mut bd = f64::INFINITY;
+        for k in lo..nb {
+            let d = (exp[k] - bg.0).abs();
+            if d < bd {
+                bd = d;
+                best = Some(k);
+            }
+        }
+        match best {
+            Some(k) => {
+                anchor[k] = Some(*bg);
+                lo = k + 1;
+            }
+            None => break,
+        }
+    }
+    let mut chosen: Vec<Option<(f64, f64, f64)>> = anchor.clone();
+    let mut iter_pts: Vec<usize> = (0..nb).filter(|&k| anchor[k].is_some()).collect();
+    iter_pts.push(nb);
+    let mut prev_idx: isize = -1;
+    let mut prev_time = onset0;
+    for &ak in &iter_pts {
+        let p_ = (prev_idx + 1) as usize;
+        let q_isize = ak as isize - 1;
+        let r = if ak < nb { anchor[ak].unwrap().0 } else { offset };
+        let l = prev_time;
+        if (p_ as isize) <= q_isize {
+            let q_ = q_isize as usize;
+            let nbk = q_ - p_ + 1;
+            let local: Vec<(f64, f64, f64)> = cand
+                .iter()
+                .filter(|g| g.0 > l + 0.02 && g.1 < r - 0.02 && g.2 < big_thr)
+                .cloned()
+                .collect();
+            let lsegs = subtract_gaps(l, r, gaps);
+            let lsp = lsegs.iter().map(|(a, b)| b - a).sum::<f64>().max(1e-3);
+            let lw: Vec<f64> = (p_..=q_ + 1).map(|i| wt[i]).collect();
+            let ltot: f64 = lw.iter().sum::<f64>().max(1.0);
+            let mut lacc = 0.0;
+            let mut lexp: Vec<f64> = Vec::with_capacity(nbk);
+            for s in lw.iter().take(nbk) {
+                lacc += *s;
+                lexp.push(seg_frac_to_time(lacc / ltot, &lsegs, lsp));
+            }
+            if local.len() >= nbk && nbk > 0 {
+                // score = -|t-exp| + λ·쉼길이 → within-line 작은 쉼 대신 진짜 경계(큰 쉼) 선호.
+                let lam = 2.0_f64;
+                let mut lo2 = 0usize;
+                for bi in 0..nbk {
+                    let hi = local.len() - (nbk - bi);
+                    let mut best = lo2;
+                    let mut bs = f64::NEG_INFINITY;
+                    for ci in lo2..=hi {
+                        let g = local[ci];
+                        let score = -(g.0 - lexp[bi]).abs() + lam * g.2;
+                        if score > bs {
+                            bs = score;
+                            best = ci;
+                        }
+                    }
+                    chosen[p_ + bi] = Some(local[best]);
+                    lo2 = best + 1;
+                }
+            } else {
+                for bi in 0..nbk {
+                    let t = lexp[bi];
+                    chosen[p_ + bi] = Some((t, t, 0.0));
+                }
+            }
+        }
+        prev_idx = ak as isize;
+        prev_time = if ak < nb { anchor[ak].unwrap().1 } else { offset };
+    }
+    let mut st = vec![onset0];
+    let mut en = Vec::new();
+    for g in &chosen {
+        let g = g.unwrap_or((onset0, onset0, 0.0));
+        st.push(g.1);
+        en.push(g.0);
+    }
+    en.push(offset);
+    (st, en)
+}
+
 /// 순수 신호 정렬 (STT·API 0) — WAV 에너지에서 문장 쉼을 검출해 문장 앵커(실측 발화 재개 지점)를 잡고,
 /// 문장 안은 음절가중으로 단어를 분배(노래방 fill). 우리 LC 오디오(TTS 생성 WAV)의 정답 — 측정상 문장 경계
 /// 검출은 깨끗(top N-1 긴 쉼, 6/6)하고 char 추정보다 정확하며, 단어는 연결발화라 무음 분리가 불가(4/7)해서
@@ -918,42 +1068,11 @@ fn signal_align(
         let mut cand: Vec<(f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).cloned().collect();
         cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         if cand.len() >= nsent - 1 {
-            // 옛 "가장 긴 쉼 top N-1" 은 거짓 긴 쉼(예: 디렉션 안 "Directions." 뒤 heading 쉼)을 경계로
-            // 잡아 긴 줄을 짧은 창에 욱여넣었다. 정공 = 각 경계의 "기대 시각"(줄 가중치 누적 비례)을 잡고
-            // 가장 가까운 실제 쉼에 단조 snap → 긴 줄이 제 발화길이만큼 차지(native 에서 per-turn 격리와 동등).
-            // 가중치 = 음절 + 문장부호 쉼(line_weight): 쉼표 많은 줄(음절보다 길게 발화)이 짧게 추정돼
-            // 경계가 일찍 잡히던 것 보정 → cascade 없이 해당 줄만 정확히 늘어남.
-            let wt: Vec<f64> = parsed.iter().map(|(_, t)| line_weight(t)).collect();
-            let tot_wt: f64 = wt.iter().sum::<f64>().max(1.0);
-            let span = (offset - onset0).max(0.1);
-            let mut acc = 0.0;
-            let mut expected: Vec<f64> = Vec::with_capacity(nsent - 1);
-            for s in wt.iter().take(nsent - 1) {
-                acc += *s;
-                expected.push(onset0 + acc / tot_wt * span);
-            }
-            // 각 기대 경계 → 가장 가까운 후보 쉼(이전 선택 이후, 뒤 경계 몫 남겨 단조 보장).
-            let mut chosen: Vec<(f64, f64, f64)> = Vec::with_capacity(nsent - 1);
-            let mut lo = 0usize;
-            for (bi, &exp) in expected.iter().enumerate() {
-                let hi = cand.len() - ((nsent - 1) - bi);
-                let mut best = lo;
-                let mut bestd = f64::INFINITY;
-                for ci in lo..=hi {
-                    let d = (cand[ci].0 - exp).abs();
-                    if d < bestd { bestd = d; best = ci; }
-                }
-                chosen.push(cand[best]);
-                lo = best + 1;
-            }
-            let mut st = vec![onset0];
-            let mut en = Vec::new();
-            for g in &chosen {
-                st.push(g.1);
-                en.push(g.0);
-            }
-            en.push(offset);
-            (st, en)
+            // coarse-to-fine: 큰 pause(≥2s)를 하드 앵커로 박아 블록 분할 → 블록 안에서만 local expected
+            // (speech-time 누적가중) + prominence(쉼 길이) snap. 옛 wall-clock 누적비례는 답안 pause 같은
+            // 큰 무음이 뒤에 몰리면 앞 줄(긴 Directions 등)을 과배정 → cascade. speech-time + 앵커가 차단.
+            // 큰 pause 없는 일반 대화 = 단일 블록 = 옛 동작과 등가(회귀 0, Henderson 검증).
+            coarse_to_fine_lines(parsed, &cand, &gaps, onset0, offset)
         } else {
             // 쉼 부족 → 줄 가중치(음절+문장부호 쉼) 추정 문장 경계(char 보다 정확).
             let lens: Vec<f64> = parsed.iter().map(|(_, t)| line_weight(t)).collect();
