@@ -915,7 +915,7 @@ function dictationDiff(script: string, typed: string) {
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
-function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [] }: {
+function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [], abA, abB, setAbA, setAbB }: {
   src: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onTime: (t: number) => void;
@@ -924,6 +924,9 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   study?: boolean;
   /** LRC 단어 [start,end] — A-B 구간을 단어 경계로 snap(단어 중간 잘림 방지). 없으면 raw 시간. */
   words?: Array<{ start: number; end: number }>;
+  /** A-B 구간(초) — 부모(스크립트)가 소유. 스크립트 단어 클릭/마커와 플레이어 A/B 버튼이 같은 상태 공유. */
+  abA: number | null; abB: number | null;
+  setAbA: (t: number | null) => void; setAbB: (t: number | null) => void;
 }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -933,8 +936,6 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   const [vol, setVol] = useState(1);
   const [showVol, setShowVol] = useState(false); // 볼륨 탭 → 슬라이더 오버레이(속도와 동일 패턴).
   const [loop, setLoop] = useState(false);
-  const [abA, setAbA] = useState<number | null>(null);
-  const [abB, setAbB] = useState<number | null>(null);
   const loopingRef = useRef(false); // A-B 루프 0.5초 딜레이 중 재트리거 방지.
   // A-B 단어 경계 snap — t 가 든 단어로(있으면), 빈음이면 A=다음 단어 start / B=이전 단어 end.
   const snapStart = (t: number) => {
@@ -1147,6 +1148,17 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   // LRC 임의 시각 seek(단어 클릭) — 그 시각으로 이동 + 재생 시작.
   const seekTo = (t: number) => { const a = audioRef.current; if (a && isFinite(t)) { a.currentTime = t; if (a.paused) void a.play(); } };
+  // 파일 TTS A-B 구간(초) — 스크립트(부모)가 소유. 플레이어 A/B 버튼·스크립트 단어 탭이 같은 상태 공유.
+  // 루프는 플레이어가 abA/abB(props)로 수행. abSel ON 이면 LRC 단어 탭 = A→B 지정(마커), OFF 면 seek.
+  const [abA, setAbA] = useState<number | null>(null);
+  const [abB, setAbB] = useState<number | null>(null);
+  const [abSel, setAbSel] = useState(false);
+  // LRC 단어 탭 → 구간 선택(abSel) 시 A then B(시간), 아니면 seek. 다시 탭하면 재설정(이동).
+  const pickAb = (w: { start: number; end: number }) => {
+    if (abA == null || (abA != null && abB != null)) { setAbA(w.start); setAbB(null); }
+    else if (w.end > abA) setAbB(w.end);
+    else setAbA(w.start); // A 앞을 누르면 A 재설정
+  };
   // LRC 단어 평탄화 — 플레이어 A-B 단어 경계 snap 용([start,end] 목록).
   const lrcWords = useMemo(() => (lrc ? lrc.flatMap((l) => l.words ?? []) : []), [lrc]);
   // LRC 현재 줄 — start≤cur<end (정확). 단어 클릭/줄 fill 의 활성 줄.
@@ -1247,7 +1259,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
-        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} />
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} />
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
@@ -1300,7 +1312,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
               {isStudy && <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>}
               <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
-              {isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
+              {audioUrl && isStudy && showScript && <button type="button" onClick={() => setAbSel((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${abSel ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔂 구간{abA != null && abB != null ? ' ●' : ''}</button>}
+              {audioUrl && isStudy && abSel && showScript ? <span className="text-slate-400">단어 탭 = 시작(A)→끝(B) 지정 · 플레이어가 그 구간 반복</span> : isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
             </div>
           )}
           {dictation && !isStatic && (
@@ -1351,8 +1364,9 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             const next = words[wi + 1];
                             const wFrac = active ? Math.max(0, Math.min(1, (cur - w.start) / Math.max(w.end - w.start, 0.05))) : 0;
                             const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
+                            const isAb = (abA != null && Math.abs(w.start - abA) < 0.01) || (abB != null && Math.abs(w.end - abB) < 0.01);
                             return [
-                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                              <span key={`w${wi}`} onClick={() => (abSel ? pickAb(w) : seekTo(w.start))} className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
