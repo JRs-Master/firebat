@@ -1009,8 +1009,8 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
       </div>
-      {/* 컨트롤 2그룹 — 모바일: 속도 줄 / 반복·구간·볼륨 줄(속도 그룹이 w-full 이라 다음 그룹이 줄바꿈). 데스크톱: 한 줄.
-          시험 모드(study=false)면 속도·전체반복·구간반복 숨김(1회청취), 볼륨만 유지. */}
+      {/* 컨트롤 한 줄(브라우저 TTS 와 동일 구조) — 속도·전체반복·구간 + 볼륨(ml-auto 로 항상 우측 끝).
+          모바일은 자연 wrap. 시험 모드(study=false)면 속도·전체반복·구간 숨김(1회청취), 볼륨만(우측 고정). */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
         {study && (
           <div className="relative flex items-center gap-1.5">
@@ -1028,23 +1028,22 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
             )}
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {study && <>
-            <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">↻</button>
-            <span className="text-slate-400 ml-1">구간</span>
-            <button type="button" onClick={() => setAbA(snapStart(cur))} className={pill(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
-            <button type="button" onClick={() => setAbB(snapEnd(cur))} className={pill(abB != null)} title="구간 끝(B) — 현재 위치">B</button>
-            {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
-          </>}
-          <div className="relative flex items-center ml-1">
-            <button type="button" onClick={() => setShowVol((v) => !v)} className={pill(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
-            {showVol && (
-              <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
-                <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)} aria-label="볼륨" className="flex-1 accent-blue-600" />
-                <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(vol * 100)}</span>
-              </div>
-            )}
-          </div>
+        {study && <>
+          <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">↻</button>
+          <span className="text-slate-400 ml-1">구간</span>
+          <button type="button" onClick={() => setAbA(snapStart(cur))} className={pill(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
+          <button type="button" onClick={() => setAbB(snapEnd(cur))} className={pill(abB != null)} title="구간 끝(B) — 현재 위치">B</button>
+          {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
+        </>}
+        {/* 볼륨 = 항상 오른쪽 끝 고정(ml-auto) — 구간 ✕ 버튼이 떠도 위치 불변. 시험 모드(볼륨만)도 동일하게 우측. */}
+        <div className="relative flex items-center ml-auto">
+          <button type="button" onClick={() => setShowVol((v) => !v)} className={pill(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
+          {showVol && (
+            <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
+              <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)} aria-label="볼륨" className="flex-1 accent-blue-600" />
+              <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(vol * 100)}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1360,7 +1359,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
           {showScript && (
             <div className="rounded-lg border border-[#d9cdae] p-2.5">
               <div className="text-[11px] font-bold text-indigo-500 mb-1">스크립트 <span className="font-normal text-slate-400">· 줄을 탭하면 그 구간부터 재생</span></div>
-              <div className="flex flex-col gap-0.5">
+              {/* 마커 드래그 중엔 전체 본문 텍스트 선택 차단 → 데스크톱 하이라이트·모바일 선택팝업("브라우저 툴팁") 0. */}
+              <div className={`flex flex-col gap-0.5 ${dragging ? 'select-none' : ''}`}>
                 {lrc ? lrc.map((ln, i) => {
                   // 현재 재생 줄 = 연한 박스 + 진한 fill 이 왼→오로 **한 줄 연속 sweep**.
                   // fill 위치 = 단어 타이밍으로 계산(말하는 단어까지 글자 비례로 차오름) → 끊김 없이
@@ -1393,7 +1393,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                                 onPointerDown={mkf ? markerDown(mkf) : undefined}
                                 onPointerMove={markerMove} onPointerUp={markerUp}
                                 onClick={() => { if (movedRef.current) { movedRef.current = false; return; } seekTo(w.start); }}
-                                className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                                className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none select-none' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
@@ -1432,7 +1432,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); if (bSpeaking) bRunRange(lo, hi); }
                             else { setBLoopStart(c); setBLoopEnd(null); if (bSpeaking) bRunRange(c, null); }
                           }}
-                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none' : (bSeg === i && wi >= bStartWord ? 'bg-blue-100/70 text-slate-900' : '')}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none select-none' : (bSeg === i && wi >= bStartWord ? 'bg-blue-100/70 text-slate-900' : '')}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
                           );
                         })}
                       </span>
