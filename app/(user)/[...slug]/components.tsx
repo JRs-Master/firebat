@@ -114,9 +114,9 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
       // AI 가 quiz(단일)에 questions 배열(복수)을 넣으면 quiz_group 으로 위임 — quiz=단일/quiz_group=복수
       // 혼동 흡수(QuizComp 는 questions 를 무시해 빈 박스가 됐던 root). single question 은 그대로 QuizComp.
       if (Array.isArray(p.questions) && p.questions.length > 0)
-        return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions} type={p.type ?? p.format} view={p.view} />;
-      return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} type={p.type ?? p.format ?? p.quizType} view={p.view} />;
-    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} type={p.type ?? p.format} view={p.view} />;
+        return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions} type={p.type ?? p.format} marker={p.marker} view={p.view} />;
+      return <QuizComp number={p.number} points={p.points} question={p.question ?? ''} boxes={p.boxes} figures={p.figures} statements={p.statements} choices={p.choices ?? p.options ?? []} answer={p.answer} answerIndex={p.answerIndex ?? p.correctIndex} explanation={p.explanation} type={p.type ?? p.format ?? p.quizType} marker={p.marker} view={p.view} />;
+    case 'QuizGroup':     return <QuizGroupComp passage={p.passage} boxes={p.boxes} figures={p.figures} questions={p.questions ?? p.quizzes ?? p.items ?? []} type={p.type ?? p.format} marker={p.marker} view={p.view} />;
     case 'Sentence':      return <SentenceComp sentence={p.sentence ?? p.original ?? p.text ?? p.english ?? p.eng} tokens={p.tokens ?? p.chunks} pattern={p.pattern} translation={p.translation} notes={p.notes ?? p.grammar ?? p.points ?? p.note ?? p.analysis} vocab={p.vocab ?? p.words} groups={p.groups ?? p.structure ?? p.phrases} />;
     case 'Vocab':         return <VocabComp title={p.title} words={p.words ?? p.vocabulary ?? p.wordList ?? p.items ?? p.cards ?? []} mode={p.mode} />;
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
@@ -136,6 +136,41 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
 // 문제 박스·ㄱㄴㄷ 보기는 무채색(흰+검은줄) 시험지 스타일. 정답·오답 표시만 색. 해설은 자유.
 const QUIZ_CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
 const QUIZ_KOR = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+// 보기 마커 세트 — 시험·언어별로 ABC / ㄱㄴㄷ / 가나다 / 숫자 등 다양(경우의 수 많음). AI 가 marker 로
+// 스타일명·명시 배열을 지정하거나, listening 은 script 라벨에서 자동 감지. 기본 = 숫자(①②③).
+const MARKER_SETS: Record<string, string[]> = {
+  number: QUIZ_CIRCLED,
+  alpha: ['Ⓐ', 'Ⓑ', 'Ⓒ', 'Ⓓ', 'Ⓔ', 'Ⓕ', 'Ⓖ', 'Ⓗ'],
+  kor: ['㉠', '㉡', '㉢', '㉣', '㉤', '㉥', '㉦', '㉧'],
+  ganada: ['㉮', '㉯', '㉰', '㉱', '㉲', '㉳', '㉴', '㉵'],
+};
+// 별칭(AI 자연 표기 흡수) → 정규 스타일명.
+const MARKER_ALIAS: Record<string, string> = {
+  letter: 'alpha', abc: 'alpha', alphabet: 'alpha',
+  consonant: 'kor', hangul: 'kor',
+  syllable: 'ganada', korean: 'ganada',
+  num: 'number', digit: 'number', numeric: 'number',
+};
+// marker prop(스타일명 | 명시 배열) → 마커 배열. 배열이면 그대로, 문자열이면 세트/별칭 lookup.
+const markerSet = (marker?: string | string[]): string[] => {
+  if (Array.isArray(marker) && marker.length) return marker;
+  const key = typeof marker === 'string' ? (MARKER_ALIAS[marker.toLowerCase()] ?? marker.toLowerCase()) : '';
+  return MARKER_SETS[key] ?? MARKER_SETS.number;
+};
+// script 줄 라벨("(A) ...", "(가) ...", "(ㄱ) ...", "(1) ...")에서 보기 스타일 자동 감지.
+// 스크립트가 A/B/C 면 보기도 Ⓐ Ⓑ Ⓒ 로 일치(숫자 ①②③ 와 어긋남 방지). 미감지 시 숫자(수능 듣기 등).
+const detectMarkerStyle = (lines: Array<{ text?: string; line?: string }>): string | undefined => {
+  for (const ln of lines) {
+    const m = /^\s*\(?\s*([A-Za-z]|[ㄱ-ㅎ]|[가-힣]|\d+)\s*[).]/u.exec(String(ln?.text ?? ln?.line ?? ''));
+    if (!m) continue;
+    const ch = m[1];
+    if (/^[A-Za-z]$/.test(ch)) return 'alpha';
+    if (/^[ㄱ-ㅎ]$/.test(ch)) return 'kor';
+    if (/^[가-힣]$/.test(ch)) return 'ganada';
+    if (/^\d+$/.test(ch)) return 'number';
+  }
+  return undefined;
+};
 type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 
 // 컴포넌트가 QUIZ_CIRCLED 로 보기 번호(①②③)를 자동 부여하므로, AI 가 choice 텍스트에 또 넣은
@@ -143,7 +178,7 @@ type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 const stripChoiceMarker = (s: any): string => {
   // choice 가 string 이 아닐 수 있음(AI 가 {text}/{label}/{en} 객체나 숫자로 보냄) → 안전 추출 후 처리.
   const str = typeof s === 'string' ? s : (s?.text ?? s?.label ?? s?.en ?? (s == null ? '' : String(s)));
-  return String(str).replace(/^\s*(?:[①-⑩]|\d+[.)])\s*/u, '');
+  return String(str).replace(/^\s*(?:[①-⑩Ⓐ-Ⓩ㉠-㉧㉮-㉵]|\(?(?:[A-Za-z]|[ㄱ-ㅎ]|[가-힣]|\d+)[).])\s*/u, '');
 };
 
 // 정답 정규화 — AI 는 answer·answerIndex 둘 다 0-based(choices 인덱스, 첫 보기=0)로 보낸다(실측 2건:
@@ -190,17 +225,18 @@ const PAPER_STYLE = { backgroundImage: PAPER_NOISE } as const;
 
 function QuizBody({
   number, question, boxes, figures, statements, choices, answer, answerIndex, explanation, type,
-  view, selected, revealed, onSelect,
+  view, selected, revealed, onSelect, marker,
 }: {
   number?: number | string; question: string; boxes?: string[]; figures?: ComponentDef[];
   statements?: string[]; choices: string[]; answer?: number | string; answerIndex?: number; explanation?: string; type?: string;
-  view: QuizView; selected?: number; revealed: boolean; onSelect?: (i: number) => void;
+  view: QuizView; selected?: number; revealed: boolean; onSelect?: (i: number) => void; marker?: string | string[];
 }) {
   const showAnswer = view === 'answers' || view === 'full' || (view === 'interactive' && revealed);
   const interactive = view === 'interactive';
   const ox = oxConfig(type, answer, answerIndex); // OX/TFNG 모드면 라벨+정답, 아니면 null
   const ans = ox ? ox.ans : quizAns(typeof answer === 'number' ? answer : undefined, answerIndex); // 1-based
   const numLabel = number == null ? '' : typeof number === 'number' ? `${number}.` : String(number);
+  const marks = markerSet(marker); // 보기 마커(①②③ / ⒶⒷⒸ / ㉠㉡㉢ / ㉮㉯㉰) — marker prop 따라.
   return (
     <div style={PAPER_STYLE} className="rounded-xl border border-[#e9e2d0] bg-[#faf8f0] px-4 py-3.5 sm:px-5 sm:py-4 text-[14px] sm:text-[15px] text-slate-800 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       {view === 'answers' ? (
@@ -270,7 +306,7 @@ function QuizBody({
                 onClick={() => onSelect?.(num)}
                 className={`text-left flex gap-2.5 items-start px-3.5 py-2.5 rounded-lg border transition-colors ${cls} ${interactive && !revealed ? 'cursor-pointer hover:border-slate-300' : 'cursor-default'}`}
               >
-                <span className="shrink-0">{QUIZ_CIRCLED[i] ?? `${num}.`}</span>
+                <span className="shrink-0">{marks[i] ?? `${num}.`}</span>
                 <span className="flex-1"><InlineMd text={stripChoiceMarker(c)} /></span>
                 {showAnswer && isAns && <span className="text-green-600 shrink-0">✓</span>}
                 {showAnswer && isSel && !isAns && <span className="text-red-500 shrink-0">✗</span>}
@@ -281,7 +317,7 @@ function QuizBody({
       )}
       {showAnswer && (
         <div className="mt-3.5">
-          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {ox ? (ox.labels[ans - 1] ?? ans) : (QUIZ_CIRCLED[ans - 1] ?? ans)}</div>}
+          {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {ox ? (ox.labels[ans - 1] ?? ans) : (marks[ans - 1] ?? ans)}</div>}
           {explanation && (
             <div className="rounded-lg border border-[#d9cdae] p-3 sm:p-3.5">
               <div className="text-[11px] font-bold text-indigo-500 tracking-wide mb-1.5">해설</div>
@@ -893,6 +929,7 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   const [cur, setCur] = useState(0);
   const [dur, setDur] = useState(0);
   const [speed, setSpeed] = useState(1);
+  const [showSpeed, setShowSpeed] = useState(false); // 속도 탭 → 슬라이더(0.1~3x) 노출 토글.
   const [vol, setVol] = useState(1);
   const [loop, setLoop] = useState(false);
   const [abA, setAbA] = useState<number | null>(null);
@@ -974,8 +1011,12 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
         {study && (
           <div className="flex items-center gap-1.5 w-full sm:w-auto">
-            <span className="text-slate-400">속도</span>
-            {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (<button key={s} type="button" onClick={() => setSpeed(s)} className={pill(speed === s)}>{s}×</button>))}
+            <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pill(showSpeed)}>속도 {speed.toFixed(1)}x</button>
+            {showSpeed && (
+              <input type="range" min={0.1} max={3} step={0.1} value={speed}
+                onChange={(e) => setSpeed(Math.round(Number(e.target.value) * 10) / 10)}
+                aria-label="재생 속도" className="flex-1 sm:w-36 accent-blue-600" />
+            )}
           </div>
         )}
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1026,6 +1067,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const browserMode = !!browserTts && !audioUrl;
   const [bSpeaking, setBSpeaking] = useState(false);
   const [bSpeed, setBSpeed] = useState(1);
+  const [bShowSpeed, setBShowSpeed] = useState(false); // 브라우저 TTS 속도 슬라이더 토글.
   const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 현재 낭독 중 문장(하이라이트)
   const [bVol, setBVol] = useState(1);
   const bSpeedRef = useRef(1); bSpeedRef.current = bSpeed;
@@ -1064,6 +1106,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   }, [effectiveLines]);
   // 가이드 줄 텍스트 집합 — LRC 사이드카 줄 매칭용(사이드카엔 guide 플래그 없으니 텍스트로 식별).
   const guideLineTexts = useMemo(() => new Set((effectiveLines as any[]).filter(lineIsGuide).map((l) => lcNorm(String(l.text ?? l.line ?? '')))), [effectiveLines]);
+  // 보기 마커 스타일 — script 라벨(A/B/C·가나다·ㄱㄴㄷ·1/2/3)에서 자동 감지 → 보기 번호가 스크립트와 일치.
+  const detectedMarker = useMemo(() => detectMarkerStyle(effectiveLines as any[]), [effectiveLines]);
   // 세그먼트별 시작 시각 — start(초) 우선, 없으면 글자수 비례 추정(duration 알면). 클릭 seek·현재 문장 하이라이트용.
   const lineStarts = useMemo(() => {
     if (segments.some((s) => typeof s.start === 'number')) return segments.map((s) => (typeof s.start === 'number' ? s.start! : 0));
@@ -1147,11 +1191,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
           </button>
           {isStudy && (
-            <div className="flex items-center gap-1 text-[11px]">
-              <span className="text-slate-400">속도</span>
-              {[0.5, 0.75, 1, 1.25].map((s) => (
-                <button key={s} type="button" onClick={() => setBSpeed(s)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bSpeed === s ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{s}×</button>
-              ))}
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <button type="button" onClick={() => setBShowSpeed((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowSpeed ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>속도 {bSpeed.toFixed(1)}x</button>
+              {bShowSpeed && (
+                <input type="range" min={0.1} max={3} step={0.1} value={bSpeed}
+                  onChange={(e) => setBSpeed(Math.round(Number(e.target.value) * 10) / 10)}
+                  aria-label="재생 속도" className="w-28 accent-blue-600" />
+              )}
             </div>
           )}
           <div className="ml-auto flex items-center gap-1 text-[11px]">
@@ -1222,7 +1268,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             const wFrac = active ? Math.max(0, Math.min(1, (cur - w.start) / Math.max(w.end - w.start, 0.05))) : 0;
                             const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
                             return [
-                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : '[@media(hover:hover)]:hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
@@ -1258,12 +1304,12 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
         <div className="flex flex-col gap-4 mt-3">
           {qs.map((q: any, i: number) => (
             <QuizBody key={`lq-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
-              choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type} view={view}
+              choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type} marker={q.marker ?? detectedMarker} view={view}
               selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected((s) => ({ ...s, [i]: n }))} />
           ))}
           {view === 'interactive' && !revealed && (
             <div className="flex justify-end">
-              <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 정답 확인</button>
+              <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">{qs.length === 1 ? '정답 확인' : '전체 정답 확인'}</button>
             </div>
           )}
         </div>
@@ -1358,10 +1404,10 @@ function SentenceComp({ sentence, tokens, pattern, translation, notes, vocab, gr
   );
 }
 
-function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, answerIndex, explanation, type, view = 'interactive' }: {
+function QuizComp({ number, points, question, boxes, figures, statements, choices, answer, answerIndex, explanation, type, marker, view = 'interactive' }: {
   number?: number | string; points?: number | string; question: string; boxes?: string[];
   figures?: ComponentDef[]; statements?: string[]; choices: string[]; answer?: number | string; answerIndex?: number;
-  explanation?: string; type?: string; view?: QuizView;
+  explanation?: string; type?: string; marker?: string | string[]; view?: QuizView;
 }) {
   const [selected, setSelected] = useState<number | undefined>(undefined);
   const [revealed, setRevealed] = useState(false);
@@ -1377,7 +1423,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
       )}
       <QuizBody
         number={number} question={question} boxes={boxes} figures={figures} statements={statements}
-        choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} type={type} view={view}
+        choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} type={type} marker={marker} view={view}
         selected={selected} revealed={revealed} onSelect={setSelected}
       />
       {view === 'interactive' && !revealed && (
@@ -1389,10 +1435,10 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
   );
 }
 
-function QuizGroupComp({ passage, boxes, figures, questions, type, view = 'interactive' }: {
+function QuizGroupComp({ passage, boxes, figures, questions, type, marker, view = 'interactive' }: {
   passage?: string; boxes?: string[]; figures?: ComponentDef[];
-  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; options?: string[]; answer?: number | string; answerIndex?: number; correctIndex?: number; explanation?: string; type?: string; figures?: ComponentDef[] }>;
-  type?: string; view?: QuizView;
+  questions: Array<{ number?: number | string; question: string; statements?: string[]; choices: string[]; options?: string[]; answer?: number | string; answerIndex?: number; correctIndex?: number; explanation?: string; type?: string; marker?: string | string[]; figures?: ComponentDef[] }>;
+  type?: string; marker?: string | string[]; view?: QuizView;
 }) {
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [revealed, setRevealed] = useState(false);
@@ -1416,14 +1462,14 @@ function QuizGroupComp({ passage, boxes, figures, questions, type, view = 'inter
         {qs.map((q, i) => (
           <QuizBody
             key={`q-${i}`} number={q.number} question={q.question} statements={q.statements} figures={q.figures}
-            choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type ?? type} view={view}
+            choices={q.choices ?? q.options ?? []} answer={q.answer} answerIndex={q.answerIndex ?? q.correctIndex} explanation={q.explanation} type={q.type ?? type} marker={q.marker ?? marker} view={view}
             selected={selected[i]} revealed={revealed} onSelect={(n) => setSelected(s => ({ ...s, [i]: n }))}
           />
         ))}
       </div>
       {view === 'interactive' && !revealed && (
         <div className="flex justify-end mt-3">
-          <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">전체 정답 확인</button>
+          <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">{qs.length === 1 ? '정답 확인' : '전체 정답 확인'}</button>
         </div>
       )}
     </div>
