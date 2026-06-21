@@ -1212,24 +1212,27 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                     <div key={i} className="rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed">
                       <div className="flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
-                        {/* 단어별 배경(띄어쓰기를 각 span 안에 포함 + 모서리 라운드 X) → 인접 단어가 맞붙어
-                            연속 띠(형광펜)처럼 보이고, 인라인이라 모바일 줄바꿈에도 줄 단위로 자연히 흐름
-                            (absolute 사각형은 2줄을 한 박스로 덮어서 폐기). */}
+                        {/* 클릭=단어 단위(선택) / fill=단어+공백을 각각 토큰으로 두고 자체 시각구간 [start,end]
+                            안에서 %로 차오름 → 무음(공백 구간=앞단어끝~다음단어시작)도 채워지며 끊김 없이 연속.
+                            토큰 하나=단일 단어/공백이라 내부 줄바꿈 0(줄 사이는 인라인이라 자연 wrap) = absolute
+                            fill 안전(2줄 한 박스 문제 없음). 현재 문장=연한 base + 진한 fill 이 쭉 차오름. */}
                         <span className="flex-1">
                           {words.map((w, wi) => {
-                            // 현재 문장: 지난 단어=중간 / 현재 단어=진하게 / 아직=연하게(현재 문장 표시).
-                            const cls = !active
-                              ? 'hover:bg-blue-200/40'
-                              : cur >= w.end
-                                ? 'bg-blue-300/55'
-                                : cur >= w.start && cur < w.end
-                                  ? 'bg-blue-400/55'
-                                  : 'bg-blue-100/50';
-                            // 단어 + 뒤 공백을 한 span 에(공백도 그 단어 배경 = 빈틈/겹침 0). 단 맨 끝 단어 뒤
-                            // 공백은 꼬리로 남으니 제외.
-                            return (
-                              <span key={wi} onClick={() => seekTo(w.start)} className={`cursor-pointer ${cls}`}>{w.word}{wi < words.length - 1 ? ' ' : ''}</span>
-                            );
+                            const next = words[wi + 1];
+                            const wFrac = active ? Math.max(0, Math.min(1, (cur - w.start) / Math.max(w.end - w.start, 0.05))) : 0;
+                            const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
+                            return [
+                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                                {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
+                                <span className="relative">{w.word}</span>
+                              </span>,
+                              next ? (
+                                <span key={`s${wi}`} className={`relative ${active ? 'bg-blue-100/50' : ''}`} aria-hidden>
+                                  {active && sFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${sFrac * 100}%` }} />}
+                                  <span className="relative"> </span>
+                                </span>
+                              ) : null,
+                            ];
                           })}
                         </span>
                       </div>
