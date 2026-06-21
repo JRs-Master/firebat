@@ -1279,7 +1279,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             const wFrac = active ? Math.max(0, Math.min(1, (cur - w.start) / Math.max(w.end - w.start, 0.05))) : 0;
                             const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
                             return [
-                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : '[@media(hover:hover)]:hover:bg-blue-200/40'}`}>
+                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer ${active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,

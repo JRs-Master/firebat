@@ -8,6 +8,18 @@
 @source "../user/modules/**/*.{js,ts,jsx,tsx}";
 @source "../user/apps/**/*.{js,ts,jsx,tsx}";
 
+/* Tailwind hover: 유틸을 마우스(pointer:fine) 기기로 한정 — v4 기본은 @media(hover:hover)만이라
+   hover:hover 로 잡히는 일부 모바일에서 터치 탭 후 'sticky 호버'(파란/회색 잔상)가 남던 것 차단.
+   아래 .hover-blue 가드와 동일 조건을 Tailwind hover: 전체에 적용(전역 근본 fix). 데스크톱(마우스)은
+   pointer:fine 라 정상 동작, 터치(pointer:coarse)는 hover 미적용 = 잔상 0. */
+@custom-variant hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+
 /* PB 빌드 스텝퍼 현재 단계 — 블러 번지는 펄스(진행 중 느낌). */
 @keyframes step-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.45); }
