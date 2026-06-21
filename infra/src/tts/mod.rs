@@ -399,9 +399,10 @@ impl TtsAdapter {
                 Err(format!("Gemini per-turn 실패: {last_err}"))
             }
         });
-        // buffered(3) = 최대 3 동시 — TTS 모델 동시성 과부하(200+오디오없음) 회피 + 순서 보존.
+        // buffered(8) = 사실상 전부 동시 발사(보통 대화 ≤8턴 = 뿅뿅뿅, wall-time ≈ 1콜). 캡은 병적 다턴
+        // (30턴 모놀로그 등)서만 작동. 흘린 콜은 위 retry 가 줍는다 = 빠르고 robust. 순서 보존.
         let results: Vec<Result<(Vec<u8>, u32), String>> =
-            futures_util::stream::iter(futs).buffered(3).collect().await;
+            futures_util::stream::iter(futs).buffered(8).collect().await;
         let mut rate = 24000u32;
         let mut all: Vec<u8> = Vec::new();
         for (i, r) in results.into_iter().enumerate() {
