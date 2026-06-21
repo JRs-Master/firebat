@@ -872,28 +872,55 @@ fn signal_align(
         .map(|p| (p + 1) as f64 * fsec)
         .unwrap_or(total);
     let nsent = parsed.len();
-    // 문장 앵커 = 긴 쉼(≥250ms) 중 시간 길이 top (N-1) → 시간순. 부족하면 char 추정(드문 경우).
+    // 문장 앵커 = 음절 누적 "기대 시각"에 가장 가까운 실제 쉼으로 단조 snap. 부족하면 음절 추정(드문 경우).
     let (starts, ends): (Vec<f64>, Vec<f64>) = if nsent <= 1 {
         (vec![onset0], vec![offset])
     } else {
-        let mut long: Vec<&(f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).collect();
-        if long.len() >= nsent - 1 {
-            long.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-            let mut sb: Vec<&(f64, f64, f64)> = long.into_iter().take(nsent - 1).collect();
-            sb.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        // 후보 쉼(≥250ms), 시간순.
+        let mut cand: Vec<(f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).cloned().collect();
+        cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        if cand.len() >= nsent - 1 {
+            // 옛 "가장 긴 쉼 top N-1" 은 거짓 긴 쉼(예: 디렉션 안 "Directions." 뒤 heading 쉼)을 경계로
+            // 잡아 긴 줄을 짧은 창에 욱여넣었다(디렉션 4초가 0.75초로 → 대화 하이라이트 ~3초 당겨짐).
+            // 정공 = 각 경계의 "기대 시각"(음절 누적 비례)을 잡고 가장 가까운 실제 쉼에 단조 snap →
+            // 긴 디렉션/긴 줄이 제 발화길이만큼 차지(per-turn 의 턴 격리와 동등한 결과를 native 에서도).
+            let syl: Vec<f64> = parsed.iter()
+                .map(|(_, t)| t.split_whitespace().map(|w| syllables(w) as f64).sum::<f64>().max(1.0))
+                .collect();
+            let tot_syl: f64 = syl.iter().sum::<f64>().max(1.0);
+            let span = (offset - onset0).max(0.1);
+            let mut acc = 0.0;
+            let mut expected: Vec<f64> = Vec::with_capacity(nsent - 1);
+            for s in syl.iter().take(nsent - 1) {
+                acc += *s;
+                expected.push(onset0 + acc / tot_syl * span);
+            }
+            // 각 기대 경계 → 가장 가까운 후보 쉼(이전 선택 이후, 뒤 경계 몫 남겨 단조 보장).
+            let mut chosen: Vec<(f64, f64, f64)> = Vec::with_capacity(nsent - 1);
+            let mut lo = 0usize;
+            for (bi, &exp) in expected.iter().enumerate() {
+                let hi = cand.len() - ((nsent - 1) - bi);
+                let mut best = lo;
+                let mut bestd = f64::INFINITY;
+                for ci in lo..=hi {
+                    let d = (cand[ci].0 - exp).abs();
+                    if d < bestd { bestd = d; best = ci; }
+                }
+                chosen.push(cand[best]);
+                lo = best + 1;
+            }
             let mut st = vec![onset0];
             let mut en = Vec::new();
-            for g in &sb {
+            for g in &chosen {
                 st.push(g.1);
                 en.push(g.0);
             }
             en.push(offset);
             (st, en)
         } else {
-            // 쉼 부족 → char 추정 문장 경계
-            let lens: Vec<f64> = parsed
-                .iter()
-                .map(|(_, t)| t.chars().count().max(1) as f64)
+            // 쉼 부족 → 음절 추정 문장 경계(긴 줄을 발화시간에 근접 — char 보다 정확).
+            let lens: Vec<f64> = parsed.iter()
+                .map(|(_, t)| t.split_whitespace().map(|w| syllables(w) as f64).sum::<f64>().max(1.0))
                 .collect();
             let tot: f64 = lens.iter().sum::<f64>().max(1.0);
             let span = (offset - onset0).max(0.1);
