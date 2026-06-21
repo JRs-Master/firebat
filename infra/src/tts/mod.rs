@@ -832,6 +832,27 @@ fn line_weight(text: &str) -> f64 {
     (syl + commas as f64 * 2.0 + inner_ends as f64 * 3.0).max(1.0)
 }
 
+/// 연음 그룹 분할 — punctuation(.,;:?!) 으로 끝나는 단어 뒤에서 끊음. per-group 단어 분배용.
+fn split_word_groups(text: &str) -> Vec<Vec<&str>> {
+    let mut groups: Vec<Vec<&str>> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    for w in text.split_whitespace() {
+        cur.push(w);
+        if w
+            .chars()
+            .last()
+            .map(|ch| matches!(ch, '.' | ',' | ';' | ':' | '?' | '!'))
+            .unwrap_or(false)
+        {
+            groups.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        groups.push(cur);
+    }
+    groups
+}
+
 /// [a,b] 에서 무음(gaps) 뺀 발화 구간들 — speech-time 매핑용(무음 건너뛰기).
 fn subtract_gaps(a: f64, b: f64, gaps: &[(f64, f64, f64, f64)]) -> Vec<(f64, f64)> {
     let mut segs = Vec::new();
@@ -1101,66 +1122,115 @@ fn signal_align(
     for (idx, (speaker, text)) in parsed.iter().enumerate() {
         let s0 = starts.get(idx).copied().unwrap_or(onset0);
         let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
-        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). 두 조건 동시:
-        //  ① 길이 ≥125ms (파열음 closure ~80-95ms 배제)
-        //  ② 깊이 minenv < thr×0.07 (에너지 바닥 근처 = 진짜 쉼; 마침표·쉼표·문장 휴지는 0 근처).
-        // 옛 길이-only 는 *얕은* 긴 쉼(자음군·배경 잔향)도 경계로 쳐 fill 이 헛 멈췄다. 깊이 추가로 진짜
-        // 연음 경계만 → 어떤 TTS·내용이든 일반 적용(실측: Part2 마침표/쉼표·Henderson 쉼표/마침표 정확).
-        let mut inner: Vec<(f64, f64)> = gaps
+        // position-based 연음 분배 (사용자 설계): punctuation 이 쉼 위치를 *지정* → 그 위치 근처 *깊은 쉼*을
+        // 신호로 *확인*(스크립트 연결) → 확인된 쉼이 세그먼트 경계 → 각 그룹(연결 단어)을 제 세그먼트 시간에
+        // 음절 분배. 옛 줄전체 분배는 그룹 첫 단어가 쉼 *전*부터 시작("A." 뒤 쉬는데 "On"이 칠해짐)했는데
+        // 그룹↔세그먼트 1:1 로 차단. punctuation 이 권위(항상 그룹 단위), 신호는 위치만 정밀화 = 폴백 없음.
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let groups = split_word_groups(text);
+        let span = (s1 - s0).max(1e-3);
+        // 확인용 깊은 쉼(짧아도 OK; depth 로 진짜 쉼만 — 비-punctuation·파열음 closure 무시).
+        let deep: Vec<(f64, f64)> = gaps
             .iter()
-            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.125 && g.3 < thr * 0.07)
+            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.3 < thr * 0.07 && g.2 >= 0.05)
             .map(|g| (g.0, g.1))
             .collect();
-        inner.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        // 발화 세그먼트 = [s0,s1] 에서 inner 쉼 제외.
-        let mut segs: Vec<(f64, f64)> = Vec::new();
-        let mut cur = s0;
-        for &(ps, pe) in &inner {
-            if ps > cur {
-                segs.push((cur, ps));
-            }
-            cur = pe.max(cur);
-        }
-        if cur < s1 {
-            segs.push((cur, s1));
-        }
-        if segs.is_empty() {
-            segs.push((s0, s1));
-        }
-        let speech_total: f64 = segs.iter().map(|(a, b)| b - a).sum::<f64>().max(1e-3);
-        // speech-fraction(0..1) → 실제 시각(쉼 건너뜀). 단어를 발화시간에 균등 → 쉼은 자연히 빈 구간.
-        let to_time = |frac: f64| -> f64 {
-            let target = frac.clamp(0.0, 1.0) * speech_total;
-            let mut accum = 0.0;
-            for &(a, b) in &segs {
-                let d = b - a;
-                if accum + d >= target {
-                    return a + (target - accum);
+        let gsyl: Vec<f64> = groups
+            .iter()
+            .map(|g| g.iter().map(|w| syllables(w) as f64).sum::<f64>())
+            .collect();
+        let totsyl: f64 = gsyl.iter().sum::<f64>().max(1.0);
+        // 그룹 경계(음절 누적 기대위치) → 가장 긴 깊은 쉼에 snap(±0.6s·단조). 없으면 추정위치(쉼 없음).
+        let mut seg_starts: Vec<f64> = vec![s0];
+        let mut seg_ends: Vec<f64> = Vec::new();
+        let mut lo = 0usize;
+        let mut cum = 0.0;
+        let mut prev_end = s0;
+        for gi in 0..groups.len().saturating_sub(1) {
+            cum += gsyl[gi];
+            let exp = s0 + cum / totsyl * span;
+            let mut best: Option<usize> = None;
+            let mut blen = 0.0;
+            for ci in lo..deep.len() {
+                let gst = deep[ci].0;
+                if gst < prev_end {
+                    continue;
                 }
-                accum += d;
+                let dur = deep[ci].1 - deep[ci].0;
+                if (gst - exp).abs() < 0.6 && dur > blen {
+                    blen = dur;
+                    best = Some(ci);
+                }
             }
-            s1
-        };
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let weights: Vec<f64> = words.iter().map(|w| syllables(w) as f64).collect();
-        let tw: f64 = weights.iter().sum::<f64>().max(1.0);
-        let mut acc = 0.0;
+            match best {
+                Some(ci) => {
+                    seg_ends.push(deep[ci].0);
+                    seg_starts.push(deep[ci].1);
+                    prev_end = deep[ci].1;
+                    lo = ci + 1;
+                }
+                None => {
+                    seg_ends.push(exp);
+                    seg_starts.push(exp);
+                    prev_end = exp;
+                }
+            }
+        }
+        seg_ends.push(s1);
+        // 각 그룹을 제 세그먼트 [ga,gb] 에 음절 분배 + 단어길이 상한.
+        // 레벨3(약한 무음): 그룹 *안* 약한 깊은 쉼(≥50ms·depth)도 건너뛰며 분배 → fill 이 그룹 안 미세
+        // 쉼서도 멈췄다 이어짐(계층: 문장→그룹→약한무음). 검증 케이스는 그룹 안 깊은 쉼 적어 영향 미미.
         let mut wl: Vec<TtsWord> = Vec::with_capacity(words.len());
-        for (k2, w) in words.iter().enumerate() {
-            let ws = to_time(acc / tw);
-            acc += weights[k2];
-            let we_raw = to_time(acc / tw);
-            // 단어 길이 상한 = 음절 비례 발화시간 ×2. to_time 은 쉼을 건너뛰지만 단어의 [start,end] 가
-            // 줄 안 큰 쉼(thought-group)을 가로지르면 그 단어가 무음을 품어 fill 이 1초+ 기어간다(끊김).
-            // 발화시간 기준 상한으로 캡 → 무음은 단어 사이 공백이 흡수(좁아 사실상 멈춤). 정상 단어는 상한
-            // 안 걸려 무영향(we_raw ≈ ws + 음절share).
-            let max_dur = (weights[k2] / tw * speech_total * 2.0).max(0.04);
-            let we = we_raw.min(ws + max_dur).max(ws + 0.02);
-            wl.push(TtsWord {
-                word: (*w).to_string(),
-                start: ws,
-                end: we,
-            });
+        for (gi, group) in groups.iter().enumerate() {
+            let ga = seg_starts[gi];
+            let gb = seg_ends[gi].max(ga + 0.05);
+            let ginner: Vec<(f64, f64)> = gaps
+                .iter()
+                .filter(|g| g.0 > ga + 0.02 && g.1 < gb - 0.02 && g.3 < thr * 0.07 && g.2 >= 0.05)
+                .map(|g| (g.0, g.1))
+                .collect();
+            let mut gsegs: Vec<(f64, f64)> = Vec::new();
+            let mut gc = ga;
+            for &(ps, pe) in &ginner {
+                if ps > gc {
+                    gsegs.push((gc, ps));
+                }
+                gc = pe.max(gc);
+            }
+            if gc < gb {
+                gsegs.push((gc, gb));
+            }
+            if gsegs.is_empty() {
+                gsegs.push((ga, gb));
+            }
+            let gsp: f64 = gsegs.iter().map(|(x, y)| y - x).sum::<f64>().max(1e-3);
+            let gtt = |frac: f64| -> f64 {
+                let target = frac.clamp(0.0, 1.0) * gsp;
+                let mut ac = 0.0;
+                for &(x, y) in &gsegs {
+                    let d = y - x;
+                    if ac + d >= target {
+                        return x + (target - ac);
+                    }
+                    ac += d;
+                }
+                gb
+            };
+            let gsl: Vec<f64> = group.iter().map(|w| syllables(w) as f64).collect();
+            let gtw: f64 = gsl.iter().sum::<f64>().max(1.0);
+            let mut gacc = 0.0;
+            for (k, w) in group.iter().enumerate() {
+                let ws = gtt(gacc / gtw);
+                gacc += gsl[k];
+                let we_raw = gtt(gacc / gtw);
+                let max_dur = (gsl[k] / gtw * gsp * 2.0).max(0.04);
+                let we = we_raw.min(ws + max_dur).max(ws + 0.02);
+                wl.push(TtsWord {
+                    word: (*w).to_string(),
+                    start: ws,
+                    end: we,
+                });
+            }
         }
         out.push(TtsLine {
             speaker: speaker.clone(),
