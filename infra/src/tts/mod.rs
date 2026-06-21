@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::Engine;
-use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsLine, TtsRequest, TtsResult, TtsWord};
+use firebat_core::ports::{ITtsPort, IVaultPort, InfraResult, TtsLine, TtsRequest, TtsResult, TtsSpeaker, TtsWord};
 
 pub struct TtsAdapter {
     vault: Arc<dyn IVaultPort>,
@@ -686,8 +686,8 @@ impl ITtsPort for TtsAdapter {
                 if !seg_text.trim().is_empty() {
                     let mut sub = req.clone();
                     sub.text = seg_text.clone();
-                    let mut spoken = sub.clone(); // 합성 입력은 라벨을 낭독 가능 형태로(괄호 제거).
-                    spoken.text = speakable_labels(seg_text);
+                    let mut spoken = sub.clone(); // 합성 입력 = 라벨 낭독형(괄호 제거) + 화자 접두 정규화.
+                    spoken.text = ensure_speaker_prefix(&speakable_labels(seg_text), &req.speakers);
                     let seg = if spoken.speakers.len() > 2 {
                         self.gemini_per_turn(&spoken).await?
                     } else {
@@ -730,9 +730,10 @@ impl ITtsPort for TtsAdapter {
             .filter(|t| !t.trim().is_empty())
             .collect::<Vec<_>>()
             .join("\n");
-        // 합성 입력만 라벨 낭독 가능 형태로(괄호 제거) — 표시·LRC 는 원본(req.text) 유지(align 은 req 로 호출).
+        // 합성 입력만 라벨 낭독 가능 형태로(괄호 제거) + 화자 접두 정규화(미선언 화자 줄=안내멘트 등을 첫 화자로
+        // → native 가 빼먹지 않음) — 표시·LRC 는 원본(req.text) 유지(align 은 req 로 호출).
         let mut spoken = req.clone();
-        spoken.text = speakable_labels(&req.text);
+        spoken.text = ensure_speaker_prefix(&speakable_labels(&req.text), &req.speakers);
         let mut result = match spoken.provider.as_str() {
             "openai" => self.openai(&spoken).await?,
             // Gemini native multispeaker = 정확히 2명만 → 3명+ 면 per-turn 병렬 합성(화자 무제한·성별 일관).
@@ -1110,6 +1111,33 @@ fn speakable_labels(text: &str) -> String {
             }
             line.to_string()
         })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 멀티스피커 줄의 화자 접두 정규화 — native multispeaker 는 선언된 화자와 매칭 안 되는 "Name:" 줄을
+/// 낭독에서 건너뛴다(per-turn 은 첫 화자로 폴백하나 native 는 안 함 = 비대칭). 안내멘트를 "Directions: ..."
+/// 처럼 화자 없이 쓰면 native 가 통째로 빼먹음 → 선언 안 된(또는 접두 없는) 줄을 **첫 화자**로 재귀속.
+/// speakers 비었으면(단일 음성) 그대로(전체 낭독). 이미 유효 화자 줄은 불변(idempotent).
+fn ensure_speaker_prefix(text: &str, speakers: &[TtsSpeaker]) -> String {
+    if speakers.is_empty() {
+        return text.to_string();
+    }
+    let first = speakers[0].speaker.as_str();
+    text.lines()
+        .map(|line| {
+            let t = line.trim();
+            if t.is_empty() {
+                return String::new();
+            }
+            if let Some((name, _)) = t.split_once(':') {
+                if speakers.iter().any(|s| s.speaker.eq_ignore_ascii_case(name.trim())) {
+                    return t.to_string(); // 유효 화자 접두 — 그대로.
+                }
+            }
+            format!("{first}: {t}") // 접두 없음/미선언 화자 → 첫 화자로(줄 전체를 그 화자 대사로).
+        })
+        .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
 }
