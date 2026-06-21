@@ -1002,7 +1002,13 @@ fn signal_align(
         for (k2, w) in words.iter().enumerate() {
             let ws = to_time(acc / tw);
             acc += weights[k2];
-            let we = to_time(acc / tw);
+            let we_raw = to_time(acc / tw);
+            // 단어 길이 상한 = 음절 비례 발화시간 ×2. to_time 은 쉼을 건너뛰지만 단어의 [start,end] 가
+            // 줄 안 큰 쉼(thought-group)을 가로지르면 그 단어가 무음을 품어 fill 이 1초+ 기어간다(끊김).
+            // 발화시간 기준 상한으로 캡 → 무음은 단어 사이 공백이 흡수(좁아 사실상 멈춤). 정상 단어는 상한
+            // 안 걸려 무영향(we_raw ≈ ws + 음절share).
+            let max_dur = (weights[k2] / tw * speech_total * 2.0).max(0.04);
+            let we = we_raw.min(ws + max_dur).max(ws + 0.02);
             wl.push(TtsWord {
                 word: (*w).to_string(),
                 start: ws,
