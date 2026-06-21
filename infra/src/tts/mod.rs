@@ -686,10 +686,12 @@ impl ITtsPort for TtsAdapter {
                 if !seg_text.trim().is_empty() {
                     let mut sub = req.clone();
                     sub.text = seg_text.clone();
-                    let seg = if sub.speakers.len() > 2 {
-                        self.gemini_per_turn(&sub).await?
+                    let mut spoken = sub.clone(); // 합성 입력은 라벨을 낭독 가능 형태로(괄호 제거).
+                    spoken.text = speakable_labels(seg_text);
+                    let seg = if spoken.speakers.len() > 2 {
+                        self.gemini_per_turn(&spoken).await?
                     } else {
-                        self.gemini(&sub).await?
+                        self.gemini(&spoken).await?
                     };
                     if let Some((pcm, r)) = wav_pcm(&seg.audio) {
                         rate = r;
@@ -728,11 +730,14 @@ impl ITtsPort for TtsAdapter {
             .filter(|t| !t.trim().is_empty())
             .collect::<Vec<_>>()
             .join("\n");
-        let mut result = match req.provider.as_str() {
-            "openai" => self.openai(&req).await?,
+        // 합성 입력만 라벨 낭독 가능 형태로(괄호 제거) — 표시·LRC 는 원본(req.text) 유지(align 은 req 로 호출).
+        let mut spoken = req.clone();
+        spoken.text = speakable_labels(&req.text);
+        let mut result = match spoken.provider.as_str() {
+            "openai" => self.openai(&spoken).await?,
             // Gemini native multispeaker = 정확히 2명만 → 3명+ 면 per-turn 병렬 합성(화자 무제한·성별 일관).
-            "gemini" if req.speakers.len() > 2 => self.gemini_per_turn(&req).await?,
-            "gemini" => self.gemini(&req).await?,
+            "gemini" if spoken.speakers.len() > 2 => self.gemini_per_turn(&spoken).await?,
+            "gemini" => self.gemini(&spoken).await?,
             other => return Err(format!("알 수 없는 TTS provider: {other}")),
         };
         // LRC 정렬 — 합성된 오디오를 STT(타임스탬프)로 전사 → 단어별 시각. best-effort: 실패 시 빈 lines
@@ -1077,4 +1082,34 @@ fn split_pause_segments(text: &str) -> Vec<(String, f64)> {
         segs.push((text.trim().to_string(), 0.0));
     }
     segs
+}
+
+/// Gemini/TTS 가 줄 앞 "(A)"/"(B)"/"(가)" 같은 **괄호 짧은 라벨을 주석으로 보고 낭독을 건너뛰는** quirk 회피 —
+/// 합성에 보내는 텍스트의 그 라벨만 "A," 형태로(괄호 제거) 바꿔 실제로 읽히게 한다. 화면 표시·LRC·AI 가 쓰는
+/// 스크립트는 원본("(A)")을 그대로 쓴다(이 함수는 합성 입력에만 적용). 화자 접두("Name: ")는 보존.
+fn speakable_labels(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let (prefix, body) = match line.find(": ") {
+                Some(i) => (&line[..i + 2], &line[i + 2..]),
+                None => ("", line),
+            };
+            let bt = body.trim_start();
+            if bt.starts_with('(') {
+                if let Some(close) = bt.find(')') {
+                    let inner = &bt[1..close];
+                    // 라벨로 인정 = 괄호 안 1~2 글자(영문/숫자/한글). "(laughing)" 등 긴 건 그대로 둠.
+                    if !inner.is_empty()
+                        && inner.chars().count() <= 2
+                        && inner.chars().all(|c| c.is_alphanumeric())
+                    {
+                        let rest = bt[close + 1..].trim_start();
+                        return format!("{prefix}{inner}, {rest}");
+                    }
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
