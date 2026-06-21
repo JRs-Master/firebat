@@ -992,7 +992,7 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
-  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA; void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
   const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); } };
   const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); const x = Math.floor(s % 60); return `${m}:${x.toString().padStart(2, '0')}`; };
   // 활성 = muted 슬레이트(약간 진해짐) — 파랑/녹색/주황 등 saturated 색 대신 컨트롤 톤 통일.
@@ -1085,6 +1085,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const [bSpeed, setBSpeed] = useState(1);
   const [bShowSpeed, setBShowSpeed] = useState(false); // 브라우저 TTS 속도 슬라이더 토글.
   const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 현재 낭독 중 문장(하이라이트)
+  const [bStartWord, setBStartWord] = useState(0); // 현재 문장 하이라이트 시작 단어(단어 클릭 시작점부터 표시)
   const [bVol, setBVol] = useState(1);
   const [bShowVol, setBShowVol] = useState(false); // 볼륨 슬라이더 오버레이 토글(속도와 동일).
   const bSpeedRef = useRef(1); bSpeedRef.current = bSpeed;
@@ -1149,17 +1150,10 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   // LRC 임의 시각 seek(단어 클릭) — 그 시각으로 이동 + 재생 시작.
   const seekTo = (t: number) => { const a = audioRef.current; if (a && isFinite(t)) { a.currentTime = t; if (a.paused) void a.play(); } };
-  // 파일 TTS A-B 구간(초) — 스크립트(부모)가 소유. 플레이어 A/B 버튼·스크립트 단어 탭이 같은 상태 공유.
-  // 루프는 플레이어가 abA/abB(props)로 수행. abSel ON 이면 LRC 단어 탭 = A→B 지정(마커), OFF 면 seek.
+  // 파일 TTS A-B 구간(초) — 스크립트(부모)가 소유. 플레이어 A/B 버튼(현재 위치)으로 set,
+  // 스크립트는 마커만 표시. 루프는 플레이어가 abA/abB(props)로 수행. (스크립트 드래그 조정 = 추후)
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
-  const [abSel, setAbSel] = useState(false);
-  // LRC 단어 탭 → 구간 선택(abSel) 시 A then B(시간), 아니면 seek. 다시 탭하면 재설정(이동).
-  const pickAb = (w: { start: number; end: number }) => {
-    if (abA == null || (abA != null && abB != null)) { setAbA(w.start); setAbB(null); }
-    else if (w.end > abA) setAbB(w.end);
-    else setAbA(w.start); // A 앞을 누르면 A 재설정
-  };
   // LRC 단어 평탄화 — 플레이어 A-B 단어 경계 snap 용([start,end] 목록).
   const lrcWords = useMemo(() => (lrc ? lrc.flatMap((l) => l.words ?? []) : []), [lrc]);
   // LRC 현재 줄 — start≤cur<end (정확). 단어 클릭/줄 fill 의 활성 줄.
@@ -1190,14 +1184,15 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.filter((s) => !s.guide).map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
   // 속도·볼륨 바꾸면 현재 문장을 새 설정으로 재시작+이어감(전체 처음 X). onboundary 모바일 불안정이라 문장 단위.
-  const bPlayFrom = (idx: number, fromText?: string) => {
+  const bPlayFrom = (idx: number, fromText?: string, wordOffset = 0) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const gen = ++bGenRef.current;
     window.speechSynthesis.cancel();
-    if (idx < 0 || idx >= segments.length) { bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return; }
+    if (idx < 0 || idx >= segments.length) { bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); setBStartWord(0); return; }
     bPlayRef.current = true;
     setBSpeaking(true);
     setBSeg(idx);
+    setBStartWord(wordOffset); // 단어 클릭 시작점부터 하이라이트(0=문장 처음부터)
     // fromText = 단어 클릭 시 그 단어부터(첫 문장만 부분 발화), 이후 문장은 onend 가 full 로 이어감.
     const u = new SpeechSynthesisUtterance(fromText ?? segments[idx].text);
     u.rate = bSpeedRef.current;
@@ -1211,7 +1206,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const bPlayFromWord = (segIdx: number, wordIdx: number) => {
     bRangeRef.current = null;
     const parts = segments[segIdx].text.split(' ');
-    bPlayFrom(segIdx, parts.slice(Math.max(0, wordIdx)).join(' '));
+    bPlayFrom(segIdx, parts.slice(Math.max(0, wordIdx)).join(' '), Math.max(0, wordIdx));
   };
   const bPtLE = (p: { seg: number; word: number }, q: { seg: number; word: number }) => p.seg < q.seg || (p.seg === q.seg && p.word <= q.word);
   // 구간 루프 — [a,b](null=스크립트 경계 0/끝) 반복 발화. 전체반복·A-(B 없음)·A-B 모두 이 경로 단일화.
@@ -1221,13 +1216,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     const A = a ?? { seg: 0, word: 0 };
     const last = segments.length - 1;
     const B = b ?? { seg: last, word: Math.max(0, segments[last].text.split(' ').length - 1) };
-    const items: { seg: number; text: string }[] = [];
+    const items: { seg: number; text: string; wordStart: number }[] = [];
     for (let s = A.seg; s <= B.seg; s++) {
       const words = segments[s].text.split(' ');
       const st = s === A.seg ? A.word : 0;
       const en = s === B.seg ? B.word + 1 : words.length;
       const t = words.slice(Math.max(0, st), en).join(' ').trim();
-      if (t) items.push({ seg: s, text: t });
+      if (t) items.push({ seg: s, text: t, wordStart: Math.max(0, st) });
     }
     if (!items.length) { bRangeRef.current = null; return; }
     bPlayRef.current = true;
@@ -1242,6 +1237,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       const gen = ++bGenRef.current;
       window.speechSynthesis.cancel();
       setBSeg(items[i].seg);
+      setBStartWord(items[i].wordStart);
       const u = new SpeechSynthesisUtterance(items[i].text);
       u.rate = bSpeedRef.current; u.volume = bVolRef.current; u.lang = 'en-US';
       u.onend = () => { if (bGenRef.current === gen && bPlayRef.current) step(i + 1); };
@@ -1311,9 +1307,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
               {isStudy && <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>}
               <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
-              {audioUrl && isStudy && showScript && <button type="button" onClick={() => setAbSel((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${abSel ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔂 구간{abA != null && abB != null ? ' ●' : ''}</button>}
               {browserMode && isStudy && showScript && <button type="button" onClick={() => { const n = !bAbSel; setBAbSel(n); if (!n) { setBLoopStart(null); setBLoopEnd(null); bStop(); } }} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${bAbSel ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔂 구간{bLoopStart && bLoopEnd ? ' ●' : ''}</button>}
-              {((audioUrl && abSel) || (browserMode && bAbSel)) && showScript ? <span className="text-slate-400">단어 탭 = 시작(A)→끝(B) · 다시 탭하면 이동</span> : isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
+              {browserMode && bAbSel && showScript ? <span className="text-slate-400">단어 탭 = 시작(A)→끝(B) · 다시 탭하면 이동</span> : isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
             </div>
           )}
           {dictation && !isStatic && (
@@ -1366,7 +1361,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
                             const isAb = (abA != null && Math.abs(w.start - abA) < 0.01) || (abB != null && Math.abs(w.end - abB) < 0.01);
                             return [
-                              <span key={`w${wi}`} onClick={() => (abSel ? pickAb(w) : seekTo(w.start))} className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
@@ -1387,7 +1382,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                     <div key={i} className="px-1.5 py-1 text-[12px] sm:text-[13px] italic text-slate-400 leading-relaxed">{s.text}</div>
                   ) : browserMode ? (
                     // 브라우저 TTS = 단어 클릭 시 그 단어부터 재생(파일 모드 단어 클릭과 동등, fill 만 없음).
-                    <div key={i} className={`flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${bSeg === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700'}`}>
+                    <div key={i} className="flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors text-slate-700">
                       {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                       <span className="flex-1">
                         {s.text.split(' ').map((w, wi, arr) => {
@@ -1400,7 +1395,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); if (bSpeaking) bRunRange(lo, hi); }
                             else { setBLoopStart(c); setBLoopEnd(null); if (bSpeaking) bRunRange(c, null); }
                           }}
-                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : ''}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : (bSeg === i && wi >= bStartWord ? 'bg-blue-100/70 text-slate-900' : '')}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
                           );
                         })}
                       </span>
