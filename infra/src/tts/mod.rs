@@ -1130,7 +1130,10 @@ fn ensure_speaker_prefix(text: &str, speakers: &[TtsSpeaker]) -> String {
     if speakers.is_empty() {
         return text.to_string();
     }
-    let first = speakers[0].speaker.as_str();
+    // 무라벨 줄은 "직전 유효 화자"로 이어붙임(carry-forward) — 한 화자의 여러 줄 턴이 가장 흔한
+    // 무라벨 케이스. "무조건 첫 화자"면 2번째 화자 턴의 prefix 를 빼먹었을 때 1번째 화자가 읽는 버그.
+    // 첫 줄(직전 화자 없음)만 첫 화자로 default.
+    let mut last = speakers[0].speaker.clone();
     text.lines()
         .map(|line| {
             let t = line.trim();
@@ -1139,10 +1142,11 @@ fn ensure_speaker_prefix(text: &str, speakers: &[TtsSpeaker]) -> String {
             }
             if let Some((name, _)) = t.split_once(':') {
                 if speakers.iter().any(|s| s.speaker.eq_ignore_ascii_case(name.trim())) {
+                    last = name.trim().to_string(); // 유효 화자 갱신 → 다음 무라벨 줄이 이 화자로 이어짐.
                     return t.to_string(); // 유효 화자 접두 — 그대로.
                 }
             }
-            format!("{first}: {t}") // 접두 없음/미선언 화자 → 첫 화자로(줄 전체를 그 화자 대사로).
+            format!("{last}: {t}") // 접두 없음/미선언 화자 → 직전 화자로(줄 전체를 그 화자 대사로).
         })
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
