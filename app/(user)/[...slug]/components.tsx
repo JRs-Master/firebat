@@ -1010,12 +1010,18 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
           시험 모드(study=false)면 속도·전체반복·구간반복 숨김(1회청취), 볼륨만 유지. */}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mt-2 text-[11px]">
         {study && (
-          <div className="flex items-center gap-1.5 w-full sm:w-auto">
-            <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pill(showSpeed)}>속도 {speed.toFixed(1)}x</button>
+          <div className="relative flex items-center gap-1.5">
+            <span className="text-slate-400">속도</span>
+            <button type="button" onClick={() => setShowSpeed((v) => !v)} className={pill(showSpeed)}>{speed.toFixed(1)}x</button>
             {showSpeed && (
-              <input type="range" min={0.1} max={3} step={0.1} value={speed}
-                onChange={(e) => setSpeed(Math.round(Number(e.target.value) * 10) / 10)}
-                aria-label="재생 속도" className="flex-1 sm:w-36 accent-blue-600" />
+              // 팝오버(absolute, 흐름 밖) — 다른 컨트롤 위에 떠서 줄 밀림 0. 슬라이더 놓으면 자동 닫힘.
+              <div className="absolute left-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-52">
+                <input type="range" min={0.1} max={3} step={0.1} value={speed}
+                  onChange={(e) => setSpeed(Math.round(Number(e.target.value) * 10) / 10)}
+                  onPointerUp={() => setShowSpeed(false)}
+                  aria-label="재생 속도" className="flex-1 accent-blue-600" />
+                <span className="w-9 text-right tabular-nums text-slate-500">{speed.toFixed(1)}x</span>
+              </div>
             )}
           </div>
         )}
@@ -1191,12 +1197,17 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
           </button>
           {isStudy && (
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <button type="button" onClick={() => setBShowSpeed((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowSpeed ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>속도 {bSpeed.toFixed(1)}x</button>
+            <div className="relative flex items-center gap-1.5 text-[11px]">
+              <span className="text-slate-400">속도</span>
+              <button type="button" onClick={() => setBShowSpeed((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowSpeed ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{bSpeed.toFixed(1)}x</button>
               {bShowSpeed && (
-                <input type="range" min={0.1} max={3} step={0.1} value={bSpeed}
-                  onChange={(e) => setBSpeed(Math.round(Number(e.target.value) * 10) / 10)}
-                  aria-label="재생 속도" className="w-28 accent-blue-600" />
+                <div className="absolute left-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-52">
+                  <input type="range" min={0.1} max={3} step={0.1} value={bSpeed}
+                    onChange={(e) => setBSpeed(Math.round(Number(e.target.value) * 10) / 10)}
+                    onPointerUp={() => setBShowSpeed(false)}
+                    aria-label="재생 속도" className="flex-1 accent-blue-600" />
+                  <span className="w-9 text-right tabular-nums text-slate-500">{bSpeed.toFixed(1)}x</span>
+                </div>
               )}
             </div>
           )}

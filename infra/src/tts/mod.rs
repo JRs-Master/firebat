@@ -673,6 +673,61 @@ impl ITtsPort for TtsAdapter {
                 *i += 1;
             }
         }
+        // Pause 마커("[pause: N]" 단독 줄) — 그 지점에 N초 무음(시험 문항 사이 마킹 시간·받아쓰기 간격 등).
+        // 화자 수·provider 무관하게 동작하려면 합성 단계서 세그먼트 분할이 정공(native gemini 는 한 콜이라
+        // concat 지점이 없음). gemini(WAV) = 세그먼트별 합성+정렬 → 무음 PCM 끼워 concat → 타임스탬프 offset.
+        let segments = split_pause_segments(&req.text);
+        if req.provider == "gemini" && segments.len() > 1 && segments.iter().any(|s| s.1 > 0.0) {
+            let mut combined: Vec<u8> = Vec::new();
+            let mut rate = 24000u32;
+            let mut lines: Vec<TtsLine> = Vec::new();
+            let mut offset = 0.0f64;
+            for (seg_text, pause_after) in &segments {
+                if !seg_text.trim().is_empty() {
+                    let mut sub = req.clone();
+                    sub.text = seg_text.clone();
+                    let seg = if sub.speakers.len() > 2 {
+                        self.gemini_per_turn(&sub).await?
+                    } else {
+                        self.gemini(&sub).await?
+                    };
+                    if let Some((pcm, r)) = wav_pcm(&seg.audio) {
+                        rate = r;
+                        if req.align {
+                            // 세그먼트별 정렬(깨끗한 오디오 — 큰 무음이 signal_align 을 교란 안 함) 후 offset.
+                            for mut ln in self.align(&seg.audio, &seg.content_type, &sub).await {
+                                ln.start += offset;
+                                ln.end += offset;
+                                for w in ln.words.iter_mut() {
+                                    w.start += offset;
+                                    w.end += offset;
+                                }
+                                lines.push(ln);
+                            }
+                        }
+                        offset += pcm.len() as f64 / (rate as f64 * 2.0); // mono 16bit
+                        combined.extend_from_slice(&pcm);
+                    }
+                }
+                if *pause_after > 0.0 {
+                    combined.extend(std::iter::repeat(0u8).take((rate as f64 * *pause_after) as usize * 2));
+                    offset += *pause_after;
+                }
+            }
+            return Ok(TtsResult {
+                audio: pcm_to_wav(&combined, rate, 1, 16),
+                content_type: "audio/wav".to_string(),
+                ext: "wav".to_string(),
+                lines,
+            });
+        }
+        // pause 없음 또는 openai(mp3 — 무음 PCM 삽입 불가) — 마커 제거(낭독 방지) 후 단일 합성.
+        req.text = segments
+            .into_iter()
+            .map(|s| s.0)
+            .filter(|t| !t.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
         let mut result = match req.provider.as_str() {
             "openai" => self.openai(&req).await?,
             // Gemini native multispeaker = 정확히 2명만 → 3명+ 면 per-turn 병렬 합성(화자 무제한·성별 일관).
@@ -970,4 +1025,56 @@ fn pcm_to_wav(pcm: &[u8], sample_rate: u32, channels: u16, bits: u16) -> Vec<u8>
     out.extend_from_slice(&data_len.to_le_bytes());
     out.extend_from_slice(pcm);
     out
+}
+
+/// WAV(pcm_to_wav 산출 = 44바이트 헤더·mono·16bit)에서 PCM 바이트 + 샘플레이트 추출. concat·무음 삽입용.
+fn wav_pcm(audio: &[u8]) -> Option<(Vec<u8>, u32)> {
+    if audio.len() < 44 || &audio[0..4] != b"RIFF" {
+        return None;
+    }
+    let rate = u32::from_le_bytes([audio[24], audio[25], audio[26], audio[27]]);
+    if !(8000..=48000).contains(&rate) {
+        return None;
+    }
+    Some((audio[44..].to_vec(), rate))
+}
+
+/// pause 마커 분할 — "[pause: 10]" / "{pause 10}" 류 **단독 줄**(대괄호/중괄호로 시작)을 만나면 거기서
+/// 끊고 그 뒤에 N초 무음을 둔다. 각 세그먼트 = (스크립트 텍스트, 뒤따르는 무음 초). 마커는 화자 수·provider
+/// 무관하게 무음을 끼우기 위함(시험 문항 사이 마킹 시간·받아쓰기 간격 등 범용 — 시험별 길이는 스킬이 지정).
+fn split_pause_segments(text: &str) -> Vec<(String, f64)> {
+    let parse_pause = |line: &str| -> Option<f64> {
+        let t = line.trim();
+        if !(t.starts_with('[') || t.starts_with('{')) {
+            return None; // 산문 오탐 방지 — 대괄호/중괄호 시작만 마커로 인정.
+        }
+        let inner = t.trim_matches(|c| c == '[' || c == ']' || c == '{' || c == '}').trim();
+        if !inner.to_lowercase().starts_with("pause") {
+            return None;
+        }
+        let num: String = inner[4..].chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+        num.parse::<f64>().ok().filter(|n| *n > 0.0 && *n <= 60.0)
+    };
+    let mut segs: Vec<(String, f64)> = Vec::new();
+    let mut cur = String::new();
+    for line in text.lines() {
+        if let Some(secs) = parse_pause(line) {
+            if !cur.trim().is_empty() {
+                segs.push((cur.trim().to_string(), secs));
+                cur.clear();
+            } else if let Some(last) = segs.last_mut() {
+                last.1 += secs; // 연속 pause / 빈 텍스트 → 직전 무음에 누적.
+            }
+            continue;
+        }
+        cur.push_str(line);
+        cur.push('\n');
+    }
+    if !cur.trim().is_empty() {
+        segs.push((cur.trim().to_string(), 0.0));
+    }
+    if segs.is_empty() {
+        segs.push((text.trim().to_string(), 0.0));
+    }
+    segs
 }

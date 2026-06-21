@@ -111,8 +111,9 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             dialogue); the provider and concrete voices come from settings / auto-assignment. Assign \
             per-speaker accents realistic to the target test or context. Multi-speaker: write the script \
             as 'Name: line' per turn and list \
-            those names in `speakers`. Cached — the same script+voice is reused without re-generating. \
-            Returns { url }."
+            those names in `speakers`. Put `[pause: N]` on its own line to insert N seconds of silence \
+            at that point (e.g. the marking gap between timed exam items, or a repeat-after-me pause). \
+            Cached — the same script+voice is reused without re-generating. Returns { url }."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
