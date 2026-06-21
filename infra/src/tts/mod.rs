@@ -1191,54 +1191,59 @@ fn signal_align(
             }
         }
         seg_ends.push(s1);
-        // 각 그룹을 제 세그먼트 [ga,gb] 에 음절 분배 + 단어길이 상한.
-        // 레벨3(약한 무음): 그룹 *안* 약한 깊은 쉼(≥50ms·depth)도 건너뛰며 분배 → fill 이 그룹 안 미세
-        // 쉼서도 멈췄다 이어짐(계층: 문장→그룹→약한무음). 검증 케이스는 그룹 안 깊은 쉼 적어 영향 미미.
+        // 각 그룹 안 단어 분배 — word_weight 기대위치를 미세 쉼(depth<thr×0.12, ≥40ms)에 snap(앵커).
+        // 미세 쉼 있는 단어경계는 거기 고정(재동기), 없으면 기대위치 → 긴 연결 그룹의 누적 드리프트 차단
+        // (계층: 문장→연음그룹→단어경계 미세쉼). 미세쉼 없는 짧은 그룹은 순수 word_weight(영향 0).
         let mut wl: Vec<TtsWord> = Vec::with_capacity(words.len());
         for (gi, group) in groups.iter().enumerate() {
             let ga = seg_starts[gi];
             let gb = seg_ends[gi].max(ga + 0.05);
-            let ginner: Vec<(f64, f64)> = gaps
+            let micro: Vec<(f64, f64)> = gaps
                 .iter()
-                .filter(|g| g.0 > ga + 0.02 && g.1 < gb - 0.02 && g.3 < thr * 0.07 && g.2 >= 0.05)
+                .filter(|g| g.0 > ga + 0.02 && g.1 < gb - 0.02 && g.3 < thr * 0.12 && g.2 >= 0.04)
                 .map(|g| (g.0, g.1))
                 .collect();
-            let mut gsegs: Vec<(f64, f64)> = Vec::new();
-            let mut gc = ga;
-            for &(ps, pe) in &ginner {
-                if ps > gc {
-                    gsegs.push((gc, ps));
-                }
-                gc = pe.max(gc);
-            }
-            if gc < gb {
-                gsegs.push((gc, gb));
-            }
-            if gsegs.is_empty() {
-                gsegs.push((ga, gb));
-            }
-            let gsp: f64 = gsegs.iter().map(|(x, y)| y - x).sum::<f64>().max(1e-3);
-            let gtt = |frac: f64| -> f64 {
-                let target = frac.clamp(0.0, 1.0) * gsp;
-                let mut ac = 0.0;
-                for &(x, y) in &gsegs {
-                    let d = y - x;
-                    if ac + d >= target {
-                        return x + (target - ac);
+            let ww: Vec<f64> = group.iter().map(|w| word_weight(w)).collect();
+            let totw: f64 = ww.iter().sum::<f64>().max(1.0);
+            let gspan = (gb - ga).max(1e-3);
+            let mut w_starts: Vec<f64> = vec![ga];
+            let mut w_ends: Vec<f64> = Vec::new();
+            let mut wlo = 0usize;
+            let mut wcum = 0.0;
+            let mut wprev = ga;
+            for k in 0..group.len().saturating_sub(1) {
+                wcum += ww[k];
+                let exp = ga + wcum / totw * gspan;
+                let mut best: Option<usize> = None;
+                let mut bd = 0.15;
+                for ci in wlo..micro.len() {
+                    if micro[ci].0 < wprev {
+                        continue;
                     }
-                    ac += d;
+                    let d = (micro[ci].0 - exp).abs();
+                    if d < bd {
+                        bd = d;
+                        best = Some(ci);
+                    }
                 }
-                gb
-            };
-            let gsl: Vec<f64> = group.iter().map(|w| word_weight(w)).collect();
-            let gtw: f64 = gsl.iter().sum::<f64>().max(1.0);
-            let mut gacc = 0.0;
+                match best {
+                    Some(ci) => {
+                        w_ends.push(micro[ci].0);
+                        w_starts.push(micro[ci].1);
+                        wprev = micro[ci].1;
+                        wlo = ci + 1;
+                    }
+                    None => {
+                        w_ends.push(exp);
+                        w_starts.push(exp);
+                        wprev = exp;
+                    }
+                }
+            }
+            w_ends.push(gb);
             for (k, w) in group.iter().enumerate() {
-                let ws = gtt(gacc / gtw);
-                gacc += gsl[k];
-                let we_raw = gtt(gacc / gtw);
-                let max_dur = (gsl[k] / gtw * gsp * 2.0).max(0.04);
-                let we = we_raw.min(ws + max_dur).max(ws + 0.02);
+                let ws = w_starts[k];
+                let we = w_ends[k].max(ws + 0.02);
                 wl.push(TtsWord {
                     word: (*w).to_string(),
                     start: ws,
