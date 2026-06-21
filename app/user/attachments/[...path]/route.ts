@@ -11,7 +11,7 @@ import { readTempAttachment, readConvAttachment } from '../../../../lib/api-gen/
  * path traversal 가드는 Rust adapter(sanitize_path_seg) 안.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
@@ -29,12 +29,41 @@ export async function GET(
   const buf = binary instanceof Uint8Array
     ? Buffer.from(binary)
     : Buffer.from(binary as unknown as string, 'base64');
+  const total = buf.length;
+  const baseHeaders: Record<string, string> = {
+    'Content-Type': res.data.contentType || 'application/octet-stream',
+    'Cache-Control': 'public, max-age=2592000',
+    // 오디오/비디오 seek(시간바 이동) 필수 — 브라우저가 Range 요청으로 특정 시각 바이트를 가져옴.
+    'Accept-Ranges': 'bytes',
+  };
+
+  // HTTP Range — 미디어 seek. 없으면 currentTime 점프가 안 먹어 재생·스크립트가 안 따라감.
+  const range = req.headers.get('range');
+  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null;
+  if (m) {
+    let start = m[1] ? parseInt(m[1], 10) : 0;
+    let end = m[2] ? parseInt(m[2], 10) : total - 1;
+    if (!Number.isFinite(start) || start < 0) start = 0;
+    if (!Number.isFinite(end) || end >= total) end = total - 1;
+    if (start > end || start >= total) {
+      return new NextResponse('Range Not Satisfiable', {
+        status: 416,
+        headers: { ...baseHeaders, 'Content-Range': `bytes */${total}` },
+      });
+    }
+    const chunk = buf.subarray(start, end + 1);
+    return new NextResponse(chunk, {
+      status: 206,
+      headers: {
+        ...baseHeaders,
+        'Content-Range': `bytes ${start}-${end}/${total}`,
+        'Content-Length': String(chunk.length),
+      },
+    });
+  }
+
   return new NextResponse(buf, {
     status: 200,
-    headers: {
-      'Content-Type': res.data.contentType || 'application/octet-stream',
-      'Cache-Control': 'public, max-age=2592000',
-      'Content-Length': String(buf.length),
-    },
+    headers: { ...baseHeaders, 'Content-Length': String(total) },
   });
 }
