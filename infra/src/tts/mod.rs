@@ -272,6 +272,133 @@ impl TtsAdapter {
         })
     }
 
+    /// Gemini per-turn 병렬 합성 — 3명+ 대화(native multispeaker 는 정확히 2명만 허용). 턴별 단일-스피커
+    /// 호출(같은 화자=같은 voiceName=목소리·성별 일관 → "답을 남자가" 식 swap 불가)을 병렬(buffered 6)로
+    /// 발사 후 순서대로 concat(턴 사이 0.4s 무음 = signal_align 이 턴 경계로 검출). wall-time ≈ 1콜.
+    /// 화자 무제한(G-TELP 다자 대화) + 턴 경계 정확.
+    async fn gemini_per_turn(&self, req: &TtsRequest) -> InfraResult<TtsResult> {
+        use futures_util::StreamExt;
+        let key = self
+            .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
+            .ok_or("Gemini API 키 미설정 (설정에서 등록 필요)")?;
+        // 턴 파싱 — "Name: text" → (voice, style, text). 화자 매칭 실패 시 첫 화자 보이스.
+        let turns: Vec<(String, Option<String>, String)> = req
+            .text
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                if let Some((a, b)) = l.split_once(':') {
+                    let name = a.trim();
+                    if let Some(sp) = req
+                        .speakers
+                        .iter()
+                        .find(|s| s.speaker.eq_ignore_ascii_case(name))
+                    {
+                        return (sp.voice.clone(), sp.style.clone(), b.trim().to_string());
+                    }
+                }
+                let sp = &req.speakers[0];
+                (sp.voice.clone(), sp.style.clone(), l.to_string())
+            })
+            .filter(|(_, _, t)| !t.is_empty())
+            .collect();
+        if turns.is_empty() {
+            return Err("per-turn: 빈 스크립트".to_string());
+        }
+        let n_turns = turns.len();
+        let model = req.model.clone();
+        let global_style = req.style.clone();
+        // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
+        let futs = turns.into_iter().map(|(voice, style, text)| {
+            let client = self.client.clone();
+            let key = key.clone();
+            let model = model.clone();
+            let global_style = global_style.clone();
+            async move {
+                let mut prompt = String::new();
+                if let Some(g) = &global_style {
+                    if !g.trim().is_empty() {
+                        prompt.push_str(g.trim());
+                        prompt.push('\n');
+                    }
+                }
+                if let Some(s) = &style {
+                    if !s.trim().is_empty() {
+                        prompt.push_str(&format!("Speak with a {}.\n", s.trim()));
+                    }
+                }
+                prompt.push_str(&text);
+                let body = serde_json::json!({
+                    "contents": [{ "parts": [{ "text": prompt }] }],
+                    "generationConfig": {
+                        "responseModalities": ["AUDIO"],
+                        "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } },
+                    },
+                });
+                let url = format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                    model
+                );
+                let resp = client
+                    .post(&url)
+                    .header("x-goog-api-key", &key)
+                    .header("Content-Type", "application/json")
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Gemini per-turn 요청 실패: {e}"))?;
+                if !resp.status().is_success() {
+                    let st = resp.status();
+                    let t = resp.text().await.unwrap_or_default();
+                    return Err(format!("Gemini per-turn {st}: {t}"));
+                }
+                let json: serde_json::Value = resp
+                    .json()
+                    .await
+                    .map_err(|e| format!("per-turn 응답 파싱: {e}"))?;
+                let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
+                let b64 = inline["data"]
+                    .as_str()
+                    .ok_or_else(|| "per-turn 응답에 오디오 없음".to_string())?;
+                let mime = inline["mimeType"].as_str().unwrap_or("");
+                let rate = mime
+                    .split(';')
+                    .find_map(|s| s.trim().strip_prefix("rate="))
+                    .and_then(|r| r.trim().parse::<u32>().ok())
+                    .filter(|r| *r >= 8000 && *r <= 48000)
+                    .unwrap_or(24000);
+                let pcm = base64::engine::general_purpose::STANDARD
+                    .decode(b64)
+                    .map_err(|e| format!("per-turn PCM 디코드: {e}"))?;
+                Ok::<(Vec<u8>, u32), String>((pcm, rate))
+            }
+        });
+        // buffered(6) = 최대 6 동시(rate-limit 안전) + 결과는 입력 순서 보존.
+        let results: Vec<Result<(Vec<u8>, u32), String>> =
+            futures_util::stream::iter(futs).buffered(6).collect().await;
+        let mut rate = 24000u32;
+        let mut all: Vec<u8> = Vec::new();
+        for (i, r) in results.into_iter().enumerate() {
+            let (pcm, r_rate) = r?;
+            if i == 0 {
+                rate = r_rate;
+            } else {
+                // 턴 사이 0.4s 무음 — signal_align 이 턴 경계로 검출(≥250ms gate).
+                let gap_samples = (rate as usize) * 4 / 10;
+                all.extend(std::iter::repeat(0u8).take(gap_samples * 2));
+            }
+            all.extend_from_slice(&pcm);
+        }
+        tracing::info!(target: "tts", turns = n_turns, rate = rate, "Gemini per-turn 병렬 합성");
+        Ok(TtsResult {
+            audio: pcm_to_wav(&all, rate, 1, 16),
+            content_type: "audio/wav".to_string(),
+            ext: "wav".to_string(),
+            lines: Vec::new(),
+        })
+    }
+
     /// LRC 정렬 — 합성된 오디오를 STT(타임스탬프)로 전사 → 단어별 시각 → 스크립트 줄에 매핑.
     /// best-effort: STT 키 없음/실패 시 빈 Vec (컴포넌트가 글자수 비례 추정으로 fallback).
     /// provider 선택 = Whisper(OpenAI, 단어 정밀) 우선 → 없으면 Gemini STT. TTS provider 와 독립.
@@ -511,6 +638,8 @@ impl ITtsPort for TtsAdapter {
         }
         let mut result = match req.provider.as_str() {
             "openai" => self.openai(&req).await?,
+            // Gemini native multispeaker = 정확히 2명만 → 3명+ 면 per-turn 병렬 합성(화자 무제한·성별 일관).
+            "gemini" if req.speakers.len() > 2 => self.gemini_per_turn(&req).await?,
             "gemini" => self.gemini(&req).await?,
             other => return Err(format!("알 수 없는 TTS provider: {other}")),
         };
