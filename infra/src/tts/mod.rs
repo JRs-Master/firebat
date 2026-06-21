@@ -298,40 +298,56 @@ impl TtsAdapter {
         let model = req.model.clone();
         let global_style = req.style.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
-        let futs = turns.into_iter().map(|(voice, _style, text)| {
+        let futs = turns.into_iter().map(|(voice, style, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
             let global_style = global_style.clone();
             async move {
-                let mut prompt = String::new();
-                if let Some(g) = &global_style {
-                    if !g.trim().is_empty() {
-                        prompt.push_str(g.trim());
-                        prompt.push('\n');
-                    }
-                }
-                // per-speaker 억양 지시("Speak with a X accent.")는 Gemini 안전필터 PROHIBITED_CONTENT
-                // 차단 트리거(오탐) + 프리빌트 보이스가 안 먹어 효과도 없음 → 주입 안 함. 억양=보이스 선택.
-                prompt.push_str(&text);
-                let body = serde_json::json!({
-                    "contents": [{ "parts": [{ "text": prompt }] }],
-                    "generationConfig": {
-                        "responseModalities": ["AUDIO"],
-                        "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } },
-                    },
-                });
                 let url = format!(
                     "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
                     model
                 );
-                // 병렬 호출 중 transient(200+오디오없음 / 일시 rate / 네트워크) 대비 — 최대 2회 시도.
-                // 끝까지 실패 시 finishReason 포함 진단(safety/recitation 등 비-transient 식별).
+                // 억양/스타일 = DIRECTOR'S NOTES + 명확한 서문 + TRANSCRIPT 라벨(Gemini TTS 공식). 모호한
+                // 프롬프트는 분류기가 TTS 로 못 알아채 PROHIBITED_CONTENT 거부하거나 notes 를 소리내 읽음 →
+                // 서문으로 "transcript 를 음성 합성" 명확히 + 스크립트 시작 라벨링. 그래도 차단되면 notes 빼고
+                // 평문 재시도 → 오디오 보장(평문은 항상 통과, 서버 재현 확인).
+                let dnote = style
+                    .as_ref()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let gstyle = global_style
+                    .as_ref()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let mut use_notes = dnote.is_some() || gstyle.is_some();
                 let mut last_err = String::new();
-                for attempt in 0..2u32 {
+                for attempt in 0..3u32 {
                     if attempt > 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
+                    let mut prompt = String::new();
+                    if use_notes {
+                        // 서문(분류기에 TTS 요청임을 명시) + DIRECTOR'S NOTES(AI 자유 free-text) + TRANSCRIPT 라벨.
+                        prompt.push_str("Read the transcript below aloud as natural speech. Do not read these notes or labels out loud.\n\nDIRECTOR'S NOTES\n");
+                        if let Some(g) = &gstyle {
+                            prompt.push_str(g);
+                            prompt.push('\n');
+                        }
+                        if let Some(d) = &dnote {
+                            prompt.push_str(d);
+                            prompt.push('\n');
+                        }
+                        prompt.push_str("\nTRANSCRIPT\n");
+                    }
+                    prompt.push_str(&text);
+                    let body = serde_json::json!({
+                        "contents": [{ "parts": [{ "text": prompt }] }],
+                        "generationConfig": {
+                            "responseModalities": ["AUDIO"],
+                            "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } },
+                        },
+                    });
                     let resp = match client
                         .post(&url)
                         .header("x-goog-api-key", &key)
@@ -376,15 +392,19 @@ impl TtsAdapter {
                             }
                         }
                     }
-                    // 차단(promptFeedback.blockReason)이면 candidates 자체가 없음 → 둘 다 확인.
+                    // candidates 없는 차단(promptFeedback.blockReason) 식별.
+                    let blocked = json["promptFeedback"]["blockReason"].is_string();
                     let fr = json["candidates"][0]["finishReason"]
                         .as_str()
                         .or_else(|| json["promptFeedback"]["blockReason"].as_str())
                         .unwrap_or("none");
                     last_err = format!("오디오 없음(reason={fr})");
-                    // 차단은 deterministic(같은 입력=같은 차단) → retry 무의미, 즉시 중단.
-                    if json["promptFeedback"]["blockReason"].is_string() {
-                        break;
+                    if blocked {
+                        if use_notes {
+                            use_notes = false; // notes/서문이 차단 트리거 → 빼고 평문 재시도(평문은 항상 통과)
+                            continue;
+                        }
+                        break; // 평문도 차단 = deterministic, 중단
                     }
                 }
                 Err(format!("Gemini per-turn 실패: {last_err}"))
