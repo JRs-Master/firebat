@@ -189,9 +189,11 @@ impl TtsAdapter {
                 prompt.push('\n');
             }
         }
-        let speech_config = if req.speakers.is_empty() {
+        let speech_config = if req.speakers.len() <= 1 {
+            // multiSpeaker 는 정확히 2명 필수(1명이면 400 — 실측). 0~1명 = 단일 voice(1명이면 그 화자 보이스).
+            let v = req.speakers.first().map(|s| s.voice.clone()).filter(|x| !x.is_empty()).unwrap_or_else(|| req.voice.clone());
             serde_json::json!({
-                "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": req.voice } }
+                "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": v } }
             })
         } else {
             // 화자별 억양 텍스트 지시("X speaks with a Y accent")는 Gemini 안전필터에 PROHIBITED_CONTENT 로
@@ -693,7 +695,7 @@ impl ITtsPort for TtsAdapter {
                     let mut sub = req.clone();
                     sub.text = seg_text.clone();
                     let mut spoken = sub.clone(); // 합성 입력 = 라벨 낭독형(괄호 제거) + 화자 접두 정규화.
-                    spoken.text = ensure_speaker_prefix(&speakable_labels(seg_text), &req.speakers);
+                    spoken.text = prep_synth_text(seg_text, &req.speakers);
                     let seg = if spoken.speakers.len() > 2 {
                         self.gemini_per_turn(&spoken).await?
                     } else {
@@ -739,7 +741,7 @@ impl ITtsPort for TtsAdapter {
         // 합성 입력만 라벨 낭독 가능 형태로(괄호 제거) + 화자 접두 정규화(미선언 화자 줄=안내멘트 등을 첫 화자로
         // → native 가 빼먹지 않음) — 표시·LRC 는 원본(req.text) 유지(align 은 req 로 호출).
         let mut spoken = req.clone();
-        spoken.text = ensure_speaker_prefix(&speakable_labels(&req.text), &req.speakers);
+        spoken.text = prep_synth_text(&req.text, &req.speakers);
         let mut result = match spoken.provider.as_str() {
             "openai" => self.openai(&spoken).await?,
             // Gemini native multispeaker = 정확히 2명만 → 3명+ 면 per-turn 병렬 합성(화자 무제한·성별 일관).
@@ -1091,35 +1093,6 @@ fn split_pause_segments(text: &str) -> Vec<(String, f64)> {
     segs
 }
 
-/// Gemini/TTS 가 줄 앞 "(A)"/"(B)"/"(가)" 같은 **괄호 짧은 라벨을 주석으로 보고 낭독을 건너뛰는** quirk 회피 —
-/// 합성에 보내는 텍스트의 그 라벨만 "A," 형태로(괄호 제거) 바꿔 실제로 읽히게 한다. 화면 표시·LRC·AI 가 쓰는
-/// 스크립트는 원본("(A)")을 그대로 쓴다(이 함수는 합성 입력에만 적용). 화자 접두("Name: ")는 보존.
-fn speakable_labels(text: &str) -> String {
-    text.lines()
-        .map(|line| {
-            let (prefix, body) = match line.find(": ") {
-                Some(i) => (&line[..i + 2], &line[i + 2..]),
-                None => ("", line),
-            };
-            let bt = body.trim_start();
-            if bt.starts_with('(') {
-                if let Some(close) = bt.find(')') {
-                    let inner = &bt[1..close];
-                    // 라벨로 인정 = 괄호 안 1~2 글자(영문/숫자/한글). "(laughing)" 등 긴 건 그대로 둠.
-                    if !inner.is_empty()
-                        && inner.chars().count() <= 2
-                        && inner.chars().all(|c| c.is_alphanumeric())
-                    {
-                        let rest = bt[close + 1..].trim_start();
-                        return format!("{prefix}{inner}, {rest}");
-                    }
-                }
-            }
-            line.to_string()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 /// 멀티스피커 줄의 화자 접두 정규화 — native multispeaker 는 선언된 화자와 매칭 안 되는 "Name:" 줄을
 /// 낭독에서 건너뛴다(per-turn 은 첫 화자로 폴백하나 native 는 안 함 = 비대칭). 안내멘트를 "Directions: ..."
@@ -1146,4 +1119,23 @@ fn ensure_speaker_prefix(text: &str, speakers: &[TtsSpeaker]) -> String {
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// 합성 입력 텍스트 준비 — 화자 수에 따라: 2명+ = ensure_speaker_prefix(접두 보존, multiSpeaker 가 파싱) /
+/// 1명 = 단일 voice 라 화자 이름이 낭독되니 그 이름 접두 제거 / 0명 = 그대로.
+fn prep_synth_text(text: &str, speakers: &[TtsSpeaker]) -> String {
+    if speakers.len() >= 2 {
+        ensure_speaker_prefix(text, speakers)
+    } else if speakers.len() == 1 {
+        let pfx = format!("{}:", speakers[0].speaker);
+        text.lines()
+            .map(|l| {
+                let t = l.trim_start();
+                t.strip_prefix(&pfx).map(|r| r.trim_start().to_string()).unwrap_or_else(|| l.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        text.to_string()
+    }
 }
