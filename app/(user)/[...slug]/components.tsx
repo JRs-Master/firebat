@@ -1080,6 +1080,10 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const bVolRef = useRef(1); bVolRef.current = bVol;
   const bPlayRef = useRef(false); // 재생 의도(cancel 시 false → 자동 다음 문장 중단)
   const bGenRef = useRef(0); // utterance 세대 토큰(재시작 시 옛 onend 무효화)
+  const [bLoopAll, setBLoopAll] = useState(false); // 전체반복(끝→루프 시작점). 단어 timestamp 없어 A-B 대신 A-(시작점만).
+  const bLoopAllRef = useRef(false); bLoopAllRef.current = bLoopAll;
+  const [bLoopStart, setBLoopStart] = useState<{ seg: number; word: number } | null>(null); // A- : 클릭한 단어=루프 시작(없으면 0부터)
+  const bLoopStartRef = useRef<{ seg: number; word: number } | null>(null); bLoopStartRef.current = bLoopStart;
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
@@ -1164,7 +1168,16 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const gen = ++bGenRef.current;
     window.speechSynthesis.cancel();
-    if (idx < 0 || idx >= segments.length) { bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return; }
+    if (idx < 0 || idx >= segments.length) {
+      // 전체반복 — 끝나면 루프 시작점(A- 클릭 단어, 없으면 0)부터 다시.
+      if (bLoopAllRef.current && bPlayRef.current) {
+        const st = bLoopStartRef.current;
+        if (st) { const parts = segments[st.seg].text.split(' '); bPlayFrom(st.seg, parts.slice(Math.max(0, st.word)).join(' ')); }
+        else bPlayFrom(0);
+        return;
+      }
+      bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return;
+    }
     bPlayRef.current = true;
     setBSpeaking(true);
     setBSeg(idx);
@@ -1196,7 +1209,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
-            onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
+            onClick={() => { if (bSpeaking) bStop(); else { setBLoopStart(null); bPlayFrom(0); } }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
             {bSpeaking
               ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
@@ -1215,6 +1228,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                   <span className="w-9 text-right tabular-nums text-slate-500">{bSpeed.toFixed(1)}x</span>
                 </div>
               )}
+            </div>
+          )}
+          {isStudy && (
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <button type="button" onClick={() => setBLoopAll((v) => !v)} title="전체반복" aria-pressed={bLoopAll}
+                className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bLoopAll ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔁</button>
+              {bLoopAll && <span className="text-slate-400">단어 탭 = 거기부터 반복</span>}
             </div>
           )}
           <div className="ml-auto flex items-center gap-1 text-[11px]">
@@ -1310,7 +1330,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                       {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                       <span className="flex-1">
                         {s.text.split(' ').map((w, wi, arr) => (
-                          <span key={wi} onClick={() => bPlayFromWord(i, wi)} className="cursor-pointer rounded-sm hover:bg-blue-200/40">{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                          <span key={wi} onClick={() => { setBLoopStart({ seg: i, word: wi }); bPlayFromWord(i, wi); }}
+                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${bLoopAll && bLoopStart?.seg === i && bLoopStart?.word === wi ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300' : ''}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
                         ))}
                       </span>
                     </div>
