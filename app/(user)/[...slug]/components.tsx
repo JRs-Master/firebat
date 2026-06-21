@@ -1303,14 +1303,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
-        <>
-          <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} />
-          {/* TEMP DEBUG — 첫 재생 싱크 추적용. 제거 예정. */}
-          <div className="mt-1 font-mono text-[10px] text-red-600 break-all">
-            DBG cur={cur.toFixed(2)} dur={dur.toFixed(1)} lrc={lrc ? lrc.length : 'null'} ready={String(lrcReady)} curLrc={curLrc}
-            {lrc && curLrc >= 0 ? ` → "${(lrc[curLrc]?.text || '').slice(0, 28)}"` : ''}
-          </div>
-        </>
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} />
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
