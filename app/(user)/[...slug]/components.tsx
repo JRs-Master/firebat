@@ -1065,14 +1065,20 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   // 있으면 현재 문장 박스 + fill 와이프 + 단어 클릭 seek(정확). 없으면 글자수 추정 fallback.
   type LrcLine = { speaker?: string | null; text: string; start: number; end: number; words?: Array<{ word: string; start: number; end: number }> };
   const [lrc, setLrc] = useState<LrcLine[] | null>(null);
+  // sidecar fetch 정착 여부 — 로딩 중(미정착)엔 글자수 추정 하이라이트를 끔(오싱크 방지).
+  // 시크릿/콜드 로드 첫 재생 시 fetch 가 늦으면 lrc=null + dur=0 → 추정이 마지막 줄로 튀어 "완전 안맞음"
+  // 되던 것 차단. 정착(성공/실패) 후에만 karaoke(lrc 있음) 또는 추정(lrc 없음=Gemini) 으로 분기.
+  const [lrcReady, setLrcReady] = useState(false);
   useEffect(() => {
     setLrc(null);
-    if (!audioUrl) return;
+    setLrcReady(false);
+    if (!audioUrl) { setLrcReady(true); return; }
     let alive = true;
     fetch(`${audioUrl}.lrc.json`)
       .then((r) => (r.ok ? r.text() : Promise.reject()))
       .then((t) => { const arr = JSON.parse(t); if (alive && Array.isArray(arr) && arr.length) setLrc(arr); })
-      .catch(() => { /* 정렬 없음 — 추정 fallback */ });
+      .catch(() => { /* 정렬 없음 — 추정 fallback */ })
+      .finally(() => { if (alive) setLrcReady(true); });
     return () => { alive = false; };
   }, [audioUrl]);
   const isStatic = view !== 'interactive';
@@ -1142,10 +1148,12 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     return lens.map((len) => { const t = (acc / total) * dur; acc += len; return t; });
   }, [segments, dur]);
   const curLine = useMemo(() => {
+    // sidecar 로딩 중(파일 TTS) 이면 추정 하이라이트 금지 — lrc 정착 전 오싱크(마지막 줄 튐) 차단.
+    if (audioUrl && !lrcReady) return -1;
     let idx = -1;
     for (let i = 0; i < lineStarts.length; i++) if (cur >= lineStarts[i] - 0.2) idx = i;
     return idx;
-  }, [cur, lineStarts]);
+  }, [cur, lineStarts, audioUrl, lrcReady]);
   const seekLine = (i: number) => { const a = audioRef.current; if (a && lineStarts[i] != null) { a.currentTime = lineStarts[i]; if (a.paused) void a.play(); } };
   // LRC 임의 시각 seek(단어 클릭) — 그 시각으로 이동 + 재생 시작.
   const seekTo = (t: number) => { const a = audioRef.current; if (a && isFinite(t)) { a.currentTime = t; if (a.paused) void a.play(); } };
