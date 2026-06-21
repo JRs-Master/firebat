@@ -833,7 +833,7 @@ fn line_weight(text: &str) -> f64 {
 }
 
 /// [a,b] 에서 무음(gaps) 뺀 발화 구간들 — speech-time 매핑용(무음 건너뛰기).
-fn subtract_gaps(a: f64, b: f64, gaps: &[(f64, f64, f64)]) -> Vec<(f64, f64)> {
+fn subtract_gaps(a: f64, b: f64, gaps: &[(f64, f64, f64, f64)]) -> Vec<(f64, f64)> {
     let mut segs = Vec::new();
     let mut cur = a;
     for g in gaps {
@@ -874,8 +874,8 @@ fn seg_frac_to_time(frac: f64, segs: &[(f64, f64)], total: f64) -> f64 {
 /// 리셋하고 speech-time 이 무음 분포 왜곡을 제거. 큰 pause 없으면(일반 대화) 단일 블록 = 옛 동작과 등가.
 fn coarse_to_fine_lines(
     parsed: &[(Option<String>, String)],
-    cand: &[(f64, f64, f64)],
-    gaps: &[(f64, f64, f64)],
+    cand: &[(f64, f64, f64, f64)],
+    gaps: &[(f64, f64, f64, f64)],
     onset0: f64,
     offset: f64,
 ) -> (Vec<f64>, Vec<f64>) {
@@ -894,7 +894,7 @@ fn coarse_to_fine_lines(
     }
     let exp: Vec<f64> = cum.iter().map(|ck| seg_frac_to_time(ck / totw, &gsegs, gsp)).collect();
     // 큰 pause → 가장 가까운 기대 경계 idx 에 단조 배정(하드 앵커).
-    let mut anchor: Vec<Option<(f64, f64, f64)>> = vec![None; nb];
+    let mut anchor: Vec<Option<(f64, f64, f64, f64)>> = vec![None; nb];
     let mut lo = 0usize;
     for bg in cand.iter().filter(|g| g.2 >= big_thr) {
         let mut best: Option<usize> = None;
@@ -914,7 +914,7 @@ fn coarse_to_fine_lines(
             None => break,
         }
     }
-    let mut chosen: Vec<Option<(f64, f64, f64)>> = anchor.clone();
+    let mut chosen: Vec<Option<(f64, f64, f64, f64)>> = anchor.clone();
     let mut iter_pts: Vec<usize> = (0..nb).filter(|&k| anchor[k].is_some()).collect();
     iter_pts.push(nb);
     let mut prev_idx: isize = -1;
@@ -927,7 +927,7 @@ fn coarse_to_fine_lines(
         if (p_ as isize) <= q_isize {
             let q_ = q_isize as usize;
             let nbk = q_ - p_ + 1;
-            let local: Vec<(f64, f64, f64)> = cand
+            let local: Vec<(f64, f64, f64, f64)> = cand
                 .iter()
                 .filter(|g| g.0 > l + 0.02 && g.1 < r - 0.02 && g.2 < big_thr)
                 .cloned()
@@ -964,7 +964,7 @@ fn coarse_to_fine_lines(
             } else {
                 for bi in 0..nbk {
                     let t = lexp[bi];
-                    chosen[p_ + bi] = Some((t, t, 0.0));
+                    chosen[p_ + bi] = Some((t, t, 0.0, 0.0));
                 }
             }
         }
@@ -974,7 +974,7 @@ fn coarse_to_fine_lines(
     let mut st = vec![onset0];
     let mut en = Vec::new();
     for g in &chosen {
-        let g = g.unwrap_or((onset0, onset0, 0.0));
+        let g = g.unwrap_or((onset0, onset0, 0.0, 0.0));
         st.push(g.1);
         en.push(g.0);
     }
@@ -1033,17 +1033,22 @@ fn signal_align(
         return None;
     }
     let thr = mx * 0.06;
-    // interior silence gaps (양 끝 무음 제외)
-    let mut gaps: Vec<(f64, f64, f64)> = Vec::new(); // (start_s, end_s, dur)
+    // interior silence gaps (양 끝 무음 제외) — (start_s, end_s, dur, minenv).
+    // minenv(쉼 바닥 에너지) = 깊이: 진짜 쉼(마침표·쉼표·문장)은 에너지 0 근처(깊음), 파열음/자음군은 얕음.
+    let mut gaps: Vec<(f64, f64, f64, f64)> = Vec::new();
     let mut i = 0usize;
     while i < env.len() {
         if env[i] < thr {
             let a = i;
+            let mut mn = env[i];
             while i < env.len() && env[i] < thr {
+                if env[i] < mn {
+                    mn = env[i];
+                }
                 i += 1;
             }
             if a > 0 && i < env.len() {
-                gaps.push((a as f64 * fsec, i as f64 * fsec, (i - a) as f64 * fsec));
+                gaps.push((a as f64 * fsec, i as f64 * fsec, (i - a) as f64 * fsec, mn));
             }
         } else {
             i += 1;
@@ -1065,7 +1070,7 @@ fn signal_align(
         (vec![onset0], vec![offset])
     } else {
         // 후보 쉼(≥250ms), 시간순.
-        let mut cand: Vec<(f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).cloned().collect();
+        let mut cand: Vec<(f64, f64, f64, f64)> = gaps.iter().filter(|g| g.2 >= 0.25).cloned().collect();
         cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         if cand.len() >= nsent - 1 {
             // coarse-to-fine: 큰 pause(≥2s)를 하드 앵커로 박아 블록 분할 → 블록 안에서만 local expected
@@ -1096,12 +1101,14 @@ fn signal_align(
     for (idx, (speaker, text)) in parsed.iter().enumerate() {
         let s0 = starts.get(idx).copied().unwrap_or(onset0);
         let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
-        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). ≥125ms(사용자 선택): 실측 분포상
-        // 호흡 쉼은 75~125ms 에 몰리고 그 위(125~250ms)는 dead-zone → 125ms 가 호흡 상한이라 150과 동일.
-        // 더 적은 쉼만 잡아 fill 이 매끄러우면서 진짜 thought-group 경계는 다 포함(되돌리려면 0.075/0.10).
+        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). 두 조건 동시:
+        //  ① 길이 ≥125ms (파열음 closure ~80-95ms 배제)
+        //  ② 깊이 minenv < thr×0.07 (에너지 바닥 근처 = 진짜 쉼; 마침표·쉼표·문장 휴지는 0 근처).
+        // 옛 길이-only 는 *얕은* 긴 쉼(자음군·배경 잔향)도 경계로 쳐 fill 이 헛 멈췄다. 깊이 추가로 진짜
+        // 연음 경계만 → 어떤 TTS·내용이든 일반 적용(실측: Part2 마침표/쉼표·Henderson 쉼표/마침표 정확).
         let mut inner: Vec<(f64, f64)> = gaps
             .iter()
-            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.125)
+            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.125 && g.3 < thr * 0.07)
             .map(|g| (g.0, g.1))
             .collect();
         inner.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
