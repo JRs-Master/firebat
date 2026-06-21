@@ -87,6 +87,20 @@ impl TtsAdapter {
         l.contains("female") || l.contains("woman") || l.contains("girl") || l.contains('여')
     }
 
+    /// 화자명에서 성별 신호 추론 — gender 미주입 시 fallback. 명확한 성별어(Woman/Man/여자/남자 등)
+    /// 있을 때만 Some, 고유명(Lisa·Daniel 등 신호 없음)은 None(혼합 목록 유지 = 회귀 0).
+    /// female 어가 male 어를 포함("female"⊃"male", "woman"⊃"man")하므로 female 먼저 판정.
+    fn gender_from_name(name: &str) -> Option<bool> {
+        let l = name.to_lowercase();
+        if l.contains("female") || l.contains("woman") || l.contains("girl") || l.contains("lady") || l.contains('여') {
+            Some(true)
+        } else if l.contains("male") || l.contains("man") || l.contains("boy") || l.contains('남') {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     /// OpenAI /v1/audio/speech 1회 — 단일 voice mp3. style → instructions(말투/억양).
     async fn openai_one(
         &self,
@@ -674,9 +688,16 @@ impl ITtsPort for TtsAdapter {
                 if !sp.voice.is_empty() {
                     continue;
                 }
-                let list = Self::voices_for_gender(&req.provider, sp.gender.as_deref());
+                // gender 우선순위: AI 주입값 → (없으면) 화자명 성별어 추론 → (그것도 없으면) None(혼합).
+                // "Woman"/"Man" 처럼 이름이 곧 성별인데 gender 미주입이면 남자 보이스가 걸리던 버그 차단.
+                let eff_gender: Option<String> = match sp.gender.as_deref() {
+                    Some(g) if !g.trim().is_empty() => Some(g.to_string()),
+                    _ => Self::gender_from_name(&sp.speaker)
+                        .map(|f| if f { "female".to_string() } else { "male".to_string() }),
+                };
+                let list = Self::voices_for_gender(&req.provider, eff_gender.as_deref());
                 let i = gcount
-                    .entry(sp.gender.clone().unwrap_or_default())
+                    .entry(eff_gender.clone().unwrap_or_default())
                     .or_insert(0);
                 sp.voice = list[(seed + *i) % list.len()].to_string();
                 *i += 1;
