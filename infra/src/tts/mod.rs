@@ -794,6 +794,23 @@ fn syllables(word: &str) -> usize {
     n.max(1)
 }
 
+/// 줄 가중치 = 음절(발화시간) + 문장부호 쉼(쉼표·세미콜론·콜론 ×2, 줄 안 마침표/물음표/느낌표 ×3).
+/// 음절만으론 *발화 시간*만 재고 문장부호가 만드는 *쉼*은 못 잡아, 쉼표 많은 줄이 음절보다 길게 발화되는데도
+/// 짧게 추정돼 경계가 일찍 잡혔다(under-allocated). 쉼 시간을 음절-등가로 더해 경계 위치 추정을 실제에 맞춘다.
+fn line_weight(text: &str) -> f64 {
+    let syl: f64 = text.split_whitespace().map(|w| syllables(w) as f64).sum();
+    let commas = text.matches(',').count() + text.matches(';').count() + text.matches(':').count();
+    // 줄 안(끝 제외) 문장끝 — '.'/'?'/'!' 바로 뒤가 공백인 경우(ASCII 단일바이트라 UTF-8 안전).
+    let bytes = text.as_bytes();
+    let mut inner_ends = 0usize;
+    for i in 0..bytes.len() {
+        if matches!(bytes[i], b'.' | b'?' | b'!') && bytes.get(i + 1).is_some_and(|b| b.is_ascii_whitespace()) {
+            inner_ends += 1;
+        }
+    }
+    (syl + commas as f64 * 2.0 + inner_ends as f64 * 3.0).max(1.0)
+}
+
 /// 순수 신호 정렬 (STT·API 0) — WAV 에너지에서 문장 쉼을 검출해 문장 앵커(실측 발화 재개 지점)를 잡고,
 /// 문장 안은 음절가중으로 단어를 분배(노래방 fill). 우리 LC 오디오(TTS 생성 WAV)의 정답 — 측정상 문장 경계
 /// 검출은 깨끗(top N-1 긴 쉼, 6/6)하고 char 추정보다 정확하며, 단어는 연결발화라 무음 분리가 불가(4/7)해서
@@ -872,7 +889,7 @@ fn signal_align(
         .map(|p| (p + 1) as f64 * fsec)
         .unwrap_or(total);
     let nsent = parsed.len();
-    // 문장 앵커 = 음절 누적 "기대 시각"에 가장 가까운 실제 쉼으로 단조 snap. 부족하면 음절 추정(드문 경우).
+    // 문장 앵커 = 줄 가중치(음절+문장부호 쉼) 누적 "기대 시각"에 가장 가까운 실제 쉼으로 단조 snap. 부족하면 추정.
     let (starts, ends): (Vec<f64>, Vec<f64>) = if nsent <= 1 {
         (vec![onset0], vec![offset])
     } else {
@@ -881,19 +898,18 @@ fn signal_align(
         cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         if cand.len() >= nsent - 1 {
             // 옛 "가장 긴 쉼 top N-1" 은 거짓 긴 쉼(예: 디렉션 안 "Directions." 뒤 heading 쉼)을 경계로
-            // 잡아 긴 줄을 짧은 창에 욱여넣었다(디렉션 4초가 0.75초로 → 대화 하이라이트 ~3초 당겨짐).
-            // 정공 = 각 경계의 "기대 시각"(음절 누적 비례)을 잡고 가장 가까운 실제 쉼에 단조 snap →
-            // 긴 디렉션/긴 줄이 제 발화길이만큼 차지(per-turn 의 턴 격리와 동등한 결과를 native 에서도).
-            let syl: Vec<f64> = parsed.iter()
-                .map(|(_, t)| t.split_whitespace().map(|w| syllables(w) as f64).sum::<f64>().max(1.0))
-                .collect();
-            let tot_syl: f64 = syl.iter().sum::<f64>().max(1.0);
+            // 잡아 긴 줄을 짧은 창에 욱여넣었다. 정공 = 각 경계의 "기대 시각"(줄 가중치 누적 비례)을 잡고
+            // 가장 가까운 실제 쉼에 단조 snap → 긴 줄이 제 발화길이만큼 차지(native 에서 per-turn 격리와 동등).
+            // 가중치 = 음절 + 문장부호 쉼(line_weight): 쉼표 많은 줄(음절보다 길게 발화)이 짧게 추정돼
+            // 경계가 일찍 잡히던 것 보정 → cascade 없이 해당 줄만 정확히 늘어남.
+            let wt: Vec<f64> = parsed.iter().map(|(_, t)| line_weight(t)).collect();
+            let tot_wt: f64 = wt.iter().sum::<f64>().max(1.0);
             let span = (offset - onset0).max(0.1);
             let mut acc = 0.0;
             let mut expected: Vec<f64> = Vec::with_capacity(nsent - 1);
-            for s in syl.iter().take(nsent - 1) {
+            for s in wt.iter().take(nsent - 1) {
                 acc += *s;
-                expected.push(onset0 + acc / tot_syl * span);
+                expected.push(onset0 + acc / tot_wt * span);
             }
             // 각 기대 경계 → 가장 가까운 후보 쉼(이전 선택 이후, 뒤 경계 몫 남겨 단조 보장).
             let mut chosen: Vec<(f64, f64, f64)> = Vec::with_capacity(nsent - 1);
@@ -918,10 +934,8 @@ fn signal_align(
             en.push(offset);
             (st, en)
         } else {
-            // 쉼 부족 → 음절 추정 문장 경계(긴 줄을 발화시간에 근접 — char 보다 정확).
-            let lens: Vec<f64> = parsed.iter()
-                .map(|(_, t)| t.split_whitespace().map(|w| syllables(w) as f64).sum::<f64>().max(1.0))
-                .collect();
+            // 쉼 부족 → 줄 가중치(음절+문장부호 쉼) 추정 문장 경계(char 보다 정확).
+            let lens: Vec<f64> = parsed.iter().map(|(_, t)| line_weight(t)).collect();
             let tot: f64 = lens.iter().sum::<f64>().max(1.0);
             let span = (offset - onset0).max(0.1);
             let mut st = Vec::new();
@@ -936,18 +950,18 @@ fn signal_align(
         }
     };
     // 문장 안 단어 분배 — thought group(원어민이 한 호흡에 묶어 발음하는 단위) 인식.
-    // 문장 span 안 미세 쉼(≥100ms, 단어내 파열음 노이즈·짧은 쉼 제외)을 검출 → 발화(speech) 구간만 음절-균등,
+    // 문장 span 안 미세 쉼(≥125ms, 단어내 파열음 노이즈·짧은 쉼 제외)을 검출 → 발화(speech) 구간만 음절-균등,
     // 쉼 구간엔 단어 0 → fill 이 그 thought-group 경계에서 멈췄다 다음 그룹으로 이어짐(연음그룹 단위 동기).
     let mut out: Vec<TtsLine> = Vec::with_capacity(nsent);
     for (idx, (speaker, text)) in parsed.iter().enumerate() {
         let s0 = starts.get(idx).copied().unwrap_or(onset0);
         let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
-        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). ≥100ms(사용자 선택): 실측 분포상
-        // 호흡 쉼은 75~125ms 에 몰리고 <75ms 는 노이즈 → 75ms 가 호흡을 더 많이 잡지만(75~100ms 7개)
-        // 일반 대화 체감차 작아 100ms 로 상향. 더 적은 쉼만 잡아 fill 이 매끄러움(되돌리려면 0.075).
+        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). ≥125ms(사용자 선택): 실측 분포상
+        // 호흡 쉼은 75~125ms 에 몰리고 그 위(125~250ms)는 dead-zone → 125ms 가 호흡 상한이라 150과 동일.
+        // 더 적은 쉼만 잡아 fill 이 매끄러우면서 진짜 thought-group 경계는 다 포함(되돌리려면 0.075/0.10).
         let mut inner: Vec<(f64, f64)> = gaps
             .iter()
-            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.10)
+            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.125)
             .map(|g| (g.0, g.1))
             .collect();
         inner.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
