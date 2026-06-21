@@ -1126,39 +1126,12 @@ fn split_pause_segments(text: &str) -> Vec<(String, f64)> {
 /// 낭독에서 건너뛴다(per-turn 은 첫 화자로 폴백하나 native 는 안 함 = 비대칭). 안내멘트를 "Directions: ..."
 /// 처럼 화자 없이 쓰면 native 가 통째로 빼먹음 → 선언 안 된(또는 접두 없는) 줄을 **첫 화자**로 재귀속.
 /// speakers 비었으면(단일 음성) 그대로(전체 낭독). 이미 유효 화자 줄은 불변(idempotent).
-fn ensure_speaker_prefix(text: &str, speakers: &[TtsSpeaker]) -> String {
-    if speakers.is_empty() {
-        return text.to_string();
-    }
-    // 무라벨 줄은 "직전 유효 화자"로 이어붙임(carry-forward) — 한 화자의 여러 줄 턴이 가장 흔한
-    // 무라벨 케이스. "무조건 첫 화자"면 2번째 화자 턴의 prefix 를 빼먹었을 때 1번째 화자가 읽는 버그.
-    // 첫 줄(직전 화자 없음)만 첫 화자로 default.
-    let mut last = speakers[0].speaker.clone();
-    text.lines()
-        .map(|line| {
-            let t = line.trim();
-            if t.is_empty() {
-                return String::new();
-            }
-            if let Some((name, _)) = t.split_once(':') {
-                if speakers.iter().any(|s| s.speaker.eq_ignore_ascii_case(name.trim())) {
-                    last = name.trim().to_string(); // 유효 화자 갱신 → 다음 무라벨 줄이 이 화자로 이어짐.
-                    return t.to_string(); // 유효 화자 접두 — 그대로.
-                }
-            }
-            format!("{last}: {t}") // 접두 없음/미선언 화자 → 직전 화자로(줄 전체를 그 화자 대사로).
-        })
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// 합성 입력 텍스트 준비 — 화자 수에 따라: 2명+ = ensure_speaker_prefix(접두 보존, multiSpeaker 가 파싱) /
-/// 1명 = 단일 voice 라 화자 이름이 낭독되니 그 이름 접두 제거 / 0명 = 그대로.
+/// 합성 입력 텍스트 준비 — 단일 화자(1명)면 그 이름 접두만 제거(단일 voice 라 안 떼면 이름까지 낭독됨;
+/// 추측이 아니라 알려진 단일 이름의 결정적 정규화). 2명+/0명 = 그대로 통과. 무라벨 줄 강제 화자주입은
+/// 제거함 — 잘못 만든 스크립트를 합성단에서 추측 보정하면 화자 오배정(2번째 턴 라벨 빼먹으면 1번째가 읽음)·
+/// 정렬 밀림 같은 2차 문제를 만든다. 라벨 정확성은 프롬프트/스킬 책임(multiSpeaker 가 "Name: line" 직접 파싱).
 fn prep_synth_text(text: &str, speakers: &[TtsSpeaker]) -> String {
-    if speakers.len() >= 2 {
-        ensure_speaker_prefix(text, speakers)
-    } else if speakers.len() == 1 {
+    if speakers.len() == 1 {
         let pfx = format!("{}:", speakers[0].speaker);
         text.lines()
             .map(|l| {
