@@ -1098,6 +1098,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const [bLoopEnd, setBLoopEnd] = useState<{ seg: number; word: number } | null>(null); // B : 클릭한 끝 단어(없으면 A부터 끝까지)
   const bLoopEndRef = useRef<{ seg: number; word: number } | null>(null); bLoopEndRef.current = bLoopEnd;
   const bRangeRef = useRef<{ a: { seg: number; word: number } | null; b: { seg: number; word: number } | null } | null>(null); // 현재 루프 구간(속도변경 재시작·취소 분기용)
+  const [bAbSel, setBAbSel] = useState(false); // 브라우저 구간반복 토글 — ON 이면 단어 탭 = A/B 지정(↻ 전체반복과 분리)
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
@@ -1234,8 +1235,9 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     const step = (i: number) => {
       if (!bPlayRef.current) return;
       if (i >= items.length) {
-        if (bLoopAllRef.current) { step(0); return; } // 🔁 ON = A 로 루프
-        bRangeRef.current = null; bPlayFrom(B.seg + 1); return; // 🔁 OFF = 이어서 전체(B 다음부터)
+        const isSection = !!(a || b); // 구간(A/B 지정) = 항상 루프 / 전체(a·b null) = ↻ 토글 따름
+        if (isSection || bLoopAllRef.current) { step(0); return; }
+        bRangeRef.current = null; bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return;
       }
       const gen = ++bGenRef.current;
       window.speechSynthesis.cancel();
@@ -1285,7 +1287,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             </div>
           )}
           {isStudy && (
-            <button type="button" onClick={() => { const next = !bLoopAll; setBLoopAll(next); if (next && bPlayRef.current && !bRangeRef.current) bRunRange(bLoopStartRef.current, bLoopEndRef.current); }} title="반복(켜고 단어 탭 = 구간 A→B)" aria-pressed={bLoopAll}
+            <button type="button" onClick={() => { const next = !bLoopAll; setBLoopAll(next); if (next && bPlayRef.current && !bRangeRef.current) bRunRange(null, null); }} title="전체반복" aria-pressed={bLoopAll}
               className={`px-1.5 py-0.5 rounded leading-none transition-colors text-[11px] ${bLoopAll ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>↻</button>
           )}
           <div className="relative ml-auto flex items-center text-[11px]">
@@ -1297,9 +1299,6 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               </div>
             )}
           </div>
-          {isStudy && bLoopAll && (
-            <span className="w-full text-[11px] text-slate-400">반복 ON · 단어 탭 = 구간 시작(A)→끝(B) · 다시 탭하면 재설정</span>
-          )}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>
@@ -1313,7 +1312,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               {isStudy && <button type="button" onClick={() => setDictation((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${dictation ? 'bg-indigo-500 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>✍️ 받아쓰기</button>}
               <button type="button" onClick={() => setShowScript((v) => !v)} className="px-2 py-0.5 rounded font-semibold leading-none text-slate-500 transition-colors hover-blue">{showScript ? '스크립트 숨기기' : '스크립트 보기'}</button>
               {audioUrl && isStudy && showScript && <button type="button" onClick={() => setAbSel((v) => !v)} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${abSel ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔂 구간{abA != null && abB != null ? ' ●' : ''}</button>}
-              {audioUrl && isStudy && abSel && showScript ? <span className="text-slate-400">단어 탭 = 시작(A)→끝(B) 지정 · 플레이어가 그 구간 반복</span> : isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
+              {browserMode && isStudy && showScript && <button type="button" onClick={() => { const n = !bAbSel; setBAbSel(n); if (!n) { setBLoopStart(null); setBLoopEnd(null); bStop(); } }} className={`px-2 py-0.5 rounded font-semibold leading-none transition-colors ${bAbSel ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔂 구간{bLoopStart && bLoopEnd ? ' ●' : ''}</button>}
+              {((audioUrl && abSel) || (browserMode && bAbSel)) && showScript ? <span className="text-slate-400">단어 탭 = 시작(A)→끝(B) · 다시 탭하면 이동</span> : isStudy && <span className="text-slate-400">먼저 듣고 받아쓴 뒤 확인하세요</span>}
             </div>
           )}
           {dictation && !isStatic && (
@@ -1391,10 +1391,10 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                       {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                       <span className="flex-1">
                         {s.text.split(' ').map((w, wi, arr) => {
-                          const isAB = bLoopAll && ((bLoopStart?.seg === i && bLoopStart?.word === wi) || (bLoopEnd?.seg === i && bLoopEnd?.word === wi));
+                          const isAB = (bLoopStart?.seg === i && bLoopStart?.word === wi) || (bLoopEnd?.seg === i && bLoopEnd?.word === wi);
                           return (
                           <span key={wi} onClick={() => {
-                            if (!bLoopAll) { setBLoopStart(null); setBLoopEnd(null); bPlayFromWord(i, wi); return; }
+                            if (!bAbSel) { bPlayFromWord(i, wi); return; }
                             const c = { seg: i, word: wi };
                             if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); bRunRange(lo, hi); }
                             else { setBLoopStart(c); setBLoopEnd(null); bRunRange(c, null); }
