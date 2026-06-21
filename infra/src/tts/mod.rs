@@ -801,20 +801,58 @@ fn signal_align(
             (st, en)
         }
     };
-    // 문장 안 음절가중 단어 분배
+    // 문장 안 단어 분배 — thought group(원어민이 한 호흡에 묶어 발음하는 단위) 인식.
+    // 문장 span 안 미세 쉼(≥150ms, 단어내 파열음 노이즈 제외)을 검출 → 발화(speech) 구간만 음절-균등 분배,
+    // 쉼 구간엔 단어 0 → fill 이 그 thought-group 경계에서 멈췄다 다음 그룹으로 이어짐(연음그룹 단위 동기).
     let mut out: Vec<TtsLine> = Vec::with_capacity(nsent);
     for (idx, (speaker, text)) in parsed.iter().enumerate() {
         let s0 = starts.get(idx).copied().unwrap_or(onset0);
         let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
+        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만, ≥150ms 라 파열음 노이즈 제외).
+        let mut inner: Vec<(f64, f64)> = gaps
+            .iter()
+            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.15)
+            .map(|g| (g.0, g.1))
+            .collect();
+        inner.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // 발화 세그먼트 = [s0,s1] 에서 inner 쉼 제외.
+        let mut segs: Vec<(f64, f64)> = Vec::new();
+        let mut cur = s0;
+        for &(ps, pe) in &inner {
+            if ps > cur {
+                segs.push((cur, ps));
+            }
+            cur = pe.max(cur);
+        }
+        if cur < s1 {
+            segs.push((cur, s1));
+        }
+        if segs.is_empty() {
+            segs.push((s0, s1));
+        }
+        let speech_total: f64 = segs.iter().map(|(a, b)| b - a).sum::<f64>().max(1e-3);
+        // speech-fraction(0..1) → 실제 시각(쉼 건너뜀). 단어를 발화시간에 균등 → 쉼은 자연히 빈 구간.
+        let to_time = |frac: f64| -> f64 {
+            let target = frac.clamp(0.0, 1.0) * speech_total;
+            let mut accum = 0.0;
+            for &(a, b) in &segs {
+                let d = b - a;
+                if accum + d >= target {
+                    return a + (target - accum);
+                }
+                accum += d;
+            }
+            s1
+        };
         let words: Vec<&str> = text.split_whitespace().collect();
         let weights: Vec<f64> = words.iter().map(|w| syllables(w) as f64).collect();
         let tw: f64 = weights.iter().sum::<f64>().max(1.0);
         let mut acc = 0.0;
         let mut wl: Vec<TtsWord> = Vec::with_capacity(words.len());
         for (k2, w) in words.iter().enumerate() {
-            let ws = s0 + acc / tw * (s1 - s0);
+            let ws = to_time(acc / tw);
             acc += weights[k2];
-            let we = s0 + acc / tw * (s1 - s0);
+            let we = to_time(acc / tw);
             wl.push(TtsWord {
                 word: (*w).to_string(),
                 start: ws,
