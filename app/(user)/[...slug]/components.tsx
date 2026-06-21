@@ -140,8 +140,11 @@ type QuizView = 'exam' | 'answers' | 'full' | 'interactive';
 
 // 컴포넌트가 QUIZ_CIRCLED 로 보기 번호(①②③)를 자동 부여하므로, AI 가 choice 텍스트에 또 넣은
 // 앞쪽 마커(원문자 ①~⑩ / "1." / "1)")를 제거해 "① ① form" 식 중복 표시를 막는다.
-const stripChoiceMarker = (s: string): string =>
-  s.replace(/^\s*(?:[①-⑩]|\d+[.)])\s*/u, '');
+const stripChoiceMarker = (s: any): string => {
+  // choice 가 string 이 아닐 수 있음(AI 가 {text}/{label}/{en} 객체나 숫자로 보냄) → 안전 추출 후 처리.
+  const str = typeof s === 'string' ? s : (s?.text ?? s?.label ?? s?.en ?? (s == null ? '' : String(s)));
+  return String(str).replace(/^\s*(?:[①-⑩]|\d+[.)])\s*/u, '');
+};
 
 // 정답 정규화 — AI 는 answer·answerIndex 둘 다 0-based(choices 인덱스, 첫 보기=0)로 보낸다(실측 2건:
 // answerIndex 3=④, answer 1=②). 내부 ans 는 1-based(보기 번호 = i+1)라 +1 환산. 먼저 온 값 사용.

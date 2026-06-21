@@ -340,43 +340,68 @@ impl TtsAdapter {
                     "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
                     model
                 );
-                let resp = client
-                    .post(&url)
-                    .header("x-goog-api-key", &key)
-                    .header("Content-Type", "application/json")
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Gemini per-turn 요청 실패: {e}"))?;
-                if !resp.status().is_success() {
-                    let st = resp.status();
-                    let t = resp.text().await.unwrap_or_default();
-                    return Err(format!("Gemini per-turn {st}: {t}"));
+                // 병렬 호출 중 transient(200+오디오없음 / 일시 rate / 네트워크) 대비 — 최대 2회 시도.
+                // 끝까지 실패 시 finishReason 포함 진단(safety/recitation 등 비-transient 식별).
+                let mut last_err = String::new();
+                for attempt in 0..2u32 {
+                    if attempt > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    }
+                    let resp = match client
+                        .post(&url)
+                        .header("x-goog-api-key", &key)
+                        .header("Content-Type", "application/json")
+                        .json(&body)
+                        .send()
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            last_err = format!("요청 {e}");
+                            continue;
+                        }
+                    };
+                    if !resp.status().is_success() {
+                        let st = resp.status();
+                        let t = resp.text().await.unwrap_or_default();
+                        last_err = format!("{st}: {}", t.chars().take(160).collect::<String>());
+                        continue;
+                    }
+                    let json: serde_json::Value = match resp.json().await {
+                        Ok(j) => j,
+                        Err(e) => {
+                            last_err = format!("파싱 {e}");
+                            continue;
+                        }
+                    };
+                    let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
+                    if let Some(b64) = inline["data"].as_str() {
+                        let mime = inline["mimeType"].as_str().unwrap_or("");
+                        let rate = mime
+                            .split(';')
+                            .find_map(|s| s.trim().strip_prefix("rate="))
+                            .and_then(|r| r.trim().parse::<u32>().ok())
+                            .filter(|r| *r >= 8000 && *r <= 48000)
+                            .unwrap_or(24000);
+                        match base64::engine::general_purpose::STANDARD.decode(b64) {
+                            Ok(pcm) => return Ok::<(Vec<u8>, u32), String>((pcm, rate)),
+                            Err(e) => {
+                                last_err = format!("디코드 {e}");
+                                continue;
+                            }
+                        }
+                    }
+                    let fr = json["candidates"][0]["finishReason"]
+                        .as_str()
+                        .unwrap_or("none");
+                    last_err = format!("오디오 없음(finishReason={fr})");
                 }
-                let json: serde_json::Value = resp
-                    .json()
-                    .await
-                    .map_err(|e| format!("per-turn 응답 파싱: {e}"))?;
-                let inline = &json["candidates"][0]["content"]["parts"][0]["inlineData"];
-                let b64 = inline["data"]
-                    .as_str()
-                    .ok_or_else(|| "per-turn 응답에 오디오 없음".to_string())?;
-                let mime = inline["mimeType"].as_str().unwrap_or("");
-                let rate = mime
-                    .split(';')
-                    .find_map(|s| s.trim().strip_prefix("rate="))
-                    .and_then(|r| r.trim().parse::<u32>().ok())
-                    .filter(|r| *r >= 8000 && *r <= 48000)
-                    .unwrap_or(24000);
-                let pcm = base64::engine::general_purpose::STANDARD
-                    .decode(b64)
-                    .map_err(|e| format!("per-turn PCM 디코드: {e}"))?;
-                Ok::<(Vec<u8>, u32), String>((pcm, rate))
+                Err(format!("Gemini per-turn 실패: {last_err}"))
             }
         });
-        // buffered(6) = 최대 6 동시(rate-limit 안전) + 결과는 입력 순서 보존.
+        // buffered(3) = 최대 3 동시 — TTS 모델 동시성 과부하(200+오디오없음) 회피 + 순서 보존.
         let results: Vec<Result<(Vec<u8>, u32), String>> =
-            futures_util::stream::iter(futs).buffered(6).collect().await;
+            futures_util::stream::iter(futs).buffered(3).collect().await;
         let mut rate = 24000u32;
         let mut all: Vec<u8> = Vec::new();
         for (i, r) in results.into_iter().enumerate() {
