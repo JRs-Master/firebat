@@ -1161,6 +1161,9 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   // 스크립트는 마커만 표시. 루프는 플레이어가 abA/abB(props)로 수행. (스크립트 드래그 조정 = 추후)
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
+  // 모바일 탭-이동 — A/B 마커 탭 = 선택(armed), 그 뒤 단어 탭 = 그 위치로 이동(드래그 대안).
+  // 파일 모드 전용(브라우저는 bAbSel 토글이 같은 역할). PC 드래그는 그대로 병행.
+  const [armed, setArmed] = useState<'A' | 'B' | null>(null);
   // ── A/B 마커 드래그 이동 — 스크립트에서 마커(A/B) 단어를 끌어 다른 단어로 옮김(브라우저=단어 인덱스,
   // 파일=단어 시각). data-w 속성으로 포인터 밑 단어 식별(elementFromPoint), pointer capture 로 터치도 추적. ──
   const dragRef = useRef<null | 'A' | 'B'>(null);
@@ -1179,9 +1182,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   };
   const markerUp = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
+    const which = dragRef.current;
+    const wasMove = movedRef.current;
     dragRef.current = null; setDragging(false);
     try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* */ }
     if (browserMode && bSpeaking && bLoopStartRef.current) bRunRange(bLoopStartRef.current, bLoopEndRef.current);
+    // 끌지 않고 탭만(파일 마커) = 선택(arm) 토글 — 다음 단어 탭으로 이동. 브라우저는 bAbSel 이 담당.
+    if (!wasMove && !browserMode) setArmed((a) => (a === which ? null : which));
   };
   const markerDown = (which: 'A' | 'B') => (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -1400,8 +1407,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                               <span key={`w${wi}`} data-w={`f:${w.start}:${w.end}`}
                                 onPointerDown={mkf ? markerDown(mkf) : undefined}
                                 onPointerMove={markerMove} onPointerUp={markerUp}
-                                onClick={() => { if (movedRef.current) { movedRef.current = false; return; } seekTo(w.start); }}
-                                className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none select-none' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                                onClick={() => {
+                                  if (movedRef.current) { movedRef.current = false; return; } // 드래그 끝 클릭 억제
+                                  if (mkf) return; // 마커 탭 = 선택(markerUp 에서 arm) — seek 안 함
+                                  if (armed) { if (armed === 'A') setAbA(w.start); else setAbB(w.end); setArmed(null); return; } // 선택 마커를 이 단어로 이동
+                                  seekTo(w.start);
+                                }}
+                                className={`relative cursor-pointer rounded-sm ${isAb ? `bg-slate-300 text-slate-800 touch-none select-none ${mkf === armed ? 'ring-2 ring-blue-500' : 'ring-1 ring-slate-400'}` : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
