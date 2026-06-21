@@ -1160,7 +1160,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const dictResult = useMemo(() => (dictChecked ? dictationDiff(segments.filter((s) => !s.guide).map((s) => s.text).join(' '), typed) : null), [dictChecked, segments, typed]);
   // 브라우저 TTS — 문장 단위 순차 재생(idx 부터). Web Speech 는 mid-utterance rate/volume 변경 불가라
   // 속도·볼륨 바꾸면 현재 문장을 새 설정으로 재시작+이어감(전체 처음 X). onboundary 모바일 불안정이라 문장 단위.
-  const bPlayFrom = (idx: number) => {
+  const bPlayFrom = (idx: number, fromText?: string) => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const gen = ++bGenRef.current;
     window.speechSynthesis.cancel();
@@ -1168,7 +1168,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     bPlayRef.current = true;
     setBSpeaking(true);
     setBSeg(idx);
-    const u = new SpeechSynthesisUtterance(segments[idx].text);
+    // fromText = 단어 클릭 시 그 단어부터(첫 문장만 부분 발화), 이후 문장은 onend 가 full 로 이어감.
+    const u = new SpeechSynthesisUtterance(fromText ?? segments[idx].text);
     u.rate = bSpeedRef.current;
     u.volume = bVolRef.current;
     u.lang = 'en-US';
@@ -1176,6 +1177,11 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     window.speechSynthesis.speak(u);
   };
   const bStop = () => { bPlayRef.current = false; bGenRef.current++; if (typeof window !== 'undefined') window.speechSynthesis?.cancel(); setBSpeaking(false); };
+  // 단어 클릭 = 그 단어부터 재생(브라우저 모드). fill(차오름)은 단어 타임 없어 불가 — 문장 하이라이트만.
+  const bPlayFromWord = (segIdx: number, wordIdx: number) => {
+    const parts = segments[segIdx].text.split(' ');
+    bPlayFrom(segIdx, parts.slice(Math.max(0, wordIdx)).join(' '));
+  };
   // 재생 중 속도/볼륨 변경 → 현재 문장을 새 설정으로 재시작 + 이어감.
   useEffect(() => {
     if (bPlayRef.current && bSeg >= 0) bPlayFrom(bSeg);
@@ -1298,9 +1304,19 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                 }) : segments.map((s, i: number) => (
                   s.guide ? (
                     <div key={i} className="px-1.5 py-1 text-[12px] sm:text-[13px] italic text-slate-400 leading-relaxed">{s.text}</div>
+                  ) : browserMode ? (
+                    // 브라우저 TTS = 단어 클릭 시 그 단어부터 재생(파일 모드 단어 클릭과 동등, fill 만 없음).
+                    <div key={i} className={`flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${bSeg === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700'}`}>
+                      {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
+                      <span className="flex-1">
+                        {s.text.split(' ').map((w, wi, arr) => (
+                          <span key={wi} onClick={() => bPlayFromWord(i, wi)} className="cursor-pointer rounded-sm hover:bg-blue-200/40">{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                        ))}
+                      </span>
+                    </div>
                   ) : (
-                  <button key={i} type="button" onClick={() => { if (browserMode) bPlayFrom(i); else seekLine(i); }}
-                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${(browserMode ? bSeg === i : curLine === i) ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
+                  <button key={i} type="button" onClick={() => seekLine(i)}
+                    className={`text-left flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${curLine === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700 hover:bg-white/70'}`}>
                     {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                     <span className="flex-1"><InlineMd text={s.text} /></span>
                   </button>
