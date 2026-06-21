@@ -815,6 +815,20 @@ fn syllables(word: &str) -> usize {
     n.max(1)
 }
 
+/// 단어 발화시간 근사 = 음절 + 0.5×자음수. 음절-only 는 자음클러스터 단어("trends" 1음절 5자음·
+/// "client"·"year-over-year")를 과소평가해 fill 이 빨리 지나간다 → 자음(articulation 시간) 반영.
+fn word_weight(w: &str) -> f64 {
+    let s = syllables(w) as f64;
+    let cons = w
+        .chars()
+        .filter(|c| {
+            let lc = c.to_ascii_lowercase();
+            lc.is_ascii_alphabetic() && !matches!(lc, 'a' | 'e' | 'i' | 'o' | 'u' | 'y')
+        })
+        .count() as f64;
+    s + 0.5 * cons
+}
+
 /// 줄 가중치 = 음절(발화시간) + 문장부호 쉼(쉼표·세미콜론·콜론 ×2, 줄 안 마침표/물음표/느낌표 ×3).
 /// 음절만으론 *발화 시간*만 재고 문장부호가 만드는 *쉼*은 못 잡아, 쉼표 많은 줄이 음절보다 길게 발화되는데도
 /// 짧게 추정돼 경계가 일찍 잡혔다(under-allocated). 쉼 시간을 음절-등가로 더해 경계 위치 추정을 실제에 맞춘다.
@@ -1216,7 +1230,7 @@ fn signal_align(
                 }
                 gb
             };
-            let gsl: Vec<f64> = group.iter().map(|w| syllables(w) as f64).collect();
+            let gsl: Vec<f64> = group.iter().map(|w| word_weight(w)).collect();
             let gtw: f64 = gsl.iter().sum::<f64>().max(1.0);
             let mut gacc = 0.0;
             for (k, w) in group.iter().enumerate() {
