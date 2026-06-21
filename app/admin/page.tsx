@@ -2489,7 +2489,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
               </button>
             </div>
             {!composerCollapsed && (
-            <div className="mt-2 sm:mt-4 text-center pb-1 sm:pb-2">
+            <div className="mt-0.5 sm:mt-1 text-center pb-0 sm:pb-0.5">
               <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase">
                 © All rights reserved Firebat
               </span>

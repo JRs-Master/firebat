@@ -942,7 +942,11 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
     <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5">
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
       <div className="flex items-center gap-2">
-        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{playing ? '❚❚' : '▶'}</button>
+        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
+          {playing
+            ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+            : <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+        </button>
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
       </div>
@@ -1118,7 +1122,11 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
             onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
-            className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white text-[13px] flex items-center justify-center hover:bg-blue-700">{bSpeaking ? '❚❚' : '▶'}</button>
+            className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
+            {bSpeaking
+              ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+              : <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+          </button>
           {isStudy && (
             <div className="flex items-center gap-1 text-[11px]">
               <span className="text-slate-400">속도</span>
@@ -1193,12 +1201,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                     fillPct = Math.min((done / total) * 100, 100);
                   }
                   return (
-                    <div key={i} className={`rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed ${active ? 'bg-blue-100/50' : ''}`}>
+                    <div key={i} className="rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed">
                       <div className="flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
-                        <span className="relative flex-1">
+                        {/* 박스·fill 은 텍스트 폭에만 — 문장 끝 뒤 빈 공간은 안 채움(flex-1 제거 = 내용 폭). */}
+                        <span className={`relative self-start ${active ? 'rounded bg-blue-100/60' : ''}`}>
                           {/* 연속 fill — 텍스트 위 한 줄 sweep(단어 타이밍 기반 글자 위치) */}
-                          {active && <span className="absolute inset-y-0 left-0 rounded bg-blue-300/45 pointer-events-none" style={{ width: `${fillPct}%` }} />}
+                          {active && <span className="absolute inset-y-0 left-0 rounded bg-blue-300/55 pointer-events-none" style={{ width: `${fillPct}%` }} />}
                           <span className="relative">
                             {words.map((w, wi) => (
                               <span key={wi} onClick={() => seekTo(w.start)} className="cursor-pointer rounded hover:bg-blue-200/40">{w.word} </span>
