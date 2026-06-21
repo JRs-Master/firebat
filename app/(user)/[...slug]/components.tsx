@@ -1154,6 +1154,33 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   // 스크립트는 마커만 표시. 루프는 플레이어가 abA/abB(props)로 수행. (스크립트 드래그 조정 = 추후)
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
+  // ── A/B 마커 드래그 이동 — 스크립트에서 마커(A/B) 단어를 끌어 다른 단어로 옮김(브라우저=단어 인덱스,
+  // 파일=단어 시각). data-w 속성으로 포인터 밑 단어 식별(elementFromPoint), pointer capture 로 터치도 추적. ──
+  const dragRef = useRef<null | 'A' | 'B'>(null);
+  const movedRef = useRef(false); // 드래그 발생 시 onClick(선택) 억제용
+  const [dragging, setDragging] = useState(false);
+  const markerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    e.preventDefault();
+    const el = (typeof document !== 'undefined' ? (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) : null)?.closest('[data-w]') as HTMLElement | null;
+    const w = el?.getAttribute('data-w');
+    if (!w) return;
+    movedRef.current = true;
+    const p = w.split(':');
+    if (p[0] === 'b') { const pt = { seg: Number(p[1]), word: Number(p[2]) }; if (dragRef.current === 'A') setBLoopStart(pt); else setBLoopEnd(pt); }
+    else { if (dragRef.current === 'A') setAbA(Number(p[1])); else setAbB(Number(p[2])); }
+  };
+  const markerUp = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    dragRef.current = null; setDragging(false);
+    try { (e.currentTarget as Element).releasePointerCapture(e.pointerId); } catch { /* */ }
+    if (browserMode && bSpeaking && bLoopStartRef.current) bRunRange(bLoopStartRef.current, bLoopEndRef.current);
+  };
+  const markerDown = (which: 'A' | 'B') => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    dragRef.current = which; movedRef.current = false; setDragging(true);
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* */ }
+  };
   // LRC 단어 평탄화 — 플레이어 A-B 단어 경계 snap 용([start,end] 목록).
   const lrcWords = useMemo(() => (lrc ? lrc.flatMap((l) => l.words ?? []) : []), [lrc]);
   // LRC 현재 줄 — start≤cur<end (정확). 단어 클릭/줄 fill 의 활성 줄.
@@ -1359,9 +1386,14 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                             const next = words[wi + 1];
                             const wFrac = active ? Math.max(0, Math.min(1, (cur - w.start) / Math.max(w.end - w.start, 0.05))) : 0;
                             const sFrac = active && next ? Math.max(0, Math.min(1, (cur - w.end) / Math.max(next.start - w.end, 0.05))) : 0;
-                            const isAb = (abA != null && Math.abs(w.start - abA) < 0.01) || (abB != null && Math.abs(w.end - abB) < 0.01);
+                            const mkf: 'A' | 'B' | null = (abA != null && Math.abs(w.start - abA) < 0.01) ? 'A' : (abB != null && Math.abs(w.end - abB) < 0.01) ? 'B' : null;
+                            const isAb = mkf !== null;
                             return [
-                              <span key={`w${wi}`} onClick={() => seekTo(w.start)} className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
+                              <span key={`w${wi}`} data-w={`f:${w.start}:${w.end}`}
+                                onPointerDown={mkf ? markerDown(mkf) : undefined}
+                                onPointerMove={markerMove} onPointerUp={markerUp}
+                                onClick={() => { if (movedRef.current) { movedRef.current = false; return; } seekTo(w.start); }}
+                                className={`relative cursor-pointer rounded-sm ${isAb ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none' : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
                                 <span className="relative">{w.word}</span>
                               </span>,
@@ -1386,16 +1418,21 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                       {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                       <span className="flex-1">
                         {s.text.split(' ').map((w, wi, arr) => {
-                          const isAB = (bLoopStart?.seg === i && bLoopStart?.word === wi) || (bLoopEnd?.seg === i && bLoopEnd?.word === wi);
+                          const mk: 'A' | 'B' | null = (bLoopStart?.seg === i && bLoopStart?.word === wi) ? 'A' : (bLoopEnd?.seg === i && bLoopEnd?.word === wi) ? 'B' : null;
+                          const isAB = mk !== null;
                           return (
-                          <span key={wi} onClick={() => {
+                          <span key={wi} data-w={`b:${i}:${wi}`}
+                            onPointerDown={mk ? markerDown(mk) : undefined}
+                            onPointerMove={markerMove} onPointerUp={markerUp}
+                            onClick={() => {
+                            if (movedRef.current) { movedRef.current = false; return; } // 드래그 끝 클릭 억제
                             if (!bAbSel) { bPlayFromWord(i, wi); return; }
                             const c = { seg: i, word: wi };
                             // 마커만 설정 — 재생 중이면 즉시 적용, 멈춰 있으면 재생 버튼이 그 구간을 재생.
                             if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); if (bSpeaking) bRunRange(lo, hi); }
                             else { setBLoopStart(c); setBLoopEnd(null); if (bSpeaking) bRunRange(c, null); }
                           }}
-                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : (bSeg === i && wi >= bStartWord ? 'bg-blue-100/70 text-slate-900' : '')}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400 touch-none' : (bSeg === i && wi >= bStartWord ? 'bg-blue-100/70 text-slate-900' : '')}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
                           );
                         })}
                       </span>
