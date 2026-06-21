@@ -1092,8 +1092,11 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const bGenRef = useRef(0); // utterance 세대 토큰(재시작 시 옛 onend 무효화)
   const [bLoopAll, setBLoopAll] = useState(false); // 전체반복(끝→루프 시작점). 단어 timestamp 없어 A-B 대신 A-(시작점만).
   const bLoopAllRef = useRef(false); bLoopAllRef.current = bLoopAll;
-  const [bLoopStart, setBLoopStart] = useState<{ seg: number; word: number } | null>(null); // A- : 클릭한 단어=루프 시작(없으면 0부터)
+  const [bLoopStart, setBLoopStart] = useState<{ seg: number; word: number } | null>(null); // A : 클릭한 시작 단어(없으면 0부터)
   const bLoopStartRef = useRef<{ seg: number; word: number } | null>(null); bLoopStartRef.current = bLoopStart;
+  const [bLoopEnd, setBLoopEnd] = useState<{ seg: number; word: number } | null>(null); // B : 클릭한 끝 단어(없으면 A부터 끝까지)
+  const bLoopEndRef = useRef<{ seg: number; word: number } | null>(null); bLoopEndRef.current = bLoopEnd;
+  const bRangeRef = useRef<{ a: { seg: number; word: number } | null; b: { seg: number; word: number } | null } | null>(null); // 현재 루프 구간(속도변경 재시작·취소 분기용)
   const [showScript, setShowScript] = useState(isStatic); // 학습=청취 먼저(가림), 공유/프린트=공개
   const [dictation, setDictation] = useState(false);
   const [typed, setTyped] = useState('');
@@ -1178,16 +1181,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
     const gen = ++bGenRef.current;
     window.speechSynthesis.cancel();
-    if (idx < 0 || idx >= segments.length) {
-      // 전체반복 — 끝나면 루프 시작점(A- 클릭 단어, 없으면 0)부터 다시.
-      if (bLoopAllRef.current && bPlayRef.current) {
-        const st = bLoopStartRef.current;
-        if (st) { const parts = segments[st.seg].text.split(' '); bPlayFrom(st.seg, parts.slice(Math.max(0, st.word)).join(' ')); }
-        else bPlayFrom(0);
-        return;
-      }
-      bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return;
-    }
+    if (idx < 0 || idx >= segments.length) { bPlayRef.current = false; setBSpeaking(false); setBSeg(-1); return; }
     bPlayRef.current = true;
     setBSpeaking(true);
     setBSeg(idx);
@@ -1199,15 +1193,53 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
     u.onend = () => { if (bGenRef.current === gen && bPlayRef.current) bPlayFrom(idx + 1); };
     window.speechSynthesis.speak(u);
   };
-  const bStop = () => { bPlayRef.current = false; bGenRef.current++; if (typeof window !== 'undefined') window.speechSynthesis?.cancel(); setBSpeaking(false); };
-  // 단어 클릭 = 그 단어부터 재생(브라우저 모드). fill(차오름)은 단어 타임 없어 불가 — 문장 하이라이트만.
+  const bStop = () => { bPlayRef.current = false; bGenRef.current++; bRangeRef.current = null; if (typeof window !== 'undefined') window.speechSynthesis?.cancel(); setBSpeaking(false); };
+  // 단어 클릭 = 그 단어부터 1회 재생(루프 아님 — 🔁 OFF). fill(차오름)은 단어 타임 없어 불가, 문장 하이라이트만.
   const bPlayFromWord = (segIdx: number, wordIdx: number) => {
+    bRangeRef.current = null;
     const parts = segments[segIdx].text.split(' ');
     bPlayFrom(segIdx, parts.slice(Math.max(0, wordIdx)).join(' '));
   };
+  const bPtLE = (p: { seg: number; word: number }, q: { seg: number; word: number }) => p.seg < q.seg || (p.seg === q.seg && p.word <= q.word);
+  // 구간 루프 — [a,b](null=스크립트 경계 0/끝) 반복 발화. 전체반복·A-(B 없음)·A-B 모두 이 경로 단일화.
+  const bRunRange = (a: { seg: number; word: number } | null, b: { seg: number; word: number } | null) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis || !segments.length) return;
+    bRangeRef.current = { a, b };
+    const A = a ?? { seg: 0, word: 0 };
+    const last = segments.length - 1;
+    const B = b ?? { seg: last, word: Math.max(0, segments[last].text.split(' ').length - 1) };
+    const items: { seg: number; text: string }[] = [];
+    for (let s = A.seg; s <= B.seg; s++) {
+      const words = segments[s].text.split(' ');
+      const st = s === A.seg ? A.word : 0;
+      const en = s === B.seg ? B.word + 1 : words.length;
+      const t = words.slice(Math.max(0, st), en).join(' ').trim();
+      if (t) items.push({ seg: s, text: t });
+    }
+    if (!items.length) { bRangeRef.current = null; return; }
+    bPlayRef.current = true;
+    setBSpeaking(true);
+    const step = (i: number) => {
+      if (!bPlayRef.current) return;
+      if (i >= items.length) {
+        if (bLoopAllRef.current) { step(0); return; } // 🔁 ON = A 로 루프
+        bRangeRef.current = null; bPlayFrom(B.seg + 1); return; // 🔁 OFF = 이어서 전체(B 다음부터)
+      }
+      const gen = ++bGenRef.current;
+      window.speechSynthesis.cancel();
+      setBSeg(items[i].seg);
+      const u = new SpeechSynthesisUtterance(items[i].text);
+      u.rate = bSpeedRef.current; u.volume = bVolRef.current; u.lang = 'en-US';
+      u.onend = () => { if (bGenRef.current === gen && bPlayRef.current) step(i + 1); };
+      window.speechSynthesis.speak(u);
+    };
+    step(0);
+  };
   // 재생 중 속도/볼륨 변경 → 현재 문장을 새 설정으로 재시작 + 이어감.
   useEffect(() => {
-    if (bPlayRef.current && bSeg >= 0) bPlayFrom(bSeg);
+    if (!bPlayRef.current) return;
+    if (bRangeRef.current) bRunRange(bRangeRef.current.a, bRangeRef.current.b); // 구간 루프 재시작
+    else if (bSeg >= 0) bPlayFrom(bSeg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bSpeed, bVol]);
   return (
@@ -1219,7 +1251,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
-            onClick={() => { if (bSpeaking) bStop(); else { setBLoopStart(null); bPlayFrom(0); } }}
+            onClick={() => { if (bSpeaking) bStop(); else { setBLoopStart(null); setBLoopEnd(null); if (bLoopAll) bRunRange(null, null); else bPlayFrom(0); } }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
             {bSpeaking
               ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
@@ -1241,7 +1273,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             </div>
           )}
           {isStudy && (
-            <button type="button" onClick={() => setBLoopAll((v) => !v)} title="전체반복" aria-pressed={bLoopAll}
+            <button type="button" onClick={() => { const next = !bLoopAll; setBLoopAll(next); if (next && bPlayRef.current && !bRangeRef.current) bRunRange(bLoopStartRef.current, bLoopEndRef.current); }} title="반복(켜고 단어 탭 = 구간 A→B)" aria-pressed={bLoopAll}
               className={`px-1.5 py-0.5 rounded leading-none transition-colors text-[11px] ${bLoopAll ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>↻</button>
           )}
           <div className="relative ml-auto flex items-center text-[11px]">
@@ -1253,6 +1285,9 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
               </div>
             )}
           </div>
+          {isStudy && bLoopAll && (
+            <span className="w-full text-[11px] text-slate-400">반복 ON · 단어 탭 = 구간 시작(A)→끝(B) · 다시 탭하면 재설정</span>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-[#d9cdae] bg-[#f3eedd] px-3 py-4 text-center text-[12px] text-slate-400">오디오 생성 대기 중</div>
@@ -1341,10 +1376,18 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                     <div key={i} className={`flex gap-1.5 px-1.5 py-1 rounded text-[13px] sm:text-[14px] leading-relaxed transition-colors ${bSeg === i ? 'bg-blue-100/70 text-slate-900' : 'text-slate-700'}`}>
                       {s.speaker && <span className="font-bold text-slate-500 shrink-0">{s.speaker}:</span>}
                       <span className="flex-1">
-                        {s.text.split(' ').map((w, wi, arr) => (
-                          <span key={wi} onClick={() => { setBLoopStart({ seg: i, word: wi }); bPlayFromWord(i, wi); }}
-                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${bLoopAll && bLoopStart?.seg === i && bLoopStart?.word === wi ? 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300' : ''}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
-                        ))}
+                        {s.text.split(' ').map((w, wi, arr) => {
+                          const isAB = bLoopAll && ((bLoopStart?.seg === i && bLoopStart?.word === wi) || (bLoopEnd?.seg === i && bLoopEnd?.word === wi));
+                          return (
+                          <span key={wi} onClick={() => {
+                            if (!bLoopAll) { setBLoopStart(null); setBLoopEnd(null); bPlayFromWord(i, wi); return; }
+                            const c = { seg: i, word: wi };
+                            if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); bRunRange(lo, hi); }
+                            else { setBLoopStart(c); setBLoopEnd(null); bRunRange(c, null); }
+                          }}
+                            className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : ''}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
+                          );
+                        })}
                       </span>
                     </div>
                   ) : (
