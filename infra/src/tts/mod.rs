@@ -900,17 +900,17 @@ fn signal_align(
         }
     };
     // 문장 안 단어 분배 — thought group(원어민이 한 호흡에 묶어 발음하는 단위) 인식.
-    // 문장 span 안 미세 쉼(≥100ms, 단어내 파열음 노이즈 ≤45ms 는 제외)을 검출 → 발화(speech) 구간만 음절-균등,
+    // 문장 span 안 미세 쉼(≥75ms, 단어내 파열음 노이즈 ≤45ms 는 제외)을 검출 → 발화(speech) 구간만 음절-균등,
     // 쉼 구간엔 단어 0 → fill 이 그 thought-group 경계에서 멈췄다 다음 그룹으로 이어짐(연음그룹 단위 동기).
     let mut out: Vec<TtsLine> = Vec::with_capacity(nsent);
     for (idx, (speaker, text)) in parsed.iter().enumerate() {
         let s0 = starts.get(idx).copied().unwrap_or(onset0);
         let s1 = ends.get(idx).copied().unwrap_or(offset).max(s0 + 0.05);
-        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). ≥100ms: 실측 호흡 쉼 0.09~0.13초(예 "(A)"
+        // 이 문장 안 thought-group 경계 쉼(라인 경계 제외=내부만). ≥75ms: 실측 호흡 쉼 0.09~0.13초(예 "(A)"
         // 뒤 0.125초)는 잡고 파열음 노이즈 ≤45ms 는 거름. (TOEIC 짧은 답변+빠른 보이스라 쉼이 짧음.)
         let mut inner: Vec<(f64, f64)> = gaps
             .iter()
-            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.10)
+            .filter(|g| g.0 > s0 + 0.02 && g.1 < s1 - 0.02 && g.2 >= 0.075)
             .map(|g| (g.0, g.1))
             .collect();
         inner.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));

@@ -1622,7 +1622,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       female: [{ id: 'nova', label: '밝고 활기찬' }, { id: 'shimmer', label: '부드럽고 차분한' }, { id: 'coral', label: '친근하고 따뜻한' }],
                       male: [{ id: 'onyx', label: '깊고 묵직한' }, { id: 'echo', label: '차분하고 또렷한' }, { id: 'ash', label: '단단하고 자신감 있는' }],
                     } },
-                    gemini: { models: ['gemini-3.1-flash-tts-preview'], voices: {
+                    gemini: { models: ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'], voices: {
                       female: [{ id: 'Kore', label: '단단한' }, { id: 'Leda', label: '발랄한' }, { id: 'Aoede', label: '산뜻한' }, { id: 'Sulafat', label: '따뜻한' }],
                       male: [{ id: 'Puck', label: '경쾌한' }, { id: 'Charon', label: '안정적인' }, { id: 'Fenrir', label: '활기찬' }, { id: 'Orus', label: '단단한' }],
                     } },
