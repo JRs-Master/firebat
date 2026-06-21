@@ -243,7 +243,7 @@ function QuizBody({
         number != null && <div className="text-[12px] font-bold text-slate-500 mb-1">{typeof number === 'number' ? `${number}번` : String(number)}</div>
       ) : (
         <div className="font-semibold mb-3 text-[15px] sm:text-[16px] leading-snug">
-          {numLabel && <span className="mr-1.5 text-indigo-600">{numLabel}</span>}
+          {numLabel && <span className="mr-1.5">{numLabel}</span>}
           <InlineMd text={question} />
         </div>
       )}
