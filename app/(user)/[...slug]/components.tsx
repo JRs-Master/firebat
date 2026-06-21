@@ -1265,7 +1265,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
-            onClick={() => { if (bSpeaking) bStop(); else { setBLoopStart(null); setBLoopEnd(null); if (bLoopAll) bRunRange(null, null); else bPlayFrom(0); } }}
+            onClick={() => { if (bSpeaking) { bStop(); return; } if (bLoopStart && bLoopEnd) bRunRange(bLoopStart, bLoopEnd); else if (bLoopStart) bRunRange(bLoopStart, null); else if (bLoopAll) bRunRange(null, null); else bPlayFrom(0); }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
             {bSpeaking
               ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
@@ -1396,8 +1396,9 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                           <span key={wi} onClick={() => {
                             if (!bAbSel) { bPlayFromWord(i, wi); return; }
                             const c = { seg: i, word: wi };
-                            if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); bRunRange(lo, hi); }
-                            else { setBLoopStart(c); setBLoopEnd(null); bRunRange(c, null); }
+                            // 마커만 설정 — 재생 중이면 즉시 적용, 멈춰 있으면 재생 버튼이 그 구간을 재생.
+                            if (bLoopStart && !bLoopEnd) { const [lo, hi] = bPtLE(bLoopStart, c) ? [bLoopStart, c] : [c, bLoopStart]; setBLoopStart(lo); setBLoopEnd(hi); if (bSpeaking) bRunRange(lo, hi); }
+                            else { setBLoopStart(c); setBLoopEnd(null); if (bSpeaking) bRunRange(c, null); }
                           }}
                             className={`cursor-pointer rounded-sm hover:bg-blue-200/40 ${isAB ? 'bg-slate-300 text-slate-800 ring-1 ring-slate-400' : ''}`}>{w}{wi < arr.length - 1 ? ' ' : ''}</span>
                           );
