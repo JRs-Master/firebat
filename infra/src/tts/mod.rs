@@ -298,49 +298,29 @@ impl TtsAdapter {
         if parsed.is_empty() {
             return Vec::new();
         }
-        // 1순위 = 순수 신호 정렬(STT·API 0): WAV 에너지로 문장 쉼 검출 → 문장 앵커(실측 발화 재개 지점,
-        // char 추정보다 정확) + 문장 안 음절가중 단어 분배(노래방 fill). 우리 LC 오디오(TTS WAV)의 정답.
-        // 측정(자연 오디오 문장-시작 MAE): 검출 앵커≈정확 / char 추정 0.30s / Gemini-forced 0.48s / open 2.18s.
+        // 정렬 provider 설정(system:tts:align_provider): ''/auto = 신호정렬 우선 / 'local' = 신호·추정만
+        // (STT 0) / 'openai' = Whisper 강제(단어 단위 실측). Gemini 는 UI 제거(정렬 불안정 2.7s) — 옛 값이
+        // 저장돼 있어도 auto 처럼 동작.
+        let provider = self
+            .first_secret(&["system:tts:align_provider"])
+            .unwrap_or_default();
+        // OpenAI(Whisper) 강제 — 신호정렬 건너뛰고 단어 단위 실측(WAV·mp3 공통). 키 없으면 빈 → 컴포넌트 추정.
+        if provider == "openai" {
+            let words = self.transcribe_words(audio, content_type).await;
+            return map_words_to_lines(&parsed, &words, audio, content_type);
+        }
+        // 1순위 = 순수 신호 정렬(STT·API 0): WAV 에너지로 문장 쉼 검출 → 문장 앵커(실측 발화 재개 지점) +
+        // 문장 안 음절가중 단어 분배. 측정(자연 오디오 문장-시작 MAE): 검출앵커≈정확 / char 0.30s /
+        // gemini-forced 0.48s / open 2.18s. 우리 LC 오디오(TTS WAV)의 정답.
         if let Some(lines) = signal_align(audio, content_type, &parsed) {
             return lines;
         }
-        // 2순위(비-WAV mp3 등) = Whisper(OpenAI 키 있을 때). 없으면 빈 → 컴포넌트 글자수 추정.
-        let words = self.transcribe_words(audio, content_type).await;
-        if words.is_empty() {
+        // 비-WAV(mp3) 등: 'local' 이면 추정(STT 0, 빈 Vec) / auto 면 Whisper(OpenAI 키 있을 때).
+        if provider == "local" {
             return Vec::new();
         }
-        // 순차 매핑 — 스크립트 줄 = 오디오 순서. 각 줄의 발화 단어 수만큼 전사 단어를 소비.
-        // (구두점/병합 차이로 미세 드리프트 가능하나 깨끗한 합성음 + 알려진 순서라 충분.)
-        let mut idx = 0usize;
-        let mut out: Vec<TtsLine> = Vec::with_capacity(parsed.len());
-        for (speaker, text) in parsed {
-            let n = text.split_whitespace().count().max(1);
-            if idx >= words.len() {
-                break;
-            }
-            let take = n.min(words.len() - idx);
-            let slice = &words[idx..idx + take];
-            idx += take;
-            let start = slice.first().map(|w| w.start).unwrap_or(0.0);
-            let end = slice.last().map(|w| w.end).unwrap_or(start);
-            out.push(TtsLine {
-                speaker,
-                text,
-                start,
-                end,
-                words: slice.to_vec(),
-            });
-        }
-        // Sanity gate(양방향) — STT 타임스탬프가 실제 오디오 길이의 0.85~1.15배 밖이면 엉터리로 보고 버림
-        // (빈 Vec → 컴포넌트가 실제 길이 기반 글자수 추정 fallback). 오버슈트(2.5-flash 52초) + 언더슈트
-        // (3.5-flash 가끔 32초) 둘 다 차단. 정상 범위는 그대로 사용(3.5-flash 대부분 39~40초).
-        if let Some(d) = wav_duration_secs(audio, content_type) {
-            let max_end = out.iter().map(|l| l.end).fold(0.0_f64, f64::max);
-            if d > 0.5 && (max_end > d * 1.15 || max_end < d * 0.85) {
-                return Vec::new();
-            }
-        }
-        out
+        let words = self.transcribe_words(audio, content_type).await;
+        map_words_to_lines(&parsed, &words, audio, content_type)
     }
 
     /// 단어별 타임스탬프 전사 — 설정 `system:tts:align_provider`(openai/gemini/빈=auto) 따름.
@@ -721,6 +701,47 @@ fn signal_align(
         });
     }
     Some(out)
+}
+
+/// 전사 단어(STT) → 스크립트 줄에 순차 매핑 + 양방향 sanity gate. STT 폴백(Whisper) 경로 전용
+/// (signal_align 은 자체로 줄 생성). 각 줄의 발화 단어 수만큼 전사 단어를 소비. 타임스탬프가 실제 오디오
+/// 길이의 0.85~1.15배 밖이면 엉터리로 보고 빈 Vec(→ 컴포넌트가 글자수 추정 fallback).
+fn map_words_to_lines(
+    parsed: &[(Option<String>, String)],
+    words: &[TtsWord],
+    audio: &[u8],
+    content_type: &str,
+) -> Vec<TtsLine> {
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let mut idx = 0usize;
+    let mut out: Vec<TtsLine> = Vec::with_capacity(parsed.len());
+    for (speaker, text) in parsed {
+        let n = text.split_whitespace().count().max(1);
+        if idx >= words.len() {
+            break;
+        }
+        let take = n.min(words.len() - idx);
+        let slice = &words[idx..idx + take];
+        idx += take;
+        let start = slice.first().map(|w| w.start).unwrap_or(0.0);
+        let end = slice.last().map(|w| w.end).unwrap_or(start);
+        out.push(TtsLine {
+            speaker: speaker.clone(),
+            text: text.clone(),
+            start,
+            end,
+            words: slice.to_vec(),
+        });
+    }
+    if let Some(d) = wav_duration_secs(audio, content_type) {
+        let max_end = out.iter().map(|l| l.end).fold(0.0_f64, f64::max);
+        if d > 0.5 && (max_end > d * 1.15 || max_end < d * 0.85) {
+            return Vec::new();
+        }
+    }
+    out
 }
 
 /// PCM(16-bit LE) → WAV. Gemini TTS 응답 = 24kHz mono 16-bit PCM (헤더 없음) → RIFF/WAVE 헤더 부착.

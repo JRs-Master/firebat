@@ -1705,16 +1705,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           </Field>
                           <Field label={t('settings_modal.tts_align_label')} help={t('settings_modal.tts_align_help')}>
                             <SegButtons<string>
-                              value={ttsAlignProvider || 'auto'}
+                              value={ttsAlignProvider === 'local' || ttsAlignProvider === 'openai' ? ttsAlignProvider : 'auto'}
                               onChange={(p) => {
                                 if (p === 'openai' && !hasOpenaiKey) return;
-                                if (p === 'gemini' && !hasGeminiKey) return;
                                 setTtsAlignProvider(p === 'auto' ? '' : p);
                               }}
                               options={[
                                 { value: 'auto', label: t('settings_modal.tts_align_auto') },
+                                { value: 'local', label: t('settings_modal.tts_align_local') },
                                 { value: 'openai', label: hasOpenaiKey ? 'OpenAI (Whisper)' : `OpenAI${t('settings_modal.tts_key_required_suffix')}` },
-                                { value: 'gemini', label: hasGeminiKey ? 'Gemini' : `Gemini${t('settings_modal.tts_key_required_suffix')}` },
                               ]}
                             />
                           </Field>
