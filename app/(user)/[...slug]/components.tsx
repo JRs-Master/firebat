@@ -915,7 +915,7 @@ function dictationDiff(script: string, typed: string) {
 
 // 정독청취 플레이어 — 재생속도 / 전체반복 / A-B 구간반복 / 볼륨 + 외부에서 시각(cur)·길이(dur) 구독
 // (스크립트 줄 하이라이트·클릭 seek 용). 학습 핵심 = 느리게·구간 반복 청취(intensive listening).
-function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [], abA, abB, setAbA, setAbB, lrcReady = true }: {
+function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [], abA, abB, setAbA, setAbB }: {
   src: string;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onTime: (t: number) => void;
@@ -927,8 +927,6 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   /** A-B 구간(초) — 부모(스크립트)가 소유. 스크립트 단어 클릭/마커와 플레이어 A/B 버튼이 같은 상태 공유. */
   abA: number | null; abB: number | null;
   setAbA: (t: number | null) => void; setAbB: (t: number | null) => void;
-  /** sidecar 정착 여부 — 미정착이면 재생을 정착까지 미룸(첫 줄부터 싱크). 기본 true(브라우저/무사이드카). */
-  lrcReady?: boolean;
 }) {
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -994,18 +992,7 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
-  const pendingPlayRef = useRef(false); // sidecar 미정착 시 재생 보류 → 정착 후 시작(첫 줄부터 싱크)
-  const [waitingLrc, setWaitingLrc] = useState(false);
-  const beginPlay = () => { const a = audioRef.current; if (!a) return; if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA; void a.play(); setPlaying(true); };
-  // sidecar 정착되면 보류된 재생 시작 — 첫 줄부터 노래방 싱크(미정착 중 재생 시작 시 첫 줄 놓치던 것).
-  useEffect(() => {
-    if (!(lrcReady && pendingPlayRef.current)) return;
-    pendingPlayRef.current = false; setWaitingLrc(false);
-    const a = audioRef.current; if (!a) return;
-    if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA;
-    void a.play(); setPlaying(true);
-  }, [lrcReady, abA, abB, audioRef]);
-  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { if (!lrcReady) { pendingPlayRef.current = true; setWaitingLrc(true); return; } beginPlay(); } else { a.pause(); setPlaying(false); } };
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { if (abA != null && (a.currentTime < abA || (abB != null && a.currentTime >= abB))) a.currentTime = abA; void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
   const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); } };
   const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); const x = Math.floor(s % 60); return `${m}:${x.toString().padStart(2, '0')}`; };
   // 활성 = muted 슬레이트(약간 진해짐) — 파랑/녹색/주황 등 saturated 색 대신 컨트롤 톤 통일.
@@ -1014,12 +1001,10 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
     <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5">
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
       <div className="flex items-center gap-2">
-        <button type="button" onClick={toggle} aria-label={waitingLrc ? '정렬 불러오는 중' : playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
-          {waitingLrc
-            ? <svg viewBox="0 0 24 24" fill="none" className="w-[18px] h-[18px] animate-spin" aria-hidden><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.3" /><path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
-            : playing
-              ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
-              : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+        <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
+          {playing
+            ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+            : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
         </button>
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
@@ -1318,7 +1303,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
       {title && <div className="text-[13px] sm:text-[14px] font-bold text-slate-700 mb-2.5 flex items-center gap-1.5"><span aria-hidden>🎧</span>{title}</div>}
       {image && <img src={image} alt={title ?? '사진'} loading="lazy" className="w-full max-h-72 object-contain rounded-lg border border-[#e9e2d0] bg-white mb-2.5" />}
       {audioUrl ? (
-        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} lrcReady={lrcReady} />
+        <ListeningPlayer src={audioUrl} audioRef={audioRef} onTime={setCur} onDur={setDur} study={isStudy} words={lrcWords} abA={abA} abB={abB} setAbA={setAbA} setAbB={setAbB} />
       ) : (browserMode && segments.length > 0) ? (
         <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5 flex flex-wrap items-center gap-2">
           <button type="button" aria-label={bSpeaking ? '정지' : '재생'}
