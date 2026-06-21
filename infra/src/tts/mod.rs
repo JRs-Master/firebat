@@ -176,10 +176,11 @@ impl TtsAdapter {
             .first_secret(&["system:gemini:api-key", "GEMINI_API_KEY"])
             .ok_or("Gemini API 키 미설정 (설정에서 등록 필요)")?;
         let mut prompt = String::new();
-        // 멀티스피커 docs 서문 — 없으면 native 가 긴 비대화 줄(안내문/디렉션)을 드롭한다(실측: 같은 스크립트
-        // 서문 없음 32s vs 있음 59s). "모든 줄 verbatim 낭독" 명시 → 드롭 0 → 스크립트 줄 수 = 오디오 일치
-        // → signal_align 정렬 정확. (서문 자체는 낭독 안 됨 — docs 표준 형식.)
-        if !req.speakers.is_empty() {
+        // 서문 — 없으면 native 가 긴 비대화 줄(안내문/디렉션)을 드롭한다(실측: 멀티 32s→59s, 단일 7.7s→30s).
+        // 단일·멀티 둘 다 드롭하므로 리스닝(align=긴 스크립트)이면 항상 서문 추가. 짧은 샘플(align=false)은
+        // 스타일 지시("Say cheerfully")와 충돌 피하려 제외. "모든 줄 verbatim 낭독" → 드롭 0 → 줄 수=오디오
+        // 일치 → signal_align 정렬 정확. (서문 자체는 낭독 안 됨 — docs 표준 형식.)
+        if req.align {
             prompt.push_str("Read the following aloud, every line verbatim:\n\n");
         }
         // 억양/스타일 = Gemini 는 per-speaker 스타일 필드 없음 → 프롬프트 텍스트에 자연어로 합성.
