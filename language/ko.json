@@ -500,7 +500,7 @@
     "tts_align_label": "타임스탬프 (자막 동기)",
     "tts_align_help": "스크립트를 오디오에 동기화(노래방식 진행·클릭 이동)하는 방식입니다. 자동 = WAV 는 로컬 신호 분석(무료·정확한 문장 동기), 그 외에는 OpenAI(Whisper). 로컬 = 항상 신호 분석만(API·비용 0, 결정적). OpenAI = Whisper 로 단어 단위 정밀 동기(키 필요).",
     "tts_align_auto": "자동",
-    "tts_align_local": "로컬 (STT 0)",
+    "tts_align_local": "로컬 (신호 분석)",
     "timezone_help": "크론 스케줄링과 AI 시간 기준에 반영됩니다",
     "admin_account_change": "관리자 계정 변경",
     "admin_account_change_hint": "현재 비밀번호 입력 필수. 빈칸은 기존 유지.",

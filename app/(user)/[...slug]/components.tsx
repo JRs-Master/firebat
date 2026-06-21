@@ -931,9 +931,25 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
     };
     const onMeta = () => { setDur(a.duration || 0); onDur(a.duration || 0); };
     const onEnd = () => { if (!a.loop) setPlaying(false); };
+    // play/pause 이벤트 = 버튼 상태 동기 (단어 클릭·seek 등 외부 재생도 버튼이 ▶↔❚❚ 반영).
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     a.addEventListener('timeupdate', onT); a.addEventListener('loadedmetadata', onMeta); a.addEventListener('ended', onEnd);
-    return () => { a.removeEventListener('timeupdate', onT); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd); };
+    a.addEventListener('play', onPlay); a.addEventListener('pause', onPause);
+    return () => { a.removeEventListener('timeupdate', onT); a.removeEventListener('loadedmetadata', onMeta); a.removeEventListener('ended', onEnd); a.removeEventListener('play', onPlay); a.removeEventListener('pause', onPause); };
   }, [audioRef, abA, abB, onTime, onDur]);
+  // 재생 중 rAF 로 시간/슬라이더 부드럽게 — timeupdate 는 ~4회/초라 시간바가 뚝뚝 끊김.
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      const a = audioRef.current;
+      if (a && !a.paused) { setCur(a.currentTime); onTime(a.currentTime); }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, audioRef, onTime]);
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = vol; }, [vol, audioRef]);
   useEffect(() => { if (audioRef.current) audioRef.current.loop = loop; }, [loop, audioRef]);
@@ -947,8 +963,8 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
       <div className="flex items-center gap-2">
         <button type="button" onClick={toggle} aria-label={playing ? '일시정지' : '재생'} className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
           {playing
-            ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
-            : <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+            ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+            : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
         </button>
         <input type="range" min={0} max={dur || 0} step={0.05} value={cur} onChange={(e) => seek(Number(e.target.value))} aria-label="재생 위치" className="flex-1 accent-blue-600" />
         <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmt(cur)}/{fmt(dur)}</span>
@@ -1127,8 +1143,8 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             onClick={() => { if (bSpeaking) bStop(); else bPlayFrom(0); }}
             className="w-9 h-9 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
             {bSpeaking
-              ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
-              : <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+              ? <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px]" aria-hidden><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+              : <svg viewBox="0 0 24 24" fill="currentColor" className="w-[18px] h-[18px] ml-0.5" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
           </button>
           {isStudy && (
             <div className="flex items-center gap-1 text-[11px]">
@@ -1192,30 +1208,29 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                   );
                   const active = curLrc === i;
                   const words = ln.words && ln.words.length ? ln.words : [{ word: ln.text, start: ln.start, end: ln.end }];
-                  let fillPct = 0;
-                  if (active) {
-                    const total = words.reduce((a, w) => a + w.word.length + 1, 0) || 1;
-                    let done = 0;
-                    for (const w of words) {
-                      const f = cur >= w.end ? 1 : cur <= w.start ? 0 : (cur - w.start) / Math.max(w.end - w.start, 0.05);
-                      done += (w.word.length + 1) * f;
-                      if (f < 1) break;
-                    }
-                    fillPct = Math.min((done / total) * 100, 100);
-                  }
                   return (
                     <div key={i} className="rounded px-1.5 py-1 text-[13px] sm:text-[14px] leading-relaxed">
                       <div className="flex gap-1.5">
                         {ln.speaker && <span className="font-bold text-slate-500 shrink-0">{ln.speaker}:</span>}
-                        {/* 박스·fill 은 텍스트 폭에만 — 문장 끝 뒤 빈 공간은 안 채움(flex-1 제거 = 내용 폭). */}
-                        <span className={`relative self-start ${active ? 'rounded bg-blue-100/60' : ''}`}>
-                          {/* 연속 fill — 텍스트 위 한 줄 sweep(단어 타이밍 기반 글자 위치) */}
-                          {active && <span className="absolute inset-y-0 left-0 rounded bg-blue-300/55 pointer-events-none" style={{ width: `${fillPct}%` }} />}
-                          <span className="relative">
-                            {words.map((w, wi) => (
-                              <span key={wi} onClick={() => seekTo(w.start)} className="cursor-pointer rounded hover:bg-blue-200/40">{w.word} </span>
-                            ))}
-                          </span>
+                        {/* 단어별 배경(띄어쓰기를 각 span 안에 포함 + 모서리 라운드 X) → 인접 단어가 맞붙어
+                            연속 띠(형광펜)처럼 보이고, 인라인이라 모바일 줄바꿈에도 줄 단위로 자연히 흐름
+                            (absolute 사각형은 2줄을 한 박스로 덮어서 폐기). */}
+                        <span className="flex-1">
+                          {words.map((w, wi) => {
+                            // 현재 문장: 지난 단어=중간 / 현재 단어=진하게 / 아직=연하게(현재 문장 표시).
+                            const cls = !active
+                              ? 'hover:bg-blue-200/40'
+                              : cur >= w.end
+                                ? 'bg-blue-300/55'
+                                : cur >= w.start && cur < w.end
+                                  ? 'bg-blue-400/55'
+                                  : 'bg-blue-100/50';
+                            // 단어 + 뒤 공백을 한 span 에(공백도 그 단어 배경 = 빈틈/겹침 0). 단 맨 끝 단어 뒤
+                            // 공백은 꼬리로 남으니 제외.
+                            return (
+                              <span key={wi} onClick={() => seekTo(w.start)} className={`cursor-pointer ${cls}`}>{w.word}{wi < words.length - 1 ? ' ' : ''}</span>
+                            );
+                          })}
                         </span>
                       </div>
                     </div>
