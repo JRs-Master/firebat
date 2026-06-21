@@ -188,21 +188,9 @@ impl TtsAdapter {
                 "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": req.voice } }
             })
         } else {
-            // 화자별 억양은 멀티스피커 config 에 필드가 없어 프롬프트로 지시(Gemini 스타일 제어).
-            let accents: Vec<String> = req
-                .speakers
-                .iter()
-                .filter_map(|s| {
-                    s.style
-                        .as_ref()
-                        .filter(|st| !st.trim().is_empty())
-                        .map(|st| format!("{} speaks with a {}", s.speaker, st.trim()))
-                })
-                .collect();
-            if !accents.is_empty() {
-                prompt.push_str(&accents.join("; "));
-                prompt.push_str(".\n");
-            }
+            // 화자별 억양 텍스트 지시("X speaks with a Y accent")는 Gemini 안전필터에 PROHIBITED_CONTENT 로
+            // 차단됨(오탐, safetySettings BLOCK_NONE 으로도 override 불가) + 프리빌트 보이스가 안 먹어 효과도
+            // 없음 → 주입 안 함. 억양 다양성은 보이스 선택(성별별 큐레이션)으로.
             let configs: Vec<serde_json::Value> = req
                 .speakers
                 .iter()
@@ -310,7 +298,7 @@ impl TtsAdapter {
         let model = req.model.clone();
         let global_style = req.style.clone();
         // into_iter(owned) + prompt 를 async 안에서 — 빌린 &tuple 로 인한 HRTB(FnOnce) 회피.
-        let futs = turns.into_iter().map(|(voice, style, text)| {
+        let futs = turns.into_iter().map(|(voice, _style, text)| {
             let client = self.client.clone();
             let key = key.clone();
             let model = model.clone();
@@ -323,11 +311,8 @@ impl TtsAdapter {
                         prompt.push('\n');
                     }
                 }
-                if let Some(s) = &style {
-                    if !s.trim().is_empty() {
-                        prompt.push_str(&format!("Speak with a {}.\n", s.trim()));
-                    }
-                }
+                // per-speaker 억양 지시("Speak with a X accent.")는 Gemini 안전필터 PROHIBITED_CONTENT
+                // 차단 트리거(오탐) + 프리빌트 보이스가 안 먹어 효과도 없음 → 주입 안 함. 억양=보이스 선택.
                 prompt.push_str(&text);
                 let body = serde_json::json!({
                     "contents": [{ "parts": [{ "text": prompt }] }],
@@ -391,10 +376,16 @@ impl TtsAdapter {
                             }
                         }
                     }
+                    // 차단(promptFeedback.blockReason)이면 candidates 자체가 없음 → 둘 다 확인.
                     let fr = json["candidates"][0]["finishReason"]
                         .as_str()
+                        .or_else(|| json["promptFeedback"]["blockReason"].as_str())
                         .unwrap_or("none");
-                    last_err = format!("오디오 없음(finishReason={fr})");
+                    last_err = format!("오디오 없음(reason={fr})");
+                    // 차단은 deterministic(같은 입력=같은 차단) → retry 무의미, 즉시 중단.
+                    if json["promptFeedback"]["blockReason"].is_string() {
+                        break;
+                    }
                 }
                 Err(format!("Gemini per-turn 실패: {last_err}"))
             }
