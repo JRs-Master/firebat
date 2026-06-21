@@ -931,6 +931,7 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   const [speed, setSpeed] = useState(1);
   const [showSpeed, setShowSpeed] = useState(false); // 속도 탭 → 슬라이더(0.1~3x) 노출 토글.
   const [vol, setVol] = useState(1);
+  const [showVol, setShowVol] = useState(false); // 볼륨 탭 → 슬라이더 오버레이(속도와 동일 패턴).
   const [loop, setLoop] = useState(false);
   const [abA, setAbA] = useState<number | null>(null);
   const [abB, setAbB] = useState<number | null>(null);
@@ -993,7 +994,8 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
   const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) { void a.play(); setPlaying(true); } else { a.pause(); setPlaying(false); } };
   const seek = (t: number) => { const a = audioRef.current; if (a) { a.currentTime = t; setCur(t); } };
   const fmt = (s: number) => { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); const x = Math.floor(s % 60); return `${m}:${x.toString().padStart(2, '0')}`; };
-  const pill = (on: boolean) => `px-1.5 py-0.5 rounded leading-none transition-colors ${on ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`;
+  // 활성 = muted 슬레이트(약간 진해짐) — 파랑/녹색/주황 등 saturated 색 대신 컨트롤 톤 통일.
+  const pill = (on: boolean) => `px-1.5 py-0.5 rounded leading-none transition-colors ${on ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`;
   return (
     <div className="rounded-lg border border-[#d9cdae] bg-[#f3eedd] p-2.5">
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
@@ -1027,14 +1029,21 @@ function ListeningPlayer({ src, audioRef, onTime, onDur, study = true, words = [
         )}
         <div className="flex flex-wrap items-center gap-1.5">
           {study && <>
-            <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">🔁</button>
+            <button type="button" onClick={() => setLoop((v) => !v)} className={pill(loop)} title="전체 반복">↻</button>
             <span className="text-slate-400 ml-1">구간</span>
-            <button type="button" onClick={() => setAbA(snapStart(cur))} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abA != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 시작(A) — 단어 경계로 맞춤">A{abA != null ? ` ${fmt(abA)}` : ''}</button>
-            <button type="button" onClick={() => setAbB(snapEnd(cur))} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${abB != null ? 'bg-emerald-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`} title="구간 끝(B) — 단어 경계로 맞춤">B{abB != null ? ` ${fmt(abB)}` : ''}</button>
+            <button type="button" onClick={() => setAbA(snapStart(cur))} className={pill(abA != null)} title="구간 시작(A) — 현재 위치">A</button>
+            <button type="button" onClick={() => setAbB(snapEnd(cur))} className={pill(abB != null)} title="구간 끝(B) — 현재 위치">B</button>
             {(abA != null || abB != null) && <button type="button" onClick={() => { setAbA(null); setAbB(null); }} className="px-1.5 py-0.5 rounded leading-none bg-white/70 text-slate-400 hover:bg-white" title="구간 해제">✕</button>}
           </>}
-          <span className="text-slate-400 ml-1" aria-hidden>🔊</span>
-          <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
+          <div className="relative flex items-center ml-1">
+            <button type="button" onClick={() => setShowVol((v) => !v)} className={pill(showVol)} aria-label="볼륨">🔊 {Math.round(vol * 100)}</button>
+            {showVol && (
+              <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
+                <input type="range" min={0} max={1} step={0.05} value={vol} onChange={(e) => setVol(Number(e.target.value))} onPointerUp={() => setShowVol(false)} aria-label="볼륨" className="flex-1 accent-blue-600" />
+                <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(vol * 100)}</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1076,6 +1085,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const [bShowSpeed, setBShowSpeed] = useState(false); // 브라우저 TTS 속도 슬라이더 토글.
   const [bSeg, setBSeg] = useState(-1); // 브라우저 모드: 현재 낭독 중 문장(하이라이트)
   const [bVol, setBVol] = useState(1);
+  const [bShowVol, setBShowVol] = useState(false); // 볼륨 슬라이더 오버레이 토글(속도와 동일).
   const bSpeedRef = useRef(1); bSpeedRef.current = bSpeed;
   const bVolRef = useRef(1); bVolRef.current = bVol;
   const bPlayRef = useRef(false); // 재생 의도(cancel 시 false → 자동 다음 문장 중단)
@@ -1218,7 +1228,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
           {isStudy && (
             <div className="relative flex items-center gap-1.5 text-[11px]">
               <span className="text-slate-400">속도</span>
-              <button type="button" onClick={() => setBShowSpeed((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowSpeed ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{bSpeed.toFixed(1)}x</button>
+              <button type="button" onClick={() => setBShowSpeed((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowSpeed ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>{bSpeed.toFixed(1)}x</button>
               {bShowSpeed && (
                 <div className="absolute left-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-52">
                   <input type="range" min={0.1} max={3} step={0.1} value={bSpeed}
@@ -1231,15 +1241,17 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
             </div>
           )}
           {isStudy && (
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <button type="button" onClick={() => setBLoopAll((v) => !v)} title="전체반복" aria-pressed={bLoopAll}
-                className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bLoopAll ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>🔁</button>
-              {bLoopAll && <span className="text-slate-400">단어 탭 = 거기부터 반복</span>}
-            </div>
+            <button type="button" onClick={() => setBLoopAll((v) => !v)} title="전체반복" aria-pressed={bLoopAll}
+              className={`px-1.5 py-0.5 rounded leading-none transition-colors text-[11px] ${bLoopAll ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`}>↻</button>
           )}
-          <div className="ml-auto flex items-center gap-1 text-[11px]">
-            <span className="text-slate-400" aria-hidden>🔊</span>
-            <input type="range" min={0} max={1} step={0.05} value={bVol} onChange={(e) => setBVol(Number(e.target.value))} aria-label="볼륨" className="w-14 accent-blue-600" />
+          <div className="relative ml-auto flex items-center text-[11px]">
+            <button type="button" onClick={() => setBShowVol((v) => !v)} className={`px-1.5 py-0.5 rounded leading-none transition-colors ${bShowVol ? 'bg-slate-300 text-slate-800' : 'bg-white/70 text-slate-500 hover:bg-white'}`} aria-label="볼륨">🔊 {Math.round(bVol * 100)}</button>
+            {bShowVol && (
+              <div className="absolute right-0 top-full mt-1 z-30 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg w-44">
+                <input type="range" min={0} max={1} step={0.05} value={bVol} onChange={(e) => setBVol(Number(e.target.value))} onPointerUp={() => setBShowVol(false)} aria-label="볼륨" className="flex-1 accent-blue-600" />
+                <span className="w-8 text-right tabular-nums text-slate-500">{Math.round(bVol * 100)}</span>
+              </div>
+            )}
           </div>
         </div>
       ) : (
