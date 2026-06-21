@@ -1168,9 +1168,13 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   // 파일=단어 시각). data-w 속성으로 포인터 밑 단어 식별(elementFromPoint), pointer capture 로 터치도 추적. ──
   const dragRef = useRef<null | 'A' | 'B'>(null);
   const movedRef = useRef(false); // 드래그 발생 시 onClick(선택) 억제용
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null); // 드래그 시작 좌표(임계 판정)
   const [dragging, setDragging] = useState(false);
   const markerMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
+    // 드래그 임계 — 6px 미만 움직임은 이동 아님(클릭/탭 미세 떨림이 드래그로 오인돼 선택 안 되던 것 방지).
+    const st = dragStartRef.current;
+    if (st && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 6) return;
     e.preventDefault();
     const el = (typeof document !== 'undefined' ? (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) : null)?.closest('[data-w]') as HTMLElement | null;
     const w = el?.getAttribute('data-w');
@@ -1193,6 +1197,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
   const markerDown = (which: 'A' | 'B') => (e: React.PointerEvent) => {
     e.stopPropagation();
     dragRef.current = which; movedRef.current = false; setDragging(true);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* */ }
   };
   // LRC 단어 평탄화 — 플레이어 A-B 단어 경계 snap 용([start,end] 목록).
