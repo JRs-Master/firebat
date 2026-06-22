@@ -1416,18 +1416,7 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                                   if (movedRef.current) { movedRef.current = false; return; } // 드래그 끝 클릭 억제
                                   if (mkf) return; // 마커 탭 = 선택(markerUp 에서 arm) — seek 안 함
                                   if (armed) { if (armed === 'A') setAbA(w.start); else setAbB(w.end); setArmed(null); return; } // 선택 마커를 이 단어로 이동
-                                  // 연음으로 안 끊기는 구(앞 단어와 gap<0.04s)는 한 단어처럼 = 그 구 시작부터 재생.
-                                  // ("but I still" 처럼 각각 클릭해도 소리는 구 전체.) 단 (a) 문장/절 경계(문장부호)는
-                                  // 안 넘고 (b) 클릭 지점에서 1.2s 이상 거슬러 안 감 → 정렬이 단어경계를 못 잡은
-                                  // 연결발화/옛 데이터에서도 '대화 턴 통째' 로 묶이지 않음(seek 가 줄 처음까지 튀는 것 차단).
-                                  let rs = wi;
-                                  while (
-                                    rs > 0 &&
-                                    words[rs].start - words[rs - 1].end < 0.04 &&
-                                    !/[.,;:?!]$/.test(words[rs - 1].word) &&
-                                    words[wi].start - words[rs - 1].start < 1.2
-                                  ) rs--;
-                                  seekTo(words[rs].start);
+                                  seekTo(w.start); // 단어 클릭 = 그 단어부터 재생 (단어 단위)
                                 }}
                                 className={`relative cursor-pointer rounded-sm ${isAb ? `bg-slate-300 text-slate-800 touch-none select-none ${mkf === armed ? 'ring-2 ring-blue-500' : 'ring-1 ring-slate-400'}` : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}
