@@ -1416,7 +1416,11 @@ function ListeningComp({ title, audioUrl, image, script, questions, browserTts, 
                                   if (movedRef.current) { movedRef.current = false; return; } // 드래그 끝 클릭 억제
                                   if (mkf) return; // 마커 탭 = 선택(markerUp 에서 arm) — seek 안 함
                                   if (armed) { if (armed === 'A') setAbA(w.start); else setAbB(w.end); setArmed(null); return; } // 선택 마커를 이 단어로 이동
-                                  seekTo(w.start);
+                                  // 연음으로 안 끊기는 구(앞 단어와 거의 붙음 = gap<0.04s)는 한 단어처럼 취급 → 그 구 시작부터 재생.
+                                  // ("but I still" 처럼 각각 클릭해도 소리는 구 전체라, 어느 단어를 눌러도 구 시작으로 seek.)
+                                  let rs = wi;
+                                  while (rs > 0 && words[rs].start - words[rs - 1].end < 0.04) rs--;
+                                  seekTo(words[rs].start);
                                 }}
                                 className={`relative cursor-pointer rounded-sm ${isAb ? `bg-slate-300 text-slate-800 touch-none select-none ${mkf === armed ? 'ring-2 ring-blue-500' : 'ring-1 ring-slate-400'}` : active ? 'bg-blue-100/50' : 'hover:bg-blue-200/40'}`}>
                                 {active && wFrac > 0 && <span className="absolute inset-y-0 left-0 bg-blue-300/55 pointer-events-none" style={{ width: `${wFrac * 100}%` }} />}

@@ -30,9 +30,13 @@ export async function GET(
     ? Buffer.from(binary)
     : Buffer.from(binary as unknown as string, 'base64');
   const total = buf.length;
+  // .lrc.json 정렬 사이드카 = 가변 메타데이터(오디오 생성 후 재정렬 가능) → 캐시 금지로 항상 최신.
+  // 오디오(.wav 등)는 불변이라 30일 캐시 유지.
+  const fname = path[path.length - 1];
+  const mutable = fname.endsWith('.lrc.json');
   const baseHeaders: Record<string, string> = {
     'Content-Type': res.data.contentType || 'application/octet-stream',
-    'Cache-Control': 'public, max-age=2592000',
+    'Cache-Control': mutable ? 'no-store' : 'public, max-age=2592000',
     // 오디오/비디오 seek(시간바 이동) 필수 — 브라우저가 Range 요청으로 특정 시각 바이트를 가져옴.
     'Accept-Ranges': 'bytes',
   };
