@@ -441,13 +441,9 @@ async function main() {
       // typhoonNo 만 주면 그 태풍 최신 통보문, 둘 다 없으면 활성 태풍 중 최신 발표.
       let fc = tmFc;
       let seq = typhoonNo;
-      // typhoonNo 정규화 — AI 가 "202607"(년+호)·"2607"·"07"·7 등 다양하게 전달. KMA typhoonSeq·typSeq
-      // = 호수만(1~50). 100 초과 = 년도 prefix(YYYYNN) → 뒤 2자리(% 100). 안 하면 filter·typSeq 둘 다
-      // 어긋나 forecast 가 항상 빈 배열(예측 cone·반경 0 = plain 점).
-      if (seq != null && String(seq).trim() !== '') {
-        const n = parseInt(String(seq).replace(/\D/g, ''), 10);
-        if (Number.isFinite(n)) seq = n > 100 ? n % 100 : n;
-      }
+      // typhoonNo = 호수만. config 설명이 "년도 prefix(202507 등) 금지, 예 7·18"로 AI 를 가이드한다.
+      // 추측 정규화(년도 prefix % 100) 제거 — 잘못 넘기면 아래 filter/typSeq 가 빈 결과 + note 를 주고
+      // AI 가 가이드대로 호수만 다시 넘긴다. (입력 떡칠 대신 가이드 우선.)
       if (!fc) {
         const days = [todayYmd(), todayYmd(new Date(Date.now() - 86400000))];
         let cands = [];
