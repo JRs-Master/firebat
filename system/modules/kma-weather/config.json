@@ -64,7 +64,7 @@
       },
       "typhoonNo": {
         "type": "string",
-        "description": "[typhoon-forecast] 태풍번호 (예: '202515'). typhoon-list 결과에서 확인"
+        "description": "[typhoon-forecast] 태풍 호수 — typhoon-list 결과의 typhoonSeq (= KMA typSeq/태풍번호, 예: 7·18). 호수만 — 년도 prefix(202507 등) 금지. 미지정 시 최근 활성 태풍 자동"
       },
       "fromTm": {
         "type": "string",
