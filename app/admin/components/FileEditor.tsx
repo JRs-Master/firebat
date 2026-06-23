@@ -75,9 +75,17 @@ interface FileEditorProps {
   aiModel?: string;
   onClose: () => void;
   onSaved?: () => void;
+  /** transport override — 주입 시 filePath 의 기본 /api/fs/file 대신 이 핸들러로 load/save.
+   *  (hub = hub fs route / skill·template = op-route override. filePath 는 표시·언어 감지용으로 유지.) */
+  load?: () => Promise<string>;
+  save?: (content: string) => Promise<void>;
+  /** 복원 — system base 로 되돌리기(override 삭제). 있으면 복원 버튼 노출. */
+  restore?: () => Promise<void>;
+  /** AI assist(code-assist, admin 전용) 노출 — hub 면 false. 기본 true. */
+  aiAssist?: boolean;
 }
 
-export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: FileEditorProps) {
+export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved, load, save, restore, aiAssist = true }: FileEditorProps) {
   const t = useTranslations();
   const aiInstructionId = useId();
   const isPageMode = !!pageSlug;
@@ -200,6 +208,15 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     setLoading(true);
     setError(null);
 
+    // transport override (hub·skill·template) — 주입된 load 핸들러로 본문 가져옴 (PageSpec 분기 무관).
+    if (load) {
+      load()
+        .then(text => { setContent(text); setOriginal(text); })
+        .catch(e => setError(e?.message ?? String(e)))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     const url = isPageMode
       ? `/api/pages/${encodeURIComponent(pageSlug!)}`
       : `/api/fs/file?path=${encodeURIComponent(filePath!)}`;
@@ -229,7 +246,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [filePath, pageSlug, isPageMode]);
+  }, [filePath, pageSlug, isPageMode, load]);
 
   // JSON 유효성 실시간 검증 (PageSpec 모드)
   useEffect(() => {
@@ -260,6 +277,9 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
         );
         if (data.success) { setOriginal(content); onSaved?.(); ok = true; }
         else setError(data.error || '저장 실패');
+      } else if (save) {
+        await save(content);
+        setOriginal(content); onSaved?.(); ok = true;
       } else {
         const data = await apiPut<{ success: boolean; error?: string }>(
           '/api/fs/file',
@@ -276,7 +296,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       setSaveFeedback(ok ? 'ok' : 'err');
       setTimeout(() => setSaveFeedback(null), 1500);
     }
-  }, [filePath, pageSlug, content, isDirty, saving, isPageMode, jsonError, onSaved]);
+  }, [filePath, pageSlug, content, isDirty, saving, isPageMode, jsonError, onSaved, save]);
 
   // 선택 영역 정보 갱신
   const updateSelectionInfo = useCallback(() => {
@@ -467,7 +487,22 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 툴바가 넘쳐 닫기(X)가 화면 밖으로 밀리던 것 + AI 가 모바일서 동작하던 것 동시 차단 */}
             {!isMobileDevice && (
               <>
-                {/* AI 버튼 */}
+                {/* 복원 — 내 수정본(override) 삭제 → 기본(system) 버전 (restore 핸들러 주입 시만) */}
+                {restore && (
+                  <Tooltip label="기본(system) 버전으로 복원 — 내 수정본 삭제">
+                    <button
+                      onClick={async () => {
+                        if (!(await confirmDialog({ title: '복원', message: '내 수정본을 삭제하고 기본(system) 버전으로 되돌립니다.', okLabel: '복원', danger: true }))) return;
+                        try { await restore(); onSaved?.(); onClose(); } catch (e: any) { setError(e?.message ?? String(e)); }
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold bg-[#2d2d2d] text-slate-400 hover:bg-amber-600/20 hover:text-amber-300 border border-slate-700/40 transition-colors"
+                    >
+                      <RotateCcw size={13} /> 복원
+                    </button>
+                  </Tooltip>
+                )}
+                {/* AI 버튼 — hub(aiAssist=false)면 숨김 (code-assist 는 admin 전용) */}
+                {aiAssist && (
                 <Tooltip label="AI 어시스트 (Ctrl+K)">
                   <button
                     onClick={() => { if (aiOpen) setAiOpen(false); else openAiPanel(); }}
@@ -480,6 +515,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     <Bot size={13} /> AI
                   </button>
                 </Tooltip>
+                )}
 
                 {/* PageSpec 미리보기 */}
                 {isPageMode && (
