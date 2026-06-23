@@ -4401,7 +4401,34 @@ function MapComp({
           const el = container.querySelector('.maplibregl-ctrl-attrib');
           if (el) { el.classList.add('maplibregl-compact'); el.classList.remove('maplibregl-compact-show'); }
         };
-        resizeObserver = new ResizeObserver(() => map.resize());
+        // 컨테이너가 0크기일 때 fitBounds 하면 view 가 깨져(zoom 극단/NaN) 첫 렌더가 빈 화면 → F5(레이아웃
+        // 안정) 해야 보이던 것. fitBoundsOnce = 컨테이너가 실제 크기를 가질 때 *한 번만* fit. resize 로 크기가
+        // 잡히면 발동 → F5 없이 그려짐. 이미 fit 했으면(=사용자 pan/zoom) 재fit 안 함.
+        let didFit = false;
+        const fitBoundsOnce = () => {
+          if (didFit || !container.clientWidth || !container.clientHeight) return;
+          const conePts = safeCones.reduce((a, c) => a + c.points.length, 0);
+          if (safeMarkers.length + safeCircles.length + safeLines.length + conePts < 2) { didFit = true; return; }
+          const bounds = new ml.LngLatBounds();
+          for (const m of safeMarkers) bounds.extend([m.lon, m.lat]);
+          for (const c of safeCircles) {
+            const dLat = c.radius / 111000;
+            const dLon = c.radius / (111000 * Math.cos((c.lat * Math.PI) / 180));
+            bounds.extend([c.lon + dLon, c.lat + dLat]);
+            bounds.extend([c.lon - dLon, c.lat - dLat]);
+          }
+          for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
+          // cone 은 중심선뿐 아니라 폭(반경)까지 포함해야 가장자리 안 잘림.
+          for (const cn of safeCones) for (const p of cn.points) {
+            const dLat = p.radius / 111000;
+            const dLon = p.radius / (111000 * Math.cos((p.lat * Math.PI) / 180));
+            bounds.extend([p.lon + dLon, p.lat + dLat]);
+            bounds.extend([p.lon - dLon, p.lat - dLat]);
+          }
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 56, maxZoom: 13, duration: 0 });
+          didFit = true;
+        };
+        resizeObserver = new ResizeObserver(() => { map.resize(); fitBoundsOnce(); });
         resizeObserver.observe(container);
         // +/- 줌 버튼(NavigationControl) 미표시 — 휠/핀치 줌으로 충분, 화면 깔끔하게.
         map.on('load', () => {
@@ -4486,27 +4513,8 @@ function MapComp({
             );
           }
         }
-        // bounds fit — 마커 + 원 + 선 2+ 시 모두 보이도록 자동 줌.
-        const conePts = safeCones.reduce((a, c) => a + c.points.length, 0);
-        if (safeMarkers.length + safeCircles.length + safeLines.length + conePts >= 2) {
-          const bounds = new ml.LngLatBounds();
-          for (const m of safeMarkers) bounds.extend([m.lon, m.lat]);
-          for (const c of safeCircles) {
-            const dLat = c.radius / 111000;
-            const dLon = c.radius / (111000 * Math.cos((c.lat * Math.PI) / 180));
-            bounds.extend([c.lon + dLon, c.lat + dLat]);
-            bounds.extend([c.lon - dLon, c.lat - dLat]);
-          }
-          for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
-          // cone 은 중심선뿐 아니라 폭(반경)까지 포함해야 가장자리 안 잘림.
-          for (const cn of safeCones) for (const p of cn.points) {
-            const dLat = p.radius / 111000;
-            const dLon = p.radius / (111000 * Math.cos((p.lat * Math.PI) / 180));
-            bounds.extend([p.lon + dLon, p.lat + dLat]);
-            bounds.extend([p.lon - dLon, p.lat - dLat]);
-          }
-          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 56, maxZoom: 13, duration: 0 });
-        }
+        // bounds fit — 컨테이너 크기 잡히면 한 번 (위 fitBoundsOnce, resize 로도 발동). 즉시 시도.
+        fitBoundsOnce();
       };
       // CDN 동적 로드 — maplibre-gl JS + CSS.
       if (w.maplibregl) initMapLibre();
