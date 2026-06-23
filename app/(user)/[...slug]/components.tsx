@@ -3946,7 +3946,7 @@ function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = n
     ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dy="0.35em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.8" stroke-linejoin="round"/></g>`
+    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.9" stroke-linejoin="round"/></g>`
     + center
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
