@@ -3953,20 +3953,25 @@ function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = n
 }
 
 
-/** 마커 SVG → displayPx×5 고해상도 PNG 로 supersample 한 <img>(표시 displayPx). 벡터 SVG <img> 는
- *  intrinsic 무시하고 표시크기×DPR 로만 래스터돼 DPR-1 PC 에서 흐릿 → canvas 로 5배 굽고 다운스케일
+/** 마커 SVG → displayPx×4 고해상도 PNG 로 supersample 한 <img>(표시 displayPx). 벡터 SVG <img> 는
+ *  intrinsic 무시하고 표시크기×DPR 로만 래스터돼 DPR-1 PC 에서 흐릿 → canvas 로 4배 굽고 다운스케일
  *  → 어떤 DPR 에서도 또렷. PNG 준비 전엔 SVG 그대로 보여 깜빡임 없음. (data URI SVG = 동일출처라 taint 0.) */
+// (svgUrl|displayPx) → supersampled PNG. 재렌더·재마운트·동일 마커마다 canvas+toDataURL 재굽기 방지 = 저사양 PC jank 감소.
+const _markerPngCache = new Map<string, string>();
 function crispMarkerImg(svgUrl: string, displayPx: number): HTMLImageElement {
   const el = document.createElement('img');
   el.width = displayPx; el.height = displayPx; el.style.display = 'block';
+  const k = `${svgUrl}|${displayPx}`;
+  const hit = _markerPngCache.get(k);
+  if (hit) { el.src = hit; return el; }
   el.src = svgUrl;
   const probe = new Image();
   probe.onload = () => {
     try {
-      const px = Math.max(1, Math.round(displayPx * 5));
+      const px = Math.max(1, Math.round(displayPx * 4));
       const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
       const ctx = cv.getContext('2d');
-      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); el.src = cv.toDataURL('image/png'); }
+      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); const u = cv.toDataURL('image/png'); _markerPngCache.set(k, u); el.src = u; }
     } catch { /* 실패 시 SVG 유지 */ }
   };
   probe.src = svgUrl;
@@ -3975,13 +3980,16 @@ function crispMarkerImg(svgUrl: string, displayPx: number): HTMLImageElement {
 
 /** crispMarkerImg 의 PNG data URL 만 비동기 반환 (Kakao MarkerImage 용). 실패/준비전 = SVG. */
 function crispMarkerPng(svgUrl: string, displayPx: number, cb: (url: string) => void): void {
+  const k = `${svgUrl}|${displayPx}`;
+  const hit = _markerPngCache.get(k);
+  if (hit) { cb(hit); return; }
   const probe = new Image();
   probe.onload = () => {
     try {
-      const px = Math.max(1, Math.round(displayPx * 5));
+      const px = Math.max(1, Math.round(displayPx * 4));
       const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
       const ctx = cv.getContext('2d');
-      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); cb(cv.toDataURL('image/png')); }
+      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); const u = cv.toDataURL('image/png'); _markerPngCache.set(k, u); cb(u); }
     } catch { /* SVG 유지 */ }
   };
   probe.src = svgUrl;
