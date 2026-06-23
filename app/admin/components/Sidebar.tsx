@@ -39,16 +39,18 @@ export type ConversationMeta = {
 
 type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entities' | 'notes' | 'calendar' | 'library';
 
-const TABS: { id: TabId; label: string; Icon: typeof FolderTree; tooltip: string }[] = [
-  { id: 'workspace', label: '워크스페이스', Icon: FolderTree, tooltip: 'Workspace' },
-  { id: 'chats', label: '대화', Icon: MessageSquare, tooltip: '대화 목록' },
-  { id: 'gallery', label: '갤러리', Icon: ImageIcon, tooltip: '갤러리' },
-  { id: 'templates', label: '템플릿', Icon: LayoutTemplate, tooltip: '템플릿' },
-  { id: 'skills', label: '스킬', Icon: BookText, tooltip: '스킬 — 케이스별 사용 매뉴얼' },
-  { id: 'library', label: 'Library', Icon: BookOpen, tooltip: 'Library — 자료 영역 + RAG 검색' },
-  { id: 'entities', label: 'Recall', Icon: Sparkles, tooltip: 'Recall (엔티티 + 사건)' },
-  { id: 'notes', label: '노트', Icon: NotebookText, tooltip: '노트' },
-  { id: 'calendar', label: '캘린더', Icon: CalendarIcon, tooltip: '캘린더' },
+// label·tooltip = i18n: 렌더에서 t(`sidebar.${id}`) 로 해석(한글 워크스페이스/스킬/라이브러리/리콜,
+// 영어 사용자는 Workspace/Skills/Library/Recall). 여기선 id + Icon 만.
+const TABS: { id: TabId; Icon: typeof FolderTree }[] = [
+  { id: 'workspace', Icon: FolderTree },
+  { id: 'chats', Icon: MessageSquare },
+  { id: 'gallery', Icon: ImageIcon },
+  { id: 'templates', Icon: LayoutTemplate },
+  { id: 'skills', Icon: BookText },
+  { id: 'library', Icon: BookOpen },
+  { id: 'entities', Icon: Sparkles },
+  { id: 'notes', Icon: NotebookText },
+  { id: 'calendar', Icon: CalendarIcon },
 ];
 
 interface SidebarProps {
@@ -676,23 +678,24 @@ export function Sidebar({
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
-      {visibleTabs.map(t => {
-        const isActive = tab === t.id && !collapsed;
-        const Icon = t.Icon;
+      {visibleTabs.map(tb => {
+        const isActive = tab === tb.id && !collapsed;
+        const Icon = tb.Icon;
+        const tabName = t(`sidebar.${tb.id}`);
         const button = (
           <button
-            key={t.id}
+            key={tb.id}
             type="button"
-            onClick={() => toggleTab(t.id)}
+            onClick={() => toggleTab(tb.id)}
             className={`relative p-2 rounded-lg transition-colors ${
               isActive
                 ? 'bg-slate-800 text-white'
                 : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'
             }`}
-            aria-label={t.tooltip}
+            aria-label={tabName}
           >
             <Icon size={18} className="w-[18px] h-[18px] shrink-0" />
-            {t.id === 'chats' && conversations.length > 0 && !isActive && (
+            {tb.id === 'chats' && conversations.length > 0 && !isActive && (
               <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-1 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
                 {conversations.length > 9 ? '9+' : conversations.length}
               </span>
@@ -701,7 +704,7 @@ export function Sidebar({
         );
         // 활성 탭(panel 펼친 상태)은 tooltip 표시하지 않음 — 헤더에 라벨 이미 노출 + 펼침 상태에서 hover 시 잔영 회피.
         return isActive ? button : (
-          <Tooltip key={t.id} label={t.tooltip} side="right">
+          <Tooltip key={tb.id} label={tabName} side="right">
             {button}
           </Tooltip>
         );
@@ -738,7 +741,7 @@ export function Sidebar({
     <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200/80 shrink-0">
       {/* width/height fixed — svg path 따라 폭 변동 + 옆 텍스트 layout shift (떨림) 방지 */}
       <ActiveIcon size={15} className="w-[15px] h-[15px] text-slate-700 shrink-0" />
-      <span className="text-sm font-semibold text-slate-800 truncate flex-1 antialiased">{activeTab.label}</span>
+      <span className="text-sm font-semibold text-slate-800 truncate flex-1 antialiased">{t(`sidebar.${activeTab.id}`)}</span>
       {!isMobile && (
         <Tooltip label={t('sidebar_actions.collapse_panel')}>
           <button
