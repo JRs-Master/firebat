@@ -168,7 +168,7 @@ export function SkillsPanel({
                   key={sk.slug}
                   id={sk.slug}
                   kind="enter"
-                  onActivate={() => onEditFile?.(`user/skills/${sk.slug}.md`)}
+                  onActivate={() => onEditFile?.(`${sk.source === 'system' ? 'system' : 'user'}/skills/${sk.slug}.md`)}
                   rowClassName="px-2 py-1.5 rounded-lg hover:bg-slate-100"
                   className="flex items-center gap-1.5"
                   actions={
