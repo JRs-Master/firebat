@@ -441,9 +441,13 @@ async function main() {
       // typhoonNo 만 주면 그 태풍 최신 통보문, 둘 다 없으면 활성 태풍 중 최신 발표.
       let fc = tmFc;
       let seq = typhoonNo;
-      // typhoonNo = 호수만. config 설명이 "년도 prefix(202507 등) 금지, 예 7·18"로 AI 를 가이드한다.
-      // 추측 정규화(년도 prefix % 100) 제거 — 잘못 넘기면 아래 filter/typSeq 가 빈 결과 + note 를 주고
-      // AI 가 가이드대로 호수만 다시 넘긴다. (입력 떡칠 대신 가이드 우선.)
+      // typhoonNo = 호수만. config 설명이 "년도 prefix 금지, 예 7·18"로 AI 가이드(1차) + 모듈 단 방어
+      // 정규화(2차) — AI 가 "202607"(년+호)·"07"·"7호" 등으로 보내도 호수 추출(100 초과 = 년도 prefix → % 100).
+      // 모듈이 자기 입력을 정규화하는 것이라 OK (Rust core·인프라 케이스 하드코딩과 다름 — 모듈 책임 영역).
+      if (seq != null && String(seq).trim() !== '') {
+        const n = parseInt(String(seq).replace(/\D/g, ''), 10);
+        if (Number.isFinite(n)) seq = n > 100 ? n % 100 : n;
+      }
       if (!fc) {
         const days = [todayYmd(), todayYmd(new Date(Date.now() - 86400000))];
         let cands = [];
