@@ -3946,15 +3946,15 @@ function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = n
     ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dy="0.35em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.6" stroke-linejoin="round"/></g>`
+    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.9" stroke-linejoin="round"/></g>`
     + center
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 
-/** 마커 SVG → displayPx×3 고해상도 PNG 로 supersample 한 <img>(표시 displayPx). 벡터 SVG <img> 는
- *  intrinsic 무시하고 표시크기×DPR 로만 래스터돼 DPR-1 PC 에서 흐릿 → canvas 로 3배 굽고 다운스케일
+/** 마커 SVG → displayPx×4 고해상도 PNG 로 supersample 한 <img>(표시 displayPx). 벡터 SVG <img> 는
+ *  intrinsic 무시하고 표시크기×DPR 로만 래스터돼 DPR-1 PC 에서 흐릿 → canvas 로 4배 굽고 다운스케일
  *  → 어떤 DPR 에서도 또렷. PNG 준비 전엔 SVG 그대로 보여 깜빡임 없음. (data URI SVG = 동일출처라 taint 0.) */
 function crispMarkerImg(svgUrl: string, displayPx: number): HTMLImageElement {
   const el = document.createElement('img');
@@ -3963,7 +3963,7 @@ function crispMarkerImg(svgUrl: string, displayPx: number): HTMLImageElement {
   const probe = new Image();
   probe.onload = () => {
     try {
-      const px = Math.max(1, Math.round(displayPx * 3));
+      const px = Math.max(1, Math.round(displayPx * 4));
       const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
       const ctx = cv.getContext('2d');
       if (ctx) { ctx.drawImage(probe, 0, 0, px, px); el.src = cv.toDataURL('image/png'); }
@@ -3978,7 +3978,7 @@ function crispMarkerPng(svgUrl: string, displayPx: number, cb: (url: string) => 
   const probe = new Image();
   probe.onload = () => {
     try {
-      const px = Math.max(1, Math.round(displayPx * 3));
+      const px = Math.max(1, Math.round(displayPx * 4));
       const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
       const ctx = cv.getContext('2d');
       if (ctx) { ctx.drawImage(probe, 0, 0, px, px); cb(cv.toDataURL('image/png')); }
@@ -4170,7 +4170,11 @@ function MapComp({
   const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
   // 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
   const mapMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
-  const finalHeight = height || (mapMaxH ? `${mapMaxH}px` : '320px');
+  // 명시 height 도 viewport cap(모바일 320/PC 480)을 넘지 못하게 — AI 가 큰 height 를 줘도 채팅·페이지서 지도가 과도하게 길어지지 않음(고정 크기 유지).
+  const explicitPx = height ? /^(\d+(?:\.\d+)?)px$/.exec(height.trim())?.[1] : undefined;
+  const finalHeight = explicitPx && mapMaxH
+    ? `${Math.min(parseFloat(explicitPx), mapMaxH)}px`
+    : (height || (mapMaxH ? `${mapMaxH}px` : '320px'));
   const finalZoom = typeof zoom === 'number' ? zoom : 12;
 
   // 중심 좌표 — center 명시 우선, 없으면 markers 평균
