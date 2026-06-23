@@ -3943,7 +3943,7 @@ function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = n
   const k = size / 24; // 24 viewBox → 마커 크기 스케일
   // 중앙 강도 번호 — 흰 원판 + 색 숫자 (glyph 눈 자리에 얹음). 정중앙 (central + dy 보정).
   const center = grade
-    ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" dy="0.04em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
+    ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dy="0.35em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
     : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.6" stroke-linejoin="round"/></g>`
