@@ -14,8 +14,7 @@
  *   alerts       — 기상특보 목록 — WthrWrnInfoService/getWthrWrnList
  *   alerts-news  — 기상속보 — WthrWrnInfoService/getWthrBrkNews
  *   alerts-prelim — 기상예비특보 — WthrWrnInfoService/getWthrPwn
- *   uv-index     — 자외선지수 V3 — LivingWthrIdxServiceV3/getUVIdxV3 (legacy 호환)
- *   uv-index-v5  — 자외선지수 V5 — LivingWthrIdxServiceV5/getUVIdxV5 (옛 V4 endpoint 폐기, 2026-05 기상청 변경)
+ *   uv-index / uv-index-v5 — 자외선지수 V5 — LivingWthrIdxServiceV5/getUVIdxV5 (uv-index=옛 V3 별칭→V5 통일, V2/V3/V4 폐기 2026-05)
  *   air-stagnation — 대기정체지수 V5 — LivingWthrIdxServiceV5/getAirDiffusionIdxV5 (옛 V4 endpoint 폐기, 2026-05 기상청 변경)
  *   체감온도 (thermal-index / getSenTaIdxV4) — 2026-05 기상청 데이터 생산중단으로 API 서비스 폐기됨
  *   earthquake   — 지진통보문 — EqkInfoService/getEqkMsg
@@ -336,23 +335,15 @@ async function main() {
       return out(true, { items: r.items });
     }
 
-    // ── 생활기상지수 V3 (uv-index) ──
-    if (action === 'uv-index') {
-      if (!areaNo) return outErr('error.uv_index_areaNo_required', {});
-      const t = data.time || ymdHm().slice(0, 10);
-      const r = await callApi(serviceKey, '/LivingWthrIdxServiceV3/getUVIdxV3', {
-        numOfRows: limit, pageNo: 1, areaNo, time: t,
-      });
-      if (!r.ok) return outErr(r.errorKey, r.errorParams);
-      return out(true, { items: r.items });
-    }
-
-    // ── 생활기상지수 V5 시리즈 (uv-index-v5 / air-stagnation) — 2026-05 기상청 V4→V5 endpoint 변경 ──
-    if (action === 'uv-index-v5' || action === 'air-stagnation') {
+    // ── 생활기상지수 V5 (uv-index = 자외선 / air-stagnation = 대기정체) ──
+    // 2026-05 KMA 변경: V4→V5, 체감온도(getSenTaIdx) 폐기. 공지 "변경 후 URL = V5" → V2/V3/V4 superseded.
+    // uv-index 는 옛 V3 별칭 → V5 로 통일(uv-index·uv-index-v5 동일 엔드포인트, 죽은 V3 호출 방지).
+    // areaNo + time(yyyyMMddHH 10자리), 3시간 단위 — 자외선 75h / 대기정체 78h.
+    if (action === 'uv-index' || action === 'uv-index-v5' || action === 'air-stagnation') {
       if (!areaNo) return outErr('error.areaNo_required', { action });
       const t = data.time || ymdHm().slice(0, 10);
-      const path = action === 'uv-index-v5' ? '/LivingWthrIdxServiceV5/getUVIdxV5'
-                                            : '/LivingWthrIdxServiceV5/getAirDiffusionIdxV5';
+      const path = action === 'air-stagnation' ? '/LivingWthrIdxServiceV5/getAirDiffusionIdxV5'
+                                               : '/LivingWthrIdxServiceV5/getUVIdxV5';
       const r = await callApi(serviceKey, path, {
         numOfRows: limit, pageNo: 1, areaNo, time: t,
       });

@@ -15,7 +15,7 @@
       "action": {
         "type": "string",
         "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-news", "alerts-prelim", "uv-index", "uv-index-v5", "air-stagnation", "earthquake", "tsunami", "typhoon-list", "typhoon-info", "typhoon-forecast"],
-        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V3 (areaNo+time, legacy), uv-index-v5=자외선 V5 (3시간×75h h0-h75, 2026-05 V4→V5 변경), air-stagnation=대기정체지수 V5 (areaNo+time, 3시간×78h h3-h78, 2026-05 V4→V5 변경), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈. (참고: 체감온도 thermal-index 는 2026-05 기상청 데이터 생산중단으로 폐기)"
+        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V5 (=uv-index-v5 별칭, areaNo+time), uv-index-v5=자외선 V5 (3시간×75h h0-h75, 2026-05 V4→V5 변경), air-stagnation=대기정체지수 V5 (areaNo+time, 3시간×78h h3-h78, 2026-05 V4→V5 변경), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈. (참고: 체감온도 thermal-index 는 2026-05 기상청 데이터 생산중단으로 폐기)"
       },
       "lat": {
         "type": "number",
