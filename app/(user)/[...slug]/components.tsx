@@ -4071,12 +4071,14 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale()); // 태풍 마커는 크게
     // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강. 중앙 강도 번호 (1~5).
     const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
+    // SVG 를 표시 크기의 3배 해상도로 생성 → size 로 다운스케일. 고DPI PC 에서 SVG data URI 가
+    // DPR 만큼 재래스터 안 돼 흐릿해지던 것 해소(어떤 DPR 에서도 또렷, 모바일 무회귀).
+    el.innerHTML = `<img src="${typhoonSvgUrl(size * 3, tColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
     // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (현재보다 약간 작게). 밋밋한 원 대신.
     const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
     const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
+    el.innerHTML = `<img src="${typhoonSvgUrl(size * 3, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     // 색 핀(흰 속원 + 이모지) — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom). 속원만큼 크게.
     const headW = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
@@ -4249,11 +4251,11 @@ function MapComp({
             if (m.icon === 'typhoon') {
               const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
               const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed)), size);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size * 3, tColor, typhoonGradeNum(m.windSpeed)), size); // 3× 해상도 → size 다운스케일 (고DPI 선명)
             } else if (m.icon === 'forecast') {
               const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
               const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed)), size);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size * 3, fColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
