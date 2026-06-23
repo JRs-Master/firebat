@@ -45,8 +45,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   const instance = authRes.data?.instance;
   if (!instance) return jsonResponse(500, { error: 'instance 조회 실패' });
-  // 세션 스코프(`<inst>:<sid>`) — 같은 위젯 다른 세션끼리 스킬 격리. (템플릿과 동일 패턴.)
-  const hubOwner = `${instance.id}:${sessionId}`;
+  // 세션 스코프(`hub:<inst>:<sid>`) — 같은 위젯 다른 세션끼리 스킬 격리. skill_file owner_dir 가
+  // `hub:` prefix 를 요구(entities·library·AI inject 와 동일 canonical). prefix 빠지면 owner_dir
+  // 에러 → list Err → grpc unwrap_or_default → 빈 배열(system 스킬도 안 보임).
+  const hubOwner = `hub:${instance.id}:${sessionId}`;
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); }
