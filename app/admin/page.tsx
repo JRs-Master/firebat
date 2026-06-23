@@ -1991,6 +1991,25 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     };
   }, [hubContext, hubSessionId, resetHubSession]);
 
+  // hub 파일 편집 transport — FileEditor 가 admin /api/fs/file(401) 대신 hub fs route(세션 스코프)로
+  // read/write. editingFile(워크스페이스 경로 user/hub/<inst>/<sid>/...) 기준. admin 이면 {} → 기본 경로.
+  const editorTransport = useMemo<{ load?: () => Promise<string>; save?: (c: string) => Promise<void> }>(() => {
+    if (!hubContext || !editingFile) return {};
+    const { slug, apiToken } = hubContext; const sid = hubSessionId; const path = editingFile;
+    const post = async (op: string, body: Record<string, unknown>) => {
+      const res = await fetch(`/api/hub/${encodeURIComponent(slug)}/fs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Api-Token': apiToken, 'X-Session-Id': sid },
+        body: JSON.stringify({ op, ...body }),
+      });
+      return res.json().catch(() => ({ success: false, error: '응답 파싱 실패' }));
+    };
+    return {
+      load: async () => { const r = await post('read', { path }); if (!r.success) throw new Error(r.error || '읽기 실패'); return r.content ?? ''; },
+      save: async (content: string) => { const r = await post('write', { path, content }); if (!r.success) throw new Error(r.error || '저장 실패'); },
+    };
+  }, [hubContext, editingFile, hubSessionId]);
+
   const {
     messages, input, setInput, loading,
     attachedImage, setAttachedImage,
@@ -2164,7 +2183,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         onRefreshChats={refreshConversations}
         aiModel={aiModel}
         onOpenSettings={hubContext ? undefined : () => setShowSettings(true)}
-        onEditFile={hubContext ? undefined : (filePath: string) => setEditingFile(filePath)}
+        onEditFile={(filePath: string) => { if (hubContext && !filePath.startsWith('user/hub/')) return; setEditingFile(filePath); }}
         onOpenModuleSettings={hubContext ? undefined : handleOpenModuleSettings}
         mobileOpen={mobileMenuOpen}
         onMobileOpenChange={setMobileMenuOpen}
@@ -2503,12 +2522,15 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             상태 변경 자체가 불가능하지만 defense-in-depth 차원에서 추가. */}
 
         {/* 파일 에디터 모달 */}
-        {!hubContext && editingFile && (
+        {editingFile && (
           <FileEditor
             filePath={editingFile}
             aiModel={aiModel}
             onClose={() => setEditingFile(null)}
             onSaved={() => refreshSidebar()}
+            load={editorTransport.load}
+            save={editorTransport.save}
+            aiAssist={!hubContext}
           />
         )}
 
