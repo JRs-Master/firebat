@@ -14,8 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-news", "alerts-prelim", "uv-index", "uv-index-v5", "air-stagnation", "earthquake", "tsunami", "typhoon-list", "typhoon-info", "typhoon-forecast"],
-        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V5 (=uv-index-v5 별칭, areaNo+time), uv-index-v5=자외선 V5 (3시간×75h h0-h75, 2026-05 V4→V5 변경), air-stagnation=대기정체지수 V5 (areaNo+time, 3시간×78h h3-h78, 2026-05 V4→V5 변경), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈. (참고: 체감온도 thermal-index 는 2026-05 기상청 데이터 생산중단으로 폐기)"
+        "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-msg", "alerts-news", "alerts-news-list", "alerts-prelim", "alerts-prelim-list", "wthr-info", "wthr-info-list", "pwn-status", "pwn-code", "uv-index", "uv-index-v5", "air-stagnation", "earthquake", "earthquake-list", "tsunami", "tsunami-list", "typhoon-list", "typhoon-info", "typhoon-forecast"],
+        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId). [기상특보] alerts=특보 목록(제목·발표시각), alerts-msg=특보 통보문 본문, alerts-news=기상속보 본문(ann 2000자), alerts-news-list=기상속보 목록, alerts-prelim=예비특보 본문, alerts-prelim-list=예비특보 목록, wthr-info=기상정보 본문(폭염·한파 등 해설), wthr-info-list=기상정보 목록, pwn-status=특보 발효 현황(현재 발효 중만, 날짜 불요), pwn-code=특보 구역코드(fromTmFc/toTmFc+areaCode+warninType). [생활기상] uv-index=자외선 V5 (=uv-index-v5 별칭, areaNo+time), uv-index-v5=자외선 V5 (3시간×75h h0-h75, 2026-05 V4→V5 변경), air-stagnation=대기정체지수 V5 (areaNo+time, 3시간×78h h3-h78, 2026-05 V4→V5 변경). [지진] earthquake=지진통보문(fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙), earthquake-list=지진통보문 목록, tsunami=지진해일통보문, tsunami-list=지진해일통보문 목록. [태풍] typhoon-list/info/forecast. (참고: 체감온도 thermal-index 는 2026-05 데이터 생산중단으로 폐기)"
       },
       "lat": {
         "type": "number",
@@ -39,7 +39,7 @@
       },
       "stnId": {
         "type": "string",
-        "description": "[alerts/alerts-news/alerts-prelim/medium-fcst] 발표 관청 / 지점 번호. 108=전국, 109=서울·인천·경기, 159=부산. alerts-news/alerts-prelim 의 stnId 는 옵션 (전체 조회 가능)"
+        "description": "[기상특보·기상정보 계열(alerts·alerts-msg·alerts-news·alerts-prelim·wthr-info 및 목록형)/medium-fcst] 발표 관청 / 지점 번호. 108=전국, 109=서울·인천·경기, 159=부산. 기상특보 계열에선 옵션 (전체 조회 가능)"
       },
       "areaNo": {
         "type": "string",
@@ -58,6 +58,14 @@
         "type": "string",
         "description": "[uv-index/uv-index-v5/air-stagnation] 발표 시각 yyyyMMddHH 10자리. 미지정 시 현재 시각 자동"
       },
+      "areaCode": {
+        "type": "string",
+        "description": "[pwn-code] 특보 구역코드 (예: S1322200). 미지정 시 전체"
+      },
+      "warninType": {
+        "type": "string",
+        "description": "[pwn-code] 특보 종류 코드 (예: 6). 미지정 시 전체"
+      },
       "tmFc": {
         "type": "string",
         "description": "[medium-*/typhoon-info/typhoon-forecast] 발표시각 yyyyMMddHHmm. 중기예보=06시·18시 발표. 태풍 통보문은 발표 시점에 따라 다양"
@@ -68,11 +76,11 @@
       },
       "fromTm": {
         "type": "string",
-        "description": "[alerts/alerts-news/alerts-prelim/earthquake/tsunami/typhoon-list] 시작시각 yyyyMMdd 8자리. 미지정 시 7일 전 (지진/해일/태풍은 30일 전)"
+        "description": "[기상특보·기상정보·pwn-code 계열/지진·해일 계열(earthquake·tsunami 및 목록형)/typhoon-list] 시작시각 yyyyMMdd 8자리. 미지정 시 7일 전 (지진/해일/태풍은 30일 전)"
       },
       "toTm": {
         "type": "string",
-        "description": "[alerts/alerts-news/alerts-prelim/earthquake/tsunami/typhoon-list] 종료시각 yyyyMMdd 8자리. 미지정 시 오늘"
+        "description": "[기상특보·기상정보·pwn-code 계열/지진·해일 계열(earthquake·tsunami 및 목록형)/typhoon-list] 종료시각 yyyyMMdd 8자리. 미지정 시 오늘"
       },
       "limit": {
         "type": "integer",

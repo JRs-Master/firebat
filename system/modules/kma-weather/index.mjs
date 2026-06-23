@@ -11,14 +11,16 @@
  *   medium-ta    — 중기 기온 — MidFcstInfoService/getMidTa (regId)
  *   medium-sea   — 중기 해상예보 (날씨·파고) — MidFcstInfoService/getMidSeaFcst (regId 해상)
  *   fcst-version — 예보 수정버전 — VilageFcstInfoService_2.0/getFcstVersion (ftype + basedatetime)
- *   alerts       — 기상특보 목록 — WthrWrnInfoService/getWthrWrnList
- *   alerts-news  — 기상속보 — WthrWrnInfoService/getWthrBrkNews
- *   alerts-prelim — 기상예비특보 — WthrWrnInfoService/getWthrPwn
+ *   alerts / alerts-msg — 기상특보 목록 / 통보문 본문 — getWthrWrnList / getWthrWrnMsg
+ *   alerts-news / alerts-news-list — 기상속보 본문 / 목록 — getWthrBrkNews / getWthrBrkNewsList
+ *   alerts-prelim / alerts-prelim-list — 예비특보 본문 / 목록 — getWthrPwn / getWthrPwnList
+ *   wthr-info / wthr-info-list — 기상정보 본문 / 목록 — getWthrInfo / getWthrInfoList
+ *   pwn-status — 특보 발효 현황 — getPwnStatus  |  pwn-code — 특보 구역코드 — getPwnCd
  *   uv-index / uv-index-v5 — 자외선지수 V5 — LivingWthrIdxServiceV5/getUVIdxV5 (uv-index=옛 V3 별칭→V5 통일, V2/V3/V4 폐기 2026-05)
  *   air-stagnation — 대기정체지수 V5 — LivingWthrIdxServiceV5/getAirDiffusionIdxV5 (옛 V4 endpoint 폐기, 2026-05 기상청 변경)
  *   체감온도 (thermal-index / getSenTaIdxV4) — 2026-05 기상청 데이터 생산중단으로 API 서비스 폐기됨
- *   earthquake   — 지진통보문 — EqkInfoService/getEqkMsg
- *   tsunami      — 지진해일통보문 — EqkInfoService/getTsunamiMsg
+ *   earthquake / earthquake-list — 지진통보문 / 목록 — getEqkMsg / getEqkMsgList
+ *   tsunami / tsunami-list — 지진해일통보문 / 목록 — getTsunamiMsg / getTsunamiMsgList
  *   typhoon-list — 태풍 통보문 목록 — TyphoonInfoService/getTyphoonInfoList (tmFc 단일)
  *   typhoon-info — 태풍 통보문 상세 — TyphoonInfoService/getTyphoonInfo (fromTmFc/toTmFc)
  *   typhoon-forecast — 태풍 예상정보 — TyphoonInfoService/getTyphoonFcst (tmFc + typSeq)
@@ -321,16 +323,42 @@ async function main() {
     }
 
     // ── 기상특보 시리즈 (WthrWrnInfoService) ──
-    // 모든 endpoint 가 stnId(옵션) + fromTmFc/toTmFc (yyyyMMdd 8자리) 표준
-    if (action === 'alerts' || action === 'alerts-news' || action === 'alerts-prelim') {
+    // 날짜범위형 endpoint: stnId(옵션) + fromTmFc/toTmFc (yyyyMMdd 8자리) 표준.
+    const WTHR_PATHS = {
+      'alerts': '/WthrWrnInfoService/getWthrWrnList',                // 특보 목록 (제목·발표시각)
+      'alerts-msg': '/WthrWrnInfoService/getWthrWrnMsg',             // 특보 통보문 본문
+      'alerts-news': '/WthrWrnInfoService/getWthrBrkNews',          // 기상속보 본문
+      'alerts-news-list': '/WthrWrnInfoService/getWthrBrkNewsList',  // 기상속보 목록
+      'alerts-prelim': '/WthrWrnInfoService/getWthrPwn',           // 예비특보 본문
+      'alerts-prelim-list': '/WthrWrnInfoService/getWthrPwnList',    // 예비특보 목록
+      'wthr-info': '/WthrWrnInfoService/getWthrInfo',              // 기상정보 본문
+      'wthr-info-list': '/WthrWrnInfoService/getWthrInfoList',       // 기상정보 목록
+    };
+    if (WTHR_PATHS[action]) {
       const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
       const toYmd = toTm || todayYmd();
-      const path = action === 'alerts' ? '/WthrWrnInfoService/getWthrWrnList'
-                 : action === 'alerts-news' ? '/WthrWrnInfoService/getWthrBrkNews'
-                 : '/WthrWrnInfoService/getWthrPwn';
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (stnId) params.stnId = stnId;
-      const r = await callApi(serviceKey, path, params);
+      const r = await callApi(serviceKey, WTHR_PATHS[action], params);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
+      return out(true, { items: r.items });
+    }
+
+    // 특보 발효 현황 (getPwnStatus) — 날짜 파라미터 없음, 현재 발효 중인 특보만
+    if (action === 'pwn-status') {
+      const r = await callApi(serviceKey, '/WthrWrnInfoService/getPwnStatus', { numOfRows: limit, pageNo: 1 });
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
+      return out(true, { items: r.items });
+    }
+
+    // 특보 구역코드 조회 (getPwnCd) — fromTmFc/toTmFc + areaCode + warninType (특보종류 코드)
+    if (action === 'pwn-code') {
+      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
+      const toYmd = toTm || todayYmd();
+      const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
+      if (data.areaCode) params.areaCode = data.areaCode;
+      if (data.warninType) params.warninType = data.warninType;
+      const r = await callApi(serviceKey, '/WthrWrnInfoService/getPwnCd', params);
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
@@ -361,11 +389,16 @@ async function main() {
     }
 
     // ── 지진/해일 시리즈 (EqkInfoService) — fromTmFc/toTmFc 8자리 ──
-    if (action === 'earthquake' || action === 'tsunami') {
+    const EQK_PATHS = {
+      'earthquake': '/EqkInfoService/getEqkMsg',            // 지진통보문
+      'earthquake-list': '/EqkInfoService/getEqkMsgList',   // 지진통보문 목록
+      'tsunami': '/EqkInfoService/getTsunamiMsg',           // 지진해일통보문
+      'tsunami-list': '/EqkInfoService/getTsunamiMsgList',  // 지진해일통보문 목록
+    };
+    if (EQK_PATHS[action]) {
       const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
       const toYmd = toTm || todayYmd();
-      const path = action === 'earthquake' ? '/EqkInfoService/getEqkMsg' : '/EqkInfoService/getTsunamiMsg';
-      const r = await callApi(serviceKey, path, {
+      const r = await callApi(serviceKey, EQK_PATHS[action], {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
