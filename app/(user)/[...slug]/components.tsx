@@ -3913,87 +3913,23 @@ function buildPinSvgUrl(emoji: string, w: number, color = '#6366f1'): string {
 /** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
  *  강도1 약(17~24) 초록 → 강도2 중(25~32) 파랑 → 강도3 강(33~43) 노랑 → 강도4 매우강(44~53) 주황
  *  → 강도5 초강력(54+) 빨강. 17 미만 = 열대저압부(TD) 회색. windSpeed 없으면 null (caller 가 color fallback). */
-function typhoonColorByWind(ws?: number | null): string | null {
-  if (typeof ws !== 'number' || !Number.isFinite(ws)) return null;
-  if (ws >= 54) return '#ef4444'; // 강도5 초강력 (빨강)
-  if (ws >= 44) return '#f97316'; // 강도4 매우강 (주황)
-  if (ws >= 33) return '#eab308'; // 강도3 강 (노랑)
-  if (ws >= 25) return '#3b82f6'; // 강도2 중 (파랑)
-  if (ws >= 17) return '#22c55e'; // 강도1 약 (초록)
-  return '#9ca3af';               // 열대저압부 TD (<17, 회색)
-}
-
-/** 최대풍속 (m/s) → 기상청 태풍 강도 번호 (1~5). 17 미만 = TD (열대저압부) → 'T'. windSpeed 없으면 null. */
-function typhoonGradeNum(ws?: number | null): string | null {
-  if (typeof ws !== 'number' || !Number.isFinite(ws)) return null;
+/** windSpeed(m/s) → 사전 생성 마커 PNG 키 (기상청 강도 임계 — scripts/gen-typhoon-markers.mjs 와 1:1). */
+function typhoonMarkerVariant(ws?: number | null): string {
+  if (typeof ws !== 'number' || !Number.isFinite(ws)) return 'none';
   if (ws >= 54) return '5';
   if (ws >= 44) return '4';
   if (ws >= 33) return '3';
   if (ws >= 25) return '2';
   if (ws >= 17) return '1';
-  return 'T'; // 열대저압부
+  return 'T';
+}
+/** 태풍 마커 = public/markers/ 의 사전 생성 PNG (브라우저 굽기 0). 색·강도번호가 PNG 에 구워져 있음. */
+function typhoonMarkerSrc(ws?: number | null): string {
+  return `/markers/typhoon-${typhoonMarkerVariant(ws)}.png`;
 }
 
-// mdi-weather-hurricane glyph (24×24 viewBox) — Material Design 태풍 소용돌이. 강도색 채움.
-const HURRICANE_PATH = 'M15,6.79C16.86,7.86 18,9.85 18,12C18,22 6,22 6,22C7.25,21.06 8.38,19.95 9.34,18.71C9.38,18.66 9.41,18.61 9.44,18.55C9.69,18.06 9.5,17.46 9,17.21C7.14,16.14 6,14.15 6,12C6,2 18,2 18,2C16.75,2.94 15.62,4.05 14.66,5.29C14.62,5.34 14.59,5.39 14.56,5.45C14.31,5.94 14.5,6.54 15,6.79Z';
-
-/** 태풍 마커 — mdi 허리케인 glyph (강도색 채움 + 흰 외곽) + 중앙 강도 번호. data URI 반환. */
-function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = null): string {
-  const c = size / 2;
-  const k = size / 24; // 24 viewBox → 마커 크기 스케일
-  // 중앙 강도 번호 — 흰 원판 + 색 숫자 (glyph 눈 자리에 얹음). 정중앙 (central + dy 보정).
-  const center = grade
-    ? `<circle cx="${c}" cy="${c}" r="${size * 0.22}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dy="0.35em" fill="${color}" font-size="${size * 0.28}" font-weight="800" font-family="sans-serif">${grade}</text>`
-    : '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<g transform="scale(${k})"><path d="${HURRICANE_PATH}" fill="${color}" stroke="white" stroke-width="0.9" stroke-linejoin="round"/></g>`
-    + center
-    + `</svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-}
-
-
-/** 마커 SVG → displayPx×4 고해상도 PNG 로 supersample 한 <img>(표시 displayPx). 벡터 SVG <img> 는
- *  intrinsic 무시하고 표시크기×DPR 로만 래스터돼 DPR-1 PC 에서 흐릿 → canvas 로 4배 굽고 다운스케일
- *  → 어떤 DPR 에서도 또렷. PNG 준비 전엔 SVG 그대로 보여 깜빡임 없음. (data URI SVG = 동일출처라 taint 0.) */
-// (svgUrl|displayPx) → supersampled PNG. 재렌더·재마운트·동일 마커마다 canvas+toDataURL 재굽기 방지 = 저사양 PC jank 감소.
-const _markerPngCache = new Map<string, string>();
-function crispMarkerImg(svgUrl: string, displayPx: number): HTMLImageElement {
-  const el = document.createElement('img');
-  el.width = displayPx; el.height = displayPx; el.style.display = 'block';
-  const k = `${svgUrl}|${displayPx}`;
-  const hit = _markerPngCache.get(k);
-  if (hit) { el.src = hit; return el; }
-  el.src = svgUrl;
-  const probe = new Image();
-  probe.onload = () => {
-    try {
-      const px = Math.max(1, Math.round(displayPx * 4));
-      const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
-      const ctx = cv.getContext('2d');
-      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); const u = cv.toDataURL('image/png'); _markerPngCache.set(k, u); el.src = u; }
-    } catch { /* 실패 시 SVG 유지 */ }
-  };
-  probe.src = svgUrl;
-  return el;
-}
-
-/** crispMarkerImg 의 PNG data URL 만 비동기 반환 (Kakao MarkerImage 용). 실패/준비전 = SVG. */
-function crispMarkerPng(svgUrl: string, displayPx: number, cb: (url: string) => void): void {
-  const k = `${svgUrl}|${displayPx}`;
-  const hit = _markerPngCache.get(k);
-  if (hit) { cb(hit); return; }
-  const probe = new Image();
-  probe.onload = () => {
-    try {
-      const px = Math.max(1, Math.round(displayPx * 4));
-      const cv = document.createElement('canvas'); cv.width = px; cv.height = px;
-      const ctx = cv.getContext('2d');
-      if (ctx) { ctx.drawImage(probe, 0, 0, px, px); const u = cv.toDataURL('image/png'); _markerPngCache.set(k, u); cb(u); }
-    } catch { /* SVG 유지 */ }
-  };
-  probe.src = svgUrl;
-}
+// 태풍 마커는 사전 생성 정적 PNG (public/markers/, scripts/gen-typhoon-markers.mjs) 를 쓴다 —
+// 런타임 SVG→canvas→PNG 굽기 폐기(모든 방문자 브라우저 부담 0). typhoonMarkerSrc 참조.
 
 /** multi-line label → HTML \<br\> 변환. sanitize 후. */
 function labelToHtml(label: string): string {
@@ -4111,15 +4047,12 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
     const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale()); // 태풍 마커는 크게
-    // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강. 중앙 강도 번호 (1~5).
-    const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-    // 마커 = canvas supersample(crispMarkerImg) — 벡터 SVG <img> 가 DPR-1 PC 에서 흐릿하던 것 해소.
-    el.appendChild(crispMarkerImg(typhoonSvgUrl(size * 3, tColor, typhoonGradeNum(m.windSpeed)), size));
+    // 사전 생성 PNG (public/markers/) — 강도색·번호가 구워져 있어 브라우저 굽기 0.
+    el.innerHTML = `<img src="${typhoonMarkerSrc(m.windSpeed)}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
-    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (현재보다 약간 작게). 밋밋한 원 대신.
+    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (현재보다 약간 작게).
     const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
-    const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-    el.appendChild(crispMarkerImg(typhoonSvgUrl(size * 3, fColor, typhoonGradeNum(m.windSpeed)), size));
+    el.innerHTML = `<img src="${typhoonMarkerSrc(m.windSpeed)}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     // 색 핀(흰 속원 + 이모지) — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom). 속원만큼 크게.
     const headW = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
@@ -4293,19 +4226,12 @@ function MapComp({
             };
             // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
             // current·카테고리 = emoji / 그 외 + color = color circle.
-            let crispMarker: { url: string; size: number } | null = null; // 태풍 마커 = 생성 후 PNG supersample 교체
             if (m.icon === 'typhoon') {
               const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-              const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-              const url = typhoonSvgUrl(size * 3, tColor, typhoonGradeNum(m.windSpeed));
-              opts.image = makeDataUriImage(url, size); // PNG 준비 전엔 SVG
-              crispMarker = { url, size };
+              opts.image = makeDataUriImage(typhoonMarkerSrc(m.windSpeed), size); // 사전 생성 PNG
             } else if (m.icon === 'forecast') {
               const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
-              const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-              const url = typhoonSvgUrl(size * 3, fColor, typhoonGradeNum(m.windSpeed));
-              opts.image = makeDataUriImage(url, size);
-              crispMarker = { url, size };
+              opts.image = makeDataUriImage(typhoonMarkerSrc(m.windSpeed), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
@@ -4315,11 +4241,6 @@ function MapComp({
             // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀). 옛 동작 복원.
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
-            // 태풍 마커 = canvas supersample — 벡터 SVG MarkerImage 가 DPR-1 PC 에서 흐릿하던 것 해소.
-            if (crispMarker) {
-              const cm = crispMarker;
-              crispMarkerPng(cm.url, cm.size, (png) => marker.setImage(makeDataUriImage(png, cm.size)));
-            }
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
             // kakao 기본 InfoWindow 는 wrapping 멀티라인(주소·전화 2~3줄) 콘텐츠의 흰 박스 높이를
             // 잘못 측정해 내용이 박스 밖으로 넘쳤다 → CustomOverlay 로 우리 div 자체를 박스로 렌더해
