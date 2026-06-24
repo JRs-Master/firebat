@@ -9,7 +9,9 @@ import { mkdirSync, readdirSync, statSync } from 'fs';
 // components.tsx 의 HURRICANE_PATH (mdi-weather-hurricane, 24×24 viewBox) 와 동일.
 const HPATH = 'M15,6.79C16.86,7.86 18,9.85 18,12C18,22 6,22 6,22C7.25,21.06 8.38,19.95 9.34,18.71C9.38,18.66 9.41,18.61 9.44,18.55C9.69,18.06 9.5,17.46 9,17.21C7.14,16.14 6,14.15 6,12C6,2 18,2 18,2C16.75,2.94 15.62,4.05 14.66,5.29C14.62,5.34 14.59,5.39 14.56,5.45C14.31,5.94 14.5,6.54 15,6.79Z';
 
-const SIZE = 256;          // 고해상도 — 어떤 DPR·표시크기에도 또렷(브라우저가 표시크기로 다운스케일).
+// 마커 최대 표시크기(large PC = markerPixelSize 29 × deviceScale 1.25 ≈ 36px) × 4 = 144.
+// 원래 런타임 supersample(canvas size×4)의 4x 다운스케일 수준에 맞춤 — 256은 ~7x 과도 축소라 무름.
+const SIZE = 144;
 const k = SIZE / 24;       // 24-viewBox → SIZE 스케일.
 const c = SIZE / 2;
 
