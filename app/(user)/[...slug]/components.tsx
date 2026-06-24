@@ -4339,7 +4339,7 @@ function MapComp({
         if (!ml) return;
         const map = new ml.Map({
           container,
-          style: 'https://tiles.openfreemap.org/styles/liberty',  // liberty — bright 스프라이트 아이콘 누락(흰 박스) 회피
+          style: 'https://tiles.openfreemap.org/styles/bright',  // bright 복귀 (liberty=3D 건물·동일 박스라 반려). 흰 박스=도로 표지 아이콘 → 아래 루프서 숨김
           center: [finalCenter.lon, finalCenter.lat],
           zoom: Math.max(1, finalZoom - 1),
         });
@@ -4396,24 +4396,41 @@ function MapComp({
                 continue;
               }
             }
+            if (layer.type === 'fill-extrusion') {
+              // 3D 건물 돌출 숨김 — liberty 등의 3D 건물 평면화(사용자 반려). 날씨 지도엔 불필요.
+              try { map.setLayoutProperty(layer.id, 'visibility', 'none'); } catch { /* 무시 */ }
+              continue;
+            }
             const lo = layer.layout as Record<string, unknown> | undefined;
-            if (layer.type === 'symbol' && lo && 'text-field' in lo) {
-              try {
-                // 북한 라벨 숨김 — 도시 라벨엔 국가 필드가 없어 한글 이름(name:ko) 부분일치로 가린다.
-                // 대한민국·서울 등 남한 + 중국·일본 등 타국 라벨은 유지. 지역 줌이라 동네 라벨(청진동 등) 미표시 = 오탐 거의 0.
-                const NK = ['조선민주주의', '평양', '함흥', '청진', '원산', '신의주', '개성', '사리원', '해주', '혜산', '강계', '나선', '남포', '김책', '단천', '평성'];
-                const nkMatch = (n: string) => ['in', n, ['to-string', ['coalesce', ['get', 'name:ko'], ['get', 'name'], '']]];
-                map.setLayoutProperty(layer.id, 'text-field', [
-                  'case',
-                  ['any', ...NK.map(nkMatch)],
-                  '',
-                  ['coalesce', ['get', `name:${lang}`], ['get', 'name:latin'], ['get', 'name']],
-                ]);
-                // 폰트 weight — 나라명·수도 = Bold(굵게), 일반 지명 = Regular(가늘게). 벡터 glyph 는
-                // 숫자 weight(500/600) 미지원 → Noto Sans Regular/Bold 2단계로 분리 (OpenFreeMap 기본 제공).
-                const bold = /country|capital/i.test(layer.id);
-                map.setLayoutProperty(layer.id, 'text-font', bold ? ['Noto Sans Bold'] : ['Noto Sans Regular']);
-              } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
+            if (layer.type === 'symbol') {
+              const srcLayer = String((layer as any)['source-layer'] || '');
+              const isTransport = /transportation/i.test(srcLayer);
+              // 도로 표지 아이콘(IC·JC·국도 N호선 = road shield) 숨김 — 스프라이트에 그 shield 가 없어 흰 박스로 뜸 + 날씨 지도엔 불필요. 도로 선·이름 텍스트는 유지.
+              if (isTransport) {
+                try { map.setPaintProperty(layer.id, 'icon-opacity', 0); } catch { /* 무시 */ }
+              }
+              if (lo && 'text-field' in lo) {
+                try {
+                  // 북한 라벨 숨김 — 도시 라벨엔 국가 필드가 없어 한글 이름(name:ko) 부분일치로 가린다.
+                  // 대한민국·서울 등 남한 + 중국·일본 등 타국 라벨은 유지. 지역 줌이라 동네 라벨(청진동 등) 미표시 = 오탐 거의 0.
+                  const NK = ['조선민주주의', '평양', '함흥', '청진', '원산', '신의주', '개성', '사리원', '해주', '혜산', '강계', '나선', '남포', '김책', '단천', '평성'];
+                  const nkMatch = (n: string) => ['in', n, ['to-string', ['coalesce', ['get', 'name:ko'], ['get', 'name'], '']]];
+                  map.setLayoutProperty(layer.id, 'text-field', [
+                    'case',
+                    ['any', ...NK.map(nkMatch)],
+                    '',
+                    ['coalesce', ['get', `name:${lang}`], ['get', 'name:latin'], ['get', 'name']],
+                  ]);
+                  // 북한 도시 점(icon)도 숨김 — 이름만 지우면 점이 남는다(사용자 보고). 북한만 0, 남한·타국은 유지.
+                  if (!isTransport) {
+                    map.setPaintProperty(layer.id, 'icon-opacity', ['case', ['any', ...NK.map(nkMatch)], 0, 1] as any);
+                  }
+                  // 폰트 weight — 나라명·수도 = Bold(굵게), 일반 지명 = Regular(가늘게). 벡터 glyph 는
+                  // 숫자 weight(500/600) 미지원 → Noto Sans Regular/Bold 2단계로 분리 (OpenFreeMap 기본 제공).
+                  const bold = /country|capital/i.test(layer.id);
+                  map.setLayoutProperty(layer.id, 'text-font', bold ? ['Noto Sans Bold'] : ['Noto Sans Regular']);
+                } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
+              }
             }
           }
           // cone (예측 영역) — 경로 + 각 점 반경 → 점점 넓어지는 부드러운 polygon.
