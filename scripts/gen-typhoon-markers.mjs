@@ -1,6 +1,7 @@
-// 태풍 마커 PNG 사전 생성 — 결정적·유한한 마커(등급 5/4/3/2/1/T/none)를 빌드 시점에 한 번 구워
-// public/markers/ 에 정적 에셋으로 둔다. 런타임(브라우저)에서 SVG→canvas→PNG 재굽기를 없애
-// 모든 방문자가 그냥 <img src> 로 받게 한다(HTTP 캐시). 디자인 변경 시 이 스크립트 재실행.
+// 태풍 마커 PNG 사전 생성 — 결정적·유한한 마커(등급 5/4/3/2/1/T/none)를 한 번 구워
+// lib/markers/ 에 둔다. components.tsx 가 import → 번들러가 /_next/static/media/ 로 emit →
+// 기존 frontend static 배포에 자동 포함(public/ standalone 미서빙 문제·DB·Caddy 설정 무관).
+// 런타임(브라우저) SVG→canvas→PNG 재굽기 0. 디자인 변경 시 이 스크립트 재실행.
 //   실행: node scripts/gen-typhoon-markers.mjs
 import sharp from 'sharp';
 import { mkdirSync, readdirSync, statSync } from 'fs';
@@ -34,7 +35,7 @@ function svg(color, grade) {
     + `</svg>`;
 }
 
-const outdir = 'public/markers';
+const outdir = 'lib/markers';
 mkdirSync(outdir, { recursive: true });
 for (const [key, color, grade] of VARIANTS) {
   const file = `${outdir}/typhoon-${key}.png`;

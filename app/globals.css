@@ -473,6 +473,11 @@ html::-webkit-scrollbar-thumb:hover,
   font-size: 16px;
   color: #94a3b8;
   border-radius: 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  line-height: 1;
 }
 .firebat-map-popup .maplibregl-popup-close-button:hover {
   background: #f1f5f9;

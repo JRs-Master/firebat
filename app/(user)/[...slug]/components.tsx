@@ -10,6 +10,14 @@ import StockChart from '../../admin/chat-components/StockChart';
 import { BlockErrorBoundary } from '../../admin/components/BlockErrorBoundary';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { usePublicTranslations } from '../../../lib/i18n';
+// 태풍 마커 — 사전 생성 PNG (scripts/gen-typhoon-markers.mjs). import → 번들러가 /_next/static/media 로 emit.
+import typhoon5 from '../../../lib/markers/typhoon-5.png';
+import typhoon4 from '../../../lib/markers/typhoon-4.png';
+import typhoon3 from '../../../lib/markers/typhoon-3.png';
+import typhoon2 from '../../../lib/markers/typhoon-2.png';
+import typhoon1 from '../../../lib/markers/typhoon-1.png';
+import typhoonT from '../../../lib/markers/typhoon-T.png';
+import typhoonNone from '../../../lib/markers/typhoon-none.png';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
@@ -3923,9 +3931,13 @@ function typhoonMarkerVariant(ws?: number | null): string {
   if (ws >= 17) return '1';
   return 'T';
 }
-/** 태풍 마커 = public/markers/ 의 사전 생성 PNG (브라우저 굽기 0). 색·강도번호가 PNG 에 구워져 있음. */
+/** 변종 → import 한 사전 생성 PNG URL (번들러가 /_next/static/media 로 emit, 브라우저 굽기 0). */
+const TYPHOON_MARKER_SRC: Record<string, string> = {
+  '5': typhoon5.src, '4': typhoon4.src, '3': typhoon3.src, '2': typhoon2.src,
+  '1': typhoon1.src, 'T': typhoonT.src, 'none': typhoonNone.src,
+};
 function typhoonMarkerSrc(ws?: number | null): string {
-  return `/markers/typhoon-${typhoonMarkerVariant(ws)}.png`;
+  return TYPHOON_MARKER_SRC[typhoonMarkerVariant(ws)] ?? typhoonNone.src;
 }
 
 // 태풍 마커는 사전 생성 정적 PNG (public/markers/, scripts/gen-typhoon-markers.mjs) 를 쓴다 —
@@ -3958,9 +3970,13 @@ function buildPopupCardHtml(rawLabel: string): string {
     .join('');
   // 우리식 카드 — Firebat StockChart / Card 컴포넌트 스타일 (흰 배경 + 제목 bold + border 구분, 색 헤더 X).
   // 둥근 모서리 + 그림자 + border 는 popup wrapper CSS (firebat-map-popup).
+  // 본문 없으면(헤더만) border-bottom·헤더 배경 빼고 단일 컴팩트 카드 = 댕글링 줄(검은 줄처럼 보이던 것) 제거.
+  const headStyle = bodyRows
+    ? 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;'
+    : 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px;background:#fff;';
   return (
-    `<div style="min-width:140px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
-    + `<div style="font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">${head}</div>`
+    `<div style="min-width:120px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
+    + `<div style="${headStyle}">${head}</div>`
     + (bodyRows ? `<div style="padding:9px 13px;font-size:12px;line-height:1.55;background:#fff;">${bodyRows}</div>` : '')
     + `</div>`
   );
