@@ -67,3 +67,27 @@ export function parsePageRecord(pb: PageRecordPb): ParsedPageSpec {
     _updatedAt: epochToIso(pb.updatedAt) ?? parsed._updatedAt,
   };
 }
+
+/**
+ * inner PageSpec 추출 + double-wrap 복구 — 단일 진실 헬퍼(조회·저장 공용).
+ * spec 값이 (1) string-of-JSON 이거나 (2) PageRecordPb 통째가 직렬화된 형태
+ * (`$typeName` 포함 또는 `slug`+`status`+문자열 `spec`)면 안쪽 진짜 PageSpec 까지 벗긴다.
+ * clean PageSpec(`{head, body}`)은 그대로 반환(no-op) — top-level 에 문자열 `spec` 필드가
+ * 없으므로 오탐 0. 다중 wrap 도 최대 4겹까지 복구.
+ */
+function looksLikePageRecord(o: unknown): o is Record<string, unknown> {
+  if (!o || typeof o !== 'object') return false;
+  const r = o as Record<string, unknown>;
+  if (typeof r.spec !== 'string') return false;
+  const tn = r.$typeName;
+  return (typeof tn === 'string' && tn.includes('PageRecord'))
+    || (typeof r.slug === 'string' && 'status' in r);
+}
+
+export function unwrapPageSpec(raw: unknown): Record<string, unknown> {
+  let cur: unknown = typeof raw === 'string' ? safeJsonParse<unknown>(raw, {}) : raw;
+  for (let i = 0; i < 4 && looksLikePageRecord(cur); i++) {
+    cur = safeJsonParse<unknown>((cur as Record<string, unknown>).spec as string, {});
+  }
+  return (cur && typeof cur === 'object' && !Array.isArray(cur)) ? (cur as Record<string, unknown>) : {};
+}

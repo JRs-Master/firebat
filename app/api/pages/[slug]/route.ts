@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { get as getPage, rename as renamePage } from '../../../../lib/api-gen/page';
+import { unwrapPageSpec } from '../../../../lib/util/page-pb-convert';
 import { withAuth } from '../../../../lib/with-api-error';
 
 function safeDecodeSlug(slug: string): string {
@@ -17,7 +18,9 @@ export const GET = withAuth(async (
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 404 });
   }
-  return NextResponse.json({ success: true, spec: res.data });
+  // inner PageSpec 만 반환(+double-wrap 복구) — 옛날엔 raw PageRecordPb(`{$typeName,slug,spec,...}`)를
+  // 그대로 줘서 편집기가 PB 를 들고 재저장 → spec 컬럼에 PB 통째 = double-wrap 이었음. unwrapPageSpec 으로 차단.
+  return NextResponse.json({ success: true, spec: unwrapPageSpec(res.data?.spec) });
 });
 
 /** 페이지 slug 변경 — body: { newSlug, setRedirect?: boolean } */
