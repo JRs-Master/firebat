@@ -3971,9 +3971,10 @@ function buildPopupCardHtml(rawLabel: string): string {
   // 우리식 카드 — Firebat StockChart / Card 컴포넌트 스타일 (흰 배경 + 제목 bold + border 구분, 색 헤더 X).
   // 둥근 모서리 + 그림자 + border 는 popup wrapper CSS (firebat-map-popup).
   // 본문 없으면(헤더만) border-bottom·헤더 배경 빼고 단일 컴팩트 카드 = 댕글링 줄(검은 줄처럼 보이던 것) 제거.
+  // 헤더 배경은 본문 유무와 무관하게 회색(#f8fafc) 통일 = 모든 팝업이 같은 우리 카드 룩. border-bottom 은 본문 있을 때만(댕글링 줄 방지).
   const headStyle = bodyRows
     ? 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc;'
-    : 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px;background:#fff;';
+    : 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px;background:#f8fafc;';
   return (
     `<div style="min-width:120px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
     + `<div style="${headStyle}">${head}</div>`
@@ -4338,7 +4339,7 @@ function MapComp({
         if (!ml) return;
         const map = new ml.Map({
           container,
-          style: 'https://tiles.openfreemap.org/styles/bright',
+          style: 'https://tiles.openfreemap.org/styles/liberty',  // liberty — bright 스프라이트 아이콘 누락(흰 박스) 회피
           center: [finalCenter.lon, finalCenter.lat],
           zoom: Math.max(1, finalZoom - 1),
         });
@@ -4400,7 +4401,7 @@ function MapComp({
               try {
                 // 북한 라벨 숨김 — 도시 라벨엔 국가 필드가 없어 한글 이름(name:ko) 부분일치로 가린다.
                 // 대한민국·서울 등 남한 + 중국·일본 등 타국 라벨은 유지. 지역 줌이라 동네 라벨(청진동 등) 미표시 = 오탐 거의 0.
-                const NK = ['조선민주주의', '평양', '함흥', '청진', '원산', '신의주', '개성', '사리원', '해주', '혜산', '강계', '나선'];
+                const NK = ['조선민주주의', '평양', '함흥', '청진', '원산', '신의주', '개성', '사리원', '해주', '혜산', '강계', '나선', '남포', '김책', '단천', '평성'];
                 const nkMatch = (n: string) => ['in', n, ['to-string', ['coalesce', ['get', 'name:ko'], ['get', 'name'], '']]];
                 map.setLayoutProperty(layer.id, 'text-field', [
                   'case',
