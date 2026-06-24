@@ -43,7 +43,10 @@ impl AnthropicMessagesHandler {
             Some(l @ ("low" | "medium" | "high" | "xhigh" | "max")) => l,
             _ => return, // none / minimal / 미설정 → thinking off (param 생략 = 비활성)
         };
-        body["thinking"] = serde_json::json!({ "type": "adaptive" });
+        // display:"summarized" 명시 — Opus 4.8/4.7/Fable 은 display 기본값이 "omitted"(thinking 빈 채 반환)라
+        // 명시 안 하면 thinking 안 보인다. summarized 로 요약 사고 노출(4.6/Sonnet/Haiku 는 기본 summarized = no-op).
+        // adaptive 와 호환(문서: always-on 모델도 display:summarized 명시 가능). budget_tokens 는 4.7+ 400.
+        body["thinking"] = serde_json::json!({ "type": "adaptive", "display": "summarized" });
         // effort = Opus/Sonnet 4.6/Fable 지원, Haiku 4.5 미지원(400) → Haiku 는 adaptive 만.
         if !config.id.contains("haiku") {
             if let Some(obj) = body.as_object_mut() {
