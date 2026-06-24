@@ -478,6 +478,9 @@ html::-webkit-scrollbar-thumb:hover,
   box-shadow: none;
   padding: 0;
   line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
 }
 .firebat-map-popup .maplibregl-popup-close-button:hover {
   background: #f1f5f9;

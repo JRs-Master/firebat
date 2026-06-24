@@ -4398,11 +4398,15 @@ function MapComp({
             const lo = layer.layout as Record<string, unknown> | undefined;
             if (layer.type === 'symbol' && lo && 'text-field' in lo) {
               try {
+                // 북한 라벨 숨김 — 도시 라벨엔 국가 필드가 없어 한글 이름(name:ko) 부분일치로 가린다.
+                // 대한민국·서울 등 남한 + 중국·일본 등 타국 라벨은 유지. 지역 줌이라 동네 라벨(청진동 등) 미표시 = 오탐 거의 0.
+                const NK = ['조선민주주의', '평양', '함흥', '청진', '원산', '신의주', '개성', '사리원', '해주', '혜산', '강계', '나선'];
+                const nkMatch = (n: string) => ['in', n, ['to-string', ['coalesce', ['get', 'name:ko'], ['get', 'name'], '']]];
                 map.setLayoutProperty(layer.id, 'text-field', [
-                  'coalesce',
-                  ['get', `name:${lang}`],
-                  ['get', 'name:latin'],
-                  ['get', 'name'],
+                  'case',
+                  ['any', ...NK.map(nkMatch)],
+                  '',
+                  ['coalesce', ['get', `name:${lang}`], ['get', 'name:latin'], ['get', 'name']],
                 ]);
                 // 폰트 weight — 나라명·수도 = Bold(굵게), 일반 지명 = Regular(가늘게). 벡터 glyph 는
                 // 숫자 weight(500/600) 미지원 → Noto Sans Regular/Bold 2단계로 분리 (OpenFreeMap 기본 제공).
