@@ -204,8 +204,9 @@ interface FirebatInfraContainer {
 - `sysmod_*` / `mcp_*` → resolveCallTarget 으로 모듈 경로 / MCP 서버 자동 라우팅
 
 ### Step 4. 결과 보고
-`AiManager.processWithTools()` 반환 = `{success, reply, blocks, executedActions, suggestions, pendingActions}`.
-SSE result 이벤트로 프론트엔드 전달. 학습 데이터 (`data/logs/training-*.jsonl`) 자동 저장.
+`AiManager.process_with_tools_opts*()` 반환 `AiResponse` = `{success, reply, blocks, executedActions, toolResults, suggestions, pendingActions, libraryHits, buildSession, modelId, costUsd, error}`.
+
+**메시지 영속/전송 직렬화 = 단일 소스** (2026-06-25): admin·hub 가 각자 `AiResponse → 메시지.data` 를 손수 풀어 드리프트(buildSession·libraryHits 한쪽 누락)가 반복되던 것을 폐기. `AiResponse::message_data_json()` = canonical `data` 빌더(superset, skip 없이 항상 전 키) / `to_result_json()` = 직렬화 + canonical `data` 부착. 모든 result 이벤트(grpc ai·hub의 unary·stream)와 hub_messages 영속·admin route 가 이 둘만 사용 → 새 필드 추가 = Rust 빌더 한 곳만 고치면 admin·hub 자동. SSE result 이벤트로 프론트엔드 전달. 학습 데이터(`data/logs/training-*.jsonl`) 자동 저장.
 
 ---
 

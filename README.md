@@ -281,7 +281,7 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 
 Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot **widget** or a full-screen **page** (`/<slug>`). Each anonymous visitor gets a **per-device account** (localStorage session) with fully isolated data — notes, calendar, recall, library, pages, gallery, cron, conversations — never shared across admin↔visitor, visitor↔visitor, or device↔device.
 
-- **Single shared logic** — hub reuses the admin chat + panels; one fix applies to both (no separate hub patching).
+- **Single shared logic** — hub reuses the admin chat + panels; one fix applies to both (no separate hub patching). Message persistence is single-source too: both paths serialize through one canonical builder (`AiResponse::message_data_json`), so a new field can't drift onto only one side.
 - **Owner-scoping enforced in Rust core** — every hub op carries `owner = hub:<instance>:<session>`; the gRPC service layer rejects cross-tenant access (`permission_denied`). The frontend only forwards the owner — never bypassable.
 - **Single policy gate** (`permits_tool`, identical for FC and MCP paths) — ① always-on core tools (notes/calendar + owner-scoped writes) / ② per-hub opt-in external sysmods / ③ denied: Vault/secrets, arbitrary network, admin/system tools.
 - **Knowledge-base sharing** — admin grants library references per hub; the widget answers from the admin's docs (visitor's own uploads ∪ admin-shared, in one search).
