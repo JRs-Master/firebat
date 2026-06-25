@@ -167,6 +167,10 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
   const [inputValues, setInputValues] = useState<Record<number, string[]>>({});  // idx → 여러 칸 배열
   const [customInput, setCustomInput] = useState('');  // 순수 선택지(string-only) 카드의 "직접 입력" 칸
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  // aggregate 카드(전송 버튼 있음)에서 선택된 plain string 단축(예: "추천대로"/"전부")의 인덱스.
+  // 단독(string-only) 카드는 클릭=즉시 전송이지만, 전송 버튼이 있는 카드에선 토글처럼 select→전송 이라야
+  // 일관됨 — 즉시 발사하면 카드가 잠기며 전송 버튼이 사라져 혼란(사용자 보고). ✓/✕ 액션 마커는 즉시 유지.
+  const [selectedStringIdx, setSelectedStringIdx] = useState<number | null>(null);
 
   // aggregate 항목 (toggle / input / plan-revise) 가 하나라도 있으면 카드 하단 전송 버튼 노출
   const hasAggregate = suggestions.some(it => typeof it !== 'string' && (it.type === 'toggle' || it.type === 'input' || it.type === 'plan-revise'));
@@ -196,12 +200,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     setToggleValues(tInit);
     setInputValues(iInit);
     setCustomInput('');
+    setSelectedStringIdx(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sigKey]);
 
   const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
   const toggleOption = (idx: number, opt: string) => {
+    setSelectedStringIdx(null); // 수동 토글 선택 = 단축 string 선택 해제 (상호배타)
     const item = suggestions[idx];
     const single = typeof item !== 'string' && item.type === 'toggle' && !!item.single;
     setToggleValues(prev => {
@@ -244,6 +250,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
 
   // 카드 전체 aggregate 전송 — 모든 toggle + input 값을 label 기준으로 묶어 newline join
   const hasAnyContent = () => {
+    if (selectedStringIdx !== null) return true; // 단축 string 선택됨 → 전송 가능
     for (let i = 0; i < suggestions.length; i++) {
       const item = suggestions[i];
       if (typeof item === 'string') continue;
@@ -254,6 +261,11 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
   };
 
   const handleAggregateSubmit = () => {
+    // 단축 string(예: "추천대로"/"전부")이 선택돼 있으면 그것만 전송 — 터미널 선택이라 토글/입력 무시(상호배타).
+    if (selectedStringIdx !== null) {
+      const sel = suggestions[selectedStringIdx];
+      if (typeof sel === 'string') { onSuggestion?.(sel); return; }
+    }
     const parts: string[] = [];
     suggestions.forEach((item, i) => {
       if (typeof item === 'string') return;
@@ -367,21 +379,34 @@ function SuggestionButtons({ suggestions, loading, onSuggestion, fullWidth, pick
     <div className={`border border-blue-200/60 rounded-2xl overflow-hidden bg-gradient-to-br from-white to-blue-50/40 shadow-sm w-full ${fullWidth ? '' : 'max-w-md sm:ml-auto'}`}>
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
-          // 단일 버튼 — 즉시 전송. 신호등: ✓=emerald(승인) / ✕=rose(취소) / 그 외=기본(blue). 플랜카드 soft 톤 매칭.
+          // 신호등: ✓=emerald(승인) / ✕=rose(취소) / 그 외=기본(blue). 플랜카드 soft 톤 매칭.
           const mk = item.trimStart();
           const isCancel = /^[✕✗×]/.test(mk);
           const isApprove = /^✓/.test(mk);
+          // 전송 버튼이 있는(aggregate) 카드 + 액션 마커 아닌 plain string = select→전송(즉시 발사 X).
+          // 마커(✓/✕) string·단독 카드는 즉시 전송 유지.
+          const selectMode = hasAggregate && !isCancel && !isApprove;
+          const isSel = selectMode && selectedStringIdx === i;
           const btnCls = isCancel
             ? 'text-rose-700 bg-rose-50/50 hover:bg-rose-100 hover:text-rose-800'
             : isApprove
               ? 'text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 hover:text-emerald-800'
-              : 'text-slate-700 hover:bg-blue-50/70 hover:text-blue-800';
+              : isSel
+                ? 'text-blue-700 bg-blue-50'
+                : 'text-slate-700 hover:bg-blue-50/70 hover:text-blue-800';
           const arrowCls = isCancel ? 'text-rose-300 group-hover:text-rose-500' : isApprove ? 'text-emerald-300 group-hover:text-emerald-500' : 'text-blue-300 group-hover:text-blue-500';
+          const onClick = selectMode
+            ? () => setSelectedStringIdx(prev => {
+                const next = prev === i ? null : i;
+                if (next !== null) setToggleValues({}); // 단축 선택 = 수동 토글 해제 (상호배타)
+                return next;
+              })
+            : () => onSuggestion?.(item);
           return (
-            <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
+            <button key={i} onClick={onClick} disabled={loading}
               className={`group w-full flex items-center justify-between gap-2 px-4 py-3 text-left text-[13px] font-medium transition-colors disabled:opacity-50 border-b border-blue-100/70 last:border-b-0 ${btnCls}`}>
               <span className="min-w-0">{item}</span>
-              <span className={`shrink-0 transition-colors ${arrowCls}`} aria-hidden>›</span>
+              <span className={`shrink-0 transition-colors ${isSel ? 'text-blue-600' : arrowCls}`} aria-hidden>{isSel ? '✓' : '›'}</span>
             </button>
           );
         }
