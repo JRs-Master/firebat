@@ -536,6 +536,9 @@ impl HubManager {
             "suggestions": response.suggestions,
             "libraryHits": response.library_hits,
             "pendingActions": response.pending_actions,
+            // Project Builder 카드 영속 — 옛엔 누락이라 reconcile/reload 가 라이브 buildSession 을
+            // bs=None 으로 덮어 PB 카드가 suggest 칩으로 바뀌던 root. admin route(mergedData)와 동일하게 저장.
+            "buildSession": response.build_session,
         });
         let _ = self
             .append_system_message(
