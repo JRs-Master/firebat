@@ -4,7 +4,7 @@ import { createClient } from '@connectrpc/connect';
 import { AiService } from '../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../lib/api-gen/_transport';
 import { getConversation, saveConversation } from '../../../../lib/api-gen/conversation';
-import { unBigInt } from '../../../../lib/api-gen/_unbigint';
+import { relayChatStream } from '../../../../lib/util/chat-stream-relay';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
 // Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.
@@ -116,112 +116,54 @@ function handleToolsMode(
           opts: { optsJson: JSON.stringify(opts ?? {}) },
         } as any);
 
-        let finalResult: {
-          success?: boolean;
-          reply?: string;
-          executedActions?: unknown;
-          toolResults?: unknown;
-          libraryHits?: unknown;
-          blocks?: unknown;
-          suggestions?: unknown;
-          pendingActions?: unknown;
-          buildSession?: unknown;
-          data?: unknown;
-          error?: string;
-        } | null = null;
-        let stepIndex = 0;
+        // 공유 relay — chunk/step/result/error 루프 + canonical data 기반 result 이벤트.
+        // hub route 와 동일 헬퍼 (admin·hub 공통 로직). 반환 = 파싱된 최종 result (영속용).
+        const result = await relayChatStream(aiStream, send);
 
-        for await (const ev of aiStream) {
-          const evt: any = unBigInt(ev);
-          const oneof = evt?.event;
-          if (!oneof) continue;
-          if (oneof.case === 'chunk') {
-            const v = oneof.value;
-            send('chunk', { type: v.eventType, content: v.content });
-          } else if (oneof.case === 'step') {
-            const v = oneof.value;
-            const stepStart = v.status === 'start';
-            send('step', {
-              index: stepIndex,
-              type: v.name,
-              status: v.status,
-              description: v.description ?? v.name,
-              error: v.errorMessage ?? undefined,
+        // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
+        // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
+        // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
+        // hub 는 Rust(append_system_message)가 영속화 — admin 만 여기서 conversations 테이블에 저장.
+        if (result && opts.conversationId && saveOpts?.systemId) {
+          try {
+            // data = Rust canonical message-data (relay 가 result 이벤트에 보낸 것과 동일 소스).
+            const mergedData: Record<string, unknown> =
+              result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
+            // user 메시지 + system(AI 응답) 메시지 쌍 저장
+            const userMsg = saveOpts.userId && saveOpts.userPrompt
+              ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}), ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}) }
+              : null;
+            // suggestions / pendingActions / libraryHits top-level — reload 후에도 ✓실행 버튼·승인 카드·
+            // SourceTags 뱃지 복원 (렌더가 top-level 에서 읽음). blocks 는 data 에서 렌더.
+            const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
+            const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
+            const libraryHitsArr = Array.isArray(result.libraryHits) ? (result.libraryHits as unknown[]) : undefined;
+            const systemMsg = {
+              id: saveOpts.systemId,
+              role: 'system' as const,
+              content: result.reply || '',
+              executedActions: result.executedActions,
+              toolResults: result.toolResults,
+              data: mergedData,
+              ...(suggestionsArr && suggestionsArr.length > 0 ? { suggestions: suggestionsArr } : {}),
+              ...(pendingArr && pendingArr.length > 0 ? { pendingActions: pendingArr } : {}),
+              ...(libraryHitsArr && libraryHitsArr.length > 0 ? { libraryHits: libraryHitsArr } : {}),
+              ...(result.error ? { error: result.error } : {}),
+            };
+            const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
+            // 기존 title 유지 — 없으면 첫 user 메시지 기반.
+            const owner = opts.owner || 'admin';
+            const existing = await getConversation({ owner, id: opts.conversationId });
+            const existingTitle = existing.ok && existing.data ? existing.data.title : '';
+            const title = existingTitle
+              || ((saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : ''));
+            await saveConversation({
+              owner,
+              id: opts.conversationId,
+              title,
+              messagesJson: JSON.stringify(msgs),
             });
-            if (!stepStart) stepIndex++;
-          } else if (oneof.case === 'result') {
-            try {
-              finalResult = JSON.parse(oneof.value.rawJson);
-            } catch (e) {
-              send('error', { error: `result JSON 파싱 실패: ${(e as Error).message}` });
-            }
-          } else if (oneof.case === 'error') {
-            send('error', { error: oneof.value.errorMessage });
-          }
-        }
-
-        if (finalResult) {
-          const result = finalResult;
-          // Rust ships the canonical message-data (AiResponse::message_data_json) on the result
-          // event's `data`. Use it verbatim — re-deriving here is exactly what dropped
-          // buildSession/libraryHits between the admin and hub paths. Fallback {} only for an
-          // older core without `data`.
-          const mergedData: Record<string, unknown> =
-            result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
-          send('result', {
-            success: result.success,
-            reply: result.reply,
-            executedActions: result.executedActions,
-            toolResults: result.toolResults,
-            libraryHits: result.libraryHits,
-            data: mergedData,
-            suggestions: result.suggestions,
-            error: result.error,
-          });
-
-          // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
-          // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
-          // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
-          if (opts.conversationId && saveOpts?.systemId) {
-            try {
-              // user 메시지 + system(AI 응답) 메시지 쌍 저장
-              const userMsg = saveOpts.userId && saveOpts.userPrompt
-                ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}), ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}) }
-                : null;
-              // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원.
-              // `data` 안 mergedData 그대로 (top-level blocks / suggestions / pendingActions
-              // mirror — frontend `ev.data.data.blocks` 매핑 호환).
-              const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
-              const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
-              const libraryHitsArr = Array.isArray(result.libraryHits) ? (result.libraryHits as unknown[]) : undefined;
-              const systemMsg = {
-                id: saveOpts.systemId,
-                role: 'system' as const,
-                content: result.reply || '',
-                executedActions: result.executedActions,
-                toolResults: result.toolResults,
-                data: mergedData,
-                ...(suggestionsArr && suggestionsArr.length > 0 ? { suggestions: suggestionsArr } : {}),
-                ...(pendingArr && pendingArr.length > 0 ? { pendingActions: pendingArr } : {}),
-                // libraryHits top-level so reload shows SourceTags badges (admin previously dropped them).
-                ...(libraryHitsArr && libraryHitsArr.length > 0 ? { libraryHits: libraryHitsArr } : {}),
-                ...(result.error ? { error: result.error } : {}),
-              };
-              const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
-              // 기존 title 유지 — 없으면 첫 user 메시지 기반.
-              const owner = opts.owner || 'admin';
-              const existing = await getConversation({ owner, id: opts.conversationId });
-              const existingTitle = existing.ok && existing.data ? existing.data.title : '';
-              const title = existingTitle
-                || ((saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : ''));
-              await saveConversation({
-                owner,
-                id: opts.conversationId,
-                title,
-                messagesJson: JSON.stringify(msgs),
-              });
-            } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
-          }
+          } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
         }
       } catch (err: any) {
         send('error', { error: err?.message || '알 수 없는 오류' });

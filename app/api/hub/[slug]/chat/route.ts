@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@connectrpc/connect';
 import { HubService } from '../../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../../lib/api-gen/_transport';
-import { unBigInt } from '../../../../../lib/api-gen/_unbigint';
+import { relayChatStream } from '../../../../../lib/util/chat-stream-relay';
 import { logger } from '../../../../../lib/util/logger';
 
 // AI 응답 대기 시간 고려 (CLI 모드 멀티턴 도구 호출 포함 가능). admin chat 과 동일.
@@ -133,57 +133,9 @@ function streamResponse(args: {
           aiMsgId,
         } as any);
 
-        let finalResult: Record<string, unknown> | null = null;
-        let stepIndex = 0;
-
-        for await (const ev of aiStream) {
-          const evt: any = unBigInt(ev);
-          const oneof = evt?.event;
-          if (!oneof) continue;
-          if (oneof.case === 'chunk') {
-            const v = oneof.value;
-            send('chunk', { type: v.eventType, content: v.content });
-          } else if (oneof.case === 'step') {
-            const v = oneof.value;
-            send('step', {
-              index: stepIndex,
-              type: v.name,
-              status: v.status,
-              description: v.description ?? v.name,
-              error: v.errorMessage ?? undefined,
-            });
-            if (v.status !== 'start') stepIndex++;
-          } else if (oneof.case === 'result') {
-            try {
-              finalResult = JSON.parse(oneof.value.rawJson);
-            } catch (e) {
-              send('error', { error: `result JSON 파싱 실패: ${(e as Error).message}` });
-            }
-          } else if (oneof.case === 'error') {
-            send('error', { error: oneof.value.errorMessage });
-          }
-        }
-
-        if (finalResult) {
-          const result = finalResult;
-          const reply = typeof result.reply === 'string' ? result.reply : '';
-          // Rust ships the canonical message-data on the result event's `data`
-          // (AiResponse::message_data_json) — same single source as the admin path. Use it
-          // verbatim; re-deriving here is what dropped buildSession/libraryHits before.
-          const mergedData: Record<string, unknown> = (result.data && typeof result.data === 'object')
-            ? result.data as Record<string, unknown>
-            : {};
-          send('result', {
-            success: result.success !== false,
-            reply,
-            executedActions: result.executedActions,
-            toolResults: result.toolResults,
-            libraryHits: result.libraryHits,
-            data: mergedData,
-            suggestions: result.suggestions,
-            error: typeof result.error === 'string' ? result.error : undefined,
-          });
-        }
+        // 공유 relay — chunk/step/result/error 루프 + canonical data 기반 result 이벤트 (admin 과 동일 헬퍼).
+        // 영속화는 Rust(HubManager.send_message → append_system_message)가 처리 → 반환값 사용 안 함(admin 만 TS 저장).
+        await relayChatStream(aiStream, send);
       } catch (err) {
         const msg = (err as Error)?.message ?? '알 수 없는 오류';
         // 인증 단계(streaming RPC 시작 전) UNAUTHORIZED_ORIGIN: sentinel — 무단 임베드 시 403 대신
