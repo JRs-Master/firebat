@@ -473,6 +473,27 @@ impl HubManager {
         // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
         let conv = self.port.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
+
+        // Set the conversation title from the first user message — same behaviour as the admin
+        // chat path (existingTitle || derived). hub previously never persisted a title, so
+        // hub_conversations.title stayed NULL and the visitor's chat list showed every entry as
+        // "새 대화" (admin sets it in the TS route; the hub Rust path was missing it = drift).
+        // Set only when empty so it stays put on later turns. char-based slice — byte slicing
+        // panics on a Korean char boundary.
+        let title_empty = conv
+            .as_ref()
+            .map(|c| c.title.as_deref().unwrap_or("").trim().is_empty())
+            .unwrap_or(true);
+        if title_empty {
+            let trimmed = user_message.trim();
+            if !trimmed.is_empty() {
+                let mut title: String = trimmed.chars().take(28).collect();
+                if trimmed.chars().count() > 28 {
+                    title.push('…');
+                }
+                let _ = self.port.update_conversation_title(conversation_id, &title).await;
+            }
+        }
         // owner = hub:<instance>:<session> (세션 단위 격리) — tool 주입(ai.rs)·library route 와 통일.
         // 옛 hub:<instance> (세션 없음) 은 per-tool 주입과 어긋나던 drift 였음.
         let owner = format!("hub:{}:{}", instance.id, session_id);
