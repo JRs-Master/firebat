@@ -149,6 +149,39 @@ pub struct AiResponse {
     pub build_session: Option<serde_json::Value>,
 }
 
+impl AiResponse {
+    /// Canonical `message.data` payload — the single source for every persistence and
+    /// transport surface (streaming result event, hub_messages, admin conversations).
+    /// It is a superset so neither admin nor hub drifts: `blocks` and `buildSession` are
+    /// read from `data`, while the badges (executedActions/toolResults/libraryHits/
+    /// suggestions/pendingActions) are mirrored here too so hub's data_json round-trips
+    /// (mapHubMessages reconstructs the message from data alone). Every key is always
+    /// emitted (unlike the struct's skip_serializing_if) so the shape stays stable.
+    pub fn message_data_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "blocks": self.blocks,
+            "executedActions": self.executed_actions,
+            "toolResults": self.tool_results,
+            "suggestions": self.suggestions,
+            "pendingActions": self.pending_actions,
+            "libraryHits": self.library_hits,
+            "buildSession": self.build_session,
+        })
+    }
+
+    /// Wire JSON for a result event: the serialized response plus the canonical `data`
+    /// object, so every transport (admin/hub, unary/stream) exposes one message-data shape
+    /// and consumers persist `data` verbatim instead of re-deriving it (the source of the
+    /// buildSession/libraryHits drift between the two paths).
+    pub fn to_result_json(&self) -> String {
+        let mut v = serde_json::to_value(self).unwrap_or_else(|_| serde_json::json!({}));
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("data".to_string(), self.message_data_json());
+        }
+        v.to_string()
+    }
+}
+
 /// AiResponse 안 모든 사용자 노출 string 필드 안 시크릿 / 토큰 마스킹. process_with_tools_opts
 /// 종료 직전 단일 게이트 — 외부 API 응답 본문 안 api-key / customer-id / Bearer / JWT / sk-* /
 /// AIza* / Telegram bot token 등이 도구 결과 / 에러 메시지 / reply / blocks 안에 그대로 흘러가

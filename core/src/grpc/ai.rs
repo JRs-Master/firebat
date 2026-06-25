@@ -110,7 +110,7 @@ impl AiService for AiServiceImpl {
             .await
         {
             Ok(response) => Ok(Response::new(AiRequestActionWithToolsResponse {
-                raw_json: to_raw_json(&response),
+                raw_json: response.to_result_json(),
             })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -189,7 +189,7 @@ impl AiService for AiServiceImpl {
                 Some(Ok(response)) => {
                     yield Ok(AiStreamEventPb {
                         event: Some(AiStreamEventOneof::Result(AiResultEventPb {
-                            raw_json: to_raw_json(&response),
+                            raw_json: response.to_result_json(),
                         })),
                     });
                 }

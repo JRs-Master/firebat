@@ -526,20 +526,11 @@ impl HubManager {
             .process_with_tools_opts_with_emit(user_message, &[], &llm_opts, &ai_opts, emit)
             .await?;
 
-        // AI 응답을 hub_messages 에 영속화. data_json = blocks + tool_results + suggestions + pendingActions.
-        // pendingActions(plan 승인 카드 등)도 저장 — reload 시 카드 복원 (옛엔 미영속이라 F5 하면 plan 승인 카드 사라짐).
-        // plan 본체는 plan_store(in-memory)라 같은 세션 내 실행은 정상, 서버 재시작 후엔 plan 만료로 재클릭이 graceful reject.
-        let data_payload = serde_json::json!({
-            "executedActions": response.executed_actions,
-            "toolResults": response.tool_results,
-            "blocks": response.blocks,
-            "suggestions": response.suggestions,
-            "libraryHits": response.library_hits,
-            "pendingActions": response.pending_actions,
-            // Project Builder 카드 영속 — 옛엔 누락이라 reconcile/reload 가 라이브 buildSession 을
-            // bs=None 으로 덮어 PB 카드가 suggest 칩으로 바뀌던 root. admin route(mergedData)와 동일하게 저장.
-            "buildSession": response.build_session,
-        });
+        // Persist the AI response into hub_messages using the canonical message-data builder
+        // (AiResponse::message_data_json) — the same single source the admin path now consumes,
+        // so a new field can never be dropped on one side again (the buildSession/libraryHits
+        // drift root). Includes blocks/suggestions/pendingActions/buildSession so cards survive reload.
+        let data_payload = response.message_data_json();
         let _ = self
             .append_system_message(
                 conversation_id,

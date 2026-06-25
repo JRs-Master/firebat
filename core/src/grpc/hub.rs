@@ -546,10 +546,8 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
 
-        // 5. raw_json 영역 직렬화 (admin chat 영역 동일 포맷)
-        let raw_json = serde_json::to_string(&response).map_err(|e| {
-            TonicStatus::internal(format!("AiResponse 직렬화 실패: {e}"))
-        })?;
+        // 5. Serialize with the canonical `data` object — same single-source shape as admin chat.
+        let raw_json = response.to_result_json();
 
         Ok(Response::new(HubSendMessageResponse {
             conversation_id,
@@ -661,7 +659,7 @@ impl HubService for HubServiceImpl {
             }
             match final_rx.recv().await {
                 Some(Ok(response)) => {
-                    let raw_json = serde_json::to_string(&response).unwrap_or_else(|_| "null".to_string());
+                    let raw_json = response.to_result_json();
                     yield Ok(HubStreamEventPb {
                         event: Some(HubStreamEventOneof::Result(AiResultEventPb { raw_json })),
                     });

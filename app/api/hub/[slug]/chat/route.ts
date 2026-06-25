@@ -167,25 +167,18 @@ function streamResponse(args: {
         if (finalResult) {
           const result = finalResult;
           const reply = typeof result.reply === 'string' ? result.reply : '';
-          const passthroughData = (result.data && typeof result.data === 'object')
+          // Rust ships the canonical message-data on the result event's `data`
+          // (AiResponse::message_data_json) — same single source as the admin path. Use it
+          // verbatim; re-deriving here is what dropped buildSession/libraryHits before.
+          const mergedData: Record<string, unknown> = (result.data && typeof result.data === 'object')
             ? result.data as Record<string, unknown>
             : {};
-          // admin /api/chat/stream 의 result event 형식과 동일 — top-level + data 안 mirror.
-          const mergedData: Record<string, unknown> = {
-            ...passthroughData,
-            blocks: result.blocks,
-            suggestions: result.suggestions,
-            pendingActions: result.pendingActions,
-            // Project Builder stepper — page.tsx 가 msg.data.buildSession 을 읽음. admin route 엔
-            // 있는데(2af946b) hub 엔 빠져 있어, start_build 가 불려도 PB 카드가 hub 에서 절대 안 떴음
-            // (2026-06-19 진단). admin 과 동일 미러.
-            ...(result.buildSession ? { buildSession: result.buildSession } : {}),
-          };
           send('result', {
             success: result.success !== false,
             reply,
             executedActions: result.executedActions,
             toolResults: result.toolResults,
+            libraryHits: result.libraryHits,
             data: mergedData,
             suggestions: result.suggestions,
             error: typeof result.error === 'string' ? result.error : undefined,

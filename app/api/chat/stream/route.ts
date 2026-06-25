@@ -121,6 +121,7 @@ function handleToolsMode(
           reply?: string;
           executedActions?: unknown;
           toolResults?: unknown;
+          libraryHits?: unknown;
           blocks?: unknown;
           suggestions?: unknown;
           pendingActions?: unknown;
@@ -161,21 +162,18 @@ function handleToolsMode(
 
         if (finalResult) {
           const result = finalResult;
-          const passthroughData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
-          const mergedData: Record<string, unknown> = {
-            ...passthroughData,
-            blocks: result.blocks,
-            suggestions: result.suggestions,
-            pendingActions: result.pendingActions,
-            // Project Builder stepper — page.tsx reads msg.data.buildSession. 이 mirror 가 없으면 Rust 가
-            // AiResponse.buildSession 을 보내도 frontend 에 전달 안 돼 빌드 카드가 절대 안 뜬다.
-            ...(result.buildSession ? { buildSession: result.buildSession } : {}),
-          };
+          // Rust ships the canonical message-data (AiResponse::message_data_json) on the result
+          // event's `data`. Use it verbatim — re-deriving here is exactly what dropped
+          // buildSession/libraryHits between the admin and hub paths. Fallback {} only for an
+          // older core without `data`.
+          const mergedData: Record<string, unknown> =
+            result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
           send('result', {
             success: result.success,
             reply: result.reply,
             executedActions: result.executedActions,
             toolResults: result.toolResults,
+            libraryHits: result.libraryHits,
             data: mergedData,
             suggestions: result.suggestions,
             error: result.error,
@@ -195,6 +193,7 @@ function handleToolsMode(
               // mirror — frontend `ev.data.data.blocks` 매핑 호환).
               const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
               const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
+              const libraryHitsArr = Array.isArray(result.libraryHits) ? (result.libraryHits as unknown[]) : undefined;
               const systemMsg = {
                 id: saveOpts.systemId,
                 role: 'system' as const,
@@ -204,6 +203,8 @@ function handleToolsMode(
                 data: mergedData,
                 ...(suggestionsArr && suggestionsArr.length > 0 ? { suggestions: suggestionsArr } : {}),
                 ...(pendingArr && pendingArr.length > 0 ? { pendingActions: pendingArr } : {}),
+                // libraryHits top-level so reload shows SourceTags badges (admin previously dropped them).
+                ...(libraryHitsArr && libraryHitsArr.length > 0 ? { libraryHits: libraryHitsArr } : {}),
                 ...(result.error ? { error: result.error } : {}),
               };
               const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
