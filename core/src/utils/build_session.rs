@@ -378,7 +378,7 @@ pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
 **Choose the chip type that fits the choice — your call**: when several features are combinable, use a multi-select `toggle` so the user checks many then submits once; when it is a single mutually-exclusive pick, plain string chips are fine. **Ask everything in this one set — do NOT split into follow-up questions across turns.** \
 At the same time classify the complexity tier — T1=simple page (render/html, no external module) / T2=calls existing modules·services / T3=needs a new user module (code generation). \
 **Do NOT call advance_build before the user responds** (the engine allows only one step per turn). The next step is Design. \
-When the user responds (toggle submit or a shortcut), call advance_build(tier, output=chosen features, auto=true if the user picked 'just do it all')."
+When the user responds, call advance_build(tier, output=chosen features). **Set auto=true if the user picked EITHER shortcut — 'proceed with the recommendation' OR 'just do it all' — both mean \"you decide the rest, do NOT ask me again\", so the remaining steps must run automatically to completion (one-shot). auto=false ONLY when the user made a specific selection (chose particular options) and wants to keep choosing the next steps.**"
             .to_string(),
         BuildStep::Design => {
             let tier_hint = match tier {
@@ -390,7 +390,7 @@ When the user responds (toggle submit or a shortcut), call advance_build(tier, o
             format!("S2 Design selection: **present design/theme options as suggest chips** and let the user choose (include 'proceed with the recommendation'). {tier_hint} \
 **Components vs the `html` app**: the built-in render components (table, chart, gallery, KPI metric/grid, form, tabs, accordion, list, map, etc.) render standard data/UI and are interactive + centrally maintained; the `html` component is a custom app for bespoke UI/logic a component can't express — a game, a custom canvas/animation, a novel interaction. \
 **Chip types — pick per the choice's nature, do NOT hardcode single vs multi**: the MAIN theme/style is normally ONE pick → use a single-select toggle (a toggle with single:true — a radio: one choice, submitted together with other groups) so it can coexist with auxiliary groups under one submit. If multiple themes can sensibly apply together, use a multi-select toggle instead (no single flag). Add a separate multi-select toggle for genuinely combinable auxiliary options ONLY IF useful — your call whether to offer them. Do NOT use plain string chips for the main theme (a string chip sends immediately and cannot combine with other groups in one submit); reserve string chips for standalone shortcuts like 'proceed with the recommendation'. \
-**No advance_build before selection** — present the chips and wait. The next step is Refine (final additions). When the user chooses, call advance_build(output=design choice).")
+**No advance_build before selection** — present the chips and wait. The next step is Refine (final additions). When the user chooses, call advance_build(output=design choice). **Set auto=true if they picked the 'proceed with the recommendation' shortcut (= \"you finish the rest\", one-shot to completion); auto=false for a specific design pick.**")
         }
         BuildStep::Refine => "S3 Refine — final additions before building (NOT a post-build fix loop). Proactively suggest \
 commonly-missed extras for THIS app type as suggest chips — \
