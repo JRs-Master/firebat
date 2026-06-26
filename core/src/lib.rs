@@ -8,6 +8,7 @@
 //! 의존 단방향 — `infra → core`. core 는 trait 만 정의, infra 가 implement.
 
 pub mod ports;
+pub mod principal;
 pub mod managers;
 pub mod grpc;
 pub mod i18n;
