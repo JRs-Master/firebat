@@ -205,6 +205,8 @@ impl SqliteDatabaseAdapter {
             };
             rows.filter_map(|r| r.ok()).collect()
         };
+        let mut conv_count = 0usize;
+        let mut msg_count = 0usize;
         for (conv_id, blob) in pending {
             let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&blob) else {
                 continue;
@@ -223,12 +225,22 @@ impl SqliteDatabaseAdapter {
                     .to_string();
                 let created = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
                 let data_json = serde_json::to_string(m).unwrap_or_default();
-                let _ = conn.execute(
+                if let Ok(affected) = conn.execute(
                     "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
                     params![mid, conv_id, role, content, data_json, created],
-                );
+                ) {
+                    msg_count += affected;
+                }
             }
+            conv_count += 1;
+        }
+        // hub 백필(main.rs)과 대칭 — 실제 이전 있을 때만 로그(매 부팅 노이즈 0, 배포 첫 부팅 검증용).
+        if conv_count > 0 {
+            tracing::info!(
+                category = "conversation",
+                "conversation 백필 완료 — {conv_count} 대화 / {msg_count} 메시지 통합 store 반영"
+            );
         }
     }
 
