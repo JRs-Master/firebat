@@ -213,7 +213,8 @@ impl SqliteMemoryAdapter {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 expose_widget INTEGER NOT NULL DEFAULT 1,       -- 1=widget 임베드 노출, 0=숨김
-                expose_page INTEGER NOT NULL DEFAULT 1          -- 1=/hub/{slug} 풀스크린 노출, 0=숨김
+                expose_page INTEGER NOT NULL DEFAULT 1,         -- 1=/hub/{slug} 풀스크린 노출, 0=숨김
+                kind TEXT NOT NULL DEFAULT 'widget'             -- 'tenant'(full workspace) | 'widget'(embed chatbot)
             );
             CREATE INDEX IF NOT EXISTS idx_hub_instances_slug ON hub_instances(slug);
             CREATE INDEX IF NOT EXISTS idx_hub_instances_updated ON hub_instances(updated_at DESC);
@@ -256,6 +257,12 @@ impl SqliteMemoryAdapter {
         // 예외 — content_hash (중복 업로드 dedup, 2026-06): 라이브러리 자료가 이미 쌓인 운영 DB 보존을
         // 위해 신규 nullable 컬럼만 defensive ALTER (이미 있으면 무시). 자료 손실 없이 dedup 활성.
         let _ = conn.execute("ALTER TABLE library_sources ADD COLUMN content_hash TEXT", []);
+        // hub_instances.kind (2026-06-26) — tenant/widget 분리. 기존 DB 는 CREATE TABLE 가 no-op 라
+        // defensive ALTER (이미 있으면 무시). NOT NULL + DEFAULT 라 기존 행은 자동으로 'widget'.
+        let _ = conn.execute(
+            "ALTER TABLE hub_instances ADD COLUMN kind TEXT NOT NULL DEFAULT 'widget'",
+            [],
+        );
         // content_hash 인덱스는 컬럼 보장(ALTER) 후 생성. 옛 DB 는 CREATE TABLE 가 no-op 라 batch 안에서
         // 만들면 컬럼 부재로 schema init 전체가 실패(crash) — ALTER 뒤로 분리해야 fresh/기존 DB 모두 안전.
         let _ = conn.execute(

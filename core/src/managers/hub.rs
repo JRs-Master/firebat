@@ -57,6 +57,8 @@ pub struct CreateInstanceInput {
     // 노출 형태 — None = default true (양쪽 노출 시작)
     pub expose_widget: Option<bool>,
     pub expose_page: Option<bool>,
+    // instance kind — None = 'widget'(기본). 'tenant' = 풀 워크스페이스.
+    pub kind: Option<String>,
 }
 
 /// 부분 update — 매 필드 Option (None = 변경 X). enabled / api_token 영역 별도 토글 메서드.
@@ -72,6 +74,7 @@ pub struct UpdateInstanceInput {
     pub allowed_domains: Option<Vec<String>>,
     pub expose_widget: Option<bool>,
     pub expose_page: Option<bool>,
+    pub kind: Option<String>,
 }
 
 pub struct HubManager {
@@ -145,6 +148,8 @@ impl HubManager {
             // 노출 형태 default — 둘 다 true (새 instance 양쪽 노출 시작)
             expose_widget: input.expose_widget.unwrap_or(true),
             expose_page: input.expose_page.unwrap_or(true),
+            // 기본 'widget' — admin 이 명시 'tenant' 로 승격해야 풀 워크스페이스.
+            kind: input.kind.unwrap_or_else(|| "widget".to_string()),
         };
         self.port.create_instance(&instance).await?;
         Ok(id)
@@ -205,6 +210,9 @@ impl HubManager {
         }
         if let Some(v) = patch.expose_page {
             current.expose_page = v;
+        }
+        if let Some(v) = patch.kind {
+            current.kind = v;
         }
         current.updated_at = Self::now_ms();
         self.port.update_instance(&current).await

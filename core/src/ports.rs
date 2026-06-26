@@ -2651,6 +2651,13 @@ pub struct HubInstance {
     // 노출 형태 — 한 instance 가 widget / page 둘 다 활성 가능. default 둘 다 true.
     pub expose_widget: bool,                // 외부 사이트 임베드 풍선 widget (allowed_domains 검증)
     pub expose_page: bool,                  // 우리 사이트 풀스크린 URL `/<slug>` (self host 자동 허용)
+    // instance kind — 'tenant'(full workspace, admin logic scoped to its own owner) | 'widget'(embed chatbot, allowlist).
+    #[serde(default = "default_hub_kind")]
+    pub kind: String,
+}
+
+fn default_hub_kind() -> String {
+    "widget".to_string()
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

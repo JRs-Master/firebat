@@ -111,8 +111,8 @@ impl IHubPort for SqliteHubAdapter {
                 id, slug, name, description, system_prompt,
                 allowed_references, allowed_sysmods, model_id, enabled,
                 api_token, allowed_domains, created_at, updated_at,
-                expose_widget, expose_page
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                expose_widget, expose_page, kind
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 instance.id,
                 instance.slug,
@@ -129,6 +129,7 @@ impl IHubPort for SqliteHubAdapter {
                 instance.updated_at,
                 instance.expose_widget as i64,
                 instance.expose_page as i64,
+                instance.kind,
             ],
         )
         .map_err(|e| format!("hub_instances insert: {e}"))?;
@@ -142,7 +143,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page
+                        expose_widget, expose_page, kind
                  FROM hub_instances
                  ORDER BY updated_at DESC",
             )
@@ -164,7 +165,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page
+                        expose_widget, expose_page, kind
                  FROM hub_instances WHERE id = ?1",
             )
             .map_err(|e| format!("hub_instances get prepare: {e}"))?;
@@ -179,7 +180,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page
+                        expose_widget, expose_page, kind
                  FROM hub_instances WHERE slug = ?1",
             )
             .map_err(|e| format!("hub_instances get_by_slug prepare: {e}"))?;
@@ -195,8 +196,8 @@ impl IHubPort for SqliteHubAdapter {
                 slug = ?1, name = ?2, description = ?3, system_prompt = ?4,
                 allowed_references = ?5, allowed_sysmods = ?6, model_id = ?7, enabled = ?8,
                 api_token = ?9, allowed_domains = ?10, updated_at = ?11,
-                expose_widget = ?12, expose_page = ?13
-             WHERE id = ?14",
+                expose_widget = ?12, expose_page = ?13, kind = ?14
+             WHERE id = ?15",
             params![
                 instance.slug,
                 instance.name,
@@ -211,6 +212,7 @@ impl IHubPort for SqliteHubAdapter {
                 updated_at,
                 instance.expose_widget as i64,
                 instance.expose_page as i64,
+                instance.kind,
                 instance.id,
             ],
         )
@@ -488,6 +490,7 @@ fn row_to_instance(row: &rusqlite::Row) -> rusqlite::Result<HubInstance> {
         updated_at: row.get(12)?,
         expose_widget: row.get::<_, i64>(13)? != 0,
         expose_page: row.get::<_, i64>(14)? != 0,
+        kind: row.get(15)?,
     })
 }
 
@@ -535,6 +538,7 @@ mod tests {
             updated_at: ts,
             expose_widget: true,
             expose_page: true,
+            kind: "widget".to_string(),
         }
     }
 

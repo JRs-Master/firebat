@@ -2696,6 +2696,7 @@ message HubInstancePb {
   // 노출 형태 (boolean 2개 — 한 instance 가 widget / page 둘 다 활성 가능). default 둘 다 true.
   bool expose_widget = 14;                    // 외부 사이트 임베드 풍선 widget (allowed_domains 검증)
   bool expose_page = 15;                      // 우리 사이트 풀스크린 URL `/<slug>` (self host 자동 허용)
+  string kind = 16;                           // instance kind: 'tenant'(full workspace) | 'widget'(embed chatbot)
 }
 
 message HubConversationPb {
@@ -2731,6 +2732,7 @@ message HubCreateInstanceRequest {
   // 노출 형태 — 미설정 시 default 둘 다 true (양쪽 노출 시작)
   optional bool expose_widget = 10;
   optional bool expose_page = 11;
+  optional string kind = 12;                 // 'tenant' | 'widget'. 미설정 = 'widget'(기본)
 }
 message HubCreateInstanceResponse {
   string id = 1;
@@ -2774,6 +2776,7 @@ message HubUpdateInstanceRequest {
   // 노출 형태 patch (None = 옛 값 유지)
   optional bool expose_widget = 13;
   optional bool expose_page = 14;
+  optional string kind = 15;                 // 'tenant' | 'widget' patch (None = 옛 값 유지)
 }
 message HubUpdateInstanceResponse {}
 
