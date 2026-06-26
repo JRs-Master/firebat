@@ -353,11 +353,40 @@ impl HubManager {
         Ok(conv_id)
     }
 
+    /// app.db ConversationSummary(owner-keyed) → HubConversation. instance/session 은 호출 인자라
+    /// owner 파싱 불필요. title 은 app.db 가 항상 채움(placeholder 최소) → Some.
+    fn summary_to_hub_conv(
+        s: crate::ports::ConversationSummary,
+        instance_id: &str,
+        session_id: &str,
+    ) -> HubConversation {
+        HubConversation {
+            id: s.id,
+            instance_id: instance_id.to_string(),
+            session_id: session_id.to_string(),
+            title: Some(s.title),
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+        }
+    }
+
     pub async fn list_conversations(
         &self,
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
+        // Phase 1 read 전환 — app.db 통합 store(owner-keyed) 우선, 비면 memory.db fallback(손실 0).
+        // 쓰기측 미러(생성·제목·삭제·updated_at)가 완전해야 정확 — 그 보강 후 전환.
+        if let Some(db) = &self.db {
+            let owner = format!("hub:{instance_id}:{session_id}");
+            let rows = db.list_conversations(&owner);
+            if !rows.is_empty() {
+                return Ok(rows
+                    .into_iter()
+                    .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
+                    .collect());
+            }
+        }
         self.port.list_conversations(instance_id, session_id).await
     }
 
@@ -372,6 +401,17 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
+        // Phase 1 read 전환 — app.db 통합 store 우선, 비면 memory.db fallback.
+        if let Some(db) = &self.db {
+            let owner = format!("hub:{instance_id}:{session_id}");
+            let rows = db.list_deleted_conversations(&owner);
+            if !rows.is_empty() {
+                return Ok(rows
+                    .into_iter()
+                    .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
+                    .collect());
+            }
+        }
         self.port
             .list_deleted_conversations(instance_id, session_id)
             .await

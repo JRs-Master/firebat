@@ -652,7 +652,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let Ok(conn) = self.conn.lock() else {
             return false;
         };
-        conn.execute(
+        let ok = conn.execute(
             "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
@@ -667,7 +667,14 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 msg.created_at
             ],
         )
-        .is_ok()
+        .is_ok();
+        // 부모 conversations.updated_at 갱신(뒤로 가지 않게 < 조건) — hub 목록 read-switch 가 활동순
+        // 정렬되게. admin 은 save_conversation 이 갱신하지만 hub append 경로엔 없던 갭.
+        let _ = conn.execute(
+            "UPDATE conversations SET updated_at = ?2 WHERE id = ?1 AND updated_at < ?2",
+            params![msg.conversation_id, msg.created_at],
+        );
+        ok
     }
 
     fn list_conversation_messages(&self, conversation_id: &str) -> Vec<ConversationMessage> {
