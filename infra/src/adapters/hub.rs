@@ -54,7 +54,8 @@ impl SqliteHubAdapter {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 expose_widget INTEGER NOT NULL DEFAULT 1,
-                expose_page INTEGER NOT NULL DEFAULT 1
+                expose_page INTEGER NOT NULL DEFAULT 1,
+                kind TEXT NOT NULL DEFAULT 'widget'
             );
             CREATE TABLE hub_conversations (
                 id TEXT PRIMARY KEY,
