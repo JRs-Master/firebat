@@ -19,6 +19,8 @@ export interface Principal {
   owner: string;
   /** hub widget 의 인증된 instance (admin 은 undefined) — system_prompt/model/allowed_* 필요 시. */
   hubInstance?: HubInstancePb;
+  /** hub 방문자 세션 id (admin 은 undefined) — `<inst>:<sid>` 스코프 직접 조립·RPC 인자용. */
+  sessionId?: string;
 }
 
 /**
@@ -38,6 +40,10 @@ export async function resolvePrincipal(
     }
     if (!sessionId) {
       return NextResponse.json({ error: 'X-Session-Id 헤더가 필요합니다.' }, { status: 400 });
+    }
+    // 형식 검증 — sessionId 가 path 스코프(`<inst>:<sid>`)에 들어가므로 콜론·traversal·과길이 차단(defense-in-depth).
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sessionId)) {
+      return NextResponse.json({ error: '잘못된 X-Session-Id 형식입니다.' }, { status: 400 });
     }
     const origin = req.headers.get('origin') ?? '';
     const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
@@ -59,6 +65,7 @@ export async function resolvePrincipal(
       isAdmin: false,
       owner: `hub:${instance.id}:${sessionId}`,
       hubInstance: instance,
+      sessionId,
     };
   }
 
