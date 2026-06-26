@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runModule } from '../../../../../lib/api-gen/module';
-import { authenticate } from '../../../../../lib/api-gen/hub';
+import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
 /**
@@ -19,29 +19,20 @@ interface Ctx { params: Promise<{ slug: string }> }
 // 자체 host 데이터 sysmod 만 허용. 새 sysmod 추가 시 본 list 갱신 필요.
 const HUB_ALLOWED_SYSMODS = new Set(['notes', 'calendar']);
 
-async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; instance: { id: string; allowedSysmods?: string[] } } | { ok: false; status: number; error: string }> {
-  const apiToken = req.headers.get('x-api-token') ?? '';
-  const sessionId = req.headers.get('x-session-id') ?? '';
-  const origin = req.headers.get('origin') ?? '';
-  const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
-  if (!apiToken) return { ok: false, status: 401, error: 'X-Api-Token 헤더가 필요합니다.' };
-  if (!sessionId) return { ok: false, status: 400, error: 'X-Session-Id 헤더가 필요합니다.' };
-  // 형식 검증 — _hubScope(`<inst>:<sid>`)에 콜론·traversal·과길이 주입 차단(CAL-1 deterministic 경로 경계 방어, sink 와 이중).
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sessionId)) return { ok: false, status: 400, error: '잘못된 X-Session-Id 형식입니다.' };
-  const res = await authenticate({ slug, apiToken, origin, selfHost });
-  if (!res.ok) {
-    const msg = res.message ?? '인증 실패';
-    if (msg.includes('UNAUTHORIZED_ORIGIN:')) return { ok: false, status: 403, error: '허용되지 않은 도메인입니다.' };
-    return { ok: false, status: 401, error: msg };
-  }
-  if (!res.data?.instance) return { ok: false, status: 500, error: 'instance 조회 실패' };
-  return { ok: true, instance: res.data.instance as any };
+async function authHub(
+  req: NextRequest,
+  slug: string,
+): Promise<{ ok: true; instanceId: string; sessionId: string } | { ok: false; response: NextResponse }> {
+  // sessionId 형식 검증(path 스코프 traversal 차단)은 resolvePrincipal 안에 통합됨.
+  const principal = await resolvePrincipal(req, slug);
+  if (isPrincipalError(principal)) return { ok: false, response: principal };
+  return { ok: true, instanceId: principal.hubInstance!.id, sessionId: principal.sessionId! };
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const auth = await authHub(req, slug);
-  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  if (!auth.ok) return auth.response;
 
   let body: Record<string, any> = {};
   try { body = await req.json(); }
@@ -61,11 +52,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   // visitor 별 격리 — _hubScope = `<instance_id>:<session_id>` 자동 주입.
   // sysmod 가 resolveNotesDir / resolveCalDir 안에서 분리 (data/hub/<inst>/<sid>/notes/...).
-  const sessionId = req.headers.get('x-session-id') ?? '';
   const moduleInput = {
     action: String(body.action ?? ''),
     ...body.data,
-    _hubScope: `${auth.instance.id}:${sessionId}`,
+    _hubScope: `${auth.instanceId}:${auth.sessionId}`,
   };
 
   try {
