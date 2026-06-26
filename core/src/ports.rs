@@ -300,6 +300,8 @@ pub trait IDatabasePort: Send + Sync {
     fn list_conversation_messages(&self, conversation_id: &str) -> Vec<ConversationMessage>;
     /// 통합 store 대화 row 멱등 생성 (이미 있으면 no-op) — hub/admin owner-keyed 공용.
     fn ensure_conversation_row(&self, owner: &str, id: &str, title: &str, created_at: i64) -> bool;
+    /// 통합 store 대화 제목만 갱신 — hub 가 memory.db 제목 갱신을 app.db 미러에도 반영(자동/rename 공용).
+    fn update_conversation_title(&self, id: &str, title: &str) -> bool;
     /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
     /// 휴지통에서 복원 — deleted_at NULL 설정. tombstone 도 제거 (다기기 동기화).

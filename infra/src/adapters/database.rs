@@ -612,7 +612,9 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             .is_ok();
         // Phase 1 dual-write — blob 을 통합 store(conversation_messages) rows 로도 동기화.
         // blob = full-array replace 라 rows 도 재동기(삭제 후 재삽입). data_json = 메시지 원본
-        // (프론트 shape 무관 passthrough) → read 슬라이스에서 그대로 복원. blob 이 아직 read 권위.
+        // (프론트 shape 무관 passthrough) → read 슬라이스에서 그대로 복원. read 는 rows 우선(slice 3).
+        // ⚠️ contract 항목: admin 은 여기서 *전체 메시지*(UI 플래그 포함)를, hub 미러는 *data 페이로드만*
+        //    저장 = 같은 data_json 컬럼의 의미 불일치. 단일 read 경로 전에 canonical data 로 통일 필요.
         if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(messages_json) {
             let _ = conn.execute(
                 "DELETE FROM conversation_messages WHERE conversation_id = ?1",
@@ -708,6 +710,18 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         .is_ok()
     }
 
+    fn update_conversation_title(&self, id: &str, title: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else {
+            return false;
+        };
+        conn.execute(
+            "UPDATE conversations SET title = ?2 WHERE id = ?1",
+            params![id, title],
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    }
+
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
         let now = firebat_core::utils::time::now_ms();
@@ -773,7 +787,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn permanent_delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        // hard delete — row + 임베딩 cascade. tombstone 은 그대로 유지 (다기기 stale POST 차단).
+        // hard delete — row + 임베딩 + 통합 store 메시지 cascade. tombstone 은 유지 (다기기 stale POST 차단).
         let r1 = conn.execute(
             "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
             params![id, owner],
@@ -782,12 +796,17 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             "DELETE FROM conversation_embeddings WHERE conv_id = ?1 AND owner = ?2",
             params![id, owner],
         );
+        // Phase 1 — conversation_messages 도 cascade (없으면 영구삭제 후 메시지 rows orphan = read-switch 시 잔존).
+        let _ = conn.execute(
+            "DELETE FROM conversation_messages WHERE conversation_id = ?1",
+            params![id],
+        );
         r1.is_ok()
     }
 
     fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> i64 {
         let Ok(conn) = self.conn.lock() else { return 0 };
-        // cutoff_ms 보다 이전에 삭제된 거 일괄 hard delete. cascade — 임베딩도 같이.
+        // cutoff_ms 보다 이전에 삭제된 거 일괄 hard delete. cascade — 임베딩 + 통합 store 메시지.
         // 응답: 삭제된 row 수.
         let r = conn.execute(
             "DELETE FROM conversation_embeddings WHERE conv_id IN (
@@ -797,6 +816,14 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             params![cutoff_ms],
         );
         let _ = r;
+        // Phase 1 — conversation_messages cascade (없으면 retention 후 메시지 rows orphan).
+        let _ = conn.execute(
+            "DELETE FROM conversation_messages WHERE conversation_id IN (
+                SELECT id FROM conversations
+                 WHERE deleted_at IS NOT NULL AND deleted_at < ?1
+             )",
+            params![cutoff_ms],
+        );
         match conn.execute(
             "DELETE FROM conversations WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
             params![cutoff_ms],

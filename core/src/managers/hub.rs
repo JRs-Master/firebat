@@ -113,7 +113,8 @@ impl HubManager {
     }
 
     /// Phase 1 — app.db 통합 store 에 hub 대화 row 를 owner-keyed 로 멱등 생성(있으면 no-op).
-    /// owner = "hub:<instance>:<session>". 제목은 placeholder — 실제 제목 동기화는 read 슬라이스/백필.
+    /// owner = "hub:<instance>:<session>". 생성 시 제목 = "새 대화" placeholder — 실제 제목은
+    /// update_conversation_title 가 첫 메시지/rename 시 app.db 미러에도 반영(백필은 c.title 직접 전달).
     fn mirror_hub_conv_row(&self, instance_id: &str, session_id: &str, conv_id: &str) {
         if let Some(db) = &self.db {
             let owner = format!("hub:{instance_id}:{session_id}");
@@ -380,19 +381,45 @@ impl HubManager {
         self.port.get_conversation(id).await
     }
 
-    /// soft delete — 휴지통으로 이동. deleted_at 갱신.
+    /// app.db 통합 store 미러용 owner 도출 — "hub:<instance>:<session>". 변이 *전* 호출
+    /// (영구삭제는 row 가 사라지므로). hub get_conversation 은 soft-deleted 도 반환해 restore 도 가능.
+    async fn hub_owner_of(&self, id: &str) -> Option<String> {
+        self.port
+            .get_conversation(id)
+            .await
+            .ok()
+            .flatten()
+            .map(|c| format!("hub:{}:{}", c.instance_id, c.session_id))
+    }
+
+    /// soft delete — 휴지통으로 이동. deleted_at 갱신. app.db 통합 store 도 미러(드리프트 방지).
     pub async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
-        self.port.delete_conversation(id).await
+        let owner = self.hub_owner_of(id).await;
+        self.port.delete_conversation(id).await?;
+        if let (Some(db), Some(owner)) = (&self.db, owner) {
+            db.delete_conversation(&owner, id);
+        }
+        Ok(())
     }
 
-    /// 휴지통에서 복원 — deleted_at NULL.
+    /// 휴지통에서 복원 — deleted_at NULL. app.db 통합 store 도 미러.
     pub async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
-        self.port.restore_conversation(id).await
+        let owner = self.hub_owner_of(id).await;
+        self.port.restore_conversation(id).await?;
+        if let (Some(db), Some(owner)) = (&self.db, owner) {
+            db.restore_conversation(&owner, id);
+        }
+        Ok(())
     }
 
-    /// 영구 삭제 — hard delete. messages cascade.
+    /// 영구 삭제 — hard delete. messages cascade. app.db 통합 store 도 미러(conversation_messages cascade).
     pub async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
-        self.port.permanent_delete_conversation(id).await
+        let owner = self.hub_owner_of(id).await;
+        self.port.permanent_delete_conversation(id).await?;
+        if let (Some(db), Some(owner)) = (&self.db, owner) {
+            db.permanent_delete_conversation(&owner, id);
+        }
+        Ok(())
     }
 
     /// 30일 retention cleanup — internal cron 이 호출.
@@ -402,7 +429,13 @@ impl HubManager {
     }
 
     pub async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {
-        self.port.update_conversation_title(id, title).await
+        self.port.update_conversation_title(id, title).await?;
+        // app.db 통합 store 미러 — memory.db 제목 갱신을 app.db 에도 반영(rename·자동 제목 공용).
+        // 없으면 통합 store 의 hub 제목이 mirror_hub_conv_row 의 "새 대화" placeholder 로 고착 = contract 후 재발.
+        if let Some(db) = &self.db {
+            db.update_conversation_title(id, title);
+        }
+        Ok(())
     }
 
     // ─── Message ──────────────────────────────────────────────────────────
@@ -559,7 +592,8 @@ impl HubManager {
                 if trimmed.chars().count() > 28 {
                     title.push('…');
                 }
-                let _ = self.port.update_conversation_title(conversation_id, &title).await;
+                // 공용 메서드 경유 — memory.db + app.db 통합 store 양쪽 미러(드리프트 방지).
+                let _ = self.update_conversation_title(conversation_id, &title).await;
             }
         }
         // owner = hub:<instance>:<session> (세션 단위 격리) — tool 주입(ai.rs)·library route 와 통일.
