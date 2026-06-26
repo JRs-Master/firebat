@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { saveTempAttachment } from '../../../../../../lib/api-gen/media';
-import { authenticate } from '../../../../../../lib/api-gen/hub';
+import { resolvePrincipal, isPrincipalError } from '../../../../../../lib/principal';
 import { logger } from '../../../../../../lib/util/logger';
 
 /**
@@ -19,20 +19,8 @@ interface Ctx { params: Promise<{ slug: string }> }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
-  const apiToken = req.headers.get('x-api-token') ?? '';
-  const sessionId = req.headers.get('x-session-id') ?? '';
-  const origin = req.headers.get('origin') ?? '';
-  const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
-
-  if (!apiToken) return jsonError(401, 'X-Api-Token 헤더가 필요합니다.');
-  if (!sessionId) return jsonError(400, 'X-Session-Id 헤더가 필요합니다.');
-
-  const auth = await authenticate({ slug, apiToken, origin, selfHost });
-  if (!auth.ok) {
-    const msg = auth.message ?? '인증 실패';
-    const status = msg.includes('UNAUTHORIZED_ORIGIN:') ? 403 : 401;
-    return jsonError(status, msg);
-  }
+  const principal = await resolvePrincipal(req, slug);
+  if (isPrincipalError(principal)) return principal;
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticate } from '../../../../../lib/api-gen/hub';
+import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { createShare } from '../../../../../lib/api-gen/conversation';
 import { getBaseUrl } from '../../../../../lib/base-url';
 
@@ -20,25 +20,8 @@ interface Ctx { params: Promise<{ slug: string }> }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
-  const apiToken = req.headers.get('x-api-token') ?? '';
-  const sessionId = req.headers.get('x-session-id') ?? '';
-  const origin = req.headers.get('origin') ?? '';
-  const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
-
-  if (!apiToken) return NextResponse.json({ success: false, error: 'X-Api-Token 헤더가 필요합니다.' }, { status: 401 });
-  if (!sessionId) return NextResponse.json({ success: false, error: 'X-Session-Id 헤더가 필요합니다.' }, { status: 400 });
-
-  // 인증
-  const authRes = await authenticate({ slug, apiToken, origin, selfHost });
-  if (!authRes.ok) {
-    const msg = authRes.message ?? '인증 실패';
-    if (msg.includes('UNAUTHORIZED_ORIGIN:')) {
-      return NextResponse.json({ success: false, error: '허용되지 않은 도메인입니다.' }, { status: 403 });
-    }
-    return NextResponse.json({ success: false, error: msg }, { status: 401 });
-  }
-  const instance = authRes.data?.instance;
-  if (!instance) return NextResponse.json({ success: false, error: 'instance 조회 실패' }, { status: 500 });
+  const principal = await resolvePrincipal(req, slug);
+  if (isPrincipalError(principal)) return principal;
 
   const body = await req.json().catch(() => ({}));
   const type = body.type === 'turn' ? 'turn' : 'full';
@@ -54,7 +37,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     : (type === 'turn' ? '공유된 응답' : '공유된 대화');
 
   // owner 영역 = hub:<slug>:<sessionId 앞 8자>. 옛 admin share 영역과 자연 분리.
-  const ownerTag = `hub:${slug}:${sessionId.slice(0, 8)}`;
+  const ownerTag = `hub:${slug}:${(principal.sessionId ?? '').slice(0, 8)}`;
 
   const res = await createShare({
     shareType: type,

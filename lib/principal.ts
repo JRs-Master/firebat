@@ -33,32 +33,25 @@ export async function resolvePrincipal(
 ): Promise<Principal | NextResponse> {
   // hub widget — slug 경로 + X-Api-Token (+ origin / self-host 검증은 Rust authenticate).
   if (slug) {
+    // hub 는 외부 사이트 임베드(cross-origin) — 인증 에러도 CORS 허용해야 위젯이 응답을 읽음.
+    const hubErr = (status: number, error: string) =>
+      NextResponse.json({ error }, { status, headers: { 'Access-Control-Allow-Origin': '*' } });
     const apiToken = req.headers.get('x-api-token') ?? '';
     const sessionId = req.headers.get('x-session-id') ?? '';
-    if (!apiToken) {
-      return NextResponse.json({ error: 'X-Api-Token 헤더가 필요합니다.' }, { status: 401 });
-    }
-    if (!sessionId) {
-      return NextResponse.json({ error: 'X-Session-Id 헤더가 필요합니다.' }, { status: 400 });
-    }
+    if (!apiToken) return hubErr(401, 'X-Api-Token 헤더가 필요합니다.');
+    if (!sessionId) return hubErr(400, 'X-Session-Id 헤더가 필요합니다.');
     // 형식 검증 — sessionId 가 path 스코프(`<inst>:<sid>`)에 들어가므로 콜론·traversal·과길이 차단(defense-in-depth).
-    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sessionId)) {
-      return NextResponse.json({ error: '잘못된 X-Session-Id 형식입니다.' }, { status: 400 });
-    }
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sessionId)) return hubErr(400, '잘못된 X-Session-Id 형식입니다.');
     const origin = req.headers.get('origin') ?? '';
     const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
     const authRes = await authenticate({ slug, apiToken, origin, selfHost });
     if (!authRes.ok) {
       const msg = authRes.message ?? '인증 실패';
-      if (msg.includes('UNAUTHORIZED_ORIGIN:')) {
-        return NextResponse.json({ error: '허용되지 않은 도메인입니다.' }, { status: 403 });
-      }
-      return NextResponse.json({ error: msg }, { status: 401 });
+      if (msg.includes('UNAUTHORIZED_ORIGIN:')) return hubErr(403, '허용되지 않은 도메인입니다.');
+      return hubErr(401, msg);
     }
     const instance = authRes.data?.instance;
-    if (!instance) {
-      return NextResponse.json({ error: 'instance 조회 실패' }, { status: 500 });
-    }
+    if (!instance) return hubErr(500, 'instance 조회 실패');
     // visitor 별 격리 — "hub:<instance_id>:<session_id>".
     return {
       kind: 'widget',
