@@ -180,7 +180,56 @@ impl SqliteDatabaseAdapter {
             [],
         )
         .ok();
+
+        // ── Phase 1 백필 — dual-write 이전 대화 blob → 통합 conversation_messages rows ──
+        // rows 가 아직 없는 활성 대화만(idempotent). 비파괴(blob 보존). cross-DB hub 백필은 별도(main.rs).
+        Self::backfill_conversation_messages(conn);
         Ok(())
+    }
+
+    /// Phase 1 — conversation_messages rows 가 없는 기존 대화의 blob 을 rows 로 끌어옴.
+    /// idempotent(없는 것만) + 비파괴(blob 유지). dual-write 배포 전 만들어진 대화 대상.
+    fn backfill_conversation_messages(conn: &Connection) {
+        let pending: Vec<(String, String)> = {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT id, messages FROM conversations
+                 WHERE deleted_at IS NULL
+                   AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_messages)",
+            ) else {
+                return;
+            };
+            let Ok(rows) = stmt.query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            }) else {
+                return;
+            };
+            rows.filter_map(|r| r.ok()).collect()
+        };
+        for (conv_id, blob) in pending {
+            let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&blob) else {
+                continue;
+            };
+            for (i, m) in arr.iter().enumerate() {
+                let mid = m
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{conv_id}-{i}"));
+                let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let content = m
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let created = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
+                let data_json = serde_json::to_string(m).unwrap_or_default();
+                let _ = conn.execute(
+                    "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
+                    params![mid, conv_id, role, content, data_json, created],
+                );
+            }
+        }
     }
 
     /// 다른 어댑터 (CostManager / EntityManager 등) 가 같은 DB 위에 자기 테이블 설정할 때 활용.
