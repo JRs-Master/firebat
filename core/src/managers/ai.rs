@@ -992,7 +992,7 @@ impl AiManager {
                         .as_deref()
                         .or(ai_opts.owner.as_deref())
                         .unwrap_or("admin");
-                    if mw_owner == "admin" {
+                    if crate::principal::Principal::from_owner(mw_owner).is_admin {
                         let auto = self
                             .vault
                             .as_ref()

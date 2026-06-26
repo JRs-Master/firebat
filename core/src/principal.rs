@@ -51,4 +51,23 @@ impl Principal {
     pub fn owner(&self) -> &str {
         &self.owner
     }
+
+    /// Parse an owner scope key back into a typed Principal. Centralizes the ad-hoc
+    /// `owner == "admin"` / `owner.starts_with("hub:")` checks scattered across the code,
+    /// and is the simplest form of the auth→Principal resolver. Unknown owners are treated
+    /// conservatively as non-admin. Preserves the owner string verbatim (no reconstruction).
+    pub fn from_owner(owner: &str) -> Self {
+        if owner == "admin" {
+            Self::admin()
+        } else if owner.starts_with("hub:") {
+            Self { owner: owner.to_string(), is_admin: false, kind: PrincipalKind::Widget }
+        } else {
+            Self { owner: owner.to_string(), is_admin: false, kind: PrincipalKind::Tenant }
+        }
+    }
+
+    /// True for anonymous hub widget visitors.
+    pub fn is_hub(&self) -> bool {
+        matches!(self.kind, PrincipalKind::Widget)
+    }
 }
