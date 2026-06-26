@@ -70,4 +70,32 @@ impl Principal {
     pub fn is_hub(&self) -> bool {
         matches!(self.kind, PrincipalKind::Widget)
     }
+
+    /// Full tool capability (admin / tenant) vs allowlist-restricted (widget).
+    /// The widget deny-list + sysmod allowlist apply only when this is `false`.
+    pub fn has_full_tools(&self) -> bool {
+        matches!(self.kind, PrincipalKind::Tenant)
+    }
+
+    /// Owner key for SECRET (Vault) lookup — deliberately separate from data scope
+    /// (`owner()`). A tenant keeps its own data scope but currently SHARES the admin
+    /// Vault (single operator). A full multi-tenant split would return `self.owner`
+    /// here for tenants — changing only this method, not call sites.
+    pub fn vault_owner(&self) -> &str {
+        if self.is_admin {
+            &self.owner // admin uses its own ("admin")
+        } else {
+            match self.kind {
+                PrincipalKind::Tenant => "admin", // shared for now; future split: &self.owner
+                PrincipalKind::Widget => &self.owner,
+            }
+        }
+    }
+
+    /// Whether the principal may change system settings / keys. Admin-only today.
+    /// A future multi-tenant split would also let tenants manage their own settings
+    /// (return true for non-admin tenants) — changing only this method.
+    pub fn can_manage_settings(&self) -> bool {
+        self.is_admin
+    }
 }
