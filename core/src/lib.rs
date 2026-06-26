@@ -9,6 +9,7 @@
 
 pub mod ports;
 pub mod principal;
+pub mod core_facade;
 pub mod managers;
 pub mod grpc;
 pub mod i18n;
