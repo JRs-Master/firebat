@@ -298,6 +298,8 @@ pub trait IDatabasePort: Send + Sync {
     /// conversation_id 로 묶음. owner-scope 는 conversations.owner 로 (호출측 검증).
     fn append_conversation_message(&self, msg: &ConversationMessage) -> bool;
     fn list_conversation_messages(&self, conversation_id: &str) -> Vec<ConversationMessage>;
+    /// 통합 store 대화 row 멱등 생성 (이미 있으면 no-op) — hub/admin owner-keyed 공용.
+    fn ensure_conversation_row(&self, owner: &str, id: &str, title: &str, created_at: i64) -> bool;
     /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
     /// 휴지통에서 복원 — deleted_at NULL 설정. tombstone 도 제거 (다기기 동기화).

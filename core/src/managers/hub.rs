@@ -82,16 +82,25 @@ pub struct HubManager {
     /// PageManager (옵션) — hub instance 삭제 시 hub-scoped page (project='hub:<instance_id>')
     /// cascade 처리. 미설정 시 cascade skip.
     page: Option<Arc<crate::managers::page::PageManager>>,
+    /// Phase 1 통합 — 대화를 app.db owner 기반 단일 store(conversations/conversation_messages)에도
+    /// dual-write. owner = "hub:<instance>:<session>". 미설정 시 dual-write skip(옛 동작).
+    db: Option<Arc<dyn crate::ports::IDatabasePort>>,
 }
 
 impl HubManager {
     pub fn new(port: Arc<dyn IHubPort>) -> Self {
-        Self { port, page: None }
+        Self { port, page: None, db: None }
     }
 
     /// PageManager 설정 — hub instance 삭제 시 hub-scoped page (project='hub:<id>') cascade 처리.
     pub fn with_page(mut self, page: Arc<crate::managers::page::PageManager>) -> Self {
         self.page = Some(page);
+        self
+    }
+
+    /// Phase 1 통합 store(app.db) dual-write 활성 — 대화 row + 메시지 rows 를 owner 기반 단일 store 에도 기록.
+    pub fn with_db(mut self, db: Arc<dyn crate::ports::IDatabasePort>) -> Self {
+        self.db = Some(db);
         self
     }
 
@@ -101,6 +110,29 @@ impl HubManager {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0)
+    }
+
+    /// Phase 1 — app.db 통합 store 에 hub 대화 row 를 owner-keyed 로 멱등 생성(있으면 no-op).
+    /// owner = "hub:<instance>:<session>". 제목은 placeholder — 실제 제목 동기화는 read 슬라이스/백필.
+    fn mirror_hub_conv_row(&self, instance_id: &str, session_id: &str, conv_id: &str) {
+        if let Some(db) = &self.db {
+            let owner = format!("hub:{instance_id}:{session_id}");
+            db.ensure_conversation_row(&owner, conv_id, "새 대화", Self::now_ms());
+        }
+    }
+
+    /// Phase 1 — hub 메시지를 app.db 통합 store(conversation_messages) 에도 dual-write.
+    fn mirror_hub_message(&self, msg: &HubMessage) {
+        if let Some(db) = &self.db {
+            db.append_conversation_message(&crate::ports::ConversationMessage {
+                id: msg.id.clone(),
+                conversation_id: msg.conversation_id.clone(),
+                role: msg.role.clone(),
+                content: msg.content.clone().unwrap_or_default(),
+                data_json: msg.data_json.clone().unwrap_or_default(),
+                created_at: msg.created_at,
+            });
+        }
     }
 
     // ─── Instance CRUD ────────────────────────────────────────────────────
@@ -304,7 +336,9 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        self.port.ensure_conversation(instance_id, session_id).await
+        let conv_id = self.port.ensure_conversation(instance_id, session_id).await?;
+        self.mirror_hub_conv_row(instance_id, session_id, &conv_id);
+        Ok(conv_id)
     }
 
     /// 항상 새 conversation 생성 — multi-conv 모드에서 사이드바 "새 대화" 누를 때 호출.
@@ -313,7 +347,9 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        self.port.create_conversation(instance_id, session_id).await
+        let conv_id = self.port.create_conversation(instance_id, session_id).await?;
+        self.mirror_hub_conv_row(instance_id, session_id, &conv_id);
+        Ok(conv_id)
     }
 
     pub async fn list_conversations(
@@ -385,6 +421,7 @@ impl HubManager {
             created_at: Self::now_ms(),
         };
         self.port.append_message(&msg).await?;
+        self.mirror_hub_message(&msg);
         Ok(id)
     }
 
@@ -409,6 +446,7 @@ impl HubManager {
             created_at: Self::now_ms(),
         };
         self.port.append_message(&msg).await?;
+        self.mirror_hub_message(&msg);
         Ok(id)
     }
 

@@ -492,7 +492,8 @@ async fn main() -> Result<()> {
     );
     let hub_manager = Arc::new(
         firebat_core::managers::hub::HubManager::new(hub_port)
-            .with_page(page_manager.clone()),
+            .with_page(page_manager.clone())
+            .with_db(db.clone()),
     );
 
     // RetrievalEngine — 매 사용자 query 시점 5-tier 통합 검색 (history + entities + facts + events + library).

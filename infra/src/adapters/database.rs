@@ -507,16 +507,51 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let Ok(conn) = self.conn.lock() else { return false };
         let now = firebat_core::utils::time::now_ms();
         let created = created_at.unwrap_or(now);
-        conn.execute(
-            "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                messages = excluded.messages,
-                updated_at = excluded.updated_at",
-            params![id, owner, title, messages_json, created, now],
-        )
-        .is_ok()
+        let ok = conn
+            .execute(
+                "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    messages = excluded.messages,
+                    updated_at = excluded.updated_at",
+                params![id, owner, title, messages_json, created, now],
+            )
+            .is_ok();
+        // Phase 1 dual-write — blob 을 통합 store(conversation_messages) rows 로도 동기화.
+        // blob = full-array replace 라 rows 도 재동기(삭제 후 재삽입). data_json = 메시지 원본
+        // (프론트 shape 무관 passthrough) → read 슬라이스에서 그대로 복원. blob 이 아직 read 권위.
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(messages_json) {
+            let _ = conn.execute(
+                "DELETE FROM conversation_messages WHERE conversation_id = ?1",
+                params![id],
+            );
+            for (i, m) in arr.iter().enumerate() {
+                let mid = m
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("{id}-{i}"));
+                let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let content = m
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mcreated = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
+                let data_json = serde_json::to_string(m).unwrap_or_default();
+                let _ = conn.execute(
+                    "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(id) DO UPDATE SET
+                        role = excluded.role,
+                        content = excluded.content,
+                        data_json = excluded.data_json",
+                    params![mid, id, role, content, data_json, mcreated],
+                );
+            }
+        }
+        ok
     }
 
     fn append_conversation_message(&self, msg: &ConversationMessage) -> bool {
@@ -566,6 +601,19 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
             Err(_) => Vec::new(),
         }
+    }
+
+    fn ensure_conversation_row(&self, owner: &str, id: &str, title: &str, created_at: i64) -> bool {
+        let Ok(conn) = self.conn.lock() else {
+            return false;
+        };
+        conn.execute(
+            "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
+             VALUES (?1, ?2, ?3, '[]', ?4, ?4)
+             ON CONFLICT(id) DO NOTHING",
+            params![id, owner, title, created_at],
+        )
+        .is_ok()
     }
 
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {
