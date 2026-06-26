@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, isAuthError } from './auth-guard';
 import { authenticate } from './api-gen/hub';
+import type { HubInstancePb } from './proto-gen/firebat_pb';
 
 /**
  * Principal — 요청 주체. admin(tenant) vs hub widget. "공통 로직 / 로그인으로 구분"의 키.
@@ -16,6 +17,8 @@ export interface Principal {
   isAdmin: boolean;
   /** owner-scoped store 키. "admin" | "hub:<instance>:<session>". */
   owner: string;
+  /** hub widget 의 인증된 instance (admin 은 undefined) — system_prompt/model/allowed_* 필요 시. */
+  hubInstance?: HubInstancePb;
 }
 
 /**
@@ -51,7 +54,12 @@ export async function resolvePrincipal(
       return NextResponse.json({ error: 'instance 조회 실패' }, { status: 500 });
     }
     // visitor 별 격리 — "hub:<instance_id>:<session_id>".
-    return { kind: 'widget', isAdmin: false, owner: `hub:${instance.id}:${sessionId}` };
+    return {
+      kind: 'widget',
+      isAdmin: false,
+      owner: `hub:${instance.id}:${sessionId}`,
+      hubInstance: instance,
+    };
   }
 
   // admin tenant — 세션 쿠키 / Bearer 토큰.
