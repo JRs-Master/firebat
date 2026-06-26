@@ -360,6 +360,11 @@ impl HubManager {
         self.port.list_conversations(instance_id, session_id).await
     }
 
+    /// Phase 1 백필 — 전체 hub 대화 열거 (통합 store 마이그용).
+    pub async fn list_all_conversations(&self) -> InfraResult<Vec<HubConversation>> {
+        self.port.list_all_conversations().await
+    }
+
     /// 휴지통 목록 — (instance_id, session_id) scope. deleted_at IS NOT NULL.
     pub async fn list_deleted_conversations(
         &self,
