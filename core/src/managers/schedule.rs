@@ -9,15 +9,14 @@
 
 use std::sync::Arc;
 
-use crate::managers::ai::AiManager;
 use crate::managers::event::EventManager;
 use crate::managers::status::StatusManager;
-use crate::managers::task::{PipelineStep, TaskManager};
+use crate::managers::task::PipelineStep;
 use crate::managers::tool::ToolManager;
 use crate::ports::{
     CronJobInfo, CronJobResult, CronLogEntry, CronNotification, CronOccurrence,
     CronScheduleOptions, CronTriggerCallback, CronTriggerInfo, ICronPort, ILogPort, ISandboxPort,
-    InfraResult, LlmCallOpts, SandboxExecuteOpts,
+    InfraResult, SandboxExecuteOpts,
 };
 use crate::utils::condition::evaluate_condition;
 use crate::utils::path_resolve::resolve_field_path;
@@ -29,8 +28,6 @@ const DEFAULT_RETRY_DELAY_MS: i64 = 30_000;
 /// + notify 활성. 미설정 시 sandbox-only fallback (page URL 알림 만 동작).
 #[derive(Clone)]
 pub struct ScheduleHooks {
-    pub task: Arc<TaskManager>,
-    pub ai: Arc<AiManager>,
     pub sandbox: Arc<dyn ISandboxPort>,
     pub tools: Arc<ToolManager>,
     pub log: Arc<dyn ILogPort>,
@@ -216,7 +213,11 @@ impl ScheduleManager {
     /// 3. run_once — agent / pipeline / page URL / sandbox 4 모드
     /// 4. notify hook (fire-and-forget)
     /// 5. oneShot 자동 취소
-    pub async fn handle_trigger(self: &Arc<Self>, info: CronTriggerInfo) -> CronJobResult {
+    pub async fn handle_trigger(
+        self: &Arc<Self>,
+        info: CronTriggerInfo,
+        core: &crate::core_facade::Core,
+    ) -> CronJobResult {
         let start = std::time::Instant::now();
 
         // AI 미개입 cross-call hook — cron job StatusManager 시작 (옛 TS core/index.ts:1368
@@ -291,7 +292,7 @@ impl ScheduleManager {
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(retry_delay_ms as u64)).await;
             }
-            let r = self.run_once(&info, start).await;
+            let r = self.run_once(&info, start, core).await;
             let success = r.success;
             result = Some(r);
             if success {
@@ -380,7 +381,12 @@ impl ScheduleManager {
     }
 
     /// 단일 실행 — agent / pipeline / page URL / sandbox 4 모드 분기.
-    async fn run_once(&self, info: &CronTriggerInfo, start: std::time::Instant) -> CronJobResult {
+    async fn run_once(
+        &self,
+        info: &CronTriggerInfo,
+        start: std::time::Instant,
+        core: &crate::core_facade::Core,
+    ) -> CronJobResult {
         let mut success = false;
         let mut error: Option<String> = None;
         let mut output: Option<serde_json::Value> = None;
@@ -430,15 +436,7 @@ impl ScheduleManager {
                     }),
                     ..Default::default()
                 };
-                match h
-                    .ai
-                    .process_with_tools_opts(
-                        &prompt,
-                        &[],
-                        &LlmCallOpts::default(),
-                        &ai_opts,
-                    )
-                    .await
+                match core.run_cron_agent(&prompt, &ai_opts).await
                 {
                     Ok(res) => {
                         success = res.error.is_none();
@@ -479,7 +477,7 @@ impl ScheduleManager {
                     "[Cron] 파이프라인 실행: {} ({}단계, {:?})",
                     info.job_id, total, info.trigger
                 ));
-                let pipe_result = h.task.execute_pipeline(steps).await;
+                let pipe_result = core.run_cron_pipeline(steps).await;
                 success = pipe_result.success;
                 if !success {
                     error = pipe_result.error.clone();

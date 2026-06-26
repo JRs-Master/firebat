@@ -17,9 +17,10 @@
 
 use std::sync::Arc;
 
-use crate::managers::ai::AiManager;
+use crate::managers::ai::{AiManager, AiResponse};
 use crate::managers::schedule::ScheduleManager;
-use crate::managers::task::TaskManager;
+use crate::managers::task::{PipelineResult, PipelineStep, TaskManager};
+use crate::ports::{AiRequestOpts, InfraResult, LlmCallOpts};
 
 /// The Mediator. Holds the orchestrators it coordinates; cross-cutting applies here.
 /// Grows field-by-field as each use-case migrates (cron first).
@@ -39,5 +40,23 @@ impl Core {
         schedule: Arc<ScheduleManager>,
     ) -> Self {
         Self { ai, task, schedule }
+    }
+
+    /// Cron `agent` mode — mediates the cron→Ai cross-orchestrator call so ScheduleManager no
+    /// longer holds AiManager directly. ScheduleManager keeps the request/result orchestration
+    /// (prompt build, cron context, result mapping); Core just routes the agent run.
+    pub async fn run_cron_agent(
+        &self,
+        prompt: &str,
+        ai_opts: &AiRequestOpts,
+    ) -> InfraResult<AiResponse> {
+        self.ai
+            .process_with_tools_opts(prompt, &[], &LlmCallOpts::default(), ai_opts)
+            .await
+    }
+
+    /// Cron `pipeline` mode — mediates the cron→Task cross-orchestrator call.
+    pub async fn run_cron_pipeline(&self, steps: &[PipelineStep]) -> PipelineResult {
+        self.task.execute_pipeline(steps).await
     }
 }

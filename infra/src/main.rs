@@ -660,8 +660,6 @@ async fn main() -> Result<()> {
     let schedule_manager_with_hooks = Arc::new(
         ScheduleManager::new(cron_adapter.clone()).with_hooks(
             firebat_core::managers::schedule::ScheduleHooks {
-                task: task_manager.clone(),
-                ai: ai_manager.clone(),
                 sandbox: sandbox.clone(),
                 tools: tool_manager.clone(),
                 log: Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
@@ -677,6 +675,15 @@ async fn main() -> Result<()> {
     // cron 발화 콜백 등록 — 매 trigger 시 schedule_manager.handle_trigger 호출.
     // + 실행 결과를 캘린더(sysmod_calendar)에 영속 기록 — cron 로그 버퍼(휘발/clear)·cron 잡 삭제와
     //   무관하게 남는 실행 이력. 캘린더에서 개별 삭제 가능. best-effort(실패해도 cron 결과 영향 0).
+    // Core Mediator — cron 콜백이 agent(Ai)/pipeline(Task) 를 Core 경유로 실행 → ScheduleManager 가
+    // Ai/Task(오케스트레이터)를 직접 안 부름 (Hexagonal+DDD+Mediator, #1a Schedule→Ai/Task 해소).
+    let core = std::sync::Arc::new(firebat_core::core_facade::Core::new(
+        ai_manager.clone(),
+        task_manager.clone(),
+        schedule_manager_with_hooks.clone(),
+    ));
+    let core_cb = core.clone();
+
     let schedule_arc = schedule_manager_with_hooks.clone();
     let cal_modmgr = module_manager.clone();
     // 시스템 스케줄 내장 실행 + 캘린더 gating 용 clone.
@@ -687,6 +694,7 @@ async fn main() -> Result<()> {
     let hub_cb = hub_manager.clone();
     let trigger_callback: firebat_core::ports::CronTriggerCallback = std::sync::Arc::new(move |info| {
         let mgr = schedule_arc.clone();
+        let core_b = core_cb.clone();
         let modmgr = cal_modmgr.clone();
         let vault_b = vault_cb.clone();
         let consolidation_b = consolidation_cb.clone();
@@ -762,7 +770,7 @@ async fn main() -> Result<()> {
                 };
             }
 
-            let result = mgr.handle_trigger(info).await;
+            let result = mgr.handle_trigger(info, &core_b).await;
             // 캘린더 기록 — 사용자가 "캘린더에 표시" 체크한 잡만 (시스템·미체크 잡 제외).
             // 진단: show_cal 값 + add 결과를 남긴다(옛 silent `let _` 라 실패/미실행이 안 보였음).
             if show_cal {
