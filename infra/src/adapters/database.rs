@@ -524,25 +524,56 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord> {
         let conn = self.conn.lock().ok()?;
         // deleted_at IS NULL — 휴지통 검색은 별도 메서드. 활성 대화만 응답.
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, title, messages, created_at, updated_at FROM conversations
-                 WHERE owner = ?1 AND id = ?2 AND deleted_at IS NULL",
-            )
-            .ok()?;
-        stmt.query_row(params![owner, id], |row| {
-            let messages_str: String = row.get(2)?;
-            let messages: serde_json::Value =
-                serde_json::from_str(&messages_str).unwrap_or(serde_json::json!([]));
-            Ok(ConversationRecord {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                messages,
-                created_at: row.get(3)?,
-                updated_at: row.get(4)?,
+        let (rid, title, blob, created, updated): (String, String, String, i64, i64) = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, title, messages, created_at, updated_at FROM conversations
+                     WHERE owner = ?1 AND id = ?2 AND deleted_at IS NULL",
+                )
+                .ok()?;
+            stmt.query_row(params![owner, id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
             })
+            .ok()?
+        };
+        // Phase 1 read 전환 — 통합 store(conversation_messages) rows 우선, 없거나 실패 시 blob fallback(손실 0).
+        // data_json = 원본 메시지(admin dual-write) → 그대로 복원, 파싱 실패 시 최소 {role,content}.
+        let from_rows: Vec<serde_json::Value> = conn
+            .prepare(
+                "SELECT role, content, data_json FROM conversation_messages
+                 WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC",
+            )
+            .and_then(|mut ms| {
+                ms.query_map(params![id], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                })
+                .map(|it| {
+                    it.filter_map(|x| x.ok())
+                        .map(|(role, content, dj)| {
+                            serde_json::from_str::<serde_json::Value>(&dj).unwrap_or_else(|_| {
+                                serde_json::json!({ "role": role, "content": content })
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default();
+        let messages = if from_rows.is_empty() {
+            serde_json::from_str(&blob).unwrap_or(serde_json::json!([]))
+        } else {
+            serde_json::Value::Array(from_rows)
+        };
+        Some(ConversationRecord {
+            id: rid,
+            title,
+            messages,
+            created_at: created,
+            updated_at: updated,
         })
-        .ok()
     }
 
     fn save_conversation(

@@ -459,6 +459,23 @@ impl HubManager {
         &self,
         conversation_id: &str,
     ) -> InfraResult<Vec<HubMessage>> {
+        // Phase 1 read 전환 — 통합 store(app.db) rows 우선, 없으면 hub_messages fallback(손실 0).
+        if let Some(db) = &self.db {
+            let rows = db.list_conversation_messages(conversation_id);
+            if !rows.is_empty() {
+                return Ok(rows
+                    .into_iter()
+                    .map(|m| HubMessage {
+                        id: m.id,
+                        conversation_id: m.conversation_id,
+                        role: m.role,
+                        content: if m.content.is_empty() { None } else { Some(m.content) },
+                        data_json: if m.data_json.is_empty() { None } else { Some(m.data_json) },
+                        created_at: m.created_at,
+                    })
+                    .collect());
+            }
+        }
         self.port.list_messages(conversation_id).await
     }
 
