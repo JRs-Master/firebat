@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authenticate } from '../../../../../lib/api-gen/hub';
+import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { getPending, consumePending, rejectPending } from '../../../../../lib/api-gen/ai';
 import { savePage, deletePage } from '../../../../../lib/api-gen/page';
 import { writeFile, deleteFile } from '../../../../../lib/api-gen/storage';
@@ -23,21 +23,14 @@ interface Ctx { params: Promise<{ slug: string }> }
 async function authHub(
   req: NextRequest,
   slug: string,
-): Promise<{ ok: true; instanceId: string; scope: string } | { ok: false; status: number; error: string }> {
-  const apiToken = req.headers.get('x-api-token') ?? '';
-  const sessionId = req.headers.get('x-session-id') ?? '';
-  const origin = req.headers.get('origin') ?? '';
-  const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
-  if (!apiToken) return { ok: false, status: 401, error: 'X-Api-Token 헤더가 필요합니다.' };
-  if (!sessionId) return { ok: false, status: 400, error: 'X-Session-Id 헤더가 필요합니다.' };
-  const res = await authenticate({ slug, apiToken, origin, selfHost });
-  if (!res.ok) {
-    const msg = res.message ?? '인증에 실패했습니다.';
-    if (msg.includes('UNAUTHORIZED_ORIGIN:')) return { ok: false, status: 403, error: '허용되지 않은 도메인입니다.' };
-    return { ok: false, status: 401, error: msg };
-  }
-  if (!res.data?.instance) return { ok: false, status: 500, error: 'instance 조회에 실패했습니다.' };
-  return { ok: true, instanceId: res.data.instance.id, scope: `${res.data.instance.id}:${sessionId}` };
+): Promise<{ ok: true; instanceId: string; scope: string } | { ok: false; response: NextResponse }> {
+  const principal = await resolvePrincipal(req, slug);
+  if (isPrincipalError(principal)) return { ok: false, response: principal };
+  return {
+    ok: true,
+    instanceId: principal.hubInstance!.id,
+    scope: `${principal.hubInstance!.id}:${principal.sessionId}`,
+  };
 }
 
 /** path 가 `user/hub/<instance_id>/` prefix 안인지 — fs route 와 동일 (path traversal + 타 hub 차단). */
@@ -51,7 +44,7 @@ function isHubScopedPath(path: string, instanceId: string): boolean {
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const auth = await authHub(req, slug);
-  if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  if (!auth.ok) return auth.response;
 
   let body: { op?: string; planId?: string } = {};
   try { body = await req.json(); }
