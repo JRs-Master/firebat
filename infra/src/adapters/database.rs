@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use firebat_core::ports::{
-    ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationRecord, ConversationSummary,
+    ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationMessage, ConversationRecord, ConversationSummary,
     IDatabasePort, InfraResult, LlmCostStatsFilter, LlmCostStatsRecord, LlmCostStatsSummary,
     MediaUsageEntry,
     PageListItem, PageRecord, RawSqlRow,
@@ -148,6 +148,19 @@ impl SqliteDatabaseAdapter {
                 ON shared_conversations(dedup_key, expires_at DESC);
             CREATE INDEX IF NOT EXISTS idx_shares_expires
                 ON shared_conversations(expires_at);
+
+            -- Phase 1 통합 (2026-06-26) — 대화 메시지 per-row store. admin(blob)+hub 를
+            -- owner 기반 단일 conversations/conversation_messages 로 수렴. 기존 blob 은 마이그 슬라이스까지 보존.
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                data_json TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_conv_messages_conv
+                ON conversation_messages(conversation_id, created_at);
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))?;
@@ -504,6 +517,55 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             params![id, owner, title, messages_json, created, now],
         )
         .is_ok()
+    }
+
+    fn append_conversation_message(&self, msg: &ConversationMessage) -> bool {
+        let Ok(conn) = self.conn.lock() else {
+            return false;
+        };
+        conn.execute(
+            "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                content = excluded.content,
+                data_json = excluded.data_json",
+            params![
+                msg.id,
+                msg.conversation_id,
+                msg.role,
+                msg.content,
+                msg.data_json,
+                msg.created_at
+            ],
+        )
+        .is_ok()
+    }
+
+    fn list_conversation_messages(&self, conversation_id: &str) -> Vec<ConversationMessage> {
+        let Ok(conn) = self.conn.lock() else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, conversation_id, role, content, data_json, created_at
+             FROM conversation_messages WHERE conversation_id = ?1
+             ORDER BY created_at ASC, rowid ASC",
+        ) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map(params![conversation_id], |row| {
+            Ok(ConversationMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                data_json: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        });
+        match rows {
+            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {

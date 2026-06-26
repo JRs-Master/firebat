@@ -294,6 +294,10 @@ pub trait IDatabasePort: Send + Sync {
     /// 30일 후 cleanup_old_deleted 가 cascade hard delete.
     fn delete_conversation(&self, owner: &str, id: &str) -> bool;
     fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool;
+    /// Per-message rows store (Phase 1 통합 — blob `conversations.messages` 대체 예정).
+    /// conversation_id 로 묶음. owner-scope 는 conversations.owner 로 (호출측 검증).
+    fn append_conversation_message(&self, msg: &ConversationMessage) -> bool;
+    fn list_conversation_messages(&self, conversation_id: &str) -> Vec<ConversationMessage>;
     /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
     /// 휴지통에서 복원 — deleted_at NULL 설정. tombstone 도 제거 (다기기 동기화).
@@ -507,6 +511,18 @@ pub struct ConversationRecord {
     pub created_at: i64,
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
+}
+
+/// Per-message row — Phase 1 통합 store (`conversation_messages`). admin(blob)+hub 수렴.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub data_json: String,
+    pub created_at: i64,
 }
 
 // ──────────────────────────────────────────────────────────────────────────
