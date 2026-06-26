@@ -563,8 +563,13 @@ async fn main() -> Result<()> {
     // fast/cheap, 메인 채팅 모델 X).
     // cost 저장 — 6시간 cron LLM 호출 전 check_budget → 한도 초과 시 즉시 skip
     // (백그라운드 무한 재시도 / 환각 폭주 차단)
+    // LlmService — leaf 도메인 서비스(ILlmPort 위 plain ask_text). 오케스트레이터(Consolidation 추출 /
+    // Task 파이프라인 LlmTransform)가 AiManager(오케스트레이터) 대신 이 leaf 를 의존 → orchestrator→
+    // orchestrator 결합 제거 (Hexagonal+DDD+Mediator decomposition, 2026-06-26).
+    let llm_service = Arc::new(firebat_core::managers::llm_service::LlmService::new(llm.clone()));
+
     consolidation_manager.set_ai_hook(
-        ai_manager.clone(),
+        llm_service.clone(),
         conversation_manager.clone(),
         vault.clone(),
         Some(cost_manager.clone()),
@@ -587,7 +592,7 @@ async fn main() -> Result<()> {
         firebat_core::task_executor_impl::RealTaskExecutor::new(
             sandbox.clone(),
             mcp_manager.clone(),
-            ai_manager.clone(),
+            llm_service.clone(),
             page_manager.clone(),
             tool_manager.clone(),
             logger.clone(),

@@ -22,6 +22,7 @@ pub mod schedule;
 pub mod task;
 pub mod media;
 pub mod ai;
+pub mod llm_service;
 pub mod storage;
 pub mod memory_facade;
 pub mod memory_file;

@@ -6,7 +6,7 @@
 //! Phase B-17 minimum:
 //! - EXECUTE — ISandboxPort.execute (sysmod 실행)
 //! - MCP_CALL — McpManager.call_tool
-//! - LLM_TRANSFORM — AiManager.ask_text
+//! - LLM_TRANSFORM — LlmService.ask_text
 //! - SAVE_PAGE — PageManager.save
 //! - TOOL_CALL — ToolManager.dispatch
 //! - NETWORK_REQUEST — Phase B-17+ stub (INetworkPort + reqwest 설정된 후 활성)
@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use crate::capabilities::{CapabilityProvider, ProviderLocation};
-use crate::managers::ai::AiManager;
+use crate::managers::llm_service::LlmService;
 use crate::managers::capability::CapabilityManager;
 use crate::managers::mcp::McpManager;
 use crate::managers::page::PageManager;
@@ -27,7 +27,7 @@ use crate::ports::{
 pub struct RealTaskExecutor {
     sandbox: Arc<dyn ISandboxPort>,
     mcp: Arc<McpManager>,
-    ai: Arc<AiManager>,
+    llm: Arc<LlmService>,
     page: Arc<PageManager>,
     tools: Arc<ToolManager>,
     log: Arc<dyn ILogPort>,
@@ -40,7 +40,7 @@ impl RealTaskExecutor {
     pub fn new(
         sandbox: Arc<dyn ISandboxPort>,
         mcp: Arc<McpManager>,
-        ai: Arc<AiManager>,
+        llm: Arc<LlmService>,
         page: Arc<PageManager>,
         tools: Arc<ToolManager>,
         log: Arc<dyn ILogPort>,
@@ -48,7 +48,7 @@ impl RealTaskExecutor {
         Self {
             sandbox,
             mcp,
-            ai,
+            llm,
             page,
             tools,
             log,
@@ -185,7 +185,7 @@ impl TaskExecutor for RealTaskExecutor {
         let prompt = format!(
             "{instruction}\n\n---\n{input_text}\n---\n\n위 구분선 안 원본을 근거로 응답하세요. 원본에 없는 정보 추측 금지."
         );
-        self.ai.ask_text(&prompt, &LlmCallOpts::default()).await
+        self.llm.ask_text(&prompt, &LlmCallOpts::default()).await
     }
 
     async fn save_page(

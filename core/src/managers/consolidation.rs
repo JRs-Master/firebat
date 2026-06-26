@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::managers::ai::AiManager;
+use crate::managers::llm_service::LlmService;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::cost::CostManager;
 use crate::managers::memory_file::{MemoryEntry, MemoryFileManager};
@@ -220,7 +220,7 @@ pub struct ConsolidationManager {
 /// (백그라운드 cron 의 무한 LLM 폭주 차단). 옵션이라 옛 호환 유지 — 미설정 시 옛 동작 그대로.
 #[derive(Clone)]
 pub struct ConsolidationAiHook {
-    pub ai: Arc<AiManager>,
+    pub llm: Arc<LlmService>,
     pub conversation: Arc<ConversationManager>,
     pub vault: Arc<dyn IVaultPort>,
     pub cost: Option<Arc<CostManager>>,
@@ -240,13 +240,13 @@ impl ConsolidationManager {
     /// `cost` 설정되어 있으면 LLM 호출 전 한도 검사 (백그라운드 cron 폭주 차단).
     pub fn set_ai_hook(
         &self,
-        ai: Arc<AiManager>,
+        llm: Arc<LlmService>,
         conversation: Arc<ConversationManager>,
         vault: Arc<dyn IVaultPort>,
         cost: Option<Arc<CostManager>>,
     ) {
         let mut guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
-        *guard = Some(ConsolidationAiHook { ai, conversation, vault, cost });
+        *guard = Some(ConsolidationAiHook { llm, conversation, vault, cost });
     }
 
     /// MemoryFileManager 설정 — extract_exchange 의 lessons 저장 활성. 미설정 시 lessons skip.
@@ -377,7 +377,7 @@ impl ConsolidationManager {
             thinking_level: Some("minimal".to_string()),
             ..Default::default()
         };
-        let response_text = hook.ai.ask_text(&full_prompt, &opts).await.map_err(|e| {
+        let response_text = hook.llm.ask_text(&full_prompt, &opts).await.map_err(|e| {
             crate::i18n::t(
                 "core.error.consolidation.llm_call_failed",
                 None,
@@ -677,7 +677,7 @@ impl ConsolidationManager {
                 &[],
             ));
         };
-        hook.ai.ask_text(prompt, opts).await
+        hook.llm.ask_text(prompt, opts).await
     }
 }
 

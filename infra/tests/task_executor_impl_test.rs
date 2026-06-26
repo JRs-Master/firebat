@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use tempfile::tempdir;
 
-use firebat_core::managers::ai::AiManager;
+use firebat_core::managers::llm_service::LlmService;
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::managers::page::PageManager;
 use firebat_core::managers::task::{PipelineStep, TaskExecutor, TaskManager};
@@ -30,10 +30,10 @@ fn make_executor(dir: &std::path::Path) -> Arc<RealTaskExecutor> {
     let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
     let tools = Arc::new(ToolManager::new());
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-    let ai = Arc::new(AiManager::new(llm, tools.clone(), log.clone()));
+    let llm_svc = Arc::new(LlmService::new(llm));
     let page = Arc::new(PageManager::new(db, storage));
 
-    Arc::new(RealTaskExecutor::new(sandbox, mcp, ai, page, tools, log))
+    Arc::new(RealTaskExecutor::new(sandbox, mcp, llm_svc, page, tools, log))
 }
 
 #[tokio::test]
