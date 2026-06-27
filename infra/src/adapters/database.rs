@@ -597,6 +597,19 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         created_at: Option<i64>,
     ) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
+        // 무변경 재저장 = 완전 no-op — F5(pagehide) 마다 flush 가 같은 대화를 sendBeacon 으로 재저장하며
+        // (a) updated_at bump → 목록 최상단 점프 (b) conversation_messages 통째 DELETE+재삽입 → 랙.
+        // 내용(messages) 동일하면 UPSERT·dual-write 둘 다 skip. cleanMessages 왕복이 안정적이라 신뢰 가능.
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT messages FROM conversations WHERE id = ?1 AND owner = ?2",
+                params![id, owner],
+                |r| r.get(0),
+            )
+            .ok();
+        if existing.as_deref() == Some(messages_json) {
+            return true;
+        }
         let now = firebat_core::utils::time::now_ms();
         let created = created_at.unwrap_or(now);
         let ok = conn
