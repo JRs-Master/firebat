@@ -509,40 +509,22 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [activeConvId, hubContext, convBackend, convStorageKey, reconcileActiveConv]);
 
-  // visibilitychange=hidden 안전망 / visible 재조회
+  // 복귀 시 재조회 (visible / focus) — admin·hub 공통.
+  // 통합(contract C1): 옛 pagehide/hidden flush(sendBeacon 재저장) 제거. admin chat-stream route 가
+  // 매 턴 서버측 영속(client disconnect 시에도 relay 완주 후 save)이라 flush 는 redundant 였고 —
+  // hub 엔 없던 admin 전용 분기. 그 flush 가 F5 무전송에도 conversations 재저장→updated_at bump→목록 점프
+  // 원인이었음. 제거 = admin 도 hub 처럼 server-authoritative(분리 해소) + 점프 구조적 소멸.
   useEffect(() => {
-    const flush = () => {
-      // hub mode 안 admin /api/conversations sendBeacon 차단 — 옛 누락 fix.
-      // hub 대화 = hub_conversations 별개 테이블 (HubManager.send_message 가 backend 영속화).
-      // 본 flush 안 sendBeacon 호출 시 admin conversations 테이블 안 owner='admin' 으로 저장 →
-      // admin 사이드바 대화 목록 안 hub 대화 노출.
-      if (hubContext) return;
-      if (!activeConvId || messagesRef.current.length === 0) return;
-      const cleanMsgs = cleanMessages(messagesRef.current);
-      if (cleanMsgs.length === 0) return;
-      const firstUser = cleanMsgs.find(m => m.role === 'user');
-      const title = firstUser?.content
-        ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
-        : '새 대화';
-      const convMeta = conversations.find(c => c.id === activeConvId);
-      const createdAt = convMeta?.createdAt ?? Date.now();
-      const body = JSON.stringify({ id: activeConvId, title, messages: cleanMsgs, createdAt });
-      const blob = new Blob([body], { type: 'application/json' });
-      try { navigator.sendBeacon('/api/conversations', blob); } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-    };
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush();
-      else if (document.visibilityState === 'visible') void refreshConversations();
+      if (document.visibilityState === 'visible') void refreshConversations();
     };
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('pagehide', flush);
     window.addEventListener('focus', refreshConversations);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('pagehide', flush);
       window.removeEventListener('focus', refreshConversations);
     };
-  }, [activeConvId, conversations, refreshConversations, hubContext]);
+  }, [refreshConversations]);
 
   // fallback 메시지 (TIMEOUT/INVISIBLE/EMPTY_REPLY/NETWORK) 표시 시 DB 자동 polling.
   // race: SSE 60초 timeout 직후 백엔드 67초에 DB write → visibilitychange 한 번만 발화 시 놓침.
