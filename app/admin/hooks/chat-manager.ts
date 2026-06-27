@@ -487,6 +487,11 @@ function leanPendingArgs(args?: Record<string, unknown>): Record<string, unknown
 export function cleanMessages(msgs: Message[]): Message[] {
   return msgs.filter(m =>
     !m.isThinking && !m.executing && !m.streaming
+    // system-init 히어로(👻 환영)는 client-only — 영속·비교에서 제외. 화면엔 preserveHero(로드 시 재부착)로
+    // 표시되므로 persist 할 이유 0. 옛엔 cleanMessages 가 이걸 안 걸러 DB 에 저장됨(187/189 대화) →
+    // preserveHero 가 로드마다 다시 붙이고 그 직렬화 형태가 save↔load 마다 미묘히 달라(executedActions:[] 등)
+    // save_conversation 의 messages 비교(4cb0593)가 어긋남 → 무변경 F5 에도 updated_at bump = 목록 점프 root.
+    && m.id !== 'system-init'
     // fallback/에러 메시지("응답이 비어있습니다" 등)는 DB 저장·복원에서 제외. 옛 = 클라이언트가
     // fallback 을 systemId 로 저장 → 서버가 같은 id 로 저장하는 진짜 답과 race → fallback 이 나중에
     // 쓰이면 진짜 답을 덮어써서 "F5 해도 계속 SSE 에러" 영구화. 이제 fallback 은 세션 내 표시만 하고
