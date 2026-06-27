@@ -152,7 +152,15 @@ export function Tooltip({ label, side = 'bottom', delay = 300, disabledOnTouch =
 
   // children 에 event handler + ref 주입
   const child = React.Children.only(children);
+  // 접근성 — 아이콘 전용 버튼(텍스트 없음)에 label(문자열)을 aria-label 로 자동 부여.
+  // 이미 aria-label/labelledby 있으면 보존. axe "buttons must have discernible text" 를 Tooltip 한 곳에서 일괄 해소.
+  const childProps = child.props as Record<string, unknown>;
+  const autoAria =
+    typeof label === 'string' && !childProps['aria-label'] && !childProps['aria-labelledby']
+      ? label
+      : undefined;
   const trigger = React.cloneElement(child as React.ReactElement<any>, {
+    ...(autoAria ? { 'aria-label': autoAria } : {}),
     ref: (el: HTMLElement | null) => {
       triggerRef.current = el;
       const origRef = (child as any).ref;

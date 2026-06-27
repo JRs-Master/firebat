@@ -2436,6 +2436,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                       <button
                         onClick={() => setShowPlusMenu(v => !v)}
                         disabled={loading}
+                        aria-label={t('common.more')}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
                       >
                         <Plus size={20} />
