@@ -298,6 +298,17 @@ impl ConfigDrivenAdapter {
                 enriched.cli_model = Some(m);
             }
         }
+        // 진단 — CLI 가 실제 받는 모델 확인용(per-request 모델이 로그에 없어 "AI 멍청해짐" 추적 불가했던 갭).
+        // None = CLI 기본 모델 / Some = --model 로 전송. effort 도 같이(추론 깊이).
+        if config.format.starts_with("cli-") {
+            tracing::info!(
+                category = "ai",
+                "CLI 모델 resolve — id={} → --model={:?} thinking={:?} (None=CLI 기본)",
+                config.id,
+                enriched.cli_model,
+                enriched.thinking_level
+            );
+        }
         enriched
     }
 }
