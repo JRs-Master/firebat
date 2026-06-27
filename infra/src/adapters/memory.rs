@@ -362,6 +362,7 @@ impl SqliteMemoryAdapter {
         candidates: Vec<(Vec<u8>, T)>,
         limit: usize,
         offset: usize,
+        label: &str,
     ) -> Vec<T> {
         let mut scored: Vec<(f32, T)> = candidates
             .into_iter()
@@ -375,6 +376,15 @@ impl SqliteMemoryAdapter {
             })
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        // 관련도 진단 — top + 컷 경계(limit번째) cosine + 후보 수. library/history 와 같이 보고
+        // 자동회상 threshold 튜닝용. 현재 컷 0 = top-K 무조건. "하이"(무관) 점수 확인 후 컷 값 결정.
+        let top = scored.first().map(|(s, _)| *s).unwrap_or(0.0);
+        let cut = scored.get(limit.saturating_sub(1)).map(|(s, _)| *s).unwrap_or(top);
+        tracing::info!(
+            category = "recall",
+            "Recall cosine — {label} top_score={top:.4} cut_score={cut:.4} candidates={}",
+            scored.len()
+        );
         scored
             .into_iter()
             .skip(offset)
@@ -704,7 +714,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             }
             drop(stmt);
 
-            let mut out = Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset);
+            let mut out = Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset, "entity");
             // factCount 별도 조회
             for e in &mut out {
                 e.fact_count = conn
@@ -1055,7 +1065,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                 }
                 candidates.push((b, fact));
             }
-            return Ok(Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset));
+            return Ok(Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset, "fact"));
         }
 
         // ── Fallback (LIKE + 시간 정렬) ─────────────────────────────────────────
@@ -1486,7 +1496,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     },
                 ));
             }
-            return Ok(Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset));
+            return Ok(Self::cosine_rerank(embedder, &q_vec, candidates, limit, offset, "event"));
         }
 
         // ── Fallback (LIKE + 시간 정렬) ─────────────────────────────────────────

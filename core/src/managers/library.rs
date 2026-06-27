@@ -362,6 +362,15 @@ impl LibraryManager {
                 score,
             });
         }
+        // 관련도 진단 — top + 컷 경계 dense cosine. recall/history 와 같이 보고 자동회상 threshold 튜닝용.
+        // 현재 컷 0 = top_k 무조건. "하이"(무관) 점수 확인 후 컷 값 결정(SourceTags 뱃지 + 주입 양쪽).
+        let top = hits.first().map(|h| h.score).unwrap_or(0.0);
+        let cut = hits.last().map(|h| h.score).unwrap_or(top);
+        tracing::info!(
+            category = "library",
+            "라이브러리 cosine — query='{query}' top_score={top:.4} cut_score={cut:.4} hits={}",
+            hits.len()
+        );
         Ok(hits)
     }
 }
