@@ -60,6 +60,29 @@ impl LibraryManager {
         self.library.list_references(owner).await
     }
 
+    /// 얇은 인덱스 — AI 가 "뭐가 있나" 알도록 자료 이름+설명만 (청크 자동주입 대신, discover→on-demand).
+    /// owner 자료 + extra_ids(admin 공유 = hub allowed_references) 병합. 본문은 search_library 로 인출.
+    pub async fn index(&self, owner: &str, extra_ids: &[String]) -> InfraResult<String> {
+        let mut refs = self.library.list_references(owner).await.unwrap_or_default();
+        if !extra_ids.is_empty() {
+            // hub = admin 이 공유한 reference 도 노출 (자기 owner 아니므로 admin 목록에서 ID 매칭).
+            let admin_refs = self.library.list_references("admin").await.unwrap_or_default();
+            for r in admin_refs {
+                if extra_ids.iter().any(|id| id == &r.id) && !refs.iter().any(|x| x.id == r.id) {
+                    refs.push(r);
+                }
+            }
+        }
+        let lines: Vec<String> = refs
+            .iter()
+            .map(|r| match r.description.as_deref().map(str::trim) {
+                Some(d) if !d.is_empty() => format!("- {}: {}", r.name, d),
+                _ => format!("- {}", r.name),
+            })
+            .collect();
+        Ok(lines.join("\n"))
+    }
+
     /// hub 격리 — reference_id 가 owner 소유인지 (list_references(owner) 에 포함). 미소유 false.
     /// source id-op 은 get_source 로 reference_id 를 얻어 이 함수로 검사한다.
     pub async fn is_reference_owned(&self, reference_id: &str, owner: &str) -> InfraResult<bool> {

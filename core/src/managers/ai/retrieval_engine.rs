@@ -126,6 +126,16 @@ impl RetrievalEngine {
         self
     }
 
+    /// 라이브러리 얇은 인덱스(이름+설명) — 자동주입(청크) 대신 상시 노출용. AI 가 보고 search_library 결정.
+    /// owner 자료 + extra_ids(hub allowed_references = admin 공유) 병합. library 미설정 시 None.
+    pub async fn library_index(&self, owner: &str, extra_ids: &[String]) -> Option<String> {
+        let lib = self.library.as_ref()?;
+        lib.index(owner, extra_ids)
+            .await
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+    }
+
     /// 사용자 query → 4 source 병렬 검색 → 통합 contextSummary.
     /// 옛 TS retrieve(opts) 1:1.
     pub async fn retrieve(&self, opts: &RetrieveOpts) -> RetrievalResult {

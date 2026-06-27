@@ -675,9 +675,9 @@ impl AiManager {
             }
         }
 
-        // Library Phase 1 단계 8.4 (2026-05-17) — retrieve_library_hits 누적. RetrievalEngine 가
-        // 매 query 시점 매칭한 결과 metadata. 함수 끝 AiResponse.library_hits 로 노출.
-        let mut retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
+        // library_hits(SourceTags) — library 자동주입 비활성 후 항상 빈 채로 노출(2026-06-27).
+        // 자동주입 SourceTags 노이즈 제거 → 라이브러리 사용은 search_library 도구 액션뱃지로만 표시.
+        let retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
 
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
@@ -894,36 +894,54 @@ impl AiManager {
                 // hub allowed_references 제한 → cross-tenant 안전.
                 // 빌드 세션 중엔 Recall/library 회상 skip (filter) — 빌드 진행 칩이 prompt 라 무의미.
                 if let Some(engine) = self.retrieval_engine.as_ref().filter(|_| !build_active) {
-                    let owner = effective_opts
+                    let owner_s = effective_opts
                         .owner
                         .as_deref()
                         .or(ai_opts.owner.as_deref())
-                        .map(String::from);
+                        .unwrap_or("admin")
+                        .to_string();
                     let conv_id = effective_opts
                         .conversation_id
                         .as_deref()
                         .or(ai_opts.conversation_id.as_deref())
                         .map(String::from);
-                    // hub_context 가 있으면 library 검색을 allowed_references 로 제한.
+                    // hub_context 가 있으면 library 를 allowed_references 로 제한 (인덱스·검색 공통).
                     let reference_filter = ai_opts
                         .hub_context
                         .as_ref()
                         .map(|c| c.allowed_references.clone());
+                    // library 청크 자동주입 비활성(limit 0) — 무관 query 에도 매번 주입·SourceTags 뜨던
+                    // 노이즈+토큰낭비 차단. 대신 아래 얇은 인덱스만 상시 노출 + 본문은 search_library 온디맨드
+                    // (회색 액션뱃지). entity/fact/event/history 회상은 그대로(ambient + self-gated).
                     let retrieve_opts = retrieval_engine::RetrieveOpts {
                         query: prompt.to_string(),
-                        owner,
+                        owner: Some(owner_s.clone()),
                         current_conv_id: conv_id,
-                        limits: retrieval_engine::RetrievalLimits::default(),
-                        reference_filter,
+                        limits: retrieval_engine::RetrievalLimits {
+                            library: Some(0),
+                            ..Default::default()
+                        },
+                        reference_filter: reference_filter.clone(),
                     };
                     let result = engine.retrieve(&retrieve_opts).await;
                     if !result.context_summary.is_empty() {
                         // RetrievalEngine already wraps in <RETRIEVED_CONTEXT> — push as-is (no double-wrap).
                         extra_parts.push(result.context_summary);
                     }
-                    // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
-                    if !result.library_hits.is_empty() {
-                        retrieved_library_hits = result.library_hits;
+                    // library 자동주입 안 하므로 library_hits(SourceTags)도 비움 — search_library 도구 호출
+                    // 시에만 액션뱃지로 표시(AI 가 실제 찾았을 때만). 아래 인덱스로 discover.
+                    let extra_ids = reference_filter.unwrap_or_default();
+                    if let Some(index) = engine.library_index(&owner_s, &extra_ids).await {
+                        const LIB_INDEX_CAP: usize = 4000;
+                        let body = if index.chars().count() > LIB_INDEX_CAP {
+                            let t: String = index.chars().take(LIB_INDEX_CAP).collect();
+                            format!("{t}\n… (truncated)")
+                        } else {
+                            index
+                        };
+                        extra_parts.push(format!(
+                            "<LIBRARY_AVAILABLE>\n{body}\n(Reference documents — NOT auto-injected. When the user's request relates to one, call search_library to retrieve and cite its content.)\n</LIBRARY_AVAILABLE>"
+                        ));
                     }
                 }
 
