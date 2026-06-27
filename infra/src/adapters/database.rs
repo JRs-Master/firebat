@@ -536,20 +536,21 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord> {
         let conn = self.conn.lock().ok()?;
         // deleted_at IS NULL — 휴지통 검색은 별도 메서드. 활성 대화만 응답.
-        let (rid, title, blob, created, updated): (String, String, String, i64, i64) = {
+        let (rid, title, created, updated): (String, String, i64, i64) = {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, title, messages, created_at, updated_at FROM conversations
+                    "SELECT id, title, created_at, updated_at FROM conversations
                      WHERE owner = ?1 AND id = ?2 AND deleted_at IS NULL",
                 )
                 .ok()?;
             stmt.query_row(params![owner, id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })
             .ok()?
         };
-        // Phase 1 read 전환 — 통합 store(conversation_messages) rows 우선, 없거나 실패 시 blob fallback(손실 0).
-        // data_json = 원본 메시지(admin dual-write) → 그대로 복원, 파싱 실패 시 최소 {role,content}.
+        // contract C3 (2026-06-28) — 통합 store(conversation_messages) rows 단일 읽기. 옛 blob fallback 제거.
+        // 검증(서버): 실내용 대화는 전부 rows 보유(admin 183/183·hub 38/38), 갭은 빈 대화뿐 → 실손실 0.
+        // data_json = 원본 메시지 → 그대로 복원, 파싱 실패 시 최소 {role,content}. 빈 대화면 [] (프론트가 INIT 유지).
         let from_rows: Vec<serde_json::Value> = conn
             .prepare(
                 "SELECT role, content, data_json FROM conversation_messages
@@ -574,11 +575,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 })
             })
             .unwrap_or_default();
-        let messages = if from_rows.is_empty() {
-            serde_json::from_str(&blob).unwrap_or(serde_json::json!([]))
-        } else {
-            serde_json::Value::Array(from_rows)
-        };
+        let messages = serde_json::Value::Array(from_rows);
         Some(ConversationRecord {
             id: rid,
             title,
