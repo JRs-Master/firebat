@@ -105,6 +105,15 @@ function preserveLocalPendingStatus(remote: Message[], local: Message[]): Messag
   });
 }
 
+/** system-init 히어로(👻 환영)는 client-only(백엔드 미영속). 백엔드 메시지로 LOAD/머지할 때 떨어뜨리지
+ *  않게 로컬에 있으면 맨 앞에 보존 — 새 대화에서 채팅 시작 후 reconcile/refresh 가 돌아도 히어로가
+ *  첫 메시지로 남아 위로 밀려나게(중간에 사라지던 것 차단). 로컬에 없으면(옛 대화 로드) 추가 안 함. */
+function preserveHero(merged: Message[], local: Message[]): Message[] {
+  const hero = local.find(m => m.id === 'system-init');
+  if (hero && !merged.some(m => m.id === 'system-init')) return [hero, ...merged];
+  return merged;
+}
+
 export function useChat(aiModel: string, onRefresh: () => void, hubContext?: UseChatHubContext) {
   const t = useTranslations();
   const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
@@ -272,6 +281,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         localStorage.setItem(convStorageKey, JSON.stringify(fullList));
         if (activeId) {
           setActiveConvId(activeId);
+          suppressBumpRef.current = activeId; // F5 복원 = 열어보기 → save effect updatedAt bump 방지(#2, handleSelectConv 와 동일 가드). 메시지 전송 시 해제.
           dispatch({ type: 'LOAD', messages: cleanedActive });
         }
         return;
@@ -288,6 +298,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
         const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
         setActiveConvId(active.id);
+        suppressBumpRef.current = active.id; // F5 폴백 복원 = 열어보기 → bump 방지(#2)
         dispatch({ type: 'LOAD', messages: cleanMessages(active.messages) });
       } catch (e) {
         logger.warn('useChat', 'localStorage 폴백 파싱 실패', { error: e });
@@ -421,7 +432,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       return;
     }
     if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
-    const remoteMerged = preserveLocalPendingStatus(remoteMsgs, messagesRef.current);
+    const remoteMerged = preserveHero(preserveLocalPendingStatus(remoteMsgs, messagesRef.current), messagesRef.current);
     dispatch({ type: 'LOAD', messages: remoteMerged });
     setConversations(prev => {
       const updated = prev.map(c => c.id === activeConvId
@@ -620,7 +631,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // 서버에 실제 메시지가 없으면(빈 새 대화) 로컬 welcome([INIT_MESSAGE])을 []로 덮지 않는다 — 환영문 유지.
       if (remoteRealMsgCount === 0) return;
       if (!(localRealMsgCount === 0 || remoteRealMsgCount > localRealMsgCount)) return;
-      const remoteMerged = preserveLocalPendingStatus(remoteMsgs, conv.messages);
+      const remoteMerged = preserveHero(preserveLocalPendingStatus(remoteMsgs, conv.messages), conv.messages);
       dispatch({ type: 'LOAD', messages: remoteMerged });
       setConversations(prev => {
         const cur = prev.find(c => c.id === id);
