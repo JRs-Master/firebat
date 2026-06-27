@@ -601,12 +601,18 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let created = created_at.unwrap_or(now);
         let ok = conn
             .execute(
+                // updated_at 은 **메시지가 실제로 바뀐 경우에만** now 로 갱신 — 안 바뀌면 기존 값 보존.
+                // F5(pagehide) 마다 flush 가 sendBeacon 으로 같은 대화를 재저장하는데 무조건 now 로 bump 하면
+                // 대화 입력 안 했는데도 목록 최상단으로 점프하던 버그(#2). conversations.messages = 기존 행(원본),
+                // excluded.messages = 신규 → 같으면 updated_at 보존, 다르면 now. (SQLite SET RHS 는 원본 행 기준.)
                 "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     messages = excluded.messages,
-                    updated_at = excluded.updated_at",
+                    updated_at = CASE WHEN conversations.messages = excluded.messages
+                                      THEN conversations.updated_at
+                                      ELSE excluded.updated_at END",
                 params![id, owner, title, messages_json, created, now],
             )
             .is_ok();
