@@ -272,7 +272,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         // 으로 되돌려 승인 카드가 재출현하던 #5 차단 (admin·hub 공통; hub 는 localStorage 가 유일 소스).
         const priorActive = safeJsonParse<Conversation[]>(localStorage.getItem(convStorageKey) ?? '', [])
           .find(c => c.id === activeId)?.messages ?? [];
-        const cleanedActive = preserveLocalPendingStatus(cleanMessages(activeMessages), priorActive);
+        // F5 복원도 hero 보존 — 백엔드 메시지엔 system-init 없으니 로컬(mount=[INIT_MESSAGE])에서 앞에 보존.
+        // (reconcile·select 엔 넣고 정작 F5=init 엔 빠뜨려 새 대화 F5 시 유령 사라지던 것.)
+        const cleanedActive = preserveHero(
+          preserveLocalPendingStatus(cleanMessages(activeMessages), priorActive),
+          messagesRef.current,
+        );
         const fullList: Conversation[] = remote.map(r => ({
           id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
           messages: r.id === activeId ? cleanedActive : [],
@@ -299,7 +304,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
         setActiveConvId(active.id);
         suppressBumpRef.current = active.id; // F5 폴백 복원 = 열어보기 → bump 방지(#2)
-        dispatch({ type: 'LOAD', messages: cleanMessages(active.messages) });
+        dispatch({ type: 'LOAD', messages: preserveHero(cleanMessages(active.messages), messagesRef.current) });
       } catch (e) {
         logger.warn('useChat', 'localStorage 폴백 파싱 실패', { error: e });
         localStorage.removeItem(convStorageKey);
@@ -327,6 +332,13 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       if (!contentChanged && cur.title === title) return prev;
       // 단순 열어보기(load 채움)면 updatedAt 갱신 안 함 — 메시지 안 보냈는데 목록 최상단 올라가던 #2.
       const isLoadFill = suppressBumpRef.current === activeConvId;
+      // [DIAG-F5JUMP] updatedAt bump 결정 추적 — F5 점프 범인 특정용(원인 확정 후 제거).
+      if (contentChanged) {
+        logger.debug('chat', '[DIAG-F5JUMP] save-effect', {
+          conv: activeConvId, willBump: contentChanged && !isLoadFill,
+          isLoadFill, suppress: suppressBumpRef.current, contentChanged,
+        });
+      }
       const updated = prev.map(c =>
         c.id === activeConvId
           ? { ...c, messages: cleanMsgs, title, ...(contentChanged && !isLoadFill ? { updatedAt: now } : {}) }
@@ -432,6 +444,10 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       return;
     }
     if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
+    // [DIAG-F5JUMP] reconcile 가 updatedAt 을 remote 로 갱신 — F5 점프 후보2(원인 확정 후 제거).
+    logger.debug('chat', '[DIAG-F5JUMP] reconcile-bump', {
+      conv: activeConvId, remoteUpdatedAt, localUpdatedAt, shouldForceLoad,
+    });
     const remoteMerged = preserveHero(preserveLocalPendingStatus(remoteMsgs, messagesRef.current), messagesRef.current);
     dispatch({ type: 'LOAD', messages: remoteMerged });
     setConversations(prev => {
