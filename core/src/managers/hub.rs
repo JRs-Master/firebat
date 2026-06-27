@@ -122,8 +122,8 @@ impl HubManager {
         }
     }
 
-    /// Phase 1 — hub 메시지를 app.db 통합 store(conversation_messages) 에도 dual-write.
-    fn mirror_hub_message(&self, msg: &HubMessage) {
+    /// hub 메시지를 app.db 통합 store(conversation_messages) 에 기록 — 단일 store(contract C4).
+    fn write_message(&self, msg: &HubMessage) {
         if let Some(db) = &self.db {
             db.append_conversation_message(&crate::ports::ConversationMessage {
                 id: msg.id.clone(),
@@ -375,17 +375,14 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        // Phase 1 read 전환 — app.db 통합 store(owner-keyed) 우선, 비면 memory.db fallback(손실 0).
-        // 쓰기측 미러(생성·제목·삭제·updated_at)가 완전해야 정확 — 그 보강 후 전환.
+        // contract C4 (2026-06-28) — app.db 통합 store(owner-keyed) 단독. 옛 memory.db fallback 제거.
         if let Some(db) = &self.db {
             let owner = format!("hub:{instance_id}:{session_id}");
-            let rows = db.list_conversations(&owner);
-            if !rows.is_empty() {
-                return Ok(rows
-                    .into_iter()
-                    .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
-                    .collect());
-            }
+            return Ok(db
+                .list_conversations(&owner)
+                .into_iter()
+                .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
+                .collect());
         }
         self.port.list_conversations(instance_id, session_id).await
     }
@@ -401,16 +398,14 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        // Phase 1 read 전환 — app.db 통합 store 우선, 비면 memory.db fallback.
+        // contract C4 (2026-06-28) — app.db 통합 store 단독. 옛 memory.db fallback 제거.
         if let Some(db) = &self.db {
             let owner = format!("hub:{instance_id}:{session_id}");
-            let rows = db.list_deleted_conversations(&owner);
-            if !rows.is_empty() {
-                return Ok(rows
-                    .into_iter()
-                    .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
-                    .collect());
-            }
+            return Ok(db
+                .list_deleted_conversations(&owner)
+                .into_iter()
+                .map(|s| Self::summary_to_hub_conv(s, instance_id, session_id))
+                .collect());
         }
         self.port
             .list_deleted_conversations(instance_id, session_id)
@@ -498,8 +493,9 @@ impl HubManager {
             data_json: None,
             created_at: Self::now_ms(),
         };
-        self.port.append_message(&msg).await?;
-        self.mirror_hub_message(&msg);
+        // contract C4 (2026-06-28) — app.db conversation_messages 단독 쓰기. 옛 memory.db hub_messages 폐기
+        // (C3 후 hub_messages 는 read 안 됨 = write-only 였음).
+        self.write_message(&msg);
         Ok(id)
     }
 
@@ -523,8 +519,8 @@ impl HubManager {
             data_json,
             created_at: Self::now_ms(),
         };
-        self.port.append_message(&msg).await?;
-        self.mirror_hub_message(&msg);
+        // contract C4 — app.db 단독 쓰기 (위 append_user_message 참조).
+        self.write_message(&msg);
         Ok(id)
     }
 

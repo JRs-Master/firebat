@@ -594,72 +594,79 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         created_at: Option<i64>,
     ) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        // 무변경 재저장 = 완전 no-op — F5(pagehide) 마다 flush 가 같은 대화를 sendBeacon 으로 재저장하며
-        // (a) updated_at bump → 목록 최상단 점프 (b) conversation_messages 통째 DELETE+재삽입 → 랙.
-        // 내용(messages) 동일하면 UPSERT·dual-write 둘 다 skip. cleanMessages 왕복이 안정적이라 신뢰 가능.
-        let existing: Option<String> = conn
+        // contract C4 (2026-06-28) — 단일 store = conversation_messages rows. blob(conversations.messages) 폐기.
+        // admin 저장 = full-array replace 모델(union-merge 결과 통째). 변경감지 = 기존 rows vs 신규 비교.
+        let incoming: Vec<serde_json::Value> =
+            serde_json::from_str(messages_json).unwrap_or_default();
+        // 기존 rows(data_json) 를 배열로 복원 — 무변경 재저장 no-op 판정용. merge 가 get_conversation(rows)
+        // 을 읽으므로 무변경 시 incoming == 기존 rows (deep-equal).
+        let existing: Vec<serde_json::Value> = {
+            let mut out = Vec::new();
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT data_json FROM conversation_messages WHERE conversation_id = ?1
+                 ORDER BY created_at ASC, rowid ASC",
+            ) {
+                if let Ok(rows) = stmt.query_map(params![id], |r| r.get::<_, String>(0)) {
+                    for dj in rows.flatten() {
+                        out.push(serde_json::from_str(&dj).unwrap_or(serde_json::json!({})));
+                    }
+                }
+            }
+            out
+        };
+        let row_exists: bool = conn
             .query_row(
-                "SELECT messages FROM conversations WHERE id = ?1 AND owner = ?2",
+                "SELECT 1 FROM conversations WHERE id = ?1 AND owner = ?2",
                 params![id, owner],
-                |r| r.get(0),
+                |_| Ok(()),
             )
-            .ok();
-        if existing.as_deref() == Some(messages_json) {
+            .is_ok();
+        // 무변경 + 메타 행 존재 = 완전 no-op (F5 flush 재저장이 updated_at bump·rows 재기록 안 하도록).
+        if row_exists && existing == incoming {
             return true;
         }
         let now = firebat_core::utils::time::now_ms();
         let created = created_at.unwrap_or(now);
+        // conversations = 메타(title·타임스탬프·deleted_at·owner)만. messages 블롭은 '[]' 로 비움(단일 소스=rows).
         let ok = conn
             .execute(
-                // updated_at 은 **메시지가 실제로 바뀐 경우에만** now 로 갱신 — 안 바뀌면 기존 값 보존.
-                // F5(pagehide) 마다 flush 가 sendBeacon 으로 같은 대화를 재저장하는데 무조건 now 로 bump 하면
-                // 대화 입력 안 했는데도 목록 최상단으로 점프하던 버그(#2). conversations.messages = 기존 행(원본),
-                // excluded.messages = 신규 → 같으면 updated_at 보존, 다르면 now. (SQLite SET RHS 는 원본 행 기준.)
                 "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 VALUES (?1, ?2, ?3, '[]', ?4, ?5)
                  ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
-                    messages = excluded.messages,
-                    updated_at = CASE WHEN conversations.messages = excluded.messages
-                                      THEN conversations.updated_at
-                                      ELSE excluded.updated_at END",
-                params![id, owner, title, messages_json, created, now],
+                    messages = '[]',
+                    updated_at = excluded.updated_at",
+                params![id, owner, title, created, now],
             )
             .is_ok();
-        // Phase 1 dual-write — blob 을 통합 store(conversation_messages) rows 로도 동기화.
-        // blob = full-array replace 라 rows 도 재동기(삭제 후 재삽입). data_json = 메시지 원본
-        // (프론트 shape 무관 passthrough) → read 슬라이스에서 그대로 복원. read 는 rows 우선(slice 3).
-        // ⚠️ contract 항목: admin 은 여기서 *전체 메시지*(UI 플래그 포함)를, hub 미러는 *data 페이로드만*
-        //    저장 = 같은 data_json 컬럼의 의미 불일치. 단일 read 경로 전에 canonical data 로 통일 필요.
-        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(messages_json) {
+        // rows full replace — data_json = 메시지 원본(프론트 shape passthrough), read 가 그대로 복원.
+        let _ = conn.execute(
+            "DELETE FROM conversation_messages WHERE conversation_id = ?1",
+            params![id],
+        );
+        for (i, m) in incoming.iter().enumerate() {
+            let mid = m
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{id}-{i}"));
+            let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let content = m
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let mcreated = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
+            let data_json = serde_json::to_string(m).unwrap_or_default();
             let _ = conn.execute(
-                "DELETE FROM conversation_messages WHERE conversation_id = ?1",
-                params![id],
+                "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(id) DO UPDATE SET
+                    role = excluded.role,
+                    content = excluded.content,
+                    data_json = excluded.data_json",
+                params![mid, id, role, content, data_json, mcreated],
             );
-            for (i, m) in arr.iter().enumerate() {
-                let mid = m
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("{id}-{i}"));
-                let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let content = m
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let mcreated = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
-                let data_json = serde_json::to_string(m).unwrap_or_default();
-                let _ = conn.execute(
-                    "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                     ON CONFLICT(id) DO UPDATE SET
-                        role = excluded.role,
-                        content = excluded.content,
-                        data_json = excluded.data_json",
-                    params![mid, id, role, content, data_json, mcreated],
-                );
-            }
         }
         ok
     }
