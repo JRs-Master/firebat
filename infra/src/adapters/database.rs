@@ -585,6 +585,27 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         })
     }
 
+    fn get_conversation_meta_by_id(&self, id: &str) -> Option<(String, ConversationSummary)> {
+        let conn = self.conn.lock().ok()?;
+        // deleted_at 필터 없음 — soft-deleted 도 반환(restore + 영구삭제 직전 owner 도출). hub 단일 store.
+        conn.query_row(
+            "SELECT owner, id, title, created_at, updated_at FROM conversations WHERE id = ?1",
+            params![id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    ConversationSummary {
+                        id: r.get(1)?,
+                        title: r.get(2)?,
+                        created_at: r.get(3)?,
+                        updated_at: r.get(4)?,
+                    },
+                ))
+            },
+        )
+        .ok()
+    }
+
     fn save_conversation(
         &self,
         owner: &str,

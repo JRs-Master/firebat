@@ -112,14 +112,14 @@ impl HubManager {
             .unwrap_or(0)
     }
 
-    /// Phase 1 — app.db 통합 store 에 hub 대화 row 를 owner-keyed 로 멱등 생성(있으면 no-op).
-    /// owner = "hub:<instance>:<session>". 생성 시 제목 = "새 대화" placeholder — 실제 제목은
-    /// update_conversation_title 가 첫 메시지/rename 시 app.db 미러에도 반영(백필은 c.title 직접 전달).
-    fn mirror_hub_conv_row(&self, instance_id: &str, session_id: &str, conv_id: &str) {
-        if let Some(db) = &self.db {
-            let owner = format!("hub:{instance_id}:{session_id}");
-            db.ensure_conversation_row(&owner, conv_id, "새 대화", Self::now_ms());
+    /// "hub:<instance>:<session>" → (instance, session). 형식 안 맞으면 None. 통합 store owner 역파싱.
+    fn parse_hub_owner(owner: &str) -> Option<(String, String)> {
+        let rest = owner.strip_prefix("hub:")?;
+        let (inst, sid) = rest.split_once(':')?;
+        if inst.is_empty() || sid.is_empty() {
+            return None;
         }
+        Some((inst.to_string(), sid.to_string()))
     }
 
     /// hub 메시지를 app.db 통합 store(conversation_messages) 에 기록 — 단일 store(contract C4).
@@ -337,9 +337,19 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        let conv_id = self.port.ensure_conversation(instance_id, session_id).await?;
-        self.mirror_hub_conv_row(instance_id, session_id, &conv_id);
-        Ok(conv_id)
+        // contract C4 — app.db 통합 store 단독. (instance,session) 최신 활성 재사용·없으면 새로
+        // (memory.db ensure 의미 = updated_at DESC LIMIT 1, app.db list_conversations 가 동일 정렬).
+        if let Some(db) = &self.db {
+            let owner = format!("hub:{instance_id}:{session_id}");
+            if let Some(s) = db.list_conversations(&owner).into_iter().next() {
+                return Ok(s.id);
+            }
+            let id = uuid::Uuid::new_v4().to_string();
+            // title="" → 첫 메시지 auto-title 가 채움(placeholder 아님 = title_empty 체크 통과).
+            db.ensure_conversation_row(&owner, &id, "", Self::now_ms());
+            return Ok(id);
+        }
+        self.port.ensure_conversation(instance_id, session_id).await
     }
 
     /// 항상 새 conversation 생성 — multi-conv 모드에서 사이드바 "새 대화" 누를 때 호출.
@@ -348,9 +358,13 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        let conv_id = self.port.create_conversation(instance_id, session_id).await?;
-        self.mirror_hub_conv_row(instance_id, session_id, &conv_id);
-        Ok(conv_id)
+        if let Some(db) = &self.db {
+            let owner = format!("hub:{instance_id}:{session_id}");
+            let id = uuid::Uuid::new_v4().to_string();
+            db.ensure_conversation_row(&owner, &id, "", Self::now_ms());
+            return Ok(id);
+        }
+        self.port.create_conversation(instance_id, session_id).await
     }
 
     /// app.db ConversationSummary(owner-keyed) → HubConversation. instance/session 은 호출 인자라
@@ -413,12 +427,22 @@ impl HubManager {
     }
 
     pub async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
+        // contract C4 — app.db 통합 store 단독. owner("hub:inst:sid") 역파싱 → HubConversation 재구성.
+        // soft-deleted 도 반환(get_conversation_meta_by_id = deleted 미필터) → restore·ensure_owner 정상.
+        if let Some(db) = &self.db {
+            return Ok(db.get_conversation_meta_by_id(id).and_then(|(owner, s)| {
+                Self::parse_hub_owner(&owner)
+                    .map(|(inst, sid)| Self::summary_to_hub_conv(s, &inst, &sid))
+            }));
+        }
         self.port.get_conversation(id).await
     }
 
-    /// app.db 통합 store 미러용 owner 도출 — "hub:<instance>:<session>". 변이 *전* 호출
-    /// (영구삭제는 row 가 사라지므로). hub get_conversation 은 soft-deleted 도 반환해 restore 도 가능.
+    /// app.db 통합 store owner 도출 — "hub:<instance>:<session>". 변이 *전* 호출(영구삭제 row 소멸 전).
     async fn hub_owner_of(&self, id: &str) -> Option<String> {
+        if let Some(db) = &self.db {
+            return db.get_conversation_meta_by_id(id).map(|(owner, _)| owner);
+        }
         self.port
             .get_conversation(id)
             .await
@@ -427,50 +451,55 @@ impl HubManager {
             .map(|c| format!("hub:{}:{}", c.instance_id, c.session_id))
     }
 
-    /// soft delete — 휴지통으로 이동. deleted_at 갱신. app.db 통합 store 도 미러(드리프트 방지).
+    /// soft delete — 휴지통으로 이동. deleted_at 갱신. app.db 통합 store 단독(C4).
     pub async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
-        let owner = self.hub_owner_of(id).await;
-        self.port.delete_conversation(id).await?;
-        if let (Some(db), Some(owner)) = (&self.db, owner) {
-            db.delete_conversation(&owner, id);
+        if let Some(db) = &self.db {
+            if let Some(owner) = self.hub_owner_of(id).await {
+                db.delete_conversation(&owner, id);
+            }
+            return Ok(());
         }
-        Ok(())
+        self.port.delete_conversation(id).await
     }
 
-    /// 휴지통에서 복원 — deleted_at NULL. app.db 통합 store 도 미러.
+    /// 휴지통에서 복원 — deleted_at NULL. app.db 단독.
     pub async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
-        let owner = self.hub_owner_of(id).await;
-        self.port.restore_conversation(id).await?;
-        if let (Some(db), Some(owner)) = (&self.db, owner) {
-            db.restore_conversation(&owner, id);
+        if let Some(db) = &self.db {
+            if let Some(owner) = self.hub_owner_of(id).await {
+                db.restore_conversation(&owner, id);
+            }
+            return Ok(());
         }
-        Ok(())
+        self.port.restore_conversation(id).await
     }
 
-    /// 영구 삭제 — hard delete. messages cascade. app.db 통합 store 도 미러(conversation_messages cascade).
+    /// 영구 삭제 — hard delete. conversation_messages cascade. app.db 단독.
     pub async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
-        let owner = self.hub_owner_of(id).await;
-        self.port.permanent_delete_conversation(id).await?;
-        if let (Some(db), Some(owner)) = (&self.db, owner) {
-            db.permanent_delete_conversation(&owner, id);
+        if let Some(db) = &self.db {
+            if let Some(owner) = self.hub_owner_of(id).await {
+                db.permanent_delete_conversation(&owner, id);
+            }
+            return Ok(());
         }
-        Ok(())
+        self.port.permanent_delete_conversation(id).await
     }
 
-    /// 30일 retention cleanup — internal cron 이 호출.
+    /// 30일 retention cleanup — internal cron 이 호출. app.db 단독.
     pub async fn cleanup_old_deleted_conversations(&self, retention_ms: i64) -> InfraResult<i64> {
         let cutoff = crate::utils::time::now_ms() - retention_ms;
+        if let Some(db) = &self.db {
+            return Ok(db.cleanup_old_deleted_conversations(cutoff));
+        }
         self.port.cleanup_old_deleted_conversations(cutoff).await
     }
 
     pub async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {
-        self.port.update_conversation_title(id, title).await?;
-        // app.db 통합 store 미러 — memory.db 제목 갱신을 app.db 에도 반영(rename·자동 제목 공용).
-        // 없으면 통합 store 의 hub 제목이 mirror_hub_conv_row 의 "새 대화" placeholder 로 고착 = contract 후 재발.
+        // contract C4 — app.db 통합 store 단독(rename·첫 메시지 auto-title 공용).
         if let Some(db) = &self.db {
             db.update_conversation_title(id, title);
+            return Ok(());
         }
-        Ok(())
+        self.port.update_conversation_title(id, title).await
     }
 
     // ─── Message ──────────────────────────────────────────────────────────
@@ -571,8 +600,8 @@ impl HubManager {
         const HISTORY_RECENT_LIMIT: usize = 10;
 
         // 옛 user 메시지를 모두 listMessages (현재 user 메시지는 caller 가 append_user_message 로
-        // 이미 기록한 상태 = caller 책임). recent N 으로 빌드.
-        let all_messages = self.port.list_messages(conversation_id).await?;
+        // 이미 기록한 상태 = caller 책임). recent N 으로 빌드. contract C4 — app.db 통합 store(self.list_messages).
+        let all_messages = self.list_messages(conversation_id).await?;
         let start = all_messages.len().saturating_sub(HISTORY_RECENT_LIMIT);
         let recent = &all_messages[start..];
         let history: Vec<ChatMessage> = recent
@@ -607,7 +636,8 @@ impl HubManager {
 
         // session_id — conversation 조회로 visitor 별 자료 격리 owner 에 들어감.
         // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
-        let conv = self.port.get_conversation(conversation_id).await?;
+        // contract C4 — app.db 통합 store(self.get_conversation, owner 역파싱).
+        let conv = self.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
 
         // Set the conversation title from the first user message — same behaviour as the admin

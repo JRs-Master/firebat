@@ -282,6 +282,8 @@ pub trait IDatabasePort: Send + Sync {
     // Conversations
     fn list_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
     fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord>;
+    /// id 로 대화 메타(owner + summary) 조회 — soft-deleted 포함(restore·owner 도출용). hub 단일 store 화(C4).
+    fn get_conversation_meta_by_id(&self, id: &str) -> Option<(String, ConversationSummary)>;
     fn save_conversation(
         &self,
         owner: &str,
