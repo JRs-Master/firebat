@@ -608,7 +608,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     if (!conv) return;
     setActiveConvId(id);
     suppressBumpRef.current = id; // 열어보기만으로 목록 최상단 올라가는 것 방지(#2) — 새 메시지 전송 시 해제
-    dispatch({ type: 'LOAD', messages: cleanMessages(conv.messages) }); // 캐시 즉시 표시
+    // 캐시 즉시 표시 + 유령(system-init 환영) 재부착 — init/F5(307) 와 대칭. select 만 빠져 선택 시 유령 안 뜨던 것.
+    dispatch({ type: 'LOAD', messages: preserveHero(cleanMessages(conv.messages), [INIT_MESSAGE]) });
 
     // 서버 최신 messages fetch (admin: /api/conversations / hub: sessions list-messages) — convBackend 단일 경로.
     // 캐시 비었거나 서버가 더 많으면 서버 우선. hub 비활성 conv 는 init 때 미로드(캐시 빔)라 항상 서버 채움.
