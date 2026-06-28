@@ -76,17 +76,41 @@ function mapHubMessages(
  *  재시작 LOAD 가 in-flight 저장 전 DB(pending)를 불러와 승인 카드가 다시 뜨던 것. 로컬 확정 status
  *  우선 + 다음 저장에서 DB 도 치유. (hub 는 saveToDb skip 이라 localStorage 가 유일 소스 — init 병합으로 복원) */
 const TERMINAL_PENDING = new Set(['approved', 'rejected', 'error', 'past-runat']);
+
+// 승인/거부 등 client-state(터미널 status)를 planId-keyed 로 durable 영속 — conv 메시지 캐시(reconcile 이
+// 백엔드 pending 으로 덮음)와 **별개** 라 새 빌드·reconcile 후에도 안 사라짐(승인카드 부활 차단).
+// admin=백엔드(saveToDb)가 권위 / hub=visitor 브라우저 영속(액션은 이미 commit 실행됨, status 는 "카드
+// 다시 안 보이기"용 = principal 별 store, 같은 로직). 멀티유저 계정화 시 hub 도 백엔드(1-4).
+const PENDING_STATUS_KEY = 'firebat-pending-status';
+type PendingStatusEntry = { status: PendingAction['status']; errorMessage?: string; originalRunAt?: string };
+function readPendingStatusMap(): Record<string, PendingStatusEntry> {
+  if (typeof window === 'undefined') return {};
+  return safeJsonParse<Record<string, PendingStatusEntry>>(localStorage.getItem(PENDING_STATUS_KEY) ?? '', {});
+}
+function writePendingStatus(planId: string, patch: PendingStatusEntry) {
+  if (typeof window === 'undefined' || !planId) return;
+  try {
+    const map = readPendingStatusMap();
+    map[planId] = { ...map[planId], ...patch };
+    localStorage.setItem(PENDING_STATUS_KEY, JSON.stringify(map));
+  } catch { /* localStorage 실패 무시 */ }
+}
+
 function preserveLocalPendingStatus(remote: Message[], local: Message[]): Message[] {
-  if (!local.length) return remote;
+  const durable = readPendingStatusMap(); // planId → 터미널 status (durable, reconcile 무관)
   const localById = new Map(local.map(m => [m.id, m]));
   return remote.map(rm => {
     if (!rm.pendingActions?.length) return rm;
     const lm = localById.get(rm.id);
-    if (!lm?.pendingActions?.length) return rm;
-    const localByPlan = new Map(lm.pendingActions.map(p => [p.planId, p]));
+    const localByPlan = lm?.pendingActions
+      ? new Map(lm.pendingActions.map(p => [p.planId, p]))
+      : new Map<string, PendingAction>();
     return {
       ...rm,
       pendingActions: rm.pendingActions.map(rp => {
+        // durable map(영속 결정) 우선 — reconcile 이 conv 캐시를 덮어도 status 유지(새 빌드 후 카드 부활 차단).
+        const d = durable[rp.planId];
+        if (d && TERMINAL_PENDING.has(String(d.status))) return { ...rp, ...d };
         const lp = localByPlan.get(rp.planId);
         // createdAt(로컬 stamp)은 비종결 카드에도 보존 — 리로드 후에도 만료 계산 유지.
         return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : { ...rp, createdAt: lp?.createdAt ?? rp.createdAt };
@@ -1024,6 +1048,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // 1) localStorage 즉시 동기 갱신 — useEffect 비동기 갱신 race 우회.
   // 2) DB POST 응답 await 후 실패 시 콘솔 경고 + 1회 retry — silent .catch 로 묻혔던 문제 가시화.
   const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
+    // durable map(planId-keyed) 우선 기록 — conv 캐시(reconcile 이 덮음)와 별개라 새 빌드 후에도 status 유지.
+    // admin·hub 공통(admin 은 백엔드 saveToDb 가 권위, 이건 추가 안전망 / hub 는 이게 영속의 핵심).
+    if (patch.status) writePendingStatus(planId, patch as PendingStatusEntry);
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) return;
     const updated = messagesRef.current.map(m =>
