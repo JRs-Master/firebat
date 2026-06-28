@@ -5,13 +5,14 @@
  * list(system∪user) 표시 + kind 배지 + 클릭 시 모나코로 user/skills/(slug).md 편집.
  * 새 스킬 — inline 모달(slug + kind) → 빈 .md 생성 후 모나코 편집. TemplatesPanel 미러.
  */
-import { useId, useState, useCallback, useEffect } from 'react';
+import { useId, useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, BookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { hubFetch } from '../../../lib/hub-fetch';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 
 interface SkillEntry {
@@ -31,11 +32,10 @@ export type SkillsHubContext = { slug: string; apiToken: string; sessionId: stri
 
 export function SkillsPanel({
   onEditFile,
-  hubMode,
   hubContext,
 }: {
   onEditFile?: (filePath: string) => void;
-  hubMode?: boolean;
+  hubMode?: boolean;   // accepted for caller compat; owner derived from hubContext (backend object).
   hubContext?: SkillsHubContext;
 }) {
   const t = useTranslations();
@@ -46,33 +46,31 @@ export function SkillsPanel({
   const [newKind, setNewKind] = useState('procedure');
   const [submitting, setSubmitting] = useState(false);
 
-  // hub fetch 헬퍼 — admin 은 /api/skills, hub 는 /api/hub/<slug>/skills dispatcher.
-  const hubFetch = useCallback(async (op: string, payload: Record<string, unknown>) => {
-    if (!hubContext) return null;
-    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/skills`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Token': hubContext.apiToken,
-        'X-Session-Id': hubContext.sessionId,
-      },
-      body: JSON.stringify({ op, ...payload }),
-    });
-    return res.json().catch(() => null);
-  }, [hubContext]);
+  // owner-injected backend — admin REST(/api/skills) vs hub op-dispatch 가 각 메서드 안에서만 갈림.
+  const backend = useMemo(() => ({
+    async list(): Promise<SkillEntry[]> {
+      if (hubContext) {
+        const j = await hubFetch(hubContext, 'skills', 'list', {});
+        return j?.success ? (j.items ?? []) : [];
+      }
+      const j = await apiGet<{ success: boolean; items: SkillEntry[] }>('/api/skills', { category: 'skills' });
+      return j?.success ? (j.items ?? []) : [];
+    },
+    async save(payload: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) return (await hubFetch(hubContext, 'skills', 'save', payload)) ?? { success: false };
+      return apiPost<{ success: boolean; error?: string }>('/api/skills', payload, { category: 'skills' });
+    },
+    async remove(slug: string): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) return (await hubFetch(hubContext, 'skills', 'delete', { slug })) ?? { success: false };
+      return apiDelete<{ success: boolean; error?: string }>(`/api/skills?slug=${encodeURIComponent(slug)}`, { category: 'skills' });
+    },
+  }), [hubContext]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['skills', hubMode && hubContext ? `hub-${hubContext.slug}` : 'admin'],
-    queryFn: async () => {
-      if (hubMode) {
-        if (!hubContext) return { success: true, items: [] as SkillEntry[] };
-        const json = await hubFetch('list', {});
-        return (json ?? { success: true, items: [] }) as { success: boolean; items: SkillEntry[] };
-      }
-      return apiGet<{ success: boolean; items: SkillEntry[] }>('/api/skills', { category: 'skills' });
-    },
+    queryKey: ['skills', hubContext ? `hub-${hubContext.slug}` : 'admin'],
+    queryFn: () => backend.list(),
   });
-  const skills = data?.items ?? [];
+  const skills = data ?? [];
   const loading = isLoading;
   const invalidate = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['skills'] }),
@@ -106,21 +104,19 @@ export function SkillsPanel({
     setSubmitting(true);
     try {
       const payload = { slug, kind: newKind, name: slug, description: '', content: starterBody(slug) };
-      const res = hubMode && hubContext
-        ? await hubFetch('save', payload)
-        : await apiPost<{ success: boolean; error?: string }>('/api/skills', payload, { category: 'skills' });
+      const res = await backend.save(payload);
       if (!res?.success) {
         await alertDialog({ title: '생성 실패', message: res?.error || '알 수 없는 오류', danger: true });
         return;
       }
       await invalidate();
       setCreating(false);
-      // hub mode 면 FileEditor 가 admin filesystem 호출이라 의미 0 — skip.
-      if (!hubMode) onEditFile?.(`user/skills/${slug}.md`);
+      // admin filesystem Monaco editor — hub 는 그 capability 없음(owner 가드).
+      if (!hubContext) onEditFile?.(`user/skills/${slug}.md`);
     } finally {
       setSubmitting(false);
     }
-  }, [newSlug, newKind, skills, invalidate, onEditFile, hubMode, hubContext, hubFetch]);
+  }, [newSlug, newKind, skills, invalidate, onEditFile, hubContext, backend]);
 
   const handleDelete = useCallback(async (slug: string, source: string) => {
     if (source === 'system') {
@@ -128,15 +124,13 @@ export function SkillsPanel({
       return;
     }
     if (!await confirmDialog({ title: '스킬 삭제', message: `"${slug}" 스킬을 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
-    const res = hubMode && hubContext
-      ? await hubFetch('delete', { slug })
-      : await apiDelete<{ success: boolean; error?: string }>(`/api/skills?slug=${encodeURIComponent(slug)}`, { category: 'skills' });
+    const res = await backend.remove(slug);
     if (!res?.success) {
       await alertDialog({ title: '삭제 실패', message: res?.error || '알 수 없는 오류', danger: true });
       return;
     }
     await invalidate();
-  }, [invalidate, hubMode, hubContext, hubFetch]);
+  }, [invalidate, backend]);
 
   return (
     <div className="flex flex-col h-full">

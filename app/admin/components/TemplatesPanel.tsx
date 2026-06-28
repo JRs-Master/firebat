@@ -5,13 +5,14 @@
  * user/templates/* 의 list 표시 + 클릭 시 모나코 에디터로 template.json 편집.
  * 새 템플릿 만들기 — inline 모달 (rename 패턴 차용, native prompt/alert 회피).
  */
-import { useId, useState, useCallback, useEffect } from 'react';
+import { useId, useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { hubFetch } from '../../../lib/hub-fetch';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 
 interface TemplateEntry {
@@ -42,11 +43,10 @@ export type TemplatesHubContext = { slug: string; apiToken: string; sessionId: s
 
 export function TemplatesPanel({
   onEditFile,
-  hubMode,
   hubContext,
 }: {
   onEditFile?: (filePath: string) => void;
-  hubMode?: boolean;
+  hubMode?: boolean;   // accepted for caller compat; owner derived from hubContext (backend object).
   hubContext?: TemplatesHubContext;
 }) {
   const t = useTranslations();
@@ -56,33 +56,31 @@ export function TemplatesPanel({
   const [newSlug, setNewSlug] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // hub fetch 헬퍼 — admin 은 /api/templates, hub 는 /api/hub/<slug>/templates dispatcher.
-  const hubFetch = useCallback(async (op: string, payload: Record<string, unknown>) => {
-    if (!hubContext) return null;
-    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/templates`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Token': hubContext.apiToken,
-        'X-Session-Id': hubContext.sessionId,
-      },
-      body: JSON.stringify({ op, ...payload }),
-    });
-    return res.json().catch(() => null);
-  }, [hubContext]);
+  // owner-injected backend — admin REST(/api/templates) vs hub op-dispatch 가 각 메서드 안에서만 갈림.
+  const backend = useMemo(() => ({
+    async list(): Promise<TemplateEntry[]> {
+      if (hubContext) {
+        const j = await hubFetch(hubContext, 'templates', 'list', {});
+        return j?.success ? (j.templates ?? []) : [];
+      }
+      const j = await apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' });
+      return j?.success ? (j.templates ?? []) : [];
+    },
+    async save(slug: string, config: unknown): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) return (await hubFetch(hubContext, 'templates', 'save', { slug, config })) ?? { success: false };
+      return apiPost<{ success: boolean; error?: string }>('/api/templates', { slug, config }, { category: 'templates' });
+    },
+    async remove(slug: string): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) return (await hubFetch(hubContext, 'templates', 'delete', { slug })) ?? { success: false };
+      return apiDelete<{ success: boolean; error?: string }>(`/api/templates/${encodeURIComponent(slug)}`, { category: 'templates' });
+    },
+  }), [hubContext]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['templates', hubMode && hubContext ? `hub-${hubContext.slug}` : 'admin'],
-    queryFn: async () => {
-      if (hubMode) {
-        if (!hubContext) return { success: true, templates: [] as TemplateEntry[] };
-        const json = await hubFetch('list', {});
-        return (json ?? { success: true, templates: [] }) as { success: boolean; templates: TemplateEntry[] };
-      }
-      return apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' });
-    },
+    queryKey: ['templates', hubContext ? `hub-${hubContext.slug}` : 'admin'],
+    queryFn: () => backend.list(),
   });
-  const templates = data?.templates ?? [];
+  const templates = data ?? [];
   const loading = isLoading;
   const invalidate = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['templates'] }),
@@ -123,25 +121,19 @@ export function TemplatesPanel({
     }
     setSubmitting(true);
     try {
-      const res = hubMode && hubContext
-        ? await hubFetch('save', { slug, config: STARTER_TEMPLATE })
-        : await apiPost<{ success: boolean; error?: string }>(
-            '/api/templates',
-            { slug, config: STARTER_TEMPLATE },
-            { category: 'templates' },
-          );
+      const res = await backend.save(slug, STARTER_TEMPLATE);
       if (!res?.success) {
         await alertDialog({ title: '생성 실패', message: res?.error || '알 수 없는 오류', danger: true });
         return;
       }
       await invalidate();
       setCreating(false);
-      // hub mode 면 FileEditor 가 admin filesystem 호출이라 의미 0 — skip.
-      if (!hubMode) onEditFile?.(`user/templates/${slug}/template.json`);
+      // admin filesystem Monaco editor — hub 는 그 capability 없음(owner 가드).
+      if (!hubContext) onEditFile?.(`user/templates/${slug}/template.json`);
     } finally {
       setSubmitting(false);
     }
-  }, [newSlug, templates, invalidate, onEditFile, hubMode, hubContext, hubFetch]);
+  }, [newSlug, templates, invalidate, onEditFile, hubContext, backend]);
 
   const handleDelete = useCallback(async (slug: string) => {
     if (!await confirmDialog({
@@ -150,18 +142,13 @@ export function TemplatesPanel({
       danger: true,
       okLabel: '삭제',
     })) return;
-    const res = hubMode && hubContext
-      ? await hubFetch('delete', { slug })
-      : await apiDelete<{ success: boolean; error?: string }>(
-          `/api/templates/${encodeURIComponent(slug)}`,
-          { category: 'templates' },
-        );
+    const res = await backend.remove(slug);
     if (!res?.success) {
       await alertDialog({ title: '삭제 실패', message: res?.error || '알 수 없는 오류', danger: true });
       return;
     }
     await invalidate();
-  }, [invalidate, hubMode, hubContext, hubFetch]);
+  }, [invalidate, backend]);
 
   return (
     <div className="flex flex-col h-full">
