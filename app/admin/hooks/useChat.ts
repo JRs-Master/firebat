@@ -449,7 +449,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         const merged = remote.map(r => {
           const local = prev.find(p => p.id === r.id);
           return {
-            id: r.id, title: r.title, createdAt: r.createdAt,
+            id: r.id,
+            // 로컬 파생 title(useEffect[messages] 가 첫 user 메시지로 즉시 파생) 우선 — admin 과 동일.
+            // hub 백엔드 auto-title 은 AI 턴 중 커밋이라 lagging → DB title 로 덮으면 "새 대화" 로 깜빡임.
+            // 로컬 없으면(타세션·fresh load) DB title 사용.
+            title: local?.title || r.title,
+            createdAt: r.createdAt,
             // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서 튐 방지.
             updatedAt: Math.max(r.updatedAt ?? r.createdAt, local?.updatedAt ?? 0),
             messages: local?.messages ?? [],
