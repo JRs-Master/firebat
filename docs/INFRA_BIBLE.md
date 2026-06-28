@@ -217,14 +217,16 @@ CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영
 
 | 영역 | 위치 | 방식 |
 |---|---|---|
-| app.db (pages / conversations / verifications / page_redirects / media_usage / shared_conversations / llm_costs 등) | `infra/src/adapters/database.rs::initialize()` | `CREATE TABLE IF NOT EXISTS` + 신규 컬럼은 inline `ALTER TABLE ... ADD COLUMN` (에러 무시) |
-| 메모리 — entities / entity_facts / events / event_entities (m2m) + 인덱스 | `infra/src/adapters/memory.rs::initialize()` | `CREATE TABLE IF NOT EXISTS` + inline `ALTER` |
-| 라이브러리 — library_references / library_sources / library_chunks + FTS5 | `infra/src/adapters/library.rs` | `CREATE TABLE IF NOT EXISTS` + `CREATE VIRTUAL TABLE` |
-| Hub — hub_instances / hub_conversations / hub_messages | `infra/src/adapters/hub.rs` | `CREATE TABLE IF NOT EXISTS` |
+| app.db (pages / conversations / conversation_messages / verifications / page_redirects / media_usage / shared_conversations / llm_costs 등) | `infra/src/adapters/database.rs::initialize()` | `CREATE TABLE IF NOT EXISTS` (전 컬럼·인덱스 포함) |
+| 메모리 — entities / entity_facts / events / event_entities (m2m) + 인덱스 | `infra/src/adapters/memory.rs::initialize()` | `CREATE TABLE IF NOT EXISTS` |
+| 라이브러리 — library_references / library_sources / library_chunks + FTS5 | `infra/src/adapters/memory.rs::initialize()` | `CREATE TABLE IF NOT EXISTS` + `CREATE VIRTUAL TABLE` |
+| Hub — hub_instances (위젯 메타) | `infra/src/adapters/hub.rs` | `CREATE TABLE IF NOT EXISTS` |
+
+> **대화 영속 = app.db 단일 store** (2026-06): admin·hub 모두 `conversations`(메타) + `conversation_messages`(행, canonical split/join)로 수렴. owner 컬럼(`admin` / `hub:<inst>:<sid>`)으로 구분, `ConversationManager` 단일 매니저(owner-param). 옛 hub_conversations/hub_messages(memory.db)는 폐기(orphan — 안 읽음·안 씀, 테이블 drop 은 live 마이그 위험이라 미실행). hub_instances 만 memory.db 유지.
 
 새 컬럼·인덱스 추가 절차:
-1. 해당 어댑터의 `initialize()` 에 `CREATE TABLE IF NOT EXISTS` 또는 `ALTER TABLE ... ADD COLUMN` 한 줄 추가 (idempotent — 부팅마다 안전 재실행)
-2. 인덱스는 `ALTER` 가 컬럼을 추가한 **뒤에** `CREATE INDEX IF NOT EXISTS` (순서 주의 — 기존 서버 DB crash 방지)
+1. **테스트 서버 단계(현재)**: 새 컬럼·인덱스는 어댑터 `initialize()` 의 `CREATE TABLE` 정의에 직접 추가 — DB 리셋으로 fresh schema 가 적용되므로 ALTER 마이그 불필요. 옛 데이터용 1회성 마이그/백필 코드 = throwaway, 작성 금지(forward 로직만 유지).
+2. **production live-DB(리셋 불가) 단계**: 기존 DB 보존하며 컬럼 추가 시 `ALTER TABLE ... ADD COLUMN`(에러 무시) + 인덱스는 **반드시 ALTER 뒤에** `CREATE INDEX IF NOT EXISTS` (순서 주의 — 컬럼 부재 시 schema init 전체 crash. 과거 dedup 인덱스 순서로 서버 crash-loop 사고).
 
 ---
 

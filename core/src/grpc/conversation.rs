@@ -157,7 +157,7 @@ impl ConversationService for ConversationServiceImpl {
         &self,
         req: Request<ConversationSaveMessageRequest>,
     ) -> Result<Response<ConversationSaveMessageResponse>, TonicStatus> {
-        // 단일 메시지 재저장(client-state) — hub SaveMessage 와 동일 매니저 메서드(conv.append).
+        // Re-save a single message (client-state) — same manager method as hub SaveMessage (conv.append).
         let args = req.into_inner();
         let msg: serde_json::Value = serde_json::from_str(&args.message_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("save_message message_json: {e}")))?;

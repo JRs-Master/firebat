@@ -206,7 +206,9 @@ interface FirebatInfraContainer {
 ### Step 4. 결과 보고
 `AiManager.process_with_tools_opts*()` 반환 `AiResponse` = `{success, reply, blocks, executedActions, toolResults, suggestions, pendingActions, libraryHits, buildSession, modelId, costUsd, error}`.
 
-**메시지 영속/전송 직렬화 = 단일 소스** (2026-06-25): admin·hub 가 각자 `AiResponse → 메시지.data` 를 손수 풀어 드리프트(buildSession·libraryHits 한쪽 누락)가 반복되던 것을 폐기. `AiResponse::message_data_json()` = canonical `data` 빌더(superset, skip 없이 항상 전 키) / `to_result_json()` = 직렬화 + canonical `data` 부착. 모든 result 이벤트(grpc ai·hub의 unary·stream)와 hub_messages 영속·admin route 가 이 둘만 사용 → 새 필드 추가 = Rust 빌더 한 곳만 고치면 admin·hub 자동. SSE result 이벤트로 프론트엔드 전달. 학습 데이터(`data/logs/training-*.jsonl`) 자동 저장.
+**메시지 영속/전송 직렬화 = 단일 소스** (2026-06-25): admin·hub 가 각자 `AiResponse → 메시지.data` 를 손수 풀어 드리프트(buildSession·libraryHits 한쪽 누락)가 반복되던 것을 폐기. `AiResponse::message_data_json()` = canonical `data` 빌더(superset, skip 없이 항상 전 키) / `to_result_json()` = 직렬화 + canonical `data` 부착. 모든 result 이벤트(grpc ai·hub의 unary·stream)와 영속·admin route 가 이 둘만 사용 → 새 필드 추가 = Rust 빌더 한 곳만 고치면 admin·hub 자동. SSE result 이벤트로 프론트엔드 전달. 학습 데이터(`data/logs/training-*.jsonl`) 자동 저장.
+
+**대화 영속 = 단일 store + 단일 매니저** (2026-06): admin·hub 가 다른 DB·모델 2벌(admin=app.db blob / hub=memory.db rows)이던 것을 **app.db `conversation_messages`(per-row) + `ConversationManager`(owner-param)** 단일 경로로 수렴. owner = `admin` / `hub:<inst>:<sid>`, 그 외 동일 로직(별도 hub 매니저 0). 메시지 ⟷ 행 = canonical bijection(`split_message`/`join_message`: 컬럼=id/role/content+created_at / data_json=나머지 rich, 중복 0). 단건 영속(승인 status·suggest consume/잠금) = `persistMessage`(프론트) → 단건 append, admin·hub 공통(auth 경로만 분리: admin=PATCH `/api/conversations`→`ConversationService.SaveMessage` / hub=`HubService.SaveMessage`, core 는 둘 다 `ConversationManager.append(owner)`).
 
 ---
 

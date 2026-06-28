@@ -18,12 +18,13 @@ const CONTENT_PREVIEW_MAX: usize = 500;
 /// search_history 의 같은 conv 부스트 스코어 — 옛 TS 와 동일 (현재 활성 대화 우선).
 const SAME_CONV_BOOST: f32 = 0.2;
 
-/// Message ⟷ conversation_messages row 의 canonical 변환 규약 (admin·hub·migration·frontend 공용).
-/// 컬럼 = id/role/content(메타) + created_at(정렬 인덱스). data_json = 나머지 rich(뱃지 top·blocks 는 `data`)
-/// + createdAt 유지(정확 라운드트립 → 무변경 no-op 보존). id/role/content 중복 0. 한 규약 = 모든 surface 동일.
+/// Canonical Message ⟷ conversation_messages row bijection (shared by admin·hub·frontend).
+/// Columns = id/role/content (metadata) + created_at (sort index). data_json = remaining rich fields
+/// (badges at top, blocks under `data`) + createdAt kept (exact round-trip → no-op preservation on unchanged
+/// save). Zero id/role/content duplication. One convention = identical on every surface.
 pub const MESSAGE_COLUMN_KEYS: &[&str] = &["id", "role", "content"];
 
-/// Message Value → (id, role, content, created_at[정렬용], data_json). data_json = message ∖ {id,role,content}.
+/// Message Value → (id, role, content, created_at[for sort], data_json). data_json = message ∖ {id,role,content}.
 pub fn split_message(msg: &serde_json::Value) -> (String, String, String, i64, String) {
     let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
     let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string();
@@ -39,8 +40,8 @@ pub fn split_message(msg: &serde_json::Value) -> (String, String, String, i64, S
     (id, role, content, created_at, data_json)
 }
 
-/// (id, role, content 컬럼, data_json) → Message Value = parse(data_json) ∪ {id, role, content}.
-/// createdAt 등 rich 는 data_json 에 그대로 → 정확 복원.
+/// (id, role, content columns, data_json) → Message Value = parse(data_json) ∪ {id, role, content}.
+/// Rich fields like createdAt live in data_json → restored exactly.
 pub fn join_message(id: &str, role: &str, content: &str, data_json: &str) -> serde_json::Value {
     let mut msg = serde_json::from_str::<serde_json::Value>(data_json)
         .ok()
@@ -299,11 +300,10 @@ impl ConversationManager {
         self.db.cleanup_old_deleted_conversations(cutoff)
     }
 
-    // ─── owner-keyed 단일 영속 primitive — admin·hub 공용 (hub 가 별도 매니저 대신 이걸 사용) ────
-    // 대화 영속 로직은 ConversationManager 하나. admin=owner:"admin" / hub=owner:"hub:<inst>:<sid>".
+    // ─── owner-keyed persistence primitives — shared by admin·hub (hub delegates here, no separate manager) ───
+    // Conversation persistence lives in ConversationManager alone. admin=owner:"admin" / hub=owner:"hub:<inst>:<sid>".
 
-    /// (owner) 의 최신 활성 대화 재사용·없으면 새로 생성. 옛 HubManager.ensure_conversation 의미.
-    /// list = updated_at DESC 라 first() = 최신 활성.
+    /// Reuse the owner's most recent active conversation, or create one. list = updated_at DESC → first() = latest.
     pub fn ensure(&self, owner: &str) -> String {
         if let Some(s) = self.db.list_conversations(owner).into_iter().next() {
             return s.id;
@@ -311,7 +311,7 @@ impl ConversationManager {
         self.create(owner)
     }
 
-    /// 항상 새 대화 생성 (owner). title="" → 첫 메시지 auto-title 가 채움.
+    /// Always create a new conversation (owner). title="" → first-message auto-title fills it.
     pub fn create(&self, owner: &str) -> String {
         let id = uuid::Uuid::new_v4().to_string();
         self.db
@@ -319,8 +319,8 @@ impl ConversationManager {
         id
     }
 
-    /// 단일 메시지 append (owner-keyed) — 채팅 턴 영속 primitive. conv row 없으면 생성.
-    /// canonical 규약(split_message): 컬럼=메타, data_json=rich. admin save 와 동일 저장 모양. id 충돌 시 update(멱등).
+    /// Append a single message (owner-keyed) — chat-turn persistence primitive. Creates the conv row if absent.
+    /// canonical split_message: columns=metadata, data_json=rich. Same shape as admin save. Upsert on id (idempotent).
     pub fn append(&self, owner: &str, conv_id: &str, msg: &serde_json::Value) {
         let (id, role, content, created, data_json) = split_message(msg);
         let created = if created == 0 {
@@ -344,17 +344,17 @@ impl ConversationManager {
         });
     }
 
-    /// 제목 갱신 (id 기준) — rename·auto-title 공용.
+    /// Update title (by id) — shared by rename and auto-title.
     pub fn update_title(&self, id: &str, title: &str) -> bool {
         self.db.update_conversation_title(id, title)
     }
 
-    /// id 로 대화 메타(owner + summary) — soft-deleted 포함. hub owner 도출·재구성용.
+    /// Conversation meta (owner + summary) by id — includes soft-deleted. Used to derive/reconstruct hub owner.
     pub fn meta_by_id(&self, id: &str) -> Option<(String, ConversationSummary)> {
         self.db.get_conversation_meta_by_id(id)
     }
 
-    /// 대화 메시지 rows (conv_id 기준 — conv_id unique 라 owner 무관). hub list_messages 공용.
+    /// Message rows by conv_id (conv_id is unique → owner-independent). Shared by hub list_messages.
     pub fn message_rows(&self, conv_id: &str) -> Vec<ConversationMessage> {
         self.db.list_conversation_messages(conv_id)
     }

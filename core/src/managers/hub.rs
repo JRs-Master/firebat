@@ -82,8 +82,8 @@ pub struct HubManager {
     /// PageManager (옵션) — hub instance 삭제 시 hub-scoped page (project='hub:<instance_id>')
     /// cascade 처리. 미설정 시 cascade skip.
     page: Option<Arc<crate::managers::page::PageManager>>,
-    /// 대화 영속 = ConversationManager 단일 매니저(owner="hub:<inst>:<sid>"). admin·hub 동일 로직.
-    /// 미설정 시(테스트) IHubPort(memory.db) fallback. HubManager 자체는 인스턴스 + send 오케스트레이션만.
+    /// Conversation persistence = the single ConversationManager (owner="hub:<inst>:<sid>"), same logic as admin.
+    /// When unset (tests) falls back to IHubPort (memory.db). HubManager itself only does instances + send orchestration.
     conv: Option<Arc<crate::managers::conversation::ConversationManager>>,
 }
 
@@ -92,13 +92,13 @@ impl HubManager {
         Self { port, page: None, conv: None }
     }
 
-    /// PageManager 설정 — hub instance 삭제 시 hub-scoped page (project='hub:<id>') cascade 처리.
+    /// Set PageManager — cascades hub-scoped pages (project='hub:<id>') when a hub instance is deleted.
     pub fn with_page(mut self, page: Arc<crate::managers::page::PageManager>) -> Self {
         self.page = Some(page);
         self
     }
 
-    /// 대화 영속을 ConversationManager(admin 과 동일 매니저, owner-keyed)에 위임. 대화 로직 단일화.
+    /// Delegate conversation persistence to ConversationManager (same owner-keyed manager as admin) — one logic.
     pub fn with_conversation(
         mut self,
         conv: Arc<crate::managers::conversation::ConversationManager>,
@@ -115,7 +115,7 @@ impl HubManager {
             .unwrap_or(0)
     }
 
-    /// "hub:<instance>:<session>" → (instance, session). 형식 안 맞으면 None. 통합 store owner 역파싱.
+    /// "hub:<instance>:<session>" → (instance, session); None if malformed. Reverse-parse the unified-store owner.
     fn parse_hub_owner(owner: &str) -> Option<(String, String)> {
         let rest = owner.strip_prefix("hub:")?;
         let (inst, sid) = rest.split_once(':')?;
@@ -125,8 +125,8 @@ impl HubManager {
         Some((inst.to_string(), sid.to_string()))
     }
 
-    /// hub 메시지(Message Value)를 ConversationManager(단일 대화 영속)에 기록 — canonical split 규약.
-    /// owner = conv 생성 시 부여된 "hub:<inst>:<sid>". admin save 와 완전히 동일한 저장 모양.
+    /// Write a hub message (Message Value) through ConversationManager (single conversation store) — canonical split.
+    /// owner = "hub:<inst>:<sid>" assigned at conv creation. Exactly the same storage shape as admin save.
     fn write_message(&self, conv_id: &str, msg: &serde_json::Value) {
         if let Some(conv) = &self.conv {
             if let Some((owner, _)) = conv.meta_by_id(conv_id) {
@@ -336,7 +336,6 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        // 대화 영속 = ConversationManager 단일 매니저(owner-keyed). (instance,session) 최신 활성 재사용·없으면 새로.
         if let Some(conv) = &self.conv {
             let owner = format!("hub:{instance_id}:{session_id}");
             return Ok(conv.ensure(&owner));
@@ -344,7 +343,7 @@ impl HubManager {
         self.port.ensure_conversation(instance_id, session_id).await
     }
 
-    /// 항상 새 conversation 생성 — multi-conv 모드에서 사이드바 "새 대화" 누를 때 호출.
+    /// Always create a new conversation — invoked when the sidebar "New chat" is clicked in multi-conv mode.
     pub async fn create_conversation(
         &self,
         instance_id: &str,
@@ -357,8 +356,8 @@ impl HubManager {
         self.port.create_conversation(instance_id, session_id).await
     }
 
-    /// app.db ConversationSummary(owner-keyed) → HubConversation. instance/session 은 호출 인자라
-    /// owner 파싱 불필요. title 은 app.db 가 항상 채움(placeholder 최소) → Some.
+    /// app.db ConversationSummary (owner-keyed) → HubConversation. instance/session come from the call args
+    /// so no owner parsing needed. app.db always fills title (minimal placeholder) → Some.
     fn summary_to_hub_conv(
         s: crate::ports::ConversationSummary,
         instance_id: &str,
@@ -379,7 +378,6 @@ impl HubManager {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        // 대화 영속 = ConversationManager 단일 매니저(owner-keyed).
         if let Some(conv) = &self.conv {
             let owner = format!("hub:{instance_id}:{session_id}");
             return Ok(conv
@@ -391,13 +389,12 @@ impl HubManager {
         self.port.list_conversations(instance_id, session_id).await
     }
 
-    /// 휴지통 목록 — (instance_id, session_id) scope. deleted_at IS NOT NULL.
+    /// Trash list — (instance_id, session_id) scope, deleted_at IS NOT NULL.
     pub async fn list_deleted_conversations(
         &self,
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        // 대화 영속 = ConversationManager 단일 매니저(owner-keyed).
         if let Some(conv) = &self.conv {
             let owner = format!("hub:{instance_id}:{session_id}");
             return Ok(conv
@@ -412,8 +409,8 @@ impl HubManager {
     }
 
     pub async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
-        // 대화 영속 = ConversationManager 단일 매니저. owner("hub:inst:sid") 역파싱 → HubConversation 재구성.
-        // soft-deleted 도 반환(meta_by_id = deleted 미필터) → restore·ensure_owner 정상.
+        // Reverse-parse owner ("hub:inst:sid") → reconstruct HubConversation.
+        // Returns soft-deleted too (meta_by_id does not filter deleted) → restore·ensure_owner work.
         if let Some(conv) = &self.conv {
             return Ok(conv.meta_by_id(id).and_then(|(owner, s)| {
                 Self::parse_hub_owner(&owner)
@@ -423,7 +420,7 @@ impl HubManager {
         self.port.get_conversation(id).await
     }
 
-    /// owner 도출 — "hub:<instance>:<session>". 변이 *전* 호출(영구삭제 row 소멸 전).
+    /// Derive owner — "hub:<instance>:<session>". Call *before* a mutation (before a permanent-delete drops the row).
     async fn hub_owner_of(&self, id: &str) -> Option<String> {
         if let Some(conv) = &self.conv {
             return conv.meta_by_id(id).map(|(owner, _)| owner);
@@ -436,7 +433,7 @@ impl HubManager {
             .map(|c| format!("hub:{}:{}", c.instance_id, c.session_id))
     }
 
-    /// soft delete — 휴지통으로 이동. ConversationManager 단일 매니저(owner-keyed).
+    /// Soft delete — move to trash.
     pub async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
         if let Some(conv) = &self.conv {
             if let Some(owner) = self.hub_owner_of(id).await {
@@ -447,7 +444,7 @@ impl HubManager {
         self.port.delete_conversation(id).await
     }
 
-    /// 휴지통에서 복원 — deleted_at NULL.
+    /// Restore from trash — deleted_at NULL.
     pub async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
         if let Some(conv) = &self.conv {
             if let Some(owner) = self.hub_owner_of(id).await {
@@ -458,7 +455,7 @@ impl HubManager {
         self.port.restore_conversation(id).await
     }
 
-    /// 영구 삭제 — hard delete. conversation_messages cascade.
+    /// Permanent delete — hard delete, cascades conversation_messages.
     pub async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
         if let Some(conv) = &self.conv {
             if let Some(owner) = self.hub_owner_of(id).await {
@@ -479,7 +476,7 @@ impl HubManager {
     }
 
     pub async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {
-        // 대화 영속 = ConversationManager 단일 매니저(rename·첫 메시지 auto-title 공용).
+        // Shared by rename and first-message auto-title.
         if let Some(conv) = &self.conv {
             conv.update_title(id, title);
             return Ok(());
@@ -495,11 +492,11 @@ impl HubManager {
         content: &str,
         id: Option<String>,
     ) -> InfraResult<String> {
-        // 클라이언트 발급 id 우선(프론트 로컬 메시지 정렬 — admin systemId 패턴), 없으면 uuid fallback.
+        // Prefer the client-issued id (frontend local-message ordering — admin systemId pattern); uuid fallback.
         let id = id
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        // canonical Message Value — split_message 가 컬럼/data_json 분리. user 는 rich 없음 → data_json={}.
+        // canonical Message Value — split_message separates columns/data_json. user has no rich fields → data_json={}.
         let msg = serde_json::json!({
             "id": id, "role": "user", "content": content, "createdAt": Self::now_ms(),
         });
@@ -507,7 +504,7 @@ impl HubManager {
         Ok(id)
     }
 
-    /// system (AI) 메시지 append — content + canonical data payload(message_data_json).
+    /// Append a system (AI) message — content + canonical data payload (message_data_json).
     pub async fn append_system_message(
         &self,
         conversation_id: &str,
@@ -515,12 +512,12 @@ impl HubManager {
         data_json: Option<String>,
         id: Option<String>,
     ) -> InfraResult<String> {
-        // 클라이언트 발급 id 우선(프론트 systemId 정렬), 없으면 uuid fallback. background-resume reconcile 매칭용.
+        // Prefer the client-issued id (frontend systemId ordering); uuid fallback. For background-resume reconcile matching.
         let id = id
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        // canonical Message Value — admin systemMsg 와 동일: 뱃지(executedActions 등) top + data: payload.
-        // split_message 가 컬럼(id/role/content/createdAt) 분리 → data_json = {뱃지, data: payload}.
+        // canonical Message Value — same as admin systemMsg: badges (executedActions etc.) at top + data: payload.
+        // split_message separates columns (id/role/content/createdAt) → data_json = {badges, data: payload}.
         let payload: serde_json::Value = data_json
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
@@ -540,8 +537,9 @@ impl HubManager {
         Ok(id)
     }
 
-    /// 기존 메시지 재저장(client-state 영속) — full Message Value 를 canonical append(ON CONFLICT id UPDATE,
-    /// created_at 컬럼 보존). 승인/거부 status 등을 백엔드에 영속해 reconcile 후 부활 차단. owner 는 grpc 가 검증.
+    /// Re-save an existing message (client-state persistence) — canonical append of the full Message Value
+    /// (ON CONFLICT id UPDATE, created_at preserved). Persists approve/reject status etc. so it survives
+    /// reconcile (no card resurrection). owner is verified by grpc.
     pub fn persist_message(&self, owner: &str, conv_id: &str, msg: &serde_json::Value) {
         if let Some(conv) = &self.conv {
             conv.append(owner, conv_id, msg);
@@ -552,7 +550,7 @@ impl HubManager {
         &self,
         conversation_id: &str,
     ) -> InfraResult<Vec<HubMessage>> {
-        // 대화 영속 = ConversationManager 단일 매니저. rows(conv_id) → HubMessage 매핑(presentation).
+        // rows(conv_id) → HubMessage mapping (presentation).
         if let Some(conv) = &self.conv {
             return Ok(conv
                 .message_rows(conversation_id)
@@ -570,15 +568,15 @@ impl HubManager {
         self.port.list_messages(conversation_id).await
     }
 
-    /// 외부 hub endpoint 가 호출하는 통합 entry — 가드 + history 영역 적용 + AiManager 호출 +
-    /// AI 응답 영역 hub_messages 영속화.
+    /// Unified entry called by the external hub endpoint — applies guards + history + invokes AiManager +
+    /// persists the AI response.
     ///
-    /// 흐름:
-    ///   1. instance 영역 allowed_sysmods / allowed_references 영역 HubContext 빌드
-    ///   2. 옛 user 메시지 영역 이전 메시지 영역 recent N 영역 ChatMessage 영역 빌드 (history prepend 용)
-    ///   3. AiRequestOpts + LlmCallOpts 영역 빌드 + AiManager.process_with_tools_opts 호출
-    ///   4. AI 응답 영역 hub_messages 영역 append_system_message 영역 영속화
-    ///   5. AiResponse 영역 반환 (route layer 가 SSE 영역 wrap)
+    /// Flow:
+    ///   1. Build HubContext from the instance's allowed_sysmods / allowed_references
+    ///   2. Build recent-N ChatMessage history (for prepend) from prior messages
+    ///   3. Build AiRequestOpts + LlmCallOpts + call AiManager.process_with_tools_opts
+    ///   4. Persist the AI response via append_system_message
+    ///   5. Return AiResponse (the route layer wraps it as SSE)
     pub async fn send_message(
         &self,
         ai: Arc<AiManager>,
@@ -593,8 +591,8 @@ impl HubManager {
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
 
-        // 옛 user 메시지를 모두 listMessages (현재 user 메시지는 caller 가 append_user_message 로
-        // 이미 기록한 상태 = caller 책임). recent N 으로 빌드. contract C4 — app.db 통합 store(self.list_messages).
+        // List prior messages (the current user message is already persisted by the caller via
+        // append_user_message). Build from the recent N. Single store = app.db (self.list_messages).
         let all_messages = self.list_messages(conversation_id).await?;
         let start = all_messages.len().saturating_sub(HISTORY_RECENT_LIMIT);
         let recent = &all_messages[start..];
@@ -617,9 +615,9 @@ impl HubManager {
             })
             .collect();
 
-        // 진단 — "같은 세션 연속 대화인데 이전 맥락을 못 본다" 증상 추적. conversation_id /
-        // 전체 메시지 수 / history 로 prepend 되는 수를 기록. 다음 재현에서 total=1(현재 메시지뿐)
-        // 이면 ensure_conversation 이 새/다른 conv 를 줬다는 뜻, total>1 인데 history=0 이면 필터 문제.
+        // Diagnostic — track the "same session loses earlier context" symptom. Logs conversation_id /
+        // total message count / prepended history count. On a repro: total=1 (only the current message)
+        // means ensure_conversation handed back a new/different conv; total>1 with history=0 means a filter issue.
         tracing::info!(
             category = "hub",
             "hub send_message — conv={} 전체메시지={} history={}",
@@ -628,9 +626,9 @@ impl HubManager {
             history.len()
         );
 
-        // session_id — conversation 조회로 visitor 별 자료 격리 owner 에 들어감.
-        // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
-        // contract C4 — app.db 통합 store(self.get_conversation, owner 역파싱).
+        // session_id — fetched from the conversation; feeds the per-visitor isolation owner.
+        // owner "hub:<instance_id>:<session_id>" is auto-injected per tool call inside ai.rs.
+        // Single store = app.db (self.get_conversation, owner reverse-parsed).
         let conv = self.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
 
@@ -651,12 +649,12 @@ impl HubManager {
                 if trimmed.chars().count() > 28 {
                     title.push('…');
                 }
-                // 공용 메서드 경유 — memory.db + app.db 통합 store 양쪽 미러(드리프트 방지).
+                // Via the shared method → single store (app.db).
                 let _ = self.update_conversation_title(conversation_id, &title).await;
             }
         }
-        // owner = hub:<instance>:<session> (세션 단위 격리) — tool 주입(ai.rs)·library route 와 통일.
-        // 옛 hub:<instance> (세션 없음) 은 per-tool 주입과 어긋나던 drift 였음.
+        // owner = hub:<instance>:<session> (per-session isolation) — unified with tool injection (ai.rs) and library route.
+        // The old hub:<instance> (no session) drifted from per-tool injection.
         let owner = format!("hub:{}:{}", instance.id, session_id);
 
         // instance 커스텀 프롬프트는 기본 시스템 프롬프트(에이전트·plan·render 규칙)를 replace 하지 않고

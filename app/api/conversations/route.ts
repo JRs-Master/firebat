@@ -11,12 +11,12 @@ import { withAuth } from '../../../lib/with-api-error';
 import { safeJsonParse, normalizeTimestamps } from '../../../lib/util';
 
 /**
- * /api/conversations — 관리자 대화 히스토리 CRUD (다기기 동기화)
+ * /api/conversations — admin conversation history CRUD (multi-device sync).
  */
 
-// normalizeTimestamps — proto i64 → number 변환 (createdAt / updatedAt). lib/util/normalize.ts 통합.
+// normalizeTimestamps — proto i64 → number (createdAt / updatedAt). See lib/util/normalize.ts.
 
-/** GET — 전체 목록 또는 ?id=xxx 단건 */
+/** GET — full list, or single conversation when ?id=xxx. */
 export const GET = withAuth(async (req: NextRequest) => {
   const id = req.nextUrl.searchParams.get('id');
   if (id) {
@@ -24,8 +24,7 @@ export const GET = withAuth(async (req: NextRequest) => {
     if (!res.ok) {
       return NextResponse.json({ success: false, error: res.message }, { status: 404 });
     }
-    // Rust ConversationRecordPb 의 messages_json (string) 필드 → frontend messages array 로 변환.
-    // 미존재 시 빈 배열.
+    // Rust ConversationRecordPb.messages_json (string) → frontend messages array (empty when absent).
     const raw = res.data as Record<string, unknown> | undefined;
     const messagesJson = raw?.messagesJson as string | undefined;
     const messages = safeJsonParse<unknown[]>(messagesJson, []);
@@ -45,14 +44,14 @@ export const GET = withAuth(async (req: NextRequest) => {
   });
 });
 
-/** POST — 대화 저장/갱신 (upsert). 삭제된 대화(tombstone) 는 409 로 거부. */
+/** POST — save/update a conversation (upsert). Deleted (tombstoned) conversations are rejected with 409. */
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
   const { id, title, messages, createdAt } = body as { id?: string; title?: string; messages?: unknown[]; createdAt?: number };
   if (!id || !title || !Array.isArray(messages)) {
     return NextResponse.json({ success: false, error: 'id, title, messages 필수' }, { status: 400 });
   }
-  // tombstone 체크 — 한 기기에서 삭제한 대화를 다른 기기의 stale POST 가 되살리는 것 방지
+  // tombstone check — prevent a stale POST from one device resurrecting a conversation deleted on another.
   const isDeleted = await isConversationDeleted({ owner: 'admin', id });
   if (isDeleted.ok && isDeleted.data) {
     return NextResponse.json({ success: false, error: 'deleted', deleted: true }, { status: 409 });
@@ -69,8 +68,9 @@ export const POST = withAuth(async (req: NextRequest) => {
     : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });
 
-/** PATCH — 단건 메시지 재저장(승인/거부 등 client-state). 전체 conv 재저장 대신 바뀐 메시지 1건만 upsert.
- *  hub /api/hub/[slug]/sessions 의 save-message 와 대칭 — 둘 다 ConversationManager.append(owner) 단일 경로. */
+/** PATCH — re-save a single message (client-state: approve/reject etc.). Upserts only the changed message
+ *  instead of the whole conversation. Symmetric with hub /api/hub/[slug]/sessions save-message —
+ *  both go through ConversationManager.append(owner). */
 export const PATCH = withAuth(async (req: NextRequest) => {
   const { id, message } = (await req.json()) as { id?: string; message?: unknown };
   if (!id || !message) {
@@ -82,7 +82,7 @@ export const PATCH = withAuth(async (req: NextRequest) => {
     : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });
 
-/** DELETE — ?id=xxx 삭제 */
+/** DELETE — delete by ?id=xxx. */
 export const DELETE = withAuth(async (req: NextRequest) => {
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ success: false, error: 'id 필수' }, { status: 400 });

@@ -53,9 +53,9 @@ export interface UseChatHubContext {
 /** 대화 목록 메타 — admin/hub 공통 shape (convBackend 가 정규화). */
 type ConvBackendMeta = { id: string; title: string; createdAt: number; updatedAt: number };
 
-/** hub 메시지(row wire) → frontend Message. canonical join 규약 — 컬럼(id/role/content) ∪ data_json.
- *  Rust split_message/join_message 와 동일: data_json = 뱃지(top)·blocks(data 안)·createdAt 등 rich.
- *  컬럼 id/role/content 가 authoritative(덮어씀). admin get_conversation 의 join 과 byte-동일 복원. */
+/** hub message (row wire) → frontend Message. canonical join — columns (id/role/content) ∪ data_json.
+ *  Same as Rust split_message/join_message: data_json = rich (badges at top, blocks under data, createdAt, ...).
+ *  Columns id/role/content are authoritative (override). Byte-identical to admin get_conversation's join. */
 function mapHubMessages(
   hubMsgs: Array<{ id: string; role: string; content?: string; dataJson?: string }>,
 ): Message[] {
@@ -71,15 +71,16 @@ function mapHubMessages(
   });
 }
 
-/** reload/refresh/select 가 DB(remote) 메시지로 로컬을 교체할 때, 로컬에서 이미 승인/거부/오류로
- *  확정된 pendingAction status 를 DB 의 pending 으로 되돌리지 않는다. #5 — 승인 직후 폴링·재조회·
- *  재시작 LOAD 가 in-flight 저장 전 DB(pending)를 불러와 승인 카드가 다시 뜨던 것. 로컬 확정 status
- *  우선 + 다음 저장에서 DB 도 치유. (hub 는 saveToDb skip 이라 localStorage 가 유일 소스 — init 병합으로 복원) */
+/** When reload/refresh/select replaces local with DB (remote) messages, do not revert a pendingAction status
+ *  that is already terminal locally (approved/rejected/error) back to the DB's "pending". Without this, polling/
+ *  refetch/restart LOAD right after an approval could load the DB (pending, before the in-flight save) and the
+ *  approval card would reappear. Local terminal status wins; the next save heals the DB too. */
 const TERMINAL_PENDING = new Set(['approved', 'rejected', 'error', 'past-runat']);
 
-// 활성 세션의 in-memory 터미널 status(승인/거부)를 reconcile/refresh 가 백엔드 pending 으로 덮지
-// 않게 보존 — saveMessage/saveToDb POST 가 in-flight 인 동안의 race 가드. 영속 권위는 백엔드(DB) →
-// 리로드·새 빌드 후엔 DB 가 터미널 status 를 들고 있어 카드 부활 0. (admin·hub 동일 — 둘 다 백엔드 영속.)
+// Preserve the active session's in-memory terminal status (approved/rejected) so reconcile/refresh does not
+// overwrite it with backend "pending" — a race guard while the saveMessage/saveToDb POST is in flight. The DB
+// is the persistence authority → after reload/new-build it holds the terminal status, so cards never resurrect.
+// (admin·hub identical — both persist to the backend.)
 function preserveLocalPendingStatus(remote: Message[], local: Message[]): Message[] {
   const localById = new Map(local.map(m => [m.id, m]));
   return remote.map(rm => {
@@ -92,16 +93,17 @@ function preserveLocalPendingStatus(remote: Message[], local: Message[]): Messag
       ...rm,
       pendingActions: rm.pendingActions.map(rp => {
         const lp = localByPlan.get(rp.planId);
-        // createdAt(로컬 stamp)은 비종결 카드에도 보존 — 리로드 후에도 만료 계산 유지.
+        // Preserve createdAt (local stamp) even on non-terminal cards — keeps expiry calc valid after reload.
         return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : { ...rp, createdAt: lp?.createdAt ?? rp.createdAt };
       }),
     };
   });
 }
 
-/** system-init 히어로(👻 환영)는 client-only(백엔드 미영속). 백엔드 메시지로 LOAD/머지할 때 떨어뜨리지
- *  않게 로컬에 있으면 맨 앞에 보존 — 새 대화에서 채팅 시작 후 reconcile/refresh 가 돌아도 히어로가
- *  첫 메시지로 남아 위로 밀려나게(중간에 사라지던 것 차단). 로컬에 없으면(옛 대화 로드) 추가 안 함. */
+/** The system-init hero (👻 welcome) is client-only (not backend-persisted). When LOAD/merging from backend
+ *  messages, keep it at the front if present locally — so after starting a chat in a new conversation, a
+ *  reconcile/refresh keeps the hero as the first message (pushed up, not vanishing mid-list). If absent locally
+ *  (loading an old conversation), don't add it. */
 function preserveHero(merged: Message[], local: Message[]): Message[] {
   const hero = local.find(m => m.id === 'system-init');
   if (hero && !merged.some(m => m.id === 'system-init')) return [hero, ...merged];
@@ -242,9 +244,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     watchdogRef.current = setTimeout(onFire, CHAT_WATCHDOG_IDLE_MS);
   };
 
-  // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
-  // Hub mode 이면 admin /api/conversations 호출 skip + /api/hub/<slug>/sessions 호출.
-  // hub_conversations DB 에서 다기기 동기화 + 본격 multi-conv 동작.
+  // ── Init: DB-first load (guarantees multi-device sync); fall back to localStorage only on failure ──
+  // In hub mode, skip the admin /api/conversations call and use /api/hub/<slug>/sessions instead —
+  // the conversation store gives multi-device sync + full multi-conv behaviour.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -261,13 +263,13 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           activeMessages = await convBackend.listMessages(activeId);
           if (cancelled) return;
         }
-        // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입 (save effect bump 방지).
-        // 기존 localStorage 의 확정(approved/rejected) pendingAction status 보존 — reload 시 서버 pending
-        // 으로 되돌려 승인 카드가 재출현하던 #5 차단 (admin·hub 공통; hub 는 localStorage 가 유일 소스).
+        // After cleanMessages, feed the same value to conversations + dispatch LOAD (avoids a save-effect bump).
+        // Preserve terminal (approved/rejected) pendingAction status from localStorage — stops the approval card
+        // from reappearing when reload reverts to the server's "pending" (admin·hub shared).
         const priorActive = safeJsonParse<Conversation[]>(localStorage.getItem(convStorageKey) ?? '', [])
           .find(c => c.id === activeId)?.messages ?? [];
-        // F5 복원도 hero 보존 — 백엔드 메시지엔 system-init 없으니 로컬(mount=[INIT_MESSAGE])에서 앞에 보존.
-        // (reconcile·select 엔 넣고 정작 F5=init 엔 빠뜨려 새 대화 F5 시 유령 사라지던 것.)
+        // F5 restore also preserves the hero — backend messages have no system-init, so keep it from local
+        // (mount=[INIT_MESSAGE]). (It was added on reconcile/select but missed on F5=init → hero vanished on new-chat F5.)
         const cleanedActive = preserveHero(
           preserveLocalPendingStatus(cleanMessages(activeMessages), priorActive),
           messagesRef.current,
@@ -341,8 +343,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // DB 저장 — 명시 호출. union merge 로 안전.
   // **실패 시 1회 retry + 콘솔 경고** (v0.1, 2026-04-27): silent .catch 로 묻혀서 pending status 손실 진단 불가했던 문제 가시화.
-  // Hub mode 이면 saveToDb 자체 skip — /api/conversations 는 admin 인증 필수라 401 silent fail.
-  // hub backend (/api/hub/<slug>/chat) 가 hub_conversations DB 자동 기록해 영속화 OK.
+  // In hub mode, skip saveToDb entirely — /api/conversations requires admin auth (would 401 silent-fail).
+  // The hub backend (/api/hub/<slug>/chat) persists turns to the conversation store automatically.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (hubContext) return;
@@ -400,12 +402,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     void attempt(1, useKeepalive);
   };
 
-  // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
-  // 활성 conv 의 DB 메시지를 로컬과 머지·LOAD — admin·hub **공통 reconcile** (refreshConversations 가 백엔드별로
-  // fetch 후 호출 → 한 곳 고치면 양쪽 적용). 모바일 백그라운드 throttle 로 SSE 끊겨도 백엔드는 완주·영속
-  // (admin=/api/chat/stream route save / hub=grpc detached spawn append_system_message) → 복귀 시 DB 완료본 복구.
-  // preserveLocalPendingStatus 로 승인 status 보존. hub_messages 도 full data(blocks/suggestions/pendingActions)라 퇴화 0.
-  // (잔여: 로컬이 streaming:true 로 멈춰있고 hub 로컬 id ≠ 백엔드 uuid 면 force-load 미발동 — 별도 id 정렬 안건.)
+  // Re-fetch from DB — called from several places (sidebar expand, tab switch, visibility change, ...).
+  // Merge+LOAD the active conv's DB messages with local — admin·hub shared reconcile (refreshConversations
+  // fetches per-backend then calls this → fix once, both apply). Even if SSE drops on mobile background throttle,
+  // the backend finishes and persists (admin=/api/chat/stream route save / hub=grpc detached append_system_message)
+  // → on return the completed DB copy is restored. preserveLocalPendingStatus keeps approval status; rows store
+  // full data (blocks/suggestions/pendingActions) so there is no degradation on reload.
   const reconcileActiveConv = useCallback((remoteMsgsRaw: Message[], remoteUpdatedAt: number) => {
     if (!activeConvId) return;
     const convMeta = conversations.find(c => c.id === activeConvId);
@@ -454,9 +456,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           const local = prev.find(p => p.id === r.id);
           return {
             id: r.id,
-            // 로컬 파생 title(useEffect[messages] 가 첫 user 메시지로 즉시 파생) 우선 — admin 과 동일.
-            // hub 백엔드 auto-title 은 AI 턴 중 커밋이라 lagging → DB title 로 덮으면 "새 대화" 로 깜빡임.
-            // 로컬 없으면(타세션·fresh load) DB title 사용.
+            // Prefer the locally-derived title (useEffect[messages] derives it from the first user message
+            // immediately) — same as admin. The hub backend auto-title commits during the AI turn, so it lags →
+            // overwriting with the DB title flickers back to "새 대화". Fall back to DB title if no local (other session / fresh load).
             title: local?.title || r.title,
             createdAt: r.createdAt,
             // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서 튐 방지.
@@ -860,8 +862,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         ? {
             message: userPrompt,
             planMode,
-            // 클라 발급 메시지 id — admin systemId/userId 패턴 미러. hub_messages id 가 로컬과 정렬되어
-            // background-resume reconcile 이 streaming-stuck 케이스도 매칭(옛엔 백엔드 uuid 라 불일치).
+            // Client-issued message ids — mirror the admin systemId/userId pattern. Stored row ids align with
+            // local, so background-resume reconcile matches even the streaming-stuck case (old uuid path mismatched).
             aiMsgId: systemId,
             userMsgId: `u-${id}`,
             ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
@@ -1022,10 +1024,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
   // handleSubmit(text, true, { planExecuteId }) 호출 — 모두 Function Calling 경로.
 
-  // 단건 메시지 영속(client-state: 승인/거부·suggestion 클리어·픽 잠금 등) — admin·hub 공통.
-  // ConversationManager.append(owner) 단일 경로, auth-scoped 라우트만 다름(admin 세션 / hub 토큰).
-  // 상태 1건 변경에 전체 conv 재저장은 낭비 → 바뀐 메시지 1건만 upsert(ON CONFLICT id UPDATE, created_at 보존).
-  // DB 가 권위 → reload·새 빌드 후 reconcile 이 이걸 읽어 카드/칩 부활 0. conv 캐시(localStorage)는 optimistic 백업.
+  // Persist a single message (client-state: approve/reject, suggestion clear, pick lock, etc.) — admin·hub shared.
+  // One path = ConversationManager.append(owner); only the auth-scoped route differs (admin session / hub token).
+  // Re-saving the whole conversation for one status flip is wasteful → upsert only the changed message
+  // (ON CONFLICT id UPDATE, created_at preserved). DB is the authority → after reload/new-build, reconcile reads
+  // it so cards/chips never resurrect. The localStorage conv cache is an optimistic backup.
   const persistMessage = useCallback((convId: string, msg: Message) => {
     const persist = hubContext
       ? fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
@@ -1042,11 +1045,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: convId, message: msg }),
         });
-    void persist.catch(() => { /* conv 캐시가 프론트 백업 */ });
+    void persist.catch(() => { /* conv cache is the frontend backup */ });
   }, [hubContext]);
 
-  // pending 상태 변경(승인/거부) 후 영속 — reload·새 빌드 후 카드 부활 방지.
-  // dispatch 직후 messagesRef 가 React 재렌더 전이라 stale 가능 → 새 status 를 직접 계산해 즉시 저장.
+  // Persist after a pending-status change (approve/reject) — prevents card resurrection after reload/new-build.
+  // messagesRef can be stale right after dispatch (before React re-render) → compute the new status directly and save now.
   const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) return;
@@ -1055,7 +1058,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         ? m
         : { ...m, pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, ...patch } : p) },
     );
-    // 1) localStorage conv 캐시 즉시 동기 갱신 — reload 시 캐시 우선 로드라 status 즉시 표시(optimistic).
+    // 1) update the localStorage conv cache synchronously — it loads first on reload, so status shows immediately (optimistic).
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem(convStorageKey) : null;
       if (raw) {
@@ -1064,7 +1067,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         localStorage.setItem(convStorageKey, JSON.stringify(next));
       }
     } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
-    // 2) 백엔드 영속 — 바뀐 메시지 1건만 append.
+    // 2) backend persistence — append only the changed message.
     const updatedMsg = updated.find(m => m.id === msgId);
     if (updatedMsg) persistMessage(convId, updatedMsg);
   }, [activeConvId, persistMessage]);
@@ -1132,7 +1135,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [persistPendingChange, hubContext]);
 
-  // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + 단건 영속 — 새로고침 시 카드 재등장 차단(admin·hub 공통).
+  // On suggestion click, clear that message's suggestions + persist the single message — stops the card from
+  // reappearing on refresh (admin·hub shared).
   const consumeSuggestions = useCallback((msgId: string) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (convId) {
@@ -1142,7 +1146,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
   }, [activeConvId, persistMessage]);
 
-  // 칩 픽 잠금 — consumeSuggestions(칩 제거)와 달리 칩은 남기고 픽 텍스트만 기록(잠금 강조 렌더용). 단건 영속.
+  // Lock a picked chip — unlike consumeSuggestions (which removes chips), keeps the chips and records only the
+  // picked text (for the locked-highlight render). Persists the single message.
   const lockSuggestion = useCallback((msgId: string, picked: string) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (convId) {

@@ -18,15 +18,16 @@ import { logger } from '../../../../../lib/util/logger';
 /**
  * POST /api/hub/[slug]/sessions
  *
- * 익명 hub 방문자가 자기 세션 CRUD 할 수 있게 만든 dispatcher. admin auth 우회 (withAuth X).
- * 인증 = X-Api-Token + X-Session-Id header. instance.api_token 매칭 + sessionId 기반
- * 권한 가드 (다른 사용자 sessionId 접근 차단).
+ * Dispatcher letting an anonymous hub visitor manage their own session conversations. Bypasses admin
+ * auth (no withAuth). Auth = X-Api-Token + X-Session-Id headers: instance.api_token match + sessionId
+ * scope guard (blocks access to another visitor's sessionId).
  *
- * Body: `{ op: 'list-conversations' | 'create-conversation' | 'get-conversation' |
- *          'delete-conversation' | 'update-conversation-title' | 'list-messages',
- *          id?: string, title?: string }`
+ * Body: `{ op: 'list-conversations' | 'ensure-conversation' | 'create-conversation' | 'get-conversation' |
+ *          'delete-conversation' | 'list-deleted-conversations' | 'restore-conversation' |
+ *          'permanent-delete-conversation' | 'update-conversation-title' | 'list-messages' | 'save-message',
+ *          id?: string, title?: string, message?: unknown }`
  *
- * admin dispatcher (/api/hub/[slug]/route.ts) 와 별개 — 본 영역 = anonymous + sessionId scope 가드.
+ * Separate from the admin dispatcher (/api/hub/[slug]/route.ts) — this one is anonymous + sessionId-scoped.
  */
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const principal = await resolvePrincipal(req, slug);
   if (isPrincipalError(principal)) return principal;
-  // call site 호환 — instance.id / sessionId 그대로 사용 (owner-keyed 가 아니라 RPC 인자라 분리 유지).
+  // instance.id / sessionId passed as RPC args (not owner-keyed) → kept separate for call-site compatibility.
   const instance = principal.hubInstance!;
   const sessionId = principal.sessionId!;
 
@@ -46,8 +47,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const op = body.op ?? '';
 
-  // 대화 ownership(instance_id + session_id 매칭)은 Rust core(HubService)가 강제 — 각 RPC 에 instanceId/sessionId
-  // 전달 시 불일치/부재면 권한 거부. 프론트 가드 폐기.
+  // Conversation ownership (instance_id + session_id match) is enforced by Rust core (HubService):
+  // each RPC gets instanceId/sessionId and denies on mismatch/absence. No frontend guard.
   try {
     switch (op) {
       case 'list-conversations': {
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         return NextResponse.json({ success: true, messages: res.data ?? [] });
       }
       case 'save-message': {
-        // 기존 메시지(승인/거부 status 등) 백엔드 재저장 — owner 검증은 Rust core(ensure_conv_owner).
+        // Re-save an existing message (approve/reject status etc.) — owner verified by Rust core (ensure_conv_owner).
         const id = String(body.id ?? '');
         if (!id || !body.message) return jsonResponse(400, { error: 'id·message 필수' });
         const res = await saveMessage({

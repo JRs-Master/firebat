@@ -70,8 +70,8 @@ impl SqliteDatabaseAdapter {
                 cli_session_id TEXT,
                 cli_model TEXT,
                 active_plan_state TEXT,
-                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 휴지통 = 값 있음.
-                -- 30일 후 internal cleanup cron 이 cascade hard delete.
+                -- soft-delete timestamp (ms epoch). NULL = active, set = in trash.
+                -- After 30 days the internal cleanup cron cascade-hard-deletes it.
                 deleted_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
@@ -148,8 +148,8 @@ impl SqliteDatabaseAdapter {
             CREATE INDEX IF NOT EXISTS idx_shares_expires
                 ON shared_conversations(expires_at);
 
-            -- 대화 메시지 per-row store. admin·hub 를 owner 기반 단일 store 로 수렴
-            -- (conversations = 메타 + conversation_messages = 메시지 행). canonical split/join(메타 컬럼 + data_json).
+            -- Per-row message store. admin·hub converge on one owner-based store
+            -- (conversations = metadata + conversation_messages = message rows). canonical split/join (meta columns + data_json).
             CREATE TABLE IF NOT EXISTS conversation_messages (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
@@ -509,7 +509,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn get_conversation_meta_by_id(&self, id: &str) -> Option<(String, ConversationSummary)> {
         let conn = self.conn.lock().ok()?;
-        // deleted_at 필터 없음 — soft-deleted 도 반환(restore + 영구삭제 직전 owner 도출). hub 단일 store.
+        // No deleted_at filter — returns soft-deleted too (for restore + deriving owner before permanent delete). Single store.
         conn.query_row(
             "SELECT owner, id, title, created_at, updated_at FROM conversations WHERE id = ?1",
             params![id],
@@ -538,8 +538,8 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     ) -> bool {
         use firebat_core::managers::conversation::{join_message, split_message};
         let Ok(conn) = self.conn.lock() else { return false };
-        // 단일 store = conversation_messages rows. canonical split/join 규약(admin·hub·migration·frontend 공용).
-        // 변경감지 = 기존 rows 를 join 으로 복원 → incoming 과 deep-equal 비교(F5 무변경 no-op 보존).
+        // Single store = conversation_messages rows. canonical split/join (shared by admin·hub·frontend).
+        // Change detection = reconstruct existing rows via join → deep-equal vs incoming (preserves F5 no-op).
         let incoming: Vec<serde_json::Value> =
             serde_json::from_str(messages_json).unwrap_or_default();
         let existing: Vec<serde_json::Value> = {
@@ -570,13 +570,13 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 |_| Ok(()),
             )
             .is_ok();
-        // 무변경 + 메타 행 존재 = 완전 no-op (F5 flush 재저장이 updated_at bump·rows 재기록 안 하도록).
+        // unchanged + meta row exists = full no-op (so an F5 flush re-save does not bump updated_at or rewrite rows).
         if row_exists && existing == incoming {
             return true;
         }
         let now = firebat_core::utils::time::now_ms();
         let created = created_at.unwrap_or(now);
-        // conversations = 메타(title·타임스탬프·deleted_at·owner)만. messages 블롭은 '[]' 로 비움(단일 소스=rows).
+        // conversations = metadata only (title·timestamps·deleted_at·owner). messages blob stays '[]' (single source = rows).
         let ok = conn
             .execute(
                 "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
@@ -588,8 +588,8 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 params![id, owner, title, created, now],
             )
             .is_ok();
-        // rows upsert-merge (비파괴) — canonical split: 컬럼=메타, data_json=rich. id 기준 upsert.
-        // 안전: union-merge 가 incoming ⊇ 기존행 보장 → stale row 0.
+        // rows upsert-merge (non-destructive) — canonical split: columns=metadata, data_json=rich. Upsert on id.
+        // Safe: union-merge guarantees incoming ⊇ existing rows → zero stale rows.
         for (i, m) in incoming.iter().enumerate() {
             let (mid, role, content, mcreated, data_json) = split_message(m);
             let mid = if mid.is_empty() { format!("{id}-{i}") } else { mid };
