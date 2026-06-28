@@ -186,7 +186,63 @@ impl SqliteDatabaseAdapter {
         Self::backfill_conversation_messages(conn);
         // ── canonical 마이그 — 옛 행을 split_message 규약으로 정규화(idempotent·loss-less) ──
         Self::migrate_conversation_messages_canonical(conn);
+        // ── title 백필 — 빈 title(옛 auto-title 전 대화)을 첫 user 메시지로 채움(admin·hub 공통) ──
+        Self::backfill_conversation_titles(conn);
         Ok(())
+    }
+
+    /// 빈 title 대화를 첫 user 메시지로 채움 — 옛 hub auto-title 전 대화(title NULL/""/"새 대화" placeholder).
+    /// idempotent(빈 것만)·loss-less(채우기만). admin·hub 공통(owner 무관, 첫 user 메시지 기준).
+    fn backfill_conversation_titles(conn: &Connection) {
+        let pending: Vec<String> = {
+            let Ok(mut stmt) = conn.prepare(
+                "SELECT id FROM conversations
+                 WHERE deleted_at IS NULL AND (title IS NULL OR title = '' OR title = '새 대화')",
+            ) else {
+                return;
+            };
+            let Ok(it) = stmt.query_map([], |r| r.get::<_, String>(0)) else {
+                return;
+            };
+            it.filter_map(|r| r.ok()).collect()
+        };
+        let mut filled = 0usize;
+        for conv_id in pending {
+            let first_user: Option<String> = conn
+                .query_row(
+                    "SELECT content FROM conversation_messages
+                     WHERE conversation_id = ?1 AND role = 'user'
+                     ORDER BY created_at ASC, rowid ASC LIMIT 1",
+                    params![conv_id],
+                    |r| r.get::<_, String>(0),
+                )
+                .ok();
+            let Some(content) = first_user else { continue };
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // 프론트 파생과 동일 — 첫 28자(char 경계, 한글 안전) + 초과 시 … (byte slice 금지).
+            let mut title: String = trimmed.chars().take(28).collect();
+            if trimmed.chars().count() > 28 {
+                title.push('…');
+            }
+            if conn
+                .execute(
+                    "UPDATE conversations SET title = ?2 WHERE id = ?1",
+                    params![conv_id, title],
+                )
+                .is_ok()
+            {
+                filled += 1;
+            }
+        }
+        if filled > 0 {
+            tracing::info!(
+                category = "conversation",
+                "conversation title 백필 — {filled} 대화 첫 메시지로 제목 채움"
+            );
+        }
     }
 
     /// 옛 conversation_messages 행을 canonical 규약(data_json = message ∖ {id,role,content})으로 정규화.
