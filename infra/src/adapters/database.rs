@@ -660,11 +660,10 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 params![id, owner, title, created, now],
             )
             .is_ok();
-        // rows full replace — data_json = 메시지 원본(프론트 shape passthrough), read 가 그대로 복원.
-        let _ = conn.execute(
-            "DELETE FROM conversation_messages WHERE conversation_id = ?1",
-            params![id],
-        );
+        // rows upsert-merge (비파괴) — hub append 와 동일하게 conversation_messages 에 id 기준 upsert.
+        // 옛 DELETE+reinsert(파괴적 full-replace) 폐기 → admin 도 hub 처럼 incremental upsert (동일 쓰기 모델).
+        // 안전: ConversationManager.save 의 union-merge 가 incoming ⊇ 기존행 보장 → stale row 0. data_json =
+        // 메시지 원본(프론트 shape passthrough), read 가 그대로 복원.
         for (i, m) in incoming.iter().enumerate() {
             let mid = m
                 .get("id")
