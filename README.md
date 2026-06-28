@@ -296,7 +296,7 @@ Expose the admin's AI (same logic, same sidebar panels) as an embeddable chatbot
 |---|---|
 | **Backend** | Rust (tonic 0.12 + tokio + rusqlite + reqwest + cron crate) — `core/` + `infra/` Cargo workspace |
 | **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 + React Query (TanStack Query 5) |
-| **IPC** | gRPC (proto/firebat.proto, 31 services / 262 RPCs) — @connectrpc/connect-node typed client |
+| **IPC** | gRPC (proto/firebat.proto, 32 services / 271 RPCs) — @connectrpc/connect-node typed client |
 | **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider, JSON registry `system/llm/models.json`) + CLI subscription mode |
 | **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
