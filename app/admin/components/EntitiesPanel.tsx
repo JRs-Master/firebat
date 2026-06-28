@@ -134,6 +134,12 @@ export function EntitiesPanel({
       }
       return apiPost<{ success: boolean; error?: string; created?: boolean }>('/api/entities', payload, { category: 'entities' });
     },
+    async saveFact(entityId: number, payload: { content: string; factType?: string; tags?: string[] }): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) {
+        return (await hubFetch(hubContext, 'entities', 'save-fact', { entityId, ...payload })) ?? { success: false };
+      }
+      return apiPost<{ success: boolean; error?: string }>(`/api/entities/${entityId}/timeline`, payload, { category: 'entities' });
+    },
   }), [hubContext]);
 
   const fetchEntities = useCallback(async (q: string) => {
@@ -238,6 +244,8 @@ export function EntitiesPanel({
         >
           <Network size={11} /> 엔티티
         </button>
+        {/* 사건(events) = episodic — hub 백엔드 op 없음(admin 전용 capability). hub 에선 탭 숨김. */}
+        {!hubContext && (
         <button
           onClick={() => setSubTab('events')}
           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold rounded-t-md transition-colors ${
@@ -246,9 +254,10 @@ export function EntitiesPanel({
         >
           <Activity size={11} /> 사건
         </button>
+        )}
       </div>
 
-      {subTab === 'events' ? (
+      {subTab === 'events' && !hubContext ? (
         <EventsPanel />
       ) : (
         <>
@@ -333,13 +342,11 @@ export function EntitiesPanel({
                       <EntityTimeline facts={facts} />
                       <CreateFactInline
                         entityId={e.id}
+                        saveFact={backend.saveFact}
                         onCreated={async () => {
-                          // refetch timeline + factCount
-                          const d = await apiGet<{ success: boolean; facts?: Fact[] }>(
-                            `/api/entities/${e.id}/timeline?limit=50`,
-                            { category: 'entities' },
-                          ).catch(() => null);
-                          if (d?.success) setTimeline(prev => ({ ...prev, [e.id]: d.facts ?? [] }));
+                          // refetch timeline + factCount (owner-주입 backend)
+                          const facts = await backend.timeline(e.id);
+                          setTimeline(prev => ({ ...prev, [e.id]: facts }));
                           fetchEntities(query);
                         }}
                       />
@@ -600,7 +607,11 @@ function EntityTimeline({ facts }: { facts: Fact[] }) {
   );
 }
 
-function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated: () => void }) {
+function CreateFactInline({ entityId, saveFact, onCreated }: {
+  entityId: number;
+  saveFact: (entityId: number, payload: { content: string; factType?: string; tags?: string[] }) => Promise<{ success: boolean; error?: string }>;
+  onCreated: () => void;
+}) {
   const contentId = useId();
   const factTypeId = useId();
   const tagsId = useId();
@@ -614,11 +625,7 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
     setSubmitting(true);
     try {
       const tagList = tags.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      await apiPost(
-        `/api/entities/${entityId}/timeline`,
-        { content, factType: factType.trim() || undefined, tags: tagList.length > 0 ? tagList : undefined },
-        { category: 'entities' },
-      );
+      await saveFact(entityId, { content, factType: factType.trim() || undefined, tags: tagList.length > 0 ? tagList : undefined });
       setContent('');
       setFactType('');
       setTags('');

@@ -143,7 +143,7 @@ export function GalleryPanel({
         `/api/media/usage?slug=${encodeURIComponent(selected!.slug)}`,
         { category: 'gallery' },
       ),
-    enabled: !!selected,
+    enabled: !!selected && !hubContext, // usage = admin analytics (hub 백엔드 op 없음) → hub 에선 skip(401 회피)
   });
   const selectedUsage = usageData?.success ? (usageData.data ?? []) : [];
 

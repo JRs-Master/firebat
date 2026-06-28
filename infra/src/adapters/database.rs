@@ -536,21 +536,27 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         messages_json: &str,
         created_at: Option<i64>,
     ) -> bool {
-        use firebat_core::managers::conversation::{derive_conv_title, join_message, split_message};
+        use firebat_core::managers::conversation::{derive_conv_title, join_message, split_message, DEFAULT_CONV_TITLE};
         let Ok(conn) = self.conn.lock() else { return false };
         // Single store = conversation_messages rows. canonical split/join (shared by admin·hub·frontend).
         // Change detection = reconstruct existing rows via join → deep-equal vs incoming (preserves F5 no-op).
         let incoming: Vec<serde_json::Value> =
             serde_json::from_str(messages_json).unwrap_or_default();
-        // Backend-derive the title from the first user message — same logic (derive_conv_title) as hub append,
-        // so the title is one owner-agnostic authority. Fall back to the passed title when no user message yet.
-        let derived_title = incoming
-            .iter()
-            .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
-            .and_then(|m| m.get("content").and_then(|c| c.as_str()))
-            .map(str::trim)
-            .filter(|c| !c.is_empty())
-            .map(derive_conv_title);
+        // Backend-derive the title from the first user message — ONLY when no explicit title was passed
+        // (empty or default "새 대화"). An explicit title (rename) is respected. Same derive-if-empty rule
+        // as hub append, so the title is one owner-agnostic authority without clobbering renames.
+        let derived_title: Option<String> =
+            if title.trim().is_empty() || title.trim() == DEFAULT_CONV_TITLE {
+                incoming
+                    .iter()
+                    .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+                    .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+                    .map(str::trim)
+                    .filter(|c| !c.is_empty())
+                    .map(derive_conv_title)
+            } else {
+                None
+            };
         let title: &str = derived_title.as_deref().unwrap_or(title);
         let existing: Vec<serde_json::Value> = {
             let mut out = Vec::new();
