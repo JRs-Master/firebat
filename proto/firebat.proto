@@ -867,6 +867,7 @@ message UpdateCronRequest {
   optional string execution_mode = 17;
   optional string agent_prompt = 18;
   optional bool show_in_calendar = 19;     // 캘린더 표시 opt-in (편집 시 보존/변경)
+  optional string owner = 20;              // hub 편집 owner-scope 검사용 (admin=omit/무검사). 잡 owner 자체는 update 가 기존값 보존.
 }
 message UpdateCronResponse {}
 message ListCronRequest {}

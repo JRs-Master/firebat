@@ -13,6 +13,7 @@ import { useTranslations } from '../../../lib/i18n';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
+import { hubFetch } from '../../../lib/hub-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
 import { z } from 'zod';
@@ -397,6 +398,7 @@ export function CronPanel({
       {editing && (
         <ScheduleModal
           job={editing}
+          hubContext={hubContext}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); invalidateCron(); }}
           onDelete={() => { handleCancel(editing.jobId); setEditing(null); }}
@@ -407,7 +409,7 @@ export function CronPanel({
 }
 
 // ── 스케줄 등록/수정 모달 ──────────────────────────────────────────────
-export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
+export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   job: {
     jobId: string;
     targetPath: string;
@@ -431,6 +433,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     system?: boolean;
     showInCalendar?: boolean;
   } | null;
+  hubContext?: CronHubContext;   // 있으면 hub op-dispatch(owner-scope) 로 저장, 없으면 admin apiPut.
   onClose: () => void;
   onSaved: () => void;
   onDelete?: () => void;
@@ -589,7 +592,13 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       body.showInCalendar = showInCalendar;
 
       try {
-        await apiPut('/api/cron', body, { category: 'cron' });
+        // owner-injected save — hub 면 op-dispatch(owner-scope, Rust update_owned 강제) / admin 이면 REST PUT.
+        if (hubContext) {
+          const d = await hubFetch(hubContext, 'cron', 'update', body);
+          if (!d?.success) { setError(d?.error || '저장 실패'); return; }
+        } else {
+          await apiPut('/api/cron', body, { category: 'cron' });
+        }
         onSaved();
       } catch (e: any) {
         setError(e?.message || '저장 실패');

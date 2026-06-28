@@ -270,12 +270,17 @@ impl ScheduleService for ScheduleServiceImpl {
         &self,
         req: Request<UpdateCronRequest>,
     ) -> Result<Response<UpdateCronResponse>, TonicStatus> {
-        let (job_id, target_path, opts) = parse_schedule_args(req.into_inner().into())
+        let args = req.into_inner();
+        // owner 지정(hub) → update_owned 로 owner 일치 검사. None(admin) → 기존 update(무검사).
+        // 잡 owner 자체는 update 가 기존값 보존(편집이 owner 안 바꿈).
+        let owner = args.owner.clone().filter(|s| !s.is_empty());
+        let (job_id, target_path, opts) = parse_schedule_args(args.into())
             .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
-        self.manager
-            .update(&job_id, &target_path, opts)
-            .await
-            .map_err(TonicStatus::internal)?;
+        match owner.as_deref() {
+            Some(o) => self.manager.update_owned(&job_id, &target_path, opts, Some(o)).await,
+            None => self.manager.update(&job_id, &target_path, opts).await,
+        }
+        .map_err(TonicStatus::internal)?;
         Ok(Response::new(UpdateCronResponse {}))
     }
 

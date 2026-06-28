@@ -120,9 +120,29 @@ impl ScheduleManager {
             if opts.show_in_calendar.is_none() {
                 opts.show_in_calendar = existing.options.show_in_calendar;
             }
+            // owner 는 편집으로 절대 바뀌지 않음 — 기존 owner 보존(미보존 시 hub 잡이 admin 으로 새는 누수).
+            opts.owner = existing.options.owner.clone();
         }
         let _ = self.cron.cancel(job_id).await; // 미존재 OK
         self.schedule(job_id, target_path, opts).await
+    }
+
+    /// owner-aware update — owner 일치하는 job 만 편집(visitor 가 다른 hub/admin 자료 편집 불가).
+    /// update 가 기존 owner 보존하므로 owner 변경 0.
+    pub async fn update_owned(
+        &self,
+        job_id: &str,
+        target_path: &str,
+        opts: CronScheduleOptions,
+        owner: Option<&str>,
+    ) -> InfraResult<()> {
+        let owned = self.cron.list().into_iter().any(|j| {
+            j.job_id == job_id && j.options.owner.as_deref() == owner
+        });
+        if !owned {
+            return Err("이 cron 작업에 접근할 권한이 없습니다.".to_string());
+        }
+        self.update(job_id, target_path, opts).await
     }
 
     pub async fn trigger_now(&self, job_id: &str) -> InfraResult<()> {

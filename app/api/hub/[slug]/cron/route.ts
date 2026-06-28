@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listCron, cancelCron, runNow as runCronNow } from '../../../../../lib/api-gen/schedule';
+import { listCron, cancelCron, runNow as runCronNow, updateCron } from '../../../../../lib/api-gen/schedule';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -86,6 +86,29 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         if (!jobId) return NextResponse.json({ success: false, error: 'jobId 가 필요합니다.' }, { status: 400 });
         // owner scoping = Rust core(ScheduleService.runNow → trigger_now_owned)가 강제 — owner 불일치 시 거부.
         const res = await runCronNow({ jobId, owner: expectedOwner } as any);
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true });
+      }
+      case 'update': {
+        // 스케줄 편집 — owner scoping = Rust core(ScheduleService.updateCron → update_owned)가 강제(불일치 거부).
+        // 잡 owner 자체는 update 가 기존값 보존(편집이 owner 안 바꿈). admin /api/cron PUT 과 동일 인자.
+        const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline,
+          title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt, showInCalendar } = body;
+        if (!jobId) return NextResponse.json({ success: false, error: 'jobId 가 필요합니다.' }, { status: 400 });
+        const res = await updateCron({
+          jobId,
+          targetPath: targetPath || '',
+          mode: 'cron',
+          cronTime, runAt, delaySec, startAt, endAt,
+          inputDataJson: inputData !== undefined ? JSON.stringify(inputData) : undefined,
+          pipelineJson: pipeline !== undefined ? JSON.stringify(pipeline) : undefined,
+          title, description, oneShot,
+          runWhenJson: runWhen !== undefined ? JSON.stringify(runWhen) : undefined,
+          retryJson: retry !== undefined ? JSON.stringify(retry) : undefined,
+          notifyJson: notify !== undefined ? JSON.stringify(notify) : undefined,
+          executionMode, agentPrompt, showInCalendar,
+          owner: expectedOwner,
+        } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
       }

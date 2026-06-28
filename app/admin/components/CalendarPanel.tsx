@@ -656,6 +656,7 @@ export function CalendarPanel({
         return (
           <ScheduleModal
             job={job}
+            hubContext={hubContext}
             onClose={() => setEditingCron(null)}
             onSaved={() => { setEditingCron(null); void fetchCron(); }}
             onDelete={async () => { if (await deleteCronJob(job.jobId)) setEditingCron(null); }}
