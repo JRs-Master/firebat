@@ -8,6 +8,7 @@ import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 import { apiPost } from '../../../lib/api-fetch';
+import { hubFetch } from '../../../lib/hub-fetch';
 import type { LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibraryReferenceDetail } from './LibraryReferenceDetail';
 
@@ -35,19 +36,11 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
   const nameId = useId();
   const descId = useId();
 
-  // hub mode 면 익명 endpoint, 아니면 admin endpoint. owner 영역은 hub 가 자동 주입.
+  // owner-injected single dispatcher — admin /api/library/<op> vs hub /api/hub/<slug>/library {op}.
+  // 패널 body 는 이 함수만 호출(owner-agnostic). hub 는 backend 가 owner 자동 주입.
   const libraryFetch = useCallback(async <T,>(op: string, payload: Record<string, unknown>): Promise<LibraryApiResponse<T>> => {
     if (hubContext) {
-      const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/library`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Token': hubContext.apiToken,
-          'X-Session-Id': hubContext.sessionId,
-        },
-        body: JSON.stringify({ op, ...payload }),
-      });
-      return res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+      return (await hubFetch(hubContext, 'library', op, payload)) ?? { success: false };
     }
     return apiPost<LibraryApiResponse<T>>(`/api/library/${op}`, payload, { category: 'library' });
   }, [hubContext]);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState, useEffect, useCallback, useRef } from 'react';
+import { useId, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Modal } from './Modal';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -42,10 +42,9 @@ const PAGE_SIZE = 48;
 export type GalleryHubContext = { slug: string; apiToken: string; sessionId: string };
 
 export function GalleryPanel({
-  hubMode,
   hubContext,
 }: {
-  hubMode?: boolean;
+  hubMode?: boolean;   // accepted for caller compat; owner derived from hubContext (backend object).
   hubContext?: GalleryHubContext;
 } = {}) {
   const searchId = useId();
@@ -60,30 +59,46 @@ export function GalleryPanel({
   const selected = selectedIndex !== null && selectedIndex < items.length ? items[selectedIndex] : null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // owner-injected backend — admin REST(/api/media/*) vs hub op(GET/DELETE/POST{op}) 가 각 메서드 안에서만 갈림.
+  const backend = useMemo(() => ({
+    async list(opts: { offset: number; search: string; scope: string }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
+      const params = new URLSearchParams();
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(opts.offset));
+      if (opts.search) params.set('search', opts.search);
+      if (hubContext) {
+        const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?${params.toString()}`, {
+          headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+        });
+        return res.json().catch(() => null);
+      }
+      params.set('scope', opts.scope);
+      return apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(`/api/media/list?${params.toString()}`, { category: 'gallery' }).catch(() => null);
+    },
+    async remove(slug: string): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) {
+        return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?slug=${encodeURIComponent(slug)}`, {
+          method: 'DELETE', headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+        }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }));
+      }
+      return apiDelete<{ success: boolean; error?: string }>(`/api/media/list?slug=${encodeURIComponent(slug)}`, { category: 'gallery' });
+    },
+    async regenerate(slug: string): Promise<{ success: boolean; error?: string }> {
+      if (hubContext) {
+        return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+          body: JSON.stringify({ op: 'regenerate', slug }),
+        }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }));
+      }
+      return apiPost<{ success: boolean; error?: string }>(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, undefined, { category: 'gallery' });
+    },
+  }), [hubContext]);
+
   const fetchList = useCallback(async (reset: boolean) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set('limit', String(PAGE_SIZE));
-      params.set('offset', String(reset ? 0 : offset));
-      if (search) params.set('search', search);
-      // hub mode = 익명 hub endpoint 호출. owner 자동 hub-scoped.
-      let data: { success: boolean; items: MediaItem[]; total?: number } | null = null;
-      if (hubMode && hubContext) {
-        const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?${params.toString()}`, {
-          headers: {
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-        });
-        data = await res.json().catch(() => null);
-      } else if (!hubMode) {
-        params.set('scope', scope);
-        data = await apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(
-          `/api/media/list?${params.toString()}`,
-          { category: 'gallery' },
-        ).catch(() => null);
-      }
+      const data = await backend.list({ offset: reset ? 0 : offset, search, scope });
       if (data?.success) {
         setItems(prev => reset ? data!.items : [...prev, ...data!.items]);
         setTotal(data.total || 0);
@@ -93,7 +108,7 @@ export function GalleryPanel({
     } finally {
       setLoading(false);
     }
-  }, [scope, search, offset, hubMode, hubContext]);
+  }, [backend, offset, search, scope]);
 
   // scope/search 변경 시 리셋 — debounced for search
   useEffect(() => {
@@ -140,19 +155,7 @@ export function GalleryPanel({
       : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
     if (!await confirmDialog({ title: '이미지 삭제', message: msg, danger: true, okLabel: '삭제' })) return;
     try {
-      // hub 모드 = hub 라우트(owner-scoped delete). 옛엔 admin /api/media/list 무조건 호출이라 hub 방문자 이미지 삭제가 안 됐음.
-      const data = hubMode && hubContext
-        ? await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?slug=${encodeURIComponent(slug)}`, {
-            method: 'DELETE',
-            headers: {
-              'X-Api-Token': hubContext.apiToken,
-              'X-Session-Id': hubContext.sessionId,
-            },
-          }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }))
-        : await apiDelete<{ success: boolean; error?: string }>(
-            `/api/media/list?slug=${encodeURIComponent(slug)}`,
-            { category: 'gallery' },
-          );
+      const data = await backend.remove(slug);
       if (data.success) {
         setItems(prev => prev.filter(i => i.slug !== slug));
         setTotal(prev => Math.max(0, prev - 1));
@@ -169,18 +172,7 @@ export function GalleryPanel({
   const handleRegenerate = async (slug: string) => {
     setRegenerating(true);
     try {
-      // hub 모드 = hub 라우트(owner-scoped regenerate). owner scoping 은 Rust core 가 강제.
-      const data = hubMode && hubContext
-        ? await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
-            body: JSON.stringify({ op: 'regenerate', slug }),
-          }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }))
-        : await apiPost<{ success: boolean; error?: string }>(
-            `/api/media/regenerate?slug=${encodeURIComponent(slug)}`,
-            undefined,
-            { category: 'gallery' },
-          );
+      const data = await backend.regenerate(slug);
       if (!data.success) {
         await alertDialog({ title: '재생성 실패', message: data.error || 'unknown', danger: true });
       }

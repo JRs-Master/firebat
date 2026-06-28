@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useId } from 'react';
+import { useState, useCallback, useId, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -79,31 +79,49 @@ export function CronPanel({
   // 모바일 select-to-show 패턴 — Sidebar 와 동일. PC 에선 무시 (group-hover 가 처리).
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  const { data: cronData } = useQuery({
-    queryKey: ['cron', hubMode && hubContext ? `hub-${hubContext.slug}` : 'admin'],
-    queryFn: async () => {
-      if (hubMode) {
-        // 익명 hub endpoint — owner='hub:<id>' 인 작업만 노출.
-        if (!hubContext) return { jobs: [] as CronJob[], logs: [] as CronLog[] };
+  // owner-injected backend — admin REST vs hub op(GET/DELETE/POST) 가 각 메서드 안에서만 갈림.
+  // (cron 은 GET 목록·DELETE 취소·POST{op:run} 이라 공유 hubFetch 의 {op} shape 와 달라 raw fetch 캡슐화.)
+  const backend = useMemo(() => ({
+    async list(): Promise<{ jobs: CronJob[]; logs: CronLog[] }> {
+      if (hubContext) {
         try {
           const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
-            headers: {
-              'X-Api-Token': hubContext.apiToken,
-              'X-Session-Id': hubContext.sessionId,
-            },
+            headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           });
-          const data = await res.json().catch(() => null);
-          if (data?.success) return { jobs: data.jobs ?? [], logs: data.logs ?? [] };
-        } catch (e) {
-          logger.debug('cron', 'hub fetch 실패', { error: e });
-        }
+          const d = await res.json().catch(() => null);
+          if (d?.success) return { jobs: d.jobs ?? [], logs: d.logs ?? [] };
+        } catch (e) { logger.debug('cron', 'hub fetch 실패', { error: e }); }
         return { jobs: [], logs: [] };
       }
-      return apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' }).catch((e) => {
-        logger.debug('cron', 'fetch 실패', { error: e });
-        return { jobs: [], logs: [] };
-      });
+      return apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' })
+        .then(d => ({ jobs: d.jobs ?? [], logs: d.logs ?? [] }))
+        .catch((e) => { logger.debug('cron', 'fetch 실패', { error: e }); return { jobs: [] as CronJob[], logs: [] as CronLog[] }; });
     },
+    async cancel(jobId: string): Promise<void> {
+      if (hubContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron?jobId=${encodeURIComponent(jobId)}`, {
+          method: 'DELETE', headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+        });
+      } else {
+        await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'cron' });
+      }
+    },
+    async run(jobId: string): Promise<void> {
+      if (hubContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+          body: JSON.stringify({ op: 'run', jobId }),
+        });
+      } else {
+        await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
+      }
+    },
+  }), [hubContext]);
+
+  const { data: cronData } = useQuery({
+    queryKey: ['cron', hubContext ? `hub-${hubContext.slug}` : 'admin'],
+    queryFn: () => backend.list(),
   });
   const jobs = cronData?.jobs ?? [];
   const logs = cronData?.logs ?? [];
@@ -139,17 +157,7 @@ export function CronPanel({
     if (!await confirmDialog({ title: '잡 해제', message: `잡 "${jobId}"을(를) 해제하시겠습니까?`, danger: true, okLabel: '해제' })) return;
     setCancelling(jobId);
     try {
-      if (hubMode && hubContext) {
-        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron?jobId=${encodeURIComponent(jobId)}`, {
-          method: 'DELETE',
-          headers: {
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-        });
-      } else {
-        await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'cron' });
-      }
+      await backend.cancel(jobId);
       invalidateCron();
     } finally {
       setCancelling(null);
@@ -159,18 +167,9 @@ export function CronPanel({
   const handleRunNow = async (jobId: string) => {
     setRunning(jobId);
     try {
-      // run RPC 는 실행 완료까지 블록(schedule→cron→callback 전부 await) → resolve = 작업 끝.
-      // 스피너는 그때까지 돈다(완료 추적). 실행 상태/결과는 StatusManager 뱃지(ActiveJobsIndicator)로도 표시.
-      // hub 모드 = hub 라우트(owner-scoped run). owner scoping 은 Rust core 가 강제.
-      if (hubMode && hubContext) {
-        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
-          body: JSON.stringify({ op: 'run', jobId }),
-        });
-      } else {
-        await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
-      }
+      // run 은 실행 완료까지 블록(schedule→cron→callback 전부 await) → resolve = 작업 끝. 스피너 그때까지.
+      // 실행 상태/결과는 StatusManager 뱃지(ActiveJobsIndicator)로도. owner scoping 은 Rust core 가 강제.
+      await backend.run(jobId);
       setRunning(null);
     } catch {
       setRunning(null);
