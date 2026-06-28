@@ -55,6 +55,21 @@ pub fn join_message(id: &str, role: &str, content: &str, data_json: &str) -> ser
     msg
 }
 
+/// Default conversation title (matches the conversations.title column DEFAULT).
+pub const DEFAULT_CONV_TITLE: &str = "새 대화";
+
+/// Derive a conversation title from a message's content (first 28 chars, ellipsis if longer).
+/// Single owner-agnostic logic shared by admin save + hub append → the backend is the title authority
+/// for both (no admin-frontend / hub-backend split). char-based slice — byte slicing panics mid-Korean.
+pub fn derive_conv_title(content: &str) -> String {
+    let trimmed = content.trim();
+    let mut title: String = trimmed.chars().take(28).collect();
+    if trimmed.chars().count() > 28 {
+        title.push('…');
+    }
+    title
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySearchMatch {
@@ -334,6 +349,19 @@ impl ConversationManager {
             id
         };
         self.db.ensure_conversation_row(owner, conv_id, "", created);
+        // Backend-derive the conversation title from the first user message — single authority for admin & hub.
+        // Set only while the title is still empty/default so later turns keep it.
+        if role == "user" && !content.trim().is_empty() {
+            let cur = self
+                .db
+                .get_conversation_meta_by_id(conv_id)
+                .map(|(_, s)| s.title)
+                .unwrap_or_default();
+            let cur = cur.trim();
+            if cur.is_empty() || cur == DEFAULT_CONV_TITLE {
+                self.db.update_conversation_title(conv_id, &derive_conv_title(&content));
+            }
+        }
         self.db.append_conversation_message(&ConversationMessage {
             id,
             conversation_id: conv_id.to_string(),

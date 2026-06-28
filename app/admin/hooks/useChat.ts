@@ -110,6 +110,36 @@ function preserveHero(merged: Message[], local: Message[]): Message[] {
   return merged;
 }
 
+/** Reconcile the local conversation list against the owner's backend list — one path for admin & hub
+ *  (convBackend injects the owner via auth; this logic is owner-agnostic). Rebuilds from the backend list
+ *  (locally-derived title + cached messages preserved), keeps active/unsaved local-only convs (lazy admin
+ *  creation), drops convs deleted elsewhere, sorts by recency. */
+function reconcileConvList(prev: Conversation[], remote: ConvBackendMeta[], activeConvId: string): Conversation[] {
+  const remoteIds = new Set(remote.map(r => r.id));
+  // Keep a local conv missing from the backend only if it's active or unsaved-empty (a brand-new conv not yet
+  // persisted); otherwise it was deleted elsewhere → drop.
+  const survivors = prev.filter(c => {
+    if (remoteIds.has(c.id)) return true;
+    if (c.id === activeConvId) return true;
+    const hasRealMessages = c.messages?.some(m => m.id !== 'system-init' && m.role === 'user');
+    return !hasRealMessages;
+  });
+  const localById = new Map(survivors.map(c => [c.id, c] as const));
+  const merged: Conversation[] = remote.map(r => {
+    const local = localById.get(r.id);
+    return {
+      id: r.id,
+      title: local?.title || r.title,           // locally-derived title (instant) wins; DB title for fresh/other-session
+      createdAt: r.createdAt,
+      updatedAt: Math.max(r.updatedAt ?? r.createdAt, local?.updatedAt ?? 0),
+      messages: local?.messages ?? [],          // empty for restored/elsewhere convs → filled on select
+    };
+  });
+  for (const c of survivors) if (!remoteIds.has(c.id)) merged.push(c);  // local-only (active/unsaved) appended
+  merged.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  return merged;
+}
+
 export function useChat(aiModel: string, onRefresh: () => void, hubContext?: UseChatHubContext) {
   const t = useTranslations();
   const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
@@ -451,79 +481,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   }, [activeConvId, conversations, convStorageKey]);
 
   const refreshConversations = useCallback(async () => {
-    if (hubContext) {
-      // hub: 목록 재조회(휴지통 복원·삭제 즉시 반영) + 활성 대화 메시지 reconcile(background-resume).
-      const remote = await convBackend.listConversations();
-      if (!remote) return;
+    // One path for admin & hub — convBackend injects the owner (admin session / hub token); the reconcile
+    // logic below is owner-agnostic, so testing one surface covers both. (No hubContext branch.)
+    const remote = await convBackend.listConversations();
+    if (remote) {
       setConversations(prev => {
-        const merged = remote.map(r => {
-          const local = prev.find(p => p.id === r.id);
-          return {
-            id: r.id,
-            // Prefer the locally-derived title (useEffect[messages] derives it from the first user message
-            // immediately) — same as admin. The hub backend auto-title commits during the AI turn, so it lags →
-            // overwriting with the DB title flickers back to "새 대화". Fall back to DB title if no local (other session / fresh load).
-            title: local?.title || r.title,
-            createdAt: r.createdAt,
-            // 로컬이 더 최근(메시지 직후 등)이면 유지 — 폴링이 DB 옛 updatedAt 으로 끌어내려 순서 튐 방지.
-            updatedAt: Math.max(r.updatedAt ?? r.createdAt, local?.updatedAt ?? 0),
-            messages: local?.messages ?? [],
-          };
-        });
-        merged.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+        const merged = reconcileConvList(prev, remote, activeConvId);
+        const sig = (l: Conversation[]) => l.map(c => `${c.id}:${c.title}:${c.updatedAt}`).join('|');
+        if (merged.length === prev.length && sig(merged) === sig(prev)) return prev; // unchanged → skip re-render
+        localStorage.setItem(convStorageKey, JSON.stringify(merged));
         return merged;
       });
-      // 활성 대화 메시지 재조회 — admin 과 동일 reconcile. 옛엔 목록만 갱신·메시지는 local 보존이라 미복구였음.
-      if (activeConvId) {
-        const remoteUpdatedAt = remote.find(r => r.id === activeConvId)?.updatedAt ?? 0;
-        const remoteMsgs = await convBackend.listMessages(activeConvId);
-        reconcileActiveConv(remoteMsgs, remoteUpdatedAt);
-      }
-      return;
     }
-    // admin: 1) re-fetch the list — remove convs deleted elsewhere + add convs missing locally (restored
-    //    from trash / created on another device). Mirrors the hub rebuild so restore shows up without an F5.
-    try {
-      const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> }>(
-        '/api/conversations',
-        { category: 'useChat' },
-      );
-      if (listData.success && Array.isArray(listData.conversations)) {
-        const remoteList = listData.conversations;
-        const remoteIds = new Set<string>(remoteList.map(r => r.id));
-        setConversations(prev => {
-          // 1) drop convs deleted on another device — but keep the active conv and unsaved-empty local convs.
-          const filtered = prev.filter(c => {
-            if (remoteIds.has(c.id)) return true;
-            if (c.id === activeConvId) return true;
-            const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
-            return !hasRealMessages;
-          });
-          // 2) add convs present in remote but missing locally (restored / created elsewhere). Empty messages →
-          //    filled on select. Title from DB (admin DB title is authoritative).
-          const localIds = new Set(filtered.map(c => c.id));
-          const added = remoteList
-            .filter(r => !localIds.has(r.id))
-            .map(r => ({ id: r.id, title: r.title || '새 대화', createdAt: r.createdAt, updatedAt: r.updatedAt ?? r.createdAt, messages: [] as Message[] }));
-          if (added.length === 0 && filtered.length === prev.length) return prev;
-          const next = [...filtered, ...added];
-          next.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-          localStorage.setItem(convStorageKey, JSON.stringify(next));
-          return next;
-        });
-      }
-    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-    // 2) 활성 conv 단일 갱신 — 공통 reconcile 로 위임.
-    if (!activeConvId) return;
-    try {
-      const data = await apiGet<{ success?: boolean; conversation?: { messages?: Message[]; updatedAt?: number } }>(
-        `/api/conversations?id=${encodeURIComponent(activeConvId)}`,
-        { category: 'useChat' },
-      ).catch(() => null);
-      if (!data || !data.success || !data.conversation) return;
-      reconcileActiveConv(data.conversation.messages ?? [], data.conversation.updatedAt ?? 0);
-    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [activeConvId, hubContext, convBackend, convStorageKey, reconcileActiveConv]);
+    // active conv message reconcile (background-resume) — shared.
+    if (activeConvId) {
+      const remoteUpdatedAt = remote?.find(r => r.id === activeConvId)?.updatedAt ?? 0;
+      reconcileActiveConv(await convBackend.listMessages(activeConvId), remoteUpdatedAt);
+    }
+  }, [activeConvId, convBackend, convStorageKey, reconcileActiveConv]);
 
   // 복귀 시 재조회 (visible / focus) — admin·hub 공통.
   // 통합(contract C1): 옛 pagehide/hidden flush(sendBeacon 재저장) 제거. admin chat-stream route 가
@@ -1053,7 +1028,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             'X-Api-Token': hubContext.apiToken,
             'X-Session-Id': hubContext.sessionId,
           },
-          body: JSON.stringify({ op: 'save-message', id: msg.id, message: msg }),
+          // id = conversation id (HubService.SaveMessage ensure_conv_owner + persist_message need conversation_id;
+        // the message carries its own id for the row upsert). admin PATCH uses the same {id: convId, message}.
+        body: JSON.stringify({ op: 'save-message', id: convId, message: msg }),
         })
       : fetch('/api/conversations', {
           method: 'PATCH',

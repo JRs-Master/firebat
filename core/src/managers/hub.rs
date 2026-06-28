@@ -632,27 +632,8 @@ impl HubManager {
         let conv = self.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
 
-        // Set the conversation title from the first user message — same behaviour as the admin
-        // chat path (existingTitle || derived). hub previously never persisted a title, so
-        // hub_conversations.title stayed NULL and the visitor's chat list showed every entry as
-        // "새 대화" (admin sets it in the TS route; the hub Rust path was missing it = drift).
-        // Set only when empty so it stays put on later turns. char-based slice — byte slicing
-        // panics on a Korean char boundary.
-        let title_empty = conv
-            .as_ref()
-            .map(|c| c.title.as_deref().unwrap_or("").trim().is_empty())
-            .unwrap_or(true);
-        if title_empty {
-            let trimmed = user_message.trim();
-            if !trimmed.is_empty() {
-                let mut title: String = trimmed.chars().take(28).collect();
-                if trimmed.chars().count() > 28 {
-                    title.push('…');
-                }
-                // Via the shared method → single store (app.db).
-                let _ = self.update_conversation_title(conversation_id, &title).await;
-            }
-        }
+        // Title is derived by the shared backend logic (ConversationManager.append → derive_conv_title) when the
+        // caller appends the first user message — same authority as admin. No hub-specific auto-title here.
         // owner = hub:<instance>:<session> (per-session isolation) — unified with tool injection (ai.rs) and library route.
         // The old hub:<instance> (no session) drifted from per-tool injection.
         let owner = format!("hub:{}:{}", instance.id, session_id);
