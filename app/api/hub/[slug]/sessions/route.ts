@@ -11,6 +11,7 @@ import {
   permanentDeleteConversation,
   updateConversationTitle,
   listMessages,
+  saveMessage,
 } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const instance = principal.hubInstance!;
   const sessionId = principal.sessionId!;
 
-  let body: { op?: string; id?: string; title?: string } = {};
+  let body: { op?: string; id?: string; title?: string; message?: unknown } = {};
   try { body = await req.json(); }
   catch { return jsonResponse(400, { error: 'JSON body 필요' }); }
 
@@ -111,6 +112,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const res = await listMessages({ conversationId: id, instanceId: instance.id, sessionId } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, messages: res.data ?? [] });
+      }
+      case 'save-message': {
+        // 기존 메시지(승인/거부 status 등) 백엔드 재저장 — owner 검증은 Rust core(ensure_conv_owner).
+        const id = String(body.id ?? '');
+        if (!id || !body.message) return jsonResponse(400, { error: 'id·message 필수' });
+        const res = await saveMessage({
+          conversationId: id,
+          instanceId: instance.id,
+          sessionId,
+          messageJson: JSON.stringify(body.message),
+        });
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
       }
       default:
         return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });

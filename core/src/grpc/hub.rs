@@ -30,7 +30,8 @@ use crate::proto::{
     HubListMessagesResponse, HubMessagePb,
     HubPermanentDeleteConversationRequest, HubPermanentDeleteConversationResponse,
     HubRestoreConversationRequest, HubRestoreConversationResponse,
-    HubRotateApiTokenRequest, HubRotateApiTokenResponse, HubSendMessageRequest,
+    HubRotateApiTokenRequest, HubRotateApiTokenResponse, HubSaveMessageRequest,
+    HubSaveMessageResponse, HubSendMessageRequest,
     HubSendMessageResponse, HubUpdateConversationTitleRequest,
     HubUpdateConversationTitleResponse, HubUpdateInstanceRequest, HubUpdateInstanceResponse,
 };
@@ -478,6 +479,31 @@ impl HubService for HubServiceImpl {
         Ok(Response::new(HubListMessagesResponse {
             messages: messages.into_iter().map(message_to_pb).collect(),
         }))
+    }
+
+    async fn save_message(
+        &self,
+        req: Request<HubSaveMessageRequest>,
+    ) -> Result<Response<HubSaveMessageResponse>, TonicStatus> {
+        let args = req.into_inner();
+        // owner-scoped — instance/session 필수 + conv 소유 검증(cross-tenant 쓰기 차단).
+        if args.instance_id.is_empty() || args.session_id.is_empty() {
+            return Err(TonicStatus::invalid_argument(
+                "instance_id/session_id 가 필요합니다.",
+            ));
+        }
+        self.ensure_conv_owner(
+            &args.conversation_id,
+            &Some(args.instance_id.clone()),
+            &Some(args.session_id.clone()),
+        )
+        .await?;
+        let msg: serde_json::Value = serde_json::from_str(&args.message_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("message_json 파싱 실패: {e}")))?;
+        let owner = format!("hub:{}:{}", args.instance_id, args.session_id);
+        self.manager
+            .persist_message(&owner, &args.conversation_id, &msg);
+        Ok(Response::new(HubSaveMessageResponse {}))
     }
 
     // ─── 외부 endpoint 통합 entry ───────────────────────────────────────────

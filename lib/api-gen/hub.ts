@@ -29,6 +29,7 @@ import {
   HubPermanentDeleteConversationRequestSchema,
   HubRestoreConversationRequestSchema,
   HubRotateApiTokenRequestSchema,
+  HubSaveMessageRequestSchema,
   HubSendMessageRequestSchema,
   HubSendMessageResponse,
   HubService,
@@ -218,6 +219,15 @@ export async function listMessages(args: MessageInitShape<typeof HubListMessages
   try {
       const response = await hubClient.listMessages(args ?? {});
       return { ok: true, data: unBigInt(response.messages) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function saveMessage(args: MessageInitShape<typeof HubSaveMessageRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await hubClient.saveMessage(args ?? {});
+      return { ok: true, data: undefined };
   } catch (err) {
     return toRpcError(err);
   }

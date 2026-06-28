@@ -1067,9 +1067,26 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         localStorage.setItem(convStorageKey, JSON.stringify(next));
       }
     } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
-    // 2) DB POST — 실패 시 1회 retry. 그래도 실패면 콘솔 경고 (조용히 묻히지 않게).
-    saveToDbRef.current(convId, updated);
-  }, [activeConvId]);
+    // 2) 백엔드 영속 — admin=saveToDb(/api/conversations) / hub=sessions save-message(메시지 재저장).
+    //    hub 도 백엔드에 승인 status 영속(30일 retention 안, admin 과 동일) → reconcile·새 빌드 후 부활 0.
+    //    owner(conv 소유)는 Rust core 가 검증. conv.append(ON CONFLICT id UPDATE, created_at 보존).
+    if (hubContext) {
+      const updatedMsg = updated.find(m => m.id === msgId);
+      if (updatedMsg) {
+        void fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'save-message', id: msgId, message: updatedMsg }),
+        }).catch(() => { /* durable map(위) 가 프론트 백업 */ });
+      }
+    } else {
+      saveToDbRef.current(convId, updated);
+    }
+  }, [activeConvId, hubContext]);
 
   // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {

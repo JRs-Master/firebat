@@ -2904,6 +2904,16 @@ message HubListMessagesResponse {
   repeated HubMessagePb messages = 1;
 }
 
+// 기존 메시지(id) 재저장 — 승인/거부 status 등 client-state 백엔드 영속. message_json = full Message Value.
+// owner-scoped: grpc 가 conv 소유(instance:session)를 검증 후 conv.append(ON CONFLICT UPDATE, created_at 보존).
+message HubSaveMessageRequest {
+  string conversation_id = 1;
+  string instance_id = 2;
+  string session_id = 3;
+  string message_json = 4;
+}
+message HubSaveMessageResponse {}
+
 // ─── 외부 endpoint 통합 send_message ──────────────────────────────────────
 // 외부 hub endpoint (POST /api/hub/<slug>/chat) 가 호출하는 단일 RPC.
 // 옛 Authenticate + EnsureConversation + AppendUserMessage + AI 호출 + AppendSystemMessage
@@ -2991,6 +3001,8 @@ service HubService {
   rpc AppendUserMessage(HubAppendUserMessageRequest) returns (HubAppendUserMessageResponse);
   rpc AppendSystemMessage(HubAppendSystemMessageRequest) returns (HubAppendSystemMessageResponse);
   rpc ListMessages(HubListMessagesRequest) returns (HubListMessagesResponse);
+  // 기존 메시지(id) 재저장 — client-state(승인/거부 status) 백엔드 영속. owner-scoped(세션 소유 conv).
+  rpc SaveMessage(HubSaveMessageRequest) returns (HubSaveMessageResponse);
 
   // 외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 영속화 통합
   rpc SendMessage(HubSendMessageRequest) returns (HubSendMessageResponse);

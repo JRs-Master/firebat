@@ -545,6 +545,14 @@ impl HubManager {
         Ok(id)
     }
 
+    /// 기존 메시지 재저장(client-state 영속) — full Message Value 를 canonical append(ON CONFLICT id UPDATE,
+    /// created_at 컬럼 보존). 승인/거부 status 등을 백엔드에 영속해 reconcile 후 부활 차단. owner 는 grpc 가 검증.
+    pub fn persist_message(&self, owner: &str, conv_id: &str, msg: &serde_json::Value) {
+        if let Some(conv) = &self.conv {
+            conv.append(owner, conv_id, msg);
+        }
+    }
+
     pub async fn list_messages(
         &self,
         conversation_id: &str,
