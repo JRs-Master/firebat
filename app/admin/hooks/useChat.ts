@@ -52,6 +52,10 @@ export interface UseChatHubContext {
 
 /** 대화 목록 메타 — admin/hub 공통 shape (convBackend 가 정규화). */
 type ConvBackendMeta = { id: string; title: string; createdAt: number; updatedAt: number };
+/** convBackend transport 결과 shape — admin/hub 공통. */
+type PlanCommitResult = { success: boolean; code?: string; error?: string; originalRunAt?: string };
+type UploadResult = { success?: boolean; data?: { url?: string }; error?: string };
+type ChatEndpoint = { url: string; headers: Record<string, string> };
 
 /** hub message (row wire) → frontend Message. canonical join — columns (id/role/content) ∪ data_json.
  *  Same as Rust split_message/join_message: data_json = rich (badges at top, blocks under data, createdAt, ...).
@@ -179,6 +183,16 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           },
           body: JSON.stringify({ op, ...(extra ?? {}) }),
         }).then(r => r.json()).catch(() => null);
+      const hubPlan = (op: string, planId: string): Promise<PlanCommitResult> =>
+        fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/plan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+          body: JSON.stringify({ op, planId }),
+        }).then(r => r.json()).catch(() => ({ success: false, error: '실행 실패' }));
       return {
         async listConversations(): Promise<ConvBackendMeta[] | null> {
           const r = await hf('list-conversations');
@@ -208,6 +222,30 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             body: JSON.stringify({ op: 'delete-conversation', id }),
           }).catch(() => {});
         },
+        // id = conversation id (the message carries its own id for the row upsert).
+        async saveMessage(convId: string, message: unknown): Promise<void> {
+          await hf('save-message', { id: convId, message }).catch(() => {});
+        },
+        // hub has no schedule_task → action/newRunAt ignored.
+        async commitPlan(planId: string, _action?: 'now' | 'reschedule', _newRunAt?: string): Promise<PlanCommitResult> {
+          return hubPlan('commit', planId);
+        },
+        async rejectPlan(planId: string): Promise<void> {
+          await hubPlan('reject', planId);
+        },
+        async uploadAttachment(dataUrl: string): Promise<UploadResult> {
+          return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media/attach-temp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+            body: JSON.stringify({ dataUrl }),
+          }).then(r => r.json());
+        },
+        chatEndpoint(): ChatEndpoint {
+          return {
+            url: `/api/hub/${encodeURIComponent(hubContext.slug)}/chat`,
+            headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+          };
+        },
       };
     }
     return {
@@ -224,6 +262,35 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       },
       async deleteConversation(id: string): Promise<void> {
         await apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
+      },
+      async saveMessage(convId: string, message: unknown): Promise<void> {
+        await fetch('/api/conversations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: convId, message }),
+        }).catch(() => {});
+      },
+      async commitPlan(planId: string, action?: 'now' | 'reschedule', newRunAt?: string): Promise<PlanCommitResult> {
+        const qs = new URLSearchParams({ planId });
+        if (action) qs.set('action', action);
+        return apiPost<PlanCommitResult>(
+          `/api/plan/commit?${qs.toString()}`,
+          newRunAt ? { runAt: newRunAt } : {},
+          { category: 'useChat' },
+        ).catch((err: any) => ({ success: false, error: err?.message ?? '실행 실패' }));
+      },
+      async rejectPlan(planId: string): Promise<void> {
+        await apiPost(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, undefined, { category: 'useChat' }).catch(() => {});
+      },
+      async uploadAttachment(dataUrl: string): Promise<UploadResult> {
+        return fetch('/api/media/attach-temp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl }),
+        }).then(r => r.json());
+      },
+      chatEndpoint(): ChatEndpoint {
+        return { url: '/api/chat/stream', headers: { 'Content-Type': 'application/json' } };
       },
     };
   }, [hubContext]);
@@ -682,22 +749,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     let imageData: string | null = attachedImage;
     if (imageData && imageData.startsWith('data:') && inputMode !== 'image') {
       try {
-        // hub mode: 익명 visitor 가 호출 가능한 hub-scoped endpoint 사용. admin endpoint
-        // (`/api/media/attach-temp`) 는 withAuth 강제라 401 → 첨부 silent fail root cause.
-        const upUrl = hubContext
-          ? `/api/hub/${encodeURIComponent(hubContext.slug)}/media/attach-temp`
-          : '/api/media/attach-temp';
-        const upHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (hubContext) {
-          upHeaders['X-Api-Token'] = hubContext.apiToken;
-          upHeaders['X-Session-Id'] = hubContext.sessionId;
-        }
-        const upRes = await fetch(upUrl, {
-          method: 'POST',
-          headers: upHeaders,
-          body: JSON.stringify({ dataUrl: imageData }),
-        });
-        const upJson = await upRes.json() as { success?: boolean; data?: { url?: string }; error?: string };
+        // Single owner-injected upload (convBackend.uploadAttachment): admin /api/media/attach-temp /
+        // hub /api/hub/<slug>/media/attach-temp (anonymous visitor endpoint; admin one is withAuth → 401).
+        const upJson = await convBackend.uploadAttachment(imageData);
         if (upJson?.success && upJson?.data?.url) {
           imageData = upJson.data.url;
         } else {
@@ -837,17 +891,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       };
       resetWatchdog();
 
-      // Hub page mode 분기 — hubContext 가 있으면 /api/hub/<slug>/chat 호출 (익명 + apiToken).
-      // 옛 admin 의 /api/chat/stream 호출 분기 = hubContext 없을 때.
+      // Endpoint + auth headers from the single owner-injected layer (convBackend.chatEndpoint):
+      // admin /api/chat/stream / hub /api/hub/<slug>/chat. The request body shape still differs by backend
+      // contract (admin prompt/config vs hub message) — aligning that is a separate backend step.
       const isHubMode = !!hubContext;
-      const endpoint = isHubMode
-        ? `/api/hub/${encodeURIComponent(hubContext.slug)}/chat`
-        : '/api/chat/stream';
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (isHubMode) {
-        headers['X-Api-Token'] = hubContext.apiToken;
-        headers['X-Session-Id'] = hubContext.sessionId;
-      }
+      const { url: endpoint, headers } = convBackend.chatEndpoint();
       const body: Record<string, unknown> = isHubMode
         ? {
             message: userPrompt,
@@ -1015,30 +1063,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // handleSubmit(text, true, { planExecuteId }) 호출 — 모두 Function Calling 경로.
 
   // Persist a single message (client-state: approve/reject, suggestion clear, pick lock, etc.) — admin·hub shared.
-  // One path = ConversationManager.append(owner); only the auth-scoped route differs (admin session / hub token).
-  // Re-saving the whole conversation for one status flip is wasteful → upsert only the changed message
-  // (ON CONFLICT id UPDATE, created_at preserved). DB is the authority → after reload/new-build, reconcile reads
-  // it so cards/chips never resurrect. The localStorage conv cache is an optimistic backup.
+  // One path = convBackend.saveMessage → ConversationManager.append(owner). Re-saving the whole conversation for
+  // one status flip is wasteful → upsert only the changed message (the message carries its own id for the row
+  // upsert; convId locates the conv). DB is the authority → reconcile reads it so cards/chips never resurrect.
   const persistMessage = useCallback((convId: string, msg: Message) => {
-    const persist = hubContext
-      ? fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-          // id = conversation id (HubService.SaveMessage ensure_conv_owner + persist_message need conversation_id;
-        // the message carries its own id for the row upsert). admin PATCH uses the same {id: convId, message}.
-        body: JSON.stringify({ op: 'save-message', id: convId, message: msg }),
-        })
-      : fetch('/api/conversations', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: convId, message: msg }),
-        });
-    void persist.catch(() => { /* conv cache is the frontend backup */ });
-  }, [hubContext]);
+    void convBackend.saveMessage(convId, msg);
+  }, [convBackend]);
 
   // Persist after a pending-status change (approve/reject) — prevents card resurrection after reload/new-build.
   // messagesRef can be stale right after dispatch (before React re-render) → compute the new status directly and save now.
@@ -1067,29 +1097,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
     try {
-      type CommitResult = { success: boolean; code?: string; error?: string; originalRunAt?: string };
-      let data: CommitResult;
-      if (hubContext) {
-        // hub 방문자 — /api/hub/<slug>/plan (op=commit). hub 는 schedule_task 미허용이라 action/runAt 무관.
-        const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/plan`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-          body: JSON.stringify({ op: 'commit', planId }),
-        });
-        data = await res.json().catch(() => ({ success: false, error: '실행 실패' }));
-      } else {
-        const qs = new URLSearchParams({ planId });
-        if (action) qs.set('action', action);
-        data = await apiPost<CommitResult>(
-          `/api/plan/commit?${qs.toString()}`,
-          newRunAt ? { runAt: newRunAt } : {},
-          { category: 'useChat' },
-        ).catch((err: any) => ({ success: false, error: err?.message ?? '실행 실패' }));
-      }
+      // Single owner-injected commit (convBackend.commitPlan): admin /api/plan/commit / hub /api/hub/<slug>/plan.
+      // hub ignores action/newRunAt (no schedule_task). Result handling below is shared.
+      const data = await convBackend.commitPlan(planId, action, newRunAt);
       if (data.success) {
         dispatch({ type: 'PENDING_APPROVED', msgId, planId });
         onRefresh();
@@ -1104,28 +1114,16 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         persistPendingChange(msgId, planId, { status: 'error', errorMessage });
       }
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [onRefresh, persistPendingChange, hubContext]);
+  }, [onRefresh, persistPendingChange, convBackend]);
 
-  // Pending tool 개별 거부
+  // Pending tool 개별 거부 — single owner-injected reject (convBackend.rejectPlan).
   const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
     try {
-      if (hubContext) {
-        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/plan`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-          body: JSON.stringify({ op: 'reject', planId }),
-        });
-      } else {
-        await apiPost(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, undefined, { category: 'useChat' });
-      }
+      await convBackend.rejectPlan(planId);
       dispatch({ type: 'PENDING_REJECTED', msgId, planId });
       persistPendingChange(msgId, planId, { status: 'rejected' });
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
-  }, [persistPendingChange, hubContext]);
+  }, [persistPendingChange, convBackend]);
 
   // On suggestion click, clear that message's suggestions + persist the single message — stops the card from
   // reappearing on refresh (admin·hub shared).
