@@ -490,53 +490,13 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("Hub DB open 실패")?,
     );
+    // 대화 영속 = ConversationManager 단일 매니저(admin·hub 동일 로직, owner-keyed). HubManager 는
+    // 인스턴스(위젯) + send 오케스트레이션만 담당. (옛 memory.db → app.db 백필은 완료되어 제거.)
     let hub_manager = Arc::new(
         firebat_core::managers::hub::HubManager::new(hub_port)
             .with_page(page_manager.clone())
-            .with_db(db.clone()),
+            .with_conversation(conversation_manager.clone()),
     );
-    // Phase 1 백필 — 옛 hub 대화를 통합 store(app.db)로 (비파괴·idempotent, 배경 → startup 미차단).
-    {
-        let hub_bf = hub_manager.clone();
-        let db_bf = db.clone();
-        tokio::spawn(async move {
-            let convs = match hub_bf.list_all_conversations().await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(category = "hub", "hub 백필 열거 실패: {e}");
-                    return;
-                }
-            };
-            let mut n = 0usize;
-            for c in convs {
-                // 이미 통합 store 에 메시지 있으면 skip (idempotent — 재실행 시 재append 회피).
-                if !db_bf.list_conversation_messages(&c.id).is_empty() {
-                    continue;
-                }
-                let owner = format!("hub:{}:{}", c.instance_id, c.session_id);
-                let title = c.title.clone().unwrap_or_else(|| "새 대화".to_string());
-                db_bf.ensure_conversation_row(&owner, &c.id, &title, c.created_at);
-                if let Ok(msgs) = hub_bf.list_messages(&c.id).await {
-                    for m in msgs {
-                        db_bf.append_conversation_message(
-                            &firebat_core::ports::ConversationMessage {
-                                id: m.id,
-                                conversation_id: m.conversation_id,
-                                role: m.role,
-                                content: m.content.unwrap_or_default(),
-                                data_json: m.data_json.unwrap_or_default(),
-                                created_at: m.created_at,
-                            },
-                        );
-                    }
-                }
-                n += 1;
-            }
-            if n > 0 {
-                tracing::info!(category = "hub", "hub 백필 완료 — {} 대화 통합 store 반영", n);
-            }
-        });
-    }
 
     // RetrievalEngine — 매 사용자 query 시점 5-tier 통합 검색 (history + entities + facts + events + library).
     // AiManager 가 vault `system:ai-router:enabled` 토글 검사 — true 시점만 호출 → 시스템 프롬프트

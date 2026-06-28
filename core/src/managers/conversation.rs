@@ -10,8 +10,8 @@ use std::sync::Arc;
 use sha1::{Digest, Sha1};
 
 use crate::ports::{
-    ConversationEmbeddingRow, ConversationRecord, ConversationSummary, IDatabasePort,
-    IEmbedderPort, ILogPort, InfraResult,
+    ConversationEmbeddingRow, ConversationMessage, ConversationRecord, ConversationSummary,
+    IDatabasePort, IEmbedderPort, ILogPort, InfraResult,
 };
 
 const CONTENT_PREVIEW_MAX: usize = 500;
@@ -261,6 +261,49 @@ impl ConversationManager {
     pub fn cleanup_old_deleted(&self, retention_ms: i64) -> i64 {
         let cutoff = crate::utils::time::now_ms() - retention_ms;
         self.db.cleanup_old_deleted_conversations(cutoff)
+    }
+
+    // ─── owner-keyed 단일 영속 primitive — admin·hub 공용 (hub 가 별도 매니저 대신 이걸 사용) ────
+    // 대화 영속 로직은 ConversationManager 하나. admin=owner:"admin" / hub=owner:"hub:<inst>:<sid>".
+
+    /// (owner) 의 최신 활성 대화 재사용·없으면 새로 생성. 옛 HubManager.ensure_conversation 의미.
+    /// list = updated_at DESC 라 first() = 최신 활성.
+    pub fn ensure(&self, owner: &str) -> String {
+        if let Some(s) = self.db.list_conversations(owner).into_iter().next() {
+            return s.id;
+        }
+        self.create(owner)
+    }
+
+    /// 항상 새 대화 생성 (owner). title="" → 첫 메시지 auto-title 가 채움.
+    pub fn create(&self, owner: &str) -> String {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.db
+            .ensure_conversation_row(owner, &id, "", crate::utils::time::now_ms());
+        id
+    }
+
+    /// 단일 메시지 append (owner-keyed) — 채팅 턴 영속 primitive. conv row 없으면 생성.
+    /// 메시지 shape(data_json 등)는 caller 가 채운 그대로 저장 — presentation 무관. id 충돌 시 update(멱등).
+    pub fn append(&self, owner: &str, msg: &ConversationMessage) {
+        self.db
+            .ensure_conversation_row(owner, &msg.conversation_id, "", msg.created_at);
+        self.db.append_conversation_message(msg);
+    }
+
+    /// 제목 갱신 (id 기준) — rename·auto-title 공용.
+    pub fn update_title(&self, id: &str, title: &str) -> bool {
+        self.db.update_conversation_title(id, title)
+    }
+
+    /// id 로 대화 메타(owner + summary) — soft-deleted 포함. hub owner 도출·재구성용.
+    pub fn meta_by_id(&self, id: &str) -> Option<(String, ConversationSummary)> {
+        self.db.get_conversation_meta_by_id(id)
+    }
+
+    /// 대화 메시지 rows (conv_id 기준 — conv_id unique 라 owner 무관). hub list_messages 공용.
+    pub fn message_rows(&self, conv_id: &str) -> Vec<ConversationMessage> {
+        self.db.list_conversation_messages(conv_id)
     }
 
     /// 임베딩 row 메타 목록 — test 또는 진단용. 옛 inline test 가 `mgr.db.list_conversation_embeddings`
