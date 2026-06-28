@@ -309,25 +309,29 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     return () => { cancelled = true; };
   }, [setActiveConvId, hubContext, convBackend, activeConvStorageKey, convStorageKey]);
 
-  // ── 대화 저장 — localStorage 는 messages 변경마다, DB 는 확정 시점에만 ──
+  // ── Persist conversation — localStorage on every messages change, DB only at commit points ──
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
     const cleanMsgs = cleanMessages(messages);
     const firstUser = cleanMsgs.find(m => m.role === 'user');
-    const title = firstUser?.content
+    const derivedTitle = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
-      : '새 대화';
+      : null;
     const now = Date.now();
     setConversations(prev => {
       const cur = prev.find(c => c.id === activeConvId);
       if (!cur) return prev;
+      // Keep the existing title when the loaded messages momentarily lack a user message (e.g. a select
+      // transition with an empty cache) — never downgrade a real title back to '새 대화'. Re-derive only
+      // when a user message is present.
+      const title = derivedTitle ?? cur.title ?? '새 대화';
       const prevSerialized = JSON.stringify(cur.messages ?? []);
       const newSerialized = JSON.stringify(cleanMsgs);
       const contentChanged = prevSerialized !== newSerialized;
-      // 메시지·제목 모두 동일하면 early return — 불필요한 re-render + 사이드바 깜빡임 방지
+      // early-return if both messages and title are unchanged — avoids needless re-render + sidebar flicker.
       if (!contentChanged && cur.title === title) return prev;
-      // 단순 열어보기(load 채움)면 updatedAt 갱신 안 함 — 메시지 안 보냈는데 목록 최상단 올라가던 #2.
-      // (F5 점프의 영속 원인은 백엔드 save_conversation 이었고 거기서 root fix — 이건 within-session 가드.)
+      // A plain open (load fill) does not bump updatedAt — otherwise just viewing pushed the conv to the top (#2).
+      // (The persistent cause of F5 jump was backend save_conversation, fixed at the root; this is the in-session guard.)
       const isLoadFill = suppressBumpRef.current === activeConvId;
       const updated = prev.map(c =>
         c.id === activeConvId
@@ -477,24 +481,35 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       }
       return;
     }
-    // admin: 1) 목록 재조회 — 타기기에서 삭제된 대화 제거.
+    // admin: 1) re-fetch the list — remove convs deleted elsewhere + add convs missing locally (restored
+    //    from trash / created on another device). Mirrors the hub rebuild so restore shows up without an F5.
     try {
-      const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string }> }>(
+      const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> }>(
         '/api/conversations',
         { category: 'useChat' },
       );
       if (listData.success && Array.isArray(listData.conversations)) {
-        const remoteIds = new Set<string>(listData.conversations.map(r => r.id));
+        const remoteList = listData.conversations;
+        const remoteIds = new Set<string>(remoteList.map(r => r.id));
         setConversations(prev => {
+          // 1) drop convs deleted on another device — but keep the active conv and unsaved-empty local convs.
           const filtered = prev.filter(c => {
             if (remoteIds.has(c.id)) return true;
             if (c.id === activeConvId) return true;
             const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
             return !hasRealMessages;
           });
-          if (filtered.length === prev.length) return prev;
-          localStorage.setItem(convStorageKey, JSON.stringify(filtered));
-          return filtered;
+          // 2) add convs present in remote but missing locally (restored / created elsewhere). Empty messages →
+          //    filled on select. Title from DB (admin DB title is authoritative).
+          const localIds = new Set(filtered.map(c => c.id));
+          const added = remoteList
+            .filter(r => !localIds.has(r.id))
+            .map(r => ({ id: r.id, title: r.title || '새 대화', createdAt: r.createdAt, updatedAt: r.updatedAt ?? r.createdAt, messages: [] as Message[] }));
+          if (added.length === 0 && filtered.length === prev.length) return prev;
+          const next = [...filtered, ...added];
+          next.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+          localStorage.setItem(convStorageKey, JSON.stringify(next));
+          return next;
         });
       }
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
