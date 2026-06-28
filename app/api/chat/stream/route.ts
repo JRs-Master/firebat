@@ -3,7 +3,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 import { createClient } from '@connectrpc/connect';
 import { AiService } from '../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../lib/api-gen/_transport';
-import { getConversation, saveConversation } from '../../../../lib/api-gen/conversation';
+import { saveMessage } from '../../../../lib/api-gen/conversation';
 import { relayChatStream } from '../../../../lib/util/chat-stream-relay';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
@@ -116,25 +116,34 @@ function handleToolsMode(
           opts: { optsJson: JSON.stringify(opts ?? {}) },
         } as any);
 
+        // Persist the user message upfront (AI-error-safe) — mirrors hub append_user_message. The backend
+        // append derives the conv title (derive_conv_title), the same authority as hub. So turn persistence
+        // is server-side for both admin & hub; the frontend no longer needs a saveToDb backup.
+        if (opts.conversationId && saveOpts?.userId && saveOpts?.userPrompt) {
+          const userMsg = {
+            id: saveOpts.userId,
+            role: 'user' as const,
+            content: saveOpts.userPrompt,
+            ...(saveOpts.image ? { image: saveOpts.image } : {}),
+            ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}),
+          };
+          try {
+            await saveMessage({ owner: opts.owner || 'admin', conversationId: opts.conversationId, messageJson: JSON.stringify(userMsg) } as any);
+          } catch { /* best-effort upfront save */ }
+        }
+
         // 공유 relay — chunk/step/result/error 루프 + canonical data 기반 result 이벤트.
         // hub route 와 동일 헬퍼 (admin·hub 공통 로직). 반환 = 파싱된 최종 result (영속용).
         const result = await relayChatStream(aiStream, send);
 
-        // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
-        // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
-        // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
-        // hub 는 Rust(append_system_message)가 영속화 — admin 만 여기서 conversations 테이블에 저장.
+        // ── Persist the AI (system) message — single append, mirrors hub append_system_message ──
+        // The user message was already persisted upfront (above). data = Rust canonical message-data (same
+        // source the relay sent in the result event). suggestions/pendingActions/libraryHits at top-level so
+        // reload restores ✓-buttons / approval cards / SourceTags (renderer reads top-level); blocks via data.
         if (result && opts.conversationId && saveOpts?.systemId) {
           try {
-            // data = Rust canonical message-data (relay 가 result 이벤트에 보낸 것과 동일 소스).
             const mergedData: Record<string, unknown> =
               result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
-            // user 메시지 + system(AI 응답) 메시지 쌍 저장
-            const userMsg = saveOpts.userId && saveOpts.userPrompt
-              ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}), ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}) }
-              : null;
-            // suggestions / pendingActions / libraryHits top-level — reload 후에도 ✓실행 버튼·승인 카드·
-            // SourceTags 뱃지 복원 (렌더가 top-level 에서 읽음). blocks 는 data 에서 렌더.
             const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
             const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
             const libraryHitsArr = Array.isArray(result.libraryHits) ? (result.libraryHits as unknown[]) : undefined;
@@ -150,20 +159,8 @@ function handleToolsMode(
               ...(libraryHitsArr && libraryHitsArr.length > 0 ? { libraryHits: libraryHitsArr } : {}),
               ...(result.error ? { error: result.error } : {}),
             };
-            const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
-            // 기존 title 유지 — 없으면 첫 user 메시지 기반.
-            const owner = opts.owner || 'admin';
-            const existing = await getConversation({ owner, id: opts.conversationId });
-            const existingTitle = existing.ok && existing.data ? existing.data.title : '';
-            const title = existingTitle
-              || ((saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : ''));
-            await saveConversation({
-              owner,
-              id: opts.conversationId,
-              title,
-              messagesJson: JSON.stringify(msgs),
-            });
-          } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
+            await saveMessage({ owner: opts.owner || 'admin', conversationId: opts.conversationId, messageJson: JSON.stringify(systemMsg) } as any);
+          } catch { /* best-effort — server-side persistence */ }
         }
       } catch (err: any) {
         send('error', { error: err?.message || '알 수 없는 오류' });

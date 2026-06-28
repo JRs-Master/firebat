@@ -19,7 +19,7 @@ import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent } fro
 import { useTranslations } from '../../../lib/i18n';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
-import { CHAT_WATCHDOG_IDLE_MS, KEEPALIVE_BODY_LIMIT_BYTES } from '../../../lib/config';
+import { CHAT_WATCHDOG_IDLE_MS } from '../../../lib/config';
 import { safeJsonParse, logger } from '../../../lib/util';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
@@ -56,6 +56,21 @@ type ConvBackendMeta = { id: string; title: string; createdAt: number; updatedAt
 type PlanCommitResult = { success: boolean; code?: string; error?: string; originalRunAt?: string };
 type UploadResult = { success?: boolean; data?: { url?: string }; error?: string };
 type ChatEndpoint = { url: string; headers: Record<string, string> };
+/** chat send 의 owner-무관 입력 — convBackend.chatBody 가 owner 별 wire shape 로 변환(단일 주입 지점). */
+type ChatBodyParams = {
+  userPrompt: string;
+  model: string;
+  planMode: unknown;
+  systemId: string;
+  userMsgId: string;
+  history: Array<{ role: string; content: unknown; image?: string | null; imageMimeType?: string | null }>;
+  isSuggestion: boolean;
+  planExecuteId?: string;
+  planReviseId?: string;
+  conversationId?: string;
+  image?: string | null;
+  previousResponseId?: string;
+};
 
 /** hub message (row wire) → frontend Message. canonical join — columns (id/role/content) ∪ data_json.
  *  Same as Rust split_message/join_message: data_json = rich (badges at top, blocks under data, createdAt, ...).
@@ -246,6 +261,17 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           };
         },
+        // hub wire shape — conv is session-derived (no conversationId in body); model/history backend-managed.
+        chatBody(p: ChatBodyParams): Record<string, unknown> {
+          return {
+            message: p.userPrompt,
+            planMode: p.planMode,
+            aiMsgId: p.systemId,
+            userMsgId: p.userMsgId,
+            ...(p.planExecuteId ? { planExecuteId: p.planExecuteId } : {}),
+            ...(p.planReviseId ? { planReviseId: p.planReviseId } : {}),
+          };
+        },
       };
     }
     return {
@@ -291,6 +317,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       },
       chatEndpoint(): ChatEndpoint {
         return { url: '/api/chat/stream', headers: { 'Content-Type': 'application/json' } };
+      },
+      // admin wire shape — prompt/config/history + systemId/userId (route maps to its RPC).
+      chatBody(p: ChatBodyParams): Record<string, unknown> {
+        return {
+          prompt: p.userPrompt,
+          config: { model: p.model },
+          history: p.history,
+          mode: 'tools',
+          planMode: p.planMode,
+          systemId: p.systemId,
+          userId: p.userMsgId,
+          ...(p.isSuggestion ? { userSuggestion: true } : {}),
+          ...(p.planExecuteId ? { planExecuteId: p.planExecuteId } : {}),
+          ...(p.planReviseId ? { planReviseId: p.planReviseId } : {}),
+          ...(p.conversationId ? { conversationId: p.conversationId } : {}),
+          ...(p.image ? { image: p.image } : {}),
+          ...(p.previousResponseId ? { previousResponseId: p.previousResponseId } : {}),
+        };
       },
     };
   }, [hubContext]);
@@ -442,66 +486,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
-  // DB 저장 — 명시 호출. union merge 로 안전.
-  // **실패 시 1회 retry + 콘솔 경고** (v0.1, 2026-04-27): silent .catch 로 묻혀서 pending status 손실 진단 불가했던 문제 가시화.
-  // In hub mode, skip saveToDb entirely — /api/conversations requires admin auth (would 401 silent-fail).
-  // The hub backend (/api/hub/<slug>/chat) persists turns to the conversation store automatically.
-  const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
-  saveToDbRef.current = (convId: string, msgs: Message[]) => {
-    if (hubContext) return;
-    if (!convId) return;
-    const cleanMsgs = cleanMessages(msgs);
-    const firstUser = cleanMsgs.find(m => m.role === 'user');
-    const title = firstUser?.content
-      ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
-      : '새 대화';
-    const convMeta = conversations.find(c => c.id === convId);
-    const createdAt = convMeta?.createdAt ?? Date.now();
-    const body = JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt });
-    // **CRITICAL**: keepalive: true 는 브라우저 64KB body 한도 강제 — 초과 시 fetch 즉시 TypeError(Failed to fetch).
-    // 큰 대화 (Html block 누적 / 한글 많은 인터랙티브 데모 등 60KB+ 흔함) 는 keepalive 끄고 일반 fetch 사용.
-    // ⚠️ 한도는 **바이트** 기준 — `body.length`(문자 수, UTF-16)로 재면 한글(1자=3바이트)이 많을 때
-    //    문자 수는 한도 미만인데 실제 바이트는 초과해 keepalive 가 켜진 채 TypeError 나던 버그. byte 로 측정.
-    const bodyBytes = new TextEncoder().encode(body).length;
-    const useKeepalive = bodyBytes < KEEPALIVE_BODY_LIMIT_BYTES;
-    const attempt = (retries: number, keepalive: boolean): Promise<void> => fetch('/api/conversations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-      ...(keepalive ? { keepalive: true } : {}),
-    }).then(res => {
-      if (res.status === 409) {
-        setConversations(prev => {
-          const updated = prev.filter(c => c.id !== convId);
-          localStorage.setItem(convStorageKey, JSON.stringify(updated));
-          return updated;
-        });
-        if (activeConvId === convId) {
-          setActiveConvId('');
-          dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
-        }
-        return;
-      }
-      if (!res.ok && retries > 0) {
-        logger.warn('useChat', `DB save HTTP ${res.status} — ${retries}회 재시도`, { bodyBytes, keepalive });
-        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, keepalive).finally(resolve), 500));
-      }
-      if (!res.ok) logger.error('useChat', `DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험 (body ${bodyBytes}B)`, null);
-    }).catch(err => {
-      // 진단 로그 3단계 — "용량 초과(keepalive 한도)" vs "진짜 버그/네트워크" 를 bodyBytes 로 구분.
-      //  ① keepalive 실패 → ② 일반 fetch 로 graceful 전환(본문 한도 없음, 보통 성공) → ③ 그것도 실패면 경고.
-      if (keepalive) {
-        // ①+② — body 가 한도(60KB) 미만인데도 keepalive 실패 = 동시 keepalive 누적 64KB 초과 또는 네트워크.
-        logger.warn('useChat', `DB save: ① keepalive 실패 → ② 일반 fetch 로 전환 (body ${bodyBytes}B / keepalive 한도 ~64KB 누적)`, { bodyBytes, error: err });
-        return attempt(1, false);
-      }
-      if (retries > 0) {
-        logger.warn('useChat', `DB save: 일반 fetch 실패 — ${retries}회 재시도 (body ${bodyBytes}B)`, { bodyBytes, error: err });
-        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1, false).finally(resolve), 500));
-      }
-      // ③ — 일반 fetch(한도 없음)까지 실패 = 진짜 문제(서버 다운/프록시/본문 거부). bodyBytes 로 용량 원인 판별.
-      logger.error('useChat', `DB save 최종 실패 ③ 일반 fetch 도 실패 — pending status 손실 위험 (body ${bodyBytes}B)`, err);
-    });
-    void attempt(1, useKeepalive);
-  };
+  // Turn persistence is server-side for both admin & hub — the chat route appends the user message upfront
+  // (AI-error-safe) and the AI message after (relay completes even on client disconnect). No frontend turn-save.
+  // Single-message client-state (approve/reject, suggestion clear/lock) persists via persistMessage → convBackend.
 
   // Re-fetch from DB — called from several places (sidebar expand, tab switch, visibility change, ...).
   // Merge+LOAD the active conv's DB messages with local — admin·hub shared reconcile (refreshConversations
@@ -854,11 +841,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     scrollToBottom(true);
     setTimeout(() => scrollToBottom(true), 120);
 
-    // 저장 시점 1: 유저 메시지 DB 즉시 반영 (다음 프레임에 최신 messages ref 로)
-    const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
-    if (convIdForSave) {
-      queueMicrotask(() => saveToDbRef.current(convIdForSave, messagesRef.current));
-    }
+    // Turn persistence is server-side (chat route): user message upfront (AI-error-safe) + AI message after.
+    // Same as hub → no frontend saveToDb. (localStorage conv cache is still updated by the [messages] effect.)
     setLoading(true);
 
     try {
@@ -891,39 +875,24 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       };
       resetWatchdog();
 
-      // Endpoint + auth headers from the single owner-injected layer (convBackend.chatEndpoint):
-      // admin /api/chat/stream / hub /api/hub/<slug>/chat. The request body shape still differs by backend
-      // contract (admin prompt/config vs hub message) — aligning that is a separate backend step.
-      const isHubMode = !!hubContext;
+      // Endpoint + headers + body from the single owner-injected layer (convBackend). The owner-specific wire
+      // shape lives in convBackend.chatBody (admin prompt/config vs hub message) — handleSubmit stays owner-agnostic.
+      // Client-issued message ids (systemId / u-<id>) mirror across admin·hub so reconcile matches stored rows.
       const { url: endpoint, headers } = convBackend.chatEndpoint();
-      const body: Record<string, unknown> = isHubMode
-        ? {
-            message: userPrompt,
-            planMode,
-            // Client-issued message ids — mirror the admin systemId/userId pattern. Stored row ids align with
-            // local, so background-resume reconcile matches even the streaming-stuck case (old uuid path mismatched).
-            aiMsgId: systemId,
-            userMsgId: `u-${id}`,
-            ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
-            ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
-          }
-        : {
-            prompt: userPrompt,
-            config: { model: aiModel },
-            history: chatHistory,
-            mode: 'tools',
-            planMode,
-            systemId,
-            userId: `u-${id}`,
-            // suggestion 픽 = 히스토리엔 저장하되(AI 맥락) 렌더는 제외 — 백엔드가 user 메시지에 suggestionClick
-            // 플래그를 달게 해서 isSuggestionClickUserMessage 가 리로드 시 버블을 숨김.
-            ...(isSuggestion ? { userSuggestion: true } : {}),
-            ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
-            ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
-            ...(effectiveConvId ? { conversationId: effectiveConvId } : {}),
-            ...(imageData ? { image: imageData } : {}),
-            ...(previousResponseId ? { previousResponseId } : {}),
-          };
+      const body = convBackend.chatBody({
+        userPrompt,
+        model: aiModel,
+        planMode,
+        systemId,
+        userMsgId: `u-${id}`,
+        history: chatHistory,
+        isSuggestion: !!isSuggestion,
+        planExecuteId: meta?.planExecuteId,
+        planReviseId: meta?.planReviseId,
+        conversationId: effectiveConvId,
+        image: imageData,
+        previousResponseId,
+      });
       const res = await fetch(endpoint, {
         method: 'POST',
         headers,
@@ -1045,16 +1014,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       dispatch({ type: 'FINALIZE', id: systemId });
       abortRef.current = null;
       setLoading(false);
-      // 저장 시점 2: AI 응답 완료 직후 DB 반영.
-      // ⚠️ 직전 dispatch(FINALIZE) 는 React batched commit 이라 microtask 보다 늦게 적용될 수 있음.
-      // queueMicrotask 안에서 messagesRef.current 가 pre-FINALIZE 라 system 메시지가 아직 streaming:true →
-      // cleanMessages 필터링 → DB 에 user 만 저장되어 AI 답변 영구 손실. (2026-05-11 진단)
-      // chatReducer 를 동기 호출해 finalized snapshot 을 만들어 race 차단.
-      const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
-      if (convIdForSave2) {
-        const finalizedMsgs = chatReducer(messagesRef.current, { type: 'FINALIZE', id: systemId });
-        saveToDbRef.current(convIdForSave2, finalizedMsgs);
-      }
+      // AI 응답 영속 = chat route 가 server-side (post-system append, client disconnect 시에도 relay 완주 후).
+      // 옛 프론트 saveToDb (turn-end 저장) 폐기 — admin·hub 둘 다 server-authoritative.
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, inputMode, setActiveConvId, hubContext]);
 
