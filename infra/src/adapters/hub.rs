@@ -320,26 +320,6 @@ impl IHubPort for SqliteHubAdapter {
         Ok(out)
     }
 
-    async fn list_all_conversations(&self) -> InfraResult<Vec<HubConversation>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, instance_id, session_id, title, created_at, updated_at
-                 FROM hub_conversations
-                 WHERE deleted_at IS NULL
-                 ORDER BY updated_at DESC",
-            )
-            .map_err(|e| format!("hub_conversations list_all prepare: {e}"))?;
-        let rows = stmt
-            .query_map([], row_to_conversation)
-            .map_err(|e| format!("hub_conversations list_all query: {e}"))?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r.map_err(|e| format!("hub_conversations list_all row: {e}"))?);
-        }
-        Ok(out)
-    }
-
     async fn list_deleted_conversations(
         &self,
         instance_id: &str,

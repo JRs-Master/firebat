@@ -1250,6 +1250,14 @@ message ConversationSaveRequest {
   optional int64 created_at = 5;
 }
 message ConversationSaveResponse {}
+// 단일 메시지(id) 재저장 — client-state(승인/거부 status). message_json = full Message Value.
+// conv.append(canonical split, ON CONFLICT id UPDATE, created_at 보존). hub SaveMessage 와 동일 매니저 메서드.
+message ConversationSaveMessageRequest {
+  string owner = 1;
+  string conversation_id = 2;
+  string message_json = 3;
+}
+message ConversationSaveMessageResponse {}
 message ConversationDeleteRequest {
   string owner = 1;
   string id = 2;
@@ -1348,6 +1356,9 @@ service ConversationService {
   rpc List(ConversationListRequest) returns (ConversationListResponse);
   rpc Get(ConversationGetRequest) returns (ConversationGetResponse);
   rpc Save(ConversationSaveRequest) returns (ConversationSaveResponse);
+  /// 단일 메시지 재저장(client-state: 승인/거부 status 등) — hub SaveMessage 와 동일 매니저 메서드(conv.append).
+  /// admin·hub client-state 영속 경로 통일(라우트만 auth 로 분기, 매니저 로직 동일).
+  rpc SaveMessage(ConversationSaveMessageRequest) returns (ConversationSaveMessageResponse);
   /// 삭제 — soft delete. conversations.deleted_at 추가. 30일 후 cleanup cron 이 cascade 삭제.
   rpc Delete(ConversationDeleteRequest) returns (ConversationDeleteResponse);
   rpc IsDeleted(ConversationIsDeletedRequest) returns (ConversationIsDeletedResponse);

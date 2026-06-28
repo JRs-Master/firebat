@@ -3,6 +3,7 @@ import {
   getConversation,
   listConversations,
   saveConversation,
+  saveMessage,
   deleteConversation,
   isConversationDeleted,
 } from '../../../lib/api-gen/conversation';
@@ -63,6 +64,19 @@ export const POST = withAuth(async (req: NextRequest) => {
     messagesJson: JSON.stringify(messages ?? []),
     createdAt: createdAt !== undefined ? BigInt(createdAt) : undefined,
   } as any);
+  return res.ok
+    ? NextResponse.json({ success: true })
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
+});
+
+/** PATCH — 단건 메시지 재저장(승인/거부 등 client-state). 전체 conv 재저장 대신 바뀐 메시지 1건만 upsert.
+ *  hub /api/hub/[slug]/sessions 의 save-message 와 대칭 — 둘 다 ConversationManager.append(owner) 단일 경로. */
+export const PATCH = withAuth(async (req: NextRequest) => {
+  const { id, message } = (await req.json()) as { id?: string; message?: unknown };
+  if (!id || !message) {
+    return NextResponse.json({ success: false, error: 'id, message 필수' }, { status: 400 });
+  }
+  const res = await saveMessage({ owner: 'admin', conversationId: id, messageJson: JSON.stringify(message) });
   return res.ok
     ? NextResponse.json({ success: true })
     : NextResponse.json({ success: false, error: res.message }, { status: 500 });

@@ -2742,9 +2742,6 @@ pub trait IHubPort: Send + Sync {
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>>;
 
-    /// Phase 1 백필 — 전체 hub 대화 열거 (instance/session 무관). 통합 store 마이그용.
-    async fn list_all_conversations(&self) -> InfraResult<Vec<HubConversation>>;
-
     /// 휴지통 목록 — deleted_at IS NOT NULL. 최신 삭제 순.
     async fn list_deleted_conversations(
         &self,

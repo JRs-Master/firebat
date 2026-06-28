@@ -77,27 +77,10 @@ function mapHubMessages(
  *  우선 + 다음 저장에서 DB 도 치유. (hub 는 saveToDb skip 이라 localStorage 가 유일 소스 — init 병합으로 복원) */
 const TERMINAL_PENDING = new Set(['approved', 'rejected', 'error', 'past-runat']);
 
-// 승인/거부 등 client-state(터미널 status)를 planId-keyed 로 durable 영속 — conv 메시지 캐시(reconcile 이
-// 백엔드 pending 으로 덮음)와 **별개** 라 새 빌드·reconcile 후에도 안 사라짐(승인카드 부활 차단).
-// admin=백엔드(saveToDb)가 권위 / hub=visitor 브라우저 영속(액션은 이미 commit 실행됨, status 는 "카드
-// 다시 안 보이기"용 = principal 별 store, 같은 로직). 멀티유저 계정화 시 hub 도 백엔드(1-4).
-const PENDING_STATUS_KEY = 'firebat-pending-status';
-type PendingStatusEntry = { status: PendingAction['status']; errorMessage?: string; originalRunAt?: string };
-function readPendingStatusMap(): Record<string, PendingStatusEntry> {
-  if (typeof window === 'undefined') return {};
-  return safeJsonParse<Record<string, PendingStatusEntry>>(localStorage.getItem(PENDING_STATUS_KEY) ?? '', {});
-}
-function writePendingStatus(planId: string, patch: PendingStatusEntry) {
-  if (typeof window === 'undefined' || !planId) return;
-  try {
-    const map = readPendingStatusMap();
-    map[planId] = { ...map[planId], ...patch };
-    localStorage.setItem(PENDING_STATUS_KEY, JSON.stringify(map));
-  } catch { /* localStorage 실패 무시 */ }
-}
-
+// 활성 세션의 in-memory 터미널 status(승인/거부)를 reconcile/refresh 가 백엔드 pending 으로 덮지
+// 않게 보존 — saveMessage/saveToDb POST 가 in-flight 인 동안의 race 가드. 영속 권위는 백엔드(DB) →
+// 리로드·새 빌드 후엔 DB 가 터미널 status 를 들고 있어 카드 부활 0. (admin·hub 동일 — 둘 다 백엔드 영속.)
 function preserveLocalPendingStatus(remote: Message[], local: Message[]): Message[] {
-  const durable = readPendingStatusMap(); // planId → 터미널 status (durable, reconcile 무관)
   const localById = new Map(local.map(m => [m.id, m]));
   return remote.map(rm => {
     if (!rm.pendingActions?.length) return rm;
@@ -108,9 +91,6 @@ function preserveLocalPendingStatus(remote: Message[], local: Message[]): Messag
     return {
       ...rm,
       pendingActions: rm.pendingActions.map(rp => {
-        // durable map(영속 결정) 우선 — reconcile 이 conv 캐시를 덮어도 status 유지(새 빌드 후 카드 부활 차단).
-        const d = durable[rp.planId];
-        if (d && TERMINAL_PENDING.has(String(d.status))) return { ...rp, ...d };
         const lp = localByPlan.get(rp.planId);
         // createdAt(로컬 stamp)은 비종결 카드에도 보존 — 리로드 후에도 만료 계산 유지.
         return lp && TERMINAL_PENDING.has(String(lp.status)) ? { ...rp, ...lp } : { ...rp, createdAt: lp?.createdAt ?? rp.createdAt };
@@ -1042,15 +1022,32 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
   // handleSubmit(text, true, { planExecuteId }) 호출 — 모두 Function Calling 경로.
 
-  // pending 상태 변경 후 DB 저장 — 새로고침 시 status 사라짐 방지.
-  // dispatch 직후 messagesRef 가 React 재렌더 전이라 stale 가능 → 새 status 를 직접 계산해 즉시 save.
-  // **이중 저장 + 검증** (v0.1, 2026-04-27): 사용자가 승인 → 리빌드 → 다시 들어가니 버튼 재등장 케이스 방어.
-  // 1) localStorage 즉시 동기 갱신 — useEffect 비동기 갱신 race 우회.
-  // 2) DB POST 응답 await 후 실패 시 콘솔 경고 + 1회 retry — silent .catch 로 묻혔던 문제 가시화.
+  // 단건 메시지 영속(client-state: 승인/거부·suggestion 클리어·픽 잠금 등) — admin·hub 공통.
+  // ConversationManager.append(owner) 단일 경로, auth-scoped 라우트만 다름(admin 세션 / hub 토큰).
+  // 상태 1건 변경에 전체 conv 재저장은 낭비 → 바뀐 메시지 1건만 upsert(ON CONFLICT id UPDATE, created_at 보존).
+  // DB 가 권위 → reload·새 빌드 후 reconcile 이 이걸 읽어 카드/칩 부활 0. conv 캐시(localStorage)는 optimistic 백업.
+  const persistMessage = useCallback((convId: string, msg: Message) => {
+    const persist = hubContext
+      ? fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'save-message', id: msg.id, message: msg }),
+        })
+      : fetch('/api/conversations', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: convId, message: msg }),
+        });
+    void persist.catch(() => { /* conv 캐시가 프론트 백업 */ });
+  }, [hubContext]);
+
+  // pending 상태 변경(승인/거부) 후 영속 — reload·새 빌드 후 카드 부활 방지.
+  // dispatch 직후 messagesRef 가 React 재렌더 전이라 stale 가능 → 새 status 를 직접 계산해 즉시 저장.
   const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
-    // durable map(planId-keyed) 우선 기록 — conv 캐시(reconcile 이 덮음)와 별개라 새 빌드 후에도 status 유지.
-    // admin·hub 공통(admin 은 백엔드 saveToDb 가 권위, 이건 추가 안전망 / hub 는 이게 영속의 핵심).
-    if (patch.status) writePendingStatus(planId, patch as PendingStatusEntry);
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) return;
     const updated = messagesRef.current.map(m =>
@@ -1058,7 +1055,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         ? m
         : { ...m, pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, ...patch } : p) },
     );
-    // 1) localStorage 즉시 동기 갱신 — 새로고침 시 로컬 캐시가 우선 로드되므로 status 보존 보장
+    // 1) localStorage conv 캐시 즉시 동기 갱신 — reload 시 캐시 우선 로드라 status 즉시 표시(optimistic).
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem(convStorageKey) : null;
       if (raw) {
@@ -1067,26 +1064,10 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         localStorage.setItem(convStorageKey, JSON.stringify(next));
       }
     } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
-    // 2) 백엔드 영속 — admin=saveToDb(/api/conversations) / hub=sessions save-message(메시지 재저장).
-    //    hub 도 백엔드에 승인 status 영속(30일 retention 안, admin 과 동일) → reconcile·새 빌드 후 부활 0.
-    //    owner(conv 소유)는 Rust core 가 검증. conv.append(ON CONFLICT id UPDATE, created_at 보존).
-    if (hubContext) {
-      const updatedMsg = updated.find(m => m.id === msgId);
-      if (updatedMsg) {
-        void fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Token': hubContext.apiToken,
-            'X-Session-Id': hubContext.sessionId,
-          },
-          body: JSON.stringify({ op: 'save-message', id: msgId, message: updatedMsg }),
-        }).catch(() => { /* durable map(위) 가 프론트 백업 */ });
-      }
-    } else {
-      saveToDbRef.current(convId, updated);
-    }
-  }, [activeConvId, hubContext]);
+    // 2) 백엔드 영속 — 바뀐 메시지 1건만 append.
+    const updatedMsg = updated.find(m => m.id === msgId);
+    if (updatedMsg) persistMessage(convId, updatedMsg);
+  }, [activeConvId, persistMessage]);
 
   // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
@@ -1151,29 +1132,25 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [persistPendingChange, hubContext]);
 
-  // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + DB 즉시 저장 — 새로고침 시 카드 재등장 차단
+  // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + 단건 영속 — 새로고침 시 카드 재등장 차단(admin·hub 공통).
   const consumeSuggestions = useCallback((msgId: string) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
-    if (!convId) {
-      dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
-      return;
+    if (convId) {
+      const updatedMsg = messagesRef.current.find(m => m.id === msgId);
+      if (updatedMsg) persistMessage(convId, { ...updatedMsg, suggestions: undefined });
     }
-    const updated = messagesRef.current.map(m =>
-      m.id !== msgId ? m : { ...m, suggestions: undefined },
-    );
-    saveToDbRef.current(convId, updated);
     dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
-  }, [activeConvId]);
+  }, [activeConvId, persistMessage]);
 
-  // 칩 픽 잠금 — consumeSuggestions(칩 제거)와 달리 칩은 남기고 픽 텍스트만 기록(잠금 강조 렌더용). DB 즉시 저장.
+  // 칩 픽 잠금 — consumeSuggestions(칩 제거)와 달리 칩은 남기고 픽 텍스트만 기록(잠금 강조 렌더용). 단건 영속.
   const lockSuggestion = useCallback((msgId: string, picked: string) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (convId) {
-      const updated = messagesRef.current.map(m => m.id !== msgId ? m : { ...m, pickedSuggestion: picked });
-      saveToDbRef.current(convId, updated);
+      const updatedMsg = messagesRef.current.find(m => m.id === msgId);
+      if (updatedMsg) persistMessage(convId, { ...updatedMsg, pickedSuggestion: picked });
     }
     dispatch({ type: 'LOCK_SUGGESTION', msgId, picked });
-  }, [activeConvId]);
+  }, [activeConvId, persistMessage]);
 
   const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
 

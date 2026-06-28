@@ -18,6 +18,7 @@ import {
   ConversationListRequestSchema,
   ConversationPermanentDeleteRequestSchema,
   ConversationRestoreRequestSchema,
+  ConversationSaveMessageRequestSchema,
   ConversationSaveRequestSchema,
   ConversationSearchHistoryRequestSchema,
   ConversationService,
@@ -54,6 +55,15 @@ export async function get(args: MessageInitShape<typeof ConversationGetRequestSc
 export async function save(args: MessageInitShape<typeof ConversationSaveRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.save(args ?? {});
+      return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function saveMessage(args: MessageInitShape<typeof ConversationSaveMessageRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await conversationClient.saveMessage(args ?? {});
       return { ok: true, data: undefined };
   } catch (err) {
     return toRpcError(err);

@@ -72,13 +72,12 @@ impl SqliteDatabaseAdapter {
                 active_plan_state TEXT,
                 -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 휴지통 = 값 있음.
                 -- 30일 후 internal cleanup cron 이 cascade hard delete.
-                -- ⚠️ 옛 DB 호환 — IF NOT EXISTS 라 옛 schema 그대로면 이 컬럼 무시됨.
-                -- 아래 ALTER migration 이 옛 DB 에도 컬럼 추가 (idempotent).
                 deleted_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
                 ON conversations(owner, updated_at DESC);
-            -- idx_conversations_deleted_at 은 ALTER migration 뒤에 (옛 DB 호환).
+            CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at
+                ON conversations(deleted_at);
 
             CREATE TABLE IF NOT EXISTS deleted_conversations (
                 id TEXT NOT NULL,
@@ -149,8 +148,8 @@ impl SqliteDatabaseAdapter {
             CREATE INDEX IF NOT EXISTS idx_shares_expires
                 ON shared_conversations(expires_at);
 
-            -- Phase 1 통합 (2026-06-26) — 대화 메시지 per-row store. admin(blob)+hub 를
-            -- owner 기반 단일 conversations/conversation_messages 로 수렴. 기존 blob 은 마이그 슬라이스까지 보존.
+            -- 대화 메시지 per-row store. admin·hub 를 owner 기반 단일 store 로 수렴
+            -- (conversations = 메타 + conversation_messages = 메시지 행). canonical split/join(메타 컬럼 + data_json).
             CREATE TABLE IF NOT EXISTS conversation_messages (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
@@ -164,198 +163,7 @@ impl SqliteDatabaseAdapter {
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))?;
-
-        // ── migration — 옛 DB 에 conversations.deleted_at 컬럼 추가 ──
-        // CREATE TABLE IF NOT EXISTS 는 옛 schema 보존 → 새 컬럼 자동 추가 안 됨.
-        // ALTER 실행 후 컬럼 이미 존재하면 SQLite 가 에러 — .ok() 로 무시 (idempotent).
-        // soft-delete (휴지통 30일 retention) 위한 필수 컬럼. 2026-05-11 도입.
-        conn.execute(
-            "ALTER TABLE conversations ADD COLUMN deleted_at INTEGER",
-            [],
-        )
-        .ok();
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at \
-             ON conversations(deleted_at)",
-            [],
-        )
-        .ok();
-
-        // ── Phase 1 백필 — dual-write 이전 대화 blob → 통합 conversation_messages rows ──
-        // rows 가 아직 없는 활성 대화만(idempotent). 비파괴(blob 보존). cross-DB hub 백필은 별도(main.rs).
-        Self::backfill_conversation_messages(conn);
-        // ── canonical 마이그 — 옛 행을 split_message 규약으로 정규화(idempotent·loss-less) ──
-        Self::migrate_conversation_messages_canonical(conn);
-        // ── title 백필 — 빈 title(옛 auto-title 전 대화)을 첫 user 메시지로 채움(admin·hub 공통) ──
-        Self::backfill_conversation_titles(conn);
         Ok(())
-    }
-
-    /// 빈 title 대화를 첫 user 메시지로 채움 — 옛 hub auto-title 전 대화(title NULL/""/"새 대화" placeholder).
-    /// idempotent(빈 것만)·loss-less(채우기만). admin·hub 공통(owner 무관, 첫 user 메시지 기준).
-    fn backfill_conversation_titles(conn: &Connection) {
-        let pending: Vec<String> = {
-            let Ok(mut stmt) = conn.prepare(
-                "SELECT id FROM conversations
-                 WHERE deleted_at IS NULL AND (title IS NULL OR title = '' OR title = '새 대화')",
-            ) else {
-                return;
-            };
-            let Ok(it) = stmt.query_map([], |r| r.get::<_, String>(0)) else {
-                return;
-            };
-            it.filter_map(|r| r.ok()).collect()
-        };
-        let mut filled = 0usize;
-        for conv_id in pending {
-            let first_user: Option<String> = conn
-                .query_row(
-                    "SELECT content FROM conversation_messages
-                     WHERE conversation_id = ?1 AND role = 'user'
-                     ORDER BY created_at ASC, rowid ASC LIMIT 1",
-                    params![conv_id],
-                    |r| r.get::<_, String>(0),
-                )
-                .ok();
-            let Some(content) = first_user else { continue };
-            let trimmed = content.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            // 프론트 파생과 동일 — 첫 28자(char 경계, 한글 안전) + 초과 시 … (byte slice 금지).
-            let mut title: String = trimmed.chars().take(28).collect();
-            if trimmed.chars().count() > 28 {
-                title.push('…');
-            }
-            if conn
-                .execute(
-                    "UPDATE conversations SET title = ?2 WHERE id = ?1",
-                    params![conv_id, title],
-                )
-                .is_ok()
-            {
-                filled += 1;
-            }
-        }
-        if filled > 0 {
-            tracing::info!(
-                category = "conversation",
-                "conversation title 백필 — {filled} 대화 첫 메시지로 제목 채움"
-            );
-        }
-    }
-
-    /// 옛 conversation_messages 행을 canonical 규약(data_json = message ∖ {id,role,content})으로 정규화.
-    /// idempotent·loss-less·deterministic — 매 부팅 안전(이미 canonical 이면 skip).
-    /// - admin legacy(data_json = full message, "role" 키 보유) → {id,role,content} 제거.
-    /// - hub legacy(flat payload, "blocks" 키·"role"/"data" 없음) → {뱃지, data: payload} 래핑.
-    /// - canonical("role" 없음 + "data" 키 또는 "blocks" 없음) / 비-object → skip.
-    fn migrate_conversation_messages_canonical(conn: &Connection) {
-        let rows: Vec<(String, String)> = {
-            let Ok(mut stmt) =
-                conn.prepare("SELECT id, data_json FROM conversation_messages")
-            else {
-                return;
-            };
-            let Ok(it) = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            }) else {
-                return;
-            };
-            it.filter_map(|r| r.ok()).collect()
-        };
-        let mut migrated = 0usize;
-        for (row_id, dj) in rows {
-            let Ok(serde_json::Value::Object(obj)) = serde_json::from_str::<serde_json::Value>(&dj)
-            else {
-                continue; // 비-object(빈/문자열) = canonical 또는 무의미 → skip
-            };
-            let new_obj: serde_json::Map<String, serde_json::Value> = if obj.contains_key("role") {
-                // admin legacy full message → 컬럼키 제거
-                let mut o = obj.clone();
-                o.remove("id");
-                o.remove("role");
-                o.remove("content");
-                o
-            } else if obj.contains_key("data") || !obj.contains_key("blocks") {
-                continue; // 이미 canonical(시스템: data 보유 / 유저: blocks 없음)
-            } else {
-                // hub legacy flat payload(message_data_json) → {뱃지 top, data: payload}
-                let mut o = serde_json::Map::new();
-                for k in ["executedActions", "toolResults", "suggestions", "pendingActions", "libraryHits"] {
-                    if let Some(v) = obj.get(k) {
-                        o.insert(k.to_string(), v.clone());
-                    }
-                }
-                o.insert("data".to_string(), serde_json::Value::Object(obj.clone()));
-                o
-            };
-            let new_dj = serde_json::to_string(&serde_json::Value::Object(new_obj)).unwrap_or(dj.clone());
-            if new_dj != dj
-                && conn
-                    .execute(
-                        "UPDATE conversation_messages SET data_json = ?2 WHERE id = ?1",
-                        params![row_id, new_dj],
-                    )
-                    .is_ok()
-            {
-                migrated += 1;
-            }
-        }
-        if migrated > 0 {
-            tracing::info!(
-                category = "conversation",
-                "conversation_messages canonical 마이그 — {migrated} 행 정규화"
-            );
-        }
-    }
-
-    /// Phase 1 — conversation_messages rows 가 없는 기존 대화의 blob 을 rows 로 끌어옴.
-    /// idempotent(없는 것만) + 비파괴(blob 유지). dual-write 배포 전 만들어진 대화 대상.
-    fn backfill_conversation_messages(conn: &Connection) {
-        let pending: Vec<(String, String)> = {
-            let Ok(mut stmt) = conn.prepare(
-                "SELECT id, messages FROM conversations
-                 WHERE deleted_at IS NULL
-                   AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_messages)",
-            ) else {
-                return;
-            };
-            let Ok(rows) = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            }) else {
-                return;
-            };
-            rows.filter_map(|r| r.ok()).collect()
-        };
-        let mut conv_count = 0usize;
-        let mut msg_count = 0usize;
-        for (conv_id, blob) in pending {
-            let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&blob) else {
-                continue;
-            };
-            for (i, m) in arr.iter().enumerate() {
-                // canonical split — 컬럼=메타, data_json=rich(중복 0). admin save 와 동일 모양.
-                let (mid, role, content, created, data_json) =
-                    firebat_core::managers::conversation::split_message(m);
-                let mid = if mid.is_empty() { format!("{conv_id}-{i}") } else { mid };
-                if let Ok(affected) = conn.execute(
-                    "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
-                    params![mid, conv_id, role, content, data_json, created],
-                ) {
-                    msg_count += affected;
-                }
-            }
-            conv_count += 1;
-        }
-        // hub 백필(main.rs)과 대칭 — 실제 이전 있을 때만 로그(매 부팅 노이즈 0, 배포 첫 부팅 검증용).
-        if conv_count > 0 {
-            tracing::info!(
-                category = "conversation",
-                "conversation 백필 완료 — {conv_count} 대화 / {msg_count} 메시지 통합 store 반영"
-            );
-        }
     }
 
     /// 다른 어댑터 (CostManager / EntityManager 등) 가 같은 DB 위에 자기 테이블 설정할 때 활용.

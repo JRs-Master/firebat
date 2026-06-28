@@ -168,6 +168,7 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_library_sources_ref ON library_sources(reference_id);
             CREATE INDEX IF NOT EXISTS idx_library_sources_type ON library_sources(source_type);
             CREATE INDEX IF NOT EXISTS idx_library_sources_created ON library_sources(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_library_sources_hash ON library_sources(reference_id, content_hash);
 
             CREATE TABLE IF NOT EXISTS library_chunks (
                 id TEXT PRIMARY KEY,
@@ -191,10 +192,6 @@ impl SqliteMemoryAdapter {
                 content,
                 tokenize='trigram'
             );
-            -- 기존 배포본 chunk 백필 (FTS 에 아직 없는 것만 — 멱등, 매 부팅 안전).
-            INSERT INTO library_chunks_fts (chunk_id, content)
-                SELECT id, content FROM library_chunks
-                WHERE id NOT IN (SELECT chunk_id FROM library_chunks_fts);
 
             -- Hub Phase 1 (2026-05-17) — system service hub 인스턴스 settings + 대화 + 메시지.
             -- 외부 워드프레스 사이트 영역 연결용. admin chat 과 별개 (conversation / message 테이블 분리).
@@ -247,28 +244,6 @@ impl SqliteMemoryAdapter {
             "#,
         )
         .map_err(|e| format!("Memory schema 초기화 실패: {e}"))?;
-
-        // 마이그레이션 — 옛 (Phase B-12) DB 는 embedding 컬럼 미저장. ALTER TABLE 으로 추가.
-        // SQLite 는 ADD COLUMN IF NOT EXISTS 미지원 — try/catch 로 이미 존재하면 무시 (옛 TS 동등 패턴).
-        // 옛 schema → 새 schema 마이그 영역 폐기 (2026-05-20). 사용자 본인 운영 영역 = data/memory.db
-        // 삭제 후 재기동 → 새 schema 자동 생성. 옛 자료 호환 부담 0 정공.
-        // (옛 embedding ALTER / deleted_at / owner 컬럼 모두 새 CREATE TABLE 안에 정의되어 있음.)
-        //
-        // 예외 — content_hash (중복 업로드 dedup, 2026-06): 라이브러리 자료가 이미 쌓인 운영 DB 보존을
-        // 위해 신규 nullable 컬럼만 defensive ALTER (이미 있으면 무시). 자료 손실 없이 dedup 활성.
-        let _ = conn.execute("ALTER TABLE library_sources ADD COLUMN content_hash TEXT", []);
-        // hub_instances.kind (2026-06-26) — tenant/widget 분리. 기존 DB 는 CREATE TABLE 가 no-op 라
-        // defensive ALTER (이미 있으면 무시). NOT NULL + DEFAULT 라 기존 행은 자동으로 'widget'.
-        let _ = conn.execute(
-            "ALTER TABLE hub_instances ADD COLUMN kind TEXT NOT NULL DEFAULT 'widget'",
-            [],
-        );
-        // content_hash 인덱스는 컬럼 보장(ALTER) 후 생성. 옛 DB 는 CREATE TABLE 가 no-op 라 batch 안에서
-        // 만들면 컬럼 부재로 schema init 전체가 실패(crash) — ALTER 뒤로 분리해야 fresh/기존 DB 모두 안전.
-        let _ = conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_library_sources_hash ON library_sources(reference_id, content_hash)",
-            [],
-        );
         Ok(())
     }
 }

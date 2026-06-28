@@ -491,7 +491,7 @@ async fn main() -> Result<()> {
             .context("Hub DB open 실패")?,
     );
     // 대화 영속 = ConversationManager 단일 매니저(admin·hub 동일 로직, owner-keyed). HubManager 는
-    // 인스턴스(위젯) + send 오케스트레이션만 담당. (옛 memory.db → app.db 백필은 완료되어 제거.)
+    // 인스턴스(위젯) + send 오케스트레이션만 담당.
     let hub_manager = Arc::new(
         firebat_core::managers::hub::HubManager::new(hub_port)
             .with_page(page_manager.clone())
