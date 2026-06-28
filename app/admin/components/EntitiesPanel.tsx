@@ -16,6 +16,7 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { hubFetch } from '../../../lib/hub-fetch';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
@@ -70,10 +71,9 @@ interface MemoryStats {
 export type EntitiesHubContext = { slug: string; apiToken: string; sessionId: string };
 
 export function EntitiesPanel({
-  hubMode,
   hubContext,
 }: {
-  hubMode?: boolean;
+  hubMode?: boolean;   // accepted for caller compat; owner is derived from hubContext (backend object).
   hubContext?: EntitiesHubContext;
 } = {}) {
   const t = useTranslations();
@@ -88,58 +88,67 @@ export function EntitiesPanel({
   const [showCreate, setShowCreate] = useState(false);
   const [stats, setStats] = useState<MemoryStats | null>(null);
 
-  // hub fetch 헬퍼 — admin = /api/entities, hub = /api/hub/<slug>/entities dispatcher.
-  const hubFetch = useCallback(async (op: string, payload: Record<string, unknown>) => {
-    if (!hubContext) return null;
-    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/entities`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Token': hubContext.apiToken,
-        'X-Session-Id': hubContext.sessionId,
-      },
-      body: JSON.stringify({ op, ...payload }),
-    });
-    return res.json().catch(() => null);
-  }, [hubContext]);
-
-  const fetchEntities = useCallback(async (q: string) => {
-    if (hubMode) {
-      if (!hubContext) { setEntities([]); setLoading(false); return; }
-      setLoading(true);
-      try {
-        const data = await hubFetch('search', { query: q.trim(), limit: 100 });
-        if (data?.success) setEntities(data.entities ?? []);
-      } finally {
-        setLoading(false);
+  // owner-injected backend — admin REST(/api/entities) vs hub op-dispatch(/api/hub/<slug>/entities) 가
+  // 각 메서드 *안에서만* 갈림. 패널 body 는 owner-agnostic (convBackend 패턴, test 한쪽=양쪽).
+  const backend = useMemo(() => ({
+    async search(q: string): Promise<Entity[]> {
+      if (hubContext) {
+        const d = await hubFetch(hubContext, 'entities', 'search', { query: q.trim(), limit: 100 });
+        return d?.success ? (d.entities ?? []) : [];
       }
-      return;
-    }
-    setLoading(true);
-    try {
       const params = new URLSearchParams();
       if (q.trim()) params.set('query', q.trim());
       params.set('limit', '100');
-      const data = await apiGet<{ success: boolean; entities?: Entity[] }>(
-        `/api/entities?${params.toString()}`,
-        { category: 'entities' },
-      ).catch(() => null);
-      if (data?.success) setEntities(data.entities ?? []);
+      const d = await apiGet<{ success: boolean; entities?: Entity[] }>(`/api/entities?${params.toString()}`, { category: 'entities' }).catch(() => null);
+      return d?.success ? (d.entities ?? []) : [];
+    },
+    async timeline(entityId: number): Promise<Fact[]> {
+      if (hubContext) {
+        const d = await hubFetch(hubContext, 'entities', 'timeline', { entityId, limit: 50 });
+        return d?.success ? (d.facts ?? []) : [];
+      }
+      const d = await apiGet<{ success: boolean; facts?: Fact[] }>(`/api/entities/${entityId}/timeline?limit=50`, { category: 'entities' }).catch(() => null);
+      return d?.success ? (d.facts ?? []) : [];
+    },
+    async events(entityId: number): Promise<EventItem[]> {
+      if (hubContext) return []; // hub: episodic events endpoint 없음 (entities timeline 만)
+      const d = await apiGet<{ success: boolean; events?: EventItem[] }>(`/api/episodic?entityId=${entityId}&limit=50`, { category: 'entities' }).catch(() => null);
+      return d?.success ? (d.events ?? []) : [];
+    },
+    async remove(entity: Entity): Promise<void> {
+      if (hubContext) {
+        const r = await hubFetch(hubContext, 'entities', 'delete', { id: entity.id });
+        if (!r?.success) throw new Error(r?.error || 'delete 실패');
+      } else {
+        await apiDelete(`/api/entities/${entity.id}`, { category: 'entities' });
+      }
+    },
+    async stats(): Promise<MemoryStats | null> {
+      if (hubContext) return null; // hub: 집계 stats 없음
+      const d = await apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' }).catch(() => null);
+      return d?.success ? { entities: d.entities, facts: d.facts, events: d.events } : null;
+    },
+    async save(payload: { name: string; aliases?: string[] }): Promise<{ success: boolean; error?: string; created?: boolean }> {
+      if (hubContext) {
+        return (await hubFetch(hubContext, 'entities', 'save', payload)) ?? { success: false };
+      }
+      return apiPost<{ success: boolean; error?: string; created?: boolean }>('/api/entities', payload, { category: 'entities' });
+    },
+  }), [hubContext]);
+
+  const fetchEntities = useCallback(async (q: string) => {
+    setLoading(true);
+    try {
+      setEntities(await backend.search(q));
     } finally {
       setLoading(false);
     }
-  }, [hubMode, hubContext, hubFetch]);
+  }, [backend]);
 
   useEffect(() => {
     fetchEntities('');
-    if (!hubMode) {
-      apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' })
-        .then(d => {
-          if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
-        })
-        .catch(() => {});
-    }
-  }, [fetchEntities, hubMode]);
+    backend.stats().then(s => { if (s) setStats(s); }).catch(() => {});
+  }, [fetchEntities, backend]);
 
   // Debounced search
   useEffect(() => {
@@ -157,33 +166,14 @@ export function EntitiesPanel({
 
   const fetchTimeline = async (entityId: number) => {
     if (timeline[entityId]) return;
-    if (hubMode && hubContext) {
-      const data = await hubFetch('timeline', { entityId, limit: 50 });
-      if (data?.success) {
-        setTimeline(prev => ({ ...prev, [entityId]: data.facts ?? [] }));
-      }
-      return;
-    }
-    const data = await apiGet<{ success: boolean; facts?: Fact[] }>(
-      `/api/entities/${entityId}/timeline?limit=50`,
-      { category: 'entities' },
-    ).catch(() => null);
-    if (data?.success) {
-      setTimeline(prev => ({ ...prev, [entityId]: data.facts ?? [] }));
-    }
+    const facts = await backend.timeline(entityId);
+    setTimeline(prev => ({ ...prev, [entityId]: facts }));
   };
 
   const fetchEntityEvents = async (entityId: number) => {
     if (entityEvents[entityId]) return;
-    // hub mode 안 events 영역 별도 endpoint 없음 — 빈 목록 (entities timeline 만 활성).
-    if (hubMode) { setEntityEvents(prev => ({ ...prev, [entityId]: [] })); return; }
-    const data = await apiGet<{ success: boolean; events?: EventItem[] }>(
-      `/api/episodic?entityId=${entityId}&limit=50`,
-      { category: 'entities' },
-    ).catch(() => null);
-    if (data?.success) {
-      setEntityEvents(prev => ({ ...prev, [entityId]: data.events ?? [] }));
-    }
+    const events = await backend.events(entityId); // hub: [] (no episodic endpoint)
+    setEntityEvents(prev => ({ ...prev, [entityId]: events }));
   };
 
   const handleExpand = (id: number) => {
@@ -206,13 +196,7 @@ export function EntitiesPanel({
     });
     if (!ok) return;
     try {
-      if (hubMode && hubContext) {
-        // hub 모드 = hub 라우트(owner-scoped delete). 옛엔 admin /api/entities/:id 호출이라 hub 엔티티 삭제 안 됐음.
-        const r = await hubFetch('delete', { id: entity.id });
-        if (!r?.success) throw new Error(r?.error || 'delete 실패');
-      } else {
-        await apiDelete(`/api/entities/${entity.id}`, { category: 'entities' });
-      }
+      await backend.remove(entity);
       setEntities(prev => prev.filter(e => e.id !== entity.id));
       setTimeline(prev => {
         const next = { ...prev };
@@ -396,9 +380,7 @@ export function EntitiesPanel({
       {/* Create modal */}
       {showCreate && (
         <CreateEntityModal
-          hubMode={hubMode}
-          hubContext={hubContext}
-          hubFetch={hubFetch}
+          save={backend.save}
           onClose={() => setShowCreate(false)}
           onCreated={() => {
             setShowCreate(false);
@@ -687,10 +669,8 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
   );
 }
 
-function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }: {
-  hubMode?: boolean;
-  hubContext?: EntitiesHubContext;
-  hubFetch: (op: string, payload: Record<string, unknown>) => Promise<any>;
+function CreateEntityModal({ save, onClose, onCreated }: {
+  save: (payload: { name: string; aliases?: string[] }) => Promise<{ success: boolean; error?: string; created?: boolean }>;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -717,20 +697,10 @@ function CreateEntityModal({ hubMode, hubContext, hubFetch, onClose, onCreated }
     setSubmitting(true);
     try {
       const aliasList = aliases.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      // hub 모드 = hub 라우트(owner-scoped save). 옛엔 admin /api/entities 무조건 호출이라 hub 엔티티 생성이 admin 영역에 박혔음.
-      const data = hubMode && hubContext
-        ? await hubFetch('save', {
-            name: parsed.data.name,
-            aliases: aliasList.length > 0 ? aliasList : undefined,
-          })
-        : await apiPost<{ success: boolean; error?: string; created?: boolean }>(
-            '/api/entities',
-            {
-              name: parsed.data.name,
-              aliases: aliasList.length > 0 ? aliasList : undefined,
-            },
-            { category: 'entities' },
-          );
+      const data = await save({
+        name: parsed.data.name,
+        aliases: aliasList.length > 0 ? aliasList : undefined,
+      });
       if (!data?.success) {
         setError(data?.error || '실패');
         return;
