@@ -184,7 +184,74 @@ impl SqliteDatabaseAdapter {
         // ── Phase 1 백필 — dual-write 이전 대화 blob → 통합 conversation_messages rows ──
         // rows 가 아직 없는 활성 대화만(idempotent). 비파괴(blob 보존). cross-DB hub 백필은 별도(main.rs).
         Self::backfill_conversation_messages(conn);
+        // ── canonical 마이그 — 옛 행을 split_message 규약으로 정규화(idempotent·loss-less) ──
+        Self::migrate_conversation_messages_canonical(conn);
         Ok(())
+    }
+
+    /// 옛 conversation_messages 행을 canonical 규약(data_json = message ∖ {id,role,content})으로 정규화.
+    /// idempotent·loss-less·deterministic — 매 부팅 안전(이미 canonical 이면 skip).
+    /// - admin legacy(data_json = full message, "role" 키 보유) → {id,role,content} 제거.
+    /// - hub legacy(flat payload, "blocks" 키·"role"/"data" 없음) → {뱃지, data: payload} 래핑.
+    /// - canonical("role" 없음 + "data" 키 또는 "blocks" 없음) / 비-object → skip.
+    fn migrate_conversation_messages_canonical(conn: &Connection) {
+        let rows: Vec<(String, String)> = {
+            let Ok(mut stmt) =
+                conn.prepare("SELECT id, data_json FROM conversation_messages")
+            else {
+                return;
+            };
+            let Ok(it) = stmt.query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            }) else {
+                return;
+            };
+            it.filter_map(|r| r.ok()).collect()
+        };
+        let mut migrated = 0usize;
+        for (row_id, dj) in rows {
+            let Ok(serde_json::Value::Object(obj)) = serde_json::from_str::<serde_json::Value>(&dj)
+            else {
+                continue; // 비-object(빈/문자열) = canonical 또는 무의미 → skip
+            };
+            let new_obj: serde_json::Map<String, serde_json::Value> = if obj.contains_key("role") {
+                // admin legacy full message → 컬럼키 제거
+                let mut o = obj.clone();
+                o.remove("id");
+                o.remove("role");
+                o.remove("content");
+                o
+            } else if obj.contains_key("data") || !obj.contains_key("blocks") {
+                continue; // 이미 canonical(시스템: data 보유 / 유저: blocks 없음)
+            } else {
+                // hub legacy flat payload(message_data_json) → {뱃지 top, data: payload}
+                let mut o = serde_json::Map::new();
+                for k in ["executedActions", "toolResults", "suggestions", "pendingActions", "libraryHits"] {
+                    if let Some(v) = obj.get(k) {
+                        o.insert(k.to_string(), v.clone());
+                    }
+                }
+                o.insert("data".to_string(), serde_json::Value::Object(obj.clone()));
+                o
+            };
+            let new_dj = serde_json::to_string(&serde_json::Value::Object(new_obj)).unwrap_or(dj.clone());
+            if new_dj != dj
+                && conn
+                    .execute(
+                        "UPDATE conversation_messages SET data_json = ?2 WHERE id = ?1",
+                        params![row_id, new_dj],
+                    )
+                    .is_ok()
+            {
+                migrated += 1;
+            }
+        }
+        if migrated > 0 {
+            tracing::info!(
+                category = "conversation",
+                "conversation_messages canonical 마이그 — {migrated} 행 정규화"
+            );
+        }
     }
 
     /// Phase 1 — conversation_messages rows 가 없는 기존 대화의 blob 을 rows 로 끌어옴.
@@ -212,19 +279,10 @@ impl SqliteDatabaseAdapter {
                 continue;
             };
             for (i, m) in arr.iter().enumerate() {
-                let mid = m
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("{conv_id}-{i}"));
-                let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let content = m
-                    .get("content")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let created = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
-                let data_json = serde_json::to_string(m).unwrap_or_default();
+                // canonical split — 컬럼=메타, data_json=rich(중복 0). admin save 와 동일 모양.
+                let (mid, role, content, created, data_json) =
+                    firebat_core::managers::conversation::split_message(m);
+                let mid = if mid.is_empty() { format!("{conv_id}-{i}") } else { mid };
                 if let Ok(affected) = conn.execute(
                     "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO NOTHING",
@@ -548,12 +606,11 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             })
             .ok()?
         };
-        // contract C3 (2026-06-28) — 통합 store(conversation_messages) rows 단일 읽기. 옛 blob fallback 제거.
-        // 검증(서버): 실내용 대화는 전부 rows 보유(admin 183/183·hub 38/38), 갭은 빈 대화뿐 → 실손실 0.
-        // data_json = 원본 메시지 → 그대로 복원, 파싱 실패 시 최소 {role,content}. 빈 대화면 [] (프론트가 INIT 유지).
+        // 통합 store(conversation_messages) rows 단일 읽기. canonical join 규약 — 컬럼(id/role/content) ∪ data_json.
+        // 빈 대화면 [] (프론트가 INIT 유지).
         let from_rows: Vec<serde_json::Value> = conn
             .prepare(
-                "SELECT role, content, data_json FROM conversation_messages
+                "SELECT id, role, content, data_json FROM conversation_messages
                  WHERE conversation_id = ?1 ORDER BY created_at ASC, rowid ASC",
             )
             .and_then(|mut ms| {
@@ -562,14 +619,15 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                         r.get::<_, String>(0)?,
                         r.get::<_, String>(1)?,
                         r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
                     ))
                 })
                 .map(|it| {
                     it.filter_map(|x| x.ok())
-                        .map(|(role, content, dj)| {
-                            serde_json::from_str::<serde_json::Value>(&dj).unwrap_or_else(|_| {
-                                serde_json::json!({ "role": role, "content": content })
-                            })
+                        .map(|(mid, role, content, dj)| {
+                            firebat_core::managers::conversation::join_message(
+                                &mid, &role, &content, &dj,
+                            )
                         })
                         .collect::<Vec<_>>()
                 })
@@ -614,22 +672,28 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         messages_json: &str,
         created_at: Option<i64>,
     ) -> bool {
+        use firebat_core::managers::conversation::{join_message, split_message};
         let Ok(conn) = self.conn.lock() else { return false };
-        // contract C4 (2026-06-28) — 단일 store = conversation_messages rows. blob(conversations.messages) 폐기.
-        // admin 저장 = full-array replace 모델(union-merge 결과 통째). 변경감지 = 기존 rows vs 신규 비교.
+        // 단일 store = conversation_messages rows. canonical split/join 규약(admin·hub·migration·frontend 공용).
+        // 변경감지 = 기존 rows 를 join 으로 복원 → incoming 과 deep-equal 비교(F5 무변경 no-op 보존).
         let incoming: Vec<serde_json::Value> =
             serde_json::from_str(messages_json).unwrap_or_default();
-        // 기존 rows(data_json) 를 배열로 복원 — 무변경 재저장 no-op 판정용. merge 가 get_conversation(rows)
-        // 을 읽으므로 무변경 시 incoming == 기존 rows (deep-equal).
         let existing: Vec<serde_json::Value> = {
             let mut out = Vec::new();
             if let Ok(mut stmt) = conn.prepare(
-                "SELECT data_json FROM conversation_messages WHERE conversation_id = ?1
+                "SELECT id, role, content, data_json FROM conversation_messages WHERE conversation_id = ?1
                  ORDER BY created_at ASC, rowid ASC",
             ) {
-                if let Ok(rows) = stmt.query_map(params![id], |r| r.get::<_, String>(0)) {
-                    for dj in rows.flatten() {
-                        out.push(serde_json::from_str(&dj).unwrap_or(serde_json::json!({})));
+                if let Ok(rows) = stmt.query_map(params![id], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                }) {
+                    for (rid, role, content, dj) in rows.flatten() {
+                        out.push(join_message(&rid, &role, &content, &dj));
                     }
                 }
             }
@@ -660,24 +724,12 @@ impl IDatabasePort for SqliteDatabaseAdapter {
                 params![id, owner, title, created, now],
             )
             .is_ok();
-        // rows upsert-merge (비파괴) — hub append 와 동일하게 conversation_messages 에 id 기준 upsert.
-        // 옛 DELETE+reinsert(파괴적 full-replace) 폐기 → admin 도 hub 처럼 incremental upsert (동일 쓰기 모델).
-        // 안전: ConversationManager.save 의 union-merge 가 incoming ⊇ 기존행 보장 → stale row 0. data_json =
-        // 메시지 원본(프론트 shape passthrough), read 가 그대로 복원.
+        // rows upsert-merge (비파괴) — canonical split: 컬럼=메타, data_json=rich. id 기준 upsert.
+        // 안전: union-merge 가 incoming ⊇ 기존행 보장 → stale row 0.
         for (i, m) in incoming.iter().enumerate() {
-            let mid = m
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{id}-{i}"));
-            let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let content = m
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let mcreated = m.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(now);
-            let data_json = serde_json::to_string(m).unwrap_or_default();
+            let (mid, role, content, mcreated, data_json) = split_message(m);
+            let mid = if mid.is_empty() { format!("{id}-{i}") } else { mid };
+            let mcreated = if mcreated == 0 { now } else { mcreated };
             let _ = conn.execute(
                 "INSERT INTO conversation_messages (id, conversation_id, role, content, data_json, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)

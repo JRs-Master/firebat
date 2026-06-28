@@ -18,6 +18,42 @@ const CONTENT_PREVIEW_MAX: usize = 500;
 /// search_history 의 같은 conv 부스트 스코어 — 옛 TS 와 동일 (현재 활성 대화 우선).
 const SAME_CONV_BOOST: f32 = 0.2;
 
+/// Message ⟷ conversation_messages row 의 canonical 변환 규약 (admin·hub·migration·frontend 공용).
+/// 컬럼 = id/role/content(메타) + created_at(정렬 인덱스). data_json = 나머지 rich(뱃지 top·blocks 는 `data`)
+/// + createdAt 유지(정확 라운드트립 → 무변경 no-op 보존). id/role/content 중복 0. 한 규약 = 모든 surface 동일.
+pub const MESSAGE_COLUMN_KEYS: &[&str] = &["id", "role", "content"];
+
+/// Message Value → (id, role, content, created_at[정렬용], data_json). data_json = message ∖ {id,role,content}.
+pub fn split_message(msg: &serde_json::Value) -> (String, String, String, i64, String) {
+    let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let created_at = msg.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
+    let mut rich = msg.clone();
+    if let Some(o) = rich.as_object_mut() {
+        for k in MESSAGE_COLUMN_KEYS {
+            o.remove(*k);
+        }
+    }
+    let data_json = serde_json::to_string(&rich).unwrap_or_else(|_| "{}".to_string());
+    (id, role, content, created_at, data_json)
+}
+
+/// (id, role, content 컬럼, data_json) → Message Value = parse(data_json) ∪ {id, role, content}.
+/// createdAt 등 rich 는 data_json 에 그대로 → 정확 복원.
+pub fn join_message(id: &str, role: &str, content: &str, data_json: &str) -> serde_json::Value {
+    let mut msg = serde_json::from_str::<serde_json::Value>(data_json)
+        .ok()
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(o) = msg.as_object_mut() {
+        o.insert("id".to_string(), serde_json::json!(id));
+        o.insert("role".to_string(), serde_json::json!(role));
+        o.insert("content".to_string(), serde_json::json!(content));
+    }
+    msg
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistorySearchMatch {
@@ -284,11 +320,28 @@ impl ConversationManager {
     }
 
     /// 단일 메시지 append (owner-keyed) — 채팅 턴 영속 primitive. conv row 없으면 생성.
-    /// 메시지 shape(data_json 등)는 caller 가 채운 그대로 저장 — presentation 무관. id 충돌 시 update(멱등).
-    pub fn append(&self, owner: &str, msg: &ConversationMessage) {
-        self.db
-            .ensure_conversation_row(owner, &msg.conversation_id, "", msg.created_at);
-        self.db.append_conversation_message(msg);
+    /// canonical 규약(split_message): 컬럼=메타, data_json=rich. admin save 와 동일 저장 모양. id 충돌 시 update(멱등).
+    pub fn append(&self, owner: &str, conv_id: &str, msg: &serde_json::Value) {
+        let (id, role, content, created, data_json) = split_message(msg);
+        let created = if created == 0 {
+            crate::utils::time::now_ms()
+        } else {
+            created
+        };
+        let id = if id.is_empty() {
+            format!("{conv_id}-{created}")
+        } else {
+            id
+        };
+        self.db.ensure_conversation_row(owner, conv_id, "", created);
+        self.db.append_conversation_message(&ConversationMessage {
+            id,
+            conversation_id: conv_id.to_string(),
+            role,
+            content,
+            data_json,
+            created_at: created,
+        });
     }
 
     /// 제목 갱신 (id 기준) — rename·auto-title 공용.

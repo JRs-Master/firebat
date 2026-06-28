@@ -125,22 +125,14 @@ impl HubManager {
         Some((inst.to_string(), sid.to_string()))
     }
 
-    /// hub 메시지를 ConversationManager(단일 대화 영속) 에 기록 — owner-keyed. 대화 로직 = admin 과 동일 매니저.
-    /// 메시지 shape 는 그대로 전달(presentation 무관). owner = conv 생성 시 부여된 "hub:<inst>:<sid>".
-    fn write_message(&self, msg: &HubMessage) {
-        let Some(conv) = &self.conv else { return };
-        let Some((owner, _)) = conv.meta_by_id(&msg.conversation_id) else { return };
-        conv.append(
-            &owner,
-            &crate::ports::ConversationMessage {
-                id: msg.id.clone(),
-                conversation_id: msg.conversation_id.clone(),
-                role: msg.role.clone(),
-                content: msg.content.clone().unwrap_or_default(),
-                data_json: msg.data_json.clone().unwrap_or_default(),
-                created_at: msg.created_at,
-            },
-        );
+    /// hub 메시지(Message Value)를 ConversationManager(단일 대화 영속)에 기록 — canonical split 규약.
+    /// owner = conv 생성 시 부여된 "hub:<inst>:<sid>". admin save 와 완전히 동일한 저장 모양.
+    fn write_message(&self, conv_id: &str, msg: &serde_json::Value) {
+        if let Some(conv) = &self.conv {
+            if let Some((owner, _)) = conv.meta_by_id(conv_id) {
+                conv.append(&owner, conv_id, msg);
+            }
+        }
     }
 
     // ─── Instance CRUD ────────────────────────────────────────────────────
@@ -508,25 +500,19 @@ impl HubManager {
         content: &str,
         id: Option<String>,
     ) -> InfraResult<String> {
-        // 클라이언트 발급 id 우선(프론트 로컬 메시지와 hub_messages 정렬 — admin systemId 패턴), 없으면 uuid fallback.
+        // 클라이언트 발급 id 우선(프론트 로컬 메시지 정렬 — admin systemId 패턴), 없으면 uuid fallback.
         let id = id
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let msg = HubMessage {
-            id: id.clone(),
-            conversation_id: conversation_id.to_string(),
-            role: "user".to_string(),
-            content: Some(content.to_string()),
-            data_json: None,
-            created_at: Self::now_ms(),
-        };
-        // contract C4 (2026-06-28) — app.db conversation_messages 단독 쓰기. 옛 memory.db hub_messages 폐기
-        // (C3 후 hub_messages 는 read 안 됨 = write-only 였음).
-        self.write_message(&msg);
+        // canonical Message Value — split_message 가 컬럼/data_json 분리. user 는 rich 없음 → data_json={}.
+        let msg = serde_json::json!({
+            "id": id, "role": "user", "content": content, "createdAt": Self::now_ms(),
+        });
+        self.write_message(conversation_id, &msg);
         Ok(id)
     }
 
-    /// system (AI) 메시지 append — content + data_json (blocks / tool_results 영역).
+    /// system (AI) 메시지 append — content + canonical data payload(message_data_json).
     pub async fn append_system_message(
         &self,
         conversation_id: &str,
@@ -538,16 +524,24 @@ impl HubManager {
         let id = id
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let msg = HubMessage {
-            id: id.clone(),
-            conversation_id: conversation_id.to_string(),
-            role: "system".to_string(),
-            content,
-            data_json,
-            created_at: Self::now_ms(),
-        };
-        // contract C4 — app.db 단독 쓰기 (위 append_user_message 참조).
-        self.write_message(&msg);
+        // canonical Message Value — admin systemMsg 와 동일: 뱃지(executedActions 등) top + data: payload.
+        // split_message 가 컬럼(id/role/content/createdAt) 분리 → data_json = {뱃지, data: payload}.
+        let payload: serde_json::Value = data_json
+            .as_deref()
+            .and_then(|s| serde_json::from_str(s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        let mut msg = serde_json::json!({
+            "id": id, "role": "system", "content": content.clone().unwrap_or_default(), "createdAt": Self::now_ms(),
+        });
+        if let Some(o) = msg.as_object_mut() {
+            for k in ["executedActions", "toolResults", "suggestions", "pendingActions", "libraryHits"] {
+                if let Some(v) = payload.get(k) {
+                    o.insert(k.to_string(), v.clone());
+                }
+            }
+            o.insert("data".to_string(), payload);
+        }
+        self.write_message(conversation_id, &msg);
         Ok(id)
     }
 

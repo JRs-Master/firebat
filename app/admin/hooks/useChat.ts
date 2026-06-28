@@ -53,30 +53,20 @@ export interface UseChatHubContext {
 /** 대화 목록 메타 — admin/hub 공통 shape (convBackend 가 정규화). */
 type ConvBackendMeta = { id: string; title: string; createdAt: number; updatedAt: number };
 
-/** hub_messages(wire) → frontend Message. init·select 공용 (옛 중복 제거).
- *  reload 복원 시 라이브 RESULT 와 같은 shape — 뱃지(executedActions/toolResults/suggestions/libraryHits)는
- *  top-level 이어야 렌더가 읽는다 (옛 버그: data 에만 넣어 reload 후 액션 뱃지 사라짐). blocks 는 data 에서 렌더. */
+/** hub 메시지(row wire) → frontend Message. canonical join 규약 — 컬럼(id/role/content) ∪ data_json.
+ *  Rust split_message/join_message 와 동일: data_json = 뱃지(top)·blocks(data 안)·createdAt 등 rich.
+ *  컬럼 id/role/content 가 authoritative(덮어씀). admin get_conversation 의 join 과 byte-동일 복원. */
 function mapHubMessages(
   hubMsgs: Array<{ id: string; role: string; content?: string; dataJson?: string }>,
 ): Message[] {
   return hubMsgs.map(m => {
     const role = m.role === 'system' ? ('system' as const) : ('user' as const);
-    if (!m.dataJson) {
-      return { id: m.id, role, content: m.content ?? '' } as Message;
-    }
-    const d = safeJsonParse<Record<string, unknown>>(m.dataJson, {});
+    const rich = safeJsonParse<Record<string, unknown>>(m.dataJson ?? '', {});
     return {
+      ...(rich && typeof rich === 'object' ? rich : {}),
       id: m.id,
       role,
       content: m.content ?? '',
-      executedActions: d.executedActions,
-      toolResults: d.toolResults,
-      libraryHits: d.libraryHits,
-      suggestions: d.suggestions,
-      // plan 승인 카드 등 — reload 시 복원. plan 본체는 plan_store(in-memory)라 같은 세션 내 실행 정상,
-      // 재시작 후엔 plan 만료로 재클릭이 graceful reject (이중 실행 없음).
-      pendingActions: d.pendingActions,
-      data: d,
     } as Message;
   });
 }
