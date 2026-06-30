@@ -12,9 +12,10 @@
 //! 도구 registry: McpToolRegistry trait 으로 추상화. 호출자가 핸들러 + schema 등록.
 //! 초기 핸들러는 ToolManager 의 list/execute 위임 — 추후 sysmod / render_* / pending 등록 확장.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::State,
@@ -41,6 +42,7 @@ use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
 use firebat_core::managers::tool::{ToolListFilter, ToolManager};
+use firebat_core::utils::grounding::{check_grounding, parse_grounding, GroundedParam};
 use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 // ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
 // 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
@@ -73,6 +75,9 @@ pub struct McpServerState {
     /// ModuleManager — sysmod 활성화 토글 검사 (tools/list 시점 비활성 sysmod 필터).
     /// 미설정 시 list 필터 0 (옛 호환). call-time gate 는 handler 안에서 별도 수행.
     pub module_manager: Option<Arc<ModuleManager>>,
+    /// L1 grounding 선언 — tool_name → grounded params (모듈 config 의 `grounding`).
+    /// sysmod 등록 시 1회 parse. tools/call 게이트가 사용 (Fact-Provenance Firewall, plan #8-2).
+    pub grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
 }
 
 impl McpServerState {
@@ -82,6 +87,7 @@ impl McpServerState {
             vault,
             auth: None,
             module_manager: None,
+            grounding: RwLock::new(HashMap::new()),
         }
     }
 
@@ -365,7 +371,7 @@ async fn handle_rpc(
                 }];
                 return rpc_success(id, serde_json::json!({ "content": content, "isError": true }));
             }
-            match handler.call(args).await {
+            match gated_tool_call(&state, &name, args, &handler, &token).await {
                 Ok(result) => {
                     let text = serde_json::to_string(&result).unwrap_or_else(|_| "null".to_string());
                     let content = vec![ContentBlock {
@@ -414,6 +420,102 @@ fn rpc_error(id: Value, code: i32, message: &str) -> axum::response::Response {
         },
     })
     .into_response()
+}
+
+// ── L1 grounding gate — Fact-Provenance Firewall (plan #8-2) ──────────────────
+// Declared opaque params (e.g. a stock code) must trace to a value the model observed this
+// session — a prior tool result (a real lookup) or the user — else the call is rejected with
+// a resolve hint and the model retries (resolve → use). Per-session corpus of recent
+// tool-result text, TTL + size bounded; "recently observed" is enough to tell a looked-up id
+// from an invented one. Covers the MCP path (both transports); the FC path builds its own
+// corpus inline (Stage 2).
+
+const OBSERVED_TTL: Duration = Duration::from_secs(30 * 60);
+const OBSERVED_MAX: usize = 60;
+const OBSERVED_TEXT_CAP: usize = 256 * 1024;
+
+fn observed_store() -> &'static Mutex<HashMap<String, VecDeque<(Instant, String)>>> {
+    static STORE: OnceLock<Mutex<HashMap<String, VecDeque<(Instant, String)>>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn evict_expired(q: &mut VecDeque<(Instant, String)>) {
+    let now = Instant::now();
+    while q
+        .front()
+        .map(|(t, _)| now.duration_since(*t) > OBSERVED_TTL)
+        .unwrap_or(false)
+    {
+        q.pop_front();
+    }
+    while q.len() > OBSERVED_MAX {
+        q.pop_front();
+    }
+}
+
+/// Record a successful tool result's text as provenance for this session.
+fn record_observed(session: &str, text: &str) {
+    // Cap stored text to bound memory. Identifier provenance comes from small lookup/grep
+    // results, not huge numeric payloads, so a cap doesn't lose codes. Truncate on a char
+    // boundary — byte slicing would panic on multi-byte (Korean) content.
+    let capped = if text.len() > OBSERVED_TEXT_CAP {
+        let mut end = OBSERVED_TEXT_CAP;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text[..end].to_string()
+    } else {
+        text.to_string()
+    };
+    let mut store = observed_store().lock().unwrap_or_else(|e| e.into_inner());
+    let q = store.entry(session.to_string()).or_default();
+    q.push_back((Instant::now(), capped));
+    evict_expired(q);
+}
+
+/// The session's current provenance corpus (recent observed tool-result text).
+fn observed_corpus(session: &str) -> Vec<String> {
+    let mut store = observed_store().lock().unwrap_or_else(|e| e.into_inner());
+    match store.get_mut(session) {
+        Some(q) => {
+            evict_expired(q);
+            q.iter().map(|(_, s)| s.clone()).collect()
+        }
+        None => Vec::new(),
+    }
+}
+
+/// tools/call wrapper — L1 grounding check (before) + provenance record (after). Both MCP
+/// transports (HTTP `handle_rpc` / stdio `dispatch_method`) route through here so the gate
+/// covers both (args-based, per the hub-scope lesson that task-local alone is a no-op on FC).
+/// Returns the handler's result; a grounding rejection surfaces as `Err(hint)` → the existing
+/// isError tool-result path delivers the hint to the model, which retries (resolve → use).
+async fn gated_tool_call(
+    state: &Arc<McpServerState>,
+    name: &str,
+    args: Value,
+    handler: &Arc<dyn McpToolHandler>,
+    session: &str,
+) -> Result<Value, String> {
+    let grounded = {
+        let map = state.grounding.read().await;
+        map.get(name).cloned()
+    };
+    if let Some(grounded) = grounded {
+        if !grounded.is_empty() {
+            if let Err(hint) = check_grounding(&args, &grounded, &observed_corpus(session)) {
+                tracing::info!(target: "grounding", tool = name, "L1 grounding reject");
+                return Err(hint);
+            }
+        }
+    }
+    let result = handler.call(args).await;
+    if let Ok(ref v) = result {
+        if let Ok(text) = serde_json::to_string(v) {
+            record_observed(session, &text);
+        }
+    }
+    result
 }
 
 async fn handle_sse(
@@ -566,6 +668,10 @@ pub async fn register_sysmod_tools(
             }),
         };
         state.register(tool).await;
+        let g = parse_grounding(&config);
+        if !g.is_empty() {
+            state.grounding.write().await.insert(tool_name.clone(), g);
+        }
     }
 }
 
@@ -632,6 +738,10 @@ async fn register_sysmod_domains(
             module_name.replace('-', "_"),
             domain_name.replace('-', "_")
         );
+        let g = parse_grounding(config);
+        if !g.is_empty() {
+            state.grounding.write().await.insert(tool_name.clone(), g);
+        }
         let tool = McpTool {
             name: tool_name,
             description,
@@ -2152,7 +2262,7 @@ async fn dispatch_method(
                     "isError": true
                 })));
             }
-            match handler.call(args).await {
+            match gated_tool_call(state, &name, args, &handler, "stdio").await {
                 Ok(result) => {
                     let text = serde_json::to_string(&result).unwrap_or_else(|_| "null".to_string());
                     Ok(Some(serde_json::json!({

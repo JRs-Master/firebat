@@ -7,6 +7,12 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "grounding": {
+    "stk_cd": {
+      "resolveHint": "A stock code (stk_cd) must come from a lookup, never from memory. To get the code for a company name, call ka10099 (종목정보 리스트) for the right market then cache_grep by name, or call ka10100 to confirm a code you were given; then use the returned 종목코드. Never recall or guess codes. If several companies match the name, present a picker (suggest) instead of choosing for the user.",
+      "exemptActions": ["ka10100"]
+    }
+  },
   "secrets": [
     {
       "name": "KIWOOM_APP_KEY",
