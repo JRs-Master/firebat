@@ -65,9 +65,11 @@ function parseHlColor(inner: string): { color: string; text: string } {
   return { color, text };
 }
 /**
- * `==text==` → **질감 형광펜**(손으로 그은 마커, v1~v4 변형). 색 `==색:text==`. escape 단계 뒤 호출 →
- * rehypeRaw native <mark> 렌더(globals.css `.fbhl-*`). 일반(비학습) 강조는 형광펜이 아니라
- * `[[term]]` 칩(chipMarksToHtml, `<span class="fbchip">` = 질감 없는 플랫 색상 span)을 쓴다.
+ * `==text==` → **질감 형광펜**(손으로 그은 마커). 색 `==색:text==`. escape 단계 뒤 호출 →
+ * rehypeRaw native <mark> 렌더(globals.css `.fbhl-*`). 본체는 균일·반투명이고, 위아래 가장자리만
+ * 살짝 삐뚤(SVG) + 옅은 덧칠 자국이 r0~r7 변형마다 다른 자리에 들어가 "항상 양 끝"이 아니라 사람이
+ * 그은 듯 랜덤하게 진해진다. 일반(비학습) 강조는 형광펜이 아니라 `[[term]]` 칩(chipMarksToHtml,
+ * `<span class="fbchip">` = 질감 없는 플랫 색상 span)을 쓴다.
  */
 export function highlightMarksToHtml(s: string): string {
   if (!s) return s;
@@ -76,11 +78,12 @@ export function highlightMarksToHtml(s: string): string {
   if (!out.includes('==')) return out;
   out = out.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
     const { color, text } = parseHlColor(inner);
-    // 마커 질감 변형(v1~v4 = 칠한 각도·스며든 점 위치·모서리) — 텍스트 해시 기반(결정적) → SSR/클라 안전.
+    // 덧칠 자국 위치 변형(r0~r7 = 옅게 진한 두 자리가 서로 다른 곳) — 텍스트 해시 기반(결정적) →
+    // SSR/클라 안전 + 같은 표시도 매번 다른 stroke, 사람이 칠한 듯(class 기반이라 sanitize 안전).
     let h = 0;
     for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-    const v = (h % 4) + 1;
-    return `<mark class="fbhl-${color} fbhl-v${v}">${text}</mark>`;
+    const r = h % 8;
+    return `<mark class="fbhl-${color} fbhl-r${r}">${text}</mark>`;
   });
   return out;
 }

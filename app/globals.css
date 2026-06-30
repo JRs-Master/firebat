@@ -519,47 +519,44 @@ html::-webkit-scrollbar-thumb:hover,
   animation: firebat-bar-slide 1.2s ease-in-out infinite;
 }
 
-/* 형광펜(==강조==) — 마커 스윕 질감: 각진 그라데이션(불균일 잉크) + 비대칭 둥근 끝 + 반투명(텍스트 비침).
-   sysmod 인디고 칩과 구분되는 노랑/핑크/보라/초록 4색. 채팅·발행·공유 공통(rehypeRaw native <mark>). */
+/* 형광펜(==강조==) — 사람이 손으로 그은 마커:
+   본체는 균일·반투명(실제 형광펜처럼) + 위아래 가장자리만 살짝 삐뚤(SVG 경로) + 옅게 진한 덧칠 자국 2곳.
+   덧칠 위치(--fbhl-bx/bx2)는 md.ts 가 표시 텍스트 해시로 r0~r7 중 하나 배정 → "항상 양 끝"이 아니라
+   매번 다른 자리에 랜덤하게 진해짐(겹쳐 그은 듯). 마커는 *배경*이라 글자는 그 위에 온전 → 윗꼬리·아랫꼬리가
+   마커 밖으로 살짝 삐져나옴(mask로 깎으면 글자까지 사라지므로 안 씀). 색 6종. 채팅·발행·공유 공통. */
 mark[class^="fbhl-"] {
-  padding: 0.02em 0.18em;
+  padding: 0.05em 0.12em;
   color: inherit;
-  /* <mark> 브라우저 기본 배경 = 노랑. 반투명 그라디언트만 깔면 그 노랑이 비쳐 sky·pink 등이 겹쳐
-     보임 → 투명으로 덮어 색 정확히. */
+  /* <mark> 브라우저 기본 노랑 배경 제거(다른 색 비침 방지). 마커 무늬는 background-image 가 전담. */
   background-color: transparent;
   background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-  border-radius: 0.5em 0.15em 0.45em 0.2em; /* v1 기본 — 변형(v2~v4)이 override */
-  /* 손으로 칠한 형광펜 질감 — 균일 그라디언트 대신 군데군데 진한 점(두세 번 덧칠한 듯 불균일).
-     색 = --fbhl-c(hue sat light), 칠한 각도(--fbhl-a)·진한 점 위치(--fbhl-p1~4) = 변형이 정함.
-     md.ts 가 텍스트 해시로 v1~v4 배정 → 같은 표시도 매번 다른 stroke, 사람이 칠한 듯. */
+  border-radius: 0; /* 끝 모양·둥글기는 SVG 경로가 정함 */
+  /* 덧칠 자국 2곳(세로 중앙대만 진하게 → 위아래 삐뚤 가장자리는 안 건드림) + 균일 본체(SVG). */
   background-image:
-    /* 시작부 잉크 풀 — 펜을 댄 왼쪽이 종이에 스며 진해짐(비스듬한 시작). */
-    radial-gradient(130% 140% at 0% 55%, hsl(var(--fbhl-c) / 0.20), transparent 50%),
-    /* 본체 — 군데군데 진한 점(덧칠). 피크 alpha 낮춰 떡칠감 완화(0.64/0.72 → 0.44/0.50). */
-    linear-gradient(
-      var(--fbhl-a, -100deg),
-      hsl(var(--fbhl-c) / 0.12) 0%,
-      hsl(var(--fbhl-c) / 0.44) var(--fbhl-p1, 14%),
-      hsl(var(--fbhl-c) / 0.22) var(--fbhl-p2, 38%),
-      hsl(var(--fbhl-c) / 0.50) var(--fbhl-p3, 58%),
-      hsl(var(--fbhl-c) / 0.24) var(--fbhl-p4, 80%),
-      hsl(var(--fbhl-c) / 0.40) 94%,
-      hsl(var(--fbhl-c) / 0.14) 100%
-    );
+    radial-gradient(22% 34% at var(--fbhl-bx, 38%) 50%, hsl(var(--fbhl-c) / 0.17), transparent 62%),
+    radial-gradient(19% 30% at var(--fbhl-bx2, 70%) 50%, hsl(var(--fbhl-c) / 0.13), transparent 62%),
+    var(--fbhl-img);
 }
-.fbhl-yellow { --fbhl-c: 50 98% 62%; }
-.fbhl-pink   { --fbhl-c: 330 90% 72%; }
-.fbhl-purple { --fbhl-c: 270 85% 75%; }
-.fbhl-green  { --fbhl-c: 140 68% 56%; }
-.fbhl-orange { --fbhl-c: 28 95% 62%; }
-.fbhl-sky    { --fbhl-c: 199 92% 64%; }
-/* 변형 4종 — 각도·진한 점 위치·모서리 다르게 해서 손글씨 같은 다양성(매번 같은 패턴 방지). */
-.fbhl-v1 { --fbhl-a: -100deg; --fbhl-p1: 14%; --fbhl-p2: 38%; --fbhl-p3: 58%; --fbhl-p4: 80%; border-radius: 0.5em 0.15em 0.45em 0.2em; }
-.fbhl-v2 { --fbhl-a: -93deg;  --fbhl-p1: 22%; --fbhl-p2: 31%; --fbhl-p3: 67%; --fbhl-p4: 88%; border-radius: 0.2em 0.5em 0.25em 0.4em; }
-.fbhl-v3 { --fbhl-a: -107deg; --fbhl-p1: 10%; --fbhl-p2: 46%; --fbhl-p3: 53%; --fbhl-p4: 74%; border-radius: 0.4em 0.2em 0.5em 0.15em; }
-.fbhl-v4 { --fbhl-a: -96deg;  --fbhl-p1: 18%; --fbhl-p2: 33%; --fbhl-p3: 63%; --fbhl-p4: 86%; border-radius: 0.15em 0.45em 0.2em 0.5em; }
+/* 색 6종 — --fbhl-c(덧칠 자국 색) + --fbhl-img(삐뚤 가장자리 균일 본체 SVG, 색 구워넣음). */
+.fbhl-yellow { --fbhl-c: 50 98% 62%;  --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%23fddd3f' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+.fbhl-pink   { --fbhl-c: 330 90% 72%; --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%23f877b8' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+.fbhl-purple { --fbhl-c: 270 85% 75%; --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%23bf89f5' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+.fbhl-green  { --fbhl-c: 140 68% 56%; --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%2343db75' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+.fbhl-orange { --fbhl-c: 28 95% 62%;  --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%23fa9842' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+.fbhl-sky    { --fbhl-c: 199 92% 64%; --fbhl-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 30' preserveAspectRatio='none'%3E%3Cpath d='M3 8C2 5 6 3 11 5Q26 9 40 5Q54 2 68 6Q82 9 96 5Q108 2 116 6C119 5 119 6 118 9L118 21C119 25 116 27 111 25Q98 21 84 25Q70 28 56 24Q42 21 28 25Q16 28 8 25C3 27 2 25 3 21Z' fill='%234fc2f8' fill-opacity='0.3'/%3E%3C/svg%3E"); }
+/* 덧칠 자국 자리 8종(r0~r7) — 두 자국이 서로 다른 곳에 → 같은 표시도 매번 다른 stroke, 사람이 칠한 듯. */
+.fbhl-r0 { --fbhl-bx: 24%; --fbhl-bx2: 67%; }
+.fbhl-r1 { --fbhl-bx: 58%; --fbhl-bx2: 19%; }
+.fbhl-r2 { --fbhl-bx: 41%; --fbhl-bx2: 78%; }
+.fbhl-r3 { --fbhl-bx: 72%; --fbhl-bx2: 33%; }
+.fbhl-r4 { --fbhl-bx: 33%; --fbhl-bx2: 55%; }
+.fbhl-r5 { --fbhl-bx: 80%; --fbhl-bx2: 44%; }
+.fbhl-r6 { --fbhl-bx: 16%; --fbhl-bx2: 61%; }
+.fbhl-r7 { --fbhl-bx: 50%; --fbhl-bx2: 27%; }
 
 /* 용어 칩 — [[term]] / [[color:term]] / [[term^주석]] (lib/util/md.ts chipMarksToHtml).
    형광펜(마커칠)과 별개 = 테두리 pill 로 용어/조각을 콕 집기 + ruby(^주석)는 위 작은 주석.
