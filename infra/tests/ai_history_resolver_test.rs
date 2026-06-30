@@ -49,28 +49,33 @@ fn resolve_returns_recent_messages() {
 }
 
 #[test]
-fn resolve_filters_system_role() {
+fn resolve_includes_system_role_as_ai() {
+    // AI 응답은 이 스토어에서 role "system" 으로 저장된다 → 직전 발언을 기억하려면 history 에 포함해야 한다
+    // (옛엔 제외해 망각하던 root, hub 는 system→assistant 로 이미 포함). 이제 [AI] 라벨로 포함.
     let (mgr, _dir) = manager();
     let messages = serde_json::json!([
-        {"role": "system", "content": "system init"},
+        {"role": "system", "content": "이전 답변 내용"},
         {"role": "user", "content": "안녕"},
     ]);
     mgr.save_sync("admin", "c1", "test", &messages, None).unwrap();
     let resolver = HistoryResolver::new(mgr);
     let ctx = resolver.resolve("admin", Some("c1")).unwrap();
-    assert!(!ctx.contains("system init"));
+    assert!(ctx.contains("이전 답변 내용")); // AI 응답(system) 포함
     assert!(ctx.contains("안녕"));
+    assert!(ctx.contains("[AI]")); // system → AI 라벨
 }
 
 #[test]
-fn resolve_returns_none_when_only_system_messages() {
+fn resolve_includes_lone_system_message() {
+    // AI 응답(system) 하나만 있어도 컨텍스트 생성 (옛엔 None — system 제외라서). 이제 포함되어 Some.
     let (mgr, _dir) = manager();
     let messages = serde_json::json!([
-        {"role": "system", "content": "init"}
+        {"role": "system", "content": "init reply"}
     ]);
     mgr.save_sync("admin", "c1", "test", &messages, None).unwrap();
     let resolver = HistoryResolver::new(mgr);
-    assert!(resolver.resolve("admin", Some("c1")).is_none());
+    let ctx = resolver.resolve("admin", Some("c1")).unwrap();
+    assert!(ctx.contains("init reply"));
 }
 
 // ── compress_history_with_search (벡터 spread 판정) ──────────────────────
