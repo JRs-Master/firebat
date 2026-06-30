@@ -10,6 +10,7 @@
         "data"
       ],
       "additionalProperties": false,
+      "synonyms": { "candles": "data", "ohlcv": "data" },
       "columnar": { "target": "data", "map": { "dates": "date", "date": "date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume" } },
       "properties": {
         "symbol": {

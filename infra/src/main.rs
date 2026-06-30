@@ -548,6 +548,10 @@ async fn main() -> Result<()> {
             .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
+            // CLI session resume — AiManager must hold the ConversationManager to read/persist the per-conv
+            // cli_session_id (get_cli_session / set_cli_session). Without this the resume + persist gates both
+            // skip silently → --resume never fires (0/N sessions stored) → multi-turn continuity breaks for CLI.
+            .with_conversation_manager(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())
             .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())
