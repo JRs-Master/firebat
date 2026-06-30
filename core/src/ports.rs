@@ -1436,10 +1436,6 @@ pub struct HubContext {
     /// 허용 Library Reference ID 배열. 빈 배열 = library 검색 0.
     #[serde(rename = "allowedReferences", default)]
     pub allowed_references: Vec<String>,
-    /// hub 대화 history — hub_messages 테이블 영역 recent N 메시지.
-    /// AiManager 가 system_prompt 영역에 prepend (HistoryResolver 우회).
-    #[serde(default)]
-    pub history: Vec<ChatMessage>,
     /// hub instance 커스텀 시스템 프롬프트 (선택). AiManager 가 기본 시스템 프롬프트(에이전트·plan·render 규칙)에
     /// **추가** 합성한다 — 옛 방식(llm_opts.system_prompt 로 replace)은 plan_prefix·plan_instruction(실행 지시)·
     /// history·메모리 빌드 블록 전체를 건너뛰어 hub 가 admin 과 다르게 행동(인사·plan 실행 누락)하던 root. None = 기본만.

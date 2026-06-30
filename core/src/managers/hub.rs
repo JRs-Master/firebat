@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use crate::managers::ai::{AiManager, AiResponse};
 use crate::ports::{
-    AiRequestOpts, ChatMessage, HubContext, HubConversation, HubInstance,
+    AiRequestOpts, HubContext, HubConversation, HubInstance,
     HubMessage, IHubPort, InfraResult, LlmCallOpts,
 };
 
@@ -568,15 +568,15 @@ impl HubManager {
         self.port.list_messages(conversation_id).await
     }
 
-    /// Unified entry called by the external hub endpoint — applies guards + history + invokes AiManager +
-    /// persists the AI response.
+    /// Unified entry called by the external hub endpoint — applies guards + invokes AiManager. History build
+    /// and persistence (user + system) both happen inside process_with_tools (the single shared path with
+    /// admin, owner/ids injected via ai_opts) — no hub-specific history/persist here anymore.
     ///
     /// Flow:
-    ///   1. Build HubContext from the instance's allowed_sysmods / allowed_references
-    ///   2. Build recent-N ChatMessage history (for prepend) from prior messages
-    ///   3. Build AiRequestOpts + LlmCallOpts + call AiManager.process_with_tools_opts
-    ///   4. Persist the AI response via append_system_message
-    ///   5. Return AiResponse (the route layer wraps it as SSE)
+    ///   1. Build HubContext from the instance's allowed_sysmods / allowed_references / custom directive
+    ///   2. Build AiRequestOpts (owner = hub:<inst>:<sid> + message ids) + LlmCallOpts
+    ///   3. Call AiManager.process_with_tools_opts_with_emit (builds history + persists turn)
+    ///   4. Return AiResponse (the route layer wraps it as SSE)
     pub async fn send_message(
         &self,
         ai: Arc<AiManager>,
@@ -590,42 +590,8 @@ impl HubManager {
         user_msg_id: Option<String>,
         emit: Option<tokio::sync::mpsc::Sender<crate::managers::ai::AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
-        const HISTORY_RECENT_LIMIT: usize = 10;
-
-        // List prior messages (the current user message is already persisted by the caller via
-        // append_user_message). Build from the recent N. Single store = app.db (self.list_messages).
-        let all_messages = self.list_messages(conversation_id).await?;
-        let start = all_messages.len().saturating_sub(HISTORY_RECENT_LIMIT);
-        let recent = &all_messages[start..];
-        let history: Vec<ChatMessage> = recent
-            .iter()
-            .filter_map(|m| {
-                let content = m.content.clone().unwrap_or_default();
-                if content.trim().is_empty() {
-                    return None;
-                }
-                Some(ChatMessage {
-                    role: match m.role.as_str() {
-                        "system" => "assistant".to_string(),
-                        other => other.to_string(),
-                    },
-                    content: serde_json::Value::String(content),
-                    image: None,
-                    image_mime_type: None,
-                })
-            })
-            .collect();
-
-        // Diagnostic — track the "same session loses earlier context" symptom. Logs conversation_id /
-        // total message count / prepended history count. On a repro: total=1 (only the current message)
-        // means ensure_conversation handed back a new/different conv; total>1 with history=0 means a filter issue.
-        tracing::info!(
-            category = "hub",
-            "hub send_message — conv={} 전체메시지={} history={}",
-            conversation_id,
-            all_messages.len(),
-            history.len()
-        );
+        // Conversation history is built inside process_with_tools (the single shared path: owner-keyed
+        // recent-N via HistoryResolver) — no hub-specific history build here anymore. owner injected below.
 
         // session_id — fetched from the conversation; feeds the per-visitor isolation owner.
         // owner "hub:<instance_id>:<session_id>" is auto-injected per tool call inside ai.rs.
@@ -651,7 +617,6 @@ impl HubManager {
             session_id,
             allowed_sysmods: instance.allowed_sysmods.clone(),
             allowed_references: instance.allowed_references.clone(),
-            history,
             instance_directive,
         };
 

@@ -893,37 +893,12 @@ impl AiManager {
                     .filter(|s| !s.is_empty())
                     .map(|cid| crate::utils::build_session::active_session_for_conv(cid).is_some())
                     .unwrap_or(false);
-                // hub 영역 = HistoryResolver 우회 + hub_context.history 직접 format prepend.
-                // hub_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
-                if let Some(ctx) = &ai_opts.hub_context {
-                    if !ctx.history.is_empty() {
-                        let mut s = String::from("## 최근 대화 컨텍스트\n");
-                        for msg in ctx.history.iter() {
-                            let role_label = match msg.role.as_str() {
-                                "user" => "사용자",
-                                "assistant" | "system" => "AI",
-                                _ => continue,
-                            };
-                            let content_str = msg.content.as_str().unwrap_or("");
-                            let preview: String = content_str.chars().take(200).collect();
-                            if !preview.trim().is_empty() {
-                                s.push_str(&format!("- [{}]: {}\n", role_label, preview));
-                            }
-                        }
-                        if s.lines().count() > 1 {
-                            extra_parts.push(s);
-                        }
-                    }
-                    // instance 커스텀 지침 — 기본 프롬프트(에이전트·plan·render 규칙)에 **추가** (replace 아님).
-                    // 옛 방식(llm_opts.system_prompt=instance)은 이 블록 전체를 skip 해 hub 가 인사·plan 실행 누락하던 root.
-                    if let Some(directive) = ctx
-                        .instance_directive
-                        .as_deref()
-                        .filter(|d| !d.trim().is_empty())
-                    {
-                        extra_parts.push(format!("## 이 어시스턴트의 추가 지침\n{}", directive));
-                    }
-                } else if let Some(hr) = &self.history_resolver {
+                // Conversation history — ONE path for admin & hub (owner/conv_id injected; no hub/admin branch).
+                // Direct recent-N from the single owner-keyed store (robust, always present — now includes AI
+                // replies via resolve's system→AI fix) + vector recall of relevant older/cross-conv turns as a
+                // supplement. The old split (hub used hub_context.history / admin used the resolver) was the
+                // divergence that made admin lose context when the embedding lagged. owner = the injected id.
+                if let Some(hr) = &self.history_resolver {
                     let owner = effective_opts
                         .owner
                         .as_deref()
@@ -933,13 +908,11 @@ impl AiManager {
                         .conversation_id
                         .as_deref()
                         .or(ai_opts.conversation_id.as_deref());
-                    // 직전 연속성 — recent N턴 (현재 대화 그대로).
+                    // 직전 연속성 — recent N턴 (현재 대화, owner-keyed 단일 스토어).
                     if let Some(hist) = hr.resolve(owner, conv_id) {
                         extra_parts.push(hist);
                     }
-                    // 관련 과거 회상 — 벡터(E5) 검색. embedder 만 있으면 작동 (ai-router 토글 무관 —
-                    // 4-tier RetrievalEngine 과 별개). 현재 대화 밖 의미 매칭 대화를 full Q&A 로 주입.
-                    // 빌드 세션 중엔 skip — 빌드 진행 칩이 prompt 라 검색이 헛돔.
+                    // 관련 과거 회상 — 벡터(E5) 보강. 빌드 세션 중엔 skip (진행 칩이 prompt 라 헛돔).
                     if !build_active {
                         let search = hr
                             .compress_history_with_search(
@@ -954,6 +927,16 @@ impl AiManager {
                             extra_parts.push(search.context_summary);
                         }
                     }
+                }
+                // hub instance 커스텀 지침 — admin 엔 없는 capability(history 아님). 기본 프롬프트(에이전트·plan·
+                // render 규칙)에 **추가** 합성 (hub_context 있을 때만 = 정당한 capability 게이트).
+                if let Some(directive) = ai_opts
+                    .hub_context
+                    .as_ref()
+                    .and_then(|c| c.instance_directive.as_deref())
+                    .filter(|d| !d.trim().is_empty())
+                {
+                    extra_parts.push(format!("## 이 어시스턴트의 추가 지침\n{}", directive));
                 }
 
                 // RetrievalEngine 자동 prepend (Recall 회상) — **토글 무관 항상** (Phase C split, 2026-06-14).

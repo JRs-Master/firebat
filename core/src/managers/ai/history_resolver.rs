@@ -229,8 +229,10 @@ impl HistoryResolver {
                 .unwrap_or("?");
             let role_label = match role {
                 "user" => "사용자",
-                "assistant" => "AI",
-                _ => continue, // system / tool 메시지는 컨텍스트에서 제외
+                // AI 응답 = role "system" (이 스토어 규약). 직전 발언을 기억하려면 history 에 포함해야 한다
+                // (hub 는 system→assistant 매핑으로 이미 포함, admin 은 빠뜨려 망각하던 root). "assistant" 동일.
+                "assistant" | "system" => "AI",
+                _ => continue, // tool 등만 제외
             };
             // firebat-render fence(X) → 텍스트 값만 (직전 대화 주입에 raw JSON 안 섞이게).
             let content = super::render_exec::fence_to_plaintext(
