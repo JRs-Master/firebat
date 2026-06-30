@@ -707,7 +707,7 @@ impl HubManager {
 
 /// origin (scheme + host[:port]) 가 host (호스트 only) 와 같은 사이트인지 판정.
 /// page mode / admin demo 가 자기 서버에서 위젯 호출할 때 자동 허용용.
-/// 예: origin="https://firebat.co.kr", host="firebat.co.kr" → true.
+/// 예: origin="https://example.com", host="example.com" → true.
 fn origin_matches_host(origin: &str, host: &str) -> bool {
     if origin == host {
         return true;
