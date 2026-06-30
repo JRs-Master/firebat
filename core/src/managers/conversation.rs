@@ -370,6 +370,35 @@ impl ConversationManager {
             data_json,
             created_at: created,
         });
+
+        // Trigger embedding sync for search_history. The canonical single-message append is now the only
+        // chat-persist path (save() is off the chat path), so embeddings must be generated here — otherwise
+        // new conversations never get indexed and become unsearchable. Fire-and-forget background task keeps
+        // this hot path non-blocking (same pattern as auth login). The task reloads the full committed
+        // message array so msg_idx = position, matching get_conversation / search_history ordering.
+        if let Some(embedder) = &self.embedder {
+            let db = self.db.clone();
+            let embedder = embedder.clone();
+            let log = self.log.clone();
+            let owner = owner.to_string();
+            let conv_id = conv_id.to_string();
+            tokio::spawn(async move {
+                if let Some(rec) = db.get_conversation(&owner, &conv_id) {
+                    if let Some(arr) = rec.messages.as_array() {
+                        if let Err(e) =
+                            sync_conversation_embeddings(&db, &embedder, &log, &owner, &conv_id, arr)
+                                .await
+                        {
+                            if let Some(l) = &log {
+                                l.debug(&format!(
+                                    "[ConversationManager] append embedding sync failed ({conv_id}): {e}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /// Update title (by id) — shared by rename and auto-title.
@@ -428,8 +457,8 @@ impl ConversationManager {
 
     // ── 임베딩 sync + search_history (Phase B-18 Step 1.5) ────────────────────
 
-    /// 메시지 배열 ↔ 기존 임베딩 비교 → 변경·신규만 재임베딩, 사라진 인덱스는 일괄 삭제.
-    /// 옛 TS `syncEmbeddings` 1:1 port. embedder 미설정 시 즉시 반환.
+    /// Thin wrapper — delegates to the standalone `sync_conversation_embeddings` so both `save()` and the
+    /// background task spawned by `append()` share one implementation.
     async fn sync_embeddings(
         &self,
         owner: &str,
@@ -439,82 +468,7 @@ impl ConversationManager {
         let Some(embedder) = self.embedder.as_ref() else {
             return Ok(());
         };
-
-        // 기존 임베딩 (msg_idx → content_hash) 로드
-        let existing_rows = self.db.list_conversation_embeddings(owner, conv_id);
-        let existing: std::collections::HashMap<i64, String> = existing_rows
-            .into_iter()
-            .map(|m| (m.msg_idx, m.content_hash))
-            .collect();
-
-        let now = crate::utils::time::now_ms();
-
-        let mut keep_idx: std::collections::HashSet<i64> = std::collections::HashSet::new();
-        let mut embedded_count = 0usize;
-
-        for (i, msg) in messages.iter().enumerate() {
-            let i_idx = i as i64;
-            let Some(parsed) = message_to_text(msg) else {
-                continue;
-            };
-            keep_idx.insert(i_idx);
-            let hash = sha1_hex(&format!("{}:{}", embedder.version(), parsed.text));
-
-            // 기존 hash 와 같으면 변경 없음 → skip
-            if existing.get(&i_idx) == Some(&hash) {
-                continue;
-            }
-
-            // 임베딩 생성 (실패 시 해당 메시지 스킵 — 옛 TS try/catch 와 동등)
-            match embedder.embed_passage(&parsed.text).await {
-                Ok(vec) => {
-                    let preview = take_chars(&parsed.text, CONTENT_PREVIEW_MAX);
-                    let blob = embedder.vec_to_bytes(&vec);
-                    let row = ConversationEmbeddingRow {
-                        conv_id: conv_id.to_string(),
-                        conv_title: None, // upsert 시 미사용
-                        owner: owner.to_string(),
-                        msg_idx: i_idx,
-                        role: parsed.role,
-                        content_hash: hash,
-                        content_preview: preview,
-                        embedding: blob,
-                        created_at: now,
-                    };
-                    let _ = self.db.upsert_conversation_embedding(&row);
-                    embedded_count += 1;
-                }
-                Err(e) => {
-                    if let Some(log) = &self.log {
-                        log.debug(&format!(
-                            "[ConversationManager] 임베딩 실패 (msg {}): {e}",
-                            i_idx
-                        ));
-                    }
-                }
-            }
-        }
-
-        if embedded_count > 0 {
-            if let Some(log) = &self.log {
-                log.info(&format!(
-                    "대화 임베딩 갱신 — 신규/변경 {}건 (conv={})",
-                    embedded_count, conv_id
-                ));
-            }
-        }
-
-        // 사라진 msg_idx 일괄 삭제 (한 쿼리 — 옛 TS 와 동등)
-        let to_delete: Vec<i64> = existing
-            .keys()
-            .copied()
-            .filter(|idx| !keep_idx.contains(idx))
-            .collect();
-        if !to_delete.is_empty() {
-            self.db
-                .delete_conversation_embeddings_by_idx(owner, conv_id, &to_delete);
-        }
-        Ok(())
+        sync_conversation_embeddings(&self.db, embedder, &self.log, owner, conv_id, messages).await
     }
 
     /// 과거 대화 검색 — query 임베딩 ↔ 저장된 메시지 임베딩 cosine.
@@ -615,6 +569,94 @@ impl ConversationManager {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+
+/// Embedding sync core — standalone (no `&self`) so the background task in `append()` can run it from
+/// cloned Arcs. Compares the message array against stored embeddings, re-embeds new/changed messages
+/// (idempotent via content_hash), and deletes embeddings for indices no longer present. `msg_idx` =
+/// position in `messages`, matching the ordering that `get_conversation` and `search_history` use.
+async fn sync_conversation_embeddings(
+    db: &Arc<dyn IDatabasePort>,
+    embedder: &Arc<dyn IEmbedderPort>,
+    log: &Option<Arc<dyn ILogPort>>,
+    owner: &str,
+    conv_id: &str,
+    messages: &[serde_json::Value],
+) -> Result<(), String> {
+    // Load existing embeddings (msg_idx -> content_hash).
+    let existing_rows = db.list_conversation_embeddings(owner, conv_id);
+    let existing: std::collections::HashMap<i64, String> = existing_rows
+        .into_iter()
+        .map(|m| (m.msg_idx, m.content_hash))
+        .collect();
+
+    let now = crate::utils::time::now_ms();
+
+    let mut keep_idx: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut embedded_count = 0usize;
+
+    for (i, msg) in messages.iter().enumerate() {
+        let i_idx = i as i64;
+        let Some(parsed) = message_to_text(msg) else {
+            continue;
+        };
+        keep_idx.insert(i_idx);
+        let hash = sha1_hex(&format!("{}:{}", embedder.version(), parsed.text));
+
+        // Unchanged hash → skip re-embedding.
+        if existing.get(&i_idx) == Some(&hash) {
+            continue;
+        }
+
+        // Embed (skip this message on failure).
+        match embedder.embed_passage(&parsed.text).await {
+            Ok(vec) => {
+                let preview = take_chars(&parsed.text, CONTENT_PREVIEW_MAX);
+                let blob = embedder.vec_to_bytes(&vec);
+                let row = ConversationEmbeddingRow {
+                    conv_id: conv_id.to_string(),
+                    conv_title: None, // unused on upsert
+                    owner: owner.to_string(),
+                    msg_idx: i_idx,
+                    role: parsed.role,
+                    content_hash: hash,
+                    content_preview: preview,
+                    embedding: blob,
+                    created_at: now,
+                };
+                let _ = db.upsert_conversation_embedding(&row);
+                embedded_count += 1;
+            }
+            Err(e) => {
+                if let Some(log) = log {
+                    log.debug(&format!(
+                        "[ConversationManager] embedding failed (msg {}): {e}",
+                        i_idx
+                    ));
+                }
+            }
+        }
+    }
+
+    if embedded_count > 0 {
+        if let Some(log) = log {
+            log.info(&format!(
+                "대화 임베딩 갱신 — 신규/변경 {}건 (conv={})",
+                embedded_count, conv_id
+            ));
+        }
+    }
+
+    // Delete embeddings for indices that no longer exist (single query).
+    let to_delete: Vec<i64> = existing
+        .keys()
+        .copied()
+        .filter(|idx| !keep_idx.contains(idx))
+        .collect();
+    if !to_delete.is_empty() {
+        db.delete_conversation_embeddings_by_idx(owner, conv_id, &to_delete);
+    }
+    Ok(())
+}
 
 #[derive(Debug)]
 struct ParsedMessage {
