@@ -630,6 +630,8 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "execute: path 필수".to_string())?
                     .to_string();
+                // execute = user/modules only (system modules via sysmod_*). Confine like file tools.
+                let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 let input = args.get("inputData").cloned().unwrap_or(serde_json::json!({}));
                 if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
                     return Ok(serde_json::json!({"success": false, "error": "execute: inputData 빈 객체 금지. 모듈 입력 필드를 채우거나 시스템 모듈이면 sysmod_* 사용."}));
@@ -677,12 +679,12 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         },
     );
 
-    // request_secret — 시크릿 등록 여부 + 값 조회. (AI 가 키 저장은 못 함 — 사용자만 등록.)
+    // request_secret — 시크릿 등록 여부만 (present). 값은 절대 AI 에 반환 안 함(인젝션 유출 방지 — 모듈은 sandbox env 로 받음). AI 는 키 저장 불가 — 사용자만 등록.
     let secret = h.secret.clone();
     tools.register_tool(
         ToolDefinition {
             name: "request_secret".to_string(),
-            description: "시크릿 조회 (등록 여부 present + 값). AI 는 키 저장 불가 — 사용자가 설정에서 직접 등록.".to_string(),
+            description: "시크릿 등록 여부 조회 (present). 값 자체는 반환하지 않음. AI 는 키 저장 불가 — 사용자가 설정에서 직접 등록.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "name": {"type": "string"} },
@@ -698,9 +700,8 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "request_secret: name 필수".to_string())?
                     .to_string();
-                let value = secret.get_user(&name).unwrap_or_default();
-                let present = !value.is_empty();
-                Ok(serde_json::json!({"success": true, "name": name, "present": present, "value": value}))
+                let present = !secret.get_user(&name).unwrap_or_default().is_empty();
+                Ok(serde_json::json!({"success": true, "name": name, "present": present}))
             }
         },
     );
@@ -732,6 +733,11 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "network_request: url 필수".to_string())?
                     .to_string();
+                // SSRF guard — block internal/private/metadata targets (prompt-injection defense).
+                if let Some(reason) = crate::utils::net_guard::is_blocked_fetch_url(&url) {
+                    tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF 차단");
+                    return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — 내부/사설 주소 요청은 차단됩니다")}));
+                }
                 let method = args
                     .get("method")
                     .and_then(|v| v.as_str())

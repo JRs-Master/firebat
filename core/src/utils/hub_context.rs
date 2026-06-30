@@ -282,6 +282,26 @@ pub fn is_hub_readonly_tool(name: &str) -> bool {
 /// path and leaves the leak open. The injected keys (`project="hub:<inst>"`, `hubOwner`/`_hubScope`
 /// = `"<inst>:<sess>"`) travel in args on BOTH paths. Mirrors `isHubScopedPath` in
 /// app/api/hub/[slug]/fs/route.ts.
+/// AI 파일도구 confine (admin / no-hub-scope 경로) — `user/` 콘텐츠 존 화이트리스트.
+/// `..` 거부, 절대경로·`system/`·`data/`·바이너리 등 user/ 밖은 전부 거부. 빈/`.` 은 `user` 로.
+/// confine_hub_path(admin 분기) + execute 도구가 공유. AI 의 폭발 반경을 user/ 로 제한하는 단일 지점.
+pub fn confine_to_user(path: &str) -> Result<String, String> {
+    let norm = path.replace('\\', "/");
+    let norm = norm.trim_start_matches("./").trim_start_matches('/').to_string();
+    if norm.is_empty() || norm == "." {
+        return Ok("user".to_string());
+    }
+    if norm.split('/').any(|seg| seg == "..") {
+        return Err(format!("path traversal denied: {path}"));
+    }
+    if norm == "user" || norm.starts_with("user/") {
+        return Ok(norm);
+    }
+    Err(format!(
+        "file access is restricted to the user/ workspace (got '{path}'); system source, data, and binaries are off-limits — use get_module_config / list_system_modules for module metadata"
+    ))
+}
+
 pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<String, String> {
     // 전체 스코프 추출(project(hub:<...>) 우선, 없으면 hubOwner/_hubScope). 옛 코드는 split(':').next() 로 instance 만
     // 떼 fs 가 인스턴스 공유였음 → 전체 scope(`<inst>:<sid>`) 보존 + 경로를 세션 디렉토리로 rewrite 해 세션 격리.
@@ -299,7 +319,14 @@ pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<String, 
         })
         .filter(|s| !s.is_empty());
     let Some(scope) = scope else {
-        return Ok(path.to_string()); // admin / no hub scope = unrestricted
+        // admin / no hub scope — AI file tools are confined to the user/ content zone.
+        // Even with admin privilege, the AI's instructions can be hijacked by untrusted content
+        // (scraped pages, hub visitors, library docs) = prompt injection → confine the blast radius.
+        // Blocks system/ source (symlink), data/ (DBs + vault), the binary, frontend, runtime deps.
+        // System module metadata is reachable only via dedicated tools (get_module_config /
+        // list_system_modules). The human admin file browser (grpc StorageService) bypasses this
+        // function entirely, so its behavior is unchanged.
+        return confine_to_user(path);
     };
     let norm = path.replace('\\', "/");
     let norm = norm.trim_start_matches('/').to_string();
@@ -333,6 +360,26 @@ pub fn confine_hub_path(args: &serde_json::Value, path: &str) -> Result<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admin_fs_confined_to_user_zone() {
+        // no hub scope = admin. AI 파일도구는 user/ 안만 — system/data/binary 차단.
+        let admin = serde_json::json!({});
+        let c = |p: &str| confine_hub_path(&admin, p);
+        // 허용 — user/ 콘텐츠
+        assert_eq!(c("user/modules/x/index.mjs").unwrap(), "user/modules/x/index.mjs");
+        assert_eq!(c("user").unwrap(), "user");
+        assert_eq!(c(".").unwrap(), "user");
+        assert_eq!(c("").unwrap(), "user");
+        // 거부 — 시스템 소스 / DB·vault / 바이너리 / 절대경로 / traversal
+        assert!(c("system/modules/kma-weather/index.mjs").is_err());
+        assert!(c("data/vault.db").is_err());
+        assert!(c("data/app.db").is_err());
+        assert!(c("firebat-core").is_err());
+        assert!(c("frontend/server.js").is_err());
+        assert!(c("/etc/passwd").is_err());
+        assert!(c("user/../system/x").is_err());
+    }
 
     #[test]
     fn no_scope_means_admin_context() {
@@ -484,9 +531,11 @@ mod tests {
         assert_eq!(confine_hub_path(&hub2, "user/hub/inst-B/notes/a.md").unwrap(), "user/hub/inst-B/sess-1/notes/a.md");
         assert_eq!(confine_hub_path(&hub2, "user/hub/inst-B/sess-1/x.js").unwrap(), "user/hub/inst-B/sess-1/x.js");
         assert!(confine_hub_path(&hub2, "user/hub/inst-A/x").is_err());
-        // admin / no hub scope key = unrestricted
+        // admin / no hub scope key = confined to user/ (system/data/binary blocked) — see
+        // admin_fs_confined_to_user_zone for the full matrix.
         let admin = json!({});
-        assert!(confine_hub_path(&admin, "system/modules/x/config.json").is_ok());
-        assert!(confine_hub_path(&admin, "anywhere/at/all").is_ok());
+        assert!(confine_hub_path(&admin, "system/modules/x/config.json").is_err());
+        assert!(confine_hub_path(&admin, "anywhere/at/all").is_err());
+        assert!(confine_hub_path(&admin, "user/modules/x.js").is_ok());
     }
 }

@@ -1083,6 +1083,12 @@ pub struct ExecuteHandler {
 impl McpToolHandler for ExecuteHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
+        // execute = user/modules only (system modules via sysmod_*). Same confine as file tools —
+        // blocks executing module source under system/ etc. (admin → user/ zone, hub → session jail).
+        let path = match firebat_core::utils::hub_context::confine_hub_path(&args, &path) {
+            Ok(p) => p,
+            Err(e) => return Ok(serde_json::json!({"success": false, "error": e})),
+        };
         let input = args
             .get("inputData")
             .cloned()
@@ -1284,9 +1290,10 @@ pub struct RequestSecretHandler {
 impl McpToolHandler for RequestSecretHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let name = obj_str(&args, "name").ok_or_else(|| "name 필수".to_string())?;
-        let value = self.secret.get_user(&name).unwrap_or_default();
-        let present = !value.is_empty();
-        Ok(serde_json::json!({"success": true, "name": name, "present": present, "value": value}))
+        // Return presence only — never the secret VALUE into the AI context (prompt-injection
+        // exfil risk). Modules receive secrets via sandbox env injection, not through the AI.
+        let present = !self.secret.get_user(&name).unwrap_or_default().is_empty();
+        Ok(serde_json::json!({"success": true, "name": name, "present": present}))
     }
 }
 
@@ -1646,6 +1653,11 @@ pub struct NetworkRequestHandler {
 impl McpToolHandler for NetworkRequestHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let url = obj_str(&args, "url").ok_or_else(|| "url 필수".to_string())?;
+        // SSRF guard — block internal/private/metadata targets (prompt-injection defense).
+        if let Some(reason) = firebat_core::utils::net_guard::is_blocked_fetch_url(&url) {
+            tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF 차단");
+            return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — 내부/사설 주소 요청은 차단됩니다")}));
+        }
         let method = obj_str(&args, "method").unwrap_or_else(|| "GET".to_string());
         let headers: Option<std::collections::HashMap<String, String>> = args
             .get("headers")
