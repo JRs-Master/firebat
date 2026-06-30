@@ -23,7 +23,8 @@
 /// One grounded-param requirement parsed from a module config's `grounding` object.
 #[derive(Debug, Clone)]
 pub struct GroundedParam {
-    /// Param name in the action's input (e.g. "stk_cd").
+    /// Param name in the action's input (e.g. "stk_cd"). Matched case-insensitively against args
+    /// (some providers accept both `FID_INPUT_ISCD` and `fid_input_iscd`).
     pub param: String,
     /// Guidance returned to the model when the value isn't grounded — how to resolve it.
     pub hint: String,
@@ -31,11 +32,19 @@ pub struct GroundedParam {
     /// *produce* provenance for it (e.g. ka10100 종목정보 조회 takes a code to confirm it).
     /// Gating these would block the very lookup that grounds the value (chicken-and-egg).
     pub exempt_actions: Vec<String>,
+    /// Optional value shape — only tokens matching this regex are gated. Use when a param is
+    /// **overloaded**: e.g. korea-invest `FID_INPUT_ISCD` holds a 6-digit stock code (needs
+    /// grounding) but also fixed index/sector codes (`0001` 코스피) and member codes (must NOT be
+    /// gated). `^Q?[0-9]{6}$` gates only stock codes; 4-digit index codes don't match → pass.
+    /// `None` = gate every token (kiwoom `stk_cd` is never overloaded).
+    pub pattern: Option<regex::Regex>,
 }
 
 /// Parse `config.grounding` into requirements.
-/// Shape: `{ "<param>": { "resolveHint": "<text>", "exemptActions": ["<action>", ...] }, ... }`.
+/// Shape: `{ "<param>": { "resolveHint": "<text>", "exemptActions": ["<action>", ...],
+///          "pattern": "<regex>" }, ... }`.
 /// Missing / malformed → empty (opt-in: a module without `grounding` is never gated).
+/// An invalid `pattern` regex is dropped (treated as no pattern = gate all) rather than failing.
 pub fn parse_grounding(config: &serde_json::Value) -> Vec<GroundedParam> {
     let Some(obj) = config.get("grounding").and_then(|v| v.as_object()) else {
         return Vec::new();
@@ -58,23 +67,36 @@ pub fn parse_grounding(config: &serde_json::Value) -> Vec<GroundedParam> {
                         .collect()
                 })
                 .unwrap_or_default(),
+            pattern: spec
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .and_then(|p| regex::Regex::new(p).ok()),
         })
         .collect()
 }
 
+/// Case-insensitive field lookup in a JSON object (exact match first, then ascii-ci fallback).
+fn get_ci<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    let obj = v.as_object()?;
+    if let Some(found) = obj.get(key) {
+        return Some(found);
+    }
+    obj.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .map(|(_, val)| val)
+}
+
 /// Tokens to validate for one grounded param in `args`.
 /// A value may carry several ids (a multi-symbol field) — split on common delimiters so each
-/// is checked. Empty / whitespace tokens are dropped.
+/// is checked. Empty / whitespace tokens are dropped. Param matched case-insensitively, also
+/// under a nested `params` object.
 fn arg_tokens(args: &serde_json::Value, param: &str) -> Vec<String> {
-    let raw = match args.get(param) {
+    let val = get_ci(args, param)
+        .or_else(|| args.get("params").and_then(|p| get_ci(p, param)));
+    let raw = match val {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(serde_json::Value::Number(n)) => n.to_string(),
-        // Some sysmods nest fields under `params` — also look there.
-        _ => match args.get("params").and_then(|p| p.get(param)) {
-            Some(serde_json::Value::String(s)) => s.clone(),
-            Some(serde_json::Value::Number(n)) => n.to_string(),
-            _ => return Vec::new(),
-        },
+        _ => return Vec::new(),
     };
     raw.split(|c: char| c == ',' || c == ';' || c == '|' || c == '/' || c.is_whitespace())
         .map(|t| t.trim())
@@ -121,6 +143,13 @@ pub fn check_grounding(
             }
         }
         for token in arg_tokens(args, &gp.param) {
+            // Overloaded param: only gate tokens matching the declared id shape (e.g. 6-digit
+            // stock code). Fixed reference codes (index/sector) that don't match are left alone.
+            if let Some(re) = &gp.pattern {
+                if !re.is_match(&token) {
+                    continue;
+                }
+            }
             if !is_grounded(&token, observed) {
                 let hint = if gp.hint.is_empty() {
                     default_hint(&gp.param)
@@ -227,5 +256,37 @@ mod tests {
     fn no_grounded_params_never_gates() {
         let args = json!({ "stk_cd": "088390" });
         assert!(check_grounding(&args, &[], &[]).is_ok());
+    }
+
+    fn kis_grounding() -> serde_json::Value {
+        // korea-invest: FID_INPUT_ISCD is overloaded (stock code vs index/member code) → pattern
+        // gates only 6-digit stock codes.
+        json!({ "grounding": { "FID_INPUT_ISCD": {
+            "resolveHint": "resolve company name → code via dart lookup.",
+            "pattern": "^Q?[0-9]{6}$"
+        } } })
+    }
+
+    #[test]
+    fn pattern_gates_only_matching_shape() {
+        let g = parse_grounding(&kis_grounding());
+        // 6-digit invented stock code → gated (rejected).
+        let stock = json!({ "action": "v1_국내주식-008", "FID_INPUT_ISCD": "088390" });
+        assert!(check_grounding(&stock, &g, &[]).is_err());
+        // 4-digit index code (코스피 0001) → doesn't match pattern → NOT gated (passes).
+        let index = json!({ "action": "v1_국내주식-063", "FID_INPUT_ISCD": "0001" });
+        assert!(check_grounding(&index, &g, &[]).is_ok());
+        // grounded 6-digit code passes.
+        let observed = vec!["모다이노칩 080420".to_string()];
+        let ok = json!({ "action": "v1_국내주식-008", "FID_INPUT_ISCD": "080420" });
+        assert!(check_grounding(&ok, &g, &observed).is_ok());
+    }
+
+    #[test]
+    fn param_matched_case_insensitively() {
+        let g = parse_grounding(&kis_grounding());
+        // lowercase fid_input_iscd (some actions use it) still gated.
+        let lower = json!({ "action": "v1_국내주식-080", "fid_input_iscd": "088390" });
+        assert!(check_grounding(&lower, &g, &[]).is_err());
     }
 }

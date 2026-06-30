@@ -7,6 +7,18 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "grounding": {
+    "FID_INPUT_ISCD": {
+      "pattern": "^Q?[0-9]{6}$",
+      "resolveHint": "A 6-digit domestic stock code (FID_INPUT_ISCD) must come from a lookup, never from memory. Resolve a company name to its code with the dart module {action:lookup, query:<name>} — it returns the official corp_name + stock_code in one call (e.g. 이노칩 -> 모다이노칩 / 080420); the resolved code then works here in the same conversation. If the user gave a raw code, confirm it first (dart lookup of the company, or kiwoom ka10100). If several companies match, present a picker (suggest). Index/sector codes (0001 코스피, 1001 코스닥) and member-firm codes are fixed reference codes and are not gated.",
+      "exemptActions": []
+    },
+    "PDNO": {
+      "pattern": "^Q?[0-9]{6}$",
+      "resolveHint": "A 6-digit order/holdings stock code (PDNO) must come from a lookup or the user, never invented — a wrong code means trading the wrong stock. Resolve a company name to its code via dart {action:lookup}, or confirm a given code first; the resolved code then works. Bond/product codes (KR...) are not affected.",
+      "exemptActions": []
+    }
+  },
   "secrets": [
     {
       "name": "KIS_APP_KEY",
