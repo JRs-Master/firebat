@@ -3,7 +3,6 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 import { createClient } from '@connectrpc/connect';
 import { AiService } from '../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../lib/api-gen/_transport';
-import { saveMessage } from '../../../../lib/api-gen/conversation';
 import { relayChatStream } from '../../../../lib/util/chat-stream-relay';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
@@ -20,6 +19,11 @@ type ChatOpts = {
   planMode?: 'off' | 'auto' | 'always';
   planExecuteId?: string;
   planReviseId?: string;
+  // chat-turn message ids → Rust persists user/system with these ids (single shared path = process_with_tools).
+  userMsgId?: string;
+  aiMsgId?: string;
+  userImage?: string;
+  userSuggestion?: boolean;
 };
 
 /**
@@ -57,16 +61,15 @@ export async function POST(req: NextRequest) {
     ...(planModeNormalized ? { planMode: planModeNormalized } : {}),
     ...(typeof planExecuteId === 'string' && planExecuteId ? { planExecuteId } : {}),
     ...(typeof planReviseId === 'string' && planReviseId ? { planReviseId } : {}),
+    // message ids → Rust persists the turn (user+system) server-side in the single shared path, with these
+    // ids so the client's reconcile matches. Survives SSE disconnect (the old client-tied TS save did not).
+    ...(typeof systemId === 'string' && systemId ? { aiMsgId: systemId } : {}),
+    ...(typeof userId === 'string' && userId ? { userMsgId: userId } : {}),
+    ...(image ? { userImage: image as string } : {}),
+    ...(userSuggestion === true ? { userSuggestion: true } : {}),
   };
-  const saveOpts = {
-    systemId: typeof systemId === 'string' ? systemId : undefined,
-    userId: typeof userId === 'string' ? userId : undefined,
-    userPrompt: prompt,
-    image: typeof image === 'string' ? image : undefined,
-    // suggestion 픽이면 저장되는 user 메시지에 suggestionClick 플래그 — 렌더 시 말풍선 숨김 (히스토리엔 유지).
-    userSuggestion: userSuggestion === true,
-  };
-  return handleToolsMode(prompt, history, opts, req.signal, saveOpts);
+  // Turn persistence is server-side (Rust single path via the ids injected into opts) — no saveOpts needed.
+  return handleToolsMode(prompt, history, opts, req.signal);
 }
 
 /** Function Calling 모드 — 도구 호출 루프를 SSE로 스트리밍 */
@@ -75,7 +78,6 @@ function handleToolsMode(
   _history: Array<{ role: 'user' | 'assistant'; content: string }>,
   opts: ChatOpts,
   abortSignal?: AbortSignal,
-  saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string; userSuggestion?: boolean },
 ) {
   const encoder = new TextEncoder();
 
@@ -116,52 +118,11 @@ function handleToolsMode(
           opts: { optsJson: JSON.stringify(opts ?? {}) },
         } as any);
 
-        // Persist the user message upfront (AI-error-safe) — mirrors hub append_user_message. The backend
-        // append derives the conv title (derive_conv_title), the same authority as hub. So turn persistence
-        // is server-side for both admin & hub; the frontend no longer needs a saveToDb backup.
-        if (opts.conversationId && saveOpts?.userId && saveOpts?.userPrompt) {
-          const userMsg = {
-            id: saveOpts.userId,
-            role: 'user' as const,
-            content: saveOpts.userPrompt,
-            ...(saveOpts.image ? { image: saveOpts.image } : {}),
-            ...(saveOpts.userSuggestion ? { suggestionClick: true } : {}),
-          };
-          try {
-            await saveMessage({ owner: opts.owner || 'admin', conversationId: opts.conversationId, messageJson: JSON.stringify(userMsg) } as any);
-          } catch { /* best-effort upfront save */ }
-        }
-
-        // 공유 relay — chunk/step/result/error 루프 + canonical data 기반 result 이벤트.
-        // hub route 와 동일 헬퍼 (admin·hub 공통 로직). 반환 = 파싱된 최종 result (영속용).
-        const result = await relayChatStream(aiStream, send);
-
-        // ── Persist the AI (system) message — single append, mirrors hub append_system_message ──
-        // The user message was already persisted upfront (above). data = Rust canonical message-data (same
-        // source the relay sent in the result event). suggestions/pendingActions/libraryHits at top-level so
-        // reload restores ✓-buttons / approval cards / SourceTags (renderer reads top-level); blocks via data.
-        if (result && opts.conversationId && saveOpts?.systemId) {
-          try {
-            const mergedData: Record<string, unknown> =
-              result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
-            const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
-            const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
-            const libraryHitsArr = Array.isArray(result.libraryHits) ? (result.libraryHits as unknown[]) : undefined;
-            const systemMsg = {
-              id: saveOpts.systemId,
-              role: 'system' as const,
-              content: result.reply || '',
-              executedActions: result.executedActions,
-              toolResults: result.toolResults,
-              data: mergedData,
-              ...(suggestionsArr && suggestionsArr.length > 0 ? { suggestions: suggestionsArr } : {}),
-              ...(pendingArr && pendingArr.length > 0 ? { pendingActions: pendingArr } : {}),
-              ...(libraryHitsArr && libraryHitsArr.length > 0 ? { libraryHits: libraryHitsArr } : {}),
-              ...(result.error ? { error: result.error } : {}),
-            };
-            await saveMessage({ owner: opts.owner || 'admin', conversationId: opts.conversationId, messageJson: JSON.stringify(systemMsg) } as any);
-          } catch { /* best-effort — server-side persistence */ }
-        }
+        // Persistence (user + system) is server-side now — the single shared path (Rust process_with_tools)
+        // writes the turn with the ai*MsgId injected into `opts` above, in a detached task that survives a
+        // client SSE disconnect. This is the background-resume fix: the old client-tied saveMessage here died
+        // when the client navigated away, so the answer was lost. The relay only drives the live SSE display.
+        await relayChatStream(aiStream, send);
       } catch (err: any) {
         send('error', { error: err?.message || '알 수 없는 오류' });
       }

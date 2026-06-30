@@ -536,11 +536,7 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
 
-        // 3. user 메시지 영속화 (선반영 — AI 실패해도 흐름 보존)
-        let _ = self
-            .manager
-            .append_user_message(&conversation_id, &args.user_message, None)
-            .await;
+        // 3. user/AI 메시지 영속화는 process_with_tools 단일 경로(send_message 내부)가 처리 — 여기서 따로 append 안 함.
 
         // 4. AI 호출 (가드 + history + 영속화 통합). visitor 의 plan_mode + plan_execute_id /
         // plan_revise_id 영역 전파.
@@ -570,6 +566,7 @@ impl HubService for HubServiceImpl {
                 plan_execute_id,
                 plan_revise_id,
                 None, // ai_msg_id — unary HubSendMessage 는 클라 id 미동봉(uuid fallback)
+                None, // user_msg_id — unary (uuid fallback)
                 None, // unary — 스트리밍 emit 없음
             )
             .await
@@ -611,19 +608,16 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::permission_denied)?;
 
-        // 2. 대화 ensure + 3. user 메시지 영속화 (AI history 빌드 전 동기 반영).
+        // 2. 대화 ensure. (영속은 process_with_tools 단일 경로가 처리 — append_user_message 제거.)
         let conversation_id = self
             .manager
             .ensure_conversation(&instance.id, &args.session_id)
             .await
             .map_err(TonicStatus::internal)?;
-        // 클라이언트 발급 메시지 id — 프론트 로컬 메시지와 hub_messages 정렬(admin systemId 패턴). 빈 string = uuid fallback.
+        // 클라이언트 발급 메시지 id — 프론트 로컬 메시지와 conversation rows 정렬(admin systemId 패턴). 빈 string = uuid fallback.
+        // 영속 단일 경로(process_with_tools)에 ai_opts 로 주입돼 user/system 을 이 id 로 저장.
         let user_msg_id = if args.user_msg_id.is_empty() { None } else { Some(args.user_msg_id.clone()) };
         let ai_msg_id = if args.ai_msg_id.is_empty() { None } else { Some(args.ai_msg_id.clone()) };
-        let _ = self
-            .manager
-            .append_user_message(&conversation_id, &args.user_message, user_msg_id)
-            .await;
 
         let plan_mode = match args.plan_mode.as_str() {
             "always" => crate::ports::PlanMode::Always,
@@ -660,6 +654,7 @@ impl HubService for HubServiceImpl {
                     plan_execute_id,
                     plan_revise_id,
                     ai_msg_id,
+                    user_msg_id,
                     Some(event_tx),
                 )
                 .await;

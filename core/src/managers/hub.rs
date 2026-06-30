@@ -587,6 +587,7 @@ impl HubManager {
         plan_execute_id: Option<String>,
         plan_revise_id: Option<String>,
         ai_msg_id: Option<String>,
+        user_msg_id: Option<String>,
         emit: Option<tokio::sync::mpsc::Sender<crate::managers::ai::AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
@@ -678,28 +679,21 @@ impl HubManager {
             plan_mode,
             plan_execute_id,
             plan_revise_id,
+            // Persist is now the single shared path (process_with_tools) — inject the client-issued ids so it
+            // writes user/system with the same ids (reconcile matches). Replaces the old append_*_message here.
+            user_msg_id,
+            ai_msg_id,
             ..Default::default()
         };
 
         // streaming variant — emit 가 Some 이면 admin chat 과 동일하게 chunk/step 이벤트가 채널로 흐름.
         // None 이면 옛 unary 동작 (SendMessage RPC). 영속화는 어느 쪽이든 호출 후 동일.
+        // Persist (user + system) happens inside process_with_tools_opts_with_emit — the single shared path
+        // for admin & hub (owner/ids injected via ai_opts above). No hub-specific append here anymore: that
+        // was the divergence (hub=Rust here / admin=TS route). Now both persist server-side in one place.
         let response = ai
             .process_with_tools_opts_with_emit(user_message, &[], &llm_opts, &ai_opts, emit)
             .await?;
-
-        // Persist the AI response into hub_messages using the canonical message-data builder
-        // (AiResponse::message_data_json) — the same single source the admin path now consumes,
-        // so a new field can never be dropped on one side again (the buildSession/libraryHits
-        // drift root). Includes blocks/suggestions/pendingActions/buildSession so cards survive reload.
-        let data_payload = response.message_data_json();
-        let _ = self
-            .append_system_message(
-                conversation_id,
-                Some(response.reply.clone()),
-                Some(data_payload.to_string()),
-                ai_msg_id,
-            )
-            .await;
 
         Ok(response)
     }

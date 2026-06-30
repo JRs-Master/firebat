@@ -1403,6 +1403,19 @@ pub struct AiRequestOpts {
     /// AI 가 propose_plan 도구 재호출 강제. 옛 TS `planReviseId` 1:1.
     #[serde(rename = "planReviseId", default, skip_serializing_if = "Option::is_none")]
     pub plan_revise_id: Option<String>,
+    /// Chat-turn message ids — the frontend issues them (admin systemId / hub aiMsgId). The single
+    /// persist path (process_with_tools) writes user/system messages with these SAME ids so the client's
+    /// reconcile matches by id. owner from `owner`. None = skip persist (cron/agent turns, no chat UI).
+    #[serde(rename = "userMsgId", default, skip_serializing_if = "Option::is_none")]
+    pub user_msg_id: Option<String>,
+    #[serde(rename = "aiMsgId", default, skip_serializing_if = "Option::is_none")]
+    pub ai_msg_id: Option<String>,
+    /// User-message image (data URL or attachment slug) — persisted with the user message.
+    #[serde(rename = "userImage", default, skip_serializing_if = "Option::is_none")]
+    pub user_image: Option<String>,
+    /// User message is a suggestion-chip pick → persisted with suggestionClick:true (renderer hides bubble).
+    #[serde(rename = "userSuggestion", default)]
+    pub user_suggestion: bool,
 }
 
 /// Hub 컨텍스트 — `AiRequestOpts.hub_context` 안 값.

@@ -578,6 +578,70 @@ impl AiManager {
     /// streaming variant — emit 채널 받음. mpsc::Sender 가 있으면 매 turn 의 reasoning chunk +
     /// 도구 호출 step 이 채널로 전송됨. None = 옛 unary 동작 (event 발생 0).
     /// gRPC server-stream impl 가 본 메서드를 통해 채널을 받아 → tonic Stream 변환.
+    /// Persist the user message for this chat turn — the single persist point shared by admin & hub
+    /// (owner/id injected via ai_opts). No-op without conversation / conversation_id / user_msg_id
+    /// (cron/agent turns have no chat UI). Runs server-side so it survives client SSE disconnect.
+    fn persist_user_msg(&self, ai_opts: &AiRequestOpts, content: &str) {
+        let (Some(conv), Some(conv_id), Some(uid)) = (
+            &self.conversation,
+            ai_opts.conversation_id.as_deref(),
+            ai_opts.user_msg_id.as_deref().filter(|s| !s.is_empty()),
+        ) else {
+            return;
+        };
+        let owner = ai_opts.owner.as_deref().unwrap_or("admin");
+        let mut msg = serde_json::json!({
+            "id": uid, "role": "user", "content": content,
+            "createdAt": crate::utils::time::now_ms(),
+        });
+        if let Some(o) = msg.as_object_mut() {
+            if let Some(img) = ai_opts.user_image.as_deref().filter(|s| !s.is_empty()) {
+                o.insert("image".to_string(), serde_json::json!(img));
+            }
+            if ai_opts.user_suggestion {
+                o.insert("suggestionClick".to_string(), serde_json::json!(true));
+            }
+        }
+        conv.append(owner, conv_id, &msg);
+    }
+
+    /// Persist the AI (system) message for this chat turn — single point (admin & hub), canonical
+    /// `message_data_json`. No-op without conversation / conversation_id / ai_msg_id. Pass the redacted
+    /// response (via `finalize`) so secrets are never stored. Detached server-side → survives disconnect.
+    fn persist_system_msg(&self, ai_opts: &AiRequestOpts, response: &AiResponse) {
+        let (Some(conv), Some(conv_id), Some(aid)) = (
+            &self.conversation,
+            ai_opts.conversation_id.as_deref(),
+            ai_opts.ai_msg_id.as_deref().filter(|s| !s.is_empty()),
+        ) else {
+            return;
+        };
+        let owner = ai_opts.owner.as_deref().unwrap_or("admin");
+        let payload = response.message_data_json();
+        let mut msg = serde_json::json!({
+            "id": aid, "role": "system", "content": response.reply,
+            "createdAt": crate::utils::time::now_ms(),
+        });
+        if let Some(o) = msg.as_object_mut() {
+            for k in ["executedActions", "toolResults", "suggestions", "pendingActions", "libraryHits"] {
+                if let Some(v) = payload.get(k) {
+                    o.insert(k.to_string(), v.clone());
+                }
+            }
+            o.insert("data".to_string(), payload);
+        }
+        conv.append(owner, conv_id, &msg);
+    }
+
+    /// Redact + persist the system message + return the redacted response — one helper for every
+    /// return point of the tool loop (success and early/error returns), so the system message is
+    /// persisted exactly once in the single shared path.
+    fn finalize(&self, ai_opts: &AiRequestOpts, response: AiResponse) -> AiResponse {
+        let red = redact_response(response);
+        self.persist_system_msg(ai_opts, &red);
+        red
+    }
+
     pub async fn process_with_tools_opts_with_emit(
         &self,
         prompt: &str,
@@ -586,6 +650,11 @@ impl AiManager {
         ai_opts: &AiRequestOpts,
         emit: Option<mpsc::Sender<AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
+        // Persist the user message upfront (single shared path, server-side) — before the LLM loop so it is
+        // AI-error-safe AND survives client SSE disconnect (= the background-resume regression root: admin
+        // used to persist in the client-tied TS route). No-op for cron/agent turns (no user_msg_id).
+        self.persist_user_msg(ai_opts, prompt);
+
         // emit helper — None 이면 no-op. Some 이면 try_send (back-pressure 시 silent drop —
         // streaming 안에 critical 이벤트는 없고, drop 되어도 final result 는 그대로 전달).
         let emit_event = |evt: AiStreamEvent| {
@@ -633,7 +702,7 @@ impl AiManager {
                     "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                     reason
                 ));
-                return Ok(redact_response(AiResponse {
+                return Ok(self.finalize(ai_opts, AiResponse {
                     error: Some(crate::i18n::t(
                         "core.error.ai.cost_limit_exceeded",
                         None,
@@ -724,7 +793,7 @@ impl AiManager {
                 .model
                 .clone()
                 .unwrap_or_else(|| self.llm.get_model_id());
-            return Ok(redact_response(AiResponse {
+            return Ok(self.finalize(ai_opts, AiResponse {
                 error: Some(
                     "MCP 토큰이 등록되어 있지 않습니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요."
                         .to_string(),
@@ -1242,7 +1311,7 @@ impl AiManager {
                             "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                             reason
                         ));
-                        return Ok(redact_response(AiResponse {
+                        return Ok(self.finalize(ai_opts, AiResponse {
                             reply: String::new(),
                             blocks: Vec::new(),
                             executed_actions: Vec::new(),
@@ -1929,7 +1998,7 @@ impl AiManager {
             },
         };
 
-        Ok(redact_response(response))
+        Ok(self.finalize(ai_opts, response))
     }
 
     /// Vertex AI 파인튜닝 학습 데이터 기록 — 옛 TS `trainingLogContents` 1:1.
