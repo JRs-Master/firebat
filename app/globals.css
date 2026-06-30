@@ -534,16 +534,20 @@ mark[class^="fbhl-"] {
   /* 손으로 칠한 형광펜 질감 — 균일 그라디언트 대신 군데군데 진한 점(두세 번 덧칠한 듯 불균일).
      색 = --fbhl-c(hue sat light), 칠한 각도(--fbhl-a)·진한 점 위치(--fbhl-p1~4) = 변형이 정함.
      md.ts 가 텍스트 해시로 v1~v4 배정 → 같은 표시도 매번 다른 stroke, 사람이 칠한 듯. */
-  background-image: linear-gradient(
-    var(--fbhl-a, -100deg),
-    hsl(var(--fbhl-c) / 0.18) 0%,
-    hsl(var(--fbhl-c) / 0.64) var(--fbhl-p1, 14%),
-    hsl(var(--fbhl-c) / 0.30) var(--fbhl-p2, 38%),
-    hsl(var(--fbhl-c) / 0.72) var(--fbhl-p3, 58%),
-    hsl(var(--fbhl-c) / 0.32) var(--fbhl-p4, 80%),
-    hsl(var(--fbhl-c) / 0.56) 94%,
-    hsl(var(--fbhl-c) / 0.20) 100%
-  );
+  background-image:
+    /* 시작부 잉크 풀 — 펜을 댄 왼쪽이 종이에 스며 진해짐(비스듬한 시작). */
+    radial-gradient(130% 140% at 0% 55%, hsl(var(--fbhl-c) / 0.20), transparent 50%),
+    /* 본체 — 군데군데 진한 점(덧칠). 피크 alpha 낮춰 떡칠감 완화(0.64/0.72 → 0.44/0.50). */
+    linear-gradient(
+      var(--fbhl-a, -100deg),
+      hsl(var(--fbhl-c) / 0.12) 0%,
+      hsl(var(--fbhl-c) / 0.44) var(--fbhl-p1, 14%),
+      hsl(var(--fbhl-c) / 0.22) var(--fbhl-p2, 38%),
+      hsl(var(--fbhl-c) / 0.50) var(--fbhl-p3, 58%),
+      hsl(var(--fbhl-c) / 0.24) var(--fbhl-p4, 80%),
+      hsl(var(--fbhl-c) / 0.40) 94%,
+      hsl(var(--fbhl-c) / 0.14) 100%
+    );
 }
 .fbhl-yellow { --fbhl-c: 50 98% 62%; }
 .fbhl-pink   { --fbhl-c: 330 90% 72%; }

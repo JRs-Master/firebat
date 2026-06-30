@@ -53,23 +53,30 @@ export function closeStrayScript(html: string): string {
 }
 
 const FBHL_COLORS = 'yellow|green|pink|orange|sky|blue|purple';
+// `색:텍스트` / `color:색 텍스트` 파싱 — 형광펜·flat 강조 공통. 색은 AI 가 의미에 맞게 고른다.
+// 미지정 시 yellow. (답변별 기계적 로테이션은 안 함 — 사용자 요구.)
+function parseHlColor(inner: string): { color: string; text: string } {
+  let color = 'yellow';
+  let text = inner;
+  let cm = inner.match(new RegExp(`^color\\s*:\\s*(${FBHL_COLORS})\\s*[:\\s]\\s*(\\S[\\s\\S]*)$`, 'i'));
+  if (!cm) cm = inner.match(new RegExp(`^(${FBHL_COLORS})\\s*:\\s*(\\S[\\s\\S]*)$`, 'i'));
+  if (cm) { color = cm[1].toLowerCase(); text = cm[2]; }
+  if (color === 'blue') color = 'sky';
+  return { color, text };
+}
+/**
+ * `==text==` → **질감 형광펜**(손으로 그은 마커, v1~v4 변형). 색 `==색:text==`. escape 단계 뒤 호출 →
+ * rehypeRaw native <mark> 렌더(globals.css `.fbhl-*`). 일반(비학습) 강조는 형광펜이 아니라
+ * `[[term]]` 칩(chipMarksToHtml, `<span class="fbchip">` = 질감 없는 플랫 색상 span)을 쓴다.
+ */
 export function highlightMarksToHtml(s: string): string {
   if (!s) return s;
   // 칩(`[[...]]`)은 `==` 없어도 처리 — 형광펜과 같은 inline-마크업 패스에서 함께.
   let out = s.includes('[[') ? chipMarksToHtml(s) : s;
   if (!out.includes('==')) return out;
   out = out.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
-    let color = 'yellow';
-    let text = inner;
-    // CSS식 `color:sky 텍스트` / `color:sky:텍스트` (AI 가 자주 쓰는 형태).
-    let cm = inner.match(new RegExp(`^color\\s*:\\s*(${FBHL_COLORS})\\s*[:\\s]\\s*(\\S[\\s\\S]*)$`, 'i'));
-    // `sky:텍스트` (색이름 뒤 콜론 — 모호하지 않음).
-    if (!cm) cm = inner.match(new RegExp(`^(${FBHL_COLORS})\\s*:\\s*(\\S[\\s\\S]*)$`, 'i'));
-    if (cm) { color = cm[1].toLowerCase(); text = cm[2]; }
-    if (color === 'blue') color = 'sky';
-    // 마커 질감 변형(v1~v4 = 칠한 각도·모서리 다름) — 매번 같은 패턴이면 기계적이라 손으로 그은 듯
-    // 다양하게. 단 텍스트 해시 기반(결정적)이라 같은 글자=같은 변형 → SSR/클라 hydration 안전
-    // (Math.random 은 server↔client 불일치로 mismatch).
+    const { color, text } = parseHlColor(inner);
+    // 마커 질감 변형(v1~v4 = 칠한 각도·스며든 점 위치·모서리) — 텍스트 해시 기반(결정적) → SSR/클라 안전.
     let h = 0;
     for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
     const v = (h % 4) + 1;
