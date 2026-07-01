@@ -4701,9 +4701,13 @@ function NetworkComp({ nodes, edges, layout, height }: {
   nodes: NetworkNode[]; edges: NetworkEdge[]; layout?: string | null; height?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  // 모바일 320px / PC 480px 캡 + 비율 보호.
+  // 결정(2026-07-01): network 는 diagram(그냥 길게)과 반대로 **박스 고정(캡) + fit + pan/zoom** 이 정답.
+  // 인터랙티브 그래프라 높이 초과(자라기)도, 내부 스크롤도 둘 다 불편 — 그래프 자체 pan/zoom 이 네비게이션.
+  // 그래서 항상 뷰포트 캡(모바일 320 / PC 480), AI 가 넘긴 height 는 캡보다 작을 때만 존중(더 크게는 불가).
   const netMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
-  const finalHeight = height || (netMaxH ? `${netMaxH}px` : '320px');
+  const cap = netMaxH || 400;
+  const explicit = height ? parseInt(height, 10) : NaN;
+  const finalHeight = `${!isNaN(explicit) && explicit < cap ? explicit : cap}px`;
   useEffect(() => {
     if (!ref.current || nodes.length === 0) return;
     const container = ref.current;
@@ -4715,22 +4719,45 @@ function NetworkComp({ nodes, edges, layout, height }: {
       const w = window as any;
       if (!w.cytoscape) return;
       try {
-        w.cytoscape({
+        const cy = w.cytoscape({
           container,
           elements: [
             ...nodes.map(n => ({ data: { id: n.id, label: n.label }, style: n.color ? { 'background-color': COLOR_TO_HEX[n.color] || n.color } : {} })),
             ...edges.map(e => ({ data: { id: `${e.source}-${e.target}`, source: e.source, target: e.target, label: e.label || '' } })),
           ],
           style: [
-            { selector: 'node', style: { 'background-color': '#3b82f6', 'label': 'data(label)', 'color': '#1e293b', 'font-size': 12, 'text-valign': 'center', 'text-halign': 'center' } },
-            { selector: 'edge', style: { 'width': 2, 'line-color': '#94a3b8', 'target-arrow-color': '#94a3b8', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'label': 'data(label)', 'font-size': 10, 'color': '#64748b' } },
+            // 노드 = 텍스트 맞춰 커지는 round-rect + 줄바꿈 → 라벨 잘림/원 밖 넘침 방지.
+            // 흰 글씨 + 어두운 아웃라인 → 어떤 노드 색(빨강/파랑/보라 등) 위에서도 가독.
+            { selector: 'node', style: {
+              'background-color': '#3b82f6', 'shape': 'round-rectangle',
+              'width': 'label', 'height': 'label', 'padding': '9px',
+              'label': 'data(label)', 'color': '#ffffff',
+              'text-outline-color': '#334155', 'text-outline-width': 1.5,
+              'font-size': 12, 'font-weight': 600,
+              'text-valign': 'center', 'text-halign': 'center',
+              'text-wrap': 'wrap', 'text-max-width': '140px',
+            } },
+            // 엣지 라벨 = 흰 배경칩 → 선 위에 겹쳐도 읽힘.
+            { selector: 'edge', style: {
+              'width': 2, 'line-color': '#cbd5e1',
+              'target-arrow-color': '#cbd5e1', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier',
+              'label': 'data(label)', 'font-size': 10, 'color': '#64748b',
+              'text-background-color': '#ffffff', 'text-background-opacity': 0.9, 'text-background-padding': '2px',
+            } },
           ],
-          layout: { name: layout || 'cose', animate: false },
+          // fit:true + padding → 레이아웃 후 그래프 전체를 박스에 맞춤(초과 없이 pan/zoom 탐색).
+          // 간격 넉넉히(nodeRepulsion/idealEdgeLength/nodeOverlap) → 노드·라벨 겹침 완화.
+          layout: { name: layout || 'cose', animate: false, fit: true, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 120, nodeOverlap: 24 },
+          minZoom: 0.2, maxZoom: 2.5,
         });
+        // 레이아웃 비동기(cose) 대비 안전망 — 완료 후 한 번 더 fit.
+        cy.on('layoutstop', () => cy.fit(undefined, 24));
       } catch (e) {
         container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Cytoscape 오류: ${(e as Error).message}</div>`;
       }
     });
   }, [nodes, edges, layout]);
+  // 제스처 = Cytoscape 기본(2-finger 핀치줌 / 1-finger 빈배경 팬 / 1-finger 노드 드래그) — 표준이라 그대로.
+  // cooperative gestures·힌트 오버레이 미도입(높이 고정 박스라 페이지 스크롤은 박스 밖 터치로 충분).
   return <div ref={ref} className="my-3 rounded-xl border border-gray-100 shadow-sm bg-white" style={{ height: finalHeight, width: '100%' }} />;
 }
