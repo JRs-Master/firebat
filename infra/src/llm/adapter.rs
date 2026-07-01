@@ -354,7 +354,7 @@ mod tests {
     #[tokio::test]
     async fn anthropic_without_api_key_returns_error() {
         let (vault, _dir) = vault();
-        let adapter = ConfigDrivenAdapter::new(vault, "claude-sonnet-4-6".to_string());
+        let adapter = ConfigDrivenAdapter::new(vault, "claude-sonnet-5".to_string());
         let result = adapter.ask_text("hi", &LlmCallOpts::default()).await;
         // API 키 없으니 핸들러가 명시 에러 반환 (실 LLM 호출 안 함)
         assert!(result.is_err());
@@ -365,7 +365,7 @@ mod tests {
     async fn vault_override_model_id() {
         let (vault, _dir) = vault();
         vault.set_secret("system:llm:model", "gpt-5");
-        let adapter = ConfigDrivenAdapter::new(vault, "claude-sonnet-4-6".to_string());
+        let adapter = ConfigDrivenAdapter::new(vault, "claude-sonnet-5".to_string());
         // Vault override 우선
         assert_eq!(adapter.get_model_id(), "gpt-5");
     }

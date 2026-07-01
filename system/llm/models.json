@@ -120,9 +120,9 @@
       "category": "api-anthropic"
     },
     {
-      "id": "claude-sonnet-4-6",
+      "id": "claude-sonnet-5",
       "maxOutput": 64000,
-      "displayName": "Claude Sonnet 4.6",
+      "displayName": "Claude Sonnet 5",
       "provider": "Anthropic",
       "format": "anthropic-messages",
       "endpoint": "https://api.anthropic.com/v1/messages",
@@ -885,8 +885,8 @@
       "category": "cli-claude"
     },
     {
-      "id": "cli-claude-code-sonnet-4-6",
-      "displayName": "Claude Code CLI (Sonnet 4.6)",
+      "id": "cli-claude-code-sonnet-5",
+      "displayName": "Claude Code CLI (Sonnet 5)",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",

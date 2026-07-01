@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn anthropic_helper_has_mcp_and_extended_thinking() {
-        let m = anthropic_api("claude-sonnet-4-6", "Claude Sonnet 4.6", 3.0, 15.0);
+        let m = anthropic_api("claude-sonnet-5", "Claude Sonnet 5", 3.0, 15.0);
         assert!(m.features.mcp_connector);
         assert!(m.features.extended_thinking);
         assert_eq!(
