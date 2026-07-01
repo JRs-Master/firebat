@@ -4747,20 +4747,22 @@ function NetworkComp({ nodes, edges, layout, height }: {
               'text-background-color': '#ffffff', 'text-background-opacity': 0.9, 'text-background-padding': '2px',
             } },
           ],
-          // fit:true + padding → 레이아웃 후 그래프 전체를 박스에 맞춤(초과 없이 pan/zoom 탐색).
-          // 간격 넉넉히(nodeRepulsion/idealEdgeLength/nodeOverlap) → 노드·라벨 겹침 완화.
-          layout: { name: layout || 'cose', animate: false, fit: true, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 120, nodeOverlap: 24 },
           minZoom: 0.2, maxZoom: 2.5,
         });
-        // 레이아웃 비동기(cose) 대비 안전망 — 완료 후 fit. 단 세로로 긴 성긴 그래프는 전체 fit 시
-        // 너무 작아지므로(초기값 작음 문제) 최소 zoom 클램프 — 작으면 0.85 로 올리고 센터(나머진 pan 탐색).
-        cy.on('layoutstop', () => {
+        // ⚠️ layoutstop 핸들러는 layout *실행 전* 등록해야 함. layout 을 cytoscape({layout}) 생성자에 넣으면
+        // animate:false cose 가 동기 완료돼 layoutstop 이 cy.on 등록보다 먼저 발화 → 핸들러 미수신(초기 zoom
+        // 클램프가 아예 안 돌던 root). 그래서 생성자에서 layout 빼고, 핸들러 등록 뒤 명시 run().
+        cy.one('layoutstop', () => {
           cy.fit(undefined, 28);
-          if (cy.zoom() < 0.85) {
-            cy.zoom(0.85);
+          // 세로로 긴 성긴 그래프는 fit 시 노드가 너무 작아짐 → 최소 zoom 1.0 보장(작으면 100%) + 센터.
+          // 박스보다 큰 그래프는 pan/zoom 으로 탐색. (옛 0.85 는 약해서 효과 미미 → 1.0)
+          if (cy.zoom() < 1) {
+            cy.zoom(1);
             cy.center();
           }
         });
+        // 간격 넉넉히(nodeRepulsion/idealEdgeLength/nodeOverlap) → 노드·라벨 겹침 완화. fit 은 위 핸들러가 처리.
+        cy.layout({ name: layout || 'cose', animate: false, fit: false, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 120, nodeOverlap: 24 }).run();
       } catch (e) {
         container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Cytoscape 오류: ${(e as Error).message}</div>`;
       }
