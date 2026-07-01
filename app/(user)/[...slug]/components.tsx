@@ -4754,12 +4754,14 @@ function NetworkComp({ nodes, edges, layout, height }: {
         // 클램프가 아예 안 돌던 root). 그래서 생성자에서 layout 빼고, 핸들러 등록 뒤 명시 run().
         cy.one('layoutstop', () => {
           cy.fit(undefined, 28);
-          // 세로로 긴 성긴 그래프는 fit 시 노드가 너무 작아짐 → 최소 zoom 1.0 보장(작으면 100%) + 센터.
-          // 박스보다 큰 그래프는 pan/zoom 으로 탐색. (옛 0.85 는 약해서 효과 미미 → 1.0)
-          if (cy.zoom() < 1) {
-            cy.zoom(1);
-            cy.center();
-          }
+          if (cy.zoom() < 0.8) cy.zoom(0.8); // 최소 zoom 0.8
+          // 가운데(center) 대신 제일 위에서 시작 — 그래프 top 을 뷰포트 상단(패딩 20px)에 맞추고 가로 중앙.
+          const bb = cy.elements().boundingBox();
+          const z = cy.zoom();
+          cy.pan({
+            x: cy.width() / 2 - ((bb.x1 + bb.x2) / 2) * z,
+            y: 20 - bb.y1 * z,
+          });
         });
         // 간격 넉넉히(nodeRepulsion/idealEdgeLength/nodeOverlap) → 노드·라벨 겹침 완화. fit 은 위 핸들러가 처리.
         cy.layout({ name: layout || 'cose', animate: false, fit: false, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 120, nodeOverlap: 24 }).run();
