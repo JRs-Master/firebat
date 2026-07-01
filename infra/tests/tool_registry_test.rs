@@ -137,7 +137,8 @@ async fn dispatch_list_pages_returns_array() {
 #[tokio::test]
 async fn dispatch_write_then_read_file() {
     let (tools, dir) = make_setup().await;
-    let test_path = "test.txt";
+    // AI 파일도구는 user/ 존만 허용(confine_to_user) — user/ 밖 경로는 거부되므로 user/ 경로로.
+    let test_path = "user/test.txt";
     tools
         .dispatch(
             "write_file",
