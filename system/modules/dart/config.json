@@ -13,6 +13,20 @@
   "secrets": [
     "DART_API_KEY"
   ],
+  "grounding": {
+    "stock_code": {
+      "resolveHint": "A stock_code (6-digit) must come from a lookup or the user, never invented. Easiest: pass the company NAME in `query` — this module auto-converts name → code, so you usually don't need stock_code at all. Otherwise resolve first with {action:lookup, query:<name>} and use the returned stock_code. If several companies match, present a picker (suggest) instead of choosing.",
+      "exemptActions": ["lookup"]
+    },
+    "corp_code": {
+      "resolveHint": "A corp_code (8-digit DART id) must come from {action:lookup} or the user, never invented. Easiest: pass the company NAME in `query` and let the module convert it — you rarely need corp_code directly. If you have a name, lookup first; if several companies match, ask with a picker (suggest).",
+      "exemptActions": ["lookup"]
+    },
+    "corp_codes": {
+      "resolveHint": "Multi-company corp codes — every element must come from a lookup, never invented. Prefer passing company NAMES (the module converts each), or resolve each name via {action:lookup} first and use the returned corp_code values.",
+      "exemptActions": ["lookup"]
+    }
+  },
   "input": {
     "type": "object",
     "required": [

@@ -96,6 +96,17 @@ fn arg_tokens(args: &serde_json::Value, param: &str) -> Vec<String> {
     let raw = match val {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(serde_json::Value::Number(n)) => n.to_string(),
+        // Multi-value param (e.g. dart `corp_codes` — a list of ids). Flatten each string/number
+        // element into the comma-joined form the delimiter split below already handles.
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| match v {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(","),
         _ => return Vec::new(),
     };
     raw.split(|c: char| c == ',' || c == ';' || c == '|' || c == '/' || c.is_whitespace())
@@ -288,5 +299,24 @@ mod tests {
         // lowercase fid_input_iscd (some actions use it) still gated.
         let lower = json!({ "action": "v1_국내주식-080", "fid_input_iscd": "088390" });
         assert!(check_grounding(&lower, &g, &[]).is_err());
+    }
+
+    #[test]
+    fn array_param_each_element_checked() {
+        // dart corp_codes = a list of ids (multi-company). Each element must be grounded.
+        let g = parse_grounding(&json!({ "grounding": { "corp_codes": {
+            "resolveHint": "resolve each via lookup.",
+            "exemptActions": ["lookup"]
+        } } }));
+        let observed = vec![r#"{"corp_code":"00126380"}"#.to_string(), "00164779".to_string()];
+        // one grounded, one invented → reject
+        let bad = json!({ "action": "financialMulti", "corp_codes": ["00126380", "99999999"] });
+        assert!(check_grounding(&bad, &g, &observed).is_err());
+        // all grounded → pass
+        let ok = json!({ "action": "financialMulti", "corp_codes": ["00126380", "00164779"] });
+        assert!(check_grounding(&ok, &g, &observed).is_ok());
+        // the resolve action itself is exempt
+        let lookup = json!({ "action": "lookup", "corp_codes": ["99999999"] });
+        assert!(check_grounding(&lookup, &g, &observed).is_ok());
     }
 }

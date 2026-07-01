@@ -15,14 +15,16 @@
 //!
 //! Sysmod 활성/비활성 토글 — `ModuleManager.is_enabled(name)` 검사. 비활성 시 unregister.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolManager};
 use crate::ports::{InfraResult, SandboxExecuteOpts};
+use crate::utils::grounding::{parse_grounding, GroundedParam};
 
 /// Cache TTL — 옛 TS 60초 1:1.
 const CACHE_TTL: Duration = Duration::from_secs(60);
@@ -37,6 +39,10 @@ pub struct DynamicToolRegistry {
     mcp: Arc<McpManager>,
     /// 마지막 refresh 시각. None = 아직 refresh 안 함.
     last_refresh: Mutex<Option<Instant>>,
+    /// L1 grounding 선언 — tool_name(`sysmod_<name>`) → grounded params (모듈 config 의 `grounding`).
+    /// refresh 마다 config 에서 재구성. FC 경로(ai.rs 도구 루프)가 dispatch 전 `grounding_for` 로 조회해
+    /// `check_grounding` 강제 — MCP 경로(mcp_server `state.grounding`) 와 대칭, 같은 pure 헬퍼 공유 (#8-2).
+    grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
 }
 
 impl DynamicToolRegistry {
@@ -46,7 +52,14 @@ impl DynamicToolRegistry {
             module,
             mcp,
             last_refresh: Mutex::new(None),
+            grounding: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// FC 경로가 dispatch 전 조회 — 이 도구에 선언된 grounded params (없으면 None).
+    pub async fn grounding_for(&self, tool: &str) -> Option<Vec<GroundedParam>> {
+        let map = self.grounding.read().await;
+        map.get(tool).cloned()
     }
 
     /// 60초 cache 검사 후 sysmod_* / mcp_* 동적 도구 재등록. cache hit 시 즉시 return.
@@ -70,6 +83,8 @@ impl DynamicToolRegistry {
             self.tools.unregister(&def.name);
             self.tools.unregister_handler(&def.name);
         }
+        // grounding 맵도 refresh 마다 재구성 (비활성 모듈 stale 선언 제거).
+        self.grounding.write().await.clear();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
@@ -88,6 +103,11 @@ impl DynamicToolRegistry {
                 .unwrap_or_else(|| serde_json::json!({}));
             let tool_name = format!("sysmod_{}", entry.name);
             let description = entry.description.clone();
+            // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
+            let g = parse_grounding(&config);
+            if !g.is_empty() {
+                self.grounding.write().await.insert(tool_name.clone(), g);
+            }
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
                 description,

@@ -1205,6 +1205,11 @@ impl AiManager {
         // ToolExchangeEntry 에 tool_calls + tool_results + raw_model_parts 동시 보존 →
         // 다음 turn `opts.tool_exchanges` 로 어댑터에 echo (Gemini thought_signature 보존 필수).
         let mut tool_exchanges: Vec<crate::ports::ToolExchangeEntry> = Vec::new();
+        // L1 grounding corpus (FC path, #8-2) — provenance the model legitimately observed this turn:
+        // the user prompt (user-typed codes) + each successful tool result. A declared opaque param
+        // (e.g. a stock code) must appear here or the call is rejected with a resolve hint. Mirror of
+        // the MCP session accumulator; shares the pure check_grounding helper.
+        let mut observed: Vec<String> = vec![prompt.to_string()];
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
@@ -1638,6 +1643,23 @@ impl AiManager {
                 let effective_call: &ToolCall = &scoped_call;
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
                 let cache_key = tool_cache_key(&effective_call.name, &effective_call.arguments);
+                // L1 grounding gate (FC path, #8-2) — a declared opaque param (e.g. a stock code) must
+                // trace to observed provenance (prompt + this turn's tool results). Only sysmods with a
+                // `grounding` config are checked. Rejection → the model gets the resolve hint and retries
+                // (resolve → use). Mirror of the MCP gate; shares the pure check_grounding helper.
+                let grounding_reject: Option<String> = if let Some(reg) = &self.dynamic_tools {
+                    match reg.grounding_for(&effective_call.name).await {
+                        Some(g) if !g.is_empty() => crate::utils::grounding::check_grounding(
+                            &effective_call.arguments,
+                            &g,
+                            &observed,
+                        )
+                        .err(),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 let action = if turn_call_set.contains(&cache_key) {
                     // Layer 2: 이번 turn 에 이미 같은 호출 → 즉시 reject
                     self.log.warn(&format!(
@@ -1675,6 +1697,26 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("unknown tool".to_string()),
+                    }
+                } else if let Some(hint) = grounding_reject {
+                    // L1 grounding reject — do NOT dispatch. Return the resolve hint so the model looks
+                    // the identifier up first, then retries with a grounded value (resolve → use). Insert
+                    // the cache key so the identical ungrounded args don't re-run — the model must change args.
+                    self.log.info(&format!(
+                        "[AiManager] grounding reject (FC): {} — 미검증 식별자 dispatch 차단",
+                        effective_call.name
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": hint,
+                            "grounding": true,
+                        }),
+                        success: false,
+                        error: Some("ungrounded".to_string()),
                     }
                 } else {
                     turn_call_set.insert(cache_key.clone());
@@ -1742,6 +1784,13 @@ impl AiManager {
 
                 // ActionTags 는 string[] 만 받음 — 옛 TS 와 동일하게 도구 이름만.
                 executed_actions.push(serde_json::Value::String(call.name.clone()));
+                // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
+                // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
+                if action.success {
+                    if let Ok(text) = serde_json::to_string(&action.result) {
+                        observed.push(text);
+                    }
+                }
                 turn_results.push((call.clone(), action));
             }
 
