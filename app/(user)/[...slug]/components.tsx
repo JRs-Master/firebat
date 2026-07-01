@@ -4563,6 +4563,10 @@ function DiagramComp({ code, theme }: { code: string; theme?: string | null }) {
         const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
         w.mermaid.render(id, code).then((res: { svg: string }) => {
           container.innerHTML = res.svg;
+          // 다이어그램 가운데 정렬 — Mermaid SVG 는 max-width 걸린 block 이라 기본 좌측.
+          // margin:0 auto = 컨테이너보다 좁으면 중앙, 넓으면 overflow-x-auto 로 스크롤(양쪽 안전).
+          const svg = container.querySelector('svg');
+          if (svg) { (svg as SVGElement).style.display = 'block'; (svg as SVGElement).style.margin = '0 auto'; }
         }).catch((err: Error) => {
           container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Mermaid 렌더 실패: ${err.message}</div>`;
         });
@@ -4571,6 +4575,13 @@ function DiagramComp({ code, theme }: { code: string; theme?: string | null }) {
       }
     });
   }, [code, theme]);
+  // 결정(2026-07-01): 다이어그램은 network/chart 와 달리 useViewportMaxHeight 높이 캡을 *안* 건다.
+  //  - 순서도·플로우는 "훑는" 게 아니라 위→아래 "따라 읽는" 것 → 작은 박스 내부 스크롤이면 전체 흐름
+  //    조망을 잃어 오히려 불편(PC·모바일 공통). fit-축소도 긴 세로 순서도는 글자가 너무 작아져 탈락.
+  //  - 그래서 세로는 전체 높이로 자라게 두고(페이지 스크롤이 자연), 가로는 Mermaid max-width 자동 축소
+  //    + overflow-x-auto 안전망. SVG margin:0 auto 로 가운데 정렬.
+  //  - 카드가 너무 길어 거슬리면 그때 "전체보기 오버레이(캡+탭하면 풀스크린 pan/zoom)"로 전환(인터랙티브
+  //    컴포넌트 묶음). 지금은 안 자르는 게 정공.
   return <div ref={ref} className="my-3 rounded-xl border border-gray-100 shadow-sm p-4 bg-white overflow-x-auto" />;
 }
 
