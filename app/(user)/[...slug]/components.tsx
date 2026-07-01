@@ -4755,12 +4755,12 @@ function NetworkComp({ nodes, edges, layout, height }: {
         cy.one('layoutstop', () => {
           cy.fit(undefined, 28);
           if (cy.zoom() < 0.8) cy.zoom(0.8); // 최소 zoom 0.8
-          // 가운데(center) 대신 제일 위에서 시작 — 그래프 top 을 뷰포트 상단(패딩 20px)에 맞추고 가로 중앙.
+          // 제일 위 노드(bb.y1)를 뷰포트 세로 1/5 위치에 오게 + 가로 중앙 (위에 여백 조금 두고 시작).
           const bb = cy.elements().boundingBox();
           const z = cy.zoom();
           cy.pan({
             x: cy.width() / 2 - ((bb.x1 + bb.x2) / 2) * z,
-            y: 20 - bb.y1 * z,
+            y: cy.height() / 5 - bb.y1 * z,
           });
         });
         // 간격 넉넉히(nodeRepulsion/idealEdgeLength/nodeOverlap) → 노드·라벨 겹침 완화. fit 은 위 핸들러가 처리.
