@@ -4730,12 +4730,14 @@ function NetworkComp({ nodes, edges, layout, height }: {
             // 흰 글씨 + 어두운 아웃라인 → 어떤 노드 색(빨강/파랑/보라 등) 위에서도 가독.
             { selector: 'node', style: {
               'background-color': '#3b82f6', 'shape': 'round-rectangle',
-              'width': 'label', 'height': 'label', 'padding': '9px',
+              'width': 'label', 'height': 'label', 'padding': '12px',
               'label': 'data(label)', 'color': '#ffffff',
               'text-outline-color': '#334155', 'text-outline-width': 1.5,
-              'font-size': 12, 'font-weight': 600,
+              'font-size': 13, 'font-weight': 600,
               'text-valign': 'center', 'text-halign': 'center',
-              'text-wrap': 'wrap', 'text-max-width': '140px',
+              // wrap 폭 넓혀 2줄 되는 경우 자체를 줄임(Cytoscape 는 line-height 속성이 없어 줄간격은 못 벌림
+              // — 근본 해결은 라벨을 짧게 = 프롬프트, 또는 흐름은 diagram(Mermaid) 사용).
+              'text-wrap': 'wrap', 'text-max-width': '180px',
             } },
             // 엣지 라벨 = 흰 배경칩 → 선 위에 겹쳐도 읽힘.
             { selector: 'edge', style: {
@@ -4750,8 +4752,15 @@ function NetworkComp({ nodes, edges, layout, height }: {
           layout: { name: layout || 'cose', animate: false, fit: true, padding: 24, nodeRepulsion: 9000, idealEdgeLength: 120, nodeOverlap: 24 },
           minZoom: 0.2, maxZoom: 2.5,
         });
-        // 레이아웃 비동기(cose) 대비 안전망 — 완료 후 한 번 더 fit.
-        cy.on('layoutstop', () => cy.fit(undefined, 24));
+        // 레이아웃 비동기(cose) 대비 안전망 — 완료 후 fit. 단 세로로 긴 성긴 그래프는 전체 fit 시
+        // 너무 작아지므로(초기값 작음 문제) 최소 zoom 클램프 — 작으면 0.85 로 올리고 센터(나머진 pan 탐색).
+        cy.on('layoutstop', () => {
+          cy.fit(undefined, 28);
+          if (cy.zoom() < 0.85) {
+            cy.zoom(0.85);
+            cy.center();
+          }
+        });
       } catch (e) {
         container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Cytoscape 오류: ${(e as Error).message}</div>`;
       }
