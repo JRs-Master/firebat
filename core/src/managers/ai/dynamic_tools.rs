@@ -83,8 +83,9 @@ impl DynamicToolRegistry {
             self.tools.unregister(&def.name);
             self.tools.unregister_handler(&def.name);
         }
-        // grounding 맵도 refresh 마다 재구성 (비활성 모듈 stale 선언 제거).
-        self.grounding.write().await.clear();
+        // grounding 맵은 로컬에 쌓고 끝에 한 번에 swap — clear→개별 insert 사이 rebuild 창에
+        // 동시 read 가 빈 맵(fail-open)을 보는 race 회피 + write lock 획득 N회→1회.
+        let mut new_grounding: HashMap<String, Vec<GroundedParam>> = HashMap::new();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
@@ -106,7 +107,7 @@ impl DynamicToolRegistry {
             // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
             let g = parse_grounding(&config);
             if !g.is_empty() {
-                self.grounding.write().await.insert(tool_name.clone(), g);
+                new_grounding.insert(tool_name.clone(), g);
             }
             self.tools.register(ToolDefinition {
                 name: tool_name.clone(),
@@ -159,7 +160,10 @@ impl DynamicToolRegistry {
             }
         }
 
-        // 4. cache 갱신
+        // 4. grounding 맵 atomic swap (rebuild 완료 후 한 번에 교체 — read 가 부분 상태 안 봄).
+        *self.grounding.write().await = new_grounding;
+
+        // 5. cache 갱신
         let mut last = self.last_refresh.lock().await;
         *last = Some(Instant::now());
     }
