@@ -27,9 +27,9 @@ impl AnthropicMessagesHandler {
     }
 
     /// Extended thinking 요청 파라미터 주입 — features.extendedThinking 활성 + thinking_level 실 레벨일 때만.
-    /// 현재 Claude(Opus 4.6+/Sonnet 4.6/Haiku 4.5/Fable) = **adaptive thinking + output_config.effort** 가 정공.
-    /// 옛 budget_tokens(`{type:enabled, budget_tokens}`)는 Opus 4.7/4.8/Fable 에서 폐기 = 400 → adaptive 로 전환.
-    /// 레벨값(low/medium/high/xhigh/max) = effort 값 1:1. effort 는 Haiku 4.5 미지원(400)이라 Haiku 는 adaptive 만.
+    /// 4.6+ (Opus 4.6/4.7/4.8·Sonnet 4.6/5·Fable) = **adaptive thinking + output_config.effort**.
+    /// budget_tokens(`{type:enabled}`)는 4.7/4.8/Sonnet5/Fable 에서 400 → adaptive. 레벨(low~max)=effort 1:1.
+    /// **Haiku 4.5 = 적응사고 미지원(문서) → 수동 budget_tokens** (effort 도 미지원). 모델군별 분기.
     /// temperature 제거(thinking 은 temperature 미지원).
     fn apply_extended_thinking(
         body: &mut serde_json::Value,
@@ -43,12 +43,28 @@ impl AnthropicMessagesHandler {
             Some(l @ ("low" | "medium" | "high" | "xhigh" | "max")) => l,
             _ => return, // none / minimal / 미설정 → thinking off (param 생략 = 비활성)
         };
-        // display:"summarized" 명시 — Opus 4.8/4.7/Fable 은 display 기본값이 "omitted"(thinking 빈 채 반환)라
-        // 명시 안 하면 thinking 안 보인다. summarized 로 요약 사고 노출(4.6/Sonnet/Haiku 는 기본 summarized = no-op).
-        // adaptive 와 호환(문서: always-on 모델도 display:summarized 명시 가능). budget_tokens 는 4.7+ 400.
-        body["thinking"] = serde_json::json!({ "type": "adaptive", "display": "summarized" });
-        // effort = Opus/Sonnet 4.6/Fable 지원, Haiku 4.5 미지원(400) → Haiku 는 adaptive 만.
-        if !config.id.contains("haiku") {
+        let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        if config.id.contains("haiku") {
+            // Haiku 4.5 = 적응사고 미지원(문서: 적응 지원목록에 없음, 수동 budget_tokens 만) + effort 미지원(400).
+            // → 수동 확장사고. budget 이 max_tokens 에 포함되므로 출력 여유(+8000) 확보. display 는 기본
+            //   summarized(Claude 4 세대)라 명시 불요 = thinking 그대로 노출.
+            let budget = match level {
+                "low" => 4000,
+                "medium" => 8000,
+                "high" => 16000,
+                "xhigh" => 24000,
+                _ => 32000, // max
+            };
+            body["thinking"] = serde_json::json!({ "type": "enabled", "budget_tokens": budget });
+            let want = opts.max_tokens.or(config.max_output).unwrap_or(0).max(budget + 8000);
+            if cur < want {
+                body["max_tokens"] = serde_json::Value::from(want);
+            }
+        } else {
+            // 4.6+ = adaptive thinking + effort. display:"summarized" 명시 — 4.7/4.8/Sonnet5/Fable 은 display
+            // 기본 "omitted"(thinking 빈 채)라 명시 안 하면 안 보임(4.6/Sonnet4.6 은 기본 summarized = no-op).
+            // budget_tokens 는 4.7+ 400. 레벨(low~max) = effort 1:1.
+            body["thinking"] = serde_json::json!({ "type": "adaptive", "display": "summarized" });
             if let Some(obj) = body.as_object_mut() {
                 let oc = obj
                     .entry("output_config")
@@ -57,12 +73,11 @@ impl AnthropicMessagesHandler {
                     oc_map.insert("effort".to_string(), serde_json::Value::from(level));
                 }
             }
-        }
-        // adaptive 는 thinking 예산이 max_tokens 에 안 섞임 → 출력 여유만 보장(최소 16000).
-        let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-        let want = opts.max_tokens.or(config.max_output).unwrap_or(16000).max(16000);
-        if cur < want {
-            body["max_tokens"] = serde_json::Value::from(want);
+            // adaptive 는 thinking 예산이 max_tokens 에 안 섞임 → 출력 여유만 보장(최소 16000).
+            let want = opts.max_tokens.or(config.max_output).unwrap_or(16000).max(16000);
+            if cur < want {
+                body["max_tokens"] = serde_json::Value::from(want);
+            }
         }
         if let Some(obj) = body.as_object_mut() {
             obj.remove("temperature");
