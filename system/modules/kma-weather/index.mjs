@@ -339,7 +339,9 @@ async function main() {
       'wthr-info-list': '/WthrWrnInfoService/getWthrInfoList',       // 기상정보 목록
     };
     if (WTHR_PATHS[action]) {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
+      // KMA WthrWrnInfoService caps the range at 6 days back from today (7 → API error 99), so
+      // default to 6 days when fromTm is omitted.
+      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 6 * 86400000));
       const toYmd = toTm || todayYmd();
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (stnId) params.stnId = stnId;
@@ -357,7 +359,9 @@ async function main() {
 
     // 특보 구역코드 조회 (getPwnCd) — fromTmFc/toTmFc + areaCode + warninType (특보종류 코드)
     if (action === 'pwn-code') {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
+      // KMA WthrWrnInfoService caps the range at 6 days back from today (7 → API error 99), so
+      // default to 6 days when fromTm is omitted.
+      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 6 * 86400000));
       const toYmd = toTm || todayYmd();
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (data.areaCode) params.areaCode = data.areaCode;

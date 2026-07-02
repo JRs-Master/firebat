@@ -116,8 +116,15 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
         }
         component_registry::sanitize_to_schema(&mut props, &comp.props_schema);
 
-        // propsSchema 검증 — 실패 block 만 분리.
+        // propsSchema validation — only failed blocks are split out.
         if let Err(e) = crate::managers::module::validate_value(&props, &comp.props_schema) {
+            // A block with no props at all (empty) has nothing to render and lost nothing — drop
+            // it silently instead of logging a validation failure (avoids WARN noise from stray
+            // empty blocks, e.g. an empty header the model emitted). Blocks that DID carry keys
+            // but failed validation are still reported (real content was dropped → diagnose).
+            if original_keys.is_empty() {
+                continue;
+            }
             failed.push(serde_json::json!({
                 "idx": idx,
                 "type": block_type,

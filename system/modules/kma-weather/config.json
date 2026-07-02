@@ -76,7 +76,7 @@
       },
       "fromTm": {
         "type": "string",
-        "description": "[기상특보·기상정보·pwn-code 계열/지진·해일 계열(earthquake·tsunami 및 목록형)/typhoon-list] 시작시각 yyyyMMdd 8자리. 미지정 시 7일 전 (지진/해일/태풍은 30일 전)"
+        "description": "[기상특보·기상정보·pwn-code 계열/지진·해일 계열(earthquake·tsunami 및 목록형)/typhoon-list] 시작시각 yyyyMMdd 8자리. 미지정 시 6일 전 (기상특보·기상정보·pwn-code 는 API 상한이 6일 전까지 / 지진·해일·태풍은 30일 전)"
       },
       "toTm": {
         "type": "string",
