@@ -2160,7 +2160,11 @@ message ConsolidationConsolidateInactiveRequest {
 // {processed, skipped, errors}.
 message ConsolidationConsolidateInactiveResponse { string raw_json = 1; }
 
-message ConsolidationGetMemoryStatsRequest {}
+message ConsolidationGetMemoryStatsRequest {
+  // owner scoping — Recall(엔티티/사실/사건) 카운트를 owner 별로. admin/omit = admin scope
+  // (전역 합산 아님 — 옛엔 owner 무시 전역 count 라 admin 통계에 hub 데이터가 섞였음).
+  optional string owner = 1;
+}
 
 service ConsolidationService {
   rpc AskLlmText(ConsolidationAskLlmTextRequest) returns (ConsolidationAskLlmTextResponse);

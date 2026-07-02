@@ -10,7 +10,7 @@ import { withAuth } from '../../../../lib/with-api-error';
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(async () => {
-  const res = await getMemoryStats();
+  const res = await getMemoryStats({}); // owner 없음 = admin scope
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, ...(res.data as any) });
 });

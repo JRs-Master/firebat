@@ -74,12 +74,12 @@ impl EpisodicManager {
         self.port.cleanup_expired_events()
     }
 
-    pub fn count_events(&self) -> InfraResult<i64> {
-        self.port.count_events()
+    pub fn count_events(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.port.count_events(owner)
     }
 
-    pub fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
-        self.port.count_events_by_type()
+    pub fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
+        self.port.count_events_by_type(owner)
     }
 }
 

@@ -35,20 +35,20 @@ impl MemoryFacade {
 
 #[async_trait::async_trait]
 impl IMemoryFacadePort for MemoryFacade {
-    fn count_entities(&self) -> InfraResult<i64> {
-        self.entity.count_entities()
+    fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.entity.count_entities(owner)
     }
-    fn count_facts(&self) -> InfraResult<i64> {
-        self.entity.count_facts()
+    fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.entity.count_facts(owner)
     }
-    fn count_events(&self) -> InfraResult<i64> {
-        self.episodic.count_events()
+    fn count_events(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.episodic.count_events(owner)
     }
-    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
-        self.entity.count_entities_by_type()
+    fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
+        self.entity.count_entities_by_type(owner)
     }
-    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
-        self.episodic.count_events_by_type()
+    fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
+        self.episodic.count_events_by_type(owner)
     }
     fn cleanup_expired_facts(&self) -> InfraResult<i64> {
         self.entity.cleanup_expired()

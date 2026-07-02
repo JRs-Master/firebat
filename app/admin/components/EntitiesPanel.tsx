@@ -127,9 +127,16 @@ export function EntitiesPanel({
       }
     },
     async stats(): Promise<MemoryStats | null> {
-      if (hubContext) return null; // hub: 집계 stats 없음
-      const d = await apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' }).catch(() => null);
-      return d?.success ? { entities: d.entities, facts: d.facts, events: d.events } : null;
+      // 집계 = owner-scoped(admin=admin / hub=세션). pb 는 flat count → {total, byType} 로 감쌈.
+      const d: { success?: boolean; entities?: number; facts?: number; events?: number } | null = hubContext
+        ? await hubFetch(hubContext, 'entities', 'stats', {})
+        : await apiGet<{ success: boolean; entities: number; facts: number; events: number }>('/api/memory/stats', { category: 'entities' }).catch(() => null);
+      if (!d?.success) return null;
+      return {
+        entities: { total: d.entities ?? 0, byType: [] },
+        facts: { total: d.facts ?? 0, byType: [] },
+        events: { total: d.events ?? 0, byType: [] },
+      };
     },
     async save(payload: { name: string; aliases?: string[] }): Promise<{ success: boolean; error?: string; created?: boolean }> {
       if (hubContext) {

@@ -574,13 +574,13 @@ impl ConsolidationManager {
     }
 
     /// 어드민 health stats — 4-tier 누적 상태 표시용.
-    pub fn get_memory_stats(&self) -> InfraResult<MemoryStats> {
+    pub fn get_memory_stats(&self, owner: Option<&str>) -> InfraResult<MemoryStats> {
         Ok(MemoryStats {
-            entities: self.memory.count_entities()?,
-            facts: self.memory.count_facts()?,
-            events: self.memory.count_events()?,
-            entities_by_type: self.memory.count_entities_by_type()?,
-            events_by_type: self.memory.count_events_by_type()?,
+            entities: self.memory.count_entities(owner)?,
+            facts: self.memory.count_facts(owner)?,
+            events: self.memory.count_events(owner)?,
+            entities_by_type: self.memory.count_entities_by_type(owner)?,
+            events_by_type: self.memory.count_events_by_type(owner)?,
         })
     }
 

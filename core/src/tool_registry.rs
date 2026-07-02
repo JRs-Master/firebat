@@ -2345,10 +2345,13 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
     let consolidation = h.consolidation.clone();
     tools.register_handler(
         "get_memory_stats",
-        make_handler(move |_args| {
+        make_handler(move |args| {
             let consolidation = consolidation.clone();
             async move {
-                let stats = consolidation.get_memory_stats()?;
+                // owner-scoped — hub 컨텍스트면 inject_hub_owner 가 args.owner 주입(hub scope),
+                // admin 이면 없음→admin scope. 전역 합산 아님.
+                let owner = args.get("owner").and_then(|v| v.as_str());
+                let stats = consolidation.get_memory_stats(owner)?;
                 Ok(serde_json::to_value(stats).unwrap_or_default())
             }
         }),

@@ -109,7 +109,7 @@ async fn memory_stats_aggregates_async() {
         lessons: vec![],
     };
     mgr.save_extracted(extracted, None, None, None, None).await.unwrap();
-    let stats = mgr.get_memory_stats().unwrap();
+    let stats = mgr.get_memory_stats(None).unwrap();
     assert_eq!(stats.entities, 2);
     assert_eq!(stats.events, 1);
     assert!(stats

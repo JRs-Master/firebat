@@ -53,7 +53,7 @@ async fn consolidate_then_stats_via_grpc() {
     assert_eq!(outcome["saved"]["facts"].as_array().unwrap().len(), 1);
 
     let stats_resp = svc
-        .get_memory_stats(Request::new(ConsolidationGetMemoryStatsRequest {}))
+        .get_memory_stats(Request::new(ConsolidationGetMemoryStatsRequest { owner: None }))
         .await
         .unwrap();
     let stats = stats_resp.into_inner();

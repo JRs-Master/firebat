@@ -1087,25 +1087,26 @@ impl IEntityPort for SqliteMemoryAdapter {
         Ok(n as i64)
     }
 
-    fn count_entities(&self) -> InfraResult<i64> {
+    fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM entities", [], |r| r.get(0))
+        // owner-scoped 카운트 — None = admin scope(search 규약과 일치). 전역 합산이 아니라 각자 자기 것만.
+        conn.query_row("SELECT COUNT(*) FROM entities WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_entities: {e}"))
     }
 
-    fn count_facts(&self) -> InfraResult<i64> {
+    fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM entity_facts", [], |r| r.get(0))
+        conn.query_row("SELECT COUNT(*) FROM entity_facts WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_facts: {e}"))
     }
 
-    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
+    fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT type, COUNT(*) FROM entities GROUP BY type ORDER BY 2 DESC")
+            .prepare("SELECT type, COUNT(*) FROM entities WHERE owner = ?1 GROUP BY type ORDER BY 2 DESC")
             .map_err(|e| format!("count by type: {e}"))?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .query_map(params![owner.unwrap_or("admin")], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .map_err(|e| format!("count by type query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
@@ -1636,19 +1637,19 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         Ok(n as i64)
     }
 
-    fn count_events(&self) -> InfraResult<i64> {
+    fn count_events(&self, owner: Option<&str>) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        conn.query_row("SELECT COUNT(*) FROM events WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_events: {e}"))
     }
 
-    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
+    fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT type, COUNT(*) FROM events GROUP BY type ORDER BY 2 DESC")
+            .prepare("SELECT type, COUNT(*) FROM events WHERE owner = ?1 GROUP BY type ORDER BY 2 DESC")
             .map_err(|e| format!("count events by type: {e}"))?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .query_map(params![owner.unwrap_or("admin")], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .map_err(|e| format!("count events by type query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
@@ -1783,10 +1784,10 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(a.count_facts().unwrap(), 1);
+        assert_eq!(a.count_facts(None).unwrap(), 1);
         let removed = a.cleanup_expired_facts().unwrap();
         assert_eq!(removed, 1);
-        assert_eq!(a.count_facts().unwrap(), 0);
+        assert_eq!(a.count_facts(None).unwrap(), 0);
     }
 
     #[tokio::test]
@@ -1874,9 +1875,9 @@ mod tests {
         })
         .await
         .unwrap();
-        assert_eq!(a.count_facts().unwrap(), 2);
+        assert_eq!(a.count_facts(None).unwrap(), 2);
         a.remove_entity(eid).unwrap();
-        assert_eq!(a.count_facts().unwrap(), 0);
+        assert_eq!(a.count_facts(None).unwrap(), 0);
     }
 
     #[tokio::test]
@@ -1903,7 +1904,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let by_type = a.count_entities_by_type().unwrap();
+        let by_type = a.count_entities_by_type(None).unwrap();
         assert!(by_type.iter().any(|(t, c)| t == "stock" && *c == 2));
         assert!(by_type.iter().any(|(t, c)| t == "person" && *c == 1));
     }

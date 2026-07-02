@@ -8,6 +8,7 @@ import {
   ConsolidationAskLlmTextRequestSchema,
   ConsolidationConsolidateInactiveRequestSchema,
   ConsolidationConsolidateRequestSchema,
+  ConsolidationGetMemoryStatsRequestSchema,
   ConsolidationService,
   MemoryStatsPb,
 } from '../proto-gen/firebat_pb';
@@ -46,9 +47,9 @@ export async function consolidateInactive(args: MessageInitShape<typeof Consolid
   }
 }
 
-export async function getMemoryStats(): Promise<RpcResult<MemoryStatsPb>> {
+export async function getMemoryStats(args: MessageInitShape<typeof ConsolidationGetMemoryStatsRequestSchema>): Promise<RpcResult<MemoryStatsPb>> {
   try {
-      const response = await consolidationClient.getMemoryStats({});
+      const response = await consolidationClient.getMemoryStats(args ?? {});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);

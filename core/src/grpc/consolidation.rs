@@ -122,9 +122,9 @@ impl ConsolidationService for ConsolidationServiceImpl {
 
     async fn get_memory_stats(
         &self,
-        _req: Request<ConsolidationGetMemoryStatsRequest>,
+        req: Request<ConsolidationGetMemoryStatsRequest>,
     ) -> Result<Response<MemoryStatsPb>, TonicStatus> {
-        match self.manager.get_memory_stats() {
+        match self.manager.get_memory_stats(req.into_inner().owner.as_deref()) {
             Ok(stats) => {
                 let entities_by_type_json = serde_json::to_string(&stats.entities_by_type)
                     .unwrap_or_else(|_| "[]".to_string());

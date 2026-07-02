@@ -120,16 +120,16 @@ impl EntityManager {
         self.port.cleanup_expired_facts()
     }
 
-    pub fn count_entities(&self) -> InfraResult<i64> {
-        self.port.count_entities()
+    pub fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.port.count_entities(owner)
     }
 
-    pub fn count_facts(&self) -> InfraResult<i64> {
-        self.port.count_facts()
+    pub fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64> {
+        self.port.count_facts(owner)
     }
 
-    pub fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>> {
-        self.port.count_entities_by_type()
+    pub fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
+        self.port.count_entities_by_type(owner)
     }
 }
 

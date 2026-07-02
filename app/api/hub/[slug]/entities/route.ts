@@ -9,6 +9,7 @@ import {
   searchFacts,
 } from '../../../../../lib/api-gen/entity';
 import { searchEvents, deleteEvent } from '../../../../../lib/api-gen/episodic';
+import { getMemoryStats } from '../../../../../lib/api-gen/consolidation';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -133,6 +134,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const res = await deleteEvent({ id: BigInt(id), owner: hubOwner } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
+      }
+      case 'stats': {
+        // Recall 집계(엔티티·사실·사건) — owner-scoped. admin·hub 동일 shape(flat count).
+        const res = await getMemoryStats({ owner: hubOwner } as any);
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true, ...(res.data as any) });
       }
       default:
         return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });

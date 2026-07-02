@@ -1804,9 +1804,9 @@ pub trait IEntityPort: Send + Sync {
     fn cleanup_expired_facts(&self) -> InfraResult<i64>;
 
     /// 통계 — 매니저 retrieve_context / health stats 에서 활용.
-    fn count_entities(&self) -> InfraResult<i64>;
-    fn count_facts(&self) -> InfraResult<i64>;
-    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+    fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>>;
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2572,8 +2572,8 @@ pub trait IEpisodicPort: Send + Sync {
     fn unlink_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()>;
     fn cleanup_expired_events(&self) -> InfraResult<i64>;
 
-    fn count_events(&self) -> InfraResult<i64>;
-    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+    fn count_events(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -2587,11 +2587,11 @@ pub trait IEpisodicPort: Send + Sync {
 #[async_trait::async_trait]
 pub trait IMemoryFacadePort: Send + Sync {
     // Read / 통계
-    fn count_entities(&self) -> InfraResult<i64>;
-    fn count_facts(&self) -> InfraResult<i64>;
-    fn count_events(&self) -> InfraResult<i64>;
-    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
-    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+    fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_events(&self, owner: Option<&str>) -> InfraResult<i64>;
+    fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>>;
+    fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>>;
 
     // 정리
     fn cleanup_expired_facts(&self) -> InfraResult<i64>;
