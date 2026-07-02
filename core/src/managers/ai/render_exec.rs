@@ -98,7 +98,7 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
                 "idx": idx,
                 "type": block_type,
                 "error": format!(
-                    "'{}' 는 render 도구로 만들 수 없습니다. reply 텍스트에 ```firebat-render``` fence 로 직접 쓰세요(도구 인자에 넣으면 한국어 철자가 깨집니다). 도구는 code/math/diagram 전용입니다.",
+                    "'{}' cannot be built with the render tool. Emit it as a ```firebat-render``` fenced block in your reply TEXT instead (putting it in tool args corrupts non-ASCII spelling). The render tool handles only code/math/diagram.",
                     comp.component_type
                 ),
                 "useFence": true,
@@ -134,15 +134,28 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
         }));
     }
 
-    // 모두 실패 — Err 로 AI retry 유도.
+    // All blocks failed. If they were all fence-redirects, tell the model plainly to emit a
+    // firebat-render fence in its reply text and NOT re-call the tool — the old "retry the
+    // schema" wording made models re-invoke the render tool and loop. Real schema errors → retry.
     if rendered.is_empty() && !failed.is_empty() {
+        let all_fence = failed
+            .iter()
+            .all(|f| f.get("useFence").and_then(|v| v.as_bool()).unwrap_or(false));
+        if all_fence {
+            return Err(
+                "render: emit these components as a ```firebat-render``` fenced block in your \
+                 reply TEXT — do NOT call the render tool again for them (tool args corrupt \
+                 non-ASCII spelling). The render tool handles only code/math/diagram."
+                    .to_string(),
+            );
+        }
         let summary = failed
             .iter()
             .filter_map(|f| f.get("error").and_then(|v| v.as_str()))
             .collect::<Vec<_>>()
             .join("; ");
         return Err(format!(
-            "render: 모든 block 검증 실패 ({}). schema 맞춰 다시 호출하라.",
+            "render: all blocks failed validation ({}). Re-call matching the schema.",
             summary
         ));
     }

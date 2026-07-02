@@ -1347,9 +1347,11 @@ impl McpToolHandler for SaveEntityHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let input = SaveEntityInput {
             name: obj_str(&args, "name").ok_or_else(|| "name 필수".to_string())?,
+            // Entity type is dormant/optional (name is the identity) — match the FC save_entity
+            // tool + advertised schema (name-only). Older code forced it, breaking name-only saves.
             entity_type: obj_str(&args, "type")
                 .or_else(|| obj_str(&args, "entityType"))
-                .ok_or_else(|| "type 필수".to_string())?,
+                .unwrap_or_default(),
             aliases: args
                 .get("aliases")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
