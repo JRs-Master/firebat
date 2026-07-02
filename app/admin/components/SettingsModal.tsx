@@ -690,9 +690,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     // admin /api/settings, vault, and model-history are irrelevant to hub, so skip.
     if (hubContext) {
       const r = await hubFetch(hubContext, 'settings', 'set-prompt', { prompt: userPrompt }).catch(() => null);
+      // Match admin: show the ✓ (saved) state and keep the modal open — the user closes it
+      // explicitly. Do NOT call onSave() here; that closes the modal before ✓ is ever visible
+      // (the divergence that made tenant save silently close instead of confirming).
       setMainSaveState(r?.success ? 'ok' : 'err');
-      setTimeout(() => setMainSaveState(null), 1500);
-      onSave();
+      setTimeout(() => setMainSaveState(null), 2000);
       return;
     }
     writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
