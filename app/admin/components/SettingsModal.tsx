@@ -9,6 +9,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { hubFetch } from '../../../lib/hub-fetch';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { confirmDialog, alertDialog } from './Dialog';
 import { LogPanel } from './LogPanel';
@@ -42,6 +43,9 @@ type Props = {
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
   initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'; // 'cost' / 'memory' 는 호환 — 자동으로 AI 탭 + sub-tab 으로 변환
+  // hub 테넌트 모드 — 지정 시 owner(hub 세션)로 스코프 + 탭을 프롬프트·메모리만 노출(나머지=root 전용).
+  // admin SettingsModal 을 그대로 재사용(owner-injection 통합), 미니버전 신규 아님.
+  hubContext?: { slug: string; apiToken: string; sessionId: string };
 };
 
 /** SettingsModal — 자체 ErrorBoundary 추가하여 modal 안 throw 가 admin tree 통째로 reset 되지 않게 격리.
@@ -54,8 +58,10 @@ export function SettingsModal(props: Props) {
   );
 }
 
-function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
+function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab, hubContext }: Props) {
   const t = useTranslations();
+  // hub 테넌트 모드 — 탭을 프롬프트·메모리로 제한 + 데이터는 hub owner 스코프 경로(/api/hub/<slug>/*).
+  const hubMode = !!hubContext;
   const queryClient = useQueryClient();
   const { lang: uiLang, setLang: setUiLang } = useLang();
   // a11y — 안정 form field id (DevTools "Duplicate form field id" 회피 + label-input 매칭).
@@ -84,6 +90,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'logs'>(() => {
+    if (hubContext) return 'ai'; // hub 테넌트 = AI 탭(프롬프트·메모리)만
     if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
     return (initialTab ?? 'general') as any;
   });
@@ -237,6 +244,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 음성(TTS) / 비용(한도·통계) / 메모리(AI Recall 메타).
   // initialTab='cost'/'memory' 는 SettingsModal entry 시점에 settingsTab='ai' + aiSubTab 으로 자동 변환.
   const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
+    if (hubContext) return 'prompt'; // hub 테넌트 = 프롬프트·메모리만 (기본 프롬프트)
     if (initialTab === 'cost') return 'cost';
     if (initialTab === 'memory') return 'memory';
     return 'llm';
@@ -351,6 +359,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
+    // hub 테넌트 모드 — /api/settings(admin) 는 401 이라 안 씀. userPrompt 만 hub 라우트로 로드
+    // (메모리는 MemoryTabContent 가 자체 로드). 나머지 admin 설정은 hub 에서 안 보이므로 불필요.
+    if (hubContext) {
+      hubFetch(hubContext, 'settings', 'get-prompt', {})
+        .then((d) => { if (d?.success && typeof d.userPrompt === 'string') setUserPrompt(d.userPrompt); })
+        .catch(() => {});
+      return;
+    }
     // 타임존 + thinking level
     apiGet<any>('/api/settings', { category: 'settings' })
       .then(data => {
@@ -670,6 +686,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
   const handleSave = async () => {
     setMainSaveState('loading');
+    // hub 테넌트 모드 — 저장 대상은 프롬프트(개인 지시사항)뿐. hub 라우트로 owner-scoped 저장,
+    // admin /api/settings·vault·모델기록은 hub 에 무관하므로 skip.
+    if (hubContext) {
+      const r = await hubFetch(hubContext, 'settings', 'set-prompt', { prompt: userPrompt }).catch(() => null);
+      setMainSaveState(r?.success ? 'ok' : 'err');
+      setTimeout(() => setMainSaveState(null), 1500);
+      onSave();
+      return;
+    }
     writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
 
     // 카테고리별 마지막 선택 모델 기록 — 공급자/모드 전환 후 복귀 시 직전 모델 복원(restoreOrFirst).
@@ -821,6 +846,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             ><ChevronRight size={16} /></button>
           )}
           <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
+          {/* hub 테넌트 = AI 탭(프롬프트·메모리)만 노출. 나머지 탭(general·secrets·mcp·capabilities·system·logs)은 root 전용이라 숨김. */}
+          {!hubMode && (
           <button
             onClick={() => switchTab('general')}
             data-active={settingsTab === 'general'}
@@ -828,6 +855,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             {t('settings_modal.tab_general')}
           </button>
+          )}
           <button
             onClick={() => switchTab('ai')}
             data-active={settingsTab === 'ai'}
@@ -835,6 +863,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             <Cpu size={14} /> AI
           </button>
+          {!hubMode && (<>
           <button
             onClick={() => switchTab('secrets')}
             data-active={settingsTab === 'secrets'}
@@ -870,6 +899,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             <ScrollText size={14} /> {t('settings_modal.tab_logs')}
           </button>
+          </>)}
           </div>
         </div>
 
@@ -1028,7 +1058,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     { v: 'tts', label: t('settings_modal.ai_sub_tab_tts') },
                     { v: 'cost', label: t('settings_modal.ai_sub_tab_cost') },
                     { v: 'memory', label: t('settings_modal.ai_sub_tab_memory') },
-                  ] as const).map(tab => (
+                  ] as const).filter(tab => !hubMode || tab.v === 'prompt' || tab.v === 'memory').map(tab => (
                     <button
                       key={tab.v}
                       onClick={() => setAiSubTab(tab.v)}
@@ -1043,7 +1073,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   ))}
                 </div>
                 {aiSubTab === 'cost' && <CostTabContent />}
-                {aiSubTab === 'memory' && <MemoryTabContent />}
+                {aiSubTab === 'memory' && <MemoryTabContent hubContext={hubContext} />}
                 {aiSubTab === 'llm' && (<>
                 <Field label={t('settings_modal.exec_mode_label')} help={t('settings_modal.exec_mode_help')}>
                   <SegButtons<'api' | 'cli'>
@@ -2413,16 +2443,22 @@ const MEMORY_CATEGORY_I18N: Record<string, string> = {
   idea: 'settings_modal.memory_category_idea',
 };
 
-function MemoryTabContent() {
+function MemoryTabContent({ hubContext }: { hubContext?: { slug: string; apiToken: string; sessionId: string } }) {
   const t = useTranslations();
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
   const [creating, setCreating] = useState(false);
 
+  // admin=/api/memory / hub=owner-scoped /api/hub/<slug>/memory op-dispatch. 같은 백엔드, owner 만 다름.
   const load = async () => {
     setLoading(true);
     try {
+      if (hubContext) {
+        const d = await hubFetch(hubContext, 'memory', 'list', {});
+        if (d?.success) setItems((d.items as MemoryItem[]) ?? []);
+        return;
+      }
       const data = await apiGet<{ success: boolean; items: MemoryItem[] }>(
         '/api/memory',
         { category: 'memory' },
@@ -2433,23 +2469,20 @@ function MemoryTabContent() {
   useEffect(() => { void load(); }, []);
 
   const save = async (item: MemoryItem, isNew: boolean) => {
-    const data = await apiPost<{ success: boolean; error?: string }>(
-      '/api/memory',
-      item,
-      { category: 'memory' },
-    );
-    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_save_failed_title'), message: data.error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
+    const data = hubContext
+      ? await hubFetch(hubContext, 'memory', 'save', { ...item }) ?? { success: false }
+      : await apiPost<{ success: boolean; error?: string }>('/api/memory', item, { category: 'memory' });
+    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_save_failed_title'), message: (data as any).error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
     setEditing(null); setCreating(false);
     void load();
   };
 
   const remove = async (name: string) => {
     if (!await confirmDialog({ title: t('settings_modal.memory_delete_title'), message: t('settings_modal.memory_delete_message', { name }), danger: true, okLabel: t('settings_modal.memory_delete_ok') })) return;
-    const data = await apiDelete<{ success: boolean; error?: string }>(
-      `/api/memory?name=${encodeURIComponent(name)}`,
-      { category: 'memory' },
-    );
-    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_delete_failed_title'), message: data.error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
+    const data = hubContext
+      ? await hubFetch(hubContext, 'memory', 'delete', { name }) ?? { success: false }
+      : await apiDelete<{ success: boolean; error?: string }>(`/api/memory?name=${encodeURIComponent(name)}`, { category: 'memory' });
+    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_delete_failed_title'), message: (data as any).error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
     void load();
   };
 

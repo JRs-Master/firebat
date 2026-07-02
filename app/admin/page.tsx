@@ -2207,7 +2207,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         onDeleteConv={handleDeleteConv}
         onRefreshChats={refreshConversations}
         aiModel={aiModel}
-        onOpenSettings={hubContext ? undefined : () => setShowSettings(true)}
+        onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath: string) => { if (hubContext && !filePath.startsWith('user/hub/')) return; setEditingFile(filePath); }}
         onOpenModuleSettings={hubContext ? undefined : handleOpenModuleSettings}
         mobileOpen={mobileMenuOpen}
@@ -2560,8 +2560,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
           />
         )}
 
-        {/* 설정 모달 */}
-        {!hubContext && showSettings && (
+        {/* 설정 모달 — hub 테넌트는 hubChatContext(세션 owner) 주입(프롬프트·메모리만, owner-scoped). admin 은 풀.
+            hub 인데 세션 아직이면(hubChatContext 미확정) admin-mode 로 새는 것 방지 — 그때는 mount 안 함. */}
+        {showSettings && (!hubContext || hubChatContext) && (
           <SettingsModal
             aiModel={aiModel}
             onAiModelChange={setAiModel}
@@ -2569,6 +2570,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             onSave={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
             onOpenModuleSettings={(name) => { setShowSettings(false); handleOpenModuleSettings(name); }}
             initialTab={settingsInitialTab}
+            hubContext={hubChatContext}
           />
         )}
 
