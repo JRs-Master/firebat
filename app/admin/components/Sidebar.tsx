@@ -710,8 +710,9 @@ export function Sidebar({
         );
       })}
       <div className="flex-1" />
-      {/* Hub page mode = 익명 방문자 → settings 진입 금지 */}
-      {onOpenSettings && !hubMode && (
+      {/* 설정 기어 — admin(풀) + hub 테넌트(프롬프트·메모리만, SettingsModal 이 hubContext 로 게이트).
+          Phase 4a: hub 도 자기 설정 엶. onOpenSettings 미설정(위젯 등)이면 안 뜸. */}
+      {onOpenSettings && (
         <Tooltip label={t('common.settings')} side="right">
           <button
             type="button"
