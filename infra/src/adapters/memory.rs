@@ -1327,15 +1327,24 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         Ok(())
     }
 
-    fn remove_event(&self, id: i64) -> InfraResult<()> {
+    fn remove_event(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("foreign_keys ON: {e}"))?;
-        let n = conn
-            .execute("DELETE FROM events WHERE id = ?1", params![id])
-            .map_err(|e| format!("event delete: {e}"))?;
+        // owner=Some → owner-scoped 삭제(hub). 불일치·미존재 시 n=0 → 아래서 권한/미존재 에러.
+        let n = match owner {
+            Some(o) => conn
+                .execute(
+                    "DELETE FROM events WHERE id = ?1 AND owner = ?2",
+                    params![id, o],
+                )
+                .map_err(|e| format!("event delete: {e}"))?,
+            None => conn
+                .execute("DELETE FROM events WHERE id = ?1", params![id])
+                .map_err(|e| format!("event delete: {e}"))?,
+        };
         if n == 0 {
-            return Err(format!("event id={} 미존재", id));
+            return Err(format!("event id={} 미존재 또는 권한 없음", id));
         }
         Ok(())
     }

@@ -2056,6 +2056,8 @@ message EpisodicUpdateEventRequest {
 message EpisodicUpdateEventResponse {}
 message EpisodicDeleteEventRequest {
   int64 id = 1;
+  // hub owner scoping — 지정 시 event.owner 일치할 때만 삭제. admin 은 omit → 무검사.
+  optional string owner = 2;
 }
 message EpisodicDeleteEventResponse {}
 message EpisodicGetEventRequest {

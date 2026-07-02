@@ -30,8 +30,8 @@ impl EpisodicManager {
         self.port.update_event(id, &patch)
     }
 
-    pub fn delete_event(&self, id: i64) -> InfraResult<()> {
-        self.port.remove_event(id)
+    pub fn delete_event(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
+        self.port.remove_event(id, owner)
     }
 
     pub fn get_event(&self, id: i64) -> InfraResult<Option<EventRecord>> {

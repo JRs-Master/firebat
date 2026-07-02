@@ -109,9 +109,9 @@ impl EpisodicService for EpisodicServiceImpl {
         &self,
         req: Request<EpisodicDeleteEventRequest>,
     ) -> Result<Response<EpisodicDeleteEventResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let r = req.into_inner();
         self.manager
-            .delete_event(id)
+            .delete_event(r.id, r.owner.as_deref())
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(EpisodicDeleteEventResponse {}))
     }

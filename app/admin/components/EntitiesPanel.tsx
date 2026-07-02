@@ -111,7 +111,10 @@ export function EntitiesPanel({
       return d?.success ? (d.facts ?? []) : [];
     },
     async events(entityId: number): Promise<EventItem[]> {
-      if (hubContext) return []; // hub: episodic events endpoint 없음 (entities timeline 만)
+      if (hubContext) {
+        const d = await hubFetch(hubContext, 'entities', 'events', { entityId, limit: 50 });
+        return d?.success ? (d.events ?? []) : [];
+      }
       const d = await apiGet<{ success: boolean; events?: EventItem[] }>(`/api/episodic?entityId=${entityId}&limit=50`, { category: 'entities' }).catch(() => null);
       return d?.success ? (d.events ?? []) : [];
     },
@@ -244,8 +247,7 @@ export function EntitiesPanel({
         >
           <Network size={11} /> 엔티티
         </button>
-        {/* 사건(events) = episodic — hub 백엔드 op 없음(admin 전용 capability). hub 에선 탭 숨김. */}
-        {!hubContext && (
+        {/* 사건(events) = episodic — admin·hub 공통(owner-scoped). hub 는 events/delete-event op 로 격리. */}
         <button
           onClick={() => setSubTab('events')}
           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold rounded-t-md transition-colors ${
@@ -254,11 +256,10 @@ export function EntitiesPanel({
         >
           <Activity size={11} /> 사건
         </button>
-        )}
       </div>
 
-      {subTab === 'events' && !hubContext ? (
-        <EventsPanel />
+      {subTab === 'events' ? (
+        <EventsPanel hubContext={hubContext} />
       ) : (
         <>
       {/* 헤더 — 검색 + 추가 */}
@@ -403,7 +404,7 @@ export function EntitiesPanel({
 
 // ── Events sub-panel ──
 
-function EventsPanel() {
+function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
   const t = useTranslations();
   const queryId = useId();
   const typeFilterId = useId();
@@ -415,6 +416,16 @@ function EventsPanel() {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
+      // admin=/api/episodic / hub=events op(owner-scoped). 둘 다 최근 사건 목록(type/query 필터).
+      if (hubContext) {
+        const d = await hubFetch(hubContext, 'entities', 'events', {
+          type: typeFilter.trim() || undefined,
+          query: query.trim() || undefined,
+          limit: 100,
+        });
+        if (d?.success) setEvents(d.events ?? []);
+        return;
+      }
       const params = new URLSearchParams();
       if (typeFilter.trim()) params.set('type', typeFilter.trim());
       if (query.trim()) params.set('query', query.trim());
@@ -427,7 +438,7 @@ function EventsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [typeFilter, query]);
+  }, [typeFilter, query, hubContext]);
 
   useEffect(() => {
     const handle = setTimeout(fetchEvents, 250);
@@ -444,6 +455,11 @@ function EventsPanel() {
     });
     if (!ok) return;
     try {
+      if (hubContext) {
+        const r = await hubFetch(hubContext, 'entities', 'delete-event', { id });
+        if (r?.success) setEvents(prev => prev.filter(e => e.id !== id));
+        return;
+      }
       await apiDelete(`/api/episodic/${id}`, { category: 'entities' });
       setEvents(prev => prev.filter(e => e.id !== id));
     } catch {

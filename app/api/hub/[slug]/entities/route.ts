@@ -8,6 +8,7 @@ import {
   saveFact,
   searchFacts,
 } from '../../../../../lib/api-gen/entity';
+import { searchEvents, deleteEvent } from '../../../../../lib/api-gen/episodic';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
@@ -110,6 +111,28 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const res = await searchFacts({ optsJson: JSON.stringify(opts) } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, facts: (res.data as unknown[]) ?? [] });
+      }
+      case 'events': {
+        // 사건(episodic) 조회 — owner-scoped. entityId 있으면 그 엔티티 관련 사건, 없으면 최근 사건.
+        // search_events 는 WHERE e.owner=? 로 엄격 필터(cross-tenant 안전).
+        const opts = {
+          query: body.query ?? '',
+          type: body.type ?? undefined,
+          entityId: body.entityId ? Number(body.entityId) : undefined,
+          limit: body.limit ?? 100,
+          owner: hubOwner,
+        };
+        const res = await searchEvents({ optsJson: JSON.stringify(opts) } as any);
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true, events: (res.data as unknown[]) ?? [] });
+      }
+      case 'delete-event': {
+        const id = Number(body.id);
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        // owner 전달 → Rust 가 event.owner 일치할 때만 삭제(불일치 시 미존재/권한거부).
+        const res = await deleteEvent({ id: BigInt(id), owner: hubOwner } as any);
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
       }
       default:
         return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });
