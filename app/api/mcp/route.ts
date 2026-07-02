@@ -22,8 +22,12 @@ async function proxy(req: NextRequest): Promise<Response> {
     headers,
     body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer(),
   };
+  // Forward the incoming query string (e.g. ?token=<API token>). Claude.ai's web custom-connector
+  // UI has no static-token/header field — only a URL + optional OAuth — so the token must ride in
+  // the URL. The Rust verify_token reads ?token= as a fallback when no Authorization header is set.
+  const target = TARGET + req.nextUrl.search;
   try {
-    const upstream = await fetch(TARGET, init);
+    const upstream = await fetch(target, init);
     return new Response(upstream.body, {
       status: upstream.status,
       headers: upstream.headers,
@@ -34,7 +38,7 @@ async function proxy(req: NextRequest): Promise<Response> {
         error: 'Rust MCP server 연결 실패. FIREBAT_MCP_ENABLED=true + restart 확인.',
         target: TARGET,
         detail: String(err),
-      }),
+      }),  // note: TARGET shown without query to avoid logging the token
       { status: 502, headers: { 'Content-Type': 'application/json' } },
     );
   }

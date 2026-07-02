@@ -286,6 +286,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mcpTokenCopied, setMcpTokenCopied] = useState(false);
   const [mcpJsonTab, setMcpJsonTab] = useState<'api' | 'stdio'>('api');
   const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
+  const [mcpWebUrlCopied, setMcpWebUrlCopied] = useState(false);
 
   // 시스템 모듈
   const [sysModules, setSysModules] = useState<SystemModule[]>([]);
@@ -2026,6 +2027,31 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
                         </pre>
+                        {/* Claude.ai 웹 커스텀 커넥터 — 헤더 칸이 없어 토큰을 URL 에 실음 (?token=). */}
+                        <div className="mt-1 border-t border-slate-200 pt-2 flex flex-col gap-1.5">
+                          <p className="text-[10px] sm:text-[11px] font-bold text-slate-600">{t('settings_modal.mcp_json_web_connector_title')}</p>
+                          <p className="text-[10px] text-slate-500 leading-relaxed">{t('settings_modal.mcp_json_web_connector_desc')}</p>
+                          {(() => {
+                            const webUrl = `${window.location.origin}/api/mcp?token=${encodeURIComponent(tokenValue)}`;
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <code className="flex-1 text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">{webUrl}</code>
+                                <div className="relative">
+                                  <Tooltip label={t('common.copy')}>
+                                    <button
+                                      onClick={() => copyToClipboard(webUrl, setMcpWebUrlCopied)}
+                                      className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
+                                    >
+                                      <Copy size={12} className="text-slate-400" />
+                                    </button>
+                                  </Tooltip>
+                                  <FeedbackBadge state={mcpWebUrlCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          <p className="text-[10px] text-amber-600 leading-relaxed">{t('settings_modal.mcp_json_web_connector_warning')}</p>
+                        </div>
                         {!mcpTokenInfo.exists && (
                           <p className="text-[10px] text-amber-600 font-bold">{t('settings_modal.mcp_json_token_required')}</p>
                         )}

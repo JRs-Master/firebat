@@ -230,16 +230,34 @@ fn hub_blocks_tool(name: &str) -> bool {
         )
 }
 
+/// `?token=` 쿼리 파라미터 — Claude.ai 웹 커스텀 커넥터용. 그 UI 는 URL + OAuth(선택)만 받고
+/// 정적 Bearer 헤더 칸이 없어, 토큰을 URL 에 실어야 붙일 수 있다(헤더 방식은 Desktop/IDE/CLI 용).
+#[derive(serde::Deserialize)]
+pub struct TokenQuery {
+    pub token: Option<String>,
+}
+
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
 ///   1. Vault `system:internal-mcp-token` (옛 internal MCP 토큰 — Frontend / CLI 어댑터)
 ///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
 /// 검증 성공 시 검증된 토큰 문자열 반환 — handle_rpc 가 이 토큰으로 hub 컨텍스트를 lookup 해 격리.
-fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<String, StatusCode> {
-    let auth = headers
+/// `query_token` = `?token=` fallback (헤더 우선; Claude.ai 웹 커넥터는 헤더 칸이 없어 URL 로 실음).
+fn verify_token(
+    state: &Arc<McpServerState>,
+    headers: &HeaderMap,
+    query_token: Option<&str>,
+) -> Result<String, StatusCode> {
+    let header_token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
+        .and_then(|a| a.strip_prefix("Bearer "))
         .unwrap_or("");
-    let token = auth.strip_prefix("Bearer ").unwrap_or("");
+    // 헤더 우선, 없으면 `?token=` 쿼리 fallback.
+    let token = if !header_token.is_empty() {
+        header_token
+    } else {
+        query_token.unwrap_or("").trim()
+    };
     if token.is_empty() {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -271,10 +289,11 @@ fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<Stri
 
 async fn handle_rpc(
     State(state): State<Arc<McpServerState>>,
+    axum::extract::Query(q): axum::extract::Query<TokenQuery>,
     headers: HeaderMap,
     Json(req): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
-    let token = match verify_token(&state, &headers) {
+    let token = match verify_token(&state, &headers, q.token.as_deref()) {
         Ok(t) => t,
         Err(status) => {
             return (status, Json(serde_json::json!({"error": "unauthorized"}))).into_response()
@@ -520,9 +539,10 @@ async fn gated_tool_call(
 
 async fn handle_sse(
     State(state): State<Arc<McpServerState>>,
+    axum::extract::Query(q): axum::extract::Query<TokenQuery>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Err(status) = verify_token(&state, &headers) {
+    if let Err(status) = verify_token(&state, &headers, q.token.as_deref()) {
         return (status, "unauthorized").into_response();
     }
     // SSE streaming — 추후 도입 (listChanged 알림 등).
