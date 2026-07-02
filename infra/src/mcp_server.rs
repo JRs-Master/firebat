@@ -789,7 +789,8 @@ pub struct RenderUnifiedHandler;
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         // 실행 본체는 core 의 단일 소스에 있음 (ToolManager FC 경로와 공유 → drift 차단).
-        firebat_core::managers::ai::render_exec::render_blocks(&args)
+        // tool_mode=true — code/math/diagram 외 컴포넌트는 거부(fence 강제, 한국어 깨짐 차단).
+        firebat_core::managers::ai::render_exec::render_blocks(&args, true)
     }
 }
 

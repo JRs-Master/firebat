@@ -15,9 +15,20 @@ use serde_json::Value;
 
 use super::component_registry;
 
+/// render 도구로 호출해도 되는 예외 컴포넌트 — code/markup-heavy 라 fence JSON 안에서 따옴표·
+/// 줄바꿈·백슬래시 hand-escape 가 깨지기 쉬워 tool 인자(FC 레이어가 안전 escape)가 낫다. 그 외
+/// 모든 컴포넌트(table/callout/text/chart/…)는 **fence 전용** — 도구 인자에 한국어를 넣으면
+/// 모델이 철자를 degrade 시키기 때문(tool_use input 한국어 깨짐). html 은 render_iframe 별도 경로.
+const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
+
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
-pub fn render_blocks(args: &Value) -> Result<Value, String> {
+///
+/// `tool_mode` = render **도구** 경로(FC/MCP)면 true. true 일 때 fence-able 컴포넌트
+/// (code/math/diagram 외 전부)는 거부 → 모델이 firebat-render fence(텍스트 채널)로 내도록 강제.
+/// 한국어가 도구 인자에서 깨지는 걸 구조적으로 차단(프롬프트 soft 지시 → 강제). fence 경로
+/// (mask_and_sanitize_fences)는 tool_mode=false 로 호출해 전 컴포넌트 통과.
+pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
     // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
     // blocks 배열 자체를 직접 보내는 경우 수용.
     let parsed_args: Value = match args.as_str() {
@@ -79,6 +90,21 @@ pub fn render_blocks(args: &Value) -> Result<Value, String> {
                 continue;
             }
         };
+
+        // 도구 경로 fence 강제 — code/math/diagram 외 컴포넌트는 도구로 못 만든다(한국어 깨짐).
+        // 거부 → 모델이 firebat-render fence 로 reply 텍스트에 직접 쓰게 유도. fence 경로는 통과.
+        if tool_mode && !TOOL_ALLOWED_TYPES.contains(&comp.component_type.as_str()) {
+            failed.push(serde_json::json!({
+                "idx": idx,
+                "type": block_type,
+                "error": format!(
+                    "'{}' 는 render 도구로 만들 수 없습니다. reply 텍스트에 ```firebat-render``` fence 로 직접 쓰세요(도구 인자에 넣으면 한국어 철자가 깨집니다). 도구는 code/math/diagram 전용입니다.",
+                    comp.component_type
+                ),
+                "useFence": true,
+            }));
+            continue;
+        }
 
         // AI hallucination normalize — 'name' → 'title' 매핑 후 sanitize_to_schema 재귀 정규화.
         if let Some(obj) = props.as_object_mut() {
@@ -205,7 +231,8 @@ fn sanitize_fence_body(body: &str) -> (String, Value, Value) {
     } else {
         parsed
     };
-    match render_blocks(&args) {
+    // fence 경로 — tool_mode=false: 전 컴포넌트 통과(fence 가 한국어 안전한 정공 채널).
+    match render_blocks(&args, false) {
         Ok(result) => {
             let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));
             let failed = result.get("failed").cloned().unwrap_or_else(|| serde_json::json!([]));

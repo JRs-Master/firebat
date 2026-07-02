@@ -1117,7 +1117,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "render".to_string(),
-            description: "UI 컴포넌트 렌더링 — blocks 배열로 한 번에 렌더. 각 block = `type`(컴포넌트 이름, 26 종 enum) + `props`(해당 컴포넌트 schema). 실패 시 schema 에러 반환 — props 맞춰 재호출.".to_string(),
+            description: "코드/마크업 계열 컴포넌트(code / math / diagram) 전용 렌더링 도구. blocks 배열, 각 block = `type` + `props`. **그 외 모든 컴포넌트(table / callout / text / chart / quiz / … )는 이 도구로 만들지 말고 reply 텍스트에 ```firebat-render``` fence 로 직접 쓰세요** — 도구 인자에 넣으면 한국어 철자가 깨집니다. 도구가 code/math/diagram 외 type 을 받으면 거부합니다.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1140,7 +1140,8 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
             }),
             source: "core".to_string(),
         },
-        |args| async move { render_exec::render_blocks(&args) },
+        // tool_mode=true — code/math/diagram 외 컴포넌트는 거부(fence 강제, 한국어 깨짐 차단).
+        |args| async move { render_exec::render_blocks(&args, true) },
     );
 
     // suggest — 다음 행동 제안 칩 (AiManager 가 응답 suggestions 로 변환).
