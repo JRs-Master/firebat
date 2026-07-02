@@ -48,6 +48,7 @@ async fn user_prompt_2000_chars_limit() {
     let resp = svc
         .set_user_prompt(Request::new(SettingsSetUserPromptRequest {
             prompt: too_long,
+            owner: None,
         }))
         .await
         .unwrap();

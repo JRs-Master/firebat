@@ -33,7 +33,6 @@ use crate::vault_keys::{
     DEFAULT_LLM_MODEL_FALLBACK, DEFAULT_THINKING_LEVEL, USER_PROMPT_MAX_CHARS,
     VK_LLM_ANTHROPIC_CACHE, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_MODEL,
     VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_SYSTEM_TIMEZONE,
-    VK_SYSTEM_USER_PROMPT,
 };
 
 pub struct SettingsServiceImpl {
@@ -110,10 +109,14 @@ impl SettingsService for SettingsServiceImpl {
 
     async fn get_user_prompt(
         &self,
-        _req: Request<SettingsGetUserPromptRequest>,
+        req: Request<SettingsGetUserPromptRequest>,
     ) -> Result<Response<SettingsGetUserPromptResponse>, TonicStatus> {
+        // owner 별 격리 — hub 세션 owner 면 그 키, admin/omit 이면 전역(system:user-prompt).
+        let key = crate::managers::ai::prompt_builder::user_prompt_vault_key(
+            req.into_inner().owner.as_deref(),
+        );
         Ok(Response::new(SettingsGetUserPromptResponse {
-            prompt: self.get_or_default(VK_SYSTEM_USER_PROMPT, ""),
+            prompt: self.get_or_default(&key, ""),
         }))
     }
 
@@ -121,12 +124,13 @@ impl SettingsService for SettingsServiceImpl {
         &self,
         req: Request<SettingsSetUserPromptRequest>,
     ) -> Result<Response<SettingsSetUserPromptResponse>, TonicStatus> {
-        let prompt = req.into_inner().prompt;
+        let r = req.into_inner();
         // 옛 TS 와 동일 — USER_PROMPT_MAX_CHARS (2000자) 제한
-        if prompt.chars().count() > USER_PROMPT_MAX_CHARS {
+        if r.prompt.chars().count() > USER_PROMPT_MAX_CHARS {
             return Ok(Response::new(SettingsSetUserPromptResponse { ok: false }));
         }
-        let ok = self.vault.set_secret(VK_SYSTEM_USER_PROMPT, &prompt);
+        let key = crate::managers::ai::prompt_builder::user_prompt_vault_key(r.owner.as_deref());
+        let ok = self.vault.set_secret(&key, &r.prompt);
         Ok(Response::new(SettingsSetUserPromptResponse { ok }))
     }
 

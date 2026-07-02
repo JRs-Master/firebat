@@ -28,6 +28,7 @@ async fn save_then_read_roundtrip() {
         content: "developer".to_string(),
         category: "user".to_string(),
         description: "role".to_string(),
+        owner: None,
     }))
     .await
     .unwrap();
@@ -35,6 +36,7 @@ async fn save_then_read_roundtrip() {
     let resp = svc
         .read_file(Request::new(MemoryReadFileRequest {
             name: "user_role".to_string(),
+            owner: None,
         }))
         .await
         .unwrap();
@@ -50,6 +52,7 @@ async fn path_traversal_rejected() {
     let resp = svc
         .read_file(Request::new(MemoryReadFileRequest {
             name: "../../../etc/passwd".to_string(),
+            owner: None,
         }))
         .await;
     assert!(resp.is_err());
@@ -67,7 +70,7 @@ async fn list_excludes_memory_md_and_non_md() {
     std::fs::write(mem_dir.join("readme.txt"), "z").unwrap(); // 비-md 제외
 
     let resp = svc
-        .list_files(Request::new(MemoryListFilesRequest {}))
+        .list_files(Request::new(MemoryListFilesRequest { owner: None }))
         .await
         .unwrap();
     let arr: Vec<serde_json::Value> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();

@@ -1094,7 +1094,17 @@ impl AiManager {
                         title: c.title.clone(),
                     }
                 });
-                let base_prompt = pb.build(extra.as_deref(), cron_ctx.as_ref());
+                // user-prompt owner — hub 세션이면 그 owner(hub:<inst>:<sid>)의 개인 지시사항을,
+                // admin 이면 전역(None) 을 주입. 다른 hub 데이터 owner 스코프와 동일 형식.
+                let up_owner: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
+                    let scope = if c.session_id.is_empty() {
+                        c.instance_id.clone()
+                    } else {
+                        format!("{}:{}", c.instance_id, c.session_id)
+                    };
+                    format!("hub:{}", scope)
+                });
+                let base_prompt = pb.build(extra.as_deref(), cron_ctx.as_ref(), up_owner.as_deref());
 
                 // plan_execute_id / plan_revise_id 우선 처리 — 사용자 ✓실행 / ⚙수정 클릭 후 follow-up
                 // turn. plan_store 에서 조회 → 시스템 프롬프트 prepend + 옛 plan_prefix 우회 (plan 카드

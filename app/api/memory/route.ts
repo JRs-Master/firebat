@@ -12,7 +12,7 @@ import { listMemoryFiles, saveMemoryFile, deleteMemoryFile } from '../../../lib/
 import { withAuth } from '../../../lib/with-api-error';
 
 export const GET = withAuth(async () => {
-  const res = await listMemoryFiles();
+  const res = await listMemoryFiles({});
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, items: res.data });
 });

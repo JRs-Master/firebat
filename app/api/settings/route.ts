@@ -37,7 +37,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     getAiAssistantModel(),
     getAvailableAiAssistantModels(),
     getAvailableAiModels(),
-    getUserPrompt(),
+    getUserPrompt({}),
     getLastModelByCategory(),
     getImageModel(),
     getAvailableImageModels(),

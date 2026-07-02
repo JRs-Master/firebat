@@ -44,7 +44,7 @@ fn pb(v: Arc<dyn IVaultPort>) -> PromptBuilder {
 fn base_prompt_contains_tool_system_sections() {
     let (v, _dir) = vault();
     let pb = pb(v);
-    let prompt = pb.build(None, None);
+    let prompt = pb.build(None, None, None);
     assert!(prompt.contains("Firebat is an AI agent"));
     assert!(prompt.contains("Tool usage principles"));
     assert!(prompt.contains("Component rendering"));
@@ -59,7 +59,7 @@ fn user_prompt_appended_when_set() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_USER_PROMPT, "당신은 도메인 전문가입니다.");
     let pb = pb(v);
-    let prompt = pb.build(None, None);
+    let prompt = pb.build(None, None, None);
     assert!(prompt.contains("도메인 전문가"));
     assert!(prompt.contains("USER_INSTRUCTIONS"));
     assert!(prompt.contains("사용자 지시사항"));
@@ -70,7 +70,7 @@ fn user_prompt_skipped_when_empty() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_USER_PROMPT, "");
     let pb = pb(v);
-    let prompt = pb.build(None, None);
+    let prompt = pb.build(None, None, None);
     assert!(!prompt.contains("USER_INSTRUCTIONS"));
     assert!(!prompt.contains("사용자 지시사항"));
 }
@@ -79,7 +79,7 @@ fn user_prompt_skipped_when_empty() {
 fn timezone_default_seoul_appears_in_prompt() {
     let (v, _dir) = vault();
     let pb = pb(v);
-    let prompt = pb.build(None, None);
+    let prompt = pb.build(None, None, None);
     // Vault 미설정 → Asia/Seoul fallback
     assert!(prompt.contains("Asia/Seoul"));
 }
@@ -89,7 +89,7 @@ fn timezone_override_via_vault() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_TIMEZONE, "America/New_York");
     let pb = pb(v);
-    let prompt = pb.build(None, None);
+    let prompt = pb.build(None, None, None);
     assert!(prompt.contains("America/New_York"));
     let scheduling_section_idx = prompt.find("Timezone:").expect("Timezone section required");
     let scheduling_section = &prompt[scheduling_section_idx..scheduling_section_idx + 200];
@@ -100,7 +100,7 @@ fn timezone_override_via_vault() {
 fn extra_context_replaces_system_context_placeholder() {
     let (v, _dir) = vault();
     let pb = pb(v);
-    let prompt = pb.build(Some("등록된 sysmod: kiwoom, naver-search"), None);
+    let prompt = pb.build(Some("등록된 sysmod: kiwoom, naver-search"), None, None);
     assert!(prompt.contains("등록된 sysmod: kiwoom, naver-search"));
     assert!(!prompt.contains("{system_context}"));
 }
@@ -115,6 +115,7 @@ fn cron_agent_prelude_prepended() {
             job_id: "job-2026-04-25-stock-weekly".to_string(),
             title: Some("주간 증시 일정".to_string()),
         }),
+        None,
     );
     assert!(prompt.contains("Cron Agent mode"));
     assert!(prompt.contains("job-2026-04-25-stock-weekly"));
@@ -135,6 +136,7 @@ fn cron_agent_without_title_handles_gracefully() {
             job_id: "job-id-only".to_string(),
             title: None,
         }),
+        None,
     );
     assert!(prompt.contains("job-id-only"));
     assert!(!prompt.contains("{job_title_line}"));
@@ -144,7 +146,7 @@ fn cron_agent_without_title_handles_gracefully() {
 fn no_unreplaced_placeholders_in_default_build() {
     let (v, _dir) = vault();
     let pb = pb(v);
-    let prompt = pb.build(Some("ctx"), None);
+    let prompt = pb.build(Some("ctx"), None, None);
     let unreplaced_patterns = ["{system_context}", "{user_tz}", "{now_korean}", "{user_section}"];
     for pattern in unreplaced_patterns {
         assert!(!prompt.contains(pattern), "placeholder {} 미치환", pattern);
@@ -161,6 +163,7 @@ fn cron_agent_replaces_all_placeholders() {
             job_id: "test-job".to_string(),
             title: Some("test title".to_string()),
         }),
+        None,
     );
     let unreplaced_patterns = [
         "{system_context}",

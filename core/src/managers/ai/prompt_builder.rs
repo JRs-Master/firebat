@@ -35,6 +35,16 @@ pub struct CronAgentContext {
     pub title: Option<String>,
 }
 
+/// user-prompt Vault 키 — owner 별 격리. admin/전역 = `system:user-prompt`(기존),
+/// hub 세션 owner(`hub:<inst>:<sid>`) = `user-prompt:<owner>`. grpc settings 와 prompt_builder 가 공유.
+/// (owner None / 빈 / "admin" = 전역 — 기존 동작 하위호환.)
+pub fn user_prompt_vault_key(owner: Option<&str>) -> String {
+    match owner {
+        Some(o) if !o.is_empty() && o != "admin" => format!("user-prompt:{o}"),
+        _ => VK_SYSTEM_USER_PROMPT.to_string(),
+    }
+}
+
 pub struct PromptBuilder {
     vault: Arc<dyn IVaultPort>,
 }
@@ -65,13 +75,20 @@ impl PromptBuilder {
 
     /// 시스템 프롬프트 빌드 — base + extra_context + cron-agent 옵션 + user prompt 주입.
     /// 옛 TS PromptBuilder.build() 1:1.
-    pub fn build(&self, extra_context: Option<&str>, cron_agent: Option<&CronAgentContext>) -> String {
+    pub fn build(
+        &self,
+        extra_context: Option<&str>,
+        cron_agent: Option<&CronAgentContext>,
+        user_prompt_owner: Option<&str>,
+    ) -> String {
         let user_tz = self.user_tz();
         let user_tz_str = user_tz.name();
         let now_korean = self.now_korean();
+        // owner 별 user-prompt — hub 세션은 자기 것, admin/전역은 system:user-prompt.
+        // (옛엔 전역만 읽어 admin userPrompt 가 hub 프롬프트에도 새어 들어가던 것 차단.)
         let user_prompt = self
             .vault
-            .get_secret(VK_SYSTEM_USER_PROMPT)
+            .get_secret(&user_prompt_vault_key(user_prompt_owner))
             .filter(|s| !s.trim().is_empty());
         let user_section = match &user_prompt {
             Some(p) => format!(

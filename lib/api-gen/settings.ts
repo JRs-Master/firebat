@@ -7,6 +7,7 @@
 import {
   AiAssistantModelPb,
   AvailableAiModelPb,
+  SettingsGetUserPromptRequestSchema,
   SettingsService,
   SettingsSetAiAssistantModelRequestSchema,
   SettingsSetAiModelRequestSchema,
@@ -78,9 +79,9 @@ export async function setAiThinkingLevel(args: MessageInitShape<typeof SettingsS
   }
 }
 
-export async function getUserPrompt(): Promise<RpcResult<string>> {
+export async function getUserPrompt(args: MessageInitShape<typeof SettingsGetUserPromptRequestSchema>): Promise<RpcResult<string>> {
   try {
-      const response = await settingsClient.getUserPrompt({});
+      const response = await settingsClient.getUserPrompt(args ?? {});
       return { ok: true, data: unBigInt(response.prompt) };
   } catch (err) {
     return toRpcError(err);

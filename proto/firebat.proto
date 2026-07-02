@@ -2262,10 +2262,18 @@ message SettingsGetAiThinkingLevelResponse { string level = 1; }
 message SettingsSetAiThinkingLevelRequest { string level = 1; }
 message SettingsSetAiThinkingLevelResponse { bool ok = 1; }
 
-message SettingsGetUserPromptRequest {}
+message SettingsGetUserPromptRequest {
+  // owner scoping — hub 세션 owner(hub:<inst>:<sid>) 지정 시 그 owner 의 user-prompt.
+  // admin/omit = 전역(system:user-prompt).
+  optional string owner = 1;
+}
 message SettingsGetUserPromptResponse { string prompt = 1; }
 
-message SettingsSetUserPromptRequest { string prompt = 1; }
+message SettingsSetUserPromptRequest {
+  string prompt = 1;
+  // owner scoping — hub 세션 owner 지정 시 그 owner 의 user-prompt 에 저장. admin/omit = 전역.
+  optional string owner = 2;
+}
 message SettingsSetUserPromptResponse { bool ok = 1; }
 
 message SettingsGetAnthropicCacheEnabledRequest {}
@@ -2445,12 +2453,16 @@ message MemoryGetIndexResponse {
 message MemoryReadFileRequest {
   // 파일명 (확장자 생략 가능 — .md 자동 추가).
   string name = 1;
+  // owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory. admin/omit = admin scope.
+  optional string owner = 2;
 }
 message MemoryReadFileResponse {
   // { category, name, description, content } JSON (frontmatter 파싱).
   string raw_json = 1;
 }
-message MemoryListFilesRequest {}
+message MemoryListFilesRequest {
+  optional string owner = 1;
+}
 message MemoryListFilesResponse {
   // [{ category, name, description }] JSON (MEMORY.md 제외, frontmatter 파싱).
   string raw_json = 1;
@@ -2462,10 +2474,14 @@ message MemorySaveFileRequest {
   string category = 3;
   // 한 줄 요약 — 인덱스 노출 + frontmatter 에 기록.
   string description = 4;
+  // owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory 에 저장. admin/omit = admin scope.
+  optional string owner = 5;
 }
 message MemorySaveFileResponse {}
 message MemoryDeleteFileRequest {
   string name = 1;
+  // owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory 에서 삭제. admin/omit = admin scope.
+  optional string owner = 2;
 }
 message MemoryDeleteFileResponse {}
 

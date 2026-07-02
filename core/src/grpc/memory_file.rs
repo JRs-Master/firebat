@@ -4,9 +4,10 @@
 //! the other *.md files are individual entries. Four categories: user / feedback /
 //! project / reference.
 //!
-//! This service is the admin tab's CRUD path — always admin scope (None owner). The AI
-//! `memory_*` tools call `MemoryFileManager` directly with their own owner. All file logic
-//! (frontmatter, index, owner scoping) lives in the manager so both paths stay in sync.
+//! CRUD path for the admin tab (owner omit = admin scope) AND hub-tenant settings (owner =
+//! `hub:<inst>:<sid>` via `/api/hub/<slug>/memory`). The AI `memory_*` tools also call the
+//! manager directly with their own owner. All file logic (frontmatter, index, owner scoping)
+//! lives in the manager so every path stays in sync.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -47,8 +48,8 @@ impl MemoryService for MemoryServiceImpl {
         &self,
         req: Request<MemoryReadFileRequest>,
     ) -> Result<Response<MemoryReadFileResponse>, TonicStatus> {
-        let name = req.into_inner().name;
-        match self.manager.read(None, &name).await {
+        let r = req.into_inner();
+        match self.manager.read(r.owner.as_deref(), &r.name).await {
             Ok(entry) => Ok(Response::new(MemoryReadFileResponse {
                 raw_json: to_raw_json(&entry),
             })),
@@ -58,9 +59,13 @@ impl MemoryService for MemoryServiceImpl {
 
     async fn list_files(
         &self,
-        _req: Request<MemoryListFilesRequest>,
+        req: Request<MemoryListFilesRequest>,
     ) -> Result<Response<MemoryListFilesResponse>, TonicStatus> {
-        let entries = self.manager.list(None).await.unwrap_or_default();
+        let entries = self
+            .manager
+            .list(req.into_inner().owner.as_deref())
+            .await
+            .unwrap_or_default();
         Ok(Response::new(MemoryListFilesResponse {
             raw_json: to_raw_json(&entries),
         }))
@@ -71,6 +76,7 @@ impl MemoryService for MemoryServiceImpl {
         req: Request<MemorySaveFileRequest>,
     ) -> Result<Response<MemorySaveFileResponse>, TonicStatus> {
         let args = req.into_inner();
+        let owner = args.owner.clone();
         let entry = MemoryEntry {
             category: args.category,
             name: args.name,
@@ -78,7 +84,7 @@ impl MemoryService for MemoryServiceImpl {
             content: args.content,
         };
         self.manager
-            .save(None, &entry)
+            .save(owner.as_deref(), &entry)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(MemorySaveFileResponse {}))
@@ -88,9 +94,9 @@ impl MemoryService for MemoryServiceImpl {
         &self,
         req: Request<MemoryDeleteFileRequest>,
     ) -> Result<Response<MemoryDeleteFileResponse>, TonicStatus> {
-        let name = req.into_inner().name;
+        let r = req.into_inner();
         self.manager
-            .delete(None, &name)
+            .delete(r.owner.as_deref(), &r.name)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(MemoryDeleteFileResponse {}))

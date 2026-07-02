@@ -6,6 +6,7 @@
 
 import {
   MemoryDeleteFileRequestSchema,
+  MemoryListFilesRequestSchema,
   MemoryReadFileRequestSchema,
   MemorySaveFileRequestSchema,
   MemoryService,
@@ -36,9 +37,9 @@ export async function readFile(args: MessageInitShape<typeof MemoryReadFileReque
   }
 }
 
-export async function listFiles(): Promise<RpcResult<unknown>> {
+export async function listFiles(args: MessageInitShape<typeof MemoryListFilesRequestSchema>): Promise<RpcResult<unknown>> {
   try {
-      const response = await memoryClient.listFiles({});
+      const response = await memoryClient.listFiles(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);
