@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserPrompt, setUserPrompt } from '../../../../../lib/api-gen/settings';
+import { loadSettings, saveSettings } from '../../../../../lib/settings-io';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
 /**
- * POST /api/hub/[slug]/settings: hub tenant settings dispatcher (prompt = personal instructions).
+ * POST /api/hub/[slug]/settings: owner-scoped settings dispatcher for a hub tenant.
  *
- * Auth = X-Api-Token + X-Session-Id, forcing owner `hub:<inst>:<sid>` automatically. The Rust SettingsService
- * isolates by per-owner user-prompt key. ops: get-prompt / set-prompt. (The bot-persona system_prompt is
- * separate, in HubInstanceDetail; this is the tenant's personal-instructions userPrompt.)
+ * Auth = X-Api-Token + X-Session-Id, forcing owner `hub:<inst>:<sid>` automatically. Uses the same
+ * lib/settings-io loadSettings/saveSettings as admin `/api/settings`, only owner differs — so the
+ * full settings shape is returned/accepted and load/save converge with admin (tabs that open later
+ * need no route change). A tenant reads the shared admin globals but persists only its per-tenant
+ * fields (userPrompt today); the rest are read-only until per-tenant login (Phase 4).
+ * ops: get-settings / save-settings.
  */
 export const dynamic = 'force-dynamic';
 
@@ -28,15 +31,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   try {
     switch (op) {
-      case 'get-prompt': {
-        const res = await getUserPrompt({ owner } as any);
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: true, userPrompt: res.data ?? '' });
+      case 'get-settings': {
+        return NextResponse.json(await loadSettings(owner));
       }
-      case 'set-prompt': {
-        const res = await setUserPrompt({ prompt: String(body.prompt ?? ''), owner } as any);
-        if (!res.ok) return jsonResponse(500, { error: res.message });
-        return NextResponse.json({ success: res.data === true });
+      case 'save-settings': {
+        await saveSettings(body, owner);
+        return NextResponse.json({ success: true });
       }
       default:
         return jsonResponse(400, { error: `지원되지 않는 op: ${op}` });

@@ -63,6 +63,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // hub tenant mode: limit tabs to prompt/memory and route data through owner-scoped /api/hub/<slug>/*.
   const hubMode = !!hubContext;
   const queryClient = useQueryClient();
+  // Single owner-injected settings endpoint — the ONE place owner (hubContext) branches. Both
+  // load() and save() use the identical full-settings shape as admin; a hub tenant just routes
+  // through /api/hub/<slug>/settings (owner-scoped) instead of /api/settings. Load and save below
+  // are owner-agnostic, so enabling more tenant tabs later needs no change here.
+  const settingsEndpoint = useMemo(() => (hubContext ? {
+    load: () => hubFetch(hubContext, 'settings', 'get-settings', {}),
+    save: async (p: Record<string, any>) =>
+      (await hubFetch(hubContext, 'settings', 'save-settings', p).catch(() => null))?.success === true,
+  } : {
+    load: () => apiGet<any>('/api/settings', { category: 'settings' }).catch(() => null),
+    save: async (p: Record<string, any>) => {
+      await apiPatch('/api/settings', p, { category: 'settings' }).catch(() => {});
+      return true;
+    },
+  }), [hubContext]);
   const { lang: uiLang, setLang: setUiLang } = useLang();
   // a11y — 안정 form field id (DevTools "Duplicate form field id" 회피 + label-input 매칭).
   const userTimezoneId = useId();
@@ -357,43 +372,32 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       .catch(() => {});
   }, []);
 
-  // ── 데이터 로드 ────────────────────────────────────────────────────────────
+  // ── Data load — one owner-injected path (settingsEndpoint), identical full shape for admin & hub.
   useEffect(() => {
-    // hub tenant mode: /api/settings (admin) 401s, so skip it. Load only userPrompt via the hub route
-    // (memory loads itself in MemoryTabContent). Other admin settings are hidden in hub, so not needed.
-    if (hubContext) {
-      hubFetch(hubContext, 'settings', 'get-prompt', {})
-        .then((d) => { if (d?.success && typeof d.userPrompt === 'string') setUserPrompt(d.userPrompt); })
-        .catch(() => {});
-      return;
-    }
-    // 타임존 + thinking level
-    apiGet<any>('/api/settings', { category: 'settings' })
-      .then(data => {
-        if (data.success) {
-          if (data.timezone) setUserTimezone(data.timezone);
-          if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
-          if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
-          if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
-          if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
-          if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
-          if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
-          if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
-          if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
-          if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
-          if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
-          if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
-          if (typeof data.ttsProvider === 'string' && data.ttsProvider) setTtsProvider(data.ttsProvider);
-          if (typeof data.ttsModel === 'string') setTtsModel(data.ttsModel);
-          if (typeof data.ttsVoice === 'string') setTtsVoice(data.ttsVoice);
-          if (typeof data.ttsAlignProvider === 'string') setTtsAlignProvider(data.ttsAlignProvider);
-        }
+    settingsEndpoint.load()
+      .then((data: any) => {
+        if (!data?.success) return;
+        if (data.timezone) setUserTimezone(data.timezone);
+        if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
+        if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
+        if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
+        if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
+        if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
+        if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
+        if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
+        if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
+        if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
+        if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
+        if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
+        if (typeof data.ttsProvider === 'string' && data.ttsProvider) setTtsProvider(data.ttsProvider);
+        if (typeof data.ttsModel === 'string') setTtsModel(data.ttsModel);
+        if (typeof data.ttsVoice === 'string') setTtsVoice(data.ttsVoice);
+        if (typeof data.ttsAlignProvider === 'string') setTtsAlignProvider(data.ttsAlignProvider);
       })
       .catch(() => {});
-
-    // Vault 키 현황
-    refreshVaultKeys();
-  }, [refreshVaultKeys]);
+    // Vault key display = admin-only capability (a tenant has no key management, uses shared vault).
+    if (!hubContext) refreshVaultKeys();
+  }, [settingsEndpoint, refreshVaultKeys, hubContext]);
 
   // 사용자 커스텀 프롬프트 저장
   // 시크릿
@@ -684,61 +688,57 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
-  // Single owner-injected persistence layer — the ONE place `owner` (hubContext) branches.
-  // admin persists the full settings batch + vault keys; a hub tenant persists only its
-  // owner-scoped userPrompt (its other tabs are hidden). handleSave below stays owner-agnostic.
-  // Returns false only on a real save failure (admin batch is best-effort → always true).
+  // Persist settings. owner-injection lives entirely in settingsEndpoint.save (single point); the
+  // admin-only extras below (model-category memory, provider vault keys) are capability-guarded,
+  // not forks of shared logic. Returns false only on a real save failure.
   const persistSettings = async (): Promise<boolean> => {
-    if (hubContext) {
-      const r = await hubFetch(hubContext, 'settings', 'set-prompt', { prompt: userPrompt }).catch(() => null);
-      return r?.success === true;
-    }
-    writeSetting('firebat_model', aiModel); // fallback via SettingsManager
-
-    // Per-category last-selected model — restores the previous model when switching provider/mode
-    // back (restoreOrFirst). Updated only at save time (preview clicks don't touch it). Persisted
-    // to localStorage (instant) + backend (multi-device).
     const saveCat = aiModel ? categoryOf(aiModel) : '';
     const nextLastModelByCategory = saveCat
       ? { ...lastModelByCategory, [saveCat]: aiModel }
       : lastModelByCategory;
-    if (saveCat) setLastModelByCategory(nextLastModelByCategory);
+    // Model tab is admin-only, so the localStorage fallback + per-category memory apply only there.
+    if (!hubContext) {
+      writeSetting('firebat_model', aiModel);
+      if (saveCat) setLastModelByCategory(nextLastModelByCategory);
+    }
 
-    await apiPatch(
-      '/api/settings',
-      {
-        timezone: userTimezone,
-        aiModel,
-        aiThinkingLevel: thinkingLevel,
-        aiRouterEnabled,
-        aiAssistantModel,
-        imageModel,
-        imageDefaultSize,
-        imageDefaultQuality,
-        userPrompt,
-        ttsProvider,
-        ttsModel,
-        ttsVoice,
-        ttsAlignProvider,
-        lastModelByCategory: nextLastModelByCategory,
-      },
-      { category: 'settings' },
-    ).catch(() => {});
+    // Settings batch — single owner-injected endpoint, identical full payload for admin & hub.
+    // The hub backend persists only its per-tenant fields; the rest are read-only there.
+    const ok = await settingsEndpoint.save({
+      timezone: userTimezone,
+      aiModel,
+      aiThinkingLevel: thinkingLevel,
+      aiRouterEnabled,
+      aiAssistantModel,
+      imageModel,
+      imageDefaultSize,
+      imageDefaultQuality,
+      userPrompt,
+      ttsProvider,
+      ttsModel,
+      ttsVoice,
+      ttsAlignProvider,
+      lastModelByCategory: nextLastModelByCategory,
+    });
+    if (!ok) return false;
 
     // Refresh the sidebar (CronPanel's ['settings','ai-router'], etc.) right after saving — no F5.
     queryClient.invalidateQueries({ queryKey: ['settings'] });
 
-    const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
-      if (!value || value.includes('...') || value === '***') return;
-      await apiPost('/api/vault', { provider, apiKey: value }, { category: 'settings' }).catch(() => {});
-    };
-    await saveProviderKey('openai', geminiApiKey);
-    await saveProviderKey('gemini', googleApiKey);
-    await saveProviderKey('anthropic', anthropicApiKey);
-    await saveProviderKey('vertex', vertexSaJson);
-    // Refresh vault-key gating (hasOpenaiKey/hasGeminiKey + masked values) right after saving so
-    // e.g. the TTS provider activates without F5 (previously read only at mount).
-    await refreshVaultKeys();
+    // Provider API keys → vault. Admin-only capability (a tenant has no key inputs, uses the shared
+    // admin vault) → guarded by hubContext, not a fork of the shared save path.
+    if (!hubContext) {
+      const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
+        if (!value || value.includes('...') || value === '***') return;
+        await apiPost('/api/vault', { provider, apiKey: value }, { category: 'settings' }).catch(() => {});
+      };
+      await saveProviderKey('openai', geminiApiKey);
+      await saveProviderKey('gemini', googleApiKey);
+      await saveProviderKey('anthropic', anthropicApiKey);
+      await saveProviderKey('vertex', vertexSaJson);
+      // Refresh vault-key gating so e.g. the TTS provider activates without F5.
+      await refreshVaultKeys();
+    }
     return true;
   };
 
