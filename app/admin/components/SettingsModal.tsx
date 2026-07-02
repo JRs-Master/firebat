@@ -684,24 +684,20 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
-  const handleSave = async () => {
-    setMainSaveState('loading');
-    // hub tenant mode: only the prompt (personal instructions) is saved, owner-scoped via the hub route,
-    // admin /api/settings, vault, and model-history are irrelevant to hub, so skip.
+  // Single owner-injected persistence layer — the ONE place `owner` (hubContext) branches.
+  // admin persists the full settings batch + vault keys; a hub tenant persists only its
+  // owner-scoped userPrompt (its other tabs are hidden). handleSave below stays owner-agnostic.
+  // Returns false only on a real save failure (admin batch is best-effort → always true).
+  const persistSettings = async (): Promise<boolean> => {
     if (hubContext) {
       const r = await hubFetch(hubContext, 'settings', 'set-prompt', { prompt: userPrompt }).catch(() => null);
-      // Match admin: show the ✓ (saved) state and keep the modal open — the user closes it
-      // explicitly. Do NOT call onSave() here; that closes the modal before ✓ is ever visible
-      // (the divergence that made tenant save silently close instead of confirming).
-      setMainSaveState(r?.success ? 'ok' : 'err');
-      setTimeout(() => setMainSaveState(null), 2000);
-      return;
+      return r?.success === true;
     }
-    writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
+    writeSetting('firebat_model', aiModel); // fallback via SettingsManager
 
-    // 카테고리별 마지막 선택 모델 기록 — 공급자/모드 전환 후 복귀 시 직전 모델 복원(restoreOrFirst).
-    // 저장 시점에만 갱신(미리보기 클릭은 안 건드림, 2026-05-10 설계). 옛 코드에 호출이 누락돼
-    // 카테고리 전환마다 첫 모델(기본)으로 리셋되던 버그 fix. localStorage(즉시) + 백엔드(멀티기기) 둘 다.
+    // Per-category last-selected model — restores the previous model when switching provider/mode
+    // back (restoreOrFirst). Updated only at save time (preview clicks don't touch it). Persisted
+    // to localStorage (instant) + backend (multi-device).
     const saveCat = aiModel ? categoryOf(aiModel) : '';
     const nextLastModelByCategory = saveCat
       ? { ...lastModelByCategory, [saveCat]: aiModel }
@@ -729,7 +725,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       { category: 'settings' },
     ).catch(() => {});
 
-    // AI assistant 토글 등 설정 저장 후 사이드바(CronPanel 의 ['settings','ai-router'] 등) 즉시 갱신 — F5 불필요.
+    // Refresh the sidebar (CronPanel's ['settings','ai-router'], etc.) right after saving — no F5.
     queryClient.invalidateQueries({ queryKey: ['settings'] });
 
     const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
@@ -740,11 +736,25 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     await saveProviderKey('gemini', googleApiKey);
     await saveProviderKey('anthropic', anthropicApiKey);
     await saveProviderKey('vertex', vertexSaJson);
-    // 키 저장 직후 게이팅(hasOpenaiKey/hasGeminiKey + 마스킹값) 갱신 — TTS 탭 provider 활성화 등이
-    // F5 없이 즉시 반영(mount 때만 읽던 것 보완).
+    // Refresh vault-key gating (hasOpenaiKey/hasGeminiKey + masked values) right after saving so
+    // e.g. the TTS provider activates without F5 (previously read only at mount).
     await refreshVaultKeys();
+    return true;
+  };
 
-    // 계정 변경 — currentPassword 입력 시점에만 trigger. server validate_password_policy 가 authoritative.
+  const handleSave = async () => {
+    setMainSaveState('loading');
+
+    const ok = await persistSettings();
+    if (!ok) {
+      setMainSaveState('err');
+      setTimeout(() => setMainSaveState(null), 2000);
+      return;
+    }
+
+    // Account change — runs only when a current password was entered (never in hub-mode; that
+    // field's tab is hidden), so this is data-guarded, not a hubContext branch. Server
+    // validate_password_policy is authoritative.
     if (adminCurrentPw) {
       const adminPwSchema = z.object({
         currentPassword: z.string().min(1),
@@ -780,7 +790,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       }
     }
 
-    // 저장 완료 — ✓ 표시만, 모달은 유지 (다른 항목 추가 수정 가능). 사용자가 닫기 버튼 클릭 시 명시적 종료.
+    // Saved — show ✓ only and keep the modal open (more edits possible). The user closes it via
+    // the close button. Identical for admin and hub (no per-surface behavior fork).
     setMainSaveState('ok');
     setTimeout(() => setMainSaveState(null), 2000);
   };
