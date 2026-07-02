@@ -4,11 +4,11 @@ import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal
 import { logger } from '../../../../../lib/util/logger';
 
 /**
- * POST /api/hub/[slug]/settings — hub 테넌트 설정 dispatcher (프롬프트 = 개인 지시사항).
+ * POST /api/hub/[slug]/settings: hub tenant settings dispatcher (prompt = personal instructions).
  *
- * 인증 = X-Api-Token + X-Session-Id → owner `hub:<inst>:<sid>` 자동 강제. Rust SettingsService 가
- * owner 별 user-prompt 키로 격리. ops: get-prompt / set-prompt. (봇 페르소나 system_prompt 는
- * HubInstanceDetail 별개 — 여기는 테넌트 개인 지시사항 userPrompt.)
+ * Auth = X-Api-Token + X-Session-Id, forcing owner `hub:<inst>:<sid>` automatically. The Rust SettingsService
+ * isolates by per-owner user-prompt key. ops: get-prompt / set-prompt. (The bot-persona system_prompt is
+ * separate, in HubInstanceDetail; this is the tenant's personal-instructions userPrompt.)
  */
 export const dynamic = 'force-dynamic';
 

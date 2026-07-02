@@ -43,8 +43,8 @@ type Props = {
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
   initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'; // 'cost' / 'memory' 는 호환 — 자동으로 AI 탭 + sub-tab 으로 변환
-  // hub 테넌트 모드 — 지정 시 owner(hub 세션)로 스코프 + 탭을 프롬프트·메모리만 노출(나머지=root 전용).
-  // admin SettingsModal 을 그대로 재사용(owner-injection 통합), 미니버전 신규 아님.
+  // hub tenant mode: when set, scope to owner (hub session) and show only prompt/memory tabs (rest = root-only).
+  // Reuse the admin SettingsModal as-is (owner-injection unification), not a separate mini version.
   hubContext?: { slug: string; apiToken: string; sessionId: string };
 };
 
@@ -60,7 +60,7 @@ export function SettingsModal(props: Props) {
 
 function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab, hubContext }: Props) {
   const t = useTranslations();
-  // hub 테넌트 모드 — 탭을 프롬프트·메모리로 제한 + 데이터는 hub owner 스코프 경로(/api/hub/<slug>/*).
+  // hub tenant mode: limit tabs to prompt/memory and route data through owner-scoped /api/hub/<slug>/*.
   const hubMode = !!hubContext;
   const queryClient = useQueryClient();
   const { lang: uiLang, setLang: setUiLang } = useLang();
@@ -90,7 +90,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'logs'>(() => {
-    if (hubContext) return 'ai'; // hub 테넌트 = AI 탭(프롬프트·메모리)만
+    if (hubContext) return 'ai'; // hub tenant = AI tab (prompt/memory) only
     if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
     return (initialTab ?? 'general') as any;
   });
@@ -244,7 +244,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 음성(TTS) / 비용(한도·통계) / 메모리(AI Recall 메타).
   // initialTab='cost'/'memory' 는 SettingsModal entry 시점에 settingsTab='ai' + aiSubTab 으로 자동 변환.
   const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
-    if (hubContext) return 'prompt'; // hub 테넌트 = 프롬프트·메모리만 (기본 프롬프트)
+    if (hubContext) return 'prompt'; // hub tenant = prompt/memory only (default prompt)
     if (initialTab === 'cost') return 'cost';
     if (initialTab === 'memory') return 'memory';
     return 'llm';
@@ -359,8 +359,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
-    // hub 테넌트 모드 — /api/settings(admin) 는 401 이라 안 씀. userPrompt 만 hub 라우트로 로드
-    // (메모리는 MemoryTabContent 가 자체 로드). 나머지 admin 설정은 hub 에서 안 보이므로 불필요.
+    // hub tenant mode: /api/settings (admin) 401s, so skip it. Load only userPrompt via the hub route
+    // (memory loads itself in MemoryTabContent). Other admin settings are hidden in hub, so not needed.
     if (hubContext) {
       hubFetch(hubContext, 'settings', 'get-prompt', {})
         .then((d) => { if (d?.success && typeof d.userPrompt === 'string') setUserPrompt(d.userPrompt); })
@@ -686,8 +686,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
   const handleSave = async () => {
     setMainSaveState('loading');
-    // hub 테넌트 모드 — 저장 대상은 프롬프트(개인 지시사항)뿐. hub 라우트로 owner-scoped 저장,
-    // admin /api/settings·vault·모델기록은 hub 에 무관하므로 skip.
+    // hub tenant mode: only the prompt (personal instructions) is saved, owner-scoped via the hub route,
+    // admin /api/settings, vault, and model-history are irrelevant to hub, so skip.
     if (hubContext) {
       const r = await hubFetch(hubContext, 'settings', 'set-prompt', { prompt: userPrompt }).catch(() => null);
       setMainSaveState(r?.success ? 'ok' : 'err');
@@ -846,7 +846,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             ><ChevronRight size={16} /></button>
           )}
           <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
-          {/* hub 테넌트 = AI 탭(프롬프트·메모리)만 노출. 나머지 탭(general·secrets·mcp·capabilities·system·logs)은 root 전용이라 숨김. */}
+          {/* hub tenant = AI tab (prompt/memory) only 노출. 나머지 탭(general·secrets·mcp·capabilities·system·logs)은 root 전용이라 숨김. */}
           {!hubMode && (
           <button
             onClick={() => switchTab('general')}
@@ -1884,7 +1884,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
           {settingsTab === 'mcp' && (
             <>
-              {/* Firebat MCP 서버 노출 설정(외부 도구 연결 / LLM 통신용)은 설정 > 시스템 탭 > 서비스에서 관리 — 이 탭은 외부 MCP 서버(outbound) 연결 전용. */}
+              {/* Firebat MCP server exposure (external tools / LLM comms) is managed under Settings > System tab > Services; this tab is only for connecting external (outbound) MCP servers. */}
 
               {/* 등록된 MCP 서버 목록 */}
               <div className="flex flex-col gap-2">
@@ -2450,7 +2450,7 @@ function MemoryTabContent({ hubContext }: { hubContext?: { slug: string; apiToke
   const [editing, setEditing] = useState<MemoryItem | null>(null);
   const [creating, setCreating] = useState(false);
 
-  // admin=/api/memory / hub=owner-scoped /api/hub/<slug>/memory op-dispatch. 같은 백엔드, owner 만 다름.
+  // admin=/api/memory / hub=owner-scoped /api/hub/<slug>/memory op-dispatch. Same backend, only owner differs.
   const load = async () => {
     setLoading(true);
     try {

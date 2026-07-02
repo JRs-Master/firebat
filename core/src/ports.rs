@@ -2563,7 +2563,7 @@ pub trait ITtsPort: Send + Sync {
 pub trait IEpisodicPort: Send + Sync {
     async fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
     fn update_event(&self, id: i64, patch: &UpdateEventPatch) -> InfraResult<()>;
-    /// owner=Some 이면 그 owner 소유 event 만 삭제(hub scope). None=무검사(admin).
+    /// owner=Some deletes only events owned by that owner (hub scope). None = no check (admin).
     fn remove_event(&self, id: i64, owner: Option<&str>) -> InfraResult<()>;
     fn get_event(&self, id: i64) -> InfraResult<Option<EventRecord>>;
     async fn search_events(&self, opts: &EventSearchOpts) -> InfraResult<Vec<EventRecord>>;

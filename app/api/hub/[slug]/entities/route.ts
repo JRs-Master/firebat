@@ -114,8 +114,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         return NextResponse.json({ success: true, facts: (res.data as unknown[]) ?? [] });
       }
       case 'events': {
-        // 사건(episodic) 조회 — owner-scoped. entityId 있으면 그 엔티티 관련 사건, 없으면 최근 사건.
-        // search_events 는 WHERE e.owner=? 로 엄격 필터(cross-tenant 안전).
+        // Event (episodic) query, owner-scoped. With entityId, events for that entity; otherwise recent events.
+        // search_events filters strictly with WHERE e.owner=? (cross-tenant safe).
         const opts = {
           query: body.query ?? '',
           type: body.type ?? undefined,
@@ -130,13 +130,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       case 'delete-event': {
         const id = Number(body.id);
         if (!id) return jsonResponse(400, { error: 'id 필수' });
-        // owner 전달 → Rust 가 event.owner 일치할 때만 삭제(불일치 시 미존재/권한거부).
+        // Pass owner: Rust deletes only when event.owner matches (mismatch = not-found / denied).
         const res = await deleteEvent({ id: BigInt(id), owner: hubOwner } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }
       case 'stats': {
-        // Recall 집계(엔티티·사실·사건) — owner-scoped. admin·hub 동일 shape(flat count).
+        // Recall stats (entities/facts/events), owner-scoped. Same flat-count shape for admin and hub.
         const res = await getMemoryStats({ owner: hubOwner } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, ...(res.data as any) });

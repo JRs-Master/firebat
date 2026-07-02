@@ -1094,8 +1094,8 @@ impl AiManager {
                         title: c.title.clone(),
                     }
                 });
-                // user-prompt owner — hub 세션이면 그 owner(hub:<inst>:<sid>)의 개인 지시사항을,
-                // admin 이면 전역(None) 을 주입. 다른 hub 데이터 owner 스코프와 동일 형식.
+                // user-prompt owner: for a hub session, inject that owner's (hub:<inst>:<sid>) personal instructions;
+                // for admin, inject the global (None). Same shape as other hub data owner-scoping.
                 let up_owner: Option<String> = ai_opts.hub_context.as_ref().map(|c| {
                     let scope = if c.session_id.is_empty() {
                         c.instance_id.clone()

@@ -2560,7 +2560,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
           />
         )}
 
-        {/* 설정 모달 — hub 테넌트는 hubChatContext(세션 owner) 주입(프롬프트·메모리만, owner-scoped). admin 은 풀.
+        {/* Settings modal: hub tenant injects hubChatContext (session owner) for prompt/memory only, owner-scoped; admin = full.
             hub 인데 세션 아직이면(hubChatContext 미확정) admin-mode 로 새는 것 방지 — 그때는 mount 안 함. */}
         {showSettings && (!hubContext || hubChatContext) && (
           <SettingsModal

@@ -1089,7 +1089,7 @@ impl IEntityPort for SqliteMemoryAdapter {
 
     fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
-        // owner-scoped 카운트 — None = admin scope(search 규약과 일치). 전역 합산이 아니라 각자 자기 것만.
+        // owner-scoped count: None = admin scope (matches the search convention). Each owner counts only its own, not a global sum.
         conn.query_row("SELECT COUNT(*) FROM entities WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_entities: {e}"))
     }
@@ -1332,7 +1332,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let conn = self.conn.lock().unwrap();
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("foreign_keys ON: {e}"))?;
-        // owner=Some → owner-scoped 삭제(hub). 불일치·미존재 시 n=0 → 아래서 권한/미존재 에러.
+        // owner=Some: owner-scoped delete (hub). Mismatch/absent gives n=0, raising the permission/not-found error below.
         let n = match owner {
             Some(o) => conn
                 .execute(

@@ -154,10 +154,10 @@ async function callApi(serviceKey, path, params) {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   }
 
-  // 재시도 대상: 5xx 일시 오류(502/503/504) + 네트워크 fail + 429(rate limit).
-  // 429 = data.go.kr 초당/키당 한도 — "전국 날씨"처럼 지역마다 동시 호출 시 흔함. 각 호출은
-  // 별도 sandbox 프로세스라 모듈간 공유 스로틀 불가 → 백오프 + 지터로 재시도(동시 호출 시각 분산).
-  // 4xx(키 미등록 등, 429 제외) 는 retry 무의미 → 즉시 반환.
+  // Retryable: transient 5xx (502/503/504) + network failures + 429 (rate limit).
+  // 429 = data.go.kr per-second/per-key limit; common when calling per region concurrently (e.g. nationwide weather). Each call runs in
+  // a separate sandbox process, so there is no shared throttle across modules; retry with backoff + jitter to de-correlate concurrent call timing.
+  // 4xx (unregistered key, etc., excluding 429) is not worth retrying, so return immediately.
   const MAX_TRIES = 4;
   let res;
   for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
@@ -169,7 +169,7 @@ async function callApi(serviceKey, path, params) {
     }
     const retryable = (res.status >= 500 && res.status < 600) || res.status === 429;
     if (retryable && attempt < MAX_TRIES - 1) {
-      // 429 는 한도 회복에 더 긴 대기 + 지터(동시 호출 de-correlate). 5xx 는 짧게.
+      // 429 waits longer for the limit to recover, plus jitter to de-correlate concurrent calls; 5xx waits briefly.
       const base = res.status === 429 ? 1200 : 800;
       await sleep(base * (attempt + 1) + Math.floor(Math.random() * 400));
       continue;

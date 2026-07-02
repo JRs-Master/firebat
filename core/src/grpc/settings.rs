@@ -111,7 +111,7 @@ impl SettingsService for SettingsServiceImpl {
         &self,
         req: Request<SettingsGetUserPromptRequest>,
     ) -> Result<Response<SettingsGetUserPromptResponse>, TonicStatus> {
-        // owner 별 격리 — hub 세션 owner 면 그 키, admin/omit 이면 전역(system:user-prompt).
+        // Per-owner isolation: a hub session owner uses its key; admin/omit uses the global (system:user-prompt).
         let key = crate::managers::ai::prompt_builder::user_prompt_vault_key(
             req.into_inner().owner.as_deref(),
         );

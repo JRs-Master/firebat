@@ -127,7 +127,7 @@ export function EntitiesPanel({
       }
     },
     async stats(): Promise<MemoryStats | null> {
-      // 집계 = owner-scoped(admin=admin / hub=세션). pb 는 flat count → {total, byType} 로 감쌈.
+      // Stats = owner-scoped (admin=admin / hub=session). pb returns flat counts, wrapped into {total, byType}.
       const d: { success?: boolean; entities?: number; facts?: number; events?: number } | null = hubContext
         ? await hubFetch(hubContext, 'entities', 'stats', {})
         : await apiGet<{ success: boolean; entities: number; facts: number; events: number }>('/api/memory/stats', { category: 'entities' }).catch(() => null);
@@ -254,7 +254,7 @@ export function EntitiesPanel({
         >
           <Network size={11} /> 엔티티
         </button>
-        {/* 사건(events) = episodic — admin·hub 공통(owner-scoped). hub 는 events/delete-event op 로 격리. */}
+        {/* Events (episodic) — shared by admin and hub (owner-scoped). hub isolates via events/delete-event ops. */}
         <button
           onClick={() => setSubTab('events')}
           className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold rounded-t-md transition-colors ${
@@ -423,7 +423,7 @@ function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      // admin=/api/episodic / hub=events op(owner-scoped). 둘 다 최근 사건 목록(type/query 필터).
+      // admin=/api/episodic / hub=events op (owner-scoped). Both list recent events (type/query filter).
       if (hubContext) {
         const d = await hubFetch(hubContext, 'entities', 'events', {
           type: typeFilter.trim() || undefined,

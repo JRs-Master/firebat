@@ -9267,7 +9267,7 @@ export type EpisodicDeleteEventRequest = Message<"firebat.v1.EpisodicDeleteEvent
   id: bigint;
 
   /**
-   * hub owner scoping — 지정 시 event.owner 일치할 때만 삭제. admin 은 omit → 무검사.
+   * hub owner scoping: when set, delete only when event.owner matches. admin omits it (no check).
    *
    * @generated from field: optional string owner = 2;
    */
@@ -9757,8 +9757,8 @@ export const ConsolidationConsolidateInactiveResponseSchema: GenMessage<Consolid
  */
 export type ConsolidationGetMemoryStatsRequest = Message<"firebat.v1.ConsolidationGetMemoryStatsRequest"> & {
   /**
-   * owner scoping — Recall(엔티티/사실/사건) 카운트를 owner 별로. admin/omit = admin scope
-   * (전역 합산 아님 — 옛엔 owner 무시 전역 count 라 admin 통계에 hub 데이터가 섞였음).
+   * owner scoping: Recall (entities/facts/events) counts per owner. admin/omit = admin scope
+   * (Not a global sum: an owner-agnostic global count previously mixed hub data into admin stats.)
    *
    * @generated from field: optional string owner = 1;
    */
@@ -10265,8 +10265,8 @@ export const SettingsSetAiThinkingLevelResponseSchema: GenMessage<SettingsSetAiT
  */
 export type SettingsGetUserPromptRequest = Message<"firebat.v1.SettingsGetUserPromptRequest"> & {
   /**
-   * owner scoping — hub 세션 owner(hub:<inst>:<sid>) 지정 시 그 owner 의 user-prompt.
-   * admin/omit = 전역(system:user-prompt).
+   * owner scoping: a hub session owner (hub:<inst>:<sid>) targets that owner's user-prompt.
+   * admin/omit = global (system:user-prompt).
    *
    * @generated from field: optional string owner = 1;
    */
@@ -10307,7 +10307,7 @@ export type SettingsSetUserPromptRequest = Message<"firebat.v1.SettingsSetUserPr
   prompt: string;
 
   /**
-   * owner scoping — hub 세션 owner 지정 시 그 owner 의 user-prompt 에 저장. admin/omit = 전역.
+   * owner scoping: a hub session owner saves to that owner's user-prompt. admin/omit = global.
    *
    * @generated from field: optional string owner = 2;
    */
@@ -11157,7 +11157,7 @@ export type MemoryReadFileRequest = Message<"firebat.v1.MemoryReadFileRequest"> 
   name: string;
 
   /**
-   * owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory. admin/omit = admin scope.
+   * owner scoping: a hub session owner targets that owner's data/memory. admin/omit = admin scope.
    *
    * @generated from field: optional string owner = 2;
    */
@@ -11255,7 +11255,7 @@ export type MemorySaveFileRequest = Message<"firebat.v1.MemorySaveFileRequest"> 
   description: string;
 
   /**
-   * owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory 에 저장. admin/omit = admin scope.
+   * owner scoping: a hub session owner saves to that owner's data/memory. admin/omit = admin scope.
    *
    * @generated from field: optional string owner = 5;
    */
@@ -11292,7 +11292,7 @@ export type MemoryDeleteFileRequest = Message<"firebat.v1.MemoryDeleteFileReques
   name: string;
 
   /**
-   * owner scoping — hub 세션 owner 지정 시 그 owner 의 data/memory 에서 삭제. admin/omit = admin scope.
+   * owner scoping: a hub session owner deletes from that owner's data/memory. admin/omit = admin scope.
    *
    * @generated from field: optional string owner = 2;
    */

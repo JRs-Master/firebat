@@ -35,9 +35,9 @@ pub struct CronAgentContext {
     pub title: Option<String>,
 }
 
-/// user-prompt Vault 키 — owner 별 격리. admin/전역 = `system:user-prompt`(기존),
-/// hub 세션 owner(`hub:<inst>:<sid>`) = `user-prompt:<owner>`. grpc settings 와 prompt_builder 가 공유.
-/// (owner None / 빈 / "admin" = 전역 — 기존 동작 하위호환.)
+/// user-prompt Vault key, per-owner isolation. admin/global = `system:user-prompt` (existing),
+/// a hub session owner (`hub:<inst>:<sid>`) uses `user-prompt:<owner>`. Shared by grpc settings and prompt_builder.
+/// (owner None / empty / "admin" = global; backward-compatible with existing behavior.)
 pub fn user_prompt_vault_key(owner: Option<&str>) -> String {
     match owner {
         Some(o) if !o.is_empty() && o != "admin" => format!("user-prompt:{o}"),
@@ -84,8 +84,8 @@ impl PromptBuilder {
         let user_tz = self.user_tz();
         let user_tz_str = user_tz.name();
         let now_korean = self.now_korean();
-        // owner 별 user-prompt — hub 세션은 자기 것, admin/전역은 system:user-prompt.
-        // (옛엔 전역만 읽어 admin userPrompt 가 hub 프롬프트에도 새어 들어가던 것 차단.)
+        // Per-owner user-prompt: a hub session uses its own; admin/global uses system:user-prompt.
+        // (Previously only the global was read, leaking admin userPrompt into hub prompts; now prevented.)
         let user_prompt = self
             .vault
             .get_secret(&user_prompt_vault_key(user_prompt_owner))

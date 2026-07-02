@@ -15,19 +15,19 @@ use serde_json::Value;
 
 use super::component_registry;
 
-/// render 도구로 호출해도 되는 예외 컴포넌트 — code/markup-heavy 라 fence JSON 안에서 따옴표·
-/// 줄바꿈·백슬래시 hand-escape 가 깨지기 쉬워 tool 인자(FC 레이어가 안전 escape)가 낫다. 그 외
-/// 모든 컴포넌트(table/callout/text/chart/…)는 **fence 전용** — 도구 인자에 한국어를 넣으면
-/// 모델이 철자를 degrade 시키기 때문(tool_use input 한국어 깨짐). html 은 render_iframe 별도 경로.
+/// Components still allowed via the render tool: code/markup-heavy, where quotes,
+/// newlines, and backslashes are easy to break when hand-escaped inside fence JSON, so tool args (safely escaped by the FC layer) are better. All other
+/// components (table/callout/text/chart/...) are **fence-only**: putting Korean in tool args
+/// makes the model degrade the spelling (Korean corrupts in tool_use input). html uses the separate render_iframe path.
 const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
 
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
 ///
-/// `tool_mode` = render **도구** 경로(FC/MCP)면 true. true 일 때 fence-able 컴포넌트
-/// (code/math/diagram 외 전부)는 거부 → 모델이 firebat-render fence(텍스트 채널)로 내도록 강제.
-/// 한국어가 도구 인자에서 깨지는 걸 구조적으로 차단(프롬프트 soft 지시 → 강제). fence 경로
-/// (mask_and_sanitize_fences)는 tool_mode=false 로 호출해 전 컴포넌트 통과.
+/// `tool_mode` = true on the render **tool** path (FC/MCP). When true, fence-able components
+/// (everything except code/math/diagram) are rejected, forcing the model to emit a firebat-render fence (text channel).
+/// Structurally blocks Korean corruption in tool args (prompt soft-hint becomes hard enforcement). The fence path
+/// (mask_and_sanitize_fences) calls with tool_mode=false, so all components pass.
 pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
     // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
     // blocks 배열 자체를 직접 보내는 경우 수용.
@@ -91,8 +91,8 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
             }
         };
 
-        // 도구 경로 fence 강제 — code/math/diagram 외 컴포넌트는 도구로 못 만든다(한국어 깨짐).
-        // 거부 → 모델이 firebat-render fence 로 reply 텍스트에 직접 쓰게 유도. fence 경로는 통과.
+        // Tool-path fence enforcement: components other than code/math/diagram cannot be built via the tool (Korean corruption).
+        // Reject to steer the model to write a firebat-render fence directly in the reply text. The fence path passes through.
         if tool_mode && !TOOL_ALLOWED_TYPES.contains(&comp.component_type.as_str()) {
             failed.push(serde_json::json!({
                 "idx": idx,
@@ -231,7 +231,7 @@ fn sanitize_fence_body(body: &str) -> (String, Value, Value) {
     } else {
         parsed
     };
-    // fence 경로 — tool_mode=false: 전 컴포넌트 통과(fence 가 한국어 안전한 정공 채널).
+    // Fence path, tool_mode=false: all components pass (fence is the Korean-safe channel).
     match render_blocks(&args, false) {
         Ok(result) => {
             let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));

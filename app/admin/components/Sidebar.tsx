@@ -710,7 +710,7 @@ export function Sidebar({
         );
       })}
       <div className="flex-1" />
-      {/* 설정 기어 — admin(풀) + hub 테넌트(프롬프트·메모리만, SettingsModal 이 hubContext 로 게이트).
+      {/* Settings gear: admin (full) + hub tenant (prompt/memory only; SettingsModal gates via hubContext).
           Phase 4a: hub 도 자기 설정 엶. onOpenSettings 미설정(위젯 등)이면 안 뜸. */}
       {onOpenSettings && (
         <Tooltip label={t('common.settings')} side="right">

@@ -1140,7 +1140,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
             }),
             source: "core".to_string(),
         },
-        // tool_mode=true — code/math/diagram 외 컴포넌트는 거부(fence 강제, 한국어 깨짐 차단).
+        // tool_mode=true: reject components other than code/math/diagram (force fence, block Korean corruption).
         |args| async move { render_exec::render_blocks(&args, true) },
     );
 
@@ -2348,8 +2348,8 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
         make_handler(move |args| {
             let consolidation = consolidation.clone();
             async move {
-                // owner-scoped — hub 컨텍스트면 inject_hub_owner 가 args.owner 주입(hub scope),
-                // admin 이면 없음→admin scope. 전역 합산 아님.
+                // owner-scoped: under hub context, inject_hub_owner sets args.owner (hub scope);
+                // for admin, absent means admin scope. Not a global sum.
                 let owner = args.get("owner").and_then(|v| v.as_str());
                 let stats = consolidation.get_memory_stats(owner)?;
                 Ok(serde_json::to_value(stats).unwrap_or_default())

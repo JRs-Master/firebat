@@ -4,11 +4,11 @@ import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal
 import { logger } from '../../../../../lib/util/logger';
 
 /**
- * POST /api/hub/[slug]/memory — hub 테넌트의 data/memory (운영 규칙) CRUD dispatcher.
+ * POST /api/hub/[slug]/memory: CRUD dispatcher for a hub tenant's data/memory (operating rules).
  *
- * 인증 = X-Api-Token + X-Session-Id → owner `hub:<inst>:<sid>` 자동 강제. Rust MemoryService 가
- * owner 로 격리(memory_file 매니저 owner-scoped). ops: list / save / delete / read.
- * admin 의 `/api/memory` 와 같은 백엔드, owner 만 다름(owner-injection 통합).
+ * Auth = X-Api-Token + X-Session-Id, forcing owner `hub:<inst>:<sid>` automatically. The Rust MemoryService
+ * isolates by owner (the memory_file manager is owner-scoped). ops: list / save / delete / read.
+ * Same backend as admin's `/api/memory`, only owner differs (owner-injection unification).
  */
 export const dynamic = 'force-dynamic';
 

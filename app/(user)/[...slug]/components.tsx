@@ -4129,8 +4129,8 @@ function MapComp({
   // 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
   const mapMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   // 명시 height 도 viewport cap(모바일 320/PC 480)을 넘지 못하게 — AI 가 큰 height 를 줘도 채팅·페이지서 지도가 과도하게 길어지지 않음(고정 크기 유지).
-  // AI 가 height 를 숫자(400)나 "400"(px 없이)으로 보낼 수 있어 문자열 정규화 — 옛 height.trim() 이
-  // 숫자에서 TypeError("c.trim is not a function")로 지도 전체가 안 그려지던 버그.
+  // AI may send height as a number (400) or a px-less "400"; normalize to string. The old height.trim()
+  // threw TypeError("c.trim is not a function") on a number, breaking the entire map.
   const heightStr = height == null ? '' : String(height).trim();
   const explicitPx = /^(\d+(?:\.\d+)?)(?:px)?$/.exec(heightStr)?.[1];
   const finalHeight = explicitPx

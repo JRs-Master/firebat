@@ -506,12 +506,35 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   };
 
   const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
-    await navigator.clipboard.writeText(text);
+    // navigator.clipboard is only available in secure contexts (HTTPS / localhost).
+    // The admin is often served over plain HTTP (no domain/TLS yet), where it is
+    // undefined — fall back to a hidden-textarea execCommand copy so buttons still work.
+    let ok = false;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch { /* fall through to legacy copy */ }
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch { ok = false; }
+    }
+    if (!ok) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── MCP 서버 커스텀 렌더링 (외부 도구 연결 / LLM 통신용 공용) ─────────────────
+  // -- MCP server custom rendering (shared: external-tool connection / LLM comms) --
   if (isMcpApp || isMcpLlm) {
     // title / description = system/services/mcp-server-{app,llm}/lang/{lang}.json 에서 lookup.
     // 옛 system_modules.common.mcp_*_title/desc i18n 영역은 폐기.
@@ -533,8 +556,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll flex-1 min-h-0">
             <p className="text-[11px] sm:text-[12px] text-slate-400">{descText}</p>
 
-            {/* JSON 설정 보기 */}
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            {/* JSON config view. shrink-0: the scroll container is flex-col, so without it this
+                overflow-hidden box gets flex-shrunk to fit and clips its bottom (the web-connector
+                section) instead of letting the container scroll — visible once a token is generated. */}
+            <div className="border border-slate-200 rounded-lg overflow-hidden shrink-0">
               <div className="flex border-b border-slate-200">
                 <button
                   onClick={() => { setMcpJsonTab('api'); setMcpJsonCopied(false); }}
@@ -632,7 +657,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
 
-                    {/* Claude.ai 웹 커스텀 커넥터 — 웹 커넥터 폼은 URL+OAuth(선택)만 받고 헤더 칸이 없어
+                    {/* Claude.ai web custom connector: the web connector form takes only URL + OAuth (optional), with no header field,
                         토큰을 URL(?token=)에 실어야 붙는다. Rust verify_token 의 쿼리 fallback 과 짝. */}
                     {isMcpApp && (
                       <div className="border-t border-slate-200 pt-2.5 flex flex-col gap-1.5">
