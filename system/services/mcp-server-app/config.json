@@ -3,5 +3,5 @@
   "type": "service",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat MCP 서버 (앱 개발용 — Claude Code, Cursor, VS Code 등 외부 AI 도구 연결)"
+  "description": "Firebat MCP 서버 (외부 도구 연결 — Claude Code·Cursor·VS Code 등 개발 도구 + Claude.ai 웹 커넥터)"
 }

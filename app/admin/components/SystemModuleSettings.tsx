@@ -426,6 +426,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const [mcpTokenCopied, setMcpTokenCopied] = useState(false);
   const [mcpJsonTab, setMcpJsonTab] = useState<'api' | 'stdio'>('api');
   const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
+  const [mcpWebUrlCopied, setMcpWebUrlCopied] = useState(false);
 
   // 서비스별 엔드포인트 매핑 (app=외부용, llm=내부용)
   const isMcpApp = resolvedName === 'mcp-server-app';
@@ -510,11 +511,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── MCP 서버 커스텀 렌더링 (앱 개발용 / LLM 통신용 공용) ─────────────────────
+  // ── MCP 서버 커스텀 렌더링 (외부 도구 연결 / LLM 통신용 공용) ─────────────────
   if (isMcpApp || isMcpLlm) {
     // title / description = system/services/mcp-server-{app,llm}/lang/{lang}.json 에서 lookup.
     // 옛 system_modules.common.mcp_*_title/desc i18n 영역은 폐기.
-    const titleText = (langData?.title as string | undefined) ?? (isMcpLlm ? 'Firebat MCP Server (for LLMs)' : 'Firebat MCP Server (for apps)');
+    const titleText = (langData?.title as string | undefined) ?? (isMcpLlm ? 'Firebat MCP Server (for LLMs)' : 'Firebat MCP Server (external tools)');
     const descText = (langData?.description as string | undefined) ?? '';
     return (
       <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
@@ -630,6 +631,24 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       </Tooltip>
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
+
+                    {/* Claude.ai 웹 커스텀 커넥터 — 웹 커넥터 폼은 URL+OAuth(선택)만 받고 헤더 칸이 없어
+                        토큰을 URL(?token=)에 실어야 붙는다. Rust verify_token 의 쿼리 fallback 과 짝. */}
+                    {isMcpApp && (
+                      <div className="border-t border-slate-200 pt-2.5 flex flex-col gap-1.5">
+                        <p className="text-[11px] sm:text-[12px] font-bold text-slate-600">{t('system_modules.common.mcp_web_connector_title')}</p>
+                        <p className="text-[10px] sm:text-[11px] text-slate-500 leading-relaxed">{t('system_modules.common.mcp_web_connector_desc')}</p>
+                        <div className="flex items-center gap-1.5">
+                          <code className="flex-1 text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">{`${sseUrl}?token=${tokenValue}`}</code>
+                          <Tooltip label={t('system_modules.common.copy')}>
+                            <button onClick={() => copyToClipboard(`${sseUrl}?token=${tokenValue}`, setMcpWebUrlCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
+                              {mcpWebUrlCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                            </button>
+                          </Tooltip>
+                        </div>
+                        <p className="text-[10px] sm:text-[11px] text-amber-600 leading-relaxed">{t('system_modules.common.mcp_web_connector_warning')}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })()}

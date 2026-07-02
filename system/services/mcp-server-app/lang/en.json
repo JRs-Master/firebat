@@ -1,4 +1,4 @@
 {
-  "title": "Firebat MCP Server (for apps)",
-  "description": "External AI tools (Claude Code, Cursor, VS Code, etc.) can connect to this Firebat server."
+  "title": "Firebat MCP Server (external tools)",
+  "description": "External MCP clients — dev tools like Claude Code, Cursor, and VS Code, plus the Claude.ai web connector — use this to connect to your Firebat server."
 }

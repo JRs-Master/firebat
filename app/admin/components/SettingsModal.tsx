@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText, Volume2 } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Server, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText, Volume2 } from 'lucide-react';
 import { McpServer } from '../types';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
@@ -278,14 +278,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [mcpEditSaving, setMcpEditSaving] = useState(false);
   const [mcpEditFeedback, setMcpEditFeedback] = useState<'ok' | 'err' | null>(null);
   const [mcpAuth, setMcpAuth] = useState<{ server: string; step: 'starting' | 'waiting' | 'done' | 'error'; authUrl?: string; error?: string } | null>(null);
-
-  // Firebat MCP 서버 토큰
-  const [mcpTokenInfo, setMcpTokenInfo] = useState<{ exists: boolean; hint: string | null; createdAt: string | null }>({ exists: false, hint: null, createdAt: null });
-  const [mcpTokenRaw, setMcpTokenRaw] = useState<string | null>(null); // 생성 직후 1회만 표시
-  const [mcpTokenLoading, setMcpTokenLoading] = useState(false);
-  const [mcpTokenCopied, setMcpTokenCopied] = useState(false);
-  const [mcpJsonTab, setMcpJsonTab] = useState<'api' | 'stdio'>('api');
-  const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
 
   // 시스템 모듈
   const [sysModules, setSysModules] = useState<SystemModule[]>([]);
@@ -591,47 +583,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     }
   };
 
-  // Firebat MCP 토큰
-  const fetchMcpToken = useCallback(async () => {
-    try {
-      const data = await apiGet<{ success: boolean; exists?: boolean; hint?: string | null; createdAt?: string | null }>(
-        '/api/mcp/tokens',
-        { category: 'settings' },
-      );
-      if (data.success) setMcpTokenInfo({ exists: !!data.exists, hint: data.hint ?? null, createdAt: data.createdAt ?? null });
-    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
-  }, []);
-
-  const generateMcpToken = async () => {
-    if (mcpTokenInfo.exists && !await confirmDialog({ title: t('settings_modal.mcp_token_regenerate_title'), message: t('settings_modal.mcp_token_regenerate_message'), danger: true, okLabel: t('settings_modal.mcp_token_regenerate_ok') })) return;
-    setMcpTokenLoading(true);
-    try {
-      const data = await apiPost<{ success: boolean; token?: string; hint?: string; createdAt?: string }>(
-        '/api/mcp/tokens',
-        undefined,
-        { category: 'settings' },
-      );
-      if (data.success && data.token) {
-        setMcpTokenRaw(data.token);
-        setMcpTokenInfo({ exists: true, hint: data.hint ?? null, createdAt: data.createdAt ?? null });
-      }
-    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); } finally { setMcpTokenLoading(false); }
-  };
-
-  const revokeMcpToken = async () => {
-    if (!await confirmDialog({ title: t('settings_modal.mcp_token_revoke_title'), message: t('settings_modal.mcp_token_revoke_message'), danger: true, okLabel: t('settings_modal.mcp_token_revoke_ok') })) return;
-    await apiDelete('/api/mcp/tokens', { category: 'settings' });
-    setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
-    setMcpTokenRaw(null);
-  };
-
-
-  const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   // 탭 콘텐츠 스크롤 리셋용
   const contentRef = useRef<HTMLDivElement>(null);
   // 탭 바 — PC에서 드래그로 가로 스크롤 (모바일은 터치로 기본 동작)
@@ -711,9 +662,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // 탭 전환 시 데이터 로드
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
-    if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
+    if (settingsTab === 'mcp') fetchMcpServers();
     if (settingsTab === 'system') fetchSysModules();
-  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
+  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
@@ -1903,176 +1854,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
           {settingsTab === 'mcp' && (
             <>
-              {/* Firebat MCP 서버(앱 개발용/LLM 통신용)는 사이드바 > SYSTEM > 서비스에서 각각 관리 */}
-              <div className="flex flex-col gap-3 pb-4 border-b border-slate-200 hidden">
-                <div className="flex items-center gap-2">
-                  <Server size={16} className="text-blue-600" />
-                  <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings_modal.mcp_firebat_server')}</span>
-                </div>
-                <p className="text-[11px] sm:text-[12px] text-slate-400 -mt-1">
-                  {t('settings_modal.mcp_firebat_intro')}
-                </p>
-
-                {/* 토큰 관리 */}
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">{t('settings_modal.mcp_auth_token')}</span>
-                    <div className="flex items-center gap-1.5">
-                      {mcpTokenInfo.exists && (
-                        <button
-                          onClick={revokeMcpToken}
-                          className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-                        >
-                          {t('settings_modal.mcp_token_revoke')}
-                        </button>
-                      )}
-                      <button
-                        onClick={generateMcpToken}
-                        disabled={mcpTokenLoading}
-                        className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
-                      >
-                        {mcpTokenLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                        {mcpTokenInfo.exists ? t('settings_modal.mcp_token_regenerate') : t('settings_modal.mcp_token_generate')}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 토큰 1회 표시 (생성 직후) */}
-                  {mcpTokenRaw && (
-                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
-                      <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">{t('settings_modal.mcp_token_once_warning')}</p>
-                      <div className="flex items-center gap-1.5">
-                        <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
-                          {mcpTokenRaw}
-                        </code>
-                        <div className="relative">
-                          <Tooltip label={t('common.copy')}>
-                            <button
-                              onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
-                              className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
-                            >
-                              <Copy size={14} className="text-amber-600" />
-                            </button>
-                          </Tooltip>
-                          <FeedbackBadge state={mcpTokenCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 마스킹된 토큰 정보 */}
-                  {mcpTokenInfo.exists && !mcpTokenRaw && (
-                    <div className="flex items-center gap-2 text-[11px] sm:text-[12px] text-slate-500">
-                      <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{mcpTokenInfo.hint}</code>
-                      {mcpTokenInfo.createdAt && (
-                        <span className="text-slate-400">
-                          {t('settings_modal.mcp_token_created_prefix', { date: new Date(mcpTokenInfo.createdAt).toLocaleDateString(uiLang === 'ko' ? 'ko-KR' : 'en-US') })}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {!mcpTokenInfo.exists && !mcpTokenRaw && (
-                    <p className="text-[10px] sm:text-[11px] text-slate-400">{t('settings_modal.mcp_token_missing')}</p>
-                  )}
-                </div>
-
-                {/* JSON 설정 보기 (API / stdio 탭) */}
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <div className="flex border-b border-slate-200">
-                    <button
-                      onClick={() => { setMcpJsonTab('api'); setMcpJsonCopied(false); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'api' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      <Globe size={12} /> SSE (API)
-                    </button>
-                    <button
-                      onClick={() => { setMcpJsonTab('stdio'); setMcpJsonCopied(false); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'stdio' ? 'bg-green-50 text-green-700 border-b-2 border-green-500' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                      <Terminal size={12} /> stdio (SSH)
-                    </button>
-                  </div>
-
-                  {mcpJsonTab === 'api' && (() => {
-                    const sseUrl = `${window.location.origin}/api/mcp`;
-                    const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? t('settings_modal.mcp_json_token_placeholder_generated') : t('settings_modal.mcp_json_token_placeholder_create_first'));
-                    const jsonConfig = JSON.stringify({
-                      mcpServers: {
-                        firebat: {
-                          url: sseUrl,
-                          headers: { Authorization: `Bearer ${tokenValue}` },
-                        },
-                      },
-                    }, null, 2);
-                    return (
-                      <div className="p-3 flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] sm:text-[11px] text-slate-500">
-                            {t('settings_modal.mcp_json_api_intro')}
-                          </p>
-                          <div className="relative">
-                            <Tooltip label={t('common.copy')}>
-                              <button
-                                onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                                className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                              >
-                                <Copy size={12} className="text-slate-400" />
-                              </button>
-                            </Tooltip>
-                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
-                          </div>
-                        </div>
-                        <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
-                          {jsonConfig}
-                        </pre>
-                        {!mcpTokenInfo.exists && (
-                          <p className="text-[10px] text-amber-600 font-bold">{t('settings_modal.mcp_json_token_required')}</p>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {mcpJsonTab === 'stdio' && (() => {
-                    const jsonConfig = JSON.stringify({
-                      mcpServers: {
-                        firebat: {
-                          command: 'ssh',
-                          args: ['-i', '<SSH_KEY_PATH>', '<USER>@<SERVER_IP>', 'firebat-core --mcp-stdio'],
-                        },
-                      },
-                    }, null, 2);
-                    return (
-                      <div className="p-3 flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] sm:text-[11px] text-slate-500">
-                            {t('settings_modal.mcp_json_stdio_intro')}
-                          </p>
-                          <div className="relative">
-                            <Tooltip label={t('common.copy')}>
-                              <button
-                                onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                                className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                              >
-                                <Copy size={12} className="text-slate-400" />
-                              </button>
-                            </Tooltip>
-                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
-                          </div>
-                        </div>
-                        <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
-                          {jsonConfig}
-                        </pre>
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
-                          <p className="font-bold">{t('settings_modal.mcp_stdio_ssh_key_required')}</p>
-                          <p>{t('settings_modal.mcp_stdio_ssh_key_desc')}</p>
-                          <p className="text-amber-500 mt-0.5">{t('settings_modal.mcp_stdio_ssh_path_hint')}</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
+              {/* Firebat MCP 서버 노출 설정(외부 도구 연결 / LLM 통신용)은 설정 > 시스템 탭 > 서비스에서 관리 — 이 탭은 외부 MCP 서버(outbound) 연결 전용. */}
 
               {/* 등록된 MCP 서버 목록 */}
               <div className="flex flex-col gap-2">
