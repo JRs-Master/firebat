@@ -1625,7 +1625,14 @@
                   "string",
                   "null"
                 ],
-                "description": "Text label shown above the marker. Put the marker's key readable value here — the place name plus its metric, e.g. \"Seoul 24\\u00b0C\". Always label every marker that carries data; do NOT convey a value through color alone (color is a categorical accent, and a color\\u2192number legend is unreadable). Use \\n for multi-line."
+                "description": "The marker's readable value — place name plus its metric, e.g. \"Seoul 24\\u00b0C\". By default it shows on hover + in the click popup; set labelAlways=true to render it as an always-visible text chip at the marker. Prefer a label over color alone to convey a value (color is a categorical accent; a color\\u2192number legend is unreadable). Use \\n for multi-line."
+              },
+              "labelAlways": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true = render `label` as an always-visible text chip at the marker (not just hover/popup). Use for label-heavy maps where every marker's value must be readable at a glance (weather, prices). Leave off for dense POI maps to avoid clutter."
               },
               "popup": {
                 "type": [

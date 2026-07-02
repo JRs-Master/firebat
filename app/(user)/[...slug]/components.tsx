@@ -3827,7 +3827,25 @@ type MapMarker = {
   size?: 'small' | 'medium' | 'large' | null;
   /** 최대풍속 m/s — typhoon/forecast 마커 색 자동 (기상청 강도 단계). color 가 있으면 color 우선. */
   windSpeed?: number | null;
+  /**
+   * Render `label` as an always-visible text chip at the marker (default = hover/popup only).
+   * General capability for label-driven maps (place name + metric, emoji ok, \n multi-line).
+   * Opt-in so dense POI maps aren't cluttered; label-heavy maps (weather, prices) set it true.
+   */
+  labelAlways?: boolean | null;
 };
+
+/** Always-visible marker text chip (place name + metric). Shared by MapLibre + Kakao. */
+function buildLabelChipEl(label: string): HTMLDivElement {
+  const chip = document.createElement('div');
+  chip.textContent = label; // textContent = safe (no HTML injection); emoji renders inline
+  chip.style.cssText =
+    'white-space:pre-line;text-align:center;font-size:11px;font-weight:700;line-height:1.15;' +
+    'color:#0f172a;background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.10);' +
+    'border-radius:6px;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,0.18);pointer-events:none;' +
+    'max-width:140px;';
+  return chip;
+}
 
 type MapCircle = {
   lat: number;
@@ -4080,6 +4098,18 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const size = markerPixelSize(m.size, false);
     el.innerHTML = `<div style="background:${color};border:2px solid white;border-radius:50%;width:${size}px;height:${size}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`;
   }
+  // Always-visible label chip — absolutely positioned below the marker so the marker's anchor
+  // point (icon/dot) stays exactly on the coordinate (the chip is out of layout flow).
+  if (m.labelAlways && m.label) {
+    el.style.position = 'relative';
+    const chip = buildLabelChipEl(m.label);
+    chip.style.position = 'absolute';
+    chip.style.top = '100%';
+    chip.style.left = '50%';
+    chip.style.transform = 'translateX(-50%)';
+    chip.style.marginTop = '3px';
+    el.appendChild(chip);
+  }
   return el;
 }
 
@@ -4261,6 +4291,19 @@ function MapComp({
             // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀). 옛 동작 복원.
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
+            // Always-visible label chip (opt-in) — CustomOverlay below the marker, not click-gated.
+            // A top spacer pushes the visible chip clear of the marker point.
+            if (m.labelAlways && m.label) {
+              const wrap = document.createElement('div');
+              wrap.style.cssText = 'padding-top:20px;pointer-events:none;';
+              wrap.appendChild(buildLabelChipEl(m.label));
+              new w.kakao.maps.CustomOverlay({
+                position: new w.kakao.maps.LatLng(m.lat, m.lon),
+                content: wrap,
+                yAnchor: 0,
+                zIndex: 4,
+              }).setMap(map);
+            }
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
             // kakao 기본 InfoWindow 는 wrapping 멀티라인(주소·전화 2~3줄) 콘텐츠의 흰 박스 높이를
             // 잘못 측정해 내용이 박스 밖으로 넘쳤다 → CustomOverlay 로 우리 div 자체를 박스로 렌더해
