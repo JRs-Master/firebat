@@ -590,3 +590,25 @@ mark[class^="fbhl-"] {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* Weather / typhoon map marker animations (DOM inline SVG in map markers + Kakao CustomOverlay).
+   B-style weather badges (sun spin, rain fall, cloud drift, snow, thunder flicker) + typhoon swirl.
+   Typhoon spins counterclockwise (fbwx-ccw = Northern hemisphere, Coriolis); Southern is drawn as a
+   mirror (scaleX -1) so the same CCW animation reads clockwise + mirrored bands (met. symbol standard).
+   All motion gated behind prefers-reduced-motion. */
+@keyframes fbwx-spin { to { transform: rotate(360deg); } }
+@keyframes fbwx-ccw { to { transform: rotate(-360deg); } }
+@keyframes fbwx-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.09); } }
+@keyframes fbwx-drift { from { transform: translateX(-0.7px); } to { transform: translateX(0.7px); } }
+@keyframes fbwx-drop { 0% { transform: translateY(-1px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translateY(3.5px); opacity: 0; } }
+@keyframes fbwx-flick { 0%, 90%, 100% { opacity: 1; } 92% { opacity: 0.2; } 94% { opacity: 1; } 96% { opacity: 0.35; } }
+@media (prefers-reduced-motion: no-preference) {
+  .fbwx-sun { transform-box: fill-box; transform-origin: center; animation: fbwx-spin 11s linear infinite; }
+  .fbwx-core { transform-box: fill-box; transform-origin: center; animation: fbwx-pulse 3s ease-in-out infinite; }
+  .fbwx-cloud { animation: fbwx-drift 5s ease-in-out infinite alternate; }
+  .fbwx-d1 { animation: fbwx-drop 1.3s ease-in infinite; }
+  .fbwx-d2 { animation: fbwx-drop 1.3s ease-in 0.43s infinite; }
+  .fbwx-d3 { animation: fbwx-drop 1.3s ease-in 0.86s infinite; }
+  .fbwx-flick { animation: fbwx-flick 2.6s steps(1) infinite; }
+  .fbwx-typ { transform-box: fill-box; transform-origin: center; animation: fbwx-ccw 3.6s linear infinite; }
+}

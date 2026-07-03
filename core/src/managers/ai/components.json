@@ -1660,8 +1660,8 @@
                   "string",
                   "null"
                 ],
-                "enum": ["default", "typhoon", "forecast", "current", "bank", "pharmacy", "hospital", "school", "convenience", "cafe", "restaurant", null],
-                "description": "marker icon. typhoon(🌀 current typhoon) / forecast (forecast typhoon, same swirl as current) / current(📍) / food restaurant·cafe·bakery·bar / finance & medical bank·atm·hospital·pharmacy·clinic·dental / education school·library·academy·university / shopping & transit convenience·mart·mall·subway·bus·train·parking·gas·airport / others hotel·park·gym·cinema·police·fire·post·gov·church·home·office. Default marker if unspecified."
+                "enum": ["default", "typhoon", "forecast", "current", "wx-clear", "wx-partly", "wx-cloudy", "wx-rain", "wx-shower", "wx-snow", "wx-thunder", "bank", "pharmacy", "hospital", "school", "convenience", "cafe", "restaurant", null],
+                "description": "marker icon. WEATHER (animated badge — icon + the label as a temp/name pill): wx-clear(맑음) / wx-partly(구름조금) / wx-cloudy(흐림) / wx-rain(비) / wx-shower(소나기) / wx-snow(눈) / wx-thunder(뇌우). typhoon(current typhoon — swirl spins, hemisphere-correct by lat) / forecast (forecast typhoon — same swirl, static) / current(📍) / food restaurant·cafe·bakery·bar / finance & medical bank·atm·hospital·pharmacy·clinic·dental / education school·library·academy·university / shopping & transit convenience·mart·mall·subway·bus·train·parking·gas·airport / others hotel·park·gym·cinema·police·fire·post·gov·church·home·office. Default marker if unspecified."
               },
               "size": {
                 "type": [

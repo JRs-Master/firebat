@@ -10,14 +10,7 @@ import StockChart from '../../admin/chat-components/StockChart';
 import { BlockErrorBoundary } from '../../admin/components/BlockErrorBoundary';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { usePublicTranslations } from '../../../lib/i18n';
-// 태풍 마커 — 사전 생성 PNG (scripts/gen-typhoon-markers.mjs). import → 번들러가 /_next/static/media 로 emit.
-import typhoon5 from '../../../lib/markers/typhoon-5.png';
-import typhoon4 from '../../../lib/markers/typhoon-4.png';
-import typhoon3 from '../../../lib/markers/typhoon-3.png';
-import typhoon2 from '../../../lib/markers/typhoon-2.png';
-import typhoon1 from '../../../lib/markers/typhoon-1.png';
-import typhoonT from '../../../lib/markers/typhoon-T.png';
-import typhoonNone from '../../../lib/markers/typhoon-none.png';
+// Typhoon markers now render as DOM inline SVG (buildTyphoonSvg) — the old pre-gen PNGs are gone.
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
@@ -3949,17 +3942,75 @@ function typhoonMarkerVariant(ws?: number | null): string {
   if (ws >= 17) return '1';
   return 'T';
 }
-/** 변종 → import 한 사전 생성 PNG URL (번들러가 /_next/static/media 로 emit, 브라우저 굽기 0). */
-const TYPHOON_MARKER_SRC: Record<string, string> = {
-  '5': typhoon5.src, '4': typhoon4.src, '3': typhoon3.src, '2': typhoon2.src,
-  '1': typhoon1.src, 'T': typhoonT.src, 'none': typhoonNone.src,
+// ── Typhoon marker = DOM inline SVG (vector, crisp at any DPI, zero baking). Replaces the old
+// pre-gen PNG path. mdi-weather-hurricane glyph + intensity colour + grade number. Current position
+// spins (Northern = CCW via fbwx-typ; Southern is drawn mirrored so the same CCW anim reads CW +
+// mirrored bands = met. symbol standard); forecast positions are static. ──
+const HURRICANE_PATH = 'M15,6.79C16.86,7.86 18,9.85 18,12C18,22 6,22 6,22C7.25,21.06 8.38,19.95 9.34,18.71C9.38,18.66 9.41,18.61 9.44,18.55C9.69,18.06 9.5,17.46 9,17.21C7.14,16.14 6,14.15 6,12C6,2 18,2 18,2C16.75,2.94 15.62,4.05 14.66,5.29C14.62,5.34 14.59,5.39 14.56,5.45C14.31,5.94 14.5,6.54 15,6.79Z';
+const TYPHOON_STYLE: Record<string, { color: string; grade: string | null }> = {
+  '5': { color: '#ef4444', grade: '5' }, '4': { color: '#f97316', grade: '4' },
+  '3': { color: '#eab308', grade: '3' }, '2': { color: '#3b82f6', grade: '2' },
+  '1': { color: '#22c55e', grade: '1' }, 'T': { color: '#9ca3af', grade: 'T' },
+  'none': { color: '#dc2626', grade: null },
 };
-function typhoonMarkerSrc(ws?: number | null): string {
-  return TYPHOON_MARKER_SRC[typhoonMarkerVariant(ws)] ?? typhoonNone.src;
+/** Typhoon/forecast marker SVG string. spin = animate the swirl (current position only). */
+function buildTyphoonSvg(m: MapMarker, sizePx: number, spin: boolean): string {
+  const { color, grade } = TYPHOON_STYLE[typhoonMarkerVariant(m.windSpeed)] ?? TYPHOON_STYLE.none;
+  const south = typeof m.lat === 'number' && m.lat < 0; // Southern hemisphere = mirror image
+  const spinCls = spin ? 'fbwx-typ' : '';
+  const center = grade == null ? ''
+    : `<circle cx="12" cy="12" r="5" fill="#fff"/><text x="12" y="12" text-anchor="middle" dy="0.35em" fill="${color}" font-size="6.4" font-weight="800" font-family="Arial, sans-serif">${grade}</text>`;
+  const hur = `<path class="${spinCls}" d="${HURRICANE_PATH}" fill="${color}" stroke="${color}" stroke-width="0.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const swirl = south ? `<g transform="translate(24 0) scale(-1 1)">${hur}</g>` : hur;
+  const halo = 'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 0 .7px #fff) drop-shadow(0 1px 1.5px rgba(0,0,0,.28))';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sizePx}" height="${sizePx}" style="display:block;overflow:visible;${halo}">${swirl}${center}</svg>`;
 }
 
-// 태풍 마커는 사전 생성 정적 PNG (public/markers/, scripts/gen-typhoon-markers.mjs) 를 쓴다 —
-// 런타임 SVG→canvas→PNG 굽기 폐기(모든 방문자 브라우저 부담 0). typhoonMarkerSrc 참조.
+// ── Weather icons — flat, coloured, animated (sun spin, rain fall, cloud drift, snow, thunder
+// flicker) DOM SVG. Self-contained (no gradient defs) so each marker is portable; animation classes
+// live in globals.css (fbwx-*, gated behind prefers-reduced-motion). ──
+const WX_CLOUD = 'M6 18h11a4.1 4.1 0 0 0 .3-8.2A5.7 5.7 0 0 0 5.5 10.4 3.6 3.6 0 0 0 6 18z';
+const wxRays = (cls: string) => `<g class="${cls}" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"><line x1="12" y1="1.4" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.6"/><line x1="1.4" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.6" y2="12"/><line x1="4.05" y1="4.05" x2="5.9" y2="5.9"/><line x1="18.1" y1="18.1" x2="19.95" y2="19.95"/><line x1="19.95" y1="4.05" x2="18.1" y2="5.9"/><line x1="5.9" y1="18.1" x2="4.05" y2="19.95"/></g>`;
+const wxDrop = (x: number, cls: string) => `<path class="${cls}" transform="translate(${x} 0)" d="M0 19.4c-.9 1.2-1.4 2-1.4 2.7a1.4 1.4 0 0 0 2.8 0c0-.7-.5-1.5-1.4-2.7z" fill="#3b82f6"/>`;
+const wxSvg = (inner: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" style="display:block;overflow:visible">${inner}</svg>`;
+const WEATHER_ICON_SVG: Record<string, string> = {
+  'wx-clear': wxSvg(`<circle class="fbwx-core" cx="12" cy="12" r="5.6" fill="#fbbf24"/>${wxRays('fbwx-sun')}`),
+  'wx-partly': wxSvg(`<circle class="fbwx-core" cx="14.5" cy="7.5" r="4" fill="#fbbf24"/><path d="${WX_CLOUD}" fill="#cbd5e1"/>`),
+  'wx-cloudy': wxSvg(`<path class="fbwx-cloud" d="M3.5 15.5h8a3 3 0 0 0 .2-6A4.3 4.3 0 0 0 3.1 8.9 2.7 2.7 0 0 0 3.5 15.5z" fill="#e2e8f0"/><path d="${WX_CLOUD}" fill="#cbd5e1"/>`),
+  'wx-rain': wxSvg(`<path d="${WX_CLOUD}" fill="#cbd5e1"/>${wxDrop(8, 'fbwx-d1')}${wxDrop(12, 'fbwx-d2')}${wxDrop(16, 'fbwx-d3')}`),
+  'wx-shower': wxSvg(`<circle class="fbwx-core" cx="14.5" cy="6.5" r="3.4" fill="#fbbf24"/><path d="M6 16.5h11a4 4 0 0 0 .3-8A5.7 5.7 0 0 0 5.5 9 3.6 3.6 0 0 0 6 16.5z" fill="#cbd5e1"/>${wxDrop(9.5, 'fbwx-d1')}${wxDrop(14, 'fbwx-d2')}`),
+  'wx-snow': wxSvg(`<path d="${WX_CLOUD}" fill="#cbd5e1"/><circle class="fbwx-d1" cx="8" cy="20" r="1.5" fill="#60a5fa"/><circle class="fbwx-d2" cx="12" cy="20" r="1.5" fill="#60a5fa"/><circle class="fbwx-d3" cx="16" cy="20" r="1.5" fill="#60a5fa"/>`),
+  'wx-thunder': wxSvg(`<path class="fbwx-cloud" d="${WX_CLOUD}" fill="#94a3b8"/><path class="fbwx-flick" d="M12.5 15.2l-3.5 5.2h2.6l-1 3.6 4.2-6.1h-2.6z" fill="#f59e0b"/>`),
+};
+function isWeatherIcon(icon?: string | null): boolean {
+  return typeof icon === 'string' && Object.prototype.hasOwnProperty.call(WEATHER_ICON_SVG, icon);
+}
+/**
+ * Weather badge marker (TV-forecast style) — flat coloured weather glyph + a bold temp + small place
+ * name pill. label convention: "도시명\n기온" (line 0 = name, rest = temp). Icon sized via the existing
+ * markerPixelSize system (not oversized). Shared by MapLibre marker element + Kakao CustomOverlay.
+ */
+function buildWeatherBadgeEl(m: MapMarker): HTMLDivElement {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;filter:drop-shadow(0 1px 1.5px rgba(15,23,42,.28))';
+  const sz = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
+  const iconBox = document.createElement('div');
+  iconBox.style.cssText = `width:${sz}px;height:${sz}px;line-height:0`;
+  iconBox.innerHTML = WEATHER_ICON_SVG[m.icon as string] || '';
+  wrap.appendChild(iconBox);
+  const label = (m.label || '').trim();
+  if (label) {
+    const lines = label.split('\n');
+    const name = lines.length > 1 ? lines[0].trim() : '';
+    const temp = (lines.length > 1 ? lines.slice(1).join(' ') : lines[0]).trim();
+    const pill = document.createElement('div');
+    pill.style.cssText = 'background:rgba(255,255,255,.95);border:1px solid rgba(15,23,42,.08);border-radius:7px;padding:0 5px;text-align:center;line-height:1.1;box-shadow:0 1px 2px rgba(15,23,42,.18)';
+    if (name) { const n = document.createElement('div'); n.textContent = name; n.style.cssText = 'font-size:9px;font-weight:600;color:#475569'; pill.appendChild(n); }
+    if (temp) { const t = document.createElement('div'); t.textContent = temp; t.style.cssText = 'font-size:12px;font-weight:800;color:#0f172a;white-space:nowrap'; pill.appendChild(t); }
+    wrap.appendChild(pill);
+  }
+  return wrap;
+}
 
 /** multi-line label → HTML \<br\> 변환. sanitize 후. */
 function labelToHtml(label: string): string {
@@ -4078,16 +4129,13 @@ function coneSinglePolygon(pts: { lat: number; lon: number; radius: number }[]):
 
 /** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
 function buildMarkerEl(m: MapMarker): HTMLDivElement {
+  if (isWeatherIcon(m.icon)) return buildWeatherBadgeEl(m);
   const el = document.createElement('div');
   el.style.cursor = 'pointer';
-  if (m.icon === 'typhoon') {
-    const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale()); // 태풍 마커는 크게
-    // 사전 생성 PNG (public/markers/) — 강도색·번호가 구워져 있어 브라우저 굽기 0.
-    el.innerHTML = `<img src="${typhoonMarkerSrc(m.windSpeed)}" width="${size}" height="${size}" style="display:block"/>`;
-  } else if (m.icon === 'forecast') {
-    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (현재보다 약간 작게).
-    const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
-    el.innerHTML = `<img src="${typhoonMarkerSrc(m.windSpeed)}" width="${size}" height="${size}" style="display:block"/>`;
+  if (m.icon === 'typhoon' || m.icon === 'forecast') {
+    // DOM inline SVG (vector, crisp — no baking). Current position spins; forecast is static.
+    const size = Math.round(markerPixelSize(m.size ?? (m.icon === 'typhoon' ? 'large' : 'medium'), true) * markerDeviceScale());
+    el.innerHTML = buildTyphoonSvg(m, size, m.icon === 'typhoon');
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     // 색 핀(흰 속원 + 이모지) — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom). 속원만큼 크게.
     const headW = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
@@ -4264,59 +4312,63 @@ function MapComp({
             const url = buildPinSvgUrl(emoji, headW);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(headW, h), { offset: new w.kakao.maps.Point(headW / 2, h) });
           };
-          const makeDataUriImage = (url: string, size: number) =>
-            new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size / 2, size / 2) });
           // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
           // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
           let openInfo: any = null;
           for (const m of safeMarkers) {
-            const opts: { position: any; title: string; image?: any } = {
-              position: new w.kakao.maps.LatLng(m.lat, m.lon),
-              title: m.label,
-            };
-            // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
-            // current·카테고리 = emoji / 그 외 + color = color circle.
-            if (m.icon === 'typhoon') {
-              const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-              opts.image = makeDataUriImage(typhoonMarkerSrc(m.windSpeed), size); // 사전 생성 PNG
-            } else if (m.icon === 'forecast') {
-              const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
-              opts.image = makeDataUriImage(typhoonMarkerSrc(m.windSpeed), size);
-            } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-              const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-              opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
-            } else if (m.color) {
-              opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
-            }
-            // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀). 옛 동작 복원.
-            const marker = new w.kakao.maps.Marker(opts);
-            marker.setMap(map);
-            // Always-visible label chip (opt-in) — CustomOverlay below the marker, not click-gated.
-            // A top spacer pushes the visible chip clear of the marker point.
-            if (m.labelAlways && m.label) {
-              const wrap = document.createElement('div');
-              wrap.style.cssText = 'padding-top:20px;pointer-events:none;';
-              wrap.appendChild(buildLabelChipEl(m.label));
-              new w.kakao.maps.CustomOverlay({
-                position: new w.kakao.maps.LatLng(m.lat, m.lon),
-                content: wrap,
-                yAnchor: 0,
-                zIndex: 4,
-              }).setMap(map);
+            const pos = new w.kakao.maps.LatLng(m.lat, m.lon);
+            const isWx = isWeatherIcon(m.icon);
+            const isTyp = m.icon === 'typhoon' || m.icon === 'forecast';
+            let marker: any = null;              // native Kakao Marker (image markers)
+            let clickEl: HTMLElement | null = null; // DOM-SVG overlay content (for popup click)
+            if (isWx || isTyp) {
+              // DOM inline SVG marker via CustomOverlay (vector crisp, no image baking — unlike native
+              // Marker which needs a rasterized image). Weather badge (icon+temp) or typhoon swirl
+              // (current spins / forecast static).
+              let content: HTMLElement;
+              if (isWx) {
+                content = buildWeatherBadgeEl(m);
+              } else {
+                const size = Math.round(markerPixelSize(m.size ?? (m.icon === 'typhoon' ? 'large' : 'medium'), true) * markerDeviceScale());
+                content = document.createElement('div');
+                content.style.cssText = 'cursor:pointer;line-height:0';
+                content.innerHTML = buildTyphoonSvg(m, size, m.icon === 'typhoon');
+              }
+              new w.kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 0.5, zIndex: 4, clickable: true }).setMap(map);
+              clickEl = content;
+            } else {
+              const opts: { position: any; title: string; image?: any } = { position: pos, title: m.label };
+              if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
+                const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
+                opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
+              } else if (m.color) {
+                opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
+              }
+              // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀).
+              marker = new w.kakao.maps.Marker(opts);
+              marker.setMap(map);
+              // Always-visible label chip (opt-in, generic markers only — weather badge has its own pill).
+              if (m.labelAlways && m.label) {
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'padding-top:20px;pointer-events:none;';
+                wrap.appendChild(buildLabelChipEl(m.label));
+                new w.kakao.maps.CustomOverlay({ position: pos, content: wrap, yAnchor: 0, zIndex: 4 }).setMap(map);
+              }
             }
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
             // kakao 기본 InfoWindow 는 wrapping 멀티라인(주소·전화 2~3줄) 콘텐츠의 흰 박스 높이를
             // 잘못 측정해 내용이 박스 밖으로 넘쳤다 → CustomOverlay 로 우리 div 자체를 박스로 렌더해
             // CSS 가 콘텐츠 길이에 맞춰 auto-fit (MapLibre Popup 과 시각 일관).
-            const innerHtml = m.popup
+            // Weather badges (icon + temp) are self-sufficient → no auto popup (unless m.popup set).
+            const innerHtml = (isWx && !m.popup) ? '' : (m.popup
               ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
-              : buildPopupCardHtml(m.label);
+              : buildPopupCardHtml(m.label));
             if (innerHtml) {
               const box = document.createElement('div');
               box.style.cssText = 'position:relative;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,0.18);max-width:min(280px,calc(100vw - 80px));word-break:break-word;overflow-wrap:anywhere;';
               box.innerHTML = `<button type="button" aria-label="닫기" class="fb-map-popup-x" style="position:absolute;top:2px;right:5px;border:none;background:transparent;font-size:13px;line-height:1;color:#94a3b8;cursor:pointer;padding:4px;z-index:1;">✕</button>${innerHtml}`;
               const overlay = new w.kakao.maps.CustomOverlay({
-                position: new w.kakao.maps.LatLng(m.lat, m.lon),
+                position: pos,
                 content: box,
                 yAnchor: 1.25,  // 박스 하단이 마커 위쪽에 오도록 (마커 가림 방지)
                 zIndex: 5,
@@ -4324,11 +4376,13 @@ function MapComp({
               });
               const xBtn = box.querySelector('.fb-map-popup-x') as HTMLElement | null;
               if (xBtn) xBtn.addEventListener('click', (e) => { e.stopPropagation(); overlay.setMap(null); });
-              w.kakao.maps.event.addListener(marker, 'click', () => {
+              const openPopup = () => {
                 if (openInfo && openInfo !== overlay) openInfo.setMap(null);
                 overlay.setMap(map);
                 openInfo = overlay;
-              });
+              };
+              if (marker) w.kakao.maps.event.addListener(marker, 'click', openPopup);
+              else if (clickEl) clickEl.addEventListener('click', openPopup);
             }
           }
           // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
