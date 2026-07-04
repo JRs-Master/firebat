@@ -604,6 +604,62 @@ impl Default for ModuleOutput {
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// WS API — WebSocket-only sysmod actions (조건검색 등). Common infra + declarative
+// config: modules declare frames/endpoints as DATA in config.json `ws`, the adapter
+// owns transport mechanics (connect/login/correlate/timeout). Zero per-provider Rust
+// until a provider needs real logic (e.g. KIS approval_key/AES → dialect piece later).
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Simple field-equals check on a response frame (mirrors the oauth `invalidWhen` style).
+#[derive(Debug, Clone)]
+pub struct WsFieldEq {
+    pub field: String,
+    pub equals: serde_json::Value,
+}
+
+/// Login handshake spec — `frame` may contain the literal `"{TOKEN}"` placeholder which the
+/// adapter fills with the token from `token_secret` (OAuthTokenProvider, proactive refresh).
+#[derive(Debug, Clone)]
+pub struct WsLoginSpec {
+    pub frame: serde_json::Value,
+    pub response_match: String,
+    pub success_when: Option<WsFieldEq>,
+    pub token_secret: Option<String>,
+}
+
+/// One request/response WS call, fully declarative — built by ModuleManager from
+/// config.json `ws` + input args (template substitution). No provider knowledge here.
+#[derive(Debug, Clone)]
+pub struct WsApiCall {
+    pub module: String,
+    pub action: String,
+    /// Workspace-relative module dir (e.g. "system/modules/kiwoom") — the adapter reads the
+    /// module's token oauth spec from its config.json (same source the sandbox path uses).
+    pub module_dir: String,
+    pub endpoint: String,
+    /// Frame-type discriminator field (e.g. "trnm") used to match responses.
+    pub match_field: String,
+    /// Frames to echo back verbatim while waiting (e.g. ["PING"] — Kiwoom keepalive).
+    pub echo_values: Vec<String>,
+    pub login: Option<WsLoginSpec>,
+    pub request_frame: serde_json::Value,
+    pub response_match: String,
+    pub success_when: Option<WsFieldEq>,
+    /// Response field holding a human-readable failure message (config `errorMsgField`,
+    /// e.g. "return_msg") — used for the error string when success_when doesn't match.
+    pub error_msg_field: Option<String>,
+    pub mock: bool,
+    pub timeout_ms: u64,
+}
+
+/// WS API transport port — request/response over a short-lived WebSocket connection.
+/// Persistent subscriptions (realtime push) are a later stage, not this port.
+#[async_trait::async_trait]
+pub trait IWsApiPort: Send + Sync {
+    async fn call(&self, call: &WsApiCall) -> InfraResult<ModuleOutput>;
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxExecuteOpts {

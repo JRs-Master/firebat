@@ -9,6 +9,7 @@ pub mod log;
 pub mod database;
 pub mod sandbox;
 pub mod token_provider;
+pub mod ws_api;
 pub mod library;
 pub mod hub;
 pub mod mcp_client;

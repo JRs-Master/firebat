@@ -367,7 +367,7 @@ impl ProcessSandboxAdapter {
     /// - `_cacheKey` 가 이미 있으면 skip (명시 envelope 처리 결과 우선)
     /// - 배열 우선 — 자격 배열이 있으면 그것, 없으면 큰 문자열. 한 응답당 1개만.
     /// - cache.data() 실패 시 원본 data 그대로 통과 (warn log)
-    fn apply_auto_cache(
+    pub(crate) fn apply_auto_cache(
         data: serde_json::Value,
         cache: &SysmodCacheAdapter,
         module_name: &str,
@@ -550,7 +550,7 @@ impl ProcessSandboxAdapter {
 
     /// config.json 의 token 타입 secret 중 oauth 스펙이 있는 것만 (name, spec, lifetime_sec).
     /// proactive/reactive 토큰 갱신 대상.
-    fn oauth_token_secrets(
+    pub(crate) fn oauth_token_secrets(
         module_dir: &Path,
     ) -> Vec<(String, firebat_core::utils::secret_schema::OAuthSpec, u64)> {
         let manifest = module_dir.join("config.json");

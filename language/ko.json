@@ -69,7 +69,9 @@
       "input_schema_format": "input schema 형식 오류: {{detail}}",
       "output_schema_format": "output schema 형식 오류: {{detail}}",
       "unknown_validation": "알 수 없는 검증 실패",
-      "packages_missing": "[{{module}}] 필요한 패키지 '{{package}}' 가 설치되어 있지 않습니다. 설정 화면의 시스템 탭에서 [설치] 를 눌러주세요."
+      "packages_missing": "[{{module}}] 필요한 패키지 '{{package}}' 가 설치되어 있지 않습니다. 설정 화면의 시스템 탭에서 [설치] 를 눌러주세요.",
+      "ws_only_unsupported": "'{{name}}' 모듈의 '{{action}}' 은 상시 WebSocket 연결(실시간)이 필요한 기능이라 아직 지원되지 않습니다. 일반(스냅샷) 조회 액션을 사용해 주세요.",
+      "ws_not_wired": "'{{name}}' 모듈의 WebSocket 액션을 실행할 transport 가 연결되어 있지 않습니다."
     },
     "page": {
       "save_failed": "페이지 저장에 실패했습니다: {{slug}}",

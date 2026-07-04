@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::ports::{
-    ISandboxPort, IStoragePort, IVaultPort, InfraResult, ModuleOutput, PackageStatus,
-    SandboxExecuteOpts,
+    ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, InfraResult, ModuleOutput, PackageStatus,
+    SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec,
 };
 use crate::vault_keys::vk_module_settings;
 
@@ -41,6 +41,8 @@ pub struct ModuleManager {
     sandbox: Arc<dyn ISandboxPort>,
     storage: Arc<dyn IStoragePort>,
     vault: Arc<dyn IVaultPort>,
+    /// WS-only actions transport (config.json `ws` declarative) — None = not wired (tests).
+    ws_api: Option<Arc<dyn IWsApiPort>>,
 }
 
 impl ModuleManager {
@@ -53,7 +55,15 @@ impl ModuleManager {
             sandbox,
             storage,
             vault,
+            ws_api: None,
         }
+    }
+
+    /// WS API transport — modules whose config.json declares `ws.actions` route those
+    /// actions here instead of the sandbox (WebSocket-only APIs like 조건검색).
+    pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
+        self.ws_api = Some(ws_api);
+        self
     }
 
     /// Vault 직접 접근 — 시크릿 fallback chain (CMS settings 가 비었을 때 모듈 시크릿) 같은
@@ -131,8 +141,12 @@ impl ModuleManager {
                 )
             })?;
 
+        // Config once — input validation + ws routing + output validation all read it
+        // (was fetched twice: once per validation pass).
+        let config = self.get_module_config(scope, module_name).await;
+
         // Pre-spawn input validation — config.json 의 input schema 기준
-        if let Some(config) = self.get_module_config(scope, module_name).await {
+        if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
                 validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
                     crate::i18n::t(
@@ -144,11 +158,25 @@ impl ModuleManager {
             }
         }
 
-        let target = format!("{}/{}", dir_path, entry);
-        let result = self
-            .sandbox
-            .execute(&target, input_data, &SandboxExecuteOpts::default())
-            .await?;
+        // WS-only actions (config.json `ws` declarative) — route to the WS transport instead of
+        // the sandbox. Common infra + per-module config data = no per-provider WS code in modules
+        // (TokenProvider pattern). Undeclared actions fall through to the sandbox as before.
+        let ws_result = if let Some(ws_decl) = config.as_ref().and_then(|c| c.get("ws")) {
+            self.try_ws_route(module_name, scope, &dir_path, ws_decl, input_data)
+                .await?
+        } else {
+            None
+        };
+
+        let result = match ws_result {
+            Some(r) => r,
+            None => {
+                let target = format!("{}/{}", dir_path, entry);
+                self.sandbox
+                    .execute(&target, input_data, &SandboxExecuteOpts::default())
+                    .await?
+            }
+        };
 
         // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택).
         // success:false 응답 (outErr 호출 경로) = envelope `{success:false, errorKey, errorParams}`
@@ -157,7 +185,7 @@ impl ModuleManager {
         // success:false 응답까지 검증하던 것 = 옛 kma-weather (API key 미설정) 에서
         // "null is not of type object" warning 이 나던 root cause.
         if result.success {
-            if let Some(config) = self.get_module_config(scope, module_name).await {
+            if let Some(config) = &config {
                 if let Some(output_schema) = config.get("output") {
                     if let Err(e) = validate_value(&result.data, output_schema) {
                         tracing::warn!(
@@ -171,6 +199,135 @@ impl ModuleManager {
         }
 
         Ok(result)
+    }
+
+    /// config.json `ws` declaration → build a WsApiCall for this action, or None when the
+    /// action isn't WS-declared (sandbox handles it). Errors: WS-only-unsupported actions
+    /// (declared list, e.g. realtime variants) and missing transport wiring.
+    async fn try_ws_route(
+        &self,
+        module_name: &str,
+        scope: &str,
+        dir_path: &str,
+        ws: &serde_json::Value,
+        input_data: &serde_json::Value,
+    ) -> InfraResult<Option<ModuleOutput>> {
+        let action = input_data
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if action.is_empty() {
+            return Ok(None);
+        }
+        // Declared-but-unsupported (e.g. realtime variants needing a persistent connection) —
+        // clear message instead of the provider's opaque REST rejection.
+        let unsupported = ws
+            .get("unsupportedActions")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .any(|s| s == action)
+            })
+            .unwrap_or(false);
+        if unsupported {
+            return Err(crate::i18n::t(
+                "core.error.module.ws_only_unsupported",
+                None,
+                &[("name", module_name), ("action", action)],
+            ));
+        }
+        let Some(action_decl) = ws.get("actions").and_then(|a| a.get(action)) else {
+            return Ok(None);
+        };
+        let Some(ws_api) = &self.ws_api else {
+            return Err(crate::i18n::t(
+                "core.error.module.ws_not_wired",
+                None,
+                &[("name", module_name)],
+            ));
+        };
+
+        let mock = input_data
+            .get("mock")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let endpoint = if mock {
+            ws.get("endpointMock")
+                .or_else(|| ws.get("endpoint"))
+                .and_then(|v| v.as_str())
+        } else {
+            ws.get("endpoint").and_then(|v| v.as_str())
+        }
+        .ok_or_else(|| format!("[{module_name}] ws.endpoint missing in config.json"))?
+        .to_string();
+
+        let request_frame = substitute_ws_frame(
+            action_decl
+                .get("frame")
+                .ok_or_else(|| format!("[{module_name}] ws.actions.{action}.frame missing"))?,
+            input_data,
+        )
+        .map_err(|e| {
+            crate::i18n::t(
+                "core.error.module.input_validation_failed",
+                None,
+                &[("name", module_name), ("detail", &e)],
+            )
+        })?;
+
+        let call = WsApiCall {
+            module: module_name.to_string(),
+            action: action.to_string(),
+            module_dir: dir_path.to_string(),
+            endpoint,
+            match_field: ws
+                .get("matchField")
+                .and_then(|v| v.as_str())
+                .unwrap_or("trnm")
+                .to_string(),
+            echo_values: ws
+                .get("echoValues")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            login: ws.get("login").map(|l| WsLoginSpec {
+                frame: l.get("frame").cloned().unwrap_or(serde_json::Value::Null),
+                response_match: l
+                    .get("match")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("LOGIN")
+                    .to_string(),
+                success_when: parse_ws_field_eq(l.get("successWhen")),
+                token_secret: l
+                    .get("tokenSecret")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+            }),
+            request_frame,
+            response_match: action_decl
+                .get("match")
+                .and_then(|v| v.as_str())
+                .unwrap_or(action)
+                .to_string(),
+            success_when: parse_ws_field_eq(action_decl.get("successWhen")),
+            error_msg_field: ws
+                .get("errorMsgField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            mock,
+            timeout_ms: action_decl
+                .get("timeoutMs")
+                .or_else(|| ws.get("timeoutMs"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(15_000),
+        };
+        let _ = scope; // scope already encoded in dir_path; kept for signature clarity
+        Ok(Some(ws_api.call(&call).await?))
     }
 
     /// system/modules/ 시스템 모듈 list.
@@ -447,6 +604,72 @@ impl ModuleManager {
 const RESERVED_HUB_META_KEYS: &[&str] = &["owner", "hubOwner", "_hubScope", "project"];
 
 /// 입력값에 예약 메타 키가 있으면 제거한 사본을 반환 (검증 전용). 없으면 원본 차용 (clone 회피).
+/// `{field, equals}` config object → WsFieldEq (None when absent/malformed).
+fn parse_ws_field_eq(v: Option<&serde_json::Value>) -> Option<WsFieldEq> {
+    let v = v?;
+    Some(WsFieldEq {
+        field: v.get("field")?.as_str()?.to_string(),
+        equals: v.get("equals")?.clone(),
+    })
+}
+
+/// WS frame template substitution — generic, zero provider knowledge.
+/// String values of the exact form `"{param}"` / `"{param:default}"` are replaced with the
+/// input arg (coerced to string); `"{param}"` with no default and no arg = error (required).
+/// `"{TOKEN}"` is left as-is — the transport adapter fills it after the token fetch.
+fn substitute_ws_frame(
+    template: &serde_json::Value,
+    input: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    fn walk(v: &serde_json::Value, input: &serde_json::Value) -> Result<serde_json::Value, String> {
+        match v {
+            serde_json::Value::String(s) => {
+                let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) else {
+                    return Ok(v.clone());
+                };
+                if inner == "TOKEN" {
+                    return Ok(v.clone());
+                }
+                let (param, default) = match inner.split_once(':') {
+                    Some((p, d)) => (p, Some(d)),
+                    None => (inner, None),
+                };
+                if param.is_empty() || !param.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    return Ok(v.clone()); // not a placeholder (e.g. literal JSON-ish string)
+                }
+                match input.get(param) {
+                    Some(serde_json::Value::String(s)) => Ok(serde_json::Value::String(s.clone())),
+                    Some(serde_json::Value::Number(n)) => {
+                        Ok(serde_json::Value::String(n.to_string()))
+                    }
+                    Some(serde_json::Value::Bool(b)) => {
+                        Ok(serde_json::Value::String(b.to_string()))
+                    }
+                    _ => match default {
+                        Some(d) => Ok(serde_json::Value::String(d.to_string())),
+                        None => Err(format!("required param missing: {param}")),
+                    },
+                }
+            }
+            serde_json::Value::Object(map) => {
+                let mut out = serde_json::Map::new();
+                for (k, val) in map {
+                    out.insert(k.clone(), walk(val, input)?);
+                }
+                Ok(serde_json::Value::Object(out))
+            }
+            serde_json::Value::Array(items) => Ok(serde_json::Value::Array(
+                items
+                    .iter()
+                    .map(|i| walk(i, input))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            other => Ok(other.clone()),
+        }
+    }
+    walk(template, input)
+}
+
 fn input_for_validation(input_data: &serde_json::Value) -> std::borrow::Cow<'_, serde_json::Value> {
     match input_data.as_object() {
         Some(obj) if RESERVED_HUB_META_KEYS.iter().any(|k| obj.contains_key(*k)) => {

@@ -69,7 +69,9 @@
       "input_schema_format": "Input schema format error: {{detail}}",
       "output_schema_format": "Output schema format error: {{detail}}",
       "unknown_validation": "Unknown validation failure",
-      "packages_missing": "[{{module}}] Required package '{{package}}' is not installed. Click [Install] in the Settings system tab."
+      "packages_missing": "[{{module}}] Required package '{{package}}' is not installed. Click [Install] in the Settings system tab.",
+      "ws_only_unsupported": "'{{action}}' of module '{{name}}' needs a persistent WebSocket connection (realtime) and is not supported yet. Please use the snapshot query action instead.",
+      "ws_not_wired": "No WebSocket transport is wired for module '{{name}}'."
     },
     "page": {
       "save_failed": "Failed to save page: {{slug}}",

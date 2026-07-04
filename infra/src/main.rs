@@ -19,6 +19,7 @@ use firebat_infra::adapters::{
     memory::SqliteMemoryAdapter, network::ReqwestNetworkAdapter,
     sandbox::ProcessSandboxAdapter, token_provider::OAuthTokenProvider, storage::LocalStorageAdapter,
     tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
+    ws_api::WsApiAdapter,
 };
 use firebat_core::{
     managers::{
@@ -390,11 +391,21 @@ async fn main() -> Result<()> {
     // 자동 background install + frontend ActiveJobsIndicator 진행 상태 노출. 일반 string entry
     // 또는 heavy:false = 옛 동작 (foreground install).
     // cache_adapter 주입 = sysmod 응답 안 `_cache` envelope 자동 인식.
+    // OAuthTokenProvider — sandbox 와 WS transport 가 한 인스턴스를 공유 (per-secret 락이
+    // 두 경로에 걸쳐 유효해야 토큰 엔드포인트 thundering herd 가 안 생긴다).
+    let token_provider = Arc::new(OAuthTokenProvider::new(vault.clone()));
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(
         ProcessSandboxAdapter::new(workspace_root.clone())
             .with_vault(vault.clone())
-            .with_token_provider(Arc::new(OAuthTokenProvider::new(vault.clone())))
+            .with_token_provider(token_provider.clone())
             .with_status(status_manager.clone())
+            .with_cache(cache_adapter.clone()),
+    );
+    // WS API transport — config.json `ws` 선언 액션(조건검색 등 WebSocket-only)의 공통 인프라.
+    // 토큰·auto-cache 를 sandbox 경로와 공유 (선언형 config = 모듈별 WS 코드 0).
+    let ws_api: Arc<dyn firebat_core::ports::IWsApiPort> = Arc::new(
+        WsApiAdapter::new(workspace_root.clone())
+            .with_token_provider(token_provider.clone())
             .with_cache(cache_adapter.clone()),
     );
 
@@ -405,11 +416,10 @@ async fn main() -> Result<()> {
         db.clone(),
         vault.clone(),
     ));
-    let module_manager = Arc::new(ModuleManager::new(
-        sandbox.clone(),
-        storage.clone(),
-        vault.clone(),
-    ));
+    let module_manager = Arc::new(
+        ModuleManager::new(sandbox.clone(), storage.clone(), vault.clone())
+            .with_ws_api(ws_api.clone()),
+    );
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.

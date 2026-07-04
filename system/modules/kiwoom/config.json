@@ -7,6 +7,39 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "ws": {
+    "endpoint": "wss://api.kiwoom.com:10000/api/dostk/websocket",
+    "endpointMock": "wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
+    "matchField": "trnm",
+    "echoValues": ["PING"],
+    "errorMsgField": "return_msg",
+    "login": {
+      "frame": { "trnm": "LOGIN", "token": "{TOKEN}" },
+      "match": "LOGIN",
+      "successWhen": { "field": "return_code", "equals": 0 },
+      "tokenSecret": "KIWOOM_ACCESS_TOKEN"
+    },
+    "actions": {
+      "ka10171": {
+        "frame": { "trnm": "CNSRLST" },
+        "match": "CNSRLST",
+        "successWhen": { "field": "return_code", "equals": 0 }
+      },
+      "ka10172": {
+        "frame": {
+          "trnm": "CNSRREQ",
+          "seq": "{seq}",
+          "search_type": "{search_type:0}",
+          "stex_tp": "{stex_tp:K}",
+          "cont_yn": "{cont_yn:N}",
+          "next_key": "{next_key:}"
+        },
+        "match": "CNSRREQ",
+        "successWhen": { "field": "return_code", "equals": 0 }
+      }
+    },
+    "unsupportedActions": ["ka10173", "ka10174"]
+  },
   "grounding": {
     "stk_cd": {
       "resolveHint": "A stock code (stk_cd) must come from a lookup, never from memory. To resolve a company name to its code, prefer the dart module {action:lookup, query:<name>} — it returns the official corp_name + stock_code in one call (e.g. 이노칩 → 모다이노칩 / 080420). Alternatively kiwoom ka10099 (종목정보 리스트) for the market then cache_grep by name, or ka10100 to confirm a code you were given. Use the returned 종목코드. Never recall or guess codes, and don't re-guess the name if a lookup already returned a code. If several companies match, present a picker (suggest) instead of choosing for the user.",
@@ -125,7 +158,7 @@
     },
     {
       "name": "condition-theme",
-      "description": "키움증권 조건검색 + 테마 (사용자 정의 조건·테마 그룹별 종목)\n총 6개 API. action 으로 API ID 직접 호출:\n  ka10171 — 조건검색 목록조회 [필수: trnm(CNSRLST고정값)]\n  ka10172 — 조건검색 요청 일반 [필수: trnm(CNSRREQ 고정값), seq, search_type(0:조건검색), stex_tp(K:KRX)]\n  ka10173 — 조건검색 요청 실시간 [필수: trnm(CNSRREQ 고정값), seq, search_type(1: 조건검색+실시간조건검색), stex_tp(K:KRX)]\n  ka10174 — 조건검색 실시간 해제 [필수: trnm(CNSRCLR 고정값), seq]\n  ka90001 — 테마그룹별요청 [필수: qry_tp(0:전체검색, 1:테마검색, 2:종목검색), date_tp(n일전 (1일 ~ 99일 날짜입력)), flu_pl_amt_tp(1:상위기간수익률, 2:하위기간수익률, 3:상위등락률, 4:하위등락률), stex_tp(1:KRX, 2:NXT 3.통합)]\n  ka90002 — 테마구성종목요청 [필수: thema_grp_cd(테마그룹코드 번호), stex_tp(1:KRX, 2:NXT 3.통합)]",
+      "description": "키움증권 조건검색 + 테마 (사용자 정의 조건·테마 그룹별 종목)\n총 6개 API. action 으로 API ID 직접 호출:\n  ka10171 — 조건검색 목록조회 (내 조건식(HTS에서 작성) 목록 [seq, name] 반환 — 파라미터 불필요, WebSocket 자동 처리)\n  ka10172 — 조건검색 요청 일반 [필수: seq(조건식 일련번호 — ka10171 로 먼저 조회)] [선택: stex_tp(K:KRX 기본), cont_yn(Y/N), next_key] — 조건에 걸린 종목 스냅샷 반환\n  ka10173 — 조건검색 실시간 (미지원 — 상시 WebSocket 연결 필요. 스냅샷은 ka10172)\n  ka10174 — 조건검색 실시간 해제 (미지원)\n  ka90001 — 테마그룹별요청 [필수: qry_tp(0:전체검색, 1:테마검색, 2:종목검색), date_tp(n일전 (1일 ~ 99일 날짜입력)), flu_pl_amt_tp(1:상위기간수익률, 2:하위기간수익률, 3:상위등락률, 4:하위등락률), stex_tp(1:KRX, 2:NXT 3.통합)]\n  ka90002 — 테마구성종목요청 [필수: thema_grp_cd(테마그룹코드 번호), stex_tp(1:KRX, 2:NXT 3.통합)]",
       "capability": "stock-quote",
       "actions": [
         "ka10171",
