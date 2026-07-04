@@ -128,8 +128,8 @@ export function TemplatesPanel({
       }
       await invalidate();
       setCreating(false);
-      // admin filesystem Monaco editor — hub 는 그 capability 없음(owner 가드).
-      if (!hubContext) onEditFile?.(`user/templates/${slug}/template.json`);
+      // Monaco edit right away — admin(/api/fs/file) + hub(templates op-route, session JSON) both.
+      onEditFile?.(`user/templates/${slug}/template.json`);
     } finally {
       setSubmitting(false);
     }

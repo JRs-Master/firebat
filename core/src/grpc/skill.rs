@@ -86,6 +86,7 @@ impl SkillService for SkillServiceImpl {
             description: a.description,
             content: a.content,
             source: "user".to_string(),
+            overrides_system: false,
         };
         self.manager
             .save(owner_opt(&a.owner), &entry)

@@ -31,6 +31,7 @@ import { Message, PendingAction, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
+import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
 
 /** 마크다운 table wrapper — viewport quirk 우회 + 모바일 320px / PC 480px 캡. */
 function MarkdownTableBox(props: any) {
@@ -2016,23 +2017,101 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     };
   }, [hubContext, hubSessionId, resetHubSession]);
 
-  // hub 파일 편집 transport — FileEditor 가 admin /api/fs/file(401) 대신 hub fs route(세션 스코프)로
-  // read/write. editingFile(워크스페이스 경로 user/hub/<inst>/<sid>/...) 기준. admin 이면 {} → 기본 경로.
-  const editorTransport = useMemo<{ load?: () => Promise<string>; save?: (c: string) => Promise<void> }>(() => {
-    if (!hubContext || !editingFile) return {};
-    const { slug, apiToken } = hubContext; const sid = hubSessionId; const path = editingFile;
-    const post = async (op: string, body: Record<string, unknown>) => {
-      const res = await fetch(`/api/hub/${encodeURIComponent(slug)}/fs`, {
+  // Editing metadata handed along by the panel that opened the editor (e.g. a skill that shadows a
+  // shipped system skill → show the restore button). Set in onEditFile BEFORE setEditingFile, so the
+  // transport memo (keyed on editingFile) reads the fresh value.
+  const editingMetaRef = useRef<{ overridesSystem?: boolean }>({});
+
+  // File-edit transport for Monaco (FileEditor) — path-aware, owner-injected:
+  //   skills (user|system)/skills/<slug>.md → skill API (admin /api/skills, hub skills op-route).
+  //     load = single read (override → system base fallback), reconstructed as .md;
+  //     save = parse .md → save into the owner dir = override (system base untouched);
+  //     restore (only when overriding a system skill) = delete the override → base re-emerges.
+  //   templates user/templates/<slug>/template.json in hub → templates op-route (session-owned JSON).
+  //   hub workspace paths (user/hub/...) → hub fs route (session-scoped read/write).
+  //   admin defaults ({} → FileEditor's built-in /api/fs/file) for workspace/templates.
+  const editorTransport = useMemo<{ load?: () => Promise<string>; save?: (c: string) => Promise<void>; restore?: () => Promise<void> }>(() => {
+    if (!editingFile) return {};
+    const path = editingFile;
+    const meta = editingMetaRef.current;
+
+    // hub op-route poster (fs / skills / templates share the auth headers).
+    const hubPost = hubContext ? async (route: string, body: Record<string, unknown>) => {
+      const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/${route}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Api-Token': apiToken, 'X-Session-Id': sid },
-        body: JSON.stringify({ op, ...body }),
+        headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubSessionId },
+        body: JSON.stringify(body),
       });
       return res.json().catch(() => ({ success: false, error: '응답 파싱 실패' }));
-    };
-    return {
-      load: async () => { const r = await post('read', { path }); if (!r.success) throw new Error(r.error || '읽기 실패'); return r.content ?? ''; },
-      save: async (content: string) => { const r = await post('write', { path, content }); if (!r.success) throw new Error(r.error || '저장 실패'); },
-    };
+    } : null;
+
+    const skillMatch = path.match(/^(?:user|system)\/skills\/([^/]+)\.md$/);
+    if (skillMatch) {
+      const slug = skillMatch[1];
+      const getItem = async (): Promise<any> => {
+        if (hubPost) {
+          const r = await hubPost('skills', { op: 'get', slug });
+          if (!r.success) throw new Error(r.error || '스킬 읽기 실패');
+          return r.item;
+        }
+        const r = await apiGet<{ success: boolean; item?: any; error?: string }>(`/api/skills?slug=${encodeURIComponent(slug)}`, { category: 'skills' });
+        if (!r.success || !r.item) throw new Error(r.error || '스킬 읽기 실패');
+        return r.item;
+      };
+      const saveItem = async (content: string) => {
+        const f = parseSkillMd(content, slug);
+        if (hubPost) {
+          const r = await hubPost('skills', { op: 'save', slug, ...f });
+          if (!r.success) throw new Error(r.error || '스킬 저장 실패');
+          return;
+        }
+        const r = await apiPost<{ success: boolean; error?: string }>('/api/skills', { slug, ...f }, { category: 'skills' });
+        if (!r.success) throw new Error(r.error || '스킬 저장 실패');
+      };
+      const removeOverride = async () => {
+        if (hubPost) {
+          const r = await hubPost('skills', { op: 'delete', slug });
+          if (!r.success) throw new Error(r.error || '복원 실패');
+          return;
+        }
+        const res = await fetch(`/api/skills?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+        const r = await res.json().catch(() => ({ success: false }));
+        if (!r.success) throw new Error(r.error || '복원 실패');
+      };
+      return {
+        load: async () => skillToMd({ ...(await getItem()), slug }),
+        save: saveItem,
+        // Restore only when this slug shadows a shipped system skill — deleting a PURE user skill
+        // would destroy it (that action lives in the panel's delete, not here).
+        restore: meta.overridesSystem ? removeOverride : undefined,
+      };
+    }
+
+    if (hubPost) {
+      const tplMatch = path.match(/^user\/templates\/([^/]+)\/template\.json$/);
+      if (tplMatch) {
+        const slug = tplMatch[1];
+        return {
+          load: async () => {
+            const r = await hubPost('templates', { op: 'get', slug });
+            if (!r.success) throw new Error(r.error || '템플릿 읽기 실패');
+            return JSON.stringify(r.template ?? {}, null, 2);
+          },
+          save: async (content: string) => {
+            let config: unknown;
+            try { config = JSON.parse(content); } catch { throw new Error('JSON 파싱 실패 — 저장하려면 유효한 JSON 이어야 합니다.'); }
+            const r = await hubPost('templates', { op: 'save', slug, config });
+            if (!r.success) throw new Error(r.error || '템플릿 저장 실패');
+          },
+        };
+      }
+      // hub workspace file (session-scoped fs route).
+      return {
+        load: async () => { const r = await hubPost('fs', { op: 'read', path }); if (!r.success) throw new Error(r.error || '읽기 실패'); return r.content ?? ''; },
+        save: async (content: string) => { const r = await hubPost('fs', { op: 'write', path, content }); if (!r.success) throw new Error(r.error || '저장 실패'); },
+      };
+    }
+    return {};
   }, [hubContext, editingFile, hubSessionId]);
 
   const {
@@ -2208,7 +2287,12 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         onRefreshChats={refreshConversations}
         aiModel={aiModel}
         onOpenSettings={() => setShowSettings(true)}
-        onEditFile={(filePath: string) => { if (hubContext && !filePath.startsWith('user/hub/')) return; setEditingFile(filePath); }}
+        onEditFile={(filePath: string, meta?: { overridesSystem?: boolean }) => {
+          // hub may edit: session workspace files + skills (op-route override) + session templates.
+          if (hubContext && !/^(user\/hub\/|(?:user|system)\/skills\/|user\/templates\/)/.test(filePath)) return;
+          editingMetaRef.current = meta ?? {};
+          setEditingFile(filePath);
+        }}
         onOpenModuleSettings={hubContext ? undefined : handleOpenModuleSettings}
         mobileOpen={mobileMenuOpen}
         onMobileOpenChange={setMobileMenuOpen}
@@ -2556,6 +2640,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
             onSaved={() => refreshSidebar()}
             load={editorTransport.load}
             save={editorTransport.save}
+            restore={editorTransport.restore}
             aiAssist={!hubContext}
           />
         )}

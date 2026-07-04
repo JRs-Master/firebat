@@ -536,6 +536,7 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     description: a.description,
                     content: a.content,
                     source: "user".to_string(),
+                    overrides_system: false,
                 };
                 sf.save(a.owner.as_deref(), &entry).await?;
                 Ok(serde_json::json!({"ok": true, "slug": entry.slug}))

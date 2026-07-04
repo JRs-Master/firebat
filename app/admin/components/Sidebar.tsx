@@ -67,7 +67,7 @@ interface SidebarProps {
   onRefreshChats?: () => void;
   aiModel?: string;
   onOpenSettings?: () => void;
-  onEditFile?: (filePath: string) => void;
+  onEditFile?: (filePath: string, meta?: { overridesSystem?: boolean }) => void;
   onOpenModuleSettings?: (moduleName: string) => void;
   /** 외부에서 사이드바 열기 요청 (모바일 햄버거) */
   mobileOpen?: boolean;

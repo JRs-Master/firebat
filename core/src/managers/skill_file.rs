@@ -37,6 +37,10 @@ pub struct SkillEntry {
     /// "system" (shipped) or "user" (admin/hub authored). Derived on list/read.
     #[serde(default)]
     pub source: String,
+    /// true when this user entry shadows a shipped system skill of the same slug —
+    /// deleting the user file then restores the system base (Monaco "복원" button).
+    #[serde(default)]
+    pub overrides_system: bool,
 }
 
 /// One grep hit — identity + matching body lines (empty if matched on name/description only).
@@ -76,10 +80,12 @@ impl SkillFileManager {
     pub async fn read(&self, owner: Option<&str>, slug: &str) -> InfraResult<SkillEntry> {
         let stem = slug.trim().trim_end_matches(".md");
         let user_path = resolve_path(&owner_dir(&self.user_dir, owner)?, slug)?;
-        if let Ok(raw) = self.storage.read(&user_path).await {
-            return Ok(parse_entry(stem, &raw, "user"));
-        }
         let sys_path = resolve_path(&self.system_dir, slug)?;
+        if let Ok(raw) = self.storage.read(&user_path).await {
+            let mut e = parse_entry(stem, &raw, "user");
+            e.overrides_system = self.storage.read(&sys_path).await.is_ok();
+            return Ok(e);
+        }
         let raw = self.storage.read(&sys_path).await?;
         Ok(parse_entry(stem, &raw, "system"))
     }
@@ -99,7 +105,9 @@ impl SkillFileManager {
             by_slug.insert(e.slug.clone(), e);
         }
         let owner_buf = owner_dir(&self.user_dir, owner)?;
-        for e in self.read_dir_entries(&owner_buf, "user").await {
+        for mut e in self.read_dir_entries(&owner_buf, "user").await {
+            // A user entry replacing a shipped slug = override (delete restores the base).
+            e.overrides_system = by_slug.get(&e.slug).is_some_and(|prev| prev.source == "system");
             by_slug.insert(e.slug.clone(), e);
         }
         Ok(by_slug.into_values().collect())
@@ -258,6 +266,7 @@ fn parse_entry(file_stem: &str, raw: &str, source: &str) -> SkillEntry {
         description,
         content,
         source: source.to_string(),
+        overrides_system: false,
     }
 }
 
@@ -310,6 +319,7 @@ mod tests {
             description: desc.to_string(),
             content: content.to_string(),
             source: "user".to_string(),
+            overrides_system: false,
         }
     }
 

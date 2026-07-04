@@ -21,6 +21,8 @@ interface SkillEntry {
   kind: string;
   description: string;
   source: string; // system | user
+  /** true = user file shadows a shipped system skill (delete restores the base). */
+  overrides_system?: boolean;
 }
 
 const SKILL_KINDS = ['design', 'tool-usage', 'procedure', 'persona', 'policy'];
@@ -34,7 +36,7 @@ export function SkillsPanel({
   onEditFile,
   hubContext,
 }: {
-  onEditFile?: (filePath: string) => void;
+  onEditFile?: (filePath: string, meta?: { overridesSystem?: boolean }) => void;
   hubMode?: boolean;   // accepted for caller compat; owner derived from hubContext (backend object).
   hubContext?: SkillsHubContext;
 }) {
@@ -111,8 +113,8 @@ export function SkillsPanel({
       }
       await invalidate();
       setCreating(false);
-      // admin filesystem Monaco editor — hub 는 그 capability 없음(owner 가드).
-      if (!hubContext) onEditFile?.(`user/skills/${slug}.md`);
+      // Monaco edit right away — admin + hub both (transport routes to /api/skills or hub op-route).
+      onEditFile?.(`user/skills/${slug}.md`);
     } finally {
       setSubmitting(false);
     }
@@ -162,7 +164,7 @@ export function SkillsPanel({
                   key={sk.slug}
                   id={sk.slug}
                   kind="enter"
-                  onActivate={() => onEditFile?.(`${sk.source === 'system' ? 'system' : 'user'}/skills/${sk.slug}.md`)}
+                  onActivate={() => onEditFile?.(`${sk.source === 'system' ? 'system' : 'user'}/skills/${sk.slug}.md`, { overridesSystem: !!sk.overrides_system })}
                   rowClassName="px-2 py-1.5 rounded-lg hover:bg-slate-100"
                   className="flex items-center gap-1.5"
                   actions={
@@ -185,6 +187,7 @@ export function SkillsPanel({
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[8px] font-bold uppercase ${sk.kind === 'design' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>{sk.kind || 'skill'}</span>
                       <span className="truncate">{sk.name || sk.slug}</span>
                       {sk.source === 'system' && <span className="shrink-0 text-[8px] text-slate-400">(기본)</span>}
+                      {sk.overrides_system && <span className="shrink-0 text-[8px] text-amber-500 font-bold">(기본 수정됨)</span>}
                     </div>
                     {sk.description ? (
                       <div className="text-[10px] text-slate-400 truncate">{sk.description}</div>
