@@ -301,6 +301,9 @@ fn register_memory_file_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     name: a.name,
                     description: a.description,
                     content: a.content,
+                    // In-turn memory_save = explicit request or MEMORY_WRITE_MODE-gated judgment
+                    // (F1-scoped) — treated as promoted; only cron extraction stages at 0.5.
+                    confidence: 1.0,
                 };
                 mf.save(a.owner.as_deref(), &entry).await?;
                 Ok(serde_json::json!({"ok": true, "name": entry.name}))
@@ -2053,15 +2056,18 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_entity_fact — entity timeline 저장
     tools.register(ToolDefinition {
         name: "save_entity_fact".to_string(),
-        description: "Entity 의 fact 추가 (entityId + content). occurredAt / tags / dedupThreshold 옵션.".to_string(),
+        description: "Record a durable statement about a tracked entity — something that stays true about it OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER log conversation activity ('the user asked/requested/wants to see X') — the conversation itself is already stored elsewhere; a fact must stand on its own when read later. Include figures/dates in content when present. factType groups the entity's facts: REUSE the label you see in <TRACKED_ENTITIES> or the entity's timeline for the same kind of statement — stable labels are what make value updates supersede cleanly. Set supersede=true when this is a NEW VALUE of a state the entity already has (an updated figure/level/status) so the old value retires into history instead of coexisting. Set explicit=true ONLY when the user explicitly asked to remember it; autonomous saves omit it and start at lower confidence until repeated observations promote them. Numeric time-series (price history, chart data) do NOT belong here.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
                 "entityId": {"type": "integer"},
-                "content": {"type": "string"},
-                "factType": {"type": "string"},
+                "content": {"type": "string", "description": "1-2 natural sentences, self-sufficient later (state figures/dates/outcome when present)"},
+                "factType": {"type": "string", "description": "kind of statement — reuse the entity's existing labels so the same kind groups together"},
                 "occurredAt": {"type": "integer"},
-                "tags": {"type": "array", "items": {"type": "string"}}
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "supersede": {"type": "boolean", "description": "true = new value of a state this entity already has (same factType) — retire the previous value into history"},
+                "explicit": {"type": "boolean", "description": "true ONLY when the user explicitly asked to remember this"},
+                "confidence": {"type": "number", "description": "0-1 promotion score override (omit normally)"}
             },
             "required": ["entityId", "content"]
         }),
@@ -2101,6 +2107,9 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     ttl_days: args.get("ttlDays").and_then(|v| v.as_i64()),
                     dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
                     owner: args.get("owner").and_then(|v| v.as_str()).map(String::from),
+                    supersede: args.get("supersede").and_then(|v| v.as_bool()).unwrap_or(false),
+                    explicit: args.get("explicit").and_then(|v| v.as_bool()).unwrap_or(false),
+                    confidence: args.get("confidence").and_then(|v| v.as_f64()),
                 };
                 let (id, skipped, sim) = entity.save_fact(parsed).await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))
@@ -2175,6 +2184,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         .and_then(|v| v.as_str())
                         .map(String::from),
                     owner: args.get("owner").and_then(|v| v.as_str()).map(String::from),
+                    include_inactive: false, // tools see promoted, active facts only
                 };
                 let result = entity.get_entity_timeline(entity_id, opts)?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
@@ -2216,15 +2226,17 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_event
     tools.register(ToolDefinition {
         name: "save_event".to_string(),
-        description: "사건 추가 (type + title 필수). entityIds 설정하면 m2m link 자동.".to_string(),
+        description: "Record something that happened (or is scheduled) in the WORLD at a point in time and is worth recalling later — a trade executed, a release/announcement, a decision the user made, a project/life milestone. NEVER log conversation activity ('user asked about X', 'analysis was requested') — requests and Q&A already live in conversation history, not here. Reuse the same type label for the same kind of occurrence. Link entityIds so the event shows on those entities' timelines. Set explicit=true only when the user explicitly asked to remember it.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "type": {"type": "string"},
+                "type": {"type": "string", "description": "kind of occurrence — reuse existing labels"},
                 "title": {"type": "string"},
                 "description": {"type": "string"},
                 "occurredAt": {"type": "integer"},
-                "entityIds": {"type": "array", "items": {"type": "integer"}}
+                "entityIds": {"type": "array", "items": {"type": "integer"}},
+                "explicit": {"type": "boolean", "description": "true ONLY when the user explicitly asked to remember this"},
+                "confidence": {"type": "number", "description": "0-1 promotion score override (omit normally)"}
             },
             "required": ["type", "title"]
         }),
@@ -2254,6 +2266,10 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     // AiManager 가 hub_context 가 있으면 자동 주입.
                     #[serde(default)]
                     owner: Option<String>,
+                    #[serde(default)]
+                    explicit: bool,
+                    #[serde(default)]
+                    confidence: Option<f64>,
                 }
                 let parsed: Args = serde_json::from_value(args)
                     .map_err(|e| format!("save_event args: {e}"))?;
@@ -2270,6 +2286,8 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         ttl_days: parsed.ttl_days,
                         dedup_threshold: parsed.dedup_threshold,
                         owner: parsed.owner,
+                        explicit: parsed.explicit,
+                        confidence: parsed.confidence,
                     })
                     .await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))

@@ -198,6 +198,10 @@ impl EntityService for EntityServiceImpl {
                 ttl_days: args.ttl_days,
                 dedup_threshold: args.dedup_threshold,
                 owner: args.owner, // ensure_entity_owner 이미 검증 — adapter 가드와 이중(defense)
+                supersede: args.supersede.unwrap_or(false),
+                // Route callers = a human typing into the UI → user-authored by default.
+                explicit: args.explicit.unwrap_or(true),
+                confidence: args.confidence,
             })
             .await
         {
@@ -229,6 +233,7 @@ impl EntityService for EntityServiceImpl {
                     occurred_at: args.occurred_at,
                     tags,
                     ttl_days: args.ttl_days,
+                    confidence: args.confidence,
                 },
             )
             .map_err(TonicStatus::internal)?;
@@ -272,6 +277,7 @@ impl EntityService for EntityServiceImpl {
                 offset: args.offset.map(|v| v as usize),
                 order_by: args.order_by,
                 owner: args.owner.filter(|s| !s.is_empty()),
+                include_inactive: args.include_inactive.unwrap_or(false),
             },
         ) {
             Ok(list) => Ok(Response::new(EntityTimelineResponse {

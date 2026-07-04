@@ -27,6 +27,15 @@ pub struct MemoryEntry {
     pub description: String,
     #[serde(default)]
     pub content: String,
+    /// Staging tier — entries below the promote threshold (0.7) are kept on disk and visible in
+    /// the admin tab, but excluded from the injected `<OPERATIONAL_MEMORY>` index. User-authored
+    /// and explicit saves default 1.0; cron-extracted lessons start 0.5.
+    #[serde(default = "default_mem_confidence")]
+    pub confidence: f64,
+}
+
+fn default_mem_confidence() -> f64 {
+    1.0
 }
 
 /// One grep hit — entry identity + matching body lines (empty if matched on name/description only).
@@ -181,13 +190,25 @@ fn serialize_entry(e: &MemoryEntry) -> String {
     } else {
         e.category.trim()
     };
-    format!(
-        "---\nname: {}\ncategory: {}\ndescription: {}\n---\n{}",
-        e.name.trim(),
-        category,
-        e.description.trim(),
-        e.content
-    )
+    if e.confidence < 1.0 {
+        format!(
+            "---\nname: {}\ncategory: {}\ndescription: {}\nconfidence: {}\n---\n{}",
+            e.name.trim(),
+            category,
+            e.description.trim(),
+            e.confidence,
+            e.content
+        )
+    } else {
+        // Promoted/user-authored entries keep the legacy frontmatter shape (no confidence line).
+        format!(
+            "---\nname: {}\ncategory: {}\ndescription: {}\n---\n{}",
+            e.name.trim(),
+            category,
+            e.description.trim(),
+            e.content
+        )
+    }
 }
 
 /// Parse a file into an entry. Tolerates missing/partial frontmatter — a legacy file
@@ -196,6 +217,7 @@ fn parse_entry(file_stem: &str, raw: &str) -> MemoryEntry {
     let mut category = String::from("reference");
     let mut name = file_stem.to_string();
     let mut description = String::new();
+    let mut confidence: f64 = 1.0;
     let content;
     if let Some(body) = raw.strip_prefix("---\n") {
         if let Some(idx) = body.find("\n---\n") {
@@ -208,6 +230,7 @@ fn parse_entry(file_stem: &str, raw: &str) -> MemoryEntry {
                         "name" if !v.is_empty() => name = v.to_string(),
                         "category" if !v.is_empty() => category = v.to_string(),
                         "description" => description = v.to_string(),
+                        "confidence" => confidence = v.parse().unwrap_or(1.0),
                         _ => {}
                     }
                 }
@@ -223,11 +246,15 @@ fn parse_entry(file_stem: &str, raw: &str) -> MemoryEntry {
         name,
         description,
         content,
+        confidence,
     }
 }
 
 /// Group entries by canonical category, one line each: `- [name] description`.
 fn build_index(entries: &[MemoryEntry]) -> String {
+    // Staging entries (confidence < promote threshold) are excluded from injection — they are
+    // reviewable in the admin tab but must not steer behavior until confirmed.
+    let entries: Vec<&MemoryEntry> = entries.iter().filter(|e| e.confidence >= 0.7).collect();
     if entries.is_empty() {
         return String::new();
     }
@@ -241,7 +268,7 @@ fn build_index(entries: &[MemoryEntry]) -> String {
         }
     };
     for cat in MEMORY_CATEGORIES {
-        let group: Vec<&MemoryEntry> = entries.iter().filter(|e| e.category == cat).collect();
+        let group: Vec<&MemoryEntry> = entries.iter().map(|e| *e).filter(|e| e.category == cat).collect();
         if group.is_empty() {
             continue;
         }
@@ -255,6 +282,7 @@ fn build_index(entries: &[MemoryEntry]) -> String {
     // (the AI logs them while operating), not operational knowledge to inject into the AI.
     let other: Vec<&MemoryEntry> = entries
         .iter()
+        .map(|e| *e)
         .filter(|e| !MEMORY_CATEGORIES.contains(&e.category.as_str()) && e.category != "idea")
         .collect();
     if !other.is_empty() {
@@ -276,6 +304,7 @@ mod tests {
             name: name.to_string(),
             description: desc.to_string(),
             content: content.to_string(),
+            confidence: 1.0,
         }
     }
 

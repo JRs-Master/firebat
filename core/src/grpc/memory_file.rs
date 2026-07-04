@@ -82,6 +82,7 @@ impl MemoryService for MemoryServiceImpl {
             name: args.name,
             description: args.description,
             content: args.content,
+            confidence: 1.0, // admin-tab save = user-authored (promoted)
         };
         self.manager
             .save(owner.as_deref(), &entry)

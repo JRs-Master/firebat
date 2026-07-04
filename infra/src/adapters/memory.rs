@@ -87,6 +87,11 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_entities_updated ON entities(updated_at DESC);
 
             -- Entity Facts (Phase 1)
+            -- Staging/supersession columns (Intelligence rebuild 2026-07-04):
+            --   superseded_by = retired by a newer value of the same (entity, factType) — history kept, one active.
+            --   explicit      = 1 when the user explicitly asked to remember (vs autonomous/cron extraction).
+            --   confidence    = promotion score; below the promote threshold = staging (not injected into recall).
+            --   seen_count/last_seen = repeated-observation signal (dedup match bumps these → promotion).
             CREATE TABLE IF NOT EXISTS entity_facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 entity_id INTEGER NOT NULL,
@@ -99,6 +104,11 @@ impl SqliteMemoryAdapter {
                 expires_at INTEGER,
                 owner TEXT NOT NULL DEFAULT 'admin',
                 created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+                superseded_by INTEGER,
+                explicit INTEGER NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                seen_count INTEGER NOT NULL DEFAULT 1,
+                last_seen INTEGER,
                 FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_facts_entity ON entity_facts(entity_id);
@@ -107,7 +117,7 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_facts_expires ON entity_facts(expires_at);
             CREATE INDEX IF NOT EXISTS idx_facts_owner ON entity_facts(owner);
 
-            -- Events (Phase 2)
+            -- Events (Phase 2) — staging columns mirror entity_facts (see comment there).
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT NOT NULL,
@@ -120,7 +130,12 @@ impl SqliteMemoryAdapter {
                 source_conv_id TEXT,
                 expires_at INTEGER,
                 owner TEXT NOT NULL DEFAULT 'admin',
-                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+                superseded_by INTEGER,
+                explicit INTEGER NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL DEFAULT 1.0,
+                seen_count INTEGER NOT NULL DEFAULT 1,
+                last_seen INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
             CREATE INDEX IF NOT EXISTS idx_events_occurred ON events(occurred_at DESC);
@@ -244,9 +259,42 @@ impl SqliteMemoryAdapter {
             "#,
         )
         .map_err(|e| format!("Memory schema 초기화 실패: {e}"))?;
+
+        // Defensive column adds for pre-existing DBs (fresh DBs get these via CREATE TABLE above).
+        // "duplicate column name" errors are ignored on purpose. Any index touching these columns
+        // MUST come after the ALTERs — a batch index on a missing column fails schema init before
+        // the ALTER runs (crash-loop lesson, INFRA_BIBLE 제2-A장).
+        for sql in [
+            "ALTER TABLE entity_facts ADD COLUMN superseded_by INTEGER",
+            "ALTER TABLE entity_facts ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE entity_facts ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
+            "ALTER TABLE entity_facts ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE entity_facts ADD COLUMN last_seen INTEGER",
+            "ALTER TABLE events ADD COLUMN superseded_by INTEGER",
+            "ALTER TABLE events ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE events ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
+            "ALTER TABLE events ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE events ADD COLUMN last_seen INTEGER",
+        ] {
+            let _ = conn.execute(sql, []);
+        }
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_facts_superseded ON entity_facts(superseded_by)",
+            [],
+        );
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_superseded ON events(superseded_by)",
+            [],
+        );
         Ok(())
     }
 }
+
+/// Staging promotion threshold — facts/events below this confidence are "승격 대기"
+/// (visible in the admin UI review section, excluded from retrieval/search injection).
+/// The frontend grouping mirrors this value.
+#[allow(dead_code)]
+const PROMOTE_CONFIDENCE: f64 = 0.7;
 
 // memory.rs 안 사용처가 다수 — 별 alias 보존 + utils::time::now_ms 위임.
 fn now_ms() -> i64 {
@@ -296,6 +344,13 @@ impl SqliteMemoryAdapter {
             expires_at: row.get(7)?,
             created_at: row.get(8)?,
             owner,
+            // Staging/supersession columns (10-14) — resilient reads so a SELECT without them
+            // (or a pre-ALTER row) degrades to defaults instead of erroring.
+            superseded_by: row.get::<_, Option<i64>>(10).ok().flatten(),
+            explicit: row.get::<_, Option<i64>>(11).ok().flatten().unwrap_or(0) != 0,
+            confidence: row.get::<_, Option<f64>>(12).ok().flatten().unwrap_or(1.0),
+            seen_count: row.get::<_, Option<i64>>(13).ok().flatten().unwrap_or(1),
+            last_seen: row.get::<_, Option<i64>>(14).ok().flatten(),
         })
     }
 
@@ -792,6 +847,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                     .prepare(
                         "SELECT id, embedding FROM entity_facts
                          WHERE entity_id = ?1 AND embedding IS NOT NULL
+                           AND superseded_by IS NULL
                            AND (expires_at IS NULL OR expires_at > ?2)",
                     )
                     .map_err(|e| format!("dedup prepare: {e}"))?;
@@ -816,6 +872,14 @@ impl IEntityPort for SqliteMemoryAdapter {
                 }
                 if let Some(id) = best_id {
                     if best_sim >= threshold as f32 {
+                        // Repeated observation = promotion signal — bump seen_count/last_seen and
+                        // nudge confidence toward the promote threshold (explicit rows unchanged).
+                        let _ = conn.execute(
+                            "UPDATE entity_facts SET seen_count = seen_count + 1, last_seen = ?2,
+                             confidence = CASE WHEN explicit = 1 THEN confidence ELSE MIN(0.95, confidence + 0.15) END
+                             WHERE id = ?1",
+                            params![id, now],
+                        );
                         return Ok((id, true, Some(best_sim as f64)));
                     }
                 }
@@ -835,10 +899,15 @@ impl IEntityPort for SqliteMemoryAdapter {
                 |r| r.get(0),
             )
             .unwrap_or_else(|_| "admin".to_string());
+        // Confidence: explicit user request = 1.0; autonomous inline default 0.7;
+        // cron extraction passes Some(0.5) = staging (excluded from recall until promoted).
+        let confidence = input
+            .confidence
+            .unwrap_or(if input.explicit { 1.0 } else { 0.7 });
         conn.execute(
             r#"INSERT INTO entity_facts
-               (entity_id, content, fact_type, occurred_at, tags, embedding, source_conv_id, expires_at, owner, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
+               (entity_id, content, fact_type, occurred_at, tags, embedding, source_conv_id, expires_at, owner, created_at, explicit, confidence, seen_count, last_seen)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1, ?13)"#,
             params![
                 input.entity_id,
                 input.content,
@@ -849,10 +918,28 @@ impl IEntityPort for SqliteMemoryAdapter {
                 input.source_conv_id,
                 expires_at,
                 entity_owner,
+                now,
+                input.explicit as i64,
+                confidence,
                 now
             ],
         )
         .map_err(|e| format!("fact insert 실패: {e}"))?;
+        let new_id = conn.last_insert_rowid();
+
+        // Model-judged supersession — this fact is a NEW VALUE of a state the entity already has:
+        // retire the previous active rows of the same (entity, factType). History rows keep
+        // superseded_by = new id (timeline shows them struck through), exactly one active value.
+        if input.supersede {
+            if let Some(ft) = input.fact_type.as_deref().filter(|f| !f.trim().is_empty()) {
+                conn.execute(
+                    "UPDATE entity_facts SET superseded_by = ?1
+                     WHERE entity_id = ?2 AND fact_type = ?3 AND superseded_by IS NULL AND id != ?1",
+                    params![new_id, input.entity_id, ft],
+                )
+                .map_err(|e| format!("fact supersede 실패: {e}"))?;
+            }
+        }
 
         // Entity last_updated 갱신 (옛 TS 동등)
         conn.execute(
@@ -861,7 +948,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         )
         .map_err(|e| format!("entity touch 실패: {e}"))?;
 
-        Ok((conn.last_insert_rowid(), false, None))
+        Ok((new_id, false, None))
     }
 
     fn update_fact(&self, id: i64, patch: &UpdateFactPatch) -> InfraResult<()> {
@@ -889,6 +976,11 @@ impl IEntityPort for SqliteMemoryAdapter {
         if let Some(d) = patch.ttl_days {
             sets.push("expires_at = ?");
             values.push(Box::new(now_ms() + d * 24 * 60 * 60 * 1000));
+        }
+        if let Some(c) = patch.confidence {
+            // Manual promotion/demotion from the admin UI (승격 대기 -> 승격 = set >= threshold).
+            sets.push("confidence = ?");
+            values.push(Box::new(c));
         }
         if sets.is_empty() {
             return Ok(());
@@ -919,7 +1011,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>> {
         let conn = self.conn.lock().unwrap();
         let result = conn.query_row(
-            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner
+            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen
                FROM entity_facts WHERE id = ?1"#,
             params![id],
             Self::fact_from_row,
@@ -944,10 +1036,17 @@ impl IEntityPort for SqliteMemoryAdapter {
             _ => "COALESCE(occurred_at, created_at)",
         };
         let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
+        // Active-only by default (retrieval per-entity timelines) — the admin UI passes
+        // includeInactive to review staging/superseded rows grouped separately.
+        let active_gate = if opts.include_inactive {
+            ""
+        } else {
+            " AND superseded_by IS NULL AND confidence >= 0.7"
+        };
         let sql = format!(
-            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner
-               FROM entity_facts WHERE entity_id = ?1 AND owner = ?2 ORDER BY {} DESC LIMIT ?3 OFFSET ?4"#,
-            order
+            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen
+               FROM entity_facts WHERE entity_id = ?1 AND owner = ?2{} ORDER BY {} DESC LIMIT ?3 OFFSET ?4"#,
+            active_gate, order
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("timeline prepare: {e}"))?;
         let rows = stmt
@@ -973,15 +1072,19 @@ impl IEntityPort for SqliteMemoryAdapter {
             select_embedding: bool,
         ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let cols = if select_embedding {
-                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, embedding"
+                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen, embedding"
             } else {
-                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner"
+                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen"
             };
             let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
             let mut sql = format!(
                 "SELECT {} FROM entity_facts WHERE owner = ? AND (expires_at IS NULL OR expires_at > ?)",
                 cols
             );
+            if !opts.include_inactive {
+                // Retrieval/search see promoted, active facts only (staging + superseded excluded).
+                sql.push_str(" AND superseded_by IS NULL AND confidence >= 0.7");
+            }
             let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
             if let Some(eid) = opts.entity_id {
                 sql.push_str(" AND entity_id = ?");
@@ -1018,7 +1121,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             let rows = stmt
                 .query_map(value_refs.as_slice(), |r| {
                     let fact = Self::fact_from_row(r)?;
-                    let blob: Option<Vec<u8>> = r.get(10)?;
+                    let blob: Option<Vec<u8>> = r.get(15)?;
                     Ok((fact, blob))
                 })
                 .map_err(|e| format!("search facts query: {e}"))?;
@@ -1100,6 +1203,26 @@ impl IEntityPort for SqliteMemoryAdapter {
             .map_err(|e| format!("count_facts: {e}"))
     }
 
+    fn list_fact_types(&self, owner: Option<&str>) -> InfraResult<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT fact_type FROM entity_facts
+                 WHERE owner = ?1 AND fact_type IS NOT NULL AND TRIM(fact_type) != ''
+                   AND superseded_by IS NULL
+                 ORDER BY fact_type",
+            )
+            .map_err(|e| format!("list_fact_types: {e}"))?;
+        let rows = stmt
+            .query_map(params![owner.unwrap_or("admin")], |r| r.get::<_, String>(0))
+            .map_err(|e| format!("list_fact_types query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("list_fact_types row: {e}"))?);
+        }
+        Ok(out)
+    }
+
     fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
@@ -1137,6 +1260,12 @@ impl SqliteMemoryAdapter {
             expires_at: row.get(8)?,
             created_at: row.get(9)?,
             owner,
+            // Staging/supersession columns (11-15) — resilient reads (defaults when not selected).
+            superseded_by: row.get::<_, Option<i64>>(11).ok().flatten(),
+            explicit: row.get::<_, Option<i64>>(12).ok().flatten().unwrap_or(0) != 0,
+            confidence: row.get::<_, Option<f64>>(13).ok().flatten().unwrap_or(1.0),
+            seen_count: row.get::<_, Option<i64>>(14).ok().flatten().unwrap_or(1),
+            last_seen: row.get::<_, Option<i64>>(15).ok().flatten(),
         })
     }
 
@@ -1185,6 +1314,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     .prepare(
                         "SELECT id, embedding FROM events
                          WHERE type = ?1 AND embedding IS NOT NULL
+                           AND superseded_by IS NULL
                            AND occurred_at >= ?2
                            AND (expires_at IS NULL OR expires_at > ?3)",
                     )
@@ -1218,6 +1348,13 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                                 params![id, entity_id],
                             );
                         }
+                        // Repeated observation = promotion signal (mirrors save_fact).
+                        let _ = conn.execute(
+                            "UPDATE events SET seen_count = seen_count + 1, last_seen = ?2,
+                             confidence = CASE WHEN explicit = 1 THEN confidence ELSE MIN(0.95, confidence + 0.15) END
+                             WHERE id = ?1",
+                            params![id, now],
+                        );
                         return Ok((id, true, Some(best_sim as f64)));
                     }
                 }
@@ -1236,10 +1373,14 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let expires_at = input.ttl_days.map(|d| now + d * 24 * 60 * 60 * 1000);
 
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
+        // Confidence: explicit = 1.0; autonomous inline default 0.7; cron extraction Some(0.5).
+        let confidence = input
+            .confidence
+            .unwrap_or(if input.explicit { 1.0 } else { 0.7 });
         conn.execute(
             r#"INSERT INTO events
-               (type, title, description, who, context, embedding, occurred_at, source_conv_id, expires_at, owner, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
+               (type, title, description, who, context, embedding, occurred_at, source_conv_id, expires_at, owner, created_at, explicit, confidence, seen_count, last_seen)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 1, ?14)"#,
             params![
                 input.event_type,
                 input.title,
@@ -1251,6 +1392,9 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 input.source_conv_id,
                 expires_at,
                 owner,
+                now,
+                input.explicit as i64,
+                confidence,
                 now
             ],
         )
@@ -1354,7 +1498,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let conn = self.conn.lock().unwrap();
         let entity_ids = Self::fetch_event_entity_ids(&conn, id);
         let result = conn.query_row(
-            r#"SELECT id, type, title, description, who, context, occurred_at, source_conv_id, expires_at, created_at, owner
+            r#"SELECT id, type, title, description, who, context, occurred_at, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen
                FROM events WHERE id = ?1"#,
             params![id],
             |row| self.event_from_row_with_entities(row, entity_ids.clone()),
@@ -1380,9 +1524,9 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             apply_query_like: bool,
         ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let cols = if select_embedding {
-                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.embedding"
+                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.superseded_by, e.explicit, e.confidence, e.seen_count, e.last_seen, e.embedding"
             } else {
-                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner"
+                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.superseded_by, e.explicit, e.confidence, e.seen_count, e.last_seen"
             };
             let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
             let mut sql = format!("SELECT DISTINCT {} FROM events e", cols);
@@ -1390,6 +1534,10 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 sql.push_str(" INNER JOIN event_entities ee ON ee.event_id = e.id");
             }
             sql.push_str(" WHERE e.owner = ? AND (e.expires_at IS NULL OR e.expires_at > ?)");
+            if !opts.include_inactive {
+                // Retrieval/search see promoted, active events only (staging + superseded excluded).
+                sql.push_str(" AND e.superseded_by IS NULL AND e.confidence >= 0.7");
+            }
             let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
 
             if apply_query_like && !opts.query.trim().is_empty() {
@@ -1449,14 +1597,21 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                         row.get::<_, Option<i64>>(8)?,
                         row.get::<_, i64>(9)?,
                         row.get::<_, Option<String>>(10)?,
-                        row.get::<_, Option<Vec<u8>>>(11)?,
+                        (
+                            row.get::<_, Option<i64>>(11)?,
+                            row.get::<_, Option<i64>>(12)?,
+                            row.get::<_, Option<f64>>(13)?,
+                            row.get::<_, Option<i64>>(14)?,
+                            row.get::<_, Option<i64>>(15)?,
+                        ),
+                        row.get::<_, Option<Vec<u8>>>(16)?,
                     ))
                 })
                 .map_err(|e| format!("search events query: {e}"))?;
 
             let mut candidates: Vec<(Vec<u8>, EventRecord)> = Vec::new();
             for r in rows {
-                let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner, blob) =
+                let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner, staging, blob) =
                     r.map_err(|e| format!("search events row: {e}"))?;
                 let Some(b) = blob else { continue };
                 if b.is_empty() {
@@ -1478,6 +1633,11 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                         expires_at: exp,
                         created_at: created,
                         owner: row_owner.unwrap_or_else(|| "admin".to_string()),
+                        superseded_by: staging.0,
+                        explicit: staging.1.unwrap_or(0) != 0,
+                        confidence: staging.2.unwrap_or(1.0),
+                        seen_count: staging.3.unwrap_or(1),
+                        last_seen: staging.4,
                     },
                 ));
             }
@@ -1507,12 +1667,19 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, i64>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    (
+                        row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, Option<i64>>(12)?,
+                        row.get::<_, Option<f64>>(13)?,
+                        row.get::<_, Option<i64>>(14)?,
+                        row.get::<_, Option<i64>>(15)?,
+                    ),
                 ))
             })
             .map_err(|e| format!("search events query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner) =
+            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner, staging) =
                 r.map_err(|e| format!("search events row: {e}"))?;
             let entity_ids = Self::fetch_event_entity_ids(&conn, id);
             out.push(EventRecord {
@@ -1528,6 +1695,11 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 expires_at: exp,
                 created_at: created,
                 owner: row_owner.unwrap_or_else(|| "admin".to_string()),
+                superseded_by: staging.0,
+                explicit: staging.1.unwrap_or(0) != 0,
+                confidence: staging.2.unwrap_or(1.0),
+                seen_count: staging.3.unwrap_or(1),
+                last_seen: staging.4,
             });
         }
         Ok(out)
@@ -1540,9 +1712,12 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
         let conn = self.conn.lock().unwrap();
         let mut sql = String::from(
-            r#"SELECT e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner
+            r#"SELECT e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.superseded_by, e.explicit, e.confidence, e.seen_count, e.last_seen
                FROM events e WHERE e.owner = ? AND (e.expires_at IS NULL OR e.expires_at > ?)"#,
         );
+        if !opts.include_inactive {
+            sql.push_str(" AND e.superseded_by IS NULL AND e.confidence >= 0.7");
+        }
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
         if let Some(t) = &opts.event_type {
             sql.push_str(" AND e.type = ?");
@@ -1572,12 +1747,19 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, i64>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    (
+                        row.get::<_, Option<i64>>(11)?,
+                        row.get::<_, Option<i64>>(12)?,
+                        row.get::<_, Option<f64>>(13)?,
+                        row.get::<_, Option<i64>>(14)?,
+                        row.get::<_, Option<i64>>(15)?,
+                    ),
                 ))
             })
             .map_err(|e| format!("list_recent_events query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner) =
+            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner, staging) =
                 r.map_err(|e| format!("list_recent_events row: {e}"))?;
             let entity_ids = Self::fetch_event_entity_ids(&conn, id);
             out.push(EventRecord {
@@ -1593,6 +1775,11 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 expires_at: exp,
                 created_at: created,
                 owner: row_owner.unwrap_or_else(|| "admin".to_string()),
+                superseded_by: staging.0,
+                explicit: staging.1.unwrap_or(0) != 0,
+                confidence: staging.2.unwrap_or(1.0),
+                seen_count: staging.3.unwrap_or(1),
+                last_seen: staging.4,
             });
         }
         Ok(out)

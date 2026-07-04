@@ -1387,6 +1387,9 @@ impl McpToolHandler for SaveEntityFactHandler {
             ttl_days: obj_i64(&args, "ttlDays"),
             dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
             owner: obj_str(&args, "owner"),
+            supersede: args.get("supersede").and_then(|v| v.as_bool()).unwrap_or(false),
+            explicit: args.get("explicit").and_then(|v| v.as_bool()).unwrap_or(false),
+            confidence: args.get("confidence").and_then(|v| v.as_f64()),
         };
         match self.entity.save_fact(input).await {
             Ok((id, skipped, sim)) => Ok(serde_json::json!({
@@ -1466,6 +1469,8 @@ impl McpToolHandler for SaveEventHandler {
             ttl_days: obj_i64(&args, "ttlDays"),
             dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
             owner: obj_str(&args, "owner"),
+            explicit: args.get("explicit").and_then(|v| v.as_bool()).unwrap_or(false),
+            confidence: args.get("confidence").and_then(|v| v.as_f64()),
         };
         match self.episodic.save_event(input).await {
             Ok((id, skipped, sim)) => Ok(serde_json::json!({
@@ -1977,8 +1982,8 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "save_entity_fact".into(),
-        description: "Entity 사실 추가. inputSchema: {entityId, content, factType?, occurredAt?, tags?, ttlDays?}.".into(),
-        input_schema: schema_object(serde_json::json!({"entityId": {"type":"integer"}, "content": {"type":"string"}})),
+        description: "Record a durable statement about a tracked entity — something that stays true OUTSIDE this conversation (state, attribute, decision, position, goal). NEVER log conversation activity ('the user asked/requested X') — a fact must stand on its own later. Include figures/dates in content. factType groups the entity's facts: REUSE existing labels (see <TRACKED_ENTITIES>/timeline) so the same kind groups together. supersede=true when this is a NEW VALUE of a state the entity already has (old value retires into history). explicit=true ONLY when the user explicitly asked to remember. Numeric time-series (price history) do NOT belong here.".into(),
+        input_schema: schema_object(serde_json::json!({"entityId": {"type":"integer"}, "content": {"type":"string"}, "factType": {"type":"string"}, "supersede": {"type":"boolean"}, "explicit": {"type":"boolean"}})),
         handler: Arc::new(SaveEntityFactHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
@@ -2001,8 +2006,8 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "save_event".into(),
-        description: "Event 저장 (Episodic memory). inputSchema: {type, title, description?, who?, context?, entityIds?, ttlDays?}.".into(),
-        input_schema: schema_object(serde_json::json!({"type": {"type":"string"}, "title": {"type":"string"}})),
+        description: "Record something that happened (or is scheduled) in the WORLD at a point in time — a trade executed, a release/announcement, a decision the user made, a milestone. NEVER log conversation activity ('user asked about X') — requests/Q&A live in conversation history, not here. Reuse the same type for the same kind of occurrence; link entityIds. explicit=true only when the user explicitly asked to remember.".into(),
+        input_schema: schema_object(serde_json::json!({"type": {"type":"string"}, "title": {"type":"string"}, "entityIds": {"type":"array"}, "explicit": {"type":"boolean"}})),
         handler: Arc::new(SaveEventHandler { episodic: deps.episodic.clone() }),
     }).await;
     state.register(McpTool {

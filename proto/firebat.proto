@@ -1942,6 +1942,13 @@ message EntityFactSaveRequest {
   optional double dedup_threshold = 8;
   // hub owner scoping — 지정 시 entity_id 의 owner 와 일치할 때만 fact 추가 허용.
   optional string owner = 9;
+  // Model-judged supersession — this fact is a NEW VALUE of a state the entity already has:
+  // retire active rows of the same (entity, factType) into history.
+  optional bool supersede = 10;
+  // true = user explicitly asked to remember (full confidence, never auto-bumped).
+  optional bool explicit = 11;
+  // Promotion score override. Absent => explicit ? 1.0 : 0.7. Cron extraction uses 0.5 (staging).
+  optional double confidence = 12;
 }
 message EntityFactSaveResponse {
   int64 id = 1;
@@ -1956,6 +1963,8 @@ message EntityFactUpdateRequest {
   // None = 변경 X. 빈 array json = clear.
   optional string tags_json = 5;
   optional int64 ttl_days = 6;
+  // Manual promotion/demotion from the admin UI (staging -> promoted = set >= threshold 0.7).
+  optional double confidence = 7;
 }
 message EntityFactUpdateResponse {}
 message EntityDeleteFactRequest {
@@ -1974,6 +1983,8 @@ message EntityTimelineRequest {
   optional int64 offset = 3;
   optional string order_by = 4;
   optional string owner = 5;
+  // true = include staging + superseded rows (admin UI review). Default = active/promoted only.
+  optional bool include_inactive = 6;
 }
 message EntityTimelineResponse {
   string raw_json = 1;

@@ -304,6 +304,21 @@ pub trait IDatabasePort: Send + Sync {
     fn ensure_conversation_row(&self, owner: &str, id: &str, title: &str, created_at: i64) -> bool;
     /// 통합 store 대화 제목만 갱신 — hub 가 memory.db 제목 갱신을 app.db 미러에도 반영(자동/rename 공용).
     fn update_conversation_title(&self, id: &str, title: &str) -> bool;
+    /// Consolidation watermark — ids of conversations inactive past `cutoff_ms` that have NEW
+    /// activity since their last consolidation pass (updated_at > last_consolidated_at).
+    /// Most-recently-updated first, at most `limit`. Default = none (test stubs).
+    fn list_conversations_needing_consolidation(
+        &self,
+        _owner: &str,
+        _cutoff_ms: i64,
+        _limit: usize,
+    ) -> Vec<String> {
+        Vec::new()
+    }
+    /// Stamp a conversation as consolidated at `ts` — the cron skips it until new activity.
+    fn set_conversation_consolidated_at(&self, _id: &str, _ts: i64) -> bool {
+        false
+    }
     /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
     /// 휴지통에서 복원 — deleted_at NULL 설정. tombstone 도 제거 (다기기 동기화).
@@ -1676,7 +1691,23 @@ pub struct EntityFactRecord {
     /// adapter 가 entity 의 owner 자동 매핑.
     #[serde(default = "default_owner")]
     pub owner: String,
+    /// Retired by a newer value of the same (entity, factType) — history row, not active.
+    #[serde(rename = "supersededBy", default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<i64>,
+    /// true = the user explicitly asked to remember this (vs autonomous/cron extraction).
+    #[serde(default)]
+    pub explicit: bool,
+    /// Promotion score — below the promote threshold = staging (visible in UI, not injected).
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+    #[serde(rename = "seenCount", default = "default_seen_count")]
+    pub seen_count: i64,
+    #[serde(rename = "lastSeen", default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<i64>,
 }
+
+fn default_confidence() -> f64 { 1.0 }
+fn default_seen_count() -> i64 { 1 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1699,6 +1730,10 @@ pub struct EntitySearchOpts {
 pub struct FactSearchOpts {
     #[serde(default)]
     pub query: String,
+    /// true = include staging(confidence < threshold) + superseded rows (admin UI review).
+    /// Default false — retrieval/search tools see promoted, active facts only.
+    #[serde(rename = "includeInactive", default)]
+    pub include_inactive: bool,
     #[serde(rename = "entityId", default, skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<i64>,
     #[serde(rename = "factType", default, skip_serializing_if = "Option::is_none")]
@@ -1753,6 +1788,15 @@ pub struct SaveFactInput {
     /// Caller owner scope — when Some(non-empty), save_fact only proceeds if the target entity
     /// belongs to this owner (hub cross-tenant write guard). None/empty = admin (no check).
     pub owner: Option<String>,
+    /// Model-judged supersession: this is a NEW VALUE of a state the entity already has →
+    /// retire active rows of the same (entity, factType) (superseded_by = new id, history kept).
+    pub supersede: bool,
+    /// true = the user explicitly asked to remember this. explicit facts default confidence 1.0
+    /// and are never auto-bumped/decayed.
+    pub explicit: bool,
+    /// Promotion score override. None → explicit ? 1.0 : 0.7 (autonomous inline default);
+    /// cron extraction passes Some(0.5) = staging.
+    pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1762,6 +1806,8 @@ pub struct UpdateFactPatch {
     pub occurred_at: Option<i64>,
     pub tags: Option<Vec<String>>,
     pub ttl_days: Option<i64>,
+    /// Manual promotion/demotion from the admin UI (staging → promoted = set >= threshold).
+    pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1769,6 +1815,10 @@ pub struct UpdateFactPatch {
 pub struct TimelineOpts {
     #[serde(default)]
     pub limit: Option<usize>,
+    /// true = include staging + superseded rows (admin UI timeline shows them grouped).
+    /// Default false — retrieval per-entity timelines inject promoted, active facts only.
+    #[serde(rename = "includeInactive", default)]
+    pub include_inactive: bool,
     #[serde(default)]
     pub offset: Option<usize>,
     #[serde(rename = "orderBy", default)]
@@ -1807,6 +1857,11 @@ pub trait IEntityPort: Send + Sync {
     fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64>;
     fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64>;
     fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>>;
+    /// Distinct factType labels in use for this owner (controlled-vocabulary steering for
+    /// extraction/prompt injection). Active rows only. Default = none (test stubs).
+    fn list_fact_types(&self, _owner: Option<&str>) -> InfraResult<Vec<String>> {
+        Ok(Vec::new())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1834,6 +1889,17 @@ pub struct EventRecord {
     pub created_at: i64,
     #[serde(default = "default_owner")]
     pub owner: String,
+    /// Staging/supersession — mirrors EntityFactRecord (see there).
+    #[serde(rename = "supersededBy", default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<i64>,
+    #[serde(default)]
+    pub explicit: bool,
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+    #[serde(rename = "seenCount", default = "default_seen_count")]
+    pub seen_count: i64,
+    #[serde(rename = "lastSeen", default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1841,6 +1907,9 @@ pub struct EventRecord {
 pub struct EventSearchOpts {
     #[serde(default)]
     pub query: String,
+    /// true = include staging + superseded rows (admin UI). Default false = active/promoted only.
+    #[serde(rename = "includeInactive", default)]
+    pub include_inactive: bool,
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub event_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1873,6 +1942,10 @@ pub struct SaveEventInput {
     pub dedup_threshold: Option<f64>,
     /// None = admin (default), Some("hub:<id>") = 해당 hub.
     pub owner: Option<String>,
+    /// true = the user explicitly asked to remember this event.
+    pub explicit: bool,
+    /// Promotion score override. None → explicit ? 1.0 : 0.7; cron extraction passes Some(0.5).
+    pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1890,6 +1963,9 @@ pub struct UpdateEventPatch {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListRecentOpts {
+    /// true = include staging + superseded rows (admin UI). Default false = active/promoted only.
+    #[serde(rename = "includeInactive", default)]
+    pub include_inactive: bool,
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub event_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2596,6 +2672,15 @@ pub trait IMemoryFacadePort: Send + Sync {
     // 정리
     fn cleanup_expired_facts(&self) -> InfraResult<i64>;
     fn cleanup_expired_events(&self) -> InfraResult<i64>;
+
+    /// Tracked-entities listing for the extraction index (graph self-steering — the user's
+    /// actual recall graph anchors what extraction looks for). Default = empty (test stubs).
+    async fn list_entities(&self, _owner: Option<&str>, _limit: usize) -> InfraResult<Vec<EntityRecord>> {
+        Ok(Vec::new())
+    }
+    fn list_fact_types(&self, _owner: Option<&str>) -> InfraResult<Vec<String>> {
+        Ok(Vec::new())
+    }
 
     // Mutation — ConsolidationManager 의 save_extracted 가 사용 (LLM 추출 결과 일괄 저장).
     fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;

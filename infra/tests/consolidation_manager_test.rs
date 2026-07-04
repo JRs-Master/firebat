@@ -39,6 +39,7 @@ async fn save_extracted_creates_entities_and_facts() {
             fact_type: Some("transaction".to_string()),
             occurred_at: Some(1_700_000_000_000),
             tags: vec![],
+            supersede: false,
         }],
         events: vec![ExtractedEvent {
             event_type: "page_publish".to_string(),
@@ -70,6 +71,7 @@ async fn missing_entity_name_skips_fact() {
             fact_type: None,
             occurred_at: None,
             tags: vec![],
+            supersede: false,
         }],
         events: vec![],
         lessons: vec![],
