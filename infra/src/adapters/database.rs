@@ -72,7 +72,10 @@ impl SqliteDatabaseAdapter {
                 active_plan_state TEXT,
                 -- soft-delete timestamp (ms epoch). NULL = active, set = in trash.
                 -- After 30 days the internal cleanup cron cascade-hard-deletes it.
-                deleted_at INTEGER
+                deleted_at INTEGER,
+                -- consolidation watermark (ms) — the 6h inactive-consolidation cron re-extracts a
+                -- conversation only when updated_at > this (kills the old every-pass re-extraction).
+                last_consolidated_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
                 ON conversations(owner, updated_at DESC);
@@ -163,6 +166,13 @@ impl SqliteDatabaseAdapter {
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))?;
+
+        // Defensive column add for pre-existing DBs (fresh DBs get it via CREATE TABLE above).
+        // "duplicate column name" is ignored on purpose; app.db holds real conversations (no reset).
+        let _ = conn.execute(
+            "ALTER TABLE conversations ADD COLUMN last_consolidated_at INTEGER",
+            [],
+        );
         Ok(())
     }
 
@@ -699,6 +709,43 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         conn.execute(
             "UPDATE conversations SET title = ?2 WHERE id = ?1",
             params![id, title],
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    }
+
+    fn list_conversations_needing_consolidation(
+        &self,
+        owner: &str,
+        cutoff_ms: i64,
+        limit: usize,
+    ) -> Vec<String> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        // Watermark: only conversations with NEW activity since their last consolidation pass.
+        // COALESCE(last_consolidated_at, 0) means never-consolidated rows always qualify.
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id FROM conversations
+             WHERE owner = ?1 AND deleted_at IS NULL
+               AND updated_at < ?2
+               AND updated_at > COALESCE(last_consolidated_at, 0)
+             ORDER BY updated_at DESC LIMIT ?3",
+        ) else {
+            return vec![];
+        };
+        stmt.query_map(params![owner, cutoff_ms, limit as i64], |row| {
+            row.get::<_, String>(0)
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+    }
+
+    fn set_conversation_consolidated_at(&self, id: &str, ts: i64) -> bool {
+        let Ok(conn) = self.conn.lock() else {
+            return false;
+        };
+        conn.execute(
+            "UPDATE conversations SET last_consolidated_at = ?2 WHERE id = ?1",
+            params![id, ts],
         )
         .map(|n| n > 0)
         .unwrap_or(false)

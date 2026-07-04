@@ -27,41 +27,41 @@ use crate::ports::{
 use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
-const EXTRACTION_PROMPT: &str = r#"You organize conversation memory. Read the conversation and extract information worth tracking, as JSON.
+const EXTRACTION_PROMPT: &str = r#"You maintain this person's long-term memory. Read the conversation and extract ONLY durable knowledge — things that stay true OUTSIDE this conversation — as JSON.
 
-What to keep — judge by this principle, not by a fixed list of kinds:
-- KEEP: stable, re-referenceable information that will help you serve this person better when you encounter it again later.
-- SKIP: things that only matter in the moment, unverified guesses, and anything a system already records elsewhere (logs, schedules, the conversation itself).
-- SKIP code-internal / technical / implementation conclusions (how a bug was fixed, a component's data format, an API shape) — those belong in code and docs, not this person's memory; and development / build / approval events (bug fixes, page saves, deployments).
-- DO NOT generalize from a single mention. Record what was explicitly stated, but never infer a durable identity, habit, or preference from one occurrence — a one-off action is not a pattern. If something is *inferred* (not stated) and appears only once, omit it.
-- When uncertain, omit. A missing memory is recoverable by asking again; a wrong one silently misleads future actions. Prefer empty arrays over speculation — precision over recall.
+The one test that decides everything: "If this conversation were deleted, would this still be true and useful later?"
+- The conversation itself is already stored in full elsewhere. NEVER record conversation activity: "the user asked/requested X", "an analysis was performed", "the assistant showed Y" — that is chat history, not memory. Every value you write must stand on its own without referring to what happened in the chat.
+- NEVER record numeric time-series (price history, chart data, sensor readings) — a data cache owns those. A single current state value (a position, a level, a target) IS a fact.
+- SKIP code-internal / technical / implementation conclusions (how a bug was fixed, a component's data format, an API shape) — those belong in code and docs; and development / build / approval events.
+- SKIP anything another system already records (logs, schedules, calendar entries).
 - Write each value from the standpoint of what helps serve this person later, in their own terms — not internal system mechanics (you may not know how the system transforms things downstream; do not assume or describe it).
-The four shapes below are *how* to store, not *what* to store — decide what with the principle above. Classify freely; do not force any preset category.
 
-1. **entities** (subjects worth tracking): the *identity* of a recurring subject. An entity is just who/what it is; everything you know about it goes in facts, not here.
-   - name: the full canonical name of the subject — never an abbreviation, code/ticker, or the subject combined with an attribute. Keep it identical across mentions, since name plus aliases is the dedup key.
-   - aliases: every alternative form of the same subject — abbreviations, codes, alternate spellings, language variants. Put each here so later mentions merge into one entity instead of creating duplicates.
-   - metadata: optional object of attributes
+1. **entities** (subjects worth tracking — things/people/organizations/projects/strategies this person cares about): the *identity* of a recurring subject only; everything known about it goes in facts.
+   - name: the full canonical name — never an abbreviation, code/ticker, or the subject combined with an attribute. Keep it identical across mentions (name plus aliases is the dedup key).
+   - aliases: every alternative form of the same subject — abbreviations, codes/tickers, alternate spellings, language variants — so later mentions merge into one entity.
+   - metadata: optional object of attributes.
+   When a [Tracked recall graph] list is provided after the conversation, prefer recording NEW facts about those subjects and NEW subjects of similar kinds.
 
-2. **facts** (statements linked to an entity — this is where classification lives):
+2. **facts** (durable statements about an entity — its state, attributes, and this person's positions/goals/decisions about it):
    - entityName: which entity (matches a name in entities)
-   - content: 1-2 natural sentences — state time, figures, outcome when present
-   - factType: the kind of statement — this is how an entity's facts are grouped. Reuse the same label for the same kind so they group together; keep it consistent across mentions.
-   - occurredAt: ms epoch (only when a clear time is stated; omit otherwise)
-   - tags: optional array for cross-cutting labels that span fact types. A fact may carry several.
+   - content: 1-2 self-sufficient sentences — state figures, dates, outcome when present
+   - factType: the kind of statement — REUSE an existing label (see the tracked-graph list) for the same kind so a state's history groups together
+   - occurredAt: ms epoch (only when a clear time is stated)
+   - tags: optional cross-cutting labels
+   - supersede: true when this fact is a NEW VALUE of a state the entity already has (same factType — an updated figure/level/status). The previous value is retired into history.
 
-3. **events** (something that happened or is scheduled at a point in time and is worth recalling later):
-   - type: free-form classification natural to the event
-   - title: short summary
-   - description: optional detail
-   - occurredAt: ms epoch
-   - entityNames: array of linked entity names
+3. **events** (something that happened or is scheduled in the WORLD at a point in time): a trade executed, a release or announcement, a decision this person made, a project/life milestone. NOT questions, requests, analyses, or anything that only happened inside the chat.
+   - type: kind of occurrence — reuse the same label for the same kind
+   - title: short summary / description: optional detail / occurredAt: ms epoch / entityNames: linked entity names
 
-4. **lessons** (durable operational knowledge — preferences and ways of working that will apply again):
+4. **lessons** (a rule that should change behavior in FUTURE, UNRELATED conversations — a durable preference or way of working):
+   The bar is highest here. SKIP: replays of a single incident ("user pointed out X once"), current project state or what the person is working on right now (those are facts, not rules), duplicates of standing instructions already followed, and anything a schedule already encodes.
    - name: short kebab-case slug (also the filename and dedup key)
    - category: one of user / feedback / project / reference
    - description: one-line summary (shown in the index — keep it self-sufficient)
    - content: the reusable lesson / how-to body
+
+Uncertainty policy: for facts and events, when something WAS stated but you are unsure it is durable, still record it — autonomous extractions enter a staging tier (not used until confirmed by repetition or review), so recording is safe. But never invent what was not stated, and never turn a single occurrence into an identity/habit/lesson.
 
 **Language — IMPORTANT**: this extracted content is shown to the user, so write every human-readable value in {LANG}: entity `name` (use its {LANG} form when the subject has one — but keep proper codes/tickers as `aliases`), fact `content`, event `title`/`description`, lesson `description`/`content`, and `factType`/`type` labels. Keep these EXACTLY as-is regardless of language: lesson `category` (must stay one of user / feedback / project / reference), lesson `name` (kebab-case ascii slug — it is the filename and dedup key), `aliases` (codes / tickers / alternate spellings), and all JSON keys.
 
@@ -103,6 +103,10 @@ pub struct ExtractedFact {
     pub occurred_at: Option<i64>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Model-judged: this fact is a NEW VALUE of a state the entity already has (same factType)
+    /// — the previous active value is retired into history (superseded_by).
+    #[serde(default)]
+    pub supersede: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -325,12 +329,19 @@ impl ConsolidationManager {
             crate::i18n::t("core.error.consolidation.messages_not_array", None, &[])
         })?;
         if messages.len() < 2 {
+            // Too short to extract — stamp anyway so the cron stops re-picking it until new activity.
+            let _ = hook
+                .conversation
+                .mark_consolidated(conv_id, chrono::Utc::now().timestamp_millis());
             return Ok(ConsolidationOutcome::default());
         }
 
         // 2. transcript 변환
         let transcript = format_transcript(messages);
         if transcript.len() < MIN_TRANSCRIPT_LEN {
+            let _ = hook
+                .conversation
+                .mark_consolidated(conv_id, chrono::Utc::now().timestamp_millis());
             return Ok(ConsolidationOutcome::default());
         }
 
@@ -362,6 +373,26 @@ impl ConsolidationManager {
                 "\n\n[이미 저장된 운영 메모리 — lessons 추출 시 같은 교훈이면 같은 name 으로 갱신(중복 생성 금지)]\n{mem_index}"
             )
         };
+        // Graph self-steering (A2) — show the extractor what recall already tracks so it records
+        // new facts about these subjects (and new subjects of similar kinds), reuses factType
+        // labels, and sets fact.supersede when a fact is a new value of a listed state.
+        let ent_note = {
+            let scope = if owner != "admin" && !owner.is_empty() {
+                Some(owner)
+            } else {
+                None
+            };
+            let ents = self.memory.list_entities(scope, 50).await.unwrap_or_default();
+            if ents.is_empty() {
+                String::new()
+            } else {
+                let fts = self.memory.list_fact_types(scope).unwrap_or_default();
+                format!(
+                    "\n\n[Tracked recall graph — record NEW facts about these subjects and NEW subjects of similar kinds; REUSE the factType labels below for the same kind of statement; set fact.supersede=true when a fact is a NEW VALUE of a state already tracked here]\n{}",
+                    crate::managers::entity::format_entity_index(&ents, &fts)
+                )
+            }
+        };
         // 추출 결과(엔티티·사실·사건·교훈)는 사용자 노출 콘텐츠라 사용자 설정 언어로 작성하게 지시.
         // (시스템 프롬프트 자체는 영어 유지 — 글로벌 영어 룰. 산출물 산문만 사용자 언어.)
         let lang_code = crate::i18n::current_default_lang();
@@ -371,7 +402,7 @@ impl ConsolidationManager {
             _ => lang_code.as_str(),
         };
         let prompt_with_lang = EXTRACTION_PROMPT.replace("{LANG}", lang_name);
-        let full_prompt = format!("{}\n{}{}", prompt_with_lang, transcript, mem_note);
+        let full_prompt = format!("{}\n{}{}{}", prompt_with_lang, transcript, mem_note, ent_note);
         let opts = LlmCallOpts {
             model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
             thinking_level: Some("minimal".to_string()),
@@ -389,14 +420,28 @@ impl ConsolidationManager {
         let cleaned = strip_json_fence(&response_text);
         let extracted: ExtractionResult = match serde_json::from_str(&cleaned) {
             Ok(v) => v,
-            Err(_) => return Ok(ConsolidationOutcome::default()),
+            Err(_) => {
+                // Unparseable LLM output — stamp anyway: re-running the same transcript every
+                // 6h repeats the same failure (new activity resets the watermark naturally).
+                let _ = hook
+                    .conversation
+                    .mark_consolidated(conv_id, chrono::Utc::now().timestamp_millis());
+                return Ok(ConsolidationOutcome::default());
+            }
         };
 
         // 5. save_extracted 위임 (이미 설정된 메서드)
         // owner 를 쓰기 경로까지 전달 — hub 대화 정리가 admin scope 로 저장되던 누수(RECALL-2) fix. empty/"admin" → None(admin).
         let scope = if owner != "admin" && !owner.is_empty() { Some(owner) } else { None };
-        self.save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92), scope)
-            .await
+        let outcome = self
+            .save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92), scope)
+            .await?;
+        // Success — watermark so the cron only revisits this conversation on new activity.
+        // (Toggle-OFF / budget-guard early returns above intentionally do NOT stamp.)
+        let _ = hook
+            .conversation
+            .mark_consolidated(conv_id, chrono::Utc::now().timestamp_millis());
+        Ok(outcome)
     }
 
     /// 미리 추출된 JSON → entity / fact / event 일괄 save.
@@ -477,6 +522,11 @@ impl ConsolidationManager {
                     ttl_days: None,
                     dedup_threshold: fact_dedup_threshold,
                     owner: owner.map(String::from), // 호출자 owner 전달 — hub 대화 추출물이 admin scope 로 저장되던 것 fix
+                    // Cron extraction = staging: not user-authored, starts below the promote
+                    // threshold; repeated observations (dedup bumps) promote it.
+                    supersede: f.supersede,
+                    explicit: false,
+                    confidence: Some(0.5),
                 })
                 .await
             {
@@ -524,6 +574,8 @@ impl ConsolidationManager {
                     ttl_days: None,
                     dedup_threshold: event_dedup_threshold,
                     owner: owner.map(String::from),
+                    explicit: false,
+                    confidence: Some(0.5), // staging (see facts above)
                 })
                 .await
             {
@@ -560,6 +612,10 @@ impl ConsolidationManager {
                         name: l.name.clone(),
                         description: l.description.clone(),
                         content: l.content.clone(),
+                        // Cron-extracted lessons start as staging — excluded from the injected
+                        // index until reviewed/confirmed (a single-pass rule at full strength was
+                        // the sentence-preference class of accident).
+                        confidence: 0.5,
                     };
                     let _ = mf.save(owner, &entry).await;
                 }
@@ -615,30 +671,18 @@ impl ConsolidationManager {
             return InactiveConsolidationResult::default();
         };
 
-        let mut conversations: Vec<(String, i64)> = hook
+        // Watermark-filtered pick: only conversations with NEW activity since their last
+        // consolidation pass (updated_at > last_consolidated_at). The old unconditional
+        // "recent inactive 10" re-extracted the same conversations every 6h (duplicate
+        // events + wasted LLM/CLI quota).
+        let conversations = hook
             .conversation
-            .list(owner)
-            .into_iter()
-            .filter_map(|c| {
-                let updated = if c.updated_at > 0 {
-                    c.updated_at
-                } else {
-                    c.created_at
-                };
-                if updated < cutoff {
-                    Some((c.id, updated))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        conversations.sort_by(|a, b| b.1.cmp(&a.1));
-        conversations.truncate(limit);
+            .list_needing_consolidation(owner, cutoff, limit);
 
         let mut processed = 0usize;
         let mut total_saved = 0usize;
         let mut total_skipped = 0usize;
-        for (conv_id, _) in conversations {
+        for conv_id in conversations {
             match self.consolidate_conversation(owner, &conv_id, None).await {
                 Ok(outcome) => {
                     processed += 1;

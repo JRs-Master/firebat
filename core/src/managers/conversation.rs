@@ -135,6 +135,16 @@ impl ConversationManager {
         self.db.get_conversation(owner, id)
     }
 
+    /// Consolidation watermark reads/writes (see IDatabasePort docs).
+    pub fn list_needing_consolidation(&self, owner: &str, cutoff_ms: i64, limit: usize) -> Vec<String> {
+        self.db
+            .list_conversations_needing_consolidation(owner, cutoff_ms, limit)
+    }
+
+    pub fn mark_consolidated(&self, id: &str, ts: i64) -> bool {
+        self.db.set_conversation_consolidated_at(id, ts)
+    }
+
     /// 대화 저장 — 옛 TS save 1:1 port.
     ///
     /// 흐름:

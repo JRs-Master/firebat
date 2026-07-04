@@ -136,6 +136,34 @@ impl RetrievalEngine {
             .filter(|s| !s.trim().is_empty())
     }
 
+    /// Tracked-entities thin index for `<TRACKED_ENTITIES>` per-turn injection — graph
+    /// self-steering (mirrors `library_index`): the model sees what recall already tracks so it
+    /// reuses factType labels, supersedes state updates, and records subjects of similar kinds.
+    /// Cheap: empty-query listing (no embeddings). None when no entity handle or empty graph.
+    pub async fn entity_index(&self, owner: &str) -> Option<String> {
+        let entity = self.entity.as_ref()?;
+        let ents = entity
+            .search_entities(crate::ports::EntitySearchOpts {
+                query: String::new(),
+                entity_type: None,
+                limit: Some(50),
+                offset: None,
+                owner: Some(owner.to_string()),
+            })
+            .await
+            .ok()?;
+        if ents.is_empty() {
+            return None;
+        }
+        let fact_types = entity.list_fact_types(Some(owner)).unwrap_or_default();
+        let body = crate::managers::entity::format_entity_index(&ents, &fact_types);
+        if body.trim().is_empty() {
+            None
+        } else {
+            Some(body)
+        }
+    }
+
     /// 사용자 query → 4 source 병렬 검색 → 통합 contextSummary.
     /// 옛 TS retrieve(opts) 1:1.
     pub async fn retrieve(&self, opts: &RetrieveOpts) -> RetrievalResult {

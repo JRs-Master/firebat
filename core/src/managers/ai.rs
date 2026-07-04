@@ -1053,6 +1053,31 @@ impl AiManager {
                         }
                     }
                 }
+                // Tracked-entities thin index — graph self-steering for recall writes: the model
+                // sees what is already tracked (reuse factType labels, set supersede on state
+                // updates, record new facts about these + new subjects of similar kinds). Always
+                // injected (cheap, no embeddings); admin + hub (owner-scoped).
+                if let Some(re) = &self.retrieval_engine {
+                    let owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .unwrap_or("admin");
+                    if let Some(index) = re.entity_index(owner).await {
+                        const ENTITY_INDEX_CAP: usize = 4000;
+                        let body = if index.chars().count() > ENTITY_INDEX_CAP {
+                            let truncated: String =
+                                index.chars().take(ENTITY_INDEX_CAP).collect();
+                            format!("{truncated}\n… (truncated — use search_entities for the rest)")
+                        } else {
+                            index
+                        };
+                        extra_parts.push(format!(
+                            "<TRACKED_ENTITIES>\n{}\n</TRACKED_ENTITIES>",
+                            body
+                        ));
+                    }
+                }
                 // Memory write mode — 토글이 *proactive*(자율 durable) 저장만 게이트. 명시 "기억해"는
                 // 항상 허용 / 자율 저장은 토글 ON 일 때만(안 시킨 tool-call 토큰 소비라 opt-in).
                 // owner=="admin" 만 주입 (hub 는 태그 없음 → tool_system 이 manual 로 간주).
@@ -1070,7 +1095,7 @@ impl AiManager {
                             .map(|v| v == "true" || v == "1")
                             .unwrap_or(false);
                         let mode = if auto {
-                            "auto — record what's worth remembering using your judgment: both when the user asks and when you recognize clearly durable information."
+                            "auto — record what's worth remembering using your judgment: both when the user asks and when you recognize clearly durable information. Durable means true OUTSIDE this conversation — never record conversation activity ('the user asked/requested X') as a fact or event; the chat itself is already stored."
                         } else {
                             "manual — record only what the user is clearly asking you to keep. Do NOT proactively save anything they didn't ask you to remember this turn."
                         };

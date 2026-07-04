@@ -35,6 +35,22 @@ impl MemoryFacade {
 
 #[async_trait::async_trait]
 impl IMemoryFacadePort for MemoryFacade {
+    async fn list_entities(&self, owner: Option<&str>, limit: usize) -> InfraResult<Vec<crate::ports::EntityRecord>> {
+        self.entity
+            .search_entities(crate::ports::EntitySearchOpts {
+                query: String::new(), // empty query = recency-ordered listing (no embedding cost)
+                entity_type: None,
+                limit: Some(limit),
+                offset: None,
+                owner: owner.map(String::from),
+            })
+            .await
+    }
+
+    fn list_fact_types(&self, owner: Option<&str>) -> InfraResult<Vec<String>> {
+        self.entity.list_fact_types(owner)
+    }
+
     fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
         self.entity.count_entities(owner)
     }

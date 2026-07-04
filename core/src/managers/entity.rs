@@ -120,6 +120,11 @@ impl EntityManager {
         self.port.cleanup_expired_facts()
     }
 
+    /// Distinct factType labels for this owner — controlled-vocabulary steering.
+    pub fn list_fact_types(&self, owner: Option<&str>) -> InfraResult<Vec<String>> {
+        self.port.list_fact_types(owner)
+    }
+
     pub fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
         self.port.count_entities(owner)
     }
@@ -134,3 +139,29 @@ impl EntityManager {
 }
 
 // Tests 이관 — `infra/tests/entity_manager_test.rs` (integration test).
+
+/// Compact tracked-entities index body for `<TRACKED_ENTITIES>` injection — graph self-steering:
+/// the user's ACTUAL recall graph anchors what extraction looks for (replaces the hardcoded
+/// domain examples removed in the prompt-neutralization sweep, with zero hardcoding — whatever
+/// the user tracks becomes the anchor). Shared by RetrievalEngine (per-turn injection) and
+/// ConsolidationManager (extraction prompt).
+pub fn format_entity_index(
+    entities: &[crate::ports::EntityRecord],
+    fact_types: &[String],
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for e in entities {
+        let mut line = format!("- {}", e.name);
+        if !e.aliases.is_empty() {
+            line.push_str(&format!(" ({})", e.aliases.join(", ")));
+        }
+        if !e.entity_type.trim().is_empty() {
+            line.push_str(&format!(" [{}]", e.entity_type));
+        }
+        lines.push(line);
+    }
+    if !fact_types.is_empty() {
+        lines.push(format!("factType labels in use: {}", fact_types.join(", ")));
+    }
+    lines.join("\n")
+}
