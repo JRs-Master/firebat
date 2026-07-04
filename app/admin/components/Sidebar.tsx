@@ -195,6 +195,38 @@ export function Sidebar({
     }
   }, [hubMode, hubFetchJson, reloadTrash]);
 
+  // 휴지통 비우기 — 항목별 영구 삭제 endpoint 재사용(admin/hub 공용 owner-scope 유지).
+  // 순차 실행 = SQLite write 경합 회피, N 은 30일 retention 안이라 작음.
+  const handleEmptyTrash = useCallback(async () => {
+    if (trashConvs.length === 0) return;
+    const ok = await confirmDialog({
+      title: '휴지통 비우기',
+      message: `휴지통의 대화 ${trashConvs.length}개를 모두 영구 삭제합니다. 복원할 수 없습니다.`,
+      danger: true,
+      okLabel: '전체 삭제',
+    });
+    if (!ok) return;
+    let failed = 0;
+    for (const c of trashConvs) {
+      try {
+        const data = hubMode
+          ? await hubFetchJson('permanent-delete-conversation', { id: c.id })
+          : await apiPost<{ success?: boolean; error?: string }>(
+              '/api/conversations/permanent-delete',
+              { id: c.id },
+              { category: 'sidebar' },
+            );
+        if (!data?.success) failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    await reloadTrash();
+    if (failed > 0) {
+      await alertDialog({ title: '일부 삭제 실패', message: `${failed}개 대화를 삭제하지 못했습니다.`, danger: true });
+    }
+  }, [trashConvs, hubMode, hubFetchJson, reloadTrash]);
+
   // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화) + 휴지통 reload
   const refreshChatsRef = useRef(onRefreshChats);
   refreshChatsRef.current = onRefreshChats;
@@ -1236,6 +1268,14 @@ export function Sidebar({
               </button>
               {trashOpen && (
                 <div className="px-1 pb-2 space-y-0.5">
+                  {trashConvs.length > 0 && (
+                    <button
+                      onClick={handleEmptyTrash}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] font-bold text-red-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    >
+                      <Trash2 size={10} /> 전체 삭제
+                    </button>
+                  )}
                   {trashConvs.length === 0 && (
                     <p className="text-[11px] text-slate-400 text-center py-3">휴지통이 비어있습니다.</p>
                   )}
