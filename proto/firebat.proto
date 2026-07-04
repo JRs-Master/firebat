@@ -1965,10 +1965,14 @@ message EntityFactUpdateRequest {
   optional int64 ttl_days = 6;
   // Manual promotion/demotion from the admin UI (staging -> promoted = set >= threshold 0.7).
   optional double confidence = 7;
+  // owner=Some: scoped mutation (hub) — row must belong to that owner, otherwise the same
+  // not-found error as a missing id (existence hiding). Absent = admin (unscoped).
+  optional string owner = 8;
 }
 message EntityFactUpdateResponse {}
 message EntityDeleteFactRequest {
   int64 id = 1;
+  optional string owner = 2;
 }
 message EntityDeleteFactResponse {}
 message EntityGetFactRequest {

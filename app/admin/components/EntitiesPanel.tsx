@@ -162,6 +162,24 @@ export function EntitiesPanel({
       }
       return apiPost<{ success: boolean; error?: string }>(`/api/entities/${entityId}/timeline`, payload, { category: 'entities' });
     },
+    async updateFact(id: number, patch: { confidence?: number; content?: string; factType?: string; tags?: string[] }): Promise<boolean> {
+      // Staged-fact review (promote = confidence 1.0) — Rust owner-scope means a hub session
+      // can only touch its own rows (admin = unscoped).
+      if (hubContext) {
+        const r = await hubFetch(hubContext, 'entities', 'update-fact', { id, ...patch });
+        return !!r?.success;
+      }
+      const r = await apiPatch<{ success?: boolean }>(`/api/entity-facts/${id}`, patch, { category: 'entities' }).catch(() => null);
+      return !!r?.success;
+    },
+    async deleteFact(id: number): Promise<boolean> {
+      if (hubContext) {
+        const r = await hubFetch(hubContext, 'entities', 'delete-fact', { id });
+        return !!r?.success;
+      }
+      const r = await apiDelete<{ success?: boolean }>(`/api/entity-facts/${id}`, { category: 'entities' }).catch(() => null);
+      return !!r?.success;
+    },
   }), [hubContext]);
 
   const fetchEntities = useCallback(async (q: string) => {
@@ -173,10 +191,16 @@ export function EntitiesPanel({
     }
   }, [backend]);
 
+  // Stats live-refresh — called after every mutation (entity/fact/event delete, fact create,
+  // AI-driven saves via 'firebat-refresh') so the count tiles track the list in real time.
+  const refreshStats = useCallback(() => {
+    backend.stats().then(s => { if (s) setStats(s); }).catch(() => {});
+  }, [backend]);
+
   useEffect(() => {
     fetchEntities('');
-    backend.stats().then(s => { if (s) setStats(s); }).catch(() => {});
-  }, [fetchEntities, backend]);
+    refreshStats();
+  }, [fetchEntities, refreshStats]);
 
   // Debounced search
   useEffect(() => {
@@ -187,10 +211,10 @@ export function EntitiesPanel({
   // AI 채팅이 도구로 엔티티/사실을 저장하면 useChat 이 'firebat-refresh' 를 쏜다 → 사이드바 자동 재조회
   // (저장은 됐는데 수동 새로고침 전까지 안 뜨던 문제 차단).
   useEffect(() => {
-    const onRefresh = () => fetchEntities(query);
+    const onRefresh = () => { fetchEntities(query); refreshStats(); };
     window.addEventListener('firebat-refresh', onRefresh);
     return () => window.removeEventListener('firebat-refresh', onRefresh);
-  }, [fetchEntities, query]);
+  }, [fetchEntities, query, refreshStats]);
 
   const fetchTimeline = async (entityId: number, force = false) => {
     if (!force && timeline[entityId]) return;
@@ -231,6 +255,7 @@ export function EntitiesPanel({
         delete next[entity.id];
         return next;
       });
+      refreshStats();
     } catch {
       // silent — UI 가 그대로 노출 (다음 fetch 에서 정정)
     }
@@ -278,7 +303,7 @@ export function EntitiesPanel({
       </div>
 
       {subTab === 'events' ? (
-        <EventsPanel hubContext={hubContext} />
+        <EventsPanel hubContext={hubContext} onMutate={refreshStats} />
       ) : (
         <>
       {/* 헤더 — 검색 + 추가 */}
@@ -361,15 +386,16 @@ export function EntitiesPanel({
                       <div className="text-[10px] font-bold text-slate-500 mb-1">Timeline ({facts.length})</div>
                       <EntityTimeline
                         facts={facts}
-                        canReview={!hubContext}
                         onPromote={async (fid) => {
                           // Promote = user reviewed and confirmed → full confidence (recall-injectable).
-                          await apiPatch(`/api/entity-facts/${fid}`, { confidence: 1.0 }, { category: 'entities' }).catch(() => {});
+                          await backend.updateFact(fid, { confidence: 1.0 });
                           await fetchTimeline(e.id, true);
+                          refreshStats();
                         }}
                         onRemove={async (fid) => {
-                          await apiDelete(`/api/entity-facts/${fid}`, { category: 'entities' }).catch(() => {});
+                          await backend.deleteFact(fid);
                           await fetchTimeline(e.id, true);
+                          refreshStats();
                         }}
                       />
                       <CreateFactInline
@@ -380,6 +406,7 @@ export function EntitiesPanel({
                           const facts = await backend.timeline(e.id);
                           setTimeline(prev => ({ ...prev, [e.id]: facts }));
                           fetchEntities(query);
+                          refreshStats();
                         }}
                       />
                       {/* Events — entity 와 link 된 사건 (Phase 6.2 entity ↔ event 시각화) */}
@@ -435,7 +462,7 @@ export function EntitiesPanel({
 
 // ── Events sub-panel ──
 
-function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
+function EventsPanel({ hubContext, onMutate }: { hubContext?: EntitiesHubContext; onMutate?: () => void }) {
   const t = useTranslations();
   const queryId = useId();
   const typeFilterId = useId();
@@ -488,11 +515,15 @@ function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
     try {
       if (hubContext) {
         const r = await hubFetch(hubContext, 'entities', 'delete-event', { id });
-        if (r?.success) setEvents(prev => prev.filter(e => e.id !== id));
+        if (r?.success) {
+          setEvents(prev => prev.filter(e => e.id !== id));
+          onMutate?.();
+        }
         return;
       }
       await apiDelete(`/api/episodic/${id}`, { category: 'entities' });
       setEvents(prev => prev.filter(e => e.id !== id));
+      onMutate?.();
     } catch {
       // silent
     }
@@ -578,10 +609,8 @@ function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
 // 사실 타임라인 — type 별 그룹(접기/펴기) + 태그 교차 필터. 엔티티 = 정체성, 분류는 여기서.
 // Staging/supersession: active(승격·활성) 는 기존 그룹 렌더 / staged(confidence<임계) 는 접힌
 // "승격 대기" / superseded 는 접힌 "값 이력"(취소선) — 회상 주입은 active 만(백엔드 게이트).
-function EntityTimeline({ facts, canReview, onPromote, onRemove }: {
+function EntityTimeline({ facts, onPromote, onRemove }: {
   facts: Fact[];
-  /** 승격/삭제 리뷰 액션 노출 (admin 전용 — fact update RPC 가 owner-scope 없어 hub 제외). */
-  canReview?: boolean;
   onPromote?: (id: number) => void;
   onRemove?: (id: number) => void;
 }) {
@@ -688,12 +717,10 @@ function EntityTimeline({ facts, canReview, onPromote, onRemove }: {
                     {f.factType && <span className="px-1 rounded bg-amber-100 text-amber-700">{f.factType}</span>}
                     <span className="tabular-nums">신뢰 {(f.confidence ?? 0).toFixed(2)}{(f.seenCount ?? 1) > 1 ? ` · ${f.seenCount}회` : ''}</span>
                     <span className="ml-auto tabular-nums">{formatDate(f.occurredAt ?? f.createdAt)}</span>
-                    {canReview && (
-                      <span className="flex items-center gap-1">
-                        <button onClick={() => onPromote?.(f.id)} className="px-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-bold">승격</button>
-                        <button onClick={() => onRemove?.(f.id)} className="px-1 rounded bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold">삭제</button>
-                      </span>
-                    )}
+                    <span className="flex items-center gap-1">
+                      <button onClick={() => onPromote?.(f.id)} className="px-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-bold">승격</button>
+                      <button onClick={() => onRemove?.(f.id)} className="px-1 rounded bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold">삭제</button>
+                    </span>
                   </div>
                 </li>
               ))}

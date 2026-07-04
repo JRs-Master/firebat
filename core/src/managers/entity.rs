@@ -50,12 +50,12 @@ impl EntityManager {
         self.port.save_fact(&input).await
     }
 
-    pub fn update_fact(&self, id: i64, patch: UpdateFactPatch) -> InfraResult<()> {
-        self.port.update_fact(id, &patch)
+    pub fn update_fact(&self, id: i64, patch: UpdateFactPatch, owner: Option<&str>) -> InfraResult<()> {
+        self.port.update_fact(id, &patch, owner)
     }
 
-    pub fn delete_fact(&self, id: i64) -> InfraResult<()> {
-        self.port.remove_fact(id)
+    pub fn delete_fact(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
+        self.port.remove_fact(id, owner)
     }
 
     pub fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>> {

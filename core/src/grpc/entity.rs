@@ -219,6 +219,7 @@ impl EntityService for EntityServiceImpl {
         req: Request<EntityFactUpdateRequest>,
     ) -> Result<Response<EntityFactUpdateResponse>, TonicStatus> {
         let args = req.into_inner();
+        let owner = args.owner.clone();
         let tags = args
             .tags_json
             .as_deref()
@@ -235,6 +236,7 @@ impl EntityService for EntityServiceImpl {
                     ttl_days: args.ttl_days,
                     confidence: args.confidence,
                 },
+                owner.as_deref(),
             )
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(EntityFactUpdateResponse {}))
@@ -244,9 +246,9 @@ impl EntityService for EntityServiceImpl {
         &self,
         req: Request<EntityDeleteFactRequest>,
     ) -> Result<Response<EntityDeleteFactResponse>, TonicStatus> {
-        let id = req.into_inner().id;
+        let r = req.into_inner();
         self.manager
-            .delete_fact(id)
+            .delete_fact(r.id, r.owner.as_deref())
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(EntityDeleteFactResponse {}))
     }

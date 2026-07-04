@@ -6,6 +6,8 @@ import {
   deleteEntity,
   getTimeline,
   saveFact,
+  updateEntityFact,
+  deleteEntityFact,
   searchFacts,
 } from '../../../../../lib/api-gen/entity';
 import { searchEvents, deleteEvent } from '../../../../../lib/api-gen/episodic';
@@ -104,6 +106,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, id: res.data?.id, skipped: res.data?.skipped });
+      }
+      case 'update-fact': {
+        // Staged-fact review (promote = confidence 1.0) + edits. Rust scopes by owner:
+        // a row not owned by this session raises the same not-found error (existence hiding).
+        const id = Number(body.id);
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        const patch: Record<string, unknown> = { id: BigInt(id), owner: hubOwner };
+        if (typeof body.content === 'string') patch.content = body.content;
+        if (typeof body.factType === 'string') patch.factType = body.factType;
+        if (Array.isArray(body.tags)) patch.tagsJson = JSON.stringify(body.tags.filter((s: any) => typeof s === 'string'));
+        if (typeof body.confidence === 'number') patch.confidence = body.confidence;
+        const res = await updateEntityFact(patch as any);
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
+      }
+      case 'delete-fact': {
+        const id = Number(body.id);
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        const res = await deleteEntityFact({ id: BigInt(id), owner: hubOwner } as any);
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
       }
       case 'search-facts': {
         const opts = {

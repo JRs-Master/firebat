@@ -951,7 +951,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         Ok((new_id, false, None))
     }
 
-    fn update_fact(&self, id: i64, patch: &UpdateFactPatch) -> InfraResult<()> {
+    fn update_fact(&self, id: i64, patch: &UpdateFactPatch, owner: Option<&str>) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         let mut sets: Vec<&str> = vec![];
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
@@ -985,25 +985,40 @@ impl IEntityPort for SqliteMemoryAdapter {
         if sets.is_empty() {
             return Ok(());
         }
-        let sql = format!("UPDATE entity_facts SET {} WHERE id = ?", sets.join(", "));
+        let mut sql = format!("UPDATE entity_facts SET {} WHERE id = ?", sets.join(", "));
         values.push(Box::new(id));
+        if let Some(o) = owner {
+            // Scoped mutation (hub) — owner mismatch gives updated=0, raising the same
+            // not-found error below (existence hiding, remove_event mirror).
+            sql.push_str(" AND owner = ?");
+            values.push(Box::new(o.to_string()));
+        }
         let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
         let updated = conn
             .execute(&sql, value_refs.as_slice())
             .map_err(|e| format!("fact update 실패: {e}"))?;
         if updated == 0 {
-            return Err(format!("fact id={} 미존재", id));
+            return Err(format!("fact id={} 미존재 또는 권한 없음", id));
         }
         Ok(())
     }
 
-    fn remove_fact(&self, id: i64) -> InfraResult<()> {
+    fn remove_fact(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
-        let n = conn
-            .execute("DELETE FROM entity_facts WHERE id = ?1", params![id])
-            .map_err(|e| format!("fact delete 실패: {e}"))?;
+        // owner=Some: scoped delete (hub). Mismatch/absent gives n=0, raising the error below.
+        let n = match owner {
+            Some(o) => conn
+                .execute(
+                    "DELETE FROM entity_facts WHERE id = ?1 AND owner = ?2",
+                    params![id, o],
+                )
+                .map_err(|e| format!("fact delete 실패: {e}"))?,
+            None => conn
+                .execute("DELETE FROM entity_facts WHERE id = ?1", params![id])
+                .map_err(|e| format!("fact delete 실패: {e}"))?,
+        };
         if n == 0 {
-            return Err(format!("fact id={} 미존재", id));
+            return Err(format!("fact id={} 미존재 또는 권한 없음", id));
         }
         Ok(())
     }

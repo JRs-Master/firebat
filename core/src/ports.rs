@@ -1842,8 +1842,10 @@ pub trait IEntityPort: Send + Sync {
     async fn search_entities(&self, opts: &EntitySearchOpts) -> InfraResult<Vec<EntityRecord>>;
 
     async fn save_fact(&self, input: &SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
-    fn update_fact(&self, id: i64, patch: &UpdateFactPatch) -> InfraResult<()>;
-    fn remove_fact(&self, id: i64) -> InfraResult<()>;
+    /// owner=Some — scoped mutation (hub): the row must belong to that owner, otherwise the
+    /// same not-found error as a missing id (existence hiding). None = admin (unscoped).
+    fn update_fact(&self, id: i64, patch: &UpdateFactPatch, owner: Option<&str>) -> InfraResult<()>;
+    fn remove_fact(&self, id: i64, owner: Option<&str>) -> InfraResult<()>;
     fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>>;
     fn list_facts_by_entity(
         &self,
