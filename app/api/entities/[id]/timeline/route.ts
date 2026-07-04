@@ -28,6 +28,8 @@ export const GET = withAuth(async (req: NextRequest, { params }: Ctx) => {
     entityId: BigInt(id),
     limit: BigInt(limit),
     orderBy,
+    // Admin UI reviews everything — staged + superseded rows come back grouped separately.
+    includeInactive: true,
   } as any);
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, facts: (res.data as any) ?? [] });
@@ -46,6 +48,8 @@ export const POST = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const res = await saveEntityFact({
     entityId: BigInt(id),
     content: body.content,
+    // A human typing into the add-fact form = user-authored (full confidence).
+    explicit: true,
     factType: typeof body.factType === 'string' ? body.factType : undefined,
     occurredAt: occurredAtMs,
     tags: Array.isArray(body.tags) ? body.tags.filter((s: any) => typeof s === 'string') : [],

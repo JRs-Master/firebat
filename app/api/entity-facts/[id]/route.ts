@@ -39,6 +39,8 @@ export const PATCH = withAuth(async (req: NextRequest, { params }: Ctx) => {
   }
   if (Array.isArray(body?.tags)) patch.tagsJson = JSON.stringify(body.tags.filter((s: any) => typeof s === 'string'));
   if (typeof body?.ttlDays === 'number' && body.ttlDays > 0) patch.ttlDays = BigInt(body.ttlDays);
+  // Manual promotion/demotion of a staged fact from the admin UI (승격 = confidence 1.0).
+  if (typeof body?.confidence === 'number') (patch as any).confidence = body.confidence;
   const res = await updateEntityFact({ id: BigInt(id), ...patch } as any);
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });

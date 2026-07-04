@@ -15,7 +15,7 @@ import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network, ChevronRight } 
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
-import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { apiGet, apiPost, apiDelete, apiPatch } from '../../../lib/api-fetch';
 import { hubFetch } from '../../../lib/hub-fetch';
 import { RowActions, InteractiveRow } from './InteractiveRow';
 import { z } from 'zod';
@@ -41,7 +41,16 @@ interface Fact {
   tags: string[];
   occurredAt?: number;
   createdAt: number;
+  /** Staging/supersession (Intelligence rebuild) — mirrors EntityFactRecord serde. */
+  supersededBy?: number;
+  explicit?: boolean;
+  confidence?: number;
+  seenCount?: number;
+  sourceConvId?: string;
 }
+
+/** Staging promote threshold — mirrors the Rust PROMOTE_CONFIDENCE (0.7). */
+const PROMOTE_THRESHOLD = 0.7;
 
 interface EventItem {
   id: number;
@@ -52,6 +61,9 @@ interface EventItem {
   context?: Record<string, unknown>;
   occurredAt: number;
   entityIds?: number[];
+  supersededBy?: number;
+  explicit?: boolean;
+  confidence?: number;
 }
 
 function formatDate(ms: number | string | bigint | undefined | null): string {
@@ -180,8 +192,8 @@ export function EntitiesPanel({
     return () => window.removeEventListener('firebat-refresh', onRefresh);
   }, [fetchEntities, query]);
 
-  const fetchTimeline = async (entityId: number) => {
-    if (timeline[entityId]) return;
+  const fetchTimeline = async (entityId: number, force = false) => {
+    if (!force && timeline[entityId]) return;
     const facts = await backend.timeline(entityId);
     setTimeline(prev => ({ ...prev, [entityId]: facts }));
   };
@@ -347,7 +359,19 @@ export function EntitiesPanel({
                       </div>
                       {/* Timeline — 사실을 type 별로 묶고 태그로 교차 필터 */}
                       <div className="text-[10px] font-bold text-slate-500 mb-1">Timeline ({facts.length})</div>
-                      <EntityTimeline facts={facts} />
+                      <EntityTimeline
+                        facts={facts}
+                        canReview={!hubContext}
+                        onPromote={async (fid) => {
+                          // Promote = user reviewed and confirmed → full confidence (recall-injectable).
+                          await apiPatch(`/api/entity-facts/${fid}`, { confidence: 1.0 }, { category: 'entities' }).catch(() => {});
+                          await fetchTimeline(e.id, true);
+                        }}
+                        onRemove={async (fid) => {
+                          await apiDelete(`/api/entity-facts/${fid}`, { category: 'entities' }).catch(() => {});
+                          await fetchTimeline(e.id, true);
+                        }}
+                      />
                       <CreateFactInline
                         entityId={e.id}
                         saveFact={backend.saveFact}
@@ -552,25 +576,39 @@ function EventsPanel({ hubContext }: { hubContext?: EntitiesHubContext }) {
 }
 
 // 사실 타임라인 — type 별 그룹(접기/펴기) + 태그 교차 필터. 엔티티 = 정체성, 분류는 여기서.
-function EntityTimeline({ facts }: { facts: Fact[] }) {
+// Staging/supersession: active(승격·활성) 는 기존 그룹 렌더 / staged(confidence<임계) 는 접힌
+// "승격 대기" / superseded 는 접힌 "값 이력"(취소선) — 회상 주입은 active 만(백엔드 게이트).
+function EntityTimeline({ facts, canReview, onPromote, onRemove }: {
+  facts: Fact[];
+  /** 승격/삭제 리뷰 액션 노출 (admin 전용 — fact update RPC 가 owner-scope 없어 hub 제외). */
+  canReview?: boolean;
+  onPromote?: (id: number) => void;
+  onRemove?: (id: number) => void;
+}) {
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [showStaged, setShowStaged] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const active = useMemo(() => facts.filter(f => !f.supersededBy && (f.confidence ?? 1) >= PROMOTE_THRESHOLD), [facts]);
+  const staged = useMemo(() => facts.filter(f => !f.supersededBy && (f.confidence ?? 1) < PROMOTE_THRESHOLD), [facts]);
+  const history = useMemo(() => facts.filter(f => !!f.supersededBy), [facts]);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
-    facts.forEach(f => (f.tags ?? []).forEach(t => { if (t.trim()) s.add(t); }));
+    active.forEach(f => (f.tags ?? []).forEach(t => { if (t.trim()) s.add(t); }));
     return [...s];
-  }, [facts]);
+  }, [active]);
 
   const groups = useMemo(() => {
-    const shown = tagFilter ? facts.filter(f => (f.tags ?? []).includes(tagFilter)) : facts;
+    const shown = tagFilter ? active.filter(f => (f.tags ?? []).includes(tagFilter)) : active;
     const m = new Map<string, Fact[]>();
     shown.forEach(f => {
       const key = (f.factType ?? '').trim() || '기타';
       (m.get(key) ?? m.set(key, []).get(key)!).push(f);
     });
     return [...m.entries()];
-  }, [facts, tagFilter]);
+  }, [active, tagFilter]);
 
   if (facts.length === 0) return <p className="text-[10px] text-slate-400 italic">기록 없음</p>;
 
@@ -616,6 +654,9 @@ function EntityTimeline({ facts }: { facts: Fact[] }) {
                             <Tag size={8} />{tag}
                           </span>
                         ))}
+                        {f.sourceConvId && (
+                          <span title={`출처 대화: ${f.sourceConvId}`} className="text-slate-300">출처</span>
+                        )}
                         <span className="ml-auto tabular-nums">{formatDate(f.occurredAt ?? f.createdAt)}</span>
                       </div>
                     </li>
@@ -626,6 +667,64 @@ function EntityTimeline({ facts }: { facts: Fact[] }) {
           );
         })}
       </div>
+
+      {/* 승격 대기 — 자율 추출 staging (회상 주입 제외). 리뷰 후 승격/삭제. */}
+      {staged.length > 0 && (
+        <div className="mt-1.5">
+          <button
+            onClick={() => setShowStaged(v => !v)}
+            className="w-full flex items-center gap-1 text-[10px] font-bold text-amber-600 hover:text-amber-700 py-0.5"
+          >
+            <ChevronRight size={10} className={`transition-transform ${showStaged ? 'rotate-90' : ''}`} />
+            <span>승격 대기</span>
+            <span className="text-[9px] text-amber-400 tabular-nums">{staged.length}</span>
+          </button>
+          {showStaged && (
+            <ul className="list-none p-0 m-0 space-y-1 pl-3">
+              {staged.map(f => (
+                <li key={f.id} className="bg-amber-50/60 border border-amber-200 rounded p-1.5">
+                  <div className="text-[10px] text-slate-700 leading-snug whitespace-pre-wrap break-words">{f.content}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
+                    {f.factType && <span className="px-1 rounded bg-amber-100 text-amber-700">{f.factType}</span>}
+                    <span className="tabular-nums">신뢰 {(f.confidence ?? 0).toFixed(2)}{(f.seenCount ?? 1) > 1 ? ` · ${f.seenCount}회` : ''}</span>
+                    <span className="ml-auto tabular-nums">{formatDate(f.occurredAt ?? f.createdAt)}</span>
+                    {canReview && (
+                      <span className="flex items-center gap-1">
+                        <button onClick={() => onPromote?.(f.id)} className="px-1 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-bold">승격</button>
+                        <button onClick={() => onRemove?.(f.id)} className="px-1 rounded bg-rose-100 text-rose-700 hover:bg-rose-200 font-bold">삭제</button>
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* 값 이력 — supersede 로 퇴역한 옛 값 (취소선, 활성 1개 원칙의 흔적). */}
+      {history.length > 0 && (
+        <div className="mt-1">
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            className="w-full flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 py-0.5"
+          >
+            <ChevronRight size={10} className={`transition-transform ${showHistory ? 'rotate-90' : ''}`} />
+            <span>값 이력</span>
+            <span className="text-[9px] text-slate-300 tabular-nums">{history.length}</span>
+          </button>
+          {showHistory && (
+            <ul className="list-none p-0 m-0 space-y-1 pl-3">
+              {history.map(f => (
+                <li key={f.id} className="bg-slate-50 border border-slate-200 rounded p-1.5 opacity-70">
+                  <div className="text-[10px] text-slate-500 leading-snug whitespace-pre-wrap break-words line-through">{f.content}</div>
+                  <div className="mt-0.5 text-[9px] text-slate-400 tabular-nums text-right">{formatDate(f.occurredAt ?? f.createdAt)}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

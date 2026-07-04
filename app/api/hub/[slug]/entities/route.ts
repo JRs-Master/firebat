@@ -85,6 +85,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           entityId: BigInt(id),
           limit: body.limit ? BigInt(body.limit) : BigInt(50),
           owner: hubOwner,
+          includeInactive: true, // tenant UI reviews staged/superseded groups like admin
         } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true, facts: (res.data as unknown[]) ?? [] });
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const res = await saveFact({
           entityId: BigInt(eid),
           content: String(body.content),
+          explicit: true, // human-typed via the tenant add-fact form
           factType: body.factType ?? undefined,
           occurredAt: body.occurredAt ? BigInt(body.occurredAt) : undefined,
           tags: Array.isArray(body.tags) ? body.tags : [],
@@ -122,6 +124,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           entityId: body.entityId ? Number(body.entityId) : undefined,
           limit: body.limit ?? 100,
           owner: hubOwner,
+          includeInactive: true, // tenant UI shows staged rows grouped, like admin
         };
         const res = await searchEvents({ optsJson: JSON.stringify(opts) } as any);
         if (!res.ok) return jsonResponse(500, { error: res.message });

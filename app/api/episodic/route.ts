@@ -34,9 +34,10 @@ export const GET = withAuth(async (req: NextRequest) => {
           occurredAfter: Number.isFinite(occurredAfter as number) ? occurredAfter : undefined,
           occurredBefore: Number.isFinite(occurredBefore as number) ? occurredBefore : undefined,
           limit,
+          includeInactive: true, // admin UI reviews staged rows too (grouped in the panel)
         }),
       } as any)
-    : await listRecentEvents({ optsJson: JSON.stringify({ limit }) } as any);
+    : await listRecentEvents({ optsJson: JSON.stringify({ limit, includeInactive: true }) } as any);
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, events: (res.data as any) ?? [] });
 });
