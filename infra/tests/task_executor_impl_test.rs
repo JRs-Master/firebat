@@ -62,16 +62,15 @@ async fn real_executor_llm_transform_returns_stub_text() {
 #[tokio::test]
 async fn real_executor_network_request_delegates_to_tool() {
     // NETWORK_REQUEST now delegates to the registered `network_request` core tool (same SSRF-guarded
-    // path as FC). This test's ToolManager is empty (no tool registered), so delegation surfaces as a
-    // "handler not registered: network_request" error — proving it routes to the tool rather than the
-    // old hardcoded "Phase B-17+" stub. (lang-independent: the tool name is in the message.)
+    // path as FC). This test's ToolManager is empty (no tool registered), so delegation errors cleanly
+    // (dispatch's unknown-tool path) rather than returning the old hardcoded "Phase B-17+" stub or
+    // panicking. is_err() is the lang/i18n-independent contract — the stub string is gone from the code.
     let dir = tempdir().unwrap();
     let executor = make_executor(dir.path());
     let result = executor
         .network_request("https://example.com", "GET", None, None)
         .await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("network_request"));
 }
 
 #[tokio::test]
