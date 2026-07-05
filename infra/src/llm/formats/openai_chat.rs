@@ -81,9 +81,9 @@ impl OpenAiChatHandler {
             return None;
         }
         Some(match opts.thinking_level.as_deref() {
-            Some("none") | Some("minimal") => "low", // Solar low = reasoning OFF (fastest)
+            Some("none") | Some("minimal") | Some("low") => "low", // Solar low = reasoning OFF
             Some("high") | Some("xhigh") | Some("max") => "high",
-            _ => "medium", // low/medium/unset → balanced reasoning ON (default)
+            _ => "medium", // medium / unset → balanced reasoning ON (default)
         })
     }
 

@@ -803,9 +803,9 @@
       "thinking": {
         "kind": "reasoning",
         "levels": [
-          {"value": "minimal", "labels": {"ko": "없음 (추론 OFF, 빠름)", "en": "Off (no reasoning, fastest)"}},
-          {"value": "medium", "labels": {"ko": "중간 (추론 ON, 기본)", "en": "Medium (reasoning on, default)"}},
-          {"value": "high", "labels": {"ko": "높음 (깊은 추론)", "en": "High (deep reasoning)"}}
+          {"value": "low", "labels": {"ko": "Low (추론 OFF)", "en": "Low (reasoning off)"}},
+          {"value": "medium", "labels": {"ko": "Medium (기본)", "en": "Medium (default)"}},
+          {"value": "high", "labels": {"ko": "High", "en": "High"}}
         ]
       },
       "pricing": {
