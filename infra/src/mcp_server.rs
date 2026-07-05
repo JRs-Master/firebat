@@ -855,17 +855,18 @@ impl McpToolHandler for RenderUnifiedHandler {
     }
 }
 
-/// 단일 `render` MCP 도구 등록 — 옛 register_render_tools 의 26개 분리 등록 폐기.
-/// blocks 안 type 은 components.json 안 컴포넌트 이름 enum (LLM 이 schema 로 좁힘).
+/// 단일 `render` MCP 도구 등록. schema enum = 런타임 tool_mode 허용 타입(code/math/diagram)과 **동일 소스**.
+/// 그 외 모든 컴포넌트는 reply 텍스트 `firebat-render` fence 로 — 도구 인자에 한국어를 넣으면 철자가 깨진다.
+/// (옛 버그: enum 이 component_names()(전체)라 스키마↔런타임 드리프트 → 모델이 table 을 도구로 보내 거부·왕복.)
 pub async fn register_render_tools(state: &Arc<McpServerState>) {
-    let names: Vec<Value> = firebat_core::managers::ai::component_registry::component_names()
+    let names: Vec<Value> = firebat_core::managers::ai::render_exec::TOOL_ALLOWED_TYPES
         .iter()
         .map(|n| Value::String((*n).to_string()))
         .collect();
-    let description = "UI 컴포넌트 렌더링 — 한 번에 여러 blocks 배열로 렌더. \
-        각 block 은 `type` (컴포넌트 이름, 26 종 enum) + `props` (해당 컴포넌트 schema 에 맞는 데이터). \
-        propsSchema 는 search_components(query) 또는 시스템 프롬프트의 컴포넌트 카탈로그 참조. \
-        실패 시 schema 에러 반환 — LLM 이 props 맞춰 재호출."
+    let description = "코드/마크업 계열 컴포넌트(code / math / diagram) 전용 렌더링 도구. blocks 배열, \
+        각 block = `type` + `props`. **그 외 모든 컴포넌트(table / callout / text / chart / quiz / …)는 \
+        이 도구로 만들지 말고 reply 텍스트에 ```firebat-render``` fence 로 직접 쓰세요** — 도구 인자에 넣으면 \
+        한국어 철자가 깨집니다. 도구가 code/math/diagram 외 type 을 받으면 거부합니다."
         .to_string();
     let schema = serde_json::json!({
         "type": "object",

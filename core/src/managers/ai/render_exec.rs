@@ -19,7 +19,7 @@ use super::component_registry;
 /// newlines, and backslashes are easy to break when hand-escaped inside fence JSON, so tool args (safely escaped by the FC layer) are better. All other
 /// components (table/callout/text/chart/...) are **fence-only**: putting Korean in tool args
 /// makes the model degrade the spelling (Korean corrupts in tool_use input). html uses the separate render_iframe path.
-const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
+pub const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
 
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.

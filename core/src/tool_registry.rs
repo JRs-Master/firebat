@@ -1207,10 +1207,13 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
 /// 실행 본체는 core 공유 소스(render_exec / plan_store) — MCP 핸들러와 동작 일치.
 /// 결과(blocks / component=PlanCard / suggestions)는 AiManager 멀티턴 루프가 자동 변환.
 fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
-    use crate::managers::ai::{component_registry, render_exec};
+    use crate::managers::ai::render_exec;
 
-    // render — 단일 통합 도구. schema enum 은 MCP register_render_tools 와 동일 소스(component_names).
-    let names: Vec<serde_json::Value> = component_registry::component_names()
+    // render 도구 schema enum = 런타임 tool_mode 허용 타입(code/math/diagram)과 **동일 소스**.
+    // 옛 버그: enum 이 component_names()(42개 전체)라 스키마↔런타임 드리프트 — 모델이 스키마 믿고
+    // table/chart 를 도구로 보냄 → tool_mode 거부 → fence 안내 왕복. enum 을 3종으로 좁혀 애초에 못 고르게.
+    // (그 외 컴포넌트는 reply 텍스트 firebat-render fence 로 — 한국어 인자 깨짐 방지.)
+    let names: Vec<serde_json::Value> = render_exec::TOOL_ALLOWED_TYPES
         .iter()
         .map(|n| serde_json::Value::String((*n).to_string()))
         .collect();
