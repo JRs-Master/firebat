@@ -81,9 +81,9 @@ impl OpenAiChatHandler {
             return None;
         }
         Some(match opts.thinking_level.as_deref() {
-            Some("minimal") => "low", // OFF — fastest
+            Some("none") | Some("minimal") => "low", // Solar low = reasoning OFF (fastest)
             Some("high") | Some("xhigh") | Some("max") => "high",
-            _ => "medium", // low/medium/unset → balanced reasoning ON
+            _ => "medium", // low/medium/unset → balanced reasoning ON (default)
         })
     }
 
@@ -209,12 +209,14 @@ impl FormatHandler for OpenAiChatHandler {
             }));
         }
 
+        // NOTE: no `parallel_tool_calls` — Upstage's live API rejects it (400 "Unrecognized
+        // request arguments") despite its docs, and this handler is shared with Ollama/OpenRouter/
+        // LM Studio which also may not accept it. The model can still return multiple tool_calls;
+        // parse_response already handles a batch.
         let mut body = serde_json::json!({
             "model": config.id,
             "messages": messages,
             "tools": tool_defs,
-            // solar-pro3 supports parallel tool calls — the model may batch independent calls.
-            "parallel_tool_calls": true,
         });
         if let Some(m) = opts.max_tokens {
             body["max_tokens"] = serde_json::Value::from(m);
