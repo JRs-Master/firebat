@@ -596,6 +596,61 @@ impl McpToolHandler for SysmodToolHandler {
         } else {
             args
         };
+        // requiresApproval gate (#1-9b slice 1, FC 게이트 미러) — 실주문 등 config 선언 액션.
+        // interactive = 승인 카드(pending) / cron = 예약 승인(봉투) 전까지 하드 차단 / hub = 차단.
+        let action_name = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        if !action_name.is_empty() {
+            let cfg = match self
+                .module_manager
+                .get_module_config("user", &self.module_name)
+                .await
+            {
+                Some(c) => Some(c),
+                None => {
+                    self.module_manager
+                        .get_module_config("system", &self.module_name)
+                        .await
+                }
+            };
+            let decl = cfg
+                .as_ref()
+                .and_then(|c| c.get("requiresApproval"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            if firebat_core::utils::pending_tools::requires_approval_value(&decl, action_name) {
+                if firebat_core::utils::cron_context::is_cron_context_active() {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": "이 액션은 사용자 승인이 필요합니다(실주문 등). 자동(cron) 경로에서는 예약 승인(봉투) 기능 도입 전까지 실행할 수 없습니다 — 재시도하지 말고 결과에 차단 사실을 보고하세요.",
+                        "approvalBlocked": "automation",
+                    }));
+                }
+                if firebat_core::utils::hub_context::is_hub_context_active() {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": "실주문 등 승인 필요 액션은 hub 에서 사용할 수 없습니다.",
+                        "approvalBlocked": "hub",
+                    }));
+                }
+                let pargs = firebat_core::utils::pending_tools::PendingActionArgs::RunModule(
+                    firebat_core::utils::pending_tools::RunModuleArgs {
+                        module: self.module_name.clone(),
+                        input: data.clone(),
+                    },
+                );
+                let summary = format!("실행 승인: {} · {}", self.module_name, action_name);
+                let plan_id = firebat_core::utils::pending_tools::create_pending_scoped(
+                    pargs, &summary, None,
+                );
+                return Ok(serde_json::json!({
+                    "success": true,
+                    "pending": true,
+                    "planId": plan_id,
+                    "summary": summary,
+                    "note": "사용자 승인 카드가 표시됩니다 — 승인 전 실행되지 않으며, 같은 호출을 재시도하지 마세요.",
+                }));
+            }
+        }
         match self.module_manager.run(&self.module_name, &data).await {
             Ok(output) => {
                 if output.success {

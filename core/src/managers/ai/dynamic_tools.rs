@@ -43,6 +43,8 @@ pub struct DynamicToolRegistry {
     /// refresh 마다 config 에서 재구성. FC 경로(ai.rs 도구 루프)가 dispatch 전 `grounding_for` 로 조회해
     /// `check_grounding` 강제 — MCP 경로(mcp_server `state.grounding`) 와 대칭, 같은 pure 헬퍼 공유 (#8-2).
     grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
+    /// requiresApproval 선언 — tool_name → (module, 선언 값). FC 게이트가 dispatch 전 조회 (#1-9b).
+    approval: RwLock<HashMap<String, (String, serde_json::Value)>>,
 }
 
 impl DynamicToolRegistry {
@@ -53,12 +55,19 @@ impl DynamicToolRegistry {
             mcp,
             last_refresh: Mutex::new(None),
             grounding: RwLock::new(HashMap::new()),
+            approval: RwLock::new(HashMap::new()),
         }
     }
 
     /// FC 경로가 dispatch 전 조회 — 이 도구에 선언된 grounded params (없으면 None).
     pub async fn grounding_for(&self, tool: &str) -> Option<Vec<GroundedParam>> {
         let map = self.grounding.read().await;
+        map.get(tool).cloned()
+    }
+
+    /// FC 경로가 dispatch 전 조회 — 이 도구 모듈의 requiresApproval 선언 (module, decl).
+    pub async fn approval_for(&self, tool: &str) -> Option<(String, serde_json::Value)> {
+        let map = self.approval.read().await;
         map.get(tool).cloned()
     }
 
@@ -86,6 +95,7 @@ impl DynamicToolRegistry {
         // grounding 맵은 로컬에 쌓고 끝에 한 번에 swap — clear→개별 insert 사이 rebuild 창에
         // 동시 read 가 빈 맵(fail-open)을 보는 race 회피 + write lock 획득 N회→1회.
         let mut new_grounding: HashMap<String, Vec<GroundedParam>> = HashMap::new();
+        let mut new_approval: HashMap<String, (String, serde_json::Value)> = HashMap::new();
 
         // 2. sysmod scan + register
         let modules = self.module.list_system_modules().await;
@@ -106,6 +116,9 @@ impl DynamicToolRegistry {
             let description = entry.description.clone();
             // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
             let g = parse_grounding(&config);
+            if let Some(ra) = config.get("requiresApproval") {
+                new_approval.insert(tool_name.clone(), (entry.name.clone(), ra.clone()));
+            }
             if !g.is_empty() {
                 new_grounding.insert(tool_name.clone(), g);
             }
@@ -162,6 +175,7 @@ impl DynamicToolRegistry {
 
         // 4. grounding 맵 atomic swap (rebuild 완료 후 한 번에 교체 — read 가 부분 상태 안 봄).
         *self.grounding.write().await = new_grounding;
+        *self.approval.write().await = new_approval;
 
         // 5. cache 갱신
         let mut last = self.last_refresh.lock().await;

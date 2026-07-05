@@ -75,6 +75,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
 
     const args = (pending.args ?? {}) as Record<string, unknown> & { name?: string };
+  // run_module(실주문 등 승인 액션)은 hub 에서 커밋 불가 — 생성 게이트가 이미 막지만 방어 심화.
+  if ((args as any)?.name === 'run_module') {
+    return NextResponse.json({ success: false, error: 'not allowed in hub' }, { status: 403 });
+  }
     const project = `hub:${auth.instanceId}`;
     let result: { success: boolean; data?: unknown; error?: string };
 

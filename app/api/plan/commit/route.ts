@@ -4,6 +4,7 @@ import { getPending, consumePending } from '../../../../lib/api-gen/ai';
 import { writeFile, deleteFile } from '../../../../lib/api-gen/storage';
 import { savePage, deletePage } from '../../../../lib/api-gen/page';
 import { scheduleCronJob, cancelCronJob } from '../../../../lib/api-gen/schedule';
+import { run as runModuleRpc } from '../../../../lib/api-gen/module';
 
 /**
  * POST /api/plan/commit?planId=xxx
@@ -33,6 +34,19 @@ export const POST = withAuth(async (req: NextRequest) => {
     const args = pending.args as unknown as Record<string, unknown> & { name: string };
 
     switch (args.name) {
+      case 'run_module': {
+        // Approval-gated module action (requiresApproval — real-money orders etc): replay the
+        // model's input verbatim through the normal module path.
+        const moduleName = args.module as string;
+        const input = (args.input as Record<string, unknown>) ?? {};
+        const r = await runModuleRpc({ module: moduleName, dataJson: JSON.stringify(input) } as any);
+        if (!r.ok) { result = { success: false, error: r.message }; break; }
+        const out = r.data as any;
+        result = out?.success
+          ? { success: true, data: out?.data ?? null }
+          : { success: false, error: out?.error || 'module 실행 실패' };
+        break;
+      }
       case 'write_file': {
         const path = args.path as string;
         const content = args.content as string;

@@ -121,6 +121,29 @@ pub enum PendingActionArgs {
     DeletePage(DeletePageArgs),
     ScheduleTask(ScheduleTaskArgs),
     CancelCronJob(CancelTaskArgs),
+    /// Approval-gated module action (config `requiresApproval` — real-money orders etc).
+    /// Commit runs `ModuleManager.run(module, input)` verbatim.
+    RunModule(RunModuleArgs),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RunModuleArgs {
+    pub module: String,
+    /// The full module input as the model sent it (action + params) — replayed on commit.
+    pub input: serde_json::Value,
+}
+
+/// config `requiresApproval` declaration check — `true` gates every action, an array gates
+/// the listed action values. Anything else = no gate.
+pub fn requires_approval_value(decl: &serde_json::Value, action: &str) -> bool {
+    match decl {
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|s| s == action),
+        _ => false,
+    }
 }
 
 impl PendingActionArgs {
@@ -133,6 +156,7 @@ impl PendingActionArgs {
             PendingActionArgs::DeletePage(_) => "delete_page",
             PendingActionArgs::ScheduleTask(_) => "schedule_task",
             PendingActionArgs::CancelCronJob(_) => "cancel_cron_job",
+            PendingActionArgs::RunModule(_) => "run_module",
         }
     }
 

@@ -7,6 +7,7 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "requiresApproval": ["v1_국내주식-001", "v1_국내주식-002", "v1_국내주식-003", "v1_해외주식-001", "v1_국내선물-001", "v1_국내선물-002", "v1_해외선물-001"],
   "grounding": {
     "FID_INPUT_ISCD": {
       "pattern": "^Q?[0-9]{6}$",

@@ -1695,6 +1695,61 @@ impl AiManager {
                 } else {
                     None
                 };
+                // requiresApproval gate (#1-9b slice 1) — config-declared real-money/destructive
+                // actions. Interactive turn = approval card (pending). cron(automated) = hard block
+                // until the pre-approved envelope (예약 승인) ships. hub = denied (root's account).
+                let approval_gate: Option<serde_json::Value> = if let Some(reg) = &self.dynamic_tools {
+                    match reg.approval_for(&effective_call.name).await {
+                        Some((module_name, decl)) => {
+                            let act = effective_call
+                                .arguments
+                                .get("action")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if crate::utils::pending_tools::requires_approval_value(&decl, act) {
+                                if crate::utils::cron_context::is_cron_context_active() {
+                                    Some(serde_json::json!({
+                                        "success": false,
+                                        "error": "이 액션은 사용자 승인이 필요합니다(실주문 등). 자동(cron) 경로에서는 예약 승인(봉투) 기능 도입 전까지 실행할 수 없습니다 — 재시도하지 말고 결과에 차단 사실을 보고하세요.",
+                                        "approvalBlocked": "automation",
+                                    }))
+                                } else if effective_call
+                                    .arguments
+                                    .get("_hubScope")
+                                    .and_then(|v| v.as_str())
+                                    .is_some()
+                                {
+                                    Some(serde_json::json!({
+                                        "success": false,
+                                        "error": "실주문 등 승인 필요 액션은 hub 에서 사용할 수 없습니다.",
+                                        "approvalBlocked": "hub",
+                                    }))
+                                } else {
+                                    let pargs = crate::utils::pending_tools::PendingActionArgs::RunModule(
+                                        crate::utils::pending_tools::RunModuleArgs {
+                                            module: module_name.clone(),
+                                            input: effective_call.arguments.clone(),
+                                        },
+                                    );
+                                    let summary = format!("실행 승인: {} · {}", module_name, act);
+                                    let plan_id = create_pending_scoped(pargs, &summary, None);
+                                    Some(serde_json::json!({
+                                        "success": true,
+                                        "pending": true,
+                                        "planId": plan_id,
+                                        "summary": summary,
+                                        "note": "사용자 승인 카드가 표시됩니다 — 승인 전 실행되지 않으며, 같은 호출을 재시도하지 마세요.",
+                                    }))
+                                }
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
                 let action = if turn_call_set.contains(&cache_key) {
                     // Layer 2: 이번 turn 에 이미 같은 호출 → 즉시 reject
                     self.log.warn(&format!(
@@ -1732,6 +1787,17 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("unknown tool".to_string()),
+                    }
+                } else if let Some(gate) = approval_gate {
+                    // requiresApproval — pending card created (or blocked); never dispatch directly.
+                    let pending = gate.get("pending").and_then(|v| v.as_bool()).unwrap_or(false);
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: gate,
+                        success: pending,
+                        error: if pending { None } else { Some("approval blocked".to_string()) },
                     }
                 } else if let Some(hint) = grounding_reject {
                     // L1 grounding reject — do NOT dispatch. Return the resolve hint so the model looks
