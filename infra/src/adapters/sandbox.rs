@@ -290,6 +290,9 @@ pub struct ProcessSandboxAdapter {
     /// OAuthTokenProvider — config.json token secret 의 `oauth` 스펙으로 인프라가 토큰 발급·갱신.
     /// 미설정 시 토큰 자동발급 비활성 (sysmod 자체 관리 옛 동작).
     token_provider: Option<Arc<OAuthTokenProvider>>,
+    /// 시계열 영구 store (range-coverage) — SandboxExecuteOpts.timeseries 선언 호출만 적용.
+    /// 미설정 시 옛 동작 (30분 ephemeral 캐시만).
+    timeseries: Option<Arc<dyn firebat_core::ports::ITimeseriesStorePort>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
     /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
     /// 미설정 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 설정 (2026-05-06).
@@ -340,6 +343,7 @@ impl ProcessSandboxAdapter {
             status: None,
             cache: None,
             token_provider: None,
+            timeseries: None,
             #[cfg(target_os = "linux")]
             pre_exec_hook: None,
         }
@@ -350,6 +354,99 @@ impl ProcessSandboxAdapter {
     pub fn with_cache(mut self, cache: Arc<SysmodCacheAdapter>) -> Self {
         self.cache = Some(cache);
         self
+    }
+
+    /// 시계열 영구 store 주입 — 선언(config `timeseries`) 모듈의 range 조회를 미커버 갭만
+    /// fetch 로 좁히고, 전체 요청 range 는 store 에서 서빙 (증분 fetch + 영구 누적).
+    pub fn with_timeseries(
+        mut self,
+        store: Arc<dyn firebat_core::ports::ITimeseriesStorePort>,
+    ) -> Self {
+        self.timeseries = Some(store);
+        self
+    }
+
+    /// 시계열 serve 응답 합성 — records 배열 object (auto-cache 가 ≥30행이면 캐시+프리뷰 처리).
+    /// bare 배열이 아니라 object 인 이유: apply_auto_cache 는 non-object 를 그대로 통과시킴.
+    fn ts_serve_data(
+        spec: &firebat_core::ports::TsSpec,
+        rows: Vec<serde_json::Value>,
+        fully_covered: bool,
+    ) -> serde_json::Value {
+        let get_date = |r: &serde_json::Value| -> serde_json::Value {
+            let mut cur = r;
+            for seg in spec.date_field.split('.') {
+                match cur.get(seg) {
+                    Some(v) => cur = v,
+                    None => return serde_json::Value::Null,
+                }
+            }
+            cur.clone()
+        };
+        serde_json::json!({
+            "records": rows,
+            "recordCount": rows.len(),
+            "firstDate": rows.first().map(&get_date).unwrap_or(serde_json::Value::Null),
+            "lastDate": rows.last().map(&get_date).unwrap_or(serde_json::Value::Null),
+            "_tsStore": { "served": true, "fullyCovered": fully_covered },
+        })
+    }
+
+    /// 시계열 absorb + 전체 range 서빙 — run_once 의 envelope unwrap 직후 (rows 실물이 있고
+    /// `_cache`/auto-cache 처리 전) 호출. 응답 shape 이 선언과 다르면 원본 통과 (안전).
+    /// cov 범위 = 이번 fetch 의 실제 입력 range (갭 축소 반영), 미완결 최신은 clamp 로 제외.
+    fn ts_absorb_and_serve(
+        spec: &firebat_core::ports::TsSpec,
+        store: &dyn firebat_core::ports::ITimeseriesStorePort,
+        data: serde_json::Value,
+        fetch_input: &serde_json::Value,
+    ) -> serde_json::Value {
+        use firebat_core::utils::timeseries as ts;
+        let Some(rows) = ts::extract_rows(&data, &spec.rows_paths) else {
+            tracing::warn!(
+                target: "timeseries",
+                series = %spec.key,
+                "rows not found at declared paths — store skipped, original response passed"
+            );
+            return data;
+        };
+        let pairs: Vec<(i64, serde_json::Value)> = rows
+            .iter()
+            .filter_map(|r| ts::row_date_key(r, &spec.date_field).map(|k| (k, r.clone())))
+            .collect();
+        if pairs.len() != rows.len() {
+            tracing::warn!(
+                target: "timeseries",
+                series = %spec.key,
+                rows = rows.len(),
+                dated = pairs.len(),
+                "some rows missing a parseable date — store skipped, original response passed"
+            );
+            return data;
+        }
+        let fetch_start = fetch_input
+            .get(&spec.start_param)
+            .and_then(|v| v.as_str())
+            .and_then(ts::normalize_date)
+            .unwrap_or(spec.start);
+        let fetch_end = fetch_input
+            .get(&spec.end_param)
+            .and_then(|v| v.as_str())
+            .and_then(ts::normalize_date)
+            .unwrap_or(spec.end);
+        let (upserted, invalidated) =
+            store.merge_rows(&spec.key, &pairs, fetch_start, fetch_end.min(spec.cov_clamp));
+        let served = store.read_rows(&spec.key, spec.start, spec.end);
+        tracing::info!(
+            target: "timeseries",
+            series = %spec.key,
+            fetched = pairs.len(),
+            upserted,
+            invalidated,
+            served = served.len(),
+            "timeseries merged — full requested range served from the store"
+        );
+        Self::ts_serve_data(spec, served, false)
     }
 
     /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 큰 필드 1개를 SysmodCacheAdapter 로
@@ -1124,6 +1221,79 @@ impl ISandboxPort for ProcessSandboxAdapter {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.workspace_root.clone());
 
+        // ── 시계열 영구 store (range-coverage) — 선언 호출만 (opts.timeseries) ──
+        // (1) 전부 커버 = 모듈 spawn 0, store 에서 즉시 서빙.
+        // (2) 부분 커버 = 입력 range 를 미커버 갭 bounding 으로 좁혀 fetch (증분).
+        //     미완결 최신 구간(cov_clamp 이후)은 항상 fetch = 신선도 우선.
+        let mut ts_input_owned: Option<serde_json::Value> = None;
+        if let (Some(spec), Some(store)) = (&opts.timeseries, &self.timeseries) {
+            let mut uncov = store.uncovered(&spec.key, spec.start, spec.end.min(spec.cov_clamp));
+            if spec.end > spec.cov_clamp {
+                let live_start = spec.cov_clamp.max(spec.start);
+                match uncov.last_mut() {
+                    Some(last) if last.1 >= live_start => last.1 = spec.end,
+                    _ => uncov.push((live_start, spec.end)),
+                }
+            }
+            if uncov.is_empty() {
+                let rows = store.read_rows(&spec.key, spec.start, spec.end);
+                tracing::info!(
+                    target: "timeseries",
+                    series = %spec.key,
+                    rows = rows.len(),
+                    "fully covered — served from the permanent store (module spawn 0)"
+                );
+                let module_name = module_dir
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let action = input_data
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let data = Self::ts_serve_data(spec, rows, true);
+                let data = match &self.cache {
+                    Some(cache) => Self::apply_auto_cache(data, cache, &module_name, &action),
+                    None => data,
+                };
+                return Ok(ModuleOutput {
+                    protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                    success: true,
+                    data,
+                    error: None,
+                    error_key: None,
+                    error_params: None,
+                    stderr: None,
+                    exit_code: Some(0),
+                });
+            }
+            // 갭 bounding box 1회 fetch — 여러 갭 = min..max (중복 일부 허용, upsert 라 무해.
+            // 갭당 N회 호출보다 API 호출 수 최소화가 우선).
+            let (fs, fe) = (uncov[0].0, uncov[uncov.len() - 1].1);
+            if (fs > spec.start || fe < spec.end) && input_data.is_object() {
+                use firebat_core::utils::timeseries as ts_util;
+                let mut m = input_data.as_object().cloned().unwrap_or_default();
+                m.insert(
+                    spec.start_param.clone(),
+                    serde_json::Value::String(ts_util::format_param(fs, &spec.param_format)),
+                );
+                m.insert(
+                    spec.end_param.clone(),
+                    serde_json::Value::String(ts_util::format_param(fe, &spec.param_format)),
+                );
+                tracing::info!(
+                    target: "timeseries",
+                    series = %spec.key,
+                    fetch_start = fs,
+                    fetch_end = fe,
+                    "range narrowed to uncovered gaps (incremental fetch)"
+                );
+                ts_input_owned = Some(serde_json::Value::Object(m));
+            }
+        }
+        let input_data: &serde_json::Value = ts_input_owned.as_ref().unwrap_or(input_data);
+
         // OAuth 토큰 — proactive 선제 갱신 (호출 전). config token secret 의 oauth 스펙 기반.
         // 실패는 pass-through (유효 캐시가 있으면 그걸로 진행 — 블로킹 금지).
         let mock = input_data.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -1475,6 +1645,18 @@ impl ProcessSandboxAdapter {
             }
         } else {
             (true, parsed, None, None, None)
+        };
+
+        // ── 시계열 absorb + 서빙 — rows 실물이 있는 유일한 지점 (`_cache`/auto-cache 앞) ──
+        let data = if success {
+            match (&opts.timeseries, &self.timeseries) {
+                (Some(spec), Some(store)) => {
+                    Self::ts_absorb_and_serve(spec, store.as_ref(), data, input_data)
+                }
+                _ => data,
+            }
+        } else {
+            data
         };
 
         // `_cache` envelope 인식 — sysmod 가 큰 응답 (50행+) 시 data.{_cache: {records, sysmod, action,

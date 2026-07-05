@@ -7,6 +7,16 @@
   "runtime": "python",
   "capability": "stock-data",
   "providerType": "api",
+  "timeseries": {
+    "history": {
+      "idParams": {"symbol": "", "interval": "1d"},
+      "startParam": "start",
+      "endParam": "end",
+      "paramFormat": "YYYY-MM-DD",
+      "dateField": "date",
+      "rows": ["$", "_cache.records"]
+    }
+  },
   "packages": ["yfinance==1.5.1"],
   "secrets": [],
   "input": {

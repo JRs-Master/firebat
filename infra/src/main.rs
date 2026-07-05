@@ -394,13 +394,29 @@ async fn main() -> Result<()> {
     // OAuthTokenProvider — sandbox 와 WS transport 가 한 인스턴스를 공유 (per-secret 락이
     // 두 경로에 걸쳐 유효해야 토큰 엔드포인트 thundering herd 가 안 생긴다).
     let token_provider = Arc::new(OAuthTokenProvider::new(vault.clone()));
-    let sandbox: Arc<dyn ISandboxPort> = Arc::new(
-        ProcessSandboxAdapter::new(workspace_root.clone())
+    // 시계열 영구 store — range-coverage 캐시 (config `timeseries` 선언 모듈의 증분 fetch).
+    // 실패 시 None = 옛 동작 (부팅 블로킹 금지).
+    let timeseries_store: Option<Arc<dyn firebat_core::ports::ITimeseriesStorePort>> =
+        match firebat_infra::adapters::timeseries::TimeseriesStoreAdapter::new(
+            workspace_root.join("data/timeseries.db"),
+        ) {
+            Ok(a) => Some(Arc::new(a)),
+            Err(e) => {
+                tracing::warn!(error = %e, "timeseries store 초기화 실패 — ephemeral 캐시만 사용");
+                None
+            }
+        };
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new({
+        let mut adapter = ProcessSandboxAdapter::new(workspace_root.clone())
             .with_vault(vault.clone())
             .with_token_provider(token_provider.clone())
             .with_status(status_manager.clone())
-            .with_cache(cache_adapter.clone()),
-    );
+            .with_cache(cache_adapter.clone());
+        if let Some(store) = &timeseries_store {
+            adapter = adapter.with_timeseries(store.clone());
+        }
+        adapter
+    });
     // WS API transport — config.json `ws` 선언 액션(조건검색 등 WebSocket-only)의 공통 인프라.
     // 토큰·auto-cache 를 sandbox 경로와 공유 (선언형 config = 모듈별 WS 코드 0).
     let ws_api: Arc<dyn firebat_core::ports::IWsApiPort> = Arc::new(

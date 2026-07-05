@@ -207,9 +207,23 @@ impl ModuleManager {
             Some(r) => r,
             None => {
                 let target = format!("{}/{}", dir_path, entry);
-                self.sandbox
-                    .execute(&target, input_data, &SandboxExecuteOpts::default())
-                    .await?
+                // 시계열 영구 store 선언 (config `timeseries`) — 스펙은 core 가 데이터로 파싱,
+                // 갭 축소·병합·서빙은 sandbox choke-point (rows 실물이 있는 곳). 미선언·범위
+                // 비명시·limit 호출 = None (기존 30분 ephemeral 경로 그대로).
+                let mut exec_opts = SandboxExecuteOpts::default();
+                if let Some(ts_cfg) = config.as_ref().and_then(|c| c.get("timeseries")) {
+                    let action = input_data
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    exec_opts.timeseries = crate::utils::timeseries::parse_ts_spec(
+                        ts_cfg,
+                        module_name,
+                        action,
+                        input_data,
+                    );
+                }
+                self.sandbox.execute(&target, input_data, &exec_opts).await?
             }
         };
 

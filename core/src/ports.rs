@@ -740,6 +740,58 @@ pub struct SandboxExecuteOpts {
     /// timeout milliseconds. None = 기본값 (Phase B 진행 시 SANDBOX_TIMEOUT_MS 상수 활용).
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// Timeseries permanent store spec (range-coverage) — ModuleManager.run builds it from
+    /// the module config's declarative `timeseries` block (declared action + explicit range
+    /// in the input). None = 기존 경로 (store 미적용). Pure data — the sandbox choke-point
+    /// (rows in hand, before auto-cache) narrows the fetch to uncovered gaps, merges the new
+    /// rows, and serves the full requested range from the store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeseries: Option<TsSpec>,
+}
+
+/// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /
+/// WsApiCall pattern). Dates are normalized 14-digit i64 (yyyymmddHHMMSS, zero-padded).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TsSpec {
+    /// Canonical series key — `module:action:k=v|k=v` (id params normalized/sorted).
+    pub key: String,
+    /// Row date field (dot-path inside one row).
+    pub date_field: String,
+    /// Candidate row-array locations in the module's data — `"$"` = data itself is the
+    /// array, otherwise a dot-path (e.g. `"_cache.records"`). First match wins.
+    pub rows_paths: Vec<String>,
+    /// Input param names for the fetch range rewrite.
+    pub start_param: String,
+    pub end_param: String,
+    /// Rewrite format — "YYYY-MM-DD" | "YYYYMMDD".
+    pub param_format: String,
+    /// Requested range (normalized, end exclusive-ish).
+    pub start: i64,
+    pub end: i64,
+    /// Coverage clamp — completed-past boundary (now-24h, start of day). Rows at/after this
+    /// are stored but never marked covered → always re-fetched (an open daily candle keeps
+    /// changing; freshness beats cache).
+    pub cov_clamp: i64,
+}
+
+/// 시계열 영구 store (range-coverage) — 덮인 구간 집합 + rows upsert.
+/// 어댑터: infra/adapters/timeseries.rs (SQLite data/timeseries.db).
+pub trait ITimeseriesStorePort: Send + Sync {
+    /// [start, end) 중 커버 안 된 구간들 (시간순).
+    fn uncovered(&self, key: &str, start: i64, end: i64) -> Vec<(i64, i64)>;
+    /// [start, end) 구간 rows (date_key 오름차순, 원본 row JSON).
+    fn read_rows(&self, key: &str, start: i64, end: i64) -> Vec<serde_json::Value>;
+    /// rows upsert + coverage [cov_start, cov_end) 병합. 반환 = (upserted, invalidated).
+    /// 완결 과거(date < cov_end 등 covered 영역)의 기존 row 와 내용이 다르면 — 소급 조정
+    /// (액면분할/배당 수정) 신호 → 시계열 통째 무효화 후 이번 rows 로 재시작 (invalidated=true).
+    fn merge_rows(
+        &self,
+        key: &str,
+        rows: &[(i64, serde_json::Value)],
+        cov_start: i64,
+        cov_end: i64,
+    ) -> (usize, bool);
 }
 
 /// Sysmod 패키지 status — 설정 화면 [설치] / [업그레이드] 버튼 UI + 진행 상태 표시.
