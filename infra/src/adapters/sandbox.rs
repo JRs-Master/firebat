@@ -851,41 +851,21 @@ impl ProcessSandboxAdapter {
             return Err("새 버전 추출 실패 (dist-info 0)".to_string());
         };
 
-        // config.json 안 packages 배열 안 매칭 spec 정정.
+        // config.json 안 packages 배열 안 매칭 spec 정정 — **포맷 보존 in-place 문자열 치환**.
+        // parse→to_string_pretty 재직렬화는 serde_json Map 이 BTreeMap(preserve_order 미사용)이라
+        // 모든 키를 알파벳 정렬해 파일 전체를 재작성 → git-추적 config.json 이 업그레이드마다 drift 되어
+        // `git pull` 이 매번 충돌했다. 매칭 spec 의 quoted 문자열만 바꿔 diff 를 1줄로 유지한다
+        // (문자열 spec `"pkg==x"` + 객체 `{"name":"pkg==x"}` 둘 다 quoted needle 로 커버).
         let manifest_path = module_dir.join("config.json");
         let raw = std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("config.json 읽기: {e}"))?;
-        let mut parsed: serde_json::Value =
-            serde_json::from_str(&raw).map_err(|e| format!("config.json 파싱: {e}"))?;
-        let Some(packages) = parsed.get_mut("packages").and_then(|v| v.as_array_mut()) else {
-            return Err("packages 배열 0".to_string());
-        };
         let new_spec = format!("{}=={}", pkg_display, new_ver);
-        let mut updated = false;
-        for entry in packages.iter_mut() {
-            match entry {
-                serde_json::Value::String(s) if s == pkg_name => {
-                    *entry = serde_json::Value::String(new_spec.clone());
-                    updated = true;
-                }
-                serde_json::Value::Object(obj) => {
-                    if let Some(serde_json::Value::String(n)) = obj.get("name") {
-                        if n == pkg_name {
-                            obj.insert("name".to_string(), serde_json::Value::String(new_spec.clone()));
-                            updated = true;
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        if !updated {
+        let needle = format!("\"{pkg_name}\"");
+        if !raw.contains(&needle) {
             return Err(format!("packages 안 '{pkg_name}' 매칭 0"));
         }
-        // pretty + 2-space indent — 옛 config.json 영역 일관성 유지.
-        let serialized = serde_json::to_string_pretty(&parsed)
-            .map_err(|e| format!("config.json 직렬화: {e}"))?;
-        std::fs::write(&manifest_path, serialized)
+        let updated_raw = raw.replacen(&needle, &format!("\"{new_spec}\""), 1);
+        std::fs::write(&manifest_path, updated_raw)
             .map_err(|e| format!("config.json 쓰기: {e}"))?;
         tracing::info!(
             target: "sandbox",
