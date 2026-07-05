@@ -99,6 +99,28 @@ impl OpenAiChatHandler {
             .unwrap_or("")
             .to_string()
     }
+
+    /// Sanitized assistant message for multiturn echo — `{role, content, tool_calls}` only.
+    /// Returned as `raw_model_parts` so the NEXT round replays the model's own turn verbatim
+    /// (inter-round narration text + exact call grouping preserved). `reasoning` is stripped:
+    /// it is not part of the chat multiturn contract and must not be re-sent.
+    /// None when the turn had no tool_calls (final turn — the loop ends, no echo needed).
+    fn sanitized_assistant_message(body: &serde_json::Value) -> Option<serde_json::Value> {
+        let msg = body
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+            .and_then(|f| f.get("message"))?;
+        let tool_calls = msg
+            .get("tool_calls")
+            .filter(|v| v.as_array().map(|a| !a.is_empty()).unwrap_or(false))?
+            .clone();
+        Some(serde_json::json!({
+            "role": "assistant",
+            "content": msg.get("content").cloned().unwrap_or(serde_json::Value::Null),
+            "tool_calls": tool_calls,
+        }))
+    }
 }
 
 #[async_trait::async_trait]
@@ -183,37 +205,79 @@ impl FormatHandler for OpenAiChatHandler {
                 })
             })
             .collect();
-        // unused let warning 회피
-        let _ = &tool_defs;
 
-        // messages — system + user, then each prior tool call reconstructed as its own sequential
-        // assistant(tool_calls=[real args]) + tool(result, name) pair. This matches the canonical
-        // OpenAI/Solar multi-turn shape (append the real assistant reply, then a tool message per
-        // call with its name). The old code batched every prior call into one assistant message and
-        // sent `arguments:"{}"`, erasing what the model actually asked → the model lost its own
-        // context across rounds and floundered on multi-step flows.
+        // messages — system + user, then the prior tool rounds in canonical multi-turn shape.
+        //
+        // Preferred source = opts.tool_exchanges (per-ROUND entries, gemini mirror): each round
+        // replays as ONE assistant message (raw echo when captured — preserves the model's own
+        // inter-round narration text + exact call grouping) followed by its tool results. Without
+        // the echo the model loses what it said/decided between rounds and flounders (observed:
+        // Solar re-sending "improved" telegram messages because its own plan text was erased).
+        //
+        // Fallback = flat prior_results (callers that don't populate exchanges): one synthesized
+        // assistant(tool_calls=[real args]) + tool pair per call. Real args matter — the old code
+        // sent `arguments:"{}"`, erasing the model's own context across rounds.
         let mut messages = build_messages(opts, prompt).as_array().cloned().unwrap_or_default();
-        for r in prior_results {
-            let args_str = if r.arguments.is_null() {
-                "{}".to_string()
-            } else {
-                serde_json::to_string(&r.arguments).unwrap_or_else(|_| "{}".to_string())
-            };
-            messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": [{
-                    "id": r.call_id,
-                    "type": "function",
-                    "function": { "name": r.name, "arguments": args_str },
-                }],
-            }));
-            messages.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": r.call_id,
-                "name": r.name,
-                "content": serde_json::to_string(&r.result).unwrap_or_default(),
-            }));
+        if !opts.tool_exchanges.is_empty() {
+            for ex in &opts.tool_exchanges {
+                if let Some(raw) = &ex.raw_model_parts {
+                    // Raw echo — sanitized {role, content, tool_calls} captured from this handler's
+                    // own prior response (see sanitized_assistant_message).
+                    messages.push(raw.clone());
+                } else {
+                    let calls: Vec<serde_json::Value> = ex
+                        .tool_calls
+                        .iter()
+                        .map(|tc| {
+                            serde_json::json!({
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": serde_json::to_string(&tc.arguments)
+                                        .unwrap_or_else(|_| "{}".to_string()),
+                                },
+                            })
+                        })
+                        .collect();
+                    messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": calls,
+                    }));
+                }
+                for tr in &ex.tool_results {
+                    messages.push(serde_json::json!({
+                        "role": "tool",
+                        "tool_call_id": tr.call_id,
+                        "name": tr.name,
+                        "content": serde_json::to_string(&tr.result).unwrap_or_default(),
+                    }));
+                }
+            }
+        } else {
+            for r in prior_results {
+                let args_str = if r.arguments.is_null() {
+                    "{}".to_string()
+                } else {
+                    serde_json::to_string(&r.arguments).unwrap_or_else(|_| "{}".to_string())
+                };
+                messages.push(serde_json::json!({
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": r.call_id,
+                        "type": "function",
+                        "function": { "name": r.name, "arguments": args_str },
+                    }],
+                }));
+                messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": r.call_id,
+                    "name": r.name,
+                    "content": serde_json::to_string(&r.result).unwrap_or_default(),
+                }));
+            }
         }
 
         // NOTE: no `parallel_tool_calls` — Upstage's live API rejects it (400 "Unrecognized
@@ -225,6 +289,12 @@ impl FormatHandler for OpenAiChatHandler {
             "messages": messages,
             "tools": tool_defs,
         });
+        // Dynamic temperature from the tool loop (tool turn 0.2 / final turn 0.85) — ask_text
+        // already sent it; this path dropped it, so Solar ran tool-selection turns at the
+        // provider's default temp (a likely axis of its nondeterministic tool adherence).
+        if let Some(t) = opts.temperature {
+            body["temperature"] = serde_json::Value::from(t);
+        }
         // Default 8192 — 모든 API 어댑터 일관 default (gemini/vertex mirror). Without this the
         // provider's server default governs (Upstage's is small) and long outputs get cut mid-JSON.
         body["max_tokens"] =
@@ -264,6 +334,9 @@ impl FormatHandler for OpenAiChatHandler {
             tokens_out: Some(tokens_out),
             cached_tokens: Some(cached_tokens),
             thinking_text: if reasoning.is_empty() { None } else { Some(reasoning) },
+            // Echoed back next round via opts.tool_exchanges[].raw_model_parts (gemini mirror) —
+            // preserves this turn's narration text + call grouping in the multiturn replay.
+            raw_model_parts: Self::sanitized_assistant_message(&body_json),
             ..Default::default()
         })
     }

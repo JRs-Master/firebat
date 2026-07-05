@@ -1,7 +1,9 @@
 //! OpenAI Responses API — GPT-5.x 시리즈 (옛 TS openai-responses.ts).
 //!
-//! Phase B-17 minimum: 표준 input/output. reasoning / hosted MCP / tool_search /
-//! previous_response_id (24h cache) 같은 features 는 후속.
+//! Phase B-17 minimum + FC multiturn (2026-07-06): previous_response_id chain (response `id`
+//! parsed → ai.rs echoes it next round; input = latest round's function_call_output only) with
+//! a full-replay fallback (function_call + output pairs). hosted MCP / tool_search 는 후속.
+//! ⚠️ FC path unverified live (no OpenAI key registered) — spec-per-docs implementation.
 
 use crate::llm::adapter::FormatHandler;
 use firebat_core::llm::config::LlmModelConfig;
@@ -231,17 +233,53 @@ impl FormatHandler for OpenAiResponsesHandler {
             })
             .collect();
 
-        // input — 사용자 prompt + (직전 tool 결과는 input 에 함께 inject)
-        // Responses API 의 input 은 string 또는 message array. 단순화 — 첫 호출은 string.
-        // prior_results 있으면 array 로 변환:
+        // input — Responses API multiturn (string / item array).
+        //
+        // Canonical FC loop = previous_response_id chain: the server already holds the prompt +
+        // the model's function_call items from the previous response, so the new input is ONLY
+        // the outputs of the LATEST round (opts.tool_exchanges.last(); flat prior_results would
+        // re-send earlier rounds the chain already contains).
+        //
+        // Fallback (no previous_response_id captured) = full replay: prompt + every
+        // (function_call + function_call_output) pair with REAL args. An orphan
+        // function_call_output without its matching function_call is rejected by the API —
+        // the old code sent exactly that shape and would 400 on any multiturn.
+        let prev_id = opts
+            .previous_response_id
+            .as_deref()
+            .filter(|s| !s.is_empty());
         let input: serde_json::Value = if prior_results.is_empty() {
             serde_json::json!(prompt)
+        } else if prev_id.is_some() {
+            let latest: &[ToolResult] = opts
+                .tool_exchanges
+                .last()
+                .map(|ex| ex.tool_results.as_slice())
+                .unwrap_or(prior_results);
+            let arr: Vec<serde_json::Value> = latest
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "type": "function_call_output",
+                        "call_id": r.call_id,
+                        "output": serde_json::to_string(&r.result).unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::Value::Array(arr)
         } else {
             let mut arr: Vec<serde_json::Value> = vec![serde_json::json!({
                 "role": "user",
                 "content": [{"type": "input_text", "text": prompt}]
             })];
             for r in prior_results {
+                arr.push(serde_json::json!({
+                    "type": "function_call",
+                    "call_id": r.call_id,
+                    "name": r.name,
+                    "arguments": serde_json::to_string(&r.arguments)
+                        .unwrap_or_else(|_| "{}".to_string()),
+                }));
                 arr.push(serde_json::json!({
                     "type": "function_call_output",
                     "call_id": r.call_id,
@@ -256,6 +294,9 @@ impl FormatHandler for OpenAiResponsesHandler {
             "input": input,
             "tools": tool_defs,
         });
+        if let Some(prev) = prev_id {
+            body["previous_response_id"] = serde_json::Value::from(prev);
+        }
         if let Some(sp) = opts.system_prompt.as_deref() {
             if !sp.is_empty() {
                 body["instructions"] = serde_json::Value::String(sp.to_string());
@@ -297,6 +338,12 @@ impl FormatHandler for OpenAiResponsesHandler {
             tokens_out: Some(tokens_out),
             cached_tokens: Some(cached_tokens),
             thinking_text,
+            // ai.rs feeds this back as previous_response_id next round (server-side history
+            // chain — the input then carries only the new function_call_output items).
+            response_id: body_json
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             ..Default::default()
         })
     }

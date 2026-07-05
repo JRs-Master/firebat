@@ -304,16 +304,23 @@ impl FormatHandler for AnthropicMessagesHandler {
             "content": [{"type": "text", "text": prompt}]
         })];
         if !prior_results.is_empty() {
-            // 옛 TS 패턴: 직전 assistant tool_use 응답 reconstruction. 우리는 prior_results 만 받으니
-            // tool_use 메타는 임시 합성 (call_id 만 보존). Anthropic API 는 reconstruction 한 ID 매칭.
+            // Assistant tool_use reconstruction — call_id + REAL input (ToolResult.arguments,
+            // populated by the dispatcher). Sending input:{} erased what the model actually
+            // asked for and broke its cross-round context (same latent class as the old
+            // openai-chat arguments:"{}" bug fixed in da722c4b).
             let assistant_calls: Vec<serde_json::Value> = prior_results
                 .iter()
                 .map(|r| {
+                    let input = if r.arguments.is_null() {
+                        serde_json::json!({})
+                    } else {
+                        r.arguments.clone()
+                    };
                     serde_json::json!({
                         "type": "tool_use",
                         "id": r.call_id,
                         "name": r.name,
-                        "input": serde_json::json!({}) // 원본 input 모름 — empty 로
+                        "input": input,
                     })
                 })
                 .collect();
