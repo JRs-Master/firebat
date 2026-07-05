@@ -1155,35 +1155,54 @@ fn signal_align(
             .collect();
         let totsyl: f64 = gsyl.iter().sum::<f64>().max(1.0);
         // 그룹 경계(음절 누적 기대위치) → 가장 긴 깊은 쉼에 snap(±0.6s·단조). 없으면 추정위치(쉼 없음).
+        // 그룹 경계 기대시각(음절 누적 비례) 사전 계산 — 최근접 배정의 기준.
+        let n_bnd = groups.len().saturating_sub(1);
+        let mut exps: Vec<f64> = Vec::with_capacity(n_bnd);
+        {
+            let mut cum = 0.0;
+            for gi in 0..n_bnd {
+                cum += gsyl[gi];
+                exps.push(s0 + cum / totsyl * span);
+            }
+        }
+        // 최근접 1:1 배정 — 각 경계는 자기 기대시각에 가장 가까운 깊은 쉼을 취하되, **그 쉼이 다른
+        // 경계에 더 가까우면(=이웃 것) 취하지 않고 비례추정으로 둔다.** 옛 greedy-forward + 가장-긴-쉼
+        // 은 짧은 인접 그룹("Sure, | Tom. | I heard") 에서 앞 경계가 뒤 경계의 쉼을 채가 → 앞 그룹이
+        // 뒷 그룹 오디오까지 뻗고 가운데 그룹 붕괴 → fill 밀림(현재 단어는 비고 앞뒤가 채워짐)이 발생.
         let mut seg_starts: Vec<f64> = vec![s0];
         let mut seg_ends: Vec<f64> = Vec::new();
-        let mut lo = 0usize;
-        let mut cum = 0.0;
         let mut prev_end = s0;
-        for gi in 0..groups.len().saturating_sub(1) {
-            cum += gsyl[gi];
-            let exp = s0 + cum / totsyl * span;
+        let mut used = vec![false; deep.len()];
+        for gi in 0..n_bnd {
+            let exp = exps[gi];
+            // prev_end 이후 미사용 깊은 쉼 중 exp 에 가장 가까운 것(±0.6s).
             let mut best: Option<usize> = None;
-            let mut blen = 0.0;
-            for ci in lo..deep.len() {
-                let gst = deep[ci].0;
-                if gst < prev_end {
+            let mut bd = 0.6;
+            for ci in 0..deep.len() {
+                if used[ci] || deep[ci].0 < prev_end {
                     continue;
                 }
-                let dur = deep[ci].1 - deep[ci].0;
-                if (gst - exp).abs() < 0.6 && dur > blen {
-                    blen = dur;
+                let d = (deep[ci].0 - exp).abs();
+                if d < bd {
+                    bd = d;
                     best = Some(ci);
                 }
             }
+            // 이 쉼의 최근접 경계가 gi 일 때만 취득(이웃 경계 것 훔침 방지).
+            let claim = best.is_some_and(|ci| {
+                let g = deep[ci].0;
+                exps.iter().enumerate().all(|(gj, &e)| {
+                    gj == gi || (e - g).abs() >= (exps[gi] - g).abs()
+                })
+            });
             match best {
-                Some(ci) => {
+                Some(ci) if claim => {
+                    used[ci] = true;
                     seg_ends.push(deep[ci].0);
                     seg_starts.push(deep[ci].1);
                     prev_end = deep[ci].1;
-                    lo = ci + 1;
                 }
-                None => {
+                _ => {
                     seg_ends.push(exp);
                     seg_starts.push(exp);
                     prev_end = exp;
