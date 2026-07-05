@@ -313,7 +313,12 @@
         ]
       },
       "execMode": "api",
-      "category": "api-google"
+      "category": "api-google",
+      "pricing": {
+        "input": 2.0,
+        "output": 12.0,
+        "cachedInput": 0.2
+      }
     },
     {
       "id": "gemini-3.5-flash",
@@ -362,7 +367,12 @@
         ]
       },
       "execMode": "api",
-      "category": "api-google"
+      "category": "api-google",
+      "pricing": {
+        "input": 1.5,
+        "output": 9.0,
+        "cachedInput": 0.15
+      }
     },
     {
       "id": "gemini-3.1-flash-lite",
@@ -377,7 +387,12 @@
         "imageInput": true
       },
       "execMode": "api",
-      "category": "api-google"
+      "category": "api-google",
+      "pricing": {
+        "input": 0.25,
+        "output": 1.5,
+        "cachedInput": 0.025
+      }
     },
     {
       "id": "vertex-gemini-3.1-pro",
