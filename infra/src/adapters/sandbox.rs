@@ -700,7 +700,6 @@ impl ProcessSandboxAdapter {
         pip: &str,
         python_modules: &Path,
         upgrade: bool,
-        module_dir: &Path,
     ) -> Option<String> {
         let Some(status) = self.status.clone() else {
             return None;
@@ -745,10 +744,6 @@ impl ProcessSandboxAdapter {
         let status_bg = status.clone();
         let display_for_bg = display_name.clone();
         let job_id_bg = job_id.clone();
-        let python_modules_bg = python_modules.to_path_buf();
-        let module_dir_bg = module_dir.to_path_buf();
-        let pkg_name_bg = pkg.name.clone();
-        let upgrade_bg = upgrade;
         tokio::spawn(async move {
             let install_status = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
                 .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
@@ -800,24 +795,12 @@ impl ProcessSandboxAdapter {
                     return;
                 }
             }
-            // upgrade=true 인 경우 install 끝난 후 config.json 자동 갱신 — 새 디스크 버전
-            // 추출 + `packages` 배열에서 매칭되는 spec 의 명시 버전 정정. 다음 install 시점에 옛 버전이
-            // 다시 들어가지 않도록.
-            if upgrade_bg {
-                if let Err(e) = Self::update_manifest_version(
-                    &module_dir_bg,
-                    &python_modules_bg,
-                    &pkg_name_bg,
-                    &display_for_bg,
-                ) {
-                    tracing::warn!(
-                        target: "sandbox",
-                        package = %display_for_bg,
-                        error = %e,
-                        "[install] config.json 자동 갱신 실패 — install 자체는 성공"
-                    );
-                }
-            }
+            // upgrade 후 config.json 은 건드리지 않는다 — 예전엔 새 버전을 packages 핀에 써넣었지만,
+            // 그게 git-추적 config.json 을 매 업그레이드마다 drift 시켜 `git pull` 을 막았다. 다운그레이드
+            // 방지는 config 갱신이 아니라 install skip 로직(`!upgrade && is_package_installed`, present 기반)이
+            // 이미 처리한다 — 설치된 새 버전은 reload 시 skip 되어 유지된다. 업그레이드 배지도 config 핀이
+            // 아니라 *설치 버전* vs PyPI 최신으로 비교하므로 자동 해제된다. config.json = 선언 버전
+            // (repo source of truth); 영구 반영은 그 핀을 커밋. python_modules 통째 리셋 시엔 선언 버전 재설치.
             let done_msg = firebat_core::i18n::t(
                 "core.install.completed",
                 None,
@@ -830,50 +813,6 @@ impl ProcessSandboxAdapter {
         });
 
         Some(job_id)
-    }
-
-    /// config.json `packages` 배열 안 매칭 spec 의 `==` 명시 버전 갱신.
-    /// upgrade 완료 후 디스크의 새 버전 추출 + manifest 정정 → 다음 install 시점에 새 버전 그대로.
-    /// pkg_name = config.json 원본 spec (`requests==2.32.3`) / display = 추출된 패키지명 (`requests`).
-    fn update_manifest_version(
-        module_dir: &Path,
-        python_modules: &Path,
-        pkg_name: &str,
-        pkg_display: &str,
-    ) -> Result<(), String> {
-        // 디스크 안 새 버전 추출 (dist-info scan).
-        let probe = PackageSpec {
-            name: pkg_display.to_string(),
-            post_install: None,
-        };
-        let (_, new_version) = Self::installed_info(python_modules, &probe);
-        let Some(new_ver) = new_version else {
-            return Err("새 버전 추출 실패 (dist-info 0)".to_string());
-        };
-
-        // config.json 안 packages 배열 안 매칭 spec 정정 — **포맷 보존 in-place 문자열 치환**.
-        // parse→to_string_pretty 재직렬화는 serde_json Map 이 BTreeMap(preserve_order 미사용)이라
-        // 모든 키를 알파벳 정렬해 파일 전체를 재작성 → git-추적 config.json 이 업그레이드마다 drift 되어
-        // `git pull` 이 매번 충돌했다. 매칭 spec 의 quoted 문자열만 바꿔 diff 를 1줄로 유지한다
-        // (문자열 spec `"pkg==x"` + 객체 `{"name":"pkg==x"}` 둘 다 quoted needle 로 커버).
-        let manifest_path = module_dir.join("config.json");
-        let raw = std::fs::read_to_string(&manifest_path)
-            .map_err(|e| format!("config.json 읽기: {e}"))?;
-        let new_spec = format!("{}=={}", pkg_display, new_ver);
-        let needle = format!("\"{pkg_name}\"");
-        if !raw.contains(&needle) {
-            return Err(format!("packages 안 '{pkg_name}' 매칭 0"));
-        }
-        let updated_raw = raw.replacen(&needle, &format!("\"{new_spec}\""), 1);
-        std::fs::write(&manifest_path, updated_raw)
-            .map_err(|e| format!("config.json 쓰기: {e}"))?;
-        tracing::info!(
-            target: "sandbox",
-            package = %pkg_display,
-            new_version = %new_ver,
-            "[install] config.json 안 명시 버전 자동 갱신"
-        );
-        Ok(())
     }
 
     /// config.json `packages` 배열 파싱 — 매 호출자가 공유. 잘못된 형태 / 누락 시 빈 Vec.
@@ -919,7 +858,7 @@ impl ProcessSandboxAdapter {
                 continue;
             }
             if let Some(job_id) = self
-                .install_python_package(pkg, &pip, &python_modules, upgrade, module_dir)
+                .install_python_package(pkg, &pip, &python_modules, upgrade)
                 .await
             {
                 job_ids.push(job_id);
@@ -1062,11 +1001,12 @@ impl ProcessSandboxAdapter {
             } else {
                 None
             };
-            // upgrade_available = PyPI latest > config 명시 버전. specifier `==` 외 형태인 경우
-            // (required_version = None) = 비교 불가 → false (보수적).
+            // upgrade_available = PyPI latest > **설치 버전**. config 핀이 아니라 실제 설치 버전과 비교하므로
+            // in-app 업그레이드 후(설치 버전 = 최신) 배지가 자동 해제된다 — 예전처럼 config.json 에 새 버전을
+            // 써넣을 필요가 없다(그 write 가 git drift 의 원인이었다). 설치 버전 추출 실패(None) = 비교 불가 → false.
             let upgrade_available = matches!(
-                (&latest_version, &required_version),
-                (Some(l), Some(r)) if is_version_newer(l, r)
+                (&latest_version, &installed_version),
+                (Some(l), Some(i)) if is_version_newer(l, i)
             );
             result.push(PackageStatus {
                 name: display,
