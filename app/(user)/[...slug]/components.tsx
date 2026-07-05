@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, useId } from 'react';
+import { useLiveTopic, useInViewport, canLiveHere } from '../../../lib/hooks/use-live-topic';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -61,7 +62,106 @@ const TYPE_ALIAS: Record<string, string> = {
   passage: 'Passage', reading: 'Passage', reading_comprehension: 'Passage',
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
   listening: 'Listening', lc: 'Listening',
+  live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
 };
+
+// ── Live components (WS 2b) — realtime watch events in chat. Lifetime rule: live only while
+// visible in the viewport (IntersectionObserver), frozen at the last value with a timestamp
+// when hidden; the persisted message stays the creation-time snapshot (live data = client
+// state only). The events SSE is admin-authed — other surfaces render the frozen shell.
+function LiveBadge({ live, lastMs }: { live: boolean; lastMs: number | null }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] ${live ? 'text-emerald-600' : 'text-slate-400'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+      {live ? 'LIVE' : lastMs ? `${new Date(lastMs).toLocaleTimeString('ko-KR')} 기준` : '대기'}
+    </span>
+  );
+}
+
+function LiveFeedComp({ topic, title, maxItems }: { topic: string; title?: string; maxItems?: number }) {
+  const [ref, visible] = useInViewport<HTMLDivElement>();
+  const [items, setItems] = useState<Array<{ t: number; body: string }>>([]);
+  const [lastMs, setLastMs] = useState<number | null>(null);
+  const cap = Math.min(Math.max(Number(maxItems) || 30, 5), 200);
+  useLiveTopic(topic, visible, (data) => {
+    const body = typeof data === 'string' ? data : JSON.stringify(data);
+    setItems(prev => [{ t: Date.now(), body: body.slice(0, 500) }, ...prev].slice(0, cap));
+    setLastMs(Date.now());
+  });
+  const live = visible && canLiveHere();
+  return (
+    <div ref={ref} className="my-3 border border-slate-200 rounded-lg overflow-hidden bg-white">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200">
+        <span className="text-[12px] font-bold text-slate-700">{title || '실시간 피드'}</span>
+        <LiveBadge live={live} lastMs={lastMs} />
+      </div>
+      <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+        {items.length === 0 ? (
+          <p className="px-3 py-3 text-[11px] text-slate-400">
+            {canLiveHere() ? '이벤트 대기 중입니다 — 감시가 활성인 동안 실시간으로 수신됩니다.' : '라이브 표시는 admin 채팅에서만 지원됩니다.'}
+          </p>
+        ) : items.map((it, i) => (
+          <div key={`${it.t}-${i}`} className="px-3 py-1.5">
+            <span className="text-[9px] text-slate-400 tabular-nums mr-2">{new Date(it.t).toLocaleTimeString('ko-KR')}</span>
+            <span className="text-[11px] text-slate-700 break-all">{it.body}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LiveChartComp({ topic, title, valueField, maxPoints }: { topic: string; title?: string; valueField?: string; maxPoints?: number }) {
+  const [ref, visible] = useInViewport<HTMLDivElement>();
+  const [points, setPoints] = useState<number[]>([]);
+  const [lastMs, setLastMs] = useState<number | null>(null);
+  const cap = Math.min(Math.max(Number(maxPoints) || 120, 20), 600);
+  useLiveTopic(topic, visible, (data) => {
+    // valueField = dot-path into the event frame (provider frames vary — raw pass-through era).
+    let v: unknown = data;
+    for (const seg of String(valueField || 'value').split('.')) {
+      if (v == null || typeof v !== 'object') break;
+      v = (v as Record<string, unknown>)[seg];
+    }
+    const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[+,]/g, ''));
+    if (!Number.isFinite(n)) return;
+    setPoints(prev => [...prev, n].slice(-cap));
+    setLastMs(Date.now());
+  });
+  const live = visible && canLiveHere();
+  const w = 560, h = 140, pad = 6;
+  let path = '';
+  if (points.length >= 2) {
+    const min = Math.min(...points), max = Math.max(...points);
+    const span = max - min || 1;
+    path = points.map((v, i) => {
+      const x = pad + (i / (points.length - 1)) * (w - pad * 2);
+      const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  }
+  const last = points.length > 0 ? points[points.length - 1] : null;
+  return (
+    <div ref={ref} className="my-3 border border-slate-200 rounded-lg overflow-hidden bg-white">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200">
+        <span className="text-[12px] font-bold text-slate-700">{title || '실시간 차트'}</span>
+        <span className="flex items-center gap-2">
+          {last != null && <span className="text-[12px] font-bold text-blue-700 tabular-nums">{last.toLocaleString('ko-KR')}</span>}
+          <LiveBadge live={live} lastMs={lastMs} />
+        </span>
+      </div>
+      {points.length < 2 ? (
+        <p className="px-3 py-4 text-[11px] text-slate-400">
+          {canLiveHere() ? '틱 대기 중입니다 — 수신되는 값으로 라인이 그려집니다.' : '라이브 표시는 admin 채팅에서만 지원됩니다.'}
+        </p>
+      ) : (
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full block" preserveAspectRatio="none" style={{ height: 140 }}>
+          <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.5" />
+        </svg>
+      )}
+    </div>
+  );
+}
 
 function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?: boolean }) {
   const { type: rawType, props = {} } = comp;
@@ -76,6 +176,8 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? p.label ?? p.title ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
+    case 'LiveFeed':      return <LiveFeedComp topic={p.topic ?? ''} title={p.title} maxItems={p.maxItems} />;
+    case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;

@@ -688,7 +688,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "stream_watch_start".to_string(),
-            description: "Start a persistent realtime watch declared in a module's config ws.streams. Events flow to the event bus (topic in the result) and, with notify:'telegram', as Telegram messages. Idempotent: the same module+stream+args returns the existing watch. Survives server restarts until stream_watch_stop.".to_string(),
+            description: "Start a persistent realtime watch declared in a module's config ws.streams. Events flow to the event bus (topic in the result) and, with notify:'telegram', as Telegram messages. To SHOW events live in chat, render a live_feed (events) or live_chart (numeric tick, valueField dot-path) component with the returned topic. Idempotent: the same module+stream+args returns the existing watch. Survives server restarts until stream_watch_stop.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

@@ -10,8 +10,22 @@
         "data"
       ],
       "additionalProperties": false,
-      "synonyms": { "candles": "data", "ohlcv": "data" },
-      "columnar": { "target": "data", "map": { "dates": "date", "date": "date", "open": "open", "high": "high", "low": "low", "close": "close", "volume": "volume" } },
+      "synonyms": {
+        "candles": "data",
+        "ohlcv": "data"
+      },
+      "columnar": {
+        "target": "data",
+        "map": {
+          "dates": "date",
+          "date": "date",
+          "open": "open",
+          "high": "high",
+          "low": "low",
+          "close": "close",
+          "volume": "volume"
+        }
+      },
       "properties": {
         "symbol": {
           "type": "string",
@@ -344,7 +358,19 @@
             "string",
             "null"
           ],
-          "enum": ["info", "success", "warning", "warn", "error", "danger", "tip", "accent", "highlight", "neutral", null],
+          "enum": [
+            "info",
+            "success",
+            "warning",
+            "warn",
+            "error",
+            "danger",
+            "tip",
+            "accent",
+            "highlight",
+            "neutral",
+            null
+          ],
           "description": "Callout type. info (blue, default) / success (green) / warning (orange) / error (red) / tip (purple·💡) / accent (orange·🔥) / highlight (yellow·⭐) / neutral (gray·📎)"
         },
         "title": {
@@ -361,8 +387,12 @@
           ],
           "description": "CTA button — when { label, href } is set, shows a button below the body",
           "properties": {
-            "label": { "type": "string" },
-            "href": { "type": "string" }
+            "label": {
+              "type": "string"
+            },
+            "href": {
+              "type": "string"
+            }
           }
         }
       }
@@ -799,7 +829,9 @@
     "semanticText": "타임라인 연대기 이벤트 이력 히스토리 history timeline 일정 단계 progress steps",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "events": "items" },
+      "synonyms": {
+        "events": "items"
+      },
       "required": [
         "items"
       ],
@@ -940,21 +972,119 @@
     "semanticText": "문제 객관식 시험 퀴즈 quiz 보기 선택지 정답 해설 수능 공무원 기출 사법고시 ①②③④⑤ ㄱㄴㄷ 합답형 시험지 해설지 exam",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "options": "choices", "format": "type", "quizType": "type" },
-      "required": ["question"],
+      "synonyms": {
+        "options": "choices",
+        "format": "type",
+        "quizType": "type"
+      },
+      "required": [
+        "question"
+      ],
       "properties": {
-        "number": { "type": ["number", "string", "null"], "description": "question number" },
-        "points": { "type": ["number", "string", "null"], "description": "points" },
-        "question": { "type": "string", "description": "question text (markdown + LaTeX $...$)" },
-        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "0–N body boxes (grayscale exam style, markdown+LaTeX). Includes the 2-box case." },
-        "statements": { "type": ["array", "null"], "items": { "type": "string" }, "description": "ㄱㄴㄷ combined-answer statements (auto ㄱ/ㄴ/ㄷ/ㄹ labels). choices reference them as 'ㄱ,ㄴ' etc." },
-        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "visual stimuli like figures/tables/graphs — an array of other components (image/table/chart, etc.)" },
-        "choices": { "type": ["array", "null"], "items": { "type": "string" }, "description": "2–8 choices for MC (markdown+LaTeX). Auto-numbered ①②③, so no numbers in the text. Omit for ox/tfng (O/X·True/False/Not Given auto-rendered)." },
-        "answer": { "type": ["number", "string", "null"], "description": "MC: 0-based index of the correct choice. OX/TFNG: the correct label — 'O'/'X' (일치/불일치) or 'True'/'False'/'Not Given'." },
-        "answerIndex": { "type": ["number", "null"], "description": "0-based index of the correct choice (same as answer — MC only)." },
-        "type": { "type": ["string", "null"], "description": "format: omit/'mc' = multiple choice (use choices). 'ox' = O/X true-false (일치/불일치 — answer 'O'|'X', choices 불필요). 'tfng' = True/False/Not Given (TOEFL/IELTS — answer 'True'|'False'|'Not Given')." },
-        "explanation": { "type": ["string", "null"], "description": "explanation (markdown + LaTeX)" },
-        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
+        "number": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ],
+          "description": "question number"
+        },
+        "points": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ],
+          "description": "points"
+        },
+        "question": {
+          "type": "string",
+          "description": "question text (markdown + LaTeX $...$)"
+        },
+        "boxes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "0–N body boxes (grayscale exam style, markdown+LaTeX). Includes the 2-box case."
+        },
+        "statements": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "ㄱㄴㄷ combined-answer statements (auto ㄱ/ㄴ/ㄷ/ㄹ labels). choices reference them as 'ㄱ,ㄴ' etc."
+        },
+        "figures": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "visual stimuli like figures/tables/graphs — an array of other components (image/table/chart, etc.)"
+        },
+        "choices": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "2–8 choices for MC (markdown+LaTeX). Auto-numbered ①②③, so no numbers in the text. Omit for ox/tfng (O/X·True/False/Not Given auto-rendered)."
+        },
+        "answer": {
+          "type": [
+            "number",
+            "string",
+            "null"
+          ],
+          "description": "MC: 0-based index of the correct choice. OX/TFNG: the correct label — 'O'/'X' (일치/불일치) or 'True'/'False'/'Not Given'."
+        },
+        "answerIndex": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "0-based index of the correct choice (same as answer — MC only)."
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "format: omit/'mc' = multiple choice (use choices). 'ox' = O/X true-false (일치/불일치 — answer 'O'|'X', choices 불필요). 'tfng' = True/False/Not Given (TOEFL/IELTS — answer 'True'|'False'|'Not Given')."
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "explanation (markdown + LaTeX)"
+        },
+        "view": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "exam / answers / full / interactive (default interactive)"
+        }
       }
     }
   },
@@ -965,15 +1095,140 @@
     "semanticText": "지문 장문독해 세트 여러 문제 quiz group 수능 42 43 44 45 공통 지문 본문 한번에 채점 묶음",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "quizzes": "questions", "items": "questions" },
-      "required": ["questions"],
+      "synonyms": {
+        "quizzes": "questions",
+        "items": "questions"
+      },
+      "required": [
+        "questions"
+      ],
       "properties": {
-        "passage": { "type": ["string", "null"], "description": "shared passage/text (markdown + LaTeX)" },
-        "boxes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "shared body boxes (neutral/grayscale)" },
-        "figures": { "type": ["array", "null"], "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object" } } }, "description": "shared figures/tables/graphs" },
-        "questions": { "type": "array", "items": { "type": "object", "synonyms": { "options": "choices" }, "required": ["question"], "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "choices": { "type": ["array", "null"], "items": { "type": "string" } }, "answer": { "type": ["number", "string", "null"] }, "answerIndex": { "type": ["number", "null"] }, "type": { "type": ["string", "null"] }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "array of items (each {question, choices(=options) for MC OR type:'ox'/'tfng', answer (0-based index for MC / 'O'·'X'·'True'·'False'·'Not Given' for ox·tfng), explanation?, statements?, figures?})" },
-        "type": { "type": ["string", "null"], "description": "group-level format default applied to all questions — 'ox' or 'tfng' (per-question type overrides). e.g. a whole TFNG reading set." },
-        "view": { "type": ["string", "null"], "description": "exam / answers / full / interactive (default interactive)" }
+        "passage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "shared passage/text (markdown + LaTeX)"
+        },
+        "boxes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "shared body boxes (neutral/grayscale)"
+        },
+        "figures": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "shared figures/tables/graphs"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "options": "choices"
+            },
+            "required": [
+              "question"
+            ],
+            "properties": {
+              "number": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "question": {
+                "type": "string"
+              },
+              "statements": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "choices": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "answer": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "answerIndex": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "explanation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "figures": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "description": "array of items (each {question, choices(=options) for MC OR type:'ox'/'tfng', answer (0-based index for MC / 'O'·'X'·'True'·'False'·'Not Given' for ox·tfng), explanation?, statements?, figures?})"
+        },
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "group-level format default applied to all questions — 'ox' or 'tfng' (per-question type overrides). e.g. a whole TFNG reading set."
+        },
+        "view": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "exam / answers / full / interactive (default interactive)"
+        }
       }
     }
   },
@@ -984,15 +1239,170 @@
     "semanticText": "영어 구문독해 천일문 문장분석 직독직해 끊어읽기 문장구조 성분 S V O C M 주어 동사 목적어 보어 수식어 5형식 문장형식 준동사 to부정사 동명사 분사 관계사 문법 해설 영어 단어 암기 어휘 vocabulary grammar sentence syntax reading",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "chunks": "tokens", "grammar": "notes", "words": "vocab", "structure": "groups", "phrases": "groups", "original": "sentence", "text": "sentence", "english": "sentence", "eng": "sentence", "points": "notes", "note": "notes", "grammarPoints": "notes", "analysis": "notes" },
+      "synonyms": {
+        "chunks": "tokens",
+        "grammar": "notes",
+        "words": "vocab",
+        "structure": "groups",
+        "phrases": "groups",
+        "original": "sentence",
+        "text": "sentence",
+        "english": "sentence",
+        "eng": "sentence",
+        "points": "notes",
+        "note": "notes",
+        "grammarPoints": "notes",
+        "analysis": "notes"
+      },
       "properties": {
-        "sentence": { "type": ["string", "null"], "description": "the full English sentence (fallback shown when tokens absent)" },
-        "tokens": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "meaning": "gloss", "ko": "gloss", "trans": "gloss", "translation": "gloss", "kor": "gloss", "word": "text", "en": "text" }, "properties": { "text": { "type": "string" }, "role": { "type": ["string", "null"] }, "form": { "type": ["string", "null"] }, "gloss": { "type": ["string", "null"] } } }, "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (FUNCTION/성분만 — S/V/O/C/M/ADV = 주어/동사/목적어/보어/수식어/부사어, uppercase; also accepts mod/modifier/adverbial/subject/object etc.; omit for plain connecting words), form (optional — the chunk's grammatical FORM 형태: 명사구/명사절/부사구/부사절/형용사구/형용사절/to부정사구/동명사구/단어 등 단어·구·절 구분; rendered with role as 'S (명사구)'), gloss (this chunk's Korean meaning = 직독직해)." },
-        "pattern": { "type": ["string", "null"], "description": "sentence pattern label, e.g. '3형식 (S+V+O)' or '5형식'" },
-        "translation": { "type": ["string", "null"], "description": "natural full Korean translation (자연스러운 해석, markdown)" },
-        "notes": { "type": ["array", "null"], "items": { "type": "string" }, "description": "grammar points (준동사·시제·관계사 등), each a markdown string" },
-        "groups": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "role": "label", "chunk": "text", "phrase": "text", "head": "modifies" }, "properties": { "label": { "type": ["string", "null"] }, "text": { "type": "string" }, "depth": { "type": ["number", "null"] }, "modifies": { "type": ["string", "null"] } } }, "description": "구·절 구조 끊어읽기 (선택) — 문장을 구/절 청크로 분해: label(구/절 종류, e.g. 주어부/동사부/목적어부/보어부/관계절/부사절/전치사구), text(그 청크의 영어 원문), depth(중첩 깊이 0=최상위·1=그 안의 절·2…), modifies(이 구가 수식하는 대상의 짧은 표기, e.g. 'The package' — 수식어구·관계절에만). 천일문식 구문 분해(수식 관계 포함)." },
-        "vocab": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "en": "word", "term": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "mean": "meaning", "trans": "meaning", "partOfSpeech": "pos", "pos_tag": "pos" }, "properties": { "word": { "type": "string" }, "pos": { "type": ["string", "null"] }, "meaning": { "type": "string" } } }, "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Each: word (English) + pos (part-of-speech abbreviation, e.g. n. v. a. adv. prep. conj.) + meaning (Korean). Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence." }
+        "sentence": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the full English sentence (fallback shown when tokens absent)"
+        },
+        "tokens": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "meaning": "gloss",
+              "ko": "gloss",
+              "trans": "gloss",
+              "translation": "gloss",
+              "kor": "gloss",
+              "word": "text",
+              "en": "text"
+            },
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "form": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "gloss": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "description": "sentence split into reading chunks in order (끊어읽기). Each: text (English chunk), role (FUNCTION/성분만 — S/V/O/C/M/ADV = 주어/동사/목적어/보어/수식어/부사어, uppercase; also accepts mod/modifier/adverbial/subject/object etc.; omit for plain connecting words), form (optional — the chunk's grammatical FORM 형태: 명사구/명사절/부사구/부사절/형용사구/형용사절/to부정사구/동명사구/단어 등 단어·구·절 구분; rendered with role as 'S (명사구)'), gloss (this chunk's Korean meaning = 직독직해)."
+        },
+        "pattern": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "sentence pattern label, e.g. '3형식 (S+V+O)' or '5형식'"
+        },
+        "translation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "natural full Korean translation (자연스러운 해석, markdown)"
+        },
+        "notes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "grammar points (준동사·시제·관계사 등), each a markdown string"
+        },
+        "groups": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "role": "label",
+              "chunk": "text",
+              "phrase": "text",
+              "head": "modifies"
+            },
+            "properties": {
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "depth": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "modifies": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "description": "구·절 구조 끊어읽기 (선택) — 문장을 구/절 청크로 분해: label(구/절 종류, e.g. 주어부/동사부/목적어부/보어부/관계절/부사절/전치사구), text(그 청크의 영어 원문), depth(중첩 깊이 0=최상위·1=그 안의 절·2…), modifies(이 구가 수식하는 대상의 짧은 표기, e.g. 'The package' — 수식어구·관계절에만). 천일문식 구문 분해(수식 관계 포함)."
+        },
+        "vocab": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "en": "word",
+              "term": "word",
+              "ko": "meaning",
+              "kor": "meaning",
+              "definition": "meaning",
+              "def": "meaning",
+              "mean": "meaning",
+              "trans": "meaning",
+              "partOfSpeech": "pos",
+              "pos_tag": "pos"
+            },
+            "properties": {
+              "word": {
+                "type": "string"
+              },
+              "pos": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "meaning": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "vocab flashcards (단어 암기) for key/difficult words in the sentence — include 3–8 useful items. Each: word (English) + pos (part-of-speech abbreviation, e.g. n. v. a. adv. prep. conj.) + meaning (Korean). Rendered as memorize-then-reveal (tap to show). Always add these when analyzing an English sentence."
+        }
       }
     }
   },
@@ -1003,29 +1413,140 @@
     "semanticText": "단어 암기 어휘 영단어 단어장 보카 vocabulary vocab 토익 토플 수능 공무원 텝스 지텔프 플래시카드 flashcard 암기법 인출연습 능동회상 라이트너 leitner 경선식 니모닉 mnemonic 발음 어원 etymology 유의어 반의어 영어 단어 외우기 spaced repetition 단어시험 word memorize",
     "propsSchema": {
       "type": "object",
-      "required": ["words"],
-      "synonyms": { "vocabulary": "words", "wordList": "words", "cards": "words" },
+      "required": [
+        "words"
+      ],
+      "synonyms": {
+        "vocabulary": "words",
+        "wordList": "words",
+        "cards": "words"
+      },
       "properties": {
-        "title": { "type": ["string", "null"] },
-        "mode": { "type": ["string", "null"], "description": "'flashcard' (default — recall + Leitner study engine) or 'list' (quick scannable review)" },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "'flashcard' (default — recall + Leitner study engine) or 'list' (quick scannable review)"
+        },
         "words": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["word", "meaning"],
-            "synonyms": { "en": "word", "term": "word", "english": "word", "headword": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "mean": "meaning", "partOfSpeech": "pos", "ipa": "pronunciation", "phonetic": "pronunciation", "sentence": "example", "exampleSentence": "example", "usage": "example", "exampleKo": "exampleMeaning", "exampleTranslation": "exampleMeaning", "memory": "mnemonic", "hook": "mnemonic", "association": "mnemonic", "origin": "etymology", "roots": "etymology", "synonym": "synonyms", "antonym": "antonyms", "img": "image", "imageUrl": "image" },
+            "required": [
+              "word",
+              "meaning"
+            ],
+            "synonyms": {
+              "en": "word",
+              "term": "word",
+              "english": "word",
+              "headword": "word",
+              "ko": "meaning",
+              "kor": "meaning",
+              "definition": "meaning",
+              "def": "meaning",
+              "mean": "meaning",
+              "partOfSpeech": "pos",
+              "ipa": "pronunciation",
+              "phonetic": "pronunciation",
+              "sentence": "example",
+              "exampleSentence": "example",
+              "usage": "example",
+              "exampleKo": "exampleMeaning",
+              "exampleTranslation": "exampleMeaning",
+              "memory": "mnemonic",
+              "hook": "mnemonic",
+              "association": "mnemonic",
+              "origin": "etymology",
+              "roots": "etymology",
+              "synonym": "synonyms",
+              "antonym": "antonyms",
+              "img": "image",
+              "imageUrl": "image"
+            },
             "properties": {
-              "word": { "type": "string", "description": "the English word / headword" },
-              "meaning": { "type": "string", "description": "Korean meaning (markdown ok)" },
-              "pos": { "type": ["string", "null"], "description": "part-of-speech abbrev — n. v. a. adv. prep. conj." },
-              "pronunciation": { "type": ["string", "null"], "description": "phonetic e.g. /juːˈbɪkwɪtəs/ (tap 🔊 also speaks it via browser TTS)" },
-              "example": { "type": ["string", "null"], "description": "example sentence USING the word — shown on reveal with the word auto-highlighted (context learning)" },
-              "exampleMeaning": { "type": ["string", "null"], "description": "Korean translation of the example sentence" },
-              "mnemonic": { "type": ["string", "null"], "description": "memory hook — keyword/sound association (경선식식 소리연상) linking the word to its meaning. Strong for hard/abstract words; omit when it would be forced." },
-              "etymology": { "type": ["string", "null"], "description": "word roots / origin for deep encoding, e.g. 'ubi(어디든)+que → 어디에나'" },
-              "synonyms": { "type": ["array", "null"], "items": { "type": "string" } },
-              "antonyms": { "type": ["array", "null"], "items": { "type": "string" } },
-              "image": { "type": ["string", "null"], "description": "optional image URL (dual coding — best for concrete words; NOT auto-fetched, the author/app provides it)" }
+              "word": {
+                "type": "string",
+                "description": "the English word / headword"
+              },
+              "meaning": {
+                "type": "string",
+                "description": "Korean meaning (markdown ok)"
+              },
+              "pos": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "part-of-speech abbrev — n. v. a. adv. prep. conj."
+              },
+              "pronunciation": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "phonetic e.g. /juːˈbɪkwɪtəs/ (tap 🔊 also speaks it via browser TTS)"
+              },
+              "example": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "example sentence USING the word — shown on reveal with the word auto-highlighted (context learning)"
+              },
+              "exampleMeaning": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Korean translation of the example sentence"
+              },
+              "mnemonic": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "memory hook — keyword/sound association (경선식식 소리연상) linking the word to its meaning. Strong for hard/abstract words; omit when it would be forced."
+              },
+              "etymology": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "word roots / origin for deep encoding, e.g. 'ubi(어디든)+que → 어디에나'"
+              },
+              "synonyms": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "antonyms": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "image": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "optional image URL (dual coding — best for concrete words; NOT auto-fetched, the author/app provides it)"
+              }
             }
           },
           "description": "the word list. word + meaning required per item; pos / pronunciation / example(+exampleMeaning) / mnemonic / etymology / synonyms / antonyms / image are optional and each layer deepens encoding. Add a mnemonic + example for hard words. 5–20 words per card works well."
@@ -1040,30 +1561,105 @@
     "semanticText": "독해 지문 리딩 reading comprehension RC 영어독해 토익 토플 수능 공무원 텝스 지텔프 능동읽기 직독직해 해석 문단 요지 주제 main idea 단어 맥락 어휘 vocab passage 지문분석 문단요약 글읽기",
     "propsSchema": {
       "type": "object",
-      "required": ["paragraphs"],
-      "synonyms": { "text": "paragraphs", "body": "paragraphs", "content": "paragraphs", "words": "vocab", "thesis": "keyIdea", "mainIdea": "keyIdea", "trans": "translation" },
+      "required": [
+        "paragraphs"
+      ],
+      "synonyms": {
+        "text": "paragraphs",
+        "body": "paragraphs",
+        "content": "paragraphs",
+        "words": "vocab",
+        "thesis": "keyIdea",
+        "mainIdea": "keyIdea",
+        "trans": "translation"
+      },
       "properties": {
-        "title": { "type": ["string", "null"] },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "paragraphs": {
           "type": "array",
           "items": {
             "type": "object",
-            "synonyms": { "para": "text", "english": "text", "eng": "text", "sentence": "text", "point": "mainIdea", "summary": "mainIdea", "idea": "mainIdea", "ko": "mainIdea" },
-            "required": ["text"],
+            "synonyms": {
+              "para": "text",
+              "english": "text",
+              "eng": "text",
+              "sentence": "text",
+              "point": "mainIdea",
+              "summary": "mainIdea",
+              "idea": "mainIdea",
+              "ko": "mainIdea"
+            },
+            "required": [
+              "text"
+            ],
             "properties": {
-              "text": { "type": "string", "description": "the paragraph (English)" },
-              "mainIdea": { "type": ["string", "null"], "description": "this paragraph's main point (Korean) — hidden; learner predicts then taps to check (요지 파악)" }
+              "text": {
+                "type": "string",
+                "description": "the paragraph (English)"
+              },
+              "mainIdea": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "this paragraph's main point (Korean) — hidden; learner predicts then taps to check (요지 파악)"
+              }
             }
           },
           "description": "the passage split into paragraphs (문단별). Each: text (English) + optional mainIdea (요지, tap-to-reveal). Split at natural paragraph breaks; 1 paragraph is fine for a short passage."
         },
         "vocab": {
-          "type": ["array", "null"],
-          "items": { "type": "object", "synonyms": { "en": "word", "term": "word", "ko": "meaning", "kor": "meaning", "definition": "meaning", "def": "meaning", "partOfSpeech": "pos" }, "properties": { "word": { "type": "string" }, "pos": { "type": ["string", "null"] }, "meaning": { "type": "string" } } },
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "en": "word",
+              "term": "word",
+              "ko": "meaning",
+              "kor": "meaning",
+              "definition": "meaning",
+              "def": "meaning",
+              "partOfSpeech": "pos"
+            },
+            "properties": {
+              "word": {
+                "type": "string"
+              },
+              "pos": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "meaning": {
+                "type": "string"
+              }
+            }
+          },
           "description": "key/difficult words in the passage. The component finds each word in the paragraph text and makes that occurrence tap-to-reveal (맥락 어휘 — tap the word in the passage → meaning inline). word + meaning required, pos optional."
         },
-        "keyIdea": { "type": ["string", "null"], "description": "the passage's overall thesis / main idea (주제 — Korean, tap-to-reveal)" },
-        "translation": { "type": ["string", "null"], "description": "full Korean translation of the passage (해석 — markdown, tap-to-reveal)" }
+        "keyIdea": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the passage's overall thesis / main idea (주제 — Korean, tap-to-reveal)"
+        },
+        "translation": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "full Korean translation of the passage (해석 — markdown, tap-to-reveal)"
+        }
       }
     }
   },
@@ -1074,39 +1670,131 @@
     "semanticText": "개념 설명 이론 원리 강의 lesson concept explain 설명 가르치다 자기설명 self-explanation 예측 오개념 흔한오해 misconception refutation 단계 세그먼트 인출 확인문제 worked example 워크드예제 학습 교육 왜 원리 how it works 메커니즘",
     "propsSchema": {
       "type": "object",
-      "required": ["steps"],
-      "synonyms": { "sections": "steps", "parts": "steps", "overview": "intro", "summary": "intro" },
+      "required": [
+        "steps"
+      ],
+      "synonyms": {
+        "sections": "steps",
+        "parts": "steps",
+        "overview": "intro",
+        "summary": "intro"
+      },
       "properties": {
-        "title": { "type": ["string", "null"] },
-        "intro": { "type": ["string", "null"], "description": "1–2 sentence framing of the concept (always visible, markdown)" },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intro": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "1–2 sentence framing of the concept (always visible, markdown)"
+        },
         "steps": {
           "type": "array",
           "items": {
             "type": "object",
-            "synonyms": { "explanation": "body", "content": "body", "text": "body", "detail": "body", "hint": "predict", "prompt": "predict", "question": "predict", "title": "heading", "label": "heading" },
+            "synonyms": {
+              "explanation": "body",
+              "content": "body",
+              "text": "body",
+              "detail": "body",
+              "hint": "predict",
+              "prompt": "predict",
+              "question": "predict",
+              "title": "heading",
+              "label": "heading"
+            },
             "properties": {
-              "heading": { "type": ["string", "null"], "description": "short step heading (optional)" },
-              "predict": { "type": ["string", "null"], "description": "self-explanation/prediction prompt (왜?·다음은?) — when given, the body is hidden until the learner predicts then taps to reveal (generation effect). Omit to show the body directly." },
-              "body": { "type": "string", "description": "the explanation for this step (markdown)" }
+              "heading": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "short step heading (optional)"
+              },
+              "predict": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "self-explanation/prediction prompt (왜?·다음은?) — when given, the body is hidden until the learner predicts then taps to reveal (generation effect). Omit to show the body directly."
+              },
+              "body": {
+                "type": "string",
+                "description": "the explanation for this step (markdown)"
+              }
             }
           },
           "description": "the explanation broken into digestible steps (세그먼팅). Each: body (required) + optional heading + optional predict (예측→공개 게이트)."
         },
         "example": {
-          "type": ["object", "null"],
-          "synonyms": { "problem": "problem", "q": "problem", "solution": "solution", "answer": "solution" },
-          "properties": { "problem": { "type": "string", "description": "a worked-example problem (shown)" }, "solution": { "type": "string", "description": "the worked solution (hidden → reveal, markdown)" } },
+          "type": [
+            "object",
+            "null"
+          ],
+          "synonyms": {
+            "problem": "problem",
+            "q": "problem",
+            "solution": "solution",
+            "answer": "solution"
+          },
+          "properties": {
+            "problem": {
+              "type": "string",
+              "description": "a worked-example problem (shown)"
+            },
+            "solution": {
+              "type": "string",
+              "description": "the worked solution (hidden → reveal, markdown)"
+            }
+          },
           "description": "optional worked example — problem shown, solution revealed on tap (worked-example effect)."
         },
         "misconception": {
-          "type": ["object", "null"],
-          "synonyms": { "myth": "wrong", "mistake": "wrong", "wrong": "wrong", "truth": "right", "fact": "right", "correction": "right", "right": "right" },
-          "properties": { "wrong": { "type": "string", "description": "the common wrong belief (흔한 오해)" }, "right": { "type": "string", "description": "the correction + why (사실은, hidden → reveal, markdown)" } },
+          "type": [
+            "object",
+            "null"
+          ],
+          "synonyms": {
+            "myth": "wrong",
+            "mistake": "wrong",
+            "wrong": "wrong",
+            "truth": "right",
+            "fact": "right",
+            "correction": "right",
+            "right": "right"
+          },
+          "properties": {
+            "wrong": {
+              "type": "string",
+              "description": "the common wrong belief (흔한 오해)"
+            },
+            "right": {
+              "type": "string",
+              "description": "the correction + why (사실은, hidden → reveal, markdown)"
+            }
+          },
           "description": "optional misconception refutation — states a common wrong idea, reveals the correction (proven effective)."
         },
         "check": {
-          "type": ["object", "null"],
-          "properties": { "question": { "type": "string", "description": "a quick retrieval-check question" }, "answer": { "type": "string", "description": "the answer (hidden → reveal, markdown)" } },
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "a quick retrieval-check question"
+            },
+            "answer": {
+              "type": "string",
+              "description": "the answer (hidden → reveal, markdown)"
+            }
+          },
           "description": "optional final retrieval check — question shown, answer revealed after the learner predicts (active recall)."
         }
       }
@@ -1119,18 +1807,164 @@
     "semanticText": "리스닝 듣기 LC listening comprehension 토익 토플 IELTS 아이엘츠 지텔프 텝스 수능 오디오 받아쓰기 dictation 스크립트 transcript 대화 담화 멀티스피커 음성 듣기평가 audio 청해",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "transcript": "script", "lines": "script", "audio": "audioUrl", "url": "audioUrl", "quizzes": "questions", "items": "questions" },
+      "synonyms": {
+        "transcript": "script",
+        "lines": "script",
+        "audio": "audioUrl",
+        "url": "audioUrl",
+        "quizzes": "questions",
+        "items": "questions"
+      },
       "properties": {
-        "title": { "type": ["string", "null"] },
-        "audioUrl": { "type": ["string", "null"], "description": "the mp3 URL (cloud TTS, conversation-scoped via the tts sysmod). Omit while audio is being generated → shows a 'generating' placeholder." },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "audioUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the mp3 URL (cloud TTS, conversation-scoped via the tts sysmod). Omit while audio is being generated → shows a 'generating' placeholder."
+        },
         "script": {
-          "type": ["array", "null"],
-          "items": { "type": "object", "synonyms": { "spk": "speaker", "name": "speaker", "line": "text", "en": "text", "instruction": "guide", "narration": "guide", "directions": "guide" }, "properties": { "speaker": { "type": ["string", "null"], "description": "speaker label M/W/A/B (multi-speaker dialogue)" }, "text": { "type": "string" }, "start": { "type": ["number", "null"], "description": "optional start time in seconds for tap-to-replay sync (LRC). Usually left unset — the tts pipeline fills it." }, "guide": { "type": ["boolean", "null"], "description": "true = exam instruction/narration line (e.g. 'Questions 31 through 33 refer to the following conversation.'). It IS spoken in the audio and shown like a real exam, but excluded from dictation grading and from the current-position karaoke highlight (test directions are not dictated)." } } },
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "spk": "speaker",
+              "name": "speaker",
+              "line": "text",
+              "en": "text",
+              "instruction": "guide",
+              "narration": "guide",
+              "directions": "guide"
+            },
+            "properties": {
+              "speaker": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "speaker label M/W/A/B (multi-speaker dialogue)"
+              },
+              "text": {
+                "type": "string"
+              },
+              "start": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "optional start time in seconds for tap-to-replay sync (LRC). Usually left unset — the tts pipeline fills it."
+              },
+              "guide": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "true = exam instruction/narration line (e.g. 'Questions 31 through 33 refer to the following conversation.'). It IS spoken in the audio and shown like a real exam, but excluded from dictation grading and from the current-position karaoke highlight (test directions are not dictated)."
+              }
+            }
+          },
           "description": "transcript lines (받아쓰기 — hidden until the learner taps to check after dictation). Each: text + optional speaker label. Exam direction lines (e.g. 'Questions 31 through 33 refer to...') = include as items with guide:true (spoken + shown, but not graded/highlighted). Also accepts an array of plain strings."
         },
-        "questions": { "type": ["array", "null"], "items": { "type": "object", "synonyms": { "options": "choices" }, "properties": { "number": { "type": ["number", "string", "null"] }, "question": { "type": "string" }, "choices": { "type": ["array", "null"], "items": { "type": "string" } }, "answer": { "type": ["number", "string", "null"] }, "answerIndex": { "type": ["number", "null"] }, "type": { "type": ["string", "null"] }, "statements": { "type": ["array", "null"], "items": { "type": "string" } }, "explanation": { "type": ["string", "null"] }, "figures": { "type": ["array", "null"], "items": { "type": "object" } } } }, "description": "questions about the audio (same shape as quiz_group questions — MC choices, or type:'ox'/'tfng', answer, explanation)." },
-        "mode": { "type": ["string", "null"], "description": "'study' (default — speed/repeat/A-B/dictation for self-study) or 'exam' (test conditions — single listen, no repeat/speed/dictation controls). Use 'exam' for published test/exam pages." },
-        "view": { "type": ["string", "null"], "description": "answers / full / interactive (default interactive)" }
+        "questions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "synonyms": {
+              "options": "choices"
+            },
+            "properties": {
+              "number": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "question": {
+                "type": "string"
+              },
+              "choices": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "answer": {
+                "type": [
+                  "number",
+                  "string",
+                  "null"
+                ]
+              },
+              "answerIndex": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "statements": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "explanation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "figures": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "description": "questions about the audio (same shape as quiz_group questions — MC choices, or type:'ox'/'tfng', answer, explanation)."
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "'study' (default — speed/repeat/A-B/dictation for self-study) or 'exam' (test conditions — single listen, no repeat/speed/dictation controls). Use 'exam' for published test/exam pages."
+        },
+        "view": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "answers / full / interactive (default interactive)"
+        }
       }
     }
   },
@@ -1160,11 +1994,17 @@
             ],
             "properties": {
               "key": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "description": "item label. may be given as the synonym 'label' (one of the two is required)."
               },
               "label": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "description": "synonym for key — giving label instead of key still shows it as the label."
               },
               "value": {
@@ -1272,7 +2112,9 @@
     "semanticText": "상태 뱃지 배지 태그 지표 정배열 과열 중립 positive negative warning info label tag chip",
     "propsSchema": {
       "type": "object",
-      "synonyms": { "badges": "items" },
+      "synonyms": {
+        "badges": "items"
+      },
       "required": [
         "items"
       ],
@@ -1660,7 +2502,27 @@
                   "string",
                   "null"
                 ],
-                "enum": ["default", "typhoon", "forecast", "current", "wx-clear", "wx-partly", "wx-cloudy", "wx-rain", "wx-shower", "wx-snow", "wx-thunder", "bank", "pharmacy", "hospital", "school", "convenience", "cafe", "restaurant", null],
+                "enum": [
+                  "default",
+                  "typhoon",
+                  "forecast",
+                  "current",
+                  "wx-clear",
+                  "wx-partly",
+                  "wx-cloudy",
+                  "wx-rain",
+                  "wx-shower",
+                  "wx-snow",
+                  "wx-thunder",
+                  "bank",
+                  "pharmacy",
+                  "hospital",
+                  "school",
+                  "convenience",
+                  "cafe",
+                  "restaurant",
+                  null
+                ],
                 "description": "marker icon. WEATHER (animated badge — icon + the label as a temp/name pill): wx-clear(맑음) / wx-partly(구름조금) / wx-cloudy(흐림) / wx-rain(비) / wx-shower(소나기) / wx-snow(눈) / wx-thunder(뇌우). typhoon(current typhoon — swirl spins, hemisphere-correct by lat) / forecast (forecast typhoon — same swirl, static) / current(📍) / food restaurant·cafe·bakery·bar / finance & medical bank·atm·hospital·pharmacy·clinic·dental / education school·library·academy·university / shopping & transit convenience·mart·mall·subway·bus·train·parking·gas·airport / others hotel·park·gym·cinema·police·fire·post·gov·church·home·office. Default marker if unspecified."
               },
               "size": {
@@ -1668,7 +2530,12 @@
                   "string",
                   "null"
                 ],
-                "enum": ["small", "medium", "large", null],
+                "enum": [
+                  "small",
+                  "medium",
+                  "large",
+                  null
+                ],
                 "description": "marker size. legacy default = medium. typhoon area = large (emphasize current position)."
               },
               "windSpeed": {
@@ -1689,35 +2556,60 @@
           "description": "Polyline — connected line area. Typhoon track (current → forecast position chain), flight path, walking route, etc. Each line = an array of coordinates. Coordinates same as markers — sysmod results only.",
           "items": {
             "type": "object",
-            "required": ["points"],
+            "required": [
+              "points"
+            ],
             "properties": {
               "points": {
                 "type": "array",
                 "description": "line coordinate array [{lat, lon}, ...]. At least 2.",
                 "items": {
                   "type": "object",
-                  "required": ["lat", "lon"],
+                  "required": [
+                    "lat",
+                    "lon"
+                  ],
                   "properties": {
-                    "lat": { "type": "number" },
-                    "lon": { "type": "number" }
+                    "lat": {
+                      "type": "number"
+                    },
+                    "lon": {
+                      "type": "number"
+                    }
                   }
                 }
               },
               "color": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "description": "line color. default red. For a typhoon forecast track, slate (#64748b) is recommended (distinct from intensity colors). hex / color name."
               },
               "weight": {
-                "type": ["number", "null"],
+                "type": [
+                  "number",
+                  "null"
+                ],
                 "description": "line width in px. default 3."
               },
               "style": {
-                "type": ["string", "null"],
-                "enum": ["solid", "dashed", null],
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "solid",
+                  "dashed",
+                  null
+                ],
                 "description": "solid (default) / dashed (forecast track area)."
               },
               "label": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "description": "line area label (optional)"
               }
             }
@@ -1772,23 +2664,39 @@
           "description": "forecast cone (array — several can overlap). Naver-style typhoon = size cone (gale radius rad15, color #06b6d4 cyan) + probability cone (70% probability radius radPr, color #6366f1 indigo), two of them. Each cone = a smooth area widening along the track. A single cone is also fine.",
           "items": {
             "type": "object",
-            "required": ["points"],
+            "required": [
+              "points"
+            ],
             "properties": {
               "points": {
                 "type": "array",
                 "description": "track points + per-point radius (at least 2). current → forecast order. radius = radius m at each time. size cone = rad15 (gale radius km × 1000), probability cone = radPr (probability radius km × 1000).",
                 "items": {
                   "type": "object",
-                  "required": ["lat", "lon", "radius"],
+                  "required": [
+                    "lat",
+                    "lon",
+                    "radius"
+                  ],
                   "properties": {
-                    "lat": { "type": "number" },
-                    "lon": { "type": "number" },
-                    "radius": { "type": "number", "description": "radius m at that time (e.g. 200000 = 200km)" }
+                    "lat": {
+                      "type": "number"
+                    },
+                    "lon": {
+                      "type": "number"
+                    },
+                    "radius": {
+                      "type": "number",
+                      "description": "radius m at that time (e.g. 200000 = 200km)"
+                    }
                   }
                 }
               },
               "color": {
-                "type": ["string", "null"],
+                "type": [
+                  "string",
+                  "null"
+                ],
                 "description": "cone fill/outline color. size cone = #06b6d4 (cyan), probability cone = #6366f1 (indigo)."
               }
             }
@@ -1938,13 +2846,33 @@
     "semanticText": "button link cta navigate action click 버튼 링크 이동 클릭 액션",
     "propsSchema": {
       "type": "object",
-      "required": ["text"],
+      "required": [
+        "text"
+      ],
       "additionalProperties": false,
-      "synonyms": { "label": "text", "title": "text" },
+      "synonyms": {
+        "label": "text",
+        "title": "text"
+      },
       "properties": {
-        "text": { "type": "string", "description": "button label" },
-        "href": { "type": ["string", "null"], "description": "URL to navigate to on click (optional)" },
-        "variant": { "type": ["string", "null"], "description": "primary | secondary | outline (default primary)" }
+        "text": {
+          "type": "string",
+          "description": "button label"
+        },
+        "href": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL to navigate to on click (optional)"
+        },
+        "variant": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "primary | secondary | outline (default primary)"
+        }
       }
     }
   },
@@ -1958,12 +2886,48 @@
       "required": [],
       "additionalProperties": false,
       "properties": {
-        "label": { "type": ["string", "null"], "description": "label shown above the slider" },
-        "min": { "type": ["number", "null"], "description": "minimum (default 0)" },
-        "max": { "type": ["number", "null"], "description": "maximum (default 100)" },
-        "step": { "type": ["number", "null"], "description": "step (default 1)" },
-        "defaultValue": { "type": ["number", "null"], "description": "initial value (default = min)" },
-        "unit": { "type": ["string", "null"], "description": "suffix after the value, e.g. % or kg" }
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "label shown above the slider"
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "minimum (default 0)"
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "maximum (default 100)"
+        },
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "step (default 1)"
+        },
+        "defaultValue": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "initial value (default = min)"
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "suffix after the value, e.g. % or kg"
+        }
       }
     }
   },
@@ -1974,7 +2938,9 @@
     "semanticText": "tabs tabbed sections switch panel 탭 전환 구분 분류 섹션",
     "propsSchema": {
       "type": "object",
-      "required": ["tabs"],
+      "required": [
+        "tabs"
+      ],
       "additionalProperties": false,
       "properties": {
         "tabs": {
@@ -1982,14 +2948,38 @@
           "description": "tab list",
           "items": {
             "type": "object",
-            "required": ["label", "children"],
-            "synonyms": { "blocks": "children", "content": "children", "items": "children" },
+            "required": [
+              "label",
+              "children"
+            ],
+            "synonyms": {
+              "blocks": "children",
+              "content": "children",
+              "items": "children"
+            },
             "properties": {
-              "label": { "type": "string", "description": "tab label" },
+              "label": {
+                "type": "string",
+                "description": "tab label"
+              },
               "children": {
                 "type": "array",
                 "description": "blocks shown when this tab is active",
-                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type"] }
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "props": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                }
               }
             }
           }
@@ -2004,7 +2994,9 @@
     "semanticText": "accordion collapse expand toggle faq 아코디언 접기 펼치기 토글 자주묻는질문 섹션",
     "propsSchema": {
       "type": "object",
-      "required": ["items"],
+      "required": [
+        "items"
+      ],
       "additionalProperties": false,
       "properties": {
         "items": {
@@ -2012,16 +3004,51 @@
           "description": "collapsible items",
           "items": {
             "type": "object",
-            "required": ["title"],
-            "synonyms": { "blocks": "children", "body": "content", "answer": "content" },
+            "required": [
+              "title"
+            ],
+            "synonyms": {
+              "blocks": "children",
+              "body": "content",
+              "answer": "content"
+            },
             "properties": {
-              "title": { "type": "string", "description": "section title (the clickable header)" },
-              "content": { "type": ["string", "null"], "description": "plain text/markdown shown when expanded (simplest case — e.g. an FAQ answer). Use this OR children, not both." },
-              "text": { "type": ["string", "null"], "description": "alias for content" },
+              "title": {
+                "type": "string",
+                "description": "section title (the clickable header)"
+              },
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "plain text/markdown shown when expanded (simplest case — e.g. an FAQ answer). Use this OR children, not both."
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "alias for content"
+              },
               "children": {
                 "type": "array",
                 "description": "blocks shown when this item is expanded (use instead of content when you need rich blocks)",
-                "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type"] }
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "props": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ]
+                }
               }
             }
           }
@@ -2036,17 +3063,100 @@
     "semanticText": "carousel slideshow swipe gallery slides 캐러셀 슬라이드 갤러리 넘기기 슬라이드쇼",
     "propsSchema": {
       "type": "object",
-      "required": ["children"],
+      "required": [
+        "children"
+      ],
       "additionalProperties": false,
       "properties": {
         "children": {
           "type": "array",
           "description": "one block per slide",
-          "items": { "type": "object", "properties": { "type": { "type": "string" }, "props": { "type": "object", "additionalProperties": true } }, "required": ["type", "props"] }
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "props": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "type",
+              "props"
+            ]
+          }
         },
-        "autoPlay": { "type": ["boolean", "null"], "description": "auto-advance slides (default false)" },
-        "interval": { "type": ["number", "null"], "description": "auto-play interval in ms (default 5000)" }
+        "autoPlay": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "auto-advance slides (default false)"
+        },
+        "interval": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "auto-play interval in ms (default 5000)"
+        }
       }
+    }
+  },
+  {
+    "name": "live_feed",
+    "componentType": "LiveFeed",
+    "description": "Realtime event feed bound to a stream-watch SSE topic (returned by stream_watch_start). Live while visible in the viewport, frozen with a timestamp when hidden; the persisted message stays a snapshot. Use for condition-search enter/leave watches.",
+    "semanticText": "실시간 피드 감시 이벤트 live feed realtime watch 조건검색 편입 이탈 스트리밍 모니터링",
+    "propsSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "SSE topic from stream_watch_start (e.g. ws-stream:<watchId>)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "maxItems": {
+          "type": "number",
+          "description": "kept items (default 30)"
+        }
+      },
+      "required": [
+        "topic"
+      ]
+    }
+  },
+  {
+    "name": "live_chart",
+    "componentType": "LiveChart",
+    "description": "Realtime line chart appending a numeric field from stream events (SSE topic from stream_watch_start). valueField = dot-path into the event frame. Live while visible in the viewport; frozen when hidden.",
+    "semanticText": "실시간 차트 live chart 체결가 시세 스트리밍 틱 라인차트 realtime price tick 실시간 그래프",
+    "propsSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "SSE topic from stream_watch_start"
+        },
+        "title": {
+          "type": "string"
+        },
+        "valueField": {
+          "type": "string",
+          "description": "dot-path to the numeric value inside the event frame"
+        },
+        "maxPoints": {
+          "type": "number",
+          "description": "kept points (default 120)"
+        }
+      },
+      "required": [
+        "topic"
+      ]
     }
   }
 ]

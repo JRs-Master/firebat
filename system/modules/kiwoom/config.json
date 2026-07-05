@@ -44,6 +44,11 @@
       }
     },
     "streams": {
+      "quotes": {
+        "subscribe": { "frame": { "trnm": "REG", "grp_no": "1", "refresh": "1", "data": [ { "item": ["{item}"], "type": ["{type:0B}"] } ] }, "match": "REG", "successWhen": { "field": "return_code", "equals": 0 } },
+        "unsubscribe": { "frame": { "trnm": "REMOVE", "grp_no": "1", "refresh": "1", "data": [ { "item": ["{item}"], "type": ["{type:0B}"] } ] } },
+        "realtimeMatch": "REAL"
+      },
       "condition": {
         "preFrames": [
           { "frame": { "trnm": "CNSRLST" }, "match": "CNSRLST", "successWhen": { "field": "return_code", "equals": 0 } }
