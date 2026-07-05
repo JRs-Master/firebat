@@ -245,6 +245,31 @@ impl ToolManager {
         let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.handlers.contains_key(name)
     }
+
+    /// Resolve a possibly-mangled tool name to its registered form. Some models (esp. Solar) emit
+    /// sysmod names with `_` for `-` or drop the `sysmod_` prefix — e.g. `korea_invest` /
+    /// `sysmod_korea_invest` / `yfinance` for the registered `sysmod_korea-invest` /
+    /// `sysmod_yfinance`. Exact match always wins (so core tools like `save_page`/`get_skill` with
+    /// legitimate underscores are never re-mapped); otherwise try `sysmod_`-prefixed + hyphenated
+    /// candidates and return the first that is actually registered. Returns the name unchanged when
+    /// nothing matches, so genuinely unknown tools still surface the unknown-tool error.
+    /// MUST be applied *before* the approval/grounding gates so a mangled name can't bypass them.
+    pub fn canonical_name(&self, name: &str) -> String {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        if state.handlers.contains_key(name) {
+            return name.to_string();
+        }
+        let base = name.strip_prefix("sysmod_").unwrap_or(name);
+        for cand in [
+            format!("sysmod_{base}"),
+            format!("sysmod_{}", base.replace('_', "-")),
+        ] {
+            if state.handlers.contains_key(&cand) {
+                return cand;
+            }
+        }
+        name.to_string()
+    }
 }
 
 impl Default for ToolManager {

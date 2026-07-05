@@ -642,6 +642,28 @@ impl AiManager {
         red
     }
 
+    /// Persist a TERMINAL-error record for a turn that failed with no answer (LLM 400 / missing API
+    /// key / etc.) — so the conversation keeps a record instead of an orphan user bubble. Only
+    /// permanent failures reach this: a recoverable SSE disconnect still completes server-side and
+    /// persists the *real* answer via `finalize`, so this never masks a real reply. The `error`
+    /// field marks it terminal for the frontend (rendered as an error, kept on reload — unlike
+    /// transient session-only fallbacks). No-op without conversation / conversation_id / ai_msg_id.
+    fn finalize_error(&self, ai_opts: &AiRequestOpts, err: &str) {
+        let (Some(conv), Some(conv_id), Some(aid)) = (
+            &self.conversation,
+            ai_opts.conversation_id.as_deref(),
+            ai_opts.ai_msg_id.as_deref().filter(|s| !s.is_empty()),
+        ) else {
+            return;
+        };
+        let owner = ai_opts.owner.as_deref().unwrap_or("admin");
+        let msg = serde_json::json!({
+            "id": aid, "role": "system", "content": err, "error": err,
+            "createdAt": crate::utils::time::now_ms(),
+        });
+        conv.append(owner, conv_id, &msg);
+    }
+
     pub async fn process_with_tools_opts_with_emit(
         &self,
         prompt: &str,
@@ -1380,7 +1402,7 @@ impl AiManager {
                 prompt
             };
 
-            let response = self
+            let response = match self
                 .llm
                 .ask_with_tools_streaming(
                     llm_prompt,
@@ -1389,7 +1411,17 @@ impl AiManager {
                     &turn_opts,
                     llm_sink.clone(),
                 )
-                .await?;
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    // Terminal LLM failure (400 / missing API key / etc.) — no answer will come.
+                    // Persist an error record so the turn isn't an orphan user bubble on reload.
+                    // (Recoverable SSE drops don't reach here; they complete + persist the real reply.)
+                    self.finalize_error(ai_opts, &e);
+                    return Err(e);
+                }
+            };
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
 
@@ -1649,6 +1681,10 @@ impl AiManager {
                 // cross-turn). 옛 hub-only 분기를 일반화 (start_build convId 도 같은 지점에서).
                 let scoped_call: ToolCall = {
                     let mut sc = call.clone();
+                    // Canonicalize a mangled sysmod name BEFORE any gate (approval/grounding/dispatch)
+                    // so all see the registered name — a `_`/`-` or missing-prefix variant must not
+                    // slip past the approval gate. No-op for already-correct or core tool names.
+                    sc.name = self.tools.canonical_name(&sc.name);
                     let name = sc.name.clone();
                     if let serde_json::Value::Object(ref mut m) = sc.arguments {
                         // convId 주입 — Project Builder(cross-turn 세션 키) + tts(오디오 conv-scoped 저장·삭제 cascade). AI 미지정.
