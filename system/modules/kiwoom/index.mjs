@@ -450,7 +450,7 @@ async function acquireSlot() {
 
 async function callApi(base, token, apiId, params = {}, retry = 2) {
   const category = URL_CATEGORY[apiId];
-  if (!category) throw new Error(`알 수 없는 API ID: ${apiId}. 키움 REST API 문서 참조.`);
+  if (!category) throw new Error(`알 수 없는 API ID: ${apiId} — 이 값을 지어내지 마세요. 유효한 API ID 는 get_module_schema('kiwoom') 로 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽고, 종합 분석은 get_skill('stock-report') 를 참고하세요.`);
   const url = `${base}/api/dostk/${category}`;
   await acquireSlot();
   const resp = await fetch(url, {
