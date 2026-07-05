@@ -47,7 +47,7 @@ The one test that decides everything: "If this conversation were deleted, would 
    - entityName: which entity (matches a name in entities)
    - content: 1-2 self-sufficient sentences — state figures, dates, outcome when present
    - factType: the kind of statement — REUSE an existing label (see the tracked-graph list) for the same kind so a state's history groups together
-   - occurredAt: ms epoch (only when a clear time is stated)
+   - occurredAt: ms epoch — resolve relative dates ("yesterday", "next week", "this morning") against the [YYYY-MM-DD HH:MM UTC] timestamps shown in the transcript; null when no time is inferable. Never use the current/extraction time as a substitute.
    - tags: optional cross-cutting labels
    - supersede: true when this fact is a NEW VALUE of a state the entity already has (same factType — an updated figure/level/status). The previous value is retired into history.
 
@@ -834,8 +834,15 @@ pub struct InactiveConsolidationResult {
 // Tests 이관 — `infra/tests/consolidation_manager_test.rs` (integration test).
 
 /// 메시지 배열 → LLM 입력용 transcript. 사용자/AI 만, 1500자 trim.
+///
+/// Time anchors: without message timestamps the extractor has NO idea when the conversation
+/// happened (the cron runs hours later) — "어제"/"다음주"/even "오늘" can't resolve, so events
+/// were stamped with the extraction time instead of the actual occurrence. A `[YYYY-MM-DD
+/// HH:MM UTC]` line is emitted whenever the minute changes (deduped — keeps the transcript
+/// lean); the prompt instructs resolving relative dates against these anchors into occurredAt.
 fn format_transcript(messages: &[serde_json::Value]) -> String {
     let mut lines: Vec<String> = Vec::new();
+    let mut last_stamp = String::new();
     for m in messages {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let role_label = match role {
@@ -855,6 +862,16 @@ fn format_transcript(messages: &[serde_json::Value]) -> String {
         } else {
             content.to_string()
         };
+        let stamp = m
+            .get("createdAt")
+            .and_then(|v| v.as_i64())
+            .and_then(chrono::DateTime::from_timestamp_millis)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_default();
+        if !stamp.is_empty() && stamp != last_stamp {
+            lines.push(format!("[{stamp}]"));
+            last_stamp = stamp;
+        }
         lines.push(format!("{role_label}: {truncated}"));
     }
     lines.join("\n\n")

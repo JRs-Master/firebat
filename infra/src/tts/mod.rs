@@ -796,9 +796,14 @@ fn wav_duration_secs(audio: &[u8], content_type: &str) -> Option<f64> {
 
 /// 단어 음절 수(모음 그룹 추정) — char 길이보다 발화 길이에 비례. 축약형(It's/let's)=1음절이라 짧게 잡힘.
 fn syllables(word: &str) -> usize {
+    // Digits speak as full words — "9:45"→"nine forty-five", "2024"→"twenty twenty-four".
+    // The old alphabetic-only filter collapsed number/time/price tokens to weight 1, so the
+    // fill rushed past exactly the tokens LC scripts are dense with (times, prices, dates).
+    // First-order: ≈1 spoken syllable per digit.
+    let digits = word.chars().filter(|c| c.is_ascii_digit()).count();
     let w: String = word.to_lowercase().chars().filter(|c| c.is_ascii_alphabetic()).collect();
     if w.is_empty() {
-        return 1;
+        return digits.max(1);
     }
     let mut n = 0usize;
     let mut prev_v = false;
@@ -812,11 +817,37 @@ fn syllables(word: &str) -> usize {
     if w.ends_with('e') && n > 1 {
         n -= 1; // silent trailing e
     }
-    n.max(1)
+    // Spelled-out acronyms — all-caps token spoken letter-by-letter ("CEO"=see-ee-oh=3,
+    // "HR"=2, "HTML"=4) ≈1 syllable per letter. Heuristic: ≤3 letters always spelled;
+    // 4 letters spelled only without vowels (NASA/AIDS-like vowel acronyms speak as words).
+    let alpha: Vec<char> = word.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if !alpha.is_empty()
+        && alpha.len() <= 4
+        && alpha.iter().all(|c| c.is_ascii_uppercase())
+        && (alpha.len() <= 3 || !w.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u')))
+    {
+        n = n.max(alpha.len());
+    }
+    (n + digits).max(1)
+}
+
+/// Closed-class function words — spoken reduced/unstressed, materially shorter than content
+/// words of equal syllable count (standard English phonetics — a closed set, not case tuning).
+fn is_function_word(w: &str) -> bool {
+    matches!(
+        w,
+        "a" | "an" | "the" | "of" | "to" | "in" | "on" | "at" | "for" | "and" | "or" | "but"
+            | "is" | "are" | "was" | "were" | "be" | "been" | "am" | "do" | "does" | "did"
+            | "has" | "have" | "had" | "will" | "would" | "can" | "could" | "shall" | "should"
+            | "may" | "might" | "must" | "it" | "its" | "as" | "by" | "with" | "from" | "that"
+            | "this" | "so" | "if" | "than" | "then" | "i" | "he" | "she" | "we" | "you" | "they"
+    )
 }
 
 /// 단어 발화시간 근사 = 음절 + 0.5×자음수. 음절-only 는 자음클러스터 단어("trends" 1음절 5자음·
 /// "client"·"year-over-year")를 과소평가해 fill 이 빨리 지나간다 → 자음(articulation 시간) 반영.
+/// 기능어(관사·전치사·조동사 등 닫힌 집합)는 약형(reduced)으로 짧게 발화 → ×0.6 —
+/// "the"(옛 2.0)가 content 단음절과 동급으로 과대평가돼 앵커 사이 보간이 밀리던 것.
 fn word_weight(w: &str) -> f64 {
     let s = syllables(w) as f64;
     let cons = w
@@ -826,7 +857,17 @@ fn word_weight(w: &str) -> f64 {
             lc.is_ascii_alphabetic() && !matches!(lc, 'a' | 'e' | 'i' | 'o' | 'u' | 'y')
         })
         .count() as f64;
-    s + 0.5 * cons
+    let base = s + 0.5 * cons;
+    let clean: String = w
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .collect();
+    if is_function_word(&clean) {
+        base * 0.6
+    } else {
+        base
+    }
 }
 
 /// 줄 가중치 = 음절(발화시간) + 문장부호 쉼(쉼표·세미콜론·콜론 ×2, 줄 안 마침표/물음표/느낌표 ×3).
@@ -1441,5 +1482,48 @@ fn prep_synth_text(text: &str, speakers: &[TtsSpeaker]) -> String {
             .join("\n")
     } else {
         text.to_string()
+    }
+}
+
+#[cfg(test)]
+mod weight_tests {
+    use super::{is_function_word, syllables, word_weight};
+
+    #[test]
+    fn numbers_speak_as_digits() {
+        // Old code collapsed these to 1 (alphabetic filter) — fills rushed past times/prices.
+        assert_eq!(syllables("9:45"), 3); // "nine forty-five" ≈ 4 — 3 is the digit first-order
+        assert_eq!(syllables("2024"), 4);
+        assert_eq!(syllables("$4.50"), 3);
+        assert_eq!(syllables("7"), 1);
+    }
+
+    #[test]
+    fn acronyms_spell_letter_by_letter() {
+        assert_eq!(syllables("CEO"), 3); // see-ee-oh
+        assert_eq!(syllables("HR"), 2);
+        assert_eq!(syllables("VIP"), 3);
+        assert_eq!(syllables("HTML"), 4); // 4 letters, no vowels → spelled
+        assert_eq!(syllables("NASA"), 2); // 4 letters WITH vowels → spoken as a word
+        assert_eq!(syllables("B2B"), 3); // bee-to-bee: 2 letters + 1 digit
+    }
+
+    #[test]
+    fn normal_words_unchanged() {
+        assert_eq!(syllables("meeting"), 2);
+        assert_eq!(syllables("available"), 3); // silent trailing-e rule (spoken 4 — known approximation)
+        assert_eq!(syllables("Tom"), 1); // capitalized ≠ all-caps acronym
+        assert_eq!(syllables("I"), 1);
+    }
+
+    #[test]
+    fn function_words_discounted() {
+        assert!(is_function_word("the"));
+        assert!(is_function_word("with"));
+        assert!(!is_function_word("meeting"));
+        // "the" (1 syl + 2 cons = 2.0 base) discounted below a content monosyllable.
+        assert!(word_weight("the") < word_weight("desk"));
+        // Trailing punctuation doesn't break the closed-set match.
+        assert!(word_weight("to,") < 2.0);
     }
 }
