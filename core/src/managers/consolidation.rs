@@ -420,9 +420,16 @@ impl ConsolidationManager {
         let cleaned = strip_json_fence(&response_text);
         let extracted: ExtractionResult = match serde_json::from_str(&cleaned) {
             Ok(v) => v,
-            Err(_) => {
+            Err(e) => {
                 // Unparseable LLM output — stamp anyway: re-running the same transcript every
                 // 6h repeats the same failure (new activity resets the watermark naturally).
+                // Logged so a silent-zero pass is distinguishable from correct abstention.
+                tracing::warn!(
+                    target: "consolidation",
+                    conv_id = %conv_id,
+                    error = %e,
+                    "extraction output unparseable — stamped & skipped"
+                );
                 let _ = hook
                     .conversation
                     .mark_consolidated(conv_id, chrono::Utc::now().timestamp_millis());
@@ -436,6 +443,17 @@ impl ConsolidationManager {
         let outcome = self
             .save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92), scope)
             .await?;
+        // Per-conversation outcome — "clean abstention (0 saved)" vs "parse failure" vs real
+        // extraction must be tellable from journalctl (실측 verification depends on it).
+        tracing::info!(
+            target: "consolidation",
+            conv_id = %conv_id,
+            entities = outcome.saved.entities.len(),
+            facts = outcome.saved.facts.len(),
+            events = outcome.saved.events.len(),
+            skipped = outcome.skipped,
+            "extraction pass done"
+        );
         // Success — watermark so the cron only revisits this conversation on new activity.
         // (Toggle-OFF / budget-guard early returns above intentionally do NOT stamp.)
         let _ = hook
@@ -691,11 +709,20 @@ impl ConsolidationManager {
                         + outcome.saved.events.len();
                     total_skipped += outcome.skipped as usize;
                 }
-                Err(_) => {
-                    // 단일 실패는 다음 대화로 진행 (옛 TS 1:1)
+                Err(e) => {
+                    // 단일 실패는 다음 대화로 진행 (옛 TS 1:1) — 단 로그는 남긴다(무음 진단 불가 방지).
+                    tracing::warn!(target: "consolidation", conv_id = %conv_id, error = %e, "conversation consolidation failed");
                 }
             }
         }
+        tracing::info!(
+            target: "consolidation",
+            owner = %owner,
+            processed,
+            total_saved,
+            total_skipped,
+            "consolidation cron pass done"
+        );
 
         InactiveConsolidationResult {
             processed,
