@@ -1203,9 +1203,13 @@ fn signal_align(
                     prev_end = deep[ci].1;
                 }
                 _ => {
-                    seg_ends.push(exp);
-                    seg_starts.push(exp);
-                    prev_end = exp;
+                    // 비례추정 fallback — 단, 앞 그룹이 깊은 쉼을 claim 해 prev_end 를 밀었으면 그
+                    // 추정치가 prev_end 뒤로 갈 수 있다 → clamp 로 단조 보장(뒤 그룹이 앞 그룹보다 이른
+                    // 시각으로 역행 = fill 겹침 방지).
+                    let e = exp.max(prev_end);
+                    seg_ends.push(e);
+                    seg_starts.push(e);
+                    prev_end = e;
                 }
             }
         }
@@ -1269,9 +1273,12 @@ fn signal_align(
                         wprev = micro[ci].1;
                     }
                     _ => {
-                        w_ends.push(exp);
-                        w_starts.push(exp);
-                        wprev = exp;
+                        // 그룹 경계와 동일 — 앞 단어가 미세 쉼을 claim 했으면 추정치를 wprev 이상으로
+                        // clamp(단어 타임스탬프 단조 보장).
+                        let e = exp.max(wprev);
+                        w_ends.push(e);
+                        w_starts.push(e);
+                        wprev = e;
                     }
                 }
             }
