@@ -2820,6 +2820,15 @@ pub trait IMemoryFacadePort: Send + Sync {
     fn list_fact_types(&self, _owner: Option<&str>) -> InfraResult<Vec<String>> {
         Ok(Vec::new())
     }
+    /// Active facts of one entity for the extraction index (incumbent values — supersede
+    /// judgment needs them). Default = empty (test stubs).
+    fn entity_timeline(
+        &self,
+        _entity_id: i64,
+        _opts: &TimelineOpts,
+    ) -> InfraResult<Vec<EntityFactRecord>> {
+        Ok(Vec::new())
+    }
 
     // Mutation — ConsolidationManager 의 save_extracted 가 사용 (LLM 추출 결과 일괄 저장).
     fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;

@@ -51,6 +51,14 @@ impl IMemoryFacadePort for MemoryFacade {
         self.entity.list_fact_types(owner)
     }
 
+    fn entity_timeline(
+        &self,
+        entity_id: i64,
+        opts: &crate::ports::TimelineOpts,
+    ) -> InfraResult<Vec<crate::ports::EntityFactRecord>> {
+        self.entity.get_entity_timeline(entity_id, opts.clone())
+    }
+
     fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
         self.entity.count_entities(owner)
     }

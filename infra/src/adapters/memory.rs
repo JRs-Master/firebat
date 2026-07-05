@@ -293,8 +293,12 @@ impl SqliteMemoryAdapter {
 /// Staging promotion threshold — facts/events below this confidence are "승격 대기"
 /// (visible in the admin UI review section, excluded from retrieval/search injection).
 /// The frontend grouping mirrors this value.
-#[allow(dead_code)]
 const PROMOTE_CONFIDENCE: f64 = 0.7;
+
+/// Stale-staging TTL — an autonomous (explicit=0) staging row not re-observed within this
+/// window is dropped by the retention sweep (natural forgetting; reinforcement resets the
+/// clock via last_seen). Explicit and promoted rows are never touched.
+const STAGING_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 // memory.rs 안 사용처가 다수 — 별 alias 보존 + utils::time::now_ms 위임.
 fn now_ms() -> i64 {
@@ -835,8 +839,13 @@ impl IEntityPort for SqliteMemoryAdapter {
 
         // dedup_threshold cosine — 옛 TS 패턴: 같은 entity 의 기존 active fact 와 cosine 비교.
         // ≥ threshold 면 skip + 기존 id 반환. embedder + 새 임베딩 둘 다 설정되었을 때만 활성.
+        //
+        // supersede=true skips the whole dedup gate: a CORRECTION ("평단가 70,000" replacing
+        // 68,000) is textually near-identical to the incumbent, so the cosine match would
+        // short-circuit into a bump — reinforcing the WRONG old value and dropping the
+        // correction. A model-judged new value is by definition not a duplicate.
         if let (Some(threshold), Some(new_blob), Some(embedder)) = (
-            input.dedup_threshold,
+            input.dedup_threshold.filter(|_| !input.supersede),
             embedding.as_ref(),
             self.embedder.as_ref(),
         ) {
@@ -880,6 +889,40 @@ impl IEntityPort for SqliteMemoryAdapter {
                              WHERE id = ?1",
                             params![id, now],
                         );
+                        // Challenger race flip — a repeatedly-observed value that (post-bump)
+                        // reached the promote threshold retires lower-confidence active rows of
+                        // the same (entity, factType) slot: the more-often/more-recently observed
+                        // value wins, the loser becomes value history. Strictly-lower guard —
+                        // explicit incumbents (1.0) always beat the 0.95 bump cap, and equal
+                        // confidences never flip (no arbitrary winner). Slot = exact factType
+                        // only (multi-valued kinds stay untouched; those flips are model-judged
+                        // via supersede).
+                        if let Ok((ftype, conf)) = conn.query_row(
+                            "SELECT COALESCE(fact_type, ''), confidence FROM entity_facts
+                             WHERE id = ?1 AND superseded_by IS NULL",
+                            params![id],
+                            |r| Ok((r.get::<_, String>(0)?, r.get::<_, f64>(1)?)),
+                        ) {
+                            if !ftype.trim().is_empty() && conf >= PROMOTE_CONFIDENCE {
+                                let flipped = conn
+                                    .execute(
+                                        "UPDATE entity_facts SET superseded_by = ?1
+                                         WHERE entity_id = ?2 AND fact_type = ?3 AND id != ?1
+                                           AND superseded_by IS NULL AND confidence < ?4",
+                                        params![id, input.entity_id, ftype, conf],
+                                    )
+                                    .unwrap_or(0);
+                                if flipped > 0 {
+                                    tracing::info!(
+                                        target: "consolidation",
+                                        fact_id = id,
+                                        fact_type = %ftype,
+                                        retired = flipped,
+                                        "challenger promoted — lower-confidence slot values retired"
+                                    );
+                                }
+                            }
+                        }
                         return Ok((id, true, Some(best_sim as f64)));
                     }
                 }
@@ -1196,10 +1239,20 @@ impl IEntityPort for SqliteMemoryAdapter {
     fn cleanup_expired_facts(&self) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
         let now = now_ms();
+        // Two expiry classes in one sweep:
+        // (1) explicit TTL (expires_at) — as before.
+        // (2) stale staging — an autonomous observation (explicit=0, below the promote
+        //     threshold) that was never re-observed within STAGING_TTL. Repeated observations
+        //     bump last_seen/confidence (promotion race); no reinforcement = natural forgetting.
+        //     Without this, unpromoted staging accumulates unboundedly (수백 개 승격 대기).
+        //     Superseded rows are kept — they are value history on a promoted state.
+        let staging_cutoff = now - STAGING_TTL_MS;
         let n = conn
             .execute(
-                "DELETE FROM entity_facts WHERE expires_at IS NOT NULL AND expires_at < ?1",
-                params![now],
+                "DELETE FROM entity_facts WHERE (expires_at IS NOT NULL AND expires_at < ?1)
+                    OR (explicit = 0 AND superseded_by IS NULL AND confidence < ?2
+                        AND COALESCE(last_seen, created_at) < ?3)",
+                params![now, PROMOTE_CONFIDENCE, staging_cutoff],
             )
             .map_err(|e| format!("cleanup expired facts: {e}"))?;
         Ok(n as i64)
@@ -1830,10 +1883,14 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     fn cleanup_expired_events(&self) -> InfraResult<i64> {
         let conn = self.conn.lock().unwrap();
         let now = now_ms();
+        // Same two-class sweep as cleanup_expired_facts (TTL + stale staging — see there).
+        let staging_cutoff = now - STAGING_TTL_MS;
         let n = conn
             .execute(
-                "DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at < ?1",
-                params![now],
+                "DELETE FROM events WHERE (expires_at IS NOT NULL AND expires_at < ?1)
+                    OR (explicit = 0 AND superseded_by IS NULL AND confidence < ?2
+                        AND COALESCE(last_seen, created_at) < ?3)",
+                params![now, PROMOTE_CONFIDENCE, staging_cutoff],
             )
             .map_err(|e| format!("cleanup expired events: {e}"))?;
         Ok(n as i64)

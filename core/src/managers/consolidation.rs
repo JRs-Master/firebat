@@ -35,6 +35,7 @@ The one test that decides everything: "If this conversation were deleted, would 
 - SKIP code-internal / technical / implementation conclusions (how a bug was fixed, a component's data format, an API shape) — those belong in code and docs; and development / build / approval events.
 - SKIP anything another system already records (logs, schedules, calendar entries).
 - Write each value from the standpoint of what helps serve this person later, in their own terms — not internal system mechanics (you may not know how the system transforms things downstream; do not assume or describe it).
+- **Value accuracy**: when the conversation contains multiple versions of the same figure (a rough spoken mention, then a tool-verified or corrected value), record ONLY the most accurate final version. Tool-returned data always beats a conversational approximation. A wrong number in memory is worse than no number.
 
 1. **entities** (subjects worth tracking — things/people/organizations/projects/strategies this person cares about): the *identity* of a recurring subject only; everything known about it goes in facts.
    - name: the full canonical name — never an abbreviation, code/ticker, or the subject combined with an attribute. Keep it identical across mentions (name plus aliases is the dedup key).
@@ -53,6 +54,7 @@ The one test that decides everything: "If this conversation were deleted, would 
 3. **events** (something that happened or is scheduled in the WORLD at a point in time): a trade executed, a release or announcement, a decision this person made, a project/life milestone. NOT questions, requests, analyses, or anything that only happened inside the chat.
    - type: kind of occurrence — reuse the same label for the same kind
    - title: short summary / description: optional detail / occurredAt: ms epoch / entityNames: linked entity names
+   - An announcement/decision usually yields BOTH: the event (it happened at a point in time) AND a fact (the resulting durable state of the entity — plan, target, position). Record both; the fact is the more useful half for later recall.
 
 4. **lessons** (a rule that should change behavior in FUTURE, UNRELATED conversations — a durable preference or way of working):
    The bar is highest here. SKIP: replays of a single incident ("user pointed out X once"), current project state or what the person is working on right now (those are facts, not rules), duplicates of standing instructions already followed, and anything a schedule already encodes.
@@ -387,9 +389,28 @@ impl ConsolidationManager {
                 String::new()
             } else {
                 let fts = self.memory.list_fact_types(scope).unwrap_or_default();
+                // Incumbent values under each subject — without them the extractor cannot
+                // judge that a figure in the conversation is a CORRECTION of a tracked state
+                // (supersede stays false, stale values linger). Capped 3/entity.
+                let mut facts_by_entity: HashMap<i64, Vec<crate::ports::EntityFactRecord>> =
+                    HashMap::new();
+                for e in &ents {
+                    if let Ok(facts) = self.memory.entity_timeline(
+                        e.id,
+                        &crate::ports::TimelineOpts {
+                            limit: Some(3),
+                            owner: scope.map(String::from),
+                            ..Default::default()
+                        },
+                    ) {
+                        if !facts.is_empty() {
+                            facts_by_entity.insert(e.id, facts);
+                        }
+                    }
+                }
                 format!(
-                    "\n\n[Tracked recall graph — record NEW facts about these subjects and NEW subjects of similar kinds; REUSE the factType labels below for the same kind of statement; set fact.supersede=true when a fact is a NEW VALUE of a state already tracked here]\n{}",
-                    crate::managers::entity::format_entity_index(&ents, &fts)
+                    "\n\n[Tracked recall graph — record NEW facts about these subjects and NEW subjects of similar kinds; REUSE the factType labels below for the same kind of statement; set fact.supersede=true when a fact is a NEW VALUE or CORRECTION of a currently tracked value shown below]\n{}",
+                    crate::managers::entity::format_entity_index(&ents, &fts, &facts_by_entity)
                 )
             }
         };
@@ -526,7 +547,29 @@ impl ConsolidationManager {
                         entity_id_by_name.insert(f.entity_name.clone(), rec.id);
                         Some(rec.id)
                     }
-                    _ => None,
+                    // Auto-upsert — the model referenced an entity it didn't list in entities[].
+                    // Silently dropping the fact loses knowledge (observed: orphan events with no
+                    // entity, facts skipped wholesale). save_entity is upsert + cosine dedup(0.92),
+                    // so a minimal name-only entity is safe and merges with later richer saves.
+                    _ => match self
+                        .memory
+                        .save_entity(SaveEntityInput {
+                            name: f.entity_name.clone(),
+                            entity_type: String::new(),
+                            aliases: vec![],
+                            metadata: None,
+                            source_conv_id: source_conv_id.map(String::from),
+                            dedup_threshold: Some(0.92),
+                            owner: owner.map(String::from),
+                        })
+                        .await
+                    {
+                        Ok((id, _)) => {
+                            entity_id_by_name.insert(f.entity_name.clone(), id);
+                            Some(id)
+                        }
+                        Err(_) => None,
+                    },
                 },
             };
             let Some(entity_id) = entity_id else {
@@ -576,11 +619,31 @@ impl ConsolidationManager {
             }
             let mut entity_ids: Vec<i64> = Vec::new();
             for name in &ev.entity_names {
+                if name.trim().is_empty() {
+                    continue;
+                }
                 if let Some(id) = entity_id_by_name.get(name).copied() {
                     entity_ids.push(id);
                 } else if let Ok(Some(rec)) = self.memory.find_entity_by_name(name) {
                     entity_id_by_name.insert(name.clone(), rec.id);
                     entity_ids.push(rec.id);
+                } else if let Ok((id, _)) = self
+                    .memory
+                    .save_entity(SaveEntityInput {
+                        // Auto-upsert (mirror of the facts loop) — no more orphan events whose
+                        // entity link silently vanished because entities[] omitted the name.
+                        name: name.clone(),
+                        entity_type: String::new(),
+                        aliases: vec![],
+                        metadata: None,
+                        source_conv_id: source_conv_id.map(String::from),
+                        dedup_threshold: Some(0.92),
+                        owner: owner.map(String::from),
+                    })
+                    .await
+                {
+                    entity_id_by_name.insert(name.clone(), id);
+                    entity_ids.push(id);
                 }
             }
             match self

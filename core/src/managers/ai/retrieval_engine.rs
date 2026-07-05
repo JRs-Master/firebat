@@ -166,7 +166,29 @@ impl RetrievalEngine {
             return None;
         }
         let fact_types = entity.list_fact_types(Some(owner)).unwrap_or_default();
-        let body = crate::managers::entity::format_entity_index(&ents, &fact_types);
+        // Active values per subject (promoted only — TimelineOpts default excludes staging/
+        // superseded) so the model can spot when a new figure is a CORRECTION of a tracked
+        // state — supersede judgment needs the incumbent value. Capped 3/entity.
+        let mut facts_by_entity: std::collections::HashMap<
+            i64,
+            Vec<crate::ports::EntityFactRecord>,
+        > = std::collections::HashMap::new();
+        for e in &ents {
+            if let Ok(facts) = entity.get_entity_timeline(
+                e.id,
+                crate::ports::TimelineOpts {
+                    limit: Some(3),
+                    owner: Some(owner.to_string()),
+                    ..Default::default()
+                },
+            ) {
+                if !facts.is_empty() {
+                    facts_by_entity.insert(e.id, facts);
+                }
+            }
+        }
+        let body =
+            crate::managers::entity::format_entity_index(&ents, &fact_types, &facts_by_entity);
         if body.trim().is_empty() {
             None
         } else {

@@ -148,6 +148,7 @@ impl EntityManager {
 pub fn format_entity_index(
     entities: &[crate::ports::EntityRecord],
     fact_types: &[String],
+    facts_by_entity: &std::collections::HashMap<i64, Vec<crate::ports::EntityFactRecord>>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
     for e in entities {
@@ -159,6 +160,17 @@ pub fn format_entity_index(
             line.push_str(&format!(" [{}]", e.entity_type));
         }
         lines.push(line);
+        // Current ACTIVE values under each subject — without these the model (extractor or
+        // chat) cannot judge that a new figure is a CORRECTION of a tracked state, so
+        // supersede never fires and stale values linger. char-capped (byte slicing panics
+        // on Korean — log_buffer lesson).
+        if let Some(facts) = facts_by_entity.get(&e.id) {
+            for f in facts {
+                let label = f.fact_type.as_deref().unwrap_or("-");
+                let content: String = f.content.chars().take(90).collect();
+                lines.push(format!("    · {label}: {content}"));
+            }
+        }
     }
     if !fact_types.is_empty() {
         lines.push(format!("factType labels in use: {}", fact_types.join(", ")));

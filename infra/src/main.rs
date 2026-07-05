@@ -812,6 +812,20 @@ async fn main() -> Result<()> {
                         conv_b.cleanup_old_deleted(RETENTION_MS);
                         let _ = media_b.cleanup_old_attachments(RETENTION_MS).await;
                         let _ = hub_b.cleanup_old_deleted_conversations(RETENTION_MS).await;
+                        // Recall sweep — TTL-expired facts/events + stale staging (autonomous
+                        // observations never re-observed within 30d = natural forgetting).
+                        // cleanup_all_expired existed but had ZERO callers — ttl_days expiry
+                        // never actually ran until wired here.
+                        match consolidation_b.cleanup_all_expired() {
+                            Ok((f, e)) if f + e > 0 => tracing::info!(
+                                target: "consolidation",
+                                facts = f,
+                                events = e,
+                                "retention: expired/stale-staging recall rows removed"
+                            ),
+                            Ok(_) => {}
+                            Err(e) => tracing::warn!(target: "consolidation", error = %e, "retention recall sweep failed"),
+                        }
                         (true, None)
                     }
                     other => (false, Some(format!("알 수 없는 시스템 스케줄 종류: {other}"))),
