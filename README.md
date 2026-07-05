@@ -37,7 +37,7 @@ Firebat is an **AI-Powered Visual Automation Agent (VAA)** — a self-hosted pla
 One prompt flows through **design → implementation → deployment → scheduling → notification**.
 
 **Why VAA?** Firebat sits at the intersection of three categories:
-- **Visual** — results are pages, charts, tables, cards (29 built-in components), not chat logs.
+- **Visual** — results are pages, charts, tables, cards, live realtime feeds (42 built-in components), not chat logs.
 - **Automation** — cron + pipelines run while you're away (not one-shot chat).
 - **Agent** — native Function Calling multi-turn tool loop (no brittle JSON parsing).
 
@@ -142,6 +142,12 @@ When the user asks to build an app/tool/game, the AI enters a guided build flow 
 
 > 🇰🇷 **프로젝트 빌더** — 앱·도구·게임 제작 요청 시 한 번에 뱉지 않고 단계형 빌드 플로우로 진입합니다. Rust 상태 머신(`build_session.rs`)이 **요구 → 설계 → 추가요청 → 구현** 단계를 멀티턴으로 진행하고, tier(T1-T3)에 따라 경로가 적응합니다. 모든 단계는 채팅 안 단일 빌드 카드(stepper + 단계별 옵션 + 유령 조립 애니메이션)로 묶여 single-turn 처럼 보입니다. 완성 후 cron 갱신을 제안해 build→automation 루프를 이룹니다.
 
+### Realtime (WebSocket watches + live components)
+
+Declarative `ws` config per module routes actions over WebSocket (broker condition-search and quote APIs that REST can't reach). `stream_watch_start` keeps a persistent watch alive (auto-reconnect, survives restarts, Telegram fan-out), and `live_feed` / `live_chart` components render those events live in chat — alive while visible in the viewport, frozen with a timestamp when hidden.
+
+> 🇰🇷 **실시간** — 모듈 config `ws` 선언만으로 WS 전용 API(조건검색·실시간 시세) 호출, `stream_watch_*` 상시 감시(재부팅 복원·텔레그램 알림), `live_feed`/`live_chart` 컴포넌트가 채팅에서 실시간 렌더(뷰포트 가시성 = 수명).
+
 ### MCP (Model Context Protocol)
 
 **MCP Server** — external AI tools drive Firebat
@@ -215,16 +221,18 @@ Group multiple modules that perform the same capability, manage priority and fal
 
 > 🇰🇷 **Capability-Provider 시스템** — 같은 기능을 수행하는 여러 모듈을 `capability`로 묶고, 관리자가 UI에서 provider 실행 순서를 지정합니다. 실패 시 다음 provider로 자동 폴백.
 
-### Memory System (4-tier)
+### Intelligence System (4 stores)
 
-CrewAI / Mem0-style Recall + retrieval system — **dialogue ends, facts persist**. Continuous use accumulates entity timelines without manual save.
+Recall + retrieval system — **dialogue ends, facts persist**. Continuous use accumulates entity timelines without manual save. Four stores, each with a distinct job:
 
-| Tier | Role | Implementation |
+| Store | Role | Implementation |
 |---|---|---|
-| **Short-term** | Active conversation turns | ConversationManager (existing) — embeddings search |
-| **Episodic** | Time-stamped events (page publishes, cron triggers, tool calls, user actions) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
-| **Entity** | Tracked subjects (people, projects, concepts, etc.) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
-| **Contextual** | 5-source merged retrieval (history + Recall entities/facts/events + Library RAG) | `RetrievalEngine` — every user prompt → parallel search → `<RETRIEVED_CONTEXT>` auto-prepended (when the AI Assistant toggle is on) |
+| **history** | Past conversation messages | ConversationManager — embeddings search (`search_history`) |
+| **recall** | Structured knowledge: entities (tracked subjects) + facts (their point-in-time state) + events (things that happened) | `entities` + `entity_facts` + `events`/`event_entities` m2m. Semantic search + alias matching + staging/confidence promotion + supersede value history |
+| **library** | Uploaded document RAG | Hybrid dense(E5) + sparse(BM25) + RRF, on-demand `search_library` |
+| **memory** | Operational rules & lessons ("how to work") | `data/memory` .md files — index always injected, body on demand |
+
+**Retrieval** merges history + recall + library into `<RETRIEVED_CONTEXT>` per turn; `<TRACKED_ENTITIES>` (the user's own recall graph) self-steers extraction — no hardcoded examples.
 
 **Auto-accumulation, zero manual work**:
 - Core hooks fire `saveEvent` on every `savePage` / `handleCronTrigger` / `generateImage`.
@@ -553,7 +561,7 @@ Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + 
 **Target architecture**:
 
 ```
-Frontend  Next.js + React + 29 built-in components
+Frontend  Next.js + React + 42 built-in components
                           ↓
                 per-service typed clients (lib/api-gen/*.ts) → @connectrpc gRPC transport (Phase B-typed)
                           ↓

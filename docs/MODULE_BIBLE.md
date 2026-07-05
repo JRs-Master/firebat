@@ -161,6 +161,75 @@ node scripts/gen.mjs             # _apis.json → config + index
 }
 ```
 
+### 선언형 인프라 필드 (선택 — 코드 0줄, config 데이터만)
+
+인프라 choke-point 가 config 선언을 읽어 처리하는 opt-in 필드들. 모듈 코드는 아무것도 import 하지 않는다 (모듈 dumb 원칙). 미선언 = 기존 동작 그대로.
+
+#### `requiresApproval` — 실행 승인 게이트 (2026-07-05)
+```json
+{ "requiresApproval": true }                        // 모듈 전체
+{ "requiresApproval": ["kt10000", "kt10001"] }      // 특정 액션만
+```
+- 선언된 액션을 AI 가 호출하면 **디스패치 계층**(FC=ai.rs + MCP=SysmodHandler — 코드가 거부, 프롬프트 아님)이 즉시 실행 대신:
+  채팅 = 승인 카드(`PendingActionArgs::RunModule`, 승인 시 재생) / cron = 하드 차단 + 명확 메시지 / hub = 차단.
+- 대상: 실주문·비가역·real-money 액션 (키움 주문 12 / 토스 3 / 한투 7 선언 예시). 새 매매/파괴 모듈 = config 한 줄로 자동 포함.
+
+#### `grounding` — 불투명 식별자 날조 차단 (Fact-Provenance L1, 2026-06-30)
+```json
+{
+  "grounding": {
+    "stk_cd": {
+      "pattern": "^Q?[0-9]{6}$",
+      "exemptActions": ["ka10100"],
+      "resolveHint": "코드는 lookup 으로 resolve 하라는 AI 안내문 (영어)"
+    }
+  }
+}
+```
+- 선언된 param 값이 **세션 provenance corpus**(사용자 입력 ∪ 이전 도구 결과)에 없으면 디스패치 계층(MCP + FC 양쪽)이 실행 거부 + `resolveHint` 반환 → AI 가 resolve(예: dart lookup) 후 재시도.
+- `pattern` = 값-shape 필터(예: 6자리 종목코드만 gate, 4자리 지수코드는 통과 — 한투 FID_INPUT_ISCD 오버로딩 대응). 닫힌 enum 값은 기존 input schema 타입체크가 이미 막으므로 **열린 값(종목코드류)만** 선언.
+
+#### `ws` — WebSocket 전용 API (스냅샷 + 상시 감시, 2026-07-05)
+```json
+{
+  "ws": {
+    "argsField": "params",
+    "endpoint": "wss://api.kiwoom.com:10000/api/dostk/websocket",
+    "endpointMock": "wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
+    "matchField": "trnm",
+    "echoValues": ["PING"],
+    "errorMsgField": "return_msg",
+    "login": {
+      "frame": { "trnm": "LOGIN", "token": "{TOKEN}" },
+      "match": "LOGIN",
+      "successWhen": { "field": "return_code", "equals": 0 },
+      "tokenSecret": "KIWOOM_ACCESS_TOKEN"
+    },
+    "actions": {
+      "ka10172": {
+        "preFrames": [ { "frame": { "trnm": "CNSRLST" }, "match": "CNSRLST", "successWhen": { "field": "return_code", "equals": 0 } } ],
+        "frame": { "trnm": "CNSRREQ", "seq": "{seq}", "search_type": "{search_type:0}" },
+        "match": "CNSRREQ",
+        "successWhen": { "field": "return_code", "equals": 0 }
+      }
+    },
+    "streams": {
+      "condition": { "subscribe": { "...": "..." }, "unsubscribe": { "...": "..." }, "realtimeMatch": "REAL" }
+    },
+    "unsupportedActions": ["ka10173", "ka10174"]
+  }
+}
+```
+- `ws.actions` 에 선언된 액션은 sandbox 대신 **`IWsApiPort`**(스냅샷 요청/응답)로 라우팅된다. 프레임은 전부 데이터 — 필드가 틀려도 config 수정 + git pull 로 fix(재빌드 0).
+- 템플릿 치환: `"{param}"` = input 값 / `"{param:default}"` = 기본값 / `"{TOKEN}"` = 인프라가 `tokenSecret` 토큰 주입.
+- `argsField` = 모듈의 인자 컨테이너 규약(예: 키움 `{action, params:{...}}` 중첩)을 루트에 overlay — flat 모듈은 미선언.
+- `preFrames` = 본 요청 전 같은 세션에서 선행 왕복해야 하는 프레임(키움: CNSRLST 를 먼저 보내야 CNSRREQ 응답).
+- `ws.streams` = **`IWsStreamPort`** 상시 감시 선언(`stream_watch_start/stop/list` AI 도구) — 편입/이탈·시세 REAL 프레임이 이벤트 버스(SSE topic) + telegram 으로 fan-out, vault 영속으로 재부팅 자동 복원.
+- `unsupportedActions` = WS 로도 REST 로도 아직 못 하는 액션에 명확한 에러 메시지(추측 호출 방지).
+- 응답 auto-cache 는 sandbox 와 **같은 choke-point 공유** — 수백 종목 스냅샷도 캐시 + 프리뷰로 처리.
+
+> 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
+
 ---
 
 ## 제4장: secrets 규약
@@ -229,7 +298,23 @@ sysmod 가 stdout 에 다음 envelope 를 출력하면 sandbox 가 자동으로 
 
 ### 제5항. 자동 갱신 cron (선택 — 트리거 도달 시 도입)
 
-`lifetimeSec` 명시된 token 에 대해 system cron 이 만료 80% 도달 시점 refresh trigger. 현재는 sysmod 가 호출 시점에 만료 감지 → forceNew 재시도 패턴 (한투/키움) 사용 중 — 자동 cron 은 OAuth refresh API 가 있는 사례 (kakao 등) 가 활성 사용될 때 도입. 옛 호환: `lifetimeSec` 없는 항목 = 갱신 cron 등록 X.
+~~`lifetimeSec` 명시된 token 에 대해 system cron 이 만료 80% 도달 시점 refresh trigger~~ → **superseded (2026-06, 인프라 TokenProvider)**: 토큰 생명주기는 이제 **`OAuthTokenProvider`**(infra) 가 secrets 항목의 선언형 `oauth` 블록으로 처리한다 — 모듈 토큰 코드 0줄.
+
+```json
+{
+  "name": "KIWOOM_ACCESS_TOKEN", "type": "token", "lifetimeSec": 85800,
+  "oauth": {
+    "base": "https://api.kiwoom.com", "path": "/oauth2/token", "method": "POST",
+    "body": { "grant_type": "client_credentials", "appkey": "${KIWOOM_APP_KEY}", "secretkey": "${KIWOOM_APP_SECRET}" },
+    "tokenField": "token",
+    "invalidWhen": { "match": "any", "conditions": [ { "field": "return_code", "equals": 3 } ] }
+  }
+}
+```
+
+- **proactive**: 호출 전 `ensure_fresh` — `lifetimeSec` 기준 만료 임박이면 선제 재발급 → Vault 영속(`{t,iat}`) → env 주입.
+- **reactive**: 응답이 `invalidWhen` 에 매치되면 force 재발급 + 재시도 1회.
+- sandbox(REST) · ws_api · ws_stream 이 **한 provider 인스턴스 공유**(per-secret 락 = thundering herd 방지). 적용: korea-invest / kiwoom (실측 통과) / kakao (코드만, HTTPS 전환 대기). `refreshFrom` = refresh_token 회전(kakao OAuth 패턴).
 
 ---
 

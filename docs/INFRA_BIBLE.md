@@ -27,9 +27,9 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 20개 어댑터 구현 규격 (2026-06-02 코드 전수 검증)
+## 제2장: 23개 어댑터 구현 규격 (2026-06-02 전수 검증 → 2026-07-05 재검증)
 
-CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영 어댑터 20개**가 22개 포트 중 21개를 구현한다 — `SqliteMemoryAdapter` 1개가 `IEntityPort` + `IEpisodicPort` 둘을 겸하고, 나머지 22번째 `IMemoryFacadePort` 는 infra 어댑터가 아니라 core 매니저(`MemoryFacade`, `core/src/managers/memory_facade.rs`)가 구현한다 (Entity/Episodic wrapper — hexagonal 정공). 모두 `infra/src/adapters/*.rs` (LLM·image_gen 은 `infra/src/llm/` · `infra/src/image_gen/`).
+CORE_BIBLE 제2장의 25개 포트와 짝을 이루는 infra 어댑터. **운영 어댑터 23개**가 25개 포트 중 24개를 구현한다 — `SqliteMemoryAdapter` 1개가 `IEntityPort` + `IEpisodicPort` 둘을 겸하고, 나머지 `IMemoryFacadePort` 는 infra 어댑터가 아니라 core 매니저(`MemoryFacade`, `core/src/managers/memory_facade.rs`)가 구현한다 (Entity/Episodic wrapper — hexagonal 정공). 모두 `infra/src/adapters/*.rs` (LLM·image_gen 은 `infra/src/llm/` · `infra/src/image_gen/`).
 
 진화 추적:
 - v0.1: 10개 어댑터
@@ -37,8 +37,10 @@ CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영
 - Phase B-4 cutover (2026-05-06): TS → Rust 전면 이식, SysmodCache → core/utils 이동
 - Phase B-post (2026-05-06): `ReqwestNetworkAdapter`(INetworkPort) 신설
 - 이후 누적: `EnvConfigAdapter`(IConfigPort) / `FileEmbedderCacheAdapter`(IEmbedderCachePort) / `SqliteLibraryAdapter`(ILibraryPort) / `TelegramNotifierAdapter`(INotifierPort) / `SqliteHubAdapter`(IHubPort) 추가 → 20
+- 2026-06-20: `TtsAdapter`(ITtsPort, `infra/src/tts/`) — LC 오디오 파이프라인 → 21
+- 2026-07-05: `WsApiAdapter`(IWsApiPort) + `WsStreamAdapter`(IWsStreamPort) — WS 공통 인프라 (키움 조건검색 1단계 + 상시 감시 2a) → 23
 
-**운영 어댑터 20개**: storage / log(tracing) / sandbox / llm / network / cron / database / vault / mcp_client / auth / embedder(E5) / media / image_processor(image-rs) / image_gen / memory(Entity+Episodic) / embedder_cache / library / config / notifier(telegram) / hub.
+**운영 어댑터 23개**: storage / log(tracing) / sandbox / llm / network / cron / database / vault / mcp_client / auth / embedder(E5) / media / image_processor(image-rs) / image_gen / memory(Entity+Episodic) / embedder_cache / library / config / notifier(telegram) / hub / tts / ws_api / ws_stream.
 
 > 운영 외 구현 (개수 제외): stub 5종 (embedder/llm/sandbox/image_gen/image_processor — 테스트·부팅 fallback), 대체구현 2종 (`ArcticLocalEmbedderAdapter` — `FIREBAT_EMBEDDER=arctic` env 시 / `ConsoleLogAdapter` — 옛 단순 로그). `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os="linux")]`) 은 운영 미사용 — sysmod libuv/encodings/CLONE_NEWNET 차단 이슈로 `FIREBAT_SANDBOX=basic`(ProcessSandbox) 사용.
 
@@ -208,6 +210,24 @@ CORE_BIBLE 제2장의 22개 포트와 짝을 이루는 infra 어댑터. **운영
 ### 20. Hub Adapter (`infra/src/adapters/hub.rs`)
 - `IHubPort` 구현 (`SqliteHubAdapter`, rusqlite + uuid) — Hub(외부 위젯·방문자) 인스턴스 / 대화 / 메시지 CRUD.
 - 대화 메시지 soft-delete(`deleted_at`, 30일 retention cron) + 인스턴스 삭제 시 conversations/messages FK순 cascade hard-delete. `allowed_references`/`allowed_sysmods`/`allowed_domains` 는 `Vec<String>` ↔ TEXT(JSON) 직렬화.
+- ⚠️ 옛 `hub_conversations`/`hub_messages` 테이블은 2026-06-29 chat 영속 통합(app.db `conversation_messages` 단일 store, ConversationManager owner-param)으로 **더 이상 안 쓴다**(orphan 데이터, drop 은 안 함) — 인스턴스만 memory.db 유지.
+
+### 21. TTS Adapter (`infra/src/tts/mod.rs`)
+- `ITtsPort` 구현 (`TtsAdapter`, reqwest) — OpenAI `gpt-4o-mini-tts`(mp3) / Gemini TTS(멀티스피커 base64 PCM→WAV) / 브라우저 위임. conv-scoped 저장 + generate-once 캐시. LC(듣기) 오디오 파이프라인 (2026-06-20).
+
+### 22. WS API Adapter (`infra/src/adapters/ws_api.rs`)
+- `IWsApiPort` 구현 (`WsApiAdapter`, tokio-tungstenite + rustls) — WS **스냅샷** 요청/응답 (REST 로 못 부르는 WS 전용 API, 키움 조건검색 ka10171/ka10172).
+- 흐름: connect(deadline) → LOGIN(토큰 = **공유 `OAuthTokenProvider`** proactive) → preFrames(같은 세션 선행 왕복 — 키움 CNSRLST→CNSRREQ 제약) → 요청 → `match_field` 상관 프레임 대기(PING 에코 · 무관 프레임 skip 로그는 frame_kind 만 — 토큰 보호) → `successWhen` 검사 → 실패 시 `invalidWhen` 매치면 force 재발급 + 재연결 1회(sandbox reactive 미러).
+- 응답은 **sandbox 와 공유하는 `apply_auto_cache`**(pub(crate), transport-agnostic choke-point) 통과 — 큰 결과 캐시 + 프리뷰. 프레임/필드는 전부 모듈 config `ws` 블록 데이터(provider Rust 하드코드 0) — 필드 틀려도 config git pull 로 fix(재빌드 0).
+
+### 23. WS Stream Adapter (`infra/src/adapters/ws_stream.rs`)
+- `IWsStreamPort` 구현 (`WsStreamAdapter`) — WS **상시 연결 실시간 감시** (키움 조건검색 편입/이탈, 시세 REG 등).
+- watch 당 tokio task: LOGIN → preFrames → subscribe(초기 스냅샷도 sink) → REAL 프레임 수신 `select!{cancel|next}`. 끊기면 백오프 5s→60s 재연결+재구독, stop = unsubscribe(CNSRCLR) best-effort.
+- sink = main.rs 배선: `EventManager.emit`(topic `ws-stream:{watchId}`) → `/api/events` SSE(라이브 컴포넌트 live_feed/live_chart) + `notify:"telegram"` 이면 telegram sysmod 발송. watch 메타는 vault `system:ws-watches` 영속 → **재부팅 자동 복원**(`restore_streams`). 수명 = 명시 `stream_watch_stop` 까지(라이브 *컴포넌트*의 뷰포트 수명 룰과 별개).
+
+### (헬퍼) OAuth Token Provider (`infra/src/adapters/token_provider.rs`)
+- 포트 구현이 아닌 공유 헬퍼 — sysmod secrets 의 `oauth` 선언(`endpoint/body/tokenField/invalidWhen`, `lifetimeSec`)을 읽어 **proactive**(`ensure_fresh` 만료 전 재발급) + **reactive**(`is_invalid` 매치 시 force 재발급) 토큰 생명주기를 인프라에서 처리. 모듈 토큰 코드 0줄.
+- **sandbox · ws_api · ws_stream 이 한 인스턴스 공유**(main.rs) — per-secret 락으로 thundering herd 방지. 발급 결과는 Vault 영속(`{t,iat}` JSON).
 
 ---
 
