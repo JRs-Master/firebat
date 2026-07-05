@@ -2395,7 +2395,7 @@ mod tests {
             _opts: &LlmCallOpts,
         ) -> InfraResult<LlmToolResponse> {
             // 첫 호출만 scripted calls — 이후 빈 응답 (loop 종료)
-            let calls = std::mem::take(&mut *self.scripted_calls.lock().unwrap());
+            let calls = std::mem::take(&mut *self.scripted_calls.lock().unwrap_or_else(|p| p.into_inner()));
             Ok(LlmToolResponse {
                 text: if calls.is_empty() {
                     "최종 응답".to_string()

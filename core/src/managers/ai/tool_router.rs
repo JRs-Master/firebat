@@ -256,7 +256,7 @@ mod tests {
         r.record_components_cache_id(43);
         // backbone — record_turn_success 가 reset (LLM router 설정된 후 success 호출 활성)
         r.record_turn_success(true, true).await;
-        let state = r.last_route_cache_ids.lock().unwrap();
+        let state = r.last_route_cache_ids.lock().unwrap_or_else(|p| p.into_inner());
         assert!(state.components.is_empty());
         assert!(state.tools.is_none());
     }
@@ -265,7 +265,7 @@ mod tests {
     fn record_components_cache_id_ignores_negative() {
         let (r, _dir) = make_router();
         r.record_components_cache_id(-1);
-        let state = r.last_route_cache_ids.lock().unwrap();
+        let state = r.last_route_cache_ids.lock().unwrap_or_else(|p| p.into_inner());
         assert!(state.components.is_empty());
     }
 
@@ -286,7 +286,7 @@ mod tests {
         }
         // cleanup — 90초 안이라 그대로
         r.cleanup_stale_routings();
-        assert!(r.session_last_routing.lock().unwrap().contains_key("c1"));
+        assert!(r.session_last_routing.lock().unwrap_or_else(|p| p.into_inner()).contains_key("c1"));
         // (90초 지난 검증은 unit test 한도 — 실 시간 의존이라 skip. 실 운영에선 자연 expire.)
     }
 }

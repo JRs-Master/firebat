@@ -76,7 +76,7 @@ pub fn current_default_lang() -> String {
 pub fn init(workspace_root: &Path) {
     let store = build_store(workspace_root);
     let lang_count = store.by_lang.len();
-    *STORE.write().unwrap() = Some(store);
+    *STORE.write().unwrap_or_else(|p| p.into_inner()) = Some(store);
     tracing::info!("i18n: {} lang(s) loaded", lang_count);
 }
 

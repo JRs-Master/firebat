@@ -387,12 +387,6 @@ pub fn clear_pending_in_memory() {
         map.clear();
     }
 }
-
-/// 디버깅·테스트용 — 메모리 store 크기.
-pub fn pending_count() -> usize {
-    store_lock().lock().map(|m| m.len()).unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -399,6 +399,13 @@ pub trait IDatabasePort: Send + Sync {
     /// LLM 비용 통계 조회 — filter 적용 후 SUM/COUNT 집계.
     fn query_llm_cost_stats(&self, filter: &LlmCostStatsFilter) -> LlmCostStatsSummary;
 
+    /// 오래된 llm_costs rows 정리 — retention cron 용 (INSERT-only 라 유일한 무한 성장
+    /// 테이블이었음). 삭제 row 수 반환. Default no-op (테스트 스텁).
+    fn prune_llm_costs(&self, before_ts: i64) -> i64 {
+        let _ = before_ts;
+        0
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Raw SELECT escape hatch — gRPC DatabaseService 가 사용 (`services/database.rs`).
     // SELECT 만 허용. INSERT/UPDATE/DELETE 은 거부 (도메인 메서드 사용).

@@ -687,7 +687,11 @@ async fn main() -> Result<()> {
             )),
         )
             .with_tools(tool_manager.clone())
-            .with_status(status_manager.clone()),
+            .with_status(status_manager.clone())
+            // EXECUTE 실패 시 같은 capability 의 대체 provider 자동 폴백(옛 TS
+            // tryFallbackProvider). 빌더는 있었는데 배선이 빠져 기능이 영구 비활성이던
+            // 반쪽 포팅 — cleanup_all_expired 와 같은 클래스.
+            .with_capability_manager(capability_manager.clone()),
     );
 
     // INetworkPort — network_request 도구가 의존. 어댑터는 무의존이라 register_core_tools 앞에서 생성
@@ -768,6 +772,8 @@ async fn main() -> Result<()> {
     let conv_cb = conversation_manager.clone();
     let media_cb = media_manager.clone();
     let hub_cb = hub_manager.clone();
+    let cost_cb = cost_manager.clone();
+    let auth_cb = auth_manager.clone();
     let trigger_callback: firebat_core::ports::CronTriggerCallback = std::sync::Arc::new(move |info| {
         let mgr = schedule_arc.clone();
         let core_b = core_cb.clone();
@@ -777,6 +783,8 @@ async fn main() -> Result<()> {
         let conv_b = conv_cb.clone();
         let media_b = media_cb.clone();
         let hub_b = hub_cb.clone();
+        let cost_b = cost_cb.clone();
+        let auth_b = auth_cb.clone();
         Box::pin(async move {
             // handle_trigger 가 info 를 소비하므로 기록 메타를 먼저 추출.
             let builtin = info.builtin_kind.clone();
@@ -812,6 +820,16 @@ async fn main() -> Result<()> {
                         conv_b.cleanup_old_deleted(RETENTION_MS);
                         let _ = media_b.cleanup_old_attachments(RETENTION_MS).await;
                         let _ = hub_b.cleanup_old_deleted_conversations(RETENTION_MS).await;
+                        // Auth hygiene — expired session rows only vanish via list_sessions'
+                        // lazy sweep, and nothing called it periodically (rows accumulated;
+                        // validation was safe — expiry is enforced at read).
+                        let _ = auth_b.sweep_expired_sessions();
+                        // Cost rows — llm_costs was INSERT-only (the lone unbounded table).
+                        // 12-month retention keeps a year of stats for the cost tab.
+                        let pruned = cost_b.prune_older_than(365);
+                        if pruned > 0 {
+                            tracing::info!(target: "cron", rows = pruned, "retention: old llm_costs rows pruned");
+                        }
                         // Recall sweep — TTL-expired facts/events + stale staging (autonomous
                         // observations never re-observed within 30d = natural forgetting).
                         // cleanup_all_expired existed but had ZERO callers — ttl_days expiry

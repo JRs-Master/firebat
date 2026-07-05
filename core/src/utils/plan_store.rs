@@ -292,12 +292,6 @@ pub fn clear_plan_store_in_memory() {
         map.clear();
     }
 }
-
-/// 디버깅·테스트용.
-pub fn plan_count() -> usize {
-    store_lock().lock().map(|m| m.len()).unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

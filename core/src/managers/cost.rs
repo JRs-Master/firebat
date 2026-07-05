@@ -171,6 +171,12 @@ impl CostManager {
     }
 
     /// 통계 조회 (filter 적용).
+    /// 오래된 비용 rows 정리 — retention cron 이 호출 (12개월 보존).
+    pub fn prune_older_than(&self, days: i64) -> i64 {
+        let cutoff = crate::utils::time::now_ms() - days * 24 * 60 * 60 * 1000;
+        self.db.prune_llm_costs(cutoff)
+    }
+
     pub fn get_stats(&self, filter: &CostStatsFilter) -> CostStatsSummary {
         self.db.query_llm_cost_stats(filter)
     }

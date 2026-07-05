@@ -1243,6 +1243,14 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         .is_ok()
     }
 
+    fn prune_llm_costs(&self, before_ts: i64) -> i64 {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM llm_costs WHERE ts < ?1", params![before_ts])
+        })
+        .map(|n| n as i64)
+        .unwrap_or(0)
+    }
+
     fn run_select_query(&self, sql: &str) -> InfraResult<Vec<RawSqlRow>> {
         // SELECT 만 허용 — 머리부분 첫 키워드 검사 (대소문자 무시).
         let trimmed = sql.trim_start();

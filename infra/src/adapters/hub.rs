@@ -106,7 +106,7 @@ impl IHubPort for SqliteHubAdapter {
     // ─── Instance CRUD ────────────────────────────────────────────────────
 
     async fn create_instance(&self, instance: &HubInstance) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "INSERT INTO hub_instances (
                 id, slug, name, description, system_prompt,
@@ -138,7 +138,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn list_instances(&self) -> InfraResult<Vec<HubInstance>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
@@ -160,7 +160,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn get_instance(&self, id: &str) -> InfraResult<Option<HubInstance>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
@@ -175,7 +175,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn get_instance_by_slug(&self, slug: &str) -> InfraResult<Option<HubInstance>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
@@ -190,7 +190,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn update_instance(&self, instance: &HubInstance) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let updated_at = now_ms();
         conn.execute(
             "UPDATE hub_instances SET
@@ -222,7 +222,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn delete_instance(&self, id: &str) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // SQLite 의 PRAGMA foreign_keys 가 OFF 라도 명시 cascade 수행 (defense-in-depth):
         //   instance 삭제 → 그 instance 의 모든 conversations + messages 같이 삭제.
         // hub_messages 가 conversation_id FK 를 가져서 conv 삭제 시 messages 도 같이 삭제되어야 함.
@@ -250,7 +250,7 @@ impl IHubPort for SqliteHubAdapter {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // 옛 (instance_id, session_id) 의 마지막 활성 대화 찾기.
         let existing: Option<String> = conn
             .query_row(
@@ -283,7 +283,7 @@ impl IHubPort for SqliteHubAdapter {
         session_id: &str,
     ) -> InfraResult<String> {
         // 옛 conv 있어도 항상 새 conv 생성 — multi-conv 시나리오.
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let id = uuid::Uuid::new_v4().to_string();
         let ts = now_ms();
         conn.execute(
@@ -301,7 +301,7 @@ impl IHubPort for SqliteHubAdapter {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
@@ -325,7 +325,7 @@ impl IHubPort for SqliteHubAdapter {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
@@ -345,7 +345,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
@@ -359,7 +359,7 @@ impl IHubPort for SqliteHubAdapter {
     async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
         // soft delete — deleted_at 만 갱신. 30일 후 cron 이 영구 삭제.
         // 사용자가 휴지통에서 복원 (restore_conversation) 하면 deleted_at NULL.
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let ts = now_ms();
         conn.execute(
             "UPDATE hub_conversations SET deleted_at = ?1 WHERE id = ?2",
@@ -370,7 +370,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "UPDATE hub_conversations SET deleted_at = NULL WHERE id = ?1",
             params![id],
@@ -381,7 +381,7 @@ impl IHubPort for SqliteHubAdapter {
 
     async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
         // hard delete — messages cascade. 휴지통 명시 클릭 또는 30일 retention cron 이 호출.
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "DELETE FROM hub_messages WHERE conversation_id = ?1",
             params![id],
@@ -397,7 +397,7 @@ impl IHubPort for SqliteHubAdapter {
 
     async fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> InfraResult<i64> {
         // deleted_at < cutoff 인 row + 자식 hub_messages cascade hard delete. 30d retention cron 이 호출.
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "DELETE FROM hub_messages WHERE conversation_id IN
                 (SELECT id FROM hub_conversations WHERE deleted_at IS NOT NULL AND deleted_at < ?1)",
@@ -414,7 +414,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let ts = now_ms();
         conn.execute(
             "UPDATE hub_conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
@@ -427,7 +427,7 @@ impl IHubPort for SqliteHubAdapter {
     // ─── Message ──────────────────────────────────────────────────────────
 
     async fn append_message(&self, msg: &HubMessage) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "INSERT INTO hub_messages
                 (id, conversation_id, role, content, data_json, created_at)
@@ -452,7 +452,7 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn list_messages(&self, conversation_id: &str) -> InfraResult<Vec<HubMessage>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT id, conversation_id, role, content, data_json, created_at

@@ -703,7 +703,11 @@ impl ConsolidationManager {
                         // the sentence-preference class of accident).
                         confidence: 0.5,
                     };
-                    let _ = mf.save(owner, &entry).await;
+                    if let Err(e) = mf.save(owner, &entry).await {
+                        // Observability — a silently dropped lesson made "extraction ran but
+                        // nothing saved" indistinguishable from correct abstention.
+                        tracing::warn!(target: "consolidation", lesson = %l.name, error = %e, "lesson save failed");
+                    }
                 }
             }
         }

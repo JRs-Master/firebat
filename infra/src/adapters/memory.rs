@@ -458,7 +458,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         let now = now_ms();
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
         let dedup_on = input.dedup_threshold.is_some();
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // dedup 키 정규화 — 모든 공백 제거 + 소문자. "LG전자" = "LG 전자" = "LG  전자" = "lg전자".
         // split_whitespace 는 전각 공백(U+3000) 포함 Unicode 공백을 전부 흡수.
         let norm = |s: &str| s.split_whitespace().collect::<String>().to_lowercase();
@@ -594,7 +594,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn update_entity(&self, id: i64, patch: &UpdateEntityPatch) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut sets: Vec<&str> = vec![];
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
         if let Some(n) = &patch.name {
@@ -635,7 +635,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn remove_entity(&self, id: i64) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // ON DELETE CASCADE 활성화 — entity_facts / event_entities 자동 정리
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("foreign_keys ON 실패: {e}"))?;
@@ -649,7 +649,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn get_entity(&self, id: i64) -> InfraResult<Option<EntityRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let fact_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM entity_facts WHERE entity_id = ?1",
@@ -670,7 +670,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // canonical name 또는 alias 매칭 — alias 는 JSON LIKE. owner 영역 = admin scope 만
         // (find_entity_by_name 은 owner 인자 없으므로 admin default — hub-aware lookup 은 search_entities 통해).
         let row = conn.query_row(
@@ -717,7 +717,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                 .await
                 .map_err(|e| format!("embed_query 실패: {e}"))?;
 
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
             let mut sql = String::from(
                 r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner, embedding
                    FROM entities WHERE owner = ?"#,
@@ -763,7 +763,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         }
 
         // Fallback (embedder 미설정 또는 query 빈 string) — substring 매칭 + updated_at DESC.
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let q_pattern = format!("%{}%", opts.query);
         let alias_pattern = format!("%\"{}\"%", opts.query);
         let mut sql = String::from(
@@ -813,7 +813,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         // 허용(hub 방문자가 admin·타 hub 엔티티에 fact 주입 = cross-tenant write + prompt-injection 차단).
         // admin(owner None/빈값) = 무검사. 미존재·소유 불일치 모두 동일 에러로 존재 은닉.
         {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
             let entity_owner: Option<String> = conn
                 .query_row(
                     "SELECT owner FROM entities WHERE id = ?1",
@@ -851,7 +851,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         ) {
             if threshold > 0.0 {
                 let now = now_ms();
-                let conn = self.conn.lock().unwrap();
+                let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
                 let mut stmt = conn
                     .prepare(
                         "SELECT id, embedding FROM entity_facts
@@ -933,7 +933,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         let tags_json =
             serde_json::to_string(&input.tags).map_err(|e| format!("tags 직렬화: {e}"))?;
         let expires_at = input.ttl_days.map(|d| now + d * 24 * 60 * 60 * 1000);
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // fact.owner = 부모 entity 의 owner 자동 매핑 (cascade 일관성).
         let entity_owner: String = conn
             .query_row(
@@ -995,7 +995,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn update_fact(&self, id: i64, patch: &UpdateFactPatch, owner: Option<&str>) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut sets: Vec<&str> = vec![];
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
         if let Some(c) = &patch.content {
@@ -1047,7 +1047,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn remove_fact(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // owner=Some: scoped delete (hub). Mismatch/absent gives n=0, raising the error below.
         let n = match owner {
             Some(o) => conn
@@ -1067,7 +1067,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let result = conn.query_row(
             r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen
                FROM entity_facts WHERE id = ?1"#,
@@ -1086,7 +1086,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         entity_id: i64,
         opts: &TimelineOpts,
     ) -> InfraResult<Vec<EntityFactRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let limit = opts.limit.unwrap_or(50).min(500) as i64;
         let offset = opts.offset.unwrap_or(0) as i64;
         let order = match opts.order_by.as_deref() {
@@ -1173,7 +1173,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                 .map_err(|e| format!("embed_query 실패: {e}"))?;
 
             let (sql, values) = build_filters(opts, true);
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
             let mut stmt = conn.prepare(&sql).map_err(|e| format!("search facts: {e}"))?;
             let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
             let rows = stmt
@@ -1214,7 +1214,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         values.push(Box::new(limit as i64));
         values.push(Box::new(offset as i64));
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("search facts: {e}"))?;
         let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
         let rows = stmt
@@ -1237,7 +1237,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn cleanup_expired_facts(&self) -> InfraResult<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = now_ms();
         // Two expiry classes in one sweep:
         // (1) explicit TTL (expires_at) — as before.
@@ -1259,20 +1259,20 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn count_entities(&self, owner: Option<&str>) -> InfraResult<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         // owner-scoped count: None = admin scope (matches the search convention). Each owner counts only its own, not a global sum.
         conn.query_row("SELECT COUNT(*) FROM entities WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_entities: {e}"))
     }
 
     fn count_facts(&self, owner: Option<&str>) -> InfraResult<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.query_row("SELECT COUNT(*) FROM entity_facts WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_facts: {e}"))
     }
 
     fn list_fact_types(&self, owner: Option<&str>) -> InfraResult<Vec<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT DISTINCT fact_type FROM entity_facts
@@ -1292,7 +1292,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     }
 
     fn count_entities_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare("SELECT type, COUNT(*) FROM entities WHERE owner = ?1 GROUP BY type ORDER BY 2 DESC")
             .map_err(|e| format!("count by type: {e}"))?;
@@ -1377,7 +1377,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             if threshold > 0.0 {
                 let now = now_ms();
                 let cutoff = now - EVENT_DEDUP_WINDOW_MS;
-                let conn = self.conn.lock().unwrap();
+                let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
                 let mut stmt = conn
                     .prepare(
                         "SELECT id, embedding FROM events
@@ -1429,7 +1429,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             }
         }
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = now_ms();
         let occurred_at = input.occurred_at.unwrap_or(now);
         let context_json = match &input.context {
@@ -1480,7 +1480,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn update_event(&self, id: i64, patch: &UpdateEventPatch) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut sets: Vec<&str> = vec![];
         let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
         if let Some(t) = &patch.event_type {
@@ -1541,7 +1541,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn remove_event(&self, id: i64, owner: Option<&str>) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute("PRAGMA foreign_keys = ON", [])
             .map_err(|e| format!("foreign_keys ON: {e}"))?;
         // owner=Some: owner-scoped delete (hub). Mismatch/absent gives n=0, raising the permission/not-found error below.
@@ -1563,7 +1563,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn get_event(&self, id: i64) -> InfraResult<Option<EventRecord>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let entity_ids = Self::fetch_event_entity_ids(&conn, id);
         let result = conn.query_row(
             r#"SELECT id, type, title, description, who, context, occurred_at, source_conv_id, expires_at, created_at, owner, superseded_by, explicit, confidence, seen_count, last_seen
@@ -1648,7 +1648,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
 
             // cosine 모드는 query LIKE 적용 X — 임베딩 매칭으로 충분
             let (sql, values) = build_filters(opts, true, false);
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
             let mut stmt = conn.prepare(&sql).map_err(|e| format!("search events: {e}"))?;
             let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
             let rows = stmt
@@ -1718,7 +1718,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         values.push(Box::new(limit as i64));
         values.push(Box::new(offset as i64));
 
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("search events: {e}"))?;
         let value_refs: Vec<&dyn rusqlite::ToSql> = values.iter().map(|b| b.as_ref()).collect();
         let rows = stmt
@@ -1778,7 +1778,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let limit = opts.limit.unwrap_or(20).min(200) as i64;
         let offset = opts.offset.unwrap_or(0) as i64;
         let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut sql = String::from(
             r#"SELECT e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.superseded_by, e.explicit, e.confidence, e.seen_count, e.last_seen
                FROM events e WHERE e.owner = ? AND (e.expires_at IS NULL OR e.expires_at > ?)"#,
@@ -1854,7 +1854,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn link_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.execute(
             "INSERT OR IGNORE INTO event_entities (event_id, entity_id) VALUES (?1, ?2)",
             params![event_id, entity_id],
@@ -1864,7 +1864,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn unlink_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let n = conn
             .execute(
                 "DELETE FROM event_entities WHERE event_id = ?1 AND entity_id = ?2",
@@ -1881,7 +1881,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn cleanup_expired_events(&self) -> InfraResult<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let now = now_ms();
         // Same two-class sweep as cleanup_expired_facts (TTL + stale staging — see there).
         let staging_cutoff = now - STAGING_TTL_MS;
@@ -1897,13 +1897,13 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn count_events(&self, owner: Option<&str>) -> InfraResult<i64> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         conn.query_row("SELECT COUNT(*) FROM events WHERE owner = ?1", params![owner.unwrap_or("admin")], |r| r.get(0))
             .map_err(|e| format!("count_events: {e}"))
     }
 
     fn count_events_by_type(&self, owner: Option<&str>) -> InfraResult<Vec<(String, i64)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut stmt = conn
             .prepare("SELECT type, COUNT(*) FROM events WHERE owner = ?1 GROUP BY type ORDER BY 2 DESC")
             .map_err(|e| format!("count events by type: {e}"))?;
@@ -2190,7 +2190,7 @@ mod tests {
             .await
             .unwrap();
         // 임베딩 BLOB 이 설정되었는지 직접 확인
-        let conn = a.conn.lock().unwrap();
+        let conn = a.conn.lock().unwrap_or_else(|p| p.into_inner());
         let blob: Option<Vec<u8>> = conn
             .query_row(
                 "SELECT embedding FROM entities WHERE id = ?1",

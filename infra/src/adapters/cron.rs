@@ -114,19 +114,27 @@ impl TokioCronAdapter {
     fn flush_jobs(&self, jobs: &HashMap<String, CronJobInfo>) {
         let list: Vec<&CronJobInfo> = jobs.values().collect();
         if let Ok(raw) = serde_json::to_string_pretty(&list) {
-            let _ = std::fs::write(&self.jobs_file, raw);
+            // Job DEFINITIONS — a silently dropped write here means schedules vanish on
+            // restart with zero trace (disk full / permissions). Log loudly.
+            if let Err(e) = std::fs::write(&self.jobs_file, raw) {
+                tracing::error!(target: "cron", error = %e, "cron jobs 파일 저장 실패 — 재시작 시 스케줄 유실 위험");
+            }
         }
     }
 
     fn flush_logs(&self, logs: &[CronLogEntry]) {
         if let Ok(raw) = serde_json::to_string_pretty(logs) {
-            let _ = std::fs::write(&self.logs_file, raw);
+            if let Err(e) = std::fs::write(&self.logs_file, raw) {
+                tracing::warn!(target: "cron", error = %e, "cron 로그 파일 저장 실패");
+            }
         }
     }
 
     fn flush_notifications(&self, notes: &[CronNotification]) {
         if let Ok(raw) = serde_json::to_string_pretty(notes) {
-            let _ = std::fs::write(&self.notifications_file, raw);
+            if let Err(e) = std::fs::write(&self.notifications_file, raw) {
+                tracing::warn!(target: "cron", error = %e, "cron 알림 파일 저장 실패");
+            }
         }
     }
 
@@ -244,7 +252,7 @@ impl TokioCronAdapter {
     /// callback 호출 + 로그 기록.
     async fn fire_trigger(self: Arc<Self>, info: CronTriggerInfo) {
         let cb = {
-            let guard = self.callback.lock().unwrap();
+            let guard = self.callback.lock().unwrap_or_else(|p| p.into_inner());
             guard.clone()
         };
         let triggered_at = Self::now_iso();
@@ -280,7 +288,7 @@ impl TokioCronAdapter {
             steps_executed: result.steps_executed,
             steps_total: result.steps_total,
         };
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.lock().unwrap_or_else(|p| p.into_inner());
         logs.insert(0, entry);
         if logs.len() > MAX_LOGS {
             logs.truncate(MAX_LOGS);
@@ -296,11 +304,11 @@ impl TokioCronAdapter {
                 let Some(strong) = weak.upgrade() else {
                     return;
                 };
-                let job = match strong.jobs.lock().unwrap().get(&job_id).cloned() {
+                let job = match strong.jobs.lock().unwrap_or_else(|p| p.into_inner()).get(&job_id).cloned() {
                     Some(j) => j,
                     None => return, // 잡 삭제됨
                 };
-                let tz_name = strong.timezone.lock().unwrap().clone();
+                let tz_name = strong.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
 
                 // 다음 발화 시각 계산
                 let (next_fire, trigger_type, is_one_shot) = match job.mode {
@@ -353,7 +361,7 @@ impl TokioCronAdapter {
 
                 if is_one_shot {
                     // 1회 발화 후 자동 정리
-                    let mut jobs = strong.jobs.lock().unwrap();
+                    let mut jobs = strong.jobs.lock().unwrap_or_else(|p| p.into_inner());
                     if jobs.remove(&job_id).is_some() {
                         strong.flush_jobs(&jobs);
                     }
@@ -379,12 +387,12 @@ impl ICronPort for TokioCronAdapter {
         }
         // 중복 jobId 거부 — 옛 TS `cronTasks.has(jobId) || timers.has(jobId)` 1:1.
         {
-            let jobs = self.jobs.lock().unwrap();
+            let jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             if jobs.contains_key(job_id) {
                 return Err(format!("이미 등록된 잡 ID입니다: {}", job_id));
             }
         }
-        let tz_name = self.timezone.lock().unwrap().clone();
+        let tz_name = self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let mode = TokioCronAdapter::determine_mode(&opts, &tz_name)?;
 
         // 기존 task abort
@@ -404,7 +412,7 @@ impl ICronPort for TokioCronAdapter {
         };
 
         {
-            let mut jobs = self.jobs.lock().unwrap();
+            let mut jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             jobs.insert(job_id.to_string(), job);
             self.flush_jobs(&jobs);
         }
@@ -425,7 +433,7 @@ impl ICronPort for TokioCronAdapter {
         if let Some(h) = tasks.remove(job_id) {
             h.abort();
         }
-        let mut jobs = self.jobs.lock().unwrap();
+        let mut jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
         if jobs.remove(job_id).is_none() {
             return Ok(false);
         }
@@ -435,14 +443,14 @@ impl ICronPort for TokioCronAdapter {
 
     async fn trigger_now(&self, job_id: &str) -> InfraResult<()> {
         let job = {
-            let jobs = self.jobs.lock().unwrap();
+            let jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             jobs.get(job_id).cloned()
         };
         let job = job.ok_or_else(|| format!("cron 잡 {} 미등록", job_id))?;
         let info = TokioCronAdapter::build_trigger_info(&job, CronTriggerType::CronScheduler);
         // callback 호출은 Arc<Self> 필요. trigger_now 는 Arc 외부에서 호출되므로 인라인 spawn.
         let cb = {
-            let guard = self.callback.lock().unwrap();
+            let guard = self.callback.lock().unwrap_or_else(|p| p.into_inner());
             guard.clone()
         };
         let triggered_at = TokioCronAdapter::now_iso();
@@ -479,7 +487,7 @@ impl ICronPort for TokioCronAdapter {
             steps_executed: result.steps_executed,
             steps_total: result.steps_total,
         };
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.lock().unwrap_or_else(|p| p.into_inner());
         logs.insert(0, entry);
         if logs.len() > MAX_LOGS {
             logs.truncate(MAX_LOGS);
@@ -489,7 +497,7 @@ impl ICronPort for TokioCronAdapter {
     }
 
     fn list(&self) -> Vec<CronJobInfo> {
-        let jobs = self.jobs.lock().unwrap();
+        let jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
         let mut list: Vec<CronJobInfo> = jobs.values().cloned().collect();
         list.sort_by(|a, b| a.job_id.cmp(&b.job_id));
         list
@@ -521,7 +529,7 @@ impl ICronPort for TokioCronAdapter {
         // 반복 잡 runaway 방어 — 캘린더는 월 단위 조회라 잡당 500건이면 분 단위 반복도 충분.
         const MAX_PER_JOB: usize = 500;
 
-        let jobs = self.jobs.lock().unwrap();
+        let jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
         let mut out: Vec<CronOccurrence> = Vec::new();
         for job in jobs.values() {
             if job.options.owner.as_deref() != owner {
@@ -610,40 +618,40 @@ impl ICronPort for TokioCronAdapter {
     }
 
     fn set_timezone(&self, tz: &str) {
-        let mut guard = self.timezone.lock().unwrap();
+        let mut guard = self.timezone.lock().unwrap_or_else(|p| p.into_inner());
         *guard = tz.to_string();
     }
 
     fn get_timezone(&self) -> String {
-        self.timezone.lock().unwrap().clone()
+        self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
     fn on_trigger(&self, callback: CronTriggerCallback) {
-        let mut guard = self.callback.lock().unwrap();
+        let mut guard = self.callback.lock().unwrap_or_else(|p| p.into_inner());
         *guard = Some(callback);
     }
 
     fn get_logs(&self, limit: Option<usize>) -> Vec<CronLogEntry> {
-        let logs = self.logs.lock().unwrap();
+        let logs = self.logs.lock().unwrap_or_else(|p| p.into_inner());
         let take = limit.unwrap_or(MAX_LOGS);
         logs.iter().take(take).cloned().collect()
     }
 
     fn clear_logs(&self) {
-        let mut logs = self.logs.lock().unwrap();
+        let mut logs = self.logs.lock().unwrap_or_else(|p| p.into_inner());
         logs.clear();
         self.flush_logs(&logs);
     }
 
     fn consume_notifications(&self) -> Vec<CronNotification> {
-        let mut notes = self.notifications.lock().unwrap();
+        let mut notes = self.notifications.lock().unwrap_or_else(|p| p.into_inner());
         let out = std::mem::take(&mut *notes);
         self.flush_notifications(&notes);
         out
     }
 
     fn append_notify(&self, entry: CronNotification) {
-        let mut notes = self.notifications.lock().unwrap();
+        let mut notes = self.notifications.lock().unwrap_or_else(|p| p.into_inner());
         notes.push(entry);
         self.flush_notifications(&notes);
     }
@@ -669,17 +677,17 @@ impl ICronPort for TokioCronAdapter {
     async fn restore(self: Arc<Self>) {
         // 부팅 시 옛 알림 초기화 — 재시작 후 옛 알림이 한꺼번에 뜨는 것 방지 (옛 TS 1:1).
         {
-            let mut notes = self.notifications.lock().unwrap();
+            let mut notes = self.notifications.lock().unwrap_or_else(|p| p.into_inner());
             notes.clear();
             self.flush_notifications(&notes);
         }
 
         let now_ms = Utc::now().timestamp_millis();
-        let tz_name = self.timezone.lock().unwrap().clone();
+        let tz_name = self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
 
         // 만료 / 과거 1회 잡은 복원 안 함 (옛 TS restore 의 endAt + once+runAt 검사 1:1).
         let to_remove: Vec<String> = {
-            let jobs = self.jobs.lock().unwrap();
+            let jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             jobs.iter()
                 .filter_map(|(id, j)| {
                     if j.mode == CronJobMode::Delay {
@@ -707,7 +715,7 @@ impl ICronPort for TokioCronAdapter {
         };
 
         let job_ids: Vec<String> = {
-            let mut jobs = self.jobs.lock().unwrap();
+            let mut jobs = self.jobs.lock().unwrap_or_else(|p| p.into_inner());
             for id in &to_remove {
                 jobs.remove(id);
             }
@@ -787,7 +795,7 @@ mod tests {
             let job_id = info.job_id.clone();
             let target = info.target_path.clone();
             Box::pin(async move {
-                if let Some(sender) = tx_clone.lock().unwrap().take() {
+                if let Some(sender) = tx_clone.lock().unwrap_or_else(|p| p.into_inner()).take() {
                     let _ = sender.send(job_id.clone());
                 }
                 CronJobResult {

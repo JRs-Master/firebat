@@ -148,12 +148,6 @@ impl EventManager {
         let take = limit.min(len);
         state.audit_log[len - take..].to_vec()
     }
-
-    /// 현재 활성 구독자 수 — 디버깅 용.
-    pub fn listener_count(&self) -> usize {
-        self.state.lock().map(|s| s.subscriptions.len()).unwrap_or(0)
-    }
-
     fn matches_filter(filter: &EventFilter, event: &FirebatEvent) -> bool {
         match filter {
             EventFilter::All => true,

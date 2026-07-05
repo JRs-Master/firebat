@@ -406,10 +406,3 @@ T1/T2 = create·publish the page via save_page. T3 = generate the user module co
         BuildStep::Done => "The build is complete.".to_string(),
     }
 }
-
-/// For debugging / tests.
-pub fn clear_sessions_in_memory() {
-    if let Ok(mut map) = store_lock().lock() {
-        map.clear();
-    }
-}

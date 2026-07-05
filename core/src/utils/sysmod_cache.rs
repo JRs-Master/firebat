@@ -67,7 +67,7 @@ impl SysmodCacheAdapter {
     }
 
     fn touch(&self, key: &str) {
-        let mut lru = self.lru.lock().unwrap();
+        let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
         lru.insert(key.to_string(), now_ms());
         // capacity 초과 → 가장 오래된 것 evict
         if lru.len() > LRU_CAPACITY {
@@ -290,7 +290,7 @@ impl SysmodCacheAdapter {
     pub fn drop_key(&self, key: &str) -> InfraResult<()> {
         let _ = std::fs::remove_file(self.jsonl_path(key));
         let _ = std::fs::remove_file(self.meta_path(key));
-        let mut lru = self.lru.lock().unwrap();
+        let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
         lru.remove(key);
         Ok(())
     }
