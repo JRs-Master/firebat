@@ -4,6 +4,7 @@
 //! Phase 6 정공 (2026-05-13) — 옛 manual Rust 하드코드 폐기.
 
 pub const VK_SYSTEM_TIMEZONE: &str = "system:timezone";
+pub const VK_SYSTEM_WS_WATCHES: &str = "system:ws-watches";
 pub const VK_SYSTEM_AI_MODEL: &str = "system:llm:model";
 pub const VK_SYSTEM_AI_THINKING_LEVEL: &str = "system:llm:thinking-level";
 pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";

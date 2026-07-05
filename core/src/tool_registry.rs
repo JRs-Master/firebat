@@ -683,6 +683,102 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         },
     );
 
+    // stream_watch_* — persistent realtime watches (config `ws.streams` declarative).
+    let module_stream = h.module.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "stream_watch_start".to_string(),
+            description: "Start a persistent realtime watch declared in a module's config ws.streams. Events flow to the event bus (topic in the result) and, with notify:'telegram', as Telegram messages. Idempotent: the same module+stream+args returns the existing watch. Survives server restarts until stream_watch_stop.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "module": {"type": "string", "description": "module name (e.g. kiwoom)"},
+                    "stream": {"type": "string", "description": "stream key declared under the module's ws.streams"},
+                    "args": {"type": "object", "description": "stream template params (e.g. {seq})"},
+                    "notify": {"type": "string", "enum": ["telegram", "none"], "description": "notification channel on realtime events (default none = event bus only)"},
+                    "label": {"type": "string", "description": "human-readable label used in notifications"},
+                    "mock": {"type": "boolean"}
+                },
+                "required": ["module", "stream"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let module = module_stream.clone();
+            async move {
+                let m = args
+                    .get("module")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "stream_watch_start: module required".to_string())?
+                    .to_string();
+                let stream = args
+                    .get("stream")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "stream_watch_start: stream required".to_string())?
+                    .to_string();
+                let wargs = args.get("args").cloned().unwrap_or(serde_json::json!({}));
+                let notify = args
+                    .get("notify")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty() && *s != "none")
+                    .map(String::from);
+                let label = args.get("label").and_then(|v| v.as_str()).map(String::from);
+                let mock = args.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+                match module.start_stream(&m, &stream, &wargs, notify, label, mock).await {
+                    Ok(v) => Ok(serde_json::json!({"success": true, "watch": v})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+
+    let module_stream = h.module.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "stream_watch_stop".to_string(),
+            description: "Stop a realtime watch by watchId (sends the declared unsubscribe frame best-effort).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "watchId": {"type": "string"} },
+                "required": ["watchId"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let module = module_stream.clone();
+            async move {
+                let id = args
+                    .get("watchId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "stream_watch_stop: watchId required".to_string())?
+                    .to_string();
+                match module.stop_stream(&id).await {
+                    Ok(removed) => Ok(serde_json::json!({"success": true, "removed": removed})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+
+    let module_stream = h.module.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "stream_watch_list".to_string(),
+            description: "List active realtime watches with live status (state/lastEvent/eventCount).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }),
+            source: "core".to_string(),
+        },
+        move |_args| {
+            let module = module_stream.clone();
+            async move {
+                Ok(serde_json::json!({"success": true, "watches": module.list_streams()}))
+            }
+        },
+    );
+
     // request_secret — 시크릿 등록 여부만 (present). 값은 절대 AI 에 반환 안 함(인젝션 유출 방지 — 모듈은 sandbox env 로 받음). AI 는 키 저장 불가 — 사용자만 등록.
     let secret = h.secret.clone();
     tools.register_tool(

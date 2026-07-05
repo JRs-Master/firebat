@@ -19,7 +19,7 @@ use firebat_infra::adapters::{
     memory::SqliteMemoryAdapter, network::ReqwestNetworkAdapter,
     sandbox::ProcessSandboxAdapter, token_provider::OAuthTokenProvider, storage::LocalStorageAdapter,
     tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
-    ws_api::WsApiAdapter,
+    ws_api::WsApiAdapter, ws_stream::WsStreamAdapter,
 };
 use firebat_core::{
     managers::{
@@ -408,6 +408,11 @@ async fn main() -> Result<()> {
             .with_token_provider(token_provider.clone())
             .with_cache(cache_adapter.clone()),
     );
+    // WS stream transport — persistent realtime subscriptions (config `ws.streams`).
+    // Sink(event bus + notify)는 module_manager 생성 뒤 배선 (아래).
+    let ws_stream_adapter = Arc::new(
+        WsStreamAdapter::new(workspace_root.clone()).with_token_provider(token_provider.clone()),
+    );
 
     let tool_manager = Arc::new(ToolManager::new());
     let cost_manager = Arc::new(CostManager::new(db.clone(), vault.clone()));
@@ -418,8 +423,47 @@ async fn main() -> Result<()> {
     ));
     let module_manager = Arc::new(
         ModuleManager::new(sandbox.clone(), storage.clone(), vault.clone())
-            .with_ws_api(ws_api.clone()),
+            .with_ws_api(ws_api.clone())
+            .with_ws_stream(ws_stream_adapter.clone()),
     );
+    // Stream sink — realtime frames → event bus(SSE /api/events) + per-watch notify.
+    // (adapter 생성 뒤에 배선하는 이유 = closure 가 module_manager 를 잡아야 notify 라우팅 가능.)
+    {
+        let event_manager = event_manager.clone();
+        let mm = module_manager.clone();
+        ws_stream_adapter.set_sink(std::sync::Arc::new(move |spec, frame| {
+            event_manager.emit(firebat_core::managers::event::FirebatEvent {
+                event_type: spec.topic.clone(),
+                data: frame.clone(),
+            });
+            if let Some(meta) = mm.stream_watch_meta(&spec.watch_id) {
+                if meta.notify.as_deref() == Some("telegram") {
+                    let mm = mm.clone();
+                    let label = meta
+                        .label
+                        .clone()
+                        .unwrap_or_else(|| format!("{}/{}", meta.module, meta.stream));
+                    let compact: String = frame.to_string().chars().take(600).collect();
+                    tokio::spawn(async move {
+                        let text = format!("[Firebat 감시] {label}\n{compact}");
+                        if let Err(e) = mm
+                            .run(
+                                "telegram",
+                                &serde_json::json!({"action": "send-message", "text": text}),
+                            )
+                            .await
+                        {
+                            tracing::warn!(target: "ws_stream", error = %e, "watch telegram notify failed");
+                        }
+                    });
+                }
+            }
+        }));
+        let restored = module_manager.restore_streams().await;
+        if restored > 0 {
+            tracing::info!(target: "ws_stream", count = restored, "persisted watches restored");
+        }
+    }
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
     // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
     // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.

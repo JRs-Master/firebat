@@ -6,6 +6,7 @@
 
   "constants": {
     "VK_SYSTEM_TIMEZONE": "system:timezone",
+    "VK_SYSTEM_WS_WATCHES": "system:ws-watches",
     "VK_SYSTEM_AI_MODEL": "system:llm:model",
     "VK_SYSTEM_AI_THINKING_LEVEL": "system:llm:thinking-level",
     "VK_SYSTEM_USER_PROMPT": "system:user-prompt",

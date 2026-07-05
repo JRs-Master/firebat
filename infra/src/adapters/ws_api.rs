@@ -217,7 +217,7 @@ fn remaining(deadline: Instant) -> InfraResult<Duration> {
 }
 
 /// Replace the literal `"{TOKEN}"` string values with the fetched token (deep walk).
-fn fill_token(frame: &serde_json::Value, token: Option<&str>) -> serde_json::Value {
+pub(crate) fn fill_token(frame: &serde_json::Value, token: Option<&str>) -> serde_json::Value {
     match frame {
         serde_json::Value::String(s) if s == "{TOKEN}" => {
             serde_json::Value::String(token.unwrap_or_default().to_string())
@@ -236,14 +236,14 @@ fn fill_token(frame: &serde_json::Value, token: Option<&str>) -> serde_json::Val
 
 /// String-coerced field comparison — mirrors the token provider's `invalidWhen` semantics
 /// (providers are loose about number-vs-string, e.g. return_code 0 vs "0").
-fn field_eq(frame: &serde_json::Value, rule: &WsFieldEq) -> bool {
+pub(crate) fn field_eq(frame: &serde_json::Value, rule: &WsFieldEq) -> bool {
     let Some(actual) = frame.get(&rule.field) else {
         return false;
     };
     coerce(actual) == coerce(&rule.equals)
 }
 
-fn coerce(v: &serde_json::Value) -> String {
+pub(crate) fn coerce(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
         other => other.to_string(),

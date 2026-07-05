@@ -666,10 +666,62 @@ pub struct WsApiCall {
 }
 
 /// WS API transport port — request/response over a short-lived WebSocket connection.
-/// Persistent subscriptions (realtime push) are a later stage, not this port.
+/// Persistent subscriptions (realtime push) are `IWsStreamPort`, not this port.
 #[async_trait::async_trait]
 pub trait IWsApiPort: Send + Sync {
     async fn call(&self, call: &WsApiCall) -> InfraResult<ModuleOutput>;
+}
+
+/// A persistent realtime subscription (config `ws.streams.<key>` declarative) — the adapter
+/// keeps the session alive (reconnect + resubscribe with backoff) and forwards every frame
+/// matching `realtime_match` to the sink. Everything provider-specific is config data.
+#[derive(Debug, Clone)]
+pub struct WsStreamSpec {
+    pub watch_id: String,
+    /// Event-bus topic the sink publishes to (`ws-stream:{module}:{stream}:{watch_id}`).
+    pub topic: String,
+    pub module: String,
+    pub stream: String,
+    pub module_dir: String,
+    pub endpoint: String,
+    pub match_field: String,
+    pub echo_values: Vec<String>,
+    pub login: Option<WsLoginSpec>,
+    pub error_msg_field: Option<String>,
+    /// Exchanged in order after login, before subscribe (same-session prerequisites).
+    pub pre_frames: Vec<WsPreFrame>,
+    pub subscribe_frame: serde_json::Value,
+    pub subscribe_match: String,
+    pub subscribe_success: Option<WsFieldEq>,
+    /// Sent best-effort when the watch stops (e.g. CNSRCLR).
+    pub unsubscribe_frame: Option<serde_json::Value>,
+    /// Frame type carrying realtime events (e.g. "REAL").
+    pub realtime_match: String,
+    pub mock: bool,
+}
+
+/// Live status of one watch — merged with the manager's meta for list views.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsStreamStatus {
+    pub watch_id: String,
+    pub state: String, // connecting | live | reconnecting | error | stopped
+    pub detail: Option<String>,
+    pub since_ms: i64,
+    pub last_event_ms: Option<i64>,
+    pub event_count: u64,
+}
+
+/// Sink receiving realtime frames — wired in main (event bus emit + optional notify).
+pub type WsStreamSink = std::sync::Arc<dyn Fn(&WsStreamSpec, serde_json::Value) + Send + Sync>;
+
+#[async_trait::async_trait]
+pub trait IWsStreamPort: Send + Sync {
+    /// Start (idempotent by watch_id — restarting an existing id replaces the task).
+    async fn start(&self, spec: WsStreamSpec) -> InfraResult<()>;
+    /// Stop + best-effort unsubscribe frame. Ok even when the id is unknown.
+    async fn stop(&self, watch_id: &str) -> InfraResult<()>;
+    fn list(&self) -> Vec<WsStreamStatus>;
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

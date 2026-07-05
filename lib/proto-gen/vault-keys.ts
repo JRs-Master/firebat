@@ -4,6 +4,7 @@
 // Phase 6 정공 (2026-05-13) — 옛 frontend 산재 string literal 통합.
 
 export const VK_SYSTEM_TIMEZONE = "system:timezone";
+export const VK_SYSTEM_WS_WATCHES = "system:ws-watches";
 export const VK_SYSTEM_AI_MODEL = "system:llm:model";
 export const VK_SYSTEM_AI_THINKING_LEVEL = "system:llm:thinking-level";
 export const VK_SYSTEM_USER_PROMPT = "system:user-prompt";

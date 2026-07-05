@@ -14,9 +14,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::ports::{
-    ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, InfraResult, ModuleOutput, PackageStatus,
-    SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec, WsPreFrame,
+    ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, IWsStreamPort, InfraResult, ModuleOutput,
+    PackageStatus, SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec, WsPreFrame, WsStreamSpec,
 };
+use crate::vault_keys::VK_SYSTEM_WS_WATCHES;
+use std::collections::HashMap;
+use std::sync::Mutex;
 use crate::vault_keys::vk_module_settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +46,30 @@ pub struct ModuleManager {
     vault: Arc<dyn IVaultPort>,
     /// WS-only actions transport (config.json `ws` declarative) — None = not wired (tests).
     ws_api: Option<Arc<dyn IWsApiPort>>,
+    /// Persistent realtime subscriptions (config.json `ws.streams` declarative).
+    ws_stream: Option<Arc<dyn IWsStreamPort>>,
+    /// Active watches meta — persisted to the vault so watches survive restarts.
+    stream_watches: Mutex<HashMap<String, StreamWatchMeta>>,
+}
+
+/// One registered realtime watch (user intent) — the transport status lives in the port.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamWatchMeta {
+    pub watch_id: String,
+    pub topic: String,
+    pub module: String,
+    pub stream: String,
+    #[serde(default)]
+    pub args: serde_json::Value,
+    /// Notification channel on realtime events — currently "telegram" or absent (SSE only).
+    #[serde(default)]
+    pub notify: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub mock: bool,
+    pub created_ms: i64,
 }
 
 impl ModuleManager {
@@ -56,6 +83,8 @@ impl ModuleManager {
             storage,
             vault,
             ws_api: None,
+            ws_stream: None,
+            stream_watches: Mutex::new(HashMap::new()),
         }
     }
 
@@ -63,6 +92,12 @@ impl ModuleManager {
     /// actions here instead of the sandbox (WebSocket-only APIs like 조건검색).
     pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
         self.ws_api = Some(ws_api);
+        self
+    }
+
+    /// Persistent realtime subscription transport (config.json `ws.streams`).
+    pub fn with_ws_stream(mut self, ws_stream: Arc<dyn IWsStreamPort>) -> Self {
+        self.ws_stream = Some(ws_stream);
         self
     }
 
@@ -252,58 +287,18 @@ impl ModuleManager {
             .get("mock")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let endpoint = if mock {
-            ws.get("endpointMock")
-                .or_else(|| ws.get("endpoint"))
-                .and_then(|v| v.as_str())
-        } else {
-            ws.get("endpoint").and_then(|v| v.as_str())
-        }
-        .ok_or_else(|| format!("[{module_name}] ws.endpoint missing in config.json"))?
-        .to_string();
-
-        // Module arg-container convention — some modules nest API params under a field
-        // (e.g. kiwoom `{action, params:{…}}`, declared as ws.argsField). Overlay the nested
-        // object over the root so templates resolve from either level (nested wins).
-        let args_view = match ws
-            .get("argsField")
-            .and_then(|v| v.as_str())
-            .and_then(|f| input_data.get(f))
-            .and_then(|v| v.as_object())
-        {
-            Some(nested) => {
-                let mut merged = input_data.as_object().cloned().unwrap_or_default();
-                for (k, v) in nested {
-                    merged.insert(k.clone(), v.clone());
-                }
-                serde_json::Value::Object(merged)
-            }
-            None => input_data.clone(),
-        };
+        let endpoint = ws_endpoint(ws, mock)
+            .ok_or_else(|| format!("[{module_name}] ws.endpoint missing in config.json"))?;
+        let args_view = ws_args_view(ws, input_data);
         // Prerequisite frames (same-session ordering some providers require) — substituted
         // with the same args view; failures use the same validation error surface.
-        let mut pre_frames: Vec<WsPreFrame> = Vec::new();
-        if let Some(pres) = action_decl.get("preFrames").and_then(|v| v.as_array()) {
-            for p in pres {
-                let Some(frame_tpl) = p.get("frame") else { continue };
-                let frame = substitute_ws_frame(frame_tpl, &args_view).map_err(|e| {
-                    crate::i18n::t(
-                        "core.error.module.input_validation_failed",
-                        None,
-                        &[("name", module_name), ("detail", &e)],
-                    )
-                })?;
-                pre_frames.push(WsPreFrame {
-                    response_match: p
-                        .get("match")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    success_when: parse_ws_field_eq(p.get("successWhen")),
-                    frame,
-                });
-            }
-        }
+        let pre_frames = parse_ws_pre_frames(action_decl, &args_view).map_err(|e| {
+            crate::i18n::t(
+                "core.error.module.input_validation_failed",
+                None,
+                &[("name", module_name), ("detail", &e)],
+            )
+        })?;
 
         let request_frame = substitute_ws_frame(
             action_decl
@@ -324,33 +319,9 @@ impl ModuleManager {
             action: action.to_string(),
             module_dir: dir_path.to_string(),
             endpoint,
-            match_field: ws
-                .get("matchField")
-                .and_then(|v| v.as_str())
-                .unwrap_or("trnm")
-                .to_string(),
-            echo_values: ws
-                .get("echoValues")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            login: ws.get("login").map(|l| WsLoginSpec {
-                frame: l.get("frame").cloned().unwrap_or(serde_json::Value::Null),
-                response_match: l
-                    .get("match")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("LOGIN")
-                    .to_string(),
-                success_when: parse_ws_field_eq(l.get("successWhen")),
-                token_secret: l
-                    .get("tokenSecret")
-                    .and_then(|v| v.as_str())
-                    .map(String::from),
-            }),
+            match_field: ws_match_field(ws),
+            echo_values: ws_echo_values(ws),
+            login: parse_ws_login(ws),
             pre_frames,
             request_frame,
             response_match: action_decl
@@ -372,6 +343,252 @@ impl ModuleManager {
         };
         let _ = scope; // scope already encoded in dir_path; kept for signature clarity
         Ok(Some(ws_api.call(&call).await?))
+    }
+
+    // ── Persistent realtime streams (config.json `ws.streams` declarative) ──────────────
+
+    /// Start a realtime watch. Idempotent on (module, stream, args) — an identical active
+    /// watch is returned instead of duplicated. Persists to the vault (restart survival).
+    pub async fn start_stream(
+        &self,
+        module_name: &str,
+        stream_key: &str,
+        args: &serde_json::Value,
+        notify: Option<String>,
+        label: Option<String>,
+        mock: bool,
+    ) -> InfraResult<serde_json::Value> {
+        if !is_safe_name(module_name) {
+            return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
+        }
+        if !self.is_enabled(module_name) {
+            return Err(crate::i18n::t(
+                "core.error.module.disabled",
+                None,
+                &[("name", module_name)],
+            ));
+        }
+        // Idempotency — same intent returns the existing watch.
+        let args_norm = serde_json::to_string(args).unwrap_or_default();
+        {
+            let watches = self.stream_watches.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(existing) = watches.values().find(|m| {
+                m.module == module_name
+                    && m.stream == stream_key
+                    && serde_json::to_string(&m.args).unwrap_or_default() == args_norm
+            }) {
+                return Ok(serde_json::json!({
+                    "watchId": existing.watch_id,
+                    "topic": existing.topic,
+                    "created": false,
+                }));
+            }
+        }
+        let watch_id = format!(
+            "ws-{}-{}-{}",
+            module_name,
+            stream_key,
+            &uuid::Uuid::new_v4().simple().to_string()[..8]
+        );
+        let meta = StreamWatchMeta {
+            topic: format!("ws-stream:{watch_id}"),
+            watch_id,
+            module: module_name.to_string(),
+            stream: stream_key.to_string(),
+            args: args.clone(),
+            notify,
+            label,
+            mock,
+            created_ms: chrono::Utc::now().timestamp_millis(),
+        };
+        self.launch_stream(meta.clone()).await?;
+        self.persist_watches();
+        Ok(serde_json::json!({
+            "watchId": meta.watch_id,
+            "topic": meta.topic,
+            "created": true,
+        }))
+    }
+
+    /// Stop + forget a watch (best-effort unsubscribe happens in the transport).
+    pub async fn stop_stream(&self, watch_id: &str) -> InfraResult<bool> {
+        if let Some(port) = &self.ws_stream {
+            port.stop(watch_id).await?;
+        }
+        let removed = self
+            .stream_watches
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(watch_id)
+            .is_some();
+        self.persist_watches();
+        Ok(removed)
+    }
+
+    /// Watch meta lookup — the event sink uses it for notify routing.
+    pub fn stream_watch_meta(&self, watch_id: &str) -> Option<StreamWatchMeta> {
+        self.stream_watches
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(watch_id)
+            .cloned()
+    }
+
+    /// Registered watches merged with live transport status.
+    pub fn list_streams(&self) -> Vec<serde_json::Value> {
+        let statuses: HashMap<String, crate::ports::WsStreamStatus> = self
+            .ws_stream
+            .as_ref()
+            .map(|p| p.list().into_iter().map(|s| (s.watch_id.clone(), s)).collect())
+            .unwrap_or_default();
+        let watches = self.stream_watches.lock().unwrap_or_else(|p| p.into_inner());
+        let mut out: Vec<serde_json::Value> = watches
+            .values()
+            .map(|m| {
+                let mut v = serde_json::to_value(m).unwrap_or_default();
+                if let Some(obj) = v.as_object_mut() {
+                    match statuses.get(&m.watch_id) {
+                        Some(s) => {
+                            obj.insert("state".into(), serde_json::json!(s.state));
+                            obj.insert("detail".into(), serde_json::json!(s.detail));
+                            obj.insert("lastEventMs".into(), serde_json::json!(s.last_event_ms));
+                            obj.insert("eventCount".into(), serde_json::json!(s.event_count));
+                        }
+                        None => {
+                            obj.insert("state".into(), serde_json::json!("stopped"));
+                        }
+                    }
+                }
+                v
+            })
+            .collect();
+        out.sort_by_key(|v| -(v.get("createdMs").and_then(|c| c.as_i64()).unwrap_or(0)));
+        out
+    }
+
+    /// Boot-time restore of persisted watches — failures are logged and skipped (the watch
+    /// stays registered so a later manual restart can pick it up).
+    pub async fn restore_streams(&self) -> usize {
+        let Some(raw) = self.vault.get_secret(VK_SYSTEM_WS_WATCHES) else {
+            return 0;
+        };
+        let metas: Vec<StreamWatchMeta> = serde_json::from_str(&raw).unwrap_or_default();
+        let mut ok = 0usize;
+        for meta in metas {
+            let id = meta.watch_id.clone();
+            match self.launch_stream(meta).await {
+                Ok(()) => ok += 1,
+                Err(e) => {
+                    tracing::warn!(target: "ws_stream", watch_id = %id, error = %e, "watch restore failed");
+                }
+            }
+        }
+        ok
+    }
+
+    /// Build the spec from config and hand it to the transport; register the meta.
+    async fn launch_stream(&self, meta: StreamWatchMeta) -> InfraResult<()> {
+        let Some(port) = &self.ws_stream else {
+            return Err(crate::i18n::t(
+                "core.error.module.ws_not_wired",
+                None,
+                &[("name", &meta.module)],
+            ));
+        };
+        let (module_dir, config) = self.stream_config(&meta.module).await?;
+        let ws = config
+            .get("ws")
+            .ok_or_else(|| format!("[{}] config.json has no ws block", meta.module))?;
+        let decl = ws
+            .get("streams")
+            .and_then(|s| s.get(&meta.stream))
+            .ok_or_else(|| {
+                format!("[{}] ws.streams.{} not declared", meta.module, meta.stream)
+            })?;
+
+        let args_view = ws_args_view(ws, &meta.args);
+        let subscribe = decl
+            .get("subscribe")
+            .ok_or_else(|| format!("[{}] ws.streams.{}.subscribe missing", meta.module, meta.stream))?;
+        let subscribe_frame = substitute_ws_frame(
+            subscribe
+                .get("frame")
+                .ok_or_else(|| format!("[{}] subscribe.frame missing", meta.module))?,
+            &args_view,
+        )?;
+        let unsubscribe_frame = match decl.get("unsubscribe").and_then(|u| u.get("frame")) {
+            Some(tpl) => Some(substitute_ws_frame(tpl, &args_view)?),
+            None => None,
+        };
+        let spec = WsStreamSpec {
+            watch_id: meta.watch_id.clone(),
+            topic: meta.topic.clone(),
+            module: meta.module.clone(),
+            stream: meta.stream.clone(),
+            module_dir,
+            endpoint: ws_endpoint(ws, meta.mock)
+                .ok_or_else(|| format!("[{}] ws.endpoint missing", meta.module))?,
+            match_field: ws_match_field(ws),
+            echo_values: ws_echo_values(ws),
+            login: parse_ws_login(ws),
+            error_msg_field: ws
+                .get("errorMsgField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            pre_frames: parse_ws_pre_frames(decl, &args_view)?,
+            subscribe_match: subscribe
+                .get("match")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            subscribe_success: parse_ws_field_eq(subscribe.get("successWhen")),
+            subscribe_frame,
+            unsubscribe_frame,
+            realtime_match: decl
+                .get("realtimeMatch")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    format!("[{}] ws.streams.{}.realtimeMatch missing", meta.module, meta.stream)
+                })?
+                .to_string(),
+            mock: meta.mock,
+        };
+        port.start(spec).await?;
+        self.stream_watches
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(meta.watch_id.clone(), meta);
+        Ok(())
+    }
+
+    /// Streams are config-only (no entry file needed) — locate config across scopes.
+    async fn stream_config(&self, module_name: &str) -> InfraResult<(String, serde_json::Value)> {
+        for (scope, dir) in [
+            ("user", format!("user/modules/{module_name}")),
+            ("system", format!("system/modules/{module_name}")),
+        ] {
+            if let Some(cfg) = self.get_module_config(scope, module_name).await {
+                return Ok((dir, cfg));
+            }
+        }
+        Err(crate::i18n::t(
+            "core.error.module.not_found",
+            None,
+            &[("name", module_name)],
+        ))
+    }
+
+    fn persist_watches(&self) {
+        let metas: Vec<StreamWatchMeta> = self
+            .stream_watches
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        if let Ok(raw) = serde_json::to_string(&metas) {
+            self.vault.set_secret(VK_SYSTEM_WS_WATCHES, &raw);
+        }
     }
 
     /// system/modules/ 시스템 모듈 list.
@@ -648,6 +865,90 @@ impl ModuleManager {
 const RESERVED_HUB_META_KEYS: &[&str] = &["owner", "hubOwner", "_hubScope", "project"];
 
 /// 입력값에 예약 메타 키가 있으면 제거한 사본을 반환 (검증 전용). 없으면 원본 차용 (clone 회피).
+/// endpoint / endpointMock pick (mock falls back to the real endpoint when absent).
+fn ws_endpoint(ws: &serde_json::Value, mock: bool) -> Option<String> {
+    let v = if mock {
+        ws.get("endpointMock").or_else(|| ws.get("endpoint"))
+    } else {
+        ws.get("endpoint")
+    };
+    v.and_then(|v| v.as_str()).map(String::from)
+}
+
+fn ws_match_field(ws: &serde_json::Value) -> String {
+    ws.get("matchField")
+        .and_then(|v| v.as_str())
+        .unwrap_or("trnm")
+        .to_string()
+}
+
+fn ws_echo_values(ws: &serde_json::Value) -> Vec<String> {
+    ws.get("echoValues")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default()
+}
+
+fn parse_ws_login(ws: &serde_json::Value) -> Option<WsLoginSpec> {
+    ws.get("login").map(|l| WsLoginSpec {
+        frame: l.get("frame").cloned().unwrap_or(serde_json::Value::Null),
+        response_match: l
+            .get("match")
+            .and_then(|v| v.as_str())
+            .unwrap_or("LOGIN")
+            .to_string(),
+        success_when: parse_ws_field_eq(l.get("successWhen")),
+        token_secret: l
+            .get("tokenSecret")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    })
+}
+
+/// Module arg-container convention — some modules nest API params under a field
+/// (e.g. kiwoom `{action, params:{…}}`, declared as ws.argsField). Overlay the nested
+/// object over the root so templates resolve from either level (nested wins).
+fn ws_args_view(ws: &serde_json::Value, input: &serde_json::Value) -> serde_json::Value {
+    match ws
+        .get("argsField")
+        .and_then(|v| v.as_str())
+        .and_then(|f| input.get(f))
+        .and_then(|v| v.as_object())
+    {
+        Some(nested) => {
+            let mut merged = input.as_object().cloned().unwrap_or_default();
+            for (k, v) in nested {
+                merged.insert(k.clone(), v.clone());
+            }
+            serde_json::Value::Object(merged)
+        }
+        None => input.clone(),
+    }
+}
+
+/// `preFrames: [{frame, match, successWhen}]` on an action/stream declaration.
+fn parse_ws_pre_frames(
+    decl: &serde_json::Value,
+    args_view: &serde_json::Value,
+) -> Result<Vec<WsPreFrame>, String> {
+    let mut out = Vec::new();
+    if let Some(pres) = decl.get("preFrames").and_then(|v| v.as_array()) {
+        for p in pres {
+            let Some(frame_tpl) = p.get("frame") else { continue };
+            out.push(WsPreFrame {
+                frame: substitute_ws_frame(frame_tpl, args_view)?,
+                response_match: p
+                    .get("match")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                success_when: parse_ws_field_eq(p.get("successWhen")),
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// `{field, equals}` config object → WsFieldEq (None when absent/malformed).
 fn parse_ws_field_eq(v: Option<&serde_json::Value>) -> Option<WsFieldEq> {
     let v = v?;
