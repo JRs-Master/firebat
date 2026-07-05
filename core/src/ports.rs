@@ -1568,6 +1568,12 @@ pub struct HubContext {
     /// 허용 sysmod 이름 배열 (예: `["yfinance", "korea-invest"]`). 빈 배열 = 모든 sysmod 차단.
     #[serde(rename = "allowedSysmods", default)]
     pub allowed_sysmods: Vec<String>,
+    /// Instance kind = tenant. true = full-workspace hub (admin-clone scoped to its own owner) →
+    /// the widget deny-list / sysmod-allowlist gate is skipped. false (default) = anonymous widget
+    /// (allowlist-restricted). Data isolation stays via owner-scope, not this flag. See
+    /// `Principal::has_full_tools` — this carries the instance's kind to the runtime tool gate.
+    #[serde(rename = "fullTools", default)]
+    pub full_tools: bool,
     /// 허용 Library Reference ID 배열. 빈 배열 = library 검색 0.
     #[serde(rename = "allowedReferences", default)]
     pub allowed_references: Vec<String>,

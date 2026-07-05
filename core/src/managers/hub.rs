@@ -616,6 +616,8 @@ impl HubManager {
             instance_id: instance.id.clone(),
             session_id,
             allowed_sysmods: instance.allowed_sysmods.clone(),
+            // tenant = full-workspace hub (admin-clone) → widget tool gate skipped. Default 'widget'.
+            full_tools: instance.kind == "tenant",
             allowed_references: instance.allowed_references.clone(),
             instance_directive,
         };

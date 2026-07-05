@@ -836,11 +836,15 @@ impl AiManager {
             // Truly blocked (settings/auth/background/admin): request_secret / network_request / run_module /
             //   execute / schedule_task / run_task / run_cron_job / *_module / mcp_* / log.
             if let Some(ctx) = &ai_opts.hub_context {
-                // Single permission gate — same hub_context::permits_tool as the hosted (mcp_server) path (no drift).
-                // Allow = core sysmods (notes/calendar) + allowed_sysmods + read-only + render_* + owner-scoped writes.
-                // Owner-scoping of the allowed writes is enforced per-tool (confine_hub_path / project-match),
-                // NOT by this name filter — this only decides which tools are exposed.
-                tools_built.retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
+                // Tenant hub = full-workspace (admin-clone scoped to its own owner) → skip the widget gate
+                // entirely (Principal::has_full_tools). Data isolation stays via owner injection, not this filter.
+                // Widget = anonymous embed → apply the single permission gate (same hub_context::permits_tool as
+                // the hosted mcp_server path, no drift): core sysmods + allowed_sysmods + read-only + render_* +
+                // owner-scoped writes. Owner-scoping of allowed writes is per-tool (confine_hub_path / project-match).
+                if !ctx.full_tools {
+                    tools_built
+                        .retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
+                }
             }
             auto_tools = tools_built;
             &auto_tools
@@ -1257,6 +1261,7 @@ impl AiManager {
                 ctx.instance_id.clone(),
                 ctx.session_id.clone(),
                 ctx.allowed_references.clone(),
+                ctx.full_tools,
             );
             // shared internal token 대신 이 턴 토큰을 주입 — CLI 가 이 토큰으로 MCP 인증·컨텍스트 조회.
             effective_opts.mcp_token = Some(token);

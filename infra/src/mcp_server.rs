@@ -183,6 +183,10 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     // 2. hub 활성 시 — sysmod 가 allowed_sysmods ∪ CORE_SYSMODS 에 없으면 hub 도구목록에서도 제외.
     //    옛 버그: 전역 ON 이지만 hub 미허용인 sysmod(telegram 등)가 목록엔 남아 AI 가 호출 → 실행 게이트
     //    (is_sysmod_blocked_for_hub, 373)에 막혀 "허용 안 됨" + 턴 낭비. FC 경로(permits_tool)와 일관되게 목록에서 제외.
+    //    단 tenant hub(full_tools)는 admin-clone 이라 전역 활성 sysmod 전부 노출 — allowlist 제한 skip.
+    if firebat_core::utils::hub_context::active_full_tools() {
+        return true;
+    }
     if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_sysmods() {
         let hub_ok = (1..=segs.len()).any(|n| {
             let name = segs[..n].join("-");
@@ -224,6 +228,8 @@ fn inject_hub_owner(args: &mut Value) {
 /// 우회했다. dispatch 단일 지점 가드로 ③deny·배경실행을 hosted 경로에서도 일관 차단.
 fn hub_blocks_tool(name: &str) -> bool {
     firebat_core::utils::hub_context::is_hub_context_active()
+        // tenant hub (full_tools) = admin-clone → widget deny-list skipped. Only widget is gated.
+        && !firebat_core::utils::hub_context::active_full_tools()
         && !firebat_core::utils::hub_context::permits_tool(
             name,
             &firebat_core::utils::hub_context::active_allowed_sysmods().unwrap_or_default(),

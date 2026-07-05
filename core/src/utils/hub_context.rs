@@ -25,6 +25,9 @@ pub struct ActiveHubContext {
     /// admin 이 이 hub 에 공유한 Library Reference ID 들 — MCP search_library 가 본인(owner) 자료에
     /// 더해 이 공유분도 검색하게 한다 (위젯 챗봇이 admin 지식베이스로 답하도록). 빈 배열 = 공유 0.
     pub allowed_references: Vec<String>,
+    /// tenant hub = full tools. true = widget deny-list / sysmod-allowlist gate skipped (admin-clone).
+    /// false (widget) = restricted. Data isolation stays via owner injection (inject_hub_owner), not this.
+    pub full_tools: bool,
 }
 
 /// 턴별 토큰 → 컨텍스트. ai.rs HubContextGuard::enter 가 등록, guard drop 시 제거.
@@ -51,6 +54,7 @@ impl HubContextGuard {
         instance_id: String,
         session_id: String,
         allowed_references: Vec<String>,
+        full_tools: bool,
     ) -> (Self, String) {
         let token = new_turn_token(&instance_id, &session_id);
         if let Ok(mut map) = HUB_CONTEXTS.write() {
@@ -61,6 +65,7 @@ impl HubContextGuard {
                     instance_id,
                     session_id,
                     allowed_references,
+                    full_tools,
                 },
             );
         }
@@ -136,6 +141,14 @@ pub fn active_allowed_sysmods() -> Option<Vec<String>> {
         .flatten()
 }
 
+/// True when the active hub context is a **tenant** (full-workspace) — the widget deny-list /
+/// sysmod-allowlist gate is skipped for tenants (admin-clone). false for widget or non-hub.
+pub fn active_full_tools() -> bool {
+    CURRENT_HUB
+        .try_with(|c| c.as_ref().map(|x| x.full_tools).unwrap_or(false))
+        .unwrap_or(false)
+}
+
 /// hub 핵심 사이드바 sysmod — admin 의 per-hub allowed_sysmods 와 무관하게 항상 허용.
 /// hub 가 admin 사이드바 경험(메모·캘린더)을 가지려면 필수이고, 데이터는 owner-scope 라 격리됨.
 /// 외부 데이터 도구(law-search/yfinance/kakao 등)는 per-hub allowed_sysmods 로 제어.
@@ -144,6 +157,12 @@ pub const CORE_SYSMODS: &[&str] = &["notes", "calendar"];
 /// MCP server 의 sysmod handler 에서 호출 — hub context 가 활성이고 sysmod 가 미허용이면 true.
 /// admin 호출 (Guard 미설정) = false (정공 허용). 핵심 sysmod(notes/calendar)는 항상 허용.
 pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
+    // tenant hub (full_tools) = admin-clone → runs any globally-active sysmod (allowlist bypassed).
+    // Real-money/approval actions stay gated separately (requiresApproval, mcp_server) since a tenant
+    // still shares the admin Vault until per-tenant secrets (login).
+    if active_full_tools() {
+        return false;
+    }
     match active_allowed_sysmods() {
         None => false,
         Some(allowed) => {
@@ -396,6 +415,7 @@ mod tests {
             instance_id: "inst".to_string(),
             session_id: "sess".to_string(),
             allowed_references: vec![],
+            full_tools: false,
         };
         CURRENT_HUB.sync_scope(Some(ctx), || {
             assert!(is_hub_context_active());
@@ -415,6 +435,7 @@ mod tests {
             "inst".to_string(),
             "sess".to_string(),
             vec![],
+            false,
         );
         // 등록 — verify_token 인증 + handle_rpc lookup 가능.
         assert!(is_registered_token(&token));
@@ -513,6 +534,39 @@ mod tests {
         // read_file path is jailed by confine_hub_path → safe to expose to hub (deny → readonly).
         let allowed = vec!["law-search".to_string()];
         assert!(permits_tool("read_file", &allowed));
+    }
+
+    #[test]
+    fn tenant_full_tools_skips_widget_gate() {
+        // A tenant hub (full_tools) is an admin-clone → active_full_tools() true → the widget deny-list
+        // and sysmod-allowlist are bypassed at the call sites (ai.rs / mcp_server), so tools that
+        // permits_tool() denies for a widget (network_request/run_module/execute/non-allowed sysmod)
+        // are still exposed. Widget context (full_tools=false) keeps the restriction. Data isolation
+        // stays via owner injection, not this flag.
+        let ctx = ActiveHubContext {
+            allowed_sysmods: vec!["law-search".to_string()],
+            instance_id: "inst".to_string(),
+            session_id: "sess".to_string(),
+            allowed_references: vec![],
+            full_tools: true,
+        };
+        CURRENT_HUB.sync_scope(Some(ctx), || {
+            assert!(is_hub_context_active());
+            assert!(active_full_tools()); // tenant → gate skipped by callers
+        });
+        // widget (full_tools=false) → gate active
+        let widget = ActiveHubContext {
+            allowed_sysmods: vec!["law-search".to_string()],
+            instance_id: "inst".to_string(),
+            session_id: "sess".to_string(),
+            allowed_references: vec![],
+            full_tools: false,
+        };
+        CURRENT_HUB.sync_scope(Some(widget), || {
+            assert!(!active_full_tools());
+        });
+        // non-hub scope → false
+        CURRENT_HUB.sync_scope(None, || assert!(!active_full_tools()));
     }
 
     #[test]
