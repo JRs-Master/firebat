@@ -18,7 +18,9 @@
 pub mod stub;
 pub mod e5_local;
 pub mod arctic_local;
+pub mod upstage_api;
 
 pub use stub::StubEmbedderAdapter;
 pub use e5_local::E5LocalEmbedderAdapter;
 pub use arctic_local::ArcticLocalEmbedderAdapter;
+pub use upstage_api::UpstageEmbedderAdapter;

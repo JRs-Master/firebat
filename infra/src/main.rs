@@ -556,13 +556,28 @@ async fn main() -> Result<()> {
     // AiManager 가 vault `system:ai-router:enabled` 토글 검사 — true 시점만 호출 → 시스템 프롬프트
     // `<RETRIEVED_CONTEXT>` 영역 prepend. ConsolidationManager 와 동일 토글 통합 제어 (사용자 결정
     // 2026-05-17). 옛 Node 영역 의 자동 prepend path 1:1 복원 + 통합 정공.
-    let retrieval_engine = Arc::new(
+    let mut retrieval_engine_b =
         firebat_core::managers::ai::retrieval_engine::RetrievalEngine::new()
             .with_conversation(conversation_manager.clone())
             .with_entity(entity_manager.clone())
             .with_episodic(episodic_manager.clone())
-            .with_library(library_manager.clone()),
-    );
+            .with_library(library_manager.clone());
+    // 섀도우 임베딩 A/B (2026-07, 7/20 무료) — vault 에 Upstage 키 + 토글 `system:embed-shadow` 활성 시만.
+    // 운영 임베딩(E5)엔 영향 0, history 회상 결과를 Upstage 로 병렬 재임베딩해 순위·점수 비교 로그.
+    {
+        let key = vault.get_secret("system:upstage:api-key").unwrap_or_default();
+        let on = vault
+            .get_secret("system:embed-shadow")
+            .map(|v| matches!(v.trim(), "1" | "true" | "on" | "yes"))
+            .unwrap_or(false);
+        if on && !key.trim().is_empty() {
+            retrieval_engine_b = retrieval_engine_b.with_shadow(Arc::new(
+                firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(key),
+            ));
+            tracing::info!(target: "embed_shadow", "Upstage 섀도우 임베딩 A/B 활성 (history 회상 비교)");
+        }
+    }
+    let retrieval_engine = Arc::new(retrieval_engine_b);
 
     // ToolDispatcher — approval gate (check_needs_approval + pre_validate_pending_args) 활성.
     // 옛에 wiring 누락 상태로 있어 save_page 수정 시 승인 UI 안 나오던 fix (사용자 보고 2026-05-19).

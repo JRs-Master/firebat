@@ -92,6 +92,9 @@ pub struct RetrievalEngine {
     entity: Option<Arc<EntityManager>>,
     episodic: Option<Arc<EpisodicManager>>,
     library: Option<Arc<LibraryManager>>,
+    /// 섀도우 임베더 (Upstage 등) — 운영엔 안 쓰고, history 회상 결과를 같은 쿼리로 병렬 재임베딩해
+    /// E5 vs 섀도우 순위·점수를 로그로 비교(A/B 평가 전용, 2026-07 무료기간). None = 비활성.
+    shadow: Option<Arc<dyn crate::ports::IEmbedderPort>>,
 }
 
 impl RetrievalEngine {
@@ -101,7 +104,14 @@ impl RetrievalEngine {
             entity: None,
             episodic: None,
             library: None,
+            shadow: None,
         }
+    }
+
+    /// 섀도우 임베더 주입 — history 회상 A/B 비교 로그 활성. 운영 임베딩(E5)엔 영향 0.
+    pub fn with_shadow(mut self, shadow: Arc<dyn crate::ports::IEmbedderPort>) -> Self {
+        self.shadow = Some(shadow);
+        self
     }
 
     pub fn with_conversation(mut self, conversation: Arc<ConversationManager>) -> Self {
@@ -192,6 +202,12 @@ impl RetrievalEngine {
         let library_fut = self.search_library_safe(query, opts, &lim);
         let (history, entities, facts, events, library_hits) =
             tokio::join!(history_fut, entities_fut, facts_fut, events_fut, library_fut);
+
+        // 섀도우 A/B — history 회상 결과를 Upstage 등으로 병렬 재임베딩해 E5 와 순위·점수 비교(백그라운드,
+        // 턴 지연 0). 운영은 위 E5 결과 그대로 사용. 섀도우 미주입(운영 기본) 시 no-op.
+        if let (Some(shadow), false) = (&self.shadow, history.is_empty()) {
+            Self::spawn_shadow_history_compare(shadow.clone(), query.to_string(), &history);
+        }
 
         let mut sections: Vec<String> = Vec::new();
         let mut stats = RetrievalStats::default();
@@ -308,6 +324,69 @@ impl RetrievalEngine {
             stats,
             library_hits,
         }
+    }
+
+    /// 섀도우 A/B (백그라운드) — E5 가 뽑은 history 후보를 shadow 임베더로 같은 쿼리 재임베딩 →
+    /// shadow 공간 cosine 재순위 → E5 순위·점수 vs shadow 순위·점수를 한 줄 JSON 으로 로그
+    /// (target="embed_shadow"). `journalctl -u firebat | grep embed_shadow` 로 비교. 운영 무영향.
+    fn spawn_shadow_history_compare(
+        shadow: Arc<dyn crate::ports::IEmbedderPort>,
+        query: String,
+        history: &[crate::managers::conversation::HistorySearchMatch],
+    ) {
+        // 후보 = (미리보기, E5 점수, E5 순위) — history 는 이미 E5 점수 내림차순.
+        let cands: Vec<(String, f32)> = history
+            .iter()
+            .map(|h| (h.content_preview.chars().take(120).collect::<String>(), h.score))
+            .collect();
+        tokio::spawn(async move {
+            let qv = match shadow.embed_query(&query).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_query 실패");
+                    return;
+                }
+            };
+            // 각 후보를 shadow 로 임베딩 → shadow cosine.
+            let mut rows: Vec<(usize, String, f32, f32)> = Vec::with_capacity(cands.len());
+            for (e5_rank, (preview, e5_score)) in cands.iter().enumerate() {
+                let pv = match shadow.embed_passage(preview).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_passage 실패");
+                        return;
+                    }
+                };
+                let up = shadow.cosine(&qv, &pv);
+                rows.push((e5_rank, preview.clone(), *e5_score, up));
+            }
+            // shadow 점수 내림차순 = shadow 순위.
+            let mut by_up: Vec<usize> = (0..rows.len()).collect();
+            by_up.sort_by(|&a, &b| rows[b].3.partial_cmp(&rows[a].3).unwrap_or(std::cmp::Ordering::Equal));
+            let mut up_rank_of = vec![0usize; rows.len()];
+            for (up_rank, &idx) in by_up.iter().enumerate() {
+                up_rank_of[idx] = up_rank;
+            }
+            let items: Vec<serde_json::Value> = rows
+                .iter()
+                .enumerate()
+                .map(|(i, (e5_rank, preview, e5_score, up_score))| {
+                    serde_json::json!({
+                        "preview": preview,
+                        "e5_rank": e5_rank,
+                        "e5_score": (*e5_score * 1000.0).round() / 1000.0,
+                        "up_rank": up_rank_of[i],
+                        "up_score": (*up_score * 1000.0).round() / 1000.0,
+                    })
+                })
+                .collect();
+            let payload = serde_json::json!({
+                "query": query,
+                "shadow": shadow.version(),
+                "results": items,
+            });
+            tracing::info!(target: "embed_shadow", data = %payload, "history A/B");
+        });
     }
 
     async fn search_history_safe(
