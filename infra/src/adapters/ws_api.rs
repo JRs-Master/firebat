@@ -120,10 +120,36 @@ impl WsApiAdapter {
             }
         }
 
+        // Prerequisite frames — same-session ordering some providers require (e.g. Kiwoom
+        // answers CNSRREQ only after CNSRLST loaded the condition list into this session).
+        for pre in &call.pre_frames {
+            send_json(&mut ws, &pre.frame, call).await?;
+            if pre.response_match.is_empty() {
+                continue; // fire-and-forget pre-frame (no ack defined)
+            }
+            let resp = await_frame(&mut ws, call, &pre.response_match, deadline).await?;
+            if let Some(rule) = &pre.success_when {
+                if !field_eq(&resp, rule) {
+                    let msg = error_message(&resp, call);
+                    let _ = ws.close(None).await;
+                    return Err(format!(
+                        "[{}] ws pre-frame {} failed: {msg}",
+                        call.module, pre.response_match
+                    ));
+                }
+            }
+        }
+
         // Request → matching response.
         send_json(&mut ws, &call.request_frame, call).await?;
         let resp = await_frame(&mut ws, call, &call.response_match, deadline).await?;
         let _ = ws.close(None).await;
+        tracing::info!(
+            target: "ws_api",
+            module = %call.module,
+            action = %call.action,
+            "ws call completed"
+        );
 
         let ok = call
             .success_when
@@ -298,6 +324,15 @@ where
         if kind == expected {
             return Ok(frame);
         }
-        // Unrelated frame type — keep waiting until the deadline.
+        // Unrelated frame type — keep waiting until the deadline. Logged (frame-type only,
+        // never the payload — login frames carry tokens) so silent-timeout diagnosis is
+        // possible from journalctl.
+        tracing::info!(
+            target: "ws_api",
+            module = %call.module,
+            frame_kind = %kind,
+            waiting_for = %expected,
+            "skip unrelated ws frame"
+        );
     }
 }

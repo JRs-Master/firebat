@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::ports::{
     ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, InfraResult, ModuleOutput, PackageStatus,
-    SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec,
+    SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec, WsPreFrame,
 };
 use crate::vault_keys::vk_module_settings;
 
@@ -280,6 +280,31 @@ impl ModuleManager {
             }
             None => input_data.clone(),
         };
+        // Prerequisite frames (same-session ordering some providers require) — substituted
+        // with the same args view; failures use the same validation error surface.
+        let mut pre_frames: Vec<WsPreFrame> = Vec::new();
+        if let Some(pres) = action_decl.get("preFrames").and_then(|v| v.as_array()) {
+            for p in pres {
+                let Some(frame_tpl) = p.get("frame") else { continue };
+                let frame = substitute_ws_frame(frame_tpl, &args_view).map_err(|e| {
+                    crate::i18n::t(
+                        "core.error.module.input_validation_failed",
+                        None,
+                        &[("name", module_name), ("detail", &e)],
+                    )
+                })?;
+                pre_frames.push(WsPreFrame {
+                    response_match: p
+                        .get("match")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    success_when: parse_ws_field_eq(p.get("successWhen")),
+                    frame,
+                });
+            }
+        }
+
         let request_frame = substitute_ws_frame(
             action_decl
                 .get("frame")
@@ -326,6 +351,7 @@ impl ModuleManager {
                     .and_then(|v| v.as_str())
                     .map(String::from),
             }),
+            pre_frames,
             request_frame,
             response_match: action_decl
                 .get("match")

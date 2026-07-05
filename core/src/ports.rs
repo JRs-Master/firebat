@@ -628,6 +628,16 @@ pub struct WsLoginSpec {
     pub token_secret: Option<String>,
 }
 
+/// A prerequisite frame exchanged on the same session before the main request — some
+/// providers require it (e.g. Kiwoom answers CNSRREQ only after CNSRLST loaded the
+/// condition list into the session). Declarative: config `preFrames: [{frame, match}]`.
+#[derive(Debug, Clone)]
+pub struct WsPreFrame {
+    pub frame: serde_json::Value,
+    pub response_match: String,
+    pub success_when: Option<WsFieldEq>,
+}
+
 /// One request/response WS call, fully declarative — built by ModuleManager from
 /// config.json `ws` + input args (template substitution). No provider knowledge here.
 #[derive(Debug, Clone)]
@@ -643,6 +653,8 @@ pub struct WsApiCall {
     /// Frames to echo back verbatim while waiting (e.g. ["PING"] — Kiwoom keepalive).
     pub echo_values: Vec<String>,
     pub login: Option<WsLoginSpec>,
+    /// Exchanged in order on the same session, after login and before the main request.
+    pub pre_frames: Vec<WsPreFrame>,
     pub request_frame: serde_json::Value,
     pub response_match: String,
     pub success_when: Option<WsFieldEq>,

@@ -27,6 +27,9 @@
         "successWhen": { "field": "return_code", "equals": 0 }
       },
       "ka10172": {
+        "preFrames": [
+          { "frame": { "trnm": "CNSRLST" }, "match": "CNSRLST", "successWhen": { "field": "return_code", "equals": 0 } }
+        ],
         "frame": {
           "trnm": "CNSRREQ",
           "seq": "{seq}",
