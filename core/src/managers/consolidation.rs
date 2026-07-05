@@ -406,6 +406,11 @@ impl ConsolidationManager {
         let opts = LlmCallOpts {
             model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
             thinking_level: Some("minimal".to_string()),
+            // Structured output — schema-constrained JSON so extraction survives weak worker
+            // models (malformed-JSON passes observed on solar-pro3, e.g. unquoted keys mid-
+            // output). Formats without response_format support ignore this (prompt-only JSON
+            // as before). Schema mirrors the Extracted* serde structs 1:1.
+            json_schema: Some(extraction_schema()),
             ..Default::default()
         };
         let response_text = hook.llm.ask_text(&full_prompt, &opts).await.map_err(|e| {
@@ -825,6 +830,46 @@ fn main_is_cli(id: &str) -> bool {
         .find_model(id)
         .map(|m| m.format.starts_with("cli-"))
         .unwrap_or(false)
+}
+
+/// JSON Schema for the extraction output — mirrors `ExtractionResult`/`Extracted*` serde
+/// structs 1:1 (strict mode: every property required, nullable via `["T","null"]` unions —
+/// live-verified on solar-pro3). `metadata` (free-form) is intentionally omitted: strict
+/// schemas can't express it, and serde's `#[serde(default)]` fills `None`.
+fn extraction_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "entities": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"},
+                "type": {"type": "string"},
+                "aliases": {"type": "array", "items": {"type": "string"}}
+            }, "required": ["name", "type", "aliases"], "additionalProperties": false}},
+            "facts": {"type": "array", "items": {"type": "object", "properties": {
+                "entityName": {"type": "string"},
+                "content": {"type": "string"},
+                "factType": {"type": ["string", "null"]},
+                "occurredAt": {"type": ["integer", "null"]},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "supersede": {"type": "boolean"}
+            }, "required": ["entityName", "content", "factType", "occurredAt", "tags", "supersede"], "additionalProperties": false}},
+            "events": {"type": "array", "items": {"type": "object", "properties": {
+                "type": {"type": "string"},
+                "title": {"type": "string"},
+                "description": {"type": ["string", "null"]},
+                "occurredAt": {"type": ["integer", "null"]},
+                "entityNames": {"type": "array", "items": {"type": "string"}}
+            }, "required": ["type", "title", "description", "occurredAt", "entityNames"], "additionalProperties": false}},
+            "lessons": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"},
+                "category": {"type": "string"},
+                "description": {"type": "string"},
+                "content": {"type": "string"}
+            }, "required": ["name", "category", "description", "content"], "additionalProperties": false}}
+        },
+        "required": ["entities", "facts", "events", "lessons"],
+        "additionalProperties": false
+    })
 }
 
 /// ```json ... ``` 코드 블록 fence 제거. JSON 파싱 직전 호출.

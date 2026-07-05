@@ -147,6 +147,15 @@ impl FormatHandler for OpenAiChatHandler {
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }
+        // Structured output — hard-constrains the response to the caller's JSON Schema
+        // (live-verified on solar-pro3 incl. nullable unions). Makes JSON extraction robust
+        // on weak models instead of assuming a strong one.
+        if let Some(schema) = &opts.json_schema {
+            body["response_format"] = serde_json::json!({
+                "type": "json_schema",
+                "json_schema": { "name": "response", "strict": true, "schema": schema },
+            });
+        }
         // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
         // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends
         // the whole prompt + tool defs every round, so this matters a lot for multi-tool turns.
@@ -301,6 +310,13 @@ impl FormatHandler for OpenAiChatHandler {
             serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
+        }
+        // Structured output — same as ask_text (schema-constrained response).
+        if let Some(schema) = &opts.json_schema {
+            body["response_format"] = serde_json::json!({
+                "type": "json_schema",
+                "json_schema": { "name": "response", "strict": true, "schema": schema },
+            });
         }
         // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
         // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends

@@ -1339,6 +1339,12 @@ pub struct LlmCallOpts {
     pub max_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// Structured output — a JSON Schema the response must conform to. OpenAI-compat handlers
+    /// send it as `response_format: {type: json_schema, strict: true}` (live-verified on
+    /// solar-pro3 incl. nullable `["string","null"]` unions); formats without support ignore it
+    /// and rely on the prompt's JSON instruction. Caller passes the bare schema object.
+    #[serde(rename = "jsonSchema", default, skip_serializing_if = "Option::is_none")]
+    pub json_schema: Option<serde_json::Value>,
     /// 대화 owner — HistoryResolver 가 자동 history 컨텍스트 인출 시 활용. 미설정 시 기본 "admin".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
