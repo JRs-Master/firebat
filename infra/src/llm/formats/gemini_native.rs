@@ -479,6 +479,7 @@ mod tests {
                 result: serde_json::json!({"success": true}),
                 success: true,
                 error: None,
+                ..Default::default()
             }],
             raw_model_parts: Some(serde_json::json!([
                 {"text": "Calling save_page", "thought": true},
@@ -515,6 +516,7 @@ mod tests {
                 result: serde_json::json!({"success": true}),
                 success: true,
                 error: None,
+                ..Default::default()
             }],
             raw_model_parts: None, // ← 합성 경로
         }];

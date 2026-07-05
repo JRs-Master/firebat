@@ -1526,6 +1526,7 @@ impl AiManager {
                                     }),
                                     success: false,
                                     error: Some(pre_err),
+                                    arguments: call.arguments.clone(),
                                 };
                                 turn_results.push((call.clone(), action));
                                 continue;
@@ -1551,6 +1552,7 @@ impl AiManager {
                                         }),
                                         success: false,
                                         error: Some(parse_err),
+                                        arguments: call.arguments.clone(),
                                     };
                                     turn_results.push((call.clone(), action));
                                     continue;
@@ -1623,6 +1625,7 @@ impl AiManager {
                                 }),
                                 success: true,
                                 error: None,
+                                arguments: call.arguments.clone(),
                             };
                             turn_results.push((call.clone(), action));
                             continue;
@@ -1771,6 +1774,7 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("per-turn duplicate".to_string()),
+                        arguments: call.arguments.clone(),
                     }
                 } else if !self.tools.has_handler(&effective_call.name) {
                     // 미등록(환각) 도구 — dispatch 해도 handler_not_registered 뿐. 즉시 firm 반환 + 이름 추적.
@@ -1792,6 +1796,7 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("unknown tool".to_string()),
+                        arguments: call.arguments.clone(),
                     }
                 } else if let Some(gate) = approval_gate {
                     // requiresApproval — pending card created (or blocked); never dispatch directly.
@@ -1803,6 +1808,7 @@ impl AiManager {
                         result: gate,
                         success: pending,
                         error: if pending { None } else { Some("approval blocked".to_string()) },
+                        arguments: call.arguments.clone(),
                     }
                 } else if let Some(hint) = grounding_reject {
                     // L1 grounding reject — do NOT dispatch. Return the resolve hint so the model looks
@@ -1823,6 +1829,7 @@ impl AiManager {
                         }),
                         success: false,
                         error: Some("ungrounded".to_string()),
+                        arguments: call.arguments.clone(),
                     }
                 } else {
                     turn_call_set.insert(cache_key.clone());
@@ -1842,6 +1849,7 @@ impl AiManager {
                             success: true,
                             error: None,
                             result: cached_with_flag,
+                            arguments: call.arguments.clone(),
                         }
                     } else {
                         // streaming step emit — 도구 호출 시작.
@@ -2229,6 +2237,7 @@ impl AiManager {
                 result,
                 success: true,
                 error: None,
+                arguments: call.arguments.clone(),
             },
             Err(e) => ToolResult {
                 call_id: call.id.clone(),
@@ -2236,6 +2245,7 @@ impl AiManager {
                 result: serde_json::Value::Null,
                 success: false,
                 error: Some(e),
+                arguments: call.arguments.clone(),
             },
         }
     }

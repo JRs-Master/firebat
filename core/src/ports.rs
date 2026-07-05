@@ -1266,7 +1266,7 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResult {
     #[serde(rename = "callId")]
@@ -1277,6 +1277,11 @@ pub struct ToolResult {
     pub success: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The arguments the model used for this call (for faithful multi-turn reconstruction on
+    /// FC-path handlers — openai-chat/anthropic feed prior calls back and need the real args, not
+    /// an empty object). Populated by the tool dispatcher; empty for synthesized action results.
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub arguments: serde_json::Value,
 }
 
 /// 멀티턴 도구 교환 한 turn 단위 — 옛 TS `ToolExchangeEntry` 1:1 port.

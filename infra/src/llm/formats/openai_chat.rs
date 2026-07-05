@@ -72,6 +72,33 @@ impl OpenAiChatHandler {
             .unwrap_or(0);
         (text, tool_calls, tokens_in, tokens_out, cached_tokens)
     }
+
+    /// thinking_level → `reasoning_effort` (Solar Pro 3 / OpenAI-compat hybrid-reasoning models).
+    /// Solar semantics: low = reasoning OFF, medium (default) = ON, high = ON deeper. Only emitted
+    /// when features.reasoning is on; otherwise None (param omitted → model's own default).
+    fn reasoning_effort(config: &LlmModelConfig, opts: &LlmCallOpts) -> Option<&'static str> {
+        if !config.features.reasoning {
+            return None;
+        }
+        Some(match opts.thinking_level.as_deref() {
+            Some("minimal") => "low", // OFF — fastest
+            Some("high") | Some("xhigh") | Some("max") => "high",
+            _ => "medium", // low/medium/unset → balanced reasoning ON
+        })
+    }
+
+    /// Parse the `reasoning` field a hybrid-reasoning model returns alongside `content`
+    /// (`choices[0].message.reasoning`). Empty when reasoning was OFF or the model omits it.
+    fn parse_reasoning(body: &serde_json::Value) -> String {
+        body.get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+            .and_then(|f| f.get("message"))
+            .and_then(|m| m.get("reasoning"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
 }
 
 #[async_trait::async_trait]
@@ -93,6 +120,9 @@ impl FormatHandler for OpenAiChatHandler {
         }
         if let Some(m) = opts.max_tokens {
             body["max_tokens"] = serde_json::Value::from(m);
+        }
+        if let Some(effort) = Self::reasoning_effort(config, opts) {
+            body["reasoning_effort"] = serde_json::Value::from(effort);
         }
 
         let response = http_client()
@@ -149,44 +179,48 @@ impl FormatHandler for OpenAiChatHandler {
         // unused let warning 회피
         let _ = &tool_defs;
 
-        // messages — system + user + (assistant tool_calls + tool results) per prior_results
+        // messages — system + user, then each prior tool call reconstructed as its own sequential
+        // assistant(tool_calls=[real args]) + tool(result, name) pair. This matches the canonical
+        // OpenAI/Solar multi-turn shape (append the real assistant reply, then a tool message per
+        // call with its name). The old code batched every prior call into one assistant message and
+        // sent `arguments:"{}"`, erasing what the model actually asked → the model lost its own
+        // context across rounds and floundered on multi-step flows.
         let mut messages = build_messages(opts, prompt).as_array().cloned().unwrap_or_default();
-        if !prior_results.is_empty() {
-            // assistant 메시지 with tool_calls reconstruction
-            let assistant_calls: Vec<serde_json::Value> = prior_results
-                .iter()
-                .map(|r| {
-                    serde_json::json!({
-                        "id": r.call_id,
-                        "type": "function",
-                        "function": {
-                            "name": r.name,
-                            "arguments": "{}",
-                        }
-                    })
-                })
-                .collect();
+        for r in prior_results {
+            let args_str = if r.arguments.is_null() {
+                "{}".to_string()
+            } else {
+                serde_json::to_string(&r.arguments).unwrap_or_else(|_| "{}".to_string())
+            };
             messages.push(serde_json::json!({
                 "role": "assistant",
                 "content": null,
-                "tool_calls": assistant_calls,
+                "tool_calls": [{
+                    "id": r.call_id,
+                    "type": "function",
+                    "function": { "name": r.name, "arguments": args_str },
+                }],
             }));
-            for r in prior_results {
-                messages.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": r.call_id,
-                    "content": serde_json::to_string(&r.result).unwrap_or_default(),
-                }));
-            }
+            messages.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": r.call_id,
+                "name": r.name,
+                "content": serde_json::to_string(&r.result).unwrap_or_default(),
+            }));
         }
 
         let mut body = serde_json::json!({
             "model": config.id,
             "messages": messages,
             "tools": tool_defs,
+            // solar-pro3 supports parallel tool calls — the model may batch independent calls.
+            "parallel_tool_calls": true,
         });
         if let Some(m) = opts.max_tokens {
             body["max_tokens"] = serde_json::Value::from(m);
+        }
+        if let Some(effort) = Self::reasoning_effort(config, opts) {
+            body["reasoning_effort"] = serde_json::Value::from(effort);
         }
 
         let response = http_client()
@@ -203,6 +237,7 @@ impl FormatHandler for OpenAiChatHandler {
         }
         let (text, tool_calls, tokens_in, tokens_out, cached_tokens) =
             Self::parse_response(&body_json);
+        let reasoning = Self::parse_reasoning(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
             text,
@@ -212,6 +247,7 @@ impl FormatHandler for OpenAiChatHandler {
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
             cached_tokens: Some(cached_tokens),
+            thinking_text: if reasoning.is_empty() { None } else { Some(reasoning) },
             ..Default::default()
         })
     }

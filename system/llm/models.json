@@ -796,7 +796,7 @@
       "features": {
         "mcpConnector": false,
         "strictTools": false,
-        "reasoning": false,
+        "reasoning": true,
         "toolSearch": false,
         "imageInput": false
       },
