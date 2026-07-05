@@ -136,18 +136,27 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic' | 'upstage'>(_initMp.provider);
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
 
+  // Staged model selection — the model dropdown / provider tabs write here (a draft), and the
+  // draft only becomes the *active* chat model (parent `onAiModelChange`) + backend value on the
+  // main Save button. Prevents an accidental/temporary switch (e.g. picking Opus to peek at the
+  // thinking block) from silently taking effect on the next turn. Syncs from the `aiModel` prop
+  // whenever the active model changes externally (after Save, or a load); on close-without-save the
+  // modal unmounts and the draft is discarded.
+  const [draftModel, setDraftModel] = useState(aiModel);
+  useEffect(() => { setDraftModel(aiModel); }, [aiModel]);
+
   // useAiModels React Query ready 시점 entry 준비 — useState 가 옛 기본값에 머문 상태면 sync.
   // 매 마운트 시 첫 render 는 aiModelsList 빈 list → 기본값 (api/openai/general) → ready 후 자동 갱신.
-  // aiModel 변경 시점에도 같이 동작 (e.g. 다른 탭에서 model 바꾼 후 SettingsModal 열기).
+  // draftModel(스테이징된 선택) 변경 시점에도 같이 동작 — 탭/드롭다운이 draft 를 바꾸면 mode/provider 재추론.
   useEffect(() => {
     if (aiModelsList.length === 0) return;
-    const mp = inferModeProvider(aiModel);
+    const mp = inferModeProvider(draftModel);
     setExecMode(mp.execMode);
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
     setCliProvider(mp.cliProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiModelsList, aiModel]);
+  }, [aiModelsList, draftModel]);
 
   /** 카테고리별 마지막 선택 모델 — 공급자/모드 전환 시 첫 모델(auto) 대신 직전 선택 복원.
    *  카테고리 키 = JSON registry entry.category 단일 source. 옛 prefix 분기 폐기 (2026-05-13).
@@ -159,31 +168,28 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [lastModelByCategory, setLastModelByCategory] = useSetting('firebat_last_model_by_category');
   // 모델별 thinking level 기억 — 카테고리별 모델 기억과 같은 패턴.
   const [lastThinkingByModel, setLastThinkingByModel] = useSetting('firebat_last_thinking_by_model');
-  /** 새 카테고리 전환 시 호출 — 마지막 모델 복원, 없으면 첫 모델 fallback. */
+  /** 새 카테고리 전환 시 호출 — 마지막 선택 모델을 draft 로 복원(없으면 첫 모델). 활성 모델은 안 바뀜(저장 전까지). */
   const restoreOrFirst = (newCategory: string, fallbackFirst: string | undefined) => {
     const remembered = lastModelByCategory[newCategory];
     const isValid = remembered && aiModelsList.some(m => m.value === remembered) && categoryOf(remembered) === newCategory;
-    if (isValid) onAiModelChange(remembered);
-    else if (fallbackFirst) onAiModelChange(fallbackFirst);
+    if (isValid) setDraftModel(remembered);
+    else if (fallbackFirst) setDraftModel(fallbackFirst);
   };
 
-  // aiModel 이 외부에서 바뀌면(상위 저장값 로드 등) 모드/공급자 재추론.
+  // draftModel(스테이징된 선택)이 바뀌면 모드/공급자 재추론. 활성 모델(aiModel)은 저장 눌러야 바뀜.
   //
-  // ⚠ lastModelByCategory 자동 갱신은 의도적으로 제거 (2026-05-10 사용자 보고).
-  // 옛 동작: cascade 탭(execMode / aiMode / aiProvider / cliProvider) 클릭 → restoreOrFirst
-  //         → onAiModelChange 즉시 호출 → 본 useEffect 발동 → lastModelByCategory[cat] 즉시 갱신.
-  //         사용자가 "탭 미리보기" 의도로 클릭만 해도 silent 갱신되어 다음 카테고리 전환 시
-  //         예상 못 한 모델이 복원됐음.
-  // 새 동작: lastModelByCategory 갱신은 메인 "저장" 버튼 시점에만 (handleSave 안). cascade
-  //         탭 클릭은 활성 모델 preview (즉시 변경) 만 하고 카테고리 기억은 안 건드림.
+  // 모델 선택은 draft 스테이징 — cascade 탭(execMode / aiMode / aiProvider / cliProvider) 클릭이나
+  // 드롭다운 변경은 draftModel 만 바꿔 UI(그 카테고리의 직전 모델·thinking)를 미리 보여주고, 실제
+  // 활성 모델·카테고리 기억(lastModelByCategory)은 메인 "저장" 버튼(handleSave)에서만 반영된다.
+  // 그래서 "탭 미리보기"로 클릭만 하고 저장 안 하면 활성 모델은 그대로다(잘못된/임시 전환 방지).
   useEffect(() => {
-    const mp = inferModeProvider(aiModel);
+    const mp = inferModeProvider(draftModel);
     setExecMode(mp.execMode);
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
     setCliProvider(mp.cliProvider);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiModel]);
+  }, [draftModel]);
   // CLI 상태
   const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
   const [cliChecking, setCliChecking] = useState(false);
@@ -192,20 +198,20 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
   const [thinkingLevel, setThinkingLevel] = useState('low');
 
-  // 모델 변경 시 그 모델에 설정된 thinking 복원. cascade 의 유효성 검증은 기존 흐름이 처리.
+  // draft 모델 변경 시 그 모델에 기억된 thinking 복원(탭 전환 시 그 카테고리 직전 thinking 미리보기).
   useEffect(() => {
-    const remembered = lastThinkingByModel[aiModel];
+    const remembered = lastThinkingByModel[draftModel];
     if (remembered && remembered !== thinkingLevel) setThinkingLevel(remembered);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiModel]);
+  }, [draftModel]);
 
-  // thinkingLevel 변경 시 현재 모델 키에 저장.
+  // thinkingLevel 변경 시 현재 draft 모델 키에 기억(localStorage). 활성 적용은 저장 버튼(persistSettings).
   useEffect(() => {
-    if (!aiModel || !thinkingLevel) return;
-    if (lastThinkingByModel[aiModel] === thinkingLevel) return;
-    setLastThinkingByModel({ ...lastThinkingByModel, [aiModel]: thinkingLevel });
+    if (!draftModel || !thinkingLevel) return;
+    if (lastThinkingByModel[draftModel] === thinkingLevel) return;
+    setLastThinkingByModel({ ...lastThinkingByModel, [draftModel]: thinkingLevel });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiModel, thinkingLevel]);
+  }, [draftModel, thinkingLevel]);
 
   // Provider API 키 (OpenAI / Google AI Studio / Anthropic / Vertex SA)
   const [geminiApiKey, setGeminiApiKey] = useState(''); // OpenAI (기존 이름 유지)
@@ -696,13 +702,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // admin-only extras below (model-category memory, provider vault keys) are capability-guarded,
   // not forks of shared logic. Returns false only on a real save failure.
   const persistSettings = async (): Promise<boolean> => {
-    const saveCat = aiModel ? categoryOf(aiModel) : '';
+    // The staged draft becomes the active/persisted model on Save (not on selection).
+    const saveCat = draftModel ? categoryOf(draftModel) : '';
     const nextLastModelByCategory = saveCat
-      ? { ...lastModelByCategory, [saveCat]: aiModel }
+      ? { ...lastModelByCategory, [saveCat]: draftModel }
       : lastModelByCategory;
     // Model tab is admin-only, so the localStorage fallback + per-category memory apply only there.
     if (!hubContext) {
-      writeSetting('firebat_model', aiModel);
+      writeSetting('firebat_model', draftModel);
       if (saveCat) setLastModelByCategory(nextLastModelByCategory);
     }
 
@@ -710,7 +717,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     // The hub backend persists only its per-tenant fields; the rest are read-only there.
     const ok = await settingsEndpoint.save({
       timezone: userTimezone,
-      aiModel,
+      aiModel: draftModel,
       aiThinkingLevel: thinkingLevel,
       aiRouterEnabled,
       aiAssistantModel,
@@ -756,6 +763,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       setTimeout(() => setMainSaveState(null), 2000);
       return;
     }
+    // Apply the staged model as the active chat model now (persist succeeded). Until this point the
+    // dropdown / provider tabs only changed the draft — this is where the switch actually takes effect.
+    if (draftModel && draftModel !== aiModel) onAiModelChange(draftModel);
 
     // Account change — runs only when a current password was entered (never in hub-mode; that
     // field's tab is hidden), so this is data-guarded, not a hubContext branch. Server
@@ -1049,7 +1059,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             const modelOptions = modelsForProvider.length > 0
               ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
               : [{ value: '', label: t('settings_modal.image_no_model_option') }];
-            const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
+            const modelValue = modelsForProvider.some(m => m.value === draftModel) ? draftModel : (modelsForProvider[0]?.value ?? '');
             // Thinking — JSON registry single source. 옛 hardcoded prefix 기반 polices 폐기 (2026-05-13).
             const modelEntry = aiModelsList.find(m => m.value === modelValue);
             const thinkingKind = modelEntry?.thinking?.kind;
@@ -1101,13 +1111,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       if (em === execMode) return;
                       setExecMode(em);
                       if (em === 'cli') {
-                        if (aiModel.startsWith('cli-')) return;
+                        if (draftModel.startsWith('cli-')) return;
                         const newCat = `cli-${cliProvider}`;
                         const prefix = cliProviderPrefix[cliProvider];
                         const firstCli = aiModelsList.find(mm => mm.value.startsWith(prefix));
                         restoreOrFirst(newCat, firstCli?.value);
                       } else {
-                        if (!aiModel.startsWith('cli-')) return;
+                        if (!draftModel.startsWith('cli-')) return;
                         const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${aiProvider}`;
                         const firstApi = aiModelsList.find(mm => {
                           const v = mm.value;
@@ -1135,10 +1145,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const nextProviders = providersByMode[m];
                       const nextProvider = nextProviders.includes(aiProvider) ? aiProvider : nextProviders[0];
                       setAiProvider(nextProvider);
-                      const fits = (m === 'vertex' ? aiModel.startsWith('vertex-') : !aiModel.startsWith('vertex-'))
-                        && (nextProvider === 'openai' ? aiModel.startsWith('gpt-')
-                            : nextProvider === 'google' ? aiModel.startsWith('gemini-')
-                            : aiModel.startsWith('claude-'));
+                      const fits = (m === 'vertex' ? draftModel.startsWith('vertex-') : !draftModel.startsWith('vertex-'))
+                        && (nextProvider === 'openai' ? draftModel.startsWith('gpt-')
+                            : nextProvider === 'google' ? draftModel.startsWith('gemini-')
+                            : draftModel.startsWith('claude-'));
                       if (fits) return;
                       const newCat = m === 'vertex' ? 'vertex-google' : `api-${nextProvider}`;
                       const nextModels = aiModelsList.filter(mm => {
@@ -1164,11 +1174,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     onChange={(p) => {
                       if (p === effectiveProvider) return;
                       setAiProvider(p);
-                      const fits = (aiMode === 'vertex' ? aiModel.startsWith('vertex-') : !aiModel.startsWith('vertex-'))
-                        && (p === 'openai' ? aiModel.startsWith('gpt-')
-                            : p === 'google' ? aiModel.startsWith('gemini-')
-                            : p === 'anthropic' ? aiModel.startsWith('claude-')
-                            : aiModel.startsWith('solar-'));
+                      const fits = (aiMode === 'vertex' ? draftModel.startsWith('vertex-') : !draftModel.startsWith('vertex-'))
+                        && (p === 'openai' ? draftModel.startsWith('gpt-')
+                            : p === 'google' ? draftModel.startsWith('gemini-')
+                            : p === 'anthropic' ? draftModel.startsWith('claude-')
+                            : draftModel.startsWith('solar-'));
                       if (fits) return;
                       const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${p}`;
                       const nextModels = aiModelsList.filter(mm => {
@@ -1197,7 +1207,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       setCliProvider(p);
                       setCliStatus(null);
                       const prefix = cliProviderPrefix[p];
-                      if (aiModel.startsWith(prefix)) return;
+                      if (draftModel.startsWith(prefix)) return;
                       const newCat = `cli-${p}`;
                       const first = aiModelsList.find(mm => mm.value.startsWith(prefix));
                       restoreOrFirst(newCat, first?.value);
@@ -1208,7 +1218,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 )}
 
                 <Field label={t('settings_modal.model_label')}>
-                  <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
+                  <SelectInput value={modelValue} onChange={setDraftModel} options={modelOptions} />
                 </Field>
 
                 {/* Thinking — 모델 드롭다운 바로 아래. API / CLI 둘 다 동일 위치. */}
