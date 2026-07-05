@@ -324,7 +324,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   }, []);
   // 모듈별 패키지 업그레이드 가용 여부 — 리스트에 뱃지 표시용. sysModules 로드 후 병렬 fetch.
   // PyPI 결과는 sandbox 어댑터에서 1시간 캐시되므로 매 시스템 탭 진입에 PyPI 호출 부담 0.
-  const [moduleUpgradeMap, setModuleUpgradeMap] = useState<Record<string, boolean>>({});
+  // 모듈별 업그레이드 정보 — 값이 있으면 업그레이드 가능(현재→최신 버전 표시용), 없으면 최신.
+  const [moduleUpgradeMap, setModuleUpgradeMap] = useState<Record<string, { installed?: string; latest?: string }>>({});
   useEffect(() => {
     if (sysModules.length === 0) return;
     let cancelled = false;
@@ -337,21 +338,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           try {
             // API route 경유 — typed gRPC client(`lib/api-gen/module`) 는 node:http2 의존이라
             // browser bundle 에 못 들어감 (build error). server-side route 가 typed client 호출 + JSON 반환.
-            const res = await apiGet<{ success: boolean; packages?: Array<{ upgradeAvailable?: boolean }> }>(
+            const res = await apiGet<{ success: boolean; packages?: Array<{ upgradeAvailable?: boolean; installedVersion?: string; latestVersion?: string }> }>(
               `/api/settings/modules/packages?module=${encodeURIComponent(name)}`,
               { category: 'settings' },
             );
             if (res.success && Array.isArray(res.packages)) {
-              const hasUpgrade = res.packages.some(p => p.upgradeAvailable === true);
-              return [name, hasUpgrade] as const;
+              const up = res.packages.find(p => p.upgradeAvailable === true);
+              return [name, up ? { installed: up.installedVersion, latest: up.latestVersion } : null] as const;
             }
           } catch (e) {
             logger.debug('settings', `package status fetch 실패 (${name})`, { error: e });
           }
-          return [name, false] as const;
+          return [name, null] as const;
         }),
       );
-      if (!cancelled) setModuleUpgradeMap(Object.fromEntries(results));
+      if (!cancelled) setModuleUpgradeMap(Object.fromEntries(results.filter(([, v]) => v).map(([n, v]) => [n, v!])));
     })();
     return () => { cancelled = true; };
   }, [sysModules]);
@@ -2184,6 +2185,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               {moduleUpgradeMap[m.name] && (
                                 <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
                                   {t('settings_modal.upgrade_available_badge')}
+                                  {moduleUpgradeMap[m.name].installed && moduleUpgradeMap[m.name].latest && (
+                                    <span className="ml-1 font-semibold">{moduleUpgradeMap[m.name].installed} → {moduleUpgradeMap[m.name].latest}</span>
+                                  )}
                                 </span>
                               )}
                             </div>

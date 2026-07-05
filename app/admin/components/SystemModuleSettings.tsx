@@ -1455,6 +1455,12 @@ export function PackageStatusSection({ moduleName }: { moduleName: string }) {
                 {pkg.status === 'failed' && <AlertCircle size={10} />}
                 {pkg.name}
                 <span className="opacity-60">· {label}</span>
+                {/* 버전 — 업그레이드 있으면 현재→최신, 아니면 현재 버전만 */}
+                {pkg.upgradeAvailable && pkg.installedVersion && pkg.latestVersion ? (
+                  <span className="text-amber-600 font-semibold">{pkg.installedVersion} → {pkg.latestVersion}</span>
+                ) : pkg.installedVersion ? (
+                  <span className="opacity-50">{pkg.installedVersion}</span>
+                ) : null}
               </span>
             </Tooltip>
           );

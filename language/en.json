@@ -706,6 +706,6 @@
     "cost_column_cost": "Cost",
     "cost_column_date": "Date",
     "cost_empty_message": "No LLM call records in the last {{days}} days",
-    "upgrade_available_badge": "Update"
+    "upgrade_available_badge": "Upgrade"
   }
 }
