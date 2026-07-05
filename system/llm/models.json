@@ -1,6 +1,9 @@
 {
   "defaultAssistantModel": "current",
-  "assistantModels": ["gemini-3.1-flash-lite", "gpt-5.4-nano"],
+  "assistantModels": [
+    "gemini-3.1-flash-lite",
+    "gpt-5.4-nano"
+  ],
   "defaultLibraryExtractionModel": "gemini-3.5-flash",
   "libraryExtractionProModel": "gemini-3.1-pro-preview",
   "models": [
@@ -96,23 +99,38 @@
         "levels": [
           {
             "value": "low",
-            "labels": { "ko": "Low (낮음)", "en": "Low" }
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
           },
           {
             "value": "medium",
-            "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" }
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
           },
           {
             "value": "high",
-            "labels": { "ko": "High (높음)", "en": "High" }
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
           },
           {
             "value": "xhigh",
-            "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" }
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
           },
           {
             "value": "max",
-            "labels": { "ko": "Max (최대 예산)", "en": "Max (highest budget)" }
+            "labels": {
+              "ko": "Max (최대 예산)",
+              "en": "Max (highest budget)"
+            }
           }
         ]
       },
@@ -753,6 +771,29 @@
       "category": "api-openai"
     },
     {
+      "id": "solar-pro3",
+      "maxOutput": 32000,
+      "displayName": "Solar Pro 3 (Upstage)",
+      "provider": "Upstage",
+      "format": "openai-chat",
+      "endpoint": "https://api.upstage.ai/v1/chat/completions",
+      "apiKeyVaultKey": "system:upstage:api-key",
+      "features": {
+        "mcpConnector": false,
+        "strictTools": false,
+        "reasoning": false,
+        "toolSearch": false,
+        "imageInput": false
+      },
+      "pricing": {
+        "input": 0.15,
+        "output": 0.6,
+        "cachedInput": 0.015
+      },
+      "execMode": "api",
+      "category": "api-upstage"
+    },
+    {
       "id": "cli-claude-code-auto",
       "displayName": "Claude Code CLI (Auto)",
       "provider": "CLI",
@@ -873,11 +914,41 @@
       "thinking": {
         "kind": "extendedThinking",
         "levels": [
-          { "value": "low", "labels": { "ko": "Low (낮음)", "en": "Low" } },
-          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
-          { "value": "high", "labels": { "ko": "High (높음)", "en": "High" } },
-          { "value": "xhigh", "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
-          { "value": "max", "labels": { "ko": "Max (최대 예산)", "en": "Max (highest budget)" } }
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 예산)",
+              "en": "Max (highest budget)"
+            }
+          }
         ]
       },
       "execMode": "cli",

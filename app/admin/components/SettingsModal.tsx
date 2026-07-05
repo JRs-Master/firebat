@@ -101,6 +101,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const googleKeyId = useId();
   const anthropicKeyId = useId();
   const vertexSaId = useId();
+  const upstageKeyId = useId();
   // useAiModels 컴포넌트 상단 호출 — inferModeProvider / categoryOf 가 aiModelsList 참조하므로 hoist 보장.
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
@@ -116,7 +117,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   type CliProvider = 'claude' | 'codex' | 'gemini';
   // 모델 분류 — JSON registry (system/llm/models.json) 단일 source. entry.execMode/cliProvider/category 만 read.
   // 옛 prefix 분기 (model.startsWith('cli-') 등) 폐기 (2026-05-13). entry 미준비 시점 = 기본값 + useEffect sync.
-  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
+  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic' | 'upstage'; cliProvider: CliProvider } => {
     const entry = aiModelsList.find(m => m.value === model);
     if (!entry) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
     if (entry.execMode === 'cli') {
@@ -126,12 +127,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (entry.category === 'api-openai') return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
     if (entry.category === 'api-anthropic') return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
     if (entry.category === 'api-google') return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
+    if (entry.category === 'api-upstage') return { execMode: 'api', mode: 'general', provider: 'upstage', cliProvider: 'claude' };
     return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
   };
   const _initMp = inferModeProvider(aiModel);
   const [execMode, setExecMode] = useState<'api' | 'cli'>(_initMp.execMode);
   const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
-  const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
+  const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic' | 'upstage'>(_initMp.provider);
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
 
   // useAiModels React Query ready 시점 entry 준비 — useState 가 옛 기본값에 머문 상태면 sync.
@@ -210,6 +212,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [googleApiKey, setGoogleApiKey] = useState(''); // Gemini AI Studio
   const [anthropicApiKey, setAnthropicApiKey] = useState(''); // Claude
   const [vertexSaJson, setVertexSaJson] = useState(''); // Vertex AI Service Account JSON
+  const [upstageApiKey, setUpstageApiKey] = useState(''); // Upstage Solar
 
   // AI 어시스턴트 라우터 (Self-learning Flash Lite)
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
@@ -368,6 +371,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey ?? '');
         if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey ?? '');
         if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey ?? '');
+        if (data.keys?.upstage_api_key?.hasKey) setUpstageApiKey(data.keys.upstage_api_key.maskedKey ?? '');
       })
       .catch(() => {});
   }, []);
@@ -728,7 +732,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     // Provider API keys → vault. Admin-only capability (a tenant has no key inputs, uses the shared
     // admin vault) → guarded by hubContext, not a fork of the shared save path.
     if (!hubContext) {
-      const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
+      const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex' | 'upstage', value: string) => {
         if (!value || value.includes('...') || value === '***') return;
         await apiPost('/api/vault', { provider, apiKey: value }, { category: 'settings' }).catch(() => {});
       };
@@ -736,6 +740,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       await saveProviderKey('gemini', googleApiKey);
       await saveProviderKey('anthropic', anthropicApiKey);
       await saveProviderKey('vertex', vertexSaJson);
+      await saveProviderKey('upstage', upstageApiKey);
       // Refresh vault-key gating so e.g. the TTS provider activates without F5.
       await refreshVaultKeys();
     }
@@ -1007,8 +1012,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           {settingsTab === 'ai' && (() => {
             // 모드별 사용 가능 프로바이더
             // 공급자는 ABC 순. Anthropic → Google → OpenAI
-            const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic'>> = {
-              general: ['anthropic', 'google', 'openai'],
+            const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic' | 'upstage'>> = {
+              general: ['anthropic', 'google', 'openai', 'upstage'],
               vertex: ['google'],
             };
             const activeProviders = providersByMode[aiMode];
@@ -1029,10 +1034,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               if (effectiveProvider === 'openai') return v.startsWith('gpt-');
               if (effectiveProvider === 'google') return v.startsWith('gemini-');
               if (effectiveProvider === 'anthropic') return v.startsWith('claude-');
+              if (effectiveProvider === 'upstage') return v.startsWith('solar-');
               return false;
             });
-            const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
-              openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
+            const providerLabels: Record<'openai' | 'google' | 'anthropic' | 'upstage', string> = {
+              openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic', upstage: 'Upstage',
             };
             // 공급자 통일 — API/CLI 모두 Anthropic / Google / OpenAI (회사명 고정).
             // 내부 키는 역사적 이유로 CliProvider=claude/codex/gemini 유지 — 라벨만 회사명으로 매핑.
@@ -1153,7 +1159,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {execMode === 'api' && (
                 <Field label={t('settings_modal.provider_label')}>
-                  <SegButtons<'openai' | 'google' | 'anthropic'>
+                  <SegButtons<'openai' | 'google' | 'anthropic' | 'upstage'>
                     value={effectiveProvider}
                     onChange={(p) => {
                       if (p === effectiveProvider) return;
@@ -1161,7 +1167,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const fits = (aiMode === 'vertex' ? aiModel.startsWith('vertex-') : !aiModel.startsWith('vertex-'))
                         && (p === 'openai' ? aiModel.startsWith('gpt-')
                             : p === 'google' ? aiModel.startsWith('gemini-')
-                            : aiModel.startsWith('claude-'));
+                            : p === 'anthropic' ? aiModel.startsWith('claude-')
+                            : aiModel.startsWith('solar-'));
                       if (fits) return;
                       const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${p}`;
                       const nextModels = aiModelsList.filter(mm => {
@@ -1171,7 +1178,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         if (v.startsWith('vertex-')) return false;
                         if (p === 'openai') return v.startsWith('gpt-');
                         if (p === 'google') return v.startsWith('gemini-');
-                        return v.startsWith('claude-');
+                        if (p === 'anthropic') return v.startsWith('claude-');
+                        return v.startsWith('solar-');
                       });
                       restoreOrFirst(newCat, nextModels[0]?.value);
                     }}
@@ -1352,6 +1360,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <HelpText className="!text-[10px]">console.anthropic.com → API Keys</HelpText>
                     </div>
                   )}
+                  {aiMode === 'general' && effectiveProvider === 'upstage' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500" htmlFor={upstageKeyId}>Upstage (Solar)</label>
+                      <TextInput type="password" value={upstageApiKey} onChange={setUpstageApiKey} placeholder="up_..." id={upstageKeyId} name="upstageApiKey" />
+                      <HelpText className="!text-[10px]">console.upstage.ai → API Keys</HelpText>
+                    </div>
+                  )}
 
                   {aiMode === 'vertex' && (
                     <div className="flex flex-col gap-1.5">
@@ -1370,7 +1385,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   // "current" if main is that API model — can run). Since there's always a main model, this
                   // is effectively "is any model usable". (geminiApiKey state = OpenAI key, legacy name.)
                   const hasAssistantKey =
-                    execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey;
+                    execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey || !!upstageApiKey;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
                       <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>

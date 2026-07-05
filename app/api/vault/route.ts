@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '../../../lib/with-api-error';
 import { getGeminiKey, setGeminiKey } from '../../../lib/api-gen/secret';
 
-// 프로바이더별 Vault 키
+// 프로바이더별 Vault 키 — **model config(system/llm/models.json)의 apiKeyVaultKey 와 동일 키(단일 소스)**.
+// 어댑터(fetch_api_key)가 이 콜론키를 읽으므로 저장·읽기가 여기서 연결된다. 옛 언더스코어키
+// (OPENAI_API_KEY 등)는 어댑터가 안 읽어 UI 로 넣은 키가 무시되던 disconnect 를 정정(2026-07-05).
 const PROVIDER_KEYS = {
-  openai_api_key: 'OPENAI_API_KEY',
-  gemini_api_key: 'GEMINI_API_KEY',
-  anthropic_api_key: 'ANTHROPIC_API_KEY',
-  google_service_account_json: 'GOOGLE_SERVICE_ACCOUNT_JSON',
+  openai_api_key: 'system:openai:api-key',
+  gemini_api_key: 'system:gemini:api-key',
+  anthropic_api_key: 'system:anthropic:api-key',
+  google_service_account_json: 'system:vertex:service-account-json',
+  upstage_api_key: 'system:upstage:api-key',
 } as const;
 
 type ProviderField = keyof typeof PROVIDER_KEYS;

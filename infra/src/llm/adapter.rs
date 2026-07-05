@@ -95,6 +95,11 @@ impl ConfigDrivenAdapter {
             "openai-responses".to_string(),
             Arc::new(formats::openai_responses::OpenAiResponsesHandler::new()),
         );
+        // openai-chat — OpenAI 호환 서드파티(Upstage Solar / DeepSeek / Groq / 로컬 vLLM, chat/completions).
+        handlers.insert(
+            "openai-chat".to_string(),
+            Arc::new(formats::openai_chat::OpenAiChatHandler::new()),
+        );
         handlers.insert(
             "gemini-native".to_string(),
             Arc::new(formats::gemini_native::GeminiNativeHandler::new()),
