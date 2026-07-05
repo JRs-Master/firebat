@@ -124,6 +124,12 @@ impl FormatHandler for OpenAiChatHandler {
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }
+        // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
+        // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends
+        // the whole prompt + tool defs every round, so this matters a lot for multi-tool turns.
+        if let Some(cid) = opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+            body["prompt_cache_key"] = serde_json::Value::from(cid);
+        }
 
         let response = http_client()
             .post(&config.endpoint)
@@ -223,6 +229,12 @@ impl FormatHandler for OpenAiChatHandler {
         }
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
+        }
+        // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
+        // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends
+        // the whole prompt + tool defs every round, so this matters a lot for multi-tool turns.
+        if let Some(cid) = opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+            body["prompt_cache_key"] = serde_json::Value::from(cid);
         }
 
         let response = http_client()
