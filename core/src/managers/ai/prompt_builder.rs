@@ -105,6 +105,15 @@ impl PromptBuilder {
         // 시스템 컨텍스트 — extra_context 설정되어 있으면 그것, 아니면 빈 string
         let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미설정)");
 
+        // Workspace default language — the fallback for a language-neutral message (the user's own
+        // message language takes priority; this is only the default). Same mapping as consolidation.
+        let lang_code = crate::i18n::current_default_lang();
+        let lang_name = match lang_code.as_str() {
+            "ko" => "Korean (한국어)",
+            "en" => "English",
+            _ => lang_code.as_str(),
+        };
+
         // System prompt full text — single-file English from prompt_store (i18n 분리, lang 무관).
         let tool_template = prompt_store::get("tool_system");
         let base = tool_template
@@ -112,6 +121,7 @@ impl PromptBuilder {
             .replace("{user_tz}", user_tz_str)
             .replace("{now_korean}", &now_korean)
             .replace("{banned_internal_line}", &banned_internal_line)
+            .replace("{lang}", lang_name)
             .replace("{user_section}", &user_section);
 
         // Cron agent prelude — 설정되어 있으면 base 앞에 prepend
