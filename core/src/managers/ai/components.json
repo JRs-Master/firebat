@@ -218,7 +218,7 @@
   {
     "name": "table",
     "componentType": "Table",
-    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns). Set sortable=true ONLY when sorting is meaningful (many rows + comparable columns like price/count/ranking) — not for small or fixed-order tables.",
+    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns). Set sortable=true whenever the table has many rows and at least one orderable column (values with a natural order — numbers, amounts, dates, ranks) the user could rank by — not for small or fixed-order tables.",
     "semanticText": "table grid rows columns headers list compare spreadsheet data ranking metrics revenue multiple stocks 표 테이블 행 열 헤더 나열 비교 정리 데이터 목록 항목 필드 매출 지표 순위 여러 종목 비교",
     "propsSchema": {
       "type": "object",
@@ -294,7 +294,7 @@
             "boolean",
             "null"
           ],
-          "description": "true makes column headers click-to-sort (asc → desc → original). Opt-in — set ONLY when sorting is meaningful: many rows + comparable columns (prices, counts, ranking, dates). Do NOT set for small tables, single-target attribute tables, or where row order itself is the meaning. default false."
+          "description": "true makes column headers click-to-sort (asc -> desc -> original). Set it whenever the table has many rows AND at least one column whose values have a natural order (numbers, amounts, dates, ranks) — i.e. the user could plausibly want to rank the rows by a column. Skip only for short tables, single-target attribute tables, or when the given row order itself is the meaning. default false."
         }
       }
     }
@@ -1091,7 +1091,7 @@
   {
     "name": "quiz_group",
     "componentType": "QuizGroup",
-    "description": "A set of questions sharing one passage (e.g. Korean SAT items 42–45). passage (shared text) + boxes/figures (shared stimulus) + questions[] (each: question/choices/answer/explanation/statements/figures). Same view as quiz (in interactive mode, answer all then grade at once).",
+    "description": "A set of questions sharing one passage. passage (shared text) + boxes/figures (shared stimulus) + questions[] (each: question/choices/answer/explanation/statements/figures). Same view as quiz (in interactive mode, answer all then grade at once).",
     "semanticText": "지문 장문독해 세트 여러 문제 quiz group 수능 42 43 44 45 공통 지문 본문 한번에 채점 묶음",
     "propsSchema": {
       "type": "object",
@@ -2436,7 +2436,7 @@
   {
     "name": "map",
     "componentType": "Map",
-    "description": "Map + markers + radius circles + legend. Visualize geo data like real-estate deals, weather, store locations. **Provider auto-switch**: Korean coordinates (lat 33–38.7, lon 124.5–132) with a Kakao JS key set → Kakao Map; **outside Korea → Leaflet+OSM** (free CDN; Kakao is precise for Korea only). Without a Kakao key, Korean coordinates also fall back to Leaflet. Coordinates must come only from a sysmod (kakao-map geocoding/search-keyword, etc.) — filling them from AI memory shows the wrong building/neighborhood.",
+    "description": "Map + markers + radius circles + legend. Visualize any located data (points with coordinates). **Provider auto-switch**: Korean coordinates (lat 33–38.7, lon 124.5–132) with a Kakao JS key set → Kakao Map; **outside Korea → Leaflet+OSM** (free CDN; Kakao is precise for Korea only). Without a Kakao key, Korean coordinates also fall back to Leaflet. Coordinates must come only from a sysmod (kakao-map geocoding/search-keyword, etc.) — filling them from AI memory shows the wrong building/neighborhood.",
     "semanticText": "지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea",
     "propsSchema": {
       "type": "object",
@@ -2767,7 +2767,7 @@
   {
     "name": "form",
     "componentType": "Form",
-    "description": "Interactive input form backed by a sysmod. The user fills the fields and submits; the form calls `bindModule` with the field values ({field name: value}) and renders the returned data. Use to build an interactive frontend over a sysmod — e.g. a data lookup, a unit/currency converter, a search box. For purely client-side widgets with no backend, use an html app instead. Currently usable in the admin console; public published-page support is pending.",
+    "description": "Interactive input form backed by a sysmod. The user fills the fields and submits; the form calls `bindModule` with the field values ({field name: value}) and renders the returned data. Use to build an interactive frontend over a sysmod — whenever the user should supply values and get back the module's result. For purely client-side widgets with no backend, use an html app instead. Currently usable in the admin console; public published-page support is pending.",
     "semanticText": "form input submit interactive 입력 폼 제출 인터랙티브 도구 계산기 변환기 조회 검색 lookup 종목검색 모듈 호출 sysmod frontend 양식 버튼",
     "propsSchema": {
       "type": "object",

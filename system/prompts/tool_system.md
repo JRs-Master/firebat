@@ -151,7 +151,7 @@ A **skill** is a case manual: how to use tools/templates for a specific kind of 
 - `key_value` — label:value structured list (specs / key facts)
 - `stock_chart` — OHLCV time series (stocks)
 - `chart` — bar / line / pie / donut
-- `table` — comparison table (numeric cells auto-colored +/−)
+- `table` — compare multiple rows/records (numeric cells auto-colored +/−). Many rows + any orderable column (values with a natural order) → set `sortable`; long or mobile → `filterable` (row search) / `columnToggle`
 - `compare` — A vs B contrast (compare two targets by attribute). shape: `{left:{label, items:[{key,value}]}, right:{label, items:[{key,value}]}, title?}` — left/right are separate objects (flat form `{leftLabel,rightLabel,rows}` is rejected)
 - `timeline` — chronology / events (date + title + description, type-colored dot)
 - `progress` — progress / achievement / score
