@@ -1225,18 +1225,27 @@ fn signal_align(
             let ww: Vec<f64> = group.iter().map(|w| word_weight(w)).collect();
             let totw: f64 = ww.iter().sum::<f64>().max(1.0);
             let gspan = (gb - ga).max(1e-3);
+            // 그룹 내 단어 경계 기대시각(word_weight 누적).
+            let n_wb = group.len().saturating_sub(1);
+            let mut wexps: Vec<f64> = Vec::with_capacity(n_wb);
+            {
+                let mut wc = 0.0;
+                for k in 0..n_wb {
+                    wc += ww[k];
+                    wexps.push(ga + wc / totw * gspan);
+                }
+            }
+            // 최근접 1:1 + 이웃 경계 미세쉼 훔침 방지 — 그룹 경계 배정과 동일 방식(밀림 차단).
             let mut w_starts: Vec<f64> = vec![ga];
             let mut w_ends: Vec<f64> = Vec::new();
-            let mut wlo = 0usize;
-            let mut wcum = 0.0;
             let mut wprev = ga;
-            for k in 0..group.len().saturating_sub(1) {
-                wcum += ww[k];
-                let exp = ga + wcum / totw * gspan;
+            let mut wused = vec![false; micro.len()];
+            for k in 0..n_wb {
+                let exp = wexps[k];
                 let mut best: Option<usize> = None;
                 let mut bd = 0.15;
-                for ci in wlo..micro.len() {
-                    if micro[ci].0 < wprev {
+                for ci in 0..micro.len() {
+                    if wused[ci] || micro[ci].0 < wprev {
                         continue;
                     }
                     let d = (micro[ci].0 - exp).abs();
@@ -1245,14 +1254,21 @@ fn signal_align(
                         best = Some(ci);
                     }
                 }
+                let claim = best.is_some_and(|ci| {
+                    let g = micro[ci].0;
+                    wexps
+                        .iter()
+                        .enumerate()
+                        .all(|(kj, &e)| kj == k || (e - g).abs() >= (wexps[k] - g).abs())
+                });
                 match best {
-                    Some(ci) => {
+                    Some(ci) if claim => {
+                        wused[ci] = true;
                         w_ends.push(micro[ci].0);
                         w_starts.push(micro[ci].1);
                         wprev = micro[ci].1;
-                        wlo = ci + 1;
                     }
-                    None => {
+                    _ => {
                         w_ends.push(exp);
                         w_starts.push(exp);
                         wprev = exp;
