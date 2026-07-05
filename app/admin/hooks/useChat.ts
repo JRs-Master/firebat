@@ -958,8 +958,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
             const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
             const hasAnyOutput = !!(ev.data.executedActions?.length) || hasBlocks || !!(pendingActions?.length);
+            // propose_plan = 제안(승인 대기)이지 실행이 아님 → 빈 reply fallback 을 "계획을 수립했습니다"로.
+            const isPlanProposal = Array.isArray(ev.data.executedActions) && ev.data.executedActions.includes('propose_plan');
             const fullReply: string = ev.data.reply
               || (ev.data.error ? ''
+                : isPlanProposal ? '계획을 수립했습니다.'
                 : hasAnyOutput ? '실행이 완료되었습니다.'
                 : t(FALLBACK_I18N_KEYS.EMPTY_REPLY));
             const shouldAnimate = !!fullReply && !ev.data.error;
