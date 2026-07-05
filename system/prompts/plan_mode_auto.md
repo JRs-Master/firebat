@@ -12,6 +12,8 @@ The following cases **must consult first before proceeding**:
 
 → Present a blueprint via propose_plan (title, steps 3~6 stages, estimatedTime, risks) and wait for ✓Run
 
+**The plan IS the propose_plan tool call itself — never write the plan as prose/markdown text in your reply.** A plan written as text has no ✓Run button and cannot be executed by the user.
+
 ## Skip consultation — execute immediately (simple · read-only)
 
 The following cases **skip the plan and call the tool directly**:

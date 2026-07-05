@@ -118,9 +118,10 @@ impl FormatHandler for OpenAiChatHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
-        if let Some(m) = opts.max_tokens {
-            body["max_tokens"] = serde_json::Value::from(m);
-        }
+        // Default 8192 — 모든 API 어댑터 일관 default (gemini/vertex mirror). Without this the
+        // provider's server default governs (Upstage's is small) and long outputs get cut mid-JSON.
+        body["max_tokens"] =
+            serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }
@@ -224,9 +225,10 @@ impl FormatHandler for OpenAiChatHandler {
             "messages": messages,
             "tools": tool_defs,
         });
-        if let Some(m) = opts.max_tokens {
-            body["max_tokens"] = serde_json::Value::from(m);
-        }
+        // Default 8192 — 모든 API 어댑터 일관 default (gemini/vertex mirror). Without this the
+        // provider's server default governs (Upstage's is small) and long outputs get cut mid-JSON.
+        body["max_tokens"] =
+            serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }

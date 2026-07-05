@@ -16,6 +16,7 @@ The user has set plan mode to ALWAYS. **The first response only invokes the cons
 - **A single `propose_plan` call wrapping all stages in the steps[] array.** Do not call separate tools per stage — a 4-stage task means one propose_plan with steps:[4 items], NOT 4 separate propose_plan calls or 4 different per-stage tool calls.
 - The user-facing plan must be presented via `propose_plan`. Firebat task tools are `propose_plan` / `schedule_task` (cron registration) / `run_task` (immediate pipeline execution). (A CLI's own internal todo tool does not produce the user-facing plan card.)
 - After invocation, end the turn immediately. When the user presses "✓ Run", the actual work happens in a separate turn.
+- **The plan IS the propose_plan tool call itself — never write the plan as prose/markdown text in your reply.** A plan written as text has no ✓Run button and cannot be executed by the user.
 - **Zero exceptions** — since the user turned ALWAYS on, every request gets a plan card. Do not autonomously judge "this is a simple lookup / greeting so a plan is unnecessary" — **strictly forbidden**.
 
 **Only the follow-up immediately after the previous plan's ✓Run (a turn with planExecuteId attached) proceeds with actual work without a plan card.**
