@@ -262,11 +262,29 @@ impl ModuleManager {
         .ok_or_else(|| format!("[{module_name}] ws.endpoint missing in config.json"))?
         .to_string();
 
+        // Module arg-container convention — some modules nest API params under a field
+        // (e.g. kiwoom `{action, params:{…}}`, declared as ws.argsField). Overlay the nested
+        // object over the root so templates resolve from either level (nested wins).
+        let args_view = match ws
+            .get("argsField")
+            .and_then(|v| v.as_str())
+            .and_then(|f| input_data.get(f))
+            .and_then(|v| v.as_object())
+        {
+            Some(nested) => {
+                let mut merged = input_data.as_object().cloned().unwrap_or_default();
+                for (k, v) in nested {
+                    merged.insert(k.clone(), v.clone());
+                }
+                serde_json::Value::Object(merged)
+            }
+            None => input_data.clone(),
+        };
         let request_frame = substitute_ws_frame(
             action_decl
                 .get("frame")
                 .ok_or_else(|| format!("[{module_name}] ws.actions.{action}.frame missing"))?,
-            input_data,
+            &args_view,
         )
         .map_err(|e| {
             crate::i18n::t(

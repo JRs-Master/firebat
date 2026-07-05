@@ -8,6 +8,7 @@
   "capability": "stock-trading",
   "providerType": "api",
   "ws": {
+    "argsField": "params",
     "endpoint": "wss://api.kiwoom.com:10000/api/dostk/websocket",
     "endpointMock": "wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
     "matchField": "trnm",
