@@ -9,7 +9,7 @@
 //! - LLM_TRANSFORM — LlmService.ask_text
 //! - SAVE_PAGE — PageManager.save
 //! - TOOL_CALL — ToolManager.dispatch
-//! - NETWORK_REQUEST — Phase B-17+ stub (INetworkPort + reqwest 설정된 후 활성)
+//! - NETWORK_REQUEST — delegates to the registered `network_request` core tool (SSRF-guarded)
 
 use std::sync::Arc;
 
@@ -164,15 +164,23 @@ impl TaskExecutor for RealTaskExecutor {
     async fn network_request(
         &self,
         url: &str,
-        _method: &str,
-        _body: Option<&serde_json::Value>,
-        _headers: Option<&serde_json::Value>,
+        method: &str,
+        body: Option<&serde_json::Value>,
+        headers: Option<&serde_json::Value>,
     ) -> InfraResult<serde_json::Value> {
-        // Phase B-17+ — INetworkPort + reqwest 설정된 후 활성.
-        Err(format!(
-            "NETWORK_REQUEST 미구현 (Phase B-17+ reqwest) — url={}",
-            url
-        ))
+        self.log
+            .info(&format!("[Pipeline] NETWORK_REQUEST → {method} {url}"));
+        // Delegate to the registered `network_request` core tool — same SSRF-guarded path as
+        // the Function Calling tool (single source, no separate wiring). Pipeline step params
+        // map 1:1 to the tool schema {url, method?, body?, headers?}.
+        let mut args = serde_json::json!({ "url": url, "method": method });
+        if let Some(b) = body {
+            args["body"] = b.clone();
+        }
+        if let Some(h) = headers {
+            args["headers"] = h.clone();
+        }
+        self.tools.dispatch("network_request", &args).await
     }
 
     async fn llm_transform(

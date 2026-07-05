@@ -1346,6 +1346,14 @@ impl MediaManager {
             }
             // 외부 URL fetch
             if url.starts_with("http://") || url.starts_with("https://") {
+                // SSRF 차단 — AI 제어 referenceImage.url 로 내부/사설/메타데이터 주소 타격 방지
+                // (network_request 도구와 동일 가드. 콘텐츠 인젝션 위협모델 — [[reference_ai_access_security]])
+                if let Some(reason) = crate::utils::net_guard::is_blocked_fetch_url(url) {
+                    self.log_error(&format!(
+                        "[MediaManager] referenceImage URL blocked (SSRF guard): {reason} — {url}"
+                    ));
+                    return None;
+                }
                 let client = crate::utils::http_client::http_client();
                 if let Ok(resp) = client.get(url).send().await {
                     if resp.status().is_success() {
