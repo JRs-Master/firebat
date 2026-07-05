@@ -34,6 +34,10 @@ pub struct RealTaskExecutor {
     /// Capability fallback 활성 — execute_module 실패 시 같은 capability 의 다른 활성 provider 자동 시도.
     /// None 이면 fallback 비활성 (테스트 / 경량 wiring).
     capability: Option<Arc<CapabilityManager>>,
+    /// 무인(파이프라인) 정책 게이트 — 비활성 모듈 + requiresApproval 액션 차단.
+    /// EXECUTE 는 sandbox 직행이라 FC/MCP 디스패치 계층 게이트를 우회 — 같은 정책을 여기서 강제.
+    /// None (테스트/경량 wiring) = 게이트 없음 (옛 동작).
+    module: Option<Arc<crate::managers::module::ModuleManager>>,
 }
 
 impl RealTaskExecutor {
@@ -53,6 +57,7 @@ impl RealTaskExecutor {
             tools,
             log,
             capability: None,
+            module: None,
         }
     }
 
@@ -60,6 +65,55 @@ impl RealTaskExecutor {
     pub fn with_capability(mut self, capability: Arc<CapabilityManager>) -> Self {
         self.capability = Some(capability);
         self
+    }
+
+    /// ModuleManager 설정된 채로 부팅 — 무인 정책 게이트 활성.
+    pub fn with_module_manager(
+        mut self,
+        module: Arc<crate::managers::module::ModuleManager>,
+    ) -> Self {
+        self.module = Some(module);
+        self
+    }
+
+    /// Unattended-run policy gate for module-path EXECUTE steps. Pipelines bypass the FC/MCP
+    /// dispatch layer where the disabled-module and requiresApproval gates live — enforce the
+    /// same policy here. `fallback_target=true` is stricter: a module that declares ANY
+    /// approval-gated action (real-money orders — kiwoom/korea-invest/toss all share
+    /// capability "stock-trading") is never a fallback target, because auto-retrying a failed
+    /// order on ANOTHER broker is the exact "side effects run exactly once" violation.
+    async fn unattended_module_gate(
+        &self,
+        path: &str,
+        input: &serde_json::Value,
+        fallback_target: bool,
+    ) -> Result<(), String> {
+        let Some(mm) = &self.module else { return Ok(()) };
+        let Some(name) = extract_module_name(path) else { return Ok(()) };
+        if !mm.is_enabled(name) {
+            return Err(format!(
+                "module '{name}' is disabled — pipeline EXECUTE is blocked too"
+            ));
+        }
+        let scope = if path.starts_with("system/") { "system" } else { "user" };
+        let Some(cfg) = mm.get_module_config(scope, name).await else {
+            return Ok(());
+        };
+        let Some(decl) = cfg.get("requiresApproval") else {
+            return Ok(());
+        };
+        if fallback_target {
+            return Err(format!(
+                "module '{name}' declares approval-gated actions — excluded from unattended fallback"
+            ));
+        }
+        let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        if crate::utils::pending_tools::requires_approval_value(decl, action) {
+            return Err(format!(
+                "approval-required action '{action}' of module '{name}' cannot run unattended (pipeline) — register it interactively for an approval card"
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -90,6 +144,7 @@ impl TaskExecutor for RealTaskExecutor {
     ) -> InfraResult<serde_json::Value> {
         self.log
             .info(&format!("[Pipeline] EXECUTE → {} (Sandbox)", path));
+        self.unattended_module_gate(path, input, false).await?;
         let result = self
             .sandbox
             .execute(path, input, &SandboxExecuteOpts::default())
@@ -109,6 +164,13 @@ impl TaskExecutor for RealTaskExecutor {
                 let fallbacks = capability.fallback_modules(failed_module).await;
                 for alt in fallbacks {
                     let alt_path = provider_to_path(&alt);
+                    if let Err(reason) = self.unattended_module_gate(&alt_path, input, true).await {
+                        self.log.warn(&format!(
+                            "[Pipeline] fallback 대상 제외: {} — {}",
+                            alt_path, reason
+                        ));
+                        continue;
+                    }
                     self.log.info(&format!(
                         "[Pipeline] capability fallback 시도: {} → {} ({})",
                         path, alt_path, alt.module_name

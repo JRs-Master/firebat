@@ -207,11 +207,9 @@ pub struct TaskManager {
     tools: Option<Arc<ToolManager>>,
     /// StatusManager (옵션) — pipeline 실행 가시화 (옛 TS core/index.ts:1252 statusMgr.start/update/
     /// done/error 패턴 1:1). 어드민 UI 의 ActiveJobsIndicator 자동 표시.
+    /// (EXECUTE capability 폴백은 executor(RealTaskExecutor.with_capability) 단일 소유 —
+    /// 옛 매니저 레벨 중복 구현은 이중 실행이라 제거.)
     status: Option<Arc<StatusManager>>,
-    /// CapabilityManager (옵션) — EXECUTE step 실패 시 같은 capability 의 대체 provider 자동 폴백.
-    /// 옛 TS task-manager.ts:344-420 (resolvePreferredProvider + tryFallbackProvider) 1:1.
-    /// 미설정 시 fallback 비활성 (단독 EXECUTE = 유저 모듈 테스트 용도라 fallback 없음).
-    capability: Option<Arc<crate::managers::capability::CapabilityManager>>,
 }
 
 impl TaskManager {
@@ -221,7 +219,6 @@ impl TaskManager {
             log,
             tools: None,
             status: None,
-            capability: None,
         }
     }
 
@@ -236,62 +233,6 @@ impl TaskManager {
         self.status = Some(status);
         self
     }
-
-    /// CapabilityManager 설정된 채로 부팅 — EXECUTE step 실패 시 자동 fallback 활성.
-    pub fn with_capability_manager(
-        mut self,
-        capability: Arc<crate::managers::capability::CapabilityManager>,
-    ) -> Self {
-        self.capability = Some(capability);
-        self
-    }
-
-    /// EXECUTE 실패 시 같은 capability 의 대체 provider 자동 폴백 — 옛 TS tryFallbackProvider 1:1.
-    ///
-    /// 흐름:
-    /// 1. CapabilityManager 미설정 → 폴백 비활성 (None 반환)
-    /// 2. failed_path 에서 module_name + entry filename 추출
-    ///    (`system/modules/firecrawl/index.mjs` → name=`firecrawl`, entry=`index.mjs`)
-    /// 3. CapabilityManager.fallback_modules(name) → 활성 + 사용자 순서 정렬된 alternatives
-    /// 4. 각 alternative 의 path 구성 (`<location>/modules/<name>/<entry>`) 로 sandbox execute 재시도
-    /// 5. 첫 success (모듈 레벨 success 까지 통과) → unwrap 후 반환. 모두 실패 → None.
-    async fn try_fallback(&self, failed_path: &str, input: &Value) -> Option<Value> {
-        let cap = self.capability.as_ref()?;
-        let (module_name, entry_filename) = path_to_module_parts(failed_path)?;
-        let alternatives = cap.fallback_modules(&module_name).await;
-        if alternatives.is_empty() {
-            return None;
-        }
-        for alt in alternatives {
-            // alternative 의 path 구성 — 옛 TS getCapabilityCache 의 path 패턴 1:1.
-            // location 은 system|user, entry 는 failed_path 에서 그대로 reuse (대부분 같은 scope/runtime).
-            let base = match alt.location {
-                crate::capabilities::ProviderLocation::System => "system/modules",
-                crate::capabilities::ProviderLocation::User => "user/modules",
-            };
-            let alt_path = format!("{}/{}/{}", base, alt.module_name, entry_filename);
-            self.log.info(&format!(
-                "[Pipeline] 폴백 시도: {} → {} ({:?})",
-                failed_path, alt_path, alt.provider_type
-            ));
-            match self.executor.execute_module(&alt_path, input).await {
-                Ok(v) if !is_module_level_failure(&v) => {
-                    return Some(unwrap_module_result(v));
-                }
-                Ok(_) => {
-                    self.log.warn(&format!("[Pipeline] 폴백 모듈 실패: {}", alt_path));
-                }
-                Err(e) => {
-                    self.log.warn(&format!(
-                        "[Pipeline] 폴백 예외: {} — {}",
-                        alt_path, e
-                    ));
-                }
-            }
-        }
-        None
-    }
-
     /// 등록된 도구 이름 (lowercase) — instruction substring 매칭용.
     /// 새 도구 추가 시 자동 hint — 옛 TS 의 const TOOL_HINTS 12개 hardcode 제거.
     fn registered_tool_hints(&self) -> Vec<String> {
@@ -514,38 +455,21 @@ impl TaskManager {
                 // 옛 TS 1:1 — 두 가지 실패 케이스 모두 capability fallback 시도:
                 //   (a) executor.execute_module → Err (sandbox 실행 자체 실패)
                 //   (b) execute_module → Ok 인데 data.success === false (모듈 레벨 실패, e.g. API 키 누락)
-                let primary = self.executor.execute_module(path, &input).await;
-                match primary {
+                // Capability fallback lives INSIDE the executor (RealTaskExecutor.execute_module
+                // — with_capability). A second manager-level fallback here used to re-run the
+                // same alternatives after the executor had already tried them all (duplicate
+                // implementation → double execution on total failure). Removed; the executor
+                // is the single fallback owner.
+                match self.executor.execute_module(path, &input).await {
                     Ok(v) if !is_module_level_failure(&v) => {
                         StepOutcome::Continue(unwrap_module_result(v))
                     }
-                    Ok(v) => {
-                        // 모듈 레벨 실패 — 옛 TS task-manager.ts:160-167 1:1.
-                        let module_err = extract_module_error(&v);
-                        match self.try_fallback(path, &input).await {
-                            Some(fb) => {
-                                self.log.info(&format!(
-                                    "[Pipeline] EXECUTE 모듈 실패 → 폴백 성공: {}",
-                                    path
-                                ));
-                                StepOutcome::Continue(fb)
-                            }
-                            None => StepOutcome::Fail(format!(
-                                "EXECUTE 모듈 실패 ({}): {}",
-                                path, module_err
-                            )),
-                        }
-                    }
-                    Err(e) => match self.try_fallback(path, &input).await {
-                        Some(fb) => {
-                            self.log.info(&format!(
-                                "[Pipeline] EXECUTE 실패 → 폴백 성공: {}",
-                                path
-                            ));
-                            StepOutcome::Continue(fb)
-                        }
-                        None => StepOutcome::Fail(format!("EXECUTE 실패: {e}")),
-                    },
+                    Ok(v) => StepOutcome::Fail(format!(
+                        "EXECUTE 모듈 실패 ({}): {}",
+                        path,
+                        extract_module_error(&v)
+                    )),
+                    Err(e) => StepOutcome::Fail(format!("EXECUTE 실패: {e}")),
                 }
             }
             PipelineStep::McpCall {
@@ -738,20 +662,6 @@ fn extract_module_error(v: &Value) -> String {
         .unwrap_or("(모듈이 success=false 만 반환)")
         .to_string()
 }
-
-/// `system/modules/<name>/index.mjs` 또는 `user/modules/<name>/main.py` 등에서
-/// `(module_name, entry_filename)` 추출. 옛 TS `path.split('/').slice(-2, -1)[0]` 일반화.
-fn path_to_module_parts(path: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    // 마지막 segment 가 entry (index.mjs / main.py 등), 그 앞이 module name.
-    let module_name = parts[parts.len() - 2].to_string();
-    let entry = parts[parts.len() - 1].to_string();
-    Some((module_name, entry))
-}
-
 fn resolve_save_page_slug(
     step_slug: &Option<String>,
     resolved_input: &Value,
@@ -797,25 +707,11 @@ fn parse_spec_if_string(spec: Value) -> Value {
 
 // Tests 이관 — `infra/tests/task_manager_test.rs` (integration test).
 // private fn 사용 test 만 inline 유지 — `unwrap_module_result` / `parse_spec_if_string` /
-// `is_module_level_failure` / `extract_module_error` / `path_to_module_parts` / `try_fallback`.
+// `is_module_level_failure` / `extract_module_error`.
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    struct NoopLog;
-    impl ILogPort for NoopLog {
-        fn info(&self, _msg: &str) {}
-        fn warn(&self, _msg: &str) {}
-        fn error(&self, _msg: &str) {}
-        fn debug(&self, _msg: &str) {}
-    }
-
-    fn manager() -> TaskManager {
-        let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
-        let log: Arc<dyn ILogPort> = Arc::new(NoopLog);
-        TaskManager::new(executor, log)
-    }
 
     #[test]
     fn unwrap_strips_success_data_wrapper() {
@@ -855,32 +751,5 @@ mod tests {
         // error 필드 없을 때 default 메시지
         let default_err = extract_module_error(&json!({"success": false}));
         assert!(default_err.contains("success=false"));
-    }
-
-    #[test]
-    fn module_path_parts_split_correctly() {
-        let (name, entry) =
-            path_to_module_parts("system/modules/firecrawl/index.mjs").unwrap();
-        assert_eq!(name, "firecrawl");
-        assert_eq!(entry, "index.mjs");
-
-        let (name, entry) =
-            path_to_module_parts("user/modules/my-bot/main.py").unwrap();
-        assert_eq!(name, "my-bot");
-        assert_eq!(entry, "main.py");
-
-        // path 가 너무 짧으면 None
-        assert!(path_to_module_parts("index.mjs").is_none());
-        assert!(path_to_module_parts("").is_none());
-    }
-
-    #[tokio::test]
-    async fn fallback_disabled_when_no_capability_manager() {
-        // capability 미설정 → try_fallback 즉시 None (옛 TS 단독 EXECUTE = 폴백 없음 동등)
-        let mgr = manager();
-        let result = mgr
-            .try_fallback("system/modules/x/index.mjs", &json!({}))
-            .await;
-        assert!(result.is_none());
     }
 }

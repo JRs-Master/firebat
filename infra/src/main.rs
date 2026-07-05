@@ -673,7 +673,10 @@ async fn main() -> Result<()> {
             tool_manager.clone(),
             logger.clone(),
         )
-        .with_capability(capability_manager.clone()),
+        .with_capability(capability_manager.clone())
+        // 무인(파이프라인) 정책 게이트 — EXECUTE 가 sandbox 직행이라 FC/MCP 디스패치 계층의
+        // 비활성·requiresApproval 게이트를 우회하던 것을 executor 에서 동일 강제.
+        .with_module_manager(module_manager.clone()),
     );
     // ToolManager 설정된 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
@@ -687,11 +690,7 @@ async fn main() -> Result<()> {
             )),
         )
             .with_tools(tool_manager.clone())
-            .with_status(status_manager.clone())
-            // EXECUTE 실패 시 같은 capability 의 대체 provider 자동 폴백(옛 TS
-            // tryFallbackProvider). 빌더는 있었는데 배선이 빠져 기능이 영구 비활성이던
-            // 반쪽 포팅 — cleanup_all_expired 와 같은 클래스.
-            .with_capability_manager(capability_manager.clone()),
+            .with_status(status_manager.clone()),
     );
 
     // INetworkPort — network_request 도구가 의존. 어댑터는 무의존이라 register_core_tools 앞에서 생성
