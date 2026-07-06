@@ -155,13 +155,16 @@ export type MdSegment = { md: string } | { blocks: Array<{ type: string; props: 
 export function splitFirebatRender(text: string): MdSegment[] {
   if (!text || !text.includes('firebat-render')) return [{ md: text }];
   const out: MdSegment[] = [];
-  const re = /```firebat-render[^\n]*\n([\s\S]*?)```/g;
+  // 두 방언 수용: ```firebat-render 코드펜스(canonical) + <firebat-render>...</firebat-render>
+  // XML 태그(약한 모델이 fence 를 태그로 쓰는 drift — 2026-07-06 Solar 실측). 서버(render_exec)도
+  // 동일하게 양쪽을 받아 canonical 펜스로 재작성하지만, 서버를 안 거친 저장분·구버전 대비 방어.
+  const re = /```firebat-render[^\n]*\n([\s\S]*?)```|<firebat-render>\s*([\s\S]*?)\s*<\/firebat-render>/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) out.push({ md: text.slice(last, m.index) });
     try {
-      const parsed = JSON.parse(m[1].trim());
+      const parsed = JSON.parse((m[1] ?? m[2] ?? '').trim());
       const raw: any[] = Array.isArray(parsed) ? parsed : (parsed?.blocks ?? []);
       const blocks = raw
         .filter((b) => b && typeof b === 'object')

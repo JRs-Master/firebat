@@ -2233,7 +2233,7 @@ impl AiManager {
             let Some(t) = b.get("text").and_then(|v| v.as_str()) else {
                 continue;
             };
-            if !t.contains("```firebat-render") {
+            if !t.contains("```firebat-render") && !t.contains("<firebat-render>") {
                 continue;
             }
             let (masked, fences, _, _) = render_exec::mask_and_sanitize_fences(

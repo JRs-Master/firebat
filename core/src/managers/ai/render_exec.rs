@@ -284,8 +284,7 @@ pub fn mask_and_sanitize_fences(
     text: &str,
     resolver: Option<FenceDataResolver>,
 ) -> (String, Vec<String>, Vec<Value>, Vec<Value>) {
-    const OPEN: &str = "```firebat-render";
-    if !text.contains(OPEN) {
+    if !text.contains(FENCE_OPEN) && !text.contains(TAG_OPEN) {
         return (text.to_string(), Vec::new(), Vec::new(), Vec::new());
     }
     let mut out = String::with_capacity(text.len());
@@ -293,32 +292,65 @@ pub fn mask_and_sanitize_fences(
     let mut block_groups: Vec<Value> = Vec::new();
     let mut failed_groups: Vec<Value> = Vec::new();
     let mut rest = text;
-    while let Some(start) = rest.find(OPEN) {
-        out.push_str(&rest[..start]);
-        let after = &rest[start..];
-        // Body begins right after the opening line's newline.
-        let Some(nl) = after.find('\n') else {
-            out.push_str(after); // unterminated fence — keep raw
-            rest = "";
-            break;
-        };
-        let body_start_rel = nl + 1;
-        let body_and_rest = &after[body_start_rel..];
-        let Some(close_rel) = body_and_rest.find("```") else {
-            out.push_str(after); // no closing fence — keep raw
-            rest = "";
-            break;
-        };
-        let body = &body_and_rest[..close_rel];
+    while let Some(region) = find_fence_region(rest) {
+        out.push_str(&rest[..region.start]);
+        let body = &rest[region.body_start..region.body_end];
         let (sanitized, blocks, failed) = sanitize_fence_body(body, resolver);
+        // 어느 방언으로 왔든 canonical 코드펜스로 재작성 — 프론트·메모리 독자는 한 형태만 보면 된다.
         store.push(format!("```firebat-render\n{}\n```", sanitized));
         block_groups.push(blocks);
         failed_groups.push(failed);
         out.push_str(&format!("@@FBRENDER{}@@", store.len() - 1));
-        rest = &rest[start + body_start_rel + close_rel + 3..]; // past closing ```
+        rest = &rest[region.end..];
     }
     out.push_str(rest);
     (out, store, block_groups, failed_groups)
+}
+
+const FENCE_OPEN: &str = "```firebat-render";
+const TAG_OPEN: &str = "<firebat-render>";
+const TAG_CLOSE: &str = "</firebat-render>";
+
+struct FenceRegion {
+    start: usize,      // region 시작 (opener 포함)
+    body_start: usize, // JSON body 시작
+    body_end: usize,   // JSON body 끝 (exclusive)
+    end: usize,        // region 끝 (closer 포함, exclusive)
+}
+
+/// 다음 firebat-render 영역 — 두 방언 수용: ```firebat-render 코드펜스(canonical) +
+/// `<firebat-render>...</firebat-render>` XML 태그(약한 모델이 fence 를 태그로 쓰는 drift,
+/// 2026-07-06 Solar 실측 — 프롬프트로 조이는 대신 파서가 받아 canonical 로 정규화).
+/// 미종결 opener 는 skip 하지 않고 None(호출부가 나머지를 raw 로 보존 — 기존 동작).
+fn find_fence_region(text: &str) -> Option<FenceRegion> {
+    let md = text.find(FENCE_OPEN).and_then(|start| {
+        let after = &text[start..];
+        let nl = after.find('\n')?;
+        let body_start = start + nl + 1;
+        let close_rel = text[body_start..].find("```")?;
+        Some(FenceRegion {
+            start,
+            body_start,
+            body_end: body_start + close_rel,
+            end: body_start + close_rel + 3,
+        })
+    });
+    let tag = text.find(TAG_OPEN).and_then(|start| {
+        let body_start = start + TAG_OPEN.len();
+        let close_rel = text[body_start..].find(TAG_CLOSE)?;
+        Some(FenceRegion {
+            start,
+            body_start,
+            body_end: body_start + close_rel,
+            end: body_start + close_rel + TAG_CLOSE.len(),
+        })
+    });
+    match (md, tag) {
+        (Some(a), Some(b)) => Some(if a.start <= b.start { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
 }
 
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
@@ -366,27 +398,14 @@ pub fn restore_fences(text: &str, fences: &[String]) -> String {
 /// JSON shown back in recall. This strips the JSON structure, keeping the Korean/text values so the
 /// memory layer sees clean prose. Non-fence text passes through unchanged (additive).
 pub fn fence_to_plaintext(text: &str) -> String {
-    const OPEN: &str = "```firebat-render";
-    if !text.contains(OPEN) {
+    if !text.contains(FENCE_OPEN) && !text.contains(TAG_OPEN) {
         return text.to_string();
     }
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
-    while let Some(start) = rest.find(OPEN) {
-        out.push_str(&rest[..start]);
-        let after = &rest[start..];
-        let Some(nl) = after.find('\n') else {
-            out.push_str(after);
-            rest = "";
-            break;
-        };
-        let body_and_rest = &after[nl + 1..];
-        let Some(close_rel) = body_and_rest.find("```") else {
-            out.push_str(after);
-            rest = "";
-            break;
-        };
-        let body = &body_and_rest[..close_rel];
+    while let Some(region) = find_fence_region(rest) {
+        out.push_str(&rest[..region.start]);
+        let body = &rest[region.body_start..region.body_end];
         match serde_json::from_str::<Value>(body.trim()) {
             Ok(v) => {
                 let mut collected = String::new();
@@ -396,7 +415,7 @@ pub fn fence_to_plaintext(text: &str) -> String {
             // parse 실패 = 그냥 본문(JSON 마커만 떼고) — raw JSON 보다 나음.
             Err(_) => out.push_str(body.trim()),
         }
-        rest = &rest[start + nl + 1 + close_rel + 3..];
+        rest = &rest[region.end..];
     }
     out.push_str(rest);
     out
@@ -473,6 +492,21 @@ mod tests {
         // 유일 블록이 실패 → 전체 Err 로 모델에 재시도 힌트.
         let err = render_blocks(&args, false, Some(&resolver)).unwrap_err();
         assert!(err.contains("dataCacheKey"), "err mentions cache: {err}");
+    }
+
+    #[test]
+    fn tag_dialect_fence_is_recognized_and_canonicalized() {
+        // 약한 모델이 코드펜스 대신 XML 태그로 쓰는 drift — 파싱 + canonical 펜스 재작성.
+        let text = "차트입니다.\n<firebat-render>\n[{\"type\":\"header\",\"props\":{\"text\":\"제목\",\"level\":2}}]\n</firebat-render>\n끝.";
+        let (masked, fences, groups, _) = mask_and_sanitize_fences(text, None);
+        assert!(masked.contains("@@FBRENDER0@@"), "태그 영역이 마스킹되어야: {masked}");
+        assert!(!masked.contains("<firebat-render>"));
+        assert_eq!(fences.len(), 1);
+        assert!(fences[0].starts_with("```firebat-render\n"), "canonical 펜스로 재작성: {}", fences[0]);
+        assert_eq!(groups[0].as_array().map(|a| a.len()), Some(1));
+        // plaintext 변환도 태그 방언 인식
+        let plain = fence_to_plaintext(text);
+        assert!(plain.contains("제목") && !plain.contains("firebat-render"), "{plain}");
     }
 
     #[test]
