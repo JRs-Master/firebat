@@ -998,7 +998,7 @@ fn pending_or_passthrough(
     });
     let plan_id =
         firebat_core::utils::pending_tools::create_pending_scoped(pending_args, &summary, hub_scope);
-    Some(serde_json::json!({
+    let mut payload = serde_json::json!({
         "success": true,
         "pending": true,
         "planId": plan_id,
@@ -1009,7 +1009,19 @@ fn pending_or_passthrough(
             "'{}' — 사용자 승인 대기 중입니다. 자동으로 실행되지 않았습니다.",
             summary
         ),
-    }))
+    });
+    // schedule_task: runAt 이 이미 과거면 past-runat 상태로 — 프론트가 승인 대신 즉시보내기/시간변경
+    // 버튼을 띄운다. FC(ai.rs) 게이트와 동일 동작 — 옛엔 MCP 만 빠져 CLI 경로 카드가 일반 승인으로
+    // 뜨던 drift (어댑터는 status/originalRunAt 을 읽을 준비가 돼 있었음).
+    if tool_name == "schedule_task" {
+        if let Some(run_at) = args.get("runAt").and_then(|v| v.as_str()) {
+            if firebat_core::utils::pending_tools::is_past_iso(run_at) {
+                payload["status"] = serde_json::Value::String("past-runat".to_string());
+                payload["originalRunAt"] = serde_json::Value::String(run_at.to_string());
+            }
+        }
+    }
+    Some(payload)
 }
 
 pub struct SavePageHandler {

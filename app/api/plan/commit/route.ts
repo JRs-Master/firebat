@@ -137,7 +137,11 @@ export const POST = withAuth(async (req: NextRequest) => {
         result = r.ok ? { success: true, data: { jobId } } : { success: false, error: r.message };
         break;
       }
-      case 'cancel_task': {
+      // serde tag = 변형명 snake_case = 'cancel_cron_job' (PendingActionArgs::CancelCronJob).
+      // 옛 'cancel_task' 케이스는 TS 시절 이름이 안 갱신된 dead 브랜치 — 예약 해제 승인 카드를
+      // 승인해도 "지원하지 않는 도구" 로 커밋이 실패하던 잠복 버그 (2026-07-07 발견). 별칭 유지.
+      case 'cancel_task':
+      case 'cancel_cron_job': {
         const jobId = args.jobId as string;
         const r = await cancelCronJob({ jobId });
         result = r.ok ? { success: true } : { success: false, error: r.message };

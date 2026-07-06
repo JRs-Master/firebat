@@ -133,6 +133,16 @@ pub struct RunModuleArgs {
     pub input: serde_json::Value,
 }
 
+/// schedule_task 의 runAt ISO 시각이 이미 과거인지 판정 (옛 TS `Date.parse(runAt) <= Date.now()` 1:1).
+/// 파싱 실패 시 false (보수적 — 안전한 쪽이 안 설정). FC(ai.rs)·MCP(pending_or_passthrough) 공용 —
+/// 과거 runAt 이면 pending 에 `status:"past-runat"` 를 실어 프론트가 승인 대신 즉시보내기/시간변경
+/// 버튼을 띄운다.
+pub fn is_past_iso(run_at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(run_at)
+        .map(|t| t.timestamp_millis() <= chrono::Utc::now().timestamp_millis())
+        .unwrap_or(false)
+}
+
 /// config `requiresApproval` declaration check — `true` gates every action, an array gates
 /// the listed action values. Anything else = no gate.
 pub fn requires_approval_value(decl: &serde_json::Value, action: &str) -> bool {
