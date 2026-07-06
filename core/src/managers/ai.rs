@@ -2036,9 +2036,11 @@ impl AiManager {
                             blocks.push(b.clone());
                         }
                     }
-                } else if (tc.name == "render" || render_map.contains_key(tc.name.as_str()))
-                    && result.get("component").is_some()
-                {
+                } else if result.get("component").and_then(|v| v.as_str()).is_some() {
+                    // `component` 필드 = "이 결과를 컴포넌트로 렌더하라" 계약 — 도구 이름 무관
+                    // (CLI 어댑터 cli_claude_code.rs:594 와 동일 규약). 옛엔 render_map 게이트로
+                    // 좁혀서 propose_plan 의 PlanCard 가 FC 경로에서 블록이 못 되고 통째 누락
+                    // (2026-07-06 실측: 플랜 카드·칩 미표시, "계획을 수립했습니다" 텍스트만).
                     let component = result
                         .get("component")
                         .and_then(|v| v.as_str())
@@ -2053,7 +2055,11 @@ impl AiManager {
                         "name": component,
                         "props": props,
                     }));
-                } else if tc.name == "suggest" {
+                }
+                // suggestions 수집 — suggest + propose_plan(✓실행/수정/취소 칩), CLI 어댑터
+                // (cli_claude_code.rs:639)와 동일. 위 component 분기와 배타 아님(propose_plan
+                // 은 PlanCard 블록 + 칩 둘 다).
+                if tc.name == "suggest" || tc.name == "propose_plan" {
                     if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
                         cli_suggestions.extend(arr.iter().cloned());
                     }
