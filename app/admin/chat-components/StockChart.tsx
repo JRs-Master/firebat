@@ -521,6 +521,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const showSymbolChip = titleText !== symbol;
   const periodHigh = Math.max(...safeData.map(d => d.high));
   const periodLow = Math.min(...safeData.map(d => d.low));
+  const periodVolume = safeData.reduce((sum, d) => sum + d.volume, 0);
+  // 가격 표시 반올림 — yfinance 수정주가가 소수점을 달고 와("119,951.722") 헤더·카드가 지저분.
+  // 1000 이상(원화권) = 정수, 미만(저가·해외 주식) = 소수 2자리.
+  const fmtPrice = (x: number) =>
+    x >= 1000
+      ? Math.round(x).toLocaleString('ko-KR')
+      : x.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
@@ -544,25 +551,27 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           <span className="text-[11px] text-slate-400 mt-0.5">{periodLabel}</span>
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 tabular-nums">{latest.close.toLocaleString('ko-KR')}</span>
+          <span className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 tabular-nums">{fmtPrice(latest.close)}</span>
           <span className={`text-[12px] font-bold tabular-nums ${changeColor}`}>
-            {changeArrow} {Math.abs(change).toLocaleString('ko-KR')} ({changeSign}{changePct.toFixed(2)}%)
+            {changeArrow} {fmtPrice(Math.abs(change))} ({changeSign}{changePct.toFixed(2)}%)
           </span>
         </div>
       </div>
 
-      {/* 스탯 카드 */}
+      {/* 스탯 카드 — 전부 기간 기준으로 통일. 옛엔 시가·거래량=최신 봉 / 고가·저가=기간 혼재라
+          "시가 118K 인데 저가 49K" 처럼 한 줄에 다른 기준이 섞여 이상하게 읽혔다(2026-07-06 실측).
+          기간 라벨(01/02~12/30·N일)이 바로 위라 기간 기준이 자연스럽게 읽힘. 현재가·전일대비는 헤더. */}
       <div className="grid grid-cols-4 gap-2 sm:gap-3">
         {[
-          { label: '시가', v: latest.open, color: 'text-slate-700' },
+          { label: '시가', v: viewFirst.open, color: 'text-slate-700' },
           { label: '고가', v: periodHigh, color: 'text-red-600' },
           { label: '저가', v: periodLow, color: 'text-blue-600' },
-          { label: '거래량', v: latest.volume, color: 'text-slate-700', compact: true },
+          { label: '거래량', v: periodVolume, color: 'text-slate-700', compact: true },
         ].map((s, i) => (
           <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 flex flex-col gap-0.5 min-w-0">
             <span className="text-[10px] sm:text-[11px] text-slate-400 font-semibold">{s.label}</span>
             <span className={`text-[12px] sm:text-[15px] font-extrabold tabular-nums whitespace-nowrap ${s.color}`}>
-              {s.compact ? compactKorean(s.v) : s.v.toLocaleString('ko-KR')}
+              {s.compact ? compactKorean(s.v) : fmtPrice(s.v)}
             </span>
           </div>
         ))}
