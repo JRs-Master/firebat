@@ -77,8 +77,9 @@ function normalizeDate(d: string): string {
 
 function shortDate(d: string): string {
   const n = normalizeDate(d);
-  const parts = n.split('-');
-  return parts.length === 3 ? `${parts[1]}/${parts[2]}` : n;
+  // 날짜부만 MM/DD — ISO datetime("2026-01-02T00:00:00+09:00")이 그대로 와도 시각·TZ 를 흘리지 않는다.
+  const m = n.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[2]}/${m[3]}` : n;
 }
 
 // 숫자를 간결하게 (한 줄에 들어가도록 짧게)
@@ -188,7 +189,26 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           volume: isNum(d.volume) ? d.volume : 0,
         };
       });
-    return [...valid].sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
+    // 날짜 canonical 화 (데이터셋 단위) — 서버 주입(dataCacheKey) records 는 캐시 원본 ISO
+    // ("2026-01-02T00:00:00+09:00") 그대로 온다. 시각이 전부 자정이면 일봉 데이터 = 날짜만
+    // 남긴다 — 안 그러면 "T00:00" 이 분/시간봉 감지 정규식에 걸려 mode='hourly'(매일 라벨
+    // = 빼곡) + 헤더 기간에 시각·TZ 노출 (2026-07-06 실측). 인트라데이(자정 아닌 시각 존재)
+    // 는 "YYYY-MM-DD HH:MM" 로 통일 (TZ·초 제거) — 분/시간봉 감지는 그대로 동작.
+    const isoTime = (s: string) => {
+      const m = s.match(/[T ](\d{2}):(\d{2})/);
+      return m ? `${m[1]}:${m[2]}` : null;
+    };
+    const allMidnight = valid.every(d => {
+      const t = isoTime(String(d.date));
+      return t === null || t === '00:00';
+    });
+    const canon = valid.map(d => {
+      const s = normalizeDate(String(d.date));
+      const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+      if (!m) return d;
+      return { ...d, date: allMidnight || !m[2] ? m[1] : `${m[1]} ${m[2]}:${m[3]}` };
+    });
+    return [...canon].sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
   }, [data]);
   const fullN = fullData.length;
 
