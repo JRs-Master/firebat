@@ -23,7 +23,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::managers::mcp::McpManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{make_handler, ToolDefinition, ToolListFilter, ToolManager};
-use crate::ports::{InfraResult, SandboxExecuteOpts};
+use crate::ports::InfraResult;
 use crate::utils::grounding::{parse_grounding, GroundedParam};
 
 /// Cache TTL — 옛 TS 60초 1:1.
@@ -128,15 +128,18 @@ impl DynamicToolRegistry {
                 parameters,
                 source: SOURCE_SYSMOD.to_string(),
             });
-            // 핸들러 — ModuleManager.run() 위임. 옛 TS sysmod 호출 패턴 1:1.
+            // 핸들러 — ModuleManager.run() 위임. 옛 코드는 주석만 "run() 위임"이고 실제론
+            // execute()(sandbox 직행)라 run() 의 config 경로 전부를 우회했다: enabled 게이트 ·
+            // 입력 스키마 검증(A6) · WS 라우팅(키움 조건검색) · 시계열 스펙(1-3). 파이프라인
+            // EXECUTE 우회(87df93dd)와 같은 클래스 — 2026-07-06 timeseries absorb 0 실측으로 발각.
+            // MCP SysmodHandler 는 원래 run() 이라 이 정정으로 FC↔MCP 경로가 일치한다.
             let module_mgr = self.module.clone();
             let module_name = entry.name.clone();
             let handler = make_handler(move |args: serde_json::Value| {
                 let mgr = module_mgr.clone();
                 let name = module_name.clone();
                 async move {
-                    let target = format!("system/modules/{}/index.mjs", name);
-                    let result = mgr.execute(&target, &args, &SandboxExecuteOpts::default()).await?;
+                    let result = mgr.run(&name, &args).await?;
                     Ok(serde_json::to_value(&result)
                         .unwrap_or(serde_json::Value::Null))
                 }
