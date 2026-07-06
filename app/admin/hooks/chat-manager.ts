@@ -130,9 +130,12 @@ export function escapeHtmlTagMentions(text: string): string {
     'iframe', 'html', 'body', 'head', 'script', 'style', 'meta', 'link',
     'template', 'slot', 'canvas', 'svg',
     // 인라인/포맷 태그 — bold/italic 번짐의 root (특히 strong/em/b/i). 짝 안 맞으면 뒤 텍스트 오염.
+    // ⚠️ 'br' 은 제외 — void element 라 짝-불일치 번짐이 원천 불가한데, 마크다운 표 셀 안 줄바꿈의
+    // 표준 관행(`셀 내용<br>다음 줄`)이라 escape 하면 회색 칩으로 죽는다(2026-07-06 실측).
+    // rehypeRaw 가 실제 <br> 로 렌더 = 의도된 줄바꿈.
     'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins', 'mark',
     'small', 'sub', 'sup', 'code', 'pre', 'kbd', 'samp', 'var',
-    'a', 'span', 'abbr', 'cite', 'q', 'blockquote', 'p', 'br', 'hr', 'img',
+    'a', 'span', 'abbr', 'cite', 'q', 'blockquote', 'p', 'hr', 'img',
   ];
   const tagAlt = HTML_TAGS.join('|');
   const tagPattern = new RegExp(`</?(?:${tagAlt})(?:\\s[^>]*)?\\/?>`, 'gi');

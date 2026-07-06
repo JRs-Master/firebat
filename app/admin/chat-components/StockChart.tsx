@@ -212,6 +212,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [data]);
   const fullN = fullData.length;
 
+  // close-only 감지 — AI 가 종가 추이만 손으로 적어 보낸 경우(원본에 open/high/low 전무). 전부
+  // flat-doji dash 봉으로 그려져 "그리다 만 봉차트"로 보이던 것(2026-07-06 실측) → 종가 라인으로
+  // 렌더. 거래량도 전무(0 폴백)라 거래량 pane·카드도 숨긴다. 한 행이라도 OHLC 가 있으면 봉 유지.
+  const closeOnly = useMemo(() => {
+    if (!Array.isArray(data) || data.length === 0) return false;
+    const rows = (data as unknown[]).map(d =>
+      Array.isArray(d) ? { open: d[1], high: d[2], low: d[3], close: d[4] } : d,
+    ) as Array<Record<string, unknown>>;
+    const valid = rows.filter(d => d && isNum(d.close));
+    return valid.length > 0 && valid.every(d => !isNum(d.open) && !isNum(d.high) && !isNum(d.low));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   // 줌 모델 — 봉 폭(슬롯 px)이 기본, 한 화면 개수는 화면 폭에 맞춰 자동. 사용자가 휠/핀치로 줌하면
   // 그때부터 cps(개수)를 사용(확대·축소 동작). 데이터 바뀌면 기본 줌으로 복원. 헤더용 뷰포트 폭 재사용해 PC/모바일 구분.
   const isMobileChart = (_vwForHeader ?? 1024) < 640;
@@ -561,13 +574,21 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 스탯 카드 — 전부 기간 기준으로 통일. 옛엔 시가·거래량=최신 봉 / 고가·저가=기간 혼재라
           "시가 118K 인데 저가 49K" 처럼 한 줄에 다른 기준이 섞여 이상하게 읽혔다(2026-07-06 실측).
           기간 라벨(01/02~12/30·N일)이 바로 위라 기간 기준이 자연스럽게 읽힘. 현재가·전일대비는 헤더. */}
-      <div className="grid grid-cols-4 gap-2 sm:gap-3">
-        {[
-          { label: '시가', v: viewFirst.open, color: 'text-slate-700' },
-          { label: '고가', v: periodHigh, color: 'text-red-600' },
-          { label: '저가', v: periodLow, color: 'text-blue-600' },
-          { label: '거래량', v: periodVolume, color: 'text-slate-700', compact: true },
-        ].map((s, i) => (
+      <div className={`grid ${closeOnly ? 'grid-cols-3' : 'grid-cols-4'} gap-2 sm:gap-3`}>
+        {(closeOnly
+          ? [
+              // close-only = 시가·거래량 데이터가 없음 — 종가 기반 카드만 (시작=첫 종가).
+              { label: '시작', v: viewFirst.close, color: 'text-slate-700' },
+              { label: '최고', v: periodHigh, color: 'text-red-600' },
+              { label: '최저', v: periodLow, color: 'text-blue-600' },
+            ]
+          : [
+              { label: '시가', v: viewFirst.open, color: 'text-slate-700' },
+              { label: '고가', v: periodHigh, color: 'text-red-600' },
+              { label: '저가', v: periodLow, color: 'text-blue-600' },
+              { label: '거래량', v: periodVolume, color: 'text-slate-700', compact: true },
+            ]
+        ).map((s: { label: string; v: number; color: string; compact?: boolean }, i) => (
           <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 flex flex-col gap-0.5 min-w-0">
             <span className="text-[10px] sm:text-[11px] text-slate-400 font-semibold">{s.label}</span>
             <span className={`text-[12px] sm:text-[15px] font-extrabold tabular-nums whitespace-nowrap ${s.color}`}>
@@ -666,8 +687,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             );
           })}
 
-          {/* 캔들 */}
-          {safeData.map((d, i) => {
+          {/* 캔들 — close-only 데이터(open/high/low 없음)는 종가 라인으로 (flat-doji dash 방지) */}
+          {closeOnly ? (
+            <g>
+              <path
+                d={safeData.map((d, i) => `${i === 0 ? 'M' : 'L'}${xs[i]},${yPrice(d.close)}`).join(' ')}
+                fill="none" stroke="#2563eb" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+              />
+              {n <= 40 && safeData.map((d, i) => (
+                <circle key={'cd' + i} cx={xs[i]} cy={yPrice(d.close)} r={2.5} fill="#2563eb" />
+              ))}
+            </g>
+          ) : safeData.map((d, i) => {
             const x = xs[i];
             const isUpDay = d.close >= d.open;
             const color = isUpDay ? UP : DOWN;
@@ -827,13 +858,16 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           >
             <div className={`font-bold text-slate-300 ${compact ? 'mb-1 text-[10px]' : 'mb-1.5 text-[11px]'}`}>{normalizeDate(hoverBar.date)}</div>
             <div className={`flex flex-col tabular-nums leading-tight ${compact ? 'gap-0' : 'gap-0.5'}`}>
-              {[
-                { k: '시가', v: hoverBar.open.toLocaleString('ko-KR'), c: '' },
-                { k: '고가', v: hoverBar.high.toLocaleString('ko-KR'), c: 'text-red-300' },
-                { k: '저가', v: hoverBar.low.toLocaleString('ko-KR'), c: 'text-blue-300' },
-                { k: '종가', v: hoverBar.close.toLocaleString('ko-KR'), c: 'font-bold' },
-                { k: '거래량', v: compactKorean(hoverBar.volume), c: 'text-slate-300' },
-              ].map((row, i) => (
+              {(closeOnly
+                ? [{ k: '종가', v: hoverBar.close.toLocaleString('ko-KR'), c: 'font-bold' }]
+                : [
+                    { k: '시가', v: hoverBar.open.toLocaleString('ko-KR'), c: '' },
+                    { k: '고가', v: hoverBar.high.toLocaleString('ko-KR'), c: 'text-red-300' },
+                    { k: '저가', v: hoverBar.low.toLocaleString('ko-KR'), c: 'text-blue-300' },
+                    { k: '종가', v: hoverBar.close.toLocaleString('ko-KR'), c: 'font-bold' },
+                    { k: '거래량', v: compactKorean(hoverBar.volume), c: 'text-slate-300' },
+                  ]
+              ).map((row, i) => (
                 <div key={i} className={`flex items-baseline justify-between ${compact ? 'gap-2' : 'gap-4'}`}>
                   <span className="text-slate-400">{row.k}</span>
                   <span className={row.c}>{row.v}</span>
@@ -871,7 +905,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       </div>
       </div>
 
-      {/* 거래량 차트 — 가격과 가로 스크롤 동기화 (width=W + overflow-hidden, price onScroll 이 scrollLeft 맞춤). 우측 padRight 거터로 거래량축 분리. */}
+      {/* 거래량 차트 — 가격과 가로 스크롤 동기화 (width=W + overflow-hidden, price onScroll 이 scrollLeft 맞춤). 우측 padRight 거터로 거래량축 분리.
+          close-only 데이터는 거래량이 전무(0 폴백)라 pane 자체를 숨김. */}
+      {!closeOnly && (
       <div className="relative" style={{ paddingRight: padRight }}>
       <div ref={volScrollRef} className="relative overflow-x-hidden">
         <svg viewBox={`0 0 ${W} ${volH}`} className="block" width={W} preserveAspectRatio="none" style={{ height: volChartHeight }}>
@@ -902,6 +938,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </svg>
       </div>
       </div>
+      )}
 
       {/* 매수/매도 포인트 */}
       {(buyPoints?.length || sellPoints?.length) ? (

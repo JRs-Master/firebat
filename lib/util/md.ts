@@ -137,6 +137,66 @@ export function maskMath(s: string): { masked: string; restore: (t: string) => s
 export type MdSegment = { md: string } | { blocks: Array<{ type: string; props: Record<string, any> }> };
 
 /**
+ * Tolerant fence-JSON parse — strict first, then retry after stripping `//` and `/* *\/` comments
+ * plus trailing commas (all string-aware, so `https://…` and commas inside values survive). Weak
+ * models decorate fence JSON with comments (2026-07-06 Solar typhoon fence `"radius": 460000,
+ * // 460 km`), which broke strict parse → raw display. Mirrors Rust render_exec
+ * `tolerant_json_cleanup` so server and client accept the same dialects (also fixes stored
+ * messages retroactively at display time).
+ */
+export function parseFenceJson(body: string): any | undefined {
+  const trimmed = body.trim();
+  try { return JSON.parse(trimmed); } catch { /* tolerant retry below */ }
+  // pass 1: strip comments
+  let noComments = '';
+  let inStr = false, esc = false;
+  for (let i = 0; i < trimmed.length; i++) {
+    const c = trimmed[i];
+    if (inStr) {
+      noComments += c;
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; noComments += c; continue; }
+    if (c === '/' && trimmed[i + 1] === '/') {
+      while (i < trimmed.length && trimmed[i] !== '\n') i++;
+      i--; // for-loop increments
+      continue;
+    }
+    if (c === '/' && trimmed[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < trimmed.length && !(trimmed[i] === '*' && trimmed[i + 1] === '/')) i++;
+      i++; // lands on '/', for-loop steps past
+      continue;
+    }
+    noComments += c;
+  }
+  // pass 2: drop trailing commas (`, }` / `, ]`)
+  let out = '';
+  inStr = false; esc = false;
+  for (let i = 0; i < noComments.length; i++) {
+    const c = noComments[i];
+    if (inStr) {
+      out += c;
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === ',') {
+      let j = i + 1;
+      while (j < noComments.length && /\s/.test(noComments[j])) j++;
+      if (noComments[j] === '}' || noComments[j] === ']') continue;
+    }
+    out += c;
+  }
+  try { return JSON.parse(out.trim()); } catch { return undefined; }
+}
+
+/**
  * Split body text on ```firebat-render ... ``` fences (= intentional render blocks the model wrote
  * into its TEXT reply instead of calling the `render` tool). Each fence is rendered directly by
  * ComponentRenderer, bypassing the markdown text pipeline entirely — so its JSON is never mangled by
@@ -163,8 +223,8 @@ export function splitFirebatRender(text: string): MdSegment[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) out.push({ md: text.slice(last, m.index) });
-    try {
-      const parsed = JSON.parse((m[1] ?? m[2] ?? '').trim());
+    const parsed = parseFenceJson(m[1] ?? m[2] ?? '');
+    if (parsed !== undefined) {
       const raw: any[] = Array.isArray(parsed) ? parsed : (parsed?.blocks ?? []);
       const blocks = raw
         .filter((b) => b && typeof b === 'object')
@@ -176,7 +236,7 @@ export function splitFirebatRender(text: string): MdSegment[] {
         .filter((b) => b.type);
       if (blocks.length) out.push({ blocks });
       else out.push({ md: m[0] }); // empty/invalid → keep raw so it's visible
-    } catch {
+    } else {
       out.push({ md: m[0] }); // parse failure → keep raw (debuggable, not silently dropped)
     }
     last = re.lastIndex;

@@ -2811,7 +2811,9 @@ function mdBoldFix(s: string): string {
 }
 
 // 인식되는 HTML 태그만 (math 의 `<` 는 안 건드림). admin chat-manager 의 escapeHtmlTagMentions 와 동일 취지.
-const HTML_TAG_RE = /<\/?(?:strong|b|em|i|u|s|strike|del|ins|mark|small|sub|sup|code|pre|kbd|samp|var|a|span|abbr|cite|q|blockquote|p|br|hr|img|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|dl|dt|dd|h[1-6]|section|article|header|footer|nav|aside|main|form|input|select|option|textarea|script|style|iframe|svg|canvas|template)(?:\s[^>]*)?\/?>/gi;
+// ⚠️ 'br' 은 제외 — void element 라 번짐 불가 + 마크다운 표 셀 줄바꿈의 표준 관행이라 살려서 rehypeRaw 가
+// 실제 줄바꿈으로 렌더(2026-07-06 실측 — escape 시 literal 텍스트로 죽음). admin 목록과 동기.
+const HTML_TAG_RE = /<\/?(?:strong|b|em|i|u|s|strike|del|ins|mark|small|sub|sup|code|pre|kbd|samp|var|a|span|abbr|cite|q|blockquote|p|hr|img|div|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|dl|dt|dd|h[1-6]|section|article|header|footer|nav|aside|main|form|input|select|option|textarea|script|style|iframe|svg|canvas|template)(?:\s[^>]*)?\/?>/gi;
 /** AI 가 렌더 텍스트에 literal HTML 태그(`<strong>` 등)를 글로 쓰면 rehypeRaw 가 실제 태그로 실행 →
  *  짝 안 맞으면 뒤 텍스트까지 굵게/이탤릭 번진다. 인식되는 HTML 태그를 entity 로 escape 해 literal
  *  텍스트로 표시 (mdBoldFix 의 의도된 <strong> 주입은 escape 이후라 정상 렌더). */
@@ -4302,7 +4304,11 @@ function MapComp({
   const coneArr: MapCone[] = Array.isArray(cone) ? cone : cone ? [cone] : [];
   const safeCones = coneArr.filter(c => c && Array.isArray(c.points) && c.points.length >= 2
     && c.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number' && typeof p?.radius === 'number'));
-  const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
+  // 모델이 label/popup 줄바꿈을 과잉 이스케이프(`\\n` literal)로 보내는 경우 실제 줄바꿈으로 정규화
+  // (2026-07-06 태풍 팝업 실측 — literal "\n" 이 텍스트로 표시). 아무도 팝업에 backslash-n 을 의도하지 않음.
+  const unescapeNl = (s?: string | null) => (typeof s === 'string' ? s.replace(/\\n/g, '\n') : s);
+  const safeMarkers = (Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [])
+    .map(m => ({ ...m, label: unescapeNl(m.label) ?? m.label, popup: unescapeNl(m.popup) ?? m.popup }));
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
   const safeLines = Array.isArray(lines) ? lines.filter(ln => Array.isArray(ln?.points) && ln.points.length >= 2 && ln.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number')) : [];
   const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
@@ -4342,9 +4348,20 @@ function MapComp({
     let resizeObserver: ResizeObserver | undefined;
     let mapInstance: { remove?: () => void } | undefined;
 
-    // provider 결정
+    // provider 결정 — auto 는 center 만이 아니라 **전체 지오메트리**(마커·서클·라인·콘)가 한국권일 때만
+    // kakao. 카카오는 한국 밖 타일이 없어, 태풍(14°N 145°E) 같은 해외 지오메트리가 섞이면 백지가 된다
+    // (2026-07-06 실측 — "서울 위치" 마커 때문에 center 는 한국으로 판정돼 kakao 로 갔던 케이스).
+    // 명시 provider='kakao' 는 그대로 존중.
     const kakaoKey = (typeof window !== 'undefined' && (window as any).__KAKAO_MAP_JS_KEY) || '';
-    const wantsKakao = provider === 'kakao' || (provider !== 'leaflet' && isKoreaCoord(finalCenter.lat, finalCenter.lon) && kakaoKey);
+    const allGeoPoints: Array<{ lat: number; lon: number }> = [
+      finalCenter,
+      ...safeMarkers,
+      ...safeCircles,
+      ...safeLines.flatMap(ln => ln.points),
+      ...safeCones.flatMap(cn => cn.points),
+    ];
+    const allInKorea = allGeoPoints.every(p => isKoreaCoord(p.lat, p.lon));
+    const wantsKakao = provider === 'kakao' || (provider !== 'leaflet' && allInKorea && kakaoKey);
     const useKakao = wantsKakao && kakaoKey;
 
     if (useKakao) {
@@ -4463,7 +4480,7 @@ function MapComp({
             // CSS 가 콘텐츠 길이에 맞춰 auto-fit (MapLibre Popup 과 시각 일관).
             // Weather badges (icon + temp) are self-sufficient → no auto popup (unless m.popup set).
             const innerHtml = (isWx && !m.popup) ? '' : (m.popup
-              ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
+              ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup).replace(/\n/g, '<br>')}</div>`
               : buildPopupCardHtml(m.label));
             if (innerHtml) {
               const box = document.createElement('div');
@@ -4678,7 +4695,7 @@ function MapComp({
           const marker = new ml.Marker({ element: buildMarkerEl(m), anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
           // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
           const cardHtml = m.popup
-            ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
+            ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup).replace(/\n/g, '<br>')}</div>`
             : buildPopupCardHtml(m.label);
           if (cardHtml) {
             marker.setPopup(
