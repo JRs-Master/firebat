@@ -353,12 +353,113 @@ fn find_fence_region(text: &str) -> Option<FenceRegion> {
     }
 }
 
+/// Tolerant cleanup for LLM-authored fence JSON: strips `//` and `/* */` comments plus trailing
+/// commas — all string-aware, so `https://…` URLs and commas inside values are untouched. Weak
+/// models decorate JSON with comments (2026-07-06 Solar typhoon fence: `"radius": 460000, //
+/// 460 km → 460 000 m` broke strict parse → raw display). Same policy as the tag-dialect fence:
+/// the parser accepts the dialect instead of tightening prompts.
+fn tolerant_json_cleanup(body: &str) -> String {
+    // pass 1: strip comments
+    let chars: Vec<char> = body.chars().collect();
+    let mut no_comments = String::with_capacity(body.len());
+    let mut i = 0;
+    let mut in_str = false;
+    let mut escaped = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_str {
+            no_comments.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '"' => {
+                in_str = true;
+                no_comments.push(c);
+                i += 1;
+            }
+            '/' if chars.get(i + 1) == Some(&'/') => {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                i += 2;
+                while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+            }
+            _ => {
+                no_comments.push(c);
+                i += 1;
+            }
+        }
+    }
+    // pass 2: drop trailing commas (`, }` / `, ]`)
+    let chars: Vec<char> = no_comments.chars().collect();
+    let mut out = String::with_capacity(no_comments.len());
+    in_str = false;
+    escaped = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_str {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c == ',' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            if matches!(chars.get(j), Some('}') | Some(']')) {
+                i += 1;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// Parse a fence body as JSON — strict first, then the tolerant cleanup (comments / trailing
+/// commas). Shared by the sanitize and plaintext paths so both accept the same dialects.
+fn parse_fence_json(body: &str) -> Option<Value> {
+    let trimmed = body.trim();
+    serde_json::from_str(trimmed)
+        .ok()
+        .or_else(|| serde_json::from_str(tolerant_json_cleanup(trimmed).trim()).ok())
+}
+
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
 /// Returns `(json_string, blocks_value)`. On parse/validation failure, returns the trimmed original
 /// string + `Null` blocks so the frontend renders it raw (visible + debuggable, never silently dropped).
 fn sanitize_fence_body(body: &str, resolver: Option<FenceDataResolver>) -> (String, Value, Value) {
     let trimmed = body.trim();
-    let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
+    let Some(parsed) = parse_fence_json(trimmed) else {
         return (trimmed.to_string(), Value::Null, Value::Null);
     };
     let args = if parsed.is_array() {
@@ -406,14 +507,14 @@ pub fn fence_to_plaintext(text: &str) -> String {
     while let Some(region) = find_fence_region(rest) {
         out.push_str(&rest[..region.start]);
         let body = &rest[region.body_start..region.body_end];
-        match serde_json::from_str::<Value>(body.trim()) {
-            Ok(v) => {
+        match parse_fence_json(body) {
+            Some(v) => {
                 let mut collected = String::new();
                 collect_text_values(&v, "", &mut collected);
                 out.push_str(collected.trim());
             }
             // parse 실패 = 그냥 본문(JSON 마커만 떼고) — raw JSON 보다 나음.
-            Err(_) => out.push_str(body.trim()),
+            None => out.push_str(body.trim()),
         }
         rest = &rest[region.end..];
     }
@@ -507,6 +608,24 @@ mod tests {
         // plaintext 변환도 태그 방언 인식
         let plain = fence_to_plaintext(text);
         assert!(plain.contains("제목") && !plain.contains("firebat-render"), "{plain}");
+    }
+
+    #[test]
+    fn tolerant_parse_accepts_comments_and_trailing_commas() {
+        // 2026-07-06 Solar 태풍 fence 실측: JSON 값 뒤 `// 460 km → 460 000 m` 주석으로 strict
+        // parse 실패 → raw 표시. 관대 패스가 주석·trailing comma 를 벗겨 렌더로 복구해야 한다.
+        let body = "[\n  {\n    \"type\": \"header\", // 제목 주석\n    \"props\": {\n      \"text\": \"제9호 태풍\", /* 블록 주석 */\n      \"level\": 2,\n    },\n  },\n]";
+        let v = parse_fence_json(body).expect("tolerant parse");
+        assert_eq!(v[0]["props"]["text"], "제9호 태풍");
+        // 문자열 안 `//`(URL)·콤마는 건드리지 않는다.
+        let url_body = r#"[{"type":"text","props":{"content":"https://a.b/c, 그리고 // 이건 값"}}]"#;
+        let v2 = parse_fence_json(url_body).expect("strict parse");
+        assert_eq!(v2[0]["props"]["content"], "https://a.b/c, 그리고 // 이건 값");
+        // 전체 sanitize 경로에서도 raw fallback 이 아니라 렌더로 나가야.
+        let text = format!("지도.\n```firebat-render\n{}\n```\n끝.", body);
+        let (_, fences, groups, _) = mask_and_sanitize_fences(&text, None);
+        assert_eq!(fences.len(), 1);
+        assert_eq!(groups[0].as_array().map(|a| a.len()), Some(1), "렌더 블록으로 파싱: {}", fences[0]);
     }
 
     #[test]

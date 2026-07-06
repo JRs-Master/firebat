@@ -471,6 +471,20 @@ mod tests {
     }
 
     #[test]
+    fn single_item_shorthand_wraps_even_with_unknown_extra_key() {
+        // 2026-07-06 journal 실측 gotKeys=[label,value,width] — width 는 item prop 도 최상위 prop 도
+        // 아닌 미지 키. movable(label,value)이 item required(value)를 충족하면 미지 키가 있어도
+        // wrap 은 발동해야 한다(미지 키는 최상위에 남아 무해).
+        let schema = &find_component("key_value").unwrap().props_schema;
+        let mut props = json!({ "label": "시가총액", "value": "2,000조", "width": "50%" });
+        sanitize_to_schema(&mut props, schema);
+        let items = props["items"].as_array().expect("items 로 wrap 되어야");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["value"], "2,000조");
+        assert!(validate_value(&props, schema).is_ok(), "wrap 후 스키마 통과해야");
+    }
+
+    #[test]
     fn semantic_text_includes_korean_keywords() {
         let c = find_component("stock_chart").unwrap();
         assert!(c.semantic_text.contains("주식"));
