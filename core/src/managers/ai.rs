@@ -269,6 +269,10 @@ pub struct AiManager {
     /// SkillFileManager (옵션) — 스킬 인덱스(`<SKILLS_AVAILABLE>`)를 매 턴 시스템 프롬프트에 주입.
     /// 메모리와 달리 인덱스(슬러그+설명)만 상시, 본문은 온디맨드(get_skill). 미설정 시 주입 skip.
     skill_file: Option<Arc<crate::managers::skill_file::SkillFileManager>>,
+    /// SysmodCacheAdapter (옵션) — firebat-render fence 의 `dataCacheKey` props 를 서버에서
+    /// 캐시 records 로 치환(주입). 모델이 큰 배열을 손으로 베끼지 않게(truncation·날조 차단 +
+    /// cache_read 왕복 토큰 절감). 미설정 시 dataCacheKey 미해석(모델 제공 data 만 사용).
+    sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
 }
 
 impl AiManager {
@@ -294,7 +298,17 @@ impl AiManager {
             media: None,
             memory_file: None,
             skill_file: None,
+            sysmod_cache: None,
         }
+    }
+
+    /// SysmodCacheAdapter 설정 — fence `dataCacheKey` 서버측 데이터 주입 활성.
+    pub fn with_sysmod_cache(
+        mut self,
+        cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
+    ) -> Self {
+        self.sysmod_cache = Some(cache);
+        self
     }
 
     /// MemoryFileManager 설정 — data/memory 운영 메모리 인덱스 항상 주입 (토글 무관, owner=="admin").
@@ -2085,8 +2099,23 @@ impl AiManager {
         // firebat-render fence(텍스트 채널 render)를 마스킹·sanitize 후 reply 정제 → 복원.
         // fence 안 JSON 이 sanitize_reply / 마크다운 구조 추출에 안 망가지게 보호 + render_blocks 검증.
         // 모델이 도구 인자 대신 텍스트로 render 를 보내 한국어 깨짐 회피 + content 상주(메모리 회상).
+        // dataCacheKey resolver — fence blocks reference a sysmod _cacheKey; the server injects
+        // the full cached records as props.data (모델 손 복사 = truncation·날조 → 구조 차단).
+        let fence_data_resolver: Option<
+            Box<dyn Fn(&str) -> Result<Vec<serde_json::Value>, String>>,
+        > = self.sysmod_cache.as_ref().map(|cache| {
+            let cache = cache.clone();
+            Box::new(move |key: &str| {
+                cache.read(key, 0, usize::MAX).and_then(|v| {
+                    v.get("records")
+                        .and_then(|r| r.as_array())
+                        .cloned()
+                        .ok_or_else(|| "cache records missing".to_string())
+                })
+            }) as Box<dyn Fn(&str) -> Result<Vec<serde_json::Value>, String>>
+        });
         let (masked_for_reply, render_fences, render_block_groups, render_failed_groups) =
-            render_exec::mask_and_sanitize_fences(&last_text);
+            render_exec::mask_and_sanitize_fences(&last_text, fence_data_resolver.as_deref());
         let sanitized_reply = crate::utils::sanitize::sanitize_reply(&masked_for_reply);
         let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
         let (clean_reply_masked, extracted_blocks) =

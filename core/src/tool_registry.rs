@@ -1244,7 +1244,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
             source: "core".to_string(),
         },
         // tool_mode=true: reject components other than code/math/diagram (force fence, block Korean corruption).
-        |args| async move { render_exec::render_blocks(&args, true) },
+        |args| async move { render_exec::render_blocks(&args, true, None) },
     );
 
     // suggest — 다음 행동 제안 칩 (AiManager 가 응답 suggestions 로 변환).

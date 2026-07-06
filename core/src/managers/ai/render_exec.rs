@@ -21,6 +21,14 @@ use super::component_registry;
 /// makes the model degrade the spelling (Korean corrupts in tool_use input). html uses the separate render_iframe path.
 pub const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
 
+/// Resolves a sysmod `_cacheKey` to its full records for server-side data injection.
+/// Wired by AiManager over SysmodCacheAdapter; `None` on paths without cache access.
+pub type FenceDataResolver<'a> = &'a dyn Fn(&str) -> Result<Vec<Value>, String>;
+
+/// Injection row cap — protects message size when a huge cache (e.g. line-text cache of a
+/// scraped page) is referenced. Time-series keep the most recent rows (tail).
+const MAX_INJECT_ROWS: usize = 5000;
+
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
 ///
@@ -28,7 +36,17 @@ pub const TOOL_ALLOWED_TYPES: &[&str] = &["code", "math", "diagram"];
 /// (everything except code/math/diagram) are rejected, forcing the model to emit a firebat-render fence (text channel).
 /// Structurally blocks Korean corruption in tool args (prompt soft-hint becomes hard enforcement). The fence path
 /// (mask_and_sanitize_fences) calls with tool_mode=false, so all components pass.
-pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
+///
+/// `resolver` = sysmod cache lookup for `dataCacheKey` props (fence path only; tool paths pass
+/// None — data-heavy components are rejected there anyway). When a block's props carry
+/// `dataCacheKey`, the server injects the cached records as `props.data` so the model never
+/// hand-copies large arrays (hand-copied rows get truncated and even fabricated — 2026-07-06
+/// 실측: 123봉 캐시에서 74행만 베끼고 주말 날짜 봉을 지어냄).
+pub fn render_blocks(
+    args: &Value,
+    tool_mode: bool,
+    resolver: Option<FenceDataResolver>,
+) -> Result<Value, String> {
     // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
     // blocks 배열 자체를 직접 보내는 경우 수용.
     let parsed_args: Value = match args.as_str() {
@@ -104,6 +122,68 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
                 "useFence": true,
             }));
             continue;
+        }
+
+        // dataCacheKey → server-side data injection (generic — no per-component branching).
+        // The model references the sysmod `_cacheKey` instead of hand-copying rows; the full
+        // cached records become `props.data`. Kills inline truncation/fabrication and the
+        // token double-spend (cache_read into context + rows written back out).
+        if let Some(key) = props
+            .get("dataCacheKey")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+        {
+            if let Some(obj) = props.as_object_mut() {
+                obj.remove("dataCacheKey");
+            }
+            let resolved: Result<Vec<Value>, String> = match resolver {
+                Some(r) => r(&key),
+                None => Err("no cache resolver on this path".to_string()),
+            };
+            match resolved {
+                Ok(records) => {
+                    let rows = if records.len() > MAX_INJECT_ROWS {
+                        records[records.len() - MAX_INJECT_ROWS..].to_vec()
+                    } else {
+                        records
+                    };
+                    tracing::info!(
+                        target: "render",
+                        cache_key = %key,
+                        rows = rows.len(),
+                        "[render] dataCacheKey resolved — full records injected server-side"
+                    );
+                    if let Some(obj) = props.as_object_mut() {
+                        obj.insert("data".to_string(), Value::Array(rows));
+                    }
+                }
+                Err(err) => {
+                    let has_data = props
+                        .get("data")
+                        .and_then(|v| v.as_array())
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false);
+                    if has_data {
+                        // Model supplied (partial) rows alongside the key — keep them rather
+                        // than dropping the whole block.
+                        tracing::warn!(
+                            target: "render",
+                            cache_key = %key,
+                            error = %err,
+                            "[render] dataCacheKey resolve failed — keeping model-supplied data"
+                        );
+                    } else {
+                        failed.push(serde_json::json!({
+                            "idx": idx,
+                            "type": block_type,
+                            "error": format!(
+                                "dataCacheKey '{key}' resolve failed: {err}. Re-run the sysmod call and use the fresh _cacheKey."
+                            ),
+                        }));
+                        continue;
+                    }
+                }
+            }
         }
 
         // AI hallucination normalize — 'name' → 'title' 매핑 후 sanitize_to_schema 재귀 정규화.
@@ -200,7 +280,10 @@ pub fn render_blocks(args: &Value, tool_mode: bool) -> Result<Value, String> {
 /// failed to parse); `failed_groups[n]` = the array of blocks that FAILED validation in fence n (each
 /// `{idx,type,error,gotKeys}`) — surfaced as a `success:false` "render" badge so a dropped block is
 /// visible to the user, not just a journald warn (debug convenience).
-pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>, Vec<Value>) {
+pub fn mask_and_sanitize_fences(
+    text: &str,
+    resolver: Option<FenceDataResolver>,
+) -> (String, Vec<String>, Vec<Value>, Vec<Value>) {
     const OPEN: &str = "```firebat-render";
     if !text.contains(OPEN) {
         return (text.to_string(), Vec::new(), Vec::new(), Vec::new());
@@ -227,7 +310,7 @@ pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>,
             break;
         };
         let body = &body_and_rest[..close_rel];
-        let (sanitized, blocks, failed) = sanitize_fence_body(body);
+        let (sanitized, blocks, failed) = sanitize_fence_body(body, resolver);
         store.push(format!("```firebat-render\n{}\n```", sanitized));
         block_groups.push(blocks);
         failed_groups.push(failed);
@@ -241,7 +324,7 @@ pub fn mask_and_sanitize_fences(text: &str) -> (String, Vec<String>, Vec<Value>,
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
 /// Returns `(json_string, blocks_value)`. On parse/validation failure, returns the trimmed original
 /// string + `Null` blocks so the frontend renders it raw (visible + debuggable, never silently dropped).
-fn sanitize_fence_body(body: &str) -> (String, Value, Value) {
+fn sanitize_fence_body(body: &str, resolver: Option<FenceDataResolver>) -> (String, Value, Value) {
     let trimmed = body.trim();
     let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
         return (trimmed.to_string(), Value::Null, Value::Null);
@@ -252,7 +335,7 @@ fn sanitize_fence_body(body: &str) -> (String, Value, Value) {
         parsed
     };
     // Fence path, tool_mode=false: all components pass (fence is the Korean-safe channel).
-    match render_blocks(&args, false) {
+    match render_blocks(&args, false, resolver) {
         Ok(result) => {
             let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));
             let failed = result.get("failed").cloned().unwrap_or_else(|| serde_json::json!([]));
@@ -342,5 +425,67 @@ fn collect_text_values(v: &Value, key: &str, out: &mut String) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ohlcv_rows(n: usize) -> Vec<Value> {
+        (0..n)
+            .map(|i| {
+                serde_json::json!({
+                    "date": format!("2026-01-{:02}", (i % 28) + 1),
+                    "open": 100.0 + i as f64, "high": 110.0 + i as f64,
+                    "low": 90.0 + i as f64, "close": 105.0 + i as f64, "volume": 1000 + i
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn data_cache_key_injects_full_records() {
+        let rows = ohlcv_rows(123);
+        let rows_clone = rows.clone();
+        let resolver = move |key: &str| -> Result<Vec<Value>, String> {
+            assert_eq!(key, "yf-history-abc");
+            Ok(rows_clone.clone())
+        };
+        let args = serde_json::json!({
+            "blocks": [{"type": "stock_chart", "props": {"symbol": "005930.KS", "dataCacheKey": "yf-history-abc"}}]
+        });
+        let out = render_blocks(&args, false, Some(&resolver)).unwrap();
+        let blocks = out["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1);
+        let props = &blocks[0]["props"];
+        assert!(props.get("dataCacheKey").is_none(), "key removed after injection");
+        assert_eq!(props["data"].as_array().unwrap().len(), 123);
+    }
+
+    #[test]
+    fn data_cache_key_resolve_failure_without_data_fails_block() {
+        let resolver =
+            |_: &str| -> Result<Vec<Value>, String> { Err("cache expired".to_string()) };
+        let args = serde_json::json!({
+            "blocks": [{"type": "stock_chart", "props": {"symbol": "A", "dataCacheKey": "gone"}}]
+        });
+        // 유일 블록이 실패 → 전체 Err 로 모델에 재시도 힌트.
+        let err = render_blocks(&args, false, Some(&resolver)).unwrap_err();
+        assert!(err.contains("dataCacheKey"), "err mentions cache: {err}");
+    }
+
+    #[test]
+    fn data_cache_key_resolve_failure_keeps_model_data() {
+        let resolver = |_: &str| -> Result<Vec<Value>, String> { Err("expired".to_string()) };
+        let args = serde_json::json!({
+            "blocks": [{"type": "stock_chart", "props": {
+                "symbol": "A", "dataCacheKey": "gone",
+                "data": [{"date": "2026-01-02", "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 10}]
+            }}]
+        });
+        let out = render_blocks(&args, false, Some(&resolver)).unwrap();
+        let props = &out["blocks"][0]["props"];
+        assert_eq!(props["data"].as_array().unwrap().len(), 1, "model rows kept");
     }
 }

@@ -229,7 +229,8 @@ Large responses (50+ row time series, etc) — main context token saving. Sandbo
 - **cache** (large result, 50+ rows): `{success, data: {<summary fields>, _cacheKey: "<module>-<action>-1234", _cacheMeta: {sysmod: "<module>", action: "<action>", recordCount: 59, ttlSec: 600}}}`. No records inline, only `_cacheKey`.
 
 **Flow on receiving `_cacheKey`**:
-- Need part only → `cache_read({cacheKey: "...", offset: 0, limit: 50})` (pagination).
+- **Rendering the series (chart etc.)** → put the key into the component's `dataCacheKey` prop in the render fence — the server injects the FULL cached records as `data`. Do NOT cache_read the rows back and do NOT copy rows by hand into props: hand-copied arrays get truncated and corrupted, and the round-trip wastes tokens.
+- Need to READ some values (to reason or answer about them) → `cache_read({cacheKey: "...", offset: 0, limit: 50})` (pagination).
 - Condition filter → `cache_grep({cacheKey: "...", field: "<field>", op: "gt", value: <n>})` (op: eq/ne/gt/gte/lt/lte/contains/in).
 - Aggregation → `cache_aggregate({cacheKey: "...", field: "<field>", op: "avg"})` (count/sum/avg/min/max).
 - When done → `cache_drop({cacheKey: "..."})` (optional, 5min TTL auto-expires).
@@ -239,12 +240,12 @@ Large responses (50+ row time series, etc) — main context token saving. Sandbo
 **Do not call**:
 - cache_* on a response without `_cacheKey` (if records is inline, use directly).
 - Small results (fewer than 50 rows) — use inline records.
+- cache_read just to render — use `dataCacheKey` in the render fence instead (see above).
 
-**Example flow**:
+**Example flow (chart from a large series)**:
 1. Call a sysmod whose result is a large series (50+ rows).
 2. Response = `{success, data: {<summary>, _cacheKey: "<key>", _cacheMeta: {recordCount: 59, ...}}}` — no records inline.
-3. Call `cache_read({cacheKey: "<key>", offset: 0, limit: 60})` → receive the records.
-4. Pass the records into the render fence → draw the chart / table.
+3. Emit the render fence with `{"type":"stock_chart","props":{"symbol":"...","title":"...","dataCacheKey":"<key>"}}` — the server fills `data` with all records. No cache_read needed.
 
 ## Module authoring (special)
 - I/O: stdin JSON → last line of stdout {"success":true,"data":{...}}. No sys.argv.

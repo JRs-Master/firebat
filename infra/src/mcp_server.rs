@@ -851,7 +851,7 @@ impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         // 실행 본체는 core 의 단일 소스에 있음 (ToolManager FC 경로와 공유 → drift 차단).
         // tool_mode=true: reject components other than code/math/diagram (force fence, block Korean corruption).
-        firebat_core::managers::ai::render_exec::render_blocks(&args, true)
+        firebat_core::managers::ai::render_exec::render_blocks(&args, true, None)
     }
 }
 

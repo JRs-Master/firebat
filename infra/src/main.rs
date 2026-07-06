@@ -643,6 +643,8 @@ async fn main() -> Result<()> {
             .with_media(media.clone())
             .with_tool_dispatcher(tool_dispatcher.clone())
             .with_retrieval_engine(retrieval_engine)
+            // fence `dataCacheKey` → 서버측 캐시 records 주입 (모델 손 복사 truncation·날조 차단)
+            .with_sysmod_cache(cache_adapter.clone())
             // search_components(query) 도구 등록 — 옛 production 배선 누락(테스트만 호출)이라
             // CLI(MCP)·FC 모델 둘 다 컴포넌트 propsSchema 검색 불가였음. ToolManager 등록 →
             // register_builtin_tools auto-sync 가 MCP(hosted) 에도 자동 노출(source="core").

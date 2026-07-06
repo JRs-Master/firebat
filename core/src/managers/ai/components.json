@@ -2,7 +2,7 @@
   {
     "name": "stock_chart",
     "componentType": "StockChart",
-    "description": "Stock candlestick chart (OHLCV, daily/intraday). Use for visualizing stock prices. Can show buy/sell points and moving averages. Required props: symbol (code) + data (OHLCV array). title is optional (the stock's display name if present, otherwise symbol is shown). Do NOT use a 'name' key — put the display name in 'title'.",
+    "description": "Stock candlestick chart (OHLCV, daily/intraday). Use for visualizing stock prices. Can show buy/sell points and moving averages. PREFERRED: pass the sysmod response `_cacheKey` as `dataCacheKey` — the server injects the FULL cached records as `data` (never hand-copy OHLCV rows; hand-copied rows get truncated/corrupted). title is optional (the stock's display name if present, otherwise symbol is shown). Do NOT use a 'name' key — put the display name in 'title'.",
     "semanticText": "주식 종목 시세 주가 캔들 일봉 분봉 차트 OHLCV 이동평균 MA 골든크로스 데드크로스 거래량 저항 지지 매수 매도 포인트 005930 삼성전자 코스피 코스닥 투자 분석",
     "propsSchema": {
       "type": "object",
@@ -34,6 +34,10 @@
         "title": {
           "type": "string",
           "description": "stock display name — not the symbol code"
+        },
+        "dataCacheKey": {
+          "type": "string",
+          "description": "sysmod response `_cacheKey`. The server replaces this with the full cached OHLCV records as `data` — ALWAYS use this instead of copying rows by hand (no cache_read needed for charting)."
         },
         "data": {
           "type": "array",
