@@ -228,7 +228,50 @@ node scripts/gen.mjs             # _apis.json → config + index
 - `unsupportedActions` = WS 로도 REST 로도 아직 못 하는 액션에 명확한 에러 메시지(추측 호출 방지).
 - 응답 auto-cache 는 sandbox 와 **같은 choke-point 공유** — 수백 종목 스냅샷도 캐시 + 프리뷰로 처리.
 
+#### `timeseries` — 시계열 영구 store (range-coverage 캐시, 2026-07-06)
+```json
+{
+  "timeseries": {
+    "history": {
+      "startParam": "start", "endParam": "end",
+      "idParams": ["symbol", "interval"],
+      "dateField": "date",
+      "rows": ["$", "_cache.records", "records"]
+    }
+  }
+}
+```
+- 선언된 액션의 응답 rows 가 **영구 store**(`data/timeseries.db`) 에 흡수되고, 이후 요청은 커버 구간을 계산해 **미커버 구간만** fetch(완전 커버 = 모듈 spawn 0). 소급 값 변경(배당/분할 조정) 감지 시 시계열 무효화·재수집.
+- 키 = `(module, action, idParams 정규화)`. 미선언/limit 호출/범위 비명시 = bypass(기존 auto-cache 만).
+- **전제 = 표준 OHLCV 필드**: 캔들 rows 는 `{date, open, high, low, close, volume}` 으로 정규화해 반환한다(kiwoom/korea-invest/toss 는 모듈 내부에서 rename — stock_chart `dataCacheKey` 주입·cache_grep 과 한 어휘).
+
+#### `actionCatalog` — 액션 레벨 시맨틱 발견 (search_module_actions, 2026-07-07)
+```json
+{
+  "actionCatalog": {
+    "file": "actions.json",
+    "envelope": "{ \"action\": \"<id>\", \"params\": { <params> } }"
+  }
+}
+```
+- 액션이 수백 개인 모듈(한투 275·키움 208)의 **progressive disclosure** 계층: AI 가 `search_module_actions(query)` 로 자연어 검색 → `get_action_schema(module, action)` 으로 정확한 파라미터·호출 봉투 획득 → 추측 0 호출. 검증 에러 힌트도 카탈로그 보유 모듈이면 이 흐름으로 안내된다(i18n `input_validation_failed_catalog`).
+- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions` 배열. `requiresApproval` 은 여기 재선언하지 않는다(로더가 config 선언에서 join — 단일 소스).
+- API 명세가 `_apis.json` 류로 있으면 `scripts/gen-actions.mjs` 로 생성(키움·한투 예시). 액션이 적은 모듈은 선언 불필요(검증 에러 + enum 으로 충분).
+
 > 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
+
+#### 선언형 필드 요약 표
+
+| 필드 | 기능 | 처리 계층 |
+|---|---|---|
+| `packages` | 런타임 의존성 자동 설치 | sandbox |
+| `secrets` | Vault → env 주입 | sandbox |
+| `secrets[].oauth` | 토큰 발급·선제갱신·재발급 (`OAuthTokenProvider`) | infra TokenProvider |
+| `requiresApproval` | 실주문 등 승인 게이트 (카드/차단) | 디스패치 (FC + MCP) |
+| `grounding` | 불투명 식별자 날조 차단 (L1) | 디스패치 (FC + MCP) |
+| `ws` | WebSocket 스냅샷·상시 감시 라우팅 | ModuleManager.run → IWsApiPort/IWsStreamPort |
+| `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
+| `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`) | AI 도구 (E5 카탈로그) |
 
 ---
 

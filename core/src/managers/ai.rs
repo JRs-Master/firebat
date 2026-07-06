@@ -26,6 +26,9 @@ pub mod render_exec;
 pub mod component_search_index;
 pub mod tool_search_index;
 pub mod dynamic_tools;
+// #search-tool — 공용 시맨틱 카탈로그 엔진(S1) + 모듈 액션 카탈로그(S2).
+pub mod semantic_catalog;
+pub mod action_catalog;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -482,6 +485,87 @@ impl AiManager {
                 }),
                 source: "core".to_string(),
             });
+        self
+    }
+
+    /// Module action catalog tools (#search-tool S2) — progressive disclosure for big sysmods
+    /// (korea-invest 275 / kiwoom 200+ action enums). `search_module_actions` = cross-module
+    /// semantic candidates → `get_action_schema` = exact params + call envelope. Registered as
+    /// source="core" so register_builtin_tools auto-syncs both to hosted MCP (dual-registry rule).
+    pub fn register_action_catalog_tools(
+        self,
+        catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
+    ) -> Self {
+        let cat = catalog.clone();
+        let search_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = cat.clone();
+            async move {
+                let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let module = args
+                    .get("module")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim_start_matches("sysmod_").to_string());
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+                let rows = cat.search(&query, module.as_deref(), limit.clamp(1, 20)).await?;
+                Ok(serde_json::json!({
+                    "actions": rows,
+                    "count": rows.len(),
+                    "next": "call get_action_schema(module, action) for exact params + call envelope before invoking",
+                }))
+            }
+        });
+        self.tools.register_handler("search_module_actions", search_handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "search_module_actions".to_string(),
+            description: "Semantic search over module ACTIONS (broker/API modules with hundreds of cryptic action IDs). Describe what data/operation you need in natural language → ranked candidates across all cataloged modules (or one module via `module`). NEVER guess an action ID for a large module — search first, then call get_action_schema for exact params. Results flag requiresApproval (real-money orders).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "what you need, in natural language (e.g. 종목 일봉 시세, 계좌 잔고, 투자자 매매동향)" },
+                    "module": { "type": "string", "description": "optional module name to scope the search (e.g. kiwoom, korea-invest)" },
+                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                },
+                "required": ["query"],
+            }),
+            source: "core".to_string(),
+        });
+        let cat2 = catalog.clone();
+        let schema_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = cat2.clone();
+            async move {
+                let module = args
+                    .get("module")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim_start_matches("sysmod_")
+                    .to_string();
+                let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                match cat.schema(&module, &action).await {
+                    Some(s) => Ok(s),
+                    None => Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!(
+                            "no catalog entry for {}:{} — do not invent action IDs. Use search_module_actions(query) to find the right action first.",
+                            module, action
+                        ),
+                    })),
+                }
+            }
+        });
+        self.tools.register_handler("get_action_schema", schema_handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "get_action_schema".to_string(),
+            description: "Exact detail for ONE module action found via search_module_actions: parameter names + descriptions, an example, and the module's call envelope (how to shape the tool call). Call this before invoking an unfamiliar action of a large module — do not guess params.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "module name (e.g. kiwoom, korea-invest)" },
+                    "action": { "type": "string", "description": "action id from search_module_actions (e.g. ka10081)" }
+                },
+                "required": ["module", "action"],
+            }),
+            source: "core".to_string(),
+        });
         self
     }
 

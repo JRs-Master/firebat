@@ -648,7 +648,16 @@ async fn main() -> Result<()> {
             // search_components(query) 도구 등록 — 옛 production 배선 누락(테스트만 호출)이라
             // CLI(MCP)·FC 모델 둘 다 컴포넌트 propsSchema 검색 불가였음. ToolManager 등록 →
             // register_builtin_tools auto-sync 가 MCP(hosted) 에도 자동 노출(source="core").
-            .register_search_components_tool(embedder.clone(), component_cache_port.clone()),
+            .register_search_components_tool(embedder.clone(), component_cache_port.clone())
+            // #search-tool S2 — 모듈 액션 카탈로그(search_module_actions / get_action_schema).
+            // config `actionCatalog` 선언 모듈(한투 275·키움 200+)의 액션 레벨 progressive disclosure.
+            .register_action_catalog_tools(Arc::new(
+                firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
+                    module_manager.clone(),
+                    embedder.clone(),
+                    component_cache_port.clone(),
+                ),
+            )),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.

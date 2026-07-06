@@ -63,6 +63,7 @@
       "disabled": "Module '{{name}}' is disabled. Please enable it in system settings and try again.",
       "entry_missing": "Module entry file not found: {{name}}",
       "config_missing": "Module config.json not found: {{scope}}/{{name}}",
+      "input_validation_failed_catalog": "[{{name}}] Input validation failed: {{detail}} — do not guess values. Find the right action with search_module_actions(query), then call get_action_schema(\"{{name}}\", action) for exact params before invoking.",
       "input_validation_failed": "[{{name}}] Input validation failed: {{detail}} — do not guess values; call get_module_config(\"{{name}}\") to see valid actions/params.",
       "input_validation_failed_scoped": "[{{scope}}/{{name}}] Input validation failed: {{detail}} — do not guess values; call get_module_config(\"{{name}}\") to see valid actions/params.",
       "schema_format": "Schema format error: {{detail}}",

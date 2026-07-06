@@ -2000,7 +2000,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "cache_grep".into(),
-        description: "sysmod `_cacheKey` records 조건 필터. field=점 표기, op=eq/ne/gt/gte/lt/lte/contains/in. inputSchema: {cacheKey, field, op, value}.".into(),
+        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation, op=eq/ne/gt/gte/lt/lte/contains/in. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. inputSchema: {cacheKey, field, op, value}.".into(),
         input_schema: schema_object(serde_json::json!({
             "cacheKey": {"type": "string"},
             "field": {"type": "string", "description": "필드 경로 (점 표기)"},
@@ -2062,13 +2062,13 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "search_entities".into(),
-        description: "Entity 검색 (embedding + 이름). inputSchema: EntitySearchOpts.".into(),
+        description: "Search tracked entities (subjects the user asked to remember or the system observed — people, companies, stocks, projects) by name/alias/type, semantic. Use when the user references a subject you might already know. Next step: search_entity_facts / search_events. inputSchema: {query, type?, limit?}.".into(),
         input_schema: schema_object(serde_json::json!({})),
         handler: Arc::new(SearchEntitiesHandler { entity: deps.entity.clone() }),
     }).await;
     state.register(McpTool {
         name: "search_entity_facts".into(),
-        description: "Entity 사실 검색. inputSchema: FactSearchOpts.".into(),
+        description: "Search durable facts attached to entities (states, attributes, decisions — e.g. an average purchase price). Use to look up what is known about a subject BEFORE answering from memory; superseded/low-confidence facts are filtered automatically. inputSchema: {query, entityId?, factType?, limit?}.".into(),
         input_schema: schema_object(serde_json::json!({})),
         handler: Arc::new(SearchEntityFactsHandler { entity: deps.entity.clone() }),
     }).await;
@@ -2086,7 +2086,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "search_events".into(),
-        description: "Event 검색. inputSchema: EventSearchOpts.".into(),
+        description: "Search recorded events (things that happened or are scheduled in the world — announcements, fills, user life events). Use for when-did-X-happen questions about tracked subjects. inputSchema: {query, type?, entityId?, limit?}.".into(),
         input_schema: schema_object(serde_json::json!({})),
         handler: Arc::new(SearchEventsHandler { episodic: deps.episodic.clone() }),
     }).await;

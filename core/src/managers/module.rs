@@ -180,15 +180,19 @@ impl ModuleManager {
         // (was fetched twice: once per validation pass).
         let config = self.get_module_config(scope, module_name).await;
 
-        // Pre-spawn input validation — config.json 의 input schema 기준
+        // Pre-spawn input validation — config.json 의 input schema 기준.
+        // 에러 힌트 = 다음 단계 포인터(progressive disclosure): actionCatalog 선언 모듈이면
+        // search_module_actions/get_action_schema 로, 아니면 get_module_config 로 안내.
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
+                let has_catalog = config.get("actionCatalog").is_some();
                 validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
-                    crate::i18n::t(
-                        "core.error.module.input_validation_failed",
-                        None,
-                        &[("name", module_name), ("detail", &e)],
-                    )
+                    let key = if has_catalog {
+                        "core.error.module.input_validation_failed_catalog"
+                    } else {
+                        "core.error.module.input_validation_failed"
+                    };
+                    crate::i18n::t(key, None, &[("name", module_name), ("detail", &e)])
                 })?;
             }
         }
@@ -650,6 +654,34 @@ impl ModuleManager {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
                     return Some(parsed);
                 }
+            }
+        }
+        None
+    }
+
+    /// 모듈 dir 안 선언 파일 read (config `actionCatalog.file` 등) — 파일명만 허용 (path traversal 차단).
+    pub async fn read_module_file(&self, scope: &str, name: &str, file: &str) -> Option<String> {
+        if !is_safe_name(name) {
+            return None;
+        }
+        // 파일명 화이트리스트 — 영숫자/대시/언더스코어 + .json 확장자만 (경로 구분자 차단).
+        if !file
+            .strip_suffix(".json")
+            .is_some_and(|stem| !stem.is_empty() && stem.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        {
+            return None;
+        }
+        let candidates: Vec<String> = if scope == "user" {
+            vec![format!("user/modules/{}/{}", name, file)]
+        } else {
+            vec![
+                format!("system/modules/{}/{}", name, file),
+                format!("system/services/{}/{}", name, file),
+            ]
+        };
+        for path in candidates {
+            if let Ok(content) = self.storage.read(&path).await {
+                return Some(content);
             }
         }
         None

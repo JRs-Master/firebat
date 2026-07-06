@@ -1976,7 +1976,7 @@ async function acquireSlot() {
 
 async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
   const meta = API_TABLE[action];
-  if (!meta) throw new Error(`알 수 없는 API ID: ${action} — 이 값을 지어내지 마세요. 유효한 API ID 는 get_module_config('korea-invest') 로 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽고, 종합 분석은 get_skill('stock-report') 를 참고하세요.`);
+  if (!meta) throw new Error(`알 수 없는 API ID: ${action} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('korea-invest', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
   const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
   if (isMock && !meta.trIdMock) throw new Error(`${action} (${meta.name}) 은 모의투자 미지원입니다.`);
   let url = `${base}${meta.path}`;

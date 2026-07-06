@@ -1336,7 +1336,7 @@ fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // cache_grep — 조건 필터 (9 op)
     tools.register(ToolDefinition {
         name: "cache_grep".to_string(),
-        description: "sysmod `_cacheKey` records 안 조건 필터. field=점 표기 (예: `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=비교값.".to_string(),
+        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation (e.g. `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=comparison value. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -2219,7 +2219,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // search_entities
     tools.register(ToolDefinition {
         name: "search_entities".to_string(),
-        description: "Entity 검색 (query + type 필터). Phase B-15+ 임베딩 설정된 후 cosine.".to_string(),
+        description: "Search tracked entities (subjects the user asked to remember or the system observed — people, companies, stocks, projects) by name/alias/type, semantic. Use when the user references a subject you might already know. Next step: search_entity_facts for its durable facts, search_events for related events.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -2294,7 +2294,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // search_entity_facts
     tools.register(ToolDefinition {
         name: "search_entity_facts".to_string(),
-        description: "Fact 검색 (query + entityId/factType/tags/시간범위 필터).".to_string(),
+        description: "Search durable facts attached to entities (states, attributes, decisions — e.g. an average purchase price) — query + entityId/factType/tags/time-range filters. Use to look up what is known about a subject BEFORE answering from memory; superseded/low-confidence facts are filtered automatically.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -2397,7 +2397,7 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // search_events
     tools.register(ToolDefinition {
         name: "search_events".to_string(),
-        description: "사건 검색 (query + type/who/entityId/시간범위 필터).".to_string(),
+        description: "Search recorded events (things that happened or are scheduled in the world — announcements, fills, user life events) — query + type/who/entityId/time-range filters. Use for when-did-X-happen questions about tracked subjects.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {

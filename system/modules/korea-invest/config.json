@@ -7,6 +7,10 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "actionCatalog": {
+    "file": "actions.json",
+    "envelope": "{ \"action\": \"<id>\", \"query\": { <query.* params> }, \"body\": { <body.* params> } } — param key prefix query./body. marks the location"
+  },
   "requiresApproval": ["v1_국내주식-001", "v1_국내주식-002", "v1_국내주식-003", "v1_해외주식-001", "v1_국내선물-001", "v1_국내선물-002", "v1_해외선물-001"],
   "grounding": {
     "FID_INPUT_ISCD": {
