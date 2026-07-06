@@ -1783,20 +1783,13 @@ impl AiManager {
                                         "approvalBlocked": "hub",
                                     }))
                                 } else {
-                                    let pargs = crate::utils::pending_tools::PendingActionArgs::RunModule(
-                                        crate::utils::pending_tools::RunModuleArgs {
-                                            module: module_name.clone(),
-                                            input: effective_call.arguments.clone(),
-                                        },
-                                    );
-                                    let summary = format!("실행 승인: {} · {}", module_name, act);
-                                    let plan_id = create_pending_scoped(pargs, &summary, None);
+                                    // Pending 생성은 여기서 하지 않는다 — 이 시점은 dup/unknown 분기
+                                    // *전*이라 여기서 만들면 그 분기로 빠질 때 store 에 고아 pending 이
+                                    // 쌓인다. 마커만 반환, 실제 생성은 소비 분기에서.
                                     Some(serde_json::json!({
-                                        "success": true,
-                                        "pending": true,
-                                        "planId": plan_id,
-                                        "summary": summary,
-                                        "note": "사용자 승인 카드가 표시됩니다 — 승인 전 실행되지 않으며, 같은 호출을 재시도하지 마세요.",
+                                        "needsPending": true,
+                                        "module": module_name,
+                                        "action": act,
                                     }))
                                 }
                             } else {
@@ -1849,13 +1842,61 @@ impl AiManager {
                         arguments: call.arguments.clone(),
                     }
                 } else if let Some(gate) = approval_gate {
-                    // requiresApproval — pending card created (or blocked); never dispatch directly.
-                    let pending = gate.get("pending").and_then(|v| v.as_bool()).unwrap_or(false);
+                    // requiresApproval — pending card (or blocked); never dispatch directly.
                     turn_call_set.insert(cache_key.clone());
+                    let needs_pending = gate
+                        .get("needsPending")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let result = if needs_pending {
+                        // Pending 생성 + 프론트 승인 카드 배선 — 카드는 AiResponse.pendingActions
+                        // 로만 뜬다. 옛엔 store 에만 만들고 push 를 빼먹어 카드가 영영 안 떴음
+                        // (2026-07-06 실측: 주문 API 승인 카드 미표시). shape = dispatcher 경로와
+                        // 동일 {planId,name,summary,args} — 프론트는 미지 name 이면 summary fallback.
+                        let module_name = gate
+                            .get("module")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let act = gate
+                            .get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
+                        let pargs = crate::utils::pending_tools::PendingActionArgs::RunModule(
+                            crate::utils::pending_tools::RunModuleArgs {
+                                module: module_name.clone(),
+                                input: effective_call.arguments.clone(),
+                            },
+                        );
+                        let summary = format!("실행 승인: {} · {}", module_name, act);
+                        let plan_id = create_pending_scoped(pargs, &summary, None);
+                        pending_actions.push(serde_json::json!({
+                            "planId": plan_id,
+                            "name": effective_call.name,
+                            "summary": summary,
+                            "args": effective_call.arguments.clone(),
+                        }));
+                        executed_actions
+                            .push(serde_json::Value::String(effective_call.name.clone()));
+                        self.log.info(&format!(
+                            "[AiManager] requiresApproval 승인 대기: {} (planId={})",
+                            effective_call.name, plan_id
+                        ));
+                        serde_json::json!({
+                            "success": true,
+                            "pending": true,
+                            "planId": plan_id,
+                            "summary": summary,
+                            "note": "사용자 승인 카드가 표시됩니다 — 승인 전 실행되지 않으며, 같은 호출을 재시도하지 마세요.",
+                        })
+                    } else {
+                        gate
+                    };
+                    let pending = result.get("pending").and_then(|v| v.as_bool()).unwrap_or(false);
                     ToolResult {
                         call_id: call.id.clone(),
                         name: call.name.clone(),
-                        result: gate,
+                        result,
                         success: pending,
                         error: if pending { None } else { Some("approval blocked".to_string()) },
                         arguments: call.arguments.clone(),
