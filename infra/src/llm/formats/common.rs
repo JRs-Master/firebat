@@ -3,9 +3,21 @@
 use firebat_core::llm::config::LlmModelConfig;
 use firebat_core::ports::LlmCallOpts;
 
-/// 공유 reqwest::Client — connection pool 재사용. core utils 로 이동 (services 와 공유).
-/// re-export 로 옛 호출부 호환.
-pub use firebat_core::utils::http_client::http_client;
+/// LLM 전용 reqwest::Client — 공유 client(core utils, timeout 120s)와 분리.
+/// LLM 라운드는 큰 프롬프트+추론으로 2분을 넘길 수 있다(2026-07-06 실측: Solar FC 라운드가
+/// 120s timeout 에 걸려 "error sending request" — 도구/모듈 HTTP 와 달리 LLM 은 장고
+/// 응답이 정상 동작). read timeout 600s + connect 10s(죽은 엔드포인트는 빠른 실패).
+pub fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(600))
+            .pool_max_idle_per_host(8)
+            .build()
+            .expect("LLM reqwest client 빌드 실패")
+    })
+}
 
 /// API 키 또는 명시 에러. 사용자 친화 메시지 — 내부 Vault key 노출 X (사용자가 어디서 입력하는지 모름).
 pub fn require_api_key(config: &LlmModelConfig, api_key: Option<&str>) -> Result<String, String> {
@@ -20,8 +32,19 @@ pub fn require_api_key(config: &LlmModelConfig, api_key: Option<&str>) -> Result
 }
 
 /// reqwest::Error → InfraResult 변환.
-pub fn map_reqwest_error<E: std::fmt::Display>(e: E) -> String {
-    firebat_core::i18n::t("core.error.llm.http_failed", None, &[("detail", &e.to_string())])
+/// reqwest 의 Display 는 "error sending request for url" 까지만이고 진짜 원인(timeout /
+/// connection reset / dns)은 source 체인에 있다 → 체인을 이어붙여 사용자 메시지에 포함 +
+/// journal 에도 남긴다(옛엔 유저 메시지로만 가서 서버 로그에 흔적 0 = 진단 불가, 2026-07-06 실측).
+pub fn map_reqwest_error<E: std::error::Error>(e: E) -> String {
+    let mut detail = e.to_string();
+    let mut src = e.source();
+    while let Some(s) = src {
+        detail.push_str(": ");
+        detail.push_str(&s.to_string());
+        src = s.source();
+    }
+    tracing::warn!(target: "llm", error = %detail, "LLM HTTP request failed");
+    firebat_core::i18n::t("core.error.llm.http_failed", None, &[("detail", &detail)])
 }
 
 /// 비용 계산 — input/output 토큰 수 + config.pricing → USD.
