@@ -2171,6 +2171,32 @@ impl AiManager {
             final_blocks.push(b);
         }
 
+        // Text blocks were pushed RAW during the round loop (before fence processing) — the
+        // frontend renders THESE, not clean_reply. For ordinary fences raw ≈ sanitized so it
+        // never mattered, but server-side transforms (dataCacheKey injection) only existed in
+        // clean_reply → the displayed copy kept an unresolved dataCacheKey and StockChart
+        // crashed on data=undefined (2026-07-06 실측). Re-run fence sanitize on every text
+        // block so the displayed copy carries the same normalized/injected fences. Badges were
+        // already emitted from the last_text pass — none here (avoid duplicates).
+        for b in final_blocks.iter_mut() {
+            let is_text = b.get("type").and_then(|v| v.as_str()) == Some("text");
+            if !is_text {
+                continue;
+            }
+            let Some(t) = b.get("text").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if !t.contains("```firebat-render") {
+                continue;
+            }
+            let (masked, fences, _, _) = render_exec::mask_and_sanitize_fences(
+                t,
+                fence_data_resolver.as_deref(),
+            );
+            let restored = render_exec::restore_fences(&masked, &fences);
+            b["text"] = serde_json::Value::String(restored);
+        }
+
         // Vertex AI 파인튜닝용 학습 데이터 기록 (옛 TS ai-manager.ts:1526 1:1).
         // contents 형식: user → model(functionCall) → user(functionResponse) → ... → model(text).
         // logger.info("[USER_AI_TRAINING] {...}") 출력 시 log adapter 가 별도 JSONL 파일로 분기.

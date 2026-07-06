@@ -154,6 +154,75 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
             }
         }
 
+        // 0.7 single-item shorthand wrap — 모델이 아이템 1개의 필드를 required 배열 prop 으로
+        //     감싸지 않고 최상위에 그대로 보내는 축약({label,value} instead of items:[{label,value}])
+        //     흡수. 데이터 기반(컴포넌트명 하드코딩 0): required 배열-of-objects prop 이 정확히
+        //     1개이고 그게 비어있으며, 최상위 키 중 그 item 의 프로퍼티이면서 최상위 프로퍼티는
+        //     아닌 키가 item required 를 전부 충족할 때만 단일 요소 배열로 이동. (어차피 검증
+        //     실패로 블록이 통째 드롭되던 케이스라 strictly better.)
+        if let Some(known) = properties {
+            let array_reqs: Vec<&str> = required
+                .iter()
+                .filter(|k| {
+                    known
+                        .get(**k)
+                        .map(|sub| {
+                            schema_allows_type(sub, "array")
+                                && sub
+                                    .get("items")
+                                    .and_then(|i| i.get("properties"))
+                                    .is_some()
+                        })
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
+            if array_reqs.len() == 1 {
+                let rname = array_reqs[0];
+                let target_empty = obj
+                    .get(rname)
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.is_empty())
+                    .unwrap_or(true);
+                if target_empty {
+                    let items_schema = known.get(rname).and_then(|s| s.get("items"));
+                    let item_props = items_schema
+                        .and_then(|i| i.get("properties"))
+                        .and_then(|p| p.as_object());
+                    let item_required: Vec<&str> = items_schema
+                        .and_then(|i| i.get("required"))
+                        .and_then(|r| r.as_array())
+                        .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect())
+                        .unwrap_or_default();
+                    if let Some(item_props) = item_props {
+                        let movable: Vec<String> = obj
+                            .keys()
+                            .filter(|k| {
+                                item_props.contains_key(k.as_str())
+                                    && !known.contains_key(k.as_str())
+                            })
+                            .cloned()
+                            .collect();
+                        let satisfies_required = item_required
+                            .iter()
+                            .all(|rk| movable.iter().any(|m| m == rk));
+                        if !movable.is_empty() && satisfies_required {
+                            let mut item = serde_json::Map::new();
+                            for k in &movable {
+                                if let Some(v) = obj.remove(k) {
+                                    item.insert(k.clone(), v);
+                                }
+                            }
+                            obj.insert(
+                                rname.to_string(),
+                                serde_json::Value::Array(vec![serde_json::Value::Object(item)]),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // 1. additionalProperties:false 면 properties 에 없는 키 전부 drop.
         if additional_false {
             if let Some(known) = properties {
@@ -379,8 +448,26 @@ mod tests {
         let schema = &c.props_schema;
         assert_eq!(schema["type"], "object");
         let required = schema["required"].as_array().unwrap();
-        assert!(required.iter().any(|v| v == "symbol"));
+        // symbol 은 0b402c5 에서 optional 로 완화 — data 만 required.
+        assert!(!required.iter().any(|v| v == "symbol"));
         assert!(required.iter().any(|v| v == "data"));
+    }
+
+    #[test]
+    fn single_item_shorthand_wraps_into_required_array() {
+        // 모델이 items:[{...}] 대신 아이템 필드를 최상위에 그대로 보낸 축약 흡수 (key_value 실측).
+        let schema = &find_component("key_value").unwrap().props_schema;
+        let mut props = json!({ "label": "가격 범위", "value": "12만~37만" });
+        sanitize_to_schema(&mut props, schema);
+        let items = props["items"].as_array().expect("items 로 wrap 되어야");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["value"], "12만~37만");
+        assert_eq!(items[0]["label"], "가격 범위");
+        assert!(props.get("label").is_none(), "최상위 축약 키는 이동되어야");
+        assert!(
+            validate_value(&props, schema).is_ok(),
+            "wrap 후 스키마 통과해야"
+        );
     }
 
     #[test]
