@@ -19,6 +19,19 @@ pub fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// LLM 스트리밍 전용 client — total timeout 없음(스트림은 청크 간 idle timeout 이 행 감지를
+/// 담당, total 을 걸면 정상적인 장고 스트림이 중간에 잘림). connect 10s 는 유지.
+pub fn llm_stream_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(8)
+            .build()
+            .expect("LLM stream reqwest client 빌드 실패")
+    })
+}
+
 /// API 키 또는 명시 에러. 사용자 친화 메시지 — 내부 Vault key 노출 X (사용자가 어디서 입력하는지 모름).
 pub fn require_api_key(config: &LlmModelConfig, api_key: Option<&str>) -> Result<String, String> {
     match api_key {

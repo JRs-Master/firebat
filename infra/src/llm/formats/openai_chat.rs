@@ -5,12 +5,18 @@
 use crate::llm::adapter::FormatHandler;
 use firebat_core::llm::config::LlmModelConfig;
 use crate::llm::formats::common::{
-    build_messages, compute_cost, http_client, map_reqwest_error, require_api_key,
+    build_messages, compute_cost, http_client, llm_stream_client, map_reqwest_error,
+    require_api_key,
 };
 use firebat_core::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolCall, ToolDefinition,
     ToolResult,
 };
+
+/// 스트림 청크 간 최대 무데이터 허용 — 이걸 넘기면 행(hang)으로 판정.
+/// 정상 라운드는 reasoning 토큰이 수 초 안에 흐르기 시작한다(라이브 검증) — 180s 는
+/// 프롬프트 큐잉·첫 토큰 지연의 넉넉한 상한이면서, 옛 비스트리밍의 "행에 10분 낭비"를 없앤다.
+const STREAM_IDLE_TIMEOUT_SECS: u64 = 180;
 
 pub struct OpenAiChatHandler;
 
@@ -100,6 +106,182 @@ impl OpenAiChatHandler {
             .to_string()
     }
 
+    /// chat/completions 호출 — 기본 SSE 스트리밍으로 받아 **비스트리밍 응답 shape 으로 조립**
+    /// (다운스트림 parse_response/parse_reasoning/sanitized_assistant_message 무변경).
+    ///
+    /// 왜 스트리밍: 비스트리밍은 total timeout 하나로만 행(hang)을 구분할 수 있어 "느리지만
+    /// 완주하는 라운드"(실측 166s)를 살리려면 행에 10분을 낭비한다(2026-07-06 upstage 행 2회
+    /// 실측). 스트리밍은 청크 간 idle timeout 으로 행을 빨리 감지하면서 정상 장고 라운드는
+    /// 제한 없이 받는다. shape 은 solar-pro3 라이브 검증: delta.content/reasoning 조각,
+    /// tool_calls 는 index 별 조각(후속 조각의 name="" 은 덮어쓰기 금지, arguments 는 이어붙임),
+    /// 마지막 chunk 에 usage(stream_options.include_usage), 종료 = data: [DONE].
+    ///
+    /// `stream=false`(json_schema 등 스트리밍 미검증 조합) 또는 응답이 SSE 가 아닌 호환 서버
+    /// (stream 플래그 무시하고 JSON 통짜 반환)는 기존 비스트리밍 경로 그대로.
+    async fn send_chat(
+        config: &LlmModelConfig,
+        key: &str,
+        mut body: serde_json::Value,
+        stream: bool,
+    ) -> InfraResult<(reqwest::StatusCode, serde_json::Value)> {
+        if !stream {
+            let response = http_client()
+                .post(&config.endpoint)
+                .bearer_auth(key)
+                .json(&body)
+                .send()
+                .await
+                .map_err(map_reqwest_error)?;
+            let status = response.status();
+            let body_json: serde_json::Value =
+                response.json().await.map_err(map_reqwest_error)?;
+            return Ok((status, body_json));
+        }
+
+        body["stream"] = serde_json::Value::Bool(true);
+        body["stream_options"] = serde_json::json!({ "include_usage": true });
+        let response = llm_stream_client()
+            .post(&config.endpoint)
+            .bearer_auth(key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let status = response.status();
+        let is_sse = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.contains("text/event-stream"))
+            .unwrap_or(false);
+        if !status.is_success() || !is_sse {
+            // 에러 바디 또는 스트림 미지원 호환 서버(JSON 통짜) — 그대로 파싱해 기존 경로로.
+            let text = response.text().await.map_err(map_reqwest_error)?;
+            let json = serde_json::from_str(&text)
+                .unwrap_or_else(|_| serde_json::json!({ "raw": text }));
+            return Ok((status, json));
+        }
+
+        use futures_util::StreamExt;
+        let mut byte_stream = response.bytes_stream();
+        // 바이트 버퍼 — 청크가 멀티바이트(한글) 문자 중간에서 끊길 수 있어 줄(\n) 경계에서만
+        // UTF-8 변환한다 (from_utf8_lossy 를 청크 단위로 쓰면 한글 깨짐).
+        let mut buf: Vec<u8> = Vec::new();
+        let mut content = String::new();
+        let mut reasoning = String::new();
+        let mut finish: Option<String> = None;
+        let mut usage: Option<serde_json::Value> = None;
+        // index → (id, name, arguments 누적)
+        let mut calls: std::collections::BTreeMap<u64, (String, String, String)> =
+            std::collections::BTreeMap::new();
+        let mut done = false;
+        while !done {
+            let next = tokio::time::timeout(
+                std::time::Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS),
+                byte_stream.next(),
+            )
+            .await;
+            let chunk = match next {
+                Err(_) => {
+                    let detail = format!(
+                        "stream idle timeout — no data for {STREAM_IDLE_TIMEOUT_SECS}s"
+                    );
+                    tracing::warn!(target: "llm", error = %detail, "LLM HTTP request failed");
+                    return Err(firebat_core::i18n::t(
+                        "core.error.llm.http_failed",
+                        None,
+                        &[("detail", &detail)],
+                    ));
+                }
+                Ok(None) => break, // 스트림 정상 종료 ([DONE] 없이 EOF 도 수용)
+                Ok(Some(Err(e))) => return Err(map_reqwest_error(e)),
+                Ok(Some(Ok(bytes))) => bytes,
+            };
+            buf.extend_from_slice(&chunk);
+            while let Some(pos) = buf.iter().position(|&c| c == b'\n') {
+                let line_bytes: Vec<u8> = buf.drain(..=pos).collect();
+                let line = String::from_utf8_lossy(&line_bytes);
+                let line = line.trim();
+                let Some(data) = line.strip_prefix("data:") else { continue };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    done = true;
+                    break;
+                }
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+                if let Some(u) = v.get("usage").filter(|u| !u.is_null()) {
+                    usage = Some(u.clone());
+                }
+                let Some(choice) = v
+                    .get("choices")
+                    .and_then(|c| c.as_array())
+                    .and_then(|a| a.first())
+                else {
+                    continue;
+                };
+                if let Some(fr) = choice.get("finish_reason").and_then(|f| f.as_str()) {
+                    finish = Some(fr.to_string());
+                }
+                let Some(delta) = choice.get("delta") else { continue };
+                if let Some(s) = delta.get("content").and_then(|v| v.as_str()) {
+                    content.push_str(s);
+                }
+                if let Some(s) = delta.get("reasoning").and_then(|v| v.as_str()) {
+                    reasoning.push_str(s);
+                }
+                if let Some(arr) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                    for tc in arr {
+                        let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let entry = calls.entry(idx).or_default();
+                        if let Some(id) = tc
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                        {
+                            entry.0 = id.to_string();
+                        }
+                        if let Some(f) = tc.get("function") {
+                            if let Some(nm) = f
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                            {
+                                entry.1 = nm.to_string();
+                            }
+                            if let Some(a) = f.get("arguments").and_then(|v| v.as_str()) {
+                                entry.2.push_str(a);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 비스트리밍 shape 으로 조립 — 다운스트림 파서 공용.
+        let mut message = serde_json::json!({ "role": "assistant", "content": content });
+        if !reasoning.is_empty() {
+            message["reasoning"] = serde_json::Value::String(reasoning);
+        }
+        if !calls.is_empty() {
+            let arr: Vec<serde_json::Value> = calls
+                .into_values()
+                .map(|(id, name, args)| {
+                    serde_json::json!({
+                        "id": id,
+                        "type": "function",
+                        "function": { "name": name, "arguments": args },
+                    })
+                })
+                .collect();
+            message["tool_calls"] = serde_json::Value::Array(arr);
+        }
+        let assembled = serde_json::json!({
+            "choices": [{ "message": message, "finish_reason": finish }],
+            "usage": usage.unwrap_or_else(|| serde_json::json!({})),
+        });
+        Ok((status, assembled))
+    }
+
     /// Sanitized assistant message for multiturn echo — `{role, content, tool_calls}` only.
     /// Returned as `raw_model_parts` so the NEXT round replays the model's own turn verbatim
     /// (inter-round narration text + exact call grouping preserved). `reasoning` is stripped:
@@ -167,15 +349,10 @@ impl FormatHandler for OpenAiChatHandler {
             body["prompt_cache_key"] = serde_json::Value::from(cid);
         }
 
-        let response = http_client()
-            .post(&config.endpoint)
-            .bearer_auth(&key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_reqwest_error)?;
-        let status = response.status();
-        let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
+        // json_schema(structured outputs) 조합만 비스트리밍 유지 — stream+response_format 은
+        // 라이브 미검증(worker/cron 경로라 행 리스크도 낮음). 그 외 = 스트리밍(행 조기 감지).
+        let (status, body_json) =
+            Self::send_chat(config, &key, body, opts.json_schema.is_none()).await?;
         if !status.is_success() {
             // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 모델 표시명 + 호환 계열 표기.
             return Err(firebat_core::i18n::t(
@@ -342,15 +519,10 @@ impl FormatHandler for OpenAiChatHandler {
             body["prompt_cache_key"] = serde_json::Value::from(cid);
         }
 
-        let response = http_client()
-            .post(&config.endpoint)
-            .bearer_auth(&key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(map_reqwest_error)?;
-        let status = response.status();
-        let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
+        // FC 라운드 = 스트리밍(행 조기 감지 — 2026-07-06 upstage 행 2회의 주 피해 경로).
+        // json_schema 조합만 비스트리밍(stream+response_format 라이브 미검증).
+        let (status, body_json) =
+            Self::send_chat(config, &key, body, opts.json_schema.is_none()).await?;
         if !status.is_success() {
             // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 모델 표시명 + 호환 계열 표기.
             return Err(firebat_core::i18n::t(
