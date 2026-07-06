@@ -110,7 +110,8 @@ def main():
         period = data.get('period', '1mo')
         interval = data.get('interval', '1d')
         limit = data.get('limit', 50)
-        df = yf.download(' '.join(symbols), period=period, interval=interval, progress=False, group_by='ticker', auto_adjust=True)
+        # auto_adjust=False — history 액션과 동일 규약(분할만 반영, 배당 미반영 = HTS 수정주가).
+        df = yf.download(' '.join(symbols), period=period, interval=interval, progress=False, group_by='ticker', auto_adjust=False)
         # 다종목이면 multi-index columns. 단일이면 single.
         result = {}
         if len(symbols) == 1:
@@ -188,10 +189,16 @@ def main():
         start = data.get('start')
         end = data.get('end')
         limit = data.get('limit')
+        # auto_adjust=False = split-adjusted, dividend-UNadjusted Close (Korean HTS convention).
+        # The default (True) bakes dividends into past prices (total-return series), so past
+        # closes stop matching actual traded prices (2025-12-30: 119,900 shown as 119,652) and
+        # every new dividend rewrites the whole history (quarterly ts-store invalidation).
+        # Yahoo applies splits retroactively either way, so False alone = HTS-style 수정주가
+        # (verified on the 005930.KS 2018 50:1 split boundary).
         if start or end:
-            df = t.history(start=start, end=end, interval=interval)
+            df = t.history(start=start, end=end, interval=interval, auto_adjust=False)
         else:
-            df = t.history(period=period, interval=interval)
+            df = t.history(period=period, interval=interval, auto_adjust=False)
         records = history_records(df, limit)
         # limit 명시 — 마지막 N개 cut
         if isinstance(limit, int) and limit > 0 and len(records) > limit:
