@@ -177,7 +177,12 @@ impl FormatHandler for OpenAiChatHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!("OpenAI Chat API 에러 {}: {}", status, body_json));
+            // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 하드코딩 "OpenAI" 가
+            // Solar 에러에 그대로 노출돼 혼란. 모델 표시명 + 호환 계열 표기.
+            return Err(format!(
+                "{}(OpenAI-호환 API) 에러 {}: {}",
+                config.display_name, status, body_json
+            ));
         }
         let (text, _calls, tokens_in, tokens_out, cached_tokens) = Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
@@ -343,7 +348,12 @@ impl FormatHandler for OpenAiChatHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!("OpenAI Chat API 에러 {}: {}", status, body_json));
+            // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 하드코딩 "OpenAI" 가
+            // Solar 에러에 그대로 노출돼 혼란. 모델 표시명 + 호환 계열 표기.
+            return Err(format!(
+                "{}(OpenAI-호환 API) 에러 {}: {}",
+                config.display_name, status, body_json
+            ));
         }
         let (text, tool_calls, tokens_in, tokens_out, cached_tokens) =
             Self::parse_response(&body_json);
