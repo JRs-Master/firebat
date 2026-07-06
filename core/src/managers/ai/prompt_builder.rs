@@ -68,9 +68,9 @@ impl PromptBuilder {
     fn now_korean(&self) -> String {
         let tz = self.user_tz();
         let now_local = tz.from_utc_datetime(&Utc::now().naive_utc());
-        // `2026. 5. 4. 오후 3:42:18` 식 한국 locale 형식 — chrono 의 `%` format 으로 흉내
-        // 한국 locale 정확 동작은 sys locale 에 의존. 일반 ISO + tz 표기로 안전 폴백.
-        now_local.format("%Y-%m-%d %H:%M:%S").to_string()
+        // 요일 포함 — 없으면 모델이 달력 계산을 스스로 하다 틀린다(2026-07-06 실측: Solar 가
+        // 월요일(07-06)을 주말로 계산해 "4~6일 주말 휴장" 오답). ISO + (Mon) = locale 무의존.
+        now_local.format("%Y-%m-%d (%a) %H:%M:%S").to_string()
     }
 
     /// 시스템 프롬프트 빌드 — base + extra_context + cron-agent 옵션 + user prompt 주입.
