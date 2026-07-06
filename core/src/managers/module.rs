@@ -1065,6 +1065,14 @@ pub fn validate_value(
             .unwrap_or_else(|| {
                 crate::i18n::t("core.error.module.unknown_validation", None, &[])
             });
+        // 거대 enum 오류 캡 — "is not one of [275개 전체]" 가 도구 결과로 그대로 가면
+        // 컨텍스트 폭탄 + 약한 모델이 목록에서 아무거나 집는 유도(2026-07-06 실측: 한투 275
+        // 액션 덤프를 보고 주문 API 를 시세용으로 선택). 앞부분만 남기고 char-경계 안전 절단.
+        const MAX_ERR_CHARS: usize = 400;
+        if first.chars().count() > MAX_ERR_CHARS {
+            let capped: String = first.chars().take(MAX_ERR_CHARS).collect();
+            return Err(format!("{capped}… (truncated)"));
+        }
         return Err(first);
     }
     Ok(())

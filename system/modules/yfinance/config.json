@@ -14,7 +14,7 @@
       "endParam": "end",
       "paramFormat": "YYYY-MM-DD",
       "dateField": "date",
-      "rows": ["$", "_cache.records"]
+      "rows": ["$", "_cache.records", "records"]
     }
   },
   "packages": ["yfinance==1.5.1"],

@@ -403,12 +403,26 @@ impl ProcessSandboxAdapter {
     ) -> serde_json::Value {
         use firebat_core::utils::timeseries as ts;
         let Some(rows) = ts::extract_rows(&data, &spec.rows_paths) else {
-            tracing::warn!(
+            // 선언 경로에 rows 없음 = 갭 fetch 가 빈 응답(주말/휴장 갭 = 정상)이거나 shape 변형.
+            // 옛엔 원본 통과 → store 가 요청 range 를 다 갖고 있어도 모델이 빈 records 를 받았다
+            // (2026-07-06 실측: store 123봉 + 주말 갭 fetch 빈 응답 → "데이터 없음" 전달).
+            // fetch 자체는 성공이므로 요청 range 를 store 에서 서빙 — store 도 비었을 때만 원본 통과.
+            let served = store.read_rows(&spec.key, spec.start, spec.end);
+            if served.is_empty() {
+                tracing::warn!(
+                    target: "timeseries",
+                    series = %spec.key,
+                    "rows not found at declared paths and store empty — original response passed"
+                );
+                return data;
+            }
+            tracing::info!(
                 target: "timeseries",
                 series = %spec.key,
-                "rows not found at declared paths — store skipped, original response passed"
+                served = served.len(),
+                "gap fetch returned no rows — serving requested range from the store"
             );
-            return data;
+            return Self::ts_serve_data(spec, served, false);
         };
         let pairs: Vec<(i64, serde_json::Value)> = rows
             .iter()
