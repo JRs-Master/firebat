@@ -241,6 +241,47 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
   return await resp.json();
 }
 
+// Standard OHLCV normalization — rename Kiwoom candle vocabulary (dt/cntr_tm/open_pric/high_pric/
+// low_pric/cur_prc/trde_qty) to the cross-broker standard {date, open, high, low, close, volume} so
+// stock_chart dataCacheKey injection, the timeseries store, and cache_grep all speak one vocabulary
+// (yfinance already does). Field-signature detection (a row carrying a date field together with
+// open_pric) — no per-action enum, so every chart/daily-price API normalizes uniformly.
+// Values arrive as strings, sometimes signed ("+68000") — strip the sign (prices/volumes are absolute).
+function kiwoomNum(v) {
+  const n = Number(String(v ?? '').replace(/^[+\\-]/, ''));
+  return Number.isFinite(n) ? n : v;
+}
+function kiwoomDate(s) {
+  s = String(s ?? '');
+  if (/^\\d{8}$/.test(s)) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
+  if (/^\\d{12,14}$/.test(s)) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) + ' ' + s.slice(8, 10) + ':' + s.slice(10, 12);
+  return s;
+}
+const CANDLE_FIELD_MAP = [
+  ['dt', 'date'], ['cntr_tm', 'date'],
+  ['open_pric', 'open'], ['high_pric', 'high'], ['low_pric', 'low'],
+  ['cur_prc', 'close'], ['trde_qty', 'volume'],
+];
+function normalizeCandleRows(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 2) return;
+  for (const v of Object.values(obj)) {
+    if (Array.isArray(v)) {
+      for (const row of v) {
+        if (!row || typeof row !== 'object') continue;
+        if (!(('dt' in row || 'cntr_tm' in row) && 'open_pric' in row)) continue;
+        for (const [src, dst] of CANDLE_FIELD_MAP) {
+          if (src in row) {
+            row[dst] = dst === 'date' ? kiwoomDate(row[src]) : kiwoomNum(row[src]);
+            if (src !== dst) delete row[src];
+          }
+        }
+      }
+    } else if (v && typeof v === 'object') {
+      normalizeCandleRows(v, depth + 1);
+    }
+  }
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -269,6 +310,7 @@ process.stdin.on('end', async () => {
     const base = isMock ? BASE_MOCK : BASE_REAL;
     const params = data.params || {};
     const result = await callApi(base, token, action, params);
+    normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
     const rc = result?.return_code;

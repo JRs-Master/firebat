@@ -240,6 +240,61 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   return await resp.json();
 }
 
+// Standard OHLCV normalization — rename KIS candle vocabulary to the cross-broker standard
+// {date, open, high, low, close, volume} so stock_chart dataCacheKey injection, the timeseries
+// store, and cache_grep all speak one vocabulary (yfinance already does). Field-signature
+// detection (no per-action enum): a row is a candle when it carries a date field together with a
+// close-price field. Covers 국내 일/주/월(stck_bsop_date+stck_clpr), 국내 분봉(stck_cntg_hour+
+// stck_prpr), 해외(xymd+clos). Values arrive as strings — Number() them.
+function kisNum(v) {
+  const n = Number(String(v ?? '').replace(/^[+\-]/, ''));
+  return Number.isFinite(n) ? n : v;
+}
+function kisDate8(s) {
+  s = String(s ?? '');
+  return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
+}
+function normalizeCandleRow(row) {
+  // 해외 기간별시세 (HHDFS76240000 류): xymd + clos (+open/high/low/tvol)
+  if ('xymd' in row && 'clos' in row) {
+    row.date = kisDate8(row.xymd); delete row.xymd;
+    row.close = kisNum(row.clos); delete row.clos;
+    if ('open' in row) row.open = kisNum(row.open);
+    if ('high' in row) row.high = kisNum(row.high);
+    if ('low' in row) row.low = kisNum(row.low);
+    if ('tvol' in row) { row.volume = kisNum(row.tvol); delete row.tvol; }
+    return;
+  }
+  // 국내: stck_bsop_date + (stck_clpr 일/주/월 | stck_prpr 분봉)
+  if ('stck_bsop_date' in row && ('stck_clpr' in row || 'stck_prpr' in row)) {
+    const day = kisDate8(row.stck_bsop_date); delete row.stck_bsop_date;
+    if ('stck_cntg_hour' in row) {
+      const t = String(row.stck_cntg_hour).padStart(6, '0');
+      row.date = day + ' ' + t.slice(0, 2) + ':' + t.slice(2, 4);
+      delete row.stck_cntg_hour;
+    } else {
+      row.date = day;
+    }
+    if ('stck_oprc' in row) { row.open = kisNum(row.stck_oprc); delete row.stck_oprc; }
+    if ('stck_hgpr' in row) { row.high = kisNum(row.stck_hgpr); delete row.stck_hgpr; }
+    if ('stck_lwpr' in row) { row.low = kisNum(row.stck_lwpr); delete row.stck_lwpr; }
+    if ('stck_clpr' in row) { row.close = kisNum(row.stck_clpr); delete row.stck_clpr; }
+    else if ('stck_prpr' in row) { row.close = kisNum(row.stck_prpr); delete row.stck_prpr; }
+    if ('acml_vol' in row) { row.volume = kisNum(row.acml_vol); delete row.acml_vol; }
+    else if ('cntg_vol' in row) { row.volume = kisNum(row.cntg_vol); delete row.cntg_vol; }
+  }
+}
+function normalizeCandles(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 2) return;
+  for (const v of Object.values(obj)) {
+    if (Array.isArray(v)) {
+      for (const row of v) { if (row && typeof row === 'object') normalizeCandleRow(row); }
+    } else if (v && typeof v === 'object') {
+      normalizeCandles(v, depth + 1);
+    }
+  }
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -269,6 +324,7 @@ process.stdin.on('end', async () => {
     const query = data.query || {};
     const body = data.body || {};
     const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
+    normalizeCandles(result);
     const meta = API_TABLE[action];
     // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
     // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).

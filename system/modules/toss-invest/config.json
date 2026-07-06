@@ -216,6 +216,6 @@
   },
   "output": {
     "type": "object",
-    "description": "액션별 result. prices → [{symbol,lastPrice,currency,timestamp}] / candles → {candles:[{timestamp,openPrice,...,volume}],nextBefore} / accounts → [{accountNo,accountSeq,accountType}] / holdings → {totalPurchaseAmount,marketValue,profitLoss,items:[...]} / create-order|modify-order|cancel-order → {orderId,clientOrderId?} / buying-power → {currency,cashBuyingPower} 등. 가격·수량은 문자열."
+    "description": "액션별 result. prices → [{symbol,lastPrice,currency,timestamp}] / candles → {candles:[{date,open,high,low,close,volume}],nextBefore} (표준 OHLCV 필드로 정규화됨) / accounts → [{accountNo,accountSeq,accountType}] / holdings → {totalPurchaseAmount,marketValue,profitLoss,items:[...]} / create-order|modify-order|cancel-order → {orderId,clientOrderId?} / buying-power → {currency,cashBuyingPower} 등. 가격·수량은 문자열."
   }
 }

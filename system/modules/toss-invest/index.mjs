@@ -156,6 +156,24 @@ process.stdin.on('end', async () => {
       console.log(JSON.stringify(out));
       return;
     }
+    // Standard OHLCV normalization — rename Toss candle fields (timestamp/openPrice/…, string
+    // values) to the cross-broker standard {date, open, high, low, close, volume} so stock_chart
+    // dataCacheKey injection, the timeseries store, and cache_grep all speak one vocabulary
+    // (yfinance/kiwoom/korea-invest mirror this). Other fields (nextBefore etc.) pass through.
+    if (action === 'candles' && res.result && Array.isArray(res.result.candles)) {
+      const num = v => { const n = Number(v); return Number.isFinite(n) ? n : v; };
+      for (const row of res.result.candles) {
+        if (!row || typeof row !== 'object') continue;
+        const ts = row.timestamp ?? row.dateTime ?? row.dt;
+        if (ts !== undefined) { row.date = String(ts); delete row.timestamp; delete row.dateTime; delete row.dt; }
+        if ('openPrice' in row) { row.open = num(row.openPrice); delete row.openPrice; }
+        if ('highPrice' in row) { row.high = num(row.highPrice); delete row.highPrice; }
+        if ('lowPrice' in row) { row.low = num(row.lowPrice); delete row.lowPrice; }
+        if ('closePrice' in row) { row.close = num(row.closePrice); delete row.closePrice; }
+        if ('volume' in row) row.volume = num(row.volume);
+        else if ('tradingVolume' in row) { row.volume = num(row.tradingVolume); delete row.tradingVolume; }
+      }
+    }
     console.log(JSON.stringify({ success: true, data: { action, name: meta?.name, result: res.result } }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
