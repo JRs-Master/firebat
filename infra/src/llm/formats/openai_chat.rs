@@ -140,10 +140,14 @@ impl FormatHandler for OpenAiChatHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
-        // Default 8192 — 모든 API 어댑터 일관 default (gemini/vertex mirror). Without this the
-        // provider's server default governs (Upstage's is small) and long outputs get cut mid-JSON.
-        body["max_tokens"] =
-            serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
+        // max_tokens = 명시 요청 시에만. chat-completions 는 completion 예산이 컨텍스트 창에
+        // **선차감**된다 — maxOutput(32000) 상시 전송은 메시지 100K+ 턴에서 400
+        // context_length_exceeded 를 냈다(실측 회귀). 생략 = 서버가 남은 공간 자동 맞춤(정답).
+        // (gemini maxOutputTokens/anthropic max_tokens 는 의미론이 달라 미러 부적절.
+        //  추출 JSON 잘림 방어는 structured outputs 가 담당.)
+        if let Some(m) = opts.max_tokens {
+            body["max_tokens"] = serde_json::Value::from(m);
+        }
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }
@@ -304,10 +308,14 @@ impl FormatHandler for OpenAiChatHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
-        // Default 8192 — 모든 API 어댑터 일관 default (gemini/vertex mirror). Without this the
-        // provider's server default governs (Upstage's is small) and long outputs get cut mid-JSON.
-        body["max_tokens"] =
-            serde_json::Value::from(opts.max_tokens.or(config.max_output).unwrap_or(8192));
+        // max_tokens = 명시 요청 시에만. chat-completions 는 completion 예산이 컨텍스트 창에
+        // **선차감**된다 — maxOutput(32000) 상시 전송은 메시지 100K+ 턴에서 400
+        // context_length_exceeded 를 냈다(실측 회귀). 생략 = 서버가 남은 공간 자동 맞춤(정답).
+        // (gemini maxOutputTokens/anthropic max_tokens 는 의미론이 달라 미러 부적절.
+        //  추출 JSON 잘림 방어는 structured outputs 가 담당.)
+        if let Some(m) = opts.max_tokens {
+            body["max_tokens"] = serde_json::Value::from(m);
+        }
         if let Some(effort) = Self::reasoning_effort(config, opts) {
             body["reasoning_effort"] = serde_json::Value::from(effort);
         }
