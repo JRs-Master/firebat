@@ -191,6 +191,16 @@
       "set_budget_failed": "set_budget failed.",
       "set_enabled_failed": "set_enabled failed.",
       "rename_unimplemented": "rename — in progress with Phase B-9."
+    },
+    "llm": {
+      "model_not_registered": "LLM model not registered: {{model}}",
+      "handler_missing": "LLM format handler not configured: {{format}}",
+      "http_failed": "HTTP request failed: {{detail}}",
+      "api_key_required": "Please enter the {{name}} API key (Settings → AI tab or API keys tab).",
+      "api_error": "{{name}} API error {{status}}: {{detail}}",
+      "api_error_compat": "{{name}} (OpenAI-compatible API) error {{status}}: {{detail}}",
+      "cli_failed": "{{name}} CLI failure ({{stage}}): {{detail}}",
+      "vertex_auth_failed": "Vertex auth failed ({{stage}}): {{detail}}"
     }
   },
   "install": {
@@ -707,5 +717,8 @@
     "cost_column_date": "Date",
     "cost_empty_message": "No LLM call records in the last {{days}} days",
     "upgrade_available_badge": "Upgrade"
+  },
+  "llm": {
+    "tool_call_marker": "[tool call: {{name}}]"
   }
 }

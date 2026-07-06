@@ -191,6 +191,16 @@
       "set_budget_failed": "set_budget 에 실패했습니다.",
       "set_enabled_failed": "set_enabled 에 실패했습니다.",
       "rename_unimplemented": "rename — Phase B-9 와 같이 진행 중입니다."
+    },
+    "llm": {
+      "model_not_registered": "LLM 모델 미등록: {{model}}",
+      "handler_missing": "LLM format 핸들러 미설정: {{format}}",
+      "http_failed": "HTTP 요청 실패: {{detail}}",
+      "api_key_required": "{{name}} API 키를 입력해주세요 (설정 → AI 탭 또는 API 키 탭).",
+      "api_error": "{{name}} API 에러 {{status}}: {{detail}}",
+      "api_error_compat": "{{name}}(OpenAI-호환 API) 에러 {{status}}: {{detail}}",
+      "cli_failed": "{{name}} CLI 실행 실패 ({{stage}}): {{detail}}",
+      "vertex_auth_failed": "Vertex 인증 실패 ({{stage}}): {{detail}}"
     }
   },
   "install": {
@@ -707,5 +717,8 @@
     "cost_column_date": "일자",
     "cost_empty_message": "최근 {{days}}일 LLM 호출 기록 없음",
     "upgrade_available_badge": "업그레이드"
+  },
+  "llm": {
+    "tool_call_marker": "[도구 호출: {{name}}]"
   }
 }

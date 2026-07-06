@@ -198,7 +198,7 @@ impl ConfigDrivenAdapter {
             .to_string();
         self.config_for(&model_id)
             .cloned()
-            .ok_or_else(|| format!("LLM 모델 미등록: {model_id}"))
+            .ok_or_else(|| firebat_core::i18n::t("core.error.llm.model_not_registered", None, &[("model", &model_id)]))
     }
 }
 
@@ -223,7 +223,7 @@ impl ILlmPort for ConfigDrivenAdapter {
         let config = self.select_config(opts)?;
         let handler = self
             .handler_for(&config.format)
-            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
+            .ok_or_else(|| firebat_core::i18n::t("core.error.llm.handler_missing", None, &[("format", &config.format)]))?;
         let api_key = self.fetch_api_key(&config);
         let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler
@@ -241,7 +241,7 @@ impl ILlmPort for ConfigDrivenAdapter {
         let config = self.select_config(opts)?;
         let handler = self
             .handler_for(&config.format)
-            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
+            .ok_or_else(|| firebat_core::i18n::t("core.error.llm.handler_missing", None, &[("format", &config.format)]))?;
         let api_key = self.fetch_api_key(&config);
         let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler
@@ -260,7 +260,7 @@ impl ILlmPort for ConfigDrivenAdapter {
         let config = self.select_config(opts)?;
         let handler = self
             .handler_for(&config.format)
-            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
+            .ok_or_else(|| firebat_core::i18n::t("core.error.llm.handler_missing", None, &[("format", &config.format)]))?;
         let api_key = self.fetch_api_key(&config);
         let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler

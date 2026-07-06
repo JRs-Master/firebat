@@ -247,7 +247,7 @@ impl CodexCliHandler {
         let output = match tokio::time::timeout(CODEX_TURN_TIMEOUT, child.wait_with_output()).await {
             Ok(r) => r.map_err(|e| {
                 cleanup_temp_file(tmp_image_path);
-                format!("Codex CLI wait 실패: {e}")
+                firebat_core::i18n::t("core.error.llm.cli_failed", None, &[("name", "Codex"), ("stage", "wait"), ("detail", &e.to_string())])
             })?,
             Err(_) => {
                 cleanup_temp_file(tmp_image_path);
@@ -400,7 +400,7 @@ impl CodexCliHandler {
                             if !outcome.thinking_acc.is_empty() {
                                 outcome.thinking_acc.push('\n');
                             }
-                            outcome.thinking_acc.push_str(&format!("[도구 호출: {}]", tool_name));
+                            outcome.thinking_acc.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &tool_name)]));
                             continue;
                         }
                         if ev_type == "item.completed" && server == "firebat" {

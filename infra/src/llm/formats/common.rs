@@ -11,16 +11,17 @@ pub use firebat_core::utils::http_client::http_client;
 pub fn require_api_key(config: &LlmModelConfig, api_key: Option<&str>) -> Result<String, String> {
     match api_key {
         Some(k) if !k.is_empty() => Ok(k.to_string()),
-        _ => Err(format!(
-            "{} API 키를 입력해주세요 (설정 → AI 탭 또는 API 키 탭).",
-            config.display_name
+        _ => Err(firebat_core::i18n::t(
+            "core.error.llm.api_key_required",
+            None,
+            &[("name", &config.display_name)],
         )),
     }
 }
 
 /// reqwest::Error → InfraResult 변환.
 pub fn map_reqwest_error<E: std::fmt::Display>(e: E) -> String {
-    format!("HTTP 요청 실패: {e}")
+    firebat_core::i18n::t("core.error.llm.http_failed", None, &[("detail", &e.to_string())])
 }
 
 /// 비용 계산 — input/output 토큰 수 + config.pricing → USD.

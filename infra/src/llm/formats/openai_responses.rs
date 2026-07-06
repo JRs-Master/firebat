@@ -109,7 +109,7 @@ impl OpenAiResponsesHandler {
                             if !thinking_text.is_empty() {
                                 thinking_text.push('\n');
                             }
-                            thinking_text.push_str(&format!("[도구 호출: {}]", name));
+                            thinking_text.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &name)]));
                         }
                         tool_calls.push(ToolCall {
                             id: call_id,
@@ -181,14 +181,18 @@ impl FormatHandler for OpenAiResponsesHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!(
-                "OpenAI Responses API 에러 {}: {}",
-                status,
-                body_json
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[
+                    ("name", "OpenAI Responses"),
+                    ("status", &status.to_string()),
+                    ("detail", body_json
                     .get("error")
                     .and_then(|e| e.get("message"))
                     .and_then(|m| m.as_str())
-                    .unwrap_or("(unknown)")
+                    .unwrap_or("(unknown)")),
+                ],
             ));
         }
         let (text, _calls, tokens_in, tokens_out, cached_tokens, _thinking) =
@@ -316,14 +320,18 @@ impl FormatHandler for OpenAiResponsesHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!(
-                "OpenAI Responses API 에러 {}: {}",
-                status,
-                body_json
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[
+                    ("name", "OpenAI Responses"),
+                    ("status", &status.to_string()),
+                    ("detail", body_json
                     .get("error")
                     .and_then(|e| e.get("message"))
                     .and_then(|m| m.as_str())
-                    .unwrap_or("(unknown)")
+                    .unwrap_or("(unknown)")),
+                ],
             ));
         }
         let (text, tool_calls, tokens_in, tokens_out, cached_tokens, thinking_text) =

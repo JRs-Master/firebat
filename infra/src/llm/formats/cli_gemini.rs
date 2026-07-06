@@ -245,7 +245,7 @@ impl GeminiCliHandler {
         let output = match tokio::time::timeout(GEMINI_TURN_TIMEOUT, child.wait_with_output()).await {
             Ok(r) => r.map_err(|e| {
                 cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-                format!("Gemini CLI wait 실패: {e}")
+                firebat_core::i18n::t("core.error.llm.cli_failed", None, &[("name", "Gemini"), ("stage", "wait"), ("detail", &e.to_string())])
             })?,
             Err(_) => {
                 cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
@@ -441,7 +441,7 @@ impl GeminiCliHandler {
                 if !outcome.thinking_acc.is_empty() {
                     outcome.thinking_acc.push('\n');
                 }
-                outcome.thinking_acc.push_str(&format!("[도구 호출: {}]", bare));
+                outcome.thinking_acc.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &bare)]));
                 if let Some(id) = tool_id {
                     pending_calls.insert(
                         id,

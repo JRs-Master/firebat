@@ -349,7 +349,7 @@ impl ClaudeCodeCliHandler {
         loop {
             let line = match tokio::time::timeout(CLAUDE_IDLE_TIMEOUT, reader.next_line()).await {
                 Ok(read_result) => match read_result
-                    .map_err(|e| format!("Claude Code CLI stdout 읽기 실패: {e}"))?
+                    .map_err(|e| firebat_core::i18n::t("core.error.llm.cli_failed", None, &[("name", "Claude Code"), ("stage", "stdout"), ("detail", &e.to_string())]))?
                 {
                     Some(line) => line,
                     None => break, // EOF — claude 정상 종료
@@ -472,7 +472,7 @@ impl ClaudeCodeCliHandler {
                                 // 도구 호출 마커도 thinking 본문에 추가 — 사용자가 turn 중 어떤 도구가
                                 // 호출됐는지 자연어로 본다. 옛 Node 의 onChunk({type:'thinking',
                                 // content:'[도구 호출: name]'}) 와 동등.
-                                let marker = format!("[도구 호출: {bare}]");
+                                let marker = firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &bare)]);
                                 if !outcome.thinking_acc.is_empty() {
                                     outcome.thinking_acc.push('\n');
                                 }
@@ -704,7 +704,7 @@ impl ClaudeCodeCliHandler {
         let status = child
             .wait()
             .await
-            .map_err(|e| format!("Claude Code CLI wait 실패: {e}"))?;
+            .map_err(|e| firebat_core::i18n::t("core.error.llm.cli_failed", None, &[("name", "Claude Code"), ("stage", "wait"), ("detail", &e.to_string())]))?;
         let stderr_buf = stderr_task.await.unwrap_or_default();
         Self::cleanup_claude_cache_files().await;
 

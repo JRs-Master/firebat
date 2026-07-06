@@ -100,7 +100,7 @@ impl GeminiNativeHandler {
                                 if !thinking_text.is_empty() {
                                     thinking_text.push('\n');
                                 }
-                                thinking_text.push_str(&format!("[도구 호출: {}]", name));
+                                thinking_text.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &name)]));
                             }
                             tool_calls.push(ToolCall {
                                 id: format!("gemini-call-{}", idx),
@@ -321,7 +321,11 @@ impl FormatHandler for GeminiNativeHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!("Gemini API 에러 {}: {}", status, body_json));
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[("name", "Gemini"), ("status", &status.to_string()), ("detail", &body_json.to_string())],
+            ));
         }
         let (text, _calls, tokens_in, tokens_out, cached_tokens, _raw, _thinking) =
             Self::parse_response(&body_json);
@@ -358,7 +362,11 @@ impl FormatHandler for GeminiNativeHandler {
         let status = response.status();
         let body_json: serde_json::Value = response.json().await.map_err(map_reqwest_error)?;
         if !status.is_success() {
-            return Err(format!("Gemini API 에러 {}: {}", status, body_json));
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[("name", "Gemini"), ("status", &status.to_string()), ("detail", &body_json.to_string())],
+            ));
         }
         let (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_text) =
             Self::parse_response(&body_json);
@@ -568,7 +576,9 @@ mod tests {
         // 새 동작 (commit d9cd9f3): function_call 인식 시 thinking_text 에 "[도구 호출: name]"
         // 마커 누적 → tool 만 있고 thought part 없어도 Some 반환. 옛 is_none 가정 갱신.
         assert!(thinking.is_some());
-        assert!(thinking.unwrap().contains("[도구 호출:"));
+        let th = thinking.unwrap();
+        // i18n 미초기화(단위 테스트) = t() 가 키 반환 — 초기화 여부 양쪽 수용.
+        assert!(th.contains("[도구 호출:") || th.contains("tool_call_marker"));
     }
 
     #[test]

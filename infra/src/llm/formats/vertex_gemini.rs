@@ -51,7 +51,7 @@ impl VertexGeminiHandler {
         config: &LlmModelConfig,
     ) -> Result<(String, String, String), String> {
         let sa: serde_json::Value = serde_json::from_str(sa_json_str)
-            .map_err(|e| format!("Vertex SA JSON 파싱 실패: {e}"))?;
+            .map_err(|e| firebat_core::i18n::t("core.error.llm.vertex_auth_failed", None, &[("stage", "sa-json"), ("detail", &e.to_string())]))?;
         let client_email = sa
             .get("client_email")
             .and_then(|v| v.as_str())
@@ -103,9 +103,9 @@ impl VertexGeminiHandler {
         });
         let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         let key = jsonwebtoken::EncodingKey::from_rsa_pem(private_key.as_bytes())
-            .map_err(|e| format!("Vertex SA private_key RSA PEM 파싱 실패: {e}"))?;
+            .map_err(|e| firebat_core::i18n::t("core.error.llm.vertex_auth_failed", None, &[("stage", "rsa-pem"), ("detail", &e.to_string())]))?;
         let jwt = jsonwebtoken::encode(&header, &claims, &key)
-            .map_err(|e| format!("Vertex SA JWT 서명 실패: {e}"))?;
+            .map_err(|e| firebat_core::i18n::t("core.error.llm.vertex_auth_failed", None, &[("stage", "jwt-sign"), ("detail", &e.to_string())]))?;
 
         // OAuth2 token endpoint — application/x-www-form-urlencoded
         let form = [
@@ -129,7 +129,7 @@ impl VertexGeminiHandler {
         let access_token = body
             .get("access_token")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Vertex OAuth2 응답에 access_token 없음: {}", body))?
+            .ok_or_else(|| firebat_core::i18n::t("core.error.llm.vertex_auth_failed", None, &[("stage", "access-token"), ("detail", &body.to_string())]))?
             .to_string();
         let expires_in = body
             .get("expires_in")
@@ -217,7 +217,7 @@ impl VertexGeminiHandler {
                                 if !thinking_text.is_empty() {
                                     thinking_text.push('\n');
                                 }
-                                thinking_text.push_str(&format!("[도구 호출: {}]", name));
+                                thinking_text.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &name)]));
                             }
                             tool_calls.push(ToolCall {
                                 id: format!("vertex-call-{}", idx),
@@ -434,7 +434,11 @@ impl FormatHandler for VertexGeminiHandler {
                     cache.clear();
                 }
             }
-            return Err(format!("Vertex API 에러 {}: {}", status, body_json));
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[("name", "Vertex"), ("status", &status.to_string()), ("detail", &body_json.to_string())],
+            ));
         }
         let (text, _calls, tokens_in, tokens_out, cached_tokens, _raw, _thinking) =
             Self::parse_response(&body_json);
@@ -486,7 +490,11 @@ impl FormatHandler for VertexGeminiHandler {
                     cache.clear();
                 }
             }
-            return Err(format!("Vertex API 에러 {}: {}", status, body_json));
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error",
+                None,
+                &[("name", "Vertex"), ("status", &status.to_string()), ("detail", &body_json.to_string())],
+            ));
         }
         let (text, tool_calls, tokens_in, tokens_out, cached_tokens, raw_parts, thinking_text) =
             Self::parse_response(&body_json);
@@ -585,6 +593,8 @@ mod tests {
         // 새 동작 (commit d9cd9f3): function_call 인식 시 thinking_text 에 "[도구 호출: name]"
         // 마커 누적 → tool 만 있고 thought part 없어도 Some 반환. 옛 is_none 가정 갱신.
         assert!(thinking.is_some());
-        assert!(thinking.unwrap().contains("[도구 호출:"));
+        let th = thinking.unwrap();
+        // i18n 미초기화(단위 테스트) = t() 가 키 반환 — 초기화 여부 양쪽 수용.
+        assert!(th.contains("[도구 호출:") || th.contains("tool_call_marker"));
     }
 }
