@@ -489,6 +489,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
   const volTicks = useMemo(() => [maxV / 2, maxV], [maxV]);  // 거래량 축 = 중간·상한 2단계 (maxV = nice 올림된 동적 상한, 라벨 항상 표시).
 
+  // 빈 데이터 가드 — 아래 파생(viewFirst.date 등)이 undefined 참조로 크래시하기 *전*에.
+  // (옛엔 이 가드가 파생 계산 뒤(514)에 있어 데이터 없는 카드가 ErrorBoundary 로 죽었음 —
+  // 2026-07-06 실측: dataCacheKey 미주입 메시지 리로드. 마지막 hook(volTicks) 뒤라 순서 안전.)
+  if (n === 0) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-[13px]">
+        차트 데이터가 없습니다.
+      </div>
+    );
+  }
+
   // 헤더는 전체 데이터 기준 (가격), 기간/고가/저가는 가시 범위 기준
   const latest = fullData[fullN - 1];
   const viewFirst = safeData[0];
@@ -510,14 +521,6 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const showSymbolChip = titleText !== symbol;
   const periodHigh = Math.max(...safeData.map(d => d.high));
   const periodLow = Math.min(...safeData.map(d => d.low));
-
-  if (n === 0) {
-    return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-[13px]">
-        차트 데이터가 없습니다.
-      </div>
-    );
-  }
 
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
