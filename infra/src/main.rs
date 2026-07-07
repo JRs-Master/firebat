@@ -657,7 +657,17 @@ async fn main() -> Result<()> {
                     embedder.clone(),
                     component_cache_port.clone(),
                 ),
-            )),
+            ))
+            // #search-tool 확장 — skills/templates/pages/media 시맨틱 카탈로그.
+            // search_skills·search_media 는 core substring 판 오버라이드(신규 = templates/pages).
+            .register_discovery_search_tools(
+                skill_file_manager.clone(),
+                template_manager.clone(),
+                page_manager.clone(),
+                media_manager.clone(),
+                embedder.clone(),
+                component_cache_port.clone(),
+            ),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.

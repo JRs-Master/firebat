@@ -26,9 +26,11 @@ pub mod render_exec;
 pub mod component_search_index;
 pub mod tool_search_index;
 pub mod dynamic_tools;
-// #search-tool — 공용 시맨틱 카탈로그 엔진(S1) + 모듈 액션 카탈로그(S2).
+// #search-tool — 공용 시맨틱 카탈로그 엔진(S1) + 모듈 액션 카탈로그(S2) + 도메인 카탈로그
+// (skills/templates/pages/media — 수백 개 스케일 대비 시맨틱 발견).
 pub mod semantic_catalog;
 pub mod action_catalog;
+pub mod domain_catalogs;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -455,7 +457,7 @@ impl AiManager {
                     .map(|n| n as usize);
                 let opts = crate::managers::ai::component_search_index::ComponentSearchOpts { limit };
                 let matches =
-                    crate::managers::ai::component_search_index::query(embedder.as_ref(), cache.as_ref(), &query, opts)
+                    crate::managers::ai::component_search_index::query(embedder.clone(), cache.clone(), &query, opts)
                         .await?;
                 Ok(serde_json::json!({
                     "components": matches,
@@ -563,6 +565,214 @@ impl AiManager {
                     "action": { "type": "string", "description": "action id from search_module_actions (e.g. ka10081)" }
                 },
                 "required": ["module", "action"],
+            }),
+            source: "core".to_string(),
+        });
+        self
+    }
+
+    /// Domain discovery catalogs (#search-tool 확장) — skills/templates/pages/media 시맨틱 검색.
+    /// search_skills·search_media 는 core 등록(substring 판)을 **오버라이드**(register_handler =
+    /// HashMap insert = last wins; MCP auto-sync 프록시는 ToolManager dispatch 위임이라 자동 전파).
+    /// search_templates·search_pages 는 신설. 전부 source="core" = hosted MCP auto-sync.
+    ///
+    /// Owner scoping: 인덱스 = system + admin 코퍼스만(스케일 주체). hub 세션은 skills=["system:"]
+    /// / 나머지=[](빈 결과) — admin 자료 누수 0, per-session 임베딩 churn 0 (hub 자기 자료는
+    /// list/index 도구가 커버, 세션 자료는 원래 소수).
+    pub fn register_discovery_search_tools(
+        self,
+        skills: Arc<crate::managers::skill_file::SkillFileManager>,
+        templates: Arc<crate::managers::template::TemplateManager>,
+        pages: Arc<crate::managers::page::PageManager>,
+        media_mgr: Arc<crate::managers::media::MediaManager>,
+        embedder: Arc<dyn crate::ports::IEmbedderPort>,
+        cache_port: Arc<dyn crate::ports::IEmbedderCachePort>,
+    ) -> Self {
+        use crate::managers::ai::domain_catalogs::*;
+        use crate::managers::ai::semantic_catalog::RefreshingCatalog;
+        const TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+        fn is_hub_call(args: &serde_json::Value) -> bool {
+            args.get("_hubScope")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+        }
+        fn q_of(args: &serde_json::Value) -> String {
+            args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string()
+        }
+        fn lim_of(args: &serde_json::Value) -> usize {
+            (args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize).clamp(1, 20)
+        }
+
+        // ── search_skills (semantic 승격 — 옛 substring 판 오버라이드) ──
+        let skill_cat = Arc::new(RefreshingCatalog::new(
+            "skill-catalog",
+            embedder.clone(),
+            cache_port.clone(),
+            Arc::new(SkillCatalogSource { skills }),
+            TTL,
+        ));
+        let sc = skill_cat.clone();
+        let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = sc.clone();
+            async move {
+                let scopes: Vec<String> = if is_hub_call(&args) {
+                    vec!["system:".into()]
+                } else {
+                    vec!["system:".into(), "admin:".into()]
+                };
+                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let rows: Vec<serde_json::Value> = hits
+                    .into_iter()
+                    .map(|m| serde_json::json!({
+                        "slug": m.extra.get("slug").cloned().unwrap_or_default(),
+                        "name": m.name,
+                        "kind": m.extra.get("kind").cloned().unwrap_or_default(),
+                        "description": m.description,
+                        "score": m.score,
+                    }))
+                    .collect();
+                Ok(serde_json::json!({ "skills": rows, "count": rows.len(), "next": "get_skill(slug) for the full manual" }))
+            }
+        });
+        self.tools.register_handler("search_skills", handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "search_skills".to_string(),
+            description: "Semantic search over skill manuals (case playbooks — how to use tools/templates for a task). Describe the task in natural language; matches by meaning, not just substring. Use when the <SKILLS_AVAILABLE> index is truncated or the right slug isn't obvious. Next: get_skill(slug).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "task description (natural language)" },
+                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                },
+                "required": ["query"],
+            }),
+            source: "core".to_string(),
+        });
+
+        // ── search_templates (신설) ──
+        let tpl_cat = Arc::new(RefreshingCatalog::new(
+            "template-catalog",
+            embedder.clone(),
+            cache_port.clone(),
+            Arc::new(TemplateCatalogSource { templates }),
+            TTL,
+        ));
+        let tc = tpl_cat.clone();
+        let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = tc.clone();
+            async move {
+                let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
+                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let rows: Vec<serde_json::Value> = hits
+                    .into_iter()
+                    .map(|m| serde_json::json!({
+                        "slug": m.extra.get("slug").cloned().unwrap_or_default(),
+                        "name": m.name,
+                        "description": m.description,
+                        "tags": m.extra.get("tags").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                        "score": m.score,
+                    }))
+                    .collect();
+                Ok(serde_json::json!({ "templates": rows, "count": rows.len(), "next": "get_template(slug) for the spec skeleton" }))
+            }
+        });
+        self.tools.register_handler("search_templates", handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "search_templates".to_string(),
+            description: "Semantic search over page templates (reusable page skeletons). Describe the page you need (e.g. daily stock report, weekly weather digest); matches name/description/tags by meaning. Use before building a recurring-format page — prefer a matching template over building from scratch. Next: get_template(slug).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "what kind of page you need" },
+                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                },
+                "required": ["query"],
+            }),
+            source: "core".to_string(),
+        });
+
+        // ── search_pages (신설) ──
+        let page_cat = Arc::new(RefreshingCatalog::new(
+            "page-catalog",
+            embedder.clone(),
+            cache_port.clone(),
+            Arc::new(PageCatalogSource { pages }),
+            TTL,
+        ));
+        let pc = page_cat.clone();
+        let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = pc.clone();
+            async move {
+                let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
+                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let rows: Vec<serde_json::Value> = hits
+                    .into_iter()
+                    .map(|m| serde_json::json!({
+                        "slug": m.extra.get("slug").cloned().unwrap_or_default(),
+                        "title": m.name,
+                        "project": m.extra.get("project").cloned().unwrap_or_default(),
+                        "status": m.extra.get("status").cloned().unwrap_or_default(),
+                        "score": m.score,
+                    }))
+                    .collect();
+                Ok(serde_json::json!({ "pages": rows, "count": rows.len(), "next": "get_page(slug) for the full spec" }))
+            }
+        });
+        self.tools.register_handler("search_pages", handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "search_pages".to_string(),
+            description: "Semantic search over published pages by title/excerpt (meaning, not substring). Use to find an existing page before creating/updating one (avoid duplicate slugs, link related pages). Next: get_page(slug).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "page topic or title fragment" },
+                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                },
+                "required": ["query"],
+            }),
+            source: "core".to_string(),
+        });
+
+        // ── search_media (semantic 승격 — 옛 substring 판 오버라이드) ──
+        let media_cat = Arc::new(RefreshingCatalog::new(
+            "media-catalog",
+            embedder.clone(),
+            cache_port.clone(),
+            Arc::new(MediaCatalogSource { media: media_mgr }),
+            TTL,
+        ));
+        let mc = media_cat.clone();
+        let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let cat = mc.clone();
+            async move {
+                let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
+                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let rows: Vec<serde_json::Value> = hits
+                    .into_iter()
+                    .map(|m| serde_json::json!({
+                        "slug": m.extra.get("slug").cloned().unwrap_or_default(),
+                        "name": m.name,
+                        "prompt": m.description.chars().take(160).collect::<String>(),
+                        "contentType": m.extra.get("contentType").cloned().unwrap_or_default(),
+                        "score": m.score,
+                    }))
+                    .collect();
+                Ok(serde_json::json!({ "media": rows, "count": rows.len() }))
+            }
+        });
+        self.tools.register_handler("search_media", handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "search_media".to_string(),
+            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "what the image is about" },
+                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                },
+                "required": ["query"],
             }),
             source: "core".to_string(),
         });
@@ -1111,7 +1321,7 @@ impl AiManager {
                         const LIB_INDEX_CAP: usize = 4000;
                         let body = if index.chars().count() > LIB_INDEX_CAP {
                             let t: String = index.chars().take(LIB_INDEX_CAP).collect();
-                            format!("{t}\n… (truncated)")
+                            format!("{t}\n… (truncated — more references exist; search_library covers them all)")
                         } else {
                             index
                         };

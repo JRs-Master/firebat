@@ -156,33 +156,59 @@ impl SemanticCatalog {
         self.state.read().await.entries.len()
     }
 
-    /// Cosine top-K over the catalog. `id_prefix` scopes the search (e.g. `"kiwoom:"` =
-    /// that module only) — cheap structural filter, no closure API.
+    /// Hybrid top-K over the catalog: cosine + lexical boost. `scopes` = allowed id-prefix set
+    /// (owner scoping / per-module filter); None = everything.
+    ///
+    /// Lexical boost fixes the pure-dense hole where an EXACT id/name query ("ka10081") carries
+    /// weak embedding signal and can miss top-K: exact id/name equality pins the entry to the top
+    /// (+0.5), and substring containment between query and id/name (either direction, len ≥ 2)
+    /// gets a small nudge (+0.15). Mirrors the dense+sparse idea of search_library, sized for
+    /// short catalog names (no BM25 needed).
     pub async fn query(
         &self,
         user_query: &str,
         limit: usize,
-        id_prefix: Option<&str>,
+        scopes: Option<&[String]>,
     ) -> InfraResult<Vec<CatalogMatch>> {
         if user_query.trim().is_empty() {
             return Ok(Vec::new());
         }
+        if let Some(s) = scopes {
+            if s.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
         let q = self.embedder.embed_query(user_query).await?;
+        let q_lower = user_query.trim().to_lowercase();
         let state = self.state.read().await;
         let mut scored: Vec<CatalogMatch> = Vec::new();
         for e in &state.entries {
-            if let Some(p) = id_prefix {
-                if !e.id.starts_with(p) {
+            if let Some(allowed) = scopes {
+                if !allowed.iter().any(|p| e.id.starts_with(p.as_str())) {
                     continue;
                 }
             }
             let Some(v) = state.vectors.get(&e.id) else { continue };
+            let mut score = cosine(&q, v);
+            // lexical boost — id is "{scope}:{key}"; match on the key part + the name.
+            let key = e.id.rsplit(':').next().unwrap_or(&e.id).to_lowercase();
+            let name_lower = e.name.to_lowercase();
+            if key == q_lower || name_lower == q_lower {
+                score += 0.5;
+            } else if q_lower.len() >= 2
+                && (q_lower.contains(&key)
+                    || key.contains(&q_lower)
+                    || name_lower.contains(&q_lower)
+                    || (name_lower.len() >= 2 && q_lower.contains(&name_lower)))
+            {
+                score += 0.15;
+            }
             scored.push(CatalogMatch {
                 id: e.id.clone(),
                 name: e.name.clone(),
                 description: e.description.clone(),
                 extra: e.extra.clone(),
-                score: cosine(&q, v),
+                score,
             });
         }
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
@@ -209,6 +235,74 @@ impl SemanticCatalog {
             .entries
             .iter()
             .any(|e| e.id.starts_with(prefix))
+    }
+}
+
+/// A catalog data source — enumerates the current entries (e.g. skills on disk, module
+/// action declarations). Consumed by `RefreshingCatalog` on TTL rebuild.
+#[async_trait::async_trait]
+pub trait CatalogSource: Send + Sync {
+    async fn load(&self) -> Vec<CatalogEntry>;
+}
+
+/// SemanticCatalog + a TTL-gated source rebuild — the standard shape for dynamic domains
+/// (skills/templates/pages/media/module-actions). Rebuild re-reads the source but only
+/// re-embeds entries whose text changed (sha1 disk cache), so a 5-min TTL is nearly free.
+pub struct RefreshingCatalog {
+    catalog: SemanticCatalog,
+    source: Arc<dyn CatalogSource>,
+    ttl: std::time::Duration,
+    built_at: tokio::sync::Mutex<Option<std::time::Instant>>,
+}
+
+impl RefreshingCatalog {
+    pub fn new(
+        cache_file_stem: &str,
+        embedder: Arc<dyn IEmbedderPort>,
+        cache_port: Arc<dyn IEmbedderCachePort>,
+        source: Arc<dyn CatalogSource>,
+        ttl: std::time::Duration,
+    ) -> Self {
+        Self {
+            catalog: SemanticCatalog::new(cache_file_stem, embedder, cache_port),
+            source,
+            ttl,
+            built_at: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    async fn ensure(&self) {
+        {
+            let built = self.built_at.lock().await;
+            if let Some(t) = *built {
+                if t.elapsed() < self.ttl {
+                    return;
+                }
+            }
+        }
+        let entries = self.source.load().await;
+        self.catalog.set_entries(entries).await;
+        *self.built_at.lock().await = Some(std::time::Instant::now());
+    }
+
+    pub async fn query(
+        &self,
+        user_query: &str,
+        limit: usize,
+        scopes: Option<&[String]>,
+    ) -> InfraResult<Vec<CatalogMatch>> {
+        self.ensure().await;
+        self.catalog.query(user_query, limit, scopes).await
+    }
+
+    pub async fn get(&self, id: &str) -> Option<CatalogEntry> {
+        self.ensure().await;
+        self.catalog.get(id).await
+    }
+
+    pub async fn has_prefix(&self, prefix: &str) -> bool {
+        self.ensure().await;
+        self.catalog.get_first_with_prefix(prefix).await
     }
 }
 

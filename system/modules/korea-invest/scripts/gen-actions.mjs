@@ -36,6 +36,9 @@ const actions = apis
       name: a.name,
       description: cap(a.name, 60),
       domain: a.menu || '',
+      method: a.method || undefined,
+      path: a.path || undefined,
+      trId: a.trIdReal || undefined,
       params,
     };
   });

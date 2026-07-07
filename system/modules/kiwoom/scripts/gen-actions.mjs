@@ -32,6 +32,8 @@ const actions = apis
       name: a.name,
       description: cap(a.name, 60),
       domain,
+      method: a.method || undefined,
+      path: a.path || undefined,
       params,
     };
   });

@@ -4,6 +4,8 @@
   "name": "접근토큰 발급",
   "description": "접근토큰 발급",
   "domain": "OAuth 인증/접근토큰발급",
+  "method": "POST",
+  "path": "/oauth2/token",
   "params": {
    "grant_type": "grant_type (필수) — client_credentials 입력",
    "appkey": "앱키 (필수)",
@@ -15,6 +17,8 @@
   "name": "접근토큰폐기",
   "description": "접근토큰폐기",
   "domain": "OAuth 인증/접근토큰폐기",
+  "method": "POST",
+  "path": "/oauth2/revoke",
   "params": {
    "appkey": "앱키 (필수)",
    "secretkey": "시크릿키 (필수)",
@@ -26,6 +30,8 @@
   "name": "계좌번호조회",
   "description": "계좌번호조회",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {}
  },
  {
@@ -33,6 +39,8 @@
   "name": "실시간종목조회순위",
   "description": "실시간종목조회순위",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "qry_tp": "구분 (필수) — 1:1분, 2:10분, 3:1시간, 4:당일 누적, 5:30초"
   }
@@ -42,6 +50,8 @@
   "name": "일별잔고수익률",
   "description": "일별잔고수익률",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "qry_dt": "조회일자 (필수)"
   }
@@ -51,6 +61,8 @@
   "name": "주식기본정보요청",
   "description": "주식기본정보요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -60,6 +72,8 @@
   "name": "주식거래원요청",
   "description": "주식거래원요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -69,6 +83,8 @@
   "name": "체결정보요청",
   "description": "체결정보요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -78,6 +94,8 @@
   "name": "주식호가요청",
   "description": "주식호가요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -87,6 +105,8 @@
   "name": "주식일주월시분요청",
   "description": "주식일주월시분요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -96,6 +116,8 @@
   "name": "주식시분요청",
   "description": "주식시분요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -105,6 +127,8 @@
   "name": "시세표성정보요청",
   "description": "시세표성정보요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -114,6 +138,8 @@
   "name": "주식외국인종목별매매동향",
   "description": "주식외국인종목별매매동향",
   "domain": "국내주식/기관/외국인",
+  "method": "POST",
+  "path": "/api/dostk/frgnistt",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -123,6 +149,8 @@
   "name": "주식기관요청",
   "description": "주식기관요청",
   "domain": "국내주식/기관/외국인",
+  "method": "POST",
+  "path": "/api/dostk/frgnistt",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -132,6 +160,8 @@
   "name": "업종프로그램요청",
   "description": "업종프로그램요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -141,6 +171,8 @@
   "name": "신주인수권전체시세요청",
   "description": "신주인수권전체시세요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "newstk_recvrht_tp": "신주인수권구분 (필수) — 00:전체, 05:신주인수권증권, 07:신주인수권증서"
   }
@@ -150,6 +182,8 @@
   "name": "신용매매동향요청",
   "description": "신용매매동향요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "dt": "일자 (필수) — YYYYMMDD",
@@ -161,6 +195,8 @@
   "name": "공매도추이요청",
   "description": "공매도추이요청",
   "domain": "국내주식/공매도",
+  "method": "POST",
+  "path": "/api/dostk/shsa",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "tm_tp": "시간구분 — 0:시작일, 1:기간",
@@ -173,6 +209,8 @@
   "name": "일별거래상세요청",
   "description": "일별거래상세요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 (필수) — YYYYMMDD"
@@ -183,6 +221,8 @@
   "name": "신고저가요청",
   "description": "신고저가요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "ntl_tp": "신고저구분 (필수) — 1:신고가,2:신저가",
@@ -200,6 +240,8 @@
   "name": "상하한가요청",
   "description": "상하한가요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "updown_tp": "상하한구분 (필수) — 1:상한, 2:상승, 3:보합, 4: 하한, 5:하락, 6:전일상한, 7:전일하한",
@@ -216,6 +258,8 @@
   "name": "고저가근접요청",
   "description": "고저가근접요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "high_low_tp": "고저구분 (필수) — 1:고가, 2:저가",
    "alacc_rt": "근접율 (필수) — 05:0.5 10:1.0, 15:1.5, 20:2.0. 25:2.5, 30:3.0",
@@ -231,6 +275,8 @@
   "name": "가격급등락요청",
   "description": "가격급등락요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥, 201:코스피200",
    "flu_tp": "등락구분 (필수) — 1:급등, 2:급락",
@@ -249,6 +295,8 @@
   "name": "호가잔량상위요청",
   "description": "호가잔량상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 001:코스피, 101:코스닥",
    "sort_tp": "정렬구분 (필수) — 1:순매수잔량순, 2:순매도잔량순, 3:매수비율순, 4:매도비율순",
@@ -263,6 +311,8 @@
   "name": "호가잔량급증요청",
   "description": "호가잔량급증요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 001:코스피, 101:코스닥",
    "trde_tp": "매매구분 (필수) — 1:매수잔량, 2:매도잔량",
@@ -278,6 +328,8 @@
   "name": "잔량율급증요청",
   "description": "잔량율급증요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 001:코스피, 101:코스닥",
    "rt_tp": "비율구분 (필수) — 1:매수/매도비율, 2:매도/매수비율",
@@ -292,6 +344,8 @@
   "name": "거래량급증요청",
   "description": "거래량급증요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "sort_tp": "정렬구분 (필수) — 1:급증량, 2:급증률, 3:급감량, 4:급감률",
@@ -308,6 +362,8 @@
   "name": "거래량갱신요청",
   "description": "거래량갱신요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "cycle_tp": "주기구분 (필수) — 5:5일, 10:10일, 20:20일, 60:60일, 250:250일",
@@ -320,6 +376,8 @@
   "name": "매물대집중요청",
   "description": "매물대집중요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "prps_cnctr_rt": "매물집중비율 (필수) — 0~100 입력",
@@ -334,6 +392,8 @@
   "name": "고저PER요청",
   "description": "고저PER요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "pertp": "PER구분 (필수) — 1:저PBR, 2:고PBR, 3:저PER, 4:고PER, 5:저ROE, 6:고ROE",
    "stex_tp": "거래소구분 (필수) — 1:KRX, 2:NXT 3.통합"
@@ -344,6 +404,8 @@
   "name": "전일대비등락률상위요청",
   "description": "전일대비등락률상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "sort_tp": "정렬구분 (필수) — 1:상승률, 2:상승폭, 3:하락률, 4:하락폭, 5:보합",
@@ -361,6 +423,8 @@
   "name": "시가대비등락률요청",
   "description": "시가대비등락률요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "sort_tp": "정렬구분 (필수) — 1:시가, 2:고가, 3:저가, 4:기준가",
    "trde_qty_cnd": "거래량조건 (필수) — 0000:전체조회, 0010:만주이상, 0050:5만주이상, 0100:10만주이상, 0500:50만주이상, 1000:백만주이상",
@@ -378,6 +442,8 @@
   "name": "예상체결등락률상위요청",
   "description": "예상체결등락률상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "sort_tp": "정렬구분 (필수) — 1:상승률, 2:상승폭, 3:보합, 4:하락률, 5:하락폭, 6:체결량, 7:상한, 8:하한",
@@ -393,6 +459,8 @@
   "name": "당일거래량상위요청",
   "description": "당일거래량상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "sort_tp": "정렬구분 (필수) — 1:거래량, 2:거래회전율, 3:거래대금",
@@ -410,6 +478,8 @@
   "name": "전일거래량상위요청",
   "description": "전일거래량상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "qry_tp": "조회구분 (필수) — 1:전일거래량 상위100종목, 2:전일거래대금 상위100종목",
@@ -423,6 +493,8 @@
   "name": "거래대금상위요청",
   "description": "거래대금상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "mang_stk_incls": "관리종목포함 (필수) — 0:관리종목 미포함, 1:관리종목 포함",
@@ -434,6 +506,8 @@
   "name": "신용비율상위요청",
   "description": "신용비율상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "trde_qty_tp": "거래량구분 (필수) — 0:전체조회, 10:만주이상, 50:5만주이상, 100:10만주이상, 200:20만주이상, 300:30만주이상, 500:50만주이상, 1000:…",
@@ -448,6 +522,8 @@
   "name": "외인기간별매매상위요청",
   "description": "외인기간별매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "trde_tp": "매매구분 (필수) — 1:순매도, 2:순매수, 3:순매매",
@@ -460,6 +536,8 @@
   "name": "외인연속순매매상위요청",
   "description": "외인연속순매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "trde_tp": "매매구분 (필수) — 1:연속순매도, 2:연속순매수",
@@ -472,6 +550,8 @@
   "name": "외인한도소진율증가상위",
   "description": "외인한도소진율증가상위",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "dt": "기간 (필수) — 0:당일, 1:전일, 5:5일, 10;10일, 20:20일, 60:60일",
@@ -483,6 +563,8 @@
   "name": "외국계창구매매상위요청",
   "description": "외국계창구매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "dt": "기간 (필수) — 0:당일, 1:전일, 5:5일, 10;10일, 20:20일, 60:60일",
@@ -496,6 +578,8 @@
   "name": "종목별증권사순위요청",
   "description": "종목별증권사순위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
@@ -509,6 +593,8 @@
   "name": "증권사별매매상위요청",
   "description": "증권사별매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mmcm_cd": "회원사코드 (필수) — 회원사 코드는 ka10102 조회",
    "trde_qty_tp": "거래량구분 (필수) — 0:전체, 5:5000주, 10:1만주, 50:5만주, 100:10만주, 500:50만주, 1000: 100만주",
@@ -522,6 +608,8 @@
   "name": "당일주요거래원요청",
   "description": "당일주요거래원요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -531,6 +619,8 @@
   "name": "순매수거래원순위요청",
   "description": "순매수거래원순위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
@@ -546,6 +636,8 @@
   "name": "거래원매물대분석요청",
   "description": "거래원매물대분석요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
@@ -563,6 +655,8 @@
   "name": "일별기관매매종목요청",
   "description": "일별기관매매종목요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
    "end_dt": "종료일자 (필수) — YYYYMMDD",
@@ -576,6 +670,8 @@
   "name": "종목별기관매매추이요청",
   "description": "종목별기관매매추이요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
@@ -589,6 +685,8 @@
   "name": "체결강도추이시간별요청",
   "description": "체결강도추이시간별요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -598,6 +696,8 @@
   "name": "체결강도추이일별요청",
   "description": "체결강도추이일별요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -607,6 +707,8 @@
   "name": "ELW일별민감도지표요청",
   "description": "ELW일별민감도지표요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -616,6 +718,8 @@
   "name": "ELW민감도지표요청",
   "description": "ELW민감도지표요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -625,6 +729,8 @@
   "name": "업종별투자자순매수요청",
   "description": "업종별투자자순매수요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 코스피:0, 코스닥:1",
    "amt_qty_tp": "금액수량구분 (필수) — 금액:0, 수량:1",
@@ -637,6 +743,8 @@
   "name": "거래원순간거래량요청",
   "description": "거래원순간거래량요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mmcm_cd": "회원사코드 (필수) — 회원사 코드는 ka10102 조회",
    "stk_cd": "종목코드 — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -651,6 +759,8 @@
   "name": "당일상위이탈원요청",
   "description": "당일상위이탈원요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -660,6 +770,8 @@
   "name": "변동성완화장치발동종목요청",
   "description": "변동성완화장치발동종목요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001: 코스피, 101:코스닥",
    "bf_mkrt_tp": "장전구분 (필수) — 0:전체, 1:정규시장,2:시간외단일가",
@@ -681,6 +793,8 @@
   "name": "당일전일체결량요청",
   "description": "당일전일체결량요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "tdy_pred": "당일전일 (필수) — 1:당일, 2:전일"
@@ -691,6 +805,8 @@
   "name": "투자자별일별매매종목요청",
   "description": "투자자별일별매매종목요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
    "end_dt": "종료일자 (필수) — YYYYMMDD",
@@ -705,6 +821,8 @@
   "name": "종목별투자자기관별요청",
   "description": "종목별투자자기관별요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "dt": "일자 (필수) — YYYYMMDD",
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -718,6 +836,8 @@
   "name": "종목별투자자기관별차트요청",
   "description": "종목별투자자기관별차트요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "dt": "일자 (필수) — YYYYMMDD",
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -731,6 +851,8 @@
   "name": "종목별투자자기관별합계요청",
   "description": "종목별투자자기관별합계요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
@@ -745,6 +867,8 @@
   "name": "동일순매매순위요청",
   "description": "동일순매매순위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
    "end_dt": "종료일자 — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
@@ -760,6 +884,8 @@
   "name": "장중투자자별매매요청",
   "description": "장중투자자별매매요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "amt_qty_tp": "금액수량구분 (필수) — 1: 금액&수량",
@@ -774,6 +900,8 @@
   "name": "장중투자자별매매차트요청",
   "description": "장중투자자별매매차트요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액, 2:수량",
@@ -786,6 +914,8 @@
   "name": "장중투자자별매매상위요청",
   "description": "장중투자자별매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "trde_tp": "매매구분 (필수) — 1:순매수, 2:순매도",
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
@@ -798,6 +928,8 @@
   "name": "장마감후투자자별매매요청",
   "description": "장마감후투자자별매매요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액, 2:수량",
@@ -810,6 +942,8 @@
   "name": "대차거래추이요청",
   "description": "대차거래추이요청",
   "domain": "국내주식/대차거래",
+  "method": "POST",
+  "path": "/api/dostk/slb",
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD",
@@ -821,6 +955,8 @@
   "name": "대차거래상위10종목요청",
   "description": "대차거래상위10종목요청",
   "domain": "국내주식/대차거래",
+  "method": "POST",
+  "path": "/api/dostk/slb",
   "params": {
    "strt_dt": "시작일자 (필수) — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
    "end_dt": "종료일자 — YYYYMMDD (연도4자리, 월 2자리, 일 2자리 형식)",
@@ -832,6 +968,8 @@
   "name": "일자별종목별실현손익요청_일자",
   "description": "일자별종목별실현손익요청_일자",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목코드",
    "strt_dt": "시작일자 (필수) — YYYYMMDD"
@@ -842,6 +980,8 @@
   "name": "일자별종목별실현손익요청_기간",
   "description": "일자별종목별실현손익요청_기간",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목코드",
    "strt_dt": "시작일자 (필수) — YYYYMMDD",
@@ -853,6 +993,8 @@
   "name": "일자별실현손익요청",
   "description": "일자별실현손익요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "strt_dt": "시작일자 (필수)",
    "end_dt": "종료일자 (필수)"
@@ -863,6 +1005,8 @@
   "name": "미체결요청",
   "description": "미체결요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "all_stk_tp": "전체종목구분 (필수) — 0:전체, 1:종목",
    "trde_tp": "매매구분 (필수) — 0:전체, 1:매도, 2:매수",
@@ -875,6 +1019,8 @@
   "name": "체결요청",
   "description": "체결요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목코드",
    "qry_tp": "조회구분 (필수) — 0:전체, 1:종목",
@@ -888,6 +1034,8 @@
   "name": "당일실현손익상세요청",
   "description": "당일실현손익상세요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -897,6 +1045,8 @@
   "name": "증권사별종목매매동향요청",
   "description": "증권사별종목매매동향요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "mmcm_cd": "회원사코드 (필수) — 회원사 코드는 ka10102 조회",
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -909,6 +1059,8 @@
   "name": "주식틱차트조회요청",
   "description": "주식틱차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱",
@@ -920,6 +1072,8 @@
   "name": "주식분봉차트조회요청",
   "description": "주식분봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "tic_scope": "틱범위 (필수) — 1:1분, 3:3분, 5:5분, 10:10분, 15:15분, 30:30분, 45:45분, 60:60분",
@@ -932,6 +1086,8 @@
   "name": "주식일봉차트조회요청",
   "description": "주식일봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -943,6 +1099,8 @@
   "name": "주식주봉차트조회요청",
   "description": "주식주봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -954,6 +1112,8 @@
   "name": "주식월봉차트조회요청",
   "description": "주식월봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -965,6 +1125,8 @@
   "name": "당일전일체결요청",
   "description": "당일전일체결요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "tdy_pred": "당일전일 (필수) — 당일 : 1, 전일 : 2",
@@ -977,6 +1139,8 @@
   "name": "계좌수익률요청",
   "description": "계좌수익률요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stex_tp": "거래소구분 (필수) — 0 : 통합, 1 : KRX, 2 : NXT"
   }
@@ -986,6 +1150,8 @@
   "name": "일별주가요청",
   "description": "일별주가요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "qry_dt": "조회일자 (필수) — YYYYMMDD",
@@ -997,6 +1163,8 @@
   "name": "시간외단일가요청",
   "description": "시간외단일가요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1006,6 +1174,8 @@
   "name": "미체결 분할주문 상세",
   "description": "미체결 분할주문 상세",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_no": "주문번호 (필수)"
   }
@@ -1015,6 +1185,8 @@
   "name": "주식년봉차트조회요청",
   "description": "주식년봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -1026,6 +1198,8 @@
   "name": "관심종목정보요청",
   "description": "관심종목정보요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL) 여러개의 종목코드 입력시 | 로 구분"
   }
@@ -1035,6 +1209,8 @@
   "name": "시간외단일가등락율순위요청",
   "description": "시간외단일가등락율순위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체,001:코스피,101:코스닥",
    "sort_base": "정렬기준 (필수) — 1:상승률, 2:상승폭, 3:하락률, 4:하락폭, 5:보합",
@@ -1049,6 +1225,8 @@
   "name": "종목정보 리스트",
   "description": "종목정보 리스트",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 0 : 코스피, 10 : 코스닥, 30 : K-OTC, 50 : 코넥스, 60 : ETN, 70 : 손실제한 ETN, 80 : 금현물, 90 :…"
   }
@@ -1058,6 +1236,8 @@
   "name": "종목정보 조회",
   "description": "종목정보 조회",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1067,6 +1247,8 @@
   "name": "업종코드 리스트",
   "description": "업종코드 리스트",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 0:코스피(거래소),1:코스닥,2:KOSPI200,4:KOSPI100,7:KRX100(통합지수)"
   }
@@ -1076,6 +1258,8 @@
   "name": "회원사 리스트",
   "description": "회원사 리스트",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {}
  },
  {
@@ -1083,6 +1267,8 @@
   "name": "기관외국인연속매매현황요청",
   "description": "기관외국인연속매매현황요청",
   "domain": "국내주식/기관/외국인",
+  "method": "POST",
+  "path": "/api/dostk/frgnistt",
   "params": {
    "dt": "기간 (필수) — 1:최근일, 3:3일, 5:5일, 10:10일, 20:20일, 120:120일, 0:시작일자/종료일자로 조회",
    "strt_dt": "시작일자 — YYYYMMDD",
@@ -1099,6 +1285,8 @@
   "name": "당일매매일지요청",
   "description": "당일매매일지요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "base_dt": "기준일자 — YYYYMMDD(공백입력시 금일데이터,최근 2개월까지 제공)",
    "ottks_tp": "단주구분 (필수) — 1:당일매수에 대한 당일매도,2:당일매도 전체",
@@ -1110,6 +1298,8 @@
   "name": "조건검색 목록조회",
   "description": "조건검색 목록조회",
   "domain": "국내주식/조건검색",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "TR명 (필수) — CNSRLST고정값"
   }
@@ -1119,6 +1309,8 @@
   "name": "조건검색 요청 일반",
   "description": "조건검색 요청 일반",
   "domain": "국내주식/조건검색",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — CNSRREQ 고정값",
    "seq": "조건검색식 일련번호 (필수)",
@@ -1133,6 +1325,8 @@
   "name": "조건검색 요청 실시간",
   "description": "조건검색 요청 실시간",
   "domain": "국내주식/조건검색",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — CNSRREQ 고정값",
    "seq": "조건검색식 일련번호 (필수)",
@@ -1145,6 +1339,8 @@
   "name": "조건검색 실시간 해제",
   "description": "조건검색 실시간 해제",
   "domain": "국내주식/조건검색",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — CNSRCLR 고정값",
    "seq": "조건검색식 일련번호 (필수)"
@@ -1155,6 +1351,8 @@
   "name": "업종현재가요청",
   "description": "업종현재가요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 0:코스피, 1:코스닥, 2:코스피200",
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…"
@@ -1165,6 +1363,8 @@
   "name": "업종별주가요청",
   "description": "업종별주가요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 0:코스피, 1:코스닥, 2:코스피200",
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
@@ -1176,6 +1376,8 @@
   "name": "전업종지수요청",
   "description": "전업종지수요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 101:종합(KOSDAQ)"
   }
@@ -1185,6 +1387,8 @@
   "name": "업종틱차트조회요청",
   "description": "업종틱차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱"
@@ -1195,6 +1399,8 @@
   "name": "업종분봉조회요청",
   "description": "업종분봉조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱",
@@ -1206,6 +1412,8 @@
   "name": "업종일봉조회요청",
   "description": "업종일봉조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1216,6 +1424,8 @@
   "name": "업종주봉조회요청",
   "description": "업종주봉조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1226,6 +1436,8 @@
   "name": "업종월봉조회요청",
   "description": "업종월봉조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1236,6 +1448,8 @@
   "name": "업종현재가일별요청",
   "description": "업종현재가일별요청",
   "domain": "국내주식/업종",
+  "method": "POST",
+  "path": "/api/dostk/sect",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 0:코스피, 1:코스닥, 2:코스피200",
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…"
@@ -1246,6 +1460,8 @@
   "name": "업종년봉조회요청",
   "description": "업종년봉조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "inds_cd": "업종코드 (필수) — 001:종합(KOSPI), 002:대형주, 003:중형주, 004:소형주 101:종합(KOSDAQ), 201:KOSPI200, 302:KOSTA…",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1256,6 +1472,8 @@
   "name": "대차거래추이요청(종목별)",
   "description": "대차거래추이요청(종목별)",
   "domain": "국내주식/대차거래",
+  "method": "POST",
+  "path": "/api/dostk/slb",
   "params": {
    "strt_dt": "시작일자 — YYYYMMDD",
    "end_dt": "종료일자 — YYYYMMDD",
@@ -1268,6 +1486,8 @@
   "name": "ELW가격급등락요청",
   "description": "ELW가격급등락요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "flu_tp": "등락구분 (필수) — 1:급등, 2:급락",
    "tm_tp": "시간구분 (필수) — 1:분전, 2:일전",
@@ -1285,6 +1505,8 @@
   "name": "거래원별ELW순매매상위요청",
   "description": "거래원별ELW순매매상위요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "isscomp_cd": "발행사코드 (필수) — 3자리, 영웅문4 0273화면참조 (교보:001, 신한금융투자:002, 한국투자증권:003, 대신:004, 미래대우:005, ,,,)",
    "trde_qty_tp": "거래량구분 (필수) — 0:전체, 5:5천주, 10:만주, 50:5만주, 100:10만주, 500:50만주, 1000:백만주",
@@ -1298,6 +1520,8 @@
   "name": "ELWLP보유일별추이요청",
   "description": "ELWLP보유일별추이요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "bsis_aset_cd": "기초자산코드 (필수)",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1308,6 +1532,8 @@
   "name": "ELW괴리율요청",
   "description": "ELW괴리율요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "isscomp_cd": "발행사코드 (필수) — 전체:000000000000, 한국투자증권:3, 미래대우:5, 신영:6, NK투자증권:12, KB증권:17",
    "bsis_aset_cd": "기초자산코드 (필수) — 전체:000000000000, KOSPI200:201, KOSDAQ150:150, 삼성전자:005930, KT:030200..",
@@ -1321,6 +1547,8 @@
   "name": "ELW조건검색요청",
   "description": "ELW조건검색요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "isscomp_cd": "발행사코드 (필수) — 12자리입력(전체:000000000000, 한국투자증권:000,,,3, 미래대우:000,,,5, 신영:000,,,6, NK투자증권:000,,,1…",
    "bsis_aset_cd": "기초자산코드 (필수) — 전체일때만 12자리입력(전체:000000000000, KOSPI200:201, KOSDAQ150:150, 삼정전자:005930, KT:03020…",
@@ -1334,6 +1562,8 @@
   "name": "ELW등락율순위요청",
   "description": "ELW등락율순위요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "sort_tp": "정렬구분 (필수) — 1:상승률, 2:상승폭, 3:하락률, 4:하락폭",
    "rght_tp": "권리구분 (필수) — 000:전체, 001:콜, 002:풋, 003:DC, 004:DP, 006:조기종료콜, 007:조기종료풋",
@@ -1345,6 +1575,8 @@
   "name": "ELW잔량순위요청",
   "description": "ELW잔량순위요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "sort_tp": "정렬구분 (필수) — 1:순매수잔량상위, 2: 순매도 잔량상위",
    "rght_tp": "권리구분 (필수) — 000: 전체, 001: 콜, 002: 풋, 003: DC, 004: DP, 006: 조기종료콜, 007: 조기종료풋",
@@ -1356,6 +1588,8 @@
   "name": "ELW근접율요청",
   "description": "ELW근접율요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1365,6 +1599,8 @@
   "name": "ELW종목상세정보요청",
   "description": "ELW종목상세정보요청",
   "domain": "국내주식/ELW",
+  "method": "POST",
+  "path": "/api/dostk/elw",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1374,6 +1610,8 @@
   "name": "ETF수익율요청",
   "description": "ETF수익율요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)",
    "etfobjt_idex_cd": "ETF대상지수코드 (필수)",
@@ -1385,6 +1623,8 @@
   "name": "ETF종목정보요청",
   "description": "ETF종목정보요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1394,6 +1634,8 @@
   "name": "ETF일별추이요청",
   "description": "ETF일별추이요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1403,6 +1645,8 @@
   "name": "ETF전체시세요청",
   "description": "ETF전체시세요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "txon_type": "과세유형 (필수) — 0:전체, 1:비과세, 2:보유기간과세, 3:회사형, 4:외국, 5:비과세해외(보유기간관세)",
    "navpre": "NAV대비 (필수) — 0:전체, 1:NAV > 전일종가, 2:NAV < 전일종가",
@@ -1417,6 +1661,8 @@
   "name": "ETF시간대별추이요청",
   "description": "ETF시간대별추이요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1426,6 +1672,8 @@
   "name": "ETF시간대별체결요청",
   "description": "ETF시간대별체결요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1435,6 +1683,8 @@
   "name": "ETF일자별체결요청",
   "description": "ETF일자별체결요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1444,6 +1694,8 @@
   "name": "ETF시간대별체결요청",
   "description": "ETF시간대별체결요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1453,6 +1705,8 @@
   "name": "ETF시간대별추이요청",
   "description": "ETF시간대별추이요청",
   "domain": "국내주식/ETF",
+  "method": "POST",
+  "path": "/api/dostk/etf",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1462,6 +1716,8 @@
   "name": "금현물체결추이",
   "description": "금현물체결추이",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g"
   }
@@ -1471,6 +1727,8 @@
   "name": "금현물일별추이",
   "description": "금현물일별추이",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "base_dt": "기준일자 (필수) — YYYYMMDD"
@@ -1481,6 +1739,8 @@
   "name": "금현물틱차트조회요청",
   "description": "금현물틱차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱",
@@ -1492,6 +1752,8 @@
   "name": "금현물분봉차트조회요청",
   "description": "금현물분봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "tic_scope": "틱범위 (필수) — 1:1분, 3:3분, 5:5분, 10:10분, 15:15분, 30:30분, 45:45분, 60:60분",
@@ -1503,6 +1765,8 @@
   "name": "금현물일봉차트조회요청",
   "description": "금현물일봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -1514,6 +1778,8 @@
   "name": "금현물주봉차트조회요청",
   "description": "금현물주봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -1525,6 +1791,8 @@
   "name": "금현물월봉차트조회요청",
   "description": "금현물월봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "base_dt": "기준일자 (필수) — YYYYMMDD",
@@ -1536,6 +1804,8 @@
   "name": "금현물예상체결",
   "description": "금현물예상체결",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g"
   }
@@ -1545,6 +1815,8 @@
   "name": "금현물당일틱차트조회요청",
   "description": "금현물당일틱차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱"
@@ -1555,6 +1827,8 @@
   "name": "금현물당일분봉차트조회요청",
   "description": "금현물당일분봉차트조회요청",
   "domain": "국내주식/차트",
+  "method": "POST",
+  "path": "/api/dostk/chart",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱"
@@ -1565,6 +1839,8 @@
   "name": "금현물 시세정보",
   "description": "금현물 시세정보",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -1574,6 +1850,8 @@
   "name": "금현물 호가",
   "description": "금현물 호가",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "tic_scope": "틱범위 (필수) — 1:1틱, 3:3틱, 5:5틱, 10:10틱, 30:30틱"
@@ -1584,6 +1862,8 @@
   "name": "금현물투자자현황",
   "description": "금현물투자자현황",
   "domain": "국내주식/기관/외국인",
+  "method": "POST",
+  "path": "/api/dostk/frgnistt",
   "params": {}
  },
  {
@@ -1591,6 +1871,8 @@
   "name": "테마그룹별요청",
   "description": "테마그룹별요청",
   "domain": "국내주식/테마",
+  "method": "POST",
+  "path": "/api/dostk/thme",
   "params": {
    "qry_tp": "검색구분 (필수) — 0:전체검색, 1:테마검색, 2:종목검색",
    "stk_cd": "종목코드 — 검색하려는 종목코드",
@@ -1605,6 +1887,8 @@
   "name": "테마구성종목요청",
   "description": "테마구성종목요청",
   "domain": "국내주식/테마",
+  "method": "POST",
+  "path": "/api/dostk/thme",
   "params": {
    "date_tp": "날짜구분 — 1일 ~ 99일 날짜입력",
    "thema_grp_cd": "테마그룹코드 (필수) — 테마그룹코드 번호",
@@ -1616,6 +1900,8 @@
   "name": "프로그램순매수상위50요청",
   "description": "프로그램순매수상위50요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "trde_upper_tp": "매매상위구분 (필수) — 1:순매도상위, 2:순매수상위",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액, 2:수량",
@@ -1628,6 +1914,8 @@
   "name": "종목별프로그램매매현황요청",
   "description": "종목별프로그램매매현황요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "dt": "일자 (필수) — YYYYMMDD",
    "mrkt_tp": "시장구분 (필수) — P00101:코스피, P10102:코스닥",
@@ -1639,6 +1927,8 @@
   "name": "프로그램매매추이요청 시간대별",
   "description": "프로그램매매추이요청 시간대별",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "date": "날짜 (필수) — YYYYMMDD",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액(백만원), 2:수량(천주)",
@@ -1652,6 +1942,8 @@
   "name": "프로그램매매차익잔고추이요청",
   "description": "프로그램매매차익잔고추이요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "date": "날짜 (필수) — YYYYMMDD",
    "stex_tp": "거래소구분 (필수) — 1:KRX, 2:NXT 3.통합"
@@ -1662,6 +1954,8 @@
   "name": "프로그램매매누적추이요청",
   "description": "프로그램매매누적추이요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "date": "날짜 (필수) — YYYYMMDD (종료일기준 1년간 데이터만 조회가능)",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액, 2:수량",
@@ -1674,6 +1968,8 @@
   "name": "종목시간별프로그램매매추이요청",
   "description": "종목시간별프로그램매매추이요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액, 2:수량",
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -1685,6 +1981,8 @@
   "name": "외국인기관매매상위요청",
   "description": "외국인기관매매상위요청",
   "domain": "국내주식/순위정보",
+  "method": "POST",
+  "path": "/api/dostk/rkinfo",
   "params": {
    "mrkt_tp": "시장구분 (필수) — 000:전체, 001:코스피, 101:코스닥",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액(천만), 2:수량(천)",
@@ -1698,6 +1996,8 @@
   "name": "프로그램매매추이요청 일자별",
   "description": "프로그램매매추이요청 일자별",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "date": "날짜 (필수) — YYYYMMDD",
    "amt_qty_tp": "금액수량구분 (필수) — 1:금액(백만원), 2:수량(천주)",
@@ -1711,6 +2011,8 @@
   "name": "대차거래내역요청",
   "description": "대차거래내역요청",
   "domain": "국내주식/대차거래",
+  "method": "POST",
+  "path": "/api/dostk/slb",
   "params": {
    "dt": "일자 (필수) — YYYYMMDD",
    "mrkt_tp": "시장구분 (필수) — 001:코스피, 101:코스닥"
@@ -1721,6 +2023,8 @@
   "name": "종목일별프로그램매매추이요청",
   "description": "종목일별프로그램매매추이요청",
   "domain": "국내주식/시세",
+  "method": "POST",
+  "path": "/api/dostk/mrkcond",
   "params": {
    "amt_qty_tp": "금액수량구분 — 1:금액, 2:수량",
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
@@ -1732,6 +2036,8 @@
   "name": "예수금상세현황요청",
   "description": "예수금상세현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "qry_tp": "조회구분 (필수) — 3:추정조회, 2:일반조회"
   }
@@ -1741,6 +2047,8 @@
   "name": "일별추정예탁자산현황요청",
   "description": "일별추정예탁자산현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "start_dt": "시작조회기간 (필수) — YYYYMMDD",
    "end_dt": "종료조회기간 (필수) — YYYYMMDD"
@@ -1751,6 +2059,8 @@
   "name": "추정자산조회요청",
   "description": "추정자산조회요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외"
   }
@@ -1760,6 +2070,8 @@
   "name": "계좌평가현황요청",
   "description": "계좌평가현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "qry_tp": "상장폐지조회구분 (필수) — 0:전체, 1:상장폐지종목제외",
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
@@ -1770,6 +2082,8 @@
   "name": "체결잔고요청",
   "description": "체결잔고요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
   }
@@ -1779,6 +2093,8 @@
   "name": "계좌별주문체결내역상세요청",
   "description": "계좌별주문체결내역상세요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "qry_tp": "조회구분 (필수) — 1:주문순, 2:역순, 3:미체결, 4:체결내역만",
@@ -1794,6 +2110,8 @@
   "name": "계좌별익일결제예정내역요청",
   "description": "계좌별익일결제예정내역요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "strt_dcd_seq": "시작결제번호"
   }
@@ -1803,6 +2121,8 @@
   "name": "계좌별주문체결현황요청",
   "description": "계좌별주문체결현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "stk_bond_tp": "주식채권구분 (필수) — 0:전체, 1:주식, 2:채권",
@@ -1819,6 +2139,8 @@
   "name": "주문인출가능금액요청",
   "description": "주문인출가능금액요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "io_amt": "입출금액",
    "stk_cd": "종목번호 (필수)",
@@ -1833,6 +2155,8 @@
   "name": "증거금율별주문가능수량조회요청",
   "description": "증거금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목번호 (필수)",
    "uv": "매수가격"
@@ -1843,6 +2167,8 @@
   "name": "신용보증금율별주문가능수량조회요청",
   "description": "신용보증금율별주문가능수량조회요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "stk_cd": "종목번호 (필수)",
    "uv": "매수가격"
@@ -1853,6 +2179,8 @@
   "name": "증거금세부내역조회요청",
   "description": "증거금세부내역조회요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {}
  },
  {
@@ -1860,6 +2188,8 @@
   "name": "위탁종합거래내역요청",
   "description": "위탁종합거래내역요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "strt_dt": "시작일자 (필수)",
    "end_dt": "종료일자 (필수)",
@@ -1876,6 +2206,8 @@
   "name": "일별계좌수익률상세현황요청",
   "description": "일별계좌수익률상세현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "fr_dt": "평가시작일 (필수)",
    "to_dt": "평가종료일 (필수)"
@@ -1886,6 +2218,8 @@
   "name": "계좌별당일현황요청",
   "description": "계좌별당일현황요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {}
  },
  {
@@ -1893,6 +2227,8 @@
   "name": "계좌평가잔고내역요청",
   "description": "계좌평가잔고내역요청",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "qry_tp": "조회구분 (필수) — 1:합산, 2:개별",
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX:한국거래소,NXT:넥스트트레이드"
@@ -1903,6 +2239,8 @@
   "name": "주식 매수주문",
   "description": "주식 매수주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -1917,6 +2255,8 @@
   "name": "주식 매도주문",
   "description": "주식 매도주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -1931,6 +2271,8 @@
   "name": "주식 정정주문",
   "description": "주식 정정주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수)",
@@ -1945,6 +2287,8 @@
   "name": "주식 취소주문",
   "description": "주식 취소주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수)",
@@ -1957,6 +2301,8 @@
   "name": "신용 매수주문",
   "description": "신용 매수주문",
   "domain": "국내주식/신용주문",
+  "method": "POST",
+  "path": "/api/dostk/crdordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -1971,6 +2317,8 @@
   "name": "신용 매도주문",
   "description": "신용 매도주문",
   "domain": "국내주식/신용주문",
+  "method": "POST",
+  "path": "/api/dostk/crdordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "stk_cd": "종목코드 (필수)",
@@ -1987,6 +2335,8 @@
   "name": "신용 정정주문",
   "description": "신용 정정주문",
   "domain": "국내주식/신용주문",
+  "method": "POST",
+  "path": "/api/dostk/crdordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수)",
@@ -2001,6 +2351,8 @@
   "name": "신용 취소주문",
   "description": "신용 취소주문",
   "domain": "국내주식/신용주문",
+  "method": "POST",
+  "path": "/api/dostk/crdordr",
   "params": {
    "dmst_stex_tp": "국내거래소구분 (필수) — KRX,NXT,SOR",
    "orig_ord_no": "원주문번호 (필수)",
@@ -2013,6 +2365,8 @@
   "name": "신용융자 가능종목요청",
   "description": "신용융자 가능종목요청",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "crd_stk_grde_tp": "신용종목등급구분 — %:전체, A:A군, B:B군, C:C군, D:D군, E:E군",
    "mrkt_deal_tp": "시장거래구분 (필수) — %:전체, 1:코스피, 0:코스닥",
@@ -2024,6 +2378,8 @@
   "name": "신용융자 가능문의",
   "description": "신용융자 가능문의",
   "domain": "국내주식/종목정보",
+  "method": "POST",
+  "path": "/api/dostk/stkinfo",
   "params": {
    "stk_cd": "종목코드 (필수)"
   }
@@ -2033,6 +2389,8 @@
   "name": "금현물 매수주문",
   "description": "금현물 매수주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "ord_qty": "주문수량 (필수)",
@@ -2045,6 +2403,8 @@
   "name": "금현물 매도주문",
   "description": "금현물 매도주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "ord_qty": "주문수량 (필수)",
@@ -2057,6 +2417,8 @@
   "name": "금현물 정정주문",
   "description": "금현물 정정주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
    "orig_ord_no": "원주문번호 (필수)",
@@ -2069,6 +2431,8 @@
   "name": "금현물 취소주문",
   "description": "금현물 취소주문",
   "domain": "국내주식/주문",
+  "method": "POST",
+  "path": "/api/dostk/ordr",
   "params": {
    "orig_ord_no": "원주문번호 (필수)",
    "stk_cd": "종목코드 (필수) — M04020000 금 99.99_1kg, M04020100 미니금 99.99_100g",
@@ -2080,6 +2444,8 @@
   "name": "금현물 잔고확인",
   "description": "금현물 잔고확인",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {}
  },
  {
@@ -2087,6 +2453,8 @@
   "name": "금현물 예수금",
   "description": "금현물 예수금",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {}
  },
  {
@@ -2094,6 +2462,8 @@
   "name": "금현물 주문체결전체조회",
   "description": "금현물 주문체결전체조회",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_dt": "주문일자 (필수)",
    "qry_tp": "조회구분 — 1: 주문순, 2: 역순",
@@ -2110,6 +2480,8 @@
   "name": "금현물 주문체결조회",
   "description": "금현물 주문체결조회",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_dt": "주문일자 — YYYYMMDD",
    "qry_tp": "조회구분 (필수) — 1:주문순, 2:역순, 3:미체결, 4:체결내역만",
@@ -2125,6 +2497,8 @@
   "name": "금현물 거래내역조회",
   "description": "금현물 거래내역조회",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "strt_dt": "시작일자",
    "end_dt": "종료일자",
@@ -2137,6 +2511,8 @@
   "name": "금현물 미체결조회",
   "description": "금현물 미체결조회",
   "domain": "국내주식/계좌",
+  "method": "POST",
+  "path": "/api/dostk/acnt",
   "params": {
    "ord_dt": "주문일자 (필수)",
    "qry_tp": "조회구분 — 1: 주문순, 2: 역순",
@@ -2153,6 +2529,8 @@
   "name": "주문체결",
   "description": "주문체결",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "grant_type": "grant_type (필수) — client_credentials 입력",
    "appkey": "앱키 (필수)",
@@ -2164,6 +2542,8 @@
   "name": "잔고",
   "description": "잔고",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
   }
@@ -2173,6 +2553,8 @@
   "name": "주식기세",
   "description": "주식기세",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2187,6 +2569,8 @@
   "name": "주식체결",
   "description": "주식체결",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2201,6 +2585,8 @@
   "name": "주식우선호가",
   "description": "주식우선호가",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2215,6 +2601,8 @@
   "name": "주식호가잔량",
   "description": "주식호가잔량",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2229,6 +2617,8 @@
   "name": "주식시간외호가",
   "description": "주식시간외호가",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2243,6 +2633,8 @@
   "name": "주식당일거래원",
   "description": "주식당일거래원",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2257,6 +2649,8 @@
   "name": "ETF NAV",
   "description": "ETF NAV",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2271,6 +2665,8 @@
   "name": "주식예상체결",
   "description": "주식예상체결",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2285,6 +2681,8 @@
   "name": "국제금환산가격",
   "description": "국제금환산가격",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2299,6 +2697,8 @@
   "name": "업종지수",
   "description": "업종지수",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2313,6 +2713,8 @@
   "name": "업종등락",
   "description": "업종등락",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2327,6 +2729,8 @@
   "name": "주식종목정보",
   "description": "주식종목정보",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2341,6 +2745,8 @@
   "name": "ELW 이론가",
   "description": "ELW 이론가",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2355,6 +2761,8 @@
   "name": "장시작시간",
   "description": "장시작시간",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2369,6 +2777,8 @@
   "name": "ELW 지표",
   "description": "ELW 지표",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2383,6 +2793,8 @@
   "name": "종목프로그램매매",
   "description": "종목프로그램매매",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2397,6 +2809,8 @@
   "name": "VI발동/해제",
   "description": "VI발동/해제",
   "domain": "국내주식/실시간시세",
+  "method": "POST",
+  "path": "/api/dostk/websocket",
   "params": {
    "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
    "grp_no": "그룹번호 (필수)",
@@ -2411,6 +2825,7 @@
   "name": "오류코드",
   "description": "오류코드",
   "domain": "",
+  "method": "POST",
   "params": {}
  }
 ]

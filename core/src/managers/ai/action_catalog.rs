@@ -1,6 +1,6 @@
 //! ModuleActionCatalog — per-action semantic discovery for big sysmods (#search-tool S2).
 //!
-//! korea-invest (275 actions) / kiwoom (200+) expose only cryptic action-ID enums; dumping
+//! korea-invest (278 actions) / kiwoom (208) expose only cryptic action-ID enums; dumping
 //! the enum steers weak models into wrong picks (observed: an ORDER API chosen for a chart).
 //! This catalog gives the missing middle layer of progressive disclosure:
 //!   `search_module_actions(query)` → ranked candidates (cross-module by default, so the
@@ -11,47 +11,33 @@
 //! ```json
 //! "actionCatalog": {
 //!   "file": "actions.json",           // module-dir relative, OR inline:
-//!   "actions": [ { "id", "name", "description", "domain"?, "params"?: {name: desc}, "example"? } ],
+//!   "actions": [ { "id", "name", "description", "domain"?, "params"?: {name: desc}, ... } ],
 //!   "envelope": "{ \"action\": \"<id>\", \"params\": { ... } }"   // module call-shape hint
 //! }
 //! ```
-//! `requiresApproval` is NOT re-declared here — it is joined from the module config's own
-//! declaration at load time (single source, no drift). Modules without a catalog are simply
-//! not indexed (small enums are already self-correcting via validation errors).
+//! Any extra per-action fields (method/path/trId/example …) ride along into
+//! `get_action_schema` untouched. `requiresApproval` is NOT re-declared here — it is joined
+//! from the module config's own declaration at load time (single source, no drift). Modules
+//! without a catalog are simply not indexed (small enums are already self-correcting via
+//! validation errors).
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use std::time::Duration;
 
-use crate::managers::ai::semantic_catalog::{CatalogEntry, SemanticCatalog};
+use crate::managers::ai::semantic_catalog::{CatalogEntry, CatalogSource, RefreshingCatalog};
 use crate::managers::module::ModuleManager;
 use crate::ports::{IEmbedderCachePort, IEmbedderPort};
 use crate::utils::pending_tools::requires_approval_value;
 
 /// Rebuild TTL — config/actions.json changes land via git pull; embeddings are hash-cached so a
-/// rebuild only re-reads JSON (re-embeds nothing when unchanged). 5 min keeps drift short without
-/// per-call file reads.
+/// rebuild only re-reads JSON (re-embeds nothing when unchanged).
 const REBUILD_TTL: Duration = Duration::from_secs(300);
 
-pub struct ModuleActionCatalog {
+struct ModuleActionSource {
     module: Arc<ModuleManager>,
-    catalog: SemanticCatalog,
-    built_at: Mutex<Option<Instant>>,
 }
 
-impl ModuleActionCatalog {
-    pub fn new(
-        module: Arc<ModuleManager>,
-        embedder: Arc<dyn IEmbedderPort>,
-        cache_port: Arc<dyn IEmbedderCachePort>,
-    ) -> Self {
-        Self {
-            module,
-            catalog: SemanticCatalog::new("module-actions", embedder, cache_port),
-            built_at: Mutex::new(None),
-        }
-    }
-
+impl ModuleActionSource {
     /// Load one module's catalog declaration → entries. Inline `actions` wins; else `file`
     /// (module-dir relative, read through ModuleManager storage).
     async fn module_entries(&self, scope: &str, name: &str) -> Vec<CatalogEntry> {
@@ -89,7 +75,7 @@ impl ModuleActionCatalog {
                     .to_string();
                 let domain = a.get("domain").and_then(|v| v.as_str()).unwrap_or("");
                 let desc = a.get("description").and_then(|v| v.as_str()).unwrap_or("");
-                // Semantic text = name + domain + description + param labels — what a user query
+                // Semantic text = domain + description + param labels — what a user query
                 // should land on ("투자자 매매동향", "일봉", "잔고" …).
                 let param_names: Vec<String> = a
                     .get("params")
@@ -114,15 +100,19 @@ impl ModuleActionCatalog {
                 let mut extra = serde_json::json!({
                     "module": name,
                     "action": id,
-                    "domain": domain,
                     "paramNames": param_names,
                     "requiresApproval": approval,
                 });
-                if let Some(p) = a.get("params") {
-                    extra["params"] = p.clone();
-                }
-                if let Some(e) = a.get("example") {
-                    extra["example"] = e.clone();
+                // Ride every declared field along (params/example/method/path/trId/domain …) —
+                // get_action_schema returns them verbatim, so richer actions.json = richer detail
+                // with zero loader changes.
+                if let Some(obj) = a.as_object() {
+                    for (k, v) in obj {
+                        if matches!(k.as_str(), "id" | "name" | "description") {
+                            continue;
+                        }
+                        extra[k] = v.clone();
+                    }
                 }
                 if !envelope.is_empty() {
                     extra["envelope"] = serde_json::Value::String(envelope.to_string());
@@ -136,17 +126,11 @@ impl ModuleActionCatalog {
             })
             .collect()
     }
+}
 
-    /// TTL-gated rebuild — scans system + user modules for `actionCatalog` declarations.
-    async fn ensure(&self) {
-        {
-            let built = self.built_at.lock().await;
-            if let Some(t) = *built {
-                if t.elapsed() < REBUILD_TTL {
-                    return;
-                }
-            }
-        }
+#[async_trait::async_trait]
+impl CatalogSource for ModuleActionSource {
+    async fn load(&self) -> Vec<CatalogEntry> {
         let mut entries: Vec<CatalogEntry> = Vec::new();
         for m in self.module.list_system_modules().await {
             entries.extend(self.module_entries("system", &m.name).await);
@@ -154,8 +138,29 @@ impl ModuleActionCatalog {
         for m in self.module.list_user_modules().await {
             entries.extend(self.module_entries("user", &m.name).await);
         }
-        self.catalog.set_entries(entries).await;
-        *self.built_at.lock().await = Some(Instant::now());
+        entries
+    }
+}
+
+pub struct ModuleActionCatalog {
+    catalog: RefreshingCatalog,
+}
+
+impl ModuleActionCatalog {
+    pub fn new(
+        module: Arc<ModuleManager>,
+        embedder: Arc<dyn IEmbedderPort>,
+        cache_port: Arc<dyn IEmbedderCachePort>,
+    ) -> Self {
+        Self {
+            catalog: RefreshingCatalog::new(
+                "module-actions",
+                embedder,
+                cache_port,
+                Arc::new(ModuleActionSource { module }),
+                REBUILD_TTL,
+            ),
+        }
     }
 
     /// Cross-module (default) or per-module semantic action search. Returns lean rows —
@@ -167,11 +172,10 @@ impl ModuleActionCatalog {
         module: Option<&str>,
         limit: usize,
     ) -> Result<Vec<serde_json::Value>, String> {
-        self.ensure().await;
-        let prefix = module.map(|m| format!("{}:", m));
+        let scopes: Option<Vec<String>> = module.map(|m| vec![format!("{}:", m)]);
         let matches = self
             .catalog
-            .query(query, limit, prefix.as_deref())
+            .query(query, limit, scopes.as_deref())
             .await
             .map_err(|e| e.to_string())?;
         Ok(matches
@@ -190,17 +194,20 @@ impl ModuleActionCatalog {
             .collect())
     }
 
-    /// Full detail for one action — params with descriptions + example + call envelope.
+    /// Full detail for one action — params with descriptions + example + call envelope +
+    /// any extra declared fields (method/path/trId …).
     pub async fn schema(&self, module: &str, action: &str) -> Option<serde_json::Value> {
-        self.ensure().await;
         let entry = self.catalog.get(&format!("{}:{}", module, action)).await?;
         let mut out = serde_json::json!({
             "module": module,
             "action": action,
             "name": entry.name,
         });
-        for k in ["domain", "params", "example", "envelope", "requiresApproval"] {
-            if let Some(v) = entry.extra.get(k) {
+        if let Some(obj) = entry.extra.as_object() {
+            for (k, v) in obj {
+                if matches!(k.as_str(), "module" | "action" | "paramNames") {
+                    continue;
+                }
                 out[k] = v.clone();
             }
         }
@@ -209,9 +216,6 @@ impl ModuleActionCatalog {
 
     /// Whether any catalog entries exist for this module — error-hint branching (S3).
     pub async fn has_module(&self, module: &str) -> bool {
-        self.ensure().await;
-        self.catalog
-            .get_first_with_prefix(&format!("{}:", module))
-            .await
+        self.catalog.has_prefix(&format!("{}:", module)).await
     }
 }

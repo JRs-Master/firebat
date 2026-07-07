@@ -1679,33 +1679,8 @@ impl McpToolHandler for ImageGenHandler {
     }
 }
 
-// search_media / regenerate_image — ToolManager(register_media_tools) 와 같은 MediaManager 위임.
-// 옛엔 MCP 누락이라 hosted MCP 모델(CLI/Anthropic/OpenAI)이 갤러리 검색·이미지 재생성 불가했음.
-pub struct SearchMediaHandler {
-    pub media: Arc<MediaManager>,
-}
-#[async_trait::async_trait]
-impl McpToolHandler for SearchMediaHandler {
-    async fn call(&self, args: Value) -> Result<Value, String> {
-        let scope = obj_str(&args, "scope").and_then(|s| match s.as_str() {
-            "user" => Some(firebat_core::ports::MediaScope::User),
-            "system" => Some(firebat_core::ports::MediaScope::System),
-            _ => None,
-        });
-        let opts = firebat_core::ports::MediaListOpts {
-            search: obj_str(&args, "query"),
-            scope,
-            limit: args.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize),
-            offset: args.get("offset").and_then(|v| v.as_u64()).map(|n| n as usize),
-            hub_owner: obj_str(&args, "hubOwner"),
-        };
-        match self.media.list(opts).await {
-            Ok(result) => Ok(serde_json::json!({"success": true, "data": result})),
-            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
-        }
-    }
-}
-
+// regenerate_image — ToolManager(register_media_tools) 와 같은 MediaManager 위임.
+// (search_media explicit 핸들러는 폐기 — 시맨틱 카탈로그 판이 auto-sync 프록시로 노출, 2026-07-07.)
 pub struct RegenerateImageHandler {
     pub media: Arc<MediaManager>,
 }
@@ -2112,17 +2087,9 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
 
     // Media
-    state.register(McpTool {
-        name: "search_media".into(),
-        description: "갤러리 미디어 검색 (slug / filenameHint / prompt / model 매칭, 최신순). inputSchema: {query?, scope?, limit?, offset?}.".into(),
-        input_schema: schema_object(serde_json::json!({
-            "query": {"type": "string"},
-            "scope": {"type": "string", "enum": ["user", "system"]},
-            "limit": {"type": "integer"},
-            "offset": {"type": "integer"}
-        })),
-        handler: Arc::new(SearchMediaHandler { media: deps.media.clone() }),
-    }).await;
+    // search_media 는 explicit 등록하지 않는다 — ToolManager 의 시맨틱 카탈로그 판
+    // (register_discovery_search_tools)이 Stage 2 auto-sync 프록시로 노출된다. 여기 explicit
+    // 로 두면 옛 substring 판이 이름을 선점해 FC↔MCP drift (2026-07-07 갓벽 sweep).
     state.register(McpTool {
         name: "regenerate_image".into(),
         description: "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. inputSchema: {slug}.".into(),
