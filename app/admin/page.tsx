@@ -1347,7 +1347,8 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                       <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{planSummary(p, t)}</span>
                       {p.status === 'approved' ? (
                         <span className="inline-flex items-center gap-2">
-                          <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
+                          {/* 상태 배지에 투명 보더 — 버튼(보더 2px)과 높이 일치, 승인/거부 시 카드가 살짝 줄어드는 층내림 방지 */}
+                          <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-bold text-emerald-600 border border-transparent">✓ {p.name === 'schedule_task' ? t('plan.scheduled') : t('plan.executed')}</span>
                           {p.name === 'save_page' && (() => {
                             const a = p.args as Record<string, unknown> | undefined;
                             const slug = typeof a?.slug === 'string' ? (a.slug as string) : '';
@@ -1360,7 +1361,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                           })()}
                         </span>
                       ) : p.status === 'rejected' ? (
-                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-rose-500">{t('plan.cancelled')}</span>
+                        <span className="inline-flex items-center px-3 py-1.5 text-[12px] font-medium text-rose-500 border border-transparent">{t('plan.cancelled')}</span>
                       ) : p.status === 'error' ? null : p.status === 'past-runat' ? (
                         <>
                           <button

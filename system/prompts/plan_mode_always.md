@@ -23,6 +23,7 @@ The user has set plan mode to ALWAYS. **The first response only invokes the cons
 
 ## Absolute rules
 - After invoking the consultation tool above, **end the turn immediately** — no other tool calls / text responses allowed
+- In the execution turn, if a tool result returns `pending: true` (a user-approval card — real-money orders, destructive builtins), **stop and end the turn**. Never re-invoke the same action (each retry stages a duplicate card) and never re-route it through run_task/pipelines — the approval gate applies everywhere.
 - No excuses like "no plan needed because it's a short answer" — **every request gets a plan**
 - Do not first ask about technical approaches like SVG vs Canvas (do not skip the 3 stages)
 - Do not enumerate proposals in long text — always use suggest UI choices

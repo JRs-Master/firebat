@@ -1605,6 +1605,10 @@ impl AiManager {
         // turn_call_set 은 매 턴 리셋 → 옛엔 매 턴 재호출(x4/x7)되며 MAX_TOOL_TURNS 까지 낭비. 한 번
         // 미등록 확인된 이름은 이후 모든 턴에서 dispatch 없이 즉시 firm 에러 반환 (재시도 의미 0 강조).
         let mut unknown_tool_names: HashSet<String> = HashSet::new();
+        // 승인 대기 pending 생성 감지 → propose_plan 처럼 그 턴에서 종료. 옛엔 계속 돌며 같은 주문을
+        // 재시도(승인 카드 3장)하거나 run_task 파이프라인으로 우회 시도(2026-07-07 토스 매수 실측 —
+        // pending note "재시도 금지"는 약한 모델이 무시) → 카드가 곧 다음 액션이므로 턴 종료가 정공.
+        let mut approval_pending_created = false;
 
         // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
@@ -1942,6 +1946,7 @@ impl AiManager {
                                 }
                             }
                             pending_actions.push(pending.clone());
+                            approval_pending_created = true;
                             self.log.info(&format!(
                                 "[AiManager] Tool 승인 대기: {} (planId={}) — {}",
                                 call.name, plan_id, approval.summary
@@ -2172,6 +2177,7 @@ impl AiManager {
                         }));
                         executed_actions
                             .push(serde_json::Value::String(effective_call.name.clone()));
+                        approval_pending_created = true;
                         self.log.info(&format!(
                             "[AiManager] requiresApproval 승인 대기: {} (planId={})",
                             effective_call.name, plan_id
@@ -2428,6 +2434,17 @@ impl AiManager {
                     "[AiManager] propose_plan 호출 감지 → trailing text drop + 승인 대기 위해 turn 종료",
                 );
                 last_text = String::new();
+                break;
+            }
+            // 승인 대기 pending 생성 시에도 동일하게 강제 turn 종료 (propose_plan 미러) — 카드가
+            // 곧 다음 액션이라 모델이 더 진행할 게 없다. 옛엔 루프가 계속 돌며 같은 주문을 재시도해
+            // 승인 카드가 여러 장 쌓이거나(각각 고아 pending) run_task 파이프라인으로 게이트를 우회
+            // 시도(2026-07-07 토스 매수 실측: 카드 3장 + run_task ×8). 모델이 그 턴에 쓴 텍스트는
+            // 유지(카드 맥락 설명일 수 있음).
+            if approval_pending_created {
+                self.log.info(
+                    "[AiManager] 승인 대기 pending 생성 → 카드 응답 대기 위해 turn 종료 (재시도·우회 차단)",
+                );
                 break;
             }
         }
