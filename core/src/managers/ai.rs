@@ -2642,8 +2642,11 @@ impl AiManager {
                     .collect::<Vec<_>>()
                     .join(",")
             };
+            // model= 로 궤적 분리 — recall/분류기 라벨은 강한 모델(Claude) 궤적이 ground truth,
+            // 약한 모델(Solar) 궤적은 오선택·루프가 섞여 라벨 오염(카나리아 행동 데이터로만).
             self.log.info(&format!(
-                "[intent_shadow] q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
+                "[intent_shadow] model={} q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
+                last_model_id,
                 prompt.chars().take(80).collect::<String>().replace('\n', " "),
                 fmt_short(&shadow_actions),
                 fmt_short(&shadow_skills),
