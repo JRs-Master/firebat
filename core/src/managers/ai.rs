@@ -278,6 +278,12 @@ pub struct AiManager {
     /// 캐시 records 로 치환(주입). 모델이 큰 배열을 손으로 베끼지 않게(truncation·날조 차단 +
     /// cache_read 왕복 토큰 절감). 미설정 시 dataCacheKey 미해석(모델 제공 data 만 사용).
     sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
+    /// Intent Agent S0 — shadow-mode TurnBrief 재료 (registration 시 카탈로그 Arc 공유).
+    /// S0 = 계산·기록만(행동 0): 매 턴 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist 를
+    /// 실제 디스패치와 대조해 recall 을 journal(target=intent_shadow) 에 남긴다 — L2 세계
+    /// 좁히기의 임계·정확도를 실측으로 확정하기 위한 선행 측정 (plan Intent Agent 섹션).
+    intent_actions: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
+    intent_skills: Option<Arc<crate::managers::ai::semantic_catalog::RefreshingCatalog>>,
 }
 
 impl AiManager {
@@ -304,6 +310,8 @@ impl AiManager {
             memory_file: None,
             skill_file: None,
             sysmod_cache: None,
+            intent_actions: None,
+            intent_skills: None,
         }
     }
 
@@ -495,9 +503,11 @@ impl AiManager {
     /// semantic candidates → `get_action_schema` = exact params + call envelope. Registered as
     /// source="core" so register_builtin_tools auto-syncs both to hosted MCP (dual-registry rule).
     pub fn register_action_catalog_tools(
-        self,
+        mut self,
         catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
     ) -> Self {
+        // Intent Agent S0 — 같은 카탈로그를 shadow TurnBrief 계산에도 공유 (행동 0, 측정 전용).
+        self.intent_actions = Some(catalog.clone());
         let cat = catalog.clone();
         let search_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = cat.clone();
@@ -617,7 +627,7 @@ impl AiManager {
     /// / 나머지=[](빈 결과) — admin 자료 누수 0, per-session 임베딩 churn 0 (hub 자기 자료는
     /// list/index 도구가 커버, 세션 자료는 원래 소수).
     pub fn register_discovery_search_tools(
-        self,
+        mut self,
         skills: Arc<crate::managers::skill_file::SkillFileManager>,
         templates: Arc<crate::managers::template::TemplateManager>,
         pages: Arc<crate::managers::page::PageManager>,
@@ -650,6 +660,8 @@ impl AiManager {
             Arc::new(SkillCatalogSource { skills }),
             TTL,
         ));
+        // Intent Agent S0 — 스킬 카탈로그도 shadow TurnBrief 공유 (측정 전용).
+        self.intent_skills = Some(skill_cat.clone());
         let sc = skill_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = sc.clone();
@@ -1623,6 +1635,42 @@ impl AiManager {
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
+        // ── Intent Agent S0 — shadow TurnBrief (측정 전용, 행동 0) ──
+        // 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist 를 턴 종료 시 실제 디스패치와
+        // 대조해 recall 을 journal(intent_shadow) 에 기록. L2 세계 좁히기·L3 포인터 주입의
+        // 임계와 정확도를 실측 트래픽으로 확정하기 위한 선행 데이터 수집 (plan Intent Agent).
+        // 비용 = 쿼리 E5 임베딩 2회(로컬, ms 단위). 카탈로그 미배선(테스트 등) = skip.
+        let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
+        let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
+        if prompt.trim().len() >= 2 {
+            if let Some(cat) = &self.intent_actions {
+                if let Ok(rows) = cat.search(prompt, None, 8).await {
+                    for r in rows {
+                        let m = r.get("module").and_then(|v| v.as_str()).unwrap_or("");
+                        let a = r.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                        let s = r.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                        if !m.is_empty() && !a.is_empty() {
+                            shadow_actions.push((format!("{m}:{a}"), s));
+                        }
+                    }
+                }
+            }
+            if let Some(cat) = &self.intent_skills {
+                let scopes = vec!["system:".to_string(), "admin:".to_string()];
+                if let Ok(hits) = cat.query(prompt, 3, Some(&scopes)).await {
+                    for h in hits {
+                        let slug = h
+                            .extra
+                            .get("slug")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .unwrap_or_else(|| h.id.clone());
+                        shadow_skills.push((slug, h.score));
+                    }
+                }
+            }
+        }
+
         // Hub visitor 호출 — 턴별 고유 MCP 토큰 발급 + 컨텍스트 맵 등록 → 그 토큰을 mcp_token 으로 주입.
         // CLI 의 MCP 호출이 그 토큰으로 자기 컨텍스트만 보게 해 동시 visitor race(답 꼬임/누수) 차단.
         // MCP server handler 가 토큰으로 컨텍스트를 찾아 owner 격리 + allowed_sysmods 검사. Guard drop = 등록 해제.
@@ -2543,6 +2591,68 @@ impl AiManager {
             self.log.warn(&format!(
                 "[AiManager] MAX_TOOL_TURNS({}) 소진 — 자연 종료 없이 루프 종료 (마지막 turn 산출물로 마무리)",
                 max_turns
+            ));
+        }
+
+        // ── Intent Agent S0 — shadow recall 기록 (행동 0) ──
+        // shortlist 가 실제 디스패치를 커버했는지(recall) + 디스패치 없는 턴의 매칭 분포
+        // (false-positive율 = L3 포인터 임계 입력). grep: journalctl | grep intent_shadow.
+        if !shadow_actions.is_empty() || !shadow_skills.is_empty() {
+            let mut dispatched_actions: Vec<(String, String)> = Vec::new(); // (tool suffix, action)
+            let mut dispatched_skills: Vec<String> = Vec::new();
+            for tr in &tool_results_summary {
+                if let Some(rest) = tr.name.strip_prefix("sysmod_") {
+                    if let Some(act) = tr
+                        .input
+                        .as_ref()
+                        .and_then(|i| i.get("action"))
+                        .and_then(|v| v.as_str())
+                    {
+                        dispatched_actions.push((rest.to_string(), act.to_string()));
+                    }
+                } else if tr.name == "get_skill" {
+                    if let Some(slug) = tr
+                        .input
+                        .as_ref()
+                        .and_then(|i| i.get("slug"))
+                        .and_then(|v| v.as_str())
+                    {
+                        dispatched_skills.push(slug.to_string());
+                    }
+                }
+            }
+            // 도메인 분리 도구(sysmod_kiwoom_chart 등)는 카탈로그 모듈명(kiwoom)의 prefix 매치.
+            let act_hits = dispatched_actions
+                .iter()
+                .filter(|(tool_suffix, act)| {
+                    shadow_actions.iter().any(|(ma, _)| {
+                        ma.split_once(':')
+                            .map(|(m, a)| a == act && tool_suffix.starts_with(m))
+                            .unwrap_or(false)
+                    })
+                })
+                .count();
+            let skill_hits = dispatched_skills
+                .iter()
+                .filter(|slug| shadow_skills.iter().any(|(s, _)| s == *slug))
+                .count();
+            let fmt_short = |v: &Vec<(String, f32)>| {
+                v.iter()
+                    .map(|(n, s)| format!("{n}:{s:.2}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            self.log.info(&format!(
+                "[intent_shadow] q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
+                prompt.chars().take(80).collect::<String>().replace('\n', " "),
+                fmt_short(&shadow_actions),
+                fmt_short(&shadow_skills),
+                dispatched_actions,
+                dispatched_skills,
+                act_hits,
+                dispatched_actions.len(),
+                skill_hits,
+                dispatched_skills.len(),
             ));
         }
 
