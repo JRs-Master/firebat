@@ -4121,6 +4121,17 @@ function labelToHtml(label: string): string {
   return sanitizePopupHtml(label).replace(/\n/g, '<br>');
 }
 
+/** 마커 popup → HTML. 모델이 popup 에 HTML 을 준 경우만 raw div(디자인 자유), plain text 면
+ *  label 과 동일한 우리 카드(buildPopupCardHtml — slate 헤더 + 라벨:값 행)로 렌더. 옛엔 popup
+ *  존재 = 무조건 raw div 라 모델이 다줄 텍스트를 popup 에 넣으면 스타일 없는 흰 박스가 떴다
+ *  (2026-07-07 태풍 실측 — "우리 카드 안 쓰는 듯"). 방언 수용: label 에 넣든 popup 에 넣든 같은 카드. */
+function popupToHtml(popup: string): string {
+  const hasHtml = /<[a-z][^>]*>/i.test(popup);
+  return hasHtml
+    ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(popup).replace(/\n/g, '<br>')}</div>`
+    : buildPopupCardHtml(popup);
+}
+
 /** 지도 popup 카드 HTML — 첫 줄 = 헤더, 나머지 = 본문 (라벨:값 행). 색 = Firebat 디자인 통일 (slate).
  *  마커 색 (태풍 빨강 등) 과 무관 — popup 은 디자인 일관성 위해 slate 헤더 + 흰 본문. rawLabel = multi-line (\n). */
 function buildPopupCardHtml(rawLabel: string): string {
@@ -4480,7 +4491,7 @@ function MapComp({
             // CSS 가 콘텐츠 길이에 맞춰 auto-fit (MapLibre Popup 과 시각 일관).
             // Weather badges (icon + temp) are self-sufficient → no auto popup (unless m.popup set).
             const innerHtml = (isWx && !m.popup) ? '' : (m.popup
-              ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup).replace(/\n/g, '<br>')}</div>`
+              ? popupToHtml(m.popup)
               : buildPopupCardHtml(m.label));
             if (innerHtml) {
               const box = document.createElement('div');
@@ -4695,7 +4706,7 @@ function MapComp({
           const marker = new ml.Marker({ element: buildMarkerEl(m), anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
           // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
           const cardHtml = m.popup
-            ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup).replace(/\n/g, '<br>')}</div>`
+            ? popupToHtml(m.popup)
             : buildPopupCardHtml(m.label);
           if (cardHtml) {
             marker.setPopup(
