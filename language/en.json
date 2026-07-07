@@ -211,6 +211,9 @@
     "completed": "{{package}} install complete.",
     "failed": "{{package}} install failed: {{error}}"
   },
+  "table": {
+    "columns": "Columns"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

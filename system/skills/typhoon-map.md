@@ -1,7 +1,7 @@
 ---
 name: typhoon-map
 kind: tool-usage
-description: 태풍 경로/위치/예상진로 질문 시 — Map 컴포넌트의 태풍 전용 기능으로 풀 렌더(허리케인 마커 icon=typhoon/forecast + windSpeed + 예측 cone + 강풍/폭풍반경 circles + 다줄 label 팝업). 활동 태풍이 여럿이면 한 지도에 전부. plain 색 점 + 별도 반경 표로 그리지 말 것.
+description: 태풍 경로·정보를 지도에 표시하는 방법 — 태그: 태풍, 태풍경로, 태풍지도, 예상진로, 허리케인. 본문 없이 그리면 틀리는 함정이 많다 — 반드시 get_skill 로 본문을 읽고 그릴 것.
 ---
 
 # 태풍 지도 시각화 (kma_weather → Map)

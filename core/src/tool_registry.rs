@@ -487,10 +487,12 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "save_skill".to_string(),
         description: "Save a skill (case manual) — overwrites the same slug. kind = design | \
-            tool-usage | procedure | persona | policy. description = one-line 'when to use' (the \
-            discovery trigger — make it specific). content = the manual (markdown: which tools/ \
-            templates, steps, output). Use when you've worked out a reusable way to handle a \
-            recurring case. Context-conditional guidance belongs here (a skill), not always-on memory_save."
+            tool-usage | procedure | persona | policy. description = one-line 'when to use' + \
+            trigger keywords/tags ONLY — never summarize HOW (a recipe-flavored description \
+            makes models act from the index line and skip the manual). content = the manual \
+            (markdown: which tools/templates, steps, output, pitfalls). Use when you've worked \
+            out a reusable way to handle a recurring case. Context-conditional guidance belongs \
+            here (a skill), not always-on memory_save."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",

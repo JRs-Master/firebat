@@ -163,9 +163,11 @@ impl ModuleActionCatalog {
         }
     }
 
-    /// Cross-module (default) or per-module semantic action search. Returns lean rows —
-    /// param NAMES only; full param descriptions come from `get_action_schema` (progressive
-    /// disclosure: 정확한 정보를 조금씩).
+    /// Cross-module (default) or per-module semantic action search. Returns DISCOVERY rows
+    /// only — id/name/domain/approval flag, deliberately NO param information: an index line
+    /// must be a trigger, never enough to act on, or models guess the call instead of loading
+    /// the detail (get_action_schema). Same principle as the skills index (2026-07-08:
+    /// "인덱스만 보고 다 봤다고 생각" — 사용자 진단).
     pub async fn search(
         &self,
         query: &str,
@@ -187,7 +189,6 @@ impl ModuleActionCatalog {
                     "name": m.name,
                     "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
-                    "paramNames": m.extra.get("paramNames").cloned().unwrap_or(serde_json::Value::Array(vec![])),
                     "score": m.score,
                 })
             })

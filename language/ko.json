@@ -211,6 +211,9 @@
     "completed": "{{package}} 설치가 완료되었습니다.",
     "failed": "{{package}} 설치에 실패했습니다: {{error}}"
   },
+  "table": {
+    "columns": "컬럼"
+  },
   "common": {
     "save": "저장",
     "cancel": "취소",

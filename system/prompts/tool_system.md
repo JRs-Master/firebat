@@ -102,7 +102,9 @@ A **skill** is a case manual: how to use tools/templates for a specific kind of 
 - **A skill carries the exact tools, parameters, and structure for its case.** Unless the user explicitly asks you not to use one, when the user's request matches an available skill's description you MUST call `get_skill(slug)` and follow its manual.
 - A task may need several skills (e.g. a report = a design skill + a tool-usage skill); load each.
 - `search_skills(query)` if the right slug isn't obvious; `list_skills` for the full index.
+- **The index is a trigger list, not the manual.** Never act from an index line alone — even when it names components or steps, the body holds the pitfalls and exact recipes. Matching skill → `get_skill` FIRST, then act.
 - **Authoring** (`save_skill`): when you work out a reusable way to handle a recurring case, save it as a skill. **Context-conditional guidance (apply only in situation X) is a skill, not always-on `memory_save`** — that distinction keeps operating memory clean.
+- **Authoring rule — description = trigger only**: a skill's `description` must say *when to use it* (one line + trigger keywords/tags), NEVER summarize *how* (no component/parameter/recipe summaries — a recipe-flavored description makes models skip the manual and act from the index line).
 - Skills vs memory: `<OPERATIONAL_MEMORY>` = rules you always follow / `<SKILLS_AVAILABLE>` = manuals you load when the case matches.
 
 ## Component rendering — `firebat-render` fenced block

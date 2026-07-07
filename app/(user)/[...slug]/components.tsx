@@ -2119,6 +2119,9 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // 뷰 인터랙티브 (클라 전용, 서버 호출 0): 행 필터 + 컬럼 토글.
   const [query, setQuery] = useState('');
   const [hiddenCols, setHiddenCols] = useState<Set<number>>(() => new Set());
+  // 컬럼 토글 UI = 드롭다운 체크리스트 — 옛 칩 가로 나열은 컬럼 11개면 표 위에 칩 띠가 생겨
+  // 정체를 알아보기 어려웠다 (2026-07-08 사용자: "리스트로 체크해서"). 버튼 하나 + 체크 목록.
+  const [colMenuOpen, setColMenuOpen] = useState(false);
   const toggleCol = useCallback((i: number) => setHiddenCols(prev => {
     const n = new Set(prev);
     if (n.has(i)) n.delete(i); else n.add(i);
@@ -2148,6 +2151,15 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
     const n = parseFloat(c);
     return Number.isFinite(n) ? n : null;
   };
+  // 날짜 인지 — "2026-07-07" 을 parseFloat 하면 2026 에서 끊겨 전 행 동점 = 날짜 컬럼 정렬이
+  // 안 먹던 버그 (2026-07-08 실측). 날짜꼴이면 그룹별 zero-pad 이어붙인 문자열로 비교
+  // ("2026.7.7" vs "2026.10.1" 도 정확). 숫자 판정보다 먼저 시도.
+  const parseSortDate = (v: string): string | null => {
+    const s = v.trim();
+    if (!/^\d{2,4}[-./]\d{1,2}([-./]\d{1,2})?([ T]\d{1,2}:\d{2}(:\d{2})?)?$/.test(s)) return null;
+    const parts = s.split(/[^0-9]+/).filter(Boolean);
+    return parts.map(p => (p.length === 1 ? '0' + p : p)).join('');
+  };
   // 크로스 스크립트 정렬 순서 — Windows 탐색기 관행: 숫자(0) → 영문(1) → 한글(2) → 기타(3).
   // (localeCompare('ko') 만 쓰면 한글이 영문보다 앞 = Windows 와 반대라 버킷으로 명시.)
   const scriptRank = (s: string): number => {
@@ -2159,9 +2171,12 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
   const sortedRows = sortCol === null ? shownRows : [...shownRows].sort((a, b) => {
     const av = String(a.row[sortCol] ?? '').trim(), bv = String(b.row[sortCol] ?? '').trim();
+    const ad = parseSortDate(av), bd = parseSortDate(bv);
     const an = parseSortNum(av), bn = parseSortNum(bv);
     let cmp: number;
-    if (an !== null && bn !== null) {
+    if (ad !== null && bd !== null) {
+      cmp = ad < bd ? -1 : ad > bd ? 1 : 0; // 둘 다 날짜꼴 = 날짜 비교
+    } else if (an !== null && bn !== null) {
       cmp = an - bn; // 둘 다 수치(현재가·PER 등) = 수치 비교
     } else {
       const ra = scriptRank(av), rb = scriptRank(bv);
@@ -2220,21 +2235,37 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
             </div>
           )}
           {columnToggle && (
-            <div className="flex flex-wrap gap-1.5">
-              {headers.map((h, i) => {
-                const shown = !hiddenCols.has(i);
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => toggleCol(i)}
-                    aria-pressed={shown}
-                    className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${shown ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-400 line-through'}`}
-                  >
-                    {cleanPlainText(h)}
-                  </button>
-                );
-              })}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setColMenuOpen(o => !o)}
+                aria-expanded={colMenuOpen}
+                className="px-2.5 py-1.5 rounded-lg text-[12px] font-semibold border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                {t('table.columns')} {visibleCols.length}/{headers.length} ▾
+              </button>
+              {colMenuOpen && (
+                <>
+                  {/* 바깥 클릭 = 닫기 (백드롭) */}
+                  <div className="fixed inset-0 z-20" onClick={() => setColMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-30 min-w-[180px] max-w-[260px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1.5 space-y-0.5 scrollbar-thin">
+                    {headers.map((h, i) => (
+                      <label
+                        key={i}
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={!hiddenCols.has(i)}
+                          onChange={() => toggleCol(i)}
+                          className="accent-blue-600 shrink-0"
+                        />
+                        <span className="truncate">{cleanPlainText(h)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
           {filterable && q && (

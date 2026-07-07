@@ -275,7 +275,13 @@ fn build_index(entries: &[SkillEntry]) -> String {
     if entries.is_empty() {
         return String::new();
     }
-    let mut out = String::from("# Available Skills (load full manual with get_skill)\n");
+    // Header is load-bearing: descriptions must read as TRIGGERS, never as the manual.
+    // A recipe-flavored description made even strong models skip get_skill ("이미 읽었다") and
+    // render from the one-liner, missing every pitfall in the body (2026-07-08 태풍 실측).
+    let mut out = String::from(
+        "# Available Skills — index lines are TRIGGERS (when to use), NOT the manual.\n\
+         When a skill matches the task, you MUST call get_skill(slug) and follow the full manual BEFORE acting — the body contains pitfalls and exact recipes that are never in this index.\n",
+    );
     let line = |e: &SkillEntry, out: &mut String| {
         let d = e.description.trim();
         if d.is_empty() {

@@ -513,16 +513,26 @@ impl AiManager {
             let cat = cat.clone();
             async move {
                 let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let module = args
-                    .get("module")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.trim_start_matches("sysmod_").to_string());
                 let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
                 // The catalog covers a FIXED set of modules — say so in every response.
                 // Silence made models retry a search that could never succeed (2026-07-07:
                 // "toss-invest create-order" ×9 — toss had no catalog, so the results never
                 // contained it and the model kept searching in disbelief).
                 let cataloged = cat.cataloged_modules().await;
+                // Module filter dialect absorb: strip sysmod_ prefix + underscore↔hyphen
+                // ("sysmod_toss_invest" ≡ "toss-invest" — models see underscore tool names).
+                let module = args
+                    .get("module")
+                    .and_then(|v| v.as_str())
+                    .map(|s| {
+                        let m = s.trim_start_matches("sysmod_").to_string();
+                        if cataloged.contains(&m) {
+                            m
+                        } else {
+                            let h = m.replace('_', "-");
+                            if cataloged.contains(&h) { h } else { m }
+                        }
+                    });
                 if let Some(m) = module.as_deref() {
                     if !cataloged.contains(&m.to_string()) {
                         return Ok(serde_json::json!({
@@ -565,12 +575,19 @@ impl AiManager {
         let schema_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = cat2.clone();
             async move {
-                let module = args
+                let raw_module = args
                     .get("module")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .trim_start_matches("sysmod_")
                     .to_string();
+                // Dialect absorb — underscore↔hyphen module name (search handler와 동일).
+                let module = if cat.has_module(&raw_module).await {
+                    raw_module
+                } else {
+                    let h = raw_module.replace('_', "-");
+                    if cat.has_module(&h).await { h } else { raw_module }
+                };
                 let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 match cat.schema(&module, &action).await {
                     Some(s) => Ok(s),

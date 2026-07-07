@@ -1,7 +1,7 @@
 ---
 name: weather-map
 kind: tool-usage
-description: 날씨를 지도에 표시 요청 시(전국·여러 도시·단일 도시 모두) — TV 뉴스 일기예보처럼 도시별 마커에 날씨 아이콘(icon=wx-*)+이름+기온 배지로. plain 색 점 + 색 범례로만 그리지 말 것(점만 찍으면 도시명·기온이 안 보임). 단일 도시는 zoom 8 지정(골목 확대 방지). kma_weather short 예보 → Map.
+description: 날씨를 지도에 표시하는 방법(전국·여러 도시·단일 도시) — 태그: 날씨, 날씨지도, 일기예보, 기온, 전국날씨. 본문 없이 그리면 틀리는 규약이 있다 — 반드시 get_skill 로 본문을 읽고 그릴 것.
 ---
 
 # 날씨 지도 (TV 뉴스 일기예보식) — kma_weather → Map
