@@ -108,9 +108,16 @@ impl RealTaskExecutor {
             ));
         }
         let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
-        if crate::utils::pending_tools::requires_approval_value(decl, action) {
+        // 승인 액션 분기 — cron 컨텍스트(등록 시 스케줄 승인 카드 통과 = 잡에 담긴 매매까지 승인,
+        // 사용자 확정 2026-07-07: "오늘 TQQQ 1주 매수" → 새벽 미국장에 예약 실행)는 허용.
+        // 인터랙티브 run_task 는 승인 카드 없이 파이프라인으로 게이트를 우회하는 경로라 차단
+        // (2026-07-07 토스 매수 실측 — 모델이 정확히 이 우회를 시도함). 한도(가격 상한·잔고 %)
+        // 세팅은 core 몫 아님 — 전용 자동매매 sysmod 의 설정 영역.
+        if crate::utils::pending_tools::requires_approval_value(decl, action)
+            && !crate::utils::cron_context::is_cron_context_active()
+        {
             return Err(format!(
-                "approval-required action '{action}' of module '{name}' cannot run unattended (pipeline) — register it interactively for an approval card"
+                "approval-required action '{action}' of module '{name}' cannot run via interactive run_task (that would bypass the approval card) — call the module tool directly for an approval card, or register it as a schedule (approving the schedule approves the action)"
             ));
         }
         Ok(())

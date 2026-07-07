@@ -497,6 +497,11 @@ impl ScheduleManager {
                     "[Cron] 파이프라인 실행: {} ({}단계, {:?})",
                     info.job_id, total, info.trigger
                 ));
+                // Cron context 활성 — 스케줄 등록 승인 = 잡에 담긴 액션(실주문 포함) 승인으로 간주
+                // (사용자 확정 2026-07-07). unattended_module_gate 가 이 guard 로 "승인된 예약 실행"과
+                // "인터랙티브 run_task 우회"를 구분한다(agent 분기의 guard 와 대칭 — 옛엔 pipeline
+                // 분기만 guard 가 없어 예약 매매가 차단됐음).
+                let _cron_guard = crate::utils::cron_context::CronContextGuard::enter();
                 let pipe_result = core.run_cron_pipeline(steps).await;
                 success = pipe_result.success;
                 if !success {

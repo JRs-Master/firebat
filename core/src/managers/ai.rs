@@ -2053,8 +2053,10 @@ impl AiManager {
                     None
                 };
                 // requiresApproval gate (#1-9b slice 1) — config-declared real-money/destructive
-                // actions. Interactive turn = approval card (pending). cron(automated) = hard block
-                // until the pre-approved envelope (예약 승인) ships. hub = denied (root's account).
+                // actions. Interactive turn = approval card (pending). cron = ALLOWED — 스케줄 등록
+                // 승인 카드 통과 = 잡에 담긴 액션(실주문 포함) 승인으로 간주(사용자 확정 2026-07-07,
+                // "오늘 TQQQ 1주 매수" → 새벽 미국장 예약 실행. cron_context 의 destructive 빌트인
+                // passthrough 와 동일 철학). hub = denied (root's account).
                 let approval_gate: Option<serde_json::Value> = if let Some(reg) = &self.dynamic_tools {
                     match reg.approval_for(&effective_call.name).await {
                         Some((module_name, decl)) => {
@@ -2065,11 +2067,8 @@ impl AiManager {
                                 .unwrap_or("");
                             if crate::utils::pending_tools::requires_approval_value(&decl, act) {
                                 if crate::utils::cron_context::is_cron_context_active() {
-                                    Some(serde_json::json!({
-                                        "success": false,
-                                        "error": "이 액션은 사용자 승인이 필요합니다(실주문 등). 자동(cron) 경로에서는 예약 승인(봉투) 기능 도입 전까지 실행할 수 없습니다 — 재시도하지 말고 결과에 차단 사실을 보고하세요.",
-                                        "approvalBlocked": "automation",
-                                    }))
+                                    // 승인된 예약 실행 — 게이트 없이 정상 dispatch.
+                                    None
                                 } else if effective_call
                                     .arguments
                                     .get("_hubScope")

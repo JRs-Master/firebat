@@ -18,6 +18,8 @@ Destructive / real-money tools already stage a **user-approval card** before any
 
 After the approval card appears (result has `pending: true`), **stop — end your turn**. Never re-invoke the same action (each retry stages another duplicate card) and never re-route it through run_task/pipelines to force execution — the gate applies everywhere.
 
+A **time-conditioned** gated action ("buy X when the market opens", "sell at 3pm") → register it via **schedule_task**: approving the schedule card approves the contained action, and it runs unattended at trigger time.
+
 ## Skip consultation — execute immediately (simple · read-only)
 
 The following cases **skip the plan and call the tool directly**:

@@ -603,9 +603,13 @@ impl McpToolHandler for SysmodToolHandler {
             args
         };
         // requiresApproval gate (#1-9b slice 1, FC 게이트 미러) — 실주문 등 config 선언 액션.
-        // interactive = 승인 카드(pending) / cron = 예약 승인(봉투) 전까지 하드 차단 / hub = 차단.
+        // interactive = 승인 카드(pending) / cron = ALLOWED (스케줄 등록 승인 카드 통과 = 잡에
+        // 담긴 액션(실주문 포함) 승인으로 간주 — 사용자 확정 2026-07-07, destructive 빌트인
+        // passthrough 와 동일 철학) / hub = 차단(root 계좌).
         let action_name = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
-        if !action_name.is_empty() {
+        if !action_name.is_empty()
+            && !firebat_core::utils::cron_context::is_cron_context_active()
+        {
             let cfg = match self
                 .module_manager
                 .get_module_config("user", &self.module_name)
@@ -624,13 +628,6 @@ impl McpToolHandler for SysmodToolHandler {
                 .cloned()
                 .unwrap_or(Value::Null);
             if firebat_core::utils::pending_tools::requires_approval_value(&decl, action_name) {
-                if firebat_core::utils::cron_context::is_cron_context_active() {
-                    return Ok(serde_json::json!({
-                        "success": false,
-                        "error": "이 액션은 사용자 승인이 필요합니다(실주문 등). 자동(cron) 경로에서는 예약 승인(봉투) 기능 도입 전까지 실행할 수 없습니다 — 재시도하지 말고 결과에 차단 사실을 보고하세요.",
-                        "approvalBlocked": "automation",
-                    }));
-                }
                 if firebat_core::utils::hub_context::is_hub_context_active() {
                     return Ok(serde_json::json!({
                         "success": false,
