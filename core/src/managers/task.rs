@@ -35,7 +35,13 @@ pub enum PipelineStep {
         input_map: Option<Value>,
     },
     McpCall {
-        server: String,
+        // Optional — models often write only the CLI-namespaced tool name
+        // (`mcp__<srv>__<tool>`), which carries the server inside the name (the executor's
+        // `split_mcp_name` extracts it); a bare tool with no server anywhere = ourselves.
+        // Required `server` used to kill the whole schedule_task pending at parse time
+        // ("missing field server" — 2026-07-07 실측).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server: Option<String>,
         tool: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         arguments: Option<Value>,
@@ -260,8 +266,10 @@ impl TaskManager {
                     }
                 }
                 PipelineStep::McpCall { server, tool, .. } => {
-                    if server.trim().is_empty() {
-                        return Some(format!("[Step {n}] MCP_CALL에 server가 없습니다."));
+                    // server 는 옵션 (미기재 = firebat 내부 / mcp__<srv>__ 이름에 내장 가능) —
+                    // 기재됐다면 빈 문자열은 거부.
+                    if server.as_deref().is_some_and(|s| s.trim().is_empty()) {
+                        return Some(format!("[Step {n}] MCP_CALL의 server가 빈 문자열입니다."));
                     }
                     if tool.trim().is_empty() {
                         return Some(format!("[Step {n}] MCP_CALL에 tool이 없습니다."));
@@ -394,6 +402,10 @@ impl TaskManager {
                 }
                 StepOutcome::Fail(err) => {
                     let full_err = format!("[Pipeline Step {n}] {}", err);
+                    // journal 에도 반드시 남긴다 — status job 이 없는 실행(cron DelayedRun 등)은
+                    // 옛엔 실패가 어디에도 안 찍혀 무증상 유실이었다 (2026-07-07 실측: 승인된
+                    // TQQQ 예약 매수의 MCP_CALL 실패가 로그 0 으로 증발).
+                    self.log.warn(&format!("[Pipeline] 실패 — {full_err}"));
                     if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
                         let _ = s.fail(job_id, full_err.clone());
                     }
@@ -484,7 +496,10 @@ impl TaskManager {
                 } else {
                     arguments.clone().unwrap_or(Value::Object(Default::default()))
                 };
-                match self.executor.call_mcp_tool(server, tool, &args).await {
+                // server 미기재 = 자기 자신(firebat) — tool 이 mcp__<srv>__ 네임스페이스를
+                // 품고 있으면 executor 의 split_mcp_name 이 그쪽을 우선한다.
+                let srv = server.as_deref().unwrap_or("firebat");
+                match self.executor.call_mcp_tool(srv, tool, &args).await {
                     Ok(v) => StepOutcome::Continue(v),
                     Err(e) => StepOutcome::Fail(format!("MCP_CALL 실패: {e}")),
                 }

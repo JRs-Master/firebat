@@ -122,6 +122,91 @@ impl RealTaskExecutor {
         }
         Ok(())
     }
+
+    /// Map an LLM-facing sysmod tool name to its module. Accepts every dialect the models
+    /// actually emit: `sysmod_toss-invest` (FC per-module), `sysmod_toss_invest` (underscore),
+    /// `sysmod_toss_invest_order` / `sysmod_kiwoom_chart` (MCP domain-split view — the domain
+    /// suffix is presentation only; the module reads `action` from args). Matching is done on
+    /// underscore-normalized names so hyphen/underscore variants are one identity.
+    async fn resolve_sysmod_module(&self, tool: &str) -> Option<String> {
+        let mm = self.module.as_ref()?;
+        let norm = tool.strip_prefix("sysmod_")?.replace('-', "_");
+        let mut best: Option<String> = None;
+        for m in mm.list_system_modules().await {
+            let m_norm = m.name.replace('-', "_");
+            if norm == m_norm || norm.starts_with(&format!("{m_norm}_")) {
+                // Longest-prefix wins (e.g. a hypothetical module "kiwoom_gold" over "kiwoom").
+                if best.as_ref().map(|b| m.name.len() > b.len()).unwrap_or(true) {
+                    best = Some(m.name.clone());
+                }
+            }
+        }
+        best
+    }
+
+    /// requiresApproval gate for pipeline steps that address a sysmod TOOL (TOOL_CALL /
+    /// internal MCP_CALL). Same policy as `unattended_module_gate`: cron context (schedule
+    /// card approved = contained actions approved) passes; interactive run_task is denied.
+    /// Enabled/validation gates live in `ModuleManager.run` (single choke) — approval is a
+    /// dispatch-layer policy, so it must be enforced here.
+    async fn sysmod_approval_gate(
+        &self,
+        module_name: &str,
+        args: &serde_json::Value,
+    ) -> Result<(), String> {
+        let Some(mm) = &self.module else { return Ok(()) };
+        let Some(cfg) = mm.get_module_config("system", module_name).await else {
+            return Ok(());
+        };
+        let Some(decl) = cfg.get("requiresApproval") else {
+            return Ok(());
+        };
+        let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        if crate::utils::pending_tools::requires_approval_value(decl, action)
+            && !crate::utils::cron_context::is_cron_context_active()
+        {
+            return Err(format!(
+                "approval-required action '{action}' of module '{module_name}' cannot run via an interactive pipeline (that would bypass the approval card) — call the module tool directly for an approval card, or register it as a schedule (approving the schedule approves the action)"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Execute one of OUR OWN tools from a pipeline step. sysmod names (any dialect) resolve
+    /// to the module and run through `ModuleManager.run` (enabled gate · input validation ·
+    /// WS routing · timeseries — the single choke point); other names go through
+    /// `ToolManager.dispatch` with canonical-name normalization.
+    async fn run_internal_tool(
+        &self,
+        tool: &str,
+        args: &serde_json::Value,
+    ) -> InfraResult<serde_json::Value> {
+        if let Some(module_name) = self.resolve_sysmod_module(tool).await {
+            self.sysmod_approval_gate(&module_name, args).await?;
+            let mm = self
+                .module
+                .as_ref()
+                .expect("resolve_sysmod_module returned Some without module manager");
+            let result = mm.run(&module_name, args).await?;
+            return Ok(serde_json::to_value(&result).unwrap_or(serde_json::Value::Null));
+        }
+        let name = self.tools.canonical_name(tool);
+        self.tools.dispatch(&name, args).await
+    }
+}
+
+/// Split a CLI-namespaced MCP tool name (`mcp__<server>__<tool>`) into (server, tool).
+/// Models that see tools through a CLI naturally write that combined form; absorbing it here
+/// means a pipeline step works whether the model filled `server` separately or not.
+fn split_mcp_name(server: &str, tool: &str) -> (String, String) {
+    if let Some(rest) = tool.strip_prefix("mcp__") {
+        if let Some((srv, t)) = rest.split_once("__") {
+            if !srv.is_empty() && !t.is_empty() {
+                return (srv.to_string(), t.to_string());
+            }
+        }
+    }
+    (server.to_string(), tool.to_string())
 }
 
 /// 모듈 path 에서 module_name 추출. `<scope>/modules/<name>/<entry>` 형식 가정.
@@ -225,9 +310,19 @@ impl TaskExecutor for RealTaskExecutor {
         tool: &str,
         args: &serde_json::Value,
     ) -> InfraResult<serde_json::Value> {
+        let (server, tool) = split_mcp_name(server, tool);
         self.log
             .info(&format!("[Pipeline] MCP_CALL → {}/{}", server, tool));
-        self.mcp.call_tool(server, tool, args).await
+        // "firebat" = ourselves. The outbound MCP client only knows EXTERNAL servers
+        // (data/mcp-servers.json), so routing self-calls there failed instantly with
+        // "MCP 서버 미등록: firebat" — models addressing our own tools as mcp__firebat__*
+        // (the only name a CLI ever shows them) could never be served (2026-07-07 실측:
+        // 승인된 TQQQ 예약 매수가 이 경로에서 조용히 죽음). Loop back to internal dispatch —
+        // sysmod resolution + approval gate + ModuleManager.run choke point.
+        if server == "firebat" {
+            return self.run_internal_tool(&tool, args).await;
+        }
+        self.mcp.call_tool(&server, &tool, args).await
     }
 
     async fn network_request(
@@ -290,9 +385,20 @@ impl TaskExecutor for RealTaskExecutor {
         tool: &str,
         input: &serde_json::Value,
     ) -> InfraResult<serde_json::Value> {
+        // Absorb the CLI-namespaced dialect here too (mcp__firebat__X ≡ our own tool X).
+        let (server, tool) = split_mcp_name("firebat", tool);
+        if server != "firebat" {
+            // TOOL_CALL addressed an EXTERNAL server's tool by its namespaced name.
+            self.log
+                .info(&format!("[Pipeline] TOOL_CALL → {}/{} (external MCP)", server, tool));
+            return self.mcp.call_tool(&server, &tool, input).await;
+        }
         self.log
-            .info(&format!("[Pipeline] TOOL_CALL → {} (ToolManager.dispatch)", tool));
-        self.tools.dispatch(tool, input).await
+            .info(&format!("[Pipeline] TOOL_CALL → {} (internal dispatch)", tool));
+        // run_internal_tool = canonical-name normalize + sysmod approval gate — a raw
+        // tools.dispatch here let an interactive run_task invoke an approval-gated order
+        // tool with no card (the same bypass class the EXECUTE gate closed).
+        self.run_internal_tool(&tool, input).await
     }
 }
 
