@@ -37,7 +37,25 @@
         },
         "dataCacheKey": {
           "type": "string",
-          "description": "sysmod response `_cacheKey`. The server replaces this with the full cached OHLCV records as `data` — ALWAYS use this instead of copying rows by hand (no cache_read needed for charting)."
+          "description": "sysmod response `_cacheKey`. The server replaces this with the full cached OHLCV records as `data` — ALWAYS use this instead of copying rows by hand (no cache_read needed for charting). The full cache may span years — for a period request ('recent 3 months') add dataRange or dataLimit alongside."
+        },
+        "dataRange": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "description": "inclusive start date (YYYY-MM-DD or YYYYMMDD)"
+            },
+            "to": {
+              "type": "string",
+              "description": "inclusive end date"
+            }
+          },
+          "description": "period slice applied server-side to the dataCacheKey injection — use with dataCacheKey when the user asked for a specific window (e.g. 최근 3개월 → from: three months ago)."
+        },
+        "dataLimit": {
+          "type": "integer",
+          "description": "keep only the N most-recent rows of the dataCacheKey injection (e.g. 66 trading days ≈ 3 months of daily candles). Alternative to dataRange."
         },
         "data": {
           "type": "array",

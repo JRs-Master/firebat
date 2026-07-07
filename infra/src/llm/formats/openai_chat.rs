@@ -20,6 +20,40 @@ const STREAM_IDLE_TIMEOUT_SECS: u64 = 180;
 
 pub struct OpenAiChatHandler;
 
+/// Repair a model-authored tool-call `arguments` string into a valid JSON object.
+/// Weak models emit broken JSON (comments / trailing commas / truncation). Two failure
+/// surfaces need this: (1) local dispatch parse, (2) the multiturn echo — the upstream API
+/// VALIDATES replayed `function.arguments` as JSON, so echoing the raw broken string is a
+/// permanent 400 on every later round of the turn (2026-07-07 schedule_task 실측).
+/// Chain: strict parse → tolerant cleanup (comment/trailing-comma strip) → `{}` last resort.
+/// Returns (parsed value, canonical string) — both sides stay consistent.
+fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        if v.is_object() {
+            return (v, raw.to_string());
+        }
+    }
+    let cleaned = firebat_core::managers::ai::render_exec::tolerant_json_cleanup(raw);
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&cleaned) {
+        if v.is_object() {
+            let s = v.to_string();
+            tracing::warn!(
+                target: "llm",
+                "tool-call arguments repaired via tolerant parse ({} chars)",
+                raw.len()
+            );
+            return (v, s);
+        }
+    }
+    tracing::warn!(
+        target: "llm",
+        "tool-call arguments unparseable — replaced with {{}} ({} chars head: {})",
+        raw.len(),
+        raw.chars().take(120).collect::<String>()
+    );
+    (serde_json::json!({}), "{}".to_string())
+}
+
 impl OpenAiChatHandler {
     pub fn new() -> Self {
         Self
@@ -51,8 +85,10 @@ impl OpenAiChatHandler {
                                 .and_then(|f| f.get("arguments"))
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("{}");
-                            let arguments =
-                                serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                            // Repair (not just fallback): a tolerant parse recovers the model's
+                            // intended args for comment/trailing-comma dialects, so the tool can
+                            // actually run instead of failing validation on {}.
+                            let (arguments, _) = repair_tool_args(args_str);
                             tool_calls.push(ToolCall { id, name, arguments });
                         }
                     }
@@ -293,10 +329,29 @@ impl OpenAiChatHandler {
             .and_then(|c| c.as_array())
             .and_then(|a| a.first())
             .and_then(|f| f.get("message"))?;
-        let tool_calls = msg
+        let mut tool_calls = msg
             .get("tool_calls")
             .filter(|v| v.as_array().map(|a| !a.is_empty()).unwrap_or(false))?
             .clone();
+        // Echo must be VALID JSON per call — the upstream validates replayed
+        // function.arguments, so one malformed round would 400 every later round.
+        // Repair to the same canonical string the dispatcher parsed (consistency).
+        if let Some(calls) = tool_calls.as_array_mut() {
+            for tc in calls.iter_mut() {
+                let raw = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("{}")
+                    .to_string();
+                let (_, canonical) = repair_tool_args(&raw);
+                if canonical != raw {
+                    if let Some(f) = tc.get_mut("function") {
+                        f["arguments"] = serde_json::Value::String(canonical);
+                    }
+                }
+            }
+        }
         Some(serde_json::json!({
             "role": "assistant",
             "content": msg.get("content").cloned().unwrap_or(serde_json::Value::Null),

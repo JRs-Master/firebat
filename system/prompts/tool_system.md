@@ -231,6 +231,7 @@ Large responses (50+ row time series, etc) — main context token saving. Sandbo
 
 **Flow on receiving `_cacheKey`**:
 - **Rendering the series (chart etc.)** → put the key into the component's `dataCacheKey` prop in the render fence — the server injects the FULL cached records as `data`. Do NOT cache_read the rows back and do NOT copy rows by hand into props: hand-copied arrays get truncated and corrupted, and the round-trip wastes tokens.
+- **Period request** ("최근 3개월" 등) → the injection is otherwise the WHOLE cache; add `dataRange: {from, to}` (inclusive dates) or `dataLimit: N` (most-recent N rows) next to `dataCacheKey` — the server slices before injecting. Fetch with the latest base date; slice at render.
 - Need to READ some values (to reason or answer about them) → `cache_read({cacheKey: "...", offset: 0, limit: 50})` (pagination).
 - Condition filter → `cache_grep({cacheKey: "...", field: "<field>", op: "gt", value: <n>})` (op: eq/ne/gt/gte/lt/lte/contains/in).
 - Aggregation → `cache_aggregate({cacheKey: "...", field: "<field>", op: "avg"})` (count/sum/avg/min/max).

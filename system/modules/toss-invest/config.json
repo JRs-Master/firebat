@@ -7,6 +7,10 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "actionCatalog": {
+    "file": "actions.json",
+    "envelope": "{ \"action\": \"<id>\", <params flat at top level — no params wrapper> }"
+  },
   "requiresApproval": ["create-order", "modify-order", "cancel-order"],
   "secrets": [
     {

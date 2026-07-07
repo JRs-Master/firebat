@@ -29,6 +29,84 @@ pub type FenceDataResolver<'a> = &'a dyn Fn(&str) -> Result<Vec<Value>, String>;
 /// scraped page) is referenced. Time-series keep the most recent rows (tail).
 const MAX_INJECT_ROWS: usize = 5000;
 
+/// Digits-only compare key: "2026-04-07" / "20260407" / "2026-04-07T09:30" all order
+/// correctly under prefix-truncated lexicographic compare.
+fn date_compare_key(s: &str) -> String {
+    s.chars().filter(|c| c.is_ascii_digit()).collect()
+}
+
+/// A row's date-ish value as a compare key. Broker/yfinance normalization uses `date`;
+/// small generic fallback list for other cached shapes.
+fn row_date_key(row: &Value) -> Option<String> {
+    for k in ["date", "datetime", "dt", "timestamp"] {
+        match row.get(k) {
+            Some(Value::String(s)) if !s.is_empty() => return Some(date_compare_key(s)),
+            Some(Value::Number(n)) => return Some(format!("{:020}", n.as_i64().unwrap_or(0))),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Prefix-truncated compare — "202604070930" vs bound "20260407" compares on the first
+/// 8 digits, so a `to` date includes that whole day.
+fn date_in_bound(row_key: &str, bound: &str, is_from: bool) -> bool {
+    let n = bound.len().min(row_key.len());
+    let prefix = &row_key[..n];
+    if is_from { prefix >= bound } else { prefix <= bound }
+}
+
+/// Apply the optional fence-props period slice to injected cache records (generic — any
+/// component with a `data` injection). `dataRange:{from?,to?}` filters by row date;
+/// `dataLimit:N` keeps the N most-recent rows (row order preserved, newest-first or
+/// oldest-first both handled). A slice that would empty the data falls back to the full
+/// records (bad range from the model must not blank the chart). Idempotent — re-running
+/// the sanitize pass on already-sliced data is a no-op.
+fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value> {
+    let mut rows = records;
+    if let Some(range) = props.get("dataRange").and_then(|v| v.as_object()) {
+        let from = range.get("from").and_then(|v| v.as_str()).map(date_compare_key);
+        let to = range.get("to").and_then(|v| v.as_str()).map(date_compare_key);
+        if from.is_some() || to.is_some() {
+            let filtered: Vec<Value> = rows
+                .iter()
+                .filter(|r| {
+                    let Some(key) = row_date_key(r) else { return true };
+                    let from_ok = from.as_deref().map(|f| date_in_bound(&key, f, true)).unwrap_or(true);
+                    let to_ok = to.as_deref().map(|t| date_in_bound(&key, t, false)).unwrap_or(true);
+                    from_ok && to_ok
+                })
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                tracing::warn!(
+                    target: "render",
+                    "[render] dataRange matched 0 rows — range ignored, full records kept"
+                );
+            } else {
+                rows = filtered;
+            }
+        }
+    }
+    if let Some(limit) = props.get("dataLimit").and_then(|v| v.as_u64()) {
+        let limit = limit as usize;
+        if limit > 0 && rows.len() > limit {
+            // Most-recent N, order-aware: newest-first rows (e.g. kiwoom) take the head,
+            // oldest-first (e.g. yfinance) take the tail. No dates → tail (stable default).
+            let newest_first = match (row_date_key(&rows[0]), row_date_key(&rows[rows.len() - 1])) {
+                (Some(a), Some(b)) => a > b,
+                _ => false,
+            };
+            rows = if newest_first {
+                rows[..limit].to_vec()
+            } else {
+                rows[rows.len() - limit..].to_vec()
+            };
+        }
+    }
+    rows
+}
+
 /// `render` 도구 인자(`{blocks: [...]}` 또는 stringified / 배열 직접)를 검증·정규화해
 /// `{success, blocks, failed}` 반환. ToolManager + MCP 공용.
 ///
@@ -142,16 +220,24 @@ pub fn render_blocks(
             };
             match resolved {
                 Ok(records) => {
-                    let rows = if records.len() > MAX_INJECT_ROWS {
-                        records[records.len() - MAX_INJECT_ROWS..].to_vec()
+                    // Optional period slice — generic, fence-props-driven (no component
+                    // branching): `dataRange:{from?,to?}` filters by the rows' date field,
+                    // `dataLimit:N` keeps the N most-recent rows. Without this the injection
+                    // is always the WHOLE cache and the model has no way to slice it
+                    // (2026-07-07 실측: "최근 3개월" 일봉이 600봉 차트로 렌더).
+                    let total = records.len();
+                    let sliced = apply_data_slice(records, &props);
+                    let rows = if sliced.len() > MAX_INJECT_ROWS {
+                        sliced[sliced.len() - MAX_INJECT_ROWS..].to_vec()
                     } else {
-                        records
+                        sliced
                     };
                     tracing::info!(
                         target: "render",
                         cache_key = %key,
                         rows = rows.len(),
-                        "[render] dataCacheKey resolved — full records injected server-side"
+                        total = total,
+                        "[render] dataCacheKey resolved — records injected server-side (sliced)"
                     );
                     if let Some(obj) = props.as_object_mut() {
                         obj.insert("data".to_string(), Value::Array(rows));
@@ -358,7 +444,11 @@ fn find_fence_region(text: &str) -> Option<FenceRegion> {
 /// models decorate JSON with comments (2026-07-06 Solar typhoon fence: `"radius": 460000, //
 /// 460 km → 460 000 m` broke strict parse → raw display). Same policy as the tag-dialect fence:
 /// the parser accepts the dialect instead of tightening prompts.
-fn tolerant_json_cleanup(body: &str) -> String {
+///
+/// `pub` — the openai_chat FC handler reuses it to repair malformed tool-call `arguments`
+/// (same weak-model dialect; an unrepaired echo of raw broken JSON is a permanent upstream
+/// 400 on every later round — 2026-07-07 schedule_task 실측).
+pub fn tolerant_json_cleanup(body: &str) -> String {
     // pass 1: strip comments
     let chars: Vec<char> = body.chars().collect();
     let mut no_comments = String::with_capacity(body.len());
@@ -640,5 +730,59 @@ mod tests {
         let out = render_blocks(&args, false, Some(&resolver)).unwrap();
         let props = &out["blocks"][0]["props"];
         assert_eq!(props["data"].as_array().unwrap().len(), 1, "model rows kept");
+    }
+
+    fn day_rows(dates: &[&str]) -> Vec<Value> {
+        dates
+            .iter()
+            .map(|d| serde_json::json!({"date": d, "close": 1.0}))
+            .collect()
+    }
+
+    #[test]
+    fn data_slice_range_inclusive_and_format_agnostic() {
+        // ISO rows, YYYYMMDD bounds — digits-only compare bridges both formats.
+        let rows = day_rows(&["2026-04-06", "2026-04-07", "2026-05-01", "2026-07-07"]);
+        let props = serde_json::json!({"dataRange": {"from": "20260407", "to": "2026-05-01"}});
+        let out = apply_data_slice(rows, &props);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["date"], "2026-04-07");
+        assert_eq!(out[1]["date"], "2026-05-01");
+    }
+
+    #[test]
+    fn data_slice_empty_range_falls_back_to_full() {
+        let rows = day_rows(&["2026-04-06", "2026-04-07"]);
+        let props = serde_json::json!({"dataRange": {"from": "2030-01-01"}});
+        assert_eq!(apply_data_slice(rows, &props).len(), 2, "bad range must not blank data");
+    }
+
+    #[test]
+    fn data_limit_keeps_most_recent_order_aware() {
+        // oldest-first (yfinance) — tail
+        let asc = day_rows(&["2026-01-01", "2026-01-02", "2026-01-03"]);
+        let out = apply_data_slice(asc, &serde_json::json!({"dataLimit": 2}));
+        assert_eq!(out[0]["date"], "2026-01-02");
+        // newest-first (kiwoom) — head
+        let desc = day_rows(&["2026-01-03", "2026-01-02", "2026-01-01"]);
+        let out = apply_data_slice(desc, &serde_json::json!({"dataLimit": 2}));
+        assert_eq!(out[0]["date"], "2026-01-03");
+        assert_eq!(out[1]["date"], "2026-01-02");
+    }
+
+    #[test]
+    fn data_cache_key_injection_applies_slice() {
+        let rows = day_rows(&["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]);
+        let rows_clone = rows.clone();
+        let resolver = move |_: &str| -> Result<Vec<Value>, String> { Ok(rows_clone.clone()) };
+        let args = serde_json::json!({
+            "blocks": [{"type": "stock_chart", "props": {
+                "symbol": "A", "dataCacheKey": "k", "dataLimit": 2
+            }}]
+        });
+        let out = render_blocks(&args, false, Some(&resolver)).unwrap();
+        let data = out["blocks"][0]["props"]["data"].as_array().unwrap();
+        assert_eq!(data.len(), 2, "dataLimit applied at injection");
+        assert_eq!(data[0]["date"], "2026-01-03");
     }
 }
