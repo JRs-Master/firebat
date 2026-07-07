@@ -236,6 +236,22 @@ impl SemanticCatalog {
             .iter()
             .any(|e| e.id.starts_with(prefix))
     }
+
+    /// Distinct id prefixes (the part before ':'), sorted — e.g. the set of cataloged
+    /// modules. Cheap (few names) — lets a searcher tell "not in the catalog" from
+    /// "keep searching" (2026-07-07: a model retried a search endlessly for a module
+    /// that was never indexed).
+    pub async fn id_prefixes(&self) -> Vec<String> {
+        let state = self.state.read().await;
+        let mut out: Vec<String> = state
+            .entries
+            .iter()
+            .filter_map(|e| e.id.split_once(':').map(|(p, _)| p.to_string()))
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
 }
 
 /// A catalog data source — enumerates the current entries (e.g. skills on disk, module
@@ -303,6 +319,11 @@ impl RefreshingCatalog {
     pub async fn has_prefix(&self, prefix: &str) -> bool {
         self.ensure().await;
         self.catalog.get_first_with_prefix(prefix).await
+    }
+
+    pub async fn id_prefixes(&self) -> Vec<String> {
+        self.ensure().await;
+        self.catalog.id_prefixes().await
     }
 }
 

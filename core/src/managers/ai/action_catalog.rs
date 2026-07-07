@@ -211,11 +211,33 @@ impl ModuleActionCatalog {
                 out[k] = v.clone();
             }
         }
+        // Some source API docs carry no param table (KIS: 41 actions) — silence here sent
+        // models on an endless param hunt (search loop). Say it explicitly + point at the
+        // definitive next step instead.
+        let params_empty = out
+            .get("params")
+            .map(|p| p.as_object().map(|o| o.is_empty()).unwrap_or(true))
+            .unwrap_or(true);
+        if params_empty {
+            out["paramsNote"] = serde_json::Value::String(
+                "Parameter docs are NOT available for this action — searching again will not \
+                 reveal them. Construct the call from the envelope hint (+ method/path/trId) and \
+                 the module input schema (get_module_config); the module's validation errors will \
+                 name any missing field."
+                    .to_string(),
+            );
+        }
         Some(out)
     }
 
     /// Whether any catalog entries exist for this module — error-hint branching (S3).
     pub async fn has_module(&self, module: &str) -> bool {
         self.catalog.has_prefix(&format!("{}:", module)).await
+    }
+
+    /// Distinct cataloged module names — lets search/schema responses say definitively
+    /// which modules are indexed (uncataloged module = call it directly, stop searching).
+    pub async fn cataloged_modules(&self) -> Vec<String> {
+        self.catalog.id_prefixes().await
     }
 }

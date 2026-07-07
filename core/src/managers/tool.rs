@@ -91,6 +91,12 @@ struct ToolState {
     /// 도구 핸들러 (등록·dispatch 용). 옛 TS executeToolCall switch 잔여 분기 폐지 (Step 4) —
     /// Rust 처음부터 ToolManager dispatch 단일 source.
     handlers: HashMap<String, ToolHandler>,
+    /// Per-turn call caps — tool name → max calls allowed inside ONE user turn.
+    /// Declared at registration by tools where unbounded repetition is pathological
+    /// (discovery/search tools: a goal-seeking model can thrash them with arg variants
+    /// until the whole tool budget burns — 2026-07-07 실측 search_module_actions ×19).
+    /// Enforcement lives in the AiManager FC loop; undeclared tools are uncapped.
+    per_turn_limits: HashMap<String, usize>,
 }
 
 impl ToolManager {
@@ -185,6 +191,21 @@ impl ToolManager {
     pub fn clear_active_plan(&self, conversation_id: &str) {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.active_plan.remove(conversation_id);
+    }
+
+    // ─────── Per-turn call caps ───────
+
+    /// Declare a per-turn call cap for one tool (registration-time, declarative — the
+    /// FC loop enforces it generically; no per-tool logic there).
+    pub fn set_per_turn_limit(&self, name: &str, limit: usize) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.per_turn_limits.insert(name.to_string(), limit);
+    }
+
+    /// The declared per-turn cap for a tool — None = uncapped.
+    pub fn per_turn_limit(&self, name: &str) -> Option<usize> {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.per_turn_limits.get(name).copied()
     }
 
     // ─────── 도구 핸들러 — register / dispatch (Step 2/4) ───────

@@ -508,11 +508,31 @@ impl AiManager {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim_start_matches("sysmod_").to_string());
                 let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+                // The catalog covers a FIXED set of modules — say so in every response.
+                // Silence made models retry a search that could never succeed (2026-07-07:
+                // "toss-invest create-order" ×9 — toss had no catalog, so the results never
+                // contained it and the model kept searching in disbelief).
+                let cataloged = cat.cataloged_modules().await;
+                if let Some(m) = module.as_deref() {
+                    if !cataloged.contains(&m.to_string()) {
+                        return Ok(serde_json::json!({
+                            "actions": [],
+                            "count": 0,
+                            "catalogedModules": cataloged,
+                            "note": format!(
+                                "module '{m}' has NO action catalog — searching will NEVER find its actions. \
+                                 Call the module tool (sysmod_{m}) directly; its own description/enum + input \
+                                 validation errors will guide you (or consult get_module_config)."
+                            ),
+                        }));
+                    }
+                }
                 let rows = cat.search(&query, module.as_deref(), limit.clamp(1, 20)).await?;
                 Ok(serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
-                    "next": "call get_action_schema(module, action) for exact params + call envelope before invoking",
+                    "catalogedModules": cataloged,
+                    "next": "call get_action_schema(module, action) for exact params + call envelope before invoking. Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
                 }))
             }
         });
@@ -544,6 +564,19 @@ impl AiManager {
                 let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 match cat.schema(&module, &action).await {
                     Some(s) => Ok(s),
+                    // Two very different misses (2026-07-07 실측): an uncataloged MODULE must not
+                    // be pointed back at search — search can never find it, so that hint created
+                    // an infinite schema→search→schema loop. Only a bad ACTION of a cataloged
+                    // module should re-search.
+                    None if !cat.has_module(&module).await => Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!(
+                            "module '{m}' has NO action catalog — do NOT search for it (search_module_actions will never list it). \
+                             Call the module tool (sysmod_{m}) directly with its documented action; its input validation errors \
+                             will guide you, and get_module_config('{m}') shows the full input schema.",
+                            m = module
+                        ),
+                    })),
                     None => Ok(serde_json::json!({
                         "success": false,
                         "error": format!(
@@ -554,6 +587,10 @@ impl AiManager {
                 }
             }
         });
+        // Discovery tools are the thrash-prone class (2026-07-07: search ×19 burned a whole
+        // turn) — cap per turn. Generous for legitimate multi-topic turns (표+차트+주문 ≈ 3-6).
+        self.tools.set_per_turn_limit("search_module_actions", 6);
+        self.tools.set_per_turn_limit("get_action_schema", 8);
         self.tools.register_handler("get_action_schema", schema_handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "get_action_schema".to_string(),
@@ -776,6 +813,10 @@ impl AiManager {
             }),
             source: "core".to_string(),
         });
+        // Same thrash-prone discovery class — per-turn caps (search_module_actions 참조).
+        for name in ["search_skills", "search_templates", "search_pages", "search_media", "search_components"] {
+            self.tools.set_per_turn_limit(name, 6);
+        }
         self
     }
 
@@ -1609,6 +1650,19 @@ impl AiManager {
         // 재시도(승인 카드 3장)하거나 run_task 파이프라인으로 우회 시도(2026-07-07 토스 매수 실측 —
         // pending note "재시도 금지"는 약한 모델이 무시) → 카드가 곧 다음 액션이므로 턴 종료가 정공.
         let mut approval_pending_created = false;
+        // Turn-exhaustion detector — stays true only when the round loop burns all
+        // MAX_TOOL_TURNS without a natural break (no-tool-calls / propose_plan / approval).
+        // Used after the loop for an honest failure reply instead of a silent empty turn
+        // (2026-07-07 실측: search 도구 스팸으로 25콜 소진 → reply/blocks 전부 빈 채 종료
+        // → 화면 "응답이 비어있습니다" + DB 빈 row = 폴링 복구·히스토리 연속성까지 사망).
+        let mut tool_budget_exhausted = true;
+        // Per-turn per-tool-name call counter — a goal-seeking model can thrash ONE tool
+        // with slightly varying args, which neither Layer 1 (identical-args cache) nor
+        // Layer 2 (identical-args set) catches. Tools may declare a per-turn cap on the
+        // ToolManager (generic mechanism, declared at registration — no per-case logic here);
+        // over the cap the call is rejected with a firm "proceed with what you have".
+        let mut turn_tool_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
@@ -1839,6 +1893,7 @@ impl AiManager {
                     "[AiManager] turn {} 종료 — 도구 호출 0개",
                     turn + 1
                 ));
+                tool_budget_exhausted = false;
                 break;
             }
 
@@ -2099,7 +2154,42 @@ impl AiManager {
                 } else {
                     None
                 };
-                let action = if turn_call_set.contains(&cache_key) {
+                // Per-turn per-tool-name cap — counted on every attempt (dedup/cache/reject 포함).
+                // Layer 1/2 는 "같은 인자" 만 잡는다; 인자를 살짝 바꿔가며 한 도구를 두드리는
+                // goal-seeking thrash 는 이름 단위 카운트로만 잡힌다 (선언된 도구만, 기본 무제한).
+                let per_turn_over_cap = {
+                    let count = turn_tool_counts
+                        .entry(effective_call.name.clone())
+                        .or_insert(0);
+                    *count += 1;
+                    self.tools
+                        .per_turn_limit(&effective_call.name)
+                        .map(|cap| *count > cap)
+                        .unwrap_or(false)
+                };
+                let action = if per_turn_over_cap {
+                    self.log.warn(&format!(
+                        "[AiManager] per-turn 도구 호출 한도 초과 차단: {} ({}회)",
+                        effective_call.name,
+                        turn_tool_counts.get(&effective_call.name).copied().unwrap_or(0)
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "'{}' 도구를 이번 턴에 허용 한도 이상 호출했습니다. 이 도구 호출을 중단하세요 — 지금까지 확보한 결과로 진행하고, 찾던 항목이 없으면 없다고 결론 내린 뒤 사용자에게 최종 답변을 작성하세요.",
+                                effective_call.name
+                            ),
+                            "perTurnLimitExceeded": true,
+                        }),
+                        success: false,
+                        error: Some("per-turn tool cap".to_string()),
+                        arguments: call.arguments.clone(),
+                    }
+                } else if turn_call_set.contains(&cache_key) {
                     // Layer 2: 이번 turn 에 이미 같은 호출 → 즉시 reject
                     self.log.warn(&format!(
                         "[AiManager] Tool 중복 호출 차단 (per-turn): {}",
@@ -2433,6 +2523,7 @@ impl AiManager {
                     "[AiManager] propose_plan 호출 감지 → trailing text drop + 승인 대기 위해 turn 종료",
                 );
                 last_text = String::new();
+                tool_budget_exhausted = false;
                 break;
             }
             // 승인 대기 pending 생성 시에도 동일하게 강제 turn 종료 (propose_plan 미러) — 카드가
@@ -2444,8 +2535,15 @@ impl AiManager {
                 self.log.info(
                     "[AiManager] 승인 대기 pending 생성 → 카드 응답 대기 위해 turn 종료 (재시도·우회 차단)",
                 );
+                tool_budget_exhausted = false;
                 break;
             }
+        }
+        if tool_budget_exhausted {
+            self.log.warn(&format!(
+                "[AiManager] MAX_TOOL_TURNS({}) 소진 — 자연 종료 없이 루프 종료 (마지막 turn 산출물로 마무리)",
+                max_turns
+            ));
         }
 
         // Phase B-17+ result processor — 모든 LLM 응답을 단일 정제 레이어 통과.
@@ -2477,7 +2575,7 @@ impl AiManager {
         let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
         let (clean_reply_masked, extracted_blocks) =
             crate::utils::sanitize::segments_to_blocks(segments);
-        let clean_reply = render_exec::restore_fences(&clean_reply_masked, &render_fences);
+        let mut clean_reply = render_exec::restore_fences(&clean_reply_masked, &render_fences);
         // render 뱃지 — fence 로 그린 것도 옛 render 도구처럼 tool_results 에 노출(뱃지 + 내용 = 디버그 편의).
         // fence 는 도구 호출이 아니지만, 사용자에게 "render 했음 + 그 내용"을 보여주면 픽스할 때 편하다.
         for blocks in &render_block_groups {
@@ -2552,6 +2650,33 @@ impl AiManager {
             );
             let restored = render_exec::restore_fences(&masked, &fences);
             b["text"] = serde_json::Value::String(restored);
+        }
+
+        // Honest failure fallback — a turn that produced literally NOTHING visible (no reply,
+        // no blocks, no pending card, no suggestion chips) used to persist an empty system row:
+        // the UI showed the "응답이 비어있습니다" invariant, DB-poll recovery reloaded the same
+        // emptiness, and the NEXT turn's history had no anchor (대화 단절). Persist an honest
+        // failure text instead (2026-07-07 실측: search 도구 스팸 25콜 소진 턴). propose_plan /
+        // approval / suggest 턴은 blocks·pending·suggestions 가 차 있어 자연 제외.
+        if clean_reply.trim().is_empty()
+            && final_blocks.is_empty()
+            && pending_actions.is_empty()
+            && cli_suggestions.is_empty()
+        {
+            clean_reply = if tool_budget_exhausted {
+                crate::i18n::t(
+                    "core.error.ai.turn_exhausted",
+                    None,
+                    &[("max", &max_turns.to_string())],
+                )
+            } else {
+                crate::i18n::t("core.error.ai.empty_final", None, &[])
+            };
+            // Live SSE clients render chunk text — emit so the fallback is visible without reload.
+            emit_event(AiStreamEvent::Chunk {
+                event_type: "text".to_string(),
+                content: clean_reply.clone(),
+            });
         }
 
         // Vertex AI 파인튜닝용 학습 데이터 기록 (옛 TS ai-manager.ts:1526 1:1).

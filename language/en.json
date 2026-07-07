@@ -171,6 +171,8 @@
       "agent_prompt_empty": "agentPrompt is empty.",
       "cost_limit_exceeded": "Cost limit exceeded: {{reason}}",
       "cost_limit_exceeded_short": "Cost limit exceeded.",
+      "turn_exhausted": "The tool-call budget ({{max}} calls) was exhausted before the task finished. Please split the request into smaller steps or try again.",
+      "empty_final": "Response generation failed (the model returned no content). Please try again.",
       "tool_dispatcher_unready": "Activates after ToolDispatcher full wiring — AiManager.resolve_call_target API exposure required.",
       "args_json_parse_failed": "Failed to parse argsJson: {{detail}}",
       "share_db_unset": "create_share: IDatabasePort not configured.",
