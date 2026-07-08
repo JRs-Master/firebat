@@ -152,7 +152,7 @@ async fn compress_with_embedder_low_spread_returns_empty() {
     // Stub embedder 는 query/passage prefix 차이로 spread 가 우연히 클 수 있어
     // 결과 검증은 "구조 valid" 정도만 (context_summary 가 string OR 빈 string)
     if !r.context_summary.is_empty() {
-        assert!(r.context_summary.contains("[관련 과거 대화"));
+        assert!(r.context_summary.contains("[Related past conversations"));
     }
 }
 
@@ -183,8 +183,7 @@ async fn compress_with_strong_match_returns_context() {
     // spread 가 MIN_SPREAD 이상이면 context 설정. Stub embedder 결정론이라 검증 가능.
     // 구조 valid 만 검증
     if !r.context_summary.is_empty() {
-        assert!(r.context_summary.contains("[관련 과거 대화"));
-        assert!(r.context_summary.contains("건"));
+        assert!(r.context_summary.contains("[Related past conversations"));
     }
 }
 

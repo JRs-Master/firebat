@@ -638,10 +638,15 @@ impl ClaudeCodeCliHandler {
                                 outcome.pending_actions.push(action);
                             }
                         }
-                        // 3) suggest / propose_plan → suggestions
+                        // 3) suggest / propose_plan → suggestions. suggest 는 last-wins —
+                        // 한 턴에 여러 번 호출 시 마지막 세트가 대체 (FC 경로 ai.rs 와 대칭,
+                        // 누적하면 칩 세트가 겹쳐 렌더 — 2026-07-08 실측).
                         if (pending.name == "suggest" || pending.name == "propose_plan")
                             && payload.get("suggestions").and_then(|v| v.as_array()).is_some()
                         {
+                            if pending.name == "suggest" {
+                                outcome.suggestions.clear();
+                            }
                             for s in payload.get("suggestions").unwrap().as_array().unwrap() {
                                 outcome.suggestions.push(s.clone());
                             }

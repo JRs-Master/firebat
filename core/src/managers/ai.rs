@@ -2516,7 +2516,14 @@ impl AiManager {
                 // suggestions 수집 — suggest + propose_plan(✓실행/수정/취소 칩), CLI 어댑터
                 // (cli_claude_code.rs:639)와 동일. 위 component 분기와 배타 아님(propose_plan
                 // 은 PlanCard 블록 + 칩 둘 다).
-                if tc.name == "suggest" || tc.name == "propose_plan" {
+                // suggest 는 last-wins: 한 턴에 suggest 를 여러 번 호출하면 마지막 세트가
+                // 이전 것을 대체한다 (누적하면 칩 세트가 겹쳐 렌더 — 2026-07-08 실측).
+                if tc.name == "suggest" {
+                    if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
+                        cli_suggestions.clear();
+                        cli_suggestions.extend(arr.iter().cloned());
+                    }
+                } else if tc.name == "propose_plan" {
                     if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
                         cli_suggestions.extend(arr.iter().cloned());
                     }

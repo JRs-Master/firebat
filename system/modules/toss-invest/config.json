@@ -146,11 +146,11 @@
       },
       "before": {
         "type": "string",
-        "description": "캔들 페이지네이션 상한 (ISO 8601, inclusive — 이 시각과 같거나 이전 봉만). 이전 응답의 nextBefore 값 전달. candles/market-indicator-candles."
+        "description": "캔들 페이지네이션 전용 (ISO 8601, inclusive). 첫 호출엔 생략(미지정=최신 봉부터) — 다음 페이지에만 이전 응답의 nextBefore 값 전달. 날짜를 추측해 채우지 말 것. candles/market-indicator-candles."
       },
       "until": {
         "type": "string",
-        "description": "investor-trading 조회 기준일 (YYYY-MM-DD, inclusive). 이전 응답의 nextUntil 값 전달. 미지정 시 최신부터."
+        "description": "investor-trading 페이지네이션 전용 (YYYY-MM-DD, inclusive). 첫 호출엔 생략(미지정=최신부터) — 다음 페이지에만 이전 응답의 nextUntil 값 전달. 날짜를 추측해 채우지 말 것."
       },
       "adjusted": {
         "type": "boolean",

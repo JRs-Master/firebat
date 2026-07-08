@@ -237,9 +237,9 @@ impl RetrievalEngine {
         // 1) Conversation history
         if !history.is_empty() {
             stats.history = history.len();
-            let mut lines = vec![format!("[관련 과거 대화 ({}건)]", history.len())];
+            let mut lines = vec![format!("[Related past conversations ({})]", history.len())];
             for m in &history {
-                let role_label = if m.role == "user" { "사용자" } else { "AI" };
+                let role_label = if m.role == "user" { "User" } else { "AI" };
                 let preview = slice_chars(&m.content_preview, HISTORY_PREVIEW_MAX);
                 lines.push(format!("- [{}]: {}", role_label, preview));
             }
