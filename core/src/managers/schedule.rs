@@ -270,7 +270,7 @@ impl ScheduleManager {
                     .await;
                 if !met.0 {
                     hooks.log.info(&format!(
-                        "[Cron] runWhen 미충족 → skip: {} ({})",
+                        "[Cron] runWhen not met — skip: {} ({})",
                         info.job_id, met.1
                     ));
                     return CronJobResult {
@@ -306,7 +306,7 @@ impl ScheduleManager {
             if attempt > 0 {
                 if let Some(hooks) = &self.hooks {
                     hooks.log.warn(&format!(
-                        "[Cron] retry {}/{}: {} ({}ms 대기)",
+                        "[Cron] retry {}/{}: {} (waiting {}ms)",
                         attempt, retry_count, info.job_id, retry_delay_ms
                     ));
                 }
@@ -348,7 +348,7 @@ impl ScheduleManager {
             if let Some(hooks) = &self.hooks {
                 hooks
                     .log
-                    .info(&format!("[Cron] oneShot 성공 → 자동 취소: {}", info.job_id));
+                    .info(&format!("[Cron] oneShot succeeded — auto-canceled: {}", info.job_id));
             }
             let _ = self.cron.cancel(&info.job_id).await;
         }
@@ -432,7 +432,7 @@ impl ScheduleManager {
                         )
                     });
                 h.log.info(&format!(
-                    "[Cron] agent 실행: {} ({:?}) — prompt 길이 {}",
+                    "[Cron] agent run: {} ({:?}) — prompt len {}",
                     info.job_id,
                     info.trigger,
                     prompt.len()
@@ -494,7 +494,7 @@ impl ScheduleManager {
                 let total = steps.len() as i64;
                 steps_total = Some(total);
                 h.log.info(&format!(
-                    "[Cron] 파이프라인 실행: {} ({}단계, {:?})",
+                    "[Cron] pipeline run: {} ({} steps, {:?})",
                     info.job_id, total, info.trigger
                 ));
                 // Cron context 활성 — 스케줄 등록 승인 = 잡에 담긴 액션(실주문 포함) 승인으로 간주
@@ -517,7 +517,7 @@ impl ScheduleManager {
         else if info.target_path.starts_with('/') {
             if let Some(h) = hooks {
                 h.log.info(&format!(
-                    "[Cron] 잡 실행: {} → {} ({:?})",
+                    "[Cron] job run: {} → {} ({:?})",
                     info.job_id, info.target_path, info.trigger
                 ));
             }
@@ -533,7 +533,7 @@ impl ScheduleManager {
         else {
             if let Some(h) = hooks {
                 h.log.info(&format!(
-                    "[Cron] 잡 실행: {} → {} ({:?})",
+                    "[Cron] job run: {} → {} ({:?})",
                     info.job_id, info.target_path, info.trigger
                 ));
                 let input = info.input_data.clone().unwrap_or_else(|| {

@@ -57,7 +57,7 @@ pub fn init_from_file() {
                         path = %path.display(),
                         models = reg.models.len(),
                         default = %reg.default_assistant_model,
-                        "LLM registry 로드 완료"
+                        "LLM registry loaded"
                     );
                     init(reg);
                     return;
@@ -66,15 +66,15 @@ pub fn init_from_file() {
                     tracing::error!(
                         path = %path.display(),
                         error = %e,
-                        "LLM registry JSON 파싱 실패 — 다음 후보 시도"
+                        "LLM registry JSON parse failed — trying next candidate"
                     );
                 }
             },
             Err(e) => {
-                tracing::warn!(path = %path.display(), error = %e, "LLM registry 읽기 실패 — 다음 후보");
+                tracing::warn!(path = %path.display(), error = %e, "LLM registry read failed — trying next candidate");
             }
         }
     }
-    tracing::warn!("LLM registry JSON 미발견 — stub registry 폴백 (모델 0). FIREBAT_LLM_MODELS_PATH env 으로 명시 가능");
+    tracing::warn!("LLM registry JSON not found — stub registry fallback (0 models); set FIREBAT_LLM_MODELS_PATH to override");
     init(stub_registry());
 }

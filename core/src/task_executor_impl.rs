@@ -258,13 +258,13 @@ impl TaskExecutor for RealTaskExecutor {
                     let alt_path = provider_to_path(&alt);
                     if let Err(reason) = self.unattended_module_gate(&alt_path, input, true).await {
                         self.log.warn(&format!(
-                            "[Pipeline] fallback 대상 제외: {} — {}",
+                            "[Pipeline] fallback candidate excluded: {} — {}",
                             alt_path, reason
                         ));
                         continue;
                     }
                     self.log.info(&format!(
-                        "[Pipeline] capability fallback 시도: {} → {} ({})",
+                        "[Pipeline] capability fallback attempt: {} → {} ({})",
                         path, alt_path, alt.module_name
                     ));
                     match self
@@ -274,19 +274,19 @@ impl TaskExecutor for RealTaskExecutor {
                     {
                         Ok(out) if out.success => {
                             self.log
-                                .info(&format!("[Pipeline] capability fallback 성공: {}", alt_path));
+                                .info(&format!("[Pipeline] capability fallback succeeded: {}", alt_path));
                             return Ok(out.data);
                         }
                         Ok(out) => {
                             self.log.warn(&format!(
-                                "[Pipeline] fallback 모듈 실패: {} — {}",
+                                "[Pipeline] fallback module failed: {} — {}",
                                 alt_path,
                                 out.error.unwrap_or_default()
                             ));
                         }
                         Err(e) => {
                             self.log.warn(&format!(
-                                "[Pipeline] fallback 예외: {} — {}",
+                                "[Pipeline] fallback exception: {} — {}",
                                 alt_path, e
                             ));
                         }

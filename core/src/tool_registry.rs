@@ -837,8 +837,8 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .to_string();
                 // SSRF guard — block internal/private/metadata targets (prompt-injection defense).
                 if let Some(reason) = crate::utils::net_guard::is_blocked_fetch_url(&url) {
-                    tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF 차단");
-                    return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — 내부/사설 주소 요청은 차단됩니다")}));
+                    tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF blocked");
+                    return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — internal/private addresses are not allowed")}));
                 }
                 let method = args
                     .get("method")
@@ -851,15 +851,15 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let body = args.get("body").cloned();
                 let timeout_ms = args.get("timeoutMs").and_then(|v| v.as_i64()).unwrap_or(30_000) as u64;
                 // MCP NetworkRequestHandler 와 동일 진단 로깅 (관찰성 대칭).
-                tracing::info!(target: "network", url = %url, method = %method, timeout_ms = timeout_ms, "[network_request] 호출 시작");
+                tracing::info!(target: "network", url = %url, method = %method, timeout_ms = timeout_ms, "[network_request] start");
                 let req = NetworkRequest { url: url.clone(), method, headers, body, timeout_ms };
                 match network.fetch(req).await {
                     Ok(resp) => {
-                        tracing::info!(target: "network", url = %url, status = resp.status, ok = resp.ok, "[network_request] 응답 수신");
+                        tracing::info!(target: "network", url = %url, status = resp.status, ok = resp.ok, "[network_request] response received");
                         Ok(serde_json::json!({"success": true, "data": resp}))
                     }
                     Err(e) => {
-                        tracing::warn!(target: "network", url = %url, error = %e, "[network_request] 실패");
+                        tracing::warn!(target: "network", url = %url, error = %e, "[network_request] failed");
                         Ok(serde_json::json!({"success": false, "error": e}))
                     }
                 }

@@ -80,7 +80,7 @@ impl ArcticLocalEmbedderAdapter {
                         model_id = ARCTIC_MODEL_ID,
                         cache_dir = ?self.cache_dir,
                         error = %e,
-                        "[ArcticEmbedder] 모델 로드 실패 — 다음 호출 시 재시도"
+                        "[ArcticEmbedder] model load failed — will retry on next call"
                     );
                 }
                 result
@@ -94,7 +94,7 @@ impl ArcticLocalEmbedderAdapter {
             target: "embedder",
             model_id = ARCTIC_MODEL_ID,
             cache_dir = ?self.cache_dir,
-            "[ArcticEmbedder] 모델 로드 시작 — 첫 호출 시 ~1.1GB 다운로드"
+            "[ArcticEmbedder] model load start"
         );
         let api = self.build_api()?;
         let repo = api.repo(Repo::with_revision(
@@ -103,34 +103,34 @@ impl ArcticLocalEmbedderAdapter {
             "main".to_string(),
         ));
 
-        tracing::debug!(target: "embedder", "[ArcticEmbedder] config.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[ArcticEmbedder] downloading config.json");
         let config_path = repo
             .get("config.json")
             .await
-            .map_err(|e| format!("Arctic config.json 다운로드 실패: {e}"))?;
-        tracing::debug!(target: "embedder", path = ?config_path, "[ArcticEmbedder] config.json 받음");
+            .map_err(|e| format!("Arctic config.json download failed: {e}"))?;
+        tracing::debug!(target: "embedder", path = ?config_path, "[ArcticEmbedder] config.json fetched");
 
-        tracing::debug!(target: "embedder", "[ArcticEmbedder] tokenizer.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[ArcticEmbedder] downloading tokenizer.json");
         let tokenizer_path = repo
             .get("tokenizer.json")
             .await
-            .map_err(|e| format!("Arctic tokenizer.json 다운로드 실패: {e}"))?;
-        tracing::debug!(target: "embedder", path = ?tokenizer_path, "[ArcticEmbedder] tokenizer.json 받음");
+            .map_err(|e| format!("Arctic tokenizer.json download failed: {e}"))?;
+        tracing::debug!(target: "embedder", path = ?tokenizer_path, "[ArcticEmbedder] tokenizer.json fetched");
 
-        tracing::debug!(target: "embedder", "[ArcticEmbedder] model.safetensors 다운로드 시도 (~1.1GB)");
+        tracing::debug!(target: "embedder", "[ArcticEmbedder] downloading model.safetensors");
         let weights_path = repo
             .get("model.safetensors")
             .await
-            .map_err(|e| format!("Arctic model.safetensors 다운로드 실패: {e}"))?;
-        tracing::info!(target: "embedder", path = ?weights_path, "[ArcticEmbedder] safetensors 받음");
+            .map_err(|e| format!("Arctic model.safetensors download failed: {e}"))?;
+        tracing::info!(target: "embedder", path = ?weights_path, "[ArcticEmbedder] safetensors fetched");
 
         let config_str = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("config.json 읽기: {e}"))?;
+            .map_err(|e| format!("config.json read: {e}"))?;
         let config: Config = serde_json::from_str(&config_str)
-            .map_err(|e| format!("config.json 파싱: {e}"))?;
+            .map_err(|e| format!("config.json parse: {e}"))?;
 
         let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| format!("tokenizer.json 파싱: {e}"))?;
+            .map_err(|e| format!("tokenizer.json parse: {e}"))?;
         tokenizer
             .with_padding(Some(tokenizers::PaddingParams {
                 strategy: tokenizers::PaddingStrategy::BatchLongest,
@@ -160,7 +160,7 @@ impl ArcticLocalEmbedderAdapter {
             target: "embedder",
             model_id = ARCTIC_MODEL_ID,
             dim = ARCTIC_DIM,
-            "[ArcticEmbedder] 모델 로드 완료 — OnceCell cache (다음 호출은 hf_hub init 0)"
+            "[ArcticEmbedder] model loaded"
         );
         Ok(Arc::new(ArcticState {
             model,
@@ -176,7 +176,7 @@ impl ArcticLocalEmbedderAdapter {
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "https://huggingface.co".to_string());
-        tracing::info!(target: "embedder", endpoint = %endpoint, "[ArcticEmbedder] hf-hub endpoint 설정");
+        tracing::info!(target: "embedder", endpoint = %endpoint, "[ArcticEmbedder] hf-hub endpoint set");
         let mut builder = hf_hub::api::tokio::ApiBuilder::new()
             .with_endpoint(endpoint);
         if let Some(dir) = &self.cache_dir {
@@ -184,7 +184,7 @@ impl ArcticLocalEmbedderAdapter {
         }
         builder
             .build()
-            .map_err(|e| format!("hf-hub Api 초기화: {e}"))
+            .map_err(|e| format!("hf-hub Api init: {e}"))
     }
 
     /// 단일 텍스트 → mean-pooled + L2-normalized 1024-dim Vec<f32>.

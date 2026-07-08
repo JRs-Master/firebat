@@ -220,7 +220,7 @@ impl ConversationManager {
                 if let Err(e) = self.sync_embeddings(owner, id, arr).await {
                     if let Some(log) = &self.log {
                         log.debug(&format!(
-                            "[ConversationManager] sync_embeddings 실패 ({id}): {e} — 저장 자체는 성공"
+                            "[ConversationManager] sync_embeddings failed ({id}): {e} — save itself succeeded"
                         ));
                     }
                 }
@@ -650,7 +650,7 @@ async fn sync_conversation_embeddings(
     if embedded_count > 0 {
         if let Some(log) = log {
             log.info(&format!(
-                "대화 임베딩 갱신 — 신규/변경 {}건 (conv={})",
+                "conversation embeddings updated — {} new/changed (conv={})",
                 embedded_count, conv_id
             ));
         }

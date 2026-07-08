@@ -117,7 +117,7 @@ impl TokioCronAdapter {
             // Job DEFINITIONS — a silently dropped write here means schedules vanish on
             // restart with zero trace (disk full / permissions). Log loudly.
             if let Err(e) = std::fs::write(&self.jobs_file, raw) {
-                tracing::error!(target: "cron", error = %e, "cron jobs 파일 저장 실패 — 재시작 시 스케줄 유실 위험");
+                tracing::error!(target: "cron", error = %e, "failed to save cron jobs file — schedules may be lost on restart");
             }
         }
     }
@@ -125,7 +125,7 @@ impl TokioCronAdapter {
     fn flush_logs(&self, logs: &[CronLogEntry]) {
         if let Ok(raw) = serde_json::to_string_pretty(logs) {
             if let Err(e) = std::fs::write(&self.logs_file, raw) {
-                tracing::warn!(target: "cron", error = %e, "cron 로그 파일 저장 실패");
+                tracing::warn!(target: "cron", error = %e, "failed to save cron log file");
             }
         }
     }
@@ -133,7 +133,7 @@ impl TokioCronAdapter {
     fn flush_notifications(&self, notes: &[CronNotification]) {
         if let Ok(raw) = serde_json::to_string_pretty(notes) {
             if let Err(e) = std::fs::write(&self.notifications_file, raw) {
-                tracing::warn!(target: "cron", error = %e, "cron 알림 파일 저장 실패");
+                tracing::warn!(target: "cron", error = %e, "failed to save cron notification file");
             }
         }
     }

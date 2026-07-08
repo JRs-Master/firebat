@@ -83,7 +83,7 @@ impl E5LocalEmbedderAdapter {
                         model_id = E5_MODEL_ID,
                         cache_dir = ?self.cache_dir,
                         error = %e,
-                        "[E5Embedder] 모델 로드 실패 — 다음 호출 시 재시도"
+                        "[E5Embedder] model load failed — will retry on next call"
                     );
                 }
                 result
@@ -97,7 +97,7 @@ impl E5LocalEmbedderAdapter {
             target: "embedder",
             model_id = E5_MODEL_ID,
             cache_dir = ?self.cache_dir,
-            "[E5Embedder] 모델 로드 시작 — 첫 호출 시 ~470MB 다운로드"
+            "[E5Embedder] model load start"
         );
         // hf-hub Api — 모델 자동 다운로드 + 캐싱.
         let api = self.build_api()?;
@@ -107,34 +107,34 @@ impl E5LocalEmbedderAdapter {
             "main".to_string(),
         ));
 
-        tracing::debug!(target: "embedder", "[E5Embedder] config.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[E5Embedder] downloading config.json");
         let config_path = repo
             .get("config.json")
             .await
-            .map_err(|e| format!("E5 config.json 다운로드 실패: {e}"))?;
-        tracing::debug!(target: "embedder", path = ?config_path, "[E5Embedder] config.json 받음");
+            .map_err(|e| format!("E5 config.json download failed: {e}"))?;
+        tracing::debug!(target: "embedder", path = ?config_path, "[E5Embedder] config.json fetched");
 
-        tracing::debug!(target: "embedder", "[E5Embedder] tokenizer.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[E5Embedder] downloading tokenizer.json");
         let tokenizer_path = repo
             .get("tokenizer.json")
             .await
-            .map_err(|e| format!("E5 tokenizer.json 다운로드 실패: {e}"))?;
-        tracing::debug!(target: "embedder", path = ?tokenizer_path, "[E5Embedder] tokenizer.json 받음");
+            .map_err(|e| format!("E5 tokenizer.json download failed: {e}"))?;
+        tracing::debug!(target: "embedder", path = ?tokenizer_path, "[E5Embedder] tokenizer.json fetched");
 
-        tracing::debug!(target: "embedder", "[E5Embedder] model.safetensors 다운로드 시도 (~470MB)");
+        tracing::debug!(target: "embedder", "[E5Embedder] downloading model.safetensors");
         let weights_path = repo
             .get("model.safetensors")
             .await
-            .map_err(|e| format!("E5 model.safetensors 다운로드 실패: {e}"))?;
-        tracing::info!(target: "embedder", path = ?weights_path, "[E5Embedder] safetensors 받음");
+            .map_err(|e| format!("E5 model.safetensors download failed: {e}"))?;
+        tracing::info!(target: "embedder", path = ?weights_path, "[E5Embedder] safetensors fetched");
 
         let config_str = std::fs::read_to_string(&config_path)
-            .map_err(|e| format!("config.json 읽기: {e}"))?;
+            .map_err(|e| format!("config.json read: {e}"))?;
         let config: Config = serde_json::from_str(&config_str)
-            .map_err(|e| format!("config.json 파싱: {e}"))?;
+            .map_err(|e| format!("config.json parse: {e}"))?;
 
         let mut tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| format!("tokenizer.json 파싱: {e}"))?;
+            .map_err(|e| format!("tokenizer.json parse: {e}"))?;
         // padding + truncation 활성 — batch 시 길이 통일. 단일 호출 시도 truncation 만 의미.
         tokenizer
             .with_padding(Some(tokenizers::PaddingParams {
@@ -165,7 +165,7 @@ impl E5LocalEmbedderAdapter {
             target: "embedder",
             model_id = E5_MODEL_ID,
             dim = E5_DIM,
-            "[E5Embedder] 모델 로드 완료 — OnceCell cache (다음 호출은 hf_hub init 0)"
+            "[E5Embedder] model loaded"
         );
         Ok(Arc::new(E5State {
             model,
@@ -186,7 +186,7 @@ impl E5LocalEmbedderAdapter {
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "https://huggingface.co".to_string());
-        tracing::info!(target: "embedder", endpoint = %endpoint, "[E5Embedder] hf-hub endpoint 설정");
+        tracing::info!(target: "embedder", endpoint = %endpoint, "[E5Embedder] hf-hub endpoint set");
         let mut builder = hf_hub::api::tokio::ApiBuilder::new()
             .with_endpoint(endpoint);
         if let Some(dir) = &self.cache_dir {
@@ -194,7 +194,7 @@ impl E5LocalEmbedderAdapter {
         }
         builder
             .build()
-            .map_err(|e| format!("hf-hub Api 초기화: {e}"))
+            .map_err(|e| format!("hf-hub Api init: {e}"))
     }
 
     /// 단일 텍스트 → mean-pooled + L2-normalized 384-dim Vec<f32>.

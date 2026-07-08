@@ -388,7 +388,7 @@ impl TaskManager {
                 StepOutcome::EarlyExit(value) => {
                     // CONDITION 미충족 — 정상 종료, 이후 step skip
                     self.log.info(&format!(
-                        "[Pipeline] 조건 미충족 — 파이프라인 정상 종료 (이후 {}단계 스킵)",
+                        "[Pipeline] condition not met — pipeline ended normally ({} remaining steps skipped)",
                         total - i - 1
                     ));
                     if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
@@ -405,7 +405,7 @@ impl TaskManager {
                     // journal 에도 반드시 남긴다 — status job 이 없는 실행(cron DelayedRun 등)은
                     // 옛엔 실패가 어디에도 안 찍혀 무증상 유실이었다 (2026-07-07 실측: 승인된
                     // TQQQ 예약 매수의 MCP_CALL 실패가 로그 0 으로 증발).
-                    self.log.warn(&format!("[Pipeline] 실패 — {full_err}"));
+                    self.log.warn(&format!("[Pipeline] failed — {full_err}"));
                     if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
                         let _ = s.fail(job_id, full_err.clone());
                     }

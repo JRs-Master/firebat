@@ -306,10 +306,10 @@ impl ConsolidationManager {
             let check = cost.check_budget();
             if !check.within_budget {
                 tracing::warn!(
-                    reason = check.reason.as_deref().unwrap_or("한도 초과"),
+                    reason = check.reason.as_deref().unwrap_or("budget exceeded"),
                     daily_used = check.daily_used_usd,
                     monthly_used = check.monthly_used_usd,
-                    "ConsolidationManager: 예산 한도 초과 — consolidate_conversation skip"
+                    "ConsolidationManager: budget exceeded — consolidate_conversation skipped"
                 );
                 return Ok(ConsolidationOutcome {
                     extracted: ExtractionResult::default(),

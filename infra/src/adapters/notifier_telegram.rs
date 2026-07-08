@@ -78,7 +78,7 @@ impl INotifierPort for TelegramNotifierAdapter {
             Some(t) if !t.is_empty() => t,
             _ => {
                 tracing::debug!(
-                    "TelegramNotifier: TELEGRAM_BOT_TOKEN 미설정 — 알림 skip"
+                    "TelegramNotifier: TELEGRAM_BOT_TOKEN not set — notification skipped"
                 );
                 return;
             }
@@ -87,7 +87,7 @@ impl INotifierPort for TelegramNotifierAdapter {
             Some(id) if !id.is_empty() => id,
             _ => {
                 tracing::debug!(
-                    "TelegramNotifier: TELEGRAM_CHAT_ID 미설정 — 알림 skip"
+                    "TelegramNotifier: TELEGRAM_CHAT_ID not set — notification skipped"
                 );
                 return;
             }
@@ -108,16 +108,16 @@ impl INotifierPort for TelegramNotifierAdapter {
         let result = self.http.post(&url).json(&body).send().await;
         match result {
             Ok(resp) if resp.status().is_success() => {
-                tracing::debug!(level = ?level, "TelegramNotifier: 알림 발송 성공");
+                tracing::debug!(level = ?level, "TelegramNotifier: notification sent");
             }
             Ok(resp) => {
                 tracing::warn!(
                     status = %resp.status(),
-                    "TelegramNotifier: Telegram API non-2xx 응답 — 토큰 / chat_id 확인 필요"
+                    "TelegramNotifier: Telegram API non-2xx — check token / chat_id"
                 );
             }
             Err(e) => {
-                tracing::warn!(error = %e, "TelegramNotifier: HTTP 요청 실패");
+                tracing::warn!(error = %e, "TelegramNotifier: HTTP request failed");
             }
         }
     }

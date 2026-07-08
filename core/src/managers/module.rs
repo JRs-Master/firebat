@@ -244,7 +244,7 @@ impl ModuleManager {
                         tracing::warn!(
                             module = module_name,
                             error = %e,
-                            "[ModuleManager] 출력 schema 위반 — 모듈 stdout 이 config.output 어김"
+                            "[ModuleManager] output schema violation — module stdout does not match config.output"
                         );
                     }
                 }

@@ -192,7 +192,7 @@ impl StdioConnection {
                         break;
                     }
                     Err(e) => {
-                        tracing::warn!(server = %server_name_for_reader, error = %e, "MCP stdio read 실패");
+                        tracing::warn!(server = %server_name_for_reader, error = %e, "MCP stdio read failed");
                         break;
                     }
                     Ok(_) => {
@@ -215,7 +215,7 @@ impl StdioConnection {
                                     server = %server_name_for_reader,
                                     error = %e,
                                     line = %trimmed,
-                                    "MCP stdio JSON parse 실패"
+                                    "MCP stdio JSON parse failed"
                                 );
                             }
                         }
@@ -434,7 +434,7 @@ impl SseConnection {
                 let chunk = match chunk {
                     Ok(c) => c,
                     Err(e) => {
-                        tracing::warn!(server = %server_name_for_reader, error = %e, "SSE stream 끊김");
+                        tracing::warn!(server = %server_name_for_reader, error = %e, "SSE stream disconnected");
                         break;
                     }
                 };
@@ -832,7 +832,7 @@ impl IMcpClientPort for McpClientFileAdapter {
                 Ok(mut tools) => all.append(&mut tools),
                 Err(e) => {
                     // 한 server 실패해도 나머지 계속 — 운영 안정성 (옛 TS 동등)
-                    tracing::warn!(server = %name, error = %e, "MCP list_tools 실패 (skip)");
+                    tracing::warn!(server = %name, error = %e, "MCP list_tools failed (skip)");
                 }
             }
         }

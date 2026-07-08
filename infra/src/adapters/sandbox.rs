@@ -597,7 +597,7 @@ impl ProcessSandboxAdapter {
                         field = %field_name,
                         cache_key = %key,
                         total = total_count,
-                        "[sandbox] auto-cache 적용 — 큰 배열 필드를 cache 로 추출"
+                        "[sandbox] auto-cache applied — large array field extracted to cache"
                     );
                 }
                 Err(e) => {
@@ -606,7 +606,7 @@ impl ProcessSandboxAdapter {
                         module = module_name,
                         action = input_action,
                         error = %e,
-                        "[sandbox] auto-cache 저장 실패 — 폐기"
+                        "[sandbox] auto-cache save failed — discarded"
                     );
                 }
             }
@@ -674,7 +674,7 @@ impl ProcessSandboxAdapter {
                         cache_key = %key,
                         total_chars = total_chars,
                         total_lines = total_lines,
-                        "[sandbox] auto-cache 적용 — 큰 텍스트 필드를 줄 단위로 cache 로 추출"
+                        "[sandbox] auto-cache applied — large text field cached line-by-line"
                     );
                 }
                 Err(e) => {
@@ -683,7 +683,7 @@ impl ProcessSandboxAdapter {
                         module = module_name,
                         action = input_action,
                         error = %e,
-                        "[sandbox] auto-cache(텍스트) 저장 실패 — 폐기"
+                        "[sandbox] auto-cache (text) save failed — discarded"
                     );
                 }
             }
@@ -1378,7 +1378,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
         if let Some(tp) = &self.token_provider {
             for (name, spec, life) in &token_secrets {
                 if let Err(e) = tp.ensure_fresh(name, spec, *life, mock, false).await {
-                    tracing::warn!(target: "sandbox", secret = %name, error = %e, "proactive 토큰 갱신 실패 — 캐시로 진행");
+                    tracing::warn!(target: "sandbox", secret = %name, error = %e, "proactive token refresh failed — proceeding with cached token");
                 }
             }
         }
@@ -1401,12 +1401,12 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     if tp.is_invalid(spec, &result.data) {
                         match tp.ensure_fresh(name, spec, *life, mock, true).await {
                             Ok(_) => refreshed = true,
-                            Err(e) => tracing::warn!(target: "sandbox", secret = %name, error = %e, "reactive 토큰 재발급 실패"),
+                            Err(e) => tracing::warn!(target: "sandbox", secret = %name, error = %e, "reactive token reissue failed"),
                         }
                     }
                 }
                 if refreshed {
-                    tracing::info!(target: "sandbox", "토큰 무효 감지 → 재발급 후 1회 재시도");
+                    tracing::info!(target: "sandbox", "invalid token detected — reissued, retrying once");
                     result = self
                         .run_once(&full_path, &runtime, &module_dir, input_data, opts)
                         .await?;
@@ -1577,10 +1577,10 @@ impl ProcessSandboxAdapter {
             module = module_name,
             action = input_action,
             input_keys = ?input_keys,
-            "[sandbox] sysmod 호출 시작"
+            "[sandbox] sysmod call start"
         );
 
-        let mut child = cmd.spawn().map_err(|e| format!("spawn 실패: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
             // 모듈 stdin protocol — `{correlationId, data}` wrap. main.py / index.mjs 가
@@ -1651,7 +1651,7 @@ impl ProcessSandboxAdapter {
             stderr_size = stderr_buf.len(),
             stdout_preview = %stdout_preview,
             stderr_preview = %stderr_preview,
-            "[sandbox] sysmod 호출 종료"
+            "[sandbox] sysmod call end"
         );
         if !exit_status.success() {
             tracing::warn!(
@@ -1660,7 +1660,7 @@ impl ProcessSandboxAdapter {
                 action = input_action,
                 exit_code = ?exit_code,
                 stderr_preview = %stderr_buf.chars().take(300).collect::<String>(),
-                "[sandbox] sysmod 비정상 종료"
+                "[sandbox] sysmod abnormal exit"
             );
             // stderr 에 패키지 누락 관련 정보가 있으니 error 에 포함 (try_auto_install 매칭용)
             let combined_err = if !stderr_buf.is_empty() {
@@ -1785,7 +1785,7 @@ impl ProcessSandboxAdapter {
                                         action = input_action,
                                         cache_key = %key,
                                         record_count,
-                                        "[sandbox] _cache envelope → SysmodCacheAdapter 저장"
+                                        "[sandbox] _cache envelope stored to SysmodCacheAdapter"
                                     );
                                 }
                                 Err(e) => {
@@ -1794,7 +1794,7 @@ impl ProcessSandboxAdapter {
                                         module = module_name,
                                         action = input_action,
                                         error = %e,
-                                        "[sandbox] _cache 저장 실패 — envelope 폐기"
+                                        "[sandbox] _cache save failed — envelope discarded"
                                     );
                                 }
                             }

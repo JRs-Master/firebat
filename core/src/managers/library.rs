@@ -158,7 +158,7 @@ impl LibraryManager {
         let chunks = chunk_text(extracted_text, CHUNK_SIZE, CHUNK_OVERLAP);
         tracing::info!(
             category = "library",
-            "라이브러리 자료 인덱싱 시작 — 자료='{}' 청크 {}개",
+            "library indexing start — ref='{}' chunks={}",
             name,
             chunks.len()
         );
@@ -191,7 +191,7 @@ impl LibraryManager {
             .await?;
         tracing::info!(
             category = "library",
-            "라이브러리 자료 인덱싱 완료 — 자료='{}' 청크 {}개",
+            "library indexing done — ref='{}' chunks={}",
             name,
             chunks.len()
         );
@@ -304,7 +304,7 @@ impl LibraryManager {
         // query 임베딩
         tracing::info!(
             category = "library",
-            "라이브러리 검색 — query='{}' 대상 reference {}개",
+            "library search — query='{}' references={}",
             query,
             target_refs.len()
         );
@@ -391,7 +391,7 @@ impl LibraryManager {
         let cut = hits.last().map(|h| h.score).unwrap_or(top);
         tracing::info!(
             category = "library",
-            "라이브러리 cosine — query='{query}' top_score={top:.4} cut_score={cut:.4} hits={}",
+            "library cosine — query='{query}' top_score={top:.4} cut_score={cut:.4} hits={}",
             hits.len()
         );
         Ok(hits)

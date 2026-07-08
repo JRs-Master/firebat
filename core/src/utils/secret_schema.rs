@@ -136,7 +136,7 @@ fn parse_entry(entry: &serde_json::Value) -> Option<SecretMeta> {
         Some(raw) => match serde_json::from_value::<OAuthSpec>(raw.clone()) {
             Ok(spec) => Some(spec),
             Err(e) => {
-                tracing::warn!(target: "secret", secret = %name, error = %e, "oauth 스펙 파싱 실패 — 토큰 자동발급 비활성");
+                tracing::warn!(target: "secret", secret = %name, error = %e, "oauth spec parse failed — token auto-issue disabled");
                 None
             }
         },

@@ -1729,8 +1729,8 @@ impl McpToolHandler for NetworkRequestHandler {
         let url = obj_str(&args, "url").ok_or_else(|| "url 필수".to_string())?;
         // SSRF guard — block internal/private/metadata targets (prompt-injection defense).
         if let Some(reason) = firebat_core::utils::net_guard::is_blocked_fetch_url(&url) {
-            tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF 차단");
-            return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — 내부/사설 주소 요청은 차단됩니다")}));
+            tracing::warn!(target: "network", url = %url, %reason, "[network_request] SSRF blocked");
+            return Ok(serde_json::json!({"success": false, "error": format!("network_request blocked ({reason}) — internal/private addresses are not allowed")}));
         }
         let method = obj_str(&args, "method").unwrap_or_else(|| "GET".to_string());
         let headers: Option<std::collections::HashMap<String, String>> = args
@@ -1743,7 +1743,7 @@ impl McpToolHandler for NetworkRequestHandler {
             url = %url,
             method = %method,
             timeout_ms = timeout_ms,
-            "[network_request] 호출 시작"
+            "[network_request] start"
         );
         let req = firebat_core::ports::NetworkRequest {
             url: url.clone(),
@@ -1764,12 +1764,12 @@ impl McpToolHandler for NetworkRequestHandler {
                     status = resp.status,
                     ok = resp.ok,
                     body_size = body_size,
-                    "[network_request] 응답 수신"
+                    "[network_request] response received"
                 );
                 Ok(serde_json::json!({"success": true, "data": resp}))
             }
             Err(e) => {
-                tracing::warn!(target: "network", url = %url, error = %e, "[network_request] 실패");
+                tracing::warn!(target: "network", url = %url, error = %e, "[network_request] failed");
                 Ok(serde_json::json!({"success": false, "error": e}))
             }
         }
@@ -2172,7 +2172,7 @@ pub async fn serve(state: Arc<McpServerState>) -> Result<(), String> {
     tracing::info!(target: "mcp", "MCP HTTP server listening on {addr}");
     axum::serve(listener, router)
         .await
-        .map_err(|e| format!("MCP serve 실패: {e}"))?;
+        .map_err(|e| format!("MCP serve failed: {e}"))?;
     Ok(())
 }
 
@@ -2185,7 +2185,7 @@ pub async fn serve(state: Arc<McpServerState>) -> Result<(), String> {
 /// 도구 호출 패턴은 HTTP 와 동일 (initialize / tools/list / tools/call).
 pub async fn serve_stdio(state: Arc<McpServerState>) -> Result<(), String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
-    tracing::info!(target: "mcp", "MCP stdio server 시작 (외부 사용자 진입용)");
+    tracing::info!(target: "mcp", "MCP stdio server started");
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
     let mut reader = BufReader::new(stdin).lines();

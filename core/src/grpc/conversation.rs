@@ -337,7 +337,7 @@ impl ConversationService for ConversationServiceImpl {
         // cascade: 그 대화의 conv-scoped 첨부 미디어(TTS 오디오 등) 삭제 — best-effort(실패해도 막지 않음).
         if let Some(media) = &self.media {
             if let Err(e) = media.delete_conv_attachments(&args.id).await {
-                tracing::warn!(target: "media", "conv 첨부 cascade 삭제 실패 (conv={}): {e}", args.id);
+                tracing::warn!(target: "media", "attachment cascade delete failed (conv={}): {e}", args.id);
             }
         }
         Ok(Response::new(ConversationPermanentDeleteResponse {}))

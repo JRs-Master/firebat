@@ -150,7 +150,7 @@ impl HistoryResolver {
 
         // 진단 — 벡터(E5) 회상 품질 (admin 로그 탭): 매칭 수 / top score / spread.
         // E5 유지 vs 다른 임베딩 모델 교체 판단용.
-        tracing::info!(target: "ai", count = picked.len(), top_score = top1, spread = spread, "search_history 벡터 회상");
+        tracing::info!(target: "ai", count = picked.len(), top_score = top1, spread = spread, "search_history vector recall");
 
         // 매칭 대화의 Q&A 페어 full 원문 — 옛 200자 preview → 전체 (E5 가 고른 대화 통째로).
         // user 매칭이면 다음 assistant, assistant 매칭이면 이전 user 를 같이 (한 덩어리).

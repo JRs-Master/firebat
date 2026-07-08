@@ -269,7 +269,7 @@ impl LibraryService for LibraryServiceImpl {
                 match std::fs::copy(&args.file_path, &dest) {
                     Ok(_) => Some(dest.to_string_lossy().to_string()),
                     Err(e) => {
-                        tracing::warn!(category = "library", "원본 보관 실패 (추출은 계속): {e}");
+                        tracing::warn!(category = "library", "original file archive failed (extraction continues): {e}");
                         None
                     }
                 }

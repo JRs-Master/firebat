@@ -85,7 +85,7 @@ impl LogService for LogServiceImpl {
         let filter = req.into_inner().filter;
         match reload_log_filter(&self.reload_handle, &filter) {
             Ok(_) => {
-                tracing::info!(filter = %filter, "[log] 필터 reload (RPC)");
+                tracing::info!(filter = %filter, "[log] filter reloaded (RPC)");
                 Ok(Response::new(SetLogFilterResponse {
                     ok: true,
                     error: String::new(),

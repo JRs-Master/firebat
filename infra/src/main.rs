@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("logs.db"));
     let log_reload_handle = init_tracing(log_db_path.clone());
-    tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
+    tracing::info!(version = firebat_core::version(), "Firebat Core booting");
 
     // 옛 commit `3418b4b` 의 HF_ENDPOINT env 자동 default 설정 fix = 잘못된 진단 — hf-hub 0.3
     // 은 env 를 안 읽음 + default endpoint = "https://huggingface.co" 자체에 있음. 사용자 환경
@@ -119,7 +119,7 @@ async fn main() -> Result<()> {
             ) {
                 Ok(s) => s,
                 Err(e) => {
-                    tracing::warn!(error = %e, "[log] SIGHUP handler 등록 실패");
+                    tracing::warn!(error = %e, "[log] SIGHUP handler registration failed");
                     return;
                 }
             };
@@ -134,12 +134,12 @@ async fn main() -> Result<()> {
                     &filter_str,
                 ) {
                     Ok(_) => {
-                        tracing::info!(filter = %filter_str, "[log] 필터 reload (SIGHUP)")
+                        tracing::info!(filter = %filter_str, "[log] filter reloaded (SIGHUP)")
                     }
                     Err(e) => tracing::warn!(
                         error = %e,
                         filter = %filter_str,
-                        "[log] 필터 reload 실패 — 기존 유지"
+                        "[log] filter reload failed — keeping current"
                     ),
                 }
             }
@@ -208,14 +208,14 @@ async fn main() -> Result<()> {
     let db: Arc<dyn IDatabasePort> = Arc::new(
         SqliteDatabaseAdapter::new(&app_db_path)
             .map_err(anyhow::Error::msg)
-            .context("App DB open 실패")?,
+            .context("failed to open app DB")?,
     );
     // Sandbox 어댑터는 status_manager 의존 (heavy 패키지 background install 진행 상태 노출) —
     // event_manager + status_manager wiring 후 생성.
     let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
         McpClientFileAdapter::new(mcp_servers_path)
             .map_err(anyhow::Error::msg)
-            .context("MCP servers 파일 open 실패")?,
+            .context("failed to open MCP servers file")?,
     );
     // IEmbedderPort — env `FIREBAT_EMBEDDER` 으로 swap:
     //   - `e5` (운영 default, 2026-05-17 정정): candle + intfloat/multilingual-e5-small
@@ -233,18 +233,18 @@ async fn main() -> Result<()> {
     let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
         "arctic" => {
             tracing::info!(
-                "Embedder: Arctic Embed L v2.0 (Snowflake/snowflake-arctic-embed-l-v2.0, 1024-dim, max_length 8192, 첫 호출 시 ~1.1GB 다운로드)"
+                "Embedder: Arctic Embed L v2.0 (1024-dim)"
             );
             Arc::new(ArcticLocalEmbedderAdapter::new())
         }
         "e5" => {
             tracing::info!(
-                "Embedder: E5 local (intfloat/multilingual-e5-small, 384-dim, 첫 호출 시 모델 다운로드)"
+                "Embedder: E5 local (intfloat/multilingual-e5-small, 384-dim)"
             );
             Arc::new(E5LocalEmbedderAdapter::new())
         }
         _ => {
-            tracing::info!("Embedder: stub (FNV-1a hash, 의미 검색 X — env FIREBAT_EMBEDDER=arctic 으로 활성)");
+            tracing::info!("Embedder: stub (FNV-1a hash, no semantic search)");
             Arc::new(StubEmbedderAdapter::new())
         }
     };
@@ -258,7 +258,7 @@ async fn main() -> Result<()> {
     let memory_adapter = Arc::new(
         SqliteMemoryAdapter::new(&memory_db_path)
             .map_err(anyhow::Error::msg)
-            .context("Memory DB open 실패")?
+            .context("failed to open memory DB")?
             .with_embedder(embedder.clone()),
     );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
@@ -299,11 +299,11 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "image-rs".to_string());
     let image_processor: Arc<dyn IImageProcessorPort> = match processor_kind.as_str() {
         "stub" => {
-            tracing::info!("Image processor: stub (no-op, 단위 테스트 용)");
+            tracing::info!("Image processor: stub (no-op)");
             Arc::new(StubImageProcessorAdapter::new())
         }
         _ => {
-            tracing::info!("Image processor: image-rs (variants/blurhash/placeholder 활성)");
+            tracing::info!("Image processor: image-rs (variants/blurhash/placeholder)");
             Arc::new(ImageRsProcessorAdapter::new())
         }
     };
@@ -402,7 +402,7 @@ async fn main() -> Result<()> {
         ) {
             Ok(a) => Some(Arc::new(a)),
             Err(e) => {
-                tracing::warn!(error = %e, "timeseries store 초기화 실패 — ephemeral 캐시만 사용");
+                tracing::warn!(error = %e, "timeseries store init failed — ephemeral cache only");
                 None
             }
         };
@@ -590,7 +590,7 @@ async fn main() -> Result<()> {
             retrieval_engine_b = retrieval_engine_b.with_shadow(Arc::new(
                 firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(key),
             ));
-            tracing::info!(target: "embed_shadow", "Upstage 섀도우 임베딩 A/B 활성 (history 회상 비교)");
+            tracing::info!(target: "embed_shadow", "Upstage shadow embedding A/B enabled (history recall compare)");
         }
     }
     let retrieval_engine = Arc::new(retrieval_engine_b);
@@ -882,7 +882,7 @@ async fn main() -> Result<()> {
                         }
                         (true, None)
                     }
-                    other => (false, Some(format!("알 수 없는 시스템 스케줄 종류: {other}"))),
+                    other => (false, Some(format!("unknown system schedule kind: {other}"))),
                 };
                 // 마지막 실행 시각 기록 — 부팅 시 overdue 캐치업 판단용.
                 let _ = vault_b.set_secret(
@@ -932,11 +932,11 @@ async fn main() -> Result<()> {
                 });
                 // sysmod_calendar add — admin scope(_hubScope 없음). hub cron 별도 scope 는 추후.
                 match modmgr.run("calendar", &cal_input).await {
-                    Ok(_) => tracing::info!(target: "cron", job = %job_id, "[cron-cal] 실행기록 캘린더 추가됨"),
-                    Err(e) => tracing::warn!(target: "cron", job = %job_id, error = %e, "[cron-cal] 캘린더 추가 실패"),
+                    Ok(_) => tracing::info!(target: "cron", job = %job_id, "[cron-cal] run record added to calendar"),
+                    Err(e) => tracing::warn!(target: "cron", job = %job_id, error = %e, "[cron-cal] calendar add failed"),
                 }
             } else {
-                tracing::info!(target: "cron", job = %job_id, "[cron-cal] show_cal=false → 캘린더 기록 skip (잡 showInCalendar 미설정/미전파?)");
+                tracing::info!(target: "cron", job = %job_id, "[cron-cal] show_cal=false — calendar record skipped");
             }
             result
         })
@@ -970,8 +970,8 @@ async fn main() -> Result<()> {
                     ..Default::default()
                 };
                 match sched.schedule(jid, &format!("builtin:{kind}"), opts).await {
-                    Ok(_) => tracing::info!(job = jid, "[system-cron] 시스템 스케줄 등록"),
-                    Err(e) => tracing::warn!(job = jid, error = %e, "[system-cron] 등록 실패"),
+                    Ok(_) => tracing::info!(job = jid, "[system-cron] system schedule registered"),
+                    Err(e) => tracing::warn!(job = jid, error = %e, "[system-cron] registration failed"),
                 }
             }
             // overdue 캐치업 대상 수집 — 과거에 실행된 적이 있고(lastrun 존재) 그게 6h 초과 = 진짜 놓친
@@ -994,7 +994,7 @@ async fn main() -> Result<()> {
             tokio::spawn(async move {
                 for jid in overdue_jids {
                     if let Err(e) = sched_bg.trigger_now(&jid).await {
-                        tracing::warn!(job = %jid, error = %e, "[system-cron] overdue 캐치업 실패");
+                        tracing::warn!(job = %jid, error = %e, "[system-cron] overdue catch-up failed");
                     }
                 }
             });
@@ -1209,7 +1209,7 @@ async fn main() -> Result<()> {
         .await;
         tokio::spawn(async move {
             if let Err(e) = firebat_infra::mcp_server::serve(mcp_state).await {
-                tracing::error!("MCP server 종료: {e}");
+                tracing::error!("MCP server exited: {e}");
             }
         });
     }
@@ -1219,7 +1219,7 @@ async fn main() -> Result<()> {
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(firebat_core::FILE_DESCRIPTOR_SET)
         .build_v1()
-        .context("gRPC reflection service 설정 실패")?;
+        .context("failed to set up gRPC reflection service")?;
 
     Server::builder()
         .add_service(reflection_service)

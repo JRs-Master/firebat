@@ -110,11 +110,11 @@ impl OAuthTokenProvider {
         {
             if !rt.is_empty() {
                 self.vault.set_secret(&format!("user:{rt_secret}"), rt);
-                tracing::info!(target: "token", secret = %name, refresh_secret = %rt_secret, "refresh_token 회전 영속");
+                tracing::info!(target: "token", secret = %name, refresh_secret = %rt_secret, "refresh_token rotated and persisted");
             }
         }
         // 발급 이벤트만 기록 (토큰 값은 절대 X) — proactive/reactive 갱신 가시화 + 검증.
-        tracing::info!(target: "token", secret = %name, mock, force, "OAuth 토큰 발급·갱신 + Vault 영속");
+        tracing::info!(target: "token", secret = %name, mock, force, "OAuth token issued/refreshed and persisted to vault");
         Ok(token)
     }
 
@@ -242,7 +242,7 @@ impl OAuthTokenProvider {
             match self.vault.get_secret(&format!("user:{var}")) {
                 Some(val) => val,
                 None => {
-                    tracing::warn!(target: "secret", secret = %name, var = %var, "oauth body placeholder 미해결");
+                    tracing::warn!(target: "secret", secret = %name, var = %var, "oauth body placeholder unresolved");
                     String::new()
                 }
             }

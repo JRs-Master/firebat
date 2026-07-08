@@ -308,7 +308,7 @@ impl ConfigDrivenAdapter {
         if config.format.starts_with("cli-") {
             tracing::info!(
                 category = "ai",
-                "CLI 모델 resolve — id={} → --model={:?} thinking={:?} (None=CLI 기본)",
+                "CLI model resolve — id={} → --model={:?} thinking={:?} (None=CLI default)",
                 config.id,
                 enriched.cli_model,
                 enriched.thinking_level

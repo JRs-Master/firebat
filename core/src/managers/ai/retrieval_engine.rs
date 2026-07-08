@@ -365,7 +365,7 @@ impl RetrievalEngine {
             let qv = match shadow.embed_query(&query).await {
                 Ok(v) => v,
                 Err(e) => {
-                    tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_query 실패");
+                    tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_query failed");
                     return;
                 }
             };
@@ -375,7 +375,7 @@ impl RetrievalEngine {
                 let pv = match shadow.embed_passage(preview).await {
                     Ok(v) => v,
                     Err(e) => {
-                        tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_passage 실패");
+                        tracing::warn!(target: "embed_shadow", error = %e, "shadow embed_passage failed");
                         return;
                     }
                 };

@@ -271,10 +271,10 @@ impl TtsAdapter {
             .and_then(|r| r.trim().parse::<u32>().ok())
             .filter(|r| *r >= 8000 && *r <= 48000)
             .unwrap_or(24000);
-        tracing::info!(target: "tts", mime = %mime, rate = rate, "Gemini TTS PCM 샘플레이트");
+        tracing::info!(target: "tts", mime = %mime, rate = rate, "Gemini TTS PCM sample rate");
         let pcm = base64::engine::general_purpose::STANDARD
             .decode(b64)
-            .map_err(|e| format!("Gemini PCM 디코드: {e}"))?;
+            .map_err(|e| format!("Gemini PCM decode: {e}"))?;
         Ok(TtsResult {
             audio: pcm_to_wav(&pcm, rate, 1, 16),
             content_type: "audio/wav".to_string(),
@@ -283,7 +283,7 @@ impl TtsAdapter {
         })
     }
 
-    /// Gemini per-turn 병렬 합성 — 3명+ 대화(native multispeaker 는 정확히 2명만 허용). 턴별 단일-스피커
+    /// Gemini per-turn parallel synthesis — 3명+ 대화(native multispeaker 는 정확히 2명만 허용). 턴별 단일-스피커
     /// 호출(같은 화자=같은 voiceName=목소리·성별 일관 → "답을 남자가" 식 swap 불가)을 병렬(buffered 6)로
     /// 발사 후 순서대로 concat(턴 사이 0.4s 무음 = signal_align 이 턴 경계로 검출). wall-time ≈ 1콜.
     /// 화자 무제한(G-TELP 다자 대화) + 턴 경계 정확.
@@ -450,7 +450,7 @@ impl TtsAdapter {
             }
             all.extend_from_slice(&pcm);
         }
-        tracing::info!(target: "tts", turns = n_turns, rate = rate, "Gemini per-turn 병렬 합성");
+        tracing::info!(target: "tts", turns = n_turns, rate = rate, "Gemini per-turn parallel synthesis");
         Ok(TtsResult {
             audio: pcm_to_wav(&all, rate, 1, 16),
             content_type: "audio/wav".to_string(),

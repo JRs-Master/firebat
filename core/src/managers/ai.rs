@@ -1099,7 +1099,7 @@ impl AiManager {
                         crate::i18n::t("core.error.ai.cost_limit_exceeded_short", None, &[])
                     });
                 self.log.warn(&format!(
-                    "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
+                    "[AiManager] budget exceeded — LLM call blocked: {}",
                     reason
                 ));
                 return Ok(self.finalize(ai_opts, AiResponse {
@@ -1130,14 +1130,14 @@ impl AiManager {
             if !img.starts_with("data:") {
                 if let Some(data_url) = self.resolve_image_to_data_url(img).await {
                     self.log.info(&format!(
-                        "[AiManager] image slug URL → data URL 변환 (slug URL len={}, data URL len={})",
+                        "[AiManager] image slug URL converted to data URL (slug len={}, data len={})",
                         img.len(),
                         data_url.len()
                     ));
                     effective_opts.image = Some(data_url);
                 } else {
                     self.log.warn(&format!(
-                        "[AiManager] image slug URL 변환 실패 (read fail) — 옛 값 그대로 LLM 전달: {}",
+                        "[AiManager] image slug URL conversion failed — passing original to LLM: {}",
                         img
                     ));
                 }
@@ -1545,13 +1545,13 @@ impl AiManager {
                         let inst = crate::utils::plan_store::plan_to_instruction(&plan, None);
                         crate::utils::plan_store::delete_plan(pid);
                         self.log.info(&format!(
-                            "[AiManager] plan_execute_id 처리: {} (title={})",
+                            "[AiManager] plan_execute_id: {} (title={})",
                             pid, plan.title
                         ));
                         Some(inst)
                     } else {
                         self.log.warn(&format!(
-                            "[AiManager] plan_execute_id {} 조회 실패 (만료 또는 부재) — 일반 흐름 진행",
+                            "[AiManager] plan_execute_id {} not found (expired or missing) — continuing normal flow",
                             pid
                         ));
                         None
@@ -1563,13 +1563,13 @@ impl AiManager {
                         let inst = crate::utils::plan_store::plan_to_revise_instruction(&plan, prompt);
                         // revise 시 plan_store 항목 보존 — AI 가 propose_plan 재호출 후 새 planId 발급함.
                         self.log.info(&format!(
-                            "[AiManager] plan_revise_id 처리: {} (title={})",
+                            "[AiManager] plan_revise_id: {} (title={})",
                             rid, plan.title
                         ));
                         Some(inst)
                     } else {
                         self.log.warn(&format!(
-                            "[AiManager] plan_revise_id {} 조회 실패 — 일반 흐름 진행",
+                            "[AiManager] plan_revise_id {} not found — continuing normal flow",
                             rid
                         ));
                         None
@@ -1789,7 +1789,7 @@ impl AiManager {
                         crate::i18n::t("core.error.ai.cost_limit_exceeded_short", None, &[])
                     });
                         self.log.warn(&format!(
-                            "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
+                            "[AiManager] budget exceeded — LLM call blocked: {}",
                             reason
                         ));
                         return Ok(self.finalize(ai_opts, AiResponse {
@@ -1887,7 +1887,7 @@ impl AiManager {
                 if model_for_session.starts_with("cli-") && !sid.is_empty() {
                     conv_mgr.set_cli_session(conv_id, sid, &model_for_session);
                     self.log.info(&format!(
-                        "[AiManager] CLI session_id 영속화: conv={} model={} session_id={}",
+                        "[AiManager] CLI session_id persisted: conv={} model={} session_id={}",
                         conv_id, model_for_session, sid
                     ));
                 }
@@ -1955,7 +1955,7 @@ impl AiManager {
                     push_text_block_dedup(&mut blocks, &last_text);
                 }
                 self.log.info(&format!(
-                    "[AiManager] turn {} 종료 — 도구 호출 0개",
+                    "[AiManager] turn {} finished — no tool calls",
                     turn + 1
                 ));
                 tool_budget_exhausted = false;
@@ -1978,7 +1978,7 @@ impl AiManager {
                             // 사전 검증 — 실패면 UI 미노출 + tool 결과만 에러
                             if let Some(pre_err) = dispatcher.pre_validate_pending_args(call) {
                                 self.log.warn(&format!(
-                                    "[AiManager] Tool 사전검증 실패 (UI 비노출, 재시도 유도): {} — {}",
+                                    "[AiManager] tool pre-validation failed (hidden from UI, retry hint sent): {} — {}",
                                     call.name, pre_err
                                 ));
                                 let action = ToolResult {
@@ -2004,7 +2004,7 @@ impl AiManager {
                                 Ok(t) => t,
                                 Err(parse_err) => {
                                     self.log.warn(&format!(
-                                        "[AiManager] Tool 인자 schema 불일치 (UI 비노출, 재시도 유도): {} — {}",
+                                        "[AiManager] tool args schema mismatch (hidden from UI, retry hint sent): {} — {}",
                                         call.name, parse_err
                                     ));
                                     let action = ToolResult {
@@ -2068,7 +2068,7 @@ impl AiManager {
                             pending_actions.push(pending.clone());
                             approval_pending_created = true;
                             self.log.info(&format!(
-                                "[AiManager] Tool 승인 대기: {} (planId={}) — {}",
+                                "[AiManager] tool pending approval: {} (planId={}) — {}",
                                 call.name, plan_id, approval.summary
                             ));
                             // executedActions 에는 도구 이름 (string) 만 — frontend ActionTags 가
@@ -2234,7 +2234,7 @@ impl AiManager {
                 };
                 let action = if per_turn_over_cap {
                     self.log.warn(&format!(
-                        "[AiManager] per-turn 도구 호출 한도 초과 차단: {} ({}회)",
+                        "[AiManager] per-turn tool call cap exceeded: {} ({} calls)",
                         effective_call.name,
                         turn_tool_counts.get(&effective_call.name).copied().unwrap_or(0)
                     ));
@@ -2257,7 +2257,7 @@ impl AiManager {
                 } else if turn_call_set.contains(&cache_key) {
                     // Layer 2: 이번 turn 에 이미 같은 호출 → 즉시 reject
                     self.log.warn(&format!(
-                        "[AiManager] Tool 중복 호출 차단 (per-turn): {}",
+                        "[AiManager] duplicate tool call blocked (per-turn): {}",
                         call.name
                     ));
                     ToolResult {
@@ -2277,8 +2277,8 @@ impl AiManager {
                     // 매 턴 재호출(x4/x7)로 MAX_TOOL_TURNS 낭비하던 것 차단. "영영 없으니 재시도 마라" 강조.
                     let repeat = !unknown_tool_names.insert(effective_call.name.clone());
                     self.log.warn(&format!(
-                        "[AiManager] 미등록 도구 차단{}: {}",
-                        if repeat { " (반복)" } else { "" },
+                        "[AiManager] unknown tool blocked{}: {}",
+                        if repeat { " (repeat)" } else { "" },
                         effective_call.name
                     ));
                     turn_call_set.insert(cache_key.clone());
@@ -2336,7 +2336,7 @@ impl AiManager {
                             .push(serde_json::Value::String(effective_call.name.clone()));
                         approval_pending_created = true;
                         self.log.info(&format!(
-                            "[AiManager] requiresApproval 승인 대기: {} (planId={})",
+                            "[AiManager] requiresApproval pending: {} (planId={})",
                             effective_call.name, plan_id
                         ));
                         serde_json::json!({
@@ -2363,7 +2363,7 @@ impl AiManager {
                     // the identifier up first, then retries with a grounded value (resolve → use). Insert
                     // the cache key so the identical ungrounded args don't re-run — the model must change args.
                     self.log.info(&format!(
-                        "[AiManager] grounding reject (FC): {} — 미검증 식별자 dispatch 차단",
+                        "[AiManager] grounding reject (FC): {} — ungrounded identifier dispatch blocked",
                         effective_call.name
                     ));
                     turn_call_set.insert(cache_key.clone());
@@ -2384,7 +2384,7 @@ impl AiManager {
                     if let Some(cached) = get_cached_tool_result(&cache_key) {
                         // Layer 1: cross-turn cache hit (60초 내) → 직전 결과 재사용
                         self.log.info(&format!(
-                            "[AiManager] Tool cache HIT: {} — 직전 결과 재사용",
+                            "[AiManager] tool cache HIT: {} — reusing previous result",
                             call.name
                         ));
                         let mut cached_with_flag = cached.clone();
@@ -2588,7 +2588,7 @@ impl AiManager {
             // propose_plan 호출 시 강제 turn 종료 — 사용자가 ✓실행 누른 뒤 다음 turn 진행.
             if is_propose_plan_turn {
                 self.log.info(
-                    "[AiManager] propose_plan 호출 감지 → trailing text drop + 승인 대기 위해 turn 종료",
+                    "[AiManager] propose_plan detected — dropping trailing text, ending turn for approval",
                 );
                 last_text = String::new();
                 tool_budget_exhausted = false;
@@ -2601,7 +2601,7 @@ impl AiManager {
             // 유지(카드 맥락 설명일 수 있음).
             if approval_pending_created {
                 self.log.info(
-                    "[AiManager] 승인 대기 pending 생성 → 카드 응답 대기 위해 turn 종료 (재시도·우회 차단)",
+                    "[AiManager] approval pending created — ending turn for card response",
                 );
                 tool_budget_exhausted = false;
                 break;
@@ -2609,7 +2609,7 @@ impl AiManager {
         }
         if tool_budget_exhausted {
             self.log.warn(&format!(
-                "[AiManager] MAX_TOOL_TURNS({}) 소진 — 자연 종료 없이 루프 종료 (마지막 turn 산출물로 마무리)",
+                "[AiManager] MAX_TOOL_TURNS({}) exhausted — loop ended without natural finish",
                 max_turns
             ));
         }

@@ -340,7 +340,7 @@ pub fn render_blocks(
             rendered_count = rendered.len(),
             failed_count = failed.len(),
             failed = %serde_json::to_string(&failed).unwrap_or_default(),
-            "[render] 일부 block 검증 실패 — silent skip (사용자 화면 미표시)"
+            "[render] some blocks failed validation — silently skipped (not shown to user)"
         );
     }
 

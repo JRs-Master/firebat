@@ -277,7 +277,7 @@ impl ToolSearchIndex {
     async fn build_category_index(&self) -> InfraResult<Vec<(String, Vec<f32>)>> {
         tracing::info!(
             category = "tool_search",
-            "도구 검색 인덱스 구축 시작 — 카테고리 {}개",
+            "tool search index build start — {} categories",
             CATEGORIES.len()
         );
         let disk = load_disk_cache(self.cache_port.as_ref());
@@ -318,7 +318,7 @@ impl ToolSearchIndex {
         );
         tracing::info!(
             category = "tool_search",
-            "도구 검색 인덱스 구축 완료 — 카테고리 {}개 (재사용 {}, 신규 {})",
+            "tool search index built — {} categories (reused {}, new {})",
             CATEGORIES.len(),
             reused,
             embedded
@@ -398,7 +398,7 @@ impl ToolSearchIndex {
             );
             tracing::info!(
                 category = "tool_search",
-                "도구 검색 인덱스 구축 — 도구 {}개 (재사용 {}, 신규 {})",
+                "tool search index built — {} tools (reused {}, new {})",
                 tools.len(),
                 reused,
                 embedded

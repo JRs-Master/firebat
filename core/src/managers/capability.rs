@@ -77,7 +77,7 @@ impl CapabilityManager {
             },
         );
         self.log
-            .info(&format!("[Capability] 등록: {} ({})", id, label));
+            .info(&format!("[Capability] registered: {} ({})", id, label));
     }
 
     /// capability 별 provider 목록. 모듈 스캔 — system/modules + user/modules.
@@ -127,7 +127,7 @@ impl CapabilityManager {
                         },
                     );
                     self.log.warn(&format!(
-                        "[Capability] 미등록 capability 자동 등록: {}",
+                        "[Capability] auto-registered unknown capability: {}",
                         cap_id
                     ));
                 }

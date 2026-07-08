@@ -17,7 +17,7 @@ impl FileEmbedderCacheAdapter {
         let dir = std::env::var("FIREBAT_DATA_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("data"));
-        tracing::info!(dir = %dir.display(), "FileEmbedderCacheAdapter 디렉토리 resolve");
+        tracing::info!(dir = %dir.display(), "FileEmbedderCacheAdapter dir resolved");
         Self { dir }
     }
 
@@ -36,12 +36,12 @@ impl IEmbedderCachePort for FileEmbedderCacheAdapter {
         let path = self.dir.join(cache_name);
         if let Some(parent) = path.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                tracing::warn!(dir = %parent.display(), error = %e, "embedder cache mkdir 실패");
+                tracing::warn!(dir = %parent.display(), error = %e, "embedder cache mkdir failed");
                 return;
             }
         }
         if let Err(e) = std::fs::write(&path, json) {
-            tracing::warn!(path = %path.display(), error = %e, "embedder cache write 실패");
+            tracing::warn!(path = %path.display(), error = %e, "embedder cache write failed");
         }
     }
 }
