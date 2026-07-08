@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-05-24 (secrets 항목 schema string|object union · settings_fields lang 분리 등. Phase B-4 cutover 모듈 규격 영향 0)
+> 최종 개정: 2026-07-08 (선언형 인프라 필드 8종 정착 — requiresApproval/grounding/ws/timeseries/actionCatalog · 표준 OHLCV 정규화 규약 · 타임아웃 60초 현행화)
 
 ## 전문(前文)
 
@@ -96,7 +96,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 
 1. **1회성 생명주기**: 호출 시 자식 프로세스로 실행 → stdout 출력 → 종료.
 2. **어드민 무중단**: 모듈 에러는 Sandbox 계층이 잡아내므로 `/admin` 시스템에 영향 없음.
-3. **타임아웃**: 30초 초과 시 강제 종료 (`SANDBOX_TIMEOUT_MS`).
+3. **타임아웃**: 60초 초과 시 강제 종료 (`DEFAULT_TIMEOUT_MS = 60_000`, 호출별 override 가능).
 
 ---
 
@@ -171,8 +171,8 @@ node scripts/gen.mjs             # _apis.json → config + index
 { "requiresApproval": ["kt10000", "kt10001"] }      // 특정 액션만
 ```
 - 선언된 액션을 AI 가 호출하면 **디스패치 계층**(FC=ai.rs + MCP=SysmodHandler — 코드가 거부, 프롬프트 아님)이 즉시 실행 대신:
-  채팅 = 승인 카드(`PendingActionArgs::RunModule`, 승인 시 재생) / cron = 하드 차단 + 명확 메시지 / hub = 차단.
-- 대상: 실주문·비가역·real-money 액션 (키움 주문 12 / 토스 3 / 한투 7 선언 예시). 새 매매/파괴 모듈 = config 한 줄로 자동 포함.
+  채팅 = 승인 카드(`PendingActionArgs::RunModule`, 승인 시 재생 + **턴 즉시 종료** = 카드 1장 보장) / cron = **스케줄 승인 = 잡에 담긴 매매 승인** → 실행 허용(인터랙티브 run_task 우회만 차단) / hub = 차단.
+- 대상: 실주문·비가역·real-money 액션 (키움 주문 12 / 토스 6 — 주문 3+조건주문 3 / 한투 7 선언 예시). 새 매매/파괴 모듈 = config 한 줄로 자동 포함.
 
 #### `grounding` — 불투명 식별자 날조 차단 (Fact-Provenance L1, 2026-06-30)
 ```json
@@ -255,8 +255,9 @@ node scripts/gen.mjs             # _apis.json → config + index
 }
 ```
 - 액션이 수백 개인 모듈(한투 275·키움 208)의 **progressive disclosure** 계층: AI 가 `search_module_actions(query)` 로 자연어 검색 → `get_action_schema(module, action)` 으로 정확한 파라미터·호출 봉투 획득 → 추측 0 호출. 검증 에러 힌트도 카탈로그 보유 모듈이면 이 흐름으로 안내된다(i18n `input_validation_failed_catalog`).
-- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions` 배열. `requiresApproval` 은 여기 재선언하지 않는다(로더가 config 선언에서 join — 단일 소스).
-- API 명세가 `_apis.json` 류로 있으면 `scripts/gen-actions.mjs` 로 생성(키움·한투 예시). 액션이 적은 모듈은 선언 불필요(검증 에러 + enum 으로 충분).
+- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions` 배열. `requiresApproval` 은 여기 재선언하지 않는다(로더가 config 선언에서 join — 단일 소스). `envelope` 필드로 호출 봉투 형태 명시(flat vs `params` 중첩 — 모듈 방언).
+- **description = 트리거만** ("인덱스 = 트리거" 원칙): 검색 결과에 미니 레시피·파라미터 나열을 넣으면 모델이 `get_action_schema` 를 건너뛰고 추측한다. 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
+- API 명세가 `_apis.json` 류로 있으면 `scripts/gen-actions.mjs` 로 생성(키움·한투 예시) — **desc 보강은 `scripts/actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지). 손작성 예시 = toss-invest(공식 OpenAPI 대조 28 액션). 액션이 적은 모듈은 선언 불필요(검증 에러 + enum 으로 충분).
 
 > 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
 

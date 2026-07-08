@@ -1,10 +1,10 @@
 # PAGESPEC BIBLE — 페이지 및 채팅 렌더링 규약
 
-> 최종 개정: 2026-05-06 (Phase B-4 cutover — PageSpec schema 영향 0)
+> 최종 개정: 2026-07-08 (컴포넌트 42종 현행화 · **렌더 채널 = firebat-render fence** — 콘텐츠=fence/액션=도구 · dataCacheKey 서버 주입 · 학습·인터랙티브·라이브 컴포넌트)
 >
 > Firebat의 모든 **선언적 UI 렌더링**을 다룬다. AI는 React/TSX를 직접 작성하지 않고, PageSpec JSON 혹은 채팅 블록으로 UI를 선언한다.
 >
-> **🔥 Phase B-4 cutover 후 영향 없음** — PageSpec JSON schema + 29 render_* 컴포넌트 + Frontend (`app/(user)/[...slug]/components.tsx`) 모두 동일. 차이: 페이지 저장 backend 가 옛 TS PageManager → Rust `core/src/managers/page.rs`. JSON shape (head/body/seo) 100% 호환.
+> **🔥 Phase B-4 cutover 후 영향 없음** — PageSpec JSON schema + 42 빌트인 컴포넌트 + Frontend (`app/(user)/[...slug]/components.tsx`) 모두 동일. 차이: 페이지 저장 backend 가 옛 TS PageManager → Rust `core/src/managers/page.rs`. JSON shape (head/body/seo) 100% 호환.
 
 ## 제1장: PageSpec 스키마
 
@@ -60,12 +60,18 @@ middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layou
 
 ---
 
-## 제2장: Page Component 목록 (29종)
+## 제2장: 컴포넌트 목록 (레지스트리 42종)
 
 페이지용 컴포넌트. `save_page`로 DB에 저장 → `app/(user)/[slug]/page.tsx`가 렌더.
-채팅에서는 통합 `render` 도구(`{blocks:[{type, props}]}`)로도 직접 렌더 가능.
+채팅에서는 본문 안 ` ```firebat-render ` fence(제3장 제3항)로 직접 렌더.
 
-> 채팅 render 레지스트리(`core/src/managers/ai/components.json`) 기준 29 컴포넌트: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · quiz · quiz_group · key_value · plan_card · status_badge · diagram · math · code · slideshow · lottie · network · map. (아래 표의 Button / Tabs / Accordion / Carousel / Alert / Form / ResultDisplay / Slider / Html / AdSlot 은 PageSpec 페이지 전용 컴포넌트.)
+> 채팅 render 레지스트리(`core/src/managers/ai/components.json`) 기준 **42 컴포넌트**:
+> - 기본·시각화 27: stock_chart · chart · table · badge · callout · progress · header · text · list · divider · countdown · image · card · grid · metric · timeline · compare · key_value · plan_card · status_badge · diagram · math · code · slideshow · lottie · network · map
+> - 퀴즈 2: quiz · quiz_group
+> - 인터랙티브 6 (2026-06-16): form(모듈 바인딩) · button · slider · tabs · accordion · carousel (children/items = grid 미러 `{type,props}`)
+> - 학습 5 (2026-06-19~20): sentence(구문독해 S/V/O·직독직해) · vocab(인출·Leitner·니모닉) · passage · concept · listening(LC 플레이어·받아쓰기·노래방 정렬)
+> - 라이브 2 (2026-07-05, WS 2b): live_feed · live_chart — `stream_watch_start` 의 SSE topic 구독. **수명 = 뷰포트 가시성**(보일 때만 live, 벗어나면 마지막 값+타임스탬프 동결, 영속 = 생성 시점 스냅샷)
+> (아래 표의 Alert / ResultDisplay / Html / AdSlot 은 PageSpec 페이지 전용.)
 
 ### 기본 UI
 | Component | 역할 | 주요 Props |
@@ -152,13 +158,23 @@ type Block =
   | { type: 'component'; name: string; props: object }          // React 컴포넌트
 ```
 
+### 제1-1항. 렌더 채널 = `firebat-render` fence (2026-06-17 도입, 2026-07-02 구조 강제 — 주 경로)
+
+채팅 시각화의 **주 채널은 도구가 아니라 본문 텍스트 안 fence** — "콘텐츠 = fence / 액션 = 도구" 원칙(FIREBAT_BIBLE 제6장 제4항). 모델이 도구호출 인자 안에서 한국어를 생성하면 깨지는(옳→옵) 상류 한계 + content 단일 소스가 메모리·회상을 공짜로 얻는 구조 우위.
+
+- 형식: 본문 안 ` ```firebat-render\n[{type, props}, ...]\n``` ` (JSON blocks 배열). 산문 사이 인라인 배치 가능.
+- 서버(`render_exec::mask_and_sanitize_fences`)가 fence 를 마스킹 → `render_blocks` 로 sanitize·schema 검증 → 검증된 JSON 을 fence 에 되써넣음. 프론트(`lib/util/md.ts splitFirebatRender`)가 fence = ComponentRenderer / 나머지 = 마크다운으로 split 렌더 (admin·발행·공유 3 surface 공통).
+- **관대 파서** (2026-07-07): JSON 안 `//`·`/* */` 주석 + trailing comma 를 문자열-인식 스캐너로 제거 후 재파싱(strict 우선) — 모델 방언 수용. 저장분도 프론트에서 소급 렌더.
+- **큰 데이터 = `dataCacheKey` 참조** (2026-07-06): 캔들 수백 봉 등은 값 대신 sysmod 캐시 키를 fence props 에 적으면 서버(`FenceDataResolver`)가 캐시 전체 records 를 `props.data` 로 주입 — AI 손 복사·truncation·날조 차단. `dataRange:{from,to}` / `dataLimit:N` 으로 기간·개수 슬라이스.
+- raw kind: ` ```firebat-html/code/math/diagram ` 류 body-verbatim fence(JSON escape 0) — 큰 HTML/LaTeX 용 (staged).
+
 ### 제2항. 채팅 전용 컴포넌트
 
 PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 #### `StockChart` (주식 차트)
 파일: `app/admin/chat-components/StockChart.tsx`
-도구: `render_stock_chart`
+호출: fence `stock_chart` 블록 (데이터는 `dataCacheKey` 참조 권장 — 서버가 캐시 전체 주입)
 
 **Props:**
 ```typescript
@@ -191,9 +207,10 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 **특징:**
 - 순수 SVG (의존성 없음, iframe 없음)
 - Pretendard 폰트 자동 적용
-- 모바일 터치 tooltip 지원
-- 오래된→최신 자동 정렬
-- 우측 2일 여백 (차트 관례)
+- 모바일 터치: 드래그=스크롤 / 롱프레스=툴팁 (MTS 표준)
+- 오래된→최신 자동 정렬 / 보이는 구간 동적 Y축 / 커서 앵커 줌
+- close-only 데이터 감지 시 종가 라인 모드 (거래량 pane 숨김 — flat-doji 방지)
+- 표준 OHLCV 필드(`{date,open,high,low,close,volume}`) — 브로커 3사·yfinance 모듈이 이 어휘로 정규화해 반환
 
 ---
 
@@ -222,24 +239,24 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ---
 
-## 제5장: AI 렌더 도구 매핑
+## 제5장: AI 렌더 채널 매핑 (2026-07 현행)
 
-| 도구 | 블록 타입 | 용도 |
-|---|---|---|
-| `save_page` | — | PageSpec 페이지 DB 저장 |
-| `render_stock_chart` | component:StockChart | 주식 시각화 (전용) |
-| `render_iframe` | html | 한 섹션 iframe 위젯 (지도/다이어그램 등 CDN 라이브러리 시각화) |
+| 채널 | 용도 |
+|---|---|
+| ` ```firebat-render ` **fence** (본문 텍스트) | 채팅 시각화 **주 경로** — 42 컴포넌트 전부 (제3장 제1-1항) |
+| `render` 도구 | **code / math / diagram 전용** — 그 외 컴포넌트는 코드가 거부(`tool_mode` 게이트, 2026-07-02) + "fence 로 쓰라" 에러. 큰 raw 코드·LaTeX 의 hand-escape 리스크 회피용 |
+| `render_iframe` | html — 한 섹션 iframe 위젯 (CDN 라이브러리 시각화, 자유 HTML 최후 수단) |
+| `save_page` | PageSpec 페이지 DB 저장 (승인 카드 경유) |
 
 ### 제1항. 우선순위
-1. **주식 관련** → `render_stock_chart`
-2. **정형화된 데이터** (표/카드/뱃지/알림) → 통합 `render`(`{blocks:[{type, props}]}` — 28→1 단일 도구로 통합 완료, components.json schema 검증)
-3. **지도/다이어그램/애니메이션** → 통합 `render` 의 `map` / `diagram` / `lottie` block (또는 CDN 라이브러리 시 `render_iframe`)
-4. **최후의 수단** → `render_iframe` 자유 HTML (한 섹션, 페이지 본문 통째 아님)
+1. **정형 데이터·시각화 전반** (표/차트/카드/지도/주식차트/학습/라이브) → `firebat-render` fence
+2. **코드/수식/다이어그램** → fence 또는 `render` 도구 (둘 다 허용 — 도구는 이 3종만 통과)
+3. **CDN 라이브러리·자유 HTML** → `render_iframe` (한 섹션, 페이지 본문 통째 아님)
 
 ### 제2항. 금지사항
-- 같은 시각화를 `render_iframe`로 해놓고 전용 도구가 있는 경우 선택 실수
 - 페이지 본문 전체를 `render_iframe` 1개 블록으로 만드는 것 — iframe 안에서 AdSense 광고·SEO 인덱싱 모두 차단됨
-- 코드 블록 ` ```json ` 안에 도구 호출 구조 노출 (서버가 필터링하지만 AI는 애초에 하지 말 것)
+- fence 없는 bare-JSON 덤프 (fence 마커 없는 JSON 은 strip 됨)
+- 캔들·시계열 큰 배열을 fence 에 손으로 복사하는 것 — `dataCacheKey` 참조가 정공 (손 복사 = truncation·날조 관측됨)
 
 ---
 
@@ -310,7 +327,8 @@ Metric 도 동일: `valueIsNumeric` 자동 right 정렬 제거. AI 가 `valueAli
 
 ## 제7장: 향후 계획
 
-- [x] PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출 — 통합 `render` 도구(`{blocks:[{type, props}]}`)로 완료 (28→1 통합)
-- [ ] `LineChart`/`BarChart` 채팅 전용 컴포넌트 (StockChart 스타일)
-- [ ] 실시간 업데이트 블록 (`component:LiveCard`)
+- [x] PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출 — 통합 `render` → **fence 채널**로 완성 (2026-06-17)
+- [x] 실시간 업데이트 블록 — `live_feed` / `live_chart` (WS 2b, 2026-07-05, 뷰포트 가시성 수명)
+- [ ] `LineChart`/`BarChart` 채팅 전용 컴포넌트 (StockChart 스타일 — 현재 chart 로 충분)
 - [ ] 다국어 라벨 (i18n 통합 시)
+- [ ] save_page title+body fence 화 (②단계 — 도구 인자 한글 깨짐의 잔여 표면)

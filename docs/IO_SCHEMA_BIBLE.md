@@ -1,6 +1,6 @@
 # FIREBAT I/O SCHEMA BIBLE — 전 계층 타입 계약서
 
-> 최종 개정: 2026-05-06 (Phase B-4 cutover)
+> 최종 개정: 2026-07-08 (proto 카운트 현행화 32 services / 271 RPCs · PipelineStep $prev 규약)
 >
 > ⚠️ 아래는 옛 TS 시절 예시 — 현재 코어는 Rust (core/src, infra/src). 개념 참고용. 본 문서의 TS interface / Zod 스키마 / FirebatAction / FirebatCore 코드 블록은 historical 기록이며, 타입 개념과 7계층 통신 규약만 유효하다.
 
@@ -9,7 +9,7 @@
 본 문서는 Firebat의 **모든 통신 경계**에서 오가는 데이터의 타입을 엄격히 정의한다.
 
 **🔥 Phase B-4 cutover 후 타입 single source**: 옛 TS Core 의 `core/types/index.ts` 와 `core/ports/index.ts` 폐기. 새 single source 는:
-1. **proto/firebat.proto** (31 services / 262 RPCs) — gRPC 메시지 schema 가 backend ↔ frontend 통신의 wire format
+1. **proto/firebat.proto** (32 services / 271 RPCs) — gRPC 메시지 schema 가 backend ↔ frontend 통신의 wire format
 2. **core/src/ports.rs** — Rust trait 시그니처 (`InfraResult<T>` / `LlmCallOpts` / `CronJobInfo` 등)
 3. **lib/types/firebat-types.ts** — Frontend type-only 정의 (`PageListItem` / `AuthSession` / `FirebatCore`)
 
@@ -373,11 +373,11 @@ interface ExecuteStep extends PipelineStepBase {
   inputMap?: Record<string, unknown>;  // $prev 치환 매핑
 }
 
-/** MCP_CALL — 외부 MCP 도구 호출 */
+/** MCP_CALL — MCP 도구 호출. server 생략 또는 "firebat" = 내부 sysmod 루프백 (2026-07-08) */
 interface McpCallStep extends PipelineStepBase {
   type: 'MCP_CALL';
-  server: string;                      // MCP 서버 이름 (필수)
-  tool: string;                        // 도구 이름 (필수)
+  server?: string;                     // MCP 서버 이름 (옵션 — 생략/"firebat" = 내부 디스패치)
+  tool: string;                        // 도구 이름 (필수 — mcp__firebat__* 접두사 방언 흡수)
   arguments?: Record<string, unknown>; // 도구 인자
   inputMap?: Record<string, unknown>;  // $prev 치환 매핑
 }
@@ -405,6 +405,8 @@ interface LlmTransformStep extends PipelineStepBase {
 type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep
   | ConditionStep | SavePageStep | ToolCallStep;
 ```
+
+**$prev 규약 (2026-07-08, 스텝 공통)**: `$prev` = **이전 스텝 출력 자체** — 모듈 `{success,data}` envelope 은 자동 언랩되므로 `.output` 같은 래퍼 경로를 지어내지 말 것 (예: `$prev.result[0].accountSeq`). `$stepN` = N번째 스텝 출력. **미해석 참조가 인자에 남으면 실행 전 스텝 실패**(fail-fast — literal 이 모듈로 새지 않음). 모듈 레벨 실패(`{success:false}`) = 스텝 실패로 집계 (EXECUTE/MCP_CALL/TOOL_CALL 공통 — `core/src/managers/task.rs` `call_outcome`).
 
 ### Zod 스키마
 ```typescript
