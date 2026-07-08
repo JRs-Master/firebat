@@ -464,6 +464,13 @@ impl TaskManager {
                 input_map,
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
+                // 미해석 $prev/$stepN 참조 fail-fast — literal 로 모듈에 흘러가면 모듈이 엉뚱한
+                // 에러("계좌번호를 찾을 수 없습니다")를 내 진단이 안 됨 (2026-07-08 실측).
+                if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
+                    return StepOutcome::Fail(format!(
+                        "EXECUTE 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
+                    ));
+                }
                 // 옛 TS 1:1 — 두 가지 실패 케이스 모두 capability fallback 시도:
                 //   (a) executor.execute_module → Err (sandbox 실행 자체 실패)
                 //   (b) execute_module → Ok 인데 data.success === false (모듈 레벨 실패, e.g. API 키 누락)
@@ -496,6 +503,11 @@ impl TaskManager {
                 } else {
                     arguments.clone().unwrap_or(Value::Object(Default::default()))
                 };
+                if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&args) {
+                    return StepOutcome::Fail(format!(
+                        "MCP_CALL 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
+                    ));
+                }
                 // server 미기재 = 자기 자신(firebat) — tool 이 mcp__<srv>__ 네임스페이스를
                 // 품고 있으면 executor 의 split_mcp_name 이 그쪽을 우선한다.
                 let srv = server.as_deref().unwrap_or("firebat");

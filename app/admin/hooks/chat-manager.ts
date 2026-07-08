@@ -208,7 +208,7 @@ export type ChatAction =
   | { type: 'NETWORK_ERROR'; id: string; message: string }
   | { type: 'FINALIZE'; id: string } // finally 블록: 여전히 in-flight 면 강제 터미널 + 인바리언트
   // Pending action (schedule_task 등)
-  | { type: 'PENDING_APPROVED'; msgId: string; planId: string }
+  | { type: 'PENDING_APPROVED'; msgId: string; planId: string; newRunAt?: string }
   | { type: 'PENDING_REJECTED'; msgId: string; planId: string }
   | { type: 'PENDING_PAST_RUNAT'; msgId: string; planId: string; originalRunAt?: string }
   | { type: 'PENDING_ERROR'; msgId: string; planId: string; errorMessage: string }
@@ -428,7 +428,15 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
       return state.map(m => m.id !== action.msgId ? m : {
         ...m,
         pendingActions: m.pendingActions?.map(p =>
-          p.planId === action.planId ? { ...p, status: 'approved' as const, errorMessage: undefined } : p,
+          p.planId === action.planId
+            ? {
+                ...p,
+                status: 'approved' as const,
+                errorMessage: undefined,
+                // 시간 변경 재예약 승인 — 카드의 실행 시각 표시(args.runAt)도 새 시간으로 (옛엔 원래 시간 고정)
+                ...(action.newRunAt ? { args: { ...(p.args ?? {}), runAt: action.newRunAt } } : {}),
+              }
+            : p,
         ),
       });
 

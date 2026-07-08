@@ -35,6 +35,8 @@
     "order_currency": "통화",
     "order_tif": "체결 조건",
     "order_when": "실행 시각",
+    "reschedule_apply": "변경",
+    "reschedule_cancel": "취소",
     "order_stale": "⏱ {min}분 전 요청입니다 — 시세가 변했을 수 있습니다."
   },
   "suggest": {

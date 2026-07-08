@@ -1927,7 +1927,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
             "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차면 pipeline(권장 — 결정적, 런타임 LLM 0회 또는 합성 1회), 매 trigger 런타임 판단 필요하면 agent(매번 LLM 루프)"},
-            "pipeline": {"type": "array", "description": "executionMode=pipeline 의 결정적 step 배열. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. 이전 step 출력은 inputMap/$prev 로 참조. 임계·규칙 판정은 CONDITION. 요약·리포트 합성이 필요하면 LLM_TRANSFORM 한 step(자동 컨텍스트 없으니 형식·구조 지시는 instruction 에 명시)", "items": {"type": "object"}},
+            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. Cross-step reference: $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction)", "items": {"type": "object"}},
             "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 매 trigger 받는 자연어 지시문"}
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),

@@ -10,6 +10,26 @@
 use crate::utils::path_resolve::resolve_field_path;
 use serde_json::{Map, Value};
 
+/// Detect a `$prev` / `$stepN` reference that survived resolution — returns the offending string.
+/// A missing path is preserved as a literal (by design, see module doc), but if that literal then
+/// flows into a module/tool argument the module fails with an unrelated-looking error
+/// (measured: accountSeq="$prev.output[0]..." → toss "해당 계좌번호를 찾을 수 없습니다").
+/// Step executors use this to fail fast with an actionable message instead.
+pub fn find_unresolved_ref(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => {
+            if s.contains("$prev") || s.contains("$step") {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }
+        Value::Array(a) => a.iter().find_map(find_unresolved_ref),
+        Value::Object(m) => m.values().find_map(find_unresolved_ref),
+        _ => None,
+    }
+}
+
 /// 임의의 값에서 `$prev` / `$prev.path` / `$stepN` / `$stepN.path` 치환 (재귀).
 pub fn resolve_value(val: &Value, prev: &Value, step_results: &[Value]) -> Value {
     match val {

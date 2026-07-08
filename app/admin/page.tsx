@@ -1223,6 +1223,9 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
   liveStep?: string;
 }) {
   const t = useTranslations();
+  // past-runat "시간 변경" 인라인 피커 — 옛 window.prompt(브라우저 alert + 문자열 직타) 대신
+  // datetime-local(달력+시간, ScheduleModal 과 동일 입력기)로. 카드당 1개만 열림.
+  const [reschedule, setReschedule] = useState<{ planId: string; value: string } | null>(null);
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
     return (
@@ -1457,15 +1460,11 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                           </button>
                           <button
                             onClick={() => {
+                              if (reschedule?.planId === p.planId) { setReschedule(null); return; }
                               const cur = new Date(Date.now() + 5 * 60_000);
                               const yyyy = cur.getFullYear(), mm = String(cur.getMonth() + 1).padStart(2, '0'), dd = String(cur.getDate()).padStart(2, '0');
                               const hh = String(cur.getHours()).padStart(2, '0'), mi = String(cur.getMinutes()).padStart(2, '0');
-                              const suggested = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-                              const input = window.prompt(t('plan.reschedule_prompt'), suggested);
-                              if (!input) return;
-                              // 초·타임존 보정 — 입력값은 사용자 로컬 시각 가정
-                              const iso = input.length === 16 ? input + ':00' : input;
-                              onApprovePendingAction?.(msg.id, p.planId, 'reschedule', iso);
+                              setReschedule({ planId: p.planId, value: `${yyyy}-${mm}-${dd}T${hh}:${mi}` });
                             }}
                             className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-bold rounded-lg border border-slate-300 transition-colors"
                           >
@@ -1516,6 +1515,36 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                               ? <OrderArgRows key={i} args={input} t={t} strict />
                               : null;
                           })}
+                        </div>
+                      )}
+                      {/* 시간 변경 인라인 피커 — datetime-local (달력+시간). 확인 = reschedule 커밋 */}
+                      {reschedule?.planId === p.planId && p.status === 'past-runat' && (
+                        <div className="flex flex-wrap items-center gap-2 pl-6 pt-1">
+                          <input
+                            type="datetime-local"
+                            value={reschedule.value}
+                            onChange={e => setReschedule({ planId: p.planId, value: e.target.value })}
+                            aria-label={t('plan.reschedule_prompt')}
+                            className="px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg bg-white outline-none focus:border-blue-400"
+                          />
+                          <button
+                            onClick={() => {
+                              if (!reschedule.value) return;
+                              // 초 보정 — datetime-local 은 초 없는 로컬 시각
+                              const iso = reschedule.value.length === 16 ? reschedule.value + ':00' : reschedule.value;
+                              onApprovePendingAction?.(msg.id, p.planId, 'reschedule', iso);
+                              setReschedule(null);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors"
+                          >
+                            {t('plan.reschedule_apply')}
+                          </button>
+                          <button
+                            onClick={() => setReschedule(null)}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-600 text-[12px] font-bold rounded-lg border border-slate-300 transition-colors"
+                          >
+                            {t('plan.reschedule_cancel')}
+                          </button>
                         </div>
                       )}
                       {staleMin >= 10 && (

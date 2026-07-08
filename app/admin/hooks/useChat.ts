@@ -1039,13 +1039,18 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // Persist after a pending-status change (approve/reject) — prevents card resurrection after reload/new-build.
   // messagesRef can be stale right after dispatch (before React re-render) → compute the new status directly and save now.
-  const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
+  const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>, argsPatch?: Record<string, unknown>) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) return;
     const updated = messagesRef.current.map(m =>
       m.id !== msgId
         ? m
-        : { ...m, pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, ...patch } : p) },
+        : {
+            ...m,
+            pendingActions: m.pendingActions?.map(p => p.planId === planId
+              ? { ...p, ...patch, ...(argsPatch ? { args: { ...(p.args ?? {}), ...argsPatch } } : {}) }
+              : p),
+          },
     );
     // 1) update the localStorage conv cache synchronously — it loads first on reload, so status shows immediately (optimistic).
     try {
@@ -1068,10 +1073,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // hub ignores action/newRunAt (no schedule_task). Result handling below is shared.
       const data = await convBackend.commitPlan(planId, action, newRunAt);
       if (data.success) {
-        dispatch({ type: 'PENDING_APPROVED', msgId, planId });
+        const rescheduled = action === 'reschedule' && newRunAt ? newRunAt : undefined;
+        dispatch({ type: 'PENDING_APPROVED', msgId, planId, newRunAt: rescheduled });
         onRefresh();
         window.dispatchEvent(new Event('firebat-refresh'));
-        persistPendingChange(msgId, planId, { status: 'approved' });
+        // 재예약이면 카드 실행 시각(args.runAt)도 새 시간으로 영속 (옛엔 원래 시간이 계속 표시)
+        persistPendingChange(msgId, planId, { status: 'approved' }, rescheduled ? { runAt: rescheduled } : undefined);
       } else if (data.code === 'PAST_RUNAT') {
         dispatch({ type: 'PENDING_PAST_RUNAT', msgId, planId, originalRunAt: data.originalRunAt });
         persistPendingChange(msgId, planId, { status: 'past-runat', originalRunAt: data.originalRunAt });
