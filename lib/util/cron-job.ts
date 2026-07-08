@@ -1,5 +1,25 @@
 import { safeJsonParse } from './json';
 
+const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** cron 식 → 사람 말 (ko). 5필드가 아니거나 못 읽는 패턴이면 원문 반환.
+ *  ScheduleModal 과 승인 카드(스케줄 실행 시각 표시)가 공유. */
+export function describeCron(expr: string): string {
+  const p = expr.split(' ');
+  if (p.length !== 5) return expr;
+  const [min, hour, dom, mon, dow] = p;
+  if (min.startsWith('*/')) return `${min.slice(2)}분마다`;
+  if (hour.startsWith('*/')) return `${hour.slice(2)}시간마다`;
+  const timeStr = `${hour}:${min.padStart(2, '0')}`;
+  if (dom !== '*' && mon === '*') return `매월 ${dom}일 ${timeStr}`;
+  if (dow !== '*') {
+    const days = dow.split(',').map(d => DOW_KO[parseInt(d)] || d).join('·');
+    return `매주 ${days} ${timeStr}`;
+  }
+  if (min !== '*' && hour !== '*') return `매일 ${timeStr}`;
+  return expr;
+}
+
 /**
  * proto CronJobPb 의 *Json 문자열 필드를 프론트가 기대하는 객체 필드로 정규화.
  *

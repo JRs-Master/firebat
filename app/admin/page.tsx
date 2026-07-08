@@ -32,6 +32,7 @@ import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 import { parseSkillMd, skillToMd } from '../../lib/util/skill-md';
+import { describeCron } from '../../lib/util/cron-job';
 
 /** 마크다운 table wrapper — viewport quirk 우회 + 모바일 320px / PC 480px 캡. */
 function MarkdownTableBox(props: any) {
@@ -1505,7 +1506,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                             <div className="text-[11px] text-slate-600">
                               <span className="text-slate-400">{t('plan.order_when')}</span>{' '}
                               <span className="font-semibold tabular-nums">
-                                {/^\d{4}-\d{2}-\d{2}T/.test(schedWhen) ? new Date(schedWhen).toLocaleString('ko-KR') : schedWhen}
+                                {/^\d{4}-\d{2}-\d{2}T/.test(schedWhen) ? new Date(schedWhen).toLocaleString('ko-KR') : describeCron(schedWhen)}
                               </span>
                             </div>
                           )}

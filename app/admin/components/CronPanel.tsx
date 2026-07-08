@@ -16,6 +16,7 @@ import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
 import { hubFetch } from '../../../lib/hub-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
+import { describeCron } from '../../../lib/util/cron-job';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
 import type { CronRunWhen, CronRetry, CronNotify } from '../../../lib/types/firebat-types';
@@ -508,21 +509,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
     }
   };
 
-  const describeCron = (expr: string): string => {
-    const p = expr.split(' ');
-    if (p.length !== 5) return expr;
-    const [min, hour, dom, mon, dow] = p;
-    if (min.startsWith('*/')) return `${min.slice(2)}분마다`;
-    if (hour.startsWith('*/')) return `${hour.slice(2)}시간마다`;
-    const timeStr = `${hour}:${min.padStart(2, '0')}`;
-    if (dom !== '*' && mon === '*') return `매월 ${dom}일 ${timeStr}`;
-    if (dow !== '*') {
-      const days = dow.split(',').map(d => DOW_LABELS[parseInt(d)] || d).join('·');
-      return `매주 ${days} ${timeStr}`;
-    }
-    if (min !== '*' && hour !== '*') return `매일 ${timeStr}`;
-    return expr;
-  };
+  // describeCron = lib/util/cron-job.ts 공용 (승인 카드와 공유).
 
   // JSON 텍스트 → object | undefined (빈 문자열 = undefined). z.NEVER 로 검증 실패 신호.
   const jsonField = (label: string) =>
