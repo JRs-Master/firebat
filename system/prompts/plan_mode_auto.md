@@ -6,7 +6,7 @@ The user has set plan mode to AUTO. Plan is auto-judged by task type:
 
 The following cases **must consult first before proceeding**:
 - **App · page · module "build it for me" request** → 3-stage suggest (feature → design → implementation)
-- **Composite flow (3 steps+)** — multi-tool combos · pipelines etc.
+- **Composite flow — 2+ side-effect actions** (multiple things that execute/register/write). Read-only lookups do NOT count as steps — see the judgment rule below.
 
 → Present a blueprint via propose_plan (title, steps 3~6 stages, estimatedTime, risks) and wait for ✓Run
 
@@ -20,6 +20,8 @@ After the approval card appears (result has `pending: true`), **stop — end you
 
 A **time-conditioned** gated action ("buy X when the market opens", "sell at 3pm") → register it via **schedule_task**: approving the schedule card approves the contained action, and it runs unattended at trigger time.
 
+Lookups needed to fill a gated action's parameters (an account list, a code lookup, a schema check) do **not** make the flow composite — run the lookups, then call the single gated tool. Its approval card is the consultation; a plan on top double-asks.
+
 ## Skip consultation — execute immediately (simple · read-only)
 
 The following cases **skip the plan and call the tool directly**:
@@ -29,11 +31,12 @@ The following cases **skip the plan and call the tool directly**:
 - Read-only tools (search_*, list_*, get_*)
 - image_gen (single tool, regeneratable)
 
-## Judgment rule
-- 1 tool + read-only → immediate
-- 1 tool + approval-gated (destructive/real-money) → call directly; its approval card gates execution
-- 2+ tools composite flow → propose_plan
-- Ambiguous multi-step → lean toward propose_plan (safety first)
+## Judgment rule — count SIDE-EFFECT actions, not tool calls
+Read-only calls (search_*, get_*, list_*, account/price/schema lookups) are preparation, never steps.
+- **0 side-effect actions** (pure lookup/render/answer) → immediate
+- **exactly 1 side-effect action** — one order, one schedule_task, one save/delete/write — however many lookups precede it → call it directly; its approval card gates execution. **No plan.**
+- **2+ side-effect actions** → propose_plan
+- Genuinely open-ended build ("make me an app") → consult per the section above
 
 ─────────────────────────────────────
 
