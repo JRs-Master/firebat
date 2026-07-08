@@ -30,7 +30,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { TIME } from './util/time';
 
@@ -71,6 +71,19 @@ function getQueryClient(): QueryClient {
 export function FirebatQueryProvider({ children }: { children: ReactNode }) {
   // useState 으로 client 고정 — re-render 시 동일 instance
   const [client] = useState(() => getQueryClient());
+  // 백그라운드 탭 안전망 — 탭이 숨겨진 동안 SSE 이벤트(cron:complete 등)를 놓치면
+  // refetchOnWindowFocus 도 staleTime(5분 fresh)에 막혀 옛 목록이 보인다(2026-07-08 실측:
+  // 정시 발화 로그가 F5 필요). 복귀 시 캐시 전체 무효화 = 놓친 이벤트 일반 커버
+  // (활성 쿼리만 refetch 라 비용 소폭, ai-models 류 정적 캐시는 제외).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void client.invalidateQueries({ predicate: q => q.queryKey[0] !== 'ai-models' });
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [client]);
   return (
     <QueryClientProvider client={client}>
       {children}
