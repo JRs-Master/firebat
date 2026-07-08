@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listCron, cancelCron, runNow as runCronNow, updateCron } from '../../../../../lib/api-gen/schedule';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
+import { normalizeCronJob } from '../../../../../lib/util/cron-job';
 
 /**
  * /api/hub/[slug]/cron — 익명 hub 방문자의 cron 영역 dispatcher.
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   try {
     const jobsRes = await listCron();
     if (!jobsRes.ok) return NextResponse.json({ success: false, error: jobsRes.message }, { status: 500 });
-    const jobs = (jobsRes.data ?? []).filter((j: any) => j.owner === expectedOwner);
+    const jobs = (jobsRes.data ?? []).filter((j: any) => j.owner === expectedOwner).map(normalizeCronJob);
     return NextResponse.json({ success: true, jobs, logs: [], notifications: [] });
   } catch (err) {
     logger.debug('hub-cron', 'list 실패', { error: err });

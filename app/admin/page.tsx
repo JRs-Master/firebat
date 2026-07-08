@@ -38,7 +38,7 @@ function MarkdownTableBox(props: any) {
   const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   return (
     <div
-      className="overflow-auto mb-2 rounded-xl border border-slate-200"
+      className="overflow-auto mb-2 rounded-xl border border-slate-200 scrollbar-thin"
       style={{ maxHeight: maxH ? `${maxH}px` : '480px' }}
     >
       <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />

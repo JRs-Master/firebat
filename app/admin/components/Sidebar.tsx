@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu } from './Menu';
@@ -416,7 +417,14 @@ export function Sidebar({
 
   // AI 액션 완료 (window 'firebat-refresh') + SSE (sidebar:refresh / cron:complete) 통합 수신
   // EventsManager 싱글톤이 EventSource 1개만 유지 — CronPanel 과 공유.
-  useSidebarRefresh(() => refreshAllRef.current());
+  // react-query 캐시도 여기서 무효화 — 각 패널의 자체 리스너는 언마운트 동안 이벤트를 놓치고,
+  // 전역 staleTime(5분) 이 다음 마운트의 refetch 까지 막아 승인 직후 목록이 stale 하던 것.
+  // 상시 마운트인 Sidebar 가 전체 무효화하면 마운트 패널은 즉시, 언마운트 패널은 다음 마운트에 refetch.
+  const queryClient = useQueryClient();
+  useSidebarRefresh(() => {
+    refreshAllRef.current();
+    queryClient.invalidateQueries({ predicate: q => q.queryKey[0] !== 'ai-models' });
+  });
 
   // 페이지 visibility 변경
   const handleSetPageVisibility = async (slug: string, vis: 'public' | 'password' | 'private') => {

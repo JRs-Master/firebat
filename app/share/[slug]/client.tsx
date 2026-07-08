@@ -68,7 +68,7 @@ const mdComponents = {
   pre: ({ children }: any) => <>{children}</>,
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
   table: (props: any) => (
-    <div className="overflow-auto mb-2 rounded-xl border border-slate-200">
+    <div className="overflow-auto mb-2 rounded-xl border border-slate-200 scrollbar-thin">
       <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
     </div>
   ),

@@ -815,10 +815,30 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
             {executionMode === 'pipeline' ? (
               <>
                 <p className="text-[10px] text-slate-400 mt-1.5">미리 짠 step 흐름 결정적 실행 (싸고 결정적). 단순 시세·알림에 사용.</p>
-                {job?.pipeline && (
-                  <pre className="mt-1.5 px-3 py-2 text-[11px] bg-slate-50 border border-slate-200 rounded-lg text-slate-600 overflow-x-auto max-h-32 whitespace-pre-wrap">
-                    {JSON.stringify(job.pipeline, null, 2)}
-                  </pre>
+                {Array.isArray(job?.pipeline) && job.pipeline.length > 0 && (
+                  <div className="mt-1.5 space-y-1 max-h-52 overflow-y-auto scrollbar-thin">
+                    {job.pipeline.map((s: any, i: number) => {
+                      // step 대상 라벨 — 타입별 필드가 달라 best-effort (tool / module/action / url / path).
+                      const target = s.tool
+                        || (s.module ? `${s.module}${s.action ? `/${s.action}` : ''}` : '')
+                        || s.url || s.path || s.slug || '';
+                      const { type: _t, ...rest } = s;
+                      const hasBody = Object.keys(rest).length > 0;
+                      return (
+                        <div key={i} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+                          <div className="text-[11px] font-semibold text-slate-600 break-all">
+                            <span className="inline-block px-1.5 py-px mr-1.5 rounded bg-blue-50 border border-blue-100 text-blue-600 text-[10px] font-bold align-middle">{i + 1}</span>
+                            {s.type || 'STEP'}{target ? ` — ${target}` : ''}
+                          </div>
+                          {hasBody && (
+                            <pre className="mt-1 text-[10px] text-slate-500 overflow-x-auto scrollbar-thin whitespace-pre-wrap break-all">
+                              {JSON.stringify(rest, null, 1)}
+                            </pre>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </>
             ) : (

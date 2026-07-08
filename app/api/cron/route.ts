@@ -10,6 +10,7 @@ import {
   updateCron,
 } from '../../../lib/api-gen/schedule';
 import { withAuth } from '../../../lib/with-api-error';
+import { normalizeCronJob } from '../../../lib/util/cron-job';
 
 /** POST /api/cron?action=run&jobId=xxx — 기존 cron 잡 즉시 1회 트리거 */
 export const POST = withAuth(async (req: NextRequest) => {
@@ -54,7 +55,9 @@ export const GET = withAuth(async (req: NextRequest) => {
   }
 
   // hub-scoped 자료 필터 — owner 시작 'hub:' 모두 제외 (admin 자료만 표시).
-  const adminJobs = (jobsRes.data ?? []).filter((j: any) => !j.owner || !j.owner.startsWith('hub:'));
+  const adminJobs = (jobsRes.data ?? [])
+    .filter((j: any) => !j.owner || !j.owner.startsWith('hub:'))
+    .map(normalizeCronJob);
 
   return NextResponse.json({
     jobs: adminJobs,

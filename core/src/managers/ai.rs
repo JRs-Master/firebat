@@ -2638,13 +2638,31 @@ impl AiManager {
                     }
                 }
             }
-            // 도메인 분리 도구(sysmod_kiwoom_chart 등)는 카탈로그 모듈명(kiwoom)의 prefix 매치.
-            let act_hits = dispatched_actions
+            // 방언 정규화 — 디스패치 도구 suffix 는 언더스코어·도메인 분리(kiwoom_chart, toss_invest_account)라
+            // 카탈로그 모듈명(kiwoom, toss-invest)과 직접 비교 불가 → 모듈명 하이픈→언더스코어 후 prefix 매치.
+            // recall 분모 = 카탈로그 등재 모듈 디스패치만 — 미등재 모듈(kma 등)은 shortlist 에
+            // 구조적으로 나올 수 없어 분모 포함 시 recall 이 항상 낮게 왜곡된다(첫날 0/2·0/7 사례).
+            let cataloged_norm: Vec<String> = if let Some(ac) = &self.intent_actions {
+                ac.cataloged_modules()
+                    .await
+                    .iter()
+                    .map(|m| m.replace('-', "_"))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let denom_actions: Vec<&(String, String)> = dispatched_actions
+                .iter()
+                .filter(|(tool_suffix, _)| {
+                    cataloged_norm.iter().any(|m| tool_suffix.starts_with(m.as_str()))
+                })
+                .collect();
+            let act_hits = denom_actions
                 .iter()
                 .filter(|(tool_suffix, act)| {
                     shadow_actions.iter().any(|(ma, _)| {
                         ma.split_once(':')
-                            .map(|(m, a)| a == act && tool_suffix.starts_with(m))
+                            .map(|(m, a)| a == act && tool_suffix.starts_with(&m.replace('-', "_")))
                             .unwrap_or(false)
                     })
                 })
@@ -2670,7 +2688,7 @@ impl AiManager {
                 dispatched_actions,
                 dispatched_skills,
                 act_hits,
-                dispatched_actions.len(),
+                denom_actions.len(),
                 skill_hits,
                 dispatched_skills.len(),
             ));
