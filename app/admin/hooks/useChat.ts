@@ -16,6 +16,7 @@ import { useReducer, useState, useRef, useEffect, useCallback, useMemo } from 'r
 import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent } from './chat-manager';
+import { alertDialog } from '../components/Dialog';
 import { useTranslations } from '../../../lib/i18n';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
@@ -742,11 +743,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         if (upJson?.success && upJson?.data?.url) {
           imageData = upJson.data.url;
         } else {
-          alert(`첨부 이미지 업로드 실패: ${upJson?.error ?? '응답 오류'}`);
+          void alertDialog({ title: '첨부 실패', message: `첨부 이미지 업로드 실패: ${upJson?.error ?? '응답 오류'}`, danger: true });
           return;
         }
       } catch (err) {
-        alert(`첨부 이미지 업로드 실패 (네트워크): ${err instanceof Error ? err.message : String(err)}`);
+        void alertDialog({ title: '첨부 실패', message: `첨부 이미지 업로드 실패 (네트워크): ${err instanceof Error ? err.message : String(err)}`, danger: true });
         return;
       }
     }
