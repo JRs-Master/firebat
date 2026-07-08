@@ -463,10 +463,56 @@ impl ProcessSandboxAdapter {
         Self::ts_serve_data(spec, served, false)
     }
 
+    /// auto-cache 후보 수집 — data 객체를 (배열엔 내려가지 않고) 중첩 object 로 재귀 하강하며
+    /// 배열/문자열 후보의 (경로, 크기) 를 모은다. 모듈마다 envelope 모양이 달라서
+    /// (kiwoom/korea-invest = 스프레드 직접 자식 / toss = `result` 중첩 / 기타 임의 중첩)
+    /// 최상위만 보면 사각지대가 생기는 것을 일반화 (2026-07-08 — toss investor-trading 88KB
+    /// 가 verbatim 으로 LLM 에 들어가 Solar 128K 초과 400 난 실측 fix).
+    fn collect_cache_candidates(
+        obj: &serde_json::Map<String, serde_json::Value>,
+        depth: usize,
+        path: &mut Vec<String>,
+        arrays: &mut Vec<(Vec<String>, usize)>,
+        strings: &mut Vec<(Vec<String>, usize)>,
+    ) {
+        const AUTO_CACHE_MAX_DEPTH: usize = 4;
+        for (k, v) in obj {
+            // 예약 필드는 캐시 대상 아님 (명시 envelope 잔재 / 기 주입 메타)
+            if k == "_cacheKey" || k == "_cacheMeta" || k == "_cache" {
+                continue;
+            }
+            path.push(k.clone());
+            match v {
+                serde_json::Value::Array(a) => arrays.push((path.clone(), a.len())),
+                serde_json::Value::String(s) => strings.push((path.clone(), s.chars().count())),
+                serde_json::Value::Object(o) if depth + 1 < AUTO_CACHE_MAX_DEPTH => {
+                    Self::collect_cache_candidates(o, depth + 1, path, arrays, strings);
+                }
+                _ => {}
+            }
+            path.pop();
+        }
+    }
+
+    /// 경로(세그먼트 배열)로 중첩 값 mutable 접근. 세그먼트는 전부 object 키 (배열 인덱스 없음).
+    fn value_at_path_mut<'a>(
+        root: &'a mut serde_json::Map<String, serde_json::Value>,
+        path: &[String],
+    ) -> Option<&'a mut serde_json::Value> {
+        let (first, rest) = path.split_first()?;
+        let mut cur = root.get_mut(first)?;
+        for seg in rest {
+            cur = cur.as_object_mut()?.get_mut(seg)?;
+        }
+        Some(cur)
+    }
+
     /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 큰 필드 1개를 SysmodCacheAdapter 로
-    /// 저장 + in-place 프리뷰 축약 + `_cacheKey` / `_cacheMeta` 형제 필드 주입.
+    /// 저장 + in-place 프리뷰 축약 + `_cacheKey` / `_cacheMeta` 형제 필드 주입 (메타는 항상 data 최상위).
     ///
     /// 모든 sysmod 응답이 거치는 단일 choke point — 도구별 코드 0 으로 현재·미래 도구 자동 적용.
+    /// **중첩 스캔** (2026-07-08 일반화): 큰 필드가 `data` 직접 자식이 아니라 `data.result.records`
+    /// 처럼 중첩돼 있어도 찾는다 (object 로만 하강, 깊이 캡 4, 배열 안으로는 안 내려감).
     /// 두 종류를 자동 인식:
     /// - 큰 **배열** (≥ `AUTO_CACHE_THRESHOLD`(30) 개) → 첫 5개만 남기고 나머지 캐시 (시세 / 공시 목록 등).
     /// - 큰 **문자열** (≥ `TEXT_CACHE_THRESHOLD`(8000) 자) → 줄 단위 `{line, text}` 레코드로 캐시 +
@@ -477,6 +523,7 @@ impl ProcessSandboxAdapter {
     /// - data 가 object 가 아니면 변형 없음
     /// - `_cacheKey` 가 이미 있으면 skip (명시 envelope 처리 결과 우선)
     /// - 배열 우선 — 자격 배열이 있으면 그것, 없으면 큰 문자열. 한 응답당 1개만.
+    ///   동률이면 얕은 경로 우선. `_cacheMeta.fieldName` = 점 표기 경로 (예: "result.records").
     /// - cache.data() 실패 시 원본 data 그대로 통과 (warn log)
     pub(crate) fn apply_auto_cache(
         data: serde_json::Value,
@@ -495,14 +542,21 @@ impl ProcessSandboxAdapter {
         if obj.contains_key("_cacheKey") {
             return serde_json::Value::Object(obj);
         }
-        // ── 1) 배열 경로 (우선) — 가장 큰 배열 ≥ 30 개 ──
-        let largest_arr: Option<(String, usize)> = obj
-            .iter()
-            .filter_map(|(k, v)| v.as_array().map(|a| (k.clone(), a.len())))
+        let mut arrays: Vec<(Vec<String>, usize)> = Vec::new();
+        let mut strings: Vec<(Vec<String>, usize)> = Vec::new();
+        let mut path_buf: Vec<String> = Vec::new();
+        Self::collect_cache_candidates(&obj, 0, &mut path_buf, &mut arrays, &mut strings);
+
+        // ── 1) 배열 경로 (우선) — 가장 큰 배열 ≥ 30 개, 동률 = 얕은 경로 우선 ──
+        let largest_arr: Option<(Vec<String>, usize)> = arrays
+            .into_iter()
             .filter(|(_, l)| *l >= AUTO_CACHE_THRESHOLD)
-            .max_by_key(|(_, l)| *l);
-        if let Some((field_name, total_count)) = largest_arr {
-            let records = match obj.get(&field_name).and_then(|v| v.as_array()).cloned() {
+            .max_by(|a, b| a.1.cmp(&b.1).then(b.0.len().cmp(&a.0.len())));
+        if let Some((field_path, total_count)) = largest_arr {
+            let field_name = field_path.join(".");
+            let records = match Self::value_at_path_mut(&mut obj, &field_path)
+                .and_then(|v| v.as_array().cloned())
+            {
                 Some(r) => r,
                 None => return serde_json::Value::Object(obj),
             };
@@ -515,7 +569,9 @@ impl ProcessSandboxAdapter {
                 None,
             ) {
                 Ok(key) => {
-                    if let Some(arr) = obj.get_mut(&field_name).and_then(|v| v.as_array_mut()) {
+                    if let Some(arr) = Self::value_at_path_mut(&mut obj, &field_path)
+                        .and_then(|v| v.as_array_mut())
+                    {
                         arr.truncate(AUTO_CACHE_PREVIEW);
                     }
                     obj.insert(
@@ -558,17 +614,15 @@ impl ProcessSandboxAdapter {
         }
 
         // ── 2) 텍스트 경로 — 가장 큰 문자열 ≥ 8000 자 (줄 단위 {line,text} 레코드로 캐시) ──
-        let largest_str: Option<(String, usize)> = obj
-            .iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.chars().count())))
+        let largest_str: Option<(Vec<String>, usize)> = strings
+            .into_iter()
             .filter(|(_, l)| *l >= TEXT_CACHE_THRESHOLD)
-            .max_by_key(|(_, l)| *l);
-        if let Some((field_name, total_chars)) = largest_str {
-            let full = obj
-                .get(&field_name)
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            .max_by(|a, b| a.1.cmp(&b.1).then(b.0.len().cmp(&a.0.len())));
+        if let Some((field_path, total_chars)) = largest_str {
+            let field_name = field_path.join(".");
+            let full = Self::value_at_path_mut(&mut obj, &field_path)
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_default();
             let records: Vec<serde_json::Value> = full
                 .lines()
                 .enumerate()
@@ -591,7 +645,9 @@ impl ProcessSandboxAdapter {
                     if total_chars > TEXT_PREVIEW_CHARS {
                         preview.push('…');
                     }
-                    obj.insert(field_name.clone(), serde_json::Value::String(preview));
+                    if let Some(slot) = Self::value_at_path_mut(&mut obj, &field_path) {
+                        *slot = serde_json::Value::String(preview);
+                    }
                     obj.insert(
                         "_cacheKey".to_string(),
                         serde_json::Value::String(key.clone()),
@@ -2144,6 +2200,107 @@ mod tests {
             meta.get("sysmod").and_then(|v| v.as_str()),
             Some("law-search")
         );
+    }
+
+    #[test]
+    fn apply_auto_cache_finds_nested_array() {
+        // toss investor-trading 실측 케이스 (2026-07-08): 큰 배열이 data 직접 자식이 아니라
+        // data.result.records 로 중첩 → 옛 최상위 스캔이 놓쳐 88KB verbatim → Solar 128K 초과 400.
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let records: Vec<serde_json::Value> = (0..100)
+            .map(|i| serde_json::json!({"date": format!("2026-07-{:02}", i % 28 + 1), "buyAmount": "18537355735116"}))
+            .collect();
+        let data = serde_json::json!({
+            "action": "investor-trading",
+            "name": "투자자별 매매대금",
+            "result": { "nextUntil": "2026-02-06", "records": records },
+        });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data,
+            cache.as_ref(),
+            "toss-invest",
+            "investor-trading",
+        );
+
+        let obj = out.as_object().expect("object 결과");
+        // 중첩 위치에서 in-place truncate
+        let arr = obj
+            .get("result")
+            .and_then(|v| v.get("records"))
+            .and_then(|v| v.as_array())
+            .expect("result.records 배열");
+        assert_eq!(arr.len(), 5);
+        // 형제 필드(nextUntil)는 보존
+        assert_eq!(
+            obj.get("result").and_then(|v| v.get("nextUntil")).and_then(|v| v.as_str()),
+            Some("2026-02-06")
+        );
+        // 메타는 data 최상위 + fieldName 은 점 표기 경로
+        assert!(obj.get("_cacheKey").and_then(|v| v.as_str()).is_some());
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("fieldName").and_then(|v| v.as_str()), Some("result.records"));
+        assert_eq!(meta.get("totalCount").and_then(|v| v.as_u64()), Some(100));
+        assert_eq!(
+            meta.get("action").and_then(|v| v.as_str()),
+            Some("investor-trading:result.records")
+        );
+    }
+
+    #[test]
+    fn apply_auto_cache_finds_nested_text() {
+        // 큰 문자열도 중첩 위치에서 인식 (예: data.result.content 긴 본문)
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let big_text: String = (0..900)
+            .map(|i| format!("line number {} with some content\n", i))
+            .collect();
+        let total_chars = big_text.chars().count();
+        assert!(total_chars >= 8000);
+        let data = serde_json::json!({
+            "action": "read",
+            "result": { "title": "doc", "content": big_text },
+        });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(data, cache.as_ref(), "mod", "read");
+        let obj = out.as_object().expect("object 결과");
+        // 중첩 위치의 문자열이 프리뷰로 교체
+        let preview = obj
+            .get("result")
+            .and_then(|v| v.get("content"))
+            .and_then(|v| v.as_str())
+            .expect("result.content 프리뷰");
+        assert!(preview.chars().count() <= 1501); // 1500 + '…'
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("fieldName").and_then(|v| v.as_str()), Some("result.content"));
+        assert_eq!(meta.get("kind").and_then(|v| v.as_str()), Some("text"));
+    }
+
+    #[test]
+    fn apply_auto_cache_prefers_shallow_on_tie_and_ignores_reserved() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let mk = |n: usize| -> Vec<serde_json::Value> {
+            (0..n).map(|i| serde_json::json!({"id": i})).collect()
+        };
+        // 같은 길이 40: 최상위 items vs 중첩 result.rows → 얕은 items 선택
+        let data = serde_json::json!({
+            "items": mk(40),
+            "result": { "rows": mk(40) },
+            "_cache": { "records": mk(99) },
+        });
+        let out = ProcessSandboxAdapter::apply_auto_cache(data, cache.as_ref(), "m", "a");
+        let obj = out.as_object().expect("object");
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("fieldName").and_then(|v| v.as_str()), Some("items"));
+        // 중첩 rows 는 건드리지 않음 (한 응답당 1개)
+        let rows = obj
+            .get("result")
+            .and_then(|v| v.get("rows"))
+            .and_then(|v| v.as_array())
+            .expect("rows");
+        assert_eq!(rows.len(), 40);
     }
 
     #[test]
