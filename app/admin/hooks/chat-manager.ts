@@ -482,7 +482,13 @@ function leanPendingArgs(args?: Record<string, unknown>): Record<string, unknown
   if (!args || typeof args !== 'object') return args;
   const lean: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(args)) {
-    if (v === null || typeof v !== 'object') lean[k] = v;
+    if (v === null || typeof v !== 'object') { lean[k] = v; continue; }
+    // 작은 중첩은 보존 (크기 기준 — 도구별 하드코딩 X): 스케줄 카드의 pipeline(주문 스텝 상세 표시)
+    // 같은 소형 구조는 리로드 후에도 카드에 살아야 함. 비대 방지 대상 = save_page spec.body 급 거대 중첩.
+    try {
+      const s = JSON.stringify(v);
+      if (s.length <= 2000) lean[k] = v;
+    } catch { /* 직렬화 불가(순환 등) 중첩 값 = drop — 카드 표시는 scalar 로 충분 */ }
   }
   return lean;
 }

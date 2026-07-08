@@ -34,6 +34,7 @@
     "order_account": "Account",
     "order_currency": "Currency",
     "order_tif": "Time in force",
+    "order_when": "Runs at",
     "order_stale": "⏱ Requested {min} min ago — market prices may have moved."
   },
   "suggest": {

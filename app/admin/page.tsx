@@ -976,6 +976,36 @@ function orderDetails(args: Record<string, unknown>): { side?: string; rows: Arr
   return { side, rows };
 }
 
+/** 주문 인자 구조 표시 블록 — 즉시 주문 카드(p.args)와 스케줄 카드의 파이프라인 주문 스텝
+ *  (step.inputData)이 공유. strict=true 면 의미 있는 행(side 또는 synonym 매핑)이 있을 때만
+ *  렌더(스케줄의 비주문 스텝 노이즈 차단), false 면 원시 키만 있어도 전부 표시(즉시 주문 카드 =
+ *  승인 판단 재료 전부 노출). */
+function OrderArgRows({ args, t, strict }: {
+  args: Record<string, unknown>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  strict?: boolean;
+}) {
+  const od = orderDetails(args);
+  if (od.rows.length === 0) return null;
+  if (strict && !od.side && !od.rows.some(r => !r.raw)) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      {od.side === 'BUY' && (
+        <span className="px-1.5 py-px rounded bg-red-50 border border-red-200 text-red-600 text-[11px] font-bold">{t('plan.order_buy')}</span>
+      )}
+      {od.side === 'SELL' && (
+        <span className="px-1.5 py-px rounded bg-blue-50 border border-blue-200 text-blue-600 text-[11px] font-bold">{t('plan.order_sell')}</span>
+      )}
+      {od.rows.map((r, i) => (
+        <span key={i} className="text-[11px] text-slate-600 break-all">
+          <span className="text-slate-400">{r.raw ? r.label : t(`plan.${r.label}`)}</span>{' '}
+          <span className="font-semibold tabular-nums">{r.value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
 type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number; request?: string };
 /** 빌드 세션의 한 단계(슬라이드) — 그 단계 메시지의 state + 칩/픽/pending. */
@@ -1373,10 +1403,16 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                     const isExpired = p.status !== 'approved' && p.status !== 'rejected' && !!p.createdAt && Date.now() - p.createdAt > 30 * 24 * 60 * 60 * 1000;
                     // 주문 승인 카드 (requiresApproval 모듈 액션) — 인자 구조 표시 + 신선도.
                     const isOrder = p.name === 'run_module' || String(p.name || '').startsWith('sysmod_');
-                    const od = isOrder && p.args ? orderDetails(p.args as Record<string, unknown>) : null;
                     // 미종결 주문 카드가 10분+ 묵으면 시세 맥락 경고 (오래된 카드를 뒤늦게 승인하는 사고 방지).
                     const staleMin = isOrder && !isExpired && (!p.status || p.status === 'pending') && p.createdAt
                       ? Math.floor((Date.now() - p.createdAt) / 60000) : 0;
+                    // 스케줄 승인 카드 — 승인 = 잡에 담긴 매매까지 승인이므로 실행 시각 + 파이프라인
+                    // 주문 스텝의 종목·수량을 카드에서 바로 읽히게 (제목만으론 뭘 승인하는지 약함).
+                    const schedArgs = p.name === 'schedule_task' ? (p.args as Record<string, unknown> | undefined) : undefined;
+                    const schedWhen = typeof schedArgs?.runAt === 'string' ? schedArgs.runAt as string
+                      : typeof schedArgs?.cronTime === 'string' ? schedArgs.cronTime as string : '';
+                    const schedSteps: Array<Record<string, unknown>> = Array.isArray(schedArgs?.pipeline)
+                      ? (schedArgs!.pipeline as Array<Record<string, unknown>>) : [];
                     return (
                     <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${isExpired ? 'bg-slate-50 border border-slate-200' : p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       {p.status === 'past-runat' && (
@@ -1458,20 +1494,27 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                         </>
                       )}
                       </div>
-                      {od && od.rows.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-6">
-                          {od.side === 'BUY' && (
-                            <span className="px-1.5 py-px rounded bg-red-50 border border-red-200 text-red-600 text-[11px] font-bold">{t('plan.order_buy')}</span>
+                      {isOrder && p.args && (
+                        <div className="pl-6"><OrderArgRows args={p.args as Record<string, unknown>} t={t} /></div>
+                      )}
+                      {/* 스케줄 표준 카드 — 실행 시각 + 파이프라인 주문 스텝은 주식 승인 카드와 동일 블록.
+                          (스케줄 승인 = 잡에 담긴 매매 승인이라 종목·수량이 카드에서 바로 읽혀야 함.) */}
+                      {schedArgs && (schedWhen || schedSteps.length > 0) && (
+                        <div className="flex flex-col gap-1 pl-6">
+                          {schedWhen && (
+                            <div className="text-[11px] text-slate-600">
+                              <span className="text-slate-400">{t('plan.order_when')}</span>{' '}
+                              <span className="font-semibold tabular-nums">
+                                {/^\d{4}-\d{2}-\d{2}T/.test(schedWhen) ? new Date(schedWhen).toLocaleString('ko-KR') : schedWhen}
+                              </span>
+                            </div>
                           )}
-                          {od.side === 'SELL' && (
-                            <span className="px-1.5 py-px rounded bg-blue-50 border border-blue-200 text-blue-600 text-[11px] font-bold">{t('plan.order_sell')}</span>
-                          )}
-                          {od.rows.map((r, i) => (
-                            <span key={i} className="text-[11px] text-slate-600 break-all">
-                              <span className="text-slate-400">{r.raw ? r.label : t(`plan.${r.label}`)}</span>{' '}
-                              <span className="font-semibold tabular-nums">{r.value}</span>
-                            </span>
-                          ))}
+                          {schedSteps.map((s, i) => {
+                            const input = (s.inputData ?? s.input) as Record<string, unknown> | undefined;
+                            return input && typeof input === 'object'
+                              ? <OrderArgRows key={i} args={input} t={t} strict />
+                              : null;
+                          })}
                         </div>
                       )}
                       {staleMin >= 10 && (
