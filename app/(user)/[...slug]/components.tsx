@@ -2123,16 +2123,18 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // 정체를 알아보기 어려웠다 (2026-07-08 사용자: "리스트로 체크해서"). 버튼 하나 + 체크 목록.
   // 즉시 반영(적용 버튼 없음) = 컬럼 패널 글로벌 표준(로컬 뷰 토글 — Apply 는 서버 왕복 있을 때만).
   const [colMenuOpen, setColMenuOpen] = useState(false);
-  // 바깥클릭 닫기 = document 리스너 — 전면 백드롭 div 는 열려 있는 동안 휠 대상이 백드롭이 돼
-  // 페이지(대화창) 스크롤이 표 스크롤 박스로 새던 것 (2026-07-08 사용자 보고).
+  // 바깥클릭 닫기 = document 'click' 리스너 — 전면 백드롭 div 는 열려 있는 동안 휠 대상이
+  // 백드롭이 돼 페이지(대화창) 스크롤이 표 스크롤 박스로 새던 것 (2026-07-08 사용자 보고).
+  // pointerdown 이 아니라 click 인 이유: 스크롤 제스처(터치 스크롤·스크롤바 드래그) 뒤엔
+  // 브라우저가 click 을 안 쏘므로 "스크롤은 유지, 바깥 탭·클릭만 닫힘" (MUI ClickAway 표준).
   const colMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!colMenuOpen) return;
-    const onDown = (e: PointerEvent) => {
+    const onDocClick = (e: MouseEvent) => {
       if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setColMenuOpen(false);
     };
-    document.addEventListener('pointerdown', onDown);
-    return () => document.removeEventListener('pointerdown', onDown);
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
   }, [colMenuOpen]);
   const toggleCol = useCallback((i: number) => setHiddenCols(prev => {
     const n = new Set(prev);
