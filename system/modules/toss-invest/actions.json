@@ -55,7 +55,7 @@
       "symbol": "종목 심볼 (필수)",
       "interval": "봉 단위 (필수) — 1m=1분봉 / 1d=일봉",
       "count": "봉 개수 — 최대 200 (기본 100), 최신부터 과거로",
-      "before": "페이지네이션 상한 (ISO 8601, exclusive) — 이전 응답의 nextBefore 전달",
+      "before": "페이지네이션 상한 (ISO 8601, inclusive — 이 시각과 같거나 이전 봉만) — 이전 응답의 nextBefore 전달",
       "adjusted": "수정주가 적용 여부 (기본 true)"
     }
   },
@@ -136,7 +136,7 @@
     "path": "/orders",
     "params": {
       "accountSeq": "계좌 식별자 (필수)",
-      "status": "주문 상태 그룹 (필수) — OPEN=진행중 / CLOSED=종료",
+      "status": "주문 상태 그룹 (필수) — OPEN=진행중 / CLOSED=종료 (⚠️ CLOSED 는 현재 미지원 400 closed-not-supported — 종료 주문은 order-detail 로 개별 조회)",
       "symbol": "종목 심볼 — 지정 시 해당 종목만",
       "from": "조회 시작 (ISO 8601)",
       "to": "조회 끝 (ISO 8601)",
@@ -237,6 +237,138 @@
     "params": {
       "accountSeq": "계좌 식별자 (필수)",
       "orderId": "주문 ID (필수)"
+    }
+  },
+  {
+    "id": "rankings",
+    "name": "주식 랭킹 조회",
+    "description": "거래대금·거래량 상위 / 급상승·급하락 / 토스증권 체결 기준 상위 — 국내·미국, 기간별(실시간~1년), 상위 100위",
+    "domain": "랭킹",
+    "method": "GET",
+    "path": "/rankings",
+    "params": {
+      "type": "랭킹 종류 (필수) — MARKET_TRADING_AMOUNT(시장 거래대금)/MARKET_TRADING_VOLUME(시장 거래량)/TOP_GAINERS(급상승)/TOP_LOSERS(급하락)/TOSS_SECURITIES_TRADING_AMOUNT(토스 체결 거래대금)/TOSS_SECURITIES_TRADING_VOLUME(토스 체결 거래량)",
+      "marketCountry": "시장 (필수) — KR 또는 US",
+      "duration": "산정 기간 (필수, 거래일 기준) — realtime/1d/1w/1mo/3mo/6mo/1y. TOP_GAINERS·TOP_LOSERS 는 realtime 미지원",
+      "excludeInvestmentCaution": "투자 유의 종목 제외 (boolean, 기본 false)",
+      "count": "조회 수 — 최대 100 (기본 100)"
+    }
+  },
+  {
+    "id": "market-indicator-prices",
+    "name": "시장 지표 현재가 조회",
+    "description": "코스피·코스닥 지수와 한국 국채 금리 현재가 — 심볼 8종 고정 (개별 종목 시세는 prices 사용)",
+    "domain": "시장지표",
+    "method": "GET",
+    "path": "/market-indicators/prices",
+    "params": {
+      "symbols": "지표 심볼 (필수, 콤마 다건) — KOSPI, KOSDAQ, KR_BOND_2Y/3Y/5Y/10Y/20Y/30Y 만 지원. 국채는 수익률(%)"
+    }
+  },
+  {
+    "id": "market-indicator-candles",
+    "name": "시장 지표 캔들 조회",
+    "description": "코스피·코스닥·국채 금리 캔들 OHLCV — 1분봉/일봉, 최대 200봉 (개별 종목 캔들은 candles 사용)",
+    "domain": "시장지표",
+    "method": "GET",
+    "path": "/market-indicators/{symbol}/candles",
+    "params": {
+      "symbol": "지표 심볼 (필수) — KOSPI, KOSDAQ, KR_BOND_2Y~30Y",
+      "interval": "봉 단위 (필수) — 1m=1분봉 / 1d=일봉",
+      "count": "봉 개수 — 최대 200 (기본 100)",
+      "before": "페이지네이션 상한 (ISO 8601, inclusive) — 이전 응답의 nextBefore 전달"
+    }
+  },
+  {
+    "id": "investor-trading",
+    "name": "투자자별 매매대금 조회",
+    "description": "KRX 투자자별 매매대금 — 개인/외국인/기관(세부 7분류)/기타법인 매수·매도 (KRW 정수), 코스피·코스닥만, 일/주/월/연 집계",
+    "domain": "시장지표",
+    "method": "GET",
+    "path": "/market-indicators/{symbol}/investor-trading",
+    "params": {
+      "symbol": "지표 심볼 (필수) — KOSPI 또는 KOSDAQ 만",
+      "interval": "집계 단위 (필수) — 1d(일별)/1w(주별)/1mo(월별)/1y(연도별)",
+      "count": "조회 수 — 최대 100 (기본 10)",
+      "until": "조회 기준일 (YYYY-MM-DD, inclusive) — 이전 응답의 nextUntil 전달"
+    }
+  },
+  {
+    "id": "create-conditional-order",
+    "name": "조건주문 생성",
+    "description": "브로커 서버가 가격을 감시해 조건 충족 시 자동 매매 주문 생성 (예약 매매) — SINGLE/OCO/OTO, 등록 즉시 실제 감시 시작",
+    "domain": "조건주문",
+    "method": "POST",
+    "path": "/conditional-orders",
+    "params": {
+      "accountSeq": "계좌 식별자 (필수)",
+      "symbol": "종목 심볼 (필수) — 국내=6자리 코드, 미국=티커",
+      "type": "조건주문 타입 (필수) — SINGLE(한 조건) / OCO(둘 동시 감시, 하나 충족 시 나머지 자동취소 — 둘 다 SELL, first 감시가>현재가>second 감시가, LIMIT만) / OTO(first 체결 후 second 감시 시작 — first=BUY, second=SELL, LIMIT만)",
+      "quantity": "매매 수량 (필수, 문자열) — 그룹 공통 (first/second 동일 수량)",
+      "orderType": "호가 유형 (필수) — LIMIT(각 조건에 orderPrice 필수) / MARKET(orderPrice 금지). OCO/OTO 는 LIMIT 만",
+      "expireDate": "만료일 (필수, YYYY-MM-DD) — 만료일까지 미충족 시 자동 만료",
+      "first": "첫번째 감시 조건 (필수, 객체) — {orderSide: BUY|SELL, triggerPrice: 감시가(문자열), orderPrice: 지정가(LIMIT 시 필수)}",
+      "second": "두번째 감시 조건 (OCO/OTO 필수, SINGLE 생략) — 구조는 first 와 동일",
+      "clientOrderId": "멱등성 키 (선택, 10분 유효)",
+      "confirmHighValueOrder": "1억원 이상 주문 확인 (boolean)"
+    }
+  },
+  {
+    "id": "modify-conditional-order",
+    "name": "조건주문 수정",
+    "description": "조건주문 전체 재설정 (유지할 조건도 함께 전달) — ⚠️ 수정 = 취소+재생성: 응답의 새 conditionalOrderId 가 발급되고 기존 ID 는 무효",
+    "domain": "조건주문",
+    "method": "POST",
+    "path": "/conditional-orders/{conditionalOrderId}/modify",
+    "params": {
+      "accountSeq": "계좌 식별자 (필수)",
+      "conditionalOrderId": "조건주문 ID (필수) — 수정 후엔 응답의 새 ID 를 사용해야 함",
+      "type": "변경 결과 타입 (필수) — 타입 전환 허용 (예: SINGLE→OCO)",
+      "quantity": "매매 수량 (필수, 문자열)",
+      "orderType": "호가 유형 (필수) — OCO/OTO 는 LIMIT 만",
+      "expireDate": "만료일 (필수, YYYY-MM-DD)",
+      "first": "첫번째 감시 조건 (필수, 객체)",
+      "second": "두번째 감시 조건 (OCO/OTO 필수, SINGLE 생략)",
+      "confirmHighValueOrder": "1억원 이상 주문 확인 (boolean)"
+    }
+  },
+  {
+    "id": "cancel-conditional-order",
+    "name": "조건주문 취소",
+    "description": "조건주문 감시 해제 (등록된 예약 매매 취소) — 즉시 실제 반영",
+    "domain": "조건주문",
+    "method": "DELETE",
+    "path": "/conditional-orders/{conditionalOrderId}",
+    "params": {
+      "accountSeq": "계좌 식별자 (필수)",
+      "conditionalOrderId": "조건주문 ID (필수)"
+    }
+  },
+  {
+    "id": "list-conditional-orders",
+    "name": "조건주문 목록 조회",
+    "description": "등록된 조건주문 목록 — 진행중(OPEN)/종료(CLOSED), 앱 등 다른 채널 등록분 포함",
+    "domain": "조건주문조회",
+    "method": "GET",
+    "path": "/conditional-orders",
+    "params": {
+      "accountSeq": "계좌 식별자 (필수)",
+      "status": "상태 그룹 (필수) — OPEN(감시중·일시중지·주문중) / CLOSED(완료·만료)",
+      "symbol": "종목 심볼 — 지정 시 해당 종목만",
+      "cursor": "페이지네이션 커서 — 이전 응답의 nextCursor",
+      "limit": "페이지 크기 (기본 20, 최대 100)"
+    }
+  },
+  {
+    "id": "conditional-order-detail",
+    "name": "조건주문 상세 조회",
+    "description": "조건주문 1건 상세 — first/second 조건별 상태, triggeredOrderId 로 생성된 실제 주문 추적 가능",
+    "domain": "조건주문조회",
+    "method": "GET",
+    "path": "/conditional-orders/{conditionalOrderId}",
+    "params": {
+      "accountSeq": "계좌 식별자 (필수)",
+      "conditionalOrderId": "조건주문 ID (필수)"
     }
   }
 ]

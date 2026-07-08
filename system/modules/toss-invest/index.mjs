@@ -44,6 +44,19 @@ const API_TABLE = {
   'create-order':   { method: 'POST', path: '/api/v1/orders', body: ['clientOrderId', 'symbol', 'side', 'orderType', 'quantity', 'orderAmount', 'price', 'timeInForce', 'confirmHighValueOrder'], needsAccount: true, name: '주문 생성' },
   'modify-order':   { method: 'POST', path: '/api/v1/orders/{orderId}/modify', pathParams: ['orderId'], body: ['orderType', 'quantity', 'price', 'confirmHighValueOrder'], needsAccount: true, name: '주문 정정' },
   'cancel-order':   { method: 'POST', path: '/api/v1/orders/{orderId}/cancel', pathParams: ['orderId'], body: [], needsAccount: true, name: '주문 취소' },
+  // ── Ranking ── (토큰만)
+  'rankings':       { method: 'GET', path: '/api/v1/rankings', query: ['type', 'marketCountry', 'duration', 'excludeInvestmentCaution', 'count'], name: '주식 랭킹' },
+  // ── Market Indicators ── (토큰만 — 심볼 8종 고정: KOSPI/KOSDAQ/KR_BOND_2Y~30Y)
+  'market-indicator-prices':  { method: 'GET', path: '/api/v1/market-indicators/prices', query: ['symbols'], name: '시장 지표 현재가' },
+  'market-indicator-candles': { method: 'GET', path: '/api/v1/market-indicators/{symbol}/candles', pathParams: ['symbol'], query: ['interval', 'count', 'before'], name: '시장 지표 캔들' },
+  'investor-trading':         { method: 'GET', path: '/api/v1/market-indicators/{symbol}/investor-trading', pathParams: ['symbol'], query: ['interval', 'count', 'until'], name: '투자자별 매매대금' },
+  // ── Conditional Order (실매매 예약 — 브로커 서버가 가격 감시, 등록 즉시 감시 시작) ── (accountSeq 필요)
+  'create-conditional-order': { method: 'POST', path: '/api/v1/conditional-orders', body: ['symbol', 'type', 'quantity', 'orderType', 'expireDate', 'first', 'second', 'clientOrderId', 'confirmHighValueOrder'], needsAccount: true, name: '조건주문 생성' },
+  'modify-conditional-order': { method: 'POST', path: '/api/v1/conditional-orders/{conditionalOrderId}/modify', pathParams: ['conditionalOrderId'], body: ['type', 'quantity', 'orderType', 'expireDate', 'first', 'second', 'confirmHighValueOrder'], needsAccount: true, name: '조건주문 수정' },
+  'cancel-conditional-order': { method: 'DELETE', path: '/api/v1/conditional-orders/{conditionalOrderId}', pathParams: ['conditionalOrderId'], needsAccount: true, name: '조건주문 취소' },
+  // ── Conditional Order History ── (accountSeq 필요)
+  'list-conditional-orders':  { method: 'GET', path: '/api/v1/conditional-orders', query: ['status', 'symbol', 'cursor', 'limit'], needsAccount: true, name: '조건주문 목록' },
+  'conditional-order-detail': { method: 'GET', path: '/api/v1/conditional-orders/{conditionalOrderId}', pathParams: ['conditionalOrderId'], needsAccount: true, name: '조건주문 상세' },
 };
 
 // 공유 rate limiter — 토스 rate limit group 별 한도는 응답 헤더로 관리되나, 보수적 공통 throttle +
@@ -109,6 +122,8 @@ async function callApi(token, action, data, retry = 2) {
     await new Promise(r => setTimeout(r, ra * 1000 + 100));
     return callApi(token, action, data, retry - 1);
   }
+  // 204 No Content = success without body (conditional order cancel).
+  if (resp.status === 204) return { _ok: true, result: { canceled: true } };
 
   const json = await resp.json().catch(() => null);
   if (!resp.ok) {
@@ -159,8 +174,9 @@ process.stdin.on('end', async () => {
     // Standard OHLCV normalization — rename Toss candle fields (timestamp/openPrice/…, string
     // values) to the cross-broker standard {date, open, high, low, close, volume} so stock_chart
     // dataCacheKey injection, the timeseries store, and cache_grep all speak one vocabulary
-    // (yfinance/kiwoom/korea-invest mirror this). Other fields (nextBefore etc.) pass through.
-    if (action === 'candles' && res.result && Array.isArray(res.result.candles)) {
+    // (yfinance/kiwoom/korea-invest mirror this). Field-signature detection (result.candles rows),
+    // not an action gate — covers candles and market-indicator-candles alike. nextBefore passes through.
+    if (res.result && Array.isArray(res.result.candles)) {
       const num = v => { const n = Number(v); return Number.isFinite(n) ? n : v; };
       for (const row of res.result.candles) {
         if (!row || typeof row !== 'object') continue;
