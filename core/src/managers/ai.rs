@@ -2328,6 +2328,9 @@ impl AiManager {
                             "name": effective_call.name,
                             "summary": summary,
                             "args": effective_call.arguments.clone(),
+                            // 주문 카드 신선도 기준 — 서버 영속본에도 실어야 리로드 후 경고가 산다
+                            // (프론트 수신 stamp 는 라이브 세션 한정).
+                            "createdAt": crate::utils::time::now_ms_u64(),
                         }));
                         executed_actions
                             .push(serde_json::Value::String(effective_call.name.clone()));

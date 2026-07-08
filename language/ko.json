@@ -23,7 +23,18 @@
     "summary_write_file": "파일 저장: {path}",
     "summary_delete_file": "파일 삭제: {path}",
     "summary_schedule": "예약 등록: {title}",
-    "summary_cancel_cron": "예약 취소: {job}"
+    "summary_cancel_cron": "예약 취소: {job}",
+    "order_buy": "매수",
+    "order_sell": "매도",
+    "order_symbol": "종목",
+    "order_qty": "수량",
+    "order_amount": "주문 금액",
+    "order_price": "가격",
+    "order_type": "주문 유형",
+    "order_account": "계좌",
+    "order_currency": "통화",
+    "order_tif": "체결 조건",
+    "order_stale": "⏱ {min}분 전 요청입니다 — 시세가 변했을 수 있습니다."
   },
   "suggest": {
     "add_item": "항목 추가",

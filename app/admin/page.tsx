@@ -934,6 +934,48 @@ function planSummary(
   }
 }
 
+// ─── 주문 승인 카드 상세 ─────────────────────────────────────────────────────
+// requiresApproval 모듈 액션(run_module / sysmod_*)의 인자를 구조 표시 — 뭘 얼마에 몇 주
+// 승인하는지 카드에서 바로 읽히게. 모듈별 분기 없이 브로커 방언 키(synonym)만 라벨링하고
+// 나머지 원시값 키는 그대로 노출한다(승인 판단 재료는 전부 보여준다는 원칙).
+const ORDER_ARG_LABELS: Array<{ keys: string[]; label: string }> = [
+  { keys: ['symbol', 'stk_cd', 'pdno'], label: 'order_symbol' },
+  { keys: ['quantity', 'ord_qty', 'qty'], label: 'order_qty' },
+  { keys: ['orderamount'], label: 'order_amount' },
+  { keys: ['price', 'ord_uv', 'ord_unpr'], label: 'order_price' },
+  { keys: ['ordertype', 'trde_tp', 'ord_dvsn'], label: 'order_type' },
+  { keys: ['accountseq', 'cano'], label: 'order_account' },
+  { keys: ['currency'], label: 'order_currency' },
+  { keys: ['timeinforce'], label: 'order_tif' },
+];
+// action 은 summary(모듈·액션)가 이미 표시, side 는 배지로 별도, 멱등키·내부 스코프는 노이즈.
+const ORDER_HIDDEN_KEYS = new Set(['action', 'side', 'clientorderid', 'confirmhighvalueorder', '_hubscope']);
+
+function orderDetails(args: Record<string, unknown>): { side?: string; rows: Array<{ label: string; value: string; raw?: boolean }> } {
+  const lower: Record<string, { key: string; value: unknown }> = {};
+  for (const [k, v] of Object.entries(args)) lower[k.toLowerCase()] = { key: k, value: v };
+  const used = new Set<string>();
+  const rows: Array<{ label: string; value: string; raw?: boolean }> = [];
+  for (const f of ORDER_ARG_LABELS) {
+    for (const k of f.keys) {
+      const hit = lower[k];
+      if (hit && hit.value !== undefined && hit.value !== null && hit.value !== '') {
+        rows.push({ label: f.label, value: String(hit.value) });
+        used.add(k);
+        break;
+      }
+    }
+  }
+  for (const [lk, { key, value }] of Object.entries(lower)) {
+    if (used.has(lk) || ORDER_HIDDEN_KEYS.has(lk)) continue;
+    if (value === null || value === undefined || typeof value === 'object') continue;
+    rows.push({ label: key, value: String(value), raw: true });
+  }
+  const sideRaw = lower['side']?.value;
+  const side = typeof sideRaw === 'string' ? sideRaw.toUpperCase() : undefined;
+  return { side, rows };
+}
+
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
 type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number; request?: string };
 /** 빌드 세션의 한 단계(슬라이드) — 그 단계 메시지의 state + 칩/픽/pending. */
@@ -1329,6 +1371,12 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                   {msg.pendingActions.map(p => {
                     // 30일 경과 = 백엔드 pending_tools/plan_store TTL 만료. 종결(승인/거부)된 카드는 제외.
                     const isExpired = p.status !== 'approved' && p.status !== 'rejected' && !!p.createdAt && Date.now() - p.createdAt > 30 * 24 * 60 * 60 * 1000;
+                    // 주문 승인 카드 (requiresApproval 모듈 액션) — 인자 구조 표시 + 신선도.
+                    const isOrder = p.name === 'run_module' || String(p.name || '').startsWith('sysmod_');
+                    const od = isOrder && p.args ? orderDetails(p.args as Record<string, unknown>) : null;
+                    // 미종결 주문 카드가 10분+ 묵으면 시세 맥락 경고 (오래된 카드를 뒤늦게 승인하는 사고 방지).
+                    const staleMin = isOrder && !isExpired && (!p.status || p.status === 'pending') && p.createdAt
+                      ? Math.floor((Date.now() - p.createdAt) / 60000) : 0;
                     return (
                     <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${isExpired ? 'bg-slate-50 border border-slate-200' : p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       {p.status === 'past-runat' && (
@@ -1410,6 +1458,25 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                         </>
                       )}
                       </div>
+                      {od && od.rows.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 pl-6">
+                          {od.side === 'BUY' && (
+                            <span className="px-1.5 py-px rounded bg-red-50 border border-red-200 text-red-600 text-[11px] font-bold">{t('plan.order_buy')}</span>
+                          )}
+                          {od.side === 'SELL' && (
+                            <span className="px-1.5 py-px rounded bg-blue-50 border border-blue-200 text-blue-600 text-[11px] font-bold">{t('plan.order_sell')}</span>
+                          )}
+                          {od.rows.map((r, i) => (
+                            <span key={i} className="text-[11px] text-slate-600 break-all">
+                              <span className="text-slate-400">{r.raw ? r.label : t(`plan.${r.label}`)}</span>{' '}
+                              <span className="font-semibold tabular-nums">{r.value}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {staleMin >= 10 && (
+                        <div className="pl-6 text-[11px] font-medium text-amber-700">{t('plan.order_stale', { min: String(staleMin) })}</div>
+                      )}
                     </div>
                     );
                   })}

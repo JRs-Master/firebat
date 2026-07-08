@@ -23,7 +23,18 @@
     "summary_write_file": "Write file: {path}",
     "summary_delete_file": "Delete file: {path}",
     "summary_schedule": "Schedule: {title}",
-    "summary_cancel_cron": "Cancel schedule: {job}"
+    "summary_cancel_cron": "Cancel schedule: {job}",
+    "order_buy": "BUY",
+    "order_sell": "SELL",
+    "order_symbol": "Symbol",
+    "order_qty": "Qty",
+    "order_amount": "Amount",
+    "order_price": "Price",
+    "order_type": "Order type",
+    "order_account": "Account",
+    "order_currency": "Currency",
+    "order_tif": "Time in force",
+    "order_stale": "⏱ Requested {min} min ago — market prices may have moved."
   },
   "suggest": {
     "add_item": "Add item",

@@ -621,6 +621,9 @@ impl ClaudeCodeCliHandler {
                                     "name": pending.name.clone(),
                                     "summary": summary,
                                     "args": pending.input.clone(),
+                                    // 주문 카드 신선도 기준 — FC 경로(ai.rs pending push)와 동일하게
+                                    // 서버 영속본에 생성 시각을 실어 리로드 후에도 stale 경고 유지.
+                                    "createdAt": chrono::Utc::now().timestamp_millis(),
                                 });
                                 if payload.get("status").and_then(|v| v.as_str()) == Some("past-runat") {
                                     action["status"] = serde_json::Value::String("past-runat".to_string());
