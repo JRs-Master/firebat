@@ -512,7 +512,15 @@ impl TaskManager {
                 // 품고 있으면 executor 의 split_mcp_name 이 그쪽을 우선한다.
                 let srv = server.as_deref().unwrap_or("firebat");
                 match self.executor.call_mcp_tool(srv, tool, &args).await {
-                    Ok(v) => StepOutcome::Continue(v),
+                    // 모듈 레벨 실패({success:false} envelope)도 스텝 실패 — EXECUTE 와 대칭.
+                    // 옛엔 호출만 되면 성공 집계라 실주문 거절(422 잔액 부족)이 cron 로그에
+                    // "성공"으로 남았음 (2026-07-08 TQQQ 실측).
+                    Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(v),
+                    Ok(v) => StepOutcome::Fail(format!(
+                        "MCP_CALL 모듈 실패 ({}): {}",
+                        tool,
+                        extract_module_error(&v)
+                    )),
                     Err(e) => StepOutcome::Fail(format!("MCP_CALL 실패: {e}")),
                 }
             }
@@ -613,8 +621,19 @@ impl TaskManager {
                 input_map,
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
+                if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
+                    return StepOutcome::Fail(format!(
+                        "TOOL_CALL 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요. 이미 아는 값이면 참조 대신 literal 로 넣으세요."
+                    ));
+                }
                 match self.executor.execute_tool(tool, &input).await {
-                    Ok(v) => StepOutcome::Continue(v),
+                    // 모듈/도구 레벨 실패 envelope 도 스텝 실패 — MCP_CALL·EXECUTE 와 대칭.
+                    Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(v),
+                    Ok(v) => StepOutcome::Fail(format!(
+                        "TOOL_CALL 도구 실패 ({}): {}",
+                        tool,
+                        extract_module_error(&v)
+                    )),
                     Err(e) => StepOutcome::Fail(format!("TOOL_CALL {} 실패: {}", tool, e)),
                 }
             }
