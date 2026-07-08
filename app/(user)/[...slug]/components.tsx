@@ -2121,7 +2121,19 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   const [hiddenCols, setHiddenCols] = useState<Set<number>>(() => new Set());
   // 컬럼 토글 UI = 드롭다운 체크리스트 — 옛 칩 가로 나열은 컬럼 11개면 표 위에 칩 띠가 생겨
   // 정체를 알아보기 어려웠다 (2026-07-08 사용자: "리스트로 체크해서"). 버튼 하나 + 체크 목록.
+  // 즉시 반영(적용 버튼 없음) = 컬럼 패널 글로벌 표준(로컬 뷰 토글 — Apply 는 서버 왕복 있을 때만).
   const [colMenuOpen, setColMenuOpen] = useState(false);
+  // 바깥클릭 닫기 = document 리스너 — 전면 백드롭 div 는 열려 있는 동안 휠 대상이 백드롭이 돼
+  // 페이지(대화창) 스크롤이 표 스크롤 박스로 새던 것 (2026-07-08 사용자 보고).
+  const colMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!colMenuOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setColMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [colMenuOpen]);
   const toggleCol = useCallback((i: number) => setHiddenCols(prev => {
     const n = new Set(prev);
     if (n.has(i)) n.delete(i); else n.add(i);
@@ -2235,7 +2247,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
             </div>
           )}
           {columnToggle && (
-            <div className="relative shrink-0">
+            <div className="relative shrink-0 ml-auto" ref={colMenuRef}>
               <button
                 type="button"
                 onClick={() => setColMenuOpen(o => !o)}
@@ -2245,26 +2257,22 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                 {t('table.columns')} {visibleCols.length}/{headers.length} ▾
               </button>
               {colMenuOpen && (
-                <>
-                  {/* 바깥 클릭 = 닫기 (백드롭) */}
-                  <div className="fixed inset-0 z-20" onClick={() => setColMenuOpen(false)} />
-                  <div className="absolute left-0 top-full mt-1 z-30 min-w-[180px] max-w-[260px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1.5 space-y-0.5 scrollbar-thin">
-                    {headers.map((h, i) => (
-                      <label
-                        key={i}
-                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={!hiddenCols.has(i)}
-                          onChange={() => toggleCol(i)}
-                          className="accent-blue-600 shrink-0"
-                        />
-                        <span className="truncate">{cleanPlainText(h)}</span>
-                      </label>
-                    ))}
-                  </div>
-                </>
+                <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] max-w-[260px] max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg p-1.5 space-y-0.5 scrollbar-thin">
+                  {headers.map((h, i) => (
+                    <label
+                      key={i}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-[12px] text-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!hiddenCols.has(i)}
+                        onChange={() => toggleCol(i)}
+                        className="accent-blue-600 shrink-0"
+                      />
+                      <span className="truncate">{cleanPlainText(h)}</span>
+                    </label>
+                  ))}
+                </div>
               )}
             </div>
           )}
