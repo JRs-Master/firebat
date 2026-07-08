@@ -464,32 +464,15 @@ impl TaskManager {
                 input_map,
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
-                // 미해석 $prev/$stepN 참조 fail-fast — literal 로 모듈에 흘러가면 모듈이 엉뚱한
-                // 에러("계좌번호를 찾을 수 없습니다")를 내 진단이 안 됨 (2026-07-08 실측).
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
-                    return StepOutcome::Fail(format!(
-                        "EXECUTE 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
-                    ));
+                    return unresolved_ref_fail("EXECUTE", &bad);
                 }
-                // 옛 TS 1:1 — 두 가지 실패 케이스 모두 capability fallback 시도:
-                //   (a) executor.execute_module → Err (sandbox 실행 자체 실패)
-                //   (b) execute_module → Ok 인데 data.success === false (모듈 레벨 실패, e.g. API 키 누락)
                 // Capability fallback lives INSIDE the executor (RealTaskExecutor.execute_module
                 // — with_capability). A second manager-level fallback here used to re-run the
                 // same alternatives after the executor had already tried them all (duplicate
                 // implementation → double execution on total failure). Removed; the executor
                 // is the single fallback owner.
-                match self.executor.execute_module(path, &input).await {
-                    Ok(v) if !is_module_level_failure(&v) => {
-                        StepOutcome::Continue(unwrap_module_result(v))
-                    }
-                    Ok(v) => StepOutcome::Fail(format!(
-                        "EXECUTE 모듈 실패 ({}): {}",
-                        path,
-                        extract_module_error(&v)
-                    )),
-                    Err(e) => StepOutcome::Fail(format!("EXECUTE 실패: {e}")),
-                }
+                call_outcome("EXECUTE", path, self.executor.execute_module(path, &input).await)
             }
             PipelineStep::McpCall {
                 server,
@@ -504,25 +487,12 @@ impl TaskManager {
                     arguments.clone().unwrap_or(Value::Object(Default::default()))
                 };
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&args) {
-                    return StepOutcome::Fail(format!(
-                        "MCP_CALL 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
-                    ));
+                    return unresolved_ref_fail("MCP_CALL", &bad);
                 }
                 // server 미기재 = 자기 자신(firebat) — tool 이 mcp__<srv>__ 네임스페이스를
                 // 품고 있으면 executor 의 split_mcp_name 이 그쪽을 우선한다.
                 let srv = server.as_deref().unwrap_or("firebat");
-                match self.executor.call_mcp_tool(srv, tool, &args).await {
-                    // 모듈 레벨 실패({success:false} envelope)도 스텝 실패 — EXECUTE 와 대칭.
-                    // 옛엔 호출만 되면 성공 집계라 실주문 거절(422 잔액 부족)이 cron 로그에
-                    // "성공"으로 남았음 (2026-07-08 TQQQ 실측).
-                    Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(v),
-                    Ok(v) => StepOutcome::Fail(format!(
-                        "MCP_CALL 모듈 실패 ({}): {}",
-                        tool,
-                        extract_module_error(&v)
-                    )),
-                    Err(e) => StepOutcome::Fail(format!("MCP_CALL 실패: {e}")),
-                }
+                call_outcome("MCP_CALL", tool, self.executor.call_mcp_tool(srv, tool, &args).await)
             }
             PipelineStep::NetworkRequest {
                 url,
@@ -622,20 +592,9 @@ impl TaskManager {
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
-                    return StepOutcome::Fail(format!(
-                        "TOOL_CALL 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요. 이미 아는 값이면 참조 대신 literal 로 넣으세요."
-                    ));
+                    return unresolved_ref_fail("TOOL_CALL", &bad);
                 }
-                match self.executor.execute_tool(tool, &input).await {
-                    // 모듈/도구 레벨 실패 envelope 도 스텝 실패 — MCP_CALL·EXECUTE 와 대칭.
-                    Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(v),
-                    Ok(v) => StepOutcome::Fail(format!(
-                        "TOOL_CALL 도구 실패 ({}): {}",
-                        tool,
-                        extract_module_error(&v)
-                    )),
-                    Err(e) => StepOutcome::Fail(format!("TOOL_CALL {} 실패: {}", tool, e)),
-                }
+                call_outcome("TOOL_CALL", tool, self.executor.execute_tool(tool, &input).await)
             }
         }
     }
@@ -645,6 +604,33 @@ enum StepOutcome {
     Continue(Value),
     EarlyExit(Value),
     Fail(String),
+}
+
+// ── 스텝 호출 공통 규약 ─────────────────────────────────────────────────────
+// EXECUTE / MCP_CALL / TOOL_CALL 은 대상(sysmod·도구·외부 MCP)만 다르지 계약이 같다:
+// (1) 입력 해석 후 미해석 $prev/$stepN = fail-fast (literal 이 모듈로 새면 영문 모를 에러)
+// (2) 호출 결과의 {success:false} envelope = 스텝 실패 (호출 성공 ≠ 작업 성공 — 2026-07-08
+//     TQQQ 실측: 토스 422 거절이 cron 로그 "성공"으로 집계)
+// (3) 성공 envelope 은 data 로 언랩 → $prev 가 스텝 종류 무관 같은 shape.
+// 팔마다 복붙하면 드리프트(실측 2건)라 한 함수로 수렴 — 새 스텝 타입도 이 둘만 쓰면 규약 상속.
+
+/// (1) 미해석 참조 fail-fast — 스텝 종류 무관 동일 메시지.
+fn unresolved_ref_fail(kind: &str, bad: &str) -> StepOutcome {
+    StepOutcome::Fail(format!(
+        "{kind} 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
+    ))
+}
+
+/// (2)+(3) 호출 결과 → 스텝 outcome — envelope 실패 판정 + 성공 시 data 언랩.
+fn call_outcome(kind: &str, target: &str, res: InfraResult<Value>) -> StepOutcome {
+    match res {
+        Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(unwrap_module_result(v)),
+        Ok(v) => StepOutcome::Fail(format!(
+            "{kind} 모듈 실패 ({target}): {}",
+            extract_module_error(&v)
+        )),
+        Err(e) => StepOutcome::Fail(format!("{kind} 실패 ({target}): {e}")),
+    }
 }
 
 
