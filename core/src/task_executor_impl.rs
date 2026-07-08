@@ -299,7 +299,7 @@ impl TaskExecutor for RealTaskExecutor {
         match result {
             Ok(out) => Err(out
                 .error
-                .unwrap_or_else(|| "sandbox execute 실패".to_string())),
+                .unwrap_or_else(|| "sandbox execute failed".to_string())),
             Err(e) => Err(e),
         }
     }
@@ -355,7 +355,7 @@ impl TaskExecutor for RealTaskExecutor {
         self.log
             .info("[Pipeline] LLM_TRANSFORM → AiManager.ask_text");
         let prompt = format!(
-            "{instruction}\n\n---\n{input_text}\n---\n\n위 구분선 안 원본을 근거로 응답하세요. 원본에 없는 정보 추측 금지."
+            "{instruction}\n\n---\n{input_text}\n---\n\nRespond based only on the source between the delimiters. Do not invent information that is not in the source."
         );
         self.llm.ask_text(&prompt, &LlmCallOpts::default()).await
     }

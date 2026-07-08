@@ -154,7 +154,7 @@ impl HistoryResolver {
 
         // 매칭 대화의 Q&A 페어 full 원문 — 옛 200자 preview → 전체 (E5 가 고른 대화 통째로).
         // user 매칭이면 다음 assistant, assistant 매칭이면 이전 user 를 같이 (한 덩어리).
-        let mut lines = vec![format!("[관련 과거 대화 ({}건)]", picked.len())];
+        let mut lines = vec![format!("[Related past conversations ({})]", picked.len())];
         let mut seen: std::collections::HashSet<(String, usize)> = std::collections::HashSet::new();
         for m in &picked {
             let mi = m.msg_idx as usize;

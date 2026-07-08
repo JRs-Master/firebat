@@ -319,7 +319,7 @@ impl ScheduleManager {
                 break;
             }
         }
-        let final_result = result.expect("retry loop 가 attempt=0 부터 실행 → 항상 채워짐");
+        let final_result = result.expect("retry loop runs from attempt=0 — always set");
 
         // 3. notify hook (fire-and-forget)
         if let Some(notify) = &info.notify {

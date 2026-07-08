@@ -2245,7 +2245,7 @@ impl AiManager {
                         result: serde_json::json!({
                             "success": false,
                             "error": format!(
-                                "'{}' 도구를 이번 턴에 허용 한도 이상 호출했습니다. 이 도구 호출을 중단하세요 — 지금까지 확보한 결과로 진행하고, 찾던 항목이 없으면 없다고 결론 내린 뒤 사용자에게 최종 답변을 작성하세요.",
+                                "Tool '{}' exceeded its per-turn call limit. Stop calling this tool — proceed with the results gathered so far; if what you were looking for was not found, conclude it does not exist and write the final answer for the user.",
                                 effective_call.name
                             ),
                             "perTurnLimitExceeded": true,
@@ -2265,7 +2265,7 @@ impl AiManager {
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": "이번 턴에 같은 인자로 이미 호출된 도구입니다. 직전 결과를 사용하거나 다른 인자로 호출하세요. 같은 호출 retry 금지.",
+                            "error": "This tool was already called with the same arguments this turn. Use the previous result or call with different arguments. Never retry the identical call.",
                             "duplicateInTurn": true,
                         }),
                         success: false,
@@ -2287,7 +2287,7 @@ impl AiManager {
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": format!("'{}' 도구는 존재하지 않습니다. 절대 다시 호출하지 마세요 — 몇 번을 호출해도 영영 없습니다. 실제 도구: 자동 실행 예약 = schedule_task / 즉시 실행 = run_task / 플랜 = propose_plan / 메모 = sysmod_notes / 날짜 기록(캘린더) = sysmod_calendar. 시스템 상태에 나열된 이름만 사용하세요.", effective_call.name),
+                            "error": format!("Tool '{}' does not exist. Never call it again — it will not exist no matter how many times you try. Real tools: scheduled runs = schedule_task / run now = run_task / plan = propose_plan / notes = sysmod_notes / calendar = sysmod_calendar. Use only tool names listed in the system context.", effective_call.name),
                             "unknownTool": true,
                         }),
                         success: false,
@@ -2344,7 +2344,7 @@ impl AiManager {
                             "pending": true,
                             "planId": plan_id,
                             "summary": summary,
-                            "note": "사용자 승인 카드가 표시됩니다 — 승인 전 실행되지 않으며, 같은 호출을 재시도하지 마세요.",
+                            "note": "An approval card is shown to the user — nothing runs until approved. Do not retry this call.",
                         })
                     } else {
                         gate
