@@ -14241,1766 +14241,6 @@
   }
  },
  {
-  "id": "00",
-  "name": "주문체결",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "grant_type",
-     "ko": "grant_type",
-     "type": "String",
-     "required": true,
-     "length": "",
-     "desc": "client_credentials 입력"
-    },
-    {
-     "name": "appkey",
-     "ko": "앱키",
-     "type": "String",
-     "required": true,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "secretkey",
-     "ko": "시크릿키",
-     "type": "String",
-     "required": true,
-     "length": "",
-     "desc": ""
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "04",
-  "name": "잔고",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "stk_cd",
-     "ko": "종목코드",
-     "type": "String",
-     "required": true,
-     "length": "20",
-     "desc": "거래소별 종목코드\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0A",
-  "name": "주식기세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n\r\n0:기존유지안함 1:기존유지(Default)\n\r\n0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n\r\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0B",
-  "name": "주식체결",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0C",
-  "name": "주식우선호가",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0D",
-  "name": "주식호가잔량",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0E",
-  "name": "주식시간외호가",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0F",
-  "name": "주식당일거래원",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0G",
-  "name": "ETF NAV",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0H",
-  "name": "주식예상체결",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0I",
-  "name": "국제금환산가격",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "MGD: 원/g, MGU: $/온스,소수점2자리"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0J",
-  "name": "업종지수",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0U",
-  "name": "업종등락",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0g",
-  "name": "주식종목정보",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0m",
-  "name": "ELW 이론가",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0s",
-  "name": "장시작시간",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0u",
-  "name": "ELW 지표",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "0w",
-  "name": "종목프로그램매매",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
-  "id": "1h",
-  "name": "VI발동/해제",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "category": "국내주식",
-  "subCategory": "실시간시세",
-  "request": {
-   "header": [
-    {
-     "name": "api-id",
-     "ko": "TR명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": ""
-    },
-    {
-     "name": "authorization",
-     "ko": "접근토큰",
-     "type": "String",
-     "required": true,
-     "length": "1000",
-     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
-    },
-    {
-     "name": "cont-yn",
-     "ko": "연속조회여부",
-     "type": "String",
-     "required": false,
-     "length": "1",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
-    },
-    {
-     "name": "next-key",
-     "ko": "연속조회키",
-     "type": "String",
-     "required": false,
-     "length": "50",
-     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
-    }
-   ],
-   "body": [
-    {
-     "name": "trnm",
-     "ko": "서비스명",
-     "type": "String",
-     "required": true,
-     "length": "10",
-     "desc": "REG : 등록 , REMOVE : 해지"
-    },
-    {
-     "name": "grp_no",
-     "ko": "그룹번호",
-     "type": "String",
-     "required": true,
-     "length": "4",
-     "desc": ""
-    },
-    {
-     "name": "refresh",
-     "ko": "기존등록유지여부",
-     "type": "String",
-     "required": true,
-     "length": "1",
-     "desc": "등록(REG)시\n0:기존유지안함 1:기존유지(Default)\n 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type 유지\n해지(REMOVE)시 값 불필요"
-    },
-    {
-     "name": "data",
-     "ko": "실시간 등록 리스트",
-     "type": "LIST",
-     "required": false,
-     "length": "",
-     "desc": ""
-    },
-    {
-     "name": "- item",
-     "ko": "실시간 등록 요소",
-     "type": "String",
-     "required": false,
-     "length": "100",
-     "desc": "거래소별 종목코드, 업종코드\r\n(KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-    },
-    {
-     "name": "- type",
-     "ko": "실시간 항목",
-     "type": "String",
-     "required": true,
-     "length": "2",
-     "desc": "TR 명(0A,0B....)"
-    }
-   ],
-   "query": [],
-   "path": []
-  }
- },
- {
   "id": "ka01300",
   "name": "관심종목 그룹 리스트 조회",
   "method": "POST",
@@ -24913,6 +23153,2085 @@
      "required": false,
      "length": "",
      "desc": "ETF 중카테고리코드 (ETF이고 중분류일 경우 사용), usa10105 cate2 속성 참고"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust20000",
+  "name": "미국주식 매수 주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "category": "미국주식",
+  "subCategory": "주문",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": true,
+     "length": "",
+     "desc": "NA: AMEX, ND: NASDAQ, NY: NYSE"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "ord_qty",
+     "ko": "주문수량",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "ord_uv",
+     "ko": "주문단가",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리"
+    },
+    {
+     "name": "trde_tp",
+     "ko": "해외매매구분",
+     "type": "",
+     "required": true,
+     "length": "2",
+     "desc": "00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 36:VWAP시장가 37:TWAP시장가"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust20001",
+  "name": "미국주식 매도 주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "category": "미국주식",
+  "subCategory": "주문",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": true,
+     "length": "",
+     "desc": "NA: AMEX, ND: NASDAQ, NY: NYSE"
+    },
+    {
+     "name": "ord_qty",
+     "ko": "주문수량",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "ord_uv",
+     "ko": "주문단가",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리"
+    },
+    {
+     "name": "stop_pric",
+     "ko": "STOP가격",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가,시장가 등) 설정 시 입력 값은 무시되거나 빈 값처리."
+    },
+    {
+     "name": "trde_tp",
+     "ko": "매매구분",
+     "type": "",
+     "required": true,
+     "length": "2",
+     "desc": "00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 33:MOC 36:VWAP시장가 37:TWAP시장가 35:STOP 34:STOP LIMIT"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust20002",
+  "name": "미국주식 정정 주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "category": "미국주식",
+  "subCategory": "주문",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "orig_ord_no",
+     "ko": "원주문번호",
+     "type": "",
+     "required": true,
+     "length": "9",
+     "desc": "주문 요청 응답 결과로 받은 ord_no를 설정"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": true,
+     "length": "",
+     "desc": "NA: AMEX, ND: NASDAQ, NY: NYSE"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "mdfy_uv",
+     "ko": "정정단가",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "stop_pric",
+     "ko": "STOP가격",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "원주문 trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가 등) 설정 시 입력 값은 무시되거나 빈 값처리."
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust20003",
+  "name": "미국주식 취소 주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "category": "미국주식",
+  "subCategory": "주문",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "orig_ord_no",
+     "ko": "원주문번호",
+     "type": "",
+     "required": true,
+     "length": "9",
+     "desc": "주문 요청 응답 결과로 받은 ord_no를 설정"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": true,
+     "length": "",
+     "desc": "NA: AMEX, ND: NASDAQ, NY: NYSE"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21050",
+  "name": "미국주식 원장 미체결",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "ord_dt",
+     "ko": "주문일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "미입력시 오늘 날짜로 조회"
+    },
+    {
+     "name": "slby_tp",
+     "ko": "매도매수구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:전체(기본값),1:매도,2:매수"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "미입력시 전체, ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "미입력시 전체"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21070",
+  "name": "미국주식 원장잔고확인",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "미입력시 전체"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21100",
+  "name": "미국주식 거래내역",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "strt_dt",
+     "ko": "시작일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "end_dt",
+     "ko": "종료일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "tp",
+     "ko": "구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:전체,1:입출금,2:입출고,3:매매,4:매수,5:매도,F:환전, M:입출금+환전(매체전용), G:환전매수, H:환전매도, I:환전정산입금, J:환전정산출금, 6:입금, 7:출금 8:배당금입금 K:환전+환전정산입출금"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "krw_repl_skip_yn",
+     "ko": "원화대용입출금제외여부",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "Y:제외,N:비제외"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21110",
+  "name": "해외주식 예수금",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": []
+  }
+ },
+ {
+  "id": "ust21111",
+  "name": "원화출금가능 금액 조회(원화대용 포함)",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": []
+  }
+ },
+ {
+  "id": "ust21120",
+  "name": "통화별 예수금 및 증권 평가금현황",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "cmsn_incl_tp",
+     "ko": "수수료포함구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:미포함,1:포함"
+    },
+    {
+     "name": "exrt_tp",
+     "ko": "환율구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:기준환율,1:계좌적용환율,2:전일최종환율"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21121",
+  "name": "해외증권 원장 평가금액현황",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "cmsn_incl_tp",
+     "ko": "수수료포함구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:미포함,1:포함"
+    },
+    {
+     "name": "exrt_tp",
+     "ko": "환율구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:기준환율,1:계좌적용환율,2:전일최종환율"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21131",
+  "name": "해외증권 특정일 평가금액",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "base_dt",
+     "ko": "기준일자",
+     "type": "",
+     "required": true,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21132",
+  "name": "특정일 통화별 예수금 및 증권 평가금",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "base_dt",
+     "ko": "기준일자",
+     "type": "",
+     "required": true,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21150",
+  "name": "미국주식 일별 주문체결내역",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "ord_dt",
+     "ko": "주문일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "미입력시 오늘 날짜로 조회"
+    },
+    {
+     "name": "query_tp",
+     "ko": "조회구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "1:주문순,2:주문역순,3:미체결주문순,4:미체결역순,5:체결주문순,6:체결역순"
+    },
+    {
+     "name": "slby_tp",
+     "ko": "매도수구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:전체,1:매도,2:매수"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "미입력시 전체"
+    },
+    {
+     "name": "oppo_trde_tp",
+     "ko": "반대매매구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "%:전체,0:일반,1:반대매매"
+    },
+    {
+     "name": "fr_ord_no",
+     "ko": "시작주문번호",
+     "type": "",
+     "required": false,
+     "length": "9",
+     "desc": ""
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21160",
+  "name": "미국주식 예수금 상세",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": []
+  }
+ },
+ {
+  "id": "ust21170",
+  "name": "미국주식 당일 종목별 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21180",
+  "name": "미국주식 기간별 주문내역",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "strt_dt",
+     "ko": "시작주문일자",
+     "type": "",
+     "required": true,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "end_dt",
+     "ko": "종료주문일자",
+     "type": "",
+     "required": true,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "slby_tp",
+     "ko": "매도수구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:전체(기본값),1:매도,2:매수"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "미입력시 전체"
+    },
+    {
+     "name": "oppo_trde_tp",
+     "ko": "반대매매구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "%:전체,0:일반,1:반대매매"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21510",
+  "name": "미국주식 당일 주문체결 확인",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "slby_tp",
+     "ko": "매도매수구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:전체,1:매도,2:매수"
+    },
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "종목코드 입력시"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "미입력시 전체"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21530",
+  "name": "미국주식 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "strt_dt",
+     "ko": "시작일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "end_dt",
+     "ko": "종료일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": false,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21610",
+  "name": "미국주식 당일매매",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "base_dt",
+     "ko": "기준일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "qry_tp",
+     "ko": "조회구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:당일매수에대한당일매도,1:당일매도전체"
+    },
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21620",
+  "name": "미국주식 당일매매정리",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "NA :AMEX, ND :NASDAQ, NY:NYSE"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "기본값 전체"
+    },
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21630",
+  "name": "미국주식 당일 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21640",
+  "name": "미국주식 일별 종목별 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "",
+     "desc": "ND:NASDAQ,NY:NYSE,NA:AMEX"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "cntr_dt",
+     "ko": "체결일자",
+     "type": "",
+     "required": true,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "fc_krw_tp",
+     "ko": "외화원화구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "0:외화,1:원화"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21650",
+  "name": "미국주식 기간별 수익률 현황",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "fr_dt",
+     "ko": "조회시작일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "to_dt",
+     "ko": "조회종료일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21660",
+  "name": "미국주식 일별 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "strt_dt",
+     "ko": "시작일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    },
+    {
+     "name": "end_dt",
+     "ko": "종료일자",
+     "type": "",
+     "required": false,
+     "length": "8",
+     "desc": "YYYYMMDD"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust21661",
+  "name": "미국주식 월별 실현손익",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "category": "미국주식",
+  "subCategory": "계좌",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "strt_dt",
+     "ko": "시작일자",
+     "type": "",
+     "required": false,
+     "length": "6",
+     "desc": "YYYYMM"
+    },
+    {
+     "name": "end_dt",
+     "ko": "종료일자",
+     "type": "",
+     "required": false,
+     "length": "6",
+     "desc": "YYYYMM"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust31300",
+  "name": "환전 예상 금액 조회",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "category": "미국주식",
+  "subCategory": "환전",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "exch_tp",
+     "ko": "환전구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
+    },
+    {
+     "name": "fc_exmn_amt",
+     "ko": "매도통화기준 환전금액",
+     "type": "",
+     "required": false,
+     "length": "12",
+     "desc": "(EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다)\n(EXCH_TP = 2 인 경우, 매도통화: USD이며, 입력한 금액의 달러를 원화로 환전합니다.)"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust31301",
+  "name": "환율 조회",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "category": "미국주식",
+  "subCategory": "환전",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "exch_tp",
+     "ko": "환전구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust31302",
+  "name": "환전 신청",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "category": "미국주식",
+  "subCategory": "환전",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "exch_tp",
+     "ko": "환전구분",
+     "type": "",
+     "required": true,
+     "length": "1",
+     "desc": "1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
+    },
+    {
+     "name": "fc_exmn_amt",
+     "ko": "매도통화기준 환전금액",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": "매도통화기준 환전금액\n(EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다)\n(EXCH_TP = 2 인 경우, 매도통화: USD이며, 입력한 금액의 달러를 원화로 환전합니다.)"
+    }
+   ]
+  }
+ },
+ {
+  "id": "ust31490",
+  "name": "미국주식 주문가능수량(종목/증거금률별)",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "category": "미국주식",
+  "subCategory": "주문",
+  "request": {
+   "header": [
+    {
+     "name": "api-id",
+     "ko": "TR명",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "7자리 TR코드, ex) ka00001"
+    },
+    {
+     "name": "authorization",
+     "ko": "접근토큰",
+     "type": "string",
+     "required": true,
+     "length": "1000",
+     "desc": "토큰 지정시 토큰타입(\"Bearer\") 붙혀서 호출 \n 예) Bearer Egicyx..."
+    },
+    {
+     "name": "cont-yn",
+     "ko": "연속조회여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 cont-yn값 세팅"
+    },
+    {
+     "name": "next-key",
+     "ko": "연속조회키",
+     "type": "string",
+     "required": false,
+     "length": "50",
+     "desc": "응답 Header의 연속조회여부값이 Y일 경우 다음데이터 요청시 응답 Header의 next-key값 세팅"
+    }
+   ],
+   "query": [],
+   "body": [
+    {
+     "name": "stex_tp",
+     "ko": "거래소구분",
+     "type": "",
+     "required": false,
+     "length": "2",
+     "desc": "NA :AMEX, ND :NASDAQ, NY:NYSE"
+    },
+    {
+     "name": "stk_cd",
+     "ko": "종목코드",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
+    },
+    {
+     "name": "uv",
+     "ko": "매수가격",
+     "type": "",
+     "required": true,
+     "length": "12",
+     "desc": ""
     }
    ]
   }

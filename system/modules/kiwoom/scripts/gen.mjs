@@ -50,6 +50,7 @@ const DOMAIN_DESC = {
   'investor': '키움증권 투자자 동향 (기관/외국인·대차거래·공매도)',
   'etf-elw': '키움증권 ETF + ELW (수익률·민감도·괴리율·조건검색)',
   'condition-theme': '키움증권 조건검색 + 테마 (사용자 정의 조건·테마 그룹별 종목)',
+  'us-stock': '키움증권 미국주식 (시세·종목·주문·계좌·환전 — /api/us/*). 실시간·조건검색(WS)은 미지원(2단계).',
 };
 
 const DOMAIN_CAPABILITY = {
@@ -61,15 +62,30 @@ const DOMAIN_CAPABILITY = {
   'investor': 'stock-quote',
   'etf-elw': 'stock-quote',
   'condition-theme': 'stock-quote',
+  'us-stock': 'stock-trading',
 };
 
+// 손유지 블록(actionCatalog·requiresApproval·ws·grounding) = config.json 자체가 소스.
+// gen 은 reconciler: 기존 config 에서 이들을 읽어 보존하고, _apis 파생분(enum·domains·
+// URL_CATEGORY·index.mjs)만 갱신한다. 소스는 _apis.json(스펙) + config.json(손유지)에 있고
+// gen.mjs 는 소스를 담지 않는다.
+const PRESERVE_KEYS = ['actionCatalog', 'requiresApproval', 'ws', 'grounding'];
+
 function build(apis) {
+  let preserved = {};
+  try {
+    const existing = JSON.parse(readFileSync(resolve(MODULE_DIR, 'config.json'), 'utf8'));
+    for (const k of PRESERVE_KEYS) if (k in existing) preserved[k] = existing[k];
+  } catch { /* no existing config — first bootstrap */ }
+
   const urlCategory = {};
   const apiNames = {};
   for (const api of apis) {
     if (api.path) {
-      const m = api.path.match(/\/api\/dostk\/([^/]+)/);
-      if (m) urlCategory[api.id] = m[1];
+      // dostk (국내) + us (미국주식) 두 패밀리 → /api/{family}/{category}. websocket 경로는
+      // REST 디스패치 대상이 아님(ws 인프라 또는 unsupportedActions) → URL_CATEGORY 에서 제외.
+      const m = api.path.match(/\/api\/(dostk|us)\/([^/]+)/);
+      if (m && m[2] !== 'websocket') urlCategory[api.id] = `${m[1]}/${m[2]}`;
     }
     apiNames[api.id] = api.name;
   }
@@ -77,6 +93,8 @@ function build(apis) {
   const byDomain = {};
   for (const api of apis) {
     if (api.category === 'OAuth 인증') continue;
+    // 미국주식(ust*/usa*)은 별도 도메인 — 국내 subCategory 키(주문·계좌 등)와 겹쳐 섞이지 않게.
+    if (api.category && api.category.startsWith('미국주식')) { (byDomain['us-stock'] ||= []).push(api); continue; }
     const domain = DOMAIN_MAP[api.subCategory];
     if (!domain || domain === 'realtime') continue;
     (byDomain[domain] ||= []).push(api);
@@ -116,10 +134,12 @@ function build(apis) {
     type: 'module',
     scope: 'system',
     version: '1.0.0',
-    description: '키움증권 OPEN API 통합 sysmod — 208 REST API + 8 도메인 (계좌·주문·시세·차트·순위·투자자·ETF/ELW·조건검색/테마). 도메인별 별도 LLM 도구로 노출 (sysmod_kiwoom_account / sysmod_kiwoom_chart 등) — 단일 코드.',
+    description: '키움증권 OPEN API 통합 sysmod — 국내(계좌·주문·시세·차트·순위·투자자·ETF/ELW·조건검색) + 미국주식(시세·주문·계좌·환전). action 으로 API ID 직접 호출, search_module_actions → get_action_schema 로 발견.',
     runtime: 'node',
     capability: 'stock-trading',
     providerType: 'api',
+    // 손유지 블록 보존 (config.json 이 소스, gen 은 reconciler).
+    ...preserved,
     secrets: [
       { name: 'KIWOOM_APP_KEY',      type: 'key' },
       { name: 'KIWOOM_APP_SECRET',   type: 'key' },
@@ -174,12 +194,11 @@ function build(apis) {
 
   const index = `#!/usr/bin/env node
 /**
- * Firebat System Module: kiwoom — codegen 자동 생성 (scripts/gen.mjs).
- * 키움증권 OPEN API 통합 (208 REST API).
+ * Firebat System Module: kiwoom — codegen 생성 (scripts/gen.mjs, index.mjs 전용).
+ * 키움증권 OPEN API 통합 — 국내(/api/dostk/*) + 미국주식(/api/us/*).
  *
- * LLM 시점: config.json 의 domains[] 가 MCP register_sysmod_tools 에 의해 8개 별도 도구로 분리 등록
- * (sysmod_kiwoom_account / sysmod_kiwoom_chart 등). 모든 도구가 본 단일 모듈로 라우팅. action 으로
- * API ID (ka10001 등) 직접 호출.
+ * action 으로 API ID (ka10001 / ust20000 등) 직접 호출. URL_CATEGORY 가 서브경로를 결정
+ * (dostk/* 국내, us/* 미국). 발견 = search_module_actions → get_action_schema.
  *
  * OAuth + callApi + throttle (초당 5회) 내장.
  */
@@ -187,7 +206,7 @@ function build(apis) {
 const BASE_REAL = 'https://api.kiwoom.com';
 const BASE_MOCK = 'https://mockapi.kiwoom.com';
 
-// API ID → URL 카테고리 (POST /api/dostk/{category} + api-id 헤더)
+// API ID → URL 서브경로 (POST /api/{서브경로} + api-id 헤더). dostk/* = 국내, us/* = 미국주식.
 const URL_CATEGORY = ${JSON.stringify(urlCategory, null, 2)};
 // API ID → 한글명 (에러 메시지 + 결과 enrichment)
 const API_NAMES = ${JSON.stringify(apiNames, null, 2)};
@@ -210,7 +229,7 @@ async function acquireSlot() {
 async function callApi(base, token, apiId, params = {}, retry = 2) {
   const category = URL_CATEGORY[apiId];
   if (!category) throw new Error(\`알 수 없는 API ID: \${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.\`);
-  const url = \`\${base}/api/dostk/\${category}\`;
+  const url = \`\${base}/api/\${category}\`;
   await acquireSlot();
   const resp = await fetch(url, {
     method: 'POST',

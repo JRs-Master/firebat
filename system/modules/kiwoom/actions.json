@@ -2526,302 +2526,6 @@
   }
  },
  {
-  "id": "00",
-  "name": "주문체결",
-  "description": "주문체결",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "grant_type": "grant_type (필수) — client_credentials 입력",
-   "appkey": "앱키 (필수)",
-   "secretkey": "시크릿키 (필수)"
-  }
- },
- {
-  "id": "04",
-  "name": "잔고",
-  "description": "잔고",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "stk_cd": "종목코드 (필수) — 거래소별 종목코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)"
-  }
- },
- {
-  "id": "0A",
-  "name": "주식기세",
-  "description": "주식기세",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0B",
-  "name": "주식체결",
-  "description": "주식체결",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0C",
-  "name": "주식우선호가",
-  "description": "주식우선호가",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0D",
-  "name": "주식호가잔량",
-  "description": "주식호가잔량",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0E",
-  "name": "주식시간외호가",
-  "description": "주식시간외호가",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0F",
-  "name": "주식당일거래원",
-  "description": "주식당일거래원",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0G",
-  "name": "ETF NAV",
-  "description": "ETF NAV",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0H",
-  "name": "주식예상체결",
-  "description": "주식예상체결",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0I",
-  "name": "국제금환산가격",
-  "description": "국제금환산가격",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — MGD: 원/g, MGU: $/온스,소수점2자리",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0J",
-  "name": "업종지수",
-  "description": "업종지수",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0U",
-  "name": "업종등락",
-  "description": "업종등락",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0g",
-  "name": "주식종목정보",
-  "description": "주식종목정보",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0m",
-  "name": "ELW 이론가",
-  "description": "ELW 이론가",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0s",
-  "name": "장시작시간",
-  "description": "장시작시간",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0u",
-  "name": "ELW 지표",
-  "description": "ELW 지표",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "0w",
-  "name": "종목프로그램매매",
-  "description": "종목프로그램매매",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
-  "id": "1h",
-  "name": "VI발동/해제",
-  "description": "VI발동/해제",
-  "domain": "국내주식/실시간시세",
-  "method": "POST",
-  "path": "/api/dostk/websocket",
-  "params": {
-   "trnm": "서비스명 (필수) — REG : 등록 , REMOVE : 해지",
-   "grp_no": "그룹번호 (필수)",
-   "refresh": "기존등록유지여부 (필수) — 등록(REG)시 0:기존유지안함 1:기존유지(Default) 0일경우 기존등록한 item/type은 해지, 1일경우 기존등록한 item/type…",
-   "data": "실시간 등록 리스트",
-   "- item": "실시간 등록 요소 — 거래소별 종목코드, 업종코드 (KRX:039490,NXT:039490_NX,SOR:039490_AL)",
-   "- type": "실시간 항목 (필수) — TR 명(0A,0B....)"
-  }
- },
- {
   "id": "ka01300",
   "name": "관심종목 그룹 리스트 조회",
   "description": "관심종목 그룹 리스트 조회",
@@ -4332,6 +4036,387 @@
   "params": {
    "etf_cat1": "ETF카테고리코드1 — ETF 대카테고리코드 (ETF이고 대분류일 경우 사용), usa10105 cate1 속성 참고",
    "etf_cat2": "ETF카테고리코드2 — ETF 중카테고리코드 (ETF이고 중분류일 경우 사용), usa10105 cate2 속성 참고"
+  }
+ },
+ {
+  "id": "ust20000",
+  "name": "미국주식 매수 주문",
+  "description": "미국주식 매수 주문",
+  "domain": "미국주식/주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "params": {
+   "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
+   "stk_cd": "종목코드 (필수)",
+   "ord_qty": "주문수량 (필수)",
+   "ord_uv": "주문단가 — trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리",
+   "trde_tp": "해외매매구분 (필수) — 00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 36:VWAP시장가 37:TWAP시장가"
+  }
+ },
+ {
+  "id": "ust20001",
+  "name": "미국주식 매도 주문",
+  "description": "미국주식 매도 주문",
+  "domain": "미국주식/주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "params": {
+   "stk_cd": "종목코드 (필수)",
+   "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
+   "ord_qty": "주문수량 (필수)",
+   "ord_uv": "주문단가 — trde_tp가 00(지정가),30(LOC)...인 경우 필수 입력, 그 외 시장가 거래유형 설정 시 입력 값은 빈 값 처리",
+   "stop_pric": "STOP가격 — trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가,시장가 등) 설정 시 입력 값은 무시…",
+   "trde_tp": "매매구분 (필수) — 00:지정가 03시장가 26:VWAP지정가 27:TWAP지정가 30:LOC 33:MOC 36:VWAP시장가 37:TWAP시장가 35:STOP 3…"
+  }
+ },
+ {
+  "id": "ust20002",
+  "name": "미국주식 정정 주문",
+  "description": "미국주식 정정 주문",
+  "domain": "미국주식/주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "params": {
+   "orig_ord_no": "원주문번호 (필수) — 주문 요청 응답 결과로 받은 ord_no를 설정",
+   "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
+   "stk_cd": "종목코드 (필수)",
+   "mdfy_uv": "정정단가",
+   "stop_pric": "STOP가격 — 원주문 trde_tp가 34(STOP LIMIT) 또는 35(STOP)인 경우 필수 입력, 그 외 거래유형(지정가 등) 설정 시 입력 값은 무시…"
+  }
+ },
+ {
+  "id": "ust20003",
+  "name": "미국주식 취소 주문",
+  "description": "미국주식 취소 주문",
+  "domain": "미국주식/주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "params": {
+   "orig_ord_no": "원주문번호 (필수) — 주문 요청 응답 결과로 받은 ord_no를 설정",
+   "stex_tp": "거래소구분 (필수) — NA: AMEX, ND: NASDAQ, NY: NYSE",
+   "stk_cd": "종목코드 (필수)"
+  }
+ },
+ {
+  "id": "ust21050",
+  "name": "미국주식 원장 미체결",
+  "description": "미국주식 원장 미체결",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "ord_dt": "주문일자 — 미입력시 오늘 날짜로 조회",
+   "slby_tp": "매도매수구분 — 0:전체(기본값),1:매도,2:매수",
+   "stex_tp": "거래소구분 — 미입력시 전체, ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드 — 미입력시 전체"
+  }
+ },
+ {
+  "id": "ust21070",
+  "name": "미국주식 원장잔고확인",
+  "description": "미국주식 원장잔고확인",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드 — 미입력시 전체"
+  }
+ },
+ {
+  "id": "ust21100",
+  "name": "미국주식 거래내역",
+  "description": "미국주식 거래내역",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "strt_dt": "시작일자 — YYYYMMDD",
+   "end_dt": "종료일자 — YYYYMMDD",
+   "tp": "구분 — 0:전체,1:입출금,2:입출고,3:매매,4:매수,5:매도,F:환전, M:입출금+환전(매체전용), G:환전매수, H:환전매도, I:환전정산입금, …",
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드",
+   "krw_repl_skip_yn": "원화대용입출금제외여부 — Y:제외,N:비제외"
+  }
+ },
+ {
+  "id": "ust21110",
+  "name": "해외주식 예수금",
+  "description": "해외주식 예수금",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {}
+ },
+ {
+  "id": "ust21111",
+  "name": "원화출금가능 금액 조회(원화대용 포함)",
+  "description": "원화출금가능 금액 조회(원화대용 포함)",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {}
+ },
+ {
+  "id": "ust21120",
+  "name": "통화별 예수금 및 증권 평가금현황",
+  "description": "통화별 예수금 및 증권 평가금현황",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "cmsn_incl_tp": "수수료포함구분 — 0:미포함,1:포함",
+   "exrt_tp": "환율구분 — 0:기준환율,1:계좌적용환율,2:전일최종환율"
+  }
+ },
+ {
+  "id": "ust21121",
+  "name": "해외증권 원장 평가금액현황",
+  "description": "해외증권 원장 평가금액현황",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "cmsn_incl_tp": "수수료포함구분 — 0:미포함,1:포함",
+   "exrt_tp": "환율구분 — 0:기준환율,1:계좌적용환율,2:전일최종환율"
+  }
+ },
+ {
+  "id": "ust21131",
+  "name": "해외증권 특정일 평가금액",
+  "description": "해외증권 특정일 평가금액",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD"
+  }
+ },
+ {
+  "id": "ust21132",
+  "name": "특정일 통화별 예수금 및 증권 평가금",
+  "description": "특정일 통화별 예수금 및 증권 평가금",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD"
+  }
+ },
+ {
+  "id": "ust21150",
+  "name": "미국주식 일별 주문체결내역",
+  "description": "미국주식 일별 주문체결내역",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "ord_dt": "주문일자 — 미입력시 오늘 날짜로 조회",
+   "query_tp": "조회구분 (필수) — 1:주문순,2:주문역순,3:미체결주문순,4:미체결역순,5:체결주문순,6:체결역순",
+   "slby_tp": "매도수구분 (필수) — 0:전체,1:매도,2:매수",
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드 — 미입력시 전체",
+   "oppo_trde_tp": "반대매매구분 — %:전체,0:일반,1:반대매매",
+   "fr_ord_no": "시작주문번호"
+  }
+ },
+ {
+  "id": "ust21160",
+  "name": "미국주식 예수금 상세",
+  "description": "미국주식 예수금 상세",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {}
+ },
+ {
+  "id": "ust21170",
+  "name": "미국주식 당일 종목별 실현손익",
+  "description": "미국주식 당일 종목별 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21180",
+  "name": "미국주식 기간별 주문내역",
+  "description": "미국주식 기간별 주문내역",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "strt_dt": "시작주문일자 (필수) — YYYYMMDD",
+   "end_dt": "종료주문일자 (필수) — YYYYMMDD",
+   "slby_tp": "매도수구분 — 0:전체(기본값),1:매도,2:매수",
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드 — 미입력시 전체",
+   "oppo_trde_tp": "반대매매구분 — %:전체,0:일반,1:반대매매"
+  }
+ },
+ {
+  "id": "ust21510",
+  "name": "미국주식 당일 주문체결 확인",
+  "description": "미국주식 당일 주문체결 확인",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "slby_tp": "매도매수구분 — 0:전체,1:매도,2:매수",
+   "stex_tp": "거래소구분 — 종목코드 입력시",
+   "stk_cd": "종목코드 — 미입력시 전체"
+  }
+ },
+ {
+  "id": "ust21530",
+  "name": "미국주식 실현손익",
+  "description": "미국주식 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "strt_dt": "시작일자 — YYYYMMDD",
+   "end_dt": "종료일자 — YYYYMMDD",
+   "fc_krw_tp": "외화원화구분 — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21610",
+  "name": "미국주식 당일매매",
+  "description": "미국주식 당일매매",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "base_dt": "기준일자 — YYYYMMDD",
+   "qry_tp": "조회구분 (필수) — 0:당일매수에대한당일매도,1:당일매도전체",
+   "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21620",
+  "name": "미국주식 당일매매정리",
+  "description": "미국주식 당일매매정리",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
+   "stk_cd": "종목코드 — 기본값 전체",
+   "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21630",
+  "name": "미국주식 당일 실현손익",
+  "description": "미국주식 당일 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드",
+   "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21640",
+  "name": "미국주식 일별 종목별 실현손익",
+  "description": "미국주식 일별 종목별 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "stex_tp": "거래소구분 — ND:NASDAQ,NY:NYSE,NA:AMEX",
+   "stk_cd": "종목코드",
+   "cntr_dt": "체결일자 (필수) — YYYYMMDD",
+   "fc_krw_tp": "외화원화구분 (필수) — 0:외화,1:원화"
+  }
+ },
+ {
+  "id": "ust21650",
+  "name": "미국주식 기간별 수익률 현황",
+  "description": "미국주식 기간별 수익률 현황",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "fr_dt": "조회시작일자 — YYYYMMDD",
+   "to_dt": "조회종료일자 — YYYYMMDD"
+  }
+ },
+ {
+  "id": "ust21660",
+  "name": "미국주식 일별 실현손익",
+  "description": "미국주식 일별 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "strt_dt": "시작일자 — YYYYMMDD",
+   "end_dt": "종료일자 — YYYYMMDD"
+  }
+ },
+ {
+  "id": "ust21661",
+  "name": "미국주식 월별 실현손익",
+  "description": "미국주식 월별 실현손익",
+  "domain": "미국주식/계좌",
+  "method": "POST",
+  "path": "/api/us/acnt",
+  "params": {
+   "strt_dt": "시작일자 — YYYYMM",
+   "end_dt": "종료일자 — YYYYMM"
+  }
+ },
+ {
+  "id": "ust31300",
+  "name": "환전 예상 금액 조회",
+  "description": "환전 예상 금액 조회",
+  "domain": "미국주식/환전",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "params": {
+   "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
+   "fc_exmn_amt": "매도통화기준 환전금액 — (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2 인 경우, 매도통화:…"
+  }
+ },
+ {
+  "id": "ust31301",
+  "name": "환율 조회",
+  "description": "환율 조회",
+  "domain": "미국주식/환전",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "params": {
+   "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)"
+  }
+ },
+ {
+  "id": "ust31302",
+  "name": "환전 신청",
+  "description": "환전 신청",
+  "domain": "미국주식/환전",
+  "method": "POST",
+  "path": "/api/us/exchange",
+  "params": {
+   "exch_tp": "환전구분 (필수) — 1:원화(KRW)->달러(USD), 2:달러(USD)->원화(KRW)",
+   "fc_exmn_amt": "매도통화기준 환전금액 (필수) — 매도통화기준 환전금액 (EXCH_TP = 1 인 경우, 매도통화는 KRW 이며, 입력한 금액의 원화를 달러로 환전합니다) (EXCH_TP = 2…"
+  }
+ },
+ {
+  "id": "ust31490",
+  "name": "미국주식 주문가능수량(종목/증거금률별)",
+  "description": "미국주식 주문가능수량(종목/증거금률별)",
+  "domain": "미국주식/주문",
+  "method": "POST",
+  "path": "/api/us/ordr",
+  "params": {
+   "stex_tp": "거래소구분 — NA :AMEX, ND :NASDAQ, NY:NYSE",
+   "stk_cd": "종목코드 (필수)",
+   "uv": "매수가격 (필수)"
   }
  }
 ]
