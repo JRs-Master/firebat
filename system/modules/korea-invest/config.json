@@ -73,6 +73,20 @@
           ]
         }
       }
+    },
+    {
+      "name": "KIS_WS_APPROVAL_KEY",
+      "type": "token",
+      "lifetimeSec": 84600,
+      "oauth": {
+        "base": "https://openapi.koreainvestment.com:9443",
+        "baseMock": "https://openapivts.koreainvestment.com:29443",
+        "path": "/oauth2/Approval",
+        "method": "POST",
+        "contentType": "application/json",
+        "body": { "grant_type": "client_credentials", "appkey": "${KIS_APP_KEY}", "secretkey": "${KIS_APP_SECRET}" },
+        "tokenField": "approval_key"
+      }
     }
   ],
   "domains": [
