@@ -24,6 +24,16 @@
       "exemptActions": []
     }
   },
+  "timeseries": {
+    "v1_국내주식-016": {
+      "idParams": { "query.FID_INPUT_ISCD": "", "query.FID_PERIOD_DIV_CODE": "D" },
+      "startParam": "query.FID_INPUT_DATE_1",
+      "endParam": "query.FID_INPUT_DATE_2",
+      "paramFormat": "YYYYMMDD",
+      "dateField": "date",
+      "rows": ["output2", "records"]
+    }
+  },
   "secrets": [
     {
       "name": "KIS_APP_KEY",
