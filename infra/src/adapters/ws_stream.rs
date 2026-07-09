@@ -13,17 +13,20 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use base64::Engine;
+use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 
 use firebat_core::ports::{
-    IWsStreamPort, InfraResult, WsStreamSink, WsStreamSpec, WsStreamStatus,
+    IWsStreamPort, InfraResult, WsDecryptSpec, WsFrameFormat, WsStreamSink, WsStreamSpec,
+    WsStreamStatus,
 };
 use firebat_core::utils::secret_schema::OAuthSpec;
 
 use crate::adapters::sandbox::ProcessSandboxAdapter;
 use crate::adapters::token_provider::OAuthTokenProvider;
-use crate::adapters::ws_api::{coerce, field_eq, fill_token};
+use crate::adapters::ws_api::{coerce, field_eq, fill_token, frame_get};
 
 /// Per-handshake-step budget (connect / login / pre-frame / subscribe ack).
 const STEP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -76,7 +79,13 @@ impl WsStreamAdapter {
     }
 
     fn token_spec(&self, spec: &WsStreamSpec) -> Option<(String, OAuthSpec, u64)> {
-        let secret_name = spec.login.as_ref()?.token_secret.as_deref()?;
+        // Token secret comes from the LOGIN frame (kiwoom) or spec-level (한투 approval_key,
+        // which rides in the subscribe frame rather than a LOGIN handshake).
+        let secret_name = spec
+            .login
+            .as_ref()
+            .and_then(|l| l.token_secret.as_deref())
+            .or(spec.token_secret.as_deref())?;
         let module_dir = self.workspace_root.join(&spec.module_dir);
         ProcessSandboxAdapter::oauth_token_secrets(&module_dir)
             .into_iter()
@@ -246,13 +255,15 @@ async fn run_session(
     token_spec: &Option<(String, OAuthSpec, u64)>,
     sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
 ) -> SessionEnd {
-    // Token (proactive per (re)connect).
-    let token = if spec
+    // Token (proactive per (re)connect). Present when a secret is declared in the LOGIN frame
+    // (kiwoom) or at spec level (한투 approval_key — rides in the subscribe frame, no LOGIN).
+    let needs_token = spec
         .login
         .as_ref()
         .map(|l| l.token_secret.is_some())
         .unwrap_or(false)
-    {
+        || spec.token_secret.is_some();
+    let token = if needs_token {
         let (Some(tp), Some((name, oauth, life))) = (token_provider, token_spec) else {
             return SessionEnd::Dropped("token provider/spec not wired".to_string());
         };
@@ -296,7 +307,8 @@ async fn run_session(
         }
     }
     for pre in &spec.pre_frames {
-        if let Err(e) = send(&mut ws, &pre.frame).await {
+        let frame = fill_token(&pre.frame, token.as_deref());
+        if let Err(e) = send(&mut ws, &frame).await {
             return SessionEnd::Dropped(e);
         }
         if pre.response_match.is_empty() {
@@ -317,9 +329,14 @@ async fn run_session(
             Err(e) => return SessionEnd::Dropped(format!("pre-frame: {e}")),
         }
     }
-    if let Err(e) = send(&mut ws, &spec.subscribe_frame).await {
+    // For 한투 (token_secret at spec level), the approval_key rides in the subscribe frame
+    // header via `{TOKEN}`. kiwoom has no `{TOKEN}` here so fill_token is a no-op.
+    let subscribe_frame = fill_token(&spec.subscribe_frame, token.as_deref());
+    if let Err(e) = send(&mut ws, &subscribe_frame).await {
         return SessionEnd::Dropped(e);
     }
+    // Captured from the subscribe ack for KIS 체결통보 (flag 1) — the ack body carries iv/key.
+    let mut decrypt_keys: Option<(String, String)> = None;
     if !spec.subscribe_match.is_empty() {
         match exchange(&mut ws, spec, &spec.subscribe_match).await {
             Ok(resp) => {
@@ -331,10 +348,24 @@ async fn run_session(
                         ));
                     }
                 }
-                // The subscribe ack often carries the initial snapshot — forward it too so
-                // consumers start from a full state, not just deltas.
-                if let Some(sink) = sink_getter() {
-                    sink(spec, resp);
+                // KIS ack carries the AES iv/key — capture (never forward: it's a secret).
+                if let Some(dec) = &spec.decrypt {
+                    decrypt_keys = capture_decrypt_keys(&resp, dec);
+                    if decrypt_keys.is_none() {
+                        tracing::warn!(
+                            target: "ws_stream",
+                            watch_id = %spec.watch_id,
+                            "encrypted stream but subscribe ack had no iv/key — flag-1 frames will be skipped"
+                        );
+                    }
+                }
+                // For JSON providers the ack often carries the initial snapshot — forward it so
+                // consumers start from full state. For KisPipe the ack is a control message
+                // (and may hold the decrypt key), so it is never forwarded.
+                if spec.frame_format == WsFrameFormat::Json {
+                    if let Some(sink) = sink_getter() {
+                        sink(spec, resp);
+                    }
                 }
             }
             Err(e) => return SessionEnd::Dropped(format!("subscribe: {e}")),
@@ -373,8 +404,36 @@ async fn run_session(
                     Message::Close(_) => return SessionEnd::Dropped("server closed".to_string()),
                     _ => continue,
                 };
+
+                // 한투 positional realtime frame: `flag|TR_ID|count|f1^f2^…` (flag 1 = AES256).
+                if spec.frame_format == WsFrameFormat::KisPipe && is_positional(&text) {
+                    match decode_positional(&text, spec, &decrypt_keys) {
+                        Some((tr_id, value)) => {
+                            // One watch subscribes one TR — guard against a stray other-TR frame.
+                            if !spec.realtime_match.is_empty() && tr_id != spec.realtime_match {
+                                continue;
+                            }
+                            {
+                                let mut s = status.lock().unwrap_or_else(|p| p.into_inner());
+                                s.last_event_ms = Some(now_ms());
+                                s.event_count += 1;
+                            }
+                            if let Some(sink) = sink_getter() {
+                                sink(spec, value);
+                            }
+                        }
+                        None => tracing::warn!(
+                            target: "ws_stream",
+                            watch_id = %spec.watch_id,
+                            "positional realtime frame decode failed — skipped"
+                        ),
+                    }
+                    continue;
+                }
+
+                // JSON frame (kiwoom REAL / 한투 PINGPONG or control).
                 let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
-                let Some(kind) = frame.get(&spec.match_field).and_then(|v| v.as_str()) else { continue };
+                let Some(kind) = frame_get(&frame, &spec.match_field).and_then(|v| v.as_str()) else { continue };
                 if spec.echo_values.iter().any(|e| e == kind) {
                     let _ = ws.send(Message::Text(text)).await;
                     continue;
@@ -440,7 +499,7 @@ where
         let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        let Some(kind) = frame.get(&spec.match_field).and_then(|v| v.as_str()) else {
+        let Some(kind) = frame_get(&frame, &spec.match_field).and_then(|v| v.as_str()) else {
             continue;
         };
         if spec.echo_values.iter().any(|e| e == kind) {
@@ -451,6 +510,89 @@ where
             return Ok(frame);
         }
     }
+}
+
+// ── 한투 (KisPipe) positional realtime decode + AES256-CBC ───────────────────
+
+type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
+
+/// A 한투 realtime frame is `flag|TR_ID|count|body` — flag is a single digit (0 plaintext /
+/// 1 AES). Control frames (subscribe ack, PINGPONG) are JSON objects starting with `{`.
+fn is_positional(text: &str) -> bool {
+    text.starts_with("0|") || text.starts_with("1|")
+}
+
+/// Capture the AES iv/key from the subscribe ack (dot-paths). None when absent.
+fn capture_decrypt_keys(ack: &serde_json::Value, dec: &WsDecryptSpec) -> Option<(String, String)> {
+    let iv = frame_get(ack, &dec.iv_field)?.as_str()?.to_string();
+    let key = frame_get(ack, &dec.key_field)?.as_str()?.to_string();
+    if iv.is_empty() || key.is_empty() {
+        return None;
+    }
+    Some((iv, key))
+}
+
+/// AES256-CBC decrypt (PKCS7) — KIS gives the raw ASCII iv (16) / key (32) in the ack, the
+/// body is base64. Best-effort: any failure returns None (frame skipped, never crashes).
+fn aes256_cbc_decrypt(b64: &str, iv: &str, key: &str) -> Option<String> {
+    let ct = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .ok()?;
+    let dec = Aes256CbcDec::new_from_slices(key.as_bytes(), iv.as_bytes()).ok()?;
+    let pt = dec.decrypt_padded_vec_mut::<Pkcs7>(&ct).ok()?;
+    String::from_utf8(pt).ok()
+}
+
+/// Decode `flag|TR_ID|count|f1^f2^…` → `(tr_id, {trId, count, records})`. `records` maps the
+/// caret-delimited values onto `field_order` (from `_ws_apis.json` responseBody), chunked by
+/// `count`. Flag 1 = decrypt the body first. Returns None on malformed/undecryptable frames.
+fn decode_positional(
+    text: &str,
+    spec: &WsStreamSpec,
+    keys: &Option<(String, String)>,
+) -> Option<(String, serde_json::Value)> {
+    let mut parts = text.splitn(4, '|');
+    let flag = parts.next()?;
+    let tr_id = parts.next()?.to_string();
+    let count: usize = parts.next()?.trim().parse().unwrap_or(1);
+    let body = parts.next().unwrap_or("");
+
+    let plain = if flag == "1" {
+        let (iv, key) = keys.as_ref()?; // encrypted but no key captured → skip
+        aes256_cbc_decrypt(body, iv, key)?
+    } else {
+        body.to_string()
+    };
+
+    let values: Vec<&str> = plain.split('^').collect();
+    let records = if spec.field_order.is_empty() {
+        serde_json::Value::Array(
+            values
+                .iter()
+                .map(|v| serde_json::Value::String((*v).to_string()))
+                .collect(),
+        )
+    } else {
+        let per = spec.field_order.len();
+        let recs: Vec<serde_json::Value> = values
+            .chunks(per)
+            .map(|chunk| {
+                let mut obj = serde_json::Map::new();
+                for (i, name) in spec.field_order.iter().enumerate() {
+                    if let Some(v) = chunk.get(i) {
+                        obj.insert(name.clone(), serde_json::Value::String((*v).to_string()));
+                    }
+                }
+                serde_json::Value::Object(obj)
+            })
+            .collect();
+        serde_json::Value::Array(recs)
+    };
+
+    Some((
+        tr_id.clone(),
+        serde_json::json!({ "trId": tr_id, "count": count, "records": records }),
+    ))
 }
 
 fn frame_error(frame: &serde_json::Value, spec: &WsStreamSpec) -> String {

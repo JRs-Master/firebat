@@ -56,6 +56,11 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 url = "2"
 base64 = "0.22"
 
+# KIS 웹소켓 체결통보(flag 1) AES256-CBC 복호 — 구독 응답이 iv/key 를 함께 준다.
+# 시세 스트림(flag 0)은 평문이라 이 경로 미사용(체결통보 전용).
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+
 # JWT — Vertex AI Service Account → access_token 자동 발급 (RS256, jwk 미사용).
 # 옛 TS @google/genai SDK 의 googleAuthOptions.credentials 자동 갱신과 동등.
 jsonwebtoken = "9"

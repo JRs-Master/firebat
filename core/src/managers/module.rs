@@ -15,7 +15,8 @@ use std::sync::Arc;
 
 use crate::ports::{
     ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, IWsStreamPort, InfraResult, ModuleOutput,
-    PackageStatus, SandboxExecuteOpts, WsApiCall, WsFieldEq, WsLoginSpec, WsPreFrame, WsStreamSpec,
+    PackageStatus, SandboxExecuteOpts, WsApiCall, WsDecryptSpec, WsFieldEq, WsFrameFormat,
+    WsLoginSpec, WsPreFrame, WsStreamSpec,
 };
 use crate::vault_keys::VK_SYSTEM_WS_WATCHES;
 use std::collections::HashMap;
@@ -538,6 +539,27 @@ impl ModuleManager {
             Some(tpl) => Some(substitute_ws_frame(tpl, &args_view)?),
             None => None,
         };
+        // 한투 positional realtime (KisPipe): field order from the module's `_ws_apis.json`
+        // responseBody, keyed by the stream's trId. kiwoom (Json) leaves field_order empty.
+        let frame_format = ws_frame_format(decl, ws);
+        let field_order = if frame_format == WsFrameFormat::KisPipe {
+            let tr_id = decl.get("trId").and_then(|v| v.as_str()).unwrap_or_default();
+            let spec_file = decl
+                .get("fieldsFrom")
+                .and_then(|v| v.as_str())
+                .unwrap_or("_ws_apis.json");
+            let scope = if module_dir.starts_with("user/") {
+                "user"
+            } else {
+                "system"
+            };
+            match self.read_module_file(scope, &meta.module, spec_file).await {
+                Some(raw) => extract_field_order(&raw, tr_id),
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
         let spec = WsStreamSpec {
             watch_id: meta.watch_id.clone(),
             topic: meta.topic.clone(),
@@ -573,6 +595,14 @@ impl ModuleManager {
                     format!("[{}] ws.streams.{}.realtimeMatch missing", meta.module, meta.stream)
                 })?
                 .to_string(),
+            frame_format,
+            field_order,
+            decrypt: parse_ws_decrypt(decl),
+            // Spec-level token secret — 한투 approval_key rides in the subscribe frame (no LOGIN).
+            token_secret: ws
+                .get("tokenSecret")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             mock: meta.mock,
         };
         port.start(spec).await?;
@@ -1006,6 +1036,53 @@ fn parse_ws_field_eq(v: Option<&serde_json::Value>) -> Option<WsFieldEq> {
         field: v.get("field")?.as_str()?.to_string(),
         equals: v.get("equals")?.clone(),
     })
+}
+
+/// Realtime wire format — `"kis-pipe"` (한투 positional) vs default Json (kiwoom). Stream-level
+/// override falls back to the module-level `ws.frameFormat`.
+fn ws_frame_format(decl: &serde_json::Value, ws: &serde_json::Value) -> WsFrameFormat {
+    let s = decl
+        .get("frameFormat")
+        .or_else(|| ws.get("frameFormat"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    match s {
+        "kis-pipe" => WsFrameFormat::KisPipe,
+        _ => WsFrameFormat::Json,
+    }
+}
+
+/// `decrypt: {ivField, keyField}` on a stream decl → WsDecryptSpec (KIS 체결통보 AES256).
+fn parse_ws_decrypt(decl: &serde_json::Value) -> Option<WsDecryptSpec> {
+    let d = decl.get("decrypt")?;
+    Some(WsDecryptSpec {
+        iv_field: d.get("ivField")?.as_str()?.to_string(),
+        key_field: d.get("keyField")?.as_str()?.to_string(),
+    })
+}
+
+/// Positional field order for a 한투 realtime TR — the responseBody name list from the module's
+/// `_ws_apis.json`, keyed by trIdReal/trIdMock. Empty when the file/entry is missing.
+fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let Some(apis) = json.get("apis").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    for api in apis {
+        let hit = api.get("trIdReal").and_then(|v| v.as_str()) == Some(tr_id)
+            || api.get("trIdMock").and_then(|v| v.as_str()) == Some(tr_id);
+        if hit {
+            if let Some(rb) = api.get("responseBody").and_then(|v| v.as_array()) {
+                return rb
+                    .iter()
+                    .filter_map(|f| f.get("name").and_then(|v| v.as_str()).map(String::from))
+                    .collect();
+            }
+        }
+    }
+    Vec::new()
 }
 
 /// WS frame template substitution — generic, zero provider knowledge.

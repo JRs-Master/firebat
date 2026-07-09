@@ -89,6 +89,73 @@
       }
     }
   ],
+  "ws": {
+    "endpoint": "ws://ops.koreainvestment.com:21000",
+    "endpointMock": "ws://ops.koreainvestment.com:31000",
+    "frameFormat": "kis-pipe",
+    "matchField": "header.tr_id",
+    "echoValues": ["PINGPONG"],
+    "tokenSecret": "KIS_WS_APPROVAL_KEY",
+    "errorMsgField": "body.msg1",
+    "_note": "한투 실시간 — approval_key(구독 헤더) + positional(^) 프레임. 시세=평문(flag0)/체결통보=AES256(flag1, 구독 응답 iv·key). field 순서는 _ws_apis.json responseBody(trId 매칭).",
+    "streams": {
+      "trade": {
+        "trId": "H0STCNT0",
+        "realtimeMatch": "H0STCNT0",
+        "subscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "1", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STCNT0", "tr_key": "{symbol}" } }
+          },
+          "match": "H0STCNT0",
+          "successWhen": { "field": "body.rt_cd", "equals": "0" }
+        },
+        "unsubscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "2", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STCNT0", "tr_key": "{symbol}" } }
+          }
+        }
+      },
+      "orderbook": {
+        "trId": "H0STASP0",
+        "realtimeMatch": "H0STASP0",
+        "subscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "1", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STASP0", "tr_key": "{symbol}" } }
+          },
+          "match": "H0STASP0",
+          "successWhen": { "field": "body.rt_cd", "equals": "0" }
+        },
+        "unsubscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "2", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STASP0", "tr_key": "{symbol}" } }
+          }
+        }
+      },
+      "execution": {
+        "trId": "H0STCNI0",
+        "realtimeMatch": "H0STCNI0",
+        "decrypt": { "ivField": "body.output.iv", "keyField": "body.output.key" },
+        "subscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "1", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STCNI0", "tr_key": "{htsId}" } }
+          },
+          "match": "H0STCNI0",
+          "successWhen": { "field": "body.rt_cd", "equals": "0" }
+        },
+        "unsubscribe": {
+          "frame": {
+            "header": { "approval_key": "{TOKEN}", "custtype": "P", "tr_type": "2", "content-type": "utf-8" },
+            "body": { "input": { "tr_id": "H0STCNI0", "tr_key": "{htsId}" } }
+          }
+        }
+      }
+    }
+  },
   "domains": [
     {
       "name": "bond",

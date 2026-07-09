@@ -679,6 +679,27 @@ pub trait IWsApiPort: Send + Sync {
     async fn call(&self, call: &WsApiCall) -> InfraResult<ModuleOutput>;
 }
 
+/// Realtime frame wire format. `Json` (kiwoom) = every frame is JSON, matched on `match_field`.
+/// `KisPipe` (한투) = control frames are JSON (`header.tr_id`) but realtime data is a positional
+/// `flag|TR_ID|count|f1^f2^…` string decoded via `field_order` (flag 1 = AES256, see `decrypt`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WsFrameFormat {
+    #[default]
+    Json,
+    KisPipe,
+}
+
+/// AES256-CBC decrypt spec for KIS 체결통보(flag 1) — the subscribe ack carries the iv/key in
+/// its body, so the adapter captures them (dot-paths) and decrypts flag-1 realtime bodies.
+/// 시세 스트림(flag 0)은 평문이라 미사용. All data — zero provider knowledge in the adapter.
+#[derive(Debug, Clone)]
+pub struct WsDecryptSpec {
+    /// Dot-path in the subscribe ack holding the AES IV (e.g. "body.output.iv").
+    pub iv_field: String,
+    /// Dot-path in the subscribe ack holding the AES key (e.g. "body.output.key").
+    pub key_field: String,
+}
+
 /// A persistent realtime subscription (config `ws.streams.<key>` declarative) — the adapter
 /// keeps the session alive (reconnect + resubscribe with backoff) and forwards every frame
 /// matching `realtime_match` to the sink. Everything provider-specific is config data.
@@ -704,6 +725,17 @@ pub struct WsStreamSpec {
     pub unsubscribe_frame: Option<serde_json::Value>,
     /// Frame type carrying realtime events (e.g. "REAL").
     pub realtime_match: String,
+    /// Wire format (default Json = kiwoom). KisPipe = 한투 positional realtime frames.
+    pub frame_format: WsFrameFormat,
+    /// Positional field names for `KisPipe` realtime decode (from `_ws_apis.json` responseBody
+    /// order). Empty for Json format.
+    pub field_order: Vec<String>,
+    /// AES256 spec for KIS 체결통보 (flag 1) — None for plaintext 시세 streams.
+    pub decrypt: Option<WsDecryptSpec>,
+    /// Token secret for providers whose auth token goes in the subscribe frame itself, not a
+    /// LOGIN frame (한투 approval_key). Filled into `{TOKEN}` placeholders in all frames.
+    /// When set, `login` is typically None. kiwoom keeps its token in `login.token_secret`.
+    pub token_secret: Option<String>,
     pub mock: bool,
 }
 

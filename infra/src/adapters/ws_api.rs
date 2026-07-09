@@ -234,10 +234,23 @@ pub(crate) fn fill_token(frame: &serde_json::Value, token: Option<&str>) -> serd
     }
 }
 
+/// Dot-path field access — `"header.tr_id"` walks nested objects (한투 control frames nest the
+/// frame type under `header`). A single segment is the same as `frame.get(field)`.
+pub(crate) fn frame_get<'a>(
+    frame: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    let mut cur = frame;
+    for seg in path.split('.') {
+        cur = cur.get(seg)?;
+    }
+    Some(cur)
+}
+
 /// String-coerced field comparison — mirrors the token provider's `invalidWhen` semantics
-/// (providers are loose about number-vs-string, e.g. return_code 0 vs "0").
+/// (providers are loose about number-vs-string, e.g. return_code 0 vs "0"). Dot-path aware.
 pub(crate) fn field_eq(frame: &serde_json::Value, rule: &WsFieldEq) -> bool {
-    let Some(actual) = frame.get(&rule.field) else {
+    let Some(actual) = frame_get(frame, &rule.field) else {
         return false;
     };
     coerce(actual) == coerce(&rule.equals)
@@ -313,7 +326,7 @@ where
         let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        let Some(kind) = frame.get(&call.match_field).and_then(|v| v.as_str()) else {
+        let Some(kind) = frame_get(&frame, &call.match_field).and_then(|v| v.as_str()) else {
             continue;
         };
         if call.echo_values.iter().any(|e| e == kind) {
