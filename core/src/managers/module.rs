@@ -180,19 +180,18 @@ impl ModuleManager {
         // (was fetched twice: once per validation pass).
         let config = self.get_module_config(scope, module_name).await;
 
-        // Pre-spawn input validation — config.json 의 input schema 기준.
-        // 에러 힌트 = 다음 단계 포인터(progressive disclosure): actionCatalog 선언 모듈이면
-        // search_module_actions/get_action_schema 로, 아니면 get_module_config 로 안내.
+        // Pre-spawn input validation — against config.json's input schema (this is L4 of the
+        // uniform tool procedure). The error hint = next-step pointer: every module is now
+        // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
+        // uniformly points back to search_module_actions → get_action_schema.
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
-                let has_catalog = config.get("actionCatalog").is_some();
                 validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
-                    let key = if has_catalog {
-                        "core.error.module.input_validation_failed_catalog"
-                    } else {
-                        "core.error.module.input_validation_failed"
-                    };
-                    crate::i18n::t(key, None, &[("name", module_name), ("detail", &e)])
+                    crate::i18n::t(
+                        "core.error.module.input_validation_failed_catalog",
+                        None,
+                        &[("name", module_name), ("detail", &e)],
+                    )
                 })?;
             }
         }

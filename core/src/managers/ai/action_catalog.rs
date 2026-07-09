@@ -44,13 +44,18 @@ impl ModuleActionSource {
         let Some(config) = self.module.get_module_config(scope, name).await else {
             return Vec::new();
         };
-        let Some(decl) = config.get("actionCatalog") else {
-            return Vec::new();
-        };
         let approval_decl = config
             .get("requiresApproval")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
+        let Some(decl) = config.get("actionCatalog") else {
+            // No explicit catalog — derive per-action entries from the module's `input` schema so
+            // EVERY module (usermods, small sysmods) is uniformly discoverable via
+            // search_module_actions (Part 1-A: the 4-step tool procedure applies to all modules,
+            // not just the 3 that hand-author actions.json). Zero authoring: the input schema the
+            // module already ships for validation doubles as the discovery catalog.
+            return derive_entries_from_input(name, &config, &approval_decl);
+        };
         let envelope = decl.get("envelope").and_then(|v| v.as_str()).unwrap_or("");
         let actions: Vec<serde_json::Value> = if let Some(arr) =
             decl.get("actions").and_then(|v| v.as_array())
@@ -126,6 +131,137 @@ impl ModuleActionSource {
             })
             .collect()
     }
+}
+
+/// Derive catalog entries from a module's `input` JSON schema when it declares no explicit
+/// `actionCatalog` (Part 1-A — uniform discovery for every module). A module with an
+/// `input.properties.action.enum` yields one entry per action (params = the input properties, so
+/// get_action_schema returns the real params); a module without an action enum yields a single
+/// entry keyed by the module name. Pure — reads only the already-fetched config.
+fn derive_entries_from_input(
+    name: &str,
+    config: &serde_json::Value,
+    approval_decl: &serde_json::Value,
+) -> Vec<CatalogEntry> {
+    let props = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.as_object());
+    // get_action_schema params = {param: description(+enum hint)}, excluding the `action` selector.
+    let params: serde_json::Value = {
+        let mut m = serde_json::Map::new();
+        if let Some(props) = props {
+            for (k, v) in props {
+                if k == "action" {
+                    continue;
+                }
+                let desc = v.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                let enum_hint = v
+                    .get("enum")
+                    .and_then(|e| e.as_array())
+                    .map(|a| {
+                        let vals: Vec<String> =
+                            a.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+                        if vals.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" (enum: {})", vals.join(", "))
+                        }
+                    })
+                    .unwrap_or_default();
+                m.insert(
+                    k.clone(),
+                    serde_json::Value::String(format!("{}{}", desc, enum_hint).trim().to_string()),
+                );
+            }
+        }
+        serde_json::Value::Object(m)
+    };
+    // Short module blurb — first sentence / 120 chars, for the single-purpose fallback and as
+    // semantic filler when an action has no per-action description fragment.
+    let module_blurb: String = config
+        .get("description")
+        .and_then(|d| d.as_str())
+        .unwrap_or("")
+        .split(['\n', '.'])
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(120)
+        .collect();
+    let module_blurb = module_blurb.trim().to_string();
+
+    let action_prop = props.and_then(|p| p.get("action"));
+    let action_enum = action_prop.and_then(|a| a.get("enum")).and_then(|e| e.as_array());
+    let action_desc_blob = action_prop
+        .and_then(|a| a.get("description"))
+        .and_then(|d| d.as_str())
+        .unwrap_or("");
+    let envelope = if action_enum.is_some() {
+        "{ \"action\": \"<id>\", <params...> } — flat: action selector + params at the top level"
+    } else {
+        "{ <params...> } — flat: params at the top level (this module has no action selector)"
+    };
+    let make_extra = |action_id: &str| -> serde_json::Value {
+        serde_json::json!({
+            "module": name,
+            "action": action_id,
+            "params": params,
+            "envelope": envelope,
+            "requiresApproval": requires_approval_value(approval_decl, action_id),
+            "derived": true,
+        })
+    };
+
+    match action_enum {
+        Some(actions) => actions
+            .iter()
+            .filter_map(|a| a.as_str())
+            .map(|act| {
+                let frag = derive_action_fragment(action_desc_blob, act);
+                // Semantic text = the action name (distinguishes quote↔history) + its fragment,
+                // or the module blurb when no fragment is parseable.
+                let sem = if frag.is_empty() {
+                    format!("{} {}", act, module_blurb)
+                } else {
+                    frag
+                };
+                CatalogEntry {
+                    id: format!("{}:{}", name, act),
+                    name: act.to_string(),
+                    description: sem.trim().to_string(),
+                    extra: make_extra(act),
+                }
+            })
+            .collect(),
+        None => vec![CatalogEntry {
+            id: format!("{}:{}", name, name),
+            name: name.to_string(),
+            description: module_blurb,
+            extra: make_extra(name),
+        }],
+    }
+}
+
+/// Best-effort per-action description from an enum-description blob like
+/// "Action. quote=current price / history=OHLCV time series / info=…". Returns the text after
+/// "action=" (or "action:") up to the next " / ", or "" if the action isn't described there.
+fn derive_action_fragment(blob: &str, action: &str) -> String {
+    for seg in blob.split(" / ") {
+        let seg = seg.trim();
+        for sep in ['=', ':'] {
+            let marker = format!("{}{}", action, sep);
+            if let Some(pos) = seg.find(&marker) {
+                // token boundary — start of segment or preceded by a non-alphanumeric char.
+                let boundary = pos == 0
+                    || !seg[..pos].chars().last().map(|c| c.is_alphanumeric()).unwrap_or(false);
+                if boundary {
+                    return seg[pos + marker.len()..].trim().to_string();
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 #[async_trait::async_trait]

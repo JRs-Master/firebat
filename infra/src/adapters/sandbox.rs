@@ -547,10 +547,11 @@ impl ProcessSandboxAdapter {
         let mut path_buf: Vec<String> = Vec::new();
         Self::collect_cache_candidates(&obj, 0, &mut path_buf, &mut arrays, &mut strings);
 
-        // ── 1) 배열 경로 (우선) — 가장 큰 배열 ≥ 30 개, 동률 = 얕은 경로 우선 ──
+        // ── 1) array field (preferred) — largest, shallow-path on tie, ANY size (Part 2:
+        //     uniform cache attaches a _cacheKey regardless of size so the model's procedure is
+        //     consistent; truncation to a preview still only happens when large) ──
         let largest_arr: Option<(Vec<String>, usize)> = arrays
             .into_iter()
-            .filter(|(_, l)| *l >= AUTO_CACHE_THRESHOLD)
             .max_by(|a, b| a.1.cmp(&b.1).then(b.0.len().cmp(&a.0.len())));
         if let Some((field_path, total_count)) = largest_arr {
             let field_name = field_path.join(".");
@@ -569,10 +570,13 @@ impl ProcessSandboxAdapter {
                 None,
             ) {
                 Ok(key) => {
-                    if let Some(arr) = Self::value_at_path_mut(&mut obj, &field_path)
-                        .and_then(|v| v.as_array_mut())
-                    {
-                        arr.truncate(AUTO_CACHE_PREVIEW);
+                    let truncated = total_count >= AUTO_CACHE_THRESHOLD;
+                    if truncated {
+                        if let Some(arr) = Self::value_at_path_mut(&mut obj, &field_path)
+                            .and_then(|v| v.as_array_mut())
+                        {
+                            arr.truncate(AUTO_CACHE_PREVIEW);
+                        }
                     }
                     obj.insert(
                         "_cacheKey".to_string(),
@@ -586,7 +590,8 @@ impl ProcessSandboxAdapter {
                             "fieldName": field_name,
                             "kind": "array",
                             "totalCount": total_count,
-                            "truncatedTo": AUTO_CACHE_PREVIEW,
+                            "truncated": truncated,
+                            "truncatedTo": if truncated { AUTO_CACHE_PREVIEW } else { total_count },
                             "autoCached": true,
                         }),
                     );
@@ -597,7 +602,8 @@ impl ProcessSandboxAdapter {
                         field = %field_name,
                         cache_key = %key,
                         total = total_count,
-                        "[sandbox] auto-cache applied — large array field extracted to cache"
+                        truncated,
+                        "[sandbox] auto-cache applied — array field cached"
                     );
                 }
                 Err(e) => {
@@ -613,7 +619,9 @@ impl ProcessSandboxAdapter {
             return serde_json::Value::Object(obj);
         }
 
-        // ── 2) 텍스트 경로 — 가장 큰 문자열 ≥ 8000 자 (줄 단위 {line,text} 레코드로 캐시) ──
+        // ── 2) text field — largest string ≥ 8000 chars (documents: firecrawl body, law article).
+        //     Small strings are NOT line-cached (a 6-char field is not a document); they fall
+        //     through to the whole-object cache below, so a _cacheKey is still attached uniformly. ──
         let largest_str: Option<(Vec<String>, usize)> = strings
             .into_iter()
             .filter(|(_, l)| *l >= TEXT_CACHE_THRESHOLD)
@@ -641,12 +649,13 @@ impl ProcessSandboxAdapter {
                 None,
             ) {
                 Ok(key) => {
-                    let mut preview: String = full.chars().take(TEXT_PREVIEW_CHARS).collect();
-                    if total_chars > TEXT_PREVIEW_CHARS {
+                    let truncated = total_chars >= TEXT_CACHE_THRESHOLD;
+                    if truncated {
+                        let mut preview: String = full.chars().take(TEXT_PREVIEW_CHARS).collect();
                         preview.push('…');
-                    }
-                    if let Some(slot) = Self::value_at_path_mut(&mut obj, &field_path) {
-                        *slot = serde_json::Value::String(preview);
+                        if let Some(slot) = Self::value_at_path_mut(&mut obj, &field_path) {
+                            *slot = serde_json::Value::String(preview);
+                        }
                     }
                     obj.insert(
                         "_cacheKey".to_string(),
@@ -662,7 +671,8 @@ impl ProcessSandboxAdapter {
                             "grepField": "text",
                             "totalChars": total_chars,
                             "totalLines": total_lines,
-                            "previewChars": TEXT_PREVIEW_CHARS.min(total_chars),
+                            "truncated": truncated,
+                            "previewChars": if truncated { TEXT_PREVIEW_CHARS.min(total_chars) } else { total_chars },
                             "autoCached": true,
                         }),
                     );
@@ -674,7 +684,8 @@ impl ProcessSandboxAdapter {
                         cache_key = %key,
                         total_chars = total_chars,
                         total_lines = total_lines,
-                        "[sandbox] auto-cache applied — large text field cached line-by-line"
+                        truncated,
+                        "[sandbox] auto-cache applied — text field cached line-by-line"
                     );
                 }
                 Err(e) => {
@@ -690,6 +701,52 @@ impl ProcessSandboxAdapter {
             return serde_json::Value::Object(obj);
         }
 
+        // ── 3) scalar-only object (no array/string field anywhere) — cache the whole object so
+        //     the model's procedure stays uniform: a _cacheKey is ALWAYS present regardless of
+        //     size. Nothing is removed (truncated:false) so there is no extra cache_read round;
+        //     the key just lets render/dataCacheKey reference it consistently.
+        let snapshot = serde_json::Value::Object(obj.clone());
+        let action_label = format!("{}:_", input_action);
+        match cache.data(
+            module_name,
+            &action_label,
+            serde_json::Value::Null,
+            vec![snapshot],
+            None,
+        ) {
+            Ok(key) => {
+                obj.insert(
+                    "_cacheKey".to_string(),
+                    serde_json::Value::String(key.clone()),
+                );
+                obj.insert(
+                    "_cacheMeta".to_string(),
+                    serde_json::json!({
+                        "sysmod": module_name,
+                        "action": action_label,
+                        "kind": "scalar",
+                        "truncated": false,
+                        "autoCached": true,
+                    }),
+                );
+                tracing::info!(
+                    target: "sandbox",
+                    module = module_name,
+                    action = input_action,
+                    cache_key = %key,
+                    "[sandbox] auto-cache applied — scalar object cached (uniform key)"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "sandbox",
+                    module = module_name,
+                    action = input_action,
+                    error = %e,
+                    "[sandbox] auto-cache (scalar) save failed — discarded"
+                );
+            }
+        }
         serde_json::Value::Object(obj)
     }
 
@@ -2304,10 +2361,13 @@ mod tests {
     }
 
     #[test]
-    fn apply_auto_cache_skips_small_arrays() {
+    fn apply_auto_cache_small_array_cached_not_truncated() {
+        // Part 2 uniform: a small array (< 30) is STILL cached — the model always gets a
+        // _cacheKey (consistent procedure) — but it is NOT truncated (stays fully inline, so
+        // truncated:false and no extra cache_read round). This kills the "sometimes inline so
+        // I'll hand-copy" branch (Solar hand-copied small candle lists + fabricated).
         let tmp = tempdir().unwrap();
         let cache = make_cache(tmp.path());
-        // items 10개 — threshold 30 미만
         let items: Vec<serde_json::Value> = (0..10)
             .map(|i| serde_json::json!({"id": i}))
             .collect();
@@ -2321,12 +2381,33 @@ mod tests {
         );
 
         let obj = out.as_object().expect("object 결과");
-        // items 그대로 (truncate 안 됨)
+        // items unchanged (not truncated — small)
         let arr = obj.get("items").and_then(|v| v.as_array()).expect("items 배열");
         assert_eq!(arr.len(), 10);
-        // _cacheKey / _cacheMeta 미주입
-        assert!(obj.get("_cacheKey").is_none());
-        assert!(obj.get("_cacheMeta").is_none());
+        // but a _cacheKey IS attached (uniform), meta.truncated = false
+        assert!(obj.get("_cacheKey").and_then(|v| v.as_str()).is_some());
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("truncated").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(meta.get("totalCount").and_then(|v| v.as_u64()), Some(10));
+        assert_eq!(meta.get("fieldName").and_then(|v| v.as_str()), Some("items"));
+    }
+
+    #[test]
+    fn apply_auto_cache_scalar_object_gets_uniform_key() {
+        // No array and no large string → the whole object is cached so a _cacheKey is still
+        // present (uniform), with nothing removed (truncated:false, kind:"scalar").
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let data = serde_json::json!({ "price": 71000, "volume": 1234 });
+        let out =
+            ProcessSandboxAdapter::apply_auto_cache(data, cache.as_ref(), "korea-invest", "quote");
+        let obj = out.as_object().expect("object 결과");
+        // scalar values stay inline
+        assert_eq!(obj.get("price").and_then(|v| v.as_i64()), Some(71000));
+        assert!(obj.get("_cacheKey").and_then(|v| v.as_str()).is_some());
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("kind").and_then(|v| v.as_str()), Some("scalar"));
+        assert_eq!(meta.get("truncated").and_then(|v| v.as_bool()), Some(false));
     }
 
     #[test]

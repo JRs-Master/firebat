@@ -710,6 +710,30 @@ fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleO
 /// 2026-05-14 옵션 C 적용 — config.json 의 `domains` 필드 있으면 도메인별 별도 도구 N개 등록
 /// (sysmod_<name>_<domain>). 각 도구의 action enum 은 그 도메인의 actions 로 좁혀짐 (토큰 절감).
 /// 단일 sysmod index.mjs 가 모든 도메인 처리 — domain 분리는 LLM 노출 layer 만.
+/// Thin sysmod tool schema (Part 1-B) — the full input schema is NOT exposed. The model must
+/// discover params via search_module_actions → get_action_schema (the uniform 4-step procedure);
+/// `additionalProperties:true` carries the discovered flat params and module.rs validates them
+/// against config.input. Forces procedure compliance (no direct-call shortcut) + shrinks the
+/// cached tool-list prefix. Mirror of the FC path (dynamic_tools.rs) so both stay uniform.
+fn thin_sysmod_input_schema() -> Value {
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Guessing params will fail validation."
+    })
+}
+
+/// Append declared config `tags` to a tool description (module selection = step 1 of the procedure).
+fn append_tags(desc: String, config: &Value) -> String {
+    if let Some(list) = config.get("tags").and_then(|t| t.as_array()) {
+        let tags: Vec<String> = list.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+        if !tags.is_empty() {
+            return format!("{} · Tags: {}", desc.trim(), tags.join(", "));
+        }
+    }
+    desc
+}
+
 pub async fn register_sysmod_tools(
     state: &Arc<McpServerState>,
     module_manager: Arc<ModuleManager>,
@@ -731,11 +755,8 @@ pub async fn register_sysmod_tools(
         }
         // 기본 — 단일 도구 등록.
         let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
-        let description = build_sysmod_description(&entry.name, &config);
-        let input_schema = config
-            .get("input")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+        let description = append_tags(build_sysmod_description(&entry.name, &config), &config);
+        let input_schema = thin_sysmod_input_schema();
         let tool = McpTool {
             name: tool_name.clone(),
             description,
@@ -762,12 +783,6 @@ async fn register_sysmod_domains(
     domains: &[Value],
     module_manager: Arc<ModuleManager>,
 ) {
-    // base input schema (action / params / query / body / mock — domain 공통)
-    let base_input = config
-        .get("input")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
-
     for domain in domains {
         let domain_name = match domain.get("name").and_then(|v| v.as_str()) {
             Some(n) if !n.is_empty() => n,
@@ -786,17 +801,6 @@ async fn register_sysmod_domains(
             continue;
         }
 
-        // input schema 복사 + action enum 을 이 도메인의 actions 로 좁힘
-        let mut input_schema = base_input.clone();
-        if let Some(props) = input_schema
-            .get_mut("properties")
-            .and_then(|v| v.as_object_mut())
-        {
-            if let Some(action_field) = props.get_mut("action").and_then(|v| v.as_object_mut()) {
-                action_field.insert("enum".to_string(), Value::Array(actions.clone()));
-            }
-        }
-
         let names = firebat_core::utils::secret_schema::secret_names(config);
         let secrets_note = if names.is_empty() {
             String::new()
@@ -806,10 +810,13 @@ async fn register_sysmod_domains(
                 names.join(", ")
             )
         };
-        let description = format!(
-            "[시스템 모듈] {desc}\n총 {n}개 API. action 으로 API ID 직접 호출.{secrets_note}",
-            desc = if domain_desc.is_empty() { module_name } else { domain_desc },
-            n = actions.len(),
+        let description = append_tags(
+            format!(
+                "[system module] {desc} — {n} actions. Discover the action via search_module_actions, then get_action_schema(module, action) for params.{secrets_note}",
+                desc = if domain_desc.is_empty() { module_name } else { domain_desc },
+                n = actions.len(),
+            ),
+            config,
         );
         let tool_name = format!(
             "sysmod_{}_{}",
@@ -823,7 +830,7 @@ async fn register_sysmod_domains(
         let tool = McpTool {
             name: tool_name,
             description,
-            input_schema,
+            input_schema: thin_sysmod_input_schema(),
             handler: Arc::new(SysmodToolHandler {
                 module_name: module_name.to_string(),
                 module_manager: module_manager.clone(),

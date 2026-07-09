@@ -108,12 +108,26 @@ impl DynamicToolRegistry {
             let Some(config) = self.module.get_module_config("system", &entry.name).await else {
                 continue;
             };
-            let parameters = config
-                .get("input")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
+            // Thin tool (Part 1-B): the full input schema is NOT exposed — the model must discover
+            // params via search_module_actions → get_action_schema (the uniform 4-step procedure).
+            // `additionalProperties:true` lets it pass the discovered flat params; module.rs still
+            // validates against config.input. This forces procedure compliance (no direct-call
+            // shortcut) and shrinks the tool-list prefix (cached; peak context ↓, 128K overflow ↓).
+            let parameters = serde_json::json!({
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Parameters are not listed here. Discover them first: search_module_actions(query) to find the action, then get_action_schema(module, action) for exact params + call envelope; then call with those params at the top level (include \"action\" if the module uses one). Guessing params will fail validation."
+            });
             let tool_name = format!("sysmod_{}", entry.name);
-            let description = entry.description.clone();
+            // Description = what the module is (module selection = step 1) + declared `tags`.
+            let mut description = entry.description.clone();
+            if let Some(tag_list) = config.get("tags").and_then(|t| t.as_array()) {
+                let tags: Vec<String> =
+                    tag_list.iter().filter_map(|t| t.as_str().map(String::from)).collect();
+                if !tags.is_empty() {
+                    description = format!("{} · Tags: {}", description.trim(), tags.join(", "));
+                }
+            }
             // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
             let g = parse_grounding(&config);
             if let Some(ra) = config.get("requiresApproval") {
