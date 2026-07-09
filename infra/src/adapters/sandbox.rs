@@ -392,6 +392,29 @@ impl ProcessSandboxAdapter {
         })
     }
 
+    /// cursor 모드 serve shape — ts_serve_data(records…) + 다음(과거) 페이지 커서를 nextCursorField
+    /// 에 주입(oldest row 의 date 값 verbatim). 모델이 그 값으로 다음 페이지를 페이지네이션한다.
+    fn ts_serve_cursor_data(
+        spec: &firebat_core::ports::TsSpec,
+        rows: Vec<serde_json::Value>,
+        fully_covered: bool,
+    ) -> serde_json::Value {
+        let oldest_date = rows.first().and_then(|r| {
+            let mut cur = r;
+            for seg in spec.date_field.split('.') {
+                cur = cur.get(seg)?;
+            }
+            Some(cur.clone())
+        });
+        let mut data = Self::ts_serve_data(spec, rows, fully_covered);
+        if !spec.next_cursor_field.is_empty() {
+            if let (Some(d), Some(obj)) = (oldest_date, data.as_object_mut()) {
+                obj.insert(spec.next_cursor_field.clone(), d);
+            }
+        }
+        data
+    }
+
     /// 시계열 absorb + 전체 range 서빙 — run_once 의 envelope unwrap 직후 (rows 실물이 있고
     /// `_cache`/auto-cache 처리 전) 호출. 응답 shape 이 선언과 다르면 원본 통과 (안전).
     /// cov 범위 = 이번 fetch 의 실제 입력 range (갭 축소 반영), 미완결 최신은 clamp 로 제외.
@@ -402,12 +425,27 @@ impl ProcessSandboxAdapter {
         fetch_input: &serde_json::Value,
     ) -> serde_json::Value {
         use firebat_core::utils::timeseries as ts;
+        // mode-aware serve — cursor = read_before(anchor, count), range = read_rows([start,end)).
+        let serve_rows =
+            |st: &dyn firebat_core::ports::ITimeseriesStorePort| -> Vec<serde_json::Value> {
+                match spec.mode {
+                    firebat_core::ports::TsMode::Cursor => {
+                        let n = if spec.count > 0 { spec.count as usize } else { 500 };
+                        st.read_before(&spec.key, spec.anchor, n)
+                    }
+                    _ => st.read_rows(&spec.key, spec.start, spec.end),
+                }
+            };
+        let serve_data = |rows: Vec<serde_json::Value>| -> serde_json::Value {
+            match spec.mode {
+                firebat_core::ports::TsMode::Cursor => Self::ts_serve_cursor_data(spec, rows, false),
+                _ => Self::ts_serve_data(spec, rows, false),
+            }
+        };
         let Some(rows) = ts::extract_rows(&data, &spec.rows_paths) else {
-            // 선언 경로에 rows 없음 = 갭 fetch 가 빈 응답(주말/휴장 갭 = 정상)이거나 shape 변형.
-            // 옛엔 원본 통과 → store 가 요청 range 를 다 갖고 있어도 모델이 빈 records 를 받았다
-            // (2026-07-06 실측: store 123봉 + 주말 갭 fetch 빈 응답 → "데이터 없음" 전달).
-            // fetch 자체는 성공이므로 요청 range 를 store 에서 서빙 — store 도 비었을 때만 원본 통과.
-            let served = store.read_rows(&spec.key, spec.start, spec.end);
+            // 선언 경로에 rows 없음 = 갭 fetch 빈 응답(주말/휴장 = 정상)이거나 shape 변형. fetch 성공
+            // 이므로 store 에 있으면 서빙 — store 도 비었을 때만 원본 통과 (2026-07-06 빈 records 버그 fix).
+            let served = serve_rows(store);
             if served.is_empty() {
                 tracing::warn!(
                     target: "timeseries",
@@ -420,9 +458,9 @@ impl ProcessSandboxAdapter {
                 target: "timeseries",
                 series = %spec.key,
                 served = served.len(),
-                "gap fetch returned no rows — serving requested range from the store"
+                "gap fetch returned no rows — serving from the store"
             );
-            return Self::ts_serve_data(spec, served, false);
+            return serve_data(served);
         };
         let pairs: Vec<(i64, serde_json::Value)> = rows
             .iter()
@@ -438,19 +476,24 @@ impl ProcessSandboxAdapter {
             );
             return data;
         }
-        let fetch_start = fetch_input
-            .get(&spec.start_param)
-            .and_then(|v| v.as_str())
-            .and_then(ts::normalize_date)
-            .unwrap_or(spec.start);
-        let fetch_end = fetch_input
-            .get(&spec.end_param)
-            .and_then(|v| v.as_str())
-            .and_then(ts::normalize_date)
-            .unwrap_or(spec.end);
-        let (upserted, invalidated) =
-            store.merge_rows(&spec.key, &pairs, fetch_start, fetch_end.min(spec.cov_clamp));
-        let served = store.read_rows(&spec.key, spec.start, spec.end);
+        // 흡수 커버 범위 — range: 실제 입력 range(갭 축소 반영, dot-path). cursor: [min_returned, anchor∧clamp).
+        let (cov_start, cov_end) = match spec.mode {
+            firebat_core::ports::TsMode::Cursor => {
+                let min_date = pairs.iter().map(|(k, _)| *k).min().unwrap_or(spec.anchor);
+                (min_date, spec.anchor.min(spec.cov_clamp))
+            }
+            _ => {
+                let fetch_start = ts::param_value(fetch_input, &spec.start_param)
+                    .and_then(|s| ts::normalize_date(&s))
+                    .unwrap_or(spec.start);
+                let fetch_end = ts::param_value(fetch_input, &spec.end_param)
+                    .and_then(|s| ts::normalize_date(&s))
+                    .unwrap_or(spec.end);
+                (fetch_start, fetch_end.min(spec.cov_clamp))
+            }
+        };
+        let (upserted, invalidated) = store.merge_rows(&spec.key, &pairs, cov_start, cov_end);
+        let served = serve_rows(store);
         tracing::info!(
             target: "timeseries",
             series = %spec.key,
@@ -458,9 +501,9 @@ impl ProcessSandboxAdapter {
             upserted,
             invalidated,
             served = served.len(),
-            "timeseries merged — full requested range served from the store"
+            "timeseries merged — served from the store"
         );
-        Self::ts_serve_data(spec, served, false)
+        serve_data(served)
     }
 
     /// auto-cache 후보 수집 — data 객체를 (배열엔 내려가지 않고) 중첩 object 로 재귀 하강하며
@@ -1430,6 +1473,54 @@ impl ISandboxPort for ProcessSandboxAdapter {
                 );
                 ts_input_owned = Some(m);
             }
+            }
+        }
+        // ── cursor 모드 serve — 과거 페이지(anchor < clamp)가 store 에 연속 커버 + count 충족이면
+        //    spawn 0. 최신(anchor >= clamp)은 항상 fetch(신선도). 불확실하면 fetch (stale 재사용 차단). ──
+        if let (Some(spec), Some(store)) = (&opts.timeseries, &self.timeseries) {
+            if matches!(spec.mode, firebat_core::ports::TsMode::Cursor)
+                && spec.count > 0
+                && spec.anchor < spec.cov_clamp
+            {
+                use firebat_core::utils::timeseries as ts;
+                let served = store.read_before(&spec.key, spec.anchor, spec.count as usize);
+                let contiguous = served
+                    .first()
+                    .and_then(|r| ts::row_date_key(r, &spec.date_field))
+                    .map(|md| store.uncovered(&spec.key, md, spec.anchor).is_empty())
+                    .unwrap_or(false);
+                if served.len() >= spec.count as usize && contiguous {
+                    let module_name = module_dir
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let action = input_data
+                        .get("action")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    tracing::info!(
+                        target: "timeseries",
+                        series = %spec.key,
+                        rows = served.len(),
+                        "cursor: past page fully covered — served from the store (module spawn 0)"
+                    );
+                    let data = Self::ts_serve_cursor_data(spec, served, true);
+                    let data = match &self.cache {
+                        Some(cache) => Self::apply_auto_cache(data, cache, &module_name, &action),
+                        None => data,
+                    };
+                    return Ok(ModuleOutput {
+                        protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                        success: true,
+                        data,
+                        error: None,
+                        error_key: None,
+                        error_params: None,
+                        stderr: None,
+                        exit_code: Some(0),
+                    });
+                }
             }
         }
         let input_data: &serde_json::Value = ts_input_owned.as_ref().unwrap_or(input_data);

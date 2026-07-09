@@ -312,4 +312,22 @@ mod tests {
         assert_eq!(s.uncovered("b", 10, 11), vec![(10, 11)]);
         assert!(s.read_rows("b", 0, 100).is_empty());
     }
+
+    #[test]
+    fn read_before_returns_latest_n_ascending() {
+        let (_d, s) = store();
+        s.merge_rows("k", &[row(10, 1.0), row(12, 2.0), row(14, 3.0), row(16, 4.0)], 10, 20);
+        // anchor=15 → date_key < 15 = {10,12,14}, 최신 2 = 12,14 (오름차순 반환).
+        let r = s.read_before("k", 15, 2);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0]["close"], 2.0);
+        assert_eq!(r[1]["close"], 3.0);
+        // count > 보유 → anchor 이전 전부 (오름차순).
+        let all = s.read_before("k", 100, 10);
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[0]["close"], 1.0);
+        assert_eq!(all[3]["close"], 4.0);
+        // anchor 이전 없음 → 빈.
+        assert!(s.read_before("k", 5, 3).is_empty());
+    }
 }
