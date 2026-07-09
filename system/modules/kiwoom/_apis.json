@@ -16001,20 +16001,6 @@
   }
  },
  {
-  "id": "공통",
-  "name": "오류코드",
-  "method": "POST",
-  "path": "",
-  "category": "",
-  "subCategory": "",
-  "request": {
-   "header": [],
-   "body": [],
-   "query": [],
-   "path": []
-  }
- },
- {
   "id": "ka01300",
   "name": "관심종목 그룹 리스트 조회",
   "method": "POST",

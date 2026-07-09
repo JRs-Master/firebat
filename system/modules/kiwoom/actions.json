@@ -2822,14 +2822,6 @@
   }
  },
  {
-  "id": "공통",
-  "name": "오류코드",
-  "description": "오류코드",
-  "domain": "",
-  "method": "POST",
-  "params": {}
- },
- {
   "id": "ka01300",
   "name": "관심종목 그룹 리스트 조회",
   "description": "관심종목 그룹 리스트 조회",
