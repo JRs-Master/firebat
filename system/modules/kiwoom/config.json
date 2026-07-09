@@ -153,6 +153,20 @@
           "0u": "ELW 지표"
         }
       },
+      "us-quotes": {
+        "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
+        "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
+        "subscribe": {
+          "frame": { "trnm": "REG", "grp_no": "1", "refresh": "1", "data": [ { "item": [ "{item}" ], "type": [ "{type:FE}" ] } ] },
+          "match": "REG",
+          "successWhen": { "field": "return_code", "equals": 0 }
+        },
+        "unsubscribe": {
+          "frame": { "trnm": "REMOVE", "grp_no": "1", "refresh": "1", "data": [ { "item": [ "{item}" ], "type": [ "{type:FE}" ] } ] }
+        },
+        "realtimeMatch": "REAL",
+        "typeCodes": { "F4": "미국주식 실시간 주문 확인", "F5": "미국주식 실시간 체결", "FE": "미국주식 실시간 체결가", "FT": "미국주식 10호가" }
+      },
       "condition": {
         "preFrames": [
           {
@@ -185,6 +199,14 @@
             "seq": "{seq}"
           }
         },
+        "realtimeMatch": "REAL"
+      },
+      "us-condition": {
+        "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
+        "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
+        "preFrames": [ { "frame": { "trnm": "GCNSRLST" }, "match": "GCNSRLST", "successWhen": { "field": "return_code", "equals": 0 } } ],
+        "subscribe": { "frame": { "trnm": "GCNSRREQ", "seq": "{seq}", "search_type": "1" }, "match": "GCNSRREQ", "successWhen": { "field": "return_code", "equals": 0 } },
+        "unsubscribe": { "frame": { "trnm": "GCNSRCLR", "seq": "{seq}" } },
         "realtimeMatch": "REAL"
       }
     },

@@ -544,7 +544,11 @@ impl ModuleManager {
             module: meta.module.clone(),
             stream: meta.stream.clone(),
             module_dir,
-            endpoint: ws_endpoint(ws, meta.mock)
+            // Per-stream endpoint override (decl.endpoint/endpointMock) → module-level fallback.
+            // 같은 provider 가 스트림별로 다른 WS 경로를 쓸 때(예: 키움 국내 /api/dostk/websocket vs
+            // 미국주식 /api/us/websocket, 같은 호스트 다른 path). 선언 없으면 기존 module-level.
+            endpoint: ws_endpoint(decl, meta.mock)
+                .or_else(|| ws_endpoint(ws, meta.mock))
                 .ok_or_else(|| format!("[{}] ws.endpoint missing", meta.module))?,
             match_field: ws_match_field(ws),
             echo_values: ws_echo_values(ws),
