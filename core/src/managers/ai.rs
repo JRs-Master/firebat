@@ -1948,12 +1948,17 @@ impl AiManager {
             // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.
             // thinking 먼저 (있을 때만) → text 다음. frontend ThinkingBlock 가 thinking content
             // bodyText 영역 표시 + text 는 답변 본문 영역 표시 (옛 TS Core 1:1 흐름).
-            if let Some(thinking) = response.thinking_text.as_deref() {
-                if !thinking.trim().is_empty() {
-                    emit_event(AiStreamEvent::Chunk {
-                        event_type: "thinking".to_string(),
-                        content: thinking.to_string(),
-                    });
+            // CLI 어댑터(claude/codex/gemini)는 turn 중 thinking 을 이미 live emit 했다 → 재emit 시
+            // 이중표시. thinking_text 는 persist(reasoningTrace/finalReasoning)용으로 유지하되, 여기
+            // display 재emit 은 CLI 가 아닐 때만(FC: openai/gemini/vertex 는 여기서 처음 흘림).
+            if response.cli_session_id.is_none() {
+                if let Some(thinking) = response.thinking_text.as_deref() {
+                    if !thinking.trim().is_empty() {
+                        emit_event(AiStreamEvent::Chunk {
+                            event_type: "thinking".to_string(),
+                            content: thinking.to_string(),
+                        });
+                    }
                 }
             }
             if !last_text.trim().is_empty() {

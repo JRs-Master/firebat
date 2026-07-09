@@ -350,6 +350,15 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
                 .find_map(|k| o.get(*k).and_then(|v| v.as_str()).map(|s| s.to_string()))
         }) {
             *value = serde_json::Value::String(s);
+        } else if value.is_number() || value.is_boolean() {
+            // string 기대인데 number/bool 이 오면 문자열화 — 표 셀에 숫자(25)나 불리언을 넣어
+            // 검증 실패(silently skipped)하던 것 흡수. 배열 재귀가 rows[i][j] 셀까지 닿으므로
+            // 표·리스트·라벨 어디든 커버 (render robustness, 일반 규칙 — 컴포넌트 하드코딩 0).
+            *value = serde_json::Value::String(match value {
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => String::new(),
+            });
         }
     }
     // scalar: no-op.

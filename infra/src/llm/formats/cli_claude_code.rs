@@ -836,7 +836,6 @@ impl FormatHandler for ClaudeCodeCliHandler {
         let mcp_path_str = mcp_config_path
             .as_ref()
             .map(|p| p.to_string_lossy().to_string());
-        let streamed = emit.is_some();
         let outcome = Self::run_cli(
             &config.endpoint,
             prompt,
@@ -862,8 +861,10 @@ impl FormatHandler for ClaudeCodeCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
-            // 스트리밍 시 thinking_acc 는 turn 중 이미 emit 됨 → AiManager post-emit 중복 방지 위해 None.
-            thinking_text: if streamed || outcome.thinking_acc.is_empty() {
+            // thinking_text 는 항상 채운다(codex/gemini 어댑터와 동일) — reasoningTrace/finalReasoning
+            // 영속(사후 DB 판독)에 필요. 스트리밍 중 이미 live emit 됐으므로 AiManager 는 CLI 응답의
+            // thinking 을 재emit 하지 않는다(cli_session_id 로 판별) → 이중표시 없이 persist.
+            thinking_text: if outcome.thinking_acc.is_empty() {
                 None
             } else {
                 Some(outcome.thinking_acc)
