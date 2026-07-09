@@ -1407,13 +1407,16 @@ impl ISandboxPort for ProcessSandboxAdapter {
             let (fs, fe) = (uncov[0].0, uncov[uncov.len() - 1].1);
             if (fs > spec.start || fe < spec.end) && input_data.is_object() {
                 use firebat_core::utils::timeseries as ts_util;
-                let mut m = input_data.as_object().cloned().unwrap_or_default();
-                m.insert(
-                    spec.start_param.clone(),
+                // dot-path 지원 — broker 모듈은 date 파라미터가 query/body 중첩(query.FID_INPUT_DATE_1).
+                let mut m = input_data.clone();
+                ts_util::set_param(
+                    &mut m,
+                    &spec.start_param,
                     serde_json::Value::String(ts_util::format_param(fs, &spec.param_format)),
                 );
-                m.insert(
-                    spec.end_param.clone(),
+                ts_util::set_param(
+                    &mut m,
+                    &spec.end_param,
                     serde_json::Value::String(ts_util::format_param(fe, &spec.param_format)),
                 );
                 tracing::info!(
@@ -1423,7 +1426,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     fetch_end = fe,
                     "range narrowed to uncovered gaps (incremental fetch)"
                 );
-                ts_input_owned = Some(serde_json::Value::Object(m));
+                ts_input_owned = Some(m);
             }
         }
         let input_data: &serde_json::Value = ts_input_owned.as_ref().unwrap_or(input_data);

@@ -40,6 +40,50 @@ pub fn format_param(date14: i64, fmt: &str) -> String {
     }
 }
 
+/// Read a param that may be flat ("start") or dot-pathed into a nested envelope
+/// ("query.FID_INPUT_DATE_1") — broker modules nest params under `query`/`body`. Returns the
+/// scalar as a string (String verbatim / Number stringified). None if the path is absent or
+/// non-scalar.
+pub fn param_value(input: &serde_json::Value, path: &str) -> Option<String> {
+    let mut cur = input;
+    for seg in path.split('.') {
+        cur = cur.get(seg)?;
+    }
+    match cur {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Set a possibly dot-pathed param on an input Value, creating intermediate objects as needed
+/// (mirror of `param_value` for the gap-narrow write). Flat path = top-level insert.
+pub fn set_param(input: &mut serde_json::Value, path: &str, val: serde_json::Value) {
+    let segs: Vec<&str> = path.split('.').collect();
+    let mut cur = input;
+    for (i, seg) in segs.iter().enumerate() {
+        if i == segs.len() - 1 {
+            if let Some(obj) = cur.as_object_mut() {
+                obj.insert((*seg).to_string(), val);
+            }
+            return;
+        }
+        // ensure cur[seg] is an object, then descend
+        let needs_obj = !cur.get(*seg).map(|v| v.is_object()).unwrap_or(false);
+        if needs_obj {
+            if let Some(obj) = cur.as_object_mut() {
+                obj.insert((*seg).to_string(), serde_json::Value::Object(serde_json::Map::new()));
+            } else {
+                return;
+            }
+        }
+        cur = match cur.as_object_mut().and_then(|o| o.get_mut(*seg)) {
+            Some(next) => next,
+            None => return,
+        };
+    }
+}
+
 /// Coverage clamp — completed-past boundary. now − 24h 의 자정(UTC). 마지막 일봉이
 /// 미완결(장중 갱신)일 수 있어 하루 여유를 두고 그 이후는 커버로 표시하지 않는다
 /// (저장은 하되 다음 조회 때 항상 재fetch = 신선도 우선, 재fetch 하루치 = 무해).
@@ -91,11 +135,11 @@ pub fn parse_ts_spec(
     if input.get("limit").is_some_and(|v| !v.is_null()) {
         return None;
     }
-    // 범위 명시 호출만 — start 필수, end 미지정 = 현재(+여유)까지.
-    let start_raw = input.get(&start_param).and_then(|v| v.as_str())?;
-    let start = normalize_date(start_raw)?;
-    let end = match input.get(&end_param).and_then(|v| v.as_str()) {
-        Some(e) => normalize_date(e)?,
+    // 범위 명시 호출만 — start 필수, end 미지정 = 현재(+여유)까지. dot-path 지원(중첩 봉투).
+    let start_raw = param_value(input, &start_param)?;
+    let start = normalize_date(&start_raw)?;
+    let end = match param_value(input, &end_param) {
+        Some(e) => normalize_date(&e)?,
         None => {
             let tomorrow = chrono::Utc::now() + chrono::Duration::hours(24);
             normalize_date(&tomorrow.format("%Y%m%d").to_string())?
@@ -112,25 +156,14 @@ pub fn parse_ts_spec(
     match decl.get("idParams") {
         Some(serde_json::Value::Object(map)) => {
             for (k, default) in map {
-                let val = input
-                    .get(k)
-                    .and_then(|v| match v {
-                        serde_json::Value::String(s) => Some(s.clone()),
-                        serde_json::Value::Number(n) => Some(n.to_string()),
-                        _ => None,
-                    })
+                let val = param_value(input, k)
                     .unwrap_or_else(|| default.as_str().unwrap_or("").to_string());
                 id_pairs.push((k.clone(), val.trim().to_lowercase()));
             }
         }
         Some(serde_json::Value::Array(arr)) => {
             for k in arr.iter().filter_map(|v| v.as_str()) {
-                let val = input
-                    .get(k)
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .trim()
-                    .to_lowercase();
+                let val = param_value(input, k).unwrap_or_default().trim().to_lowercase();
                 id_pairs.push((k.to_string(), val));
             }
         }
@@ -285,5 +318,45 @@ mod tests {
         assert_eq!(row_date_key(&row, "date"), Some(20260704000000));
         let nested = json!({"t":{"d":"20260704"}});
         assert_eq!(row_date_key(&nested, "t.d"), Some(20260704000000));
+    }
+
+    #[test]
+    fn param_value_flat_and_nested() {
+        let v = json!({"query": {"FID_INPUT_DATE_1": "20260101"}, "start": "2026-02-02", "n": 5});
+        assert_eq!(param_value(&v, "query.FID_INPUT_DATE_1").as_deref(), Some("20260101"));
+        assert_eq!(param_value(&v, "start").as_deref(), Some("2026-02-02"));
+        assert_eq!(param_value(&v, "n").as_deref(), Some("5")); // Number → string
+        assert_eq!(param_value(&v, "query.NOPE"), None);
+    }
+
+    #[test]
+    fn set_param_flat_and_nested() {
+        let mut v = json!({"action": "x"});
+        set_param(&mut v, "query.FID_INPUT_DATE_1", json!("20260101"));
+        assert_eq!(v["query"]["FID_INPUT_DATE_1"], "20260101");
+        set_param(&mut v, "flat", json!("y"));
+        assert_eq!(v["flat"], "y");
+        // existing nested object is preserved, not clobbered
+        set_param(&mut v, "query.FID_INPUT_DATE_2", json!("20260701"));
+        assert_eq!(v["query"]["FID_INPUT_DATE_1"], "20260101");
+        assert_eq!(v["query"]["FID_INPUT_DATE_2"], "20260701");
+    }
+
+    #[test]
+    fn spec_parses_nested_envelope() {
+        // broker 스타일 — date/id 파라미터가 query 봉투 안에 중첩.
+        let cfg = json!({
+            "daily": {
+                "idParams": {"query.FID_INPUT_ISCD": "", "query.FID_PERIOD_DIV_CODE": "D"},
+                "startParam": "query.FID_INPUT_DATE_1", "endParam": "query.FID_INPUT_DATE_2",
+                "paramFormat": "YYYYMMDD", "dateField": "date", "rows": ["_cache.records"]
+            }
+        });
+        let input = json!({"action":"daily","query":{"FID_INPUT_ISCD":"005930","FID_INPUT_DATE_1":"20260101","FID_INPUT_DATE_2":"20260701"}});
+        let spec = parse_ts_spec(&cfg, "korea-invest", "daily", &input).unwrap();
+        assert_eq!(spec.start, 20260101000000);
+        assert_eq!(spec.end, 20260701000000);
+        assert!(spec.key.contains("query.fid_input_iscd=005930"));
+        assert!(spec.key.contains("query.fid_period_div_code=d"));
     }
 }
