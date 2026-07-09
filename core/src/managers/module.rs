@@ -186,7 +186,8 @@ impl ModuleManager {
         // uniformly points back to search_module_actions → get_action_schema.
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
-                validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
+                let for_val = coerce_for_validation(&input_for_validation(input_data), input_schema);
+                validate_value(&for_val, input_schema).map_err(|e| {
                     crate::i18n::t(
                         "core.error.module.input_validation_failed_catalog",
                         None,
@@ -1071,6 +1072,47 @@ fn input_for_validation(input_data: &serde_json::Value) -> std::borrow::Cow<'_, 
         }
         _ => std::borrow::Cow::Borrowed(input_data),
     }
+}
+
+/// Validation-only scalar coercion — the model got the judgment right (correct action + param)
+/// but the JSON type wrong: a numeric string ("37.5665") where the schema declares number/integer.
+/// The Node/Python module runtime coerces such strings in arithmetic, so only the jsonschema gate
+/// rejected the call. Coerce numeric strings to numbers *for validation only* (the sandbox still
+/// receives the original input). Schema-driven, no per-module hardcoding — "LLM judges, framework
+/// tolerates the type".
+fn coerce_for_validation(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> serde_json::Value {
+    let (Some(obj), Some(props)) = (
+        value.as_object(),
+        schema.get("properties").and_then(|p| p.as_object()),
+    ) else {
+        return value.clone();
+    };
+    let mut out = obj.clone();
+    for (k, v) in obj {
+        let Some(s) = v.as_str() else { continue };
+        let Some(ty) = props.get(k).and_then(|p| p.get("type")).and_then(|t| t.as_str()) else {
+            continue;
+        };
+        match ty {
+            "integer" => {
+                if let Ok(n) = s.trim().parse::<i64>() {
+                    out.insert(k.clone(), serde_json::json!(n));
+                }
+            }
+            "number" => {
+                if let Ok(n) = s.trim().parse::<f64>() {
+                    if let Some(num) = serde_json::Number::from_f64(n) {
+                        out.insert(k.clone(), serde_json::Value::Number(num));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    serde_json::Value::Object(out)
 }
 
 /// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).

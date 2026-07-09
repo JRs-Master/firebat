@@ -64,6 +64,19 @@ pub fn trim_tool_result(result: &Value) -> Value {
             trimmed.insert("data".to_string(), data.clone());
         }
     }
+    // 화이트리스트 키(success/error/content/items/data)가 하나도 없는 큰 결과 — 예: get_action_schema
+    // 의 {module,action,params,envelope}. 빈 {} 로 버리면 사후 진단·학습 로그를 오도한다(2026-07-09:
+    // {} 를 보고 get_action_schema 가 고장난 줄 오판). 키 목록 + 잘린 프리뷰로 요약 보존.
+    if trimmed.is_empty() {
+        if let Some(obj) = result.as_object() {
+            let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+            trimmed.insert("_keys".to_string(), json!(keys));
+        }
+        trimmed.insert(
+            "_preview".to_string(),
+            json!(format!("{}...", slice_chars(&str_repr, TRIM_DATA_LIMIT))),
+        );
+    }
     Value::Object(trimmed)
 }
 
