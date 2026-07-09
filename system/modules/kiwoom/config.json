@@ -51,7 +51,8 @@
       "quotes": {
         "subscribe": { "frame": { "trnm": "REG", "grp_no": "1", "refresh": "1", "data": [ { "item": ["{item}"], "type": ["{type:0B}"] } ] }, "match": "REG", "successWhen": { "field": "return_code", "equals": 0 } },
         "unsubscribe": { "frame": { "trnm": "REMOVE", "grp_no": "1", "refresh": "1", "data": [ { "item": ["{item}"], "type": ["{type:0B}"] } ] } },
-        "realtimeMatch": "REAL"
+        "realtimeMatch": "REAL",
+        "typeCodes": { "0B": "주식체결", "0D": "주식호가잔량", "0C": "주식우선호가", "0H": "주식예상체결", "0A": "주식기세", "0E": "주식시간외호가", "0F": "주식당일거래원", "0G": "ETF NAV", "0J": "업종지수", "0U": "업종등락", "0g": "주식종목정보", "0w": "종목프로그램매매", "1h": "VI발동/해제", "00": "주문체결", "04": "잔고" }
       },
       "condition": {
         "preFrames": [
