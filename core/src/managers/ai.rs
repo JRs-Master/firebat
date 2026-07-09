@@ -179,6 +179,9 @@ impl AiResponse {
             "libraryHits": self.library_hits,
             "buildSession": self.build_session,
             "reasoningTrace": self.reasoning_trace,
+            // 사후 판독: 이 응답을 낸 모델 (똥멍청이 Solar vs 똑똑이 Sonnet 추론 비교 —
+            // 옛엔 llm_costs 테이블 조인해야 알았음). reasoningTrace 라운드별 model 과 짝.
+            "model": self.model_id,
         })
     }
 
@@ -2641,6 +2644,7 @@ impl AiManager {
                 let any_failed = turn_action_results.iter().any(|r| !r.success);
                 reasoning_trace.push(serde_json::json!({
                     "round": reasoning_trace.len() + 1,
+                    "model": response.model_id.clone(),
                     "reasoning": round_reasoning,
                     "tools": tool_names,
                     "failed": any_failed,
