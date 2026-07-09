@@ -159,6 +159,13 @@ pub struct AiResponse {
     /// 형식: `[{round, reasoning, tools:[names], failed:bool}]`.
     #[serde(rename = "reasoningTrace", default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_trace: Vec<serde_json::Value>,
+    /// Reasoning behind the FINAL answer of a turn that ended with NO tool call. reasoning_trace
+    /// only captures tool-calling rounds, so a turn that answers directly (e.g. fabricating data
+    /// without searching — the 배재고 case) leaves it empty. Captured from the concluding round's
+    /// thinking_text so the "why didn't it use a tool" failure is readable post-hoc (the live
+    /// thinkingText is overwritten by the "답변 완료" label on completion, so the DB loses it).
+    #[serde(rename = "finalReasoning", default, skip_serializing_if = "Option::is_none")]
+    pub final_reasoning: Option<String>,
 }
 
 impl AiResponse {
@@ -179,6 +186,7 @@ impl AiResponse {
             "libraryHits": self.library_hits,
             "buildSession": self.build_session,
             "reasoningTrace": self.reasoning_trace,
+            "finalReasoning": self.final_reasoning,
             // 사후 판독: 이 응답을 낸 모델 (똥멍청이 Solar vs 똑똑이 Sonnet 추론 비교 —
             // 옛엔 llm_costs 테이블 조인해야 알았음). reasoningTrace 라운드별 model 과 짝.
             "model": self.model_id,
@@ -1753,6 +1761,9 @@ impl AiManager {
         // 리버스엔지니어링 관측 — 라운드별 reasoning + 호출 도구 + 실패 여부 누적.
         // 최종 AiResponse.reasoning_trace 로 canonical 영속 (사후 DB 판독).
         let mut reasoning_trace: Vec<serde_json::Value> = Vec::new();
+        // 도구 없이 끝난 턴의 최종 답변 reasoning (reasoning_trace 는 도구-호출 라운드만 담아,
+        // 검색 없이 바로 답한 턴 = 빈 배열이라 정작 "왜 도구를 안 썼나"를 못 봄).
+        let mut final_reasoning: Option<String> = None;
 
         // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
@@ -1834,6 +1845,7 @@ impl AiManager {
                             library_hits: Vec::new(),
                             build_session: None,
                             reasoning_trace: Vec::new(),
+                            final_reasoning: None,
                         }));
                     }
                 }
@@ -1973,6 +1985,15 @@ impl AiManager {
                 .any(|tc| tc.name == "propose_plan");
 
             if response.tool_calls.is_empty() {
+                // 리버스엔지니어링 관측 — 이 최종 라운드의 CoT 를 남긴다(도구 0 턴은
+                // reasoning_trace 가 비므로 여기서만 잡힘). 실시간 thinkingText 가 "답변 완료"
+                // 라벨로 덮이기 전의 진짜 추론.
+                if let Some(t) = response.thinking_text.as_deref() {
+                    let t = t.trim();
+                    if !t.is_empty() {
+                        final_reasoning = Some(t.to_string());
+                    }
+                }
                 if is_propose_plan_turn {
                     self.log.info("[AiManager] propose_plan turn → trailing text drop");
                     last_text = String::new();
@@ -2943,6 +2964,7 @@ impl AiManager {
                     .and_then(|sess| serde_json::to_value(sess).ok())
             },
             reasoning_trace,
+            final_reasoning,
         };
 
         Ok(self.finalize(ai_opts, response))
