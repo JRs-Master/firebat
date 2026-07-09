@@ -12,6 +12,17 @@
     "envelope": "{ \"action\": \"<id>\", <params flat at top level — no params wrapper> }"
   },
   "requiresApproval": ["create-order", "modify-order", "cancel-order", "create-conditional-order", "modify-conditional-order", "cancel-conditional-order"],
+  "timeseries": {
+    "candles": {
+      "fetchMode": "cursor",
+      "anchorParam": "before",
+      "countParam": "count",
+      "nextCursorField": "nextBefore",
+      "idParams": { "symbol": "", "interval": "1d" },
+      "dateField": "date",
+      "rows": ["result.candles", "records"]
+    }
+  },
   "secrets": [
     {
       "name": "TOSS_API_KEY",

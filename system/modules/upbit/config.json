@@ -8,6 +8,17 @@
   "capability": "crypto-trading",
   "providerType": "api",
   "secrets": ["UPBIT_ACCESS_KEY", "UPBIT_SECRET_KEY"],
+  "timeseries": {
+    "candle-days": {
+      "fetchMode": "cursor",
+      "anchorParam": "to",
+      "countParam": "count",
+      "nextCursorField": "",
+      "idParams": { "market": "" },
+      "dateField": "candle_date_time_utc",
+      "rows": ["items", "records"]
+    }
+  },
   "input": {
     "type": "object",
     "required": ["action"],
