@@ -245,19 +245,25 @@ node scripts/gen.mjs             # _apis.json → config + index
 - 키 = `(module, action, idParams 정규화)`. 미선언/limit 호출/범위 비명시 = bypass(기존 auto-cache 만).
 - **전제 = 표준 OHLCV 필드**: 캔들 rows 는 `{date, open, high, low, close, volume}` 으로 정규화해 반환한다(kiwoom/korea-invest/toss 는 모듈 내부에서 rename — stock_chart `dataCacheKey` 주입·cache_grep 과 한 어휘).
 
-#### `actionCatalog` — 액션 레벨 시맨틱 발견 (search_module_actions, 2026-07-07)
+#### `actionCatalog` / `tags` — 4단 도구 계단: 발견 → 상세 → 호출 → 검증 (모든 모듈, 2026-07-09)
 ```json
 {
+  "tags": ["헌법", "법률", "명령", "조례", "규칙", "판례"],
   "actionCatalog": {
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"params\": { <params> } }"
   }
 }
 ```
-- 액션이 수백 개인 모듈(한투 275·키움 208)의 **progressive disclosure** 계층: AI 가 `search_module_actions(query)` 로 자연어 검색 → `get_action_schema(module, action)` 으로 정확한 파라미터·호출 봉투 획득 → 추측 0 호출. 검증 에러 힌트도 카탈로그 보유 모듈이면 이 흐름으로 안내된다(i18n `input_validation_failed_catalog`).
-- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions` 배열. `requiresApproval` 은 여기 재선언하지 않는다(로더가 config 선언에서 join — 단일 소스). `envelope` 필드로 호출 봉투 형태 명시(flat vs `params` 중첩 — 모듈 방언).
-- **description = 트리거만** ("인덱스 = 트리거" 원칙): 검색 결과에 미니 레시피·파라미터 나열을 넣으면 모델이 `get_action_schema` 를 건너뛰고 추측한다. 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
-- API 명세가 `_apis.json` 류로 있으면 `scripts/gen-actions.mjs` 로 생성(키움·한투 예시) — **desc 보강은 `scripts/actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지). 손작성 예시 = toss-invest(공식 OpenAPI 대조 28 액션). 액션이 적은 모듈은 선언 불필요(검증 에러 + enum 으로 충분).
+**모든 sysmod·usermod 는 동일한 4단 절차로 호출된다** — 큰 모듈이든 작은 모듈이든: ① 도구 설명·`tags` 로 모듈 선택 → ② `search_module_actions(query)` 로 액션 발견 → ③ `get_action_schema(module, action)` 으로 정확한 파라미터·봉투 획득 → ④ 호출(`module.rs` 가 input 스키마로 검증, 틀리면 힌트 재전송 = i18n `input_validation_failed_catalog`). **도구 설명엔 파라미터가 없다** — `dynamic_tools.rs`/`mcp_server.rs` 가 sysmod 도구 `parameters` 를 얇게(`{additionalProperties:true}` + "발견하라" 안내) 등록해 직접호출 우회를 구조로 차단한다(판단은 모델, 절차는 프레임워크 — "빨간불이면 차단봉").
+- **액션 카탈로그 소스 = 3단 폴백** (하드코딩 0, `action_catalog.rs`):
+  1. `actionCatalog`(위 예시, file/inline) → rich per-action(한투 275·키움 208·toss 28).
+  2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
+  3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
+- `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). `envelope` = 호출 봉투 형태(flat vs `params` 중첩 — 모듈 방언). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
+- **`tags`** (선택, string 배열) = 모듈 선택 신호. 도구 설명에 append 되어 모델이 L1(모듈 선택)에서 고른다.
+- **description = 트리거만** ("인덱스 = 트리거"): 검색 결과에 파라미터 나열 금지(모델이 get 건너뛰고 추측). 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
+- **usermod authoring**: input 스키마에 `action` enum + 각 액션 설명을 넣으면 → 등록 즉시 search_module_actions 로 발견(파생). per-action 정밀 params 를 원하면 `actionCatalog` + `actions.json` 선언. 둘 다 없어도 단일 엔트리로 발견은 된다.
 
 > 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
 
@@ -272,7 +278,8 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `grounding` | 불투명 식별자 날조 차단 (L1) | 디스패치 (FC + MCP) |
 | `ws` | WebSocket 스냅샷·상시 감시 라우팅 | ModuleManager.run → IWsApiPort/IWsStreamPort |
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
-| `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`) | AI 도구 (E5 카탈로그) |
+| `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
+| `tags` | 모듈 선택 신호 (얇은 도구 설명에 append) | 도구 등록 (dynamic_tools/mcp_server) |
 
 ---
 

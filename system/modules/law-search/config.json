@@ -7,6 +7,7 @@
   "runtime": "node",
   "capability": "law-search",
   "providerType": "api",
+  "tags": ["법령", "법률", "판례", "헌법", "행정규칙", "자치법규", "조례", "헌재결정례", "법령해석례", "조약", "법률 자문"],
   "secrets": ["LAW_API_OC"],
   "input": {
     "type": "object",
