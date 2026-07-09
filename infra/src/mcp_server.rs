@@ -747,13 +747,12 @@ pub async fn register_sysmod_tools(
             Some(c) => c,
             None => continue,
         };
-        // domains 필드 있으면 → 도메인별 N 도구 등록 (옵션 C).
-        if let Some(domains) = config.get("domains").and_then(|v| v.as_array()) {
-            register_sysmod_domains(state, &entry.name, &config, domains, module_manager.clone())
-                .await;
-            continue;
-        }
-        // 기본 — 단일 도구 등록.
+        // Under the uniform 4-step procedure (Part 1-B) every module is ONE thin tool —
+        // action-level scoping is done by search_module_actions (which returns {module, action}),
+        // not by domain-split tools. The old `domains` split (option C) only existed to narrow the
+        // action enum inside the now-thin schema, so it is dropped: this also aligns MCP with the
+        // FC path (dynamic_tools.rs = one sysmod_<name> per module) so `search_module_actions` →
+        // call resolves to a single, predictable tool name on both paths.
         let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
         let description = append_tags(build_sysmod_description(&entry.name, &config), &config);
         let input_schema = thin_sysmod_input_schema();
@@ -771,72 +770,6 @@ pub async fn register_sysmod_tools(
         if !g.is_empty() {
             state.grounding.write().await.insert(tool_name.clone(), g);
         }
-    }
-}
-
-/// config.domains 가 있을 때 — 각 domain 마다 sysmod_<name>_<domain> 도구 N개 등록.
-/// 모든 도구가 같은 SysmodToolHandler (단일 모듈) 로 라우팅 — action enum 만 도메인별 좁혀짐.
-async fn register_sysmod_domains(
-    state: &Arc<McpServerState>,
-    module_name: &str,
-    config: &Value,
-    domains: &[Value],
-    module_manager: Arc<ModuleManager>,
-) {
-    for domain in domains {
-        let domain_name = match domain.get("name").and_then(|v| v.as_str()) {
-            Some(n) if !n.is_empty() => n,
-            _ => continue,
-        };
-        let domain_desc = domain
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let actions: Vec<Value> = domain
-            .get("actions")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-        if actions.is_empty() {
-            continue;
-        }
-
-        let names = firebat_core::utils::secret_schema::secret_names(config);
-        let secrets_note = if names.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "\n필요 시크릿: {} (미설정 시 request_secret 호출)",
-                names.join(", ")
-            )
-        };
-        let description = append_tags(
-            format!(
-                "[system module] {desc} — {n} actions. Discover the action via search_module_actions, then get_action_schema(module, action) for params.{secrets_note}",
-                desc = if domain_desc.is_empty() { module_name } else { domain_desc },
-                n = actions.len(),
-            ),
-            config,
-        );
-        let tool_name = format!(
-            "sysmod_{}_{}",
-            module_name.replace('-', "_"),
-            domain_name.replace('-', "_")
-        );
-        let g = parse_grounding(config);
-        if !g.is_empty() {
-            state.grounding.write().await.insert(tool_name.clone(), g);
-        }
-        let tool = McpTool {
-            name: tool_name,
-            description,
-            input_schema: thin_sysmod_input_schema(),
-            handler: Arc::new(SysmodToolHandler {
-                module_name: module_name.to_string(),
-                module_manager: module_manager.clone(),
-            }),
-        };
-        state.register(tool).await;
     }
 }
 
