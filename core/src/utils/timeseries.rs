@@ -16,7 +16,7 @@
 //! `SandboxExecuteOpts.timeseries`; the sandbox choke-point does gap-narrowing/merge/serve.
 //! Not declared / no explicit range / `limit` present = None (bypass — 기존 30분 ephemeral).
 
-use crate::ports::TsSpec;
+use crate::ports::{TsMode, TsSpec};
 
 /// Flexible date normalization — keep digits, require >= 8 (yyyymmdd), zero-pad to 14
 /// (yyyymmddHHMMSS). Handles "2026-07-04", "20260704", ISO datetimes ("2026-07-04T09:30:00+09:00"
@@ -98,6 +98,49 @@ pub fn coverage_clamp_now() -> i64 {
 /// - input 에 start 없음 (period 모드 = 범위 비명시)
 /// - input 에 limit 있음 (부분 rows 가 요청 range 커버로 오기록되는 것 차단)
 /// - start/end 파싱 실패 또는 start >= end
+/// Canonical series key from idParams (map `{param: default}` or array `[param]`) — values
+/// normalized (lowercase/trim) + default substitution so "interval 생략" ≡ "1d 명시" (soft-dup
+/// 차단). None if idParams absent (id 없는 시계열 = 키 충돌 위험 → 선언 강제).
+fn ts_id_key(
+    module: &str,
+    action: &str,
+    decl: &serde_json::Value,
+    input: &serde_json::Value,
+) -> Option<String> {
+    let mut id_pairs: Vec<(String, String)> = Vec::new();
+    match decl.get("idParams") {
+        Some(serde_json::Value::Object(map)) => {
+            for (k, default) in map {
+                let val = param_value(input, k)
+                    .unwrap_or_else(|| default.as_str().unwrap_or("").to_string());
+                id_pairs.push((k.clone(), val.trim().to_lowercase()));
+            }
+        }
+        Some(serde_json::Value::Array(arr)) => {
+            for k in arr.iter().filter_map(|v| v.as_str()) {
+                let val = param_value(input, k).unwrap_or_default().trim().to_lowercase();
+                id_pairs.push((k.to_string(), val));
+            }
+        }
+        _ => return None,
+    }
+    id_pairs.sort();
+    Some(format!(
+        "{module}:{action}:{}",
+        id_pairs
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("|")
+    ))
+}
+
+/// 지금(+여유) — end 미지정 / cursor 최신 anchor.
+fn now_plus() -> Option<i64> {
+    let tomorrow = chrono::Utc::now() + chrono::Duration::hours(24);
+    normalize_date(&tomorrow.format("%Y%m%d").to_string())
+}
+
 pub fn parse_ts_spec(
     ts_config: &serde_json::Value,
     module: &str,
@@ -115,6 +158,60 @@ pub fn parse_ts_spec(
     if rows_paths.is_empty() {
         return None;
     }
+    let param_format = decl
+        .get("paramFormat")
+        .and_then(|v| v.as_str())
+        .unwrap_or("YYYY-MM-DD")
+        .to_string();
+    let key = ts_id_key(module, action, decl, input)?;
+    let cov_clamp = coverage_clamp_now();
+
+    // ── Cursor 모드 (broker 캔들: anchor 날짜 + count) — start/end 없음 ──
+    if decl.get("fetchMode").and_then(|v| v.as_str()) == Some("cursor") {
+        let anchor_param = decl.get("anchorParam")?.as_str()?.to_string();
+        let count_param = decl.get("countParam").and_then(|v| v.as_str()).unwrap_or("");
+        let next_cursor_field = decl
+            .get("nextCursorField")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        // anchor = input[anchorParam](과거 페이지 요청) 또는 now(최신 요청).
+        let anchor = match param_value(input, &anchor_param) {
+            Some(a) => normalize_date(&a)?,
+            None => now_plus()?,
+        };
+        let count = if count_param.is_empty() {
+            0
+        } else {
+            param_value(input, count_param)
+                .and_then(|c| {
+                    c.chars()
+                        .filter(|ch| ch.is_ascii_digit())
+                        .collect::<String>()
+                        .parse::<i64>()
+                        .ok()
+                })
+                .unwrap_or(0)
+        };
+        return Some(TsSpec {
+            key,
+            date_field,
+            rows_paths,
+            start_param: String::new(),
+            end_param: String::new(),
+            param_format,
+            start: 0,
+            end: 0,
+            cov_clamp,
+            mode: TsMode::Cursor,
+            anchor,
+            count,
+            anchor_param,
+            next_cursor_field,
+        });
+    }
+
+    // ── Range 모드 (start/end 날짜 범위) ──
     let start_param = decl
         .get("startParam")
         .and_then(|v| v.as_str())
@@ -125,12 +222,6 @@ pub fn parse_ts_spec(
         .and_then(|v| v.as_str())
         .unwrap_or("end")
         .to_string();
-    let param_format = decl
-        .get("paramFormat")
-        .and_then(|v| v.as_str())
-        .unwrap_or("YYYY-MM-DD")
-        .to_string();
-
     // limit = partial rows — coverage 오기록 위험이라 bypass.
     if input.get("limit").is_some_and(|v| !v.is_null()) {
         return None;
@@ -140,44 +231,11 @@ pub fn parse_ts_spec(
     let start = normalize_date(&start_raw)?;
     let end = match param_value(input, &end_param) {
         Some(e) => normalize_date(&e)?,
-        None => {
-            let tomorrow = chrono::Utc::now() + chrono::Duration::hours(24);
-            normalize_date(&tomorrow.format("%Y%m%d").to_string())?
-        }
+        None => now_plus()?,
     };
     if start >= end {
         return None;
     }
-
-    // Canonical key — module:action + id params (map 형 {param: default} 또는 배열 [param]).
-    // 값 정규화(lowercase/trim) + 미지정 = default 치환 → "interval 생략" 과 "1d 명시" 가
-    // 같은 시계열로 수렴 (soft-dup 차단).
-    let mut id_pairs: Vec<(String, String)> = Vec::new();
-    match decl.get("idParams") {
-        Some(serde_json::Value::Object(map)) => {
-            for (k, default) in map {
-                let val = param_value(input, k)
-                    .unwrap_or_else(|| default.as_str().unwrap_or("").to_string());
-                id_pairs.push((k.clone(), val.trim().to_lowercase()));
-            }
-        }
-        Some(serde_json::Value::Array(arr)) => {
-            for k in arr.iter().filter_map(|v| v.as_str()) {
-                let val = param_value(input, k).unwrap_or_default().trim().to_lowercase();
-                id_pairs.push((k.to_string(), val));
-            }
-        }
-        _ => return None, // id 없는 시계열 = 키 충돌 위험 → 선언 강제
-    }
-    id_pairs.sort();
-    let key = format!(
-        "{module}:{action}:{}",
-        id_pairs
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("|")
-    );
 
     Some(TsSpec {
         key,
@@ -188,7 +246,12 @@ pub fn parse_ts_spec(
         param_format,
         start,
         end,
-        cov_clamp: coverage_clamp_now(),
+        cov_clamp,
+        mode: TsMode::Range,
+        anchor: 0,
+        count: 0,
+        anchor_param: String::new(),
+        next_cursor_field: String::new(),
     })
 }
 
@@ -358,5 +421,30 @@ mod tests {
         assert_eq!(spec.end, 20260701000000);
         assert!(spec.key.contains("query.fid_input_iscd=005930"));
         assert!(spec.key.contains("query.fid_period_div_code=d"));
+    }
+
+    #[test]
+    fn spec_parses_cursor_mode() {
+        let cfg = json!({
+            "candles": {
+                "fetchMode": "cursor",
+                "anchorParam": "before", "countParam": "count", "nextCursorField": "nextBefore",
+                "idParams": {"symbol": "", "interval": "1d"},
+                "dateField": "date", "rows": ["result.candles", "records"]
+            }
+        });
+        // 과거 페이지 (anchor 지정)
+        let input = json!({"action":"candles","symbol":"005930","interval":"1d","count":200,"before":"2026-01-01"});
+        let spec = parse_ts_spec(&cfg, "toss-invest", "candles", &input).unwrap();
+        assert_eq!(spec.mode, TsMode::Cursor);
+        assert_eq!(spec.anchor, 20260101000000);
+        assert_eq!(spec.count, 200);
+        assert_eq!(spec.anchor_param, "before");
+        assert_eq!(spec.next_cursor_field, "nextBefore");
+        // 최신 요청 (anchor 부재) → anchor = now(+여유), 여전히 cursor 모드.
+        let latest = json!({"action":"candles","symbol":"005930","interval":"1d","count":200});
+        let spec2 = parse_ts_spec(&cfg, "toss-invest", "candles", &latest).unwrap();
+        assert_eq!(spec2.mode, TsMode::Cursor);
+        assert!(spec2.anchor > 20260101000000);
     }
 }

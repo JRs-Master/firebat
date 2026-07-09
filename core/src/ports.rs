@@ -751,6 +751,16 @@ pub struct SandboxExecuteOpts {
 
 /// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /
 /// WsApiCall pattern). Dates are normalized 14-digit i64 (yyyymmddHHMMSS, zero-padded).
+/// Timeseries fetch model — range (start/end date params, e.g. yfinance / 한투 기간별) vs cursor
+/// (anchor date + count, broker candle APIs: 토스 before / upbit to / 키움 base_dt).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TsMode {
+    #[default]
+    Range,
+    Cursor,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TsSpec {
@@ -773,6 +783,21 @@ pub struct TsSpec {
     /// are stored but never marked covered → always re-fetched (an open daily candle keeps
     /// changing; freshness beats cache).
     pub cov_clamp: i64,
+    /// Fetch mode — Range (start/end) or Cursor (anchor+count). Range 이면 아래 cursor 필드 무의미.
+    #[serde(default)]
+    pub mode: TsMode,
+    /// Cursor 모드 — 정규화 anchor(조회 종료일/커서). 최신 요청(anchor 파라미터 부재) = now.
+    #[serde(default)]
+    pub anchor: i64,
+    /// Cursor 모드 — 요청 봉 개수 (0 = 미지정 → 어댑터 기본 window).
+    #[serde(default)]
+    pub count: i64,
+    /// Cursor 모드 — anchor 커서를 담은 input 파라미터 이름 (예 "before"/"to"/"base_dt"). Range = "".
+    #[serde(default)]
+    pub anchor_param: String,
+    /// Cursor 모드 — serve 재구성 시 다음(과거) 페이지 커서를 넣을 응답 필드. 없으면 "".
+    #[serde(default)]
+    pub next_cursor_field: String,
 }
 
 /// 시계열 영구 store (range-coverage) — 덮인 구간 집합 + rows upsert.
@@ -792,6 +817,8 @@ pub trait ITimeseriesStorePort: Send + Sync {
         cov_start: i64,
         cov_end: i64,
     ) -> (usize, bool);
+    /// Cursor 모드 serve — date_key < anchor 인 최신 `count` 행 (오름차순 반환). 부족하면 있는 만큼.
+    fn read_before(&self, key: &str, anchor: i64, count: usize) -> Vec<serde_json::Value>;
 }
 
 /// Sysmod 패키지 status — 설정 화면 [설치] / [업그레이드] 버튼 UI + 진행 상태 표시.

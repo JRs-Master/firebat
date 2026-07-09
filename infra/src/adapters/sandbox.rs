@@ -1361,6 +1361,8 @@ impl ISandboxPort for ProcessSandboxAdapter {
         //     미완결 최신 구간(cov_clamp 이후)은 항상 fetch = 신선도 우선.
         let mut ts_input_owned: Option<serde_json::Value> = None;
         if let (Some(spec), Some(store)) = (&opts.timeseries, &self.timeseries) {
+            // Range 모드만 이 블록에서 처리 — cursor 모드(anchor+count)는 아래 별도 분기로 간다.
+            if matches!(spec.mode, firebat_core::ports::TsMode::Range) {
             let mut uncov = store.uncovered(&spec.key, spec.start, spec.end.min(spec.cov_clamp));
             if spec.end > spec.cov_clamp {
                 let live_start = spec.cov_clamp.max(spec.start);
@@ -1427,6 +1429,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     "range narrowed to uncovered gaps (incremental fetch)"
                 );
                 ts_input_owned = Some(m);
+            }
             }
         }
         let input_data: &serde_json::Value = ts_input_owned.as_ref().unwrap_or(input_data);

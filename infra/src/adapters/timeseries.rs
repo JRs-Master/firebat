@@ -129,6 +129,28 @@ impl ITimeseriesStorePort for TimeseriesStoreAdapter {
             .unwrap_or_default()
     }
 
+    fn read_before(&self, key: &str, anchor: i64, count: usize) -> Vec<serde_json::Value> {
+        let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
+        // 최신 count 행 (date_key < anchor) 내림차순 조회 후 오름차순으로 뒤집어 반환.
+        let mut stmt = match conn.prepare(
+            "SELECT row FROM ts_rows WHERE series_key = ?1 AND date_key < ?2
+             ORDER BY date_key DESC LIMIT ?3",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let mut rows: Vec<serde_json::Value> = stmt
+            .query_map(params![key, anchor, count as i64], |r| r.get::<_, String>(0))
+            .map(|rows| {
+                rows.filter_map(|r| r.ok())
+                    .filter_map(|raw| serde_json::from_str(&raw).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        rows.reverse();
+        rows
+    }
+
     fn merge_rows(
         &self,
         key: &str,
