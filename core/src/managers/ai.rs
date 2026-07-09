@@ -152,6 +152,13 @@ pub struct AiResponse {
     /// build_session::BuildSession 직렬화 ({id, convId?, tier?, step, status, ...}).
     #[serde(rename = "buildSession", default, skip_serializing_if = "Option::is_none")]
     pub build_session: Option<serde_json::Value>,
+    /// 리버스엔지니어링 관측 — tool-loop 라운드별 reasoning + 호출 도구 + 실패 여부.
+    /// 프론트는 안 읽는다(순수 사후 판독용). 실시간 thinkingText 는 답변 완료 시 "답변 완료"
+    /// 라벨로 덮여 사라지므로, "이 도구를 이 인자로 부르기 직전 무슨 생각을 했나"를 DB
+    /// data_json 에 라운드 단위로 남긴다 (2026-07-08: 똥멍청이 LLM 실패 원인 사후 분석 인프라).
+    /// 형식: `[{round, reasoning, tools:[names], failed:bool}]`.
+    #[serde(rename = "reasoningTrace", default, skip_serializing_if = "Vec::is_empty")]
+    pub reasoning_trace: Vec<serde_json::Value>,
 }
 
 impl AiResponse {
@@ -171,6 +178,7 @@ impl AiResponse {
             "pendingActions": self.pending_actions,
             "libraryHits": self.library_hits,
             "buildSession": self.build_session,
+            "reasoningTrace": self.reasoning_trace,
         })
     }
 
@@ -1728,6 +1736,20 @@ impl AiManager {
         // over the cap the call is rejected with a firm "proceed with what you have".
         let mut turn_tool_counts: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
+        // Per-turn per-tool-name FAILURE counter — orthogonal to the attempt cap above.
+        // A model can hammer ONE sysmod (not a declared-cap discovery tool) with a missing
+        // required field, failing identically-but-not-byte-identically every round; the attempt
+        // cap doesn't apply (sysmods declare none) and the dedup set misses it (args differ a bit).
+        // Each such failure grows tool_exchanges until the context blows past the model's window
+        // (2026-07-08 실측: korea-invest FID_ORG_ADJ_PRC 누락 8회 재시도 → 136K > 128K, 400).
+        // Successful calls are NOT counted, so legitimate multi-calls (e.g. weather for 17 regions)
+        // stay unbounded — only repeated FAILURE of the same tool is capped.
+        let mut turn_fail_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        const PER_TURN_FAIL_CAP: usize = 4;
+        // 리버스엔지니어링 관측 — 라운드별 reasoning + 호출 도구 + 실패 여부 누적.
+        // 최종 AiResponse.reasoning_trace 로 canonical 영속 (사후 DB 판독).
+        let mut reasoning_trace: Vec<serde_json::Value> = Vec::new();
 
         // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
@@ -1808,6 +1830,7 @@ impl AiManager {
                             tool_results: Vec::new(),
                             library_hits: Vec::new(),
                             build_session: None,
+                            reasoning_trace: Vec::new(),
                         }));
                     }
                 }
@@ -2232,22 +2255,40 @@ impl AiManager {
                         .map(|cap| *count > cap)
                         .unwrap_or(false)
                 };
-                let action = if per_turn_over_cap {
+                // Failure cap — same tool already failed PER_TURN_FAIL_CAP times this turn.
+                // Applies to every tool (no declaration needed) since sysmods have no attempt cap;
+                // blocks the missing-field retry loop before it blows the context window.
+                let fail_over_cap = turn_fail_counts
+                    .get(&effective_call.name)
+                    .copied()
+                    .unwrap_or(0)
+                    >= PER_TURN_FAIL_CAP;
+                let action = if per_turn_over_cap || fail_over_cap {
                     self.log.warn(&format!(
-                        "[AiManager] per-turn tool call cap exceeded: {} ({} calls)",
+                        "[AiManager] per-turn tool {} cap exceeded: {} ({} calls / {} fails)",
+                        if fail_over_cap { "failure" } else { "call" },
                         effective_call.name,
-                        turn_tool_counts.get(&effective_call.name).copied().unwrap_or(0)
+                        turn_tool_counts.get(&effective_call.name).copied().unwrap_or(0),
+                        turn_fail_counts.get(&effective_call.name).copied().unwrap_or(0),
                     ));
                     turn_call_set.insert(cache_key.clone());
+                    let err_msg = if fail_over_cap {
+                        format!(
+                            "Tool '{}' has failed repeatedly this turn (likely a wrong/missing parameter or an action that doesn't fit this request). Stop retrying it — either use get_action_schema to fix the call, take a different approach, or conclude the data is unavailable and write the final answer. Do not fabricate the result.",
+                            effective_call.name
+                        )
+                    } else {
+                        format!(
+                            "Tool '{}' exceeded its per-turn call limit. Stop calling this tool — proceed with the results gathered so far; if what you were looking for was not found, conclude it does not exist and write the final answer for the user.",
+                            effective_call.name
+                        )
+                    };
                     ToolResult {
                         call_id: call.id.clone(),
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": format!(
-                                "Tool '{}' exceeded its per-turn call limit. Stop calling this tool — proceed with the results gathered so far; if what you were looking for was not found, conclude it does not exist and write the final answer for the user.",
-                                effective_call.name
-                            ),
+                            "error": err_msg,
                             "perTurnLimitExceeded": true,
                         }),
                         success: false,
@@ -2410,6 +2451,10 @@ impl AiManager {
                         let result = self.dispatch_tool(effective_call).await;
                         if result.success {
                             set_cached_tool_result(&cache_key, &result.result);
+                        } else {
+                            // Failure cap counter — only real dispatched failures (not approval
+                            // pending / grounding reject / cache paths, which don't reach here).
+                            *turn_fail_counts.entry(effective_call.name.clone()).or_insert(0) += 1;
                         }
                         // streaming step emit — 도구 호출 완료 / 에러.
                         emit_event(AiStreamEvent::Step {
@@ -2581,6 +2626,26 @@ impl AiManager {
             let turn_calls: Vec<ToolCall> = turn_results.iter().map(|(c, _)| c.clone()).collect();
             let turn_action_results: Vec<ToolResult> =
                 turn_results.iter().map(|(_, r)| r.clone()).collect();
+            // 리버스엔지니어링 관측 — 이 라운드의 reasoning + 호출 도구 + 실패 여부.
+            // response.thinking_text = 이 라운드 직전 CoT(도구 인자를 왜 이렇게 골랐나).
+            {
+                let round_reasoning = response
+                    .thinking_text
+                    .as_deref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("")
+                    .to_string();
+                let tool_names: Vec<String> =
+                    turn_calls.iter().map(|c| c.name.clone()).collect();
+                let any_failed = turn_action_results.iter().any(|r| !r.success);
+                reasoning_trace.push(serde_json::json!({
+                    "round": reasoning_trace.len() + 1,
+                    "reasoning": round_reasoning,
+                    "tools": tool_names,
+                    "failed": any_failed,
+                }));
+            }
             tool_exchanges.push(crate::ports::ToolExchangeEntry {
                 tool_calls: turn_calls,
                 tool_results: turn_action_results,
@@ -2873,6 +2938,7 @@ impl AiManager {
                 })
                     .and_then(|sess| serde_json::to_value(sess).ok())
             },
+            reasoning_trace,
         };
 
         Ok(self.finalize(ai_opts, response))
