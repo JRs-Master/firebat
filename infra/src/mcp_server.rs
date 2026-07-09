@@ -704,12 +704,6 @@ fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleO
         .unwrap_or_else(|| "module failed".to_string())
 }
 
-/// system/modules 의 config.json 스캔 → sysmod_<name> 도구 자동 등록.
-/// 옛 TS mcp/internal-server.ts:589-668 의 동적 노출 1:1.
-///
-/// 2026-05-14 옵션 C 적용 — config.json 의 `domains` 필드 있으면 도메인별 별도 도구 N개 등록
-/// (sysmod_<name>_<domain>). 각 도구의 action enum 은 그 도메인의 actions 로 좁혀짐 (토큰 절감).
-/// 단일 sysmod index.mjs 가 모든 도메인 처리 — domain 분리는 LLM 노출 layer 만.
 /// Thin sysmod tool schema (Part 1-B) — the full input schema is NOT exposed. The model must
 /// discover params via search_module_actions → get_action_schema (the uniform 4-step procedure);
 /// `additionalProperties:true` carries the discovered flat params and module.rs validates them
@@ -734,6 +728,10 @@ fn append_tags(desc: String, config: &Value) -> String {
     desc
 }
 
+/// Scan system/modules config.json → register ONE thin `sysmod_<name>` tool per module.
+/// Params are hidden (Part 1-B) — the model discovers them via search_module_actions →
+/// get_action_schema, then calls with flat args (module.rs validates). No domain-split tools:
+/// action-level scoping is done by search, so both FC and MCP expose one tool per module.
 pub async fn register_sysmod_tools(
     state: &Arc<McpServerState>,
     module_manager: Arc<ModuleManager>,

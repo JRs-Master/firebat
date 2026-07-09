@@ -525,6 +525,36 @@ impl AiManager {
         mut self,
         catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
     ) -> Self {
+        /// Widget scoping for the discovery tools (search_module_actions / get_action_schema):
+        /// which modules a hub-WIDGET visitor may see in results. Reuses the SINGLE shared policy
+        /// (hub_context::permits_tool — the same one the FC tool filter and the MCP dispatch gate
+        /// use), so this is not a new parallel rule. hub-TENANT (full_tools = admin-clone) and admin
+        /// see everything. Context = injected args (_hubScope/_allowedSysmods/_fullTools — present
+        /// on both FC and MCP, same injection as the other discovery tools) with a task-local
+        /// fallback for the MCP path.
+        fn hub_module_allowed(args: &serde_json::Value, module: &str) -> bool {
+            let is_hub = args
+                .get("_hubScope")
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
+                || crate::utils::hub_context::is_hub_context_active();
+            if !is_hub {
+                return true; // admin (root) — unrestricted
+            }
+            if args.get("_fullTools").and_then(|v| v.as_bool()).unwrap_or(false)
+                || crate::utils::hub_context::active_full_tools()
+            {
+                return true; // hub-tenant = admin-clone, sees all
+            }
+            let allowed: Vec<String> = args
+                .get("_allowedSysmods")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                .or_else(crate::utils::hub_context::active_allowed_sysmods)
+                .unwrap_or_default();
+            crate::utils::hub_context::permits_tool(&format!("sysmod_{module}"), &allowed)
+        }
         // Intent Agent S0 — 같은 카탈로그를 shadow TurnBrief 계산에도 공유 (행동 0, 측정 전용).
         self.intent_actions = Some(catalog.clone());
         let cat = catalog.clone();
@@ -537,7 +567,12 @@ impl AiManager {
                 // Silence made models retry a search that could never succeed (2026-07-07:
                 // "toss-invest create-order" ×9 — toss had no catalog, so the results never
                 // contained it and the model kept searching in disbelief).
-                let cataloged = cat.cataloged_modules().await;
+                let cataloged: Vec<String> = cat
+                    .cataloged_modules()
+                    .await
+                    .into_iter()
+                    .filter(|m| hub_module_allowed(&args, m))
+                    .collect();
                 // Module filter dialect absorb: strip sysmod_ prefix + underscore↔hyphen
                 // ("sysmod_toss_invest" ≡ "toss-invest" — models see underscore tool names).
                 let module = args
@@ -566,7 +601,15 @@ impl AiManager {
                         }));
                     }
                 }
-                let rows = cat.search(&query, module.as_deref(), limit.clamp(1, 20)).await?;
+                let mut rows = cat.search(&query, module.as_deref(), limit.clamp(1, 20)).await?;
+                // Widget scoping — a hub-widget visitor only sees modules in its allowlist
+                // (cross-module search could otherwise reveal admin-only modules).
+                rows.retain(|r| {
+                    r.get("module")
+                        .and_then(|v| v.as_str())
+                        .map(|m| hub_module_allowed(&args, m))
+                        .unwrap_or(true)
+                });
                 Ok(serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
@@ -607,6 +650,14 @@ impl AiManager {
                     let h = raw_module.replace('_', "-");
                     if cat.has_module(&h).await { h } else { raw_module }
                 };
+                // Widget scoping — do not reveal a module's action schema to a hub-widget visitor
+                // whose allowlist excludes it (same shared policy as the search filter).
+                if !hub_module_allowed(&args, &module) {
+                    return Ok(serde_json::json!({
+                        "success": false,
+                        "error": format!("module '{module}' is not available in this workspace."),
+                    }));
+                }
                 let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 match cat.schema(&module, &action).await {
                     Some(s) => Ok(s),
@@ -2187,6 +2238,24 @@ impl AiManager {
                             m.insert("owner".to_string(), serde_json::Value::String(format!("hub:{}", scope_id)));
                             m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
                             m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id.clone()));
+                            // Discovery tools scope their RESULTS to the widget's allowlist — inject
+                            // the allowlist + tenant flag so the shared policy (hub_module_allowed →
+                            // permits_tool) works on the FC path (MCP reads the same via task-local).
+                            if matches!(name.as_str(), "search_module_actions" | "get_action_schema") {
+                                m.insert(
+                                    "_allowedSysmods".to_string(),
+                                    serde_json::Value::Array(
+                                        ctx.allowed_sysmods
+                                            .iter()
+                                            .map(|s| serde_json::Value::String(s.clone()))
+                                            .collect(),
+                                    ),
+                                );
+                                m.insert(
+                                    "_fullTools".to_string(),
+                                    serde_json::Value::Bool(ctx.full_tools),
+                                );
+                            }
                             // project scopes page tools to the hub instance. MCP injects it for ALL
                             // tools (inject_hub_owner); FC must list the page tools that read it so
                             // get_page/list_pages are scoped on the FC (Gemini/Vertex) path too.
