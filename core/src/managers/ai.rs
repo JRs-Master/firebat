@@ -135,6 +135,13 @@ pub struct AiResponse {
     pub pending_actions: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The tool loop burned MAX_TOOL_TURNS without a natural finish — the reply is the honest
+    /// fallback text, not a completed task. `error` stays None (chat renders it as a normal
+    /// message), so unattended callers (cron) MUST check this flag: a task that never reached
+    /// its final action (e.g. the telegram send) is a failure, not a success (2026-07-09 실측 —
+    /// 날씨 cron 이 25 라운드 소진으로 발송 못 했는데 로그는 "성공").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exhausted: bool,
     #[serde(rename = "modelId", default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
@@ -614,7 +621,7 @@ impl AiManager {
                     "actions": rows,
                     "count": rows.len(),
                     "catalogedModules": cataloged,
-                    "next": "call get_action_schema(module, action) for exact params + call envelope before invoking. Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
+                    "next": "Rows with kind=\"action\": call get_action_schema(module, action) for exact params + call envelope before invoking. Rows with kind=\"stream\": this is a live realtime subscription — call stream_watch_start({module, stream, args}) and render the returned topic with a live_chart / live_feed component (a REST action can only give a static snapshot, never live data). Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
                 }))
             }
         });
@@ -1791,6 +1798,13 @@ impl AiManager {
         // (2026-07-07 실측: search 도구 스팸으로 25콜 소진 → reply/blocks 전부 빈 채 종료
         // → 화면 "응답이 비어있습니다" + DB 빈 row = 폴링 복구·히스토리 연속성까지 사망).
         let mut tool_budget_exhausted = true;
+        // F2 — cap-rejected calls still burn a round. The rejection text tells the model to stop
+        // and conclude, but a weak model ignores it: 2026-07-09 실측에서 Solar 는 그 지시를 11번
+        // 무시하고 search_module_actions 를 계속 두드려 25 라운드를 소진하고 빈 답으로 끝났다.
+        // 프롬프트로는 못 막으므로 구조로 막는다 — 한 라운드의 도구 호출이 전부 거부(캡/중복)면
+        // 다음 라운드는 도구 없이 호출해서 지금 가진 결과로 최종 답을 쓰게 강제한다.
+        // (도구가 없으면 모델은 텍스트를 낼 수밖에 없고, 루프는 natural-finish 경로로 빠져나간다.)
+        let mut force_final = false;
         // Per-turn per-tool-name call counter — a goal-seeking model can thrash ONE tool
         // with slightly varying args, which neither Layer 1 (identical-args cache) nor
         // Layer 2 (identical-args set) catches. Tools may declare a per-turn cap on the
@@ -1890,6 +1904,7 @@ impl AiManager {
                         None,
                         &[("reason", &reason)],
                     )),
+                            exhausted: false,
                             model_id: Some(last_model_id.clone()),
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),
@@ -1922,11 +1937,14 @@ impl AiManager {
                 prompt
             };
 
+            // F2 — a round whose every tool call was rejected means the model is thrashing; give it
+            // no tools so it must answer with what it already gathered (structural, not a prompt).
+            let round_tools: &[ToolDefinition] = if force_final { &[] } else { effective_tools };
             let response = match self
                 .llm
                 .ask_with_tools_streaming(
                     llm_prompt,
-                    effective_tools,
+                    round_tools,
                     &prior_results,
                     &turn_opts,
                     llm_sink.clone(),
@@ -2599,6 +2617,30 @@ impl AiManager {
                 turn_results.push((call.clone(), action));
             }
 
+            // F2 — did this round produce anything at all? A call rejected by the per-turn cap or
+            // the duplicate guard executed nothing, so a round made entirely of those is pure
+            // budget burn. One such round is enough: strip the tools for the next round and let the
+            // model write its answer from what it has (see `force_final` above).
+            if !turn_results.is_empty() {
+                let all_rejected = turn_results.iter().all(|(_, r)| {
+                    r.result
+                        .get("perTurnLimitExceeded")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                        || r.result
+                            .get("duplicateInTurn")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                });
+                if all_rejected && !force_final {
+                    force_final = true;
+                    self.log.warn(
+                        "[AiManager] every tool call this round was rejected (cap/duplicate) — \
+                         disabling tools for the next round to force a final answer",
+                    );
+                }
+            }
+
             // Render component blocks — 3 가지 흐름 통합 처리:
             //   (1) `render_iframe` — `{htmlContent, htmlHeight?, dependencies?}` → html block
             //   (2) 통합 `render` 또는 옛 `render_<comp>` + `result.component` 단일 component →
@@ -3016,6 +3058,7 @@ impl AiManager {
             suggestions: cli_suggestions,
             pending_actions,
             error: None,
+            exhausted: tool_budget_exhausted,
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,

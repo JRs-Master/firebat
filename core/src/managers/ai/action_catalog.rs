@@ -48,13 +48,31 @@ impl ModuleActionSource {
             .get("requiresApproval")
             .cloned()
             .unwrap_or(serde_json::Value::Null);
+        let mut entries = self.action_entries(scope, name, &config, &approval_decl).await;
+        // F4 — realtime WS subscriptions are actions too, as far as discovery is concerned. Without
+        // this a "실시간 차트" request can never reach `stream_watch_start`: search_module_actions
+        // only indexed REST actions, so the model silently substituted a static snapshot
+        // (2026-07-09 실측 — CoT: "real-time chart requires a real-time data stream" → 그런데 잡을
+        // 도구가 없어 캔들로 대체). Streams ride the same catalog, tagged `kind: "stream"`.
+        entries.extend(derive_stream_entries(name, &config));
+        entries
+    }
+
+    /// REST action entries — explicit `actionCatalog` when declared, else derived from `input`.
+    async fn action_entries(
+        &self,
+        scope: &str,
+        name: &str,
+        config: &serde_json::Value,
+        approval_decl: &serde_json::Value,
+    ) -> Vec<CatalogEntry> {
         let Some(decl) = config.get("actionCatalog") else {
             // No explicit catalog — derive per-action entries from the module's `input` schema so
             // EVERY module (usermods, small sysmods) is uniformly discoverable via
             // search_module_actions (Part 1-A: the 4-step tool procedure applies to all modules,
             // not just the 3 that hand-author actions.json). Zero authoring: the input schema the
             // module already ships for validation doubles as the discovery catalog.
-            return derive_entries_from_input(name, &config, &approval_decl);
+            return derive_entries_from_input(name, config, approval_decl);
         };
         let envelope = decl.get("envelope").and_then(|v| v.as_str()).unwrap_or("");
         let actions: Vec<serde_json::Value> = if let Some(arr) =
@@ -101,7 +119,7 @@ impl ModuleActionSource {
                         })
                         .unwrap_or_default()
                 );
-                let approval = requires_approval_value(&approval_decl, &id);
+                let approval = requires_approval_value(approval_decl, &id);
                 let mut extra = serde_json::json!({
                     "module": name,
                     "action": id,
@@ -131,6 +149,135 @@ impl ModuleActionSource {
             })
             .collect()
     }
+}
+
+/// F4 — one catalog entry per declared realtime WS subscription (`config.ws.streams.<key>`), so a
+/// "실시간 / live" query surfaces `stream_watch_start` alongside REST actions. Entries are tagged
+/// `kind: "stream"`; `get_action_schema(module, <key>)` returns the subscribe contract. Pure data —
+/// the loader knows nothing about any provider.
+fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogEntry> {
+    let Some(streams) = config
+        .get("ws")
+        .and_then(|w| w.get("streams"))
+        .and_then(|s| s.as_object())
+    else {
+        return Vec::new();
+    };
+    streams
+        .iter()
+        .map(|(key, decl)| {
+            let desc = decl.get("desc").and_then(|v| v.as_str()).unwrap_or("");
+            let key_desc = decl.get("keyDesc").and_then(|v| v.as_str()).unwrap_or("");
+            // Realtime vocabulary is baked into the semantic text so "실시간 체결 차트" / "live
+            // quotes" rank these above the snapshot REST actions they would otherwise lose to.
+            let sem = format!(
+                "{key} {desc} {key_desc} 실시간 라이브 스트림 구독 realtime live stream subscribe push"
+            );
+            let mut extra = serde_json::json!({
+                "module": name,
+                "stream": key,
+                "kind": "stream",
+                "tool": "stream_watch_start",
+                "requiresApproval": false,
+                "envelope": "stream_watch_start({ module, stream, args }) — then render the returned topic with a live_chart / live_feed component. Stop it with stream_watch_stop.",
+            });
+            if !desc.is_empty() {
+                extra["desc"] = serde_json::Value::String(desc.to_string());
+            }
+            if !key_desc.is_empty() {
+                extra["keyDesc"] = serde_json::Value::String(key_desc.to_string());
+            }
+            for field in ["trId", "realtimeMatch"] {
+                if let Some(v) = decl.get(field) {
+                    extra[field] = v.clone();
+                }
+            }
+            CatalogEntry {
+                // `stream:` keeps the id namespace disjoint from action ids.
+                id: format!("{}:stream:{}", name, key),
+                name: key.clone(),
+                description: sem.trim().to_string(),
+                extra,
+            }
+        })
+        .collect()
+}
+
+/// Every `[...]` group in a param description, split into tokens. Modules tag a param with the
+/// actions it belongs to (`[short/ultra-*]`, `[medium-land] … [medium-ta] …`); a description may
+/// carry several groups. Tokens keep `-`/`_`/`*` so wildcards and action ids survive the split.
+fn tag_tokens(desc: &str) -> Vec<String> {
+    let chars: Vec<char> = desc.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '[' {
+            if let Some(end) = (i + 1..chars.len()).find(|&j| chars[j] == ']') {
+                let inner: String = chars[i + 1..end].iter().collect();
+                for t in inner.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_' || c == '*')) {
+                    let t = t.trim();
+                    if !t.is_empty() {
+                        out.push(t.to_string());
+                    }
+                }
+                i = end + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// `ultra-*` matches `ultra-short`; otherwise an exact action-id match.
+fn token_matches(tok: &str, action: &str) -> bool {
+    match tok.strip_suffix('*') {
+        Some(prefix) => action.starts_with(prefix),
+        None => tok == action,
+    }
+}
+
+/// Does this param belong to `action`? A bracket group only counts as an action tag when at least
+/// one of its tokens names a real action of the module — so an incidental `[필수]` never filters
+/// anything out. Untagged params are module-wide and always apply.
+fn param_applies(desc: &str, action: &str, all_actions: &[&str]) -> bool {
+    let toks = tag_tokens(desc);
+    let action_toks: Vec<&String> = toks
+        .iter()
+        .filter(|t| all_actions.iter().any(|a| token_matches(t, a)))
+        .collect();
+    if action_toks.is_empty() {
+        return true;
+    }
+    action_toks.iter().any(|t| token_matches(t, action))
+}
+
+/// Scope the module-wide param map to one action. Falls back to the full map when the filter would
+/// leave nothing (a module that tags every param but not this action — never hide everything).
+fn filter_params_for_action(
+    params: &serde_json::Value,
+    action: &str,
+    all_actions: &[&str],
+) -> serde_json::Value {
+    let Some(map) = params.as_object() else {
+        return params.clone();
+    };
+    if all_actions.is_empty() {
+        return params.clone();
+    }
+    let filtered: serde_json::Map<String, serde_json::Value> = map
+        .iter()
+        .filter(|(_, v)| {
+            v.as_str()
+                .map(|d| param_applies(d, action, all_actions))
+                .unwrap_or(true)
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    if filtered.is_empty() {
+        return params.clone();
+    }
+    serde_json::Value::Object(filtered)
 }
 
 /// Derive catalog entries from a module's `input` JSON schema when it declares no explicit
@@ -202,15 +349,49 @@ fn derive_entries_from_input(
     } else {
         "{ <params...> } — flat: params at the top level (this module has no action selector)"
     };
+    // All action ids of this module — needed to tell a real action tag (`[short/ultra-*]`) apart
+    // from an incidental bracket in a description (`[필수]`), so the filter can't strip params.
+    let all_actions: Vec<&str> = action_enum
+        .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+        .unwrap_or_default();
+    // Module-level required params (minus the `action` selector) — surfaced per action after the
+    // same tag filter, so the model sees what it must supply.
+    let module_required: Vec<String> = config
+        .get("input")
+        .and_then(|i| i.get("required"))
+        .and_then(|r| r.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .filter(|s| *s != "action")
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
     let make_extra = |action_id: &str| -> serde_json::Value {
-        serde_json::json!({
+        // F1 — params scoped to THIS action. The derived catalog used to hand every action the
+        // module-wide union, so `get_action_schema(kma-weather, short)` listed 15+ params with no
+        // way to tell that `short` needs lat+lon → the model called it without coords and the
+        // 22:00 weather cron died on `coords_required` (2026-07-09 실측). Params whose description
+        // carries an action tag (`[short/ultra-*]`, `[medium-ta]`, …) are kept only for the
+        // actions they name; untagged params are module-wide and always kept.
+        let scoped = filter_params_for_action(&params, action_id, &all_actions);
+        let required: Vec<&String> = module_required
+            .iter()
+            .filter(|r| scoped.get(r.as_str()).is_some())
+            .collect();
+        let mut extra = serde_json::json!({
             "module": name,
             "action": action_id,
-            "params": params,
+            "params": scoped,
             "envelope": envelope,
             "requiresApproval": requires_approval_value(approval_decl, action_id),
             "derived": true,
-        })
+        });
+        if !required.is_empty() {
+            extra["required"] = serde_json::json!(required);
+        }
+        extra
     };
 
     match action_enum {
@@ -319,9 +500,24 @@ impl ModuleActionCatalog {
         Ok(matches
             .into_iter()
             .map(|m| {
+                // Streams (F4) carry `stream`/`kind` instead of `action` — the row tells the model
+                // which tool to reach for (stream_watch_start vs the module tool).
+                let is_stream = m.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
+                if is_stream {
+                    return serde_json::json!({
+                        "module": m.extra.get("module").cloned().unwrap_or_default(),
+                        "stream": m.extra.get("stream").cloned().unwrap_or_default(),
+                        "kind": "stream",
+                        "name": m.name,
+                        "desc": m.extra.get("desc").cloned().unwrap_or_default(),
+                        "tool": "stream_watch_start",
+                        "score": m.score,
+                    });
+                }
                 serde_json::json!({
                     "module": m.extra.get("module").cloned().unwrap_or_default(),
                     "action": m.extra.get("action").cloned().unwrap_or_default(),
+                    "kind": "action",
                     "name": m.name,
                     "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
@@ -334,7 +530,16 @@ impl ModuleActionCatalog {
     /// Full detail for one action — params with descriptions + example + call envelope +
     /// any extra declared fields (method/path/trId …).
     pub async fn schema(&self, module: &str, action: &str) -> Option<serde_json::Value> {
-        let entry = self.catalog.get(&format!("{}:{}", module, action)).await?;
+        // Streams live under a `stream:` id namespace (F4) — accept the bare key the search row
+        // handed the model (`get_action_schema(kiwoom, quotes)`) as well as the qualified id.
+        let entry = match self.catalog.get(&format!("{}:{}", module, action)).await {
+            Some(e) => e,
+            None => {
+                self.catalog
+                    .get(&format!("{}:stream:{}", module, action))
+                    .await?
+            }
+        };
         let mut out = serde_json::json!({
             "module": module,
             "action": action,
@@ -376,5 +581,80 @@ impl ModuleActionCatalog {
     /// which modules are indexed (uncataloged module = call it directly, stop searching).
     pub async fn cataloged_modules(&self) -> Vec<String> {
         self.catalog.id_prefixes().await
+    }
+}
+
+#[cfg(test)]
+mod f1_param_scope_tests {
+    use super::*;
+
+    // Real kma-weather shapes (the module whose 22:00 cron died on the union blob).
+    const ACTIONS: &[&str] = &[
+        "short", "ultra-short", "ultra-now", "medium-land", "medium-ta", "medium-sea",
+        "medium-fcst", "pwn-code", "wthr-info", "alerts-prelim", "uv-index-v5", "typhoon-info",
+    ];
+
+    #[test]
+    fn tagged_param_scopes_to_its_actions() {
+        let lat = "[short/ultra-*] 위도 (예: 37.5665 서울). lon 과 같이 입력.";
+        assert!(param_applies(lat, "short", ACTIONS));
+        assert!(param_applies(lat, "ultra-short", ACTIONS)); // wildcard
+        assert!(!param_applies(lat, "medium-ta", ACTIONS));
+        assert!(!param_applies(lat, "pwn-code", ACTIONS));
+    }
+
+    #[test]
+    fn multiple_tag_groups_all_count() {
+        // regId carries one group per action, spread through the description.
+        let reg_id = "[medium-land] 육상 예보 구역 코드. [medium-ta] 기온 지점 코드. [medium-sea] 해상 구역";
+        assert!(param_applies(reg_id, "medium-ta", ACTIONS));
+        assert!(param_applies(reg_id, "medium-land", ACTIONS));
+        assert!(!param_applies(reg_id, "short", ACTIONS));
+    }
+
+    #[test]
+    fn nested_group_tokens_match() {
+        let stn_id = "[기상특보·기상정보 계열(alerts·alerts-prelim·wthr-info 및 목록형)/medium-fcst] 지점 번호";
+        assert!(param_applies(stn_id, "wthr-info", ACTIONS));
+        assert!(param_applies(stn_id, "medium-fcst", ACTIONS));
+        assert!(!param_applies(stn_id, "short", ACTIONS));
+    }
+
+    #[test]
+    fn untagged_param_is_module_wide() {
+        assert!(param_applies("최대 결과 수", "short", ACTIONS));
+        assert!(param_applies("최대 결과 수", "pwn-code", ACTIONS));
+    }
+
+    #[test]
+    fn incidental_bracket_never_filters() {
+        // `[필수]` names no action → not an action tag → param stays visible everywhere.
+        let d = "[필수] 종목코드";
+        assert!(param_applies(d, "short", ACTIONS));
+        assert!(param_applies(d, "medium-ta", ACTIONS));
+    }
+
+    #[test]
+    fn filter_scopes_the_map_and_never_empties_it() {
+        let params = serde_json::json!({
+            "lat": "[short/ultra-*] 위도",
+            "lon": "[short/ultra-*] 경도",
+            "regId": "[medium-land] 구역 코드",
+            "areaCode": "[pwn-code] 특보 구역코드",
+            "limit": "최대 결과 수",
+        });
+        let short = filter_params_for_action(&params, "short", ACTIONS);
+        let keys: Vec<&String> = short.as_object().unwrap().keys().collect();
+        assert_eq!(keys, vec!["lat", "limit", "lon"]); // serde_json Map = BTreeMap (sorted)
+        assert!(short.get("regId").is_none());
+        assert!(short.get("areaCode").is_none());
+
+        // An action nothing is tagged for keeps the full map rather than showing nothing.
+        let full = filter_params_for_action(
+            &serde_json::json!({ "regId": "[medium-land] x" }),
+            "short",
+            ACTIONS,
+        );
+        assert!(full.get("regId").is_some());
     }
 }

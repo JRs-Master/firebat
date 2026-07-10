@@ -459,12 +459,25 @@ impl ScheduleManager {
                 match core.run_cron_agent(&prompt, &ai_opts).await
                 {
                     Ok(res) => {
-                        success = res.error.is_none();
+                        // An exhausted tool loop is a FAILURE for unattended runs: the agent never
+                        // reached its final action (send/notify/save), yet `error` is None because
+                        // chat renders the fallback text as a normal reply. Without this check the
+                        // job logs "성공" while nothing happened (2026-07-09 날씨 텔레그램 실측).
+                        success = res.error.is_none() && !res.exhausted;
                         if !success {
-                            error = res.error.clone();
+                            error = res.error.clone().or_else(|| {
+                                Some(crate::i18n::t("core.error.ai.turn_exhausted_cron", None, &[]))
+                            });
                         }
+                        // F8 — cron turns have no conversation row, so reasoningTrace/finalReasoning
+                        // are never persisted. Emit a compact journal trace so a silent failure can
+                        // be diagnosed after the fact (`journalctl -u firebat | grep cron_reasoning`).
+                        log_cron_reasoning(&res);
                         let mut out = serde_json::Map::new();
                         out.insert("mode".into(), serde_json::Value::String("agent".into()));
+                        if res.exhausted {
+                            out.insert("exhausted".into(), serde_json::Value::Bool(true));
+                        }
                         if !res.executed_actions.is_empty() {
                             out.insert(
                                 "executedActions".into(),
@@ -795,5 +808,45 @@ impl ScheduleManager {
     }
 }
 
+
+/// F8 — cron agent turns have no conversation row, so `reasoningTrace` / `finalReasoning` are
+/// never persisted to `conversation_messages.data_json` and a silent failure cannot be read back
+/// afterwards (2026-07-09 날씨 텔레그램 실측: 도구 궤적은 journal 에 있었으나 CoT 는 소실).
+/// Emit a compact per-round trace to the journal instead — `journalctl -u firebat | grep cron_reasoning`.
+fn log_cron_reasoning(res: &crate::managers::ai::AiResponse) {
+    if res.reasoning_trace.is_empty() && res.final_reasoning.is_none() {
+        return;
+    }
+    for (i, round) in res.reasoning_trace.iter().enumerate() {
+        let tools: Vec<&str> = round
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let cot: String = round
+            .get("reasoning")
+            .and_then(|r| r.as_str())
+            .unwrap_or("")
+            .chars()
+            .take(300)
+            .collect();
+        tracing::info!(
+            target: "cron_reasoning",
+            round = i,
+            tools = ?tools,
+            exhausted = res.exhausted,
+            "cot: {}",
+            cot.replace('\n', " ")
+        );
+    }
+    if let Some(fr) = &res.final_reasoning {
+        let cot: String = fr.chars().take(500).collect();
+        tracing::info!(target: "cron_reasoning", "final: {}", cot.replace('\n', " "));
+    }
+}
 
 // Tests 이관 — `infra/tests/schedule_manager_test.rs` (integration test).
