@@ -142,6 +142,13 @@ pub struct AiResponse {
     /// 날씨 cron 이 25 라운드 소진으로 발송 못 했는데 로그는 "성공").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exhausted: bool,
+    /// F2 fired: a round's tool calls were all rejected (cap/duplicate thrash) and the next round
+    /// ran with tools stripped to force a wrap-up answer. The reply is legible text, but the task's
+    /// final action (send/save/notify) may never have executed — so unattended callers (cron) must
+    /// treat this as a failure too. Without this flag the forced wrap-up counts as a natural finish
+    /// (`exhausted` stays false) and the silent-success class F3 killed comes right back.
+    #[serde(rename = "forcedFinal", default, skip_serializing_if = "std::ops::Not::not")]
+    pub forced_final: bool,
     #[serde(rename = "modelId", default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
     #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
@@ -1905,6 +1912,7 @@ impl AiManager {
                         &[("reason", &reason)],
                     )),
                             exhausted: false,
+                            forced_final: false,
                             model_id: Some(last_model_id.clone()),
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),
@@ -2706,10 +2714,15 @@ impl AiManager {
                 // 은 PlanCard 블록 + 칩 둘 다).
                 // suggest 는 last-wins: 한 턴에 suggest 를 여러 번 호출하면 마지막 세트가
                 // 이전 것을 대체한다 (누적하면 칩 세트가 겹쳐 렌더 — 2026-07-08 실측).
+                // 단 propose_plan 과 같은 라운드면 suggest 는 무시 — clear() 가 호출 순서에 따라
+                // 플랜의 ✓실행/수정/취소 칩을 지워 사용자가 플랜을 승인할 수 없게 된다(리뷰 발견).
+                // 플랜 카드가 그 턴의 주인공이므로 부수 suggest 칩은 노이즈다.
                 if tc.name == "suggest" {
-                    if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
-                        cli_suggestions.clear();
-                        cli_suggestions.extend(arr.iter().cloned());
+                    if !is_propose_plan_turn {
+                        if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
+                            cli_suggestions.clear();
+                            cli_suggestions.extend(arr.iter().cloned());
+                        }
                     }
                 } else if tc.name == "propose_plan" {
                     if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
@@ -3062,6 +3075,7 @@ impl AiManager {
             pending_actions,
             error: None,
             exhausted: tool_budget_exhausted,
+            forced_final: force_final,
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,

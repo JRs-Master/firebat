@@ -459,11 +459,14 @@ impl ScheduleManager {
                 match core.run_cron_agent(&prompt, &ai_opts).await
                 {
                     Ok(res) => {
-                        // An exhausted tool loop is a FAILURE for unattended runs: the agent never
-                        // reached its final action (send/notify/save), yet `error` is None because
-                        // chat renders the fallback text as a normal reply. Without this check the
-                        // job logs "성공" while nothing happened (2026-07-09 날씨 텔레그램 실측).
-                        success = res.error.is_none() && !res.exhausted;
+                        // An exhausted OR forced-final tool loop is a FAILURE for unattended runs:
+                        // the agent never (provably) reached its final action (send/notify/save),
+                        // yet `error` is None because chat renders the text as a normal reply.
+                        // exhausted = burned MAX_TOOL_TURNS; forced_final = F2 stripped the tools
+                        // after a thrash round and forced a wrap-up — the wrap-up reads fine but
+                        // the mission action may never have run (2026-07-09/10 날씨 텔레그램 실측:
+                        // 소진과 F2 강제종료 둘 다 "성공"으로 기록될 뻔한 클래스).
+                        success = res.error.is_none() && !res.exhausted && !res.forced_final;
                         if !success {
                             error = res.error.clone().or_else(|| {
                                 Some(crate::i18n::t("core.error.ai.turn_exhausted_cron", None, &[]))
@@ -477,6 +480,9 @@ impl ScheduleManager {
                         out.insert("mode".into(), serde_json::Value::String("agent".into()));
                         if res.exhausted {
                             out.insert("exhausted".into(), serde_json::Value::Bool(true));
+                        }
+                        if res.forced_final {
+                            out.insert("forcedFinal".into(), serde_json::Value::Bool(true));
                         }
                         if !res.executed_actions.is_empty() {
                             out.insert(
@@ -818,14 +824,11 @@ fn log_cron_reasoning(res: &crate::managers::ai::AiResponse) {
         return;
     }
     for (i, round) in res.reasoning_trace.iter().enumerate() {
+        // reasoning_trace rounds carry tools as plain name strings (ai.rs `"tools": tool_names`).
         let tools: Vec<&str> = round
             .get("tools")
             .and_then(|t| t.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
-                    .collect()
-            })
+            .map(|a| a.iter().filter_map(|t| t.as_str()).collect())
             .unwrap_or_default();
         let cot: String = round
             .get("reasoning")
