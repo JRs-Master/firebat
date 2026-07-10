@@ -536,8 +536,12 @@ async fn gated_tool_call(
     }
     let result = handler.call(args).await;
     if let Ok(ref v) = result {
-        if let Ok(text) = serde_json::to_string(v) {
-            record_observed(session, &text);
+        // F6 — skip discovery/schema tools: their output carries documentation example ids that
+        // would let a fabricated code "ground" against a doc example (mirror of the FC path).
+        if firebat_core::utils::grounding::records_provenance(name) {
+            if let Ok(text) = serde_json::to_string(v) {
+                record_observed(session, &text);
+            }
         }
     }
     result

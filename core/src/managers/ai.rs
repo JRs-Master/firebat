@@ -2609,7 +2609,10 @@ impl AiManager {
                 executed_actions.push(serde_json::Value::String(call.name.clone()));
                 // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
                 // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
-                if action.success {
+                // F6 — but NOT discovery/schema tools: their output embeds documentation examples
+                // (get_action_schema param docs carry `KRX:005930` etc.), which would let a
+                // fabricated code "ground" against a doc example that merely matched.
+                if action.success && crate::utils::grounding::records_provenance(&call.name) {
                     if let Ok(text) = serde_json::to_string(&action.result) {
                         observed.push(text);
                     }
@@ -3182,7 +3185,11 @@ impl AiManager {
             Err(e) => ToolResult {
                 call_id: call.id.clone(),
                 name: call.name.clone(),
-                result: serde_json::Value::Null,
+                // The model only ever sees `result` (every LLM format sends `content:
+                // to_string(&result)`), never the `error` field — so a bare Null gave the model
+                // literally "null" with no reason and it kept retrying blind (2026-07-09 실측:
+                // execute ×5, 왜 실패했는지 모른 채). Surface the error text in the result too.
+                result: serde_json::json!({ "success": false, "error": e.clone() }),
                 success: false,
                 error: Some(e),
                 arguments: call.arguments.clone(),

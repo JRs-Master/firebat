@@ -615,15 +615,18 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 /// network_request(HTTP). MCP 핸들러(ExecuteHandler/RunCronJobHandler/RequestSecretHandler/
 /// NetworkRequestHandler)와 같은 매니저 메서드 위임 = 동작 일치.
 fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
-    // execute — user/modules 사용자 정의 모듈 실행. 시스템 모듈은 sysmod_* 사용.
+    // execute — run a user-defined module in user/modules. System modules use their sysmod_* tools.
     let module = h.module.clone();
     tools.register_tool(
         ToolDefinition {
             name: "execute".to_string(),
-            description: "user/modules 사용자 정의 모듈 실행 전용 (시스템 모듈은 sysmod_* 사용). {path, inputData}.".to_string(),
+            description: "Run a user-defined module under user/modules only. NOT for system modules — call the module's own sysmod_<name> tool for those (e.g. weather, stocks, search). Args: {path: 'user/modules/<name>', inputData: {…module input fields}}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
-                "properties": { "path": {"type": "string"}, "inputData": {"type": "object"} },
+                "properties": {
+                    "path": {"type": "string", "description": "user/modules/<name> path of a user-defined module. System modules are NOT reachable here — use sysmod_<name>."},
+                    "inputData": {"type": "object", "description": "The module's input fields."}
+                },
                 "required": ["path"]
             }),
             source: "core".to_string(),
@@ -634,13 +637,13 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "execute: path 필수".to_string())?
+                    .ok_or_else(|| "execute: 'path' is required (user/modules/<name>). To call a system module (weather, stocks, search, …) use its sysmod_<name> tool instead of execute.".to_string())?
                     .to_string();
                 // execute = user/modules only (system modules via sysmod_*). Confine like file tools.
                 let path = crate::utils::hub_context::confine_hub_path(&args, &path)?;
                 let input = args.get("inputData").cloned().unwrap_or(serde_json::json!({}));
                 if input.is_object() && input.as_object().map(|m| m.is_empty()).unwrap_or(false) {
-                    return Ok(serde_json::json!({"success": false, "error": "execute: inputData 빈 객체 금지. 모듈 입력 필드를 채우거나 시스템 모듈이면 sysmod_* 사용."}));
+                    return Ok(serde_json::json!({"success": false, "error": "execute: 'inputData' must not be an empty object — fill the module's input fields. If this was meant to be a system module (weather, stocks, …), call its sysmod_<name> tool instead."}));
                 }
                 match module.execute(&path, &input, &SandboxExecuteOpts::default()).await {
                     Ok(output) => Ok(if output.success {

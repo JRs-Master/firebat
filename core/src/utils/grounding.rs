@@ -140,6 +140,30 @@ fn default_hint(param: &str) -> String {
 /// For each grounded param present in `args`, every token of its value must be grounded.
 /// Returns the first violation's resolve guidance (the model gets it as a tool error and
 /// retries: resolve → use). `Ok(())` when nothing is ungrounded.
+/// Whether a tool's result may be recorded into the provenance corpus. Discovery / schema / catalog
+/// tools describe the *system* (param docs, action lists, config) rather than fetch real-world data,
+/// and their output embeds literal example identifiers — `get_action_schema` param docs carry
+/// examples like `KRX:005930` / `1100000000=서울`. Recording those would let a model "ground" a
+/// fabricated code against a documentation example that merely happened to match (2026-07-09 실측:
+/// a stock code passed the gate because the schema desc it read had put an example into the corpus).
+/// Only genuine data-fetch results (sysmod calls, lookups) belong in the corpus.
+pub fn records_provenance(tool_name: &str) -> bool {
+    // Strip a leading `sysmod_` so `sysmod_dart` etc. are always data tools.
+    let n = tool_name.trim_start_matches("sysmod_");
+    !matches!(
+        n,
+        "search_module_actions"
+            | "get_action_schema"
+            | "get_module_config"
+            | "get_module_schema"
+            | "search_components"
+            | "list_system_modules"
+            | "list_user_modules"
+            | "list_mcp_servers"
+            | "list_mcp_tools"
+    )
+}
+
 pub fn check_grounding(
     args: &serde_json::Value,
     grounded: &[GroundedParam],
@@ -187,6 +211,20 @@ mod tests {
             "resolveHint": "resolve via ka10099 first.",
             "exemptActions": ["ka10100"]
         } } })
+    }
+
+    #[test]
+    fn discovery_tools_excluded_from_provenance() {
+        // Schema/discovery tools describe the system (with doc examples) — never provenance.
+        assert!(!records_provenance("get_action_schema"));
+        assert!(!records_provenance("search_module_actions"));
+        assert!(!records_provenance("get_module_config"));
+        assert!(!records_provenance("search_components"));
+        // Real data fetchers — recorded.
+        assert!(records_provenance("sysmod_dart"));
+        assert!(records_provenance("sysmod_kiwoom"));
+        assert!(records_provenance("network_request"));
+        assert!(records_provenance("execute"));
     }
 
     #[test]
