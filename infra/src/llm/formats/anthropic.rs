@@ -353,8 +353,13 @@ impl FormatHandler for AnthropicMessagesHandler {
             "model": config.id,
             "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),
             "messages": messages,
-            "tools": tool_defs,
         });
+        // Omit `tools` when empty — the F2 force-final round strips tools, and an explicit
+        // `"tools": []` is rejected by some providers (Upstage 400 empty_array 실측 2026-07-10);
+        // omitting is valid everywhere. Same guard as openai_chat / vertex.
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(tool_defs);
+        }
         Self::apply_extended_thinking(&mut body, config, opts);
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control}]` 형식.
         if let Some(sp) = opts.system_prompt.as_deref() {

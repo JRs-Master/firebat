@@ -296,8 +296,12 @@ impl FormatHandler for OpenAiResponsesHandler {
         let mut body = serde_json::json!({
             "model": config.id,
             "input": input,
-            "tools": tool_defs,
         });
+        // Omit `tools` when empty (F2 force-final round) — `"tools": []` is rejected by some
+        // OpenAI-compatible backends (Upstage 400 empty_array 실측); omitting is valid everywhere.
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(tool_defs);
+        }
         if let Some(prev) = prev_id {
             body["previous_response_id"] = serde_json::Value::from(prev);
         }

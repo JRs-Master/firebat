@@ -541,8 +541,13 @@ impl FormatHandler for OpenAiChatHandler {
         let mut body = serde_json::json!({
             "model": config.id,
             "messages": messages,
-            "tools": tool_defs,
         });
+        // Omit `tools` entirely when empty — OpenAI-compatible APIs reject `"tools": []` with
+        // 400 `empty_array` (Upstage 실측 2026-07-10: F2 force-final round(도구 제거)가 빈 배열을
+        // 보내 턴이 통째로 죽었다 — 22시 날씨 cron·실시간 차트 턴 둘 다). No tools = plain chat.
+        if !tool_defs.is_empty() {
+            body["tools"] = serde_json::Value::Array(tool_defs);
+        }
         // Dynamic temperature from the tool loop (tool turn 0.2 / final turn 0.85) — ask_text
         // already sent it; this path dropped it, so Solar ran tool-selection turns at the
         // provider's default temp (a likely axis of its nondeterministic tool adherence).
