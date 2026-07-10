@@ -151,21 +151,61 @@
           "0m": "ELW 이론가",
           "0s": "장시작시간",
           "0u": "ELW 지표"
-        }
+        },
+        "desc": "국내주식 실시간 시세 구독 (체결·호가 등 실시간 타입)",
+        "keyDesc": "item = 종목코드. 거래소 프리픽스 지원 — KRX:005930(정규) / NXT:005930(넥스트레이드) / SOR:005930_AL(통합). type = 실시간 타입(기본 0B=체결)."
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
         "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
         "subscribe": {
-          "frame": { "trnm": "REG", "grp_no": "1", "refresh": "1", "data": [ { "item": [ "{item}" ], "type": [ "{type:FE}" ] } ] },
+          "frame": {
+            "trnm": "REG",
+            "grp_no": "1",
+            "refresh": "1",
+            "data": [
+              {
+                "item": [
+                  "{item}"
+                ],
+                "type": [
+                  "{type:FE}"
+                ]
+              }
+            ]
+          },
           "match": "REG",
-          "successWhen": { "field": "return_code", "equals": 0 }
+          "successWhen": {
+            "field": "return_code",
+            "equals": 0
+          }
         },
         "unsubscribe": {
-          "frame": { "trnm": "REMOVE", "grp_no": "1", "refresh": "1", "data": [ { "item": [ "{item}" ], "type": [ "{type:FE}" ] } ] }
+          "frame": {
+            "trnm": "REMOVE",
+            "grp_no": "1",
+            "refresh": "1",
+            "data": [
+              {
+                "item": [
+                  "{item}"
+                ],
+                "type": [
+                  "{type:FE}"
+                ]
+              }
+            ]
+          }
         },
         "realtimeMatch": "REAL",
-        "typeCodes": { "F4": "미국주식 실시간 주문 확인", "F5": "미국주식 실시간 체결", "FE": "미국주식 실시간 체결가", "FT": "미국주식 10호가" }
+        "typeCodes": {
+          "F4": "미국주식 실시간 주문 확인",
+          "F5": "미국주식 실시간 체결",
+          "FE": "미국주식 실시간 체결가",
+          "FT": "미국주식 10호가"
+        },
+        "desc": "미국주식 실시간 시세 구독",
+        "keyDesc": "item = 미국 종목코드. type = 실시간 타입(기본 FE)."
       },
       "condition": {
         "preFrames": [
@@ -199,15 +239,46 @@
             "seq": "{seq}"
           }
         },
-        "realtimeMatch": "REAL"
+        "realtimeMatch": "REAL",
+        "desc": "국내 조건검색 실시간 감시 (편입/이탈 push)",
+        "keyDesc": "seq = 조건식 일련번호 (먼저 ka10171 로 조건식 목록 조회). stex_tp = 거래소(K:KRX, N:NXT, A:통합)."
       },
       "us-condition": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
         "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
-        "preFrames": [ { "frame": { "trnm": "GCNSRLST" }, "match": "GCNSRLST", "successWhen": { "field": "return_code", "equals": 0 } } ],
-        "subscribe": { "frame": { "trnm": "GCNSRREQ", "seq": "{seq}", "search_type": "1" }, "match": "GCNSRREQ", "successWhen": { "field": "return_code", "equals": 0 } },
-        "unsubscribe": { "frame": { "trnm": "GCNSRCLR", "seq": "{seq}" } },
-        "realtimeMatch": "REAL"
+        "preFrames": [
+          {
+            "frame": {
+              "trnm": "GCNSRLST"
+            },
+            "match": "GCNSRLST",
+            "successWhen": {
+              "field": "return_code",
+              "equals": 0
+            }
+          }
+        ],
+        "subscribe": {
+          "frame": {
+            "trnm": "GCNSRREQ",
+            "seq": "{seq}",
+            "search_type": "1"
+          },
+          "match": "GCNSRREQ",
+          "successWhen": {
+            "field": "return_code",
+            "equals": 0
+          }
+        },
+        "unsubscribe": {
+          "frame": {
+            "trnm": "GCNSRCLR",
+            "seq": "{seq}"
+          }
+        },
+        "realtimeMatch": "REAL",
+        "desc": "미국주식 조건검색 실시간 감시 (편입/이탈 push)",
+        "keyDesc": "seq = 조건식 일련번호 (먼저 미국 조건검색 목록 조회)."
       }
     },
     "unsupportedActions": [
@@ -990,5 +1061,15 @@
         "type": "string"
       }
     }
-  }
+  },
+  "tags": [
+    "국내주식",
+    "미국주식",
+    "시세",
+    "차트",
+    "주문",
+    "조건검색",
+    "실시간 스트림",
+    "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · 통합/SOR — stk_cd 프리픽스(KRX:005930 / NXT:005930 / SOR:005930_AL) 또는 stex_tp(1.KRX 2.NXT 3.통합)"
+  ]
 }

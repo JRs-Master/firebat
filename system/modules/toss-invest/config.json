@@ -11,16 +11,29 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", <params flat at top level — no params wrapper> }"
   },
-  "requiresApproval": ["create-order", "modify-order", "cancel-order", "create-conditional-order", "modify-conditional-order", "cancel-conditional-order"],
+  "requiresApproval": [
+    "create-order",
+    "modify-order",
+    "cancel-order",
+    "create-conditional-order",
+    "modify-conditional-order",
+    "cancel-conditional-order"
+  ],
   "timeseries": {
     "candles": {
       "fetchMode": "cursor",
       "anchorParam": "before",
       "countParam": "count",
       "nextCursorField": "nextBefore",
-      "idParams": { "symbol": "", "interval": "1d" },
+      "idParams": {
+        "symbol": "",
+        "interval": "1d"
+      },
       "dateField": "date",
-      "rows": ["result.candles", "records"]
+      "rows": [
+        "result.candles",
+        "records"
+      ]
     }
   },
   "secrets": [
@@ -55,83 +68,154 @@
       "name": "market-data",
       "description": "토스증권 시세 — 국내(KRX/NXT)·미국 주식 실시간성 데이터. 계좌 없이 토큰만으로 조회.\n  orderbook (GET /orderbook) — 호가·잔량 [symbol]\n  prices (GET /prices) — 현재가, 콤마로 최대 200건 [symbols]\n  trades (GET /trades) — 최근 체결 (당일, 최대 50) [symbol, count]\n  price-limits (GET /price-limits) — 당일 상/하한가 (미국은 null) [symbol]\n  candles (GET /candles) — 캔들 OHLCV (최대 200봉) [symbol, interval(1m/1d), count, before, adjusted]",
       "capability": "stock-quote",
-      "actions": ["orderbook", "prices", "trades", "price-limits", "candles"]
+      "actions": [
+        "orderbook",
+        "prices",
+        "trades",
+        "price-limits",
+        "candles"
+      ]
     },
     {
       "name": "stock-info",
       "description": "토스증권 종목 정보 — 영업일 단위 갱신 (짧은 폴링 금지, 진입 시 1회 캐시 권장). 토큰만으로 조회.\n  stocks (GET /stocks) — 종목 기본정보 (종목명/시장/통화/상장상태/발행주식수), 콤마로 최대 200건 [symbols]\n  stock-warnings (GET /stocks/{symbol}/warnings) — 매수 유의사항·VI (정리매매/단기과열/투자경고·위험/VI/신주인수권) [symbol]",
       "capability": "stock-info",
-      "actions": ["stocks", "stock-warnings"]
+      "actions": [
+        "stocks",
+        "stock-warnings"
+      ]
     },
     {
       "name": "market-info",
       "description": "토스증권 시장 정보 — 계좌 무관, 토큰만으로 조회.\n  exchange-rate (GET /exchange-rate) — KRW↔USD 환율 (1분 갱신, 참고용) [baseCurrency, quoteCurrency, dateTime]\n  market-calendar (GET /market-calendar/{market}) — 장 운영 캘린더 (전일/당일/익일, 세션 시간). market=KR(KRX+NXT) 또는 US [market, date]",
       "capability": "market-info",
-      "actions": ["exchange-rate", "market-calendar"]
+      "actions": [
+        "exchange-rate",
+        "market-calendar"
+      ]
     },
     {
       "name": "account",
       "description": "토스증권 계좌 목록 — 다른 계좌 컨텍스트 도구의 진입점. 토큰만으로 조회.\n  accounts (GET /accounts) — 종합매매 계좌 목록. 응답 accountSeq 를 holdings/orders/주문 도구에 전달한다 (계좌 없으면 빈 배열)",
       "capability": "stock-account",
-      "actions": ["accounts"]
+      "actions": [
+        "accounts"
+      ]
     },
     {
       "name": "asset",
       "description": "토스증권 보유 자산 — accountSeq 필수.\n  holdings (GET /holdings) — 보유 주식 (종목별 수량·매입가·평가금액·손익 + 계좌 합산 요약). symbol 지정 시 해당 종목만 [accountSeq, symbol?]",
       "capability": "stock-account",
-      "actions": ["holdings"]
+      "actions": [
+        "holdings"
+      ]
     },
     {
       "name": "order-history",
       "description": "토스증권 주문 조회 — accountSeq 필수.\n  list-orders (GET /orders) — 주문 목록. status=OPEN(진행중) 또는 CLOSED(종료) 필수 [accountSeq, status, symbol?, from?, to?, cursor?, limit?]\n  order-detail (GET /orders/{orderId}) — 주문 상세 (부분 체결 내역 포함, 모든 상태) [accountSeq, orderId]",
       "capability": "stock-account",
-      "actions": ["list-orders", "order-detail"]
+      "actions": [
+        "list-orders",
+        "order-detail"
+      ]
     },
     {
       "name": "order-info",
       "description": "토스증권 주문 전 거래 가능 정보 — accountSeq 필수. 주문 생성 직전 호출 권장.\n  buying-power (GET /buying-power) — 현금 매수 가능 금액 (미수 제외) [accountSeq, currency(KRW/USD)]\n  sellable-quantity (GET /sellable-quantity) — 종목 매도 가능 수량 [accountSeq, symbol]\n  commissions (GET /commissions) — 시장별(KR/US) 매매 수수료율 [accountSeq]",
       "capability": "stock-account",
-      "actions": ["buying-power", "sellable-quantity", "commissions"]
+      "actions": [
+        "buying-power",
+        "sellable-quantity",
+        "commissions"
+      ]
     },
     {
       "name": "order",
       "description": "토스증권 실매매 주문 — accountSeq 필수. **즉시 실제 체결 시스템에 전송**된다(별도 확인 단계 없음, 한투/키움 주문과 동일).\n  create-order (POST /orders) — 주문 생성. quantity 또는 orderAmount 중 하나(orderAmount=US 시장가 금액 주문, 정규장만). LIMIT 은 price 필수. timeInForce=CLS 는 US 지정가 종가(LOC). clientOrderId 로 멱등성 [accountSeq, symbol, side(BUY/SELL), orderType(LIMIT/MARKET), quantity|orderAmount, price?, timeInForce?(DAY/CLS), clientOrderId?, confirmHighValueOrder?]\n  modify-order (POST /orders/{orderId}/modify) — 미체결 주문 정정. KR=quantity 가능, US=가격만 [accountSeq, orderId, orderType, price?, quantity?, confirmHighValueOrder?]\n  cancel-order (POST /orders/{orderId}/cancel) — 주문 취소 (체결분 제외) [accountSeq, orderId]",
       "capability": "stock-trading",
-      "actions": ["create-order", "modify-order", "cancel-order"]
+      "actions": [
+        "create-order",
+        "modify-order",
+        "cancel-order"
+      ]
     },
     {
       "name": "ranking",
       "description": "토스증권 주식 랭킹 — 국내·미국, 계좌 무관 토큰만.\n  rankings (GET /rankings) — 거래대금/거래량 상위·급상승/급하락·토스증권 체결 기준 상위, 기간별(거래일 기준 realtime~1y, 단 TOP_GAINERS/TOP_LOSERS 는 realtime 미지원), 상위 100위 [type, marketCountry(KR/US), duration, excludeInvestmentCaution?, count?]",
       "capability": "stock-quote",
-      "actions": ["rankings"]
+      "actions": [
+        "rankings"
+      ]
     },
     {
       "name": "market-indicators",
       "description": "토스증권 시장 지표 — 코스피·코스닥 지수, 한국 국채 금리, KRX 투자자별 매매대금. 심볼 8종 고정(KOSPI, KOSDAQ, KR_BOND_2Y/3Y/5Y/10Y/20Y/30Y — 그 외 400 unsupported-symbol). 개별 종목 시세는 market-data 도구 사용. 계좌 무관.\n  market-indicator-prices (GET /market-indicators/prices) — 지표 현재가, 콤마 다건. 국채는 수익률(%) [symbols]\n  market-indicator-candles (GET /market-indicators/{symbol}/candles) — 지표 캔들 OHLCV (최대 200봉) [symbol, interval(1m/1d), count?, before?]\n  investor-trading (GET /market-indicators/{symbol}/investor-trading) — 투자자별 매매대금: 개인/외국인/기관(세부 7분류)/기타법인 매수·매도, KRW 정수. KOSPI·KOSDAQ 만 [symbol, interval(1d/1w/1mo/1y), count?, until?]",
       "capability": "market-info",
-      "actions": ["market-indicator-prices", "market-indicator-candles", "investor-trading"]
+      "actions": [
+        "market-indicator-prices",
+        "market-indicator-candles",
+        "investor-trading"
+      ]
     },
     {
       "name": "conditional-order",
       "description": "토스증권 조건주문 — 브로커 서버가 가격을 감시해 조건 충족 시 자동 매매(서버사이드 예약 매매). accountSeq 필수. **등록·수정·취소 즉시 실제 반영**.\n  create-conditional-order (POST /conditional-orders) — 생성. type=SINGLE(한 조건) / OCO(둘 감시, 하나 충족 시 나머지 자동취소 — 둘 다 SELL, first 감시가>현재가>second 감시가, LIMIT만) / OTO(first 체결 후 second 감시 — first=BUY, second=SELL, LIMIT만). 감시 조건 = first/second 객체 {orderSide, triggerPrice, orderPrice} [accountSeq, symbol, type, quantity, orderType, expireDate, first, second?, clientOrderId?, confirmHighValueOrder?]\n  modify-conditional-order (POST /conditional-orders/{conditionalOrderId}/modify) — 전체 재설정(유지할 조건도 함께 전달). ⚠️ 수정 = 취소+재생성 — 응답의 **새 conditionalOrderId** 로 교체되고 기존 ID 무효 [accountSeq, conditionalOrderId, type, quantity, orderType, expireDate, first, second?, confirmHighValueOrder?]\n  cancel-conditional-order (DELETE /conditional-orders/{conditionalOrderId}) — 감시 해제 [accountSeq, conditionalOrderId]",
       "capability": "stock-trading",
-      "actions": ["create-conditional-order", "modify-conditional-order", "cancel-conditional-order"]
+      "actions": [
+        "create-conditional-order",
+        "modify-conditional-order",
+        "cancel-conditional-order"
+      ]
     },
     {
       "name": "conditional-order-history",
       "description": "토스증권 조건주문 조회 — accountSeq 필수. 이 API 외 다른 채널(토스증권 앱 등) 등록분도 함께 반환.\n  list-conditional-orders (GET /conditional-orders) — 목록. status=OPEN(감시중/일시중지/주문중) 또는 CLOSED(완료/만료) [accountSeq, status, symbol?, cursor?, limit?]\n  conditional-order-detail (GET /conditional-orders/{conditionalOrderId}) — 상세. first/second 조건별 상태 + triggeredOrderId(생성된 실제 주문 ID — order-detail 로 추적) [accountSeq, conditionalOrderId]",
       "capability": "stock-account",
-      "actions": ["list-conditional-orders", "conditional-order-detail"]
+      "actions": [
+        "list-conditional-orders",
+        "conditional-order-detail"
+      ]
     }
   ],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["orderbook", "prices", "trades", "price-limits", "candles", "stocks", "stock-warnings", "exchange-rate", "market-calendar", "accounts", "holdings", "list-orders", "order-detail", "buying-power", "sellable-quantity", "commissions", "create-order", "modify-order", "cancel-order", "rankings", "market-indicator-prices", "market-indicator-candles", "investor-trading", "create-conditional-order", "modify-conditional-order", "cancel-conditional-order", "list-conditional-orders", "conditional-order-detail"],
+        "enum": [
+          "orderbook",
+          "prices",
+          "trades",
+          "price-limits",
+          "candles",
+          "stocks",
+          "stock-warnings",
+          "exchange-rate",
+          "market-calendar",
+          "accounts",
+          "holdings",
+          "list-orders",
+          "order-detail",
+          "buying-power",
+          "sellable-quantity",
+          "commissions",
+          "create-order",
+          "modify-order",
+          "cancel-order",
+          "rankings",
+          "market-indicator-prices",
+          "market-indicator-candles",
+          "investor-trading",
+          "create-conditional-order",
+          "modify-conditional-order",
+          "cancel-conditional-order",
+          "list-conditional-orders",
+          "conditional-order-detail"
+        ],
         "description": "호출할 토스증권 API. 도메인별 도구에서 해당 도메인 action 만 노출됨."
       },
       "accountSeq": {
@@ -152,7 +236,13 @@
       },
       "interval": {
         "type": "string",
-        "enum": ["1m", "1d", "1w", "1mo", "1y"],
+        "enum": [
+          "1m",
+          "1d",
+          "1w",
+          "1mo",
+          "1y"
+        ],
         "description": "봉/집계 단위. candles·market-indicator-candles=1m(1분봉)/1d(일봉)만. investor-trading=1d(일별)/1w(주별)/1mo(월별)/1y(연도별)."
       },
       "before": {
@@ -169,17 +259,26 @@
       },
       "baseCurrency": {
         "type": "string",
-        "enum": ["KRW", "USD"],
+        "enum": [
+          "KRW",
+          "USD"
+        ],
         "description": "exchange-rate 기준 통화."
       },
       "quoteCurrency": {
         "type": "string",
-        "enum": ["KRW", "USD"],
+        "enum": [
+          "KRW",
+          "USD"
+        ],
         "description": "exchange-rate 표시 통화 (기준과 달라야 함)."
       },
       "currency": {
         "type": "string",
-        "enum": ["KRW", "USD"],
+        "enum": [
+          "KRW",
+          "USD"
+        ],
         "description": "buying-power 통화 (필수)."
       },
       "dateTime": {
@@ -188,7 +287,10 @@
       },
       "market": {
         "type": "string",
-        "enum": ["KR", "US"],
+        "enum": [
+          "KR",
+          "US"
+        ],
         "description": "market-calendar 시장. KR=국내(KRX+NXT) / US=미국."
       },
       "date": {
@@ -197,7 +299,10 @@
       },
       "status": {
         "type": "string",
-        "enum": ["OPEN", "CLOSED"],
+        "enum": [
+          "OPEN",
+          "CLOSED"
+        ],
         "description": "상태 그룹 (필수). list-orders: OPEN=진행중(PENDING/PARTIAL_FILLED 등) / CLOSED=종료(FILLED/CANCELED 등) — ⚠️ 현재 토스 API 는 list-orders CLOSED 미지원(400 closed-not-supported), 종료 주문은 order-detail 로 개별 조회. list-conditional-orders: OPEN=감시중·일시중지·주문중 / CLOSED=완료·만료 (조건주문은 CLOSED 정상 지원)."
       },
       "from": {
@@ -226,12 +331,18 @@
       },
       "side": {
         "type": "string",
-        "enum": ["BUY", "SELL"],
+        "enum": [
+          "BUY",
+          "SELL"
+        ],
         "description": "create-order 주문 방향. BUY=매수 / SELL=매도."
       },
       "orderType": {
         "type": "string",
-        "enum": ["LIMIT", "MARKET"],
+        "enum": [
+          "LIMIT",
+          "MARKET"
+        ],
         "description": "주문 호가 유형. LIMIT=지정가(price 필수) / MARKET=시장가. create-order/modify-order/조건주문(조건주문은 그룹 공통 — LIMIT 이면 각 조건 orderPrice 필수, OCO/OTO 는 LIMIT 만)."
       },
       "quantity": {
@@ -248,7 +359,10 @@
       },
       "timeInForce": {
         "type": "string",
-        "enum": ["DAY", "CLS"],
+        "enum": [
+          "DAY",
+          "CLS"
+        ],
         "description": "주문 유효 조건 (선택, 기본 DAY). CLS=종가(LOC, US 지정가 전용)."
       },
       "confirmHighValueOrder": {
@@ -257,17 +371,38 @@
       },
       "type": {
         "type": "string",
-        "enum": ["SINGLE", "OCO", "OTO", "MARKET_TRADING_AMOUNT", "MARKET_TRADING_VOLUME", "TOP_GAINERS", "TOP_LOSERS", "TOSS_SECURITIES_TRADING_AMOUNT", "TOSS_SECURITIES_TRADING_VOLUME"],
+        "enum": [
+          "SINGLE",
+          "OCO",
+          "OTO",
+          "MARKET_TRADING_AMOUNT",
+          "MARKET_TRADING_VOLUME",
+          "TOP_GAINERS",
+          "TOP_LOSERS",
+          "TOSS_SECURITIES_TRADING_AMOUNT",
+          "TOSS_SECURITIES_TRADING_VOLUME"
+        ],
         "description": "조건주문 타입 또는 랭킹 종류. 조건주문(create/modify-conditional-order 필수): SINGLE(한 조건)/OCO(둘 감시, 하나 충족 시 나머지 자동취소 — 둘 다 SELL, first 감시가>현재가>second 감시가, LIMIT만)/OTO(first 체결 후 second 감시 — first=BUY, second=SELL, LIMIT만). rankings(필수): MARKET_TRADING_AMOUNT(시장 거래대금)/MARKET_TRADING_VOLUME(시장 거래량)/TOP_GAINERS(급상승)/TOP_LOSERS(급하락)/TOSS_SECURITIES_*(토스 체결 기준)."
       },
       "marketCountry": {
         "type": "string",
-        "enum": ["KR", "US"],
+        "enum": [
+          "KR",
+          "US"
+        ],
         "description": "rankings 조회 시장 (필수)."
       },
       "duration": {
         "type": "string",
-        "enum": ["realtime", "1d", "1w", "1mo", "3mo", "6mo", "1y"],
+        "enum": [
+          "realtime",
+          "1d",
+          "1w",
+          "1mo",
+          "3mo",
+          "6mo",
+          "1y"
+        ],
         "description": "rankings 산정 기간 (필수, 거래일 기준). TOP_GAINERS/TOP_LOSERS 는 realtime 미지원(400)."
       },
       "excludeInvestmentCaution": {
@@ -281,21 +416,53 @@
       "first": {
         "type": "object",
         "description": "조건주문 첫번째 감시 조건 (create/modify-conditional-order 필수). 가격이 triggerPrice 에 닿으면 orderSide 주문 생성. OTO 는 먼저 감시할 부모 조건.",
-        "required": ["orderSide", "triggerPrice"],
+        "required": [
+          "orderSide",
+          "triggerPrice"
+        ],
         "properties": {
-          "orderSide": { "type": "string", "enum": ["BUY", "SELL"], "description": "매매 유형" },
-          "triggerPrice": { "type": "string", "description": "감시 가격 (문자열) — 현재가가 닿으면 트리거" },
-          "orderPrice": { "type": "string", "description": "지정가 (문자열) — orderType=LIMIT 필수, MARKET 이면 보내지 않음" }
+          "orderSide": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "description": "매매 유형"
+          },
+          "triggerPrice": {
+            "type": "string",
+            "description": "감시 가격 (문자열) — 현재가가 닿으면 트리거"
+          },
+          "orderPrice": {
+            "type": "string",
+            "description": "지정가 (문자열) — orderType=LIMIT 필수, MARKET 이면 보내지 않음"
+          }
         }
       },
       "second": {
         "type": "object",
         "description": "조건주문 두번째 감시 조건 — OCO/OTO 필수, SINGLE 생략. 구조·규칙은 first 와 동일.",
-        "required": ["orderSide", "triggerPrice"],
+        "required": [
+          "orderSide",
+          "triggerPrice"
+        ],
         "properties": {
-          "orderSide": { "type": "string", "enum": ["BUY", "SELL"], "description": "매매 유형" },
-          "triggerPrice": { "type": "string", "description": "감시 가격 (문자열)" },
-          "orderPrice": { "type": "string", "description": "지정가 (문자열) — orderType=LIMIT 필수" }
+          "orderSide": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "description": "매매 유형"
+          },
+          "triggerPrice": {
+            "type": "string",
+            "description": "감시 가격 (문자열)"
+          },
+          "orderPrice": {
+            "type": "string",
+            "description": "지정가 (문자열) — orderType=LIMIT 필수"
+          }
         }
       },
       "conditionalOrderId": {
@@ -307,5 +474,15 @@
   "output": {
     "type": "object",
     "description": "액션별 result. prices → [{symbol,lastPrice,currency,timestamp}] / candles·market-indicator-candles → {candles:[{date,open,high,low,close,volume}],nextBefore} (표준 OHLCV 필드로 정규화됨) / accounts → [{accountNo,accountSeq,accountType}] / holdings → {totalPurchaseAmount,marketValue,profitLoss,items:[...]} / create-order|modify-order|cancel-order → {orderId,clientOrderId?} / buying-power → {currency,cashBuyingPower} / rankings → {rankedAt,rankings:[{rank,symbol,price:{lastPrice,basePrice,changeRate(소수비율)},tradingVolume,tradingAmount}]} / investor-trading → {nextUntil,records:[{date,individual,foreigner,institution{breakdown},otherCorporation}]} / create-conditional-order → {conditionalOrderId,clientOrderId?} / modify-conditional-order → {conditionalOrderId(새 ID)} / cancel-conditional-order → {canceled:true} / list-conditional-orders → {conditionalOrders:[...],nextCursor,hasNext} 등. 가격·수량은 문자열."
-  }
+  },
+  "tags": [
+    "국내주식",
+    "미국주식",
+    "시세",
+    "캔들",
+    "주문",
+    "조건주문",
+    "계좌",
+    "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · US — market 파라미터"
+  ]
 }
