@@ -294,6 +294,16 @@ impl ModuleManager {
         let Some(action_decl) = ws.get("actions").and_then(|a| a.get(action)) else {
             return Ok(None);
         };
+        // The one-shot WS transport (`WsApiAdapter`) speaks JSON only. A positional dialect
+        // (KisPipe) would be parsed as JSON, match nothing, and surface as a mysterious response
+        // timeout — fail fast with the real reason instead. (Realtime push uses `ws.streams`,
+        // which does implement the dialect.)
+        if ws_frame_format(action_decl, ws) != WsFrameFormat::Json {
+            return Err(format!(
+                "[{module_name}] ws.actions.{action}: frameFormat 'kis-pipe' is only supported by \
+                 ws.streams (persistent subscriptions), not by one-shot ws.actions"
+            ));
+        }
         let Some(ws_api) = &self.ws_api else {
             return Err(crate::i18n::t(
                 "core.error.module.ws_not_wired",
@@ -1062,7 +1072,13 @@ fn parse_ws_decrypt(decl: &serde_json::Value) -> Option<WsDecryptSpec> {
 }
 
 /// Positional field order for a 한투 realtime TR — the responseBody name list from the module's
-/// `_ws_apis.json`, keyed by trIdReal/trIdMock. Empty when the file/entry is missing.
+/// `_ws_apis.json`. Empty when the file/entry is missing.
+///
+/// `trIdReal` is matched first and must be unique; a mock id is only consulted when no real id
+/// matches (a mock id can collide with another API's real id). Two entries sharing a real trId
+/// means the spec file is corrupt — an earlier extractor trusted the vendor's list sheet, whose
+/// TR_ID column has typos, and silently gave two different APIs the same id. Warn loudly rather
+/// than pick one at random: the wrong field order corrupts every frame of that stream.
 fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
     let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) else {
         return Vec::new();
@@ -1070,19 +1086,35 @@ fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
     let Some(apis) = json.get("apis").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
-    for api in apis {
-        let hit = api.get("trIdReal").and_then(|v| v.as_str()) == Some(tr_id)
-            || api.get("trIdMock").and_then(|v| v.as_str()) == Some(tr_id);
-        if hit {
-            if let Some(rb) = api.get("responseBody").and_then(|v| v.as_array()) {
-                return rb
-                    .iter()
+    let names = |api: &serde_json::Value| -> Vec<String> {
+        api.get("responseBody")
+            .and_then(|v| v.as_array())
+            .map(|rb| {
+                rb.iter()
                     .filter_map(|f| f.get("name").and_then(|v| v.as_str()).map(String::from))
-                    .collect();
-            }
-        }
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let real: Vec<&serde_json::Value> = apis
+        .iter()
+        .filter(|a| a.get("trIdReal").and_then(|v| v.as_str()) == Some(tr_id))
+        .collect();
+    if real.len() > 1 {
+        tracing::warn!(
+            target: "ws_stream",
+            tr_id = tr_id,
+            entries = real.len(),
+            "duplicate trIdReal in _ws_apis.json — field order is ambiguous, re-run scripts/extract-ws-apis.mjs"
+        );
     }
-    Vec::new()
+    if let Some(api) = real.first() {
+        return names(api);
+    }
+    apis.iter()
+        .find(|a| a.get("trIdMock").and_then(|v| v.as_str()) == Some(tr_id))
+        .map(names)
+        .unwrap_or_default()
 }
 
 /// WS frame template substitution — generic, zero provider knowledge.

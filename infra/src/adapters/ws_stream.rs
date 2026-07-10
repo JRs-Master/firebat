@@ -387,7 +387,11 @@ async fn run_session(
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {
                     if let Some(unsub) = &spec.unsubscribe_frame {
-                        let _ = send(&mut ws, unsub).await; // best-effort
+                        // Must fill `{TOKEN}` here too — 한투 carries the approval_key in every
+                        // frame header, so an un-filled unsubscribe is rejected (best-effort, and
+                        // the failure is silent, which is exactly how it stayed unnoticed).
+                        let frame = fill_token(unsub, token.as_deref());
+                        let _ = send(&mut ws, &frame).await;
                     }
                     let _ = ws.close(None).await;
                     return SessionEnd::Cancelled;
@@ -565,39 +569,57 @@ fn decode_positional(
     };
 
     let values: Vec<&str> = plain.split('^').collect();
-    let records = if spec.field_order.is_empty() {
-        serde_json::Value::Array(
-            values
-                .iter()
-                .map(|v| serde_json::Value::String((*v).to_string()))
-                .collect(),
-        )
+    if values.is_empty() {
+        return None;
+    }
+    // Record width comes from the FRAME (`건수`), never from `field_order.len()`. The vendor doc's
+    // field table drifts from the wire in both directions (실측: 국내주식 호가 responseBody 62 vs
+    // 예시 59 / 국내지수 예상체결 30 vs 15 / 야간선물 호가 38 vs 46). Chunking by the doc's field
+    // count would then mis-split records — a silently corrupted feed. Deriving the width from the
+    // frame keeps record boundaries exact; names are applied positionally as far as they go, and
+    // any surplus value is preserved under `field_<i>` instead of being dropped.
+    let per = if count > 0 && values.len() % count == 0 {
+        values.len() / count
     } else {
-        let per = spec.field_order.len();
-        let recs: Vec<serde_json::Value> = values
-            .chunks(per)
-            .map(|chunk| {
-                let mut obj = serde_json::Map::new();
-                for (i, name) in spec.field_order.iter().enumerate() {
-                    if let Some(v) = chunk.get(i) {
-                        obj.insert(name.clone(), serde_json::Value::String((*v).to_string()));
-                    }
-                }
-                serde_json::Value::Object(obj)
-            })
-            .collect();
-        serde_json::Value::Array(recs)
+        values.len() // 건수 가 프레임과 안 맞으면 통째로 한 레코드 (경계 날조 금지)
     };
+    let names = &spec.field_order;
+    if !names.is_empty() && per != names.len() {
+        tracing::warn!(
+            target: "ws_stream",
+            watch_id = %spec.watch_id,
+            tr_id = %tr_id,
+            frame_width = per,
+            doc_fields = names.len(),
+            "positional field-count drift — mapping by frame width (doc `_ws_apis.json` responseBody is stale)"
+        );
+    }
+    let recs: Vec<serde_json::Value> = values
+        .chunks(per)
+        .map(|chunk| {
+            let mut obj = serde_json::Map::new();
+            for (i, v) in chunk.iter().enumerate() {
+                let key = match names.get(i) {
+                    Some(n) => n.clone(),
+                    None => format!("field_{i}"),
+                };
+                obj.insert(key, serde_json::Value::String((*v).to_string()));
+            }
+            serde_json::Value::Object(obj)
+        })
+        .collect();
 
     Some((
         tr_id.clone(),
-        serde_json::json!({ "trId": tr_id, "count": count, "records": records }),
+        serde_json::json!({ "trId": tr_id, "count": count, "records": serde_json::Value::Array(recs) }),
     ))
 }
 
 fn frame_error(frame: &serde_json::Value, spec: &WsStreamSpec) -> String {
     if let Some(field) = &spec.error_msg_field {
-        if let Some(msg) = frame.get(field).and_then(|v| v.as_str()) {
+        // dot-path — 한투 declares `body.msg1`; a plain `.get()` never resolved it, so a rejected
+        // subscribe surfaced as a raw frame dump instead of "SUBSCRIBE FAIL <reason>".
+        if let Some(msg) = frame_get(frame, field).and_then(|v| v.as_str()) {
             if !msg.trim().is_empty() {
                 return msg.to_string();
             }

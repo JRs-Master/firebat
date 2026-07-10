@@ -14,6 +14,13 @@
 //!
 //! Persistent subscriptions (realtime push, e.g. ka10173) are a later stage — this port is
 //! strictly one-shot: connect → login → ask → answer → close.
+//!
+//! ⚠️ JSON frames only. The KisPipe dialect (한투 positional `flag|TR_ID|건수|f1^f2^…` + AES256)
+//! lives in `ws_stream.rs` and is NOT implemented here, because 한투 declares no `ws.actions`
+//! (its realtime is push-only, via `ws.streams`). If a module ever declares a `ws.actions` entry
+//! with `frameFormat: "kis-pipe"`, this adapter would try to parse the positional frame as JSON
+//! and time out. ModuleManager rejects that combination up front (see the `ws.actions` routing)
+//! rather than letting it fail as a mysterious timeout.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -267,7 +274,8 @@ pub(crate) fn coerce(v: &serde_json::Value) -> String {
 /// otherwise a compact dump of the frame (capped, char-safe).
 fn error_message(frame: &serde_json::Value, call: &WsApiCall) -> String {
     if let Some(field) = &call.error_msg_field {
-        if let Some(msg) = frame.get(field).and_then(|v| v.as_str()) {
+        // dot-path (`body.msg1`) — mirrors ws_stream::frame_error.
+        if let Some(msg) = frame_get(frame, field).and_then(|v| v.as_str()) {
             if !msg.trim().is_empty() {
                 return msg.to_string();
             }

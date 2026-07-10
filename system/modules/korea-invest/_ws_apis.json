@@ -1,11 +1,12 @@
 {
  "meta": {
   "source": "한국투자증권_오픈API_전체문서_20260709_030000.xlsx (WEBSOCKET APIs)",
-  "note": "한투 실시간(웹소켓) 스펙 레퍼런스 — 비런타임(NOT wired). 와이어링 대기: approval_key 발급(/oauth2/Approval) + AES256 복호화 + ^ 구분 positional 파싱.",
+  "note": "한투 실시간(웹소켓) 스펙. TR_ID 는 urlPath(/tryitout/<TR>)에서 추출 — 목록 시트 열은 오타가 있다.",
   "approvalKey": "POST /oauth2/Approval {grant_type:client_credentials, appkey, secretkey} → approval_key(286자). 구독 요청 header 에 사용.",
-  "realtimeDecode": "실시간 프레임 = \"암호화플래그|TR_ID|건수|데이터\". 플래그 0=평문/1=AES256(구독 응답 body.output.iv+key 로 복호). 데이터는 ^ 구분 positional → responseBody 순서대로 매핑. 건수 N = 레코드 N개 연접(페이징).",
-  "subscribe": "header{approval_key,custtype(B법인/P개인),tr_type(1등록/2해제),content-type} + body{tr_id, tr_key(종목코드 6자리 등)}",
-  "count": 60
+  "realtimeDecode": "실시간 프레임 = \"암호화플래그|TR_ID|건수|데이터\". 플래그 0=평문/1=AES256(구독 응답 body.output.iv+key 로 복호). 데이터는 ^ 구분 positional → responseBody 순서대로 매핑. 건수 N = 레코드 N개 연접.",
+  "subscribe": "header{approval_key,custtype(B법인/P개인),tr_type(1등록/2해제),content-type} + body{input:{tr_id, tr_key}}",
+  "count": 60,
+  "streamCount": 58
  },
  "apis": [
   {
@@ -18,16 +19,7 @@
    "domainReal": "https://openapi.koreainvestment.com:9443",
    "domainMock": "https://openapivts.koreainvestment.com:29443",
    "urlPath": "/oauth2/Approval",
-   "requestHeader": [
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "20",
-     "desc": "application/json; utf-8"
-    }
-   ],
+   "requestHeader": [],
    "requestBody": [
     {
      "name": "grant_type",
@@ -76,14 +68,6 @@
    "domainMock": "모의투자 미지원",
    "urlPath": "/uapi/domestic-stock/v1/quotations/frgnmem-trade-trend",
    "requestHeader": [
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "40",
-     "desc": "application/json; charset=utf-8"
-    },
     {
      "name": "authorization",
      "ko": "접근토큰",
@@ -179,10 +163,82 @@
      "required": false,
      "length": "32",
      "desc": "[법인 전용] 거래고유번호로 사용하므로 거래별로 UNIQUE해야 함"
+    },
+    {
+     "name": "FID_COND_MRKT_DIV_CODE",
+     "ko": "FID 조건 시장 분류 코드",
+     "type": "string",
+     "required": true,
+     "length": "2",
+     "desc": "J 고정 입력"
+    },
+    {
+     "name": "FID_COND_SCR_DIV_CODE",
+     "ko": "화면분류코드",
+     "type": "string",
+     "required": true,
+     "length": "5",
+     "desc": "20432(primary key)"
+    },
+    {
+     "name": "FID_INPUT_ISCD",
+     "ko": "종목코드",
+     "type": "string",
+     "required": true,
+     "length": "12",
+     "desc": "ex. 005930(삼성전자) \r\n\r\n※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_CODE(시장구분코드) 둘 중 하나만 입력"
+    },
+    {
+     "name": "FID_INPUT_ISCD_2",
+     "ko": "회원사코드",
+     "type": "string",
+     "required": true,
+     "length": "10",
+     "desc": "ex. 99999(전체)\r\n\r\n※ 회원사코드 (kis developers 포탈 사이트 포럼-> FAQ -> 종목정보 다운로드(국내) 참조)"
+    },
+    {
+     "name": "FID_MRKT_CLS_CODE",
+     "ko": "시장구분코드",
+     "type": "string",
+     "required": true,
+     "length": "2",
+     "desc": "A(전체),K(코스피), Q(코스닥), K2(코스피200), W(ELW)\r\n\r\n※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_CODE(시장구분코드) 둘 중 하나만 입력"
+    },
+    {
+     "name": "FID_VOL_CNT",
+     "ko": "거래량",
+     "type": "string",
+     "required": true,
+     "length": "12",
+     "desc": "거래량 ~"
     }
    ],
    "requestBody": [],
    "responseBody": [
+    {
+     "name": "tr_id",
+     "ko": "거래ID",
+     "type": "string",
+     "required": true,
+     "length": "13",
+     "desc": "요청한 tr_id"
+    },
+    {
+     "name": "tr_cont",
+     "ko": "연속 거래 여부",
+     "type": "string",
+     "required": false,
+     "length": "1",
+     "desc": "tr_cont를 이용한 다음조회 불가 API"
+    },
+    {
+     "name": "gt_uid",
+     "ko": "Global UID",
+     "type": "string",
+     "required": false,
+     "length": "32",
+     "desc": "[법인 전용] 거래고유번호로 사용하므로 거래별로 UNIQUE해야 함"
+    },
     {
      "name": "rt_cd",
      "ko": "성공 실패 여부",
@@ -355,14 +411,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -660,14 +708,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -1349,14 +1389,6 @@
      "required": false,
      "length": "1",
      "desc": "1: 등록 2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -1432,7 +1464,7 @@
      "type": "string",
      "required": true,
      "length": "2",
-     "desc": "[KRX]\r\n00 : 지정가\r\n01 : 시장가\r\n02 : 조건부지정가\r\n03 : 최유리지정가\r\n04 : 최우선지정가\r\n05 : 장전 시간외\r\n06 : 장후 시간외\r\n07 : 시간외 단일가\r\n11 : IOC지정가 (즉시체결,잔량취소)\r\n12 : FOK지정가 (즉시체결,전량취소)\r\n13 : IOC시장가 (즉시체결,잔량취소)\r\n14 : FOK시장가 (즉시체결,전량취소)\r\n15 : IOC최유리 (즉시체결,잔량취소)\r\n16 : FOK최유리 (즉시체결,전량취소)\r\n21 : 중간가\r\n22 : 스톱지정가\r\n23 : 중간가IOC\r\n24 : 중간가FOK\r\n\r\n[NXT]\r\n00 : 지정가\r\n03 : 최유리지정가\r\n04 : 최우선지정가\r\n11 : IOC지정가 (즉시체결,잔량취소)\r\n12 : FOK지정가 (즉시체결,전량취소)\r\n13 : IOC시장가 (즉시체결,잔량취소)\r\n14 : FOK시장가 (즉시체결,전량취소)\r\n15 : IOC최유리 (즉시체결,잔량취소)\r\n16 : FOK최유리 (즉시체결,전량취소)\r\n21 : 중간가\r\n22 : 스톱지정가\r\n23 : 중간가IOC\r\n24 : 중간가FOK\r\n\r\n[SOR]\r\n00 : 지정가\r\n01 : 시장가\r\n03 : 최유리지정가\r\n04 : 최우선지정가\r\n11 : IOC지정가 (즉시체결,잔량취소)\r\n12 : FOK지정가 (즉시체결,전량취소)\r\n13 : IOC시장가 (즉시체결,잔량취소)\r\n14 : FOK시장가 (즉시체결,전량취소)\r\n15 : IOC최유리 (즉시체결,잔량취소)\r\n16 : FOK최유리 (즉시체결,전량취소)"
+     "desc": "[KRX]\r\n00 : 지정가\r\n01 : 시장가\r\n02 : 조건부지정가\r\n03 : 최유리지정가\r\n04 : 최우선지정가\r\n05 : 장전 시간외\r\n06 : 장후 시간외\r\n07 : 시간외 단일가\r\n11 : IOC지정가 (즉시체결,잔량취소)\r\n12 : FOK지정가 (즉시체결,전량취소)\r\n13 : IOC시장가 (즉시체결,잔량취소)\r\n14 : FOK시장가 (즉시체결,전량취소)\r\n15 : IOC최유리 (즉시체결,잔량취소)\r\n16 : FOK최유리 (즉시체결,전량취소)\r\n21 : 중간가\r\n22 : 스톱지정가\r\n23 : 중간가IOC\r\n24 : 중간가F"
     },
     {
      "name": "ODER_COND",
@@ -1622,14 +1654,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -2031,14 +2055,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -2528,14 +2544,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -2681,14 +2689,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -3266,14 +3266,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -3419,14 +3411,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -3478,7 +3462,7 @@
      "type": "string",
      "required": true,
      "length": "3",
-     "desc": "110        장전 동시호가 개시                      \r\n112        장개시                                  \r\n121        장후 동시호가 개시                      \r\n129        장마감                                  \r\n130        장개시전시간외개시                      \r\n139        장개시전시간외종료                      \r\n140        시간외 종가 매매 개시                   \r\n146        장종료후시간외 체결지시                 \r\n149        시간외 종가 매매 종료                   \r\n150        시간외 단일가 매매 개시                 \r\n156        시간외단일가 체결지시                   \r\n159        시간외 단일가 매매 종료                 \r\n164        시장임시정지                            \r\n174        서킷브레이크 발동                       \r\n175        서킷브레이크 해제                       \r\n182        서킷브레이크 장중동시마감               \r\n184        서킷브레이크 개시                       \r\n185        서킷브레이크 해제                       \r\n387        사이드카 매도발동                       \r\n388        사이드카 매도발동해제                   \r\n397        사이드카 매수발동                       \r\n398        사이드카 매수발동해제                   \r\n???        단일가개시                              \r\n???        서킷브레이크 단일가접수                 \r\nF01        장개시 10초전                           \r\nF06        장개시 1분전                            \r\nF07        장개시 5분전                            \r\nF08        장개시 10분전                           \r\nF09        장개시 3분전                            \r\nF11        장마감 10초전                           \r\nF16        장마감 1분전                            \r\nF17        장마감 5분전                            \r\nF18        장마감 3분전                            \r\nP01        장개시 10초전                           \r\nP06        장개시 1분전                            \r\nP07        장개시 5분전                            \r\nP08        장개시 10분전                           \r\nP09        장개시 30분전                           \r\nP11        장마감 10초전                           \r\nP16        장마감 1분전                            \r\nP17        장마감 5분전                            \r\nP18        장마감 3분전"
+     "desc": "110        장전 동시호가 개시                      \r\n112        장개시                                  \r\n121        장후 동시호가 개시                      \r\n129        장마감                                  \r\n130        장개시전시간외개시                      \r\n139        장개시전시간외종료                      \r\n140        시간외 종가 매매 개"
     },
     {
      "name": "ANTC_MKOP_CLS_CODE",
@@ -3572,14 +3556,6 @@
      "required": true,
      "length": "1",
      "desc": "1 : 등록\r\n2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -4005,14 +3981,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -4774,14 +4742,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -5463,14 +5423,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -5768,14 +5720,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -6156,14 +6100,6 @@
      "required": true,
      "length": "1",
      "desc": ""
-    },
-    {
-     "name": "dummy(사용하지 않는 필드)",
-     "ko": "dummy(사용하지 않는 필드)",
-     "type": "number",
-     "required": true,
-     "length": "4",
-     "desc": "사용하지 않는 필드입니다."
     }
    ]
   },
@@ -6201,14 +6137,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -6850,14 +6778,6 @@
      "required": true,
      "length": "1",
      "desc": "1 : 등록\r\n2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -7411,14 +7331,6 @@
      "required": false,
      "length": "1",
      "desc": "1 : 등록 2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -7844,14 +7756,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -8429,14 +8333,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -8582,14 +8478,6 @@
      "required": false,
      "length": "1",
      "desc": "'1 : 등록\r\n2 : 해제'"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "'\tutf-8'"
     }
    ],
    "requestBody": [
@@ -9015,14 +8903,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -9584,14 +9464,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -10121,14 +9993,6 @@
      "required": false,
      "length": "1",
      "desc": "1 : 등록\r\n2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": false,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -10517,14 +10381,6 @@
      "required": true,
      "length": "4",
      "desc": ""
-    },
-    {
-     "name": "dummy(사용하지 않는 필드)",
-     "ko": "dummy(사용하지 않는 필드)",
-     "type": "number",
-     "required": true,
-     "length": "4",
-     "desc": "사용하지 않는 필드입니다."
     }
    ]
   },
@@ -10562,14 +10418,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -11251,14 +11099,6 @@
      "required": true,
      "length": "1",
      "desc": "1 : 등록\r\n2 : 해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "1",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -11647,14 +11487,6 @@
      "required": true,
      "length": "4",
      "desc": ""
-    },
-    {
-     "name": "dummy(사용하지 않는 필드)",
-     "ko": "dummy(사용하지 않는 필드)",
-     "type": "number",
-     "required": true,
-     "length": "4",
-     "desc": "사용하지 않는 필드입니다."
     }
    ]
   },
@@ -11692,14 +11524,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -11821,14 +11645,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -12230,14 +12046,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -12839,14 +12647,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -13080,14 +12880,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -13537,14 +13329,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -13906,14 +13690,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -14419,14 +14195,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -14548,14 +14316,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -15013,14 +14773,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -15112,7 +14864,7 @@
    "id": "실시간-067",
    "name": "KRX야간옵션실시간체결통보",
    "menu": "[국내선물옵션] 실시간시세",
-   "trIdReal": "H0MFCNI0",
+   "trIdReal": "H0EUCNI0",
    "trIdMock": "모의투자 미지원",
    "method": "POST",
    "domainReal": "ws://ops.koreainvestment.com:21000",
@@ -15142,14 +14894,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -15359,14 +15103,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -15576,14 +15312,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -16041,14 +15769,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -16410,14 +16130,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -16939,14 +16651,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -17308,14 +17012,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -17677,14 +17373,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -17798,14 +17486,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -18407,14 +18087,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -18896,14 +18568,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -19265,14 +18929,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -19722,14 +19378,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -19747,7 +19395,7 @@
      "type": "string",
      "required": true,
      "length": "6",
-     "desc": "<미국 야간거래 - 무료시세>\r\nD+시장구분(3자리)+종목코드\r\n예) DNASAAPL : D+NAS(나스닥)+AAPL(애플)\r\n[시장구분]\r\nNYS : 뉴욕, NAS : 나스닥, AMS : 아멕스\r\n\r\n<미국 주간거래>\r\nR+시장구분(3자리)+종목코드\r\n예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플)\r\n[시장구분]\r\nBAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)\r\n\r\n<아시아국가 - 유료시세>\r\n※ 유료시세 신청시에만 유료시세 수신가능\r\n\"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고\r\nR+시장구분(3자리)+종목코드\r\n예) RHKS00003 : R+HKS(홍콩)+00003(홍콩중화가스)\r\n[시장구분]\r\nTSE : 도쿄, HKS : 홍콩,\r\nSHS : 상해, SZS : 심천\r\nHSX : 호치민, HNX : 하노이"
+     "desc": "<미국 야간거래 - 무료시세>\r\nD+시장구분(3자리)+종목코드\r\n예) DNASAAPL : D+NAS(나스닥)+AAPL(애플)\r\n[시장구분]\r\nNYS : 뉴욕, NAS : 나스닥, AMS : 아멕스\r\n\r\n<미국 주간거래>\r\nR+시장구분(3자리)+종목코드\r\n예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플)\r\n[시장구분]\r\nBAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)\r\n\r\n<아시아국가 - 유료시세>\r\n※ 유료시세 신청시에만 유료시세 수신가능\r\n\"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참"
     }
    ],
    "responseBody": [
@@ -20403,14 +20051,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -20604,14 +20244,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -20629,7 +20261,7 @@
      "type": "string",
      "required": true,
      "length": "6",
-     "desc": "<미국 야간거래/아시아 주간거래 - 무료시세>\r\nD+시장구분(3자리)+종목코드\r\n예) DNASAAPL : D+NAS(나스닥)+AAPL(애플)\r\n[시장구분]\r\nNYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 ,\r\nTSE : 도쿄, HKS : 홍콩,\r\nSHS : 상해, SZS : 심천\r\nHSX : 호치민, HNX : 하노이\r\n\r\n<미국 야간거래/아시아 주간거래 - 유료시세>\r\n※ 유료시세 신청시에만 유료시세 수신가능\r\n\"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고\r\nR+시장구분(3자리)+종목코드\r\n예) RNASAAPL : R+NAS(나스닥)+AAPL(애플)\r\n[시장구분]\r\nNYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 ,\r\nTSE : 도쿄, HKS : 홍콩,\r\nSHS : 상해, SZS : 심천\r\nHSX : 호치민, HNX : 하노이\r\n\r\n<미국 주간거래>\r\nR+시장구분(3자리)+종목코드\r\n예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플)\r\n[시장구분]\r\nBAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)"
+     "desc": "<미국 야간거래/아시아 주간거래 - 무료시세>\r\nD+시장구분(3자리)+종목코드\r\n예) DNASAAPL : D+NAS(나스닥)+AAPL(애플)\r\n[시장구분]\r\nNYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 ,\r\nTSE : 도쿄, HKS : 홍콩,\r\nSHS : 상해, SZS : 심천\r\nHSX : 호치민, HNX : 하노이\r\n\r\n<미국 야간거래/아시아 주간거래 - 유료시세>\r\n※ 유료시세 신청시에만 유료시세 수신가능\r\n\"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고\r\nR+시장구분(3자리)+종목코드\r\n예) RNASAAPL "
     }
    ],
    "responseBody": [
@@ -20877,14 +20509,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -21142,14 +20766,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -21407,14 +21023,6 @@
      "required": true,
      "length": "1",
      "desc": "\"1: 등록, 2:해제\""
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -21752,14 +21360,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -22081,14 +21681,6 @@
      "required": true,
      "length": "1",
      "desc": "B : 법인 / P : 개인"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -22410,14 +22002,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -22597,7 +22181,7 @@
    "id": "실시간-053",
    "name": "일반채권 실시간호가",
    "menu": "[장내채권] 실시간시세",
-   "trIdReal": "H0BJCNT0",
+   "trIdReal": "H0BJASP0",
    "trIdMock": "모의투자 미지원",
    "method": "POST",
    "domainReal": "ws://ops.koreainvestment.com:21000",
@@ -22627,14 +22211,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [
@@ -22964,14 +22540,6 @@
      "required": true,
      "length": "1",
      "desc": "1: 등록, 2:해제"
-    },
-    {
-     "name": "content-type",
-     "ko": "컨텐츠타입",
-     "type": "string",
-     "required": true,
-     "length": "20",
-     "desc": "utf-8"
     }
    ],
    "requestBody": [

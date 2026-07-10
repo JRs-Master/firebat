@@ -1637,9 +1637,56 @@
         }
       },
       "night-options-exec-notify": {
+        "trId": "H0EUCNI0",
+        "realtimeMatch": "H0EUCNI0",
+        "desc": "KRX야간옵션실시간체결통보",
+        "keyDesc": "HTS ID",
+        "subscribe": {
+          "frame": {
+            "header": {
+              "approval_key": "{TOKEN}",
+              "custtype": "P",
+              "tr_type": "1",
+              "content-type": "utf-8"
+            },
+            "body": {
+              "input": {
+                "tr_id": "H0EUCNI0",
+                "tr_key": "{key}"
+              }
+            }
+          },
+          "match": "H0EUCNI0",
+          "successWhen": {
+            "field": "body.rt_cd",
+            "equals": "0"
+          }
+        },
+        "unsubscribe": {
+          "frame": {
+            "header": {
+              "approval_key": "{TOKEN}",
+              "custtype": "P",
+              "tr_type": "2",
+              "content-type": "utf-8"
+            },
+            "body": {
+              "input": {
+                "tr_id": "H0EUCNI0",
+                "tr_key": "{key}"
+              }
+            }
+          }
+        },
+        "decrypt": {
+          "ivField": "body.output.iv",
+          "keyField": "body.output.key"
+        }
+      },
+      "night-futures-exec-notify": {
         "trId": "H0MFCNI0",
         "realtimeMatch": "H0MFCNI0",
-        "desc": "KRX야간옵션실시간체결통보",
+        "desc": "KRX야간선물 실시간체결통보",
         "keyDesc": "HTS ID",
         "subscribe": {
           "frame": {
@@ -2117,7 +2164,7 @@
         "trId": "HDFSASP0",
         "realtimeMatch": "HDFSASP0",
         "desc": "해외주식 실시간호가",
-        "keyDesc": "<미국 야간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스  <미국 주간거래> R+시장구분(3자리)+종목코드 예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플) [시장구분] BAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)  <아시아국가 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고 R+시장구분(3자리)+종목코드 예) RHKS00003 : R+HKS(홍콩)+00003(홍콩중화가스) [시장구분] TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이",
+        "keyDesc": "<미국 야간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스  <미국 주간거래> R+시장구분(3자리)+종목코드 예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플) [시장구분] BAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)  <아시아국가 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참",
         "subscribe": {
           "frame": {
             "header": {
@@ -2203,7 +2250,7 @@
         "trId": "HDFSCNT0",
         "realtimeMatch": "HDFSCNT0",
         "desc": "해외주식 실시간지연체결가",
-        "keyDesc": "<미국 야간거래/아시아 주간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 , TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이  <미국 야간거래/아시아 주간거래 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고 R+시장구분(3자리)+종목코드 예) RNASAAPL : R+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 , TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이  <미국 주간거래> R+시장구분(3자리)+종목코드 예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플) [시장구분] BAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)",
+        "keyDesc": "<미국 야간거래/아시아 주간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 , TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이  <미국 야간거래/아시아 주간거래 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고 R+시장구분(3자리)+종목코드 예) RNASAAPL",
         "subscribe": {
           "frame": {
             "header": {
@@ -2507,6 +2554,49 @@
             "body": {
               "input": {
                 "tr_id": "H0BJCNT0",
+                "tr_key": "{key}"
+              }
+            }
+          }
+        }
+      },
+      "bond-orderbook": {
+        "trId": "H0BJASP0",
+        "realtimeMatch": "H0BJASP0",
+        "desc": "일반채권 실시간호가",
+        "keyDesc": "채권 종목코드 (ex. KR103502GA34)",
+        "subscribe": {
+          "frame": {
+            "header": {
+              "approval_key": "{TOKEN}",
+              "custtype": "P",
+              "tr_type": "1",
+              "content-type": "utf-8"
+            },
+            "body": {
+              "input": {
+                "tr_id": "H0BJASP0",
+                "tr_key": "{key}"
+              }
+            }
+          },
+          "match": "H0BJASP0",
+          "successWhen": {
+            "field": "body.rt_cd",
+            "equals": "0"
+          }
+        },
+        "unsubscribe": {
+          "frame": {
+            "header": {
+              "approval_key": "{TOKEN}",
+              "custtype": "P",
+              "tr_type": "2",
+              "content-type": "utf-8"
+            },
+            "body": {
+              "input": {
+                "tr_id": "H0BJASP0",
                 "tr_key": "{key}"
               }
             }
