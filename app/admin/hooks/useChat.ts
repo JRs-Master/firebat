@@ -743,11 +743,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         if (upJson?.success && upJson?.data?.url) {
           imageData = upJson.data.url;
         } else {
-          void alertDialog({ title: '첨부 실패', message: `첨부 이미지 업로드 실패: ${upJson?.error ?? '응답 오류'}`, danger: true });
+          void alertDialog({ title: t('chat_input.attach_fail_title'), message: t('chat_input.attach_fail_upload', { detail: String(upJson?.error ?? 'no response') }), danger: true });
           return;
         }
       } catch (err) {
-        void alertDialog({ title: '첨부 실패', message: `첨부 이미지 업로드 실패 (네트워크): ${err instanceof Error ? err.message : String(err)}`, danger: true });
+        void alertDialog({ title: t('chat_input.attach_fail_title'), message: t('chat_input.attach_fail_network', { detail: err instanceof Error ? err.message : String(err) }), danger: true });
         return;
       }
     }

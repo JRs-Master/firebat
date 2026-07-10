@@ -1110,7 +1110,16 @@ impl AiManager {
     /// persists the *real* answer via `finalize`, so this never masks a real reply. The `error`
     /// field marks it terminal for the frontend (rendered as an error, kept on reload — unlike
     /// transient session-only fallbacks). No-op without conversation / conversation_id / ai_msg_id.
-    fn finalize_error(&self, ai_opts: &AiRequestOpts, err: &str) {
+    /// Persist a terminal-error record for the turn. `reasoning_trace` = the rounds collected
+    /// BEFORE the failure — without it a mid-loop 400 destroys every CoT of the turn and the
+    /// incident cannot be read back afterwards (2026-07-10 실측: F2→tools:[] 400 으로 죽은
+    /// 22시 cron·채팅 턴들의 추론이 통째로 소실 — 어느 검색을 왜 돌았는지 판독 불가였다).
+    fn finalize_error(
+        &self,
+        ai_opts: &AiRequestOpts,
+        err: &str,
+        reasoning_trace: &[serde_json::Value],
+    ) {
         let (Some(conv), Some(conv_id), Some(aid)) = (
             &self.conversation,
             ai_opts.conversation_id.as_deref(),
@@ -1119,10 +1128,13 @@ impl AiManager {
             return;
         };
         let owner = ai_opts.owner.as_deref().unwrap_or("admin");
-        let msg = serde_json::json!({
+        let mut msg = serde_json::json!({
             "id": aid, "role": "system", "content": err, "error": err,
             "createdAt": crate::utils::time::now_ms(),
         });
+        if !reasoning_trace.is_empty() {
+            msg["data"] = serde_json::json!({ "reasoningTrace": reasoning_trace });
+        }
         conv.append(owner, conv_id, &msg);
     }
 
@@ -1962,9 +1974,10 @@ impl AiManager {
                 Ok(r) => r,
                 Err(e) => {
                     // Terminal LLM failure (400 / missing API key / etc.) — no answer will come.
-                    // Persist an error record so the turn isn't an orphan user bubble on reload.
+                    // Persist an error record so the turn isn't an orphan user bubble on reload,
+                    // WITH the rounds collected so far (mid-loop 실패에서도 CoT 판독 가능).
                     // (Recoverable SSE drops don't reach here; they complete + persist the real reply.)
-                    self.finalize_error(ai_opts, &e);
+                    self.finalize_error(ai_opts, &e, &reasoning_trace);
                     return Err(e);
                 }
             };
@@ -2628,25 +2641,26 @@ impl AiManager {
                 turn_results.push((call.clone(), action));
             }
 
-            // F2 — did this round produce anything at all? A call rejected by the per-turn cap or
-            // the duplicate guard executed nothing, so a round made entirely of those is pure
-            // budget burn. One such round is enough: strip the tools for the next round and let the
-            // model write its answer from what it has (see `force_final` above).
+            // F2 — did this round produce anything at all? A round made entirely of rejected calls
+            // is pure budget burn: strip the tools for the next round and let the model write its
+            // answer from what it has (see `force_final` above). The trigger requires at least one
+            // CAP rejection — a cap is declared thrash evidence (search ×18 실측), whereas a
+            // duplicate-only round is often a legitimate re-check ("use the previous result" 에러로
+            // 모델이 보통 회복) — 그것만으로 턴을 끝내면 정당한 작업이 조기 종료된다(리뷰 #4).
             if !turn_results.is_empty() {
+                let rejected = |r: &ToolResult, key: &str| {
+                    r.result.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+                };
                 let all_rejected = turn_results.iter().all(|(_, r)| {
-                    r.result
-                        .get("perTurnLimitExceeded")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                        || r.result
-                            .get("duplicateInTurn")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
+                    rejected(r, "perTurnLimitExceeded") || rejected(r, "duplicateInTurn")
                 });
-                if all_rejected && !force_final {
+                let any_cap = turn_results
+                    .iter()
+                    .any(|(_, r)| rejected(r, "perTurnLimitExceeded"));
+                if all_rejected && any_cap && !force_final {
                     force_final = true;
                     self.log.warn(
-                        "[AiManager] every tool call this round was rejected (cap/duplicate) — \
+                        "[AiManager] every tool call this round was rejected (incl. a cap hit) — \
                          disabling tools for the next round to force a final answer",
                     );
                 }

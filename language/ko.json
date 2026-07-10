@@ -469,7 +469,10 @@
     "image_mode_toggle": "이미지 모드로 전환",
     "image_label": "이미지",
     "stop_generation": "생성 중지",
-    "send": "전송"
+    "send": "전송",
+    "attach_fail_title": "첨부 실패",
+    "attach_fail_upload": "첨부 이미지 업로드 실패: {detail}",
+    "attach_fail_network": "첨부 이미지 업로드 실패 (네트워크): {detail}"
   },
   "file_tree": {
     "open_in_browser": "브라우저에서 열기"

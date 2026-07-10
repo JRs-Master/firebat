@@ -500,6 +500,17 @@ impl TaskManager {
                 body,
                 headers,
             } => {
+                // NETWORK_REQUEST 필드(url/body/headers)는 $prev 해석 대상이 아니다(inputMap 없는
+                // 스텝) — 참조가 literal 로 나가면 영문 모를 DNS/HTTP 에러가 된다. 다른 스텝들과
+                // 같은 규약으로 fail-fast (동적 값 = TOOL_CALL network_request + inputMap 안내).
+                let url_v = Value::String(url.clone());
+                for v in [Some(&url_v), body.as_ref(), headers.as_ref()].into_iter().flatten() {
+                    if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(v) {
+                        return StepOutcome::Fail(format!(
+                            "NETWORK_REQUEST 미해석 참조: '{bad}' — 이 스텝의 url/body/headers 는 $prev 치환을 지원하지 않습니다. 동적 값이 필요하면 TOOL_CALL(tool=network_request) + inputMap 을 사용하세요."
+                        ));
+                    }
+                }
                 let m = method.as_deref().unwrap_or("GET");
                 match self
                     .executor

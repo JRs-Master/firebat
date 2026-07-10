@@ -469,7 +469,10 @@
     "image_mode_toggle": "Switch to image mode",
     "image_label": "Image",
     "stop_generation": "Stop generation",
-    "send": "Send"
+    "send": "Send",
+    "attach_fail_title": "Attachment failed",
+    "attach_fail_upload": "Attached image upload failed: {detail}",
+    "attach_fail_network": "Attached image upload failed (network): {detail}"
   },
   "file_tree": {
     "open_in_browser": "Open in browser"
