@@ -46,6 +46,26 @@
   }
  },
  {
+  "id": "ka01300",
+  "name": "관심종목 그룹 리스트 조회",
+  "description": "관심종목 그룹 리스트 조회",
+  "domain": "국내주식/관심종목",
+  "method": "POST",
+  "path": "/api/dostk/watchlist",
+  "params": {}
+ },
+ {
+  "id": "ka01301",
+  "name": "관심종목 그룹 상세 조회",
+  "description": "관심종목 그룹 상세 조회",
+  "domain": "국내주식/관심종목",
+  "method": "POST",
+  "path": "/api/dostk/watchlist",
+  "params": {
+   "arn_grp_id": "그룹SEQ (필수) — ka01300 응답 결과의 gcod값을 입력"
+  }
+ },
+ {
   "id": "ka01690",
   "name": "일별잔고수익률",
   "description": "일별잔고수익률",
@@ -1195,8 +1215,8 @@
  },
  {
   "id": "ka10095",
-  "name": "관심종목정보요청",
-  "description": "관심종목정보요청",
+  "name": "지정종목 정보요청",
+  "description": "지정종목 정보요청",
   "domain": "국내주식/종목정보",
   "method": "POST",
   "path": "/api/dostk/stkinfo",
@@ -1691,8 +1711,8 @@
  },
  {
   "id": "ka40009",
-  "name": "ETF시간대별체결요청",
-  "description": "ETF시간대별체결요청",
+  "name": "ETF시간대별NAV현황",
+  "description": "ETF시간대별NAV현황",
   "domain": "국내주식/ETF",
   "method": "POST",
   "path": "/api/dostk/etf",
@@ -1702,8 +1722,8 @@
  },
  {
   "id": "ka40010",
-  "name": "ETF시간대별추이요청",
-  "description": "ETF시간대별추이요청",
+  "name": "ETF시간대별수급현황",
+  "description": "ETF시간대별수급현황",
   "domain": "국내주식/ETF",
   "method": "POST",
   "path": "/api/dostk/etf",
@@ -2523,26 +2543,6 @@
    "stk_cd": "종목코드 — M04020000: 금 99.99_1kg, M04020100: 미니금 99.99_100g, 전체 조회는 빈값('')으로 설정",
    "fr_ord_no": "시작주문번호 — 시작주문번호 입력 시 이전 주문은 조회되지 않음, 전체 조회는 빈값('')으로 설정",
    "dmst_stex_tp": "국내거래소구분 — %:(전체), KRX, NXT, SOR"
-  }
- },
- {
-  "id": "ka01300",
-  "name": "관심종목 그룹 리스트 조회",
-  "description": "관심종목 그룹 리스트 조회",
-  "domain": "국내주식/관심종목",
-  "method": "POST",
-  "path": "/api/dostk/watchlist",
-  "params": {}
- },
- {
-  "id": "ka01301",
-  "name": "관심종목 그룹 상세 조회",
-  "description": "관심종목 그룹 상세 조회",
-  "domain": "국내주식/관심종목",
-  "method": "POST",
-  "path": "/api/dostk/watchlist",
-  "params": {
-   "arn_grp_id": "그룹SEQ (필수) — ka01300 응답 결과의 gcod값을 입력"
   }
  },
  {
