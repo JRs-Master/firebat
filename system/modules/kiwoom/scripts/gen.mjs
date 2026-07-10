@@ -65,17 +65,21 @@ const DOMAIN_CAPABILITY = {
   'us-stock': 'stock-trading',
 };
 
-// 손유지 블록(actionCatalog·requiresApproval·ws·grounding) = config.json 자체가 소스.
-// gen 은 reconciler: 기존 config 에서 이들을 읽어 보존하고, _apis 파생분(enum·domains·
-// URL_CATEGORY·index.mjs)만 갱신한다. 소스는 _apis.json(스펙) + config.json(손유지)에 있고
-// gen.mjs 는 소스를 담지 않는다.
-const PRESERVE_KEYS = ['actionCatalog', 'requiresApproval', 'ws', 'grounding'];
+// config.json 자체가 모듈 소스. gen 은 reconciler: `_apis.json` 파생분(domains·input·output —
+// action enum 과 URL_CATEGORY 포함)만 갱신하고 **나머지 키는 전부 보존**한다.
+//
+// ⚠️ 옛 방식(보존할 키를 whitelist)은 새 선언형 블록이 추가될 때마다 썩는다 — 실측으로 `tags`
+// 가 whitelist 에 없어 regen 이 통째로 날릴 뻔했다(korea-invest 쪽은 `ws` 58 스트림과
+// `timeseries` 까지). 규칙을 뒤집는다: **생성 키만 열거하고 나머지는 기본 보존.**
+const GENERATED_KEYS = ['domains', 'input', 'output'];
 
 function build(apis) {
   let preserved = {};
   try {
     const existing = JSON.parse(readFileSync(resolve(MODULE_DIR, 'config.json'), 'utf8'));
-    for (const k of PRESERVE_KEYS) if (k in existing) preserved[k] = existing[k];
+    for (const k of Object.keys(existing)) {
+      if (!GENERATED_KEYS.includes(k)) preserved[k] = existing[k];
+    }
   } catch { /* no existing config — first bootstrap */ }
 
   const urlCategory = {};
@@ -138,8 +142,6 @@ function build(apis) {
     runtime: 'node',
     capability: 'stock-trading',
     providerType: 'api',
-    // 손유지 블록 보존 (config.json 이 소스, gen 은 reconciler).
-    ...preserved,
     secrets: [
       { name: 'KIWOOM_APP_KEY',      type: 'key' },
       { name: 'KIWOOM_APP_SECRET',   type: 'key' },
@@ -190,6 +192,9 @@ function build(apis) {
       type: 'object',
       properties: { apiId: { type: 'string' }, name: { type: 'string' } },
     },
+    // 기존 config 의 모든 비-생성 키를 마지막에 얹어 하드코딩 기본값을 이기게 한다
+    // (config.json 이 소스 — secrets 에 손으로 추가한 토큰도 regen 을 살아남는다).
+    ...preserved,
   };
 
   const index = `#!/usr/bin/env node

@@ -346,7 +346,27 @@ const apisPath = resolve(MODULE_DIR, '_apis.json');
 const apis = JSON.parse(readFileSync(apisPath, 'utf8'));
 const { config, index } = build(apis);
 
-writeFileSync(resolve(MODULE_DIR, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
+// Reconciler, not a generator. config.json is the MODULE SOURCE — hand-maintained blocks
+// (actionCatalog / requiresApproval / grounding / timeseries / ws / tags / secrets …) are edited
+// there and must survive a regen. Only the keys derived from `_apis.json` are overwritten; every
+// other key is carried over from the existing config. A whitelist of "keys to preserve" rots the
+// moment a new declarative block is added (실측: `ws` 58 스트림·`tags`·`timeseries` 는 whitelist 에
+// 없어 regen 이 통째로 날릴 뻔했다) — so the rule is inverted: generated keys are enumerated, the
+// rest is preserved by default.
+const GENERATED_KEYS = ['domains', 'input', 'output'];
+const configPath = resolve(MODULE_DIR, 'config.json');
+let merged = config;
+try {
+  const existing = JSON.parse(readFileSync(configPath, 'utf8'));
+  merged = { ...existing };
+  for (const k of GENERATED_KEYS) merged[k] = config[k];
+  const preserved = Object.keys(existing).filter((k) => !GENERATED_KEYS.includes(k));
+  console.log(`  (reconcile) 생성: ${GENERATED_KEYS.join(', ')} | 보존: ${preserved.join(', ')}`);
+} catch {
+  console.log('  (bootstrap) 기존 config.json 없음 — 전체 생성');
+}
+
+writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8');
 writeFileSync(resolve(MODULE_DIR, 'index.mjs'), index, 'utf8');
 
 const allCount = config.input.properties.action.enum.length;

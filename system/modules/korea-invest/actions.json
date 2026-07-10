@@ -1,16 +1,5 @@
 [
  {
-  "id": "Hashkey",
-  "name": "Hashkey",
-  "description": "Hashkey",
-  "domain": "OAuth인증",
-  "method": "POST",
-  "path": "/uapi/hashkey",
-  "params": {
-   "body.JsonBody": "요청값 (필수) — POST로 보낼 body값 ex) datas = { \"CANO\": '00000000', \"ACNT_PRDT_CD\": \"01\", \"OVRS_EXC…"
-  }
- },
- {
   "id": "인증-002",
   "name": "접근토큰폐기(P)",
   "description": "접근토큰폐기(P)",
@@ -638,6 +627,19 @@
   }
  },
  {
+  "id": "ETF 현재가 호가",
+  "name": "ETF 현재가 호가",
+  "description": "ETF 현재가 호가",
+  "domain": "[국내주식] 기본시세",
+  "method": "GET",
+  "path": "/uapi/etfetn/v1/quotations/inquire-asking-price",
+  "trId": "FHPST02400200",
+  "params": {
+   "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J",
+   "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (6자리)"
+  }
+ },
+ {
   "id": "국내주식-213",
   "name": "주식일별분봉조회",
   "description": "주식일별분봉조회",
@@ -662,14 +664,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
   "trId": "FHKST03010100",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
-   "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)",
-   "query.FID_INPUT_DATE_1": "입력 날짜 1 (필수) — 조회 시작일자",
-   "query.FID_INPUT_DATE_2": "입력 날짜 2 (필수) — 조회 종료일자 (최대 100개)",
-   "query.FID_PERIOD_DIV_CODE": "기간분류코드 (필수) — D:일봉 W:주봉, M:월봉, Y:년봉",
-   "query.FID_ORG_ADJ_PRC": "수정주가 원주가 가격 여부 (필수) — 0:수정주가 1:원주가"
-  }
+  "params": {}
  },
  {
   "id": "v1_국내주식-071",
@@ -694,10 +689,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
   "trId": "FHKST01010200",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J:KRX, NX:NXT, UN:통합",
-   "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목코드 (ex 005930 삼성전자)"
-  }
+  "params": {}
  },
  {
   "id": "v1_국내주식-009",
@@ -760,10 +752,7 @@
   "method": "GET",
   "path": "/uapi/etfetn/v1/quotations/inquire-price",
   "trId": "FHPST02400000",
-  "params": {
-   "query.fid_input_iscd": "FID 입력 종목코드 (필수) — 종목코드",
-   "query.fid_cond_mrkt_div_code": "FID 조건 시장 분류 코드 (필수) — J"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-120",
@@ -1175,18 +1164,7 @@
   "method": "GET",
   "path": "/uapi/elw/v1/quotations/expiration-stocks",
   "trId": "FHKEW154700C0",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — W 입력",
-   "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — 11547 입력",
-   "query.FID_INPUT_DATE_1": "입력날짜1 (필수) — 입력날짜 ~ (ex) 20240402)",
-   "query.FID_INPUT_DATE_2": "입력날짜2 (필수) — ~입력날짜 (ex) 20240408)",
-   "query.FID_DIV_CLS_CODE": "분류구분코드 (필수) — 0(콜),1(풋),2(전체)",
-   "query.FID_ETC_CLS_CODE": "기타구분코드 (필수) — 공백 입력",
-   "query.FID_UNAS_INPUT_ISCD": "기초자산입력종목코드 (필수) — 000000(전체), 2001(KOSPI 200), 기초자산코드(종목코드 ex. 삼성전자-005930)",
-   "query.FID_INPUT_ISCD_2": "발행회사코드 (필수) — 00000(전체), 00003(한국투자증권), 00017(KB증권), 00005(미래에셋증권)",
-   "query.FID_BLNG_CLS_CODE": "결제방법 (필수) — 0(전체),1(일반),2(조기종료)",
-   "query.FID_INPUT_OPTION_1": "입력옵션1 (필수) — 공백 입력"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-182",
@@ -1250,13 +1228,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice",
   "trId": "FHKUP03500100",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — 업종 : U",
-   "query.FID_INPUT_ISCD": "업종 상세코드 (필수) — '0001 : 종합 0002 : 대형주 ... 포탈 (FAQ : 종목정보 다운로드(국내) - 업종코드 참조)'",
-   "query.FID_INPUT_DATE_1": "조회 시작일자 (필수) — 조회 시작일자 (ex. 20220501)",
-   "query.FID_INPUT_DATE_2": "조회 종료일자 (필수) — 조회 종료일자 (ex. 20220530)",
-   "query.FID_PERIOD_DIV_CODE": "'\t기간분류코드' (필수) — ' D:일봉 W:주봉, M:월봉, Y:년봉'"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-119",
@@ -1393,12 +1365,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/comp-interest",
   "trId": "FHPST07020000",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — Unique key(I)",
-   "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — Unique key(20702)",
-   "query.FID_DIV_CLS_CODE": "분류구분코드 (필수) — 1: 해외금리지표",
-   "query.FID_DIV_CLS_CODE1": "분류구분코드 (필수) — 공백 : 전체"
-  }
+  "params": {}
  },
  {
   "id": "v1_국내주식-055",
@@ -1427,16 +1394,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/news-title",
   "trId": "FHKST01011800",
-  "params": {
-   "query.FID_NEWS_OFER_ENTP_CODE": "뉴스 제공 업체 코드 (필수) — 공백 필수 입력",
-   "query.FID_COND_MRKT_CLS_CODE": "조건 시장 구분 코드 (필수) — 공백 필수 입력",
-   "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 공백: 전체, 종목코드 : 해당코드가 등록된 뉴스",
-   "query.FID_TITL_CNTT": "제목 내용 (필수) — 공백 필수 입력",
-   "query.FID_INPUT_DATE_1": "입력 날짜 (필수) — 공백: 현재기준, 조회일자(ex 00YYYYMMDD)",
-   "query.FID_INPUT_HOUR_1": "입력 시간 (필수) — 공백: 현재기준, 조회시간(ex 0000HHMMSS)",
-   "query.FID_RANK_SORT_CLS_CODE": "순위 정렬 구분 코드 (필수) — 공백 필수 입력",
-   "query.FID_INPUT_SRNO": "입력 일련번호 (필수) — 공백 필수 입력"
-  }
+  "params": {}
  },
  {
   "id": "v1_국내주식-029",
@@ -1791,12 +1749,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/ksdinfo/merger-split",
   "trId": "HHKDB669104C0",
-  "params": {
-   "query.CTS": "CTS (필수) — 공백",
-   "query.F_DT": "조회일자From (필수) — 일자 ~",
-   "query.T_DT": "조회일자To (필수) — ~ 일자",
-   "query.SHT_CD": "종목코드 (필수) — 공백: 전체, 특정종목 조회시 : 종목코드"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-187",
@@ -1989,12 +1942,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/pbar-tratio",
   "trId": "FHPST01130000",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건시장분류코드 (필수) — J:KRX, NX:NXT, UN:통합",
-   "query.FID_INPUT_ISCD": "입력종목코드 (필수) — 주식단축종목코드",
-   "query.FID_COND_SCR_DIV_CODE": "조건화면분류코드 (필수) — Uniquekey(20113)",
-   "query.FID_INPUT_HOUR_1": "입력시간1 (필수) — 공백"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-037",
@@ -2312,18 +2260,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/ranking/exp-trans-updown",
   "trId": "FHPST01820000",
-  "params": {
-   "query.fid_rank_sort_cls_code": "순위 정렬 구분 코드 (필수) — 0:상승률1:상승폭2:보합3:하락율4:하락폭5:체결량6:거래대금",
-   "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
-   "query.fid_cond_scr_div_code": "조건 화면 분류 코드 (필수) — Unique key(20182)",
-   "query.fid_input_iscd": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200, 4001: KRX100",
-   "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0:전체 1:보통주 2:우선주",
-   "query.fid_aply_rang_prc_1": "적용 범위 가격1 (필수) — 입력값 없을때 전체 (가격 ~)",
-   "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
-   "query.fid_pbmn": "거래대금 (필수) — 입력값 없을때 전체 (거래대금 ~) 천원단위",
-   "query.fid_blng_cls_code": "소속 구분 코드 (필수) — 0: 전체",
-   "query.fid_mkop_cls_code": "장운영 구분 코드 (필수) — 0:장전예상1:장마감예상"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-089",
@@ -2528,20 +2465,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/ranking/near-new-highlow",
   "trId": "FHPST01870000",
-  "params": {
-   "query.fid_aply_rang_vol": "적용 범위 거래량 (필수) — 0: 전체, 100: 100주 이상",
-   "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (주식 J)",
-   "query.fid_cond_scr_div_code": "조건 화면 분류 코드 (필수) — Unique key(20187)",
-   "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0:전체, 1:관리종목, 2:투자주의, 3:투자경고",
-   "query.fid_input_cnt_1": "입력 수1 (필수) — 괴리율 최소",
-   "query.fid_input_cnt_2": "입력 수2 (필수) — 괴리율 최대",
-   "query.fid_prc_cls_code": "가격 구분 코드 (필수) — 0:신고근접, 1:신저근접",
-   "query.fid_input_iscd": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200, 4001: KRX100",
-   "query.fid_trgt_cls_code": "대상 구분 코드 (필수) — 0: 전체",
-   "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0:전체, 1:관리종목, 2:투자주의, 3:투자경고, 4:투자위험예고, 5:투자위험, 6:보통주, 7:우선주",
-   "query.fid_aply_rang_prc_1": "적용 범위 가격1 (필수) — 가격 ~",
-   "query.fid_aply_rang_prc_2": "적용 범위 가격2 (필수) — ~ 가격"
-  }
+  "params": {}
  },
  {
   "id": "v1_국내주식-094",
@@ -2551,17 +2475,7 @@
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/ranking/prefer-disparate-ratio",
   "trId": "FHPST01770000",
-  "params": {
-   "query.fid_vol_cnt": "거래량 수 (필수) — 입력값 없을때 전체 (거래량 ~)",
-   "query.fid_cond_mrkt_div_code": "조건 시장 분류 코드 (필수) — 시장구분코드 (J:KRX, NX:NXT)",
-   "query.fid_cond_scr_div_code": "조건 화면 분류 코드 (필수) — Unique key( 20177 )",
-   "query.fid_div_cls_code": "분류 구분 코드 (필수) — 0: 전체",
-   "query.fid_input_iscd": "입력 종목코드 (필수) — 0000:전체, 0001:거래소, 1001:코스닥, 2001:코스피200",
-   "query.fid_trgt_cls_code": "대상 구분 코드 (필수) — 0 : 전체",
-   "query.fid_trgt_exls_cls_code": "대상 제외 구분 코드 (필수) — 0 : 전체",
-   "query.fid_input_price_1": "입력 가격1 (필수) — 입력값 없을때 전체 (가격 ~)",
-   "query.fid_input_price_2": "입력 가격2 (필수) — 입력값 없을때 전체 (~ 가격)"
-  }
+  "params": {}
  },
  {
   "id": "국내주식-107",
@@ -3115,13 +3029,7 @@
   "method": "GET",
   "path": "/uapi/domestic-futureoption/v1/quotations/inquire-daily-fuopchartprice",
   "trId": "FHKIF03020100",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — F: 지수선물, O:지수옵션 JF: 주식선물, JO:주식옵션, CF: 상품선물(금), 금리선물(국채), 통화선물(달러) CM: 야간선물, EU:…",
-   "query.FID_INPUT_ISCD": "종목코드 (필수) — 종목번호 (지수선물:6자리, 지수옵션 9자리)",
-   "query.FID_INPUT_DATE_1": "조회 시작일자 (필수) — 조회 시작일자 (ex. 20220401)",
-   "query.FID_INPUT_DATE_2": "조회 종료일자 (필수) — 조회 종료일자 (ex. 20220524) ※ 주(W), 월(M), 년(Y) 봉 조회 시에 아래 참고 ㅁ FID_INPUT_DATE_2 가 현재일…",
-   "query.FID_PERIOD_DIV_CODE": "기간분류코드 (필수) — D:일봉 W:주봉, M:월봉, Y:년봉"
-  }
+  "params": {}
  },
  {
   "id": "국내선물-023",
@@ -3620,8 +3528,26 @@
   "params": {
    "query.AUTH": "사용자권한정보 (필수) — 공백 입력 필수",
    "query.NREC": "종목요청개수 (필수) — 최대 10",
-   "query.EXCD_01 ~ 10": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
-   "query.SYMB_01 ~ 10": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조"
+   "query.EXCD_01": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_02": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_03": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_04": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_05": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_06": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_07": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_08": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_09": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.EXCD_10": "거래소코드 (필수) — HKS : 홍콩 NYS : 뉴욕 NAS : 나스닥 AMS : 아멕스 TSE : 도쿄 SHS : 상해 SZS : 심천 SHI : 상해지수 SZI …",
+   "query.SYMB_01": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_02": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_03": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_04": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_05": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_06": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_07": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_08": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_09": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조",
+   "query.SYMB_10": "종목코드 (필수) — API 문서 -> 종목정보파일 -> 마스터 파일 참조"
   }
  },
  {
@@ -3745,13 +3671,7 @@
   "method": "GET",
   "path": "/uapi/overseas-price/v1/quotations/inquire-daily-chartprice",
   "trId": "FHKST03030100",
-  "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — N: 해외지수, X 환율, I: 국채, S:금선물",
-   "query.FID_INPUT_ISCD": "FID 입력 종목코드 (필수) — 종목코드 ※ 해외주식 마스터 코드 참조 (포럼 > FAQ > 종목정보 다운로드(해외) > 해외지수) ※ 해당 API로 미국주식 조회 시, 다우3…",
-   "query.FID_INPUT_DATE_1": "FID 입력 날짜1 (필수) — 시작일자(YYYYMMDD)",
-   "query.FID_INPUT_DATE_2": "FID 입력 날짜2 (필수) — 종료일자(YYYYMMDD)",
-   "query.FID_PERIOD_DIV_CODE": "FID 기간 분류 코드 (필수) — D:일, W:주, M:월, Y:년"
-  }
+  "params": {}
  },
  {
   "id": "해외주식-048",
@@ -3877,15 +3797,7 @@
   "method": "GET",
   "path": "/uapi/overseas-stock/v1/ranking/new-highlow",
   "trId": "HHDFS76300000",
-  "params": {
-   "query.KEYB": "NEXT KEY BUFF (필수) — 공백",
-   "query.AUTH": "사용자권한정보 (필수) — 공백",
-   "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
-   "query.GUBN": "신고/신저 구분 (필수) — 신고(1) 신저(0)",
-   "query.GUBN2": "일시돌파/돌파 구분 (필수) — 일시돌파(0) 돌파유지(1)",
-   "query.NDAY": "N일자값 (필수) — N일전 : 0(5일), 1(10일), 2(20일), 3(30일), 4(60일), 5(120일전), 6(52주), 7(1년)",
-   "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-  }
+  "params": {}
  },
  {
   "id": "해외주식-040",
@@ -4004,14 +3916,7 @@
   "method": "GET",
   "path": "/uapi/overseas-stock/v1/ranking/updown-rate",
   "trId": "HHDFS76290000",
-  "params": {
-   "query.KEYB": "NEXT KEY BUFF (필수) — 공백",
-   "query.AUTH": "사용자권한정보 (필수) — 공백",
-   "query.EXCD": "거래소코드 (필수) — 'NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 HKS : 홍콩, SHS : 상해 , SZS : 심천 HSX : 호치민, HNX : 하…",
-   "query.GUBN": "상승율/하락율 구분 (필수) — 0(하락율), 1(상승율)",
-   "query.NDAY": "N일자값 (필수) — N일전 : 0(당일), 1(2일), 2(3일), 3(5일), 4(10일), 5(20일전), 6(30일), 7(60일), 8(120일), 9(1년…",
-   "query.VOL_RANG": "거래량조건 (필수) — 0(전체), 1(1백주이상), 2(1천주이상), 3(1만주이상), 4(10만주이상), 5(100만주이상), 6(1000만주이상)"
-  }
+  "params": {}
  },
  {
   "id": "해외주식-050",
@@ -4400,8 +4305,37 @@
   "params": {
    "query.QRY_CNT": "요청개수 (필수) — 입력한 코드 개수",
    "query.SRS_CD_01": "품목종류 (필수) — 최대 32개 까지 가능",
-   "query.SRS_CD_02…": "품목종류… (필수)",
-   "query.SRS_CD_32": "품목종류 (필수)"
+   "query.SRS_CD_02": "품목종류… (필수)",
+   "query.SRS_CD_03": "품목종류… (필수)",
+   "query.SRS_CD_04": "품목종류… (필수)",
+   "query.SRS_CD_05": "품목종류… (필수)",
+   "query.SRS_CD_06": "품목종류… (필수)",
+   "query.SRS_CD_07": "품목종류… (필수)",
+   "query.SRS_CD_08": "품목종류… (필수)",
+   "query.SRS_CD_09": "품목종류… (필수)",
+   "query.SRS_CD_10": "품목종류… (필수)",
+   "query.SRS_CD_11": "품목종류… (필수)",
+   "query.SRS_CD_12": "품목종류… (필수)",
+   "query.SRS_CD_13": "품목종류… (필수)",
+   "query.SRS_CD_14": "품목종류… (필수)",
+   "query.SRS_CD_15": "품목종류… (필수)",
+   "query.SRS_CD_16": "품목종류… (필수)",
+   "query.SRS_CD_17": "품목종류… (필수)",
+   "query.SRS_CD_18": "품목종류… (필수)",
+   "query.SRS_CD_19": "품목종류… (필수)",
+   "query.SRS_CD_20": "품목종류… (필수)",
+   "query.SRS_CD_21": "품목종류… (필수)",
+   "query.SRS_CD_22": "품목종류… (필수)",
+   "query.SRS_CD_23": "품목종류… (필수)",
+   "query.SRS_CD_24": "품목종류… (필수)",
+   "query.SRS_CD_25": "품목종류… (필수)",
+   "query.SRS_CD_26": "품목종류… (필수)",
+   "query.SRS_CD_27": "품목종류… (필수)",
+   "query.SRS_CD_28": "품목종류… (필수)",
+   "query.SRS_CD_29": "품목종류… (필수)",
+   "query.SRS_CD_30": "품목종류… (필수)",
+   "query.SRS_CD_31": "품목종류… (필수)",
+   "query.SRS_CD_32": "품목종류… (필수)"
   }
  },
  {
@@ -4561,8 +4495,35 @@
   "params": {
    "query.QRY_CNT": "요청개수 (필수) — 입력한 코드 개수",
    "query.SRS_CD_01": "종목코드1 (필수) — SRS_CD_01부터 차례로 입력(ex ) OESU24 C5500 최대 30개 까지 가능",
-   "query.SRS_CD_02...": "종목코드2 (필수)",
-   "query.SRS_CD_30": "종목코드30 (필수)"
+   "query.SRS_CD_02": "종목코드2 (필수)",
+   "query.SRS_CD_03": "종목코드2 (필수)",
+   "query.SRS_CD_04": "종목코드2 (필수)",
+   "query.SRS_CD_05": "종목코드2 (필수)",
+   "query.SRS_CD_06": "종목코드2 (필수)",
+   "query.SRS_CD_07": "종목코드2 (필수)",
+   "query.SRS_CD_08": "종목코드2 (필수)",
+   "query.SRS_CD_09": "종목코드2 (필수)",
+   "query.SRS_CD_10": "종목코드2 (필수)",
+   "query.SRS_CD_11": "종목코드2 (필수)",
+   "query.SRS_CD_12": "종목코드2 (필수)",
+   "query.SRS_CD_13": "종목코드2 (필수)",
+   "query.SRS_CD_14": "종목코드2 (필수)",
+   "query.SRS_CD_15": "종목코드2 (필수)",
+   "query.SRS_CD_16": "종목코드2 (필수)",
+   "query.SRS_CD_17": "종목코드2 (필수)",
+   "query.SRS_CD_18": "종목코드2 (필수)",
+   "query.SRS_CD_19": "종목코드2 (필수)",
+   "query.SRS_CD_20": "종목코드2 (필수)",
+   "query.SRS_CD_21": "종목코드2 (필수)",
+   "query.SRS_CD_22": "종목코드2 (필수)",
+   "query.SRS_CD_23": "종목코드2 (필수)",
+   "query.SRS_CD_24": "종목코드2 (필수)",
+   "query.SRS_CD_25": "종목코드2 (필수)",
+   "query.SRS_CD_26": "종목코드2 (필수)",
+   "query.SRS_CD_27": "종목코드2 (필수)",
+   "query.SRS_CD_28": "종목코드2 (필수)",
+   "query.SRS_CD_29": "종목코드2 (필수)",
+   "query.SRS_CD_30": "종목코드2 (필수)"
   }
  },
  {
@@ -4834,16 +4795,14 @@
   }
  },
  {
-  "id": "ETF 현재가 호가",
-  "name": "ETF 현재가 호가",
-  "description": "ETF 현재가 호가",
-  "domain": "[국내주식] 기본시세",
-  "method": "GET",
-  "path": "/uapi/etfetn/v1/quotations/inquire-asking-price",
-  "trId": "FHPST02400200",
+  "id": "Hashkey",
+  "name": "Hashkey",
+  "description": "Hashkey",
+  "domain": "OAuth인증",
+  "method": "POST",
+  "path": "/uapi/hashkey",
   "params": {
-   "query.FID_COND_MRKT_DIV_CODE": "조건 시장 분류 코드 (필수) — J",
-   "query.FID_INPUT_ISCD": "입력 종목코드 (필수) — 종목번호 (6자리)"
+   "body.JsonBody": "요청값 (필수) — POST로 보낼 body값 ex) datas = { \"CANO\": '00000000', \"ACNT_PRDT_CD\": \"01\", \"OVRS_EXC…"
   }
  }
 ]

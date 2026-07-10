@@ -11,13 +11,6 @@ const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
 
 const API_TABLE = {
-  "Hashkey": {
-    "method": "POST",
-    "path": "/uapi/hashkey",
-    "trIdReal": "",
-    "trIdMock": "",
-    "name": "Hashkey"
-  },
   "인증-002": {
     "method": "POST",
     "path": "/oauth2/revokeP",
@@ -262,6 +255,13 @@ const API_TABLE = {
     "trIdReal": "FHPST01010000",
     "trIdMock": "",
     "name": "주식현재가 시세2"
+  },
+  "ETF 현재가 호가": {
+    "method": "GET",
+    "path": "/uapi/etfetn/v1/quotations/inquire-asking-price",
+    "trIdReal": "FHPST02400200",
+    "trIdMock": "",
+    "name": "ETF 현재가 호가"
   },
   "국내주식-213": {
     "method": "GET",
@@ -1956,6 +1956,13 @@ const API_TABLE = {
     "trIdReal": "CTPF1114R",
     "trIdMock": "",
     "name": "장내채권 기본조회"
+  },
+  "Hashkey": {
+    "method": "POST",
+    "path": "/uapi/hashkey",
+    "trIdReal": "",
+    "trIdMock": "",
+    "name": "Hashkey"
   }
 };
 
@@ -2020,12 +2027,12 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
 // close-price field. Covers 국내 일/주/월(stck_bsop_date+stck_clpr), 국내 분봉(stck_cntg_hour+
 // stck_prpr), 해외(xymd+clos). Values arrive as strings — Number() them.
 function kisNum(v) {
-  const n = Number(String(v ?? '').replace(/^[+\-]/, ''));
+  const n = Number(String(v ?? '').replace(/^[+-]/, ''));
   return Number.isFinite(n) ? n : v;
 }
 function kisDate8(s) {
   s = String(s ?? '');
-  return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
+  return /^d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
 }
 function normalizeCandleRow(row) {
   // 해외 기간별시세 (HHDFS76240000 류): xymd + clos (+open/high/low/tvol)

@@ -12,7 +12,7 @@
  */
 
 import XLSX from 'xlsx';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -67,6 +67,50 @@ function extractKis() {
   return apis;
 }
 
+/**
+ * 문서가 반복 파라미터를 범위 표기로 접어둔 것을 실제 이름으로 펼친다.
+ *   `EXCD_01 ~ 10`          → EXCD_01 … EXCD_10
+ *   `SRS_CD_02…` + `SRS_CD_32` → SRS_CD_02 … SRS_CD_32   (생략기호 다음의 마지막 값까지)
+ * 접힌 표기를 그대로 두면 `get_action_schema` 가 `"EXCD_01 ~ 10"` 이라는 **보낼 수 없는**
+ * 파라미터명을 모델에게 준다(실측 3건: 해외주식 복수종목 시세조회 / 해외선물-023 / -041).
+ */
+function expandRangeFields(fields) {
+  const pad = (n, w) => String(n).padStart(w, '0');
+  const out = [];
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i];
+    const nm = String(f.name).trim();
+
+    // "BASE_01 ~ 10"
+    let m = /^([A-Za-z_][A-Za-z0-9_]*)_(\d+)\s*~\s*(\d+)$/.exec(nm);
+    if (m) {
+      const [, base, from, to] = m;
+      for (let k = +from; k <= +to; k++) out.push({ ...f, name: `${base}_${pad(k, from.length)}` });
+      continue;
+    }
+
+    // "BASE_02…" / "BASE_02..." — 다음 항목이 같은 base 의 마지막 번호면 그 사이를 채운다.
+    m = /^([A-Za-z_][A-Za-z0-9_]*)_(\d+)\s*(?:…|\.{2,})$/.exec(nm);
+    if (m) {
+      const [, base, from] = m;
+      const next = fields[i + 1];
+      const nm2 = next && new RegExp(`^${base}_(\\d+)$`).exec(String(next.name).trim());
+      if (nm2) {
+        for (let k = +from; k <= +nm2[1]; k++) out.push({ ...f, name: `${base}_${pad(k, from.length)}` });
+        i++; // 마지막 항목까지 소비
+        continue;
+      }
+      out.push({ ...f, name: `${base}_${from}` });
+      continue;
+    }
+
+    out.push(f);
+  }
+  // 앞서 개별로 나온 이름(SRS_CD_01)과 전개분이 겹칠 수 있다.
+  const seen = new Set();
+  return out.filter((f) => (seen.has(f.name) ? false : seen.add(f.name)));
+}
+
 function extractKisDetail(ws) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const header = [], body = [], query = [], path = [];
@@ -98,13 +142,37 @@ function extractKisDetail(ws) {
     else if (section === 'request-query') query.push(field);
     else if (section === 'request-path') path.push(field);
   }
-  return { request: { header, body, query, path } };
+  return {
+    request: {
+      header: expandRangeFields(header),
+      body: expandRangeFields(body),
+      query: expandRangeFields(query),
+      path: expandRangeFields(path),
+    },
+  };
 }
 
 const apis = extractKis();
 const outPath = resolve(MODULE_DIR, '_apis.json');
-writeFileSync(outPath, JSON.stringify(apis, null, 2), 'utf8');
-console.log(`✓ ${outPath} — ${apis.length} APIs`);
+
+// Reconciler, not a pure generator: `_apis.json` also carries entries that are NOT in the vendor's
+// list sheet but are real endpoints we call (Hashkey). A plain rewrite would silently drop them —
+// the same class of bug as the gen.mjs whitelist. Carry over every existing entry whose id the
+// freshly extracted set does not contain.
+let carried = [];
+try {
+  const existing = JSON.parse(readFileSync(outPath, 'utf8'));
+  const list = Array.isArray(existing) ? existing : existing.apis || [];
+  const fresh = new Set(apis.map((a) => String(a.id)));
+  carried = list.filter((a) => !fresh.has(String(a.id)));
+} catch { /* first bootstrap */ }
+if (carried.length) {
+  console.log(`  (reconcile) 문서에 없는 손유지 엔트리 보존: ${carried.map((a) => a.id).join(', ')}`);
+}
+const all = [...apis, ...carried];
+
+writeFileSync(outPath, JSON.stringify(all, null, 2), 'utf8');
+console.log(`✓ ${outPath} — ${all.length} APIs (문서 ${apis.length} + 손유지 ${carried.length})`);
 
 const menus = {};
 for (const api of apis) menus[api.menu] = (menus[api.menu] || 0) + 1;
