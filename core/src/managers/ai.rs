@@ -624,12 +624,17 @@ impl AiManager {
                         .map(|m| hub_module_allowed(&args, m))
                         .unwrap_or(true)
                 });
-                Ok(serde_json::json!({
+                let mut resp = serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
-                    "catalogedModules": cataloged,
-                    "next": "Rows with kind=\"action\": call get_action_schema(module, action) for exact params + call envelope before invoking. Rows with kind=\"stream\": this is a live realtime subscription — call stream_watch_start({module, stream, args}) and render the returned topic with a live_chart / live_feed component (a REST action can only give a static snapshot, never live data). Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
-                }))
+                    "next": "Rows with kind=\"action\": call get_action_schema(module, action) for exact params + call envelope before invoking. Rows with kind=\"stream\": this is a live realtime subscription — call stream_watch_start({module, stream, args}) and render the returned topic with a live_chart / live_feed component (a REST action can only give a static snapshot, never live data). Identifiers are MODULE-SCOPED — an action/stream belongs only to the module in its own row; never reuse a name from one module on another. Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
+                });
+                // catalogedModules only on cross-module searches — a module-scoped search already
+                // resolved its module; repeating the 18-name list every call is token noise.
+                if module.is_none() {
+                    resp["catalogedModules"] = serde_json::json!(cataloged);
+                }
+                Ok(resp)
             }
         });
         self.tools.register_handler("search_module_actions", search_handler);
@@ -688,13 +693,24 @@ impl AiManager {
                             m = module
                         ),
                     })),
-                    None => Ok(serde_json::json!({
-                        "success": false,
-                        "error": format!(
-                            "no catalog entry for {}:{} — do not invent action IDs. Use search_module_actions(query) to find the right action first.",
-                            module, action
-                        ),
-                    })),
+                    None => {
+                        // Did-you-mean — a bad action id of a cataloged module used to bounce the
+                        // model back to search (another round, more loop fuel). Resolve the near
+                        // matches right here: one dead-end becomes the next step.
+                        let close = cat
+                            .search(&action, Some(&module), 3)
+                            .await
+                            .unwrap_or_default();
+                        Ok(serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "no catalog entry for {}:{} — this action id does not exist; do not invent IDs and do not retry it.",
+                                module, action
+                            ),
+                            "didYouMean": close,
+                            "next": "Pick one of didYouMean (kind=\"stream\" → stream_watch_start; kind=\"action\" → get_action_schema then call), or search_module_actions with completely different words.",
+                        }))
+                    }
                 }
             }
         });
@@ -1820,10 +1836,27 @@ impl AiManager {
         // F2 — cap-rejected calls still burn a round. The rejection text tells the model to stop
         // and conclude, but a weak model ignores it: 2026-07-09 실측에서 Solar 는 그 지시를 11번
         // 무시하고 search_module_actions 를 계속 두드려 25 라운드를 소진하고 빈 답으로 끝났다.
-        // 프롬프트로는 못 막으므로 구조로 막는다 — 한 라운드의 도구 호출이 전부 거부(캡/중복)면
-        // 다음 라운드는 도구 없이 호출해서 지금 가진 결과로 최종 답을 쓰게 강제한다.
-        // (도구가 없으면 모델은 텍스트를 낼 수밖에 없고, 루프는 natural-finish 경로로 빠져나간다.)
+        // 프롬프트로는 못 막으므로 구조로 막는다 — **2단계** (2026-07-11 재설계):
+        //   stage 1 — 한 라운드가 전부 거부(캡 포함)면 캡에 걸린 (발견) 도구만 다음 라운드
+        //   목록에서 뺀다. 액션 도구(sysmod/stream/render)는 남는다 — 07-11 날씨 cron 실측에서
+        //   캡 시점에 모델은 이미 `short` 스키마 + telegram 까지 다 쥐고 있었는데 옛 F2 가
+        //   전체를 떼는 바람에 완주 가능한 임무를 포기 선언으로 끝냈다. 좁힌 세계에서 실행하게
+        //   두는 것이 정답.
+        //   stage 2 — 좁힌 뒤에도 한 라운드가 전부 거부면 그때 전체를 떼서 최종 답을 강제한다
+        //   (하드 스톱, forced_final 판정은 여기).
         let mut force_final = false;
+        // stage 1 strip set — capped (discovery-class) tool names removed from later rounds.
+        let mut capped_strip: HashSet<String> = HashSet::new();
+        // Progress after stage 1 — did any ACTION tool (no declared per-turn cap = not the
+        // discovery class) succeed after narrowing? Used for the honest unattended verdict:
+        // stage 1 + no real action afterwards = the turn never escaped its discovery loop,
+        // and a text-only "natural finish" there must not count as cron mission success.
+        let mut post_narrow_success = false;
+        // Whole-turn seen-keys (never reset per round, unlike turn_call_set) — an identical
+        // repeat across rounds is served from the Layer-1 cache with no signal, which quietly
+        // feeds a search loop (07-11 실측: 같은 trade-unified 검색이 fromCache 로 재서빙).
+        // The repeat gets an explicit note instead.
+        let mut turn_seen_keys: HashSet<String> = HashSet::new();
         // Per-turn per-tool-name call counter — a goal-seeking model can thrash ONE tool
         // with slightly varying args, which neither Layer 1 (identical-args cache) nor
         // Layer 2 (identical-args set) catches. Tools may declare a per-turn cap on the
@@ -1957,9 +1990,26 @@ impl AiManager {
                 prompt
             };
 
-            // F2 — a round whose every tool call was rejected means the model is thrashing; give it
-            // no tools so it must answer with what it already gathered (structural, not a prompt).
-            let round_tools: &[ToolDefinition] = if force_final { &[] } else { effective_tools };
+            // F2 — thrash containment. stage 1 (capped_strip): remove only the capped discovery
+            // tools so the model must ACT with the action tools it still has; stage 2
+            // (force_final): no tools at all — write the final answer (structural, not a prompt).
+            let narrowed_tools: Option<Vec<ToolDefinition>> =
+                if !force_final && !capped_strip.is_empty() {
+                    Some(
+                        effective_tools
+                            .iter()
+                            .filter(|t| !capped_strip.contains(&t.name))
+                            .cloned()
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+            let round_tools: &[ToolDefinition] = if force_final {
+                &[]
+            } else {
+                narrowed_tools.as_deref().unwrap_or(effective_tools)
+            };
             let response = match self
                 .llm
                 .ask_with_tools_streaming(
@@ -2315,6 +2365,9 @@ impl AiManager {
                 let effective_call: &ToolCall = &scoped_call;
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
                 let cache_key = tool_cache_key(&effective_call.name, &effective_call.arguments);
+                // Whole-turn repeat detector (round-reset turn_call_set 과 별개) — 아래 Layer-1
+                // 캐시 재서빙에 "이미 했던 그 호출" 신호를 붙이는 데 쓴다.
+                let seen_before_this_turn = !turn_seen_keys.insert(cache_key.clone());
                 // L1 grounding gate (FC path, #8-2) — a declared opaque param (e.g. a stock code) must
                 // trace to observed provenance (prompt + this turn's tool results). Only sysmods with a
                 // `grounding` config are checked. Rejection → the model gets the resolve hint and retries
@@ -2415,8 +2468,10 @@ impl AiManager {
                             effective_call.name
                         )
                     } else {
+                        // NOT "conclude it does not exist" — 07-11 실측: 캡 시점에 정답 스키마를
+                        // 이미 쥐고 있었는데 그 문구가 포기 선언을 유도했다. 실행을 시켜라.
                         format!(
-                            "Tool '{}' exceeded its per-turn call limit. Stop calling this tool — proceed with the results gathered so far; if what you were looking for was not found, conclude it does not exist and write the final answer for the user.",
+                            "Tool '{}' exceeded its per-turn call limit. STOP searching — you already have results from earlier calls this turn. Pick the best candidate and ACT on it now (call the module action / stream_watch_start / render). Only if nothing matched at all, answer honestly that the capability was not found. Never call this tool again this turn.",
                             effective_call.name
                         )
                     };
@@ -2568,6 +2623,16 @@ impl AiManager {
                         let mut cached_with_flag = cached.clone();
                         if let serde_json::Value::Object(map) = &mut cached_with_flag {
                             map.insert("fromCache".to_string(), serde_json::Value::Bool(true));
+                            // Identical repeat across rounds — the silent re-serve was fueling
+                            // search loops (07-11 실측). Say it out loud: the result cannot change.
+                            if seen_before_this_turn {
+                                map.insert(
+                                    "repeatNote".to_string(),
+                                    serde_json::Value::String(
+                                        "IDENTICAL repeat of a call you already made this turn — the result cannot change. Act on it now or change the arguments meaningfully; do not repeat it again.".to_string(),
+                                    ),
+                                );
+                            }
                         }
                         ToolResult {
                             call_id: call.id.clone(),
@@ -2628,6 +2693,14 @@ impl AiManager {
 
                 // ActionTags 는 string[] 만 받음 — 옛 TS 와 동일하게 도구 이름만.
                 executed_actions.push(serde_json::Value::String(call.name.clone()));
+                // Stage-1 progress — a successful ACTION tool (no declared per-turn cap = not the
+                // discovery class) after narrowing means the turn escaped its loop and did real work.
+                if action.success
+                    && !capped_strip.is_empty()
+                    && self.tools.per_turn_limit(&effective_call.name).is_none()
+                {
+                    post_narrow_success = true;
+                }
                 // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
                 // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
                 // F6 — but NOT discovery/schema tools: their output embeds documentation examples
@@ -2642,11 +2715,15 @@ impl AiManager {
             }
 
             // F2 — did this round produce anything at all? A round made entirely of rejected calls
-            // is pure budget burn: strip the tools for the next round and let the model write its
-            // answer from what it has (see `force_final` above). The trigger requires at least one
-            // CAP rejection — a cap is declared thrash evidence (search ×18 실측), whereas a
-            // duplicate-only round is often a legitimate re-check ("use the previous result" 에러로
-            // 모델이 보통 회복) — 그것만으로 턴을 끝내면 정당한 작업이 조기 종료된다(리뷰 #4).
+            // is pure budget burn. Two-stage containment (see `force_final`/`capped_strip` above):
+            //   stage 1 — strip only the capped tools from later rounds; the action tools stay so
+            //   the model can still complete the mission with what it discovered (07-11 실측).
+            //   stage 2 — a fully-rejected round AFTER narrowing = still thrashing → no tools at
+            //   all, forced final answer.
+            // The stage-1 trigger requires at least one CAP rejection — a cap is declared thrash
+            // evidence (search ×18 실측), whereas a duplicate-only round is often a legitimate
+            // re-check ("use the previous result" 에러로 모델이 보통 회복) — 그것만으로 좁히면
+            // 정당한 작업이 조기 종료된다(리뷰 #4).
             if !turn_results.is_empty() {
                 let rejected = |r: &ToolResult, key: &str| {
                     r.result.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
@@ -2657,12 +2734,27 @@ impl AiManager {
                 let any_cap = turn_results
                     .iter()
                     .any(|(_, r)| rejected(r, "perTurnLimitExceeded"));
-                if all_rejected && any_cap && !force_final {
-                    force_final = true;
-                    self.log.warn(
-                        "[AiManager] every tool call this round was rejected (incl. a cap hit) — \
-                         disabling tools for the next round to force a final answer",
-                    );
+                if all_rejected && !force_final {
+                    if !capped_strip.is_empty() {
+                        // stage 2 — the narrowed toolset still produced nothing but rejections.
+                        force_final = true;
+                        self.log.warn(
+                            "[AiManager] fully-rejected round after narrowing — disabling all \
+                             tools for the next round to force a final answer",
+                        );
+                    } else if any_cap {
+                        // stage 1 — remove the capped tools, keep the action tools.
+                        for (c, r) in &turn_results {
+                            if rejected(r, "perTurnLimitExceeded") {
+                                capped_strip.insert(c.name.clone());
+                            }
+                        }
+                        self.log.warn(&format!(
+                            "[AiManager] every tool call this round was rejected (incl. a cap hit) \
+                             — stripping capped tools for later rounds, keeping action tools: {:?}",
+                            capped_strip
+                        ));
+                    }
                 }
             }
 
@@ -3089,7 +3181,10 @@ impl AiManager {
             pending_actions,
             error: None,
             exhausted: tool_budget_exhausted,
-            forced_final: force_final,
+            // Honest unattended verdict — stage 2 hard stop, OR stage 1 narrowing that never
+            // produced a successful ACTION tool call afterwards (the turn ended still inside its
+            // discovery loop; a text-only finish there is not mission success for cron).
+            forced_final: force_final || (!capped_strip.is_empty() && !post_narrow_success),
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,

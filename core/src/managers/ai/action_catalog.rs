@@ -170,8 +170,10 @@ fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogE
             let key_desc = decl.get("keyDesc").and_then(|v| v.as_str()).unwrap_or("");
             // Realtime vocabulary is baked into the semantic text so "실시간 체결 차트" / "live
             // quotes" rank these above the snapshot REST actions they would otherwise lose to.
+            // English trade/tick vocab included — an English query ("trade") was ranking US-stock
+            // REST actions above the streams (07-11 실측: usa* 도배 위로 quotes 가 안 올라옴).
             let sem = format!(
-                "{key} {desc} {key_desc} 실시간 라이브 스트림 구독 realtime live stream subscribe push"
+                "{key} {desc} {key_desc} 실시간 라이브 스트림 구독 체결 틱 호가 시세 realtime live stream subscribe push tick trade execution quote orderbook"
             );
             let mut extra = serde_json::json!({
                 "module": name,
@@ -585,6 +587,9 @@ impl ModuleActionCatalog {
             .map(|m| {
                 // Streams (F4) carry `stream`/`kind` instead of `action` — the row tells the model
                 // which tool to reach for (stream_watch_start vs the module tool).
+                // 3-decimal score — the raw f32 (0.8196595907211304) is token noise with false
+                // precision a model can't calibrate anyway.
+                let score = (m.score * 1000.0).round() / 1000.0;
                 let is_stream = m.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
                 if is_stream {
                     return serde_json::json!({
@@ -594,7 +599,7 @@ impl ModuleActionCatalog {
                         "name": m.name,
                         "desc": m.extra.get("desc").cloned().unwrap_or_default(),
                         "tool": "stream_watch_start",
-                        "score": m.score,
+                        "score": score,
                     });
                 }
                 let mut row = serde_json::json!({
@@ -604,7 +609,7 @@ impl ModuleActionCatalog {
                     "name": m.name,
                     "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
-                    "score": m.score,
+                    "score": score,
                 });
                 let desc = clip_row_desc(&m.description);
                 if !desc.is_empty() && desc != m.name {
