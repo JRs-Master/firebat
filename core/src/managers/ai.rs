@@ -1944,6 +1944,14 @@ impl AiManager {
         let mut force_final = false;
         // stage 1 strip set — capped (discovery-class) tool names removed from later rounds.
         let mut capped_strip: HashSet<String> = HashSet::new();
+        // Names the discovery-STALL close added to `capped_strip` (as opposed to individual
+        // cap hits). The stall is a STATE, not a ratchet: its evidence is "orbiting discovery
+        // without acting", so the moment a real action succeeds that evidence is gone and these
+        // re-open (9차 실측: stall 폐쇄가 r6 stock_lookup 전이를 만든 것까진 설계였는데, 폐쇄가
+        // 영구라 그 다음의 정당한 resolve→get_action_schema→call 사다리가 막혀 파라미터 발명
+        // 산문으로 끝났다). Individually over-cap tools stay rejected by the per-tool counter
+        // regardless, so re-opening only restores tools with remaining budget.
+        let mut stall_stripped: HashSet<String> = HashSet::new();
         // stage 2 needs TWO consecutive fully-rejected rounds after narrowing — the first
         // rejection is how the model LEARNS discovery is closed (7차 실측: stall 폐쇄 직후
         // 첫 거부 라운드에서 곧바로 전 도구를 떼는 바람에 액션 도구로 행동할 기회가 0이었다).
@@ -2890,6 +2898,34 @@ impl AiManager {
                     if !capped_strip.is_empty() {
                         post_narrow_success = true;
                     }
+                    // Stall re-open — a real action ends the stall (its evidence was "orbiting
+                    // without acting"). Restore the stall-closed discovery tools that still have
+                    // individual budget so the legitimate NEXT ladder step (e.g. resolve a code →
+                    // get_action_schema → call the action) can proceed; tools already at their
+                    // per-tool cap stay out (the counter rejects them anyway, and re-listing a
+                    // tool that always rejects would only confuse the model).
+                    if !stall_stripped.is_empty() {
+                        let mut reopened: Vec<String> = Vec::new();
+                        for n in stall_stripped.drain() {
+                            let over = self
+                                .tools
+                                .per_turn_limit(&n)
+                                .map(|cap| {
+                                    turn_tool_counts.get(&n).copied().unwrap_or(0) >= cap
+                                })
+                                .unwrap_or(false);
+                            if !over && capped_strip.remove(&n) {
+                                reopened.push(n);
+                            }
+                        }
+                        if !reopened.is_empty() {
+                            self.log.info(&format!(
+                                "[AiManager] grounded action succeeded — reopening stall-closed \
+                                 discovery tools with remaining budget: {:?}",
+                                reopened
+                            ));
+                        }
+                    }
                 }
                 // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
                 // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
@@ -2979,6 +3015,7 @@ impl AiManager {
                          — closing ALL discovery tools (act with gathered results): {:?}",
                         closed
                     ));
+                    stall_stripped.extend(closed.iter().cloned());
                     capped_strip.extend(closed);
                 }
             }
