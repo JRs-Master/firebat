@@ -33,6 +33,16 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(15);
 const BACKOFF_STEPS_SEC: &[u64] = &[5, 10, 20, 40, 60];
 /// A session that stayed alive this long resets the reconnect backoff.
 const STABLE_SESSION: Duration = Duration::from_secs(60);
+/// start() waits this long for the first handshake outcome so a deterministic
+/// subscribe NACK (bad args) fails the registration in-turn instead of spawning
+/// a zombie that reconnects forever (2026-07-11: type="0" watch churned all night).
+const FIRST_RESULT_TIMEOUT: Duration = Duration::from_secs(12);
+/// Consecutive subscribe NACKs after which a previously-working watch gives up.
+/// A NACK is an application-level rejection of our args — it will not heal by retrying.
+const MAX_SUBSCRIBE_REJECTS: u32 = 3;
+
+/// One-shot channel start() listens on for the first session outcome.
+type FirstResultTx = tokio::sync::oneshot::Sender<Result<(), String>>;
 
 struct StatusInner {
     state: String,
@@ -142,6 +152,8 @@ impl IWsStreamPort for WsStreamAdapter {
         let sink_getter: Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync> =
             Arc::new(move || sink_holder.lock().unwrap_or_else(|p| p.into_inner()).clone());
 
+        let watch_id = spec.watch_id.clone();
+        let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         tokio::spawn(watch_loop(
             spec,
             cancel_rx,
@@ -149,7 +161,23 @@ impl IWsStreamPort for WsStreamAdapter {
             token_provider,
             token_spec,
             sink_getter,
+            Some(first_tx),
         ));
+
+        // Bounded wait for the first handshake outcome. A subscribe NACK is deterministic
+        // (our args are wrong) — fail the registration so the caller (the model, in-turn)
+        // gets the provider's error and can fix the args. Transient failures / slow networks
+        // fall through on timeout and the watch keeps retrying as before.
+        match tokio::time::timeout(FIRST_RESULT_TIMEOUT, first_rx).await {
+            Ok(Ok(Err(reason))) => {
+                self.tasks
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&watch_id);
+                return Err(format!("stream subscribe rejected by provider: {reason}"));
+            }
+            _ => {} // live / still connecting / task ended — keep the watch registered.
+        }
         Ok(())
     }
 
@@ -194,8 +222,11 @@ async fn watch_loop(
     token_provider: Option<Arc<OAuthTokenProvider>>,
     token_spec: Option<(String, OAuthSpec, u64)>,
     sink_getter: Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
+    mut first: Option<FirstResultTx>,
 ) {
     let mut backoff_idx = 0usize;
+    let mut consecutive_rejects = 0u32;
+    let mut failed = false;
     loop {
         if *cancel_rx.borrow() {
             break;
@@ -209,11 +240,37 @@ async fn watch_loop(
             &token_provider,
             &token_spec,
             &sink_getter,
+            &mut first,
         )
         .await
         {
             SessionEnd::Cancelled => break,
             SessionEnd::Dropped(reason) => {
+                // Subscribe NACK = the provider rejected our args (application-level, not
+                // transport). It cannot heal by reconnecting with the same args.
+                let is_reject = reason.starts_with("subscribe rejected");
+                consecutive_rejects = if is_reject { consecutive_rejects + 1 } else { 0 };
+                if is_reject {
+                    if let Some(tx) = first.take() {
+                        // Very first subscribe attempt — surface to start() and stop.
+                        let _ = tx.send(Err(reason.clone()));
+                        set_state(&status, "failed", Some(reason.clone()));
+                        failed = true;
+                        break;
+                    }
+                    if consecutive_rejects >= MAX_SUBSCRIBE_REJECTS {
+                        set_state(&status, "failed", Some(reason.clone()));
+                        failed = true;
+                        tracing::error!(
+                            target: "ws_stream",
+                            watch_id = %spec.watch_id,
+                            reason = %reason,
+                            attempts = consecutive_rejects,
+                            "ws stream giving up — subscribe repeatedly rejected (fix the watch args and restart it)"
+                        );
+                        break;
+                    }
+                }
                 if session_started.elapsed() >= STABLE_SESSION {
                     backoff_idx = 0;
                 }
@@ -238,7 +295,9 @@ async fn watch_loop(
             }
         }
     }
-    set_state(&status, "stopped", None);
+    if !failed {
+        set_state(&status, "stopped", None);
+    }
     tracing::info!(target: "ws_stream", watch_id = %spec.watch_id, "watch stopped");
 }
 
@@ -254,6 +313,7 @@ async fn run_session(
     token_provider: &Option<Arc<OAuthTokenProvider>>,
     token_spec: &Option<(String, OAuthSpec, u64)>,
     sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
+    first: &mut Option<FirstResultTx>,
 ) -> SessionEnd {
     // Token (proactive per (re)connect). Present when a secret is declared in the LOGIN frame
     // (kiwoom) or at spec level (한투 approval_key — rides in the subscribe frame, no LOGIN).
@@ -373,6 +433,10 @@ async fn run_session(
     }
 
     set_state(status, "live", None);
+    // First successful subscribe — release start() (registration confirmed good).
+    if let Some(tx) = first.take() {
+        let _ = tx.send(Ok(()));
+    }
     tracing::info!(
         target: "ws_stream",
         watch_id = %spec.watch_id,

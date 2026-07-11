@@ -29,7 +29,7 @@ use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, INetworkPort,
-    IStoragePort, ITtsPort, IVaultPort, ListRecentOpts, MediaListOpts, MediaScope, NetworkRequest,
+    IStoragePort, ITtsPort, IVaultPort, ListRecentOpts, NetworkRequest,
     SandboxExecuteOpts, SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
@@ -578,36 +578,11 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
-    // search_skills — substring search over skill manuals (+ name/description).
-    tools.register(ToolDefinition {
-        name: "search_skills".to_string(),
-        description: "Search skill manuals by substring (case-insensitive). Returns matching skills \
-            with only the matching lines. Use to find a relevant skill when the <SKILLS_AVAILABLE> \
-            index slug isn't obvious."
-            .to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": { "query": {"type": "string"} },
-            "required": ["query"]
-        }),
-        source: "core".to_string(),
-    });
-    let sf = h.skill_file.clone();
-    tools.register_handler(
-        "search_skills",
-        make_handler(move |args| {
-            let sf = sf.clone();
-            async move {
-                let query = args
-                    .get("query")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| "search_skills: query required".to_string())?;
-                let owner = args.get("owner").and_then(|v| v.as_str());
-                let hits = sf.grep(owner, query).await?;
-                serde_json::to_value(hits).map_err(|e| e.to_string())
-            }
-        }),
-    );
+    // search_skills is registered by AiManager::register_action_catalog_tools (semantic,
+    // E5 catalog). Do NOT register a version here: register_core_tools runs AFTER the
+    // AiManager builder in main.rs, so a registration here silently overwrites the semantic
+    // one (2026-07-11: the old substring version shadowed it — natural-language queries
+    // like "주가 전망" returned empty and the model concluded no skill existed).
 }
 
 /// 옛 MCP 전용이라 FC 모델(Gemini/Vertex)이 못 쓰던 도구를 ToolManager 에도 등록 — 양 경로 대칭.
@@ -1826,52 +1801,9 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 }
 
 fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
-    tools.register(ToolDefinition {
-        name: "search_media".to_string(),
-        description: "갤러리 미디어 검색 (slug / filenameHint / prompt / model 매칭). 최신순.".to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "scope": {"type": "string", "enum": ["user", "system"]},
-                "limit": {"type": "integer"},
-                "offset": {"type": "integer"}
-            }
-        }),
-        source: "core".to_string(),
-    });
-    let media = h.media.clone();
-    tools.register_handler(
-        "search_media",
-        make_handler(move |args| {
-            let media = media.clone();
-            async move {
-                let scope = args.get("scope").and_then(|v| v.as_str()).and_then(|s| {
-                    match s {
-                        "user" => Some(MediaScope::User),
-                        "system" => Some(MediaScope::System),
-                        _ => None,
-                    }
-                });
-                let opts = MediaListOpts {
-                    search: args.get("query").and_then(|v| v.as_str()).map(String::from),
-                    scope,
-                    limit: args
-                        .get("limit")
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize),
-                    offset: args
-                        .get("offset")
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize),
-                    // AiManager 가 hub_context 가 있을 때 자동 주입 (camelCase 'hubOwner').
-                    hub_owner: args.get("hubOwner").and_then(|v| v.as_str()).map(String::from),
-                };
-                let result = media.list(opts).await?;
-                Ok(serde_json::to_value(result).unwrap_or_default())
-            }
-        }),
-    );
+    // search_media is registered by AiManager::register_action_catalog_tools (semantic —
+    // prompt-meaning search over the gallery). Same shadowing hazard as search_skills:
+    // registering a version here would overwrite the semantic one (builder runs first).
 
     // image_gen — AI 가 호출하는 비동기 이미지 생성 도구.
     // start_generate 호출 → 즉시 placeholder slug/url 반환 → AI 가 즉시 save_page 설정할 수 있음.

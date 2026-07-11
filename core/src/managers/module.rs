@@ -535,6 +535,28 @@ impl ModuleManager {
                 format!("[{}] ws.streams.{} not declared", meta.module, meta.stream)
             })?;
 
+        // Declarative arg validation — when the stream declares a `typeCodes` map and the
+        // caller passed a `type`, it must be one of the declared codes. Rejecting here gives
+        // the model an instant, self-correcting error with the valid vocabulary instead of a
+        // provider NACK loop (2026-07-11: type="0" watch — kiwoom rejects anything not in the map).
+        if let Some(codes) = decl.get("typeCodes").and_then(|v| v.as_object()) {
+            if let Some(t) = meta.args.get("type").and_then(|v| v.as_str()) {
+                if !codes.contains_key(t) {
+                    let vocab: Vec<String> = codes
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v.as_str().unwrap_or("")))
+                        .collect();
+                    return Err(format!(
+                        "[{}] invalid realtime type '{}' for stream '{}'. Omit `type` to use the default, or pick one of: {}",
+                        meta.module,
+                        t,
+                        meta.stream,
+                        vocab.join(", ")
+                    ));
+                }
+            }
+        }
+
         let args_view = ws_args_view(ws, &meta.args);
         let subscribe = decl
             .get("subscribe")

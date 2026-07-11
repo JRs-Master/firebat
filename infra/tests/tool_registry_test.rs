@@ -166,13 +166,13 @@ async fn dispatch_get_page_missing_returns_null() {
 }
 
 #[tokio::test]
-async fn dispatch_search_media_empty_returns_zero() {
+async fn search_tools_not_registered_by_core_registry() {
+    // search_skills / search_media 는 AiManager::register_action_catalog_tools 의 시맨틱 판이
+    // 유일한 등록이어야 한다 — register_core_tools 가 다시 등록하면 main.rs 호출 순서상
+    // 시맨틱 판을 덮어써 자연어 검색이 빈 결과가 된다 (2026-07-11 회귀).
     let (tools, _dir) = make_setup().await;
-    let result = tools
-        .dispatch("search_media", &serde_json::json!({}))
-        .await
-        .unwrap();
-    assert_eq!(result["total"], 0);
+    assert!(!tools.has_handler("search_skills"));
+    assert!(!tools.has_handler("search_media"));
 }
 
 #[tokio::test]
@@ -197,17 +197,18 @@ async fn dispatch_unknown_tool_returns_error() {
 async fn registered_tool_count() {
     let (tools, _dir) = make_setup().await;
     let stats = tools.stats();
-    // page: 4 + storage: 4 + schedule: 3 + media: 3 (search/image_gen/regenerate) +
+    // page: 4 + storage: 4 + schedule: 3 + media: 2 (image_gen/regenerate — search_media 는
+    // AiManager 시맨틱 판이 유일 등록) +
     // conversation: 2 (search_history/search_memory) + entity: 5 + episodic: 3 + consolidation: 2 +
     // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
     // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
-    // skill_file: 5 (get/list/save/delete_skill + search_skills) + tts: 1 +
-    // stream_watch: 3 (start/stop/list — 실시간 감시) = 64
-    assert_eq!(stats.total, 64);
-    assert_eq!(stats.by_source.get("core").copied(), Some(64));
+    // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
+    // stream_watch: 3 (start/stop/list — 실시간 감시) = 62
+    assert_eq!(stats.total, 62);
+    assert_eq!(stats.by_source.get("core").copied(), Some(62));
 }
 
 #[tokio::test]
