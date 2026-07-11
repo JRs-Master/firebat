@@ -1931,6 +1931,12 @@ impl AiManager {
         // stage 1 + no real action afterwards = the turn never escaped its discovery loop,
         // and a text-only "natural finish" there must not count as cron mission success.
         let mut post_narrow_success = false;
+        // Whole-turn grounding — did ANY action-class tool (no declared per-turn cap) succeed
+        // at any point this turn? A forced-final turn without this has zero grounded data from
+        // this turn, and the final text gets a deterministic fabrication-warning banner
+        // (2026-07-12 실측: 강제종료 턴에서 Solar 가 차트 수치·계좌·"구독 성공"을 통째로
+        // 지어냄 — 마감 지시의 honesty 조항은 무시됐다. 프롬프트로 못 막는 클래스 = 서버 스탬프).
+        let mut turn_grounded_success = false;
         // Whole-turn seen-keys (never reset per round, unlike turn_call_set) — an identical
         // repeat across rounds is served from the Layer-1 cache with no signal, which quietly
         // feeds a search loop (07-11 실측: 같은 trade-unified 검색이 fromCache 로 재서빙).
@@ -2160,6 +2166,18 @@ impl AiManager {
             };
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
+            // Fabrication containment — a forced-final round with ZERO successful action-class
+            // calls this turn is writing without any grounded data. The model was told to be
+            // honest and wasn't (2026-07-12: fabricated chart stats, two accounts, a telegram
+            // "subscription" that never registered). Deterministic server-side banner instead
+            // of trusting self-report; history-grounded answers stay readable below the banner.
+            if force_final && !turn_grounded_success && !last_text.trim().is_empty() {
+                last_text = format!(
+                    "{}\n\n{}",
+                    crate::i18n::t("core.error.ai.ungrounded_final", None, &[]),
+                    last_text
+                );
+            }
 
             // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.
             // thinking 먼저 (있을 때만) → text 다음. frontend ThinkingBlock 가 thinking content
@@ -2830,11 +2848,11 @@ impl AiManager {
                 executed_actions.push(serde_json::Value::String(call.name.clone()));
                 // Stage-1 progress — a successful ACTION tool (no declared per-turn cap = not the
                 // discovery class) after narrowing means the turn escaped its loop and did real work.
-                if action.success
-                    && !capped_strip.is_empty()
-                    && self.tools.per_turn_limit(&effective_call.name).is_none()
-                {
-                    post_narrow_success = true;
+                if action.success && self.tools.per_turn_limit(&effective_call.name).is_none() {
+                    turn_grounded_success = true;
+                    if !capped_strip.is_empty() {
+                        post_narrow_success = true;
+                    }
                 }
                 // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
                 // call this turn can reference resolved identifiers (e.g. dart lookup → stock code).
