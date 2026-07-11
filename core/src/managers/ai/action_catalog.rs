@@ -640,6 +640,11 @@ impl ModuleActionCatalog {
                         "name": m.name,
                         "desc": m.extra.get("desc").cloned().unwrap_or_default(),
                         "tool": "stream_watch_start",
+                        // Streams DO have a discoverable contract — get_action_schema accepts the
+                        // stream key (F4). Without this pointer models assume "no schema for
+                        // streams" and invent subscribe args (9차 실측: quotes 에 stk_cd/interval
+                        // 발명 — 실제 키움 quotes args 는 item/type).
+                        "next": "subscribe args are NOT guessable — call get_action_schema(module, stream) first; it returns the subscribe contract (arg names + type codes), then stream_watch_start({module, stream, args}).",
                         "score": score,
                     });
                 }
