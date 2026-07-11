@@ -366,7 +366,7 @@ try {
   console.log('  (bootstrap) 기존 config.json 없음 — 전체 생성');
 }
 
-writeFileSync(configPath, JSON.stringify(merged, null, 2), 'utf8');
+writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
 writeFileSync(resolve(MODULE_DIR, 'index.mjs'), index, 'utf8');
 
 const allCount = config.input.properties.action.enum.length;

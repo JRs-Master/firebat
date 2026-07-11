@@ -20110,6 +20110,175 @@
     }
   },
   {
+    "id": "국내주식-163",
+    "name": "회원사 실시간 매매동향(틱)",
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/quotations/frgnmem-trade-trend",
+    "menu": "[국내주식] 시세분석",
+    "trIdReal": "FHPST04320000",
+    "trIdMock": null,
+    "request": {
+      "header": [
+        {
+          "name": "content-type",
+          "ko": "컨텐츠타입",
+          "type": "string",
+          "required": true,
+          "length": "40",
+          "desc": "application/json; charset=utf-8"
+        },
+        {
+          "name": "authorization",
+          "ko": "접근토큰",
+          "type": "string",
+          "required": true,
+          "length": "350",
+          "desc": "OAuth 토큰이 필요한 API 경우 발급한 Access token \r\n일반고객(Access token 유효기간 1일, OAuth 2.0의 Client Credentials Grant 절차를 준용) \r\n법인(Access token 유효기간 3개월, Refresh token 유효기간 1년, OAuth 2.0의 Authorization Code Grant 절차를 준용)"
+        },
+        {
+          "name": "appkey",
+          "ko": "앱키",
+          "type": "string",
+          "required": true,
+          "length": "36",
+          "desc": "한국투자증권 홈페이지에서 발급받은 appkey (절대 노출되지 않도록 주의해주세요.)"
+        },
+        {
+          "name": "appsecret",
+          "ko": "앱시크릿키",
+          "type": "string",
+          "required": true,
+          "length": "180",
+          "desc": "한국투자증권 홈페이지에서 발급받은 appkey (절대 노출되지 않도록 주의해주세요.)"
+        },
+        {
+          "name": "personalseckey",
+          "ko": "고객식별키",
+          "type": "string",
+          "required": false,
+          "length": "180",
+          "desc": "[법인 필수] 제휴사 회원 관리를 위한 고객식별키"
+        },
+        {
+          "name": "tr_id",
+          "ko": "거래ID",
+          "type": "string",
+          "required": true,
+          "length": "13",
+          "desc": "FHPST04320000"
+        },
+        {
+          "name": "tr_cont",
+          "ko": "연속 거래 여부",
+          "type": "string",
+          "required": false,
+          "length": "1",
+          "desc": "tr_cont를 이용한 다음조회 불가 API"
+        },
+        {
+          "name": "custtype",
+          "ko": "고객 타입",
+          "type": "string",
+          "required": true,
+          "length": "1",
+          "desc": "B : 법인 \r\nP : 개인"
+        },
+        {
+          "name": "seq_no",
+          "ko": "일련번호",
+          "type": "string",
+          "required": false,
+          "length": "2",
+          "desc": "[법인 필수] 001"
+        },
+        {
+          "name": "mac_address",
+          "ko": "맥주소",
+          "type": "string",
+          "required": false,
+          "length": "12",
+          "desc": "법인고객 혹은 개인고객의 Mac address 값"
+        },
+        {
+          "name": "phone_number",
+          "ko": "핸드폰번호",
+          "type": "string",
+          "required": false,
+          "length": "12",
+          "desc": "[법인 필수] 제휴사APP을 사용하는 경우 사용자(회원) 핸드폰번호 \r\nex) 01011112222 (하이픈 등 구분값 제거)"
+        },
+        {
+          "name": "ip_addr",
+          "ko": "접속 단말 공인 IP",
+          "type": "string",
+          "required": false,
+          "length": "12",
+          "desc": "[법인 필수] 사용자(회원)의 IP Address"
+        },
+        {
+          "name": "gt_uid",
+          "ko": "Global UID",
+          "type": "string",
+          "required": false,
+          "length": "32",
+          "desc": "[법인 전용] 거래고유번호로 사용하므로 거래별로 UNIQUE해야 함"
+        }
+      ],
+      "body": [],
+      "query": [
+        {
+          "name": "FID_COND_MRKT_DIV_CODE",
+          "ko": "FID 조건 시장 분류 코드",
+          "type": "string",
+          "required": true,
+          "length": "2",
+          "desc": "J 고정 입력"
+        },
+        {
+          "name": "FID_COND_SCR_DIV_CODE",
+          "ko": "화면분류코드",
+          "type": "string",
+          "required": true,
+          "length": "5",
+          "desc": "20432(primary key)"
+        },
+        {
+          "name": "FID_INPUT_ISCD",
+          "ko": "종목코드",
+          "type": "string",
+          "required": true,
+          "length": "12",
+          "desc": "ex. 005930(삼성전자) \r\n\r\n※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_CODE(시장구분코드) 둘 중 하나만 입력"
+        },
+        {
+          "name": "FID_INPUT_ISCD_2",
+          "ko": "회원사코드",
+          "type": "string",
+          "required": true,
+          "length": "10",
+          "desc": "ex. 99999(전체)\r\n\r\n※ 회원사코드 (kis developers 포탈 사이트 포럼-> FAQ -> 종목정보 다운로드(국내) 참조)"
+        },
+        {
+          "name": "FID_MRKT_CLS_CODE",
+          "ko": "시장구분코드",
+          "type": "string",
+          "required": true,
+          "length": "2",
+          "desc": "A(전체),K(코스피), Q(코스닥), K2(코스피200), W(ELW)\r\n\r\n※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_CODE(시장구분코드) 둘 중 하나만 입력"
+        },
+        {
+          "name": "FID_VOL_CNT",
+          "ko": "거래량",
+          "type": "string",
+          "required": true,
+          "length": "12",
+          "desc": "거래량 ~"
+        }
+      ],
+      "path": []
+    }
+  },
+  {
     "id": "v1_국내주식-074",
     "name": "시장별 투자자매매동향(시세)",
     "method": "GET",

@@ -928,6 +928,13 @@ const API_TABLE = {
     "trIdMock": "",
     "name": "국내주식 예상체결가 추이"
   },
+  "국내주식-163": {
+    "method": "GET",
+    "path": "/uapi/domestic-stock/v1/quotations/frgnmem-trade-trend",
+    "trIdReal": "FHPST04320000",
+    "trIdMock": "",
+    "name": "회원사 실시간 매매동향(틱)"
+  },
   "v1_국내주식-074": {
     "method": "GET",
     "path": "/uapi/domestic-stock/v1/quotations/inquire-investor-time-by-market",

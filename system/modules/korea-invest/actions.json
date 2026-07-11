@@ -2107,6 +2107,23 @@
   }
  },
  {
+  "id": "국내주식-163",
+  "name": "회원사 실시간 매매동향(틱)",
+  "description": "회원사 실시간 매매동향(틱)",
+  "domain": "[국내주식] 시세분석",
+  "method": "GET",
+  "path": "/uapi/domestic-stock/v1/quotations/frgnmem-trade-trend",
+  "trId": "FHPST04320000",
+  "params": {
+   "query.FID_COND_MRKT_DIV_CODE": "FID 조건 시장 분류 코드 (필수) — J 고정 입력",
+   "query.FID_COND_SCR_DIV_CODE": "화면분류코드 (필수) — 20432(primary key)",
+   "query.FID_INPUT_ISCD": "종목코드 (필수) — ex. 005930(삼성전자) ※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_CODE(시장구분코드) 둘 중 하나만 입력",
+   "query.FID_INPUT_ISCD_2": "회원사코드 (필수) — ex. 99999(전체) ※ 회원사코드 (kis developers 포탈 사이트 포럼-> FAQ -> 종목정보 다운로드(국내) 참조)",
+   "query.FID_MRKT_CLS_CODE": "시장구분코드 (필수) — A(전체),K(코스피), Q(코스닥), K2(코스피200), W(ELW) ※ FID_INPUT_ISCD(종목코드) 혹은 FID_MRKT_CLS_…",
+   "query.FID_VOL_CNT": "거래량 (필수) — 거래량 ~"
+  }
+ },
+ {
   "id": "v1_국내주식-074",
   "name": "시장별 투자자매매동향(시세)",
   "description": "시장별 투자자매매동향(시세)",

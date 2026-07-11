@@ -45,7 +45,12 @@ function extractKis() {
   for (let i = 1; i < listRows.length; i++) {
     const [, transport, menu, apiName, apiId, trIdReal, trIdMock, httpMethod, urlPath] = listRows[i];
     if (!apiId || !apiName) continue;
-    if (transport !== 'REST') continue;
+    // transport 열은 오기재가 있다(국내주식-163 회원사 실시간 매매동향(틱) = GET + https +
+    // /uapi/ 경로인데 WEBSOCKET 으로 표기). trId 오타와 같은 클래스 — 신뢰 소스는 열이 아니라
+    // urlPath. /uapi/ 네임스페이스 = REST 로 흡수한다(/oauth2/ 계열 인프라 행은 그대로 제외).
+    const isRest = transport === 'REST'
+      || (transport === 'WEBSOCKET' && String(urlPath || '').trim().startsWith('/uapi/'));
+    if (!isRest) continue;
 
     const sheetName = wb.SheetNames.find((s) => s === apiName);
     let request = { header: [], body: [], query: [], path: [] };
