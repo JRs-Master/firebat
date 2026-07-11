@@ -618,6 +618,37 @@ async fn main() -> Result<()> {
         firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
     );
 
+    // #search-tool 카탈로그 임베더 선택 — E5 는 액션 카탈로그에서 정답·노이즈가 같은 점수 대역
+    // (short 0.817 vs pwn-code 0.819, 2026-07-11 실측)이라 변별 불가. Upstage solar-embedding-2 는
+    // 같은 케이스에서 스프레드 8~15배(0.105~0.198) + 노이즈 명확 분리(라이브 A/B) → 키 있으면
+    // 모듈-액션 카탈로그만 Upstage, 없으면 E5 그대로. 히스토리·라이브러리·컴포넌트 등 저장 벡터는
+    // E5 유지(별개 벡터 공간 — semantic_catalog 해시가 embedder.version() 을 포함해 자동 재임베딩).
+    let catalog_embedder: Arc<dyn firebat_core::ports::IEmbedderPort> = {
+        let key = vault.get_secret("system:upstage:api-key").unwrap_or_default();
+        if key.trim().is_empty() {
+            embedder.clone()
+        } else {
+            tracing::info!(
+                target: "semantic_catalog",
+                "module-action catalog embedder = upstage solar-embedding-2"
+            );
+            Arc::new(firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(key))
+        }
+    };
+    let action_catalog = Arc::new(
+        firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
+            module_manager.clone(),
+            catalog_embedder,
+            component_cache_port.clone(),
+        ),
+    );
+    // Boot warm-up — API 임베더의 첫 전체 빌드(~600 entry)가 첫 검색을 막지 않게 백그라운드 선빌드.
+    // 해시 디스크 캐시 덕에 이후 재빌드는 변경분만 임베딩.
+    {
+        let cat = action_catalog.clone();
+        tokio::spawn(async move { cat.warm().await });
+    }
+
     let ai_manager = Arc::new(
         AiManager::new(
             llm.clone(),
@@ -651,13 +682,8 @@ async fn main() -> Result<()> {
             .register_search_components_tool(embedder.clone(), component_cache_port.clone())
             // #search-tool S2 — 모듈 액션 카탈로그(search_module_actions / get_action_schema).
             // config `actionCatalog` 선언 모듈(한투 275·키움 200+)의 액션 레벨 progressive disclosure.
-            .register_action_catalog_tools(Arc::new(
-                firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
-                    module_manager.clone(),
-                    embedder.clone(),
-                    component_cache_port.clone(),
-                ),
-            ))
+            // 임베더 = 위 catalog_embedder (Upstage 키 있으면 solar-embedding-2, 없으면 E5).
+            .register_action_catalog_tools(action_catalog.clone())
             // #search-tool 확장 — skills/templates/pages/media 시맨틱 카탈로그.
             // search_skills·search_media 는 core substring 판 오버라이드(신규 = templates/pages).
             .register_discovery_search_tools(

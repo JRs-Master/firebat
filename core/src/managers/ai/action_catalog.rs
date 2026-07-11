@@ -620,6 +620,12 @@ impl ModuleActionCatalog {
             .collect())
     }
 
+    /// Boot-time warm-up (see RefreshingCatalog::warm) — main.rs spawns this so an API
+    /// embedder's first full build doesn't stall the first search_module_actions call.
+    pub async fn warm(&self) {
+        self.catalog.warm().await;
+    }
+
     /// Full detail for one action — params with descriptions + example + call envelope +
     /// any extra declared fields (method/path/trId …).
     pub async fn schema(&self, module: &str, action: &str) -> Option<serde_json::Value> {
