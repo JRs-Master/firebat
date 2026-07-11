@@ -2093,6 +2093,27 @@ impl AiManager {
             } else {
                 narrowed_tools.as_deref().unwrap_or(effective_tools)
             };
+            // force_final round — the model must WRITE now, not deliberate. Two structural
+            // nudges (2026-07-11 실측: force_final 라운드가 reasoning 6K자만 쓰고 content 0
+            // → empty_final 3연속):
+            //  (a) reasoning effort → low for THIS round only — final synthesis needs no deep
+            //      CoT, and the output budget must go to the content channel, not reasoning.
+            //  (b) one closing instruction appended to the prompt — the model otherwise doesn't
+            //      know why its tools vanished and hallucinates tool-call tokens instead of
+            //      answering (r11 re-call after strip, 실측).
+            let force_final_prompt: String;
+            let llm_prompt: &str = if force_final {
+                turn_opts.thinking_level = Some("low".to_string());
+                force_final_prompt = format!(
+                    "{llm_prompt}\n\n[system] Tool calls are closed for this turn. Using the \
+                     tool results you already have, write your final answer to the user NOW as \
+                     normal text (render fences allowed). If something could not be completed, \
+                     say so honestly in one line. Do not emit tool-call syntax."
+                );
+                &force_final_prompt
+            } else {
+                llm_prompt
+            };
             // Plan compiled replay — synthetic round-0: the approved plan's verified calls run
             // through the dispatch below WITHOUT an LLM round. The next iteration's LLM call
             // then synthesizes with all results in prior_results (and handles any failures —
