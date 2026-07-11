@@ -224,6 +224,17 @@ function outErr(key, params) {
   process.stdout.write(JSON.stringify(r));
 }
 
+// KMA forecast category legend — the raw items carry opaque codes (TMP/POP/SKY …); without a
+// decoder the AI hunts documentation with searches (2026-07-11 실측: "short categories" 검색 4회).
+// short(getVilageFcst) + ultra(getUltraSrt*) 카테고리 통합.
+const FCST_LEGEND = {
+  TMP: '1시간 기온(℃)', TMN: '일 최저기온(℃)', TMX: '일 최고기온(℃)',
+  POP: '강수확률(%)', PTY: '강수형태(0없음 1비 2비/눈 3눈 4소나기 — 초단기: 5빗방울 6빗방울눈날림 7눈날림)',
+  SKY: '하늘상태(1맑음 3구름많음 4흐림)', PCP: '1시간 강수량', REH: '습도(%)', SNO: '적설',
+  WSD: '풍속(m/s)', VEC: '풍향(deg)', UUU: '동서바람성분(m/s)', VVV: '남북바람성분(m/s)', WAV: '파고(m)',
+  T1H: '기온(℃)', RN1: '1시간 강수량', LGT: '낙뢰(kA)',
+};
+
 async function main() {
   const raw = await readStdin();
   let input;
@@ -231,7 +242,11 @@ async function main() {
   catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
-  const { action, lat, lon, nx: nxIn, ny: nyIn, regId, stnId, areaNo, tmFc, typhoonNo, fromTm, toTm, limit = 100 } = data;
+  const { action, lat, lon, nx: nxIn, ny: nyIn, regId, stnId, areaNo, tmFc, typhoonNo, fromTm, toTm, limit: limitIn } = data;
+  // Forecast series default = full window. getVilageFcst 3일치 ≈ 700+ 행이라 옛 기본 100 은
+  // 오늘 몇 시간치만 반환 — "내일 날씨"가 응답에 아예 없어 AI 가 데이터를 찾아 헤맸다
+  // (2026-07-11 실측). 큰 응답은 auto-cache 가 프리뷰로 줄이므로 전체 fetch 가 안전하다.
+  const limit = limitIn ?? ((action === 'short' || action === 'ultra-short') ? 1000 : 100);
 
   const serviceKey = process.env.DATA_GO_KR_API_KEY;
   if (!serviceKey) return outErr('error.api_key_missing', {});
@@ -251,7 +266,7 @@ async function main() {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
-      return out(true, { items: r.items, nx, ny, baseDate, baseTime });
+      return out(true, { items: r.items, nx, ny, baseDate, baseTime, categoryLegend: FCST_LEGEND });
     }
 
     if (action === 'ultra-now') {
@@ -261,7 +276,7 @@ async function main() {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
-      return out(true, { items: r.items, nx, ny, baseDate, baseTime });
+      return out(true, { items: r.items, nx, ny, baseDate, baseTime, categoryLegend: FCST_LEGEND });
     }
 
     if (action === 'ultra-short') {
@@ -271,7 +286,7 @@ async function main() {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
-      return out(true, { items: r.items, nx, ny, baseDate, baseTime });
+      return out(true, { items: r.items, nx, ny, baseDate, baseTime, categoryLegend: FCST_LEGEND });
     }
 
     if (action === 'medium-fcst') {

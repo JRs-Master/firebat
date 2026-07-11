@@ -625,19 +625,26 @@ impl ProcessSandboxAdapter {
                         "_cacheKey".to_string(),
                         serde_json::Value::String(key.clone()),
                     );
-                    obj.insert(
-                        "_cacheMeta".to_string(),
-                        serde_json::json!({
-                            "sysmod": module_name,
-                            "action": action_label,
-                            "fieldName": field_name,
-                            "kind": "array",
-                            "totalCount": total_count,
-                            "truncated": truncated,
-                            "truncatedTo": if truncated { AUTO_CACHE_PREVIEW } else { total_count },
-                            "autoCached": true,
-                        }),
-                    );
+                    let mut meta = serde_json::json!({
+                        "sysmod": module_name,
+                        "action": action_label,
+                        "fieldName": field_name,
+                        "kind": "array",
+                        "totalCount": total_count,
+                        "truncated": truncated,
+                        "truncatedTo": if truncated { AUTO_CACHE_PREVIEW } else { total_count },
+                        "autoCached": true,
+                    });
+                    // Next-step pointer — without it a model re-calls the module with a larger
+                    // `limit` expecting more inline rows (the preview stays truncated) and burns
+                    // rounds hunting for the hidden data (07-11 날씨 cron 실측: limit 30→50 재호출
+                    // + 검색 4회 후 캡). 에러/응답 = 다음 단계 포인터 원칙.
+                    if truncated {
+                        meta["next"] = serde_json::Value::String(format!(
+                            "Only {AUTO_CACHE_PREVIEW} of {total_count} rows are shown inline. The FULL data is already cached — page it with cache_read({{cacheKey}}) or filter rows with cache_grep({{cacheKey, field, op, value}}); numeric aggregates via cache_aggregate; to render everything use dataCacheKey in the fence. Do NOT re-call the module with a larger limit — the inline preview stays truncated."
+                        ));
+                    }
+                    obj.insert("_cacheMeta".to_string(), meta);
                     tracing::info!(
                         target: "sandbox",
                         module = module_name,
@@ -704,21 +711,24 @@ impl ProcessSandboxAdapter {
                         "_cacheKey".to_string(),
                         serde_json::Value::String(key.clone()),
                     );
-                    obj.insert(
-                        "_cacheMeta".to_string(),
-                        serde_json::json!({
-                            "sysmod": module_name,
-                            "action": action_label,
-                            "fieldName": field_name,
-                            "kind": "text",
-                            "grepField": "text",
-                            "totalChars": total_chars,
-                            "totalLines": total_lines,
-                            "truncated": truncated,
-                            "previewChars": if truncated { TEXT_PREVIEW_CHARS.min(total_chars) } else { total_chars },
-                            "autoCached": true,
-                        }),
-                    );
+                    let mut meta = serde_json::json!({
+                        "sysmod": module_name,
+                        "action": action_label,
+                        "fieldName": field_name,
+                        "kind": "text",
+                        "grepField": "text",
+                        "totalChars": total_chars,
+                        "totalLines": total_lines,
+                        "truncated": truncated,
+                        "previewChars": if truncated { TEXT_PREVIEW_CHARS.min(total_chars) } else { total_chars },
+                        "autoCached": true,
+                    });
+                    if truncated {
+                        meta["next"] = serde_json::Value::String(
+                            "Only a preview of the text is inline. The FULL text is cached as {line, text} rows — search it with cache_grep({cacheKey, field:\"text\", op:\"contains\", value}) or page it with cache_read({cacheKey}). Do NOT re-call the module — the inline preview stays truncated.".to_string(),
+                        );
+                    }
+                    obj.insert("_cacheMeta".to_string(), meta);
                     tracing::info!(
                         target: "sandbox",
                         module = module_name,
@@ -2354,6 +2364,10 @@ mod tests {
             meta.get("sysmod").and_then(|v| v.as_str()),
             Some("law-search")
         );
+        // truncated 응답 = next-step 포인터 필수 (cache_read/grep 안내 — limit 재호출 루프 차단)
+        let next = meta.get("next").and_then(|v| v.as_str()).expect("next note");
+        assert!(next.contains("cache_read"));
+        assert!(next.contains("cache_grep"));
     }
 
     #[test]
