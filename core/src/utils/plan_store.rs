@@ -32,6 +32,13 @@ pub struct PlanStep {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+    /// Compiled call arguments — filled by the planning turn AFTER it verified them
+    /// (get_action_schema + any name→code lookups). `tool` + `args` together make the step
+    /// mechanically replayable on ✓실행: the execution turn runs it through the normal gated
+    /// dispatch without re-discovery (2026-07-11: execution turns burned their whole budget
+    /// re-searching identifiers the plan turn had already found).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
 }
 
 /// 보관된 plan 1건.
@@ -263,8 +270,28 @@ pub fn plan_to_revise_instruction(plan: &StoredPlan, user_feedback: &str) -> Str
     )
 }
 
+/// Compiled (mechanically replayable) steps of a plan: `tool` + `args` both present.
+/// propose_plan / suggest are never replayable (they re-open consultation), and args must be
+/// an object (the shape every tool handler takes).
+pub fn compiled_calls(plan: &StoredPlan) -> Vec<(String, serde_json::Value)> {
+    plan.steps
+        .iter()
+        .filter_map(|s| {
+            let tool = s.tool.as_deref()?.trim();
+            if tool.is_empty() || matches!(tool, "propose_plan" | "suggest") {
+                return None;
+            }
+            let args = s.args.as_ref()?;
+            if !args.is_object() {
+                return None;
+            }
+            Some((tool.to_string(), args.clone()))
+        })
+        .collect()
+}
+
 /// plan steps 를 LLM 이 따라 실행할 수 있게 한국어 텍스트로 직렬화.
-/// 옛 TS `planToInstruction` 1:1.
+/// 옛 TS `planToInstruction` 1:1 + compiled args 노출(있으면 그대로 사용 = 재발견 0).
 pub fn plan_to_instruction(plan: &StoredPlan, original_request: Option<&str>) -> String {
     let steps_text = plan
         .steps
@@ -273,7 +300,13 @@ pub fn plan_to_instruction(plan: &StoredPlan, original_request: Option<&str>) ->
         .map(|(i, s)| {
             let desc = s.description.as_deref().map(|d| format!(" — {}", d)).unwrap_or_default();
             let tool = s.tool.as_deref().map(|t| format!(" [{}]", t)).unwrap_or_default();
-            format!("[{}] {}{}{}", i + 1, s.title, desc, tool)
+            let args = s
+                .args
+                .as_ref()
+                .and_then(|a| serde_json::to_string(a).ok())
+                .map(|a| format!(" args={}", a))
+                .unwrap_or_default();
+            format!("[{}] {}{}{}{}", i + 1, s.title, desc, tool, args)
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -281,7 +314,7 @@ pub fn plan_to_instruction(plan: &StoredPlan, original_request: Option<&str>) ->
         .map(|r| format!("\n## 사용자 원래 요청 (참고 — 시각·예약·조건 등이 plan steps 에 없으면 여기서 인식)\n\"{}\"\n", r))
         .unwrap_or_default();
     format!(
-        "사용자가 직전 plan 을 ✓실행으로 승인했습니다. 아래 단계를 그대로 따라 실행하세요.\n\n## 승인된 plan: {}\n{}\n{}\n## 실행 규칙\n- 위 단계들을 순서대로 모두 실행. 단계 임의 변경·생략 금지.\n- propose_plan 도구 **재호출 금지** (이미 승인됨).\n- **사용자 원래 요청에 시각·예약 표현 (X시 X분, X분 후, 매일 등) 이 있으면 → `schedule_task` 도구로 wrap.** 단계들은 schedule_task 의 pipeline 인자로 들어감. 즉시 실행 금지.\n- 시각·예약 표현 없으면 → `run_task` 또는 단계별 직접 도구 호출로 즉시 실행.\n- 각 단계의 tool 명시가 있으면 그 도구를 사용. 명시 없으면 단계 내용에 적합한 도구 선택.\n- 마지막 단계 종료 후 결과를 사용자에게 시각화 컴포넌트로 보고.",
+        "사용자가 직전 plan 을 ✓실행으로 승인했습니다. 아래 단계를 그대로 따라 실행하세요.\n\n## 승인된 plan: {}\n{}\n{}\n## 실행 규칙\n- 위 단계들을 순서대로 모두 실행. 단계 임의 변경·생략 금지.\n- propose_plan 도구 **재호출 금지** (이미 승인됨).\n- **args= 가 명시된 단계는 그 인자를 한 글자도 바꾸지 말고 그대로 사용해 그 도구를 호출** — 재검색·재발견·인자 재구성 금지.\n- 일부 args= 단계는 시스템이 이미 실행해 결과가 도구 결과로 제공될 수 있음 — 그 단계는 재호출하지 말고 결과를 그대로 사용.\n- **사용자 원래 요청에 시각·예약 표현 (X시 X분, X분 후, 매일 등) 이 있으면 → `schedule_task` 도구로 wrap.** 단계들은 schedule_task 의 pipeline 인자로 들어감. 즉시 실행 금지.\n- 시각·예약 표현 없으면 → `run_task` 또는 단계별 직접 도구 호출로 즉시 실행.\n- 각 단계의 tool 명시가 있으면 그 도구를 사용. 명시 없으면 단계 내용에 적합한 도구 선택.\n- 마지막 단계 종료 후 결과를 사용자에게 시각화 컴포넌트로 보고.",
         plan.title, steps_text, original_section
     )
 }
@@ -315,11 +348,13 @@ mod tests {
                     title: "1단계".to_string(),
                     description: Some("desc1".to_string()),
                     tool: Some("save_page".to_string()),
+                    args: None,
                 },
                 PlanStep {
                     title: "2단계".to_string(),
                     description: None,
                     tool: None,
+                    args: None,
                 },
             ],
             estimated_time: Some("10분".to_string()),
@@ -384,6 +419,7 @@ mod tests {
                     title: "데이터 수집".to_string(),
                     description: Some("kiwoom".to_string()),
                     tool: Some("sysmod_kiwoom_quote".to_string()),
+                    args: None,
                 },
             ],
             estimated_time: None,
@@ -399,6 +435,54 @@ mod tests {
     }
 
     #[test]
+    fn compiled_calls_extracts_only_tool_plus_args_steps() {
+        let plan = StoredPlan {
+            plan_id: "pc".to_string(),
+            title: "compiled".to_string(),
+            steps: vec![
+                // compiled — tool + object args
+                PlanStep {
+                    title: "일봉".to_string(),
+                    description: None,
+                    tool: Some("sysmod_kiwoom".to_string()),
+                    args: Some(serde_json::json!({"action":"ka10081","stk_cd":"373220"})),
+                },
+                // prose — no args
+                PlanStep {
+                    title: "요약".to_string(),
+                    description: None,
+                    tool: Some("sysmod_telegram".to_string()),
+                    args: None,
+                },
+                // never replayable
+                PlanStep {
+                    title: "재계획".to_string(),
+                    description: None,
+                    tool: Some("propose_plan".to_string()),
+                    args: Some(serde_json::json!({"title":"x"})),
+                },
+                // non-object args = not compiled
+                PlanStep {
+                    title: "이상한 args".to_string(),
+                    description: None,
+                    tool: Some("sysmod_kiwoom".to_string()),
+                    args: Some(serde_json::json!("373220")),
+                },
+            ],
+            estimated_time: None,
+            risks: None,
+            created_at: 0,
+        };
+        let calls = compiled_calls(&plan);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "sysmod_kiwoom");
+        assert_eq!(calls[0].1["stk_cd"], "373220");
+        // 인스트럭션에는 args 가 verbatim 노출 (모델이 그대로 복사해 호출).
+        let inst = plan_to_instruction(&plan, None);
+        assert!(inst.contains("args={\"action\":\"ka10081\""));
+    }
+
+    #[test]
     fn plan_to_revise_instruction_includes_feedback() {
         let plan = StoredPlan {
             plan_id: "p2".to_string(),
@@ -407,6 +491,7 @@ mod tests {
                 title: "step1".to_string(),
                 description: None,
                 tool: None,
+                args: None,
             }],
             estimated_time: None,
             risks: None,

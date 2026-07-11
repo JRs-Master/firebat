@@ -94,8 +94,8 @@ use crate::managers::cost::CostManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{
-    AiRequestOpts, ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, ToolCall,
-    ToolDefinition, ToolResult,
+    AiRequestOpts, ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, LlmToolResponse,
+    ToolCall, ToolDefinition, ToolResult,
 };
 use crate::utils::pending_tools::create_pending_scoped;
 use crate::utils::render_map::render_tool_map;
@@ -1375,6 +1375,15 @@ impl AiManager {
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
 
+        // Plan compiled replay (2026-07-11) — steps the planning turn verified down to
+        // tool+args are replayed as a synthetic round-0 through the SAME gated dispatch
+        // (approval / grounding / validation / caps), skipping the LLM for that round.
+        // Filled by the plan_execute block below; consumed at the loop's LLM-call site.
+        let mut plan_replay_raw: Vec<ToolCall> = Vec::new();
+        // Serialized plan steps — provenance seed for the grounding gate (the user approved
+        // this plan; its identifiers were verified by the planning turn's tool results).
+        let mut plan_provenance: Option<String> = None;
+
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
                 let mut extra_parts: Vec<String> = Vec::new();
@@ -1650,15 +1659,36 @@ impl AiManager {
                 // plan_execute_id / plan_revise_id 우선 처리 — 사용자 ✓실행 / ⚙수정 클릭 후 follow-up
                 // turn. plan_store 에서 조회 → 시스템 프롬프트 prepend + 옛 plan_prefix 우회 (plan 카드
                 // 재제안 안 함). 옛 TS `planExecuteRule` 흐름 1:1.
+                // + compiled replay (2026-07-11): 플랜 턴이 tool+args 까지 확정한 스텝은 실행 턴이
+                // LLM 재발견 없이 합성 라운드-0 으로 기계 재생 (아래 plan_replay_raw 소비 지점 참조).
                 let plan_instruction: Option<String> = if let Some(pid) =
                     ai_opts.plan_execute_id.as_deref().filter(|s| !s.is_empty())
                 {
                     if let Some(plan) = crate::utils::plan_store::get_plan(pid) {
                         let inst = crate::utils::plan_store::plan_to_instruction(&plan, None);
+                        let compiled = crate::utils::plan_store::compiled_calls(&plan);
+                        if !compiled.is_empty() {
+                            // The approved plan card IS provenance — its args were verified by
+                            // the planning turn's tool results, so the grounding gate must
+                            // accept them on replay (the codes won't re-appear in this turn's
+                            // own tool results before the replayed call runs).
+                            plan_provenance = serde_json::to_string(&plan.steps).ok();
+                            plan_replay_raw = compiled
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, (tool, args))| ToolCall {
+                                    id: format!("plan-step-{}", i + 1),
+                                    name: tool,
+                                    arguments: args,
+                                })
+                                .collect();
+                        }
                         crate::utils::plan_store::delete_plan(pid);
                         self.log.info(&format!(
-                            "[AiManager] plan_execute_id: {} (title={})",
-                            pid, plan.title
+                            "[AiManager] plan_execute_id: {} (title={}, compiled_steps={})",
+                            pid,
+                            plan.title,
+                            plan_replay_raw.len()
                         ));
                         Some(inst)
                     } else {
@@ -1761,8 +1791,37 @@ impl AiManager {
         // (e.g. a stock code) must appear here or the call is rejected with a resolve hint. Mirror of
         // the MCP session accumulator; shares the pure check_grounding helper.
         let mut observed: Vec<String> = vec![prompt.to_string()];
+        if let Some(p) = &plan_provenance {
+            // Approved-plan identifiers are legitimate provenance (verified during planning).
+            observed.push(p.clone());
+        }
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
+
+        // Plan replay partition — approval-gated compiled steps (schedule_task, orders) are NOT
+        // pre-run: their pending card force-ends the turn, which would cut off the synthesis
+        // round. They stay in the instruction text (with verbatim args) for the model to call
+        // in the synthesis round — the card then ends the turn WITH the model's written context.
+        // Replay is FC-path only: hosted-MCP/CLI models run tools inside their own loop and
+        // never see our prior_results, so pre-run results would be invisible to them.
+        let mut plan_replay_calls: Vec<ToolCall> = Vec::new();
+        if !plan_replay_raw.is_empty() && !effective_tools.is_empty() {
+            for call in plan_replay_raw.drain(..) {
+                let gated = approval_enabled
+                    && match &self.dispatcher {
+                        Some(d) => d.check_needs_approval(&call).await.is_some(),
+                        None => false,
+                    };
+                if gated {
+                    self.log.info(&format!(
+                        "[AiManager] plan replay — approval-gated step deferred to model: {}",
+                        call.name
+                    ));
+                } else {
+                    plan_replay_calls.push(call);
+                }
+            }
+        }
 
         // ── Intent Agent S0 — shadow TurnBrief (측정 전용, 행동 0) ──
         // 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist 를 턴 종료 시 실제 디스패치와
@@ -2014,25 +2073,48 @@ impl AiManager {
             } else {
                 narrowed_tools.as_deref().unwrap_or(effective_tools)
             };
-            let response = match self
-                .llm
-                .ask_with_tools_streaming(
-                    llm_prompt,
-                    round_tools,
-                    &prior_results,
-                    &turn_opts,
-                    llm_sink.clone(),
-                )
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    // Terminal LLM failure (400 / missing API key / etc.) — no answer will come.
-                    // Persist an error record so the turn isn't an orphan user bubble on reload,
-                    // WITH the rounds collected so far (mid-loop 실패에서도 CoT 판독 가능).
-                    // (Recoverable SSE drops don't reach here; they complete + persist the real reply.)
-                    self.finalize_error(ai_opts, &e, &reasoning_trace);
-                    return Err(e);
+            // Plan compiled replay — synthetic round-0: the approved plan's verified calls run
+            // through the dispatch below WITHOUT an LLM round. The next iteration's LLM call
+            // then synthesizes with all results in prior_results (and handles any failures —
+            // natural agent fallback). 재발견 0: 실행 턴이 식별자를 다시 사냥하다 소진되던
+            // 클래스(2026-07-11 실측 2회)의 구조 해법.
+            let response = if !plan_replay_calls.is_empty() {
+                let calls = std::mem::take(&mut plan_replay_calls);
+                self.log.info(&format!(
+                    "[AiManager] plan replay round — executing {} compiled steps without an LLM round",
+                    calls.len()
+                ));
+                LlmToolResponse {
+                    tool_calls: calls,
+                    model_id: last_model_id.clone(),
+                    response_id: current_response_id.clone(),
+                    thinking_text: Some(
+                        "[plan replay] compiled plan steps executed mechanically (no LLM round)"
+                            .to_string(),
+                    ),
+                    ..Default::default()
+                }
+            } else {
+                match self
+                    .llm
+                    .ask_with_tools_streaming(
+                        llm_prompt,
+                        round_tools,
+                        &prior_results,
+                        &turn_opts,
+                        llm_sink.clone(),
+                    )
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        // Terminal LLM failure (400 / missing API key / etc.) — no answer will come.
+                        // Persist an error record so the turn isn't an orphan user bubble on reload,
+                        // WITH the rounds collected so far (mid-loop 실패에서도 CoT 판독 가능).
+                        // (Recoverable SSE drops don't reach here; they complete + persist the real reply.)
+                        self.finalize_error(ai_opts, &e, &reasoning_trace);
+                        return Err(e);
+                    }
                 }
             };
             last_text = response.text.clone();

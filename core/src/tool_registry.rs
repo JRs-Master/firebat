@@ -1251,7 +1251,7 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "propose_plan".to_string(),
-            description: "복합·파괴적 작업 전 plan 카드 제시 (사용자 ✓실행 승인 후 실행). title + steps[] (각 {title, description?, tool?}) + estimatedTime? + risks?.".to_string(),
+            description: "복합·파괴적 작업 전 plan 카드 제시 (사용자 ✓실행 승인 후 실행). title + steps[] (각 {title, description?, tool?, args?}) + estimatedTime? + risks?. args = 이번 턴에 get_action_schema(+필요 시 이름→코드 lookup)로 검증을 마친 정확한 호출 인자 — tool+args 를 채운 스텝은 승인 시 시스템이 재발견 없이 기계적으로 실행한다. 이전 스텝 출력에 의존하거나 아직 검증 못 한 스텝은 args 를 생략(산문 스텝 = 실행 턴이 수행).".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -1263,7 +1263,8 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
                             "properties": {
                                 "title": { "type": "string" },
                                 "description": { "type": "string" },
-                                "tool": { "type": "string" }
+                                "tool": { "type": "string" },
+                                "args": { "type": "object", "description": "verified call arguments (from this turn's get_action_schema / lookups) — filled = mechanically replayed on approval" }
                             },
                             "required": ["title"]
                         }

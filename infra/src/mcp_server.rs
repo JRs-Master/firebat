@@ -2057,7 +2057,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "propose_plan".into(),
-        description: "복합 작업 계획 제안 + plan store 저장. inputSchema: {title, steps[], estimatedTime?, risks?}.".into(),
+        description: "복합 작업 계획 제안 + plan store 저장. inputSchema: {title, steps[] (각 {title, description?, tool?, args?}), estimatedTime?, risks?}. args = 이번 턴에 검증한 정확한 호출 인자 — tool+args 를 채운 스텝은 승인 시 재발견 없이 기계 실행. 미검증·이전 스텝 의존이면 args 생략.".into(),
         input_schema: schema_object(serde_json::json!({"title": {"type":"string"}, "steps": {"type":"array"}})),
         handler: Arc::new(ProposePlanHandler),
     }).await;

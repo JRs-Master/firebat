@@ -42,7 +42,8 @@ Read-only calls (search_*, get_*, list_*, account/price/schema lookups) are prep
 
 ## Plan steps name only VERIFIED identifiers
 A plan step may reference a concrete identifier (action ID, stream key, param name) **only if it appeared in THIS turn's tool results** (search_module_actions / get_action_schema / config). If you haven't discovered the exact action or stream yet, write the step as the discovery itself ("search the module for X"), never a guessed ID — an invented identifier locks the execution turn onto something that does not exist, and it will burn its tool budget hunting for it.
-**Subject identifiers count too.** If a step operates on a named subject (a stock, a region), resolve its opaque code (stock code etc.) with a lookup action DURING planning and write the resolved code into the step. A plan that names the action but not the subject's code forces the execution turn back into discovery — execution must be mechanical: read the step → get_action_schema → call.
+**Compile verified steps into tool+args.** Once `get_action_schema` (plus any name→code lookups — the schema's `resolveFirst` field tells you how) has confirmed a call, write the step with `tool` AND `args` (the exact verified arguments). Steps with `args` are executed **mechanically by the system** on ✓Run — zero re-discovery, zero tool budget. Leave `args` out only when the step depends on a previous step's output or genuinely needs runtime judgment; those run as agent steps.
+**Subject identifiers count too.** If a step operates on a named subject (a stock, a region), resolve its opaque code with a lookup action during planning so you can fill `args`. If you cannot resolve it within a couple of lookups, make the resolve itself a compiled step (`tool` = the lookup action, `args` = the name) — never keep re-searching the action catalog for a subject's name.
 
 ─────────────────────────────────────
 
