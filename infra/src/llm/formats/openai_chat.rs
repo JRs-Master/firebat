@@ -54,6 +54,52 @@ fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
     (serde_json::json!({}), "{}".to_string())
 }
 
+/// Strip serving-format tool-call tokens a hybrid model can leak into the CONTENT channel.
+/// Observed (Upstage Solar, 2026-07-11 실측): when the request carries no `tools` (the
+/// forced-final round) but the model still wants to call one, it emits its internal
+/// serialization as literal text — `<|tool_call:begin|>id<|tool_call:name|>name
+/// <|tool_call:args|>{json}<|tool_call:end|>` — which then renders verbatim to the user.
+/// These tokens are never legitimate prose: drop each whole begin..end block (and any stray
+/// markers). If that empties the reply, the server-side empty-final fallback produces an
+/// honest failure message instead of garbage.
+fn strip_leaked_tool_markup(text: &str) -> String {
+    const BEGIN: &str = "<|tool_call:begin|>";
+    const END: &str = "<|tool_call:end|>";
+    if !text.contains("<|tool_call") {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find(BEGIN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + BEGIN.len()..];
+        match after.find(END) {
+            Some(end) => rest = &after[end + END.len()..],
+            None => {
+                // unterminated block (stream cut mid-call) — drop the tail
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    // Defensive: stray markers without a begin/end pair — drop the marker tokens themselves.
+    let mut cleaned = out;
+    for marker in ["<|tool_call:name|>", "<|tool_call:args|>", BEGIN, END] {
+        if cleaned.contains(marker) {
+            cleaned = cleaned.replace(marker, "");
+        }
+    }
+    if cleaned.trim() != text.trim() {
+        tracing::warn!(
+            target: "llm",
+            "leaked tool-call markup stripped from content ({} -> {} chars)",
+            text.len(),
+            cleaned.len()
+        );
+    }
+    cleaned
+}
+
 impl OpenAiChatHandler {
     pub fn new() -> Self {
         Self
@@ -66,7 +112,7 @@ impl OpenAiChatHandler {
             if let Some(first) = choices.first() {
                 if let Some(msg) = first.get("message") {
                     if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
-                        text.push_str(content);
+                        text.push_str(&strip_leaked_tool_markup(content));
                     }
                     if let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) {
                         for tc in calls {
@@ -613,5 +659,34 @@ impl FormatHandler for OpenAiChatHandler {
             raw_model_parts: Self::sanitized_assistant_message(&body_json),
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod leaked_tool_markup_tests {
+    use super::strip_leaked_tool_markup;
+
+    #[test]
+    fn strips_whole_block() {
+        let s = "<|tool_call:begin|>k3nu0vq4f9<|tool_call:name|>search_module_actions<|tool_call:args|>{\"q\": 1}<|tool_call:end|>";
+        assert_eq!(strip_leaked_tool_markup(s), "");
+    }
+
+    #[test]
+    fn keeps_surrounding_prose() {
+        let s = "before <|tool_call:begin|>id<|tool_call:name|>t<|tool_call:args|>{}<|tool_call:end|> after";
+        assert_eq!(strip_leaked_tool_markup(s), "before  after");
+    }
+
+    #[test]
+    fn drops_unterminated_tail() {
+        let s = "answer text <|tool_call:begin|>id<|tool_call:name|>cut-off";
+        assert_eq!(strip_leaked_tool_markup(s), "answer text ");
+    }
+
+    #[test]
+    fn plain_text_untouched() {
+        let s = "일반 답변 텍스트 <b>태그</b> 포함";
+        assert_eq!(strip_leaked_tool_markup(s), s);
     }
 }

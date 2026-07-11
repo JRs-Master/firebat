@@ -399,7 +399,7 @@ fn derive_entries_from_input(
             .iter()
             .filter_map(|a| a.as_str())
             .map(|act| {
-                let frag = derive_action_fragment(action_desc_blob, act);
+                let frag = derive_action_fragment(action_desc_blob, act, &all_actions);
                 // Semantic text = the action name (distinguishes quote↔history) + its fragment,
                 // or the module blurb when no fragment is parseable.
                 let sem = if frag.is_empty() {
@@ -424,25 +424,105 @@ fn derive_entries_from_input(
     }
 }
 
-/// Best-effort per-action description from an enum-description blob like
-/// "Action. quote=current price / history=OHLCV time series / info=…". Returns the text after
-/// "action=" (or "action:") up to the next " / ", or "" if the action isn't described there.
-fn derive_action_fragment(blob: &str, action: &str) -> String {
-    for seg in blob.split(" / ") {
-        let seg = seg.trim();
-        for sep in ['=', ':'] {
-            let marker = format!("{}{}", action, sep);
-            if let Some(pos) = seg.find(&marker) {
-                // token boundary — start of segment or preceded by a non-alphanumeric char.
-                let boundary = pos == 0
-                    || !seg[..pos].chars().last().map(|c| c.is_alphanumeric()).unwrap_or(false);
-                if boundary {
-                    return seg[pos + marker.len()..].trim().to_string();
+/// Action ids may contain '-'/'_' ("ultra-short" vs "short") — a token boundary must treat
+/// them as id chars, or "short" matches inside "ultra-short=" (2026-07-11 실측: kma-weather
+/// `short` picked up the wrong fragment).
+fn is_id_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '-' || c == '_'
+}
+
+/// One-line search-row description — trigger-level (what the action is), never params.
+/// Char-boundary safe cap so a long authored desc doesn't bloat the discovery rows.
+fn clip_row_desc(s: &str) -> String {
+    const CAP: usize = 140;
+    let t = s.trim();
+    if t.chars().count() <= CAP {
+        return t.to_string();
+    }
+    let cut: String = t.chars().take(CAP).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// Where `action`'s marker sits in `blob`, as (key_start, desc_start). Marker dialects:
+/// - plain:    `action=desc` / `action:desc`
+/// - compound: `a/b/c=desc` — every slash-joined action in the key shares the description.
+/// Both sides token-boundary checked with [`is_id_char`].
+fn find_action_marker(blob: &str, action: &str) -> Option<(usize, usize)> {
+    let mut search_from = 0;
+    while let Some(rel) = blob[search_from..].find(action) {
+        let pos = search_from + rel;
+        search_from = pos + action.len().max(1);
+        let ok_before =
+            pos == 0 || !blob[..pos].chars().last().map(is_id_char).unwrap_or(false);
+        if !ok_before {
+            continue;
+        }
+        let after = &blob[pos + action.len()..];
+        match after.chars().next() {
+            Some(c @ ('=' | ':')) => {
+                return Some((key_true_start(blob, pos), pos + action.len() + c.len_utf8()));
+            }
+            Some('/') => {
+                // compound key — walk forward over id chars and '/' to the '='/':'.
+                let mut idx = pos + action.len();
+                for c in after.chars() {
+                    if is_id_char(c) || c == '/' {
+                        idx += c.len_utf8();
+                        continue;
+                    }
+                    if c == '=' || c == ':' {
+                        return Some((key_true_start(blob, pos), idx + c.len_utf8()));
+                    }
+                    break;
                 }
             }
+            _ => {}
         }
     }
-    String::new()
+    None
+}
+
+/// Walk back from a matched action token to the true start of its (possibly compound) key —
+/// clipping a fragment at a mid-key position would leave a dangling "medium-land/" tail.
+fn key_true_start(blob: &str, mut pos: usize) -> usize {
+    while pos > 0 {
+        let Some(prev) = blob[..pos].chars().last() else { break };
+        if is_id_char(prev) || prev == '/' {
+            pos -= prev.len_utf8();
+        } else {
+            break;
+        }
+    }
+    pos
+}
+
+/// Best-effort per-action description from an enum-description blob like
+/// "quote=current price / history=OHLCV time series" or
+/// "short/ultra-now/ultra-short=단기예보, fcst-version=…" (compound keys, comma separation).
+/// The fragment runs from the action's marker to the next OTHER action's marker (blobs
+/// separate entries with ", " as often as " / ", so a fixed separator under-splits), then
+/// trailing separators are trimmed. "" when the blob has no marker for this action.
+fn derive_action_fragment(blob: &str, action: &str, all_actions: &[&str]) -> String {
+    let Some((_, desc_start)) = find_action_marker(blob, action) else {
+        return String::new();
+    };
+    let rest = &blob[desc_start..];
+    let mut end = rest.len();
+    if let Some(p) = rest.find(" / ") {
+        end = end.min(p);
+    }
+    for other in all_actions {
+        if *other == action {
+            continue;
+        }
+        if let Some((key_start, _)) = find_action_marker(rest, other) {
+            end = end.min(key_start);
+        }
+    }
+    rest[..end]
+        .trim()
+        .trim_end_matches([',', '.', ';', '·', ' '])
+        .to_string()
 }
 
 #[async_trait::async_trait]
@@ -481,10 +561,13 @@ impl ModuleActionCatalog {
     }
 
     /// Cross-module (default) or per-module semantic action search. Returns DISCOVERY rows
-    /// only — id/name/domain/approval flag, deliberately NO param information: an index line
-    /// must be a trigger, never enough to act on, or models guess the call instead of loading
-    /// the detail (get_action_schema). Same principle as the skills index (2026-07-08:
-    /// "인덱스만 보고 다 봤다고 생각" — 사용자 진단).
+    /// only — id/name/domain/one-line desc/approval flag, deliberately NO param information:
+    /// an index line must be a trigger, never enough to act on, or models guess the call
+    /// instead of loading the detail (get_action_schema). Same principle as the skills index
+    /// (2026-07-08: "인덱스만 보고 다 봤다고 생각" — 사용자 진단). The one-line `desc` IS
+    /// trigger-level and required: derived modules' rows were bare cryptic ids ("short",
+    /// "pwn-code") with nothing to tell them apart, so the model round-tripped
+    /// get_action_schema per candidate and burned its per-turn cap (2026-07-11 날씨 cron 실측).
     pub async fn search(
         &self,
         query: &str,
@@ -514,7 +597,7 @@ impl ModuleActionCatalog {
                         "score": m.score,
                     });
                 }
-                serde_json::json!({
+                let mut row = serde_json::json!({
                     "module": m.extra.get("module").cloned().unwrap_or_default(),
                     "action": m.extra.get("action").cloned().unwrap_or_default(),
                     "kind": "action",
@@ -522,7 +605,12 @@ impl ModuleActionCatalog {
                     "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
                     "score": m.score,
-                })
+                });
+                let desc = clip_row_desc(&m.description);
+                if !desc.is_empty() && desc != m.name {
+                    row["desc"] = serde_json::Value::String(desc);
+                }
+                row
             })
             .collect())
     }
@@ -656,5 +744,61 @@ mod f1_param_scope_tests {
             ACTIONS,
         );
         assert!(full.get("regId").is_some());
+    }
+}
+
+#[cfg(test)]
+mod action_fragment_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_slash_separated_markers() {
+        let blob = "Action. quote=current price / history=OHLCV time series / info=company profile";
+        let acts = ["quote", "history", "info"];
+        assert_eq!(derive_action_fragment(blob, "quote", &acts), "current price");
+        assert_eq!(derive_action_fragment(blob, "history", &acts), "OHLCV time series");
+        assert_eq!(derive_action_fragment(blob, "info", &acts), "company profile");
+    }
+
+    #[test]
+    fn short_does_not_match_inside_ultra_short() {
+        // 2026-07-11 실측: "short" 마커가 "ultra-short=" 안에서 매칭돼 엉뚱한 fragment 를 얻던 것.
+        let blob = "ultra-short=초단기예보, short=단기예보 (오늘~모레), fcst-version=수정버전";
+        let acts = ["short", "ultra-short", "fcst-version"];
+        assert_eq!(derive_action_fragment(blob, "short", &acts), "단기예보 (오늘~모레)");
+        assert_eq!(derive_action_fragment(blob, "ultra-short", &acts), "초단기예보");
+    }
+
+    #[test]
+    fn compound_key_shares_description() {
+        let blob = "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회";
+        let acts = ["short", "ultra-now", "ultra-short", "fcst-version"];
+        for a in ["short", "ultra-now", "ultra-short"] {
+            assert_eq!(derive_action_fragment(blob, a, &acts), "단기예보 시리즈");
+        }
+        assert_eq!(derive_action_fragment(blob, "fcst-version", &acts), "예보 수정버전 조회");
+    }
+
+    #[test]
+    fn fragment_clips_before_next_compound_key() {
+        let blob = "alerts=특보 목록, medium-land/medium-ta/medium-sea=중기 육상·기온·해상 (regId)";
+        let acts = ["alerts", "medium-land", "medium-ta", "medium-sea"];
+        // clipping at a mid-key token must not leave a dangling "medium-land/" tail.
+        assert_eq!(derive_action_fragment(blob, "alerts", &acts), "특보 목록");
+    }
+
+    #[test]
+    fn unknown_action_returns_empty() {
+        let blob = "quote=current price";
+        assert_eq!(derive_action_fragment(blob, "history", &["quote", "history"]), "");
+    }
+
+    #[test]
+    fn clip_row_desc_char_boundary() {
+        let long = "가".repeat(200);
+        let clipped = clip_row_desc(&long);
+        assert!(clipped.chars().count() <= 141);
+        assert!(clipped.ends_with('…'));
+        assert_eq!(clip_row_desc("  짧은 설명  "), "짧은 설명");
     }
 }

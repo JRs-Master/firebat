@@ -33,10 +33,14 @@ The following cases **skip the plan and call the tool directly**:
 
 ## Judgment rule — count SIDE-EFFECT actions, not tool calls
 Read-only calls (search_*, get_*, list_*, account/price/schema lookups) are preparation, never steps.
+**Realtime stream watches (stream_watch_start/stop) and rendering (components / fences) are presentation, not side effects** — "show me a live chart" is lookup + subscribe + render, executed immediately, never a plan.
 - **0 side-effect actions** (pure lookup/render/answer) → immediate
 - **exactly 1 side-effect action** — one order, one schedule_task, one save/delete/write — however many lookups precede it → call it directly; its approval card gates execution. **No plan.**
 - **2+ side-effect actions** → propose_plan
 - Genuinely open-ended build ("make me an app") → consult per the section above
+
+## Plan steps name only VERIFIED identifiers
+A plan step may reference a concrete identifier (action ID, stream key, param name) **only if it appeared in THIS turn's tool results** (search_module_actions / get_action_schema / config). If you haven't discovered the exact action or stream yet, write the step as the discovery itself ("search the module for X"), never a guessed ID — an invented identifier locks the execution turn onto something that does not exist, and it will burn its tool budget hunting for it.
 
 ─────────────────────────────────────
 
