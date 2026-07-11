@@ -1944,6 +1944,10 @@ impl AiManager {
         let mut force_final = false;
         // stage 1 strip set — capped (discovery-class) tool names removed from later rounds.
         let mut capped_strip: HashSet<String> = HashSet::new();
+        // stage 2 needs TWO consecutive fully-rejected rounds after narrowing — the first
+        // rejection is how the model LEARNS discovery is closed (7차 실측: stall 폐쇄 직후
+        // 첫 거부 라운드에서 곧바로 전 도구를 떼는 바람에 액션 도구로 행동할 기회가 0이었다).
+        let mut post_narrow_rejected_rounds: usize = 0;
         // Progress after stage 1 — did any ACTION tool (no declared per-turn cap = not the
         // discovery class) succeed after narrowing? Used for the honest unattended verdict:
         // stage 1 + no real action afterwards = the turn never escaped its discovery loop,
@@ -2920,14 +2924,27 @@ impl AiManager {
                 let any_cap = turn_results
                     .iter()
                     .any(|(_, r)| rejected(r, "perTurnLimitExceeded"));
+                if !all_rejected {
+                    post_narrow_rejected_rounds = 0;
+                }
                 if all_rejected && !force_final {
                     if !capped_strip.is_empty() {
-                        // stage 2 — the narrowed toolset still produced nothing but rejections.
-                        force_final = true;
-                        self.log.warn(
-                            "[AiManager] fully-rejected round after narrowing — disabling all \
-                             tools for the next round to force a final answer",
-                        );
+                        // stage 2 — but only on the SECOND consecutive fully-rejected round:
+                        // the first one delivered the "discovery closed / ACT now" errors, and
+                        // the model still holds the action tools for a real attempt next round.
+                        post_narrow_rejected_rounds += 1;
+                        if post_narrow_rejected_rounds >= 2 {
+                            force_final = true;
+                            self.log.warn(
+                                "[AiManager] second fully-rejected round after narrowing — \
+                                 disabling all tools for the next round to force a final answer",
+                            );
+                        } else {
+                            self.log.warn(
+                                "[AiManager] fully-rejected round after narrowing — grace round: \
+                                 action tools stay up one more round before the forced final",
+                            );
+                        }
                     } else if any_cap {
                         // stage 1 — remove the capped tools, keep the action tools.
                         for (c, r) in &turn_results {

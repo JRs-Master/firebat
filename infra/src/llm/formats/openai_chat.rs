@@ -54,42 +54,77 @@ fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
     (serde_json::json!({}), "{}".to_string())
 }
 
-/// Strip serving-format tool-call tokens a hybrid model can leak into the CONTENT channel.
-/// Observed (Upstage Solar, 2026-07-11 실측): when the request carries no `tools` (the
+/// Recover serving-format tool-call tokens a hybrid model leaks into the CONTENT channel.
+/// Observed (Upstage Solar, 2026-07-11/12 실측): when the request carries no `tools` (the
 /// forced-final round) but the model still wants to call one, it emits its internal
 /// serialization as literal text — `<|tool_call:begin|>id<|tool_call:name|>name
-/// <|tool_call:args|>{json}<|tool_call:end|>` — which then renders verbatim to the user.
-/// These tokens are never legitimate prose: drop each whole begin..end block (and any stray
-/// markers). If that empties the reply, the server-side empty-final fallback produces an
-/// honest failure message instead of garbage.
-fn strip_leaked_tool_markup(text: &str) -> String {
+/// <|tool_call:args|>{json}<|tool_call:end|>`. These tokens are never legitimate prose.
+/// v1 stripped them (reply emptied → honest fallback), but the leak usually IS the model's
+/// intended next action — so parse each block into a real ToolCall and let it run through
+/// the normal dispatch gates (unknown-tool guard / discovery-close firm reject / approval
+/// gates all still apply). Same dialect-absorption class as the tolerant fence parser:
+/// the model can't hold the channel discipline, so the parser absorbs the dialect.
+/// Malformed blocks and stray markers are still dropped from the text.
+fn recover_leaked_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
     const BEGIN: &str = "<|tool_call:begin|>";
+    const NAME: &str = "<|tool_call:name|>";
+    const ARGS: &str = "<|tool_call:args|>";
     const END: &str = "<|tool_call:end|>";
     if !text.contains("<|tool_call") {
-        return text.to_string();
+        return (text.to_string(), Vec::new());
     }
     let mut out = String::with_capacity(text.len());
+    let mut calls: Vec<ToolCall> = Vec::new();
     let mut rest = text;
     while let Some(start) = rest.find(BEGIN) {
         out.push_str(&rest[..start]);
         let after = &rest[start + BEGIN.len()..];
-        match after.find(END) {
-            Some(end) => rest = &after[end + END.len()..],
-            None => {
-                // unterminated block (stream cut mid-call) — drop the tail
-                rest = "";
+        let (block, tail) = match after.find(END) {
+            Some(end) => (&after[..end], &after[end + END.len()..]),
+            // unterminated block (stream cut mid-call) — recover what parses, drop the tail
+            None => (after, ""),
+        };
+        if let Some(name_pos) = block.find(NAME) {
+            let after_name = &block[name_pos + NAME.len()..];
+            let (name, raw_args) = match after_name.find(ARGS) {
+                Some(args_pos) => (
+                    after_name[..args_pos].trim(),
+                    after_name[args_pos + ARGS.len()..].trim(),
+                ),
+                None => (after_name.trim(), ""),
+            };
+            if !name.is_empty() {
+                let (args, _) = repair_tool_args(raw_args);
+                let id = block[..name_pos].trim();
+                calls.push(ToolCall {
+                    id: if id.is_empty() {
+                        format!("leaked-{}", calls.len() + 1)
+                    } else {
+                        id.to_string()
+                    },
+                    name: name.to_string(),
+                    arguments: args,
+                });
             }
         }
+        rest = tail;
     }
     out.push_str(rest);
     // Defensive: stray markers without a begin/end pair — drop the marker tokens themselves.
     let mut cleaned = out;
-    for marker in ["<|tool_call:name|>", "<|tool_call:args|>", BEGIN, END] {
+    for marker in [NAME, ARGS, BEGIN, END] {
         if cleaned.contains(marker) {
             cleaned = cleaned.replace(marker, "");
         }
     }
-    if cleaned.trim() != text.trim() {
+    if !calls.is_empty() {
+        tracing::warn!(
+            target: "llm",
+            "leaked tool-call markup recovered as {} real call(s): {:?}",
+            calls.len(),
+            calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
+    } else if cleaned.trim() != text.trim() {
         tracing::warn!(
             target: "llm",
             "leaked tool-call markup stripped from content ({} -> {} chars)",
@@ -97,7 +132,7 @@ fn strip_leaked_tool_markup(text: &str) -> String {
             cleaned.len()
         );
     }
-    cleaned
+    (cleaned, calls)
 }
 
 impl OpenAiChatHandler {
@@ -112,7 +147,9 @@ impl OpenAiChatHandler {
             if let Some(first) = choices.first() {
                 if let Some(msg) = first.get("message") {
                     if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
-                        text.push_str(&strip_leaked_tool_markup(content));
+                        let (cleaned, recovered) = recover_leaked_tool_calls(content);
+                        text.push_str(&cleaned);
+                        tool_calls.extend(recovered);
                     }
                     if let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) {
                         for tc in calls {
@@ -664,29 +701,58 @@ impl FormatHandler for OpenAiChatHandler {
 
 #[cfg(test)]
 mod leaked_tool_markup_tests {
-    use super::strip_leaked_tool_markup;
+    use super::recover_leaked_tool_calls;
 
     #[test]
-    fn strips_whole_block() {
+    fn recovers_whole_block_as_call() {
         let s = "<|tool_call:begin|>k3nu0vq4f9<|tool_call:name|>search_module_actions<|tool_call:args|>{\"q\": 1}<|tool_call:end|>";
-        assert_eq!(strip_leaked_tool_markup(s), "");
+        let (text, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(text, "");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "k3nu0vq4f9");
+        assert_eq!(calls[0].name, "search_module_actions");
+        assert_eq!(calls[0].arguments, serde_json::json!({"q": 1}));
     }
 
     #[test]
     fn keeps_surrounding_prose() {
         let s = "before <|tool_call:begin|>id<|tool_call:name|>t<|tool_call:args|>{}<|tool_call:end|> after";
-        assert_eq!(strip_leaked_tool_markup(s), "before  after");
+        let (text, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(text, "before  after");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "t");
     }
 
     #[test]
-    fn drops_unterminated_tail() {
+    fn unterminated_tail_still_recovers_name() {
         let s = "answer text <|tool_call:begin|>id<|tool_call:name|>cut-off";
-        assert_eq!(strip_leaked_tool_markup(s), "answer text ");
+        let (text, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(text, "answer text ");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "cut-off");
+        assert_eq!(calls[0].arguments, serde_json::json!({}));
+    }
+
+    #[test]
+    fn broken_args_repaired_tolerantly() {
+        let s = "<|tool_call:begin|>x<|tool_call:name|>schedule_task<|tool_call:args|>{\"a\": 1,}<|tool_call:end|>";
+        let (_, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(calls[0].arguments, serde_json::json!({"a": 1}));
+    }
+
+    #[test]
+    fn nameless_block_dropped_without_call() {
+        let s = "text <|tool_call:begin|>only-id<|tool_call:end|> tail";
+        let (text, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(text, "text  tail");
+        assert!(calls.is_empty());
     }
 
     #[test]
     fn plain_text_untouched() {
         let s = "일반 답변 텍스트 <b>태그</b> 포함";
-        assert_eq!(strip_leaked_tool_markup(s), s);
+        let (text, calls) = recover_leaked_tool_calls(s);
+        assert_eq!(text, s);
+        assert!(calls.is_empty());
     }
 }
