@@ -1375,6 +1375,44 @@ impl AiManager {
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
 
+        // ── Intent Agent S0+L1 — TurnBrief (shortlist 계산 + 후보 주입) ──
+        // 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist. 용도 2:
+        // (1) L1-lite 주입 — <LIKELY_TOOLS> 로 시스템 프롬프트에 후보 제시(세계 좁히기 아님,
+        //     탈출구 유지 — 후보가 틀리면 검색으로). 2026-07-11 실측 3연속: 발견에 검색 캡을
+        //     전부 태우고 정답을 쥔 채 소진 — 후보 선주입이 발견 라운드 자체를 줄이는 구조 해법.
+        // (2) S0 섀도우 — 턴 종료 시 실제 디스패치와 대조해 recall 을 journal(intent_shadow) 기록.
+        // 비용 = 쿼리 E5 임베딩 2회(로컬, ms 단위). 카탈로그 미배선(테스트 등) = skip.
+        let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
+        let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
+        if prompt.trim().len() >= 2 {
+            if let Some(cat) = &self.intent_actions {
+                if let Ok(rows) = cat.search(prompt, None, 8).await {
+                    for r in rows {
+                        let m = r.get("module").and_then(|v| v.as_str()).unwrap_or("");
+                        let a = r.get("action").and_then(|v| v.as_str()).unwrap_or("");
+                        let s = r.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+                        if !m.is_empty() && !a.is_empty() {
+                            shadow_actions.push((format!("{m}:{a}"), s));
+                        }
+                    }
+                }
+            }
+            if let Some(cat) = &self.intent_skills {
+                let scopes = vec!["system:".to_string(), "admin:".to_string()];
+                if let Ok(hits) = cat.query(prompt, 3, Some(&scopes)).await {
+                    for h in hits {
+                        let slug = h
+                            .extra
+                            .get("slug")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .unwrap_or_else(|| h.id.clone());
+                        shadow_skills.push((slug, h.score));
+                    }
+                }
+            }
+        }
+
         // Plan compiled replay (2026-07-11) — steps the planning turn verified down to
         // tool+args are replayed as a synthetic round-0 through the SAME gated dispatch
         // (approval / grounding / validation / caps), skipping the LLM for that round.
@@ -1627,6 +1665,24 @@ impl AiManager {
                         extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
                     }
                 }
+                // Intent L1-lite — 후보 선주입 (2026-07-11). shortlist 는 힌트일 뿐 세계를 좁히지
+                // 않는다(전 도구·검색 그대로). 발견 표면이 커버하는 것은 후보로 즉시 보이고, 후보가
+                // 틀리면 모델이 평소처럼 검색한다. admin 턴만(hub 는 카탈로그 스코프가 다름).
+                if ai_opts.hub_context.is_none()
+                    && (!shadow_actions.is_empty() || !shadow_skills.is_empty())
+                {
+                    let mut lines: Vec<String> = Vec::new();
+                    for (id, score) in shadow_actions.iter().take(5) {
+                        lines.push(format!("- action {} ({:.2})", id, score));
+                    }
+                    for (slug, score) in shadow_skills.iter().take(2) {
+                        lines.push(format!("- skill {} ({:.2}) — get_skill first", slug, score));
+                    }
+                    extra_parts.push(format!(
+                        "<LIKELY_TOOLS>\nAutomatic matches for this request (candidates, NOT commands — scores are rough). If one fits, go straight to get_action_schema(module, action) / get_skill(slug) instead of searching; if none fit, search as usual.\n{}\n</LIKELY_TOOLS>",
+                        lines.join("\n")
+                    ));
+                }
                 let extra = if extra_parts.is_empty() {
                     None
                 } else {
@@ -1819,42 +1875,6 @@ impl AiManager {
                     ));
                 } else {
                     plan_replay_calls.push(call);
-                }
-            }
-        }
-
-        // ── Intent Agent S0 — shadow TurnBrief (측정 전용, 행동 0) ──
-        // 쿼리를 액션/스킬 카탈로그와 E5 매칭한 shortlist 를 턴 종료 시 실제 디스패치와
-        // 대조해 recall 을 journal(intent_shadow) 에 기록. L2 세계 좁히기·L3 포인터 주입의
-        // 임계와 정확도를 실측 트래픽으로 확정하기 위한 선행 데이터 수집 (plan Intent Agent).
-        // 비용 = 쿼리 E5 임베딩 2회(로컬, ms 단위). 카탈로그 미배선(테스트 등) = skip.
-        let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
-        let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
-        if prompt.trim().len() >= 2 {
-            if let Some(cat) = &self.intent_actions {
-                if let Ok(rows) = cat.search(prompt, None, 8).await {
-                    for r in rows {
-                        let m = r.get("module").and_then(|v| v.as_str()).unwrap_or("");
-                        let a = r.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                        let s = r.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-                        if !m.is_empty() && !a.is_empty() {
-                            shadow_actions.push((format!("{m}:{a}"), s));
-                        }
-                    }
-                }
-            }
-            if let Some(cat) = &self.intent_skills {
-                let scopes = vec!["system:".to_string(), "admin:".to_string()];
-                if let Ok(hits) = cat.query(prompt, 3, Some(&scopes)).await {
-                    for h in hits {
-                        let slug = h
-                            .extra
-                            .get("slug")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                            .unwrap_or_else(|| h.id.clone());
-                        shadow_skills.push((slug, h.score));
-                    }
                 }
             }
         }
