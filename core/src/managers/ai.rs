@@ -1967,6 +1967,32 @@ impl AiManager {
         // (2026-07-12 실측: 강제종료 턴에서 Solar 가 차트 수치·계좌·"구독 성공"을 통째로
         // 지어냄 — 마감 지시의 honesty 조항은 무시됐다. 프롬프트로 못 막는 클래스 = 서버 스탬프).
         let mut turn_grounded_success = false;
+        // Turn ledger — "cards in hand" harvested from THIS turn's successes: ready-to-call
+        // envelopes (schemas fetched), stream/action candidates (top search hits), and receipts
+        // of completed actions. A weak model re-derives its plan from scratch every round and,
+        // when a discovery call gets rejected, cannot map "act on what you have" to a concrete
+        // call (10차 실측: r7 에 ka10081 스키마·코드·telegram 후보를 전부 쥐고도 r8~r12 를
+        // 대안 재검색으로 소진 → force final 산문). The ledger is echoed verbatim inside
+        // cap/duplicate rejections and the forced-final instruction so the exact next call (or
+        // the honest "what was actually done") sits in front of the model — no recall required.
+        let mut turn_ledger: Vec<String> = Vec::new();
+        const TURN_LEDGER_MAX: usize = 10;
+        fn ledger_push(ledger: &mut Vec<String>, entry: String) {
+            if ledger.len() < TURN_LEDGER_MAX && !ledger.contains(&entry) {
+                ledger.push(entry);
+            }
+        }
+        fn ledger_note(ledger: &[String]) -> String {
+            if ledger.is_empty() {
+                return String::new();
+            }
+            format!(
+                "\nAlready in hand this turn (from YOUR earlier calls — do not re-discover):\n{}\n\
+                 Act on a READY/STREAM entry by calling it EXACTLY as written (fill only the \
+                 param values), or answer using the DONE results.",
+                ledger.join("\n")
+            )
+        }
         // Discovery-stall early close — N consecutive rounds of ONLY discovery-class calls
         // (= tools with a declared per-turn cap) means the model is orbiting the search layer
         // instead of acting (06차 실측: 검색 6회 전승·필요 정보 전부 확보 후에도 계속 검색 →
@@ -2149,11 +2175,22 @@ impl AiManager {
             let force_final_prompt: String;
             let llm_prompt: &str = if force_final {
                 turn_opts.thinking_level = Some("low".to_string());
+                // The ledger pins the final text to what actually happened — without it the
+                // model binds values to wrong labels and reports unexecuted steps as done
+                // (10차: 373220 을 "LG전자"로, 어제를 한 달 전 날짜로).
+                let verified = if turn_ledger.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\nVerified this turn (ONLY these happened — anything else was NOT executed):\n{}",
+                        turn_ledger.join("\n")
+                    )
+                };
                 force_final_prompt = format!(
                     "{llm_prompt}\n\n[system] Tool calls are closed for this turn. Using the \
                      tool results you already have, write your final answer to the user NOW as \
                      normal text (render fences allowed). If something could not be completed, \
-                     say so honestly in one line. Do not emit tool-call syntax."
+                     say so honestly in one line. Do not emit tool-call syntax.{verified}"
                 );
                 &force_final_prompt
             } else {
@@ -2668,9 +2705,12 @@ impl AiManager {
                     } else {
                         // NOT "conclude it does not exist" — 07-11 실측: 캡 시점에 정답 스키마를
                         // 이미 쥐고 있었는데 그 문구가 포기 선언을 유도했다. 실행을 시켜라.
+                        // The turn ledger makes "act on it" concrete — the abstract imperative
+                        // alone was ignored (10차: r7 스키마 확보 후에도 r8~r12 대안 재검색).
                         format!(
-                            "Tool '{}' exceeded its per-turn call limit. STOP searching — you already have results from earlier calls this turn. Pick the best candidate and ACT on it now (call the module action / stream_watch_start / render). Only if nothing matched at all, answer honestly that the capability was not found. Never call this tool again this turn.",
-                            effective_call.name
+                            "Tool '{}' exceeded its per-turn call limit. STOP searching — you already have results from earlier calls this turn. Pick the best candidate and ACT on it now (call the module action / stream_watch_start / render). Only if nothing matched at all, answer honestly that the capability was not found. Never call this tool again this turn.{}",
+                            effective_call.name,
+                            ledger_note(&turn_ledger)
                         )
                     };
                     ToolResult {
@@ -2696,7 +2736,10 @@ impl AiManager {
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": "This tool was already called with the same arguments this turn. Use the previous result or call with different arguments. Never retry the identical call.",
+                            "error": format!(
+                                "This tool was already called with the same arguments this turn. Use the previous result or call with different arguments. Never retry the identical call.{}",
+                                ledger_note(&turn_ledger)
+                            ),
                             "duplicateInTurn": true,
                         }),
                         success: false,
@@ -2925,6 +2968,84 @@ impl AiManager {
                                 reopened
                             ));
                         }
+                    }
+                }
+                // Turn-ledger harvest — turn this round's successes into ready-to-call lines.
+                if action.success {
+                    match effective_call.name.as_str() {
+                        "get_action_schema" => {
+                            let r = &action.result;
+                            if let (Some(module), Some(act)) = (
+                                r.get("module").and_then(|v| v.as_str()),
+                                r.get("action").and_then(|v| v.as_str()),
+                            ) {
+                                let params = r
+                                    .get("params")
+                                    .and_then(|p| p.as_object())
+                                    .map(|o| o.keys().cloned().collect::<Vec<_>>().join(", "))
+                                    .unwrap_or_default();
+                                let name = r.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                ledger_push(&mut turn_ledger, format!(
+                                    "- READY sysmod_{module} {{\"action\":\"{act}\",\"params\":{{{params}}}}} — {name}"
+                                ));
+                            }
+                        }
+                        "search_module_actions" => {
+                            // Top usable rows only — the full rows already sit in the tool result;
+                            // the ledger is a pointer, not a copy.
+                            if let Some(rows) =
+                                action.result.get("actions").and_then(|v| v.as_array())
+                            {
+                                let mut got_action = false;
+                                let mut got_stream = false;
+                                for row in rows {
+                                    let module = row
+                                        .get("module")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    let name =
+                                        row.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                    if !got_stream
+                                        && row.get("kind").and_then(|v| v.as_str())
+                                            == Some("stream")
+                                    {
+                                        if let Some(stream) =
+                                            row.get("stream").and_then(|v| v.as_str())
+                                        {
+                                            ledger_push(&mut turn_ledger, format!(
+                                                "- STREAM stream_watch_start {{\"module\":\"{module}\",\"stream\":\"{stream}\"}} — {name} (args: get_action_schema(\"{module}\",\"{stream}\") first)"
+                                            ));
+                                            got_stream = true;
+                                        }
+                                    } else if !got_action {
+                                        if let Some(act) =
+                                            row.get("action").and_then(|v| v.as_str())
+                                        {
+                                            ledger_push(&mut turn_ledger, format!(
+                                                "- CANDIDATE {module}:{act} — {name} (get_action_schema then call sysmod_{module})"
+                                            ));
+                                            got_action = true;
+                                        }
+                                    }
+                                    if got_action && got_stream {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        n if self.tools.per_turn_limit(n).is_none() => {
+                            // Completed real action — carry a compact receipt (e.g. a lookup's
+                            // corp_name + code) so the final answer can bind values to the right
+                            // labels (10차: 코드는 맞고 회사명을 "LG전자"로 흘린 값-라벨 결합 실패).
+                            if let Ok(compact) = serde_json::to_string(&action.result) {
+                                let trimmed: String = compact.chars().take(160).collect();
+                                ledger_push(
+                                    &mut turn_ledger,
+                                    format!("- DONE {n} → {trimmed}"),
+                                );
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // grounding corpus (#8-2) — record successful tool-result text as provenance so a later
