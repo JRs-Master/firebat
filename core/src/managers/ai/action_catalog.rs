@@ -602,13 +602,28 @@ impl ModuleActionCatalog {
         module: Option<&str>,
         limit: usize,
     ) -> Result<Vec<serde_json::Value>, String> {
+        Ok(self.search_analyzed(query, module, limit).await?.0)
+    }
+
+    /// `search` + the OOV analysis (rows, all_oov, dropped_tokens) — the search tool handler
+    /// uses `all_oov` to answer a zero-signal query (bare subject name) with a teaching hint
+    /// instead of confident junk rows.
+    pub async fn search_analyzed(
+        &self,
+        query: &str,
+        module: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>), String> {
         let scopes: Option<Vec<String>> = module.map(|m| vec![format!("{}:", m)]);
-        let matches = self
+        let outcome = self
             .catalog
-            .query(query, limit, scopes.as_deref())
+            .query_analyzed(query, limit, scopes.as_deref())
             .await
             .map_err(|e| e.to_string())?;
-        Ok(matches
+        let all_oov = outcome.all_oov;
+        let dropped = outcome.dropped_tokens;
+        let rows = outcome
+            .matches
             .into_iter()
             .map(|m| {
                 // Streams (F4) carry `stream`/`kind` instead of `action` — the row tells the model
@@ -643,7 +658,8 @@ impl ModuleActionCatalog {
                 }
                 row
             })
-            .collect())
+            .collect();
+        Ok((rows, all_oov, dropped))
     }
 
     /// Full detail for one action — params with descriptions + example + call envelope +

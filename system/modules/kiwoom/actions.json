@@ -79,7 +79,7 @@
  {
   "id": "ka10001",
   "name": "주식기본정보요청",
-  "description": "주식기본정보요청",
+  "description": "주식기본정보요청 — 종목 기본정보·현재가 스냅샷 조회",
   "domain": "국내주식/종목정보",
   "method": "POST",
   "path": "/api/dostk/stkinfo",
@@ -112,7 +112,7 @@
  {
   "id": "ka10004",
   "name": "주식호가요청",
-  "description": "주식호가요청",
+  "description": "주식호가요청 — 종목 호가창 스냅샷 (매수/매도 호가·잔량) 조회",
   "domain": "국내주식/시세",
   "method": "POST",
   "path": "/api/dostk/mrkcond",
@@ -1077,7 +1077,7 @@
  {
   "id": "ka10079",
   "name": "주식틱차트조회요청",
-  "description": "주식틱차트조회요청",
+  "description": "주식틱차트조회요청 — 종목 틱 차트 (체결 단위 가격 캔들) 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1090,7 +1090,7 @@
  {
   "id": "ka10080",
   "name": "주식분봉차트조회요청",
-  "description": "주식분봉차트조회요청",
+  "description": "주식분봉차트조회요청 — 종목 분봉 캔들 차트 (분 단위 시세·가격 히스토리 OHLCV) 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1104,7 +1104,7 @@
  {
   "id": "ka10081",
   "name": "주식일봉차트조회요청",
-  "description": "주식일봉차트조회요청",
+  "description": "주식일봉차트조회요청 — 종목 일봉(데일리) 캔들 차트, 일별 시세·가격 히스토리 OHLCV·종가 조회. '최근 N개월 일봉 차트'의 기본 액션",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1117,7 +1117,7 @@
  {
   "id": "ka10082",
   "name": "주식주봉차트조회요청",
-  "description": "주식주봉차트조회요청",
+  "description": "주식주봉차트조회요청 — 종목 주봉 캔들 차트 (주 단위 시세 히스토리) 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1130,7 +1130,7 @@
  {
   "id": "ka10083",
   "name": "주식월봉차트조회요청",
-  "description": "주식월봉차트조회요청",
+  "description": "주식월봉차트조회요청 — 종목 월봉 캔들 차트 (월 단위 시세 히스토리) 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1168,7 +1168,7 @@
  {
   "id": "ka10086",
   "name": "일별주가요청",
-  "description": "일별주가요청",
+  "description": "일별주가요청 — 종목 일별 주가 표 (날짜별 종가·거래량) 조회",
   "domain": "국내주식/시세",
   "method": "POST",
   "path": "/api/dostk/mrkcond",
@@ -1203,7 +1203,7 @@
  {
   "id": "ka10094",
   "name": "주식년봉차트조회요청",
-  "description": "주식년봉차트조회요청",
+  "description": "주식년봉차트조회요청 — 종목 년봉 캔들 차트 (연 단위 시세 히스토리) 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1417,7 +1417,7 @@
  {
   "id": "ka20005",
   "name": "업종분봉조회요청",
-  "description": "업종분봉조회요청",
+  "description": "업종분봉조회요청 — 업종 지수 분봉 캔들 차트 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1430,7 +1430,7 @@
  {
   "id": "ka20006",
   "name": "업종일봉조회요청",
-  "description": "업종일봉조회요청",
+  "description": "업종일봉조회요청 — 업종 지수 일봉 캔들 차트 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",
@@ -1783,7 +1783,7 @@
  {
   "id": "ka50081",
   "name": "금현물일봉차트조회요청",
-  "description": "금현물일봉차트조회요청",
+  "description": "금현물일봉차트조회요청 — 금현물 일봉 캔들 차트 조회",
   "domain": "국내주식/차트",
   "method": "POST",
   "path": "/api/dostk/chart",

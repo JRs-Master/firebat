@@ -509,7 +509,7 @@
  {
   "id": "v1_국내주식-008",
   "name": "주식현재가 시세",
-  "description": "주식현재가 시세",
+  "description": "주식현재가 시세 — 종목 현재가·등락률·거래량 실시간 스냅샷 조회",
   "domain": "[국내주식] 기본시세",
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-price",
@@ -659,7 +659,7 @@
  {
   "id": "v1_국내주식-016",
   "name": "국내주식기간별시세(일/주/월/년)",
-  "description": "국내주식기간별시세(일/주/월/년)",
+  "description": "국내주식기간별시세(일/주/월/년) — 종목 일봉·주봉·월봉·년봉 캔들 차트, 기간 시세·가격 히스토리 OHLCV·종가 조회 (시작일~종료일 범위)",
   "domain": "[국내주식] 기본시세",
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
@@ -773,7 +773,7 @@
  {
   "id": "v1_국내주식-022",
   "name": "주식당일분봉조회",
-  "description": "주식당일분봉조회",
+  "description": "주식당일분봉조회 — 종목 당일 분봉 캔들 차트 (분 단위 시세) 조회",
   "domain": "[국내주식] 기본시세",
   "method": "GET",
   "path": "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
@@ -3474,7 +3474,7 @@
  {
   "id": "v1_해외주식-010",
   "name": "해외주식 기간별시세",
-  "description": "해외주식 기간별시세",
+  "description": "해외주식 기간별시세 — 해외 종목 일봉·주봉·월봉 캔들 차트, 가격 히스토리 조회",
   "domain": "[해외주식] 기본시세",
   "method": "GET",
   "path": "/uapi/overseas-price/v1/quotations/dailyprice",

@@ -54,6 +54,56 @@ pub struct CatalogMatch {
 struct CatalogState {
     entries: Vec<CatalogEntry>,
     vectors: HashMap<String, Vec<f32>>,
+    /// Lowercased concat of all entry texts — the vocabulary check for OOV query cleaning
+    /// (see `clean_query`). Rebuilt with the entries; substring lookups are memchr-fast.
+    corpus: String,
+}
+
+/// `query_analyzed` outcome — matches + what the OOV cleaner did to the query.
+/// `all_oov` = every token was out-of-vocabulary (e.g. a bare subject name like a company):
+/// the query carries zero catalog signal, so no embedding search ran — callers should
+/// surface a teaching hint ("describe the capability; resolve names via a lookup action")
+/// instead of returning confident junk (2026-07-12 실측: 잡탕 top-5 가 결과처럼 보여
+/// 모델이 변형 재검색으로 캡을 태우는 죽음 나선의 입구였다).
+pub struct CatalogQueryOutcome {
+    pub matches: Vec<CatalogMatch>,
+    /// Tokens dropped as OOV (absent from every entry text, even after suffix trim).
+    pub dropped_tokens: Vec<String>,
+    pub all_oov: bool,
+}
+
+/// Drop query tokens that appear in NO catalog entry text — they cannot contribute any
+/// match signal (nothing contains them) and only pull the query embedding toward junk
+/// (실측: "LG에너지솔루션" 이 섞이면 ELW 잡탕이 뜸 → 제거 시 정답 1위). Generic — no NER,
+/// no name lists: the catalog's own vocabulary is the filter. Korean particles are
+/// tolerated by a 1–2 char suffix trim before declaring a token OOV ("차트랑" → "차트").
+fn clean_query(user_query: &str, corpus: &str) -> (String, Vec<String>) {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut dropped: Vec<String> = Vec::new();
+    for tok in user_query.split_whitespace() {
+        let lower = tok.to_lowercase();
+        let mut found = corpus.contains(&lower);
+        if !found {
+            // suffix trim (조사 tolerance) — drop up to 2 trailing chars, keep ≥ 2 chars.
+            let chars: Vec<char> = lower.chars().collect();
+            for cut in 1..=2usize {
+                if chars.len() < cut + 2 {
+                    break;
+                }
+                let trimmed: String = chars[..chars.len() - cut].iter().collect();
+                if corpus.contains(&trimmed) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            kept.push(tok);
+        } else {
+            dropped.push(tok.to_string());
+        }
+    }
+    (kept.join(" "), dropped)
 }
 
 pub struct SemanticCatalog {
@@ -94,7 +144,11 @@ impl SemanticCatalog {
             cache_file: format!("{}-embeddings.json", cache_file_stem),
             embedder,
             cache_port,
-            state: RwLock::new(CatalogState { entries: Vec::new(), vectors: HashMap::new() }),
+            state: RwLock::new(CatalogState {
+                entries: Vec::new(),
+                vectors: HashMap::new(),
+                corpus: String::new(),
+            }),
         }
     }
 
@@ -148,8 +202,13 @@ impl SemanticCatalog {
             embedded,
             entries.len() - embedded
         );
+        let mut corpus = String::new();
+        for e in &entries {
+            corpus.push_str(&entry_text(e).to_lowercase());
+            corpus.push('\n');
+        }
         let mut state = self.state.write().await;
-        *state = CatalogState { entries, vectors };
+        *state = CatalogState { entries, vectors, corpus };
     }
 
     pub async fn len(&self) -> usize {
@@ -170,17 +229,55 @@ impl SemanticCatalog {
         limit: usize,
         scopes: Option<&[String]>,
     ) -> InfraResult<Vec<CatalogMatch>> {
+        Ok(self.query_analyzed(user_query, limit, scopes).await?.matches)
+    }
+
+    /// `query` + OOV analysis. The embedding input is the OOV-cleaned query (tokens absent
+    /// from every entry text are dropped — they only pollute the vector); the lexical boost
+    /// still runs on the ORIGINAL query so exact-id hits ("ka10081") keep their pin.
+    pub async fn query_analyzed(
+        &self,
+        user_query: &str,
+        limit: usize,
+        scopes: Option<&[String]>,
+    ) -> InfraResult<CatalogQueryOutcome> {
+        let empty = |all_oov: bool, dropped: Vec<String>| CatalogQueryOutcome {
+            matches: Vec::new(),
+            dropped_tokens: dropped,
+            all_oov,
+        };
         if user_query.trim().is_empty() {
-            return Ok(Vec::new());
+            return Ok(empty(false, Vec::new()));
         }
         if let Some(s) = scopes {
             if s.is_empty() {
-                return Ok(Vec::new());
+                return Ok(empty(false, Vec::new()));
             }
         }
-        let q = self.embedder.embed_query(user_query).await?;
-        let q_lower = user_query.trim().to_lowercase();
         let state = self.state.read().await;
+        if state.entries.is_empty() {
+            return Ok(empty(false, Vec::new()));
+        }
+        let (cleaned, dropped) = clean_query(user_query, &state.corpus);
+        if cleaned.is_empty() && !dropped.is_empty() {
+            // Every token is OOV — a bare subject name ("<회사명>") or pure chitchat.
+            // No embedding search: any top-K would be confident junk.
+            return Ok(empty(true, dropped));
+        }
+        let embed_input: &str = if dropped.is_empty() {
+            user_query.trim()
+        } else {
+            tracing::info!(
+                target: "semantic_catalog",
+                "OOV tokens dropped from query ({}): {:?} — searching with \"{}\"",
+                self.cache_file,
+                dropped,
+                cleaned
+            );
+            &cleaned
+        };
+        let q = self.embedder.embed_query(embed_input).await?;
+        let q_lower = user_query.trim().to_lowercase();
         let mut scored: Vec<CatalogMatch> = Vec::new();
         for e in &state.entries {
             if let Some(allowed) = scopes {
@@ -213,7 +310,7 @@ impl SemanticCatalog {
         }
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
-        Ok(scored)
+        Ok(CatalogQueryOutcome { matches: scored, dropped_tokens: dropped, all_oov: false })
     }
 
     /// Exact lookup by id — the "detail" step after a search hit.
@@ -311,6 +408,16 @@ impl RefreshingCatalog {
         self.catalog.query(user_query, limit, scopes).await
     }
 
+    pub async fn query_analyzed(
+        &self,
+        user_query: &str,
+        limit: usize,
+        scopes: Option<&[String]>,
+    ) -> InfraResult<CatalogQueryOutcome> {
+        self.ensure().await;
+        self.catalog.query_analyzed(user_query, limit, scopes).await
+    }
+
     pub async fn get(&self, id: &str) -> Option<CatalogEntry> {
         self.ensure().await;
         self.catalog.get(id).await
@@ -337,6 +444,27 @@ mod tests {
         let b = vec![0.0_f32, 1.0];
         assert_eq!(cosine(&a, &a), 1.0);
         assert_eq!(cosine(&a, &b), 0.0);
+    }
+
+    #[test]
+    fn clean_query_drops_oov_keeps_vocab() {
+        let corpus = "name: 주식일봉차트조회요청\ndesc: 국내주식/차트 기준일자 시세 조회\n".to_lowercase();
+        // subject name = OOV → dropped; informative tokens kept
+        let (cleaned, dropped) = clean_query("LG에너지솔루션 일봉 시세", &corpus);
+        assert_eq!(cleaned, "일봉 시세");
+        assert_eq!(dropped, vec!["LG에너지솔루션".to_string()]);
+        // particle suffix trim — "차트랑" → "차트" found → kept (original token preserved)
+        let (cleaned, dropped) = clean_query("일봉 차트랑", &corpus);
+        assert_eq!(cleaned, "일봉 차트랑");
+        assert!(dropped.is_empty());
+        // all tokens OOV → empty cleaned
+        let (cleaned, dropped) = clean_query("LG에너지솔루션", &corpus);
+        assert!(cleaned.is_empty());
+        assert_eq!(dropped.len(), 1);
+        // fully in-vocab query untouched
+        let (cleaned, dropped) = clean_query("일봉 차트", &corpus);
+        assert_eq!(cleaned, "일봉 차트");
+        assert!(dropped.is_empty());
     }
 
     #[test]

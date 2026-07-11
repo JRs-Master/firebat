@@ -615,7 +615,25 @@ impl AiManager {
                         }));
                     }
                 }
-                let mut rows = cat.search(&query, module.as_deref(), limit.clamp(1, 20)).await?;
+                let (mut rows, all_oov, dropped) =
+                    cat.search_analyzed(&query, module.as_deref(), limit.clamp(1, 20)).await?;
+                if all_oov {
+                    // Zero-signal query (every token is a subject name / OOV for the catalog) —
+                    // returning junk top-K here fed the death spiral (junk looks like results →
+                    // the model re-searches variations until the cap, 2026-07-11/12 실측 3턴).
+                    return Ok(serde_json::json!({
+                        "actions": [],
+                        "count": 0,
+                        "error": format!(
+                            "Query {:?} contains no capability words — it looks like a subject \
+                             name only. Actions are searched by WHAT they do (e.g. 일봉 차트, \
+                             잔고 조회, 실시간 체결), never by a subject's name. Re-search with a \
+                             capability description, and resolve the subject's code with a \
+                             lookup/list action — then pass it as a parameter.",
+                            dropped.join(" ")
+                        ),
+                    }));
+                }
                 // Widget scoping — a hub-widget visitor only sees modules in its allowlist
                 // (cross-module search could otherwise reveal admin-only modules).
                 rows.retain(|r| {
