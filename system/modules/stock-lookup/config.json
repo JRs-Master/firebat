@@ -1,0 +1,57 @@
+{
+  "name": "stock-lookup",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "runtime": "python",
+  "providerType": "api",
+  "capability": "stock-lookup",
+  "description": "종목코드 검색 전용 — 회사명(종목명)을 공식 종목코드(6자리)와 DART corp_code(8자리)로 변환합니다. 사용법: {\"query\": \"회사명\"} 하나만 넣어 바로 호출 (action 불필요, 사전 검색·스키마 조회 불필요). 예: {\"query\": \"LG에너지솔루션\"} → corp_name + stock_code. 브로커 API(키움 stk_cd·한투 FID_INPUT_ISCD/PDNO·토스 등)에 종목코드가 필요할 때 항상 이 도구를 먼저 호출하세요 — 코드를 기억으로 추측하면 grounding 게이트가 거부합니다. 6자리 코드를 넣으면 그 코드의 회사를 확인(검증)해 줍니다. 여러 회사가 일치하면 candidates 배열이 반환되며, 확실하지 않으면 suggest 피커로 사용자에게 확인하세요.",
+  "tags": [
+    "종목코드",
+    "종목검색",
+    "종목코드 조회",
+    "회사명 변환",
+    "종목명",
+    "티커",
+    "코드 확인",
+    "stock code",
+    "ticker",
+    "lookup",
+    "resolve",
+    "symbol"
+  ],
+  "packages": ["requests==2.34.2"],
+  "secrets": ["DART_API_KEY"],
+  "input": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "회사명(부분 일치 가능) 또는 확인할 종목코드(6자리)·DART corp_code(8자리). 예: \"LG에너지솔루션\", \"삼성전자\", \"005930\""
+      },
+      "limit": {
+        "type": "integer",
+        "description": "candidates 최대 개수 (기본 10)"
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "matched": {
+        "type": "object",
+        "description": "최적 일치 — {corp_name, stock_code(6자리, 비상장이면 빈 문자열), corp_code(8자리 DART id)}"
+      },
+      "candidates": {
+        "type": "array",
+        "description": "복수 일치 시 후보 목록 (이름 짧은 순 = 정밀 우선). 확실하지 않으면 suggest 피커로 사용자에게 확인"
+      },
+      "count": {
+        "type": "integer",
+        "description": "일치한 상장사 수"
+      }
+    }
+  }
+}
