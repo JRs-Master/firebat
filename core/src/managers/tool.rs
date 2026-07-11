@@ -208,6 +208,13 @@ impl ToolManager {
         state.per_turn_limits.get(name).copied()
     }
 
+    /// Every tool with a declared per-turn cap — the "discovery class" set
+    /// (search_*/get_action_schema). Used by the discovery-stall early close.
+    pub fn per_turn_limited_names(&self) -> Vec<String> {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.per_turn_limits.keys().cloned().collect()
+    }
+
     // ─────── 도구 핸들러 — register / dispatch (Step 2/4) ───────
 
     /// 도구 핸들러 등록. AiManager 부팅 시 정적 27 도구 + 동적 sysmod_* / mcp_* / render_* 모두

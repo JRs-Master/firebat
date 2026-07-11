@@ -1955,6 +1955,15 @@ impl AiManager {
         // (2026-07-12 실측: 강제종료 턴에서 Solar 가 차트 수치·계좌·"구독 성공"을 통째로
         // 지어냄 — 마감 지시의 honesty 조항은 무시됐다. 프롬프트로 못 막는 클래스 = 서버 스탬프).
         let mut turn_grounded_success = false;
+        // Discovery-stall early close — N consecutive rounds of ONLY discovery-class calls
+        // (= tools with a declared per-turn cap) means the model is orbiting the search layer
+        // instead of acting (06차 실측: 검색 6회 전승·필요 정보 전부 확보 후에도 계속 검색 →
+        // 캡 → search_components 로 갈아타기 → 소진). At the threshold ALL discovery tools are
+        // closed at once (not just the capped one — the whack-a-mole hole of stage 1), leaving
+        // the action tools + every result already gathered. Legit discovery for a composite
+        // task is ~4-5 rounds; 5 consecutive rounds with zero action calls is stall evidence.
+        const DISCOVERY_STALL_ROUNDS: usize = 5;
+        let mut discovery_only_rounds: usize = 0;
         // Whole-turn seen-keys (never reset per round, unlike turn_call_set) — an identical
         // repeat across rounds is served from the Layer-1 cache with no signal, which quietly
         // feeds a search loop (07-11 실측: 같은 trade-unified 검색이 fromCache 로 재서빙).
@@ -2611,10 +2620,16 @@ impl AiManager {
                         .entry(effective_call.name.clone())
                         .or_insert(0);
                     *count += 1;
-                    self.tools
-                        .per_turn_limit(&effective_call.name)
-                        .map(|cap| *count > cap)
-                        .unwrap_or(false)
+                    // A stripped (discovery-closed) tool is firm-rejected even when the model
+                    // hallucinates the call from history — narrowing only hides the tool from
+                    // the LLM's list, it doesn't unregister it (06차 실측: strip 후 r8 이
+                    // search_components 로 갈아타 검색 지속 = 두더지잡기).
+                    capped_strip.contains(&effective_call.name)
+                        || self
+                            .tools
+                            .per_turn_limit(&effective_call.name)
+                            .map(|cap| *count > cap)
+                            .unwrap_or(false)
                 };
                 // Failure cap — same tool already failed PER_TURN_FAIL_CAP times this turn.
                 // Applies to every tool (no declaration needed) since sysmods have no attempt cap;
@@ -2926,6 +2941,28 @@ impl AiManager {
                             capped_strip
                         ));
                     }
+                }
+                // Discovery-stall counter — a round made ONLY of discovery-class calls
+                // (declared per-turn cap) advances the stall; a successful action-class call
+                // resets it; mixed/unknown rounds leave it unchanged.
+                let all_discovery = turn_results
+                    .iter()
+                    .all(|(c, _)| self.tools.per_turn_limit(&c.name).is_some());
+                if all_discovery {
+                    discovery_only_rounds += 1;
+                } else if turn_results.iter().any(|(c, r)| {
+                    r.success && self.tools.per_turn_limit(&c.name).is_none()
+                }) {
+                    discovery_only_rounds = 0;
+                }
+                if discovery_only_rounds == DISCOVERY_STALL_ROUNDS && !force_final {
+                    let closed = self.tools.per_turn_limited_names();
+                    self.log.warn(&format!(
+                        "[AiManager] {DISCOVERY_STALL_ROUNDS} consecutive discovery-only rounds \
+                         — closing ALL discovery tools (act with gathered results): {:?}",
+                        closed
+                    ));
+                    capped_strip.extend(closed);
                 }
             }
 
