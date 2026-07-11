@@ -53,11 +53,6 @@ pub struct TokioCronAdapter {
     notifications: Mutex<Vec<CronNotification>>,
     /// timezone (default Asia/Seoul, vault override)
     timezone: Mutex<String>,
-    /// Per-job concurrency guard — job ids whose callback is currently executing.
-    /// Run-now has no frontend debounce (the button intentionally allows repeat clicks),
-    /// so without this a double click runs the same agent job twice in parallel
-    /// (2026-07-11: duplicate weather runs 8s apart, one telegram swallowed by tool cache).
-    running: Mutex<std::collections::HashSet<String>>,
 }
 
 impl TokioCronAdapter {
@@ -113,24 +108,7 @@ impl TokioCronAdapter {
             logs: Mutex::new(logs),
             notifications: Mutex::new(notifications),
             timezone: Mutex::new(default_timezone.to_string()),
-            running: Mutex::new(std::collections::HashSet::new()),
         }))
-    }
-
-    /// Mark a job as running. Returns false when the job is already mid-execution
-    /// (the caller must skip/reject — never run the same job concurrently).
-    fn mark_running(&self, job_id: &str) -> bool {
-        self.running
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(job_id.to_string())
-    }
-
-    fn unmark_running(&self, job_id: &str) {
-        self.running
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(job_id);
     }
 
     fn flush_jobs(&self, jobs: &HashMap<String, CronJobInfo>) {
@@ -272,13 +250,10 @@ impl TokioCronAdapter {
     }
 
     /// callback 호출 + 로그 기록.
+    /// Overlapping runs of the same job are ALLOWED by design (run-now has no debounce and
+    /// back-to-back manual runs are a legitimate pattern) — each run must fully execute its
+    /// side effects; dedup is not this layer's job.
     async fn fire_trigger(self: Arc<Self>, info: CronTriggerInfo) {
-        // Concurrency guard — a scheduled fire that overlaps a still-running execution
-        // (long agent run past the next tick, or a manual run in flight) is skipped, not queued.
-        if !self.mark_running(&info.job_id) {
-            tracing::warn!(target: "cron", job_id = %info.job_id, "scheduled fire skipped — job already running");
-            return;
-        }
         let cb = {
             let guard = self.callback.lock().unwrap_or_else(|p| p.into_inner());
             guard.clone()
@@ -302,8 +277,6 @@ impl TokioCronAdapter {
                 steps_total: None,
             },
         };
-
-        self.unmark_running(&job_id);
 
         // 로그 기록 — 최대 MAX_LOGS LRU
         let entry = CronLogEntry {
@@ -477,11 +450,6 @@ impl ICronPort for TokioCronAdapter {
             jobs.get(job_id).cloned()
         };
         let job = job.ok_or_else(|| format!("cron 잡 {} 미등록", job_id))?;
-        // Concurrency guard — the run button intentionally has no client debounce, so a
-        // second click while the first run is still executing must be rejected here.
-        if !self.mark_running(job_id) {
-            return Err("이미 실행 중인 잡입니다. 실행이 끝난 뒤 다시 시도해 주세요.".to_string());
-        }
         let info = TokioCronAdapter::build_trigger_info(&job, CronTriggerType::CronScheduler);
         // callback 호출은 Arc<Self> 필요. trigger_now 는 Arc 외부에서 호출되므로 인라인 spawn.
         let cb = {
@@ -509,8 +477,6 @@ impl ICronPort for TokioCronAdapter {
                 steps_total: None,
             },
         };
-
-        self.unmark_running(job_id);
 
         let entry = CronLogEntry {
             job_id: job_id_str,

@@ -7,9 +7,12 @@
 //!
 //! 해결: 모든 도구 호출에 일반적으로 적용되는 2-Layer 가드.
 //!
-//! - **Layer 1 — Cross-turn idempotency cache (60초 TTL)**
+//! - **Layer 1 — In-turn idempotency cache (60초 TTL)**
 //!   같은 (toolName + argsHash) 가 60초 내 호출됐으면 직전 결과 그대로 반환.
 //!   AI 가 retry 해도 백엔드는 한 번만 실행. 추가 비용 0.
+//!   ⚠️ 호출자(AiManager)가 key 에 턴 nonce 를 salt 함 — 이 dedup 은 *한 턴 안의 retry* 용이다.
+//!   턴을 넘어 공유하면 동시 실행된 다른 run 의 side-effect(텔레그램 발송 등)를 삼킨다
+//!   (2026-07-11 실측: 두 run·로그 2건·메시지 1건). 두 run = 두 의도 = 각각 실행이 불변식.
 //! - **Layer 2 — Per-turn duplicate set** (호출자가 turn 안에서 직접 set 관리)
 //!   한 turn 안에서 같은 (toolName + argsHash) 두 번째 호출 차단.
 //!

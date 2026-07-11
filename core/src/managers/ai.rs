@@ -1857,6 +1857,10 @@ impl AiManager {
         // feeds a search loop (07-11 실측: 같은 trade-unified 검색이 fromCache 로 재서빙).
         // The repeat gets an explicit note instead.
         let mut turn_seen_keys: HashSet<String> = HashSet::new();
+        // Per-turn salt for the Layer-1 idempotency cache — scopes retry dedup to THIS turn.
+        // Concurrent/back-to-back runs of the same job are independent intents and must both
+        // execute (the invariant: two run logs = two telegram messages).
+        let turn_cache_salt = uuid::Uuid::new_v4().simple().to_string();
         // Per-turn per-tool-name call counter — a goal-seeking model can thrash ONE tool
         // with slightly varying args, which neither Layer 1 (identical-args cache) nor
         // Layer 2 (identical-args set) catches. Tools may declare a per-turn cap on the
@@ -2364,7 +2368,15 @@ impl AiManager {
                 };
                 let effective_call: &ToolCall = &scoped_call;
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
-                let cache_key = tool_cache_key(&effective_call.name, &effective_call.arguments);
+                // The key is salted with this turn's nonce: the idempotency cache exists to absorb
+                // in-turn retry storms (image_gen retry-after-timeout incident), NOT to dedupe
+                // across turns — two independent runs of the same job must each execute their
+                // side effects (2026-07-11: a concurrent weather run's telegram send was served
+                // from another run's cache → log said sent, only one message arrived).
+                let cache_key = format!(
+                    "{turn_cache_salt}:{}",
+                    tool_cache_key(&effective_call.name, &effective_call.arguments)
+                );
                 // Whole-turn repeat detector (round-reset turn_call_set 과 별개) — 아래 Layer-1
                 // 캐시 재서빙에 "이미 했던 그 호출" 신호를 붙이는 데 쓴다.
                 let seen_before_this_turn = !turn_seen_keys.insert(cache_key.clone());
