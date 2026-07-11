@@ -46,7 +46,7 @@ impl UpstageEmbedderAdapter {
         if !status.is_success() {
             return Err(format!("upstage embed API 에러 {status}: {json}"));
         }
-        let mut vec = json
+        let vec = json
             .get("data")
             .and_then(|d| d.as_array())
             .and_then(|a| a.first())
@@ -58,14 +58,6 @@ impl UpstageEmbedderAdapter {
                     .collect::<Vec<f32>>()
             })
             .ok_or_else(|| "upstage embed 응답에 embedding 없음".to_string())?;
-        // L2 normalize — consumers (semantic_catalog / trait cosine) assume normalized vectors
-        // (dot product = cosine). No-op if the API already returns unit vectors.
-        let norm = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 0.0 {
-            for x in vec.iter_mut() {
-                *x /= norm;
-            }
-        }
         Ok(vec)
     }
 }

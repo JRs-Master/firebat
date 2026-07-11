@@ -21,6 +21,9 @@ use tokio::sync::RwLock;
 
 use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 
+/// Bump on embedder swap — hash mismatch triggers automatic re-embedding.
+const EMBED_VERSION: &str = "e5-small-v1";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCacheEntry {
     hash: String,
@@ -61,12 +64,9 @@ pub struct SemanticCatalog {
     state: RwLock<CatalogState>,
 }
 
-/// Hash keyed by the EMBEDDER's version (IEmbedderPort::version) — swapping the embedder
-/// (e5-small-v1 ↔ upstage-solar-embed-2) changes every hash, so the disk cache re-embeds
-/// automatically instead of mixing vector spaces.
-fn sha1_hash(version: &str, s: &str) -> String {
+fn sha1_hash(s: &str) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(format!("{}:{}", version, s));
+    hasher.update(format!("{}:{}", EMBED_VERSION, s));
     hex::encode(hasher.finalize())
 }
 
@@ -99,22 +99,20 @@ impl SemanticCatalog {
     }
 
     /// Replace the entry set, embedding incrementally: unchanged (id, text-hash) pairs reuse
-    /// the disk-cached vector, only new/changed entries hit the embedder (bounded-concurrent —
-    /// an API embedder's first full build of ~600 entries would take minutes serially). Failed
-    /// embeddings skip that entry (it just won't match) — mirror of component index behavior.
+    /// the disk-cached vector, only new/changed entries hit the embedder. Failed embeddings
+    /// skip that entry (it just won't match) — mirror of component index behavior.
     pub async fn set_entries(&self, entries: Vec<CatalogEntry>) {
         let disk: HashMap<String, DiskCacheEntry> = self
             .cache_port
             .load(&self.cache_file)
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
-        let version = self.embedder.version().to_string();
         let mut vectors: HashMap<String, Vec<f32>> = HashMap::new();
         let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
-        let mut to_embed: Vec<(String, String, String)> = Vec::new(); // (id, text, hash)
+        let mut embedded = 0usize;
         for e in &entries {
             let text = entry_text(e);
-            let hash = sha1_hash(&version, &text);
+            let hash = sha1_hash(&text);
             if let Some(hit) = disk.get(&e.id) {
                 if hit.hash == hash {
                     vectors.insert(e.id.clone(), hit.vector.clone());
@@ -122,31 +120,17 @@ impl SemanticCatalog {
                     continue;
                 }
             }
-            to_embed.push((e.id.clone(), text, hash));
-        }
-        let embedded = to_embed.len();
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut tasks = tokio::task::JoinSet::new();
-        for (id, text, hash) in to_embed {
-            let emb = self.embedder.clone();
-            let sem = sem.clone();
-            tasks.spawn(async move {
-                let _permit = sem.acquire().await;
-                (id, hash, emb.embed_passage(&text).await)
-            });
-        }
-        while let Some(res) = tasks.join_next().await {
-            let Ok((id, hash, out)) = res else { continue };
-            match out {
+            match self.embedder.embed_passage(&text).await {
                 Ok(vec) => {
-                    vectors.insert(id.clone(), vec.clone());
-                    fresh.insert(id, DiskCacheEntry { hash, vector: vec });
+                    vectors.insert(e.id.clone(), vec.clone());
+                    fresh.insert(e.id.clone(), DiskCacheEntry { hash, vector: vec });
+                    embedded += 1;
                 }
                 Err(err) => {
                     tracing::warn!(
                         target: "semantic_catalog",
                         "embed failed for {} ({}): {} — skipped",
-                        id,
+                        e.id,
                         self.cache_file,
                         err
                     );
@@ -341,12 +325,6 @@ impl RefreshingCatalog {
         self.ensure().await;
         self.catalog.id_prefixes().await
     }
-
-    /// Boot-time warm-up — build the catalog (and its embedding cache) before the first user
-    /// query so an API embedder's initial full embed doesn't stall the first search.
-    pub async fn warm(&self) {
-        self.ensure().await;
-    }
 }
 
 #[cfg(test)]
@@ -369,11 +347,9 @@ mod tests {
             description: "주식 일봉".into(),
             extra: serde_json::json!({}),
         };
-        let h1 = sha1_hash("e5-small-v1", &entry_text(&e));
-        let h2 = sha1_hash("e5-small-v1", &entry_text(&e));
+        let h1 = sha1_hash(&entry_text(&e));
+        let h2 = sha1_hash(&entry_text(&e));
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 40);
-        // embedder swap → different version → different hash → auto re-embed
-        assert_ne!(h1, sha1_hash("upstage-solar-embed-2", &entry_text(&e)));
     }
 }
