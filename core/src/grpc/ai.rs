@@ -318,13 +318,16 @@ impl AiService for AiServiceImpl {
         &self,
         _req: Request<AiIsSubAgentEnabledRequest>,
     ) -> Result<Response<AiIsSubAgentEnabledResponse>, TonicStatus> {
-        Ok(Response::new(AiIsSubAgentEnabledResponse { enabled: false }))
+        Ok(Response::new(AiIsSubAgentEnabledResponse {
+            enabled: self.manager.is_sub_agent_enabled(),
+        }))
     }
 
     async fn set_sub_agent_enabled(
         &self,
-        _req: Request<AiSetSubAgentEnabledRequest>,
+        req: Request<AiSetSubAgentEnabledRequest>,
     ) -> Result<Response<AiSetSubAgentEnabledResponse>, TonicStatus> {
+        self.manager.set_sub_agent_enabled(req.into_inner().enabled);
         Ok(Response::new(AiSetSubAgentEnabledResponse {}))
     }
 

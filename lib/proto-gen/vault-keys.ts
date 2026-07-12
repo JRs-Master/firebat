@@ -21,6 +21,10 @@ export const VK_IMAGE_QUALITY = "system:image-quality";
 export const VK_SYSTEM_UI_LANG = "system:ui-lang";
 export const VK_INTERNAL_MCP_TOKEN = "system:internal-mcp-token";
 export const VK_INTERNAL_MCP_TOKEN_CREATED = "system:internal-mcp-token-created";
+export const VK_SYSTEM_SUB_AGENT_ENABLED = "system:llm:sub-agent-enabled";
+export const VK_SYSTEM_EMBED_CATALOG_PROVIDER = "system:embed:catalog-provider";
+export const VK_SYSTEM_LIBRARY_PARSE_PROVIDER = "system:library:parse-provider";
+export const VK_SYSTEM_RETENTION_ENABLED = "system:retention:enabled";
 
 export const AUTH_SESSION_PREFIX = "auth:session:";
 export const USER_SECRET_PREFIX = "user:";

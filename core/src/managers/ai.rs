@@ -444,6 +444,199 @@ impl AiManager {
         self
     }
 
+    /// Sub-agent parallel toggle — vault-backed (key inherited from the TS-era feature).
+    /// Default OFF: each sub-agent is a full LLM run, so the toggle is a cost safety net.
+    pub fn is_sub_agent_enabled(&self) -> bool {
+        self.vault
+            .as_ref()
+            .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_SUB_AGENT_ENABLED))
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false)
+    }
+
+    pub fn set_sub_agent_enabled(&self, enabled: bool) -> bool {
+        self.vault
+            .as_ref()
+            .map(|v| {
+                v.set_secret(
+                    crate::vault_keys::VK_SYSTEM_SUB_AGENT_ENABLED,
+                    if enabled { "true" } else { "false" },
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    /// spawn_subagent — parallel decomposition delegation (TS `dde3026a`/`7c95639c` Rust re-port).
+    ///
+    /// Registered POST-Arc (call from main.rs after `Arc::new(ai_manager)`), NOT in core
+    /// tool_registry: the handler re-enters AiManager itself, so it captures a `Weak` self
+    /// reference — builder-time registration has no Arc yet, and tool_registry must not know
+    /// AiManager (it would also break the GHA registered-tool-count assertion).
+    ///
+    /// Parallelism = the tool takes a `tasks` ARRAY and fans out internally
+    /// (`buffer_unordered`) — zero dispatcher surgery, and the model states the whole batch in
+    /// one call. Each task runs `process_with_tools_opts` with an EMPTY history (isolation)
+    /// and default LlmCallOpts → the adapter resolves the MAIN model (decomposition delegation
+    /// = main-tier by design; the cheap-worker axis lives in pipeline LLM_TRANSFORM instead).
+    ///
+    /// Recursion guard: FC path = hard (effective_tools gate on `ai_opts.sub_agent`).
+    /// Hosted-MCP/CLI sub-runs can still see the MCP-side tool, so the description carries the
+    /// prohibition (TS-era approach) — depth beyond 1 is discouraged, not fatal.
+    pub fn register_spawn_subagent_tool(self: &Arc<Self>) {
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "spawn_subagent".to_string(),
+            description: "Delegate INDEPENDENT sub-tasks to isolated sub-agents that run in parallel (each is a full agent run on the main model, with tools, empty history). Use for large decomposable work (e.g. researching several subjects at once) — one call with ALL tasks in the `tasks` array; do NOT call this tool once per task. Not for small single-step work (call the tool directly instead). NEVER call spawn_subagent from within a sub-agent task prompt (no recursion). Approval-gated tools are rejected inside sub-agents.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "description": "independent sub-tasks (max 8) — executed in parallel",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "prompt": { "type": "string", "description": "full self-contained instruction for this sub-agent (it sees NO conversation history)" },
+                                "label": { "type": "string", "description": "short name for the result row" }
+                            },
+                            "required": ["prompt"]
+                        }
+                    }
+                },
+                "required": ["tasks"]
+            }),
+            source: "core".to_string(),
+        });
+        let weak = Arc::downgrade(self);
+        self.tools.register_handler(
+            "spawn_subagent",
+            crate::managers::tool::make_handler(move |args| {
+                let weak = weak.clone();
+                async move {
+                    let mgr = weak
+                        .upgrade()
+                        .ok_or_else(|| "AI manager unavailable".to_string())?;
+                    // Second guard (TS 1:1) — the exposure filter can be bypassed by direct
+                    // MCP calls or stale history; the toggle must hold at dispatch too.
+                    if !mgr.is_sub_agent_enabled() {
+                        return Err(
+                            "spawn_subagent is disabled — enable the Sub-agent toggle in settings first."
+                                .to_string(),
+                        );
+                    }
+                    let tasks: Vec<(String, String)> = args
+                        .get("tasks")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|t| {
+                                    let prompt = t.get("prompt")?.as_str()?.trim().to_string();
+                                    if prompt.is_empty() {
+                                        return None;
+                                    }
+                                    let label = t
+                                        .get("label")
+                                        .and_then(|l| l.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    Some((prompt, label))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    if tasks.is_empty() {
+                        return Err(
+                            "spawn_subagent needs tasks: [{\"prompt\": \"...\", \"label\"?}] — at least one non-empty prompt."
+                                .to_string(),
+                        );
+                    }
+                    if tasks.len() > 8 {
+                        return Err(format!(
+                            "too many tasks ({}) — max 8 per call. Merge related sub-tasks or run a second batch after this one.",
+                            tasks.len()
+                        ));
+                    }
+                    // Concurrency cap: CLI main model = OS process per run (950MB server) → 2.
+                    // API models are network-bound → 4.
+                    let main_model = mgr
+                        .vault
+                        .as_ref()
+                        .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_AI_MODEL))
+                        .unwrap_or_default();
+                    let is_cli = crate::llm::registry::current()
+                        .find_model(&main_model)
+                        .map(|m| m.format.starts_with("cli-"))
+                        .unwrap_or(false);
+                    let cap = if is_cli { 2 } else { 4 };
+                    mgr.log.info(&format!(
+                        "[AiManager] spawn_subagent: {} task(s), concurrency {}",
+                        tasks.len(),
+                        cap
+                    ));
+                    use futures_util::stream::StreamExt;
+                    let mut results: Vec<(usize, serde_json::Value)> =
+                        futures_util::stream::iter(tasks.into_iter().enumerate().map(
+                            |(i, (prompt, label))| {
+                                let mgr = mgr.clone();
+                                async move {
+                                    let ai_opts = crate::ports::AiRequestOpts {
+                                        sub_agent: true,
+                                        ..Default::default()
+                                    };
+                                    let res = mgr
+                                        .process_with_tools_opts(
+                                            &prompt,
+                                            &[],
+                                            &LlmCallOpts::default(),
+                                            &ai_opts,
+                                        )
+                                        .await;
+                                    let row = match res {
+                                        Ok(r) => {
+                                            // Reply capped — sub-agent output feeds the parent's
+                                            // context; a runaway essay must not blow the window.
+                                            let reply: String = r.reply.chars().take(4000).collect();
+                                            let actions: Vec<String> = r
+                                                .executed_actions
+                                                .iter()
+                                                .filter_map(|a| {
+                                                    a.as_str()
+                                                        .map(str::to_string)
+                                                        .or_else(|| {
+                                                            a.get("name")
+                                                                .and_then(|n| n.as_str())
+                                                                .map(str::to_string)
+                                                        })
+                                                })
+                                                .collect();
+                                            serde_json::json!({
+                                                "label": label,
+                                                "reply": reply,
+                                                "actions": actions,
+                                                "incomplete": r.exhausted || r.forced_final,
+                                            })
+                                        }
+                                        Err(e) => serde_json::json!({
+                                            "label": label,
+                                            "error": e,
+                                        }),
+                                    };
+                                    (i, row)
+                                }
+                            },
+                        ))
+                        .buffer_unordered(cap)
+                        .collect()
+                        .await;
+                    results.sort_by_key(|(i, _)| *i);
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "results": results.into_iter().map(|(_, r)| r).collect::<Vec<_>>(),
+                    }))
+                }
+            }),
+        );
+    }
+
     /// DynamicToolRegistry 설정한 채로 부팅 — sysmod_* / mcp_* 자동 등록 활성.
     pub fn with_dynamic_tools(
         mut self,
@@ -1381,6 +1574,13 @@ impl AiManager {
                     tools_built
                         .retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
                 }
+            }
+            // spawn_subagent exposure gate — hidden when the vault toggle is OFF (cost safety
+            // net, TS-era 1:1), inside a sub-agent run (recursion guard, depth 1), or in any
+            // hub context (sub-agents run with admin-grade tool access; a widget/tenant turn
+            // must not fan out). Handler keeps a second guard for direct/MCP calls.
+            if !self.is_sub_agent_enabled() || ai_opts.sub_agent || ai_opts.hub_context.is_some() {
+                tools_built.retain(|t| t.name != "spawn_subagent");
             }
             auto_tools = tools_built;
             &auto_tools
@@ -2504,6 +2704,28 @@ impl AiManager {
                 if approval_enabled {
                     if let Some(dispatcher) = &self.dispatcher {
                         if let Some(approval) = dispatcher.check_needs_approval(call).await {
+                            // Sub-agent = unattended; a pending card from inside a sub-agent is
+                            // discarded with the sub-response → would silently never render.
+                            // Auto-REJECT (opposite of cron's bypass-to-run — deliberate).
+                            if ai_opts.sub_agent {
+                                let msg = format!(
+                                    "'{}' requires user approval and cannot run inside a sub-agent. Report your findings; the parent turn must perform this action itself.",
+                                    call.name
+                                );
+                                let action = ToolResult {
+                                    call_id: call.id.clone(),
+                                    name: call.name.clone(),
+                                    result: serde_json::json!({
+                                        "success": false,
+                                        "error": msg,
+                                    }),
+                                    success: false,
+                                    error: Some(msg),
+                                    arguments: call.arguments.clone(),
+                                };
+                                turn_results.push((call.clone(), action));
+                                continue;
+                            }
                             // 사전 검증 — 실패면 UI 미노출 + tool 결과만 에러
                             if let Some(pre_err) = dispatcher.pre_validate_pending_args(call) {
                                 self.log.warn(&format!(
@@ -2937,7 +3159,18 @@ impl AiManager {
                         .get("needsPending")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    let result = if needs_pending {
+                    let result = if needs_pending && ai_opts.sub_agent {
+                        // Sub-agent = unattended; its pendingActions are discarded (only
+                        // reply/actions return to the parent), so a pending card would silently
+                        // never render. Auto-REJECT (opposite of cron's auto-approve — deliberate).
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "'{}' requires user approval and cannot run inside a sub-agent. Report your findings; the parent turn must perform this action itself.",
+                                effective_call.name
+                            ),
+                        })
+                    } else if needs_pending {
                         // Pending 생성 + 프론트 승인 카드 배선 — 카드는 AiResponse.pendingActions
                         // 로만 뜬다. 옛엔 store 에만 만들고 push 를 빼먹어 카드가 영영 안 떴음
                         // (2026-07-06 실측: 주문 API 승인 카드 미표시). shape = dispatcher 경로와

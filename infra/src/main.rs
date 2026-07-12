@@ -670,6 +670,13 @@ async fn main() -> Result<()> {
             ),
     );
 
+    // spawn_subagent — post-Arc registration (the handler re-enters AiManager via a Weak self
+    // reference, so a builder step can't register it — no Arc yet). Must run BEFORE
+    // register_builtin_tools so the MCP auto-sync picks it up (registration order is a
+    // contract — 2026-07-11 search_skills shadowing lesson). Exposure is gated at runtime
+    // (vault toggle + sub-agent/hub context), not here.
+    ai_manager.register_spawn_subagent_tool();
+
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.
     // consolidate_conversation 자동 호출 시 AI Assistant 토글 (Vault `system:ai-router:enabled`)
     // 검사 → 비활성 시 skip. 활성 시 AI Assistant model (default `vault_keys::AI_ASSISTANT_DEFAULT_MODEL`,
@@ -852,6 +859,19 @@ async fn main() -> Result<()> {
                         (true, None)
                     }
                     "retention" => {
+                        // Settings gate — assistant tab "휴지통 정리" toggle. Default ON
+                        // (`v != "false"` — retention is the safe default; NOTE this is the
+                        // OPPOSITE polarity of the consolidation gate's unwrap_or(false)).
+                        // The system job stays registered (undeletable) — OFF = runtime no-op,
+                        // and lastrun still stamps below so re-enabling doesn't storm catch-up.
+                        let retention_on = vault_b
+                            .get_secret(firebat_core::vault_keys::VK_SYSTEM_RETENTION_ENABLED)
+                            .map(|v| v != "false")
+                            .unwrap_or(true);
+                        if !retention_on {
+                            tracing::info!(target: "cron", "retention: skipped (disabled in settings)");
+                            (true, None)
+                        } else {
                         const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
                         conv_b.cleanup_old_deleted(RETENTION_MS);
                         let _ = media_b.cleanup_old_attachments(RETENTION_MS).await;
@@ -881,6 +901,7 @@ async fn main() -> Result<()> {
                             Err(e) => tracing::warn!(target: "consolidation", error = %e, "retention recall sweep failed"),
                         }
                         (true, None)
+                        }
                     }
                     other => (false, Some(format!("unknown system schedule kind: {other}"))),
                 };

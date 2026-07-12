@@ -162,6 +162,17 @@ struct ContentBlock {
 /// 도구 가시성 — `sysmod_<name>` 영역만 enabled 토글 검사. 기타 도구 (render_* / builtin / mcp_*) 는 항상 가시.
 /// ModuleManager 미설정 시 가시 (옛 호환).
 fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
+    // spawn_subagent — vault toggle gate (cost safety net, FC effective_tools 필터와 대칭)
+    // + hub 세션은 종류 무관 비가시 (sub-agent 는 admin 급 도구 접근으로 돌므로 fan-out 금지;
+    //   widget 은 permits_tool 이 어차피 막지만 tenant full_tools 가 뚫는 구멍을 명시 봉쇄).
+    if tool_name == "spawn_subagent" {
+        let on = state
+            .vault
+            .get_secret(firebat_core::vault_keys::VK_SYSTEM_SUB_AGENT_ENABLED)
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        return on && !firebat_core::utils::hub_context::is_hub_context_active();
+    }
     let Some(mm) = &state.module_manager else {
         return true;
     };
@@ -1869,7 +1880,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
             "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차면 pipeline(권장 — 결정적, 런타임 LLM 0회 또는 합성 1회), 매 trigger 런타임 판단 필요하면 agent(매번 LLM 루프)"},
-            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. Cross-step reference: $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction)", "items": {"type": "object"}},
+            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. Cross-step reference: $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction; optional `model` pins a cheaper worker model for that step — omit for the current main model)", "items": {"type": "object"}},
             "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 매 trigger 받는 자연어 지시문"}
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),

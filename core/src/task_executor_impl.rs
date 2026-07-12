@@ -351,13 +351,22 @@ impl TaskExecutor for RealTaskExecutor {
         &self,
         instruction: &str,
         input_text: &str,
+        model: Option<&str>,
     ) -> InfraResult<String> {
-        self.log
-            .info("[Pipeline] LLM_TRANSFORM → AiManager.ask_text");
+        self.log.info(&format!(
+            "[Pipeline] LLM_TRANSFORM → LlmService.ask_text (model={})",
+            model.unwrap_or("current")
+        ));
         let prompt = format!(
             "{instruction}\n\n---\n{input_text}\n---\n\nRespond based only on the source between the delimiters. Do not invent information that is not in the source."
         );
-        self.llm.ask_text(&prompt, &LlmCallOpts::default()).await
+        // Per-step model override (declarative chore delegation) — the adapter resolves
+        // opts.model first (adapter.rs select_config), None = current main model.
+        let opts = LlmCallOpts {
+            model: model.map(str::to_string),
+            ..Default::default()
+        };
+        self.llm.ask_text(&prompt, &opts).await
     }
 
     async fn save_page(

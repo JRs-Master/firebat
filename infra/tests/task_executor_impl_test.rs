@@ -55,7 +55,7 @@ async fn real_executor_save_page_works() {
 async fn real_executor_llm_transform_returns_stub_text() {
     let dir = tempdir().unwrap();
     let executor = make_executor(dir.path());
-    let text = executor.llm_transform("instruction", "input_text").await.unwrap();
+    let text = executor.llm_transform("instruction", "input_text", None).await.unwrap();
     assert!(text.contains("Phase B-17+"));
 }
 

@@ -65,6 +65,11 @@ pub enum PipelineStep {
         input_data: Option<Value>,
         #[serde(rename = "inputMap", default, skip_serializing_if = "Option::is_none")]
         input_map: Option<Value>,
+        /// Per-step model override (declarative chore delegation) — the DESIGNING model pins a
+        /// cheap worker (e.g. "solar-pro3") for bounded text synthesis at compile time.
+        /// None = current main model (existing behavior).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
     Condition {
         field: String,
@@ -167,7 +172,12 @@ pub trait TaskExecutor: Send + Sync {
         body: Option<&Value>,
         headers: Option<&Value>,
     ) -> InfraResult<Value>;
-    async fn llm_transform(&self, instruction: &str, input_text: &str) -> InfraResult<String>;
+    async fn llm_transform(
+        &self,
+        instruction: &str,
+        input_text: &str,
+        model: Option<&str>,
+    ) -> InfraResult<String>;
     async fn save_page(
         &self,
         slug: &str,
@@ -210,7 +220,12 @@ impl TaskExecutor for StubTaskExecutor {
             &[("url", url)],
         ))
     }
-    async fn llm_transform(&self, _instruction: &str, _input_text: &str) -> InfraResult<String> {
+    async fn llm_transform(
+        &self,
+        _instruction: &str,
+        _input_text: &str,
+        _model: Option<&str>,
+    ) -> InfraResult<String> {
         Err(crate::i18n::t(
             "core.error.task.llm_transform_unimplemented",
             None,
@@ -569,6 +584,7 @@ impl TaskManager {
                 instruction,
                 input_data,
                 input_map,
+                model,
             } => {
                 // 옛 TS — explicit input 미지정 시 누적 결과 전체.
                 let has_explicit = input_data.is_some() || input_map.is_some();
@@ -612,7 +628,11 @@ impl TaskManager {
                         .collect::<Vec<_>>()
                         .join("\n\n")
                 };
-                match self.executor.llm_transform(instruction, &input_text).await {
+                match self
+                    .executor
+                    .llm_transform(instruction, &input_text, model.as_deref())
+                    .await
+                {
                     Ok(text) => StepOutcome::Continue(Value::String(text)),
                     Err(e) => StepOutcome::Fail(format!("LLM_TRANSFORM 실패: {e}")),
                 }

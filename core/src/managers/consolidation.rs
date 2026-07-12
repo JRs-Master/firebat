@@ -24,7 +24,7 @@ use crate::ports::{
 
 /// AI Assistant model 의 default — `llm::registry::assistant_default_model()` (JSON 산출).
 /// 옛 `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` const → JSON registry 로 이동 (Phase 5, 2026-05-13).
-use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
+use crate::vault_keys::{VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"You maintain this person's long-term memory. Read the conversation and extract ONLY durable knowledge — things that stay true OUTSIDE this conversation — as JSON.
@@ -882,38 +882,23 @@ fn format_transcript(messages: &[serde_json::Value]) -> String {
 }
 
 /// Worker 모델 해석 (Stage 3) — 답변 후 추출/consolidation 이 쓸 모델.
-/// 우선순위: explicit(어드민 수동 trigger) > AI Assistant 설정 > 스마트 기본.
-/// - `"current"` sentinel → 메인 채팅 모델(`VK_SYSTEM_AI_MODEL`; CLI 메인 = 구독 무료).
-/// - 설정 비었고 메인이 CLI → 메인(무료가 기본). 메인이 API → assistant_default(저비용).
-/// 메인 모델로 추출하면 CLI 구독은 비용 0, API 는 비싸므로 저비용 모델이 기본 — "부담없이 켜기".
+/// Worker model = explicit (admin manual trigger) > CURRENT MAIN MODEL > registry fallback.
+///
+/// 2026-07-13 단순화 — the assistant model picker was removed from the UI ("현재 모델 고정"
+/// 사용자 확정): extraction is json_schema-forced so any main model is safe, and per-step
+/// cheap-worker delegation lives in pipeline LLM_TRANSFORM `model` instead of a global knob.
+/// `VK_SYSTEM_AI_ASSISTANT_MODEL` is deliberately IGNORED here — a stale vault value from the
+/// old picker must not silently override the main model (Rust first, then UI removal).
 fn resolve_worker_model(vault: &dyn IVaultPort, explicit: Option<&str>) -> String {
     if let Some(m) = explicit.map(str::trim).filter(|v| !v.is_empty()) {
         return m.to_string();
     }
-    let assistant = vault.get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL).unwrap_or_default();
-    let assistant = assistant.trim();
     let main = vault.get_secret(VK_SYSTEM_AI_MODEL).unwrap_or_default();
     let main = main.trim();
-    if assistant == "current" {
-        // 명시 sentinel — 메인 모델 사용 (API 메인이어도 사용자 선택 존중).
-        if !main.is_empty() {
-            return main.to_string();
-        }
-    } else if !assistant.is_empty() {
-        return assistant.to_string();
-    } else if !main.is_empty() && main_is_cli(main) {
-        // 미설정 + CLI 메인 → 메인(구독 무료)이 기본. (API 메인은 아래 저비용 default 로.)
+    if !main.is_empty() {
         return main.to_string();
     }
     crate::llm::registry::assistant_default_model().to_string()
-}
-
-/// 모델 id 가 CLI 포맷(cli-claude-code / cli-codex / cli-gemini)인지 — registry lookup.
-fn main_is_cli(id: &str) -> bool {
-    crate::llm::registry::current()
-        .find_model(id)
-        .map(|m| m.format.starts_with("cli-"))
-        .unwrap_or(false)
 }
 
 /// JSON Schema for the extraction output — mirrors `ExtractionResult`/`Extracted*` serde

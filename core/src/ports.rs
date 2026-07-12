@@ -1680,6 +1680,12 @@ pub struct AiRequestOpts {
     /// User message is a suggestion-chip pick → persisted with suggestionClick:true (renderer hides bubble).
     #[serde(rename = "userSuggestion", default)]
     pub user_suggestion: bool,
+    /// This turn IS a sub-agent run (spawned by spawn_subagent). Effects: the spawn_subagent
+    /// tool is removed from the tool list (recursion guard, depth 1) and approval-gated tools
+    /// are auto-REJECTED instead of creating pending cards (a sub-agent is unattended and its
+    /// pendingActions are discarded — a silent pending would be a card that never renders).
+    #[serde(rename = "subAgent", default)]
+    pub sub_agent: bool,
 }
 
 /// Hub 컨텍스트 — `AiRequestOpts.hub_context` 안 값.

@@ -67,6 +67,7 @@ fn validate_llm_transform_with_tool_hint_rejected() {
         instruction: "1) sysmod_kiwoom_quote 호출 2) save_page".to_string(),
         input_data: None,
         input_map: None,
+        model: None,
     }];
     let err = mgr.validate_pipeline(&steps).unwrap();
     assert!(err.contains("도구명"));
@@ -79,6 +80,7 @@ fn validate_llm_transform_without_tools_skips_hint_check() {
         instruction: "1) sysmod_kiwoom_quote 호출 2) save_page".to_string(),
         input_data: None,
         input_map: None,
+        model: None,
     }];
     assert!(mgr.validate_pipeline(&steps).is_none());
 }

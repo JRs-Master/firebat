@@ -173,6 +173,10 @@ async fn search_tools_not_registered_by_core_registry() {
     let (tools, _dir) = make_setup().await;
     assert!(!tools.has_handler("search_skills"));
     assert!(!tools.has_handler("search_media"));
+    // spawn_subagent 는 post-Arc 등록(AiManager::register_spawn_subagent_tool — Weak 자기참조
+    // 필요)이 유일한 등록이어야 한다. core registry 에 넣으면 Weak 없이 등록돼 죽은 도구가 되고
+    // 도구 카운트 단언도 깨진다.
+    assert!(!tools.has_handler("spawn_subagent"));
 }
 
 #[tokio::test]

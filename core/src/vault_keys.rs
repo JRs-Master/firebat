@@ -21,6 +21,10 @@ pub const VK_IMAGE_QUALITY: &str = "system:image-quality";
 pub const VK_SYSTEM_UI_LANG: &str = "system:ui-lang";
 pub const VK_INTERNAL_MCP_TOKEN: &str = "system:internal-mcp-token";
 pub const VK_INTERNAL_MCP_TOKEN_CREATED: &str = "system:internal-mcp-token-created";
+pub const VK_SYSTEM_SUB_AGENT_ENABLED: &str = "system:llm:sub-agent-enabled";
+pub const VK_SYSTEM_EMBED_CATALOG_PROVIDER: &str = "system:embed:catalog-provider";
+pub const VK_SYSTEM_LIBRARY_PARSE_PROVIDER: &str = "system:library:parse-provider";
+pub const VK_SYSTEM_RETENTION_ENABLED: &str = "system:retention:enabled";
 
 pub const AUTH_SESSION_PREFIX: &str = "auth:session:";
 pub const USER_SECRET_PREFIX: &str = "user:";
