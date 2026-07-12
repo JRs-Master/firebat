@@ -549,13 +549,59 @@ pub fn tolerant_json_cleanup(body: &str) -> String {
     out
 }
 
+/// Escape raw control characters (U+0000–U+001F) that appear INSIDE JSON string literals.
+/// Weak models emit multi-line string values with literal newlines/tabs (2026-07-12 실측:
+/// Solar propose_plan args 3.3K chars — strict AND tolerant parse both die on the control
+/// char, so the whole plan collapsed to `{}`). Deterministic repair: a raw control char
+/// inside a string is never valid JSON, so escaping it cannot change the meaning of a valid
+/// document. Outside strings, `\n`/`\r`/`\t` are legal whitespace and left untouched.
+pub fn escape_control_chars_in_strings(body: &str) -> String {
+    let mut out = String::with_capacity(body.len() + 16);
+    let mut in_str = false;
+    let mut escaped = false;
+    for c in body.chars() {
+        if in_str {
+            if escaped {
+                out.push(c);
+                escaped = false;
+                continue;
+            }
+            match c {
+                '\\' => {
+                    out.push(c);
+                    escaped = true;
+                }
+                '"' => {
+                    out.push(c);
+                    in_str = false;
+                }
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if (c as u32) < 0x20 => {
+                    out.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                _ => out.push(c),
+            }
+        } else {
+            if c == '"' {
+                in_str = true;
+            }
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Parse a fence body as JSON — strict first, then the tolerant cleanup (comments / trailing
-/// commas). Shared by the sanitize and plaintext paths so both accept the same dialects.
+/// commas / raw control chars in strings). Shared by the sanitize and plaintext paths so both
+/// accept the same dialects.
 fn parse_fence_json(body: &str) -> Option<Value> {
     let trimmed = body.trim();
-    serde_json::from_str(trimmed)
-        .ok()
-        .or_else(|| serde_json::from_str(tolerant_json_cleanup(trimmed).trim()).ok())
+    serde_json::from_str(trimmed).ok().or_else(|| {
+        let cleaned = escape_control_chars_in_strings(&tolerant_json_cleanup(trimmed));
+        serde_json::from_str(cleaned.trim()).ok()
+    })
 }
 
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.

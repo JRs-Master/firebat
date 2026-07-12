@@ -203,7 +203,31 @@ export function parseFenceJson(body: string): any | undefined {
     }
     out += c;
   }
-  try { return JSON.parse(out.trim()); } catch { return undefined; }
+  // pass 3: escape raw control chars INSIDE string literals (multi-line string values —
+  // never valid JSON, so escaping cannot change a valid document's meaning). Mirrors Rust
+  // render_exec `escape_control_chars_in_strings` (2026-07-12 Solar 실측 클래스).
+  let fixed = '';
+  inStr = false; esc = false;
+  for (const c of out) {
+    if (inStr) {
+      if (esc) { fixed += c; esc = false; continue; }
+      if (c === '\\') { fixed += c; esc = true; continue; }
+      if (c === '"') { fixed += c; inStr = false; continue; }
+      const code = c.charCodeAt(0);
+      if (code < 0x20) {
+        if (c === '\n') fixed += '\\n';
+        else if (c === '\r') fixed += '\\r';
+        else if (c === '\t') fixed += '\\t';
+        else fixed += '\\u' + code.toString(16).padStart(4, '0');
+        continue;
+      }
+      fixed += c;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    fixed += c;
+  }
+  try { return JSON.parse(fixed.trim()); } catch { return undefined; }
 }
 
 /**

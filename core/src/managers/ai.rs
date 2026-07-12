@@ -2426,6 +2426,10 @@ impl AiManager {
             // Layer 2 reset — 매 turn 새 set
             turn_call_set = HashSet::new();
             let mut turn_results: Vec<(ToolCall, ToolResult)> = Vec::new();
+            // propose_plan 이 실제로 플랜을 만들었나 — 호출됐어도 핸들러가 거부(빈 인자 등,
+            // envelope {"success": false})했으면 false. 턴 강제 종료·suggest 억제는 이 값 기준
+            // (15차 실측: 거부된 플랜이 턴을 종료시켜 빈 응답 fallback).
+            let mut propose_plan_ok = false;
 
             for call in response.tool_calls.iter() {
                 // Approval gate (옛 TS ai-manager.ts 1342-1385 1:1) —
@@ -2982,9 +2986,19 @@ impl AiManager {
 
                 // ActionTags 는 string[] 만 받음 — 옛 TS 와 동일하게 도구 이름만.
                 executed_actions.push(serde_json::Value::String(call.name.clone()));
+                // Module-level failure envelope — a handler that returns Ok({"success": false})
+                // (guard rejections, sysmod error envelopes) has dispatch success:true (transport
+                // worked) but did NO real work. Anything that means "did real work" must also
+                // check the envelope (15차 실측: rejected propose_plan counted as grounded
+                // success and force-ended the turn empty).
+                let envelope_ok = action.success
+                    && action.result.get("success").and_then(|b| b.as_bool()) != Some(false);
+                if effective_call.name == "propose_plan" && envelope_ok {
+                    propose_plan_ok = true;
+                }
                 // Stage-1 progress — a successful ACTION tool (no declared per-turn cap = not the
                 // discovery class) after narrowing means the turn escaped its loop and did real work.
-                if action.success && self.tools.per_turn_limit(&effective_call.name).is_none() {
+                if envelope_ok && self.tools.per_turn_limit(&effective_call.name).is_none() {
                     turn_grounded_success = true;
                     if !capped_strip.is_empty() {
                         post_narrow_success = true;
@@ -3019,7 +3033,8 @@ impl AiManager {
                     }
                 }
                 // Turn-ledger harvest — turn this round's successes into ready-to-call lines.
-                if action.success {
+                // Envelope-checked: a rejection envelope must not mint READY/DONE receipts.
+                if envelope_ok {
                     match effective_call.name.as_str() {
                         "get_action_schema" => {
                             let r = &action.result;
@@ -3286,7 +3301,7 @@ impl AiManager {
                 // 플랜의 ✓실행/수정/취소 칩을 지워 사용자가 플랜을 승인할 수 없게 된다(리뷰 발견).
                 // 플랜 카드가 그 턴의 주인공이므로 부수 suggest 칩은 노이즈다.
                 if tc.name == "suggest" {
-                    if !is_propose_plan_turn {
+                    if !propose_plan_ok {
                         if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
                             cli_suggestions.clear();
                             cli_suggestions.extend(arr.iter().cloned());
@@ -3382,8 +3397,11 @@ impl AiManager {
                 prior_results.push(action);
             }
 
-            // propose_plan 호출 시 강제 turn 종료 — 사용자가 ✓실행 누른 뒤 다음 turn 진행.
-            if is_propose_plan_turn {
+            // propose_plan 이 실제 플랜 카드를 만들었을 때만 강제 turn 종료 — 사용자가 ✓실행
+            // 누른 뒤 다음 turn 진행. 핸들러가 거부(빈/깨진 인자)한 호출은 일반 실패 도구와
+            // 동일하게 다음 라운드로 — 모델이 에러를 보고 올바른 인자로 재시도하거나 직접
+            // 실행한다 (15차 실측: 거부에도 break 해서 카드도 텍스트도 없는 빈 턴이 됐음).
+            if propose_plan_ok {
                 self.log.info(
                     "[AiManager] propose_plan detected — dropping trailing text, ending turn for approval",
                 );

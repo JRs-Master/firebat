@@ -25,15 +25,18 @@ pub struct OpenAiChatHandler;
 /// surfaces need this: (1) local dispatch parse, (2) the multiturn echo — the upstream API
 /// VALIDATES replayed `function.arguments` as JSON, so echoing the raw broken string is a
 /// permanent 400 on every later round of the turn (2026-07-07 schedule_task 실측).
-/// Chain: strict parse → tolerant cleanup (comment/trailing-comma strip) → `{}` last resort.
-/// Returns (parsed value, canonical string) — both sides stay consistent.
+/// Chain: strict parse → tolerant cleanup (comment/trailing-comma strip + control-char escape
+/// inside strings — multi-line step descriptions were killing 3KB propose_plan args, 2026-07-12
+/// 실측) → `{}` last resort. Returns (parsed value, canonical string) — both sides stay consistent.
 fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
-        if v.is_object() {
-            return (v, raw.to_string());
-        }
-    }
-    let cleaned = firebat_core::managers::ai::render_exec::tolerant_json_cleanup(raw);
+    let strict_err = match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(v) if v.is_object() => return (v, raw.to_string()),
+        Ok(_) => "top-level value is not an object".to_string(),
+        Err(e) => e.to_string(),
+    };
+    let cleaned = firebat_core::managers::ai::render_exec::escape_control_chars_in_strings(
+        &firebat_core::managers::ai::render_exec::tolerant_json_cleanup(raw),
+    );
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&cleaned) {
         if v.is_object() {
             let s = v.to_string();
@@ -45,11 +48,18 @@ fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
             return (v, s);
         }
     }
+    // Log the strict parse error (line/col + reason) plus head AND tail — the failure class
+    // is usually visible at one end (truncation shows at the tail, bad escapes in the error).
     tracing::warn!(
         target: "llm",
-        "tool-call arguments unparseable — replaced with {{}} ({} chars head: {})",
+        "tool-call arguments unparseable — replaced with {{}} ({} chars, strict error: {}; head: {}; tail: {})",
         raw.len(),
-        raw.chars().take(120).collect::<String>()
+        strict_err,
+        raw.chars().take(160).collect::<String>(),
+        {
+            let tail: Vec<char> = raw.chars().rev().take(120).collect();
+            tail.into_iter().rev().collect::<String>()
+        }
     );
     (serde_json::json!({}), "{}".to_string())
 }
@@ -738,6 +748,18 @@ mod leaked_tool_markup_tests {
         let s = "<|tool_call:begin|>x<|tool_call:name|>schedule_task<|tool_call:args|>{\"a\": 1,}<|tool_call:end|>";
         let (_, calls) = recover_leaked_tool_calls(s);
         assert_eq!(calls[0].arguments, serde_json::json!({"a": 1}));
+    }
+
+    #[test]
+    fn control_chars_inside_strings_repaired() {
+        // Multi-line string values with literal newlines/tabs — the 2026-07-12 propose_plan
+        // failure class (strict AND comment/comma cleanup both reject control chars).
+        let (v, s) =
+            super::repair_tool_args("{\"title\": \"line one\nline two\ttabbed\", \"n\": 1}");
+        assert_eq!(v["title"], "line one\nline two\ttabbed");
+        assert_eq!(v["n"], 1);
+        // Canonical string must be strictly valid JSON (it is echoed to the upstream API).
+        assert!(serde_json::from_str::<serde_json::Value>(&s).is_ok());
     }
 
     #[test]
