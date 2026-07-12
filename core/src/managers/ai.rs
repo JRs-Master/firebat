@@ -738,6 +738,10 @@ impl AiManager {
         // 6 을 넘는 첫 실측 — 문서화된 인상 트리거("정당 수요가 캡에 막힌 첫 실측에서 올림").
         self.tools.set_per_turn_limit("search_module_actions", 8);
         self.tools.set_per_turn_limit("get_action_schema", 8);
+        // Discovery classification rides per_turn_limit declarations — an UNDECLARED discovery
+        // tool leaks into the action class (19차 실측: get_module_config 성공이 "grounded
+        // action succeeded"로 집계 → stall 재개방 + 날조 배너 억제 + 원장 DONE 오염).
+        self.tools.set_per_turn_limit("get_module_config", 4);
         self.tools.register_handler("get_action_schema", schema_handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "get_action_schema".to_string(),
@@ -1997,6 +2001,15 @@ impl AiManager {
         // (2026-07-12 실측: 강제종료 턴에서 Solar 가 차트 수치·계좌·"구독 성공"을 통째로
         // 지어냄 — 마감 지시의 honesty 조항은 무시됐다. 프롬프트로 못 막는 클래스 = 서버 스탬프).
         let mut turn_grounded_success = false;
+        // No-silent-exit gate (19차 실측): a natural finish (no tool calls) after a turn full
+        // of discovery with ZERO executed actions is the model ending as if work happened —
+        // 산문 플랜("✓Run 눌러 주세요", 카드 없음) + 날조 종가가 그 출구로 나감. force_final
+        // 경로엔 마감 지시·배너가 있는데 자연 종료엔 게이트가 없었다. One corrective round
+        // (ledger + "call the tools or propose_plan") — the rejection/instruction channel is
+        // the only one this model has obeyed 100%. Pure-chat turns (no discovery, empty
+        // ledger) are untouched.
+        let mut no_action_nudge_used = false;
+        let mut nudge_this_round = false;
         // Turn ledger — "cards in hand" harvested from THIS turn's successes: ready-to-call
         // envelopes (schemas fetched), stream/action candidates (top search hits), and receipts
         // of completed actions. A weak model re-derives its plan from scratch every round and,
@@ -2215,7 +2228,23 @@ impl AiManager {
             //      know why its tools vanished and hallucinates tool-call tokens instead of
             //      answering (r11 re-call after strip, 실측).
             let force_final_prompt: String;
-            let llm_prompt: &str = if force_final {
+            let nudge_prompt: String;
+            let llm_prompt: &str = if !force_final && std::mem::take(&mut nudge_this_round) {
+                // No-silent-exit corrective round (19차): the model tried to end the turn with
+                // a text-only "plan" after pure discovery. One firm instruction + the ledger.
+                nudge_prompt = format!(
+                    "{llm_prompt}\n\n[system] You gathered information but EXECUTED nothing — \
+                     this turn cannot end as if the work happened. A plan written as text has \
+                     NO Run button: the ONLY way to create an approvable plan is calling the \
+                     propose_plan TOOL. Do ONE of these right now: (1) call the READY/STREAM \
+                     entries below exactly as written, (2) call propose_plan with your plan as \
+                     tool arguments (verified steps compiled with tool+args, unverified parts \
+                     as discovery steps), or (3) if you truly cannot proceed, state plainly \
+                     that nothing was executed.{}",
+                    ledger_note(&turn_ledger)
+                );
+                &nudge_prompt
+            } else if force_final {
                 turn_opts.thinking_level = Some("low".to_string());
                 // The ledger pins the final text to what actually happened — without it the
                 // model binds values to wrong labels and reports unexecuted steps as done
@@ -2413,6 +2442,35 @@ impl AiManager {
                     if !t.is_empty() {
                         final_reasoning = Some(t.to_string());
                     }
+                }
+                // No-silent-exit: discovery happened, nothing executed, model wants to stop.
+                // Give it ONE corrective round (see nudge_prompt above). Second attempt with
+                // the same shape is accepted — but banner-stamped below.
+                if !force_final
+                    && !no_action_nudge_used
+                    && !turn_grounded_success
+                    && !turn_ledger.is_empty()
+                {
+                    no_action_nudge_used = true;
+                    nudge_this_round = true;
+                    self.log.warn(
+                        "[AiManager] natural finish after discovery with ZERO executed actions — one corrective round (no silent exit)",
+                    );
+                    continue;
+                }
+                // Accepted no-action finish after the corrective round — the reader must know
+                // nothing ran (natural finish used to skip the fabrication banner entirely;
+                // 19차: 산문 플랜 + 날조 종가가 배너 없이 나감).
+                if !force_final
+                    && no_action_nudge_used
+                    && !turn_grounded_success
+                    && !last_text.trim().is_empty()
+                {
+                    last_text = format!(
+                        "{}\n\n{}",
+                        crate::i18n::t("core.error.ai.ungrounded_final", None, &[]),
+                        last_text
+                    );
                 }
                 if is_propose_plan_turn {
                     self.log.info("[AiManager] propose_plan turn → trailing text drop");
