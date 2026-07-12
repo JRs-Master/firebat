@@ -22,7 +22,7 @@
         "type": "string",
         "enum": ["send-message", "send-photo", "send-document", "send-location"],
         "default": "send-message",
-        "description": "API action"
+        "description": "send-message=텔레그램 메시지 보내기·전송, 알림 발송, send telegram text message notification / send-photo=사진·이미지 전송, send photo image / send-document=문서·파일 전송, send document file / send-location=위치 전송, send location"
       },
       "text": {
         "type": "string",
