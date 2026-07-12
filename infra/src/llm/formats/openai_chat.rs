@@ -33,6 +33,11 @@ pub struct OpenAiChatHandler;
 /// the dispatcher turns the flag into an honest "your JSON was malformed" tool error instead).
 /// Returns (parsed value, canonical string) — both sides stay consistent.
 fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
+    // Empty/absent arguments = "no args", not a parse failure — never flag those (the leaked
+    // markup recovery feeds "" for unterminated blocks and expects a plain {}).
+    if raw.trim().is_empty() {
+        return (serde_json::json!({}), "{}".to_string());
+    }
     let strict_err = match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(v) if v.is_object() => return (v, raw.to_string()),
         Ok(_) => "top-level value is not an object".to_string(),
