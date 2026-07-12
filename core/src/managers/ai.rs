@@ -734,7 +734,9 @@ impl AiManager {
         });
         // Discovery tools are the thrash-prone class (2026-07-07: search ×19 burned a whole
         // turn) — cap per turn. Generous for legitimate multi-topic turns (표+차트+주문 ≈ 3-6).
-        self.tools.set_per_turn_limit("search_module_actions", 6);
+        // 6→8 (2026-07-12 18차): 4-부품 복합(차트+스트림+메신저+전일종가)의 정당 검색 수요가
+        // 6 을 넘는 첫 실측 — 문서화된 인상 트리거("정당 수요가 캡에 막힌 첫 실측에서 올림").
+        self.tools.set_per_turn_limit("search_module_actions", 8);
         self.tools.set_per_turn_limit("get_action_schema", 8);
         self.tools.register_handler("get_action_schema", schema_handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
@@ -2769,8 +2771,11 @@ impl AiManager {
                         // 이미 쥐고 있었는데 그 문구가 포기 선언을 유도했다. 실행을 시켜라.
                         // The turn ledger makes "act on it" concrete — the abstract imperative
                         // alone was ignored (10차: r7 스키마 확보 후에도 r8~r12 대안 재검색).
+                        // Plan escape hatch — 18차 실측: 플랜-컴파일 룰("스텝 전부 검증")을
+                        // 순종하느라 발견 마라톤 → 캡 사망. 예산이 죽어가는 바로 이 지점에서
+                        // "검증 못 한 건 discovery 스텝으로 두고 지금 플랜을 내라"를 가르친다.
                         format!(
-                            "Tool '{}' exceeded its per-turn call limit. STOP searching — you already have results from earlier calls this turn. Pick the best candidate and ACT on it now (call the module action / stream_watch_start / render). Only if nothing matched at all, answer honestly that the capability was not found. Never call this tool again this turn.{}",
+                            "Tool '{}' exceeded its per-turn call limit. STOP searching — you already have results from earlier calls this turn. Pick the best candidate and ACT on it now (call the module action / stream_watch_start / render). If this is a MULTI-STEP task that won't fit in this turn's remaining budget, call propose_plan NOW — compile the verified entries below as steps with tool+args, write the still-unverified parts as discovery steps, and the ✓Run turn (fresh tool budget) finishes the rest. Only if nothing matched at all, answer honestly that the capability was not found. Never call this tool again this turn.{}",
                             effective_call.name,
                             ledger_note(&turn_ledger)
                         )
