@@ -87,6 +87,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const anthropicCacheId = useId();
   const subAgentEnabledId = useId();
   const aiRouterEnabledId = useId();
+  const retentionEnabledId = useId();
   const newSecretNameId = useId();
   const newSecretValueId = useId();
   const moduleSecretIdBase = useId();
@@ -220,14 +221,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [vertexSaJson, setVertexSaJson] = useState(''); // Vertex AI Service Account JSON
   const [upstageApiKey, setUpstageApiKey] = useState(''); // Upstage Solar
 
-  // AI 어시스턴트 라우터 (Self-learning Flash Lite)
+  // AI 어시스턴트 (assistant 하위탭) — worker 모델 픽커는 제거됨(항상 현재 메인 모델, 2026-07-13).
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
-  const [aiAssistantModel, setAiAssistantModel] = useState('current');
-  // Backend `getAvailableAiAssistantModels()` 응답이 truth source ({id, displayName} 객체 배열) —
-  // 이 fallback list 는 첫 fetch 전 / API 실패 시점만 사용. (옛 string[] 취급 = [object Object] 잠복 버그였음.)
-  const [aiAssistantModels, setAiAssistantModels] = useState<{ id: string; displayName: string }[]>([
-    { id: 'gemini-3.1-flash-lite', displayName: 'Gemini 3.1 Flash Lite' },
-  ]);
+  // 임베딩(검색 카탈로그) / 문서 파싱 / 휴지통 정리 — assistant 탭 즉시저장 설정 3종.
+  const [embedCatalogProvider, setEmbedCatalogProvider] = useState<'local' | 'solar'>('local');
+  const [libraryParseProvider, setLibraryParseProvider] = useState<'none' | 'solar' | 'gemini'>('none');
+  const [retentionEnabled, setRetentionEnabled] = useState(true);
   // AI 모델 carousel — useAiModels 컴포넌트 상단 (L57) 에서 호출. 중복 hoist 회피 — 단일 reference.
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
@@ -267,10 +266,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 음성(TTS) / 비용(한도·통계) / 메모리(AI Recall 메타).
   // initialTab='cost'/'memory' 는 SettingsModal entry 시점에 settingsTab='ai' + aiSubTab 으로 자동 변환.
-  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
+  const [aiSubTab, setAiSubTab] = useState<'llm' | 'assistant' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
     if (hubContext) return 'prompt'; // hub tenant = prompt/memory only (default prompt)
     if (initialTab === 'cost') return 'cost';
-    if (initialTab === 'memory') return 'memory';
+    if (initialTab === 'memory') return 'assistant'; // admin: memory now lives inside the assistant tab
     return 'llm';
   });
 
@@ -391,8 +390,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (data.timezone) setUserTimezone(data.timezone);
         if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
-        if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
-        if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
+        if (data.embedCatalogProvider === 'local' || data.embedCatalogProvider === 'solar') setEmbedCatalogProvider(data.embedCatalogProvider);
+        if (['none', 'solar', 'gemini'].includes(data.libraryParseProvider)) setLibraryParseProvider(data.libraryParseProvider);
+        if (typeof data.retentionEnabled === 'boolean') setRetentionEnabled(data.retentionEnabled);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
@@ -716,12 +716,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
     // Settings batch — single owner-injected endpoint, identical full payload for admin & hub.
     // The hub backend persists only its per-tenant fields; the rest are read-only there.
+    // aiRouterEnabled 등 assistant 탭 설정은 즉시저장(토글 onChange PATCH)이라 배치에 없음.
     const ok = await settingsEndpoint.save({
       timezone: userTimezone,
       aiModel: draftModel,
       aiThinkingLevel: thinkingLevel,
-      aiRouterEnabled,
-      aiAssistantModel,
       imageModel,
       imageDefaultSize,
       imageDefaultQuality,
@@ -1024,7 +1023,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             // 모드별 사용 가능 프로바이더
             // 공급자는 ABC 순. Anthropic → Google → OpenAI
             const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic' | 'upstage'>> = {
-              general: ['anthropic', 'google', 'openai', 'upstage'],
+              // upstage(Solar) = 메인 LLM 공급자 목록에서 당분간 제외 (Solar 집중 트랙 졸업,
+              // 2026-07-13 사용자 결정). 키 입력칸은 유지 — 임베딩·문서 파싱(assistant 탭)이 사용.
+              general: ['anthropic', 'google', 'openai'],
               vertex: ['google'],
             };
             const activeProviders = providersByMode[aiMode];
@@ -1083,12 +1084,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
                   {([
                     { v: 'llm', label: 'LLM' },
+                    { v: 'assistant', label: t('settings_modal.ai_sub_tab_assistant') },
                     { v: 'prompt', label: t('settings_modal.ai_sub_tab_prompt') },
                     { v: 'image', label: t('settings_modal.ai_sub_tab_image') },
                     { v: 'tts', label: t('settings_modal.ai_sub_tab_tts') },
                     { v: 'cost', label: t('settings_modal.ai_sub_tab_cost') },
                     { v: 'memory', label: t('settings_modal.ai_sub_tab_memory') },
-                  ] as const).filter(tab => !hubMode || tab.v === 'prompt' || tab.v === 'memory').map(tab => (
+                    // admin = memory 하위탭이 assistant 탭에 흡수됨 / hub = 기존 prompt·memory 유지
+                  ] as const).filter(tab => hubMode ? (tab.v === 'prompt' || tab.v === 'memory') : (tab.v !== 'memory')).map(tab => (
                     <button
                       key={tab.v}
                       onClick={() => setAiSubTab(tab.v)}
@@ -1104,6 +1107,110 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 </div>
                 {aiSubTab === 'cost' && <CostTabContent />}
                 {aiSubTab === 'memory' && <MemoryTabContent hubContext={hubContext} />}
+                {/* assistant 하위탭 — 잡일(보조 AI) 축 전용 홈: 자동 기억 적립·임베딩·문서 파싱·휴지통 정리·메모리 관리.
+                    전부 즉시저장(하단 Save 게이트 무관). sub-agent(분해 위임 = 메인 체급)는 LLM 탭에 남음 — 두 축 안 섞음. */}
+                {aiSubTab === 'assistant' && !hubMode && (
+                <div className="flex flex-col gap-5">
+                  {(() => {
+                    // Toggle enableable when ANY model can run the extraction worker (= the current
+                    // main model — the picker was removed 2026-07-13; extraction is json_schema-forced
+                    // so any main model is safe). (geminiApiKey state = OpenAI key, legacy name.)
+                    const hasAssistantKey =
+                      execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey || !!upstageApiKey;
+                    return (
+                      <div className="flex flex-col gap-2">
+                        <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
+                        <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasAssistantKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={aiRouterEnabled}
+                            disabled={!hasAssistantKey}
+                            onChange={async e => {
+                              const next = e.target.checked;
+                              setAiRouterEnabled(next);
+                              // 즉시저장 + 캐시 무효화 — CronPanel(['settings','ai-router'])의
+                              // consolidation 잡 회색 처리가 이 캐시를 읽음 (옛 지연저장 시절엔
+                              // persistSettings 가 invalidate 를 담당했음).
+                              await apiPatch('/api/settings', { aiRouterEnabled: next }, { category: 'settings' });
+                              queryClient.invalidateQueries({ queryKey: ['settings'] });
+                            }}
+                            aria-label={t('settings_modal.ai_assistant_aria')}
+                            name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
+                          />
+                          <div className="flex-1">
+                            <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                              {t('settings_modal.ai_assistant_desc')}
+                            </div>
+                            <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
+                              <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
+                              <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
+                            </ul>
+                            <div className="text-[11px] text-slate-500 mt-1.5">{t('settings_modal.ai_assistant_current_model_note')}</div>
+                            <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_cli_note') }} />
+                            <div className="text-[11px] text-slate-400 mt-1.5">
+                              {t('settings_modal.ai_assistant_cache_note')}
+                            </div>
+                            {!hasAssistantKey && (
+                              <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
+                                {t('settings_modal.ai_assistant_no_key_warning')}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      </div>
+                    );
+                  })()}
+                  <Field label={t('settings_modal.assistant_embed_label')} help={t('settings_modal.assistant_embed_help')}>
+                    <SelectInput
+                      value={embedCatalogProvider}
+                      onChange={async (v) => {
+                        setEmbedCatalogProvider(v as 'local' | 'solar');
+                        await apiPatch('/api/settings', { embedCatalogProvider: v }, { category: 'settings' });
+                      }}
+                      options={[
+                        { value: 'local', label: t('settings_modal.assistant_embed_local') },
+                        { value: 'solar', label: 'Solar (Upstage)' + (!upstageApiKey ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !upstageApiKey },
+                      ]}
+                    />
+                  </Field>
+                  <Field label={t('settings_modal.assistant_parse_label')} help={t('settings_modal.assistant_parse_help')}>
+                    <SelectInput
+                      value={libraryParseProvider}
+                      onChange={async (v) => {
+                        setLibraryParseProvider(v as 'none' | 'solar' | 'gemini');
+                        await apiPatch('/api/settings', { libraryParseProvider: v }, { category: 'settings' });
+                      }}
+                      options={[
+                        { value: 'none', label: t('settings_modal.assistant_parse_none') },
+                        { value: 'solar', label: 'Solar (Upstage Document Parse)' + (!upstageApiKey ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !upstageApiKey },
+                        { value: 'gemini', label: 'Gemini' + ((!googleApiKey && !vertexSaJson) ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !googleApiKey && !vertexSaJson },
+                      ]}
+                    />
+                  </Field>
+                  <Field label={t('settings_modal.assistant_retention_label')} help={t('settings_modal.assistant_retention_help')}>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={retentionEnabled}
+                        onChange={async (e) => {
+                          const next = e.target.checked;
+                          setRetentionEnabled(next);
+                          await apiPatch('/api/settings', { retentionEnabled: next }, { category: 'settings' });
+                        }}
+                        aria-label={t('settings_modal.assistant_retention_label')}
+                        className="w-4 h-4 cursor-pointer" name="retentionEnabled" autoComplete="off" id={retentionEnabledId}
+                      />
+                      <span className="text-[12px] text-slate-700">{retentionEnabled ? t('settings_modal.assistant_retention_on') : t('settings_modal.assistant_retention_off')}</span>
+                    </label>
+                  </Field>
+                  <div className="pt-4 border-t border-slate-100">
+                    <div className="text-[13px] font-bold text-slate-800 mb-2">{t('settings_modal.ai_sub_tab_memory')}</div>
+                    <MemoryTabContent hubContext={hubContext} />
+                  </div>
+                </div>
+                )}
                 {aiSubTab === 'llm' && (<>
                 <Field label={t('settings_modal.exec_mode_label')} help={t('settings_modal.exec_mode_help')}>
                   <SegButtons<'api' | 'cli'>
@@ -1389,79 +1496,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 </div>
                 )}
 
-                {/* AI 어시스턴트 라우터 */}
-                {(() => {
-                  // Toggle is enableable when ANY model can be the worker: main is CLI ("current" worker
-                  // = the CLI main, free), OR any provider API key is registered (so an API worker — incl.
-                  // "current" if main is that API model — can run). Since there's always a main model, this
-                  // is effectively "is any model usable". (geminiApiKey state = OpenAI key, legacy name.)
-                  const hasAssistantKey =
-                    execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey || !!upstageApiKey;
-                  return (
-                    <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
-                      <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
-                      <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasAssistantKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={aiRouterEnabled}
-                          disabled={!hasAssistantKey}
-                          onChange={e => setAiRouterEnabled(e.target.checked)}
-                          aria-label={t('settings_modal.ai_assistant_aria')}
-                          name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
-                        />
-                        <div className="flex-1">
-                          <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                            {t('settings_modal.ai_assistant_desc')}
-                          </div>
-                          <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
-                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
-                          </ul>
-                          <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_cli_note') }} />
-                          <div className="text-[11px] text-slate-400 mt-1.5">
-                            {t('settings_modal.ai_assistant_cache_note')}
-                          </div>
-                          {!hasAssistantKey && (
-                            <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
-                              {t('settings_modal.ai_assistant_no_key_warning')}
-                            </div>
-                          )}
-                        </div>
-                      </label>
-                      {aiRouterEnabled && (
-                        <Field label={t('settings_modal.ai_assistant_model_label')}>
-                          <SelectInput
-                            value={aiAssistantModel}
-                            onChange={setAiAssistantModel}
-                            options={aiAssistantModels
-                              // 싼 API worker 는 목록엔 항상 표시하되 해당 제공자 키 없으면 선택 불가(disabled).
-                              // "current"(= 메인 모델)는 항상 가능. (geminiApiKey state = OpenAI 키, 레거시 이름.)
-                              .map(m => {
-                                const needsKey =
-                                  m.id === 'current'
-                                    ? false
-                                    : m.id.includes('gpt')
-                                      ? !geminiApiKey
-                                      : m.id.includes('gemini')
-                                        ? !googleApiKey
-                                        : false;
-                                return {
-                                  value: m.id,
-                                  label:
-                                    m.id === 'current'
-                                      ? t('settings_modal.ai_assistant_model_current')
-                                      : m.displayName + (needsKey ? t('settings_modal.ai_assistant_model_needs_key') : ''),
-                                  disabled: needsKey,
-                                };
-                              })}
-                          />
-                        </Field>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* AI 어시스턴트 = assistant 하위탭으로 이전 (2026-07-13) — 잡일(보조 AI) 축의 단일 홈. */}
                 </>)}
 
                 {/* 사용자 지시사항 — User AI 전용 (Code Assistant·AI Assistant 미적용) */}

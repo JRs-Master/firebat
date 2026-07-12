@@ -11,7 +11,10 @@
  * To make a field per-tenant later: add it to the `owner` branch of saveSettings (and, if it is
  * not already global-readable, to loadSettings) — no route or frontend change needed.
  */
-import { VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG } from './proto-gen/vault-keys';
+import {
+  VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG,
+  VK_SYSTEM_EMBED_CATALOG_PROVIDER, VK_SYSTEM_LIBRARY_PARSE_PROVIDER, VK_SYSTEM_RETENTION_ENABLED,
+} from './proto-gen/vault-keys';
 import { getGeminiKey, setGeminiKey } from './api-gen/secret';
 import {
   getTimezone, setTimezone,
@@ -40,6 +43,7 @@ export async function loadSettings(owner?: string) {
     imageModelRes, imageModelsRes, imageDefaultSizeRes, imageDefaultQualityRes,
     anthropicCacheEnabledRes, subAgentEnabledRes, uiLangRes,
     ttsProviderRes, ttsModelRes, ttsVoiceRes, ttsAlignRes,
+    embedProviderRes, parseProviderRes, retentionEnabledRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone(),
@@ -61,6 +65,9 @@ export async function loadSettings(owner?: string) {
     getGeminiKey({ key: 'system:tts:model' }),
     getGeminiKey({ key: 'system:tts:voice' }),
     getGeminiKey({ key: 'system:tts:align_provider' }),
+    getGeminiKey({ key: VK_SYSTEM_EMBED_CATALOG_PROVIDER }),
+    getGeminiKey({ key: VK_SYSTEM_LIBRARY_PARSE_PROVIDER }),
+    getGeminiKey({ key: VK_SYSTEM_RETENTION_ENABLED }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -88,6 +95,12 @@ export async function loadSettings(owner?: string) {
     ttsModel: ttsModelRes.ok ? (ttsModelRes.data || '') : '',
     ttsVoice: ttsVoiceRes.ok ? (ttsVoiceRes.data || '') : '',
     ttsAlignProvider: ttsAlignRes.ok ? (ttsAlignRes.data || '') : '',
+    embedCatalogProvider: embedProviderRes.ok && embedProviderRes.data === 'solar' ? 'solar' : 'local',
+    libraryParseProvider: parseProviderRes.ok && ['solar', 'gemini'].includes(parseProviderRes.data || '')
+      ? parseProviderRes.data : 'none',
+    // Polarity: unset = ON (retention is the safe default) — `=== 'true'` here would render
+    // a fresh install as OFF, the opposite of the backend gate (`v != "false"`).
+    retentionEnabled: !(retentionEnabledRes.ok && retentionEnabledRes.data === 'false'),
   };
 }
 
@@ -154,5 +167,15 @@ export async function saveSettings(body: Record<string, any>, owner?: string) {
   }
   if (typeof body.ttsAlignProvider === 'string') {
     await setGeminiKey({ key: 'system:tts:align_provider', value: body.ttsAlignProvider });
+  }
+  // ── assistant tab (worker axis) — all immediate-save toggles/selects ──
+  if (body.embedCatalogProvider === 'local' || body.embedCatalogProvider === 'solar') {
+    await setGeminiKey({ key: VK_SYSTEM_EMBED_CATALOG_PROVIDER, value: body.embedCatalogProvider });
+  }
+  if (['none', 'solar', 'gemini'].includes(body.libraryParseProvider)) {
+    await setGeminiKey({ key: VK_SYSTEM_LIBRARY_PARSE_PROVIDER, value: body.libraryParseProvider });
+  }
+  if (typeof body.retentionEnabled === 'boolean') {
+    await setGeminiKey({ key: VK_SYSTEM_RETENTION_ENABLED, value: body.retentionEnabled ? 'true' : 'false' });
   }
 }
