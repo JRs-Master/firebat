@@ -2226,10 +2226,14 @@ impl AiManager {
                         turn_ledger.join("\n")
                     )
                 };
+                // "There is no other executor" — 16차 실측: force_final 답변이 "위 파라미터를
+                // 그대로 호출해 주세요"라며 실행을 제3자에게 요청(자신을 플래너로 착각).
                 force_final_prompt = format!(
                     "{llm_prompt}\n\n[system] Tool calls are closed for this turn. Using the \
                      tool results you already have, write your final answer to the user NOW as \
-                     normal text (render fences allowed). If something could not be completed, \
+                     normal text (render fences allowed). You are the ONLY executor — never ask \
+                     the user or \"the system\" to run a tool or API call for you; anything you \
+                     did not run simply did not happen. If something could not be completed, \
                      say so honestly in one line. Do not emit tool-call syntax.{verified}"
                 );
                 &force_final_prompt
@@ -2713,14 +2717,20 @@ impl AiManager {
                 } else {
                     None
                 };
-                // Per-turn per-tool-name cap — counted on every attempt (dedup/cache/reject 포함).
-                // Layer 1/2 는 "같은 인자" 만 잡는다; 인자를 살짝 바꿔가며 한 도구를 두드리는
-                // goal-seeking thrash 는 이름 단위 카운트로만 잡힌다 (선언된 도구만, 기본 무제한).
+                // Per-turn per-tool-name cap — counted per UNIQUE call. Identical whole-turn
+                // repeats are NOT charged: they're re-served from the Layer-1 cache (with a
+                // repeatNote) at zero upstream cost, and charging them starves the budget for
+                // legitimate NEW discovery (16차 실측: ka10081 스키마 재확인 ×3·quotes ×2 가
+                // 캡 8 을 태워 "전날 종가" 서브태스크의 신규 스키마 조회가 캡에 죽음 →
+                // force final 산문). Varied-args thrash — the loop this cap exists for — is
+                // still charged per variation (선언된 도구만, 기본 무제한).
                 let per_turn_over_cap = {
                     let count = turn_tool_counts
                         .entry(effective_call.name.clone())
                         .or_insert(0);
-                    *count += 1;
+                    if !seen_before_this_turn {
+                        *count += 1;
+                    }
                     // A stripped (discovery-closed) tool is firm-rejected even when the model
                     // hallucinates the call from history — narrowing only hides the tool from
                     // the LLM's list, it doesn't unregister it (06차 실측: strip 후 r8 이
@@ -2943,7 +2953,25 @@ impl AiManager {
                             description: Some(tool_label(&effective_call.name)),
                             error_message: None,
                         });
-                        let result = self.dispatch_tool(effective_call).await;
+                        let mut result = self.dispatch_tool(effective_call).await;
+                        // Whole-turn repeat of a DISCOVERY tool (declared per-turn cap = static
+                        // result) that outlived the 60s Layer-1 cache — same "already did this"
+                        // signal as the cache-hit path (16차 실측: 9분 턴에서 스키마 재확인이
+                        // 전부 TTL 밖이라 repeatNote 없이 조용히 재서빙 → 재확인 루프 지속).
+                        // Uncapped sysmods are excluded — their re-fetch is a legitimate refresh.
+                        if result.success
+                            && seen_before_this_turn
+                            && self.tools.per_turn_limit(&effective_call.name).is_some()
+                        {
+                            if let serde_json::Value::Object(map) = &mut result.result {
+                                map.insert(
+                                    "repeatNote".to_string(),
+                                    serde_json::Value::String(
+                                        "IDENTICAL repeat of a call you already made this turn — the result cannot change. Act on it now or change the arguments meaningfully; do not repeat it again.".to_string(),
+                                    ),
+                                );
+                            }
+                        }
                         if result.success {
                             set_cached_tool_result(&cache_key, &result.result);
                         } else {
