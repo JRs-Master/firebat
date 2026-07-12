@@ -2750,7 +2750,7 @@ impl AiManager {
                     .copied()
                     .unwrap_or(0)
                     >= PER_TURN_FAIL_CAP;
-                let action = if per_turn_over_cap || fail_over_cap {
+                let mut action = if per_turn_over_cap || fail_over_cap {
                     self.log.warn(&format!(
                         "[AiManager] per-turn tool {} cap exceeded: {} ({} calls / {} fails)",
                         if fail_over_cap { "failure" } else { "call" },
@@ -3166,6 +3166,23 @@ impl AiManager {
                 if action.success && crate::utils::grounding::records_provenance(&call.name) {
                     if let Ok(text) = serde_json::to_string(&action.result) {
                         observed.push(text);
+                    }
+                }
+                // Ledger footer on every DISCOVERY-class success — the continuation vehicle.
+                // Weak-model CoT restarts from scratch each round (17차 실측: r4 가 READY
+                // ka10081 을 확보하고도 r5~r7 이 검색 변주로 예산 소진 — 원장이 캡 거부
+                // 에러에만 실려 모델이 "실패해야" 자기가 뭘 쥐었는지 봤다). Attach it to the
+                // result itself so each search/schema round ends with "here is what you already
+                // hold — act", without touching the prefix-cached system prompt (P5).
+                if action.success
+                    && self.tools.per_turn_limit(&effective_call.name).is_some()
+                    && !turn_ledger.is_empty()
+                {
+                    if let serde_json::Value::Object(map) = &mut action.result {
+                        map.insert(
+                            "alreadyInHand".to_string(),
+                            serde_json::Value::String(ledger_note(&turn_ledger)),
+                        );
                     }
                 }
                 turn_results.push((call.clone(), action));
