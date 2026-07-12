@@ -2242,15 +2242,23 @@ impl AiManager {
             };
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
-            // Fabrication containment — a forced-final round with ZERO successful action-class
-            // calls this turn is writing without any grounded data. The model was told to be
-            // honest and wasn't (2026-07-12: fabricated chart stats, two accounts, a telegram
-            // "subscription" that never registered). Deterministic server-side banner instead
-            // of trusting self-report; history-grounded answers stay readable below the banner.
-            if force_final && !turn_grounded_success && !last_text.trim().is_empty() {
+            // Fabrication containment — deterministic server-side banner on a forced final,
+            // instead of trusting the model's self-report (2026-07-12: fabricated chart stats,
+            // accounts, a telegram "subscription"). Two grades:
+            //  - nothing grounded at all this turn → strong banner (5차 클래스)
+            //  - only pre-narrowing lookups succeeded, nothing after the loop was contained →
+            //    partial banner (11차 클래스: lookup 하나 성공 = grounded 인데 종가·수급·"전송
+            //    완료"를 통째 날조 — 성공 1건이 배너를 꺼버리던 granularity 구멍).
+            // History-grounded answers stay readable below the banner.
+            if force_final && !post_narrow_success && !last_text.trim().is_empty() {
+                let key = if turn_grounded_success {
+                    "core.error.ai.partial_grounded_final"
+                } else {
+                    "core.error.ai.ungrounded_final"
+                };
                 last_text = format!(
                     "{}\n\n{}",
-                    crate::i18n::t("core.error.ai.ungrounded_final", None, &[]),
+                    crate::i18n::t(key, None, &[]),
                     last_text
                 );
             }
@@ -3130,10 +3138,22 @@ impl AiManager {
                     discovery_only_rounds = 0;
                 }
                 if discovery_only_rounds == DISCOVERY_STALL_ROUNDS && !force_final {
-                    let closed = self.tools.per_turn_limited_names();
+                    // get_action_schema stays OPEN: it is the CONVERGENT bridge of the ladder
+                    // (candidate → exact params → call), each call requires a concrete candidate,
+                    // and its own per-tool cap already bounds it. Closing it made our surfaces
+                    // contradict each other (11차 실측: 원장 CANDIDATE 지시 "get_action_schema
+                    // then call" 를 모델이 정확히 순종했는데 폐쇄가 firm 거부 → force final 날조).
+                    // The stall's evidence is DIVERGENT search-orbiting — search_* only.
+                    let closed: Vec<String> = self
+                        .tools
+                        .per_turn_limited_names()
+                        .into_iter()
+                        .filter(|n| n != "get_action_schema")
+                        .collect();
                     self.log.warn(&format!(
                         "[AiManager] {DISCOVERY_STALL_ROUNDS} consecutive discovery-only rounds \
-                         — closing ALL discovery tools (act with gathered results): {:?}",
+                         — closing search-class discovery tools (act with gathered results; \
+                         get_action_schema stays open): {:?}",
                         closed
                     ));
                     stall_stripped.extend(closed.iter().cloned());

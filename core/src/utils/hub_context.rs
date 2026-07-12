@@ -316,6 +316,20 @@ pub fn confine_to_user(path: &str) -> Result<String, String> {
     if norm == "user" || norm.starts_with("user/") {
         return Ok(norm);
     }
+    // System-module source path = the model is trying to RUN a module by file (11차 실측:
+    // execute(path="system/modules/kiwoom/index.mjs", inputData={action:"ka10081",...}) — 봉투
+    // 내용은 정확했고 탈것만 틀림). Point at the actual invocation surface, not metadata tools.
+    if let Some(module) = norm
+        .strip_prefix("system/modules/")
+        .and_then(|rest| rest.split('/').next())
+        .filter(|m| !m.is_empty())
+    {
+        return Err(format!(
+            "file access is restricted to the user/ workspace (got '{path}'). System modules are \
+             not run by file — call the module TOOL directly instead: sysmod_{module} \
+             {{\"action\": \"<action>\", \"params\": {{...}}}}. `execute` is only for user/modules."
+        ));
+    }
     Err(format!(
         "file access is restricted to the user/ workspace (got '{path}'); system source, data, and binaries are off-limits — use get_module_config / list_system_modules for module metadata"
     ))
