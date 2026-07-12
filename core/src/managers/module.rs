@@ -226,6 +226,51 @@ impl ModuleManager {
         }
         let input_data: &serde_json::Value = normalized.as_ref().unwrap_or(input_data);
 
+        // Stringified-JSON dialect absorber — models sometimes send a nested field as a JSON
+        // *string* ({"params": "{\"stk_cd\": ...}"}) instead of an object (2026-07-13 실측:
+        // Claude CLI/MCP 경로 kiwoom 호출). Schema-guarded: only when the schema declares the
+        // field as object/array AND the string strictly parses to that shape. Must mutate the
+        // real input (not a validation copy) — the sandbox needs the parsed value too.
+        let unstrung: Option<serde_json::Value> = (|| {
+            let obj = input_data.as_object()?;
+            let schema_props = config.as_ref()?.get("input")?.get("properties")?.as_object()?;
+            let mut out: Option<serde_json::Map<String, serde_json::Value>> = None;
+            for (k, v) in obj {
+                let Some(s) = v.as_str() else { continue };
+                let Some(ty) = schema_props
+                    .get(k)
+                    .and_then(|p| p.get("type"))
+                    .and_then(|t| t.as_str())
+                else {
+                    continue;
+                };
+                let trimmed = s.trim();
+                let shape_ok = match ty {
+                    "object" => trimmed.starts_with('{'),
+                    "array" => trimmed.starts_with('['),
+                    _ => false,
+                };
+                if !shape_ok {
+                    continue;
+                }
+                let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+                    continue;
+                };
+                if (ty == "object" && parsed.is_object()) || (ty == "array" && parsed.is_array()) {
+                    out.get_or_insert_with(|| obj.clone()).insert(k.clone(), parsed);
+                }
+            }
+            out.map(serde_json::Value::Object)
+        })();
+        if unstrung.is_some() {
+            tracing::info!(
+                target: "module",
+                module = %module_name,
+                "input dialect absorbed — stringified JSON field parsed"
+            );
+        }
+        let input_data: &serde_json::Value = unstrung.as_ref().unwrap_or(input_data);
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
