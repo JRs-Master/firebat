@@ -2110,6 +2110,18 @@ impl AiManager {
         let mut current_response_id: Option<String> = effective_opts.previous_response_id.clone();
 
         for turn in 0..max_turns {
+            // Budget-exhaustion synthesis — the LAST round is always a forced final (tools=[]),
+            // never another tool round. Without this, a turn that burned MAX_TOOL_TURNS exits
+            // with a canned error that DISCARDS every completed result (12차 실측: r10~r24 에서
+            // 차트 데이터·스트림 구독까지 성공해놓고 소진 exit 가 전부 버리고 "한도 도달" 문구만
+            // 반환). The force_final path already carries the ledger ("verified this turn"),
+            // the fabrication banner, and leak recovery — reuse it as the exhaustion exit.
+            if turn == max_turns - 1 && !force_final && !prior_results.is_empty() {
+                force_final = true;
+                self.log.warn(&format!(
+                    "[AiManager] tool budget exhausted ({max_turns} rounds) — final synthesis round"
+                ));
+            }
             // Cost budget guard — turn 0 시작 직전에만 체크 (옛 TS ai-manager.ts:1242-1248 1:1).
             // 한도 초과 시 LLM 호출 자체 차단 → 토큰 0 + 비용 0 으로 안전 종료.
             // CostManager 설정되어 있을 때만 작동 — 미설정 시 한도 무제한 (회귀 안전).
