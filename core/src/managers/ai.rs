@@ -3036,6 +3036,25 @@ impl AiManager {
                                 ledger_push(&mut turn_ledger, format!(
                                     "- READY sysmod_{module} {{\"action\":\"{act}\",\"params\":{{{params}}}}} — {name}"
                                 ));
+                                // resolveFirst rides the ledger too — a READY entry whose param
+                                // needs a lookup is NOT callable yet, and without this line the
+                                // model (correctly!) refuses to guess the code and slides back to
+                                // searching (13차 실측: READY ka10081 을 쥐고도 stk_cd 가 없어
+                                // 검색으로 회귀 — 선행 조건이 원장에 안 실려 있었다).
+                                if let Some(rf) = r.get("resolveFirst").and_then(|v| v.as_object())
+                                {
+                                    for (param, hint) in rf {
+                                        let hint_head: String = hint
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .chars()
+                                            .take(200)
+                                            .collect();
+                                        ledger_push(&mut turn_ledger, format!(
+                                            "- FIRST {param} (for the READY call above): {hint_head}"
+                                        ));
+                                    }
+                                }
                             }
                         }
                         "search_module_actions" => {
