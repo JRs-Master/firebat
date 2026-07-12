@@ -662,7 +662,7 @@ impl AiManager {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "what you need, in natural language (e.g. 종목 일봉 시세, 계좌 잔고, 투자자 매매동향)" },
+                    "query": { "type": "string", "description": "what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — e.g. \"일봉 일별 차트 캔들 daily candle\" — one rich query beats several terse retries. Never put a subject name (company/stock/region) in it." },
                     "module": { "type": "string", "description": "optional module name to scope the search (e.g. kiwoom, korea-invest)" },
                     "limit": { "type": "integer", "description": "max results (default 5)" }
                 },

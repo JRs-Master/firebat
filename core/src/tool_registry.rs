@@ -2504,10 +2504,10 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string"},
+                "name": {"type": "string", "description": "module name (alias: module)"},
+                "module": {"type": "string", "description": "alias of name"},
                 "scope": {"type": "string", "enum": ["system", "user"]}
-            },
-            "required": ["name"]
+            }
         }),
         source: "core".to_string(),
     });
@@ -2517,8 +2517,12 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         make_handler(move |args| {
             let module = module.clone();
             async move {
+                // Dialect absorb: sibling discovery tools (search_module_actions,
+                // get_action_schema) all take `module`, so models routinely send it here
+                // too (2026-07-13 실측 ×2) — accept both, `name` canonical.
                 let name = args
                     .get("name")
+                    .or_else(|| args.get("module"))
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "name")]))?
                     .to_string();
