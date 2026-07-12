@@ -73,19 +73,29 @@ function parseHlColor(inner: string): { color: string; text: string } {
  */
 export function highlightMarksToHtml(s: string): string {
   if (!s) return s;
-  // 칩(`[[...]]`)은 `==` 없어도 처리 — 형광펜과 같은 inline-마크업 패스에서 함께.
-  let out = s.includes('[[') ? chipMarksToHtml(s) : s;
-  if (!out.includes('==')) return out;
-  out = out.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
-    const { color, text } = parseHlColor(inner);
-    // 덧칠 자국 위치 변형(r0~r7 = 옅게 진한 두 자리가 서로 다른 곳) — 텍스트 해시 기반(결정적) →
-    // SSR/클라 안전 + 같은 표시도 매번 다른 stroke, 사람이 칠한 듯(class 기반이라 sanitize 안전).
-    let h = 0;
-    for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-    const r = h % 8;
-    return `<mark class="fbhl-${color} fbhl-r${r}">${text}</mark>`;
-  });
-  return out;
+  if (!s.includes('[[') && !s.includes('==')) return s;
+  // 코드펜스(```) 안은 건드리지 않는다 — escapeHtmlTagMentions 와 같은 가드. 칩 변환이
+  // 컨텍스트-무시(문자열 전역 치환)라 펜스 안 `[[term]]` 까지 `<span class="fbchip">` 로 바꿔,
+  // 코드블록이 그 태그를 리터럴로 노출하던 버그(2026-07-12 실측: 라이브 스트림 사본의
+  // 펜스 안 칩이 박스 속 raw 태그로 보임). 펜스 안 마크업은 코드 = 원문 그대로가 정답.
+  const parts = s.split(/(```[\s\S]*?```)/g);
+  return parts
+    .map((p, i) => {
+      if (i % 2 === 1) return p; // 코드펜스 원본 유지
+      let out = p.includes('[[') ? chipMarksToHtml(p) : p;
+      if (!out.includes('==')) return out;
+      out = out.replace(/==(?!\s)([^\n=]+?)(?<!\s)==/g, (_m, inner: string) => {
+        const { color, text } = parseHlColor(inner);
+        // 덧칠 자국 위치 변형(r0~r7 = 옅게 진한 두 자리가 서로 다른 곳) — 텍스트 해시 기반(결정적) →
+        // SSR/클라 안전 + 같은 표시도 매번 다른 stroke, 사람이 칠한 듯(class 기반이라 sanitize 안전).
+        let h = 0;
+        for (let i2 = 0; i2 < text.length; i2++) h = (h * 31 + text.charCodeAt(i2)) >>> 0;
+        const r = h % 8;
+        return `<mark class="fbhl-${color} fbhl-r${r}">${text}</mark>`;
+      });
+      return out;
+    })
+    .join('');
 }
 
 export function inlineFormatTagsToMarkdown(text: string): string {
