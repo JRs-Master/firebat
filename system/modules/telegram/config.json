@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.1.0",
-  "description": "Telegram bot — bidirectional (webhook + AI responses) and one-way (message and media delivery). For 24/7 bot notifications, event alerts, server status pushes, and mobile remote control. Setup: get a token from BotFather → obtain a chat ID (@get_id_bot or getUpdates after /start) → save to Vault → activate via the 'Register webhook' button. Commands are processed only for owners on the whitelist (for security).",
+  "description": "Telegram bot — bidirectional (webhook + AI responses) and one-way (message and media delivery). Sending needs NO chatId — omitted = the configured default chat (TELEGRAM_CHAT_ID); never ask the user for a chat ID unless they want a DIFFERENT recipient. For 24/7 bot notifications, event alerts, server status pushes, and mobile remote control. Setup: get a token from BotFather → obtain a chat ID (@get_id_bot or getUpdates after /start) → save to Vault → activate via the 'Register webhook' button. Commands are processed only for owners on the whitelist (for security).",
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",

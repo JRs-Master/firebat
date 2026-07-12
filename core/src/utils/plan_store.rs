@@ -160,7 +160,6 @@ pub fn store_plan(plan: PlanInsert) {
 /// AiManager result_processor 가 `component="PlanCard"` → blocks 안 PlanCard 자동 변환 +
 /// suggestions = ✓실행(plan-confirm) / ⚙수정(plan-revise) UI 버튼.
 pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value {
-    let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
     let title = args
         .get("title")
         .and_then(|v| v.as_str())
@@ -170,6 +169,17 @@ pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value 
         .get("steps")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
+    // Empty-args guard — a `propose_plan {}` call used to mint a planId and render a BLANK
+    // card whose ✓실행 replays nothing (14차 실측: Solar 가 빈 인자로 호출 → 유령 플랜 카드).
+    // A plan without a title and at least one step is not a plan; reject with the shape hint
+    // so the model retries with real content or acts directly.
+    if title.trim().is_empty() || steps.is_empty() {
+        return serde_json::json!({
+            "success": false,
+            "error": "propose_plan needs {\"title\": \"...\", \"steps\": [{\"title\": \"...\", \"description\"?, \"tool\"?, \"args\"?}, ...]} — an empty call renders a blank card that executes nothing. If the task doesn't need a multi-step plan, skip propose_plan and act directly.",
+        });
+    }
+    let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
     let estimated_time = args
         .get("estimatedTime")
         .and_then(|v| v.as_str())

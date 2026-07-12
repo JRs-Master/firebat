@@ -187,6 +187,20 @@ pub fn render_blocks(
             }
         };
 
+        // System-card impersonation guard — PlanCard is the OUTPUT of the propose_plan tool
+        // (planId + stored steps drive the ✓실행 replay). Drawing one via fence/render produces a
+        // convincing but DEAD card: no planId, no stored plan, approve does nothing (14차 실측:
+        // 도구 호출 0 턴이 fence 로 PlanCard 를 그려 "플랜 카드가 또 떴는데 가짜"). Reject with
+        // the real path. (Real plan cards ride tool-result blocks, not this sanitizer.)
+        if comp.component_type == "PlanCard" {
+            failed.push(serde_json::json!({
+                "idx": idx,
+                "type": block_type,
+                "error": "PlanCard cannot be drawn manually — it is created only by calling the propose_plan tool (which issues the planId that makes ✓실행 work). Call propose_plan with {title, steps}, or drop the card.",
+            }));
+            continue;
+        }
+
         // Tool-path fence enforcement: components other than code/math/diagram cannot be built via the tool (Korean corruption).
         // Reject to steer the model to write a firebat-render fence directly in the reply text. The fence path passes through.
         if tool_mode && !TOOL_ALLOWED_TYPES.contains(&comp.component_type.as_str()) {
