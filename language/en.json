@@ -186,6 +186,7 @@
       "cost_limit_exceeded": "Cost limit exceeded: {{reason}}",
       "cost_limit_exceeded_short": "Cost limit exceeded.",
       "turn_exhausted": "The tool-call budget ({{max}} calls) was exhausted before the task finished. Please split the request into smaller steps or try again.",
+      "exhausted_done_prefix": "Work actually completed this turn:",
       "turn_exhausted_cron": "The tool-call budget was exhausted before the task finished (the final action never ran).",
       "empty_final": "Response generation failed (the model returned no content). Please try again.",
       "ungrounded_final": "⚠️ The tool-call limit force-ended this task. No action was actually executed in this turn, so the content below may include unexecuted or unverified information.",

@@ -389,13 +389,21 @@ impl ToolDispatcher {
                 let t = match step_type {
                     Some(t) if !t.is_empty() => t,
                     _ => return Some(format!(
-                        "[Step {}] type 누락 — EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION 중 하나를 지정하세요.",
+                        "[Step {}] type 누락 — EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION/TOOL_CALL/SAVE_PAGE 중 하나를 지정하세요.",
                         step_num
                     )),
                 };
+                // 7종 = task.rs PipelineStep 과 동기 (옛 5종 whitelist 는 task.rs 가 지원하는
+                // TOOL_CALL/SAVE_PAGE 정상 스텝까지 거부하던 stale drift — 20차 실측에서 발각).
                 if !matches!(
                     t,
-                    "EXECUTE" | "MCP_CALL" | "NETWORK_REQUEST" | "LLM_TRANSFORM" | "CONDITION"
+                    "EXECUTE"
+                        | "MCP_CALL"
+                        | "NETWORK_REQUEST"
+                        | "LLM_TRANSFORM"
+                        | "CONDITION"
+                        | "TOOL_CALL"
+                        | "SAVE_PAGE"
                 ) {
                     return Some(format!("[Step {}] 알 수 없는 type: {}", step_num, t));
                 }

@@ -2658,6 +2658,13 @@ impl AiManager {
                                     .or_insert_with(|| serde_json::Value::String(cid.to_string()));
                             }
                         }
+                        // Pipeline dialect absorber — plan-step vocabulary ({tool, args} without
+                        // `type`) in schedule_task/run_task pipelines (20차 실측: "type 누락"
+                        // 거부가 마지막 라운드라 재시도 불가 → 소진). Normalized at the source
+                        // so pre-validation, the pending card, and the stored job all agree.
+                        if name == "schedule_task" || name == "run_task" {
+                            crate::managers::task::normalize_pipeline_dialect(m);
+                        }
                         // hub visitor — owner/hubOwner/_hubScope/project 강제 주입 (silent leak 차단,
                         // AI 가 넣은 owner override). visitor 별 격리 = `<instance_id>:<session_id>`.
                         if let Some(ctx) = ai_opts.hub_context.as_ref() {
@@ -3746,6 +3753,21 @@ impl AiManager {
             } else {
                 crate::i18n::t("core.error.ai.empty_final", None, &[])
             };
+            // Completed work must not vanish into the canned line (20차 실측: 차트 조회·스트림
+            // 구독을 실제로 성공시키고도 소진 → canned 메시지가 전부 삼킴). The ledger's DONE
+            // receipts are server-verified — append them so the user sees what DID happen.
+            let done_lines: Vec<&String> = turn_ledger
+                .iter()
+                .filter(|l| l.starts_with("- DONE "))
+                .collect();
+            if !done_lines.is_empty() {
+                clean_reply.push_str("\n\n");
+                clean_reply.push_str(&crate::i18n::t("core.error.ai.exhausted_done_prefix", None, &[]));
+                for l in done_lines {
+                    clean_reply.push('\n');
+                    clean_reply.push_str(l);
+                }
+            }
             // Live SSE clients render chunk text — emit so the fallback is visible without reload.
             emit_event(AiStreamEvent::Chunk {
                 event_type: "text".to_string(),

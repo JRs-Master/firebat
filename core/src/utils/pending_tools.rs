@@ -189,6 +189,12 @@ impl PendingActionArgs {
                 "name".to_string(),
                 serde_json::Value::String(name.to_string()),
             );
+            // Pipeline dialect absorber — {tool, args} steps without `type`(플랜 스텝 어휘)
+            // would fail the typed parse below. Mirrors the FC-path normalization in ai.rs
+            // so the MCP/CLI entry accepts the same dialect (20차 실측 클래스).
+            if name == "schedule_task" || name == "run_task" {
+                crate::managers::task::normalize_pipeline_dialect(map);
+            }
         }
         serde_json::from_value(merged).map_err(|e| {
             format!(

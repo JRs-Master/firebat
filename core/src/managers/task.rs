@@ -109,6 +109,50 @@ impl PipelineStep {
     }
 }
 
+/// Absorb the plan-step dialect in a pipeline args object (2026-07-12 20차 실측: 모델이
+/// schedule_task 파이프라인 스텝을 플랜 스텝 어휘 `{tool, args}`(type 없음)로 씀 → "type
+/// 누락" 거부 → 마지막 라운드라 재시도 못 하고 소진). Same class as the fence lenient
+/// parser / repair_tool_args: the dialect is unambiguous, so the parser absorbs it.
+/// - a step without `type` gets it inferred from its signature field
+///   (`tool`→TOOL_CALL, `path`→EXECUTE, `url`→NETWORK_REQUEST, `server`→MCP_CALL,
+///    `instruction`→LLM_TRANSFORM — unambiguous keys only, never guesses otherwise)
+/// - a lowercase/mixed-case `type` string is canonicalized to UPPER_SNAKE
+/// Never overwrites a present, already-uppercase type.
+pub fn normalize_pipeline_dialect(args: &mut serde_json::Map<String, serde_json::Value>) {
+    let Some(serde_json::Value::Array(steps)) = args.get_mut("pipeline") else {
+        return;
+    };
+    for step in steps {
+        let Some(o) = step.as_object_mut() else { continue };
+        if let Some(serde_json::Value::String(t)) = o.get_mut("type") {
+            let up = t.to_uppercase();
+            if up != *t {
+                *t = up;
+            }
+            continue;
+        }
+        let inferred = if o.contains_key("tool") {
+            Some("TOOL_CALL")
+        } else if o.contains_key("path") {
+            Some("EXECUTE")
+        } else if o.contains_key("url") {
+            Some("NETWORK_REQUEST")
+        } else if o.contains_key("server") {
+            Some("MCP_CALL")
+        } else if o.contains_key("instruction") {
+            Some("LLM_TRANSFORM")
+        } else {
+            None
+        };
+        if let Some(t) = inferred {
+            o.insert(
+                "type".to_string(),
+                serde_json::Value::String(t.to_string()),
+            );
+        }
+    }
+}
+
 /// TaskExecutor — pipeline step 실행 위임 trait.
 /// Phase B-14 minimum: TaskManager 가 step 실행을 이 trait 에 위임.
 /// Phase B-16+ Core facade 가 실 구현 (sandbox / mcp / llm / save_page) 저장.
