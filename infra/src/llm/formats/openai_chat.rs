@@ -27,7 +27,11 @@ pub struct OpenAiChatHandler;
 /// permanent 400 on every later round of the turn (2026-07-07 schedule_task 실측).
 /// Chain: strict parse → tolerant cleanup (comment/trailing-comma strip + control-char escape
 /// inside strings — multi-line step descriptions were killing 3KB propose_plan args, 2026-07-12
-/// 실측) → `{}` last resort. Returns (parsed value, canonical string) — both sides stay consistent.
+/// 실측) → bracket balancing (surplus/missing closers — `}}]}]}]}` tails, 21차 실측) →
+/// `__parseError` flag last resort (NOT `{}`: an empty object makes the tool report
+/// "missing field X", which misled the model into resending the same broken JSON verbatim;
+/// the dispatcher turns the flag into an honest "your JSON was malformed" tool error instead).
+/// Returns (parsed value, canonical string) — both sides stay consistent.
 fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
     let strict_err = match serde_json::from_str::<serde_json::Value>(raw) {
         Ok(v) if v.is_object() => return (v, raw.to_string()),
@@ -48,20 +52,43 @@ fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
             return (v, s);
         }
     }
+    let balanced = firebat_core::managers::ai::render_exec::balance_json_brackets(&cleaned);
+    if balanced != cleaned {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&balanced) {
+            if v.is_object() {
+                let s = v.to_string();
+                tracing::warn!(
+                    target: "llm",
+                    "tool-call arguments repaired via bracket balancing ({} chars)",
+                    raw.len()
+                );
+                return (v, s);
+            }
+        }
+    }
     // Log the strict parse error (line/col + reason) plus head AND tail — the failure class
     // is usually visible at one end (truncation shows at the tail, bad escapes in the error).
+    let tail: String = {
+        let t: Vec<char> = raw.chars().rev().take(120).collect();
+        t.into_iter().rev().collect()
+    };
     tracing::warn!(
         target: "llm",
-        "tool-call arguments unparseable — replaced with {{}} ({} chars, strict error: {}; head: {}; tail: {})",
+        "tool-call arguments unparseable — flagged __parseError ({} chars, strict error: {}; head: {}; tail: {})",
         raw.len(),
         strict_err,
         raw.chars().take(160).collect::<String>(),
-        {
-            let tail: Vec<char> = raw.chars().rev().take(120).collect();
-            tail.into_iter().rev().collect::<String>()
-        }
+        tail
     );
-    (serde_json::json!({}), "{}".to_string())
+    let tail_snip: String = {
+        let t: Vec<char> = tail.chars().rev().take(60).collect();
+        t.into_iter().rev().collect()
+    };
+    let flagged = serde_json::json!({
+        "__parseError": format!("{strict_err} (tail: …{tail_snip})")
+    });
+    let echo = flagged.to_string();
+    (flagged, echo)
 }
 
 /// Recover serving-format tool-call tokens a hybrid model leaks into the CONTENT channel.
@@ -759,6 +786,34 @@ mod leaked_tool_markup_tests {
         assert_eq!(v["title"], "line one\nline two\ttabbed");
         assert_eq!(v["n"], 1);
         // Canonical string must be strictly valid JSON (it is echoed to the upstream API).
+        assert!(serde_json::from_str::<serde_json::Value>(&s).is_ok());
+    }
+
+    #[test]
+    fn surplus_closers_repaired_via_bracket_balancing() {
+        // 21차 실측 class: a near-valid plan whose tail over-closes (`}}]}]}]}`).
+        let raw = "{\"title\": \"plan\", \"steps\": [{\"tool\": \"kiwoom\", \"args\": {\"action\": \"ka10081\"}}]}]}]}";
+        let (v, s) = super::repair_tool_args(raw);
+        assert_eq!(v["title"], "plan");
+        assert_eq!(v["steps"][0]["tool"], "kiwoom");
+        assert!(serde_json::from_str::<serde_json::Value>(&s).is_ok());
+    }
+
+    #[test]
+    fn missing_closers_appended_via_bracket_balancing() {
+        let raw = "{\"title\": \"plan\", \"steps\": [{\"tool\": \"kiwoom\"}";
+        let (v, _) = super::repair_tool_args(raw);
+        assert_eq!(v["title"], "plan");
+        assert_eq!(v["steps"][0]["tool"], "kiwoom");
+    }
+
+    #[test]
+    fn hopeless_args_flagged_not_emptied() {
+        // When no rung can repair, the fallback must carry __parseError (an honest teacher
+        // for the dispatcher) instead of a bare {} that triggers misleading missing-field
+        // errors downstream. Echo string must still be strictly valid JSON.
+        let (v, s) = super::repair_tool_args("{\"a\" 1 :::");
+        assert!(v.get("__parseError").and_then(|e| e.as_str()).is_some());
         assert!(serde_json::from_str::<serde_json::Value>(&s).is_ok());
     }
 

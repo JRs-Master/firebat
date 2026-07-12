@@ -227,7 +227,36 @@ export function parseFenceJson(body: string): any | undefined {
     if (c === '"') inStr = true;
     fixed += c;
   }
-  try { return JSON.parse(fixed.trim()); } catch { return undefined; }
+  try { return JSON.parse(fixed.trim()); } catch { /* bracket-balance retry below */ }
+  // pass 4: balance brackets/braces outside strings — surplus closers dropped, wrong-type
+  // closers rewritten, missing closers appended at EOF. Mirrors Rust render_exec
+  // `balance_json_brackets` (2026-07-12 실측: `}}]}]}]}` tails on near-valid emissions).
+  let balanced = '';
+  const stack: string[] = [];
+  inStr = false; esc = false;
+  for (const c of fixed) {
+    if (inStr) {
+      balanced += c;
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; balanced += c; continue; }
+    if (c === '{') { stack.push('}'); balanced += c; continue; }
+    if (c === '[') { stack.push(']'); balanced += c; continue; }
+    if (c === '}' || c === ']') {
+      const want = stack[stack.length - 1];
+      if (want === c) { stack.pop(); balanced += c; }
+      else if (want) { stack.pop(); balanced += want; }
+      // no opener on the stack → surplus closer, drop it
+      continue;
+    }
+    balanced += c;
+  }
+  if (inStr) balanced += '"';
+  while (stack.length) balanced += stack.pop();
+  try { return JSON.parse(balanced.trim()); } catch { return undefined; }
 }
 
 /**

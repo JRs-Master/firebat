@@ -593,14 +593,78 @@ pub fn escape_control_chars_in_strings(body: &str) -> String {
     out
 }
 
+/// Repair unbalanced brackets/braces outside string literals — a weak-model emission slip
+/// (2026-07-12 실측: a 1,625-char propose_plan arg ended `}}]}]}]}` — surplus closers — so
+/// strict AND tolerant parses both died at the tail and the whole plan collapsed to `{}`).
+/// String-aware scan: surplus closers are dropped, mismatched closers are rewritten to the
+/// expected one, unclosed openers are closed at EOF. Text inside strings is never touched;
+/// already-balanced input passes through unchanged.
+pub fn balance_json_brackets(body: &str) -> String {
+    let mut out = String::with_capacity(body.len() + 8);
+    let mut stack: Vec<char> = Vec::new();
+    let mut in_str = false;
+    let mut escaped = false;
+    for c in body.chars() {
+        if in_str {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                in_str = true;
+                out.push(c);
+            }
+            '{' => {
+                stack.push('}');
+                out.push(c);
+            }
+            '[' => {
+                stack.push(']');
+                out.push(c);
+            }
+            '}' | ']' => match stack.last() {
+                Some(&want) if want == c => {
+                    stack.pop();
+                    out.push(c);
+                }
+                Some(&want) => {
+                    // Wrong-type closer — emit the expected one instead.
+                    stack.pop();
+                    out.push(want);
+                }
+                None => {
+                    // Surplus closer after the structure already closed — drop it.
+                }
+            },
+            _ => out.push(c),
+        }
+    }
+    if in_str {
+        out.push('"');
+    }
+    while let Some(wanted) = stack.pop() {
+        out.push(wanted);
+    }
+    out
+}
+
 /// Parse a fence body as JSON — strict first, then the tolerant cleanup (comments / trailing
-/// commas / raw control chars in strings). Shared by the sanitize and plaintext paths so both
-/// accept the same dialects.
+/// commas / raw control chars in strings), then bracket balancing on top. Shared by the
+/// sanitize and plaintext paths so both accept the same dialects.
 fn parse_fence_json(body: &str) -> Option<Value> {
     let trimmed = body.trim();
     serde_json::from_str(trimmed).ok().or_else(|| {
         let cleaned = escape_control_chars_in_strings(&tolerant_json_cleanup(trimmed));
-        serde_json::from_str(cleaned.trim()).ok()
+        serde_json::from_str(cleaned.trim())
+            .ok()
+            .or_else(|| serde_json::from_str(balance_json_brackets(&cleaned).trim()).ok())
     })
 }
 

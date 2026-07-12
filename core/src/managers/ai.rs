@@ -2817,7 +2817,37 @@ impl AiManager {
                     .copied()
                     .unwrap_or(0)
                     >= PER_TURN_FAIL_CAP;
-                let mut action = if per_turn_over_cap || fail_over_cap {
+                let mut action = if let Some(perr) = effective_call
+                    .arguments
+                    .get("__parseError")
+                    .and_then(|v| v.as_str())
+                {
+                    // Truthful parse-failure teacher — repair_tool_args exhausted its rungs.
+                    // Dispatching `{}` here made the tool answer "missing field X", which misled
+                    // the model into resending the SAME broken JSON verbatim (21차 실측: identical
+                    // 1,625-char plan ×2 + 2 more attempts → mission abandoned → availability
+                    // fabrication). Tell it the real reason; this model class self-corrects from
+                    // explicit validation errors. Bounded by PER_TURN_FAIL_CAP like any failure.
+                    self.log.warn(&format!(
+                        "[AiManager] tool args unparseable — teaching parse error: {}",
+                        effective_call.name
+                    ));
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "The arguments of this call were NOT valid JSON — nothing was executed. Parse error: {perr}. Re-send this SAME call to '{}' with the SAME content but syntactically valid JSON: check bracket/brace balance and commas near the reported position. Do not drop fields and do not switch tools.",
+                                effective_call.name
+                            ),
+                            "argsParseError": true,
+                        }),
+                        success: false,
+                        error: Some("args parse error".to_string()),
+                        arguments: call.arguments.clone(),
+                    }
+                } else if per_turn_over_cap || fail_over_cap {
                     self.log.warn(&format!(
                         "[AiManager] per-turn tool {} cap exceeded: {} ({} calls / {} fails)",
                         if fail_over_cap { "failure" } else { "call" },
