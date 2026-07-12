@@ -298,6 +298,59 @@ impl ToolManager {
         }
         name.to_string()
     }
+
+    /// Nearest registered handler name within `max_dist` edits — and only when the best match is
+    /// UNIQUE at its distance (two candidates at the same distance = ambiguous → None). Used for
+    /// deterministic replay of plan-compiled steps, where the plan turn's model WRITES the tool
+    /// name and a one-letter slip (`sysmod_kiwom`) poisons the whole mechanical replay. NOT used
+    /// on the live dispatch path — there the unknown-tool error is the teacher; auto-correcting
+    /// interactive calls would mask model errors we want surfaced.
+    pub fn nearest_handler_name(&self, name: &str, max_dist: usize) -> Option<String> {
+        fn edit_distance(a: &str, b: &str) -> usize {
+            let a: Vec<char> = a.chars().collect();
+            let b: Vec<char> = b.chars().collect();
+            let mut prev: Vec<usize> = (0..=b.len()).collect();
+            let mut cur = vec![0usize; b.len() + 1];
+            for i in 1..=a.len() {
+                cur[0] = i;
+                for j in 1..=b.len() {
+                    let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+                    cur[j] = (prev[j] + 1).min(cur[j - 1] + 1).min(prev[j - 1] + cost);
+                }
+                std::mem::swap(&mut prev, &mut cur);
+            }
+            prev[b.len()]
+        }
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut best: Option<(usize, String)> = None;
+        let mut tied = false;
+        for cand in state.handlers.keys() {
+            // cheap length pre-filter — |len diff| > max_dist can never be within max_dist
+            if cand.len().abs_diff(name.len()) > max_dist {
+                continue;
+            }
+            let d = edit_distance(name, cand);
+            if d == 0 || d > max_dist {
+                continue;
+            }
+            match &best {
+                Some((bd, _)) if d > *bd => {}
+                Some((bd, bn)) if d == *bd => {
+                    if bn != cand {
+                        tied = true;
+                    }
+                }
+                _ => {
+                    best = Some((d, cand.clone()));
+                    tied = false;
+                }
+            }
+        }
+        if tied {
+            return None;
+        }
+        best.map(|(_, n)| n)
+    }
 }
 
 impl Default for ToolManager {

@@ -1747,13 +1747,41 @@ impl AiManager {
                             // accept them on replay (the codes won't re-appear in this turn's
                             // own tool results before the replayed call runs).
                             plan_provenance = serde_json::to_string(&plan.steps).ok();
+                            // Compiled-step name hygiene — the plan turn's model WRITES these
+                            // names, and a one-letter slip poisons the whole replay (12차 실측:
+                            // 플랜 스텝이 `sysmod_kiwom`(o 누락)+inputData 봉투를 굳혀 실행 턴
+                            // r1 재생이 전부 unknown/검증 실패 → 독 청소에 라운드 소진).
+                            // canonical_name absorbs prefix/underscore dialects; a residual
+                            // near-miss (edit distance ≤ 2, unique candidate) is corrected;
+                            // anything still unknown is DROPPED from replay — the step stays in
+                            // the prose instruction and the agent path discovers it properly.
                             plan_replay_raw = compiled
                                 .into_iter()
                                 .enumerate()
-                                .map(|(i, (tool, args))| ToolCall {
-                                    id: format!("plan-step-{}", i + 1),
-                                    name: tool,
-                                    arguments: args,
+                                .filter_map(|(i, (tool, args))| {
+                                    let canon = self.tools.canonical_name(&tool);
+                                    let name = if self.tools.has_handler(&canon) {
+                                        canon
+                                    } else if let Some(fixed) =
+                                        self.tools.nearest_handler_name(&canon, 2)
+                                    {
+                                        self.log.warn(&format!(
+                                            "[AiManager] plan step tool '{}' corrected to '{}' (near-match)",
+                                            tool, fixed
+                                        ));
+                                        fixed
+                                    } else {
+                                        self.log.warn(&format!(
+                                            "[AiManager] plan step tool '{}' unknown — dropped from replay (agent fallback)",
+                                            tool
+                                        ));
+                                        return None;
+                                    };
+                                    Some(ToolCall {
+                                        id: format!("plan-step-{}", i + 1),
+                                        name,
+                                        arguments: args,
+                                    })
                                 })
                                 .collect();
                         }

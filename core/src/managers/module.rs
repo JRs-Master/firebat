@@ -181,6 +181,51 @@ impl ModuleManager {
         // (was fetched twice: once per validation pass).
         let config = self.get_module_config(scope, module_name).await;
 
+        // Pipeline-dialect absorber — models (and plan-compiled steps) reuse the PIPELINE step
+        // vocabulary `inputData` for the module envelope ({action, inputData:{...}}), which the
+        // input schema rejects as an unknown property (12차 실측: 플랜이 inputData 봉투를 굳혀
+        // 실행 턴이 검증 실패 반복으로 라운드를 소진 — 의도는 명백한데 어휘만 파이프라인 것).
+        // Intent is unambiguous → absorb instead of teach: move `inputData`'s fields into
+        // `params` when the schema declares params, else spread them flat. Never applied when
+        // the schema itself defines `inputData` (a legitimate module field must not be shadowed).
+        let normalized: Option<serde_json::Value> = (|| {
+            let obj = input_data.as_object()?;
+            let inner = obj.get("inputData")?.as_object()?.clone();
+            let schema_props = config.as_ref()?.get("input")?.get("properties")?.as_object()?;
+            if schema_props.contains_key("inputData") {
+                return None;
+            }
+            let mut out = obj.clone();
+            out.remove("inputData");
+            if schema_props.contains_key("params") {
+                let params = out
+                    .entry("params".to_string())
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(p) = params.as_object_mut() {
+                    for (k, v) in inner {
+                        if !p.contains_key(&k) {
+                            p.insert(k, v);
+                        }
+                    }
+                }
+            } else {
+                for (k, v) in inner {
+                    if !out.contains_key(&k) {
+                        out.insert(k, v);
+                    }
+                }
+            }
+            Some(serde_json::Value::Object(out))
+        })();
+        if normalized.is_some() {
+            tracing::info!(
+                target: "module",
+                module = %module_name,
+                "input dialect absorbed — inputData envelope normalized"
+            );
+        }
+        let input_data: &serde_json::Value = normalized.as_ref().unwrap_or(input_data);
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
