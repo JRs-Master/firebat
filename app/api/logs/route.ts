@@ -1,7 +1,7 @@
 /**
  * 로그 조회 / filter API (로그 시스템 Phase 5, 2026-05-21). admin 전용 (withAuth).
  *
- * GET  /api/logs?minLevel=&targetPrefix=&sinceMs=&limit=  — sqlite ring buffer 조회
+ * GET  /api/logs?minLevel=&targetPrefix=&sinceMs=&limit=&contains=  — sqlite ring buffer 조회
  * POST /api/logs  body: { filter }                        — 런타임 EnvFilter reload (SIGHUP 대신)
  *
  * /api/log (단수) 는 별개 — 브라우저 로그 수집 (Phase 2). 본 route 는 admin 조회/제어.
@@ -19,6 +19,7 @@ export const GET = withAuth(async (req: NextRequest) => {
     targetPrefix: sp.get('targetPrefix') ?? '',
     sinceMs: BigInt(Number(sp.get('sinceMs') ?? 0) || 0),
     limit: Number(sp.get('limit') ?? 200) || 200,
+    contains: sp.get('contains') ?? '',
   });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });

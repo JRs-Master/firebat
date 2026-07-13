@@ -3091,6 +3091,7 @@ message LogQueryRequest {
   string target_prefix = 2;  // "" = 전체
   int64 since_ms = 3;        // 0 = 전체
   int32 limit = 4;           // 0 = default 200
+  string contains = 5;       // "" = 전체 — message/target 부분문자열 검색 (journalctl grep 대체)
 }
 
 message LogQueryResponse {

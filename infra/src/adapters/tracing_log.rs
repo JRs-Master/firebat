@@ -70,7 +70,7 @@ pub type LogReloadHandle = reload::Handle<EnvFilter, Registry>;
 ///
 /// layer 구성 (fan-out): reload EnvFilter (global) → fmt(journalctl) + LogBufferLayer(sqlite ring).
 /// filter 통과 event 가 journalctl + sqlite 둘 다 기록. SIGHUP reload 시 둘 다 레벨 변경.
-/// log_db_path = data/logs.db (sqlite ring buffer, 최근 5000건). admin 로그 탭 (Phase 5) 조회용.
+/// log_db_path = data/logs.db (sqlite ring buffer, 최근 20000건). admin 로그 탭 (Phase 5) 조회용.
 pub fn init_tracing(log_db_path: PathBuf) -> LogReloadHandle {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
@@ -80,7 +80,9 @@ pub fn init_tracing(log_db_path: PathBuf) -> LogReloadHandle {
         .map(|v| v.eq_ignore_ascii_case("json"))
         .unwrap_or(false);
 
-    let log_layer = LogBufferLayer::new(log_db_path, 5000);
+    // 20k = journalctl 실질 대체 목표의 히스토리 창 (5k 는 sysmod·embed 로그가 반나절이면 밀어냄).
+    // 행당 ~수백 B → 상한 ~10MB (별도 logs.db 라 app.db 무영향).
+    let log_layer = LogBufferLayer::new(log_db_path, 20000);
     let registry = tracing_subscriber::registry()
         .with(filter_layer)
         .with(log_layer);

@@ -41,6 +41,9 @@ pub struct LogQueryFilter {
     pub since_ms: Option<i64>,
     /// 최대 건수 (default 200, max 2000).
     pub limit: usize,
+    /// message/target 부분문자열 검색 (journalctl grep 대체). None = 전체.
+    /// SQL LIKE 로 처리 — in-memory 필터면 scan 창(limit×4) 안만 검색돼 오래된 매치를 놓침.
+    pub contains: Option<String>,
 }
 
 fn now_ms() -> i64 {
@@ -210,30 +213,61 @@ fn init_log_db(db_path: &Path) -> Result<Connection, String> {
     Ok(conn)
 }
 
+/// rusqlite row → LogRow (query_logs 두 SQL 분기 공용).
+fn row_to_log(r: &rusqlite::Row) -> rusqlite::Result<LogRow> {
+    Ok(LogRow {
+        ts_ms: r.get(0)?,
+        level: r.get(1)?,
+        target: r.get(2)?,
+        message: r.get(3)?,
+    })
+}
+
+/// LIKE 패턴 이스케이프 — %/_/\ 를 리터럴로 (ESCAPE '\' 전제).
+fn like_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
 /// 로그 조회 — admin LogService 가 호출. read-only conn (writer thread 와 분리, WAL 동시).
 pub fn query_logs(db_path: &Path, filter: &LogQueryFilter) -> Result<Vec<LogRow>, String> {
     let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
     let limit = filter.limit.clamp(1, 2000);
-    // 최신순 → limit. min_level / target_prefix / since_ms 는 in-memory 필터 (sql 단순 유지).
-    let mut stmt = conn
-        .prepare("SELECT ts_ms, level, target, message FROM logs ORDER BY id DESC LIMIT ?1")
-        .map_err(|e| e.to_string())?;
     // limit 보다 넉넉히 읽어 필터 후 limit (필터로 줄어드는 만큼 보상). 단 과다 방지 cap.
     let scan_limit = (limit * 4).min(8000) as i64;
-    let rows = stmt
-        .query_map(rusqlite::params![scan_limit], |r| {
-            Ok(LogRow {
-                ts_ms: r.get(0)?,
-                level: r.get(1)?,
-                target: r.get(2)?,
-                message: r.get(3)?,
-            })
-        })
-        .map_err(|e| e.to_string())?;
+    // contains(부분문자열) 는 SQL LIKE — in-memory 필터면 scan 창 안만 검색돼 링 깊은 곳의
+    // 매치를 놓친다(journalctl grep 대체가 목적이라 링 전체가 대상). 나머지(min_level /
+    // target_prefix / since_ms) 는 기존대로 in-memory (sql 단순 유지).
+    let contains = filter
+        .contains
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty());
+    let raw: Vec<LogRow> = if let Some(c) = contains {
+        let pat = format!("%{}%", like_escape(c));
+        let mut stmt = conn
+            .prepare(
+                "SELECT ts_ms, level, target, message FROM logs \
+                 WHERE (message LIKE ?1 ESCAPE '\\' OR target LIKE ?1 ESCAPE '\\') \
+                 ORDER BY id DESC LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![pat, scan_limit], row_to_log)
+            .map_err(|e| e.to_string())?;
+        rows.flatten().collect()
+    } else {
+        let mut stmt = conn
+            .prepare("SELECT ts_ms, level, target, message FROM logs ORDER BY id DESC LIMIT ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![scan_limit], row_to_log)
+            .map_err(|e| e.to_string())?;
+        rows.flatten().collect()
+    };
 
     let min_rank = filter.min_level.as_deref().map(level_rank);
     let mut out = Vec::with_capacity(limit);
-    for row in rows.flatten() {
+    for row in raw {
         if let Some(mr) = min_rank {
             if level_rank(&row.level) < mr {
                 continue;

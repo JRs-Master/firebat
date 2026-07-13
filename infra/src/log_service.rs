@@ -59,6 +59,11 @@ impl LogService for LogServiceImpl {
             } else {
                 args.limit as usize
             },
+            contains: if args.contains.trim().is_empty() {
+                None
+            } else {
+                Some(args.contains)
+            },
         };
         // rusqlite blocking — tokio runtime 막지 않게 spawn_blocking.
         let db = self.log_db_path.clone();
