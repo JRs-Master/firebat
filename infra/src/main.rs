@@ -910,11 +910,17 @@ async fn main() -> Result<()> {
                 let start = std::time::Instant::now();
                 let (success, error): (bool, Option<String>) = match kind.as_str() {
                     "consolidation" => {
-                        // AI assistant 토글 OFF 면 inert(=UI 회색). ON 이면 비활성 대화에서 회상·교훈 추출.
-                        let on = vault_b
+                        // Intelligence 분리 토글 — 리콜/메모리 자동 등록 중 하나라도 ON 이면 실행
+                        // (추출 1패스, 스토어별 저장 게이트는 consolidation 내부). 둘 다 OFF = inert(UI 회색).
+                        let recall_on = vault_b
                             .get_secret(firebat_core::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED)
                             .map(|v| v == "true" || v == "1")
                             .unwrap_or(false);
+                        let memory_on = vault_b
+                            .get_secret(firebat_core::vault_keys::VK_SYSTEM_MEMORY_AUTO_SAVE)
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(recall_on);
+                        let on = recall_on || memory_on;
                         if on {
                             let _ = consolidation_b
                                 .consolidate_inactive_conversations(None, None, None)
@@ -936,10 +942,18 @@ async fn main() -> Result<()> {
                             tracing::info!(target: "cron", "retention: skipped (disabled in settings)");
                             (true, None)
                         } else {
-                        const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-                        conv_b.cleanup_old_deleted(RETENTION_MS);
-                        let _ = media_b.cleanup_old_attachments(RETENTION_MS).await;
-                        let _ = hub_b.cleanup_old_deleted_conversations(RETENTION_MS).await;
+                        // 보존 일수 — assistant 탭 설정(`system:retention:days`, 기본 30일, 1~365 clamp).
+                        // 휴지통 대화·임시첨부·hub 휴지통에 적용. llm_costs(12개월)·recall staging(30일)은
+                        // 별개 의미라 고정.
+                        let retention_days: i64 = vault_b
+                            .get_secret(firebat_core::vault_keys::VK_SYSTEM_RETENTION_DAYS)
+                            .and_then(|v| v.trim().parse::<i64>().ok())
+                            .map(|d| d.clamp(1, 365))
+                            .unwrap_or(30);
+                        let retention_ms: i64 = retention_days * 24 * 60 * 60 * 1000;
+                        conv_b.cleanup_old_deleted(retention_ms);
+                        let _ = media_b.cleanup_old_attachments(retention_ms).await;
+                        let _ = hub_b.cleanup_old_deleted_conversations(retention_ms).await;
                         // Auth hygiene — expired session rows only vanish via list_sessions'
                         // lazy sweep, and nothing called it periodically (rows accumulated;
                         // validation was safe — expiry is enforced at read).

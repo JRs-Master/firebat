@@ -50,6 +50,76 @@ type Props = {
 
 /** SettingsModal — 자체 ErrorBoundary 추가하여 modal 안 throw 가 admin tree 통째로 reset 되지 않게 격리.
  *  옛: cost sub-tab throw → admin/error.tsx 발동 → 사이드바 사라짐. 새: modal 안 fallback UI 만 표시 + 사이드바 유지. */
+/**
+ * 가로 스크롤 탭 바 공용 훅 — PC 마우스 드래그 스크롤(클릭 충돌 방지 임계) + 좌/우 화살표
+ * 가시성 + scroll(). 메인 탭바와 AI 하위탭 바가 공유 (2026-07-13: 하위탭도 같은 로직).
+ * ref = callback ref — 하위탭 바는 조건부 마운트라 useRef+[] effect 면 리스너가 영영 안 붙는다.
+ */
+function useDragScrollBar() {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const refCb = useCallback((node: HTMLDivElement | null) => setEl(node), []);
+  const draggedRef = useRef(false);
+  const [state, setState] = useState({ canLeft: false, canRight: false });
+
+  useEffect(() => {
+    const bar = el;
+    if (!bar) return;
+    let isDown = false;
+    let startX = 0;
+    let startScroll = 0;
+    const DRAG_THRESHOLD = 5;
+    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; draggedRef.current = false; };
+    const onMove = (e: MouseEvent) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      if (!draggedRef.current && Math.abs(dx) < DRAG_THRESHOLD) return;
+      draggedRef.current = true;
+      bar.style.cursor = 'grabbing';
+      e.preventDefault();
+      bar.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      isDown = false;
+      bar.style.cursor = '';
+      // 다음 tick에 reset — click 이벤트 확인 후
+      setTimeout(() => { draggedRef.current = false; }, 0);
+    };
+    // 드래그 직후 click 차단
+    const onClickCapture = (e: MouseEvent) => {
+      if (draggedRef.current) { e.preventDefault(); e.stopPropagation(); }
+    };
+    bar.addEventListener('mousedown', onDown);
+    bar.addEventListener('click', onClickCapture, true);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      bar.removeEventListener('mousedown', onDown);
+      bar.removeEventListener('click', onClickCapture, true);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [el]);
+
+  useEffect(() => {
+    const bar = el;
+    if (!bar) return;
+    const update = () => setState({
+      canLeft: bar.scrollLeft > 2,
+      canRight: bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2,
+    });
+    update();
+    bar.addEventListener('scroll', update);
+    const ro = new ResizeObserver(update);
+    ro.observe(bar);
+    return () => { bar.removeEventListener('scroll', update); ro.disconnect(); };
+  }, [el]);
+
+  const scroll = useCallback((dir: 'left' | 'right') => {
+    el?.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
+  }, [el]);
+  return { ref: refCb, canLeft: state.canLeft, canRight: state.canRight, scroll };
+}
+
 export function SettingsModal(props: Props) {
   return (
     <ErrorBoundary>
@@ -221,12 +291,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [vertexSaJson, setVertexSaJson] = useState(''); // Vertex AI Service Account JSON
   const [upstageApiKey, setUpstageApiKey] = useState(''); // Upstage Solar
 
-  // AI 어시스턴트 (assistant 하위탭) — worker 모델 픽커는 제거됨(항상 현재 메인 모델, 2026-07-13).
+  // Intelligence 자동 등록 (assistant 하위탭) — 리콜(기존 ai-router 키)·메모리 분리 토글.
+  // worker 모델 픽커는 제거됨(항상 현재 메인 모델, 2026-07-13).
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
+  const [memoryAutoSave, setMemoryAutoSave] = useState(false);
   // 임베딩(검색 카탈로그) / 문서 파싱 / 휴지통 정리 — assistant 탭 즉시저장 설정 3종.
   const [embedCatalogProvider, setEmbedCatalogProvider] = useState<'local' | 'solar'>('local');
   const [libraryParseProvider, setLibraryParseProvider] = useState<'none' | 'solar' | 'gemini'>('none');
   const [retentionEnabled, setRetentionEnabled] = useState(true);
+  const [retentionDays, setRetentionDays] = useState(30);
   // AI 모델 carousel — useAiModels 컴포넌트 상단 (L57) 에서 호출. 중복 hoist 회피 — 단일 reference.
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
@@ -393,6 +466,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (data.embedCatalogProvider === 'local' || data.embedCatalogProvider === 'solar') setEmbedCatalogProvider(data.embedCatalogProvider);
         if (['none', 'solar', 'gemini'].includes(data.libraryParseProvider)) setLibraryParseProvider(data.libraryParseProvider);
         if (typeof data.retentionEnabled === 'boolean') setRetentionEnabled(data.retentionEnabled);
+        if (typeof data.retentionDays === 'number') setRetentionDays(data.retentionDays);
+        if (typeof data.memoryAutoSave === 'boolean') setMemoryAutoSave(data.memoryAutoSave);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
@@ -616,79 +691,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // 탭 콘텐츠 스크롤 리셋용
   const contentRef = useRef<HTMLDivElement>(null);
-  // 탭 바 — PC에서 드래그로 가로 스크롤 (모바일은 터치로 기본 동작)
-  const tabBarRef = useRef<HTMLDivElement>(null);
+  // 탭 바 — PC 드래그 스크롤 + 화살표 (메인 탭바 · AI 하위탭 공유 훅 useDragScrollBar)
+  const mainBar = useDragScrollBar();
+  const aiSubBar = useDragScrollBar();
 
   const switchTab = (tab: typeof settingsTab) => {
     setSettingsTab(tab);
     contentRef.current?.scrollTo(0, 0);
   };
 
-  // PC용: 탭 바 마우스 드래그 스크롤 (임계값 넘어야 실제 드래그로 간주 → 클릭과 충돌 방지)
-  const draggedRef = useRef(false);
-  useEffect(() => {
-    const bar = tabBarRef.current;
-    if (!bar) return;
-    let isDown = false;
-    let startX = 0;
-    let startScroll = 0;
-    const DRAG_THRESHOLD = 5;
-    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; draggedRef.current = false; };
-    const onMove = (e: MouseEvent) => {
-      if (!isDown) return;
-      const dx = e.pageX - startX;
-      if (!draggedRef.current && Math.abs(dx) < DRAG_THRESHOLD) return;
-      draggedRef.current = true;
-      bar.style.cursor = 'grabbing';
-      e.preventDefault();
-      bar.scrollLeft = startScroll - dx;
-    };
-    const onUp = () => {
-      isDown = false;
-      bar.style.cursor = '';
-      // 다음 tick에 reset — click 이벤트 확인 후
-      setTimeout(() => { draggedRef.current = false; }, 0);
-    };
-    // 드래그 직후 click 차단
-    const onClickCapture = (e: MouseEvent) => {
-      if (draggedRef.current) { e.preventDefault(); e.stopPropagation(); }
-    };
-    bar.addEventListener('mousedown', onDown);
-    bar.addEventListener('click', onClickCapture, true);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      bar.removeEventListener('mousedown', onDown);
-      bar.removeEventListener('click', onClickCapture, true);
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, []);
-
-  // 탭 스크롤 상태 — 좌/우 화살표 가시성 제어
-  const [scrollState, setScrollState] = useState({ canLeft: false, canRight: false });
-  const updateScrollState = useCallback(() => {
-    const bar = tabBarRef.current;
-    if (!bar) return;
-    setScrollState({
-      canLeft: bar.scrollLeft > 2,
-      canRight: bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2,
-    });
-  }, []);
-  useEffect(() => {
-    const bar = tabBarRef.current;
-    if (!bar) return;
-    updateScrollState();
-    bar.addEventListener('scroll', updateScrollState);
-    const ro = new ResizeObserver(updateScrollState);
-    ro.observe(bar);
-    return () => { bar.removeEventListener('scroll', updateScrollState); ro.disconnect(); };
-  }, [updateScrollState]);
-  const scrollTabs = useCallback((dir: 'left' | 'right') => {
-    const bar = tabBarRef.current;
-    if (!bar) return;
-    bar.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
-  }, []);
 
   // 탭 전환 시 데이터 로드
   useEffect(() => {
@@ -857,23 +868,23 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
         {/* 탭 — 모바일은 터치 스크롤, PC는 드래그 + 호버 시 화살표 */}
         <div className="relative shrink-0 border-b border-slate-200 bg-white group">
-          {scrollState.canLeft && (
+          {mainBar.canLeft && (
             <button
               type="button"
-              onClick={() => scrollTabs('left')}
+              onClick={() => mainBar.scroll('left')}
               className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               aria-label={t('system_modules.common.prev_tab')}
             ><ChevronLeft size={16} /></button>
           )}
-          {scrollState.canRight && (
+          {mainBar.canRight && (
             <button
               type="button"
-              onClick={() => scrollTabs('right')}
+              onClick={() => mainBar.scroll('right')}
               className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               aria-label={t('system_modules.common.next_tab')}
             ><ChevronRight size={16} /></button>
           )}
-          <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
+          <div ref={mainBar.ref} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
           {/* hub tenant = AI tab (prompt/memory) only 노출. 나머지 탭(general·secrets·mcp·capabilities·system·logs)은 root 전용이라 숨김. */}
           {!hubMode && (
           <button
@@ -1077,12 +1088,28 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               : 'Extended Thinking (Claude)';
             return (
               <>
-                {/* AI 서브탭 바 — 메인 탭 nav 와 동일 underline 패턴 (border-b-2).
-                    overflow-x-auto 폐기 — root cause: commit 19e2dc4 가 5 button (3→5) +
-                    overflow-x-auto 추가하여 부모 flex flex-col 안 child 의 overflow:auto box 가
-                    height collapse (flex + overflow 충돌). 5 button width 합 ~290px <
-                    modal sm:max-w-lg 512px 라 overflow-x-auto 불필요. */}
-                <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
+                {/* AI 서브탭 바 — 메인 탭바와 같은 로직(useDragScrollBar): 드래그 스크롤 + 호버
+                    화살표 (2026-07-13 사용자, 탭 7개 = 좁은 화면 overflow). 구조도 메인 바 미러
+                    (relative 블록 래퍼 + 내부 flex overflow — 옛 height-collapse 사고는 flex-col
+                    직속 자식에 overflow 를 준 케이스라 이 구조엔 해당 없음). */}
+                <div className="relative group border-b border-slate-200 mb-3">
+                  {aiSubBar.canLeft && (
+                    <button
+                      type="button"
+                      onClick={() => aiSubBar.scroll('left')}
+                      className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-6 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label={t('system_modules.common.prev_tab')}
+                    ><ChevronLeft size={14} /></button>
+                  )}
+                  {aiSubBar.canRight && (
+                    <button
+                      type="button"
+                      onClick={() => aiSubBar.scroll('right')}
+                      className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-6 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label={t('system_modules.common.next_tab')}
+                    ><ChevronRight size={14} /></button>
+                  )}
+                  <div ref={aiSubBar.ref} className="flex items-center gap-1 overflow-x-auto scrollbar-none select-none cursor-grab">
                   {([
                     { v: 'llm', label: 'LLM' },
                     { v: 'assistant', label: t('settings_modal.ai_sub_tab_assistant') },
@@ -1104,6 +1131,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       {tab.label}
                     </button>
                   ))}
+                  </div>
                 </div>
                 {aiSubTab === 'cost' && <CostTabContent />}
                 {aiSubTab === 'memory' && <MemoryTabContent hubContext={hubContext} />}
@@ -1112,45 +1140,63 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 {aiSubTab === 'assistant' && !hubMode && (
                 <div className="flex flex-col gap-5">
                   {(() => {
-                    // Toggle enableable when ANY model can run the extraction worker (= the current
-                    // main model — the picker was removed 2026-07-13; extraction is json_schema-forced
-                    // so any main model is safe). (geminiApiKey state = OpenAI key, legacy name.)
+                    // Intelligence 자동 등록 — 리콜(대상·사실·사건)과 메모리(규칙·교훈)를 분리 게이트
+                    // (2026-07-13 사용자 확정: 마스터 토글 없이 세부 2개). 추출 워커 = 메인 모델 추종.
                     const hasAssistantKey =
                       execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey || !!upstageApiKey;
+                    const saveIntel = async (patch: Record<string, boolean>) => {
+                      await apiPatch('/api/settings', patch, { category: 'settings' });
+                      // CronPanel(['settings','ai-router'])의 consolidation 회색 처리가 이 캐시를 읽음.
+                      queryClient.invalidateQueries({ queryKey: ['settings'] });
+                    };
                     return (
                       <div className="flex flex-col gap-2">
-                        <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
-                        <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasAssistantKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
-                          <input
-                            type="checkbox"
-                            className="mt-0.5"
-                            checked={aiRouterEnabled}
-                            disabled={!hasAssistantKey}
-                            onChange={async e => {
-                              const next = e.target.checked;
-                              setAiRouterEnabled(next);
-                              // 즉시저장 + 캐시 무효화 — CronPanel(['settings','ai-router'])의
-                              // consolidation 잡 회색 처리가 이 캐시를 읽음 (옛 지연저장 시절엔
-                              // persistSettings 가 invalidate 를 담당했음).
-                              await apiPatch('/api/settings', { aiRouterEnabled: next }, { category: 'settings' });
-                              queryClient.invalidateQueries({ queryKey: ['settings'] });
-                            }}
-                            aria-label={t('settings_modal.ai_assistant_aria')}
-                            name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
-                          />
-                          <div className="flex-1">
-                            <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
-                            {/* desc = <b> 태그 포함 리소스(innerHTML). 설명은 핵심 2줄만 — role 불릿·CLI·캐시
-                                주석은 과잉이라 제거 (2026-07-13 사용자: "필요한 것만 딱"). */}
-                            <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_desc') }} />
-                            <div className="text-[11px] text-slate-500 mt-1.5">{t('settings_modal.ai_assistant_current_model_note')}</div>
-                            {!hasAssistantKey && (
-                              <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
-                                {t('settings_modal.ai_assistant_no_key_warning')}
-                              </div>
-                            )}
+                        <FieldLabel>Intelligence</FieldLabel>
+                        <div className={`flex flex-col rounded-xl border ${hasAssistantKey ? 'border-slate-200' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                          <label className={`flex items-start gap-2 p-3 ${hasAssistantKey ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={aiRouterEnabled}
+                              disabled={!hasAssistantKey}
+                              onChange={async e => {
+                                const next = e.target.checked;
+                                setAiRouterEnabled(next);
+                                await saveIntel({ aiRouterEnabled: next });
+                              }}
+                              aria-label={t('settings_modal.intel_recall_label')}
+                              name="recallAutoSave" autoComplete="off" id={aiRouterEnabledId}
+                            />
+                            <div className="flex-1">
+                              <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.intel_recall_label')}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">{t('settings_modal.intel_recall_help')}</div>
+                            </div>
+                          </label>
+                          <label className={`flex items-start gap-2 p-3 border-t border-slate-100 ${hasAssistantKey ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-not-allowed'}`}>
+                            <input
+                              type="checkbox"
+                              className="mt-0.5"
+                              checked={memoryAutoSave}
+                              disabled={!hasAssistantKey}
+                              onChange={async e => {
+                                const next = e.target.checked;
+                                setMemoryAutoSave(next);
+                                await saveIntel({ memoryAutoSave: next });
+                              }}
+                              aria-label={t('settings_modal.intel_memory_label')}
+                              name="memoryAutoSave" autoComplete="off"
+                            />
+                            <div className="flex-1">
+                              <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.intel_memory_label')}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">{t('settings_modal.intel_memory_help')}</div>
+                            </div>
+                          </label>
+                        </div>
+                        {!hasAssistantKey && (
+                          <div className="text-[11px] text-amber-600 font-bold">
+                            {t('settings_modal.ai_assistant_no_key_warning')}
                           </div>
-                        </label>
+                        )}
                       </div>
                     );
                   })()}
@@ -1197,6 +1243,23 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       />
                       <span className="text-[12px] text-slate-700">{retentionEnabled ? t('settings_modal.assistant_retention_on') : t('settings_modal.assistant_retention_off')}</span>
                     </label>
+                    {retentionEnabled && (
+                      <div className="mt-2">
+                        <SelectInput
+                          value={String(retentionDays)}
+                          onChange={async (v) => {
+                            const d = parseInt(v, 10);
+                            if (!Number.isFinite(d)) return;
+                            setRetentionDays(d);
+                            await apiPatch('/api/settings', { retentionDays: d }, { category: 'settings' });
+                          }}
+                          options={[7, 14, 30, 60, 90].map(d => ({
+                            value: String(d),
+                            label: t('settings_modal.retention_days_fmt').replace('{d}', String(d)),
+                          }))}
+                        />
+                      </div>
+                    )}
                   </Field>
                   {/* 프로바이더 키 — Upstage 가 메인 LLM 공급자에서 비활성이라 LLM 탭의 키 입력이
                       도달 불가 → 여기서도 등록. 같은 state·같은 vault 키 = LLM 탭과 자동 연동. */}

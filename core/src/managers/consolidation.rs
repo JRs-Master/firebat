@@ -281,23 +281,33 @@ impl ConsolidationManager {
             return Err(crate::i18n::t("core.error.consolidation.hook_unset", None, &[]));
         };
 
-        // AI Assistant 토글 검사 — `system:ai-router:enabled` 가 false 면 자동 추출 skip.
-        // 사용자가 의식적으로 끄면 매 6시간 cron 자동 호출도 비활성 (비용 통제 + 의도 존중).
-        // 어드민이 직접 trigger 시 — model_id 명시 설정했으면 토글 무시 (manual override).
-        if model_id.is_none() {
-            let enabled = hook
-                .vault
-                .get_secret(VK_SYSTEM_AI_ROUTER_ENABLED)
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false); // default off (옛 TS 와 동일)
-            if !enabled {
-                return Ok(ConsolidationOutcome {
-                    extracted: ExtractionResult::default(),
-                    saved: SavedIds::default(),
-                    skipped: 0,
-                });
-            }
+        // Intelligence 자동 등록 토글 (2026-07-13 분리) — 리콜(`system:ai-router:enabled`, 기존 키
+        // 유지) / 메모리(`system:memory:auto-save`, 미설정 = 리콜 값 상속 → 분리 전 동작 불변).
+        // 둘 중 하나라도 ON 이면 추출은 1회 돌고(한 LLM 패스가 두 스토어 다 뽑음) 저장을
+        // 스토어별로 게이트한다(아래). 어드민 직접 trigger(model_id 명시) = 토글 무시.
+        let recall_on = hook
+            .vault
+            .get_secret(VK_SYSTEM_AI_ROUTER_ENABLED)
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false); // default off (옛 TS 와 동일)
+        let memory_on = hook
+            .vault
+            .get_secret(crate::vault_keys::VK_SYSTEM_MEMORY_AUTO_SAVE)
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(recall_on);
+        if model_id.is_none() && !recall_on && !memory_on {
+            return Ok(ConsolidationOutcome {
+                extracted: ExtractionResult::default(),
+                saved: SavedIds::default(),
+                skipped: 0,
+            });
         }
+        // manual trigger(model_id 명시)는 양 스토어 모두 저장(토글 무시 = 기존 규약).
+        let (save_recall, save_memory) = if model_id.is_some() {
+            (true, true)
+        } else {
+            (recall_on, memory_on)
+        };
 
         // 예산 가드 — CostManager 설정되어 있으면 한도 검사. 한도 초과 시 즉시 skip
         // (백그라운드 cron 6시간마다 LLM 호출 → API 오류 / 환각 무한 재시도 → 토큰 폭주 차단).
@@ -464,6 +474,17 @@ impl ConsolidationManager {
         };
 
         // 5. save_extracted 위임 (이미 설정된 메서드)
+        // 스토어별 게이트 — 추출은 한 패스지만 저장은 토글대로: 리콜 OFF = entity/fact/event drop,
+        // 메모리 OFF = lessons drop (Intelligence 분리 토글, 2026-07-13).
+        let mut extracted = extracted;
+        if !save_recall {
+            extracted.entities.clear();
+            extracted.facts.clear();
+            extracted.events.clear();
+        }
+        if !save_memory {
+            extracted.lessons.clear();
+        }
         // owner 를 쓰기 경로까지 전달 — hub 대화 정리가 admin scope 로 저장되던 누수(RECALL-2) fix. empty/"admin" → None(admin).
         let scope = if owner != "admin" && !owner.is_empty() { Some(owner) } else { None };
         let outcome = self
@@ -681,8 +702,11 @@ impl ConsolidationManager {
         }
 
         // 4. Lessons → MemoryFileManager (Memory 운영지식). 자동 추출의 Memory 측 백스톱.
-        // memory_file 미설정(또는 lessons 없음) 이면 skip. owner scope. name 충돌 시 덮어쓰기.
         // 인라인(메인 모델 memory_save)이 주 경로 — 이건 메인이 놓친 implicit 교훈을 cron 이 보강.
+        // 재관측 = 승격 신호 (2026-07-13, Recall B4 미러): 같은 name 이 다시 추출되면 내용은 최신으로
+        // 갱신하되 confidence +0.15(cap 0.95) — 0.7 도달 시 인덱스 주입(= Recall 과 같은 재관측 2회
+        // 자동 승격). 옛 동작(무조건 0.5 덮어쓰기)은 재관측이 승격 신호를 못 내는 write-only limbo.
+        // 사용자 작성/명시 저장분(confidence 1.0)은 cron 이 건드리지 않는다 — F8 출처 우선.
         if !extracted.lessons.is_empty() {
             let mf = {
                 let guard = self.memory_file.lock().unwrap_or_else(|p| p.into_inner());
@@ -693,15 +717,21 @@ impl ConsolidationManager {
                     if l.name.trim().is_empty() || l.content.trim().is_empty() {
                         continue;
                     }
+                    // read = Err when absent (fs miss) — treat any error as "no prior sighting".
+                    let existing_conf = mf.read(owner, &l.name).await.ok().map(|e| e.confidence);
+                    if matches!(existing_conf, Some(c) if c >= 1.0) {
+                        continue; // user-authored/explicit — cron never overwrites
+                    }
+                    let confidence = match existing_conf {
+                        Some(c) => (c + 0.15).min(0.95), // re-observed → promote toward 0.7
+                        None => 0.5,                     // first sighting = staging
+                    };
                     let entry = MemoryEntry {
                         category: l.category.clone(),
                         name: l.name.clone(),
                         description: l.description.clone(),
                         content: l.content.clone(),
-                        // Cron-extracted lessons start as staging — excluded from the injected
-                        // index until reviewed/confirmed (a single-pass rule at full strength was
-                        // the sentence-preference class of accident).
-                        confidence: 0.5,
+                        confidence,
                     };
                     if let Err(e) = mf.save(owner, &entry).await {
                         // Observability — a silently dropped lesson made "extraction ran but

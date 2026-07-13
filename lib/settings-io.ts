@@ -14,6 +14,8 @@
 import {
   VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG,
   VK_SYSTEM_EMBED_CATALOG_PROVIDER, VK_SYSTEM_LIBRARY_PARSE_PROVIDER, VK_SYSTEM_RETENTION_ENABLED,
+  VK_SYSTEM_RETENTION_DAYS,
+  VK_SYSTEM_MEMORY_AUTO_SAVE,
 } from './proto-gen/vault-keys';
 import { getGeminiKey, setGeminiKey } from './api-gen/secret';
 import {
@@ -44,6 +46,8 @@ export async function loadSettings(owner?: string) {
     anthropicCacheEnabledRes, subAgentEnabledRes, uiLangRes,
     ttsProviderRes, ttsModelRes, ttsVoiceRes, ttsAlignRes,
     embedProviderRes, parseProviderRes, retentionEnabledRes,
+    retentionDaysRes,
+    memoryAutoSaveRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone(),
@@ -68,6 +72,8 @@ export async function loadSettings(owner?: string) {
     getGeminiKey({ key: VK_SYSTEM_EMBED_CATALOG_PROVIDER }),
     getGeminiKey({ key: VK_SYSTEM_LIBRARY_PARSE_PROVIDER }),
     getGeminiKey({ key: VK_SYSTEM_RETENTION_ENABLED }),
+    getGeminiKey({ key: VK_SYSTEM_RETENTION_DAYS }),
+    getGeminiKey({ key: VK_SYSTEM_MEMORY_AUTO_SAVE }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -101,6 +107,15 @@ export async function loadSettings(owner?: string) {
     // Polarity: unset = ON (retention is the safe default) — `=== 'true'` here would render
     // a fresh install as OFF, the opposite of the backend gate (`v != "false"`).
     retentionEnabled: !(retentionEnabledRes.ok && retentionEnabledRes.data === 'false'),
+    // 휴지통 보존 일수 — 기본 30일 (백엔드 clamp 1~365 미러).
+    retentionDays: (() => {
+      const n = retentionDaysRes.ok ? parseInt(retentionDaysRes.data || '', 10) : NaN;
+      return Number.isFinite(n) ? Math.min(365, Math.max(1, n)) : 30;
+    })(),
+    // 메모리(교훈) 자동 등록 — 미설정 = 리콜 토글 상속 (분리 전 동작 불변).
+    memoryAutoSave: memoryAutoSaveRes.ok && memoryAutoSaveRes.data
+      ? memoryAutoSaveRes.data === 'true' || memoryAutoSaveRes.data === '1'
+      : routerEnabledRaw === 'true' || routerEnabledRaw === '1',
   };
 }
 
@@ -128,6 +143,13 @@ export async function saveSettings(body: Record<string, any>, owner?: string) {
   }
   if (typeof body.aiRouterEnabled === 'boolean') {
     await setGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED, value: body.aiRouterEnabled ? 'true' : 'false' });
+  }
+  if (typeof body.memoryAutoSave === 'boolean') {
+    await setGeminiKey({ key: VK_SYSTEM_MEMORY_AUTO_SAVE, value: body.memoryAutoSave ? 'true' : 'false' });
+  }
+  if (typeof body.retentionDays === 'number' && Number.isFinite(body.retentionDays)) {
+    const d = Math.min(365, Math.max(1, Math.round(body.retentionDays)));
+    await setGeminiKey({ key: VK_SYSTEM_RETENTION_DAYS, value: String(d) });
   }
   if (typeof body.aiAssistantModel === 'string' && body.aiAssistantModel) {
     await setAiAssistantModel({ model: body.aiAssistantModel });

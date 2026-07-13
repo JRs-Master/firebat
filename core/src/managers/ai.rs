@@ -1887,16 +1887,26 @@ impl AiManager {
                         .or(ai_opts.owner.as_deref())
                         .unwrap_or("admin");
                     if crate::principal::Principal::from_owner(mw_owner).is_admin {
-                        let auto = self
+                        // Intelligence 분리 토글 (2026-07-13) — recall(엔티티·사실·사건)과 memory(규칙·
+                        // 교훈) 자율 저장을 따로 게이트. memory 키 미설정 = recall 값 상속(분리 전 불변).
+                        let recall_auto = self
                             .vault
                             .as_ref()
                             .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_AI_ROUTER_ENABLED))
                             .map(|v| v == "true" || v == "1")
                             .unwrap_or(false);
-                        let mode = if auto {
-                            "auto — record what's worth remembering using your judgment: both when the user asks and when you recognize clearly durable information. Durable means true OUTSIDE this conversation — never record conversation activity ('the user asked/requested X') as a fact or event; the chat itself is already stored."
-                        } else {
-                            "manual — record only what the user is clearly asking you to keep. Do NOT proactively save anything they didn't ask you to remember this turn."
+                        let memory_auto = self
+                            .vault
+                            .as_ref()
+                            .and_then(|v| v.get_secret(crate::vault_keys::VK_SYSTEM_MEMORY_AUTO_SAVE))
+                            .map(|v| v == "true" || v == "1")
+                            .unwrap_or(recall_auto);
+                        const AUTO_RULE: &str = "record what's worth remembering using your judgment: both when the user asks and when you recognize clearly durable information. Durable means true OUTSIDE this conversation — never record conversation activity ('the user asked/requested X') as a fact or event; the chat itself is already stored.";
+                        let mode = match (recall_auto, memory_auto) {
+                            (true, true) => format!("auto — {AUTO_RULE}"),
+                            (true, false) => format!("recall auto / memory manual — for recall stores (save_entity / save_entity_fact / save_event): {AUTO_RULE} For memory_save (rules/lessons): only when the user explicitly asks."),
+                            (false, true) => format!("memory auto / recall manual — for memory_save (rules/lessons): {AUTO_RULE} For recall stores (save_entity / save_entity_fact / save_event): only when the user explicitly asks."),
+                            (false, false) => "manual — record only what the user is clearly asking you to keep. Do NOT proactively save anything they didn't ask you to remember this turn.".to_string(),
                         };
                         extra_parts.push(format!("<MEMORY_WRITE_MODE>\n{mode}\n</MEMORY_WRITE_MODE>"));
                     }
@@ -3790,6 +3800,17 @@ impl AiManager {
                 tool_results: turn_action_results,
                 raw_model_parts: response.raw_model_parts.clone(),
             });
+            // FC 컨텍스트 길이 가드 (2026-07-13) — 누적 exchange 직렬량이 예산을 넘으면 오래된
+            // 라운드의 결과 페이로드를 스텁으로 축약 (07-13 실측: 8시 cron 133,987 토큰 400 사망 —
+            // PER_TURN_FAIL_CAP 이 못 잡는 "큰 결과 누적" 클래스). 라운드 구조·호출 이력은 보존
+            // (페어링·서명 안전), 최근 2 라운드 불가침.
+            let trimmed_rounds = trim_tool_exchanges(&mut tool_exchanges);
+            if trimmed_rounds > 0 {
+                self.log.warn(&format!(
+                    "[AiManager] context guard: trimmed results of {} older tool round(s) to fit the model window",
+                    trimmed_rounds
+                ));
+            }
             // 다음 turn opts 에 누적 entries 통째 echo — Gemini 어댑터가 raw_model_parts 활용해 thought_signature 보존.
             effective_opts.tool_exchanges = tool_exchanges.clone();
             for (_call, action) in turn_results {
@@ -4215,6 +4236,57 @@ impl AiManager {
             },
         }
     }
+}
+
+/// FC 컨텍스트 길이 가드 — 누적 tool_exchanges 의 직렬 총량이 예산(chars)을 넘으면 오래된
+/// 라운드부터 `tool_results.result` 를 한 줄 스텁으로 축약 + `raw_model_parts` 드랍.
+/// 라운드 자체(호출 이름·인자)는 보존 — FC 페어링(assistant tool_calls ↔ tool 결과)과
+/// Gemini thought_signature(최근 라운드가 관건)를 깨지 않는 최소 절제. 최근 KEEP_RECENT
+/// 라운드는 불가침(직전 결과는 모델이 지금 읽는 중). 축약한 라운드 수 반환(0 = no-op).
+/// 예산 120K chars ≈ Solar 토크나이저 기준 수만 토큰 — base 프롬프트(~55K tok)+출력 여유를
+/// 남기고 128K 창 안에 들어오는 보수값 (2026-07-13 실측: 133,987 tok 400 재발 방지).
+fn trim_tool_exchanges(exchanges: &mut [crate::ports::ToolExchangeEntry]) -> usize {
+    const BUDGET_CHARS: usize = 120_000;
+    const KEEP_RECENT: usize = 2;
+    let size_of = |e: &crate::ports::ToolExchangeEntry| -> usize {
+        serde_json::to_string(e).map(|s| s.len()).unwrap_or(0)
+    };
+    let mut total: usize = exchanges.iter().map(size_of).sum();
+    if total <= BUDGET_CHARS {
+        return 0;
+    }
+    let mut trimmed = 0usize;
+    let cutoff = exchanges.len().saturating_sub(KEEP_RECENT);
+    for e in exchanges.iter_mut().take(cutoff) {
+        if total <= BUDGET_CHARS {
+            break;
+        }
+        let before = size_of(e);
+        let mut changed = false;
+        for r in e.tool_results.iter_mut() {
+            let is_stub = r
+                .result
+                .get("trimmed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !is_stub {
+                r.result = serde_json::json!({
+                    "trimmed": true,
+                    "note": "older round result removed to fit the context window — re-fetch if needed",
+                });
+                changed = true;
+            }
+        }
+        if e.raw_model_parts.is_some() {
+            e.raw_model_parts = None;
+            changed = true;
+        }
+        if changed {
+            total = total.saturating_sub(before.saturating_sub(size_of(e)));
+            trimmed += 1;
+        }
+    }
+    trimmed
 }
 
 /// 텍스트 블록 dedup push — 같은 signature 의 text 가 이미 blocks 에 있으면 스킵.

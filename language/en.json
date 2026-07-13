@@ -757,7 +757,12 @@
     "cost_column_cost": "Cost",
     "cost_column_date": "Date",
     "cost_empty_message": "No LLM call records in the last {{days}} days",
-    "upgrade_available_badge": "Upgrade"
+    "upgrade_available_badge": "Upgrade",
+    "intel_recall_label": "Recall auto-save",
+    "intel_recall_help": "Auto-save entities, facts and events.",
+    "intel_memory_label": "Memory auto-save",
+    "intel_memory_help": "Auto-save rules and lessons.",
+    "retention_days_fmt": "Keep {d} days"
   },
   "llm": {
     "tool_call_marker": "[tool call: {{name}}]"

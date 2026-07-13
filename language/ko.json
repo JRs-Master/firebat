@@ -757,7 +757,12 @@
     "cost_column_cost": "비용",
     "cost_column_date": "일자",
     "cost_empty_message": "최근 {{days}}일 LLM 호출 기록 없음",
-    "upgrade_available_badge": "업그레이드"
+    "upgrade_available_badge": "업그레이드",
+    "intel_recall_label": "리콜 자동 등록",
+    "intel_recall_help": "대상·사실·사건을 자동 저장합니다.",
+    "intel_memory_label": "메모리 자동 등록",
+    "intel_memory_help": "규칙·교훈을 자동 저장합니다.",
+    "retention_days_fmt": "{d}일 보관"
   },
   "llm": {
     "tool_call_marker": "[도구 호출: {{name}}]"

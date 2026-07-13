@@ -26,7 +26,9 @@
     "VK_SYSTEM_SUB_AGENT_ENABLED": "system:llm:sub-agent-enabled",
     "VK_SYSTEM_EMBED_CATALOG_PROVIDER": "system:embed:catalog-provider",
     "VK_SYSTEM_LIBRARY_PARSE_PROVIDER": "system:library:parse-provider",
-    "VK_SYSTEM_RETENTION_ENABLED": "system:retention:enabled"
+    "VK_SYSTEM_RETENTION_ENABLED": "system:retention:enabled",
+    "VK_SYSTEM_RETENTION_DAYS": "system:retention:days",
+    "VK_SYSTEM_MEMORY_AUTO_SAVE": "system:memory:auto-save"
   },
 
   "prefixes": {

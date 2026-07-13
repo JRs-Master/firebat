@@ -127,13 +127,14 @@ export function CronPanel({
   });
   const jobs = cronData?.jobs ?? [];
   const logs = cronData?.logs ?? [];
-  // AI assistant 토글 — consolidation 시스템 스케줄의 "회색 비활성" 판단용 (OFF 면 발화해도 inert).
+  // Intelligence 자동 등록 토글 — consolidation 시스템 스케줄의 "회색 비활성" 판단용.
+  // 리콜/메모리 중 하나라도 ON 이면 잡이 실제로 돌므로(추출 1패스) 둘 다 OFF 일 때만 회색.
   const { data: settingsData } = useQuery({
     queryKey: ['settings', 'ai-router'],
-    queryFn: () => apiGet<{ aiRouterEnabled?: boolean }>('/api/settings', { category: 'cron' }).catch(() => ({ aiRouterEnabled: false })),
+    queryFn: () => apiGet<{ aiRouterEnabled?: boolean; memoryAutoSave?: boolean }>('/api/settings', { category: 'cron' }).catch(() => ({ aiRouterEnabled: false, memoryAutoSave: false })),
     enabled: !hubMode,
   });
-  const aiRouterEnabled = settingsData?.aiRouterEnabled ?? false;
+  const aiRouterEnabled = (settingsData?.aiRouterEnabled ?? false) || (settingsData?.memoryAutoSave ?? false);
   const invalidateCron = useCallback(
     () => queryClient.invalidateQueries({ queryKey: ['cron'] }),
     [queryClient],

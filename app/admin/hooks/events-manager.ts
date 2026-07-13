@@ -18,6 +18,38 @@ import { logger } from '../../../lib/util/logger';
 type ServerEvent = { type: string; data?: any };
 type Listener = (ev: ServerEvent) => void;
 
+/**
+ * 라이브 토픽 링버퍼 (2026-07-13) — `ws-stream:*` 프레임을 토픽별 고정 크기 원형 버퍼에 보관.
+ * 라이브 컴포넌트(live_feed/live_chart)는 뷰포트를 벗어나면 구독을 끊는데(수명 룰), 재방문 시
+ * 다음 틱까지 빈 화면("틱 대기")이던 것을 이 버퍼 재생으로 즉시 채운다. SSE 는 active-jobs
+ * 싱글톤이 admin 앱 수명 동안 유지하므로 컴포넌트가 숨어 있어도 버퍼는 계속 쌓인다.
+ * 가득 차면 오래된 프레임부터 덮어씀(= 메모리 상한 고정, 토픽당 ~수 KB).
+ */
+const RING_FRAMES_PER_TOPIC = 50;
+const RING_MAX_TOPICS = 20;
+const topicRings = new Map<string, unknown[]>();
+
+function bufferTopicFrame(ev: ServerEvent) {
+  if (!ev.type || !ev.type.startsWith('ws-stream:')) return;
+  let ring = topicRings.get(ev.type);
+  if (!ring) {
+    // 토픽 수 상한 — 제일 오래 전에 만들어진 토픽부터 방출 (Map 은 삽입 순서 유지).
+    if (topicRings.size >= RING_MAX_TOPICS) {
+      const oldest = topicRings.keys().next().value;
+      if (oldest !== undefined) topicRings.delete(oldest);
+    }
+    ring = [];
+    topicRings.set(ev.type, ring);
+  }
+  ring.push(ev.data);
+  if (ring.length > RING_FRAMES_PER_TOPIC) ring.splice(0, ring.length - RING_FRAMES_PER_TOPIC);
+}
+
+/** 토픽의 버퍼 스냅샷 — 라이브 컴포넌트 재방문 시 구독 직전에 재생용. */
+export function getTopicBuffer(topic: string): unknown[] {
+  return topicRings.get(topic)?.slice() ?? [];
+}
+
 class EventBusSingleton {
   private es: EventSource | null = null;
   private listeners = new Set<Listener>();
@@ -72,6 +104,7 @@ class EventBusSingleton {
       this.es.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data) as ServerEvent;
+          bufferTopicFrame(ev); // 라이브 토픽 링버퍼 — 재방문 재생용 (fan-out 과 무관)
           for (const l of this.listeners) {
             try { l(ev); }
             catch (le) { logger.warn('sse', 'event listener 실패', { error: le, eventType: ev.type }); }

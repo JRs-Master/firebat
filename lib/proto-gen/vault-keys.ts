@@ -25,6 +25,8 @@ export const VK_SYSTEM_SUB_AGENT_ENABLED = "system:llm:sub-agent-enabled";
 export const VK_SYSTEM_EMBED_CATALOG_PROVIDER = "system:embed:catalog-provider";
 export const VK_SYSTEM_LIBRARY_PARSE_PROVIDER = "system:library:parse-provider";
 export const VK_SYSTEM_RETENTION_ENABLED = "system:retention:enabled";
+export const VK_SYSTEM_RETENTION_DAYS = "system:retention:days";
+export const VK_SYSTEM_MEMORY_AUTO_SAVE = "system:memory:auto-save";
 
 export const AUTH_SESSION_PREFIX = "auth:session:";
 export const USER_SECRET_PREFIX = "user:";
