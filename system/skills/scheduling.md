@@ -1,0 +1,49 @@
+---
+name: scheduling
+kind: procedure
+description: 스케줄(cron) 등록 매뉴얼 — 태그: 예약, 스케줄, 반복 실행, cron, 매일, 알림 주기, executionMode, runWhen, retry, notify. 등록 전 반드시 get_skill 로 본문을 읽을 것 (모드 선택·표준 옵션에 함정 다수).
+---
+
+# Scheduling — job registration manual (schedule_task)
+
+## Execution mode selection (executionMode) — decide at registration
+
+The axis is **fixed vs adaptive**, not simple vs complex. Prefer `pipeline` whenever the procedure is fixed.
+
+- **Fixed** → **`pipeline`** (step array in `pipeline`). Every trigger runs the *same procedure*: collect the same sources → process/format the same way → output. Use it **even when the task is elaborate**. Cost: **zero LLM** for pure data→output (`EXECUTE`/`MCP_CALL`/`NETWORK_REQUEST`/`CONDITION`/`SAVE_PAGE`), or **one LLM call** when prose synthesis is needed — add a single **`LLM_TRANSFORM`** step (its `instruction` + prior steps' data pulled in via `inputMap`). Anything expressible as a threshold/rule belongs in a `CONDITION` step.
+- **Adaptive** → **`agent`** (natural-language `agentPrompt`). Reserve for triggers that need *runtime judgment*: deciding which tools to call based on what the data shows, branching on findings, open-ended investigation that can't be fixed in advance.
+
+**Why prefer pipeline**: `agent` re-runs the whole LLM loop on every trigger (multiple calls, non-deterministic, costly); a fixed pipeline does the deterministic work with 0 LLM and at most one synthesis call. A task that *produces a report/summary on a fixed schedule from fixed sources* is **fixed → pipeline + one `LLM_TRANSFORM`**, not agent. Choose `agent` only when runtime adaptation is genuinely required.
+
+**`LLM_TRANSFORM` has no auto-context** — it is a lean text transform; it does NOT inherit memory, skills, the system prompt, or retrieval the way a chat turn does. So bake any required output format / structure / style **explicitly into its `instruction`** at registration time.
+
+## Cron standard mechanisms — use infra options instead of AI-judgment workarounds
+
+**For holiday / guard-like cases, instead of enumerating holidays**, generalize with `runWhen`:
+
+```
+schedule_task({
+  cronTime: "0 9 * * *",
+  runWhen: { check: { sysmod: "<module>", action: "<action>", inputData: { ... } }, field: "$prev.output[0].<field>", op: "==", value: "<expected>" },
+  ...
+})
+```
+The `sysmod` field in `runWhen` is the module name — use whichever sysmod + action returns the condition you need to check. If runWhen is unsatisfied, the trigger itself is skipped (not a failure). No hardcoding of holiday arrays.
+
+**Transient failures (network timeout / rate limit / 503)** are auto-recovered by `retry`:
+```
+retry: { count: 3, delayMs: 30000 }   // up to 3 times, 30s interval
+```
+Retry only idempotent tools — side-effecting tools like buy orders must not retry.
+
+**Result notification** is separated by `notify` (do not place a notify step inside the pipeline steps):
+```
+notify: {
+  onSuccess: { sysmod: "telegram", template: "Done: {title} ({durationMs}ms)" },
+  onError:   { sysmod: "telegram", template: "Failed: {title} — {error}" }
+}
+```
+
+**Agent-mode discipline (unattended runs)**: a side-effecting action (send / order / publish) runs **once, last, after verification** — never re-send an "improved version" after a success.
+
+For pipeline step authoring details (step types, the EXECUTE inputData envelope, $prev references), read `get_skill("pipeline-authoring")`.

@@ -399,6 +399,9 @@ use a **multi-select toggle so several can be picked**, plus a free-text **input
             .to_string(),
         BuildStep::Implement => "S4 Implementation (LAST step): build it exactly per the chosen features·design·additions. \
 T1/T2 = create·publish the page via save_page. T3 = generate the user module code, then the page. \
+**If the artifact is an interactive HTML app/game, call `get_skill(\"html-app-quality\")` BEFORE writing the HTML** \
+and satisfy every checklist item (accessibility, responsive/canvas fit, 100dvh viewport, multi-panel sizing, delta-time) — \
+these are the recurring causes of clipped/overflowing/too-fast apps. \
 **save_page is the final action — call it and STOP. Do NOT call advance_build after save_page** \
 (the build completes when the user approves the page; there is no further stage). If the build's data changes periodically \
 (quotes·weather·news etc.), you may propose a recurring-refresh cron (schedule_task) alongside."
