@@ -791,6 +791,14 @@ pub struct SandboxExecuteOpts {
     /// rows, and serves the full requested range from the store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeseries: Option<TsSpec>,
+    /// Skip auto-cache inline truncation. The auto-cache is a **model-context economizer**
+    /// (big arrays → `_cacheKey` + 5-row preview) — human-UI consumers (admin panels / hub
+    /// panel routes, reached via gRPC ModuleService) need the full payload: truncation was
+    /// silently starving panels once data grew past the threshold (calendar exec records
+    /// showed only the oldest 5 of 30+ events). Model paths (FC dispatch / MCP / cron /
+    /// pipeline) keep the default `false`.
+    #[serde(default)]
+    pub skip_auto_cache: bool,
 }
 
 /// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /

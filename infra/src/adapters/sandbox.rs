@@ -1443,8 +1443,10 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     .to_string();
                 let data = Self::ts_serve_data(spec, rows, true);
                 let data = match &self.cache {
-                    Some(cache) => Self::apply_auto_cache(data, cache, &module_name, &action),
-                    None => data,
+                    Some(cache) if !opts.skip_auto_cache => {
+                        Self::apply_auto_cache(data, cache, &module_name, &action)
+                    }
+                    _ => data,
                 };
                 return Ok(ModuleOutput {
                     protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
@@ -1517,8 +1519,10 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     );
                     let data = Self::ts_serve_cursor_data(spec, served, true);
                     let data = match &self.cache {
-                        Some(cache) => Self::apply_auto_cache(data, cache, &module_name, &action),
-                        None => data,
+                        Some(cache) if !opts.skip_auto_cache => {
+                            Self::apply_auto_cache(data, cache, &module_name, &action)
+                        }
+                        _ => data,
                     };
                     return Ok(ModuleOutput {
                         protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
@@ -1977,8 +1981,13 @@ impl ProcessSandboxAdapter {
         // 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey + 짧은 preview 만 받음.
         // 명시 `_cache` envelope 처리 후 이미 `_cacheKey` 채워졌으면 skip (옛 호환 + 모듈이 풍부한
         // preview 를 만들 자유 보존). 한 응답당 가장 큰 배열 1개만 자동 캐싱 (over-engineering 회피).
+        // skip_auto_cache = human-UI 경로 (gRPC ModuleService → run_raw) — 패널은 풀 데이터 필요.
         let data = if let Some(cache) = &self.cache {
-            Self::apply_auto_cache(data, cache, module_name, input_action)
+            if opts.skip_auto_cache {
+                data
+            } else {
+                Self::apply_auto_cache(data, cache, module_name, input_action)
+            }
         } else {
             data
         };

@@ -128,6 +128,28 @@ impl ModuleManager {
         module_name: &str,
         input_data: &serde_json::Value,
     ) -> InfraResult<ModuleOutput> {
+        self.run_impl(module_name, input_data, false).await
+    }
+
+    /// Human-UI run — [`run`] 과 동일하되 auto-cache 인라인 truncation 을 끔.
+    /// gRPC ModuleService(= 프론트 라우트 /api/module/run · hub sysmod 패널 경로) 전용:
+    /// 패널은 풀 데이터를 렌더해야 하는데 auto-cache 가 배열 ≥30 을 5행 프리뷰로 잘라
+    /// 캘린더 실행기록 등이 조용히 굶던 것 fix. 모델 경로(FC/MCP/cron/파이프라인)는 [`run`].
+    /// (WS 라우트 액션은 패널에서 호출하지 않아 스코프 밖 — ws_api 쪽 auto-cache 는 그대로.)
+    pub async fn run_raw(
+        &self,
+        module_name: &str,
+        input_data: &serde_json::Value,
+    ) -> InfraResult<ModuleOutput> {
+        self.run_impl(module_name, input_data, true).await
+    }
+
+    async fn run_impl(
+        &self,
+        module_name: &str,
+        input_data: &serde_json::Value,
+        skip_auto_cache: bool,
+    ) -> InfraResult<ModuleOutput> {
         if !is_safe_name(module_name) {
             return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
         }
@@ -305,7 +327,10 @@ impl ModuleManager {
                 // 시계열 영구 store 선언 (config `timeseries`) — 스펙은 core 가 데이터로 파싱,
                 // 갭 축소·병합·서빙은 sandbox choke-point (rows 실물이 있는 곳). 미선언·범위
                 // 비명시·limit 호출 = None (기존 30분 ephemeral 경로 그대로).
-                let mut exec_opts = SandboxExecuteOpts::default();
+                let mut exec_opts = SandboxExecuteOpts {
+                    skip_auto_cache,
+                    ..SandboxExecuteOpts::default()
+                };
                 if let Some(ts_cfg) = config.as_ref().and_then(|c| c.get("timeseries")) {
                     let action = input_data
                         .get("action")

@@ -126,16 +126,22 @@ impl ModuleService for ModuleServiceImpl {
         };
         // module field 가 path 형태 (`/` 포함) 면 sandboxExecute (직접 경로 실행), 아니면 run (모듈 이름 + entry 자동 탐색).
         // 두 API 경로를 단일 RPC 로 통합하면서 자동 분기 — frontend wrapper 가 둘 다 같은 RPC 호출.
+        // 이 RPC 의 소비자 = 프론트 라우트(/api/module/run · hub sysmod)뿐 = 사람 UI 표면 →
+        // auto-cache truncation 비적용(run_raw). 모델 경로(FC/MCP/cron/파이프라인)는 in-process
+        // manager.run 직행이라 이 핸들러를 안 탄다.
         let result = if args.module.contains('/') || args.module.contains('\\') {
             self.manager
                 .execute(
                     &args.module,
                     &data,
-                    &crate::ports::SandboxExecuteOpts::default(),
+                    &crate::ports::SandboxExecuteOpts {
+                        skip_auto_cache: true,
+                        ..crate::ports::SandboxExecuteOpts::default()
+                    },
                 )
                 .await
         } else {
-            self.manager.run(&args.module, &data).await
+            self.manager.run_raw(&args.module, &data).await
         };
         match result {
             Ok(output) => Ok(Response::new(output.into())),
