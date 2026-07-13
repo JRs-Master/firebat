@@ -588,6 +588,22 @@ impl ModuleActionCatalog {
         }
     }
 
+    /// Local fallback embedder passthrough (dual-embed) — primary(remote) 장애 시 로컬 세트로
+    /// 통째 폴백 (see `SemanticCatalog::with_secondary`).
+    pub fn with_secondary(
+        mut self,
+        secondary: Arc<dyn IEmbedderPort>,
+    ) -> Self {
+        self.catalog = self.catalog.with_secondary(secondary);
+        self
+    }
+
+    /// Boot-time warm-up (see RefreshingCatalog::warm) — main.rs spawns this so an API
+    /// embedder's first full build doesn't stall the first search_module_actions call.
+    pub async fn warm(&self) {
+        self.catalog.warm().await;
+    }
+
     /// Cross-module (default) or per-module semantic action search. Returns DISCOVERY rows
     /// only — id/name/domain/one-line desc/approval flag, deliberately NO param information:
     /// an index line must be a trigger, never enough to act on, or models guess the call

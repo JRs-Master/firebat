@@ -618,6 +618,45 @@ async fn main() -> Result<()> {
         firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
     );
 
+    // #search-tool 카탈로그 임베더 — assistant 탭 설정(`system:embed:catalog-provider`)이 소스.
+    // "solar" + Upstage 키 존재 = primary Upstage solar-embedding-2 + secondary E5 (dual-embed:
+    // 엔트리를 양쪽 공간에 임베딩해 두고, primary 장애 시 로컬 세트로 통째 폴백 — 공간 혼합 0).
+    // 그 외 = E5 단독 (기존 동작). 저장 벡터(히스토리·라이브러리·메모리)는 항상 E5 — 별개 공간.
+    let action_catalog = {
+        let provider = vault
+            .get_secret(firebat_core::vault_keys::VK_SYSTEM_EMBED_CATALOG_PROVIDER)
+            .unwrap_or_default();
+        let upstage_key = vault.get_secret("system:upstage:api-key").unwrap_or_default();
+        let use_solar = provider == "solar" && !upstage_key.trim().is_empty();
+        let cat = if use_solar {
+            tracing::info!(
+                target: "semantic_catalog",
+                "module-action catalog embedder = upstage solar-embedding-2 (secondary = local E5 fallback)"
+            );
+            firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
+                module_manager.clone(),
+                Arc::new(firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(
+                    upstage_key,
+                )),
+                component_cache_port.clone(),
+            )
+            .with_secondary(embedder.clone())
+        } else {
+            firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
+                module_manager.clone(),
+                embedder.clone(),
+                component_cache_port.clone(),
+            )
+        };
+        Arc::new(cat)
+    };
+    // Boot warm-up — API 임베더의 첫 전체 빌드(~600 entry)가 첫 검색을 막지 않게 백그라운드 선빌드.
+    // 해시 디스크 캐시(슬롯별) 덕에 이후 재빌드는 변경분만 임베딩.
+    {
+        let cat = action_catalog.clone();
+        tokio::spawn(async move { cat.warm().await });
+    }
+
     let ai_manager = Arc::new(
         AiManager::new(
             llm.clone(),
@@ -651,13 +690,8 @@ async fn main() -> Result<()> {
             .register_search_components_tool(embedder.clone(), component_cache_port.clone())
             // #search-tool S2 — 모듈 액션 카탈로그(search_module_actions / get_action_schema).
             // config `actionCatalog` 선언 모듈(한투 275·키움 200+)의 액션 레벨 progressive disclosure.
-            .register_action_catalog_tools(Arc::new(
-                firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
-                    module_manager.clone(),
-                    embedder.clone(),
-                    component_cache_port.clone(),
-                ),
-            ))
+            // 임베더 = 설정 게이트 action_catalog_embedder(아래) — solar 선택 시 dual-embed 폴백.
+            .register_action_catalog_tools(action_catalog.clone())
             // #search-tool 확장 — skills/templates/pages/media 시맨틱 카탈로그.
             // search_skills·search_media 는 core substring 판 오버라이드(신규 = templates/pages).
             .register_discovery_search_tools(

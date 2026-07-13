@@ -21,13 +21,17 @@ use tokio::sync::RwLock;
 
 use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 
-/// Bump on embedder swap — hash mismatch triggers automatic re-embedding.
-const EMBED_VERSION: &str = "e5-small-v1";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCacheEntry {
     hash: String,
     vector: Vec<f32>,
+    /// Secondary (local fallback) slot — dual-embed when a remote primary is configured.
+    /// serde-default so pre-dual cache files deserialize as None → only the secondary gets
+    /// backfilled (local = free), the primary vectors are reused untouched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary: Option<Vec<f32>>,
 }
 
 /// One discoverable item. `description` is the semantic text (what the embedding sees,
@@ -54,6 +58,10 @@ pub struct CatalogMatch {
 struct CatalogState {
     entries: Vec<CatalogEntry>,
     vectors: HashMap<String, Vec<f32>>,
+    /// Secondary (local fallback) vector space — populated only when a secondary embedder is
+    /// configured. NEVER mixed with `vectors`: a fallback query switches to this set wholesale
+    /// (different dimensions/space — per-call mixing would be garbage matching).
+    secondary_vectors: HashMap<String, Vec<f32>>,
     /// Lowercased concat of all entry texts — the vocabulary check for OOV query cleaning
     /// (see `clean_query`). Rebuilt with the entries; substring lookups are memchr-fast.
     corpus: String,
@@ -110,13 +118,23 @@ pub struct SemanticCatalog {
     /// Disk cache filename — `{stem}-embeddings.json` under the embedder cache dir.
     cache_file: String,
     embedder: Arc<dyn IEmbedderPort>,
+    /// Local fallback embedder (dual-embed) — when the primary is a remote API, entries are
+    /// ALSO embedded locally (free) so a primary outage degrades to a full-quality local
+    /// search instead of an error or mixed-space garbage.
+    secondary: Option<Arc<dyn IEmbedderPort>>,
+    /// Primary-outage cooldown (epoch ms) — after a query-embed failure the fallback set is
+    /// used directly for 60s, avoiding a chain of remote timeouts on every search.
+    primary_down_until: std::sync::atomic::AtomicI64,
     cache_port: Arc<dyn IEmbedderCachePort>,
     state: RwLock<CatalogState>,
 }
 
-fn sha1_hash(s: &str) -> String {
+/// Hash keyed by the EMBEDDER's version (IEmbedderPort::version) — swapping the embedder
+/// (e5 ↔ upstage-solar-embed-2) changes every hash, so the disk cache re-embeds
+/// automatically instead of mixing vector spaces.
+fn sha1_hash(version: &str, s: &str) -> String {
     let mut hasher = Sha1::new();
-    hasher.update(format!("{}:{}", EMBED_VERSION, s));
+    hasher.update(format!("{}:{}", version, s));
     hex::encode(hasher.finalize())
 }
 
@@ -143,52 +161,147 @@ impl SemanticCatalog {
         Self {
             cache_file: format!("{}-embeddings.json", cache_file_stem),
             embedder,
+            secondary: None,
+            primary_down_until: std::sync::atomic::AtomicI64::new(0),
             cache_port,
             state: RwLock::new(CatalogState {
                 entries: Vec::new(),
                 vectors: HashMap::new(),
+                secondary_vectors: HashMap::new(),
                 corpus: String::new(),
             }),
         }
     }
 
+    /// Configure the local fallback embedder (dual-embed). No-op semantics when absent —
+    /// single-embedder catalogs behave exactly as before.
+    pub fn with_secondary(mut self, secondary: Arc<dyn IEmbedderPort>) -> Self {
+        self.secondary = Some(secondary);
+        self
+    }
+
     /// Replace the entry set, embedding incrementally: unchanged (id, text-hash) pairs reuse
-    /// the disk-cached vector, only new/changed entries hit the embedder. Failed embeddings
-    /// skip that entry (it just won't match) — mirror of component index behavior.
+    /// the disk-cached vector, only new/changed entries hit the embedder (bounded-concurrent —
+    /// an API embedder's first full build of ~600 entries would take minutes serially).
+    /// With a secondary embedder configured, entries are dual-embedded (per-slot hashes —
+    /// swapping one embedder never burns the other slot's cache). Failed embeddings skip
+    /// that entry in that slot (it just won't match there).
     pub async fn set_entries(&self, entries: Vec<CatalogEntry>) {
         let disk: HashMap<String, DiskCacheEntry> = self
             .cache_port
             .load(&self.cache_file)
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
+        let version = self.embedder.version().to_string();
+        let sec_version = self.secondary.as_ref().map(|s| s.version().to_string());
         let mut vectors: HashMap<String, Vec<f32>> = HashMap::new();
+        let mut secondary_vectors: HashMap<String, Vec<f32>> = HashMap::new();
         let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
-        let mut embedded = 0usize;
+        // (id, text, primary_hash, need_primary, sec_hash, need_secondary)
+        let mut to_embed: Vec<(String, String, String, bool, Option<String>, bool)> = Vec::new();
         for e in &entries {
             let text = entry_text(e);
-            let hash = sha1_hash(&text);
-            if let Some(hit) = disk.get(&e.id) {
-                if hit.hash == hash {
-                    vectors.insert(e.id.clone(), hit.vector.clone());
-                    fresh.insert(e.id.clone(), hit.clone());
-                    continue;
-                }
+            let hash = sha1_hash(&version, &text);
+            let sec_hash = sec_version.as_deref().map(|v| sha1_hash(v, &text));
+            let hit = disk.get(&e.id);
+            let primary_ok = hit.map(|h| h.hash == hash).unwrap_or(false);
+            if primary_ok {
+                let h = hit.unwrap();
+                vectors.insert(e.id.clone(), h.vector.clone());
             }
-            match self.embedder.embed_passage(&text).await {
-                Ok(vec) => {
-                    vectors.insert(e.id.clone(), vec.clone());
-                    fresh.insert(e.id.clone(), DiskCacheEntry { hash, vector: vec });
-                    embedded += 1;
+            let secondary_ok = match (&sec_hash, hit) {
+                (Some(sh), Some(h)) => {
+                    if h.secondary_hash.as_deref() == Some(sh.as_str()) {
+                        if let Some(v) = &h.secondary {
+                            secondary_vectors.insert(e.id.clone(), v.clone());
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
                 }
-                Err(err) => {
+                (None, _) => true, // no secondary configured — nothing to do
+                _ => false,
+            };
+            if primary_ok && secondary_ok {
+                fresh.insert(
+                    e.id.clone(),
+                    DiskCacheEntry {
+                        hash,
+                        vector: vectors.get(&e.id).cloned().unwrap_or_default(),
+                        secondary_hash: sec_hash.clone(),
+                        secondary: secondary_vectors.get(&e.id).cloned(),
+                    },
+                );
+                continue;
+            }
+            to_embed.push((e.id.clone(), text, hash, !primary_ok, sec_hash, !secondary_ok));
+        }
+        let embedded = to_embed.len();
+        let sem = Arc::new(tokio::sync::Semaphore::new(8));
+        let mut tasks = tokio::task::JoinSet::new();
+        for (id, text, hash, need_primary, sec_hash, need_secondary) in to_embed {
+            let emb = self.embedder.clone();
+            let sec = self.secondary.clone();
+            let sem = sem.clone();
+            tasks.spawn(async move {
+                let _permit = sem.acquire().await;
+                let primary = if need_primary {
+                    Some(emb.embed_passage(&text).await)
+                } else {
+                    None
+                };
+                let secondary = match (&sec, need_secondary) {
+                    (Some(s), true) => Some(s.embed_passage(&text).await),
+                    _ => None,
+                };
+                (id, hash, sec_hash, primary, secondary)
+            });
+        }
+        while let Some(res) = tasks.join_next().await {
+            let Ok((id, hash, sec_hash, primary, secondary)) = res else { continue };
+            match primary {
+                Some(Ok(vec)) => {
+                    vectors.insert(id.clone(), vec);
+                }
+                Some(Err(err)) => {
                     tracing::warn!(
                         target: "semantic_catalog",
                         "embed failed for {} ({}): {} — skipped",
-                        e.id,
+                        id,
                         self.cache_file,
                         err
                     );
                 }
+                None => {}
+            }
+            match secondary {
+                Some(Ok(vec)) => {
+                    secondary_vectors.insert(id.clone(), vec);
+                }
+                Some(Err(err)) => {
+                    tracing::warn!(
+                        target: "semantic_catalog",
+                        "secondary embed failed for {} ({}): {} — skipped",
+                        id,
+                        self.cache_file,
+                        err
+                    );
+                }
+                None => {}
+            }
+            if let Some(v) = vectors.get(&id) {
+                fresh.insert(
+                    id.clone(),
+                    DiskCacheEntry {
+                        hash,
+                        vector: v.clone(),
+                        secondary_hash: sec_hash,
+                        secondary: secondary_vectors.get(&id).cloned(),
+                    },
+                );
             }
         }
         if let Ok(json) = serde_json::to_string(&fresh) {
@@ -196,11 +309,12 @@ impl SemanticCatalog {
         }
         tracing::info!(
             target: "semantic_catalog",
-            "catalog {} built — {} entries ({} embedded, {} reused)",
+            "catalog {} built — {} entries ({} embedded, {} reused{})",
             self.cache_file,
             entries.len(),
             embedded,
-            entries.len() - embedded
+            entries.len() - embedded,
+            if self.secondary.is_some() { ", dual-embed" } else { "" }
         );
         let mut corpus = String::new();
         for e in &entries {
@@ -208,7 +322,7 @@ impl SemanticCatalog {
             corpus.push('\n');
         }
         let mut state = self.state.write().await;
-        *state = CatalogState { entries, vectors, corpus };
+        *state = CatalogState { entries, vectors, secondary_vectors, corpus };
     }
 
     pub async fn len(&self) -> usize {
@@ -276,7 +390,35 @@ impl SemanticCatalog {
             );
             &cleaned
         };
-        let q = self.embedder.embed_query(embed_input).await?;
+        // Primary query embed with local fallback — on failure (or during the 60s outage
+        // cooldown) the WHOLE match switches to the secondary vector set: spaces are never
+        // mixed (remote 1024-dim vs local 384-dim → per-call mixing = garbage matching).
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let primary_cooling = self.primary_down_until.load(std::sync::atomic::Ordering::Relaxed) > now_ms;
+        let (q, use_secondary) = if self.secondary.is_some() && primary_cooling {
+            let sec = self.secondary.as_ref().unwrap();
+            (sec.embed_query(embed_input).await?, true)
+        } else {
+            match self.embedder.embed_query(embed_input).await {
+                Ok(v) => (v, false),
+                Err(err) => {
+                    let Some(sec) = &self.secondary else { return Err(err) };
+                    tracing::warn!(
+                        target: "semantic_catalog",
+                        "primary embedder failed ({}): {} — falling back to local for 60s",
+                        self.cache_file,
+                        err
+                    );
+                    self.primary_down_until
+                        .store(now_ms + 60_000, std::sync::atomic::Ordering::Relaxed);
+                    (sec.embed_query(embed_input).await?, true)
+                }
+            }
+        };
+        let vector_set = if use_secondary { &state.secondary_vectors } else { &state.vectors };
         let q_lower = user_query.trim().to_lowercase();
         let mut scored: Vec<CatalogMatch> = Vec::new();
         for e in &state.entries {
@@ -285,7 +427,7 @@ impl SemanticCatalog {
                     continue;
                 }
             }
-            let Some(v) = state.vectors.get(&e.id) else { continue };
+            let Some(v) = vector_set.get(&e.id) else { continue };
             let mut score = cosine(&q, v);
             // lexical boost — id is "{scope}:{key}"; match on the key part + the name.
             let key = e.id.rsplit(':').next().unwrap_or(&e.id).to_lowercase();
@@ -384,6 +526,18 @@ impl RefreshingCatalog {
         }
     }
 
+    /// Local fallback embedder passthrough (dual-embed) — see `SemanticCatalog::with_secondary`.
+    pub fn with_secondary(mut self, secondary: Arc<dyn IEmbedderPort>) -> Self {
+        self.catalog = self.catalog.with_secondary(secondary);
+        self
+    }
+
+    /// Boot-time warm-up — build the catalog (and its embedding cache) before the first user
+    /// query so an API embedder's initial full embed doesn't stall the first search.
+    pub async fn warm(&self) {
+        self.ensure().await;
+    }
+
     async fn ensure(&self) {
         {
             let built = self.built_at.lock().await;
@@ -475,9 +629,11 @@ mod tests {
             description: "주식 일봉".into(),
             extra: serde_json::json!({}),
         };
-        let h1 = sha1_hash(&entry_text(&e));
-        let h2 = sha1_hash(&entry_text(&e));
+        let h1 = sha1_hash("e5-small-v1", &entry_text(&e));
+        let h2 = sha1_hash("e5-small-v1", &entry_text(&e));
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 40);
+        // embedder swap → different version → different hash → auto re-embed
+        assert_ne!(h1, sha1_hash("upstage-solar-embed-2", &entry_text(&e)));
     }
 }
