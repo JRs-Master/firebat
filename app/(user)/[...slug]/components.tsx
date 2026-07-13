@@ -1994,11 +1994,27 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
         else payload[input.name] = val;
       }
 
-      const data = await apiPost<{ success: boolean; data?: any; error?: string }>(
-        '/api/module/run',
-        { module: bindModule, data: payload },
-        { category: 'module-run' },
-      );
+      // 표면 분기 — admin(채팅/미리보기) = 기존 인증 endpoint / 발행(공개) 페이지 = 익명
+      // page-scoped 콜백(/api/page-form: spec allowlist + rate limit + 승인 클래스 거부).
+      // 옛엔 공개 방문자가 무조건 401 이라 발행 앱의 form 이 장식이었음.
+      const isAdminSurface =
+        typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+      const data = isAdminSurface
+        ? await apiPost<{ success: boolean; data?: any; error?: string }>(
+            '/api/module/run',
+            { module: bindModule, data: payload },
+            { category: 'module-run' },
+          )
+        : await apiPost<{ success: boolean; data?: any; error?: string }>(
+            '/api/page-form',
+            {
+              // 발행 페이지 slug = pathname 그대로 (catch-all 세그먼트 join — page.tsx safeDecodeSlug 미러)
+              slug: decodeURIComponent(window.location.pathname).replace(/^\/+/, ''),
+              module: bindModule,
+              data: payload,
+            },
+            { category: 'module-run' },
+          );
       if (data.success && data.data) {
         setResult(data.data?.data ?? data.data);
       } else {
