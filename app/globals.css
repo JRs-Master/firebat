@@ -564,7 +564,8 @@ mark[class^="fbhl-"] {
 .fbchip {
   display: inline-block;
   padding: 0.02em 0.42em;
-  margin: 0 0.06em;
+  /* 본문 텍스트와 살짝 띄움 — 붙어 있으면 답답 (2026-07-14 사용자 피드백) */
+  margin: 0 0.18em;
   border-radius: 0.4em;
   border: 1px solid;
   font-size: 0.92em;
@@ -573,7 +574,10 @@ mark[class^="fbhl-"] {
   vertical-align: baseline;
 }
 .fbchip ruby { ruby-position: over; }
-.fbchip rt { font-size: 0.62em; font-weight: 700; opacity: 0.85; line-height: 1; }
+/* ^주석(루비) 칩 — inline-block 세로 마진은 라인박스에 반영되므로 위 주석이 이전 줄
+   본문과 붙지 않게 숨통. rt padding-bottom = 주석↔용어 사이 간격. */
+.fbchip:has(ruby) { margin-top: 0.22em; margin-bottom: 0.06em; }
+.fbchip rt { font-size: 0.62em; font-weight: 700; opacity: 0.85; line-height: 1; padding-bottom: 0.16em; }
 .fbchip-slate   { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
 .fbchip-blue    { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
 .fbchip-emerald { background: #ecfdf5; border-color: #a7f3d0; color: #059669; }
