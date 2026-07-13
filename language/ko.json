@@ -539,7 +539,7 @@
     "assistant_embed_local": "로컬 (E5)",
     "assistant_parse_label": "문서 파싱",
     "assistant_parse_help": "라이브러리 파일 업로드의 기본 파싱 방식입니다. 안 함 = 로컬 텍스트 추출(무료), Solar/Gemini = AI 파싱(스캔 PDF·이미지 문서에 유리). 업로드 시·기존 파일의 재파싱 메뉴에서 개별 선택도 가능합니다.",
-    "assistant_parse_none": "안 함 (로컬 추출)",
+    "assistant_parse_none": "로컬 추출",
     "assistant_retention_label": "휴지통 정리",
     "assistant_retention_help": "30일 지난 휴지통 대화·임시 첨부·만료 데이터를 주기적으로 자동 정리합니다. 끄면 정리가 실행되지 않습니다 (기본 켜짐).",
     "assistant_retention_on": "자동 정리 켜짐",

@@ -43,6 +43,26 @@ fn is_image_type(t: &str) -> bool {
     matches!(t, "png" | "jpg" | "jpeg" | "webp" | "gif")
 }
 
+/// 업로드/재업로드 임시 파일을 `data/library/originals/` 로 영구 보관 (재파싱용 원본).
+/// 임시파일명(Node 가 부여한 uuid.<ext>)을 그대로 써 별도 id 생성 의존성 0. 복사 실패 = None
+/// (추출은 계속 — 보관만 못 한 상태, upload/reextract 공유 규약).
+fn persist_original(src_path: &str, source_type: &str) -> Option<String> {
+    let dir = Path::new("data/library/originals");
+    let _ = std::fs::create_dir_all(dir);
+    let fname = Path::new(src_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("source.{source_type}"));
+    let dest = dir.join(&fname);
+    match std::fs::copy(src_path, &dest) {
+        Ok(_) => Some(dest.to_string_lossy().to_string()),
+        Err(e) => {
+            tracing::warn!(category = "library", "original file archive failed (extraction continues): {e}");
+            None
+        }
+    }
+}
+
 /// 이미지 source_type → MIME (Gemini vision inlineData 용).
 fn image_mime(t: &str) -> &'static str {
     match t {
@@ -294,27 +314,12 @@ impl LibraryService for LibraryServiceImpl {
         let source_url_opt = if args.source_url.is_empty() { None } else { Some(args.source_url.as_str()) };
 
         // 원본 영구 보관 — 업로드 임시 파일을 data/library/originals/ 로 복사. 재추출(정밀/비전 포함) 시
-        // 재업로드·중복 없이 보관본으로 재실행하기 위함. text/url 은 파일 없음. 복사 실패해도 추출은 계속.
-        // 임시파일명(Node 가 부여한 uuid.<ext>)을 그대로 써 별도 id 생성 의존성 0.
-        let persistent_path: Option<String> =
-            if !args.file_path.is_empty() {
-                let dir = Path::new("data/library/originals");
-                let _ = std::fs::create_dir_all(dir);
-                let fname = Path::new(&args.file_path)
-                    .file_name()
-                    .map(|f| f.to_string_lossy().to_string())
-                    .unwrap_or_else(|| format!("source.{}", args.source_type));
-                let dest = dir.join(&fname);
-                match std::fs::copy(&args.file_path, &dest) {
-                    Ok(_) => Some(dest.to_string_lossy().to_string()),
-                    Err(e) => {
-                        tracing::warn!(category = "library", "original file archive failed (extraction continues): {e}");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
+        // 재업로드·중복 없이 보관본으로 재실행하기 위함. text/url 은 파일 없음.
+        let persistent_path: Option<String> = if !args.file_path.is_empty() {
+            persist_original(&args.file_path, &args.source_type)
+        } else {
+            None
+        };
         let file_path_opt = persistent_path.as_deref();
 
         // 중복 dedup — 파일은 바이트, text/url 은 inline_text 의 sha256. 같은 reference 에 동일 내용이
@@ -406,13 +411,29 @@ impl LibraryService for LibraryServiceImpl {
             .await
             .map_err(TonicStatus::internal)?
             .ok_or_else(|| TonicStatus::not_found("source 를 찾을 수 없습니다."))?;
-        // 2. 원본 파일 존재 체크 — persist 이전 자료 / 사용자 삭제 시 명확한 에러 (재업로드 안내).
-        let file_path = source.file_path.clone().unwrap_or_default();
-        if file_path.is_empty() || !Path::new(&file_path).exists() {
-            return Err(TonicStatus::failed_precondition(
-                "원본 파일이 서버에 없습니다. 자료를 삭제 후 다시 업로드해 주세요.",
-            ));
-        }
+        // 2. 원본 경로 결정 — new_file_path(재업로드 임시 파일)가 오면 originals/ 로 보관 후 그걸로
+        //    교체(영구 보관 이전 자료·서버 초기화로 원본 유실 케이스의 복구 경로 — file_path 도 갱신).
+        //    없으면 보관본 사용, 보관본도 없으면 프론트가 재업로드 플로우로 잇는 에러
+        //    ("원본 파일이 서버에 없습니다" — LibraryReferenceDetail 이 이 문구로 감지, 문구 계약).
+        let (file_path, db_file_path): (String, Option<String>) = if !args.new_file_path.is_empty() {
+            if !Path::new(&args.new_file_path).exists() {
+                return Err(TonicStatus::invalid_argument("재업로드 파일을 읽을 수 없습니다."));
+            }
+            let persisted = persist_original(&args.new_file_path, &source.source_type);
+            // 보관 실패 시에도 임시 파일로 추출은 진행 — 단 임시 경로를 DB 에 남기지 않는다(곧 삭제됨).
+            (
+                persisted.clone().unwrap_or_else(|| args.new_file_path.clone()),
+                persisted,
+            )
+        } else {
+            let p = source.file_path.clone().unwrap_or_default();
+            if p.is_empty() || !Path::new(&p).exists() {
+                return Err(TonicStatus::failed_precondition(
+                    "원본 파일이 서버에 없습니다. 파일을 다시 업로드해 주세요.",
+                ));
+            }
+            (p.clone(), Some(p))
+        };
         // 3. 재추출 — parse_provider 스위치(upload_source 와 동일 규약): "" 레거시 /
         // "solar" Upstage Document Parse / "gemini" vision(PDF 전용) / "none" 로컬 강제.
         let provider = args.parse_provider.as_str();
@@ -475,7 +496,7 @@ impl LibraryService for LibraryServiceImpl {
                 &source.name,
                 &source.source_type,
                 source.source_url.as_deref(),
-                Some(file_path.as_str()),
+                db_file_path.as_deref(),
                 &extracted_text,
                 page_numbers.as_deref(),
                 content_hash.as_deref(),

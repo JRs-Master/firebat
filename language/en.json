@@ -539,7 +539,7 @@
     "assistant_embed_local": "Local (E5)",
     "assistant_parse_label": "Document parsing",
     "assistant_parse_help": "Default parsing for library file uploads. None = local text extraction (free); Solar/Gemini = AI parsing (better for scanned PDFs and image documents). You can also pick per upload or re-parse existing files.",
-    "assistant_parse_none": "None (local extraction)",
+    "assistant_parse_none": "Local extraction",
     "assistant_retention_label": "Trash cleanup",
     "assistant_retention_help": "Periodically removes trashed conversations, temporary attachments and expired data older than 30 days. Turning it off stops the cleanup (default on).",
     "assistant_retention_on": "Auto cleanup on",

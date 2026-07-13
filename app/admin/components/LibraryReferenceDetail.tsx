@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useId } from 'react';
-import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Type, X, Sparkles } from 'lucide-react';
+// 재파싱 = ScanText (Sparkles 는 사이드바 리콜 탭 아이콘과 겹침 — 2026-07-13 사용자).
+import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Type, X, ScanText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useTranslations } from '../../../lib/i18n';
@@ -71,6 +72,11 @@ export function LibraryReferenceDetail({
   const [reparseMenuId, setReparseMenuId] = useState<string | null>(null);
   const reparseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 원본 유실 재업로드 — 재파싱이 "원본 파일이 서버에 없습니다"로 실패하면(영구 보관 이전 자료·
+  // 서버 초기화) 파일을 다시 받아 같은 source id 로 보관+재파싱. 진행 컨텍스트는 ref 로 유지
+  // (파일 선택 input 은 비동기 콜백이라 state 스냅샷 대신 ref 가 안전).
+  const reattachInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingReattachRef = useRef<{ src: LibrarySourcePb; provider: 'none' | 'solar' | 'gemini' } | null>(null);
   const fileBtnId = useId();
   const textNameId = useId();
   const textBodyId = useId();
@@ -153,7 +159,7 @@ export function LibraryReferenceDetail({
   // 보관 원본으로 재파싱 — 같은 source id 유지, 청크 교체. 프로바이더 선택(none/solar/gemini).
   // 원본 파일 없으면 backend 가 "원본 파일이 서버에 없습니다 — 재업로드" 에러 반환 (옛 자료 / 삭제 케이스).
   const handleReextract = useCallback(async (src: LibrarySourcePb, provider: 'none' | 'solar' | 'gemini') => {
-    const providerLabel = provider === 'solar' ? 'Solar (Upstage Document Parse)' : provider === 'gemini' ? 'Gemini (vision)' : '기본 (로컬 추출)';
+    const providerLabel = provider === 'solar' ? 'Solar Document Parse' : provider === 'gemini' ? 'Gemini' : '로컬 추출';
     const ok = await confirmDialog({
       title: '재파싱',
       message: `"${src.name}" 을 보관된 원본으로 다시 파싱합니다 — ${providerLabel}. 기존 청크가 새로 교체됩니다.`,
@@ -168,6 +174,18 @@ export function LibraryReferenceDetail({
       );
       if (res.success) {
         await loadSources();
+      } else if ((res.error ?? '').includes('원본 파일이 서버에 없습니다')) {
+        // 보관 원본 유실(영구 보관 이전 업로드 / 서버 초기화) — 파일 재업로드로 이어가기.
+        // 문구 = 백엔드(grpc/library.rs reextract) 와의 계약 문자열.
+        const re = await confirmDialog({
+          title: '원본 파일 없음',
+          message: `"${src.name}" 의 원본이 서버에 보관되어 있지 않습니다. 파일을 다시 업로드하면 같은 자료로 재파싱합니다.`,
+          okLabel: '파일 다시 업로드',
+        });
+        if (re) {
+          pendingReattachRef.current = { src, provider };
+          reattachInputRef.current?.click();
+        }
       } else {
         await alertDialog({ title: '재파싱 실패', message: res.error ?? '오류가 발생했습니다.', danger: true });
       }
@@ -177,6 +195,44 @@ export function LibraryReferenceDetail({
       setReextractingId(null);
     }
   }, [loadSources, libraryFetch]);
+
+  // 재업로드 파일 선택 → 같은 source id 로 원본 재부착 + 재파싱 (upload-and-extract 의
+  // reattachSourceId 분기 — 새 source 생성 아님). admin 전용 (재파싱 버튼 자체가 !hubContext).
+  const handleReattachPick = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    const ctx = pendingReattachRef.current;
+    pendingReattachRef.current = null;
+    if (!f || !ctx) return;
+    const ext = extOf(f.name);
+    const picked = SUPPORTED_EXT[ext] ?? '';
+    // 추출 분기가 source_type 기준이라 같은 형식만 허용 (이미지끼리는 mime 만 달라 상호 허용).
+    const bothImages = IMAGE_EXTS.includes(picked) && IMAGE_EXTS.includes(ctx.src.sourceType);
+    if (picked !== ctx.src.sourceType && !bothImages) {
+      await alertDialog({ title: '형식 불일치', message: `이 자료의 형식(${ctx.src.sourceType.toUpperCase()})과 같은 파일을 올려 주세요.`, danger: true });
+      return;
+    }
+    setReextractingId(ctx.src.id);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('reattachSourceId', ctx.src.id);
+      fd.append('sourceType', ctx.src.sourceType);
+      fd.append('parseProvider', ctx.provider);
+      if (ctx.provider === 'gemini') fd.append('precise', 'true');
+      const res = await fetch('/api/library/upload-and-extract', { method: 'POST', body: fd });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        await alertDialog({ title: '재파싱 실패', message: json?.error ?? `HTTP ${res.status}`, danger: true });
+        return;
+      }
+      await loadSources();
+    } catch (err) {
+      await alertDialog({ title: '재파싱 실패', message: String(err), danger: true });
+    } finally {
+      setReextractingId(null);
+    }
+  }, [loadSources]);
 
   const acceptFile = useCallback((f: File | null) => {
     if (!f) { setPickedFile(null); return; }
@@ -326,6 +382,16 @@ export function LibraryReferenceDetail({
         <span className="text-[11px] font-medium text-slate-400">{sources.length} 개</span>
       </div>
 
+      {/* 원본 유실 재업로드용 hidden input — 업로드 폼(uploadOpen 조건부)과 별개로 상시 렌더. */}
+      <input
+        ref={reattachInputRef}
+        type="file"
+        accept=".pdf,.txt,.md,.csv,.docx,.pptx,.xlsx,.xls,.ods,.odt,.odp,.hwpx,.png,.jpg,.jpeg,.webp,.gif"
+        onChange={handleReattachPick}
+        className="hidden"
+        name="libraryReattachFile"
+      />
+
       {/* Source 업로드 토글 + form */}
       <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/40 shrink-0">
         {!uploadOpen ? (
@@ -409,18 +475,19 @@ export function LibraryReferenceDetail({
                       className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                       name="parseProvider"
                     >
-                      <option value="none">기본 (로컬 추출 — 빠르고 무료)</option>
-                      <option value="solar" disabled={!upstageKeyAvailable}>
-                        Solar (Upstage Document Parse — 표·레이아웃·스캔 문서){!upstageKeyAvailable ? ' — Upstage 키 필요' : ''}
+                      {/* 라벨 = 정식 이름만, 설명 없음 (2026-07-13 사용자). 비활성 사유 = title. */}
+                      <option value="none">로컬 추출</option>
+                      <option value="solar" disabled={!upstageKeyAvailable} title={!upstageKeyAvailable ? 'Upstage 키 필요' : undefined}>
+                        Solar Document Parse
                       </option>
-                      <option value="gemini" disabled={!geminiKeyAvailable || extOf(pickedFile.name) !== 'pdf'}>
-                        Gemini (vision — 수식·도형, PDF 전용){!geminiKeyAvailable ? ' — Gemini 키 필요' : ''}
+                      <option value="gemini" disabled={!geminiKeyAvailable || extOf(pickedFile.name) !== 'pdf'} title={!geminiKeyAvailable ? 'Gemini 키 필요' : extOf(pickedFile.name) !== 'pdf' ? 'PDF 전용' : undefined}>
+                        Gemini
                       </option>
                     </select>
                     {parseProvider === 'gemini' && geminiKeyAvailable && (
                       <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-700 pl-1">
                         <input type="checkbox" id="lib-quality-boost" name="qualityBoost" checked={qualityBoost} onChange={e => setQualityBoost(e.target.checked)} />
-                        <span>품질 향상 (Gemini Pro — 빽빽한 수식에 더 강함, 비용 ↑)</span>
+                        <span>품질 향상 (Gemini Pro)</span>
                       </label>
                     )}
                   </div>
@@ -508,7 +575,7 @@ export function LibraryReferenceDetail({
                             disabled={reextractingId === src.id}
                             className="p-1 text-slate-400 hover:text-indigo-600 transition-all disabled:opacity-50"
                           >
-                            {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                            {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <ScanText size={13} />}
                           </button>
                         </Tooltip>
                       )}
@@ -519,23 +586,25 @@ export function LibraryReferenceDetail({
                               onClick={() => { setReparseMenuId(null); handleReextract(src, 'none'); }}
                               className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
                             >
-                              기본 (로컬 추출)
+                              로컬 추출
                             </button>
                           )}
                           <button
                             onClick={() => { setReparseMenuId(null); handleReextract(src, 'solar'); }}
                             disabled={!upstageKeyAvailable}
+                            title={!upstageKeyAvailable ? 'Upstage 키 필요' : undefined}
                             className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
                           >
-                            Solar (Upstage Document Parse){!upstageKeyAvailable ? ' — 키 필요' : ''}
+                            Solar Document Parse
                           </button>
                           {(src.sourceType === 'pdf' || IMAGE_EXTS.includes(src.sourceType)) && (
                             <button
                               onClick={() => { setReparseMenuId(null); handleReextract(src, 'gemini'); }}
                               disabled={!geminiKeyAvailable}
+                              title={!geminiKeyAvailable ? 'Gemini 키 필요' : undefined}
                               className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
                             >
-                              Gemini (vision){!geminiKeyAvailable ? ' — 키 필요' : ''}
+                              Gemini
                             </button>
                           )}
                         </AnchoredMenu>

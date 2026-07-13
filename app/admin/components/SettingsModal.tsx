@@ -1177,8 +1177,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       }}
                       options={[
                         { value: 'none', label: t('settings_modal.assistant_parse_none') },
-                        { value: 'solar', label: 'Solar (Upstage Document Parse)' + (!upstageApiKey ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !upstageApiKey },
-                        { value: 'gemini', label: 'Gemini' + ((!googleApiKey && !vertexSaJson) ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !googleApiKey && !vertexSaJson },
+                        { value: 'solar', label: 'Solar Document Parse', disabled: !upstageApiKey },
+                        { value: 'gemini', label: 'Gemini', disabled: !googleApiKey && !vertexSaJson },
                       ]}
                     />
                   </Field>

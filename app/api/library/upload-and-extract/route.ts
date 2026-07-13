@@ -3,7 +3,7 @@ import { writeFile, unlink, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { uploadSource } from '../../../../lib/api-gen/library';
+import { uploadSource, reextractSource } from '../../../../lib/api-gen/library';
 import { withAuth } from '../../../../lib/with-api-error';
 import { logger } from '../../../../lib/util/logger';
 
@@ -33,6 +33,9 @@ export const POST = withAuth(async (req: NextRequest) => {
 
   const file = form.get('file');
   const referenceId = String(form.get('referenceId') ?? '').trim();
+  // 원본 재부착 — 보관 원본이 유실된 기존 source 에 파일을 다시 붙여 같은 id 로 재파싱
+  // (새 source 생성 아님). 있으면 referenceId 불필요.
+  const reattachSourceId = String(form.get('reattachSourceId') ?? '').trim();
   const sourceType = String(form.get('sourceType') ?? '').trim().toLowerCase();
   let name = String(form.get('name') ?? '').trim();
   // 정밀 추출(vision) — 수동 opt-in (pdf 전용). quality_boost = Gemini Pro, 아니면 Flash.
@@ -45,7 +48,7 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!(file instanceof File)) {
     return NextResponse.json({ success: false, error: 'file 필드가 필요합니다.' }, { status: 400 });
   }
-  if (!referenceId) {
+  if (!referenceId && !reattachSourceId) {
     return NextResponse.json({ success: false, error: 'referenceId 필드가 필요합니다.' }, { status: 400 });
   }
   // 지원 포맷 검증은 Rust dispatch(grpc/library.rs)가 단일 권위 — unknown → invalid_argument.
@@ -62,6 +65,19 @@ export const POST = withAuth(async (req: NextRequest) => {
   await writeFile(tmpPath, buf);
 
   try {
+    if (reattachSourceId) {
+      const result = await reextractSource({
+        sourceId: reattachSourceId,
+        precise,
+        qualityBoost,
+        parseProvider,
+        newFilePath: tmpPath,
+      });
+      if (!result.ok) {
+        return NextResponse.json({ success: false, error: result.message ?? 'ReextractSource 실패' }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, data: { chunkCount: Number(result.data) } });
+    }
     const result = await uploadSource({
       referenceId,
       name,
