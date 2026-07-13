@@ -11,6 +11,7 @@ import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen
 import { LibrarySourceModal } from './LibrarySourceModal';
 import type { LibraryHubContext } from './LibraryPanel';
 import { RowActions, InteractiveRow } from './InteractiveRow';
+import { AnchoredMenu } from './Menu';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
@@ -58,12 +59,17 @@ export function LibraryReferenceDetail({
   const [textName, setTextName] = useState('');
   const [textBody, setTextBody] = useState('');
   const [busy, setBusy] = useState(false);
-  // 정밀 추출(vision) — pdf 전용 수동 opt-in. quality_boost = Gemini Pro, 아니면 Flash.
-  const [precise, setPrecise] = useState(false);
+  // 파싱 프로바이더 — none(로컬)/solar(Upstage Document Parse)/gemini(vision). 기본값 = 설정
+  // (assistant 탭 libraryParseProvider), 업로드마다 개별 변경 가능. quality_boost = gemini 전용.
+  const [parseProvider, setParseProvider] = useState<'none' | 'solar' | 'gemini'>('none');
   const [qualityBoost, setQualityBoost] = useState(false);
-  // 정밀 추출 게이트 — Gemini 키 있어야 활성 (admin only). 없으면 토글 비활성 + 안내.
+  // 프로바이더 키 게이트 (admin only) — gemini = 이미지·정밀, solar = Document Parse.
   const [geminiKeyAvailable, setGeminiKeyAvailable] = useState(false);
+  const [upstageKeyAvailable, setUpstageKeyAvailable] = useState(false);
   const [reextractingId, setReextractingId] = useState<string | null>(null);
+  // 재파싱 프로바이더 메뉴 (AnchoredMenu) — 열린 source id + 트리거 anchor.
+  const [reparseMenuId, setReparseMenuId] = useState<string | null>(null);
+  const reparseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fileBtnId = useId();
   const textNameId = useId();
@@ -103,12 +109,22 @@ export function LibraryReferenceDetail({
 
   useEffect(() => { loadSources(); }, [loadSources]);
 
-  // 정밀 추출 게이트 — Gemini(AI Studio) 키 등록 여부 조회 (admin only). hub 방문자는 정밀 추출 미노출.
+  // 프로바이더 키 게이트 + 파싱 기본값 (admin only). hub 방문자는 파싱 옵션 미노출.
   useEffect(() => {
     if (hubContext) return;
     apiGet<{ keys?: Record<string, { hasKey?: boolean }> }>('/api/vault', { category: 'library' })
-      .then(d => setGeminiKeyAvailable(!!d?.keys?.gemini_api_key?.hasKey))
-      .catch(() => setGeminiKeyAvailable(false));
+      .then(d => {
+        setGeminiKeyAvailable(!!d?.keys?.gemini_api_key?.hasKey);
+        setUpstageKeyAvailable(!!d?.keys?.upstage_api_key?.hasKey);
+      })
+      .catch(() => { setGeminiKeyAvailable(false); setUpstageKeyAvailable(false); });
+    // 업로드 기본 프로바이더 = 설정 (assistant 탭). 실패 시 'none'(로컬) 유지.
+    apiGet<{ libraryParseProvider?: string }>('/api/settings', { category: 'library' })
+      .then(d => {
+        const v = d?.libraryParseProvider;
+        if (v === 'solar' || v === 'gemini' || v === 'none') setParseProvider(v);
+      })
+      .catch(() => {});
   }, [hubContext]);
 
   const resetForm = useCallback(() => {
@@ -134,28 +150,29 @@ export function LibraryReferenceDetail({
     }
   }, [loadSources, libraryFetch]);
 
-  // 보관 원본으로 정밀(vision) 재추출 — 같은 source id 유지, 청크 교체. 원본 파일 없으면 backend 가
-  // "원본 파일이 서버에 없습니다 — 재업로드" 에러 반환 (옛 자료 / 삭제 케이스).
-  const handleReextract = useCallback(async (src: LibrarySourcePb) => {
+  // 보관 원본으로 재파싱 — 같은 source id 유지, 청크 교체. 프로바이더 선택(none/solar/gemini).
+  // 원본 파일 없으면 backend 가 "원본 파일이 서버에 없습니다 — 재업로드" 에러 반환 (옛 자료 / 삭제 케이스).
+  const handleReextract = useCallback(async (src: LibrarySourcePb, provider: 'none' | 'solar' | 'gemini') => {
+    const providerLabel = provider === 'solar' ? 'Solar (Upstage Document Parse)' : provider === 'gemini' ? 'Gemini (vision)' : '기본 (로컬 추출)';
     const ok = await confirmDialog({
-      title: '정밀 재추출',
-      message: `"${src.name}" 을 보관된 원본으로 정밀 추출(Gemini)합니다. 기존 청크가 새로 교체됩니다.`,
-      okLabel: '재추출',
+      title: '재파싱',
+      message: `"${src.name}" 을 보관된 원본으로 다시 파싱합니다 — ${providerLabel}. 기존 청크가 새로 교체됩니다.`,
+      okLabel: '재파싱',
     });
     if (!ok) return;
     setReextractingId(src.id);
     try {
       const res = await libraryFetch<{ chunkCount: number }>(
         'reextract-source',
-        { sourceId: src.id, precise: true, qualityBoost: false },
+        { sourceId: src.id, parseProvider: provider, precise: provider === 'gemini', qualityBoost: false },
       );
       if (res.success) {
         await loadSources();
       } else {
-        await alertDialog({ title: '재추출 실패', message: res.error ?? '오류가 발생했습니다.', danger: true });
+        await alertDialog({ title: '재파싱 실패', message: res.error ?? '오류가 발생했습니다.', danger: true });
       }
     } catch (e) {
-      await alertDialog({ title: '재추출 실패', message: String(e), danger: true });
+      await alertDialog({ title: '재파싱 실패', message: String(e), danger: true });
     } finally {
       setReextractingId(null);
     }
@@ -221,10 +238,11 @@ export function LibraryReferenceDetail({
       fd.append('referenceId', reference.id);
       fd.append('name', pickedFile.name);
       fd.append('sourceType', sourceType);
-      // 정밀/비전 추출 — pdf(토글 ON+키) 또는 이미지(항상 vision). quality_boost ON 이면 Gemini Pro.
-      if (sourceType === 'pdf' && precise && geminiKeyAvailable) {
-        fd.append('precise', 'true');
-        if (qualityBoost) fd.append('qualityBoost', 'true');
+      // 파싱 프로바이더 — 이미지는 vision 고정(프로바이더 무관), 그 외 파일은 선택값 명시.
+      // quality_boost = gemini(Pro) 전용.
+      if (!hubContext && !isImage) {
+        fd.append('parseProvider', parseProvider);
+        if (parseProvider === 'gemini' && qualityBoost) fd.append('qualityBoost', 'true');
       } else if (isImage) {
         if (qualityBoost) fd.append('qualityBoost', 'true');
       }
@@ -254,7 +272,7 @@ export function LibraryReferenceDetail({
     } finally {
       setBusy(false);
     }
-  }, [pickedFile, reference.id, resetForm, loadSources, hubContext, precise, qualityBoost, geminiKeyAvailable]);
+  }, [pickedFile, reference.id, resetForm, loadSources, hubContext, parseProvider, qualityBoost, geminiKeyAvailable]);
 
   const submitText = useCallback(async () => {
     if (!textName.trim() || !textBody.trim()) return;
@@ -381,27 +399,29 @@ export function LibraryReferenceDetail({
                     )}
                   </div>
                 )}
-                {/* 정밀 추출(vision) — pdf 선택 시에만. Gemini 가 PDF 를 직접 읽어 수식·도형 인식. */}
-                {!hubContext && pickedFile && extOf(pickedFile.name) === 'pdf' && (
+                {/* 파싱 프로바이더 — 이미지 외 파일. 기본값 = 설정(assistant 탭), 업로드마다 개별 선택. */}
+                {!hubContext && pickedFile && !IMAGE_EXTS.includes(extOf(pickedFile.name)) && (
                   <div className="flex flex-col gap-1 p-2 rounded-lg bg-indigo-50/50 border border-indigo-100">
-                    <label className={`flex items-center gap-2 text-[11px] ${geminiKeyAvailable ? 'cursor-pointer text-slate-700' : 'cursor-not-allowed text-slate-400'}`}>
-                      <input
-                        type="checkbox"
-                        checked={precise && geminiKeyAvailable}
-                        disabled={!geminiKeyAvailable}
-                        onChange={e => setPrecise(e.target.checked)}
-                      />
-                      <span className="font-bold">정밀 추출 (수식·도형 — Gemini 가 PDF 직접 인식)</span>
-                    </label>
-                    {!geminiKeyAvailable ? (
-                      <p className="text-[10px] text-amber-600">설정 → 시크릿에서 Gemini(Google AI Studio) 키를 먼저 등록하시면 활성화됩니다.</p>
-                    ) : precise ? (
-                      <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-700 pl-5">
+                    <span className="text-[11px] font-bold text-slate-700">파싱 방식</span>
+                    <select
+                      value={parseProvider}
+                      onChange={e => setParseProvider(e.target.value as 'none' | 'solar' | 'gemini')}
+                      className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                      name="parseProvider"
+                    >
+                      <option value="none">기본 (로컬 추출 — 빠르고 무료)</option>
+                      <option value="solar" disabled={!upstageKeyAvailable}>
+                        Solar (Upstage Document Parse — 표·레이아웃·스캔 문서){!upstageKeyAvailable ? ' — Upstage 키 필요' : ''}
+                      </option>
+                      <option value="gemini" disabled={!geminiKeyAvailable || extOf(pickedFile.name) !== 'pdf'}>
+                        Gemini (vision — 수식·도형, PDF 전용){!geminiKeyAvailable ? ' — Gemini 키 필요' : ''}
+                      </option>
+                    </select>
+                    {parseProvider === 'gemini' && geminiKeyAvailable && (
+                      <label className="flex items-center gap-2 text-[11px] cursor-pointer text-slate-700 pl-1">
                         <input type="checkbox" id="lib-quality-boost" name="qualityBoost" checked={qualityBoost} onChange={e => setQualityBoost(e.target.checked)} />
                         <span>품질 향상 (Gemini Pro — 빽빽한 수식에 더 강함, 비용 ↑)</span>
                       </label>
-                    ) : (
-                      <p className="text-[10px] text-slate-400">일반 추출은 빠르고 무료. 수식·도형이 많은 PDF 는 정밀 추출을 권장합니다.</p>
                     )}
                   </div>
                 )}
@@ -479,16 +499,46 @@ export function LibraryReferenceDetail({
                   className="flex items-center gap-2"
                   actions={
                     <>
-                      {!hubContext && (src.sourceType === 'pdf' || IMAGE_EXTS.includes(src.sourceType)) && geminiKeyAvailable && (
-                        <Tooltip label="정밀 재추출 (Gemini)">
+                      {/* 재파싱 메뉴 — 파일 기반 source(원본 보관분)만. 프로바이더 선택(기본/Solar/Gemini). */}
+                      {!hubContext && src.sourceType !== 'text' && src.sourceType !== 'url' && (
+                        <Tooltip label="재파싱">
                           <button
-                            onClick={() => handleReextract(src)}
+                            ref={reparseMenuId === src.id ? reparseTriggerRef : undefined}
+                            onClick={() => setReparseMenuId(prev => (prev === src.id ? null : src.id))}
                             disabled={reextractingId === src.id}
                             className="p-1 text-slate-400 hover:text-indigo-600 transition-all disabled:opacity-50"
                           >
                             {reextractingId === src.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                           </button>
                         </Tooltip>
+                      )}
+                      {reparseMenuId === src.id && (
+                        <AnchoredMenu anchorRef={reparseTriggerRef} onClose={() => setReparseMenuId(null)}>
+                          {!IMAGE_EXTS.includes(src.sourceType) && (
+                            <button
+                              onClick={() => { setReparseMenuId(null); handleReextract(src, 'none'); }}
+                              className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50"
+                            >
+                              기본 (로컬 추출)
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { setReparseMenuId(null); handleReextract(src, 'solar'); }}
+                            disabled={!upstageKeyAvailable}
+                            className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                          >
+                            Solar (Upstage Document Parse){!upstageKeyAvailable ? ' — 키 필요' : ''}
+                          </button>
+                          {(src.sourceType === 'pdf' || IMAGE_EXTS.includes(src.sourceType)) && (
+                            <button
+                              onClick={() => { setReparseMenuId(null); handleReextract(src, 'gemini'); }}
+                              disabled={!geminiKeyAvailable}
+                              className="w-full text-left px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed"
+                            >
+                              Gemini (vision){!geminiKeyAvailable ? ' — 키 필요' : ''}
+                            </button>
+                          )}
+                        </AnchoredMenu>
                       )}
                       <Tooltip label={t('common.delete')}>
                         <button

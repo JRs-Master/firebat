@@ -51,6 +51,7 @@ export async function libraryOpDispatch(
         sourceId: String(a.sourceId ?? ''),
         precise: !!a.precise,
         qualityBoost: !!a.qualityBoost,
+        parseProvider: typeof a.parseProvider === 'string' ? a.parseProvider : '',
       });
     case 'upload-text-source':
       return uploadSource({

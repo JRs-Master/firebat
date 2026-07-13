@@ -38,6 +38,9 @@ export const POST = withAuth(async (req: NextRequest) => {
   // 정밀 추출(vision) — 수동 opt-in (pdf 전용). quality_boost = Gemini Pro, 아니면 Flash.
   const precise = String(form.get('precise') ?? '') === 'true';
   const qualityBoost = String(form.get('qualityBoost') ?? '') === 'true';
+  // 파싱 프로바이더 — "" 레거시(precise 그대로) / "none" 로컬 강제 / "solar" Upstage DP / "gemini" vision.
+  const parseProviderRaw = String(form.get('parseProvider') ?? '');
+  const parseProvider = ['none', 'solar', 'gemini'].includes(parseProviderRaw) ? parseProviderRaw : '';
 
   if (!(file instanceof File)) {
     return NextResponse.json({ success: false, error: 'file 필드가 필요합니다.' }, { status: 400 });
@@ -66,6 +69,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       filePath: tmpPath,
       precise,
       qualityBoost,
+      parseProvider,
     });
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.message ?? 'UploadSource 실패' }, { status: 500 });

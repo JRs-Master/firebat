@@ -2662,6 +2662,9 @@ message LibraryUploadSourceRequest {
   bool quality_boost = 8;
   // hub owner scoping — 지정 시 reference_id 의 owner 일치할 때만 업로드. admin 은 omit.
   optional string owner = 9;
+  // 파싱 프로바이더 — "" = 레거시 경로(precise/quality_boost 그대로) / "solar" = Upstage
+  // Document Parse / "gemini" = vision 추출 / "none" = 로컬 추출 강제.
+  string parse_provider = 10;
 }
 message LibraryUploadSourceResponse {
   string source_id = 1;
@@ -2674,6 +2677,8 @@ message LibraryReextractSourceRequest {
   // 정밀 추출(vision) — pdf 전용. quality_boost = Gemini Pro, 아니면 Flash.
   bool precise = 2;
   bool quality_boost = 3;
+  // 파싱 프로바이더 — "" 레거시 / "solar" Upstage Document Parse / "gemini" vision / "none" 로컬.
+  string parse_provider = 4;
 }
 message LibraryReextractSourceResponse {
   int64 chunk_count = 1;

@@ -7,3 +7,4 @@
 //! - 직접 입력 — frontend 영역 textarea 영역 받음 (추출 영역 0 — 직접 저장)
 
 pub mod extractor;
+pub mod upstage_parse;

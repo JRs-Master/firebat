@@ -56,11 +56,31 @@ fn image_mime(t: &str) -> &'static str {
 pub struct LibraryServiceImpl {
     manager: Arc<LibraryManager>,
     llm: Arc<dyn ILlmPort>,
+    /// Upstage Document Parse ("solar" parse provider) API key lookup.
+    vault: Arc<dyn firebat_core::ports::IVaultPort>,
 }
 
 impl LibraryServiceImpl {
-    pub fn new(manager: Arc<LibraryManager>, llm: Arc<dyn ILlmPort>) -> Self {
-        Self { manager, llm }
+    pub fn new(
+        manager: Arc<LibraryManager>,
+        llm: Arc<dyn ILlmPort>,
+        vault: Arc<dyn firebat_core::ports::IVaultPort>,
+    ) -> Self {
+        Self { manager, llm, vault }
+    }
+
+    /// "solar" provider — Upstage Document Parse. Key = vault `system:upstage:api-key`
+    /// (the same key the embedder swap uses).
+    async fn solar_parse(
+        &self,
+        file_path: &str,
+    ) -> Result<(String, Option<Vec<(usize, usize, usize)>>), String> {
+        let key = self
+            .vault
+            .get_secret("system:upstage:api-key")
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| "Upstage API 키가 등록되어 있지 않습니다 (설정 → AI → LLM 공급자 키).".to_string())?;
+        crate::library::upstage_parse::parse_document(&key, file_path).await
     }
 
     /// hub owner scoping — owner 지정 시 reference_id 가 그 owner 소유일 때만 통과. admin(None) 무검사.
@@ -211,9 +231,28 @@ impl LibraryService for LibraryServiceImpl {
         //  - "txt" / "md" — file_path read
         //  - "pdf" — file_path pdf-extract
         //  - "url" — source_url fetch (Phase 1.5) — 현재 = inline_text 만 (frontend 에서 fetch + strip 처리)
+        // parse_provider 스위치 — "" = 레거시(precise/quality_boost 그대로) / "solar" = Upstage
+        // Document Parse / "gemini" = vision 강제 / "none" = 로컬 추출 강제. 실패 = 명시 에러
+        // (자동 폴백 X — 사용자가 고른 프로바이더).
+        let provider = args.parse_provider.as_str();
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
             if args.source_type == "text" || args.source_type == "url" {
                 (args.inline_text.clone(), None)
+            } else if provider == "solar" {
+                self.solar_parse(&args.file_path)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("Solar 파싱 실패: {e}")))?
+            } else if provider == "gemini" && args.source_type == "pdf" {
+                let text = self
+                    .vision_extract(&args.file_path, "application/pdf", args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("Gemini 파싱 실패: {e}")))?;
+                (text, None)
+            } else if provider == "gemini" && !is_image_type(&args.source_type) {
+                // Gemini vision 은 PDF·이미지 전용 — office 문서는 solar 또는 로컬 추출을 사용.
+                return Err(TonicStatus::invalid_argument(
+                    "Gemini 파싱은 PDF·이미지 전용입니다. 이 파일 형식은 Solar 또는 기본(로컬) 파싱을 사용해 주세요.",
+                ));
             } else if is_image_type(&args.source_type) {
                 // 이미지 — 텍스트 레이어가 없어 vision(Gemini)으로만 추출 (스캔 기출·사진 OCR).
                 let text = self
@@ -221,8 +260,8 @@ impl LibraryService for LibraryServiceImpl {
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("이미지 추출 실패: {e}")))?;
                 (text, None)
-            } else if args.precise && args.source_type == "pdf" {
-                // 정밀 추출 (vision) — Gemini 가 PDF 직접 읽어 LaTeX·레이아웃 보존. page char-매핑 없음(None).
+            } else if provider.is_empty() && args.precise && args.source_type == "pdf" {
+                // 레거시 정밀 추출 (vision) — Gemini 가 PDF 직접 읽어 LaTeX·레이아웃 보존.
                 let text = self
                     .vision_extract(&args.file_path, "application/pdf", args.quality_boost)
                     .await
@@ -374,15 +413,31 @@ impl LibraryService for LibraryServiceImpl {
                 "원본 파일이 서버에 없습니다. 자료를 삭제 후 다시 업로드해 주세요.",
             ));
         }
-        // 3. 재추출 — precise+pdf 면 vision, 아니면 기존 pdf-extract / text.
+        // 3. 재추출 — parse_provider 스위치(upload_source 와 동일 규약): "" 레거시 /
+        // "solar" Upstage Document Parse / "gemini" vision(PDF 전용) / "none" 로컬 강제.
+        let provider = args.parse_provider.as_str();
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
-            if is_image_type(&source.source_type) {
+            if provider == "solar" {
+                self.solar_parse(&file_path)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("Solar 파싱 실패: {e}")))?
+            } else if provider == "gemini" && source.source_type == "pdf" {
+                let text = self
+                    .vision_extract(&file_path, "application/pdf", args.quality_boost)
+                    .await
+                    .map_err(|e| TonicStatus::invalid_argument(format!("Gemini 파싱 실패: {e}")))?;
+                (text, None)
+            } else if provider == "gemini" && !is_image_type(&source.source_type) {
+                return Err(TonicStatus::invalid_argument(
+                    "Gemini 파싱은 PDF·이미지 전용입니다. 이 파일 형식은 Solar 또는 기본(로컬) 파싱을 사용해 주세요.",
+                ));
+            } else if is_image_type(&source.source_type) {
                 let text = self
                     .vision_extract(&file_path, image_mime(&source.source_type), args.quality_boost)
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("이미지 추출 실패: {e}")))?;
                 (text, None)
-            } else if args.precise && source.source_type == "pdf" {
+            } else if provider.is_empty() && args.precise && source.source_type == "pdf" {
                 let text = self
                     .vision_extract(&file_path, "application/pdf", args.quality_boost)
                     .await
