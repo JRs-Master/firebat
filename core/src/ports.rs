@@ -1007,6 +1007,17 @@ pub trait IEmbedderPort: Send + Sync {
     /// 인덱스 대상 문서 임베딩 (대화 메시지·entity·event content 등) — `passage: ...` prefix.
     async fn embed_passage(&self, text: &str) -> InfraResult<Vec<f32>>;
 
+    /// 문서 임베딩 배치 — 기본 구현은 순차 루프(로컬 임베더는 그걸로 충분). 원격 API 임베더는
+    /// 배열 요청으로 오버라이드(콜 수 = 엔트리 수 → 청크 수 — 카탈로그 백필 rate-limit(429) 폭풍
+    /// 방지의 구조 해법). 첫 에러에서 중단하고 에러 반환(호출자가 쿨다운·부분 결과 처리).
+    async fn embed_passages(&self, texts: &[String]) -> InfraResult<Vec<Vec<f32>>> {
+        let mut out = Vec::with_capacity(texts.len());
+        for t in texts {
+            out.push(self.embed_passage(t).await?);
+        }
+        Ok(out)
+    }
+
     /// 정규화된 벡터 간 cosine similarity = dot product (mean pool + L2 norm 가정).
     fn cosine(&self, a: &[f32], b: &[f32]) -> f32 {
         let n = a.len().min(b.len());

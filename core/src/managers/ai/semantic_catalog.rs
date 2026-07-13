@@ -198,18 +198,19 @@ impl SemanticCatalog {
         let sec_version = self.secondary.as_ref().map(|s| s.version().to_string());
         let mut vectors: HashMap<String, Vec<f32>> = HashMap::new();
         let mut secondary_vectors: HashMap<String, Vec<f32>> = HashMap::new();
-        let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
-        // (id, text, primary_hash, need_primary, sec_hash, need_secondary)
-        let mut to_embed: Vec<(String, String, String, bool, Option<String>, bool)> = Vec::new();
+        // id → (primary_hash, sec_hash) — fresh 재구성용 (임베딩 패스 뒤 한 번에 조립).
+        let mut hashes: HashMap<String, (String, Option<String>)> = HashMap::new();
+        let mut prim_needed: Vec<(String, String)> = Vec::new(); // (id, text)
+        let mut sec_needed: Vec<(String, String)> = Vec::new();
         for e in &entries {
             let text = entry_text(e);
             let hash = sha1_hash(&version, &text);
             let sec_hash = sec_version.as_deref().map(|v| sha1_hash(v, &text));
             let hit = disk.get(&e.id);
-            let primary_ok = hit.map(|h| h.hash == hash).unwrap_or(false);
-            if primary_ok {
-                let h = hit.unwrap();
-                vectors.insert(e.id.clone(), h.vector.clone());
+            if hit.map(|h| h.hash == hash).unwrap_or(false) {
+                vectors.insert(e.id.clone(), hit.unwrap().vector.clone());
+            } else {
+                prim_needed.push((e.id.clone(), text.clone()));
             }
             let secondary_ok = match (&sec_hash, hit) {
                 (Some(sh), Some(h)) => {
@@ -227,48 +228,31 @@ impl SemanticCatalog {
                 (None, _) => true, // no secondary configured — nothing to do
                 _ => false,
             };
-            if primary_ok && secondary_ok {
-                fresh.insert(
-                    e.id.clone(),
-                    DiskCacheEntry {
-                        hash,
-                        vector: vectors.get(&e.id).cloned().unwrap_or_default(),
-                        secondary_hash: sec_hash.clone(),
-                        secondary: secondary_vectors.get(&e.id).cloned(),
-                    },
-                );
-                continue;
+            if !secondary_ok {
+                sec_needed.push((e.id.clone(), text.clone()));
             }
-            to_embed.push((e.id.clone(), text, hash, !primary_ok, sec_hash, !secondary_ok));
+            hashes.insert(e.id.clone(), (hash, sec_hash));
         }
-        let embedded = to_embed.len();
+        let embedded = prim_needed.len();
+        let sec_backfill = sec_needed.len();
+        // ── primary — bounded concurrent (로컬 임베더 전제, per-entry) ──
         let sem = Arc::new(tokio::sync::Semaphore::new(8));
         let mut tasks = tokio::task::JoinSet::new();
-        for (id, text, hash, need_primary, sec_hash, need_secondary) in to_embed {
+        for (id, text) in prim_needed {
             let emb = self.embedder.clone();
-            let sec = self.secondary.clone();
             let sem = sem.clone();
             tasks.spawn(async move {
                 let _permit = sem.acquire().await;
-                let primary = if need_primary {
-                    Some(emb.embed_passage(&text).await)
-                } else {
-                    None
-                };
-                let secondary = match (&sec, need_secondary) {
-                    (Some(s), true) => Some(s.embed_passage(&text).await),
-                    _ => None,
-                };
-                (id, hash, sec_hash, primary, secondary)
+                (id, emb.embed_passage(&text).await)
             });
         }
         while let Some(res) = tasks.join_next().await {
-            let Ok((id, hash, sec_hash, primary, secondary)) = res else { continue };
+            let Ok((id, primary)) = res else { continue };
             match primary {
-                Some(Ok(vec)) => {
-                    vectors.insert(id.clone(), vec);
+                Ok(vec) => {
+                    vectors.insert(id, vec);
                 }
-                Some(Err(err)) => {
+                Err(err) => {
                     tracing::warn!(
                         target: "semantic_catalog",
                         "embed failed for {} ({}): {} — skipped",
@@ -277,34 +261,48 @@ impl SemanticCatalog {
                         err
                     );
                 }
-                None => {}
             }
-            match secondary {
-                Some(Ok(vec)) => {
-                    secondary_vectors.insert(id.clone(), vec);
+        }
+        // ── secondary — 원격 API 전제라 **배치**(embed_passages, 어댑터가 64개/콜 청크) ──
+        // 옛 per-entry 개별 호출 = 재빌드마다 수백 콜 → 429 폭풍 + secondary 미영속이라
+        // 매 재빌드 전량 재시도(2026-07-13 실측 2,139콜/일). 실패 = 이번 빌드 slot skip
+        // (다음 재빌드로 이월 — 어댑터 쿨다운이 그 사이 호출을 HTTP 없이 끊음).
+        if let Some(sec) = &self.secondary {
+            if !sec_needed.is_empty() {
+                let texts: Vec<String> = sec_needed.iter().map(|(_, t)| t.clone()).collect();
+                match sec.embed_passages(&texts).await {
+                    Ok(vecs) => {
+                        for ((id, _), v) in sec_needed.iter().zip(vecs) {
+                            secondary_vectors.insert(id.clone(), v);
+                        }
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "semantic_catalog",
+                            "secondary batch embed failed ({}, {} entries): {} — slot skipped this build",
+                            self.cache_file,
+                            sec_needed.len(),
+                            err
+                        );
+                    }
                 }
-                Some(Err(err)) => {
-                    tracing::warn!(
-                        target: "semantic_catalog",
-                        "secondary embed failed for {} ({}): {} — skipped",
-                        id,
-                        self.cache_file,
-                        err
-                    );
-                }
-                None => {}
             }
-            if let Some(v) = vectors.get(&id) {
-                fresh.insert(
-                    id.clone(),
-                    DiskCacheEntry {
-                        hash,
-                        vector: v.clone(),
-                        secondary_hash: sec_hash,
-                        secondary: secondary_vectors.get(&id).cloned(),
-                    },
-                );
-            }
+        }
+        // ── fresh 재구성 — primary 벡터가 있는 엔트리만 영속(기존 불변식). secondary 는 이번에
+        //    확보된 것만 실림 → 다음 재빌드가 나머지를 이어서 백필. ──
+        let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
+        for e in &entries {
+            let Some(v) = vectors.get(&e.id) else { continue };
+            let (hash, sec_hash) = hashes.get(&e.id).cloned().unwrap_or_default();
+            fresh.insert(
+                e.id.clone(),
+                DiskCacheEntry {
+                    hash,
+                    vector: v.clone(),
+                    secondary_hash: sec_hash,
+                    secondary: secondary_vectors.get(&e.id).cloned(),
+                },
+            );
         }
         if let Ok(json) = serde_json::to_string(&fresh) {
             self.cache_port.save(&self.cache_file, &json);
@@ -316,7 +314,11 @@ impl SemanticCatalog {
             entries.len(),
             embedded,
             entries.len() - embedded,
-            if self.secondary.is_some() { ", dual-embed" } else { "" }
+            if self.secondary.is_some() {
+                format!(", dual-embed (secondary backfill {sec_backfill})")
+            } else {
+                String::new()
+            }
         );
         let mut corpus = String::new();
         for e in &entries {
