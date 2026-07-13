@@ -258,7 +258,9 @@ impl LibraryService for LibraryServiceImpl {
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
             if args.source_type == "text" || args.source_type == "url" {
                 (args.inline_text.clone(), None)
-            } else if provider == "solar" {
+            // plain text(txt/md/csv)는 DP 지원 포맷이 아니고 레이아웃 파싱 가치도 0 — solar
+            // 선택(설정 기본값 포함)이어도 최종 else 의 로컬 추출로 흘림.
+            } else if provider == "solar" && !matches!(args.source_type.as_str(), "txt" | "md" | "csv") {
                 self.solar_parse(&args.file_path)
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("Solar 파싱 실패: {e}")))?
@@ -438,7 +440,8 @@ impl LibraryService for LibraryServiceImpl {
         // "solar" Upstage Document Parse / "gemini" vision(PDF 전용) / "none" 로컬 강제.
         let provider = args.parse_provider.as_str();
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
-            if provider == "solar" {
+            // plain text = DP 미지원 포맷 → 로컬 추출 (upload_source 와 동일 규약).
+            if provider == "solar" && !matches!(source.source_type.as_str(), "txt" | "md" | "csv") {
                 self.solar_parse(&file_path)
                     .await
                     .map_err(|e| TonicStatus::invalid_argument(format!("Solar 파싱 실패: {e}")))?
