@@ -6,6 +6,12 @@
 //!
 //! OpenAI 완전 호환 — POST {base}/embeddings {model, input} → {data:[{embedding:[...]}]}.
 //! query/passage 비대칭: embed_query = `solar-embedding-2-query` / embed_passage = `-passage`.
+//!
+//! 공식 한도 (2026-07-13 사용자 페이스트 문서): 차원 1024 / 문자열당 최대 4,000 토큰·빈 문자열
+//! 금지 / 배열 입력 = 최대 100개·요청당 204,800 토큰(배치 API — 미사용, 카탈로그 증분 임베딩이
+//! 건수 적어 단건+Semaphore(8)로 충분. 풀 재빌드 warm 이 느려지면 배치 전환 트리거). 품질 권고
+//! = 512 토큰 이하. 아래 가드: 빈 입력 = HTTP 전 명시 에러 / 2,000자 초과 = 절단(한글 ≈
+//! 글자당 1+토큰이라 4,000토큰 한도의 보수 캡 — E5 로컬도 512토큰 절단이라 스케일 동급).
 
 use firebat_core::ports::{IEmbedderPort, InfraResult};
 
@@ -30,7 +36,18 @@ impl UpstageEmbedderAdapter {
     }
 
     async fn embed(&self, model: &str, text: &str) -> InfraResult<Vec<f32>> {
-        let body = serde_json::json!({ "model": model, "input": text });
+        // 공식 한도 가드 — 빈 문자열 = API 거부라 HTTP 전 명시 에러, 4,000토큰/문자열 한도는
+        // 2,000자 절단으로 보수 커버(char 경계 안전 — 바이트 절단 panic 클래스 회피).
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err("upstage embed: 빈 입력은 임베딩할 수 없습니다".to_string());
+        }
+        let input: String = if trimmed.chars().count() > 2000 {
+            trimmed.chars().take(2000).collect()
+        } else {
+            trimmed.to_string()
+        };
+        let body = serde_json::json!({ "model": model, "input": input });
         let resp = firebat_core::utils::http_client::http_client()
             .post(&self.endpoint)
             .bearer_auth(&self.api_key)
