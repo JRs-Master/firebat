@@ -725,6 +725,24 @@ impl ModuleManager {
                 .get("tokenSecret")
                 .and_then(|v| v.as_str())
                 .map(String::from),
+            // Declarative frame decode — fid code → label map + "the" chart value key.
+            field_labels: decl
+                .get("fieldLabels")
+                .and_then(|v| v.as_object())
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            chart_field: decl
+                .get("chartField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            chart_abs: decl
+                .get("chartAbs")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             mock: meta.mock,
         };
         port.start(spec).await?;

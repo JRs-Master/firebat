@@ -21,16 +21,38 @@ function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
   return { hasKey: true, maskedKey: '***' };
 }
 
-// 프로바이더 키 현황 조회 (OpenAI / Gemini / Anthropic)
+// 레거시 언더스코어 키 — 옛 UI/모듈이 저장하던 이름. TTS 등 first_secret 소비자는 양쪽을 다
+// 읽어 동작하는데 이 GET 은 콜론 키만 봐서 "키가 있는데 빈 칸"으로 표시되던 것(2026-07-13 실측:
+// TTS 용 GEMINI_API_KEY 등록분이 LLM 탭·파싱 게이트에서 미인식). 발견 시 콜론 키로 자가 이관
+// (write-through) — 어댑터(fetch_api_key)·표시·게이트가 단일 키로 수렴.
+const LEGACY_KEYS: Partial<Record<ProviderField, string[]>> = {
+  openai_api_key: ['OPENAI_API_KEY'],
+  gemini_api_key: ['GEMINI_API_KEY'],
+  anthropic_api_key: ['ANTHROPIC_API_KEY'],
+  upstage_api_key: ['UPSTAGE_API_KEY'],
+};
+
+// 프로바이더 키 현황 조회 (OpenAI / Gemini / Anthropic / Upstage / Vertex)
 export const GET = withAuth(async () => {
   const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
-  const entries = Object.entries(PROVIDER_KEYS);
+  const entries = Object.entries(PROVIDER_KEYS) as Array<[ProviderField, string]>;
   const values = await Promise.all(entries.map(([, vaultKey]) => getGeminiKey({ key: vaultKey })));
-  entries.forEach(([field], i) => {
+  await Promise.all(entries.map(async ([field, vaultKey], i) => {
     const v = values[i];
-    const raw = v && v.ok ? v.data : null;
+    let raw = v && v.ok ? v.data : null;
+    if (!raw) {
+      for (const legacy of LEGACY_KEYS[field] ?? []) {
+        const lv = await getGeminiKey({ key: legacy });
+        if (lv.ok && lv.data) {
+          raw = lv.data;
+          // self-migrate to the canonical colon key (adapters only read that one)
+          await setGeminiKey({ key: vaultKey, value: lv.data }).catch(() => {});
+          break;
+        }
+      }
+    }
     keys[field] = maskKey(raw ?? null);
-  });
+  }));
   return NextResponse.json({ success: true, keys });
 });
 

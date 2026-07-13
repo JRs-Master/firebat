@@ -650,11 +650,18 @@ async fn main() -> Result<()> {
         };
         Arc::new(cat)
     };
-    // Boot warm-up — API 임베더의 첫 전체 빌드(~600 entry)가 첫 검색을 막지 않게 백그라운드 선빌드.
-    // 해시 디스크 캐시(슬롯별) 덕에 이후 재빌드는 변경분만 임베딩.
+    // Boot warm-up — API 임베더(solar)일 때만: 첫 전체 빌드(~600 entry, 네트워크)가 첫 검색을
+    // 막지 않게 백그라운드 선빌드. 로컬(E5)은 기존처럼 첫 검색 때 lazy — 부팅 직후 전체 임베딩은
+    // 1 vCPU 서버에서 CPU·스왑 폭풍(2026-07-13 실측: version-해시 전환 재임베딩 + boot warm 이
+    // 겹쳐 부팅 후 몇 분간 박스 마비 — "뻗은 줄"). 캐시 히트 시 warm 은 어차피 no-op.
     {
-        let cat = action_catalog.clone();
-        tokio::spawn(async move { cat.warm().await });
+        let provider = vault
+            .get_secret(firebat_core::vault_keys::VK_SYSTEM_EMBED_CATALOG_PROVIDER)
+            .unwrap_or_default();
+        if provider == "solar" {
+            let cat = action_catalog.clone();
+            tokio::spawn(async move { cat.warm().await });
+        }
     }
 
     let ai_manager = Arc::new(

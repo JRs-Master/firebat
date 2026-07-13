@@ -544,6 +544,8 @@
     "assistant_retention_help": "Periodically removes trashed conversations, temporary attachments and expired data older than 30 days. Turning it off stops the cleanup (default on).",
     "assistant_retention_on": "Auto cleanup on",
     "assistant_retention_off": "Auto cleanup off",
+    "assistant_keys_label": "Provider API keys",
+    "assistant_keys_help": "Shares the same store as the LLM tab provider keys (saving in either place updates both).",
     "tts_title": "Text-to-Speech (TTS)",
     "tts_help": "The voice engine that generates listening (LC) audio. Built-in browser voices are free; OpenAI and Gemini offer more natural voices (selectable once the matching API key is set).",
     "tts_provider_browser": "Browser built-in",

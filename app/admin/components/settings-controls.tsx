@@ -123,7 +123,7 @@ export function SegButtons<T extends string>({
   value, options, onChange,
 }: {
   value: T;
-  options: { value: T; label: string; icon?: React.ReactNode }[];
+  options: { value: T; label: string; icon?: React.ReactNode; disabled?: boolean; title?: string }[];
   onChange: (v: T) => void;
 }) {
   return (
@@ -133,8 +133,16 @@ export function SegButtons<T extends string>({
         return (
           <button
             key={o.value}
-            onClick={() => onChange(o.value)}
-            className={`flex-1 min-w-[80px] px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors flex items-center justify-center gap-1.5 ${active ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
+            onClick={() => { if (!o.disabled) onChange(o.value); }}
+            disabled={o.disabled}
+            title={o.title}
+            className={`flex-1 min-w-[80px] px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors flex items-center justify-center gap-1.5 ${
+              o.disabled
+                ? 'border-slate-200 text-slate-300 cursor-not-allowed'
+                : active
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-slate-300 text-slate-400 hover:text-slate-600'
+            }`}
           >
             {o.icon}
             {o.label}

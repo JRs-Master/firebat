@@ -227,6 +227,12 @@ async fn watch_loop(
     let mut backoff_idx = 0usize;
     let mut consecutive_rejects = 0u32;
     let mut failed = false;
+    // Login/token rejection (e.g. kiwoom CODE=8005 "Token이 유효하지 않습니다") — the cached
+    // token was revoked server-side while still TTL-fresh, so a plain reconnect re-sends the
+    // SAME stale token forever (2026-07-13 실측: 3 watches 가 밤새 60s 8005 루프). The next
+    // attempt must FORCE-refresh the token; if the forced token is also rejected repeatedly,
+    // give up like subscribe rejects (it will not heal by retrying).
+    let mut force_token = false;
     loop {
         if *cancel_rx.borrow() {
             break;
@@ -241,6 +247,7 @@ async fn watch_loop(
             &token_spec,
             &sink_getter,
             &mut first,
+            std::mem::take(&mut force_token),
         )
         .await
         {
@@ -248,8 +255,30 @@ async fn watch_loop(
             SessionEnd::Dropped(reason) => {
                 // Subscribe NACK = the provider rejected our args (application-level, not
                 // transport). It cannot heal by reconnecting with the same args.
+                let is_login_reject = reason.starts_with("login rejected");
+                if is_login_reject {
+                    force_token = true;
+                }
                 let is_reject = reason.starts_with("subscribe rejected");
-                consecutive_rejects = if is_reject { consecutive_rejects + 1 } else { 0 };
+                consecutive_rejects =
+                    if is_reject || is_login_reject { consecutive_rejects + 1 } else { 0 };
+                if is_login_reject && consecutive_rejects >= MAX_SUBSCRIBE_REJECTS {
+                    // Forced refresh already tried between attempts — the credential itself
+                    // is bad. Stop the churn; the user fixes the key and restarts the watch.
+                    set_state(&status, "failed", Some(reason.clone()));
+                    failed = true;
+                    if let Some(tx) = first.take() {
+                        let _ = tx.send(Err(reason.clone()));
+                    }
+                    tracing::error!(
+                        target: "ws_stream",
+                        watch_id = %spec.watch_id,
+                        reason = %reason,
+                        attempts = consecutive_rejects,
+                        "ws stream giving up — login/token repeatedly rejected even after forced refresh"
+                    );
+                    break;
+                }
                 if is_reject {
                     if let Some(tx) = first.take() {
                         // Very first subscribe attempt — surface to start() and stop.
@@ -314,6 +343,7 @@ async fn run_session(
     token_spec: &Option<(String, OAuthSpec, u64)>,
     sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
     first: &mut Option<FirstResultTx>,
+    force_token: bool,
 ) -> SessionEnd {
     // Token (proactive per (re)connect). Present when a secret is declared in the LOGIN frame
     // (kiwoom) or at spec level (한투 approval_key — rides in the subscribe frame, no LOGIN).
@@ -327,7 +357,7 @@ async fn run_session(
         let (Some(tp), Some((name, oauth, life))) = (token_provider, token_spec) else {
             return SessionEnd::Dropped("token provider/spec not wired".to_string());
         };
-        match tp.ensure_fresh(name, oauth, *life, spec.mock, false).await {
+        match tp.ensure_fresh(name, oauth, *life, spec.mock, force_token).await {
             Ok(t) => Some(t),
             Err(e) => return SessionEnd::Dropped(format!("token refresh failed: {e}")),
         }
@@ -513,7 +543,7 @@ async fn run_session(
                         s.event_count += 1;
                     }
                     if let Some(sink) = sink_getter() {
-                        sink(spec, frame);
+                        sink(spec, decorate_realtime_frame(spec, frame));
                     }
                     continue;
                 }
@@ -586,6 +616,59 @@ type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
 
 /// A 한투 realtime frame is `flag|TR_ID|count|body` — flag is a single digit (0 plaintext /
 /// 1 AES). Control frames (subscribe ack, PINGPONG) are JSON objects starting with `{`.
+/// Declarative realtime-frame decode (config `fieldLabels` / `chartField`) — kiwoom REAL
+/// values are fid-code keyed ("10": "+333000"), unreadable in the live feed and unguessable
+/// for live_chart's valueField dot-path (2026-07-13 실측: 피드 = raw JSON, 차트 = 영영 틱
+/// 대기). Attach per-item `labeled` maps and a top-level numeric `value` (live_chart's
+/// DEFAULT valueField). Raw values stay untouched; specs without the config are pass-through.
+fn decorate_realtime_frame(
+    spec: &WsStreamSpec,
+    mut frame: serde_json::Value,
+) -> serde_json::Value {
+    if spec.field_labels.is_empty() && spec.chart_field.is_none() {
+        return frame;
+    }
+    let mut chart_value: Option<f64> = None;
+    if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
+        for item in items.iter_mut() {
+            let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
+                continue;
+            };
+            if let Some(cf) = &spec.chart_field {
+                if chart_value.is_none() {
+                    if let Some(raw) = values.get(cf.as_str()).and_then(|v| v.as_str()) {
+                        let cleaned: String = raw
+                            .chars()
+                            .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+                            .collect();
+                        if let Ok(n) = cleaned.parse::<f64>() {
+                            // kiwoom price sign = 등락 방향, not a negative price.
+                            chart_value = Some(if spec.chart_abs { n.abs() } else { n });
+                        }
+                    }
+                }
+            }
+            if !spec.field_labels.is_empty() {
+                let mut labeled = serde_json::Map::new();
+                for (code, label) in &spec.field_labels {
+                    if let Some(v) = values.get(code.as_str()) {
+                        labeled.insert(label.clone(), v.clone());
+                    }
+                }
+                if let Some(obj) = item.as_object_mut() {
+                    obj.insert("labeled".into(), serde_json::Value::Object(labeled));
+                }
+            }
+        }
+    }
+    if let Some(n) = chart_value {
+        if let Some(obj) = frame.as_object_mut() {
+            obj.insert("value".into(), serde_json::json!(n));
+        }
+    }
+    frame
+}
+
 fn is_positional(text: &str) -> bool {
     text.starts_with("0|") || text.starts_with("1|")
 }

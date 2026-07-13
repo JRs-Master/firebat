@@ -25,7 +25,10 @@ CACHE_DIR = os.path.join(os.getcwd(), 'data', 'cache')
 CACHE_PATH = os.path.join(CACHE_DIR, 'stock-lookup-corp-codes.json')
 
 TTL_SEC = 7 * 86400        # normal cache TTL
-REFRESH_FLOOR_SEC = 86400  # on lookup miss with a 1-day-old cache, force refresh (new listings)
+# On a lookup MISS, force-refresh when the cache is older than this — new listings appear in
+# DART corpCode same-day (실측 2026-07-13: 상장 당일 "레메디" miss — 24h floor blocked the
+# refresh). Misses are rare, the refresh is one zip download → 1h floor is safe.
+REFRESH_FLOOR_SEC = 3600
 
 
 def out(success, data=None, error=None):
@@ -159,7 +162,9 @@ def main():
     if not hits:
         return out(False, error=(
             f'"{query}" 에 일치하는 상장사가 없습니다. 회사명 표기를 바꿔 재시도하거나 '
-            f'(약칭/정식명, 예: "LG엔솔" → "LG에너지솔루션"), 사용자에게 정확한 회사명을 확인하세요.'
+            f'(약칭/정식명, 예: "LG엔솔" → "LG에너지솔루션"), 사용자에게 정확한 회사명을 확인하세요. '
+            f'오늘 신규 상장한 종목이면 DART 목록에 아직 없을 수 있습니다 — sysmod_naver-search '
+            f'{{"action": "search", "query": "{query} 종목코드"}} 로 6자리 코드를 확인해 그 코드를 그대로 사용하세요.'
         ))
 
     result = {

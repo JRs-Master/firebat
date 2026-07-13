@@ -736,6 +736,18 @@ pub struct WsStreamSpec {
     /// LOGIN frame (한투 approval_key). Filled into `{TOKEN}` placeholders in all frames.
     /// When set, `login` is typically None. kiwoom keeps its token in `login.token_secret`.
     pub token_secret: Option<String>,
+    /// Declarative realtime-frame decode (config `ws.streams.<s>.fieldLabels`): fid code →
+    /// human label. When present each data item in the sink frame gains a `labeled` map —
+    /// the live feed shows "현재가 +333000" instead of raw numeric-code JSON.
+    pub field_labels: std::collections::HashMap<String, String>,
+    /// Which `values` key is THE chart number (config `chartField`) — the sink frame gains a
+    /// top-level numeric `value`, which is live_chart's DEFAULT valueField: the model passes
+    /// only the topic, no guessed dot-paths (2026-07-13 실측: 프레임 shape 이 불투명해
+    /// valueField 를 못 맞혀 차트가 영영 "틱 대기").
+    pub chart_field: Option<String>,
+    /// Take |value| for the chart number (config `chartAbs`) — kiwoom prices carry a +/- sign
+    /// that means 등락 방향, not a negative price.
+    pub chart_abs: bool,
     pub mock: bool,
 }
 

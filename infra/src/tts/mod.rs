@@ -646,6 +646,20 @@ impl TtsAdapter {
     }
 }
 
+/// "(A)" → "A. " at line starts (optionally after a "Speaker:" prefix) — see the call site in
+/// `synthesize` for why. A-E only, line-anchored, so prose collisions are practically nil
+/// (and a line-leading "(a)" IS a marker anyway).
+fn normalize_choice_markers(text: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?m)^([^\n():]{0,40}:\s*)?\(([A-Ea-e])\)\s*").unwrap()
+    });
+    re.replace_all(text, |c: &regex::Captures| {
+        format!("{}{}. ", c.get(1).map(|m| m.as_str()).unwrap_or(""), &c[2])
+    })
+    .into_owned()
+}
+
 #[async_trait]
 impl ITtsPort for TtsAdapter {
     fn effective_config(&self) -> (String, String) {
@@ -655,6 +669,12 @@ impl ITtsPort for TtsAdapter {
     async fn synthesize(&self, req: &TtsRequest) -> InfraResult<TtsResult> {
         // provider/model 비었으면 설정·키에서 해석. 화자/단일 voice 미지정 시 provider 기본 보이스 자동배정.
         let mut req = req.clone();
+        // Choice markers "(A)" at an utterance start are visual exam labels that voice models
+        // read inconsistently (실측 2026-07-13: TOEIC part-2 보기 (A)/(B)/(C) 가 될 때도 안 될
+        // 때도 — provider 가 주석으로 해석해 skip). Deterministic: rewrite to "A." for synthesis
+        // (LRC parsing uses the same normalized text = alignment stays consistent); the
+        // on-screen script keeps its parentheses (display = the component's own prop).
+        req.text = normalize_choice_markers(&req.text);
         if req.provider.is_empty() || req.model.is_empty() {
             let (p, m) = self.resolve_config();
             if req.provider.is_empty() {

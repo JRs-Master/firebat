@@ -78,13 +78,32 @@ function LiveBadge({ live, lastMs }: { live: boolean; lastMs: number | null }) {
   );
 }
 
+// Server-decoded frame (ws_stream `fieldLabels` config) → compact human line:
+// "주식체결 373220 · 현재가 +333000 · 등락율 +2.15 …". Falls back to raw JSON for frames
+// without the declarative decode (2026-07-13 실측: raw fid-code JSON 덤프는 판독 불가).
+function formatFeedBody(data: unknown): string {
+  if (data && typeof data === 'object') {
+    const d = data as any;
+    const items = Array.isArray(d.data) ? d.data : null;
+    const first = items && items.length > 0 ? items[0] : null;
+    if (first && first.labeled && typeof first.labeled === 'object') {
+      const pairs = Object.entries(first.labeled as Record<string, unknown>)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(' · ');
+      const head = [first.name, first.item].filter(Boolean).join(' ');
+      return [head, pairs].filter(Boolean).join(' · ');
+    }
+  }
+  return typeof data === 'string' ? data : JSON.stringify(data);
+}
+
 function LiveFeedComp({ topic, title, maxItems }: { topic: string; title?: string; maxItems?: number }) {
   const [ref, visible] = useInViewport<HTMLDivElement>();
   const [items, setItems] = useState<Array<{ t: number; body: string }>>([]);
   const [lastMs, setLastMs] = useState<number | null>(null);
   const cap = Math.min(Math.max(Number(maxItems) || 30, 5), 200);
   useLiveTopic(topic, visible, (data) => {
-    const body = typeof data === 'string' ? data : JSON.stringify(data);
+    const body = formatFeedBody(data);
     setItems(prev => [{ t: Date.now(), body: body.slice(0, 500) }, ...prev].slice(0, cap));
     setLastMs(Date.now());
   });

@@ -269,7 +269,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [aiSubTab, setAiSubTab] = useState<'llm' | 'assistant' | 'prompt' | 'image' | 'tts' | 'cost' | 'memory'>(() => {
     if (hubContext) return 'prompt'; // hub tenant = prompt/memory only (default prompt)
     if (initialTab === 'cost') return 'cost';
-    if (initialTab === 'memory') return 'assistant'; // admin: memory now lives inside the assistant tab
+    if (initialTab === 'memory') return 'memory';
     return 'llm';
   });
 
@@ -1023,11 +1023,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             // 모드별 사용 가능 프로바이더
             // 공급자는 ABC 순. Anthropic → Google → OpenAI
             const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic' | 'upstage'>> = {
-              // upstage(Solar) = 메인 LLM 공급자 목록에서 당분간 제외 (Solar 집중 트랙 졸업,
-              // 2026-07-13 사용자 결정). 키 입력칸은 유지 — 임베딩·문서 파싱(assistant 탭)이 사용.
-              general: ['anthropic', 'google', 'openai'],
+              general: ['anthropic', 'google', 'openai', 'upstage'],
               vertex: ['google'],
             };
+            // upstage(Solar) = 메인 LLM 공급자로는 당분간 비활성 (Solar 졸업, 2026-07-13 —
+            // 성능 좋아지면 이 셋에서 빼기만 하면 재활성). 키·임베딩·파싱(assistant 탭)은 계속 사용.
+            const disabledProviders = new Set(['upstage']);
             const activeProviders = providersByMode[aiMode];
             const effectiveProvider = activeProviders.includes(aiProvider) ? aiProvider : activeProviders[0];
             const cliProviderPrefix: Record<CliProvider, string> = {
@@ -1090,8 +1091,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     { v: 'tts', label: t('settings_modal.ai_sub_tab_tts') },
                     { v: 'cost', label: t('settings_modal.ai_sub_tab_cost') },
                     { v: 'memory', label: t('settings_modal.ai_sub_tab_memory') },
-                    // admin = memory 하위탭이 assistant 탭에 흡수됨 / hub = 기존 prompt·memory 유지
-                  ] as const).filter(tab => hubMode ? (tab.v === 'prompt' || tab.v === 'memory') : (tab.v !== 'memory')).map(tab => (
+                  ] as const).filter(tab => !hubMode || tab.v === 'prompt' || tab.v === 'memory').map(tab => (
                     <button
                       key={tab.v}
                       onClick={() => setAiSubTab(tab.v)}
@@ -1140,9 +1140,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           />
                           <div className="flex-1">
                             <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
-                            <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                              {t('settings_modal.ai_assistant_desc')}
-                            </div>
+                            {/* desc 는 <b> 태그 포함 리소스 — plain 렌더 시 태그가 문자로 노출 (2026-07-13 실측) */}
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_desc') }} />
                             <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
                               <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
                               <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
@@ -1171,7 +1170,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       }}
                       options={[
                         { value: 'local', label: t('settings_modal.assistant_embed_local') },
-                        { value: 'solar', label: 'Solar (Upstage)' + (!upstageApiKey ? t('settings_modal.ai_assistant_model_needs_key') : ''), disabled: !upstageApiKey },
+                        // 정식 모델명 표기 (2026-07-13 사용자) — API 모델 = solar-embedding-2-query/passage.
+                        { value: 'solar', label: 'Solar Embedding 2 (Upstage)', disabled: !upstageApiKey },
                       ]}
                     />
                   </Field>
@@ -1205,9 +1205,48 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <span className="text-[12px] text-slate-700">{retentionEnabled ? t('settings_modal.assistant_retention_on') : t('settings_modal.assistant_retention_off')}</span>
                     </label>
                   </Field>
-                  <div className="pt-4 border-t border-slate-100">
-                    <div className="text-[13px] font-bold text-slate-800 mb-2">{t('settings_modal.ai_sub_tab_memory')}</div>
-                    <MemoryTabContent hubContext={hubContext} />
+                  {/* 프로바이더 키 — Upstage 가 메인 LLM 공급자에서 비활성이라 LLM 탭의 키 입력이
+                      도달 불가 → 여기서도 등록. 같은 state·같은 vault 키 = LLM 탭과 자동 연동. */}
+                  <div className="pt-4 border-t border-slate-100 flex flex-col gap-3">
+                    <FieldLabel>{t('settings_modal.assistant_keys_label')}</FieldLabel>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">Upstage (Solar)</label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <TextInput type="password" value={upstageApiKey} onChange={setUpstageApiKey} placeholder="up_..." name="assistantUpstageApiKey" />
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!upstageApiKey || upstageApiKey.includes('...') || upstageApiKey === '***') return;
+                            await apiPost('/api/vault', { provider: 'upstage', apiKey: upstageApiKey }, { category: 'settings' }).catch(() => {});
+                            await refreshVaultKeys();
+                          }}
+                          className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                        >
+                          {t('common.save')}
+                        </button>
+                      </div>
+                      <HelpText className="!text-[10px]">console.upstage.ai → API Keys — {t('settings_modal.assistant_keys_help')}</HelpText>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">Google AI Studio (Gemini)</label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <TextInput type="password" value={googleApiKey} onChange={setGoogleApiKey} placeholder="AIza..." name="assistantGoogleApiKey" />
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!googleApiKey || googleApiKey.includes('...') || googleApiKey === '***') return;
+                            await apiPost('/api/vault', { provider: 'gemini', apiKey: googleApiKey }, { category: 'settings' }).catch(() => {});
+                            await refreshVaultKeys();
+                          }}
+                          className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                        >
+                          {t('common.save')}
+                        </button>
+                      </div>
+                      <HelpText className="!text-[10px]">aistudio.google.com → Get API key — {t('settings_modal.assistant_keys_help')}</HelpText>
+                    </div>
                   </div>
                 </div>
                 )}
@@ -1301,7 +1340,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       });
                       restoreOrFirst(newCat, nextModels[0]?.value);
                     }}
-                    options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
+                    options={activeProviders.map(p => ({ value: p, label: providerLabels[p], disabled: disabledProviders.has(p) }))}
                   />
                 </Field>
                 )}
@@ -1707,8 +1746,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           onChange={switchTtsProvider}
                           options={[
                             { value: 'browser', label: t('settings_modal.tts_provider_browser') },
-                            { value: 'openai', label: hasOpenaiKey ? 'OpenAI' : `OpenAI${t('settings_modal.tts_key_required_suffix')}` },
-                            { value: 'gemini', label: hasGeminiKey ? 'Gemini' : `Gemini${t('settings_modal.tts_key_required_suffix')}` },
+                            // 키 없으면 "(키 필요)" 문구 대신 비활성 — 라벨은 항상 깨끗하게 (2026-07-13 사용자).
+                            { value: 'openai', label: 'OpenAI', disabled: !hasOpenaiKey, title: hasOpenaiKey ? undefined : t('settings_modal.tts_key_required_suffix') },
+                            { value: 'gemini', label: 'Gemini', disabled: !hasGeminiKey, title: hasGeminiKey ? undefined : t('settings_modal.tts_key_required_suffix') },
                           ]}
                         />
                       </Field>
@@ -1768,7 +1808,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               options={[
                                 { value: 'auto', label: t('settings_modal.tts_align_auto') },
                                 { value: 'local', label: t('settings_modal.tts_align_local') },
-                                { value: 'openai', label: hasOpenaiKey ? 'OpenAI (Whisper)' : `OpenAI${t('settings_modal.tts_key_required_suffix')}` },
+                                { value: 'openai', label: 'OpenAI (Whisper)', disabled: !hasOpenaiKey, title: hasOpenaiKey ? undefined : t('settings_modal.tts_key_required_suffix') },
                               ]}
                             />
                           </Field>

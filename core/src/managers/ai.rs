@@ -2210,6 +2210,9 @@ impl AiManager {
         // ledger) are untouched.
         let mut no_action_nudge_used = false;
         let mut nudge_this_round = false;
+        // Accepted no-action finish (banner-stamped below) — must also fail the unattended
+        // (cron) verdict: an action-task run that executed nothing is a missed run.
+        let mut no_action_final = false;
         // Turn ledger — "cards in hand" harvested from THIS turn's successes: ready-to-call
         // envelopes (schemas fetched), stream/action candidates (top search hits), and receipts
         // of completed actions. A weak model re-derives its plan from scratch every round and,
@@ -2671,6 +2674,12 @@ impl AiManager {
                         crate::i18n::t("core.error.ai.ungrounded_final", None, &[]),
                         last_text
                     );
+                    // Unattended callers must see this as FAILURE too — a cron job whose task
+                    // is an action (send/save) that ends with zero executed actions is a missed
+                    // run, not a success (2026-07-13 실측: 8시 텔레그램 잡이 발견만 하다 자연
+                    // 종료 → 스케줄 로그 "성공"·메시지 0 = 무증상 재발). The banner covers the
+                    // chat reader; this flag covers the cron judgment (error/exhausted/forced_final).
+                    no_action_final = true;
                 }
                 if is_propose_plan_turn {
                     self.log.info("[AiManager] propose_plan turn → trailing text drop");
@@ -4057,7 +4066,9 @@ impl AiManager {
             // Honest unattended verdict — stage 2 hard stop, OR stage 1 narrowing that never
             // produced a successful ACTION tool call afterwards (the turn ended still inside its
             // discovery loop; a text-only finish there is not mission success for cron).
-            forced_final: force_final || (!capped_strip.is_empty() && !post_narrow_success),
+            forced_final: force_final
+                || (!capped_strip.is_empty() && !post_narrow_success)
+                || no_action_final,
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,
