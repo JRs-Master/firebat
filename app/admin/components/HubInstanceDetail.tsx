@@ -24,6 +24,7 @@ interface SysmodEntry { name: string; description?: string }
  *  - system_prompt (페르소나 / 가드레일)
  *  - allowed_references (Library Reference 영역 multi-select)
  *  - allowed_sysmods (sysmod 영역 multi-select)
+ *  - allowed_skills / allowed_templates (admin 작성 스킬·템플릿 공유 allowlist — system 은 항상 노출)
  *  - allowed_domains (origin whitelist, 줄바꿈 분리)
  *  - enabled (활성 / 비활성 toggle)
  *  - api_token (표시 + 복사 + rotate)
@@ -47,6 +48,9 @@ export function HubInstanceDetail({
   const [exposePage, setExposePage] = useState(instance.exposePage);
   const [allowedReferences, setAllowedReferences] = useState<string[]>(instance.allowedReferences);
   const [allowedSysmods, setAllowedSysmods] = useState<string[]>(instance.allowedSysmods);
+  // admin 스킬·템플릿 공유 allowlist — system 은 항상 노출되므로 admin(user/) 작성분만 대상.
+  const [allowedSkills, setAllowedSkills] = useState<string[]>(instance.allowedSkills ?? []);
+  const [allowedTemplates, setAllowedTemplates] = useState<string[]>(instance.allowedTemplates ?? []);
   const [allowedDomains, setAllowedDomains] = useState(instance.allowedDomains.join('\n'));
   const [apiToken, setApiToken] = useState(instance.apiToken);
   const [saving, setSaving] = useState(false);
@@ -55,6 +59,9 @@ export function HubInstanceDetail({
   // 모든 Library Reference + sysmod list 영역 multi-select 위해 로드
   const [references, setReferences] = useState<LibraryReferencePb[]>([]);
   const [sysmods, setSysmods] = useState<SysmodEntry[]>([]);
+  // admin 스킬·템플릿 목록(공유 후보) — user 작성분만 (system 은 전 hub 공통 노출이라 제외).
+  const [adminSkills, setAdminSkills] = useState<Array<{ slug: string; name: string; description?: string }>>([]);
+  const [adminTemplates, setAdminTemplates] = useState<Array<{ slug: string; name: string; description?: string }>>([]);
 
   const nameId = useId();
   const descId = useId();
@@ -94,6 +101,26 @@ export function HubInstanceDetail({
         setSysmods(d.modules.map(m => ({ name: m.name, description: m.description })));
       }
     }).catch(e => logger.debug('hub', 'load_sysmods 실패', { error: e }));
+
+    // admin 스킬 목록 (공유 후보 — user 작성분만. system 스킬은 전 hub 공통 노출).
+    apiGet<{ success: boolean; items?: Array<{ slug: string; name: string; description?: string; source?: string }> }>(
+      '/api/skills',
+      { category: 'hub' },
+    ).then(d => {
+      if (d.success && Array.isArray(d.items)) {
+        setAdminSkills(d.items.filter(s => s.source !== 'system'));
+      }
+    }).catch(e => logger.debug('hub', 'load_skills 실패', { error: e }));
+
+    // admin 템플릿 목록 (공유 후보 — user 작성분만).
+    apiGet<{ success: boolean; templates?: Array<{ slug: string; name: string; description?: string; source?: string }> }>(
+      '/api/templates',
+      { category: 'hub' },
+    ).then(d => {
+      if (d.success && Array.isArray(d.templates)) {
+        setAdminTemplates(d.templates.filter(t => t.source !== 'system'));
+      }
+    }).catch(e => logger.debug('hub', 'load_templates 실패', { error: e }));
   }, []);
 
   const toggleReference = (id: string) => {
@@ -105,6 +132,18 @@ export function HubInstanceDetail({
   const toggleSysmod = (name: string) => {
     setAllowedSysmods(prev =>
       prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name]
+    );
+  };
+
+  const toggleSkill = (slug: string) => {
+    setAllowedSkills(prev =>
+      prev.includes(slug) ? prev.filter(x => x !== slug) : [...prev, slug]
+    );
+  };
+
+  const toggleTemplate = (slug: string) => {
+    setAllowedTemplates(prev =>
+      prev.includes(slug) ? prev.filter(x => x !== slug) : [...prev, slug]
     );
   };
 
@@ -127,6 +166,10 @@ export function HubInstanceDetail({
           replaceAllowedReferences: true,
           allowedSysmods,
           replaceAllowedSysmods: true,
+          allowedSkills,
+          replaceAllowedSkills: true,
+          allowedTemplates,
+          replaceAllowedTemplates: true,
           allowedDomains: domains,
           replaceAllowedDomains: true,
         },
@@ -146,7 +189,7 @@ export function HubInstanceDetail({
     } finally {
       setSaving(false);
     }
-  }, [instance.id, name, description, systemPrompt, enabled, kind, exposeWidget, exposePage, allowedReferences, allowedSysmods, allowedDomains]);
+  }, [instance.id, name, description, systemPrompt, enabled, kind, exposeWidget, exposePage, allowedReferences, allowedSysmods, allowedSkills, allowedTemplates, allowedDomains]);
 
   const handleRotateToken = useCallback(async () => {
     const ok = await confirmDialog({
@@ -412,6 +455,72 @@ export function HubInstanceDetail({
               })}
             </div>
           )}
+        </div>
+
+        {/* 공유 스킬 — admin(user/) 스킬 중 이 인스턴스에 노출할 것. system 스킬은 항상 노출. */}
+        <div className="flex flex-col gap-1">
+          <div className="text-[11px] font-bold text-slate-600">공유 스킬 (admin 작성분)</div>
+          {adminSkills.length === 0 ? (
+            <p className="text-[11px] text-slate-400 italic">admin 작성 스킬이 없습니다. 기본(system) 스킬은 항상 노출됩니다.</p>
+          ) : (
+            <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
+              {adminSkills.map(sk => {
+                const skillInputId = `hub-skill-${sk.slug}`;
+                return (
+                  <label key={sk.slug} htmlFor={skillInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
+                    <input
+                      id={skillInputId}
+                      type="checkbox"
+                      name="allowedSkills"
+                      value={sk.slug}
+                      checked={allowedSkills.includes(sk.slug)}
+                      onChange={() => toggleSkill(sk.slug)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={`skill ${sk.name}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-[11px] text-slate-700">{sk.slug}</div>
+                      {sk.description && <div className="text-[10px] text-slate-400 truncate">{sk.description}</div>}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400">체크한 스킬이 이 Hub 의 AI 스킬 인덱스·검색에 함께 노출됩니다 (읽기 전용 공유).</p>
+        </div>
+
+        {/* 공유 템플릿 — admin 템플릿 중 이 인스턴스에 노출할 것. */}
+        <div className="flex flex-col gap-1">
+          <div className="text-[11px] font-bold text-slate-600">공유 템플릿 (admin 작성분)</div>
+          {adminTemplates.length === 0 ? (
+            <p className="text-[11px] text-slate-400 italic">admin 작성 템플릿이 없습니다.</p>
+          ) : (
+            <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
+              {adminTemplates.map(tp => {
+                const tplInputId = `hub-template-${tp.slug}`;
+                return (
+                  <label key={tp.slug} htmlFor={tplInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
+                    <input
+                      id={tplInputId}
+                      type="checkbox"
+                      name="allowedTemplates"
+                      value={tp.slug}
+                      checked={allowedTemplates.includes(tp.slug)}
+                      onChange={() => toggleTemplate(tp.slug)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={`template ${tp.name}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-[11px] text-slate-700">{tp.slug}</div>
+                      <div className="text-[10px] text-slate-400 truncate">{tp.name}{tp.description ? ` — ${tp.description}` : ''}</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400">체크한 템플릿을 이 Hub 의 AI 가 get_template 으로 사용할 수 있습니다 (읽기 전용 공유).</p>
         </div>
 
         {/* 허용 도메인 */}

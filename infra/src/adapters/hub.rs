@@ -55,7 +55,9 @@ impl SqliteHubAdapter {
                 updated_at INTEGER NOT NULL,
                 expose_widget INTEGER NOT NULL DEFAULT 1,
                 expose_page INTEGER NOT NULL DEFAULT 1,
-                kind TEXT NOT NULL DEFAULT 'widget'
+                kind TEXT NOT NULL DEFAULT 'widget',
+                allowed_skills TEXT NOT NULL DEFAULT '[]',
+                allowed_templates TEXT NOT NULL DEFAULT '[]'
             );
             CREATE TABLE hub_conversations (
                 id TEXT PRIMARY KEY,
@@ -112,8 +114,8 @@ impl IHubPort for SqliteHubAdapter {
                 id, slug, name, description, system_prompt,
                 allowed_references, allowed_sysmods, model_id, enabled,
                 api_token, allowed_domains, created_at, updated_at,
-                expose_widget, expose_page, kind
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                expose_widget, expose_page, kind, allowed_skills, allowed_templates
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 instance.id,
                 instance.slug,
@@ -131,6 +133,8 @@ impl IHubPort for SqliteHubAdapter {
                 instance.expose_widget as i64,
                 instance.expose_page as i64,
                 instance.kind,
+                vec_to_json_array(&instance.allowed_skills),
+                vec_to_json_array(&instance.allowed_templates),
             ],
         )
         .map_err(|e| format!("hub_instances insert: {e}"))?;
@@ -144,7 +148,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page, kind
+                        expose_widget, expose_page, kind, allowed_skills, allowed_templates
                  FROM hub_instances
                  ORDER BY updated_at DESC",
             )
@@ -166,7 +170,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page, kind
+                        expose_widget, expose_page, kind, allowed_skills, allowed_templates
                  FROM hub_instances WHERE id = ?1",
             )
             .map_err(|e| format!("hub_instances get prepare: {e}"))?;
@@ -181,7 +185,7 @@ impl IHubPort for SqliteHubAdapter {
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at,
-                        expose_widget, expose_page, kind
+                        expose_widget, expose_page, kind, allowed_skills, allowed_templates
                  FROM hub_instances WHERE slug = ?1",
             )
             .map_err(|e| format!("hub_instances get_by_slug prepare: {e}"))?;
@@ -197,8 +201,9 @@ impl IHubPort for SqliteHubAdapter {
                 slug = ?1, name = ?2, description = ?3, system_prompt = ?4,
                 allowed_references = ?5, allowed_sysmods = ?6, model_id = ?7, enabled = ?8,
                 api_token = ?9, allowed_domains = ?10, updated_at = ?11,
-                expose_widget = ?12, expose_page = ?13, kind = ?14
-             WHERE id = ?15",
+                expose_widget = ?12, expose_page = ?13, kind = ?14,
+                allowed_skills = ?15, allowed_templates = ?16
+             WHERE id = ?17",
             params![
                 instance.slug,
                 instance.name,
@@ -214,6 +219,8 @@ impl IHubPort for SqliteHubAdapter {
                 instance.expose_widget as i64,
                 instance.expose_page as i64,
                 instance.kind,
+                vec_to_json_array(&instance.allowed_skills),
+                vec_to_json_array(&instance.allowed_templates),
                 instance.id,
             ],
         )
@@ -492,6 +499,8 @@ fn row_to_instance(row: &rusqlite::Row) -> rusqlite::Result<HubInstance> {
         expose_widget: row.get::<_, i64>(13)? != 0,
         expose_page: row.get::<_, i64>(14)? != 0,
         kind: row.get(15)?,
+        allowed_skills: json_array_to_vec(&row.get::<_, String>(16)?),
+        allowed_templates: json_array_to_vec(&row.get::<_, String>(17)?),
     })
 }
 
@@ -540,6 +549,8 @@ mod tests {
             expose_widget: true,
             expose_page: true,
             kind: "widget".to_string(),
+            allowed_skills: vec!["shared-skill".into()],
+            allowed_templates: vec!["shared-tpl".into()],
         }
     }
 
@@ -553,6 +564,8 @@ mod tests {
         assert_eq!(by_id.slug, "test-slug");
         assert_eq!(by_id.allowed_references, vec!["ref-1".to_string()]);
         assert_eq!(by_id.allowed_sysmods, vec!["calendar".to_string()]);
+        assert_eq!(by_id.allowed_skills, vec!["shared-skill".to_string()]);
+        assert_eq!(by_id.allowed_templates, vec!["shared-tpl".to_string()]);
         assert!(by_id.enabled);
 
         let by_slug = adapter

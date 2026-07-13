@@ -3074,6 +3074,12 @@ pub struct HubInstance {
     // instance kind — 'tenant'(full workspace, admin logic scoped to its own owner) | 'widget'(embed chatbot, allowlist).
     #[serde(default = "default_hub_kind")]
     pub kind: String,
+    // admin 이 이 인스턴스에 공유하는 자원 allowlist (allowed_references 미러) — 위젯이 system 외에
+    // 볼 수 있는 admin(user/) 스킬·템플릿 slug. 빈 = 공유 0 (system ∪ 자기 세션만 = safe-closed).
+    #[serde(default)]
+    pub allowed_skills: Vec<String>,
+    #[serde(default)]
+    pub allowed_templates: Vec<String>,
 }
 
 fn default_hub_kind() -> String {

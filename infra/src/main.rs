@@ -563,10 +563,13 @@ async fn main() -> Result<()> {
     // 대화 영속 = ConversationManager 단일 매니저(admin·hub 동일 로직, owner-keyed). HubManager 는
     // 인스턴스(위젯) + send 오케스트레이션만 담당.
     let hub_manager = Arc::new(
-        firebat_core::managers::hub::HubManager::new(hub_port)
+        firebat_core::managers::hub::HubManager::new(hub_port.clone())
             .with_page(page_manager.clone())
             .with_conversation(conversation_manager.clone()),
     );
+    // widget allowlist(공유 스킬·템플릿) — 매니저가 hub owner 문자열로 인스턴스 allowlist 를 스스로
+    // 해석(단일 choke-point: list/get/read/검색 카탈로그 전 소비처 자동 커버). 포트 주입만 하면 끝.
+    template_manager.set_hub_port(hub_port.clone());
 
     // RetrievalEngine — 매 사용자 query 시점 5-tier 통합 검색 (history + entities + facts + events + library).
     // AiManager 가 vault `system:ai-router:enabled` 토글 검사 — true 시점만 호출 → 시스템 프롬프트
@@ -617,6 +620,8 @@ async fn main() -> Result<()> {
     let skill_file_manager = Arc::new(
         firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
     );
+    // widget allowlist(공유 스킬) — template_manager 와 동일한 hub port 주입.
+    skill_file_manager.set_hub_port(hub_port.clone());
 
     // #search-tool 카탈로그 임베더 게이트(카탈로그 6종 공용 — actions/components/skills/templates/
     // pages/media). assistant 탭 설정(`system:embed:catalog-provider`) + 섀도우 토글이 소스:

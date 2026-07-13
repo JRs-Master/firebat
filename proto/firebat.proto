@@ -2754,6 +2754,10 @@ message HubInstancePb {
   bool expose_widget = 14;                    // 외부 사이트 임베드 풍선 widget (allowed_domains 검증)
   bool expose_page = 15;                      // 우리 사이트 풀스크린 URL `/<slug>` (self host 자동 허용)
   string kind = 16;                           // instance kind: 'tenant'(full workspace) | 'widget'(embed chatbot)
+  // admin 이 이 인스턴스에 공유하는 자원 allowlist (allowed_references 미러) — 위젯이 system 외에
+  // 볼 수 있는 admin(user/) 스킬·템플릿 slug 목록. 빈 배열 = 공유 0 (system ∪ 자기 세션만).
+  repeated string allowed_skills = 17;
+  repeated string allowed_templates = 18;
 }
 
 message HubConversationPb {
@@ -2790,6 +2794,8 @@ message HubCreateInstanceRequest {
   optional bool expose_widget = 10;
   optional bool expose_page = 11;
   optional string kind = 12;                 // 'tenant' | 'widget'. 미설정 = 'widget'(기본)
+  repeated string allowed_skills = 13;       // admin 스킬 공유 allowlist (slug)
+  repeated string allowed_templates = 14;    // admin 템플릿 공유 allowlist (slug)
 }
 message HubCreateInstanceResponse {
   string id = 1;
@@ -2834,6 +2840,10 @@ message HubUpdateInstanceRequest {
   optional bool expose_widget = 13;
   optional bool expose_page = 14;
   optional string kind = 15;                 // 'tenant' | 'widget' patch (None = 옛 값 유지)
+  repeated string allowed_skills = 16;       // admin 스킬 공유 allowlist patch
+  bool replace_allowed_skills = 17;
+  repeated string allowed_templates = 18;    // admin 템플릿 공유 allowlist patch
+  bool replace_allowed_templates = 19;
 }
 message HubUpdateInstanceResponse {}
 

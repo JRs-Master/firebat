@@ -9,9 +9,9 @@
 //! Phase B 변환 룰 (1:1 매핑 X) 적용 — slug 검증, JSON parse 견고성, 일반 로직 유지.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-use crate::ports::{IStoragePort, InfraResult};
+use crate::ports::{IHubPort, IStoragePort, InfraResult};
 use chrono::{DateTime, Datelike, Timelike};
 use chrono_tz::Tz;
 
@@ -51,15 +51,54 @@ pub struct TemplateEntry {
     pub name: String,
     pub description: String,
     pub tags: Vec<String>,
+    /// "system" (shipped 또는 hub 에 공유된 admin 템플릿 = read-only 베이스) | "user" (owner 작성).
+    /// 옛 데이터/호출 호환 — serde default 빈 문자열.
+    #[serde(default)]
+    pub source: String,
 }
+
+/// shipped(repo) 템플릿 베이스 — 스킬 system/skills 미러. 없으면 빈 목록(디렉토리 자체가 옵션).
+const SYSTEM_TEMPLATES_DIR: &str = "system/templates";
+/// admin 작성 템플릿 베이스 (hub 공유 오버레이의 소스).
+const ADMIN_TEMPLATES_DIR: &str = "user/templates";
 
 pub struct TemplateManager {
     storage: Arc<dyn IStoragePort>,
+    /// Hub instance lookup — hub owner 의 `allowed_templates`(admin 공유 allowlist)를 이 leaf 가
+    /// 스스로 해석해, 모든 소비처(AI 도구·grpc 패널·검색 카탈로그)가 list()/get() 한 지점에서
+    /// 공유 오버레이를 받게 한다 (skill_file 미러). None = 공유 0.
+    hub: RwLock<Option<Arc<dyn IHubPort>>>,
 }
 
 impl TemplateManager {
     pub fn new(storage: Arc<dyn IStoragePort>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            hub: RwLock::new(None),
+        }
+    }
+
+    /// main.rs wiring — hub port injection (construction order free).
+    pub fn set_hub_port(&self, port: Arc<dyn IHubPort>) {
+        if let Ok(mut g) = self.hub.write() {
+            *g = Some(port);
+        }
+    }
+
+    /// hub owner scope(`<inst>[:<sid>]`) → admin 이 그 인스턴스에 공유한 템플릿 slugs.
+    /// admin(None) 또는 port 미배선 = 빈 배열 (공유 0 = safe-closed).
+    pub async fn shared_admin_slugs(&self, owner: Option<&str>) -> Vec<String> {
+        let Some(o) = owner else { return Vec::new() };
+        let Some(inst) = crate::utils::hub_context::hub_instance_id_of_owner(o) else {
+            return Vec::new();
+        };
+        let inst = inst.to_string();
+        let port = self.hub.read().ok().and_then(|g| g.clone());
+        let Some(port) = port else { return Vec::new() };
+        match port.get_instance(&inst).await {
+            Ok(Some(i)) => i.allowed_templates,
+            _ => Vec::new(),
+        }
     }
 
     /// owner 기준 base path — None = admin (`user/templates/`),
@@ -79,11 +118,9 @@ impl TemplateManager {
         }
     }
 
-    /// 템플릿 목록 — owner 기준 디렉토리 스캔. None = admin, Some(hub_id) = 해당 hub.
-    /// 잘못된 JSON 은 silent skip.
-    pub async fn list(&self, owner: Option<&str>) -> Vec<TemplateEntry> {
-        let Ok(base) = Self::base_path(owner) else { return vec![]; };
-        let Ok(entries) = self.storage.list_dir(&base).await else {
+    /// 한 base 디렉토리 스캔 — `{base}/{slug}/template.json` 파싱. 잘못된 JSON silent skip.
+    async fn scan_entries(&self, base: &str, source: &str) -> Vec<TemplateEntry> {
+        let Ok(entries) = self.storage.list_dir(base).await else {
             return vec![];
         };
         let mut out = Vec::new();
@@ -104,18 +141,61 @@ impl TemplateManager {
                 name: t.name,
                 description: t.description,
                 tags: t.tags,
+                source: source.to_string(),
             });
         }
         out
     }
 
-    /// 템플릿 1건 조회 — 없으면 None.
+    /// 템플릿 목록 = system(shipped) ∪ [hub 공유(admin ∩ allowlist)] ∪ owner — 뒤가 같은 slug 를
+    /// 덮음(스킬 list 미러: owner 버전이 베이스를 override, 삭제 시 베이스 복원). system/공유는
+    /// source="system"(read-only 베이스), owner 작성분 = "user". 잘못된 JSON silent skip.
+    pub async fn list(&self, owner: Option<&str>) -> Vec<TemplateEntry> {
+        let mut by_slug: std::collections::BTreeMap<String, TemplateEntry> =
+            std::collections::BTreeMap::new();
+        for e in self.scan_entries(SYSTEM_TEMPLATES_DIR, "system").await {
+            by_slug.insert(e.slug.clone(), e);
+        }
+        let shared = self.shared_admin_slugs(owner).await;
+        if !shared.is_empty() {
+            for e in self.scan_entries(ADMIN_TEMPLATES_DIR, "system").await {
+                if !shared.iter().any(|s| s == &e.slug) {
+                    continue;
+                }
+                by_slug.insert(e.slug.clone(), e);
+            }
+        }
+        let Ok(base) = Self::base_path(owner) else {
+            return by_slug.into_values().collect();
+        };
+        for e in self.scan_entries(&base, "user").await {
+            by_slug.insert(e.slug.clone(), e);
+        }
+        by_slug.into_values().collect()
+    }
+
+    /// 템플릿 1건 조회 — owner 작성분 → hub 공유(admin ∩ allowlist) → system(shipped) 순.
     pub async fn get(&self, owner: Option<&str>, slug: &str) -> Option<TemplateConfig> {
         if !is_safe_slug(slug) {
             return None;
         }
-        let base = Self::base_path(owner).ok()?;
-        let path = format!("{}/{}/template.json", base, slug);
+        if let Ok(base) = Self::base_path(owner) {
+            let path = format!("{}/{}/template.json", base, slug);
+            if let Ok(json) = self.storage.read(&path).await {
+                if let Ok(t) = serde_json::from_str(&json) {
+                    return Some(t);
+                }
+            }
+        }
+        if self.shared_admin_slugs(owner).await.iter().any(|s| s == slug) {
+            let path = format!("{}/{}/template.json", ADMIN_TEMPLATES_DIR, slug);
+            if let Ok(json) = self.storage.read(&path).await {
+                if let Ok(t) = serde_json::from_str(&json) {
+                    return Some(t);
+                }
+            }
+        }
+        let path = format!("{}/{}/template.json", SYSTEM_TEMPLATES_DIR, slug);
         let json = self.storage.read(&path).await.ok()?;
         serde_json::from_str(&json).ok()
     }

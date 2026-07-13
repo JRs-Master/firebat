@@ -16,9 +16,9 @@
 //! by `kind`, so add/delete/edit auto-reflects (no separate index to maintain).
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-use crate::ports::{IStoragePort, InfraResult};
+use crate::ports::{IHubPort, IStoragePort, InfraResult};
 
 /// Canonical kinds, in index display order. Unknown kinds land under "other" (extensible).
 pub const SKILL_KINDS: [&str; 5] = ["design", "tool-usage", "procedure", "persona", "policy"];
@@ -59,6 +59,11 @@ pub struct SkillFileManager {
     system_dir: PathBuf,
     /// Writable base — admin owner. Hub owners nest under `user/hub/<inst>/<sid>/skills`.
     user_dir: PathBuf,
+    /// Hub instance lookup (port, not a manager) — lets this leaf resolve a hub owner's
+    /// `allowed_skills` allowlist by itself, so EVERY consumer (FC/MCP tools, index injection,
+    /// grpc panel, search catalog) gets the admin-shared overlay through the one list()/read()
+    /// choke point. None (tests / pre-wiring) = no sharing.
+    hub: RwLock<Option<Arc<dyn IHubPort>>>,
 }
 
 impl SkillFileManager {
@@ -67,7 +72,41 @@ impl SkillFileManager {
             storage,
             system_dir: PathBuf::from("system/skills"),
             user_dir: PathBuf::from("user/skills"),
+            hub: RwLock::new(None),
         }
+    }
+
+    /// main.rs wiring — hub port injection (construction order free).
+    pub fn set_hub_port(&self, port: Arc<dyn IHubPort>) {
+        if let Ok(mut g) = self.hub.write() {
+            *g = Some(port);
+        }
+    }
+
+    /// hub owner → admin 이 그 인스턴스에 공유한 스킬 slugs (`HubInstance.allowed_skills`).
+    /// admin/None owner 또는 hub port 미배선 = 빈 배열 (공유 0 = safe-closed).
+    pub async fn shared_admin_slugs(&self, owner: Option<&str>) -> Vec<String> {
+        let Some(o) = owner else { return Vec::new() };
+        let Some(inst) = crate::utils::hub_context::hub_instance_id_of_owner(o) else {
+            return Vec::new();
+        };
+        let inst = inst.to_string();
+        let port = self.hub.read().ok().and_then(|g| g.clone());
+        let Some(port) = port else { return Vec::new() };
+        match port.get_instance(&inst).await {
+            Ok(Some(i)) => i.allowed_skills,
+            _ => Vec::new(),
+        }
+    }
+
+    /// slug 가 이 owner 의 공유 allowlist 에 있으면 admin(user/skills) 파일 경로.
+    async fn shared_admin_path(&self, owner: Option<&str>, slug: &str) -> Option<String> {
+        let stem = slug.trim().trim_end_matches(".md");
+        let shared = self.shared_admin_slugs(owner).await;
+        if !shared.iter().any(|s| s == stem) {
+            return None;
+        }
+        resolve_path(&self.user_dir, slug).ok()
     }
 
     /// Create or overwrite a skill in the writable owner dir (never system). Same slug overwrites.
@@ -83,8 +122,17 @@ impl SkillFileManager {
         let sys_path = resolve_path(&self.system_dir, slug)?;
         if let Ok(raw) = self.storage.read(&user_path).await {
             let mut e = parse_entry(stem, &raw, "user");
-            e.overrides_system = self.storage.read(&sys_path).await.is_ok();
+            // shared(admin allowlist) 베이스를 가리는 own 파일도 override — 삭제 = 베이스 복원.
+            e.overrides_system = self.storage.read(&sys_path).await.is_ok()
+                || self.shared_admin_path(owner, slug).await.is_some();
             return Ok(e);
+        }
+        // hub 공유 베이스 (admin 스킬 ∩ allowlist) — own 파일 없을 때 system 보다 우선
+        // (admin 이 system slug 를 자기 버전으로 덮은 뒤 공유한 경우 그 버전이 보여야 함).
+        if let Some(p) = self.shared_admin_path(owner, slug).await {
+            if let Ok(raw) = self.storage.read(&p).await {
+                return Ok(parse_entry(stem, &raw, "system"));
+            }
         }
         let raw = self.storage.read(&sys_path).await?;
         Ok(parse_entry(stem, &raw, "system"))
@@ -103,6 +151,19 @@ impl SkillFileManager {
             std::collections::BTreeMap::new();
         for e in self.read_dir_entries(&self.system_dir, "system").await {
             by_slug.insert(e.slug.clone(), e);
+        }
+        // hub 공유 오버레이 — admin(user/skills) 스킬 중 인스턴스 allowlist(allowed_skills)에 든 것.
+        // 위젯 시점에선 system 과 같은 read-only 베이스라 source="system" 으로 합류(삭제 차단·
+        // override 뱃지·복원이 기존 system 규칙 그대로). admin/None owner = shared 빈 배열 → 무변.
+        let shared = self.shared_admin_slugs(owner).await;
+        if !shared.is_empty() {
+            for mut e in self.read_dir_entries(&self.user_dir, "system").await {
+                if !shared.iter().any(|s| s == &e.slug) {
+                    continue;
+                }
+                e.overrides_system = false;
+                by_slug.insert(e.slug.clone(), e);
+            }
         }
         let owner_buf = owner_dir(&self.user_dir, owner)?;
         for mut e in self.read_dir_entries(&owner_buf, "user").await {

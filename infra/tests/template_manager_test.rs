@@ -134,3 +134,64 @@ async fn hub_owner_isolation() {
     assert!(mgr.get(None, "common").await.is_some());
     assert!(mgr.get(Some("inst-B"), "common").await.is_some());
 }
+
+/// widget allowlist — admin 템플릿이 hub 인스턴스의 allowed_templates 에 있을 때만
+/// 그 hub 의 list/get 에 read-only 베이스(source="system")로 합류. 미공유 = 불가시(safe-closed).
+#[tokio::test]
+async fn hub_shared_admin_templates_overlay() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
+    let mgr = TemplateManager::new(storage);
+
+    // admin 작성 2건 — 하나만 공유
+    mgr.save(None, "shared-report", &make_template("공유 리포트")).await.unwrap();
+    mgr.save(None, "private-report", &make_template("비공유 리포트")).await.unwrap();
+
+    // memory.db 스키마(SqliteMemoryAdapter initialize) 위에 hub instance 생성
+    let db = dir.path().join("memory.db");
+    let _schema = firebat_infra::adapters::memory::SqliteMemoryAdapter::new(&db).unwrap();
+    let hub: Arc<dyn firebat_core::ports::IHubPort> =
+        Arc::new(firebat_infra::adapters::hub::SqliteHubAdapter::new(&db).unwrap());
+    let inst = firebat_core::ports::HubInstance {
+        id: "inst-share".to_string(),
+        slug: "share-test".to_string(),
+        name: "share".to_string(),
+        description: None,
+        system_prompt: None,
+        allowed_references: vec![],
+        allowed_sysmods: vec![],
+        model_id: None,
+        enabled: true,
+        api_token: "tok".to_string(),
+        allowed_domains: vec![],
+        created_at: 0,
+        updated_at: 0,
+        expose_widget: true,
+        expose_page: true,
+        kind: "widget".to_string(),
+        allowed_skills: vec![],
+        allowed_templates: vec!["shared-report".to_string()],
+    };
+    hub.create_instance(&inst).await.unwrap();
+    mgr.set_hub_port(hub);
+
+    // hub 세션 owner scope = "<inst>:<sid>"
+    let owner = "inst-share:sess1".to_string();
+    let list = mgr.list(Some(&owner)).await;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].slug, "shared-report");
+    assert_eq!(list[0].source, "system"); // read-only 베이스로 합류
+
+    assert!(mgr.get(Some(&owner), "shared-report").await.is_some());
+    assert!(mgr.get(Some(&owner), "private-report").await.is_none()); // 미공유 = 불가시
+
+    // hub 가 같은 slug 로 자기 버전 저장 = override (베이스 불변)
+    mgr.save(Some(&owner), "shared-report", &make_template("hub 버전")).await.unwrap();
+    assert_eq!(mgr.get(Some(&owner), "shared-report").await.unwrap().name, "hub 버전");
+    assert_eq!(mgr.get(None, "shared-report").await.unwrap().name, "공유 리포트");
+
+    // admin 시점은 무변 (source="user" 2건)
+    let admin_list = mgr.list(None).await;
+    assert_eq!(admin_list.len(), 2);
+    assert!(admin_list.iter().all(|e| e.source == "user"));
+}

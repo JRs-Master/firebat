@@ -59,6 +59,9 @@ pub struct CreateInstanceInput {
     pub expose_page: Option<bool>,
     // instance kind — None = 'widget'(기본). 'tenant' = 풀 워크스페이스.
     pub kind: Option<String>,
+    // admin 스킬·템플릿 공유 allowlist (slug) — allowed_references 미러.
+    pub allowed_skills: Vec<String>,
+    pub allowed_templates: Vec<String>,
 }
 
 /// 부분 update — 매 필드 Option (None = 변경 X). enabled / api_token 영역 별도 토글 메서드.
@@ -75,6 +78,8 @@ pub struct UpdateInstanceInput {
     pub expose_widget: Option<bool>,
     pub expose_page: Option<bool>,
     pub kind: Option<String>,
+    pub allowed_skills: Option<Vec<String>>,
+    pub allowed_templates: Option<Vec<String>>,
 }
 
 pub struct HubManager {
@@ -182,6 +187,8 @@ impl HubManager {
             expose_page: input.expose_page.unwrap_or(true),
             // 기본 'widget' — admin 이 명시 'tenant' 로 승격해야 풀 워크스페이스.
             kind: input.kind.unwrap_or_else(|| "widget".to_string()),
+            allowed_skills: input.allowed_skills,
+            allowed_templates: input.allowed_templates,
         };
         self.port.create_instance(&instance).await?;
         Ok(id)
@@ -245,6 +252,12 @@ impl HubManager {
         }
         if let Some(v) = patch.kind {
             current.kind = v;
+        }
+        if let Some(v) = patch.allowed_skills {
+            current.allowed_skills = v;
+        }
+        if let Some(v) = patch.allowed_templates {
+            current.allowed_templates = v;
         }
         current.updated_at = Self::now_ms();
         self.port.update_instance(&current).await

@@ -66,6 +66,8 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
         // instance kind — 'tenant'(풀 워크스페이스) | 'widget'(임베드 챗봇). 그 외 값 = backend default('widget')
         kind: args?.kind === 'tenant' || args?.kind === 'widget' ? args.kind : undefined,
+        allowedSkills: Array.isArray(args?.allowedSkills) ? args.allowedSkills.map(String) : [],
+        allowedTemplates: Array.isArray(args?.allowedTemplates) ? args.allowedTemplates.map(String) : [],
       });
     case 'list-instances':
       return listInstances();
@@ -90,6 +92,10 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         exposeWidget: typeof args?.exposeWidget === 'boolean' ? args.exposeWidget : undefined,
         exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
         kind: args?.kind === 'tenant' || args?.kind === 'widget' ? args.kind : undefined,
+        allowedSkills: Array.isArray(args?.allowedSkills) ? args.allowedSkills.map(String) : [],
+        replaceAllowedSkills: args?.replaceAllowedSkills === true,
+        allowedTemplates: Array.isArray(args?.allowedTemplates) ? args.allowedTemplates.map(String) : [],
+        replaceAllowedTemplates: args?.replaceAllowedTemplates === true,
       });
     case 'delete-instance':
       return deleteInstance({ id: String(args?.id ?? '') });

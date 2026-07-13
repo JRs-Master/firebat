@@ -226,7 +226,9 @@ impl SqliteMemoryAdapter {
                 updated_at INTEGER NOT NULL,
                 expose_widget INTEGER NOT NULL DEFAULT 1,       -- 1=widget 임베드 노출, 0=숨김
                 expose_page INTEGER NOT NULL DEFAULT 1,         -- 1=/hub/{slug} 풀스크린 노출, 0=숨김
-                kind TEXT NOT NULL DEFAULT 'widget'             -- 'tenant'(full workspace) | 'widget'(embed chatbot)
+                kind TEXT NOT NULL DEFAULT 'widget',            -- 'tenant'(full workspace) | 'widget'(embed chatbot)
+                allowed_skills TEXT NOT NULL DEFAULT '[]',      -- JSON array — admin(user/) 스킬 공유 allowlist (slug)
+                allowed_templates TEXT NOT NULL DEFAULT '[]'    -- JSON array — admin 템플릿 공유 allowlist (slug)
             );
             CREATE INDEX IF NOT EXISTS idx_hub_instances_slug ON hub_instances(slug);
             CREATE INDEX IF NOT EXISTS idx_hub_instances_updated ON hub_instances(updated_at DESC);
@@ -275,6 +277,9 @@ impl SqliteMemoryAdapter {
             "ALTER TABLE events ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
             "ALTER TABLE events ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE events ADD COLUMN last_seen INTEGER",
+            // hub widget allowlist (2026-07-14) — memory.db 는 라이브 데이터(library 등)라 리셋 회피.
+            "ALTER TABLE hub_instances ADD COLUMN allowed_skills TEXT NOT NULL DEFAULT '[]'",
+            "ALTER TABLE hub_instances ADD COLUMN allowed_templates TEXT NOT NULL DEFAULT '[]'",
         ] {
             let _ = conn.execute(sql, []);
         }

@@ -103,6 +103,8 @@ fn instance_to_pb(i: HubInstance) -> HubInstancePb {
         expose_widget: i.expose_widget,
         expose_page: i.expose_page,
         kind: i.kind,
+        allowed_skills: i.allowed_skills,
+        allowed_templates: i.allowed_templates,
     }
 }
 
@@ -150,6 +152,8 @@ impl HubService for HubServiceImpl {
             expose_widget: args.expose_widget,
             expose_page: args.expose_page,
             kind: args.kind,
+            allowed_skills: args.allowed_skills,
+            allowed_templates: args.allowed_templates,
         };
         let id = self
             .manager
@@ -234,6 +238,16 @@ impl HubService for HubServiceImpl {
             expose_widget: args.expose_widget,
             expose_page: args.expose_page,
             kind: args.kind,
+            allowed_skills: if args.replace_allowed_skills {
+                Some(args.allowed_skills)
+            } else {
+                None
+            },
+            allowed_templates: if args.replace_allowed_templates {
+                Some(args.allowed_templates)
+            } else {
+                None
+            },
         };
         self.manager
             .update_instance(&args.id, patch)

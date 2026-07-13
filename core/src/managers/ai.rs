@@ -991,6 +991,13 @@ impl AiManager {
                 .map(|s| !s.is_empty())
                 .unwrap_or(false)
         }
+        /// hub 호출의 owner scope(`<inst>:<sid>`) — allowlist(공유 스킬·템플릿) 해석용.
+        fn hub_scope_of(args: &serde_json::Value) -> Option<String> {
+            args.get("_hubScope")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        }
         fn q_of(args: &serde_json::Value) -> String {
             args.get("query").and_then(|v| v.as_str()).unwrap_or("").to_string()
         }
@@ -999,6 +1006,7 @@ impl AiManager {
         }
 
         // ── search_skills (semantic 승격 — 옛 substring 판 오버라이드) ──
+        let skills_mgr = skills.clone();
         let skill_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "skill-catalog",
             embedder.clone(),
@@ -1011,15 +1019,26 @@ impl AiManager {
         let sc = skill_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = sc.clone();
+            let mgr = skills_mgr.clone();
             async move {
-                let scopes: Vec<String> = if is_hub_call(&args) {
-                    vec!["system:".into()]
-                } else {
-                    vec!["system:".into(), "admin:".into()]
+                // hub 도 admin 스코프까지 질의하되, admin 히트는 그 인스턴스의 공유 allowlist
+                // (allowed_skills)에 든 slug 만 통과 — system 히트는 전 hub 공통(현행 유지).
+                let hub_shared: Option<Vec<String>> = match hub_scope_of(&args) {
+                    Some(scope) => Some(mgr.shared_admin_slugs(Some(&scope)).await),
+                    None => None,
                 };
+                let scopes: Vec<String> = vec!["system:".into(), "admin:".into()];
                 let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
+                    .filter(|m| match &hub_shared {
+                        None => true, // admin 호출 — 무필터
+                        Some(shared) => {
+                            let src = m.extra.get("source").and_then(|v| v.as_str()).unwrap_or("");
+                            let slug = m.extra.get("slug").and_then(|v| v.as_str()).unwrap_or("");
+                            src == "system" || shared.iter().any(|s| s == slug)
+                        }
+                    })
                     .map(|m| serde_json::json!({
                         "slug": m.extra.get("slug").cloned().unwrap_or_default(),
                         "name": m.name,
@@ -1047,6 +1066,7 @@ impl AiManager {
         });
 
         // ── search_templates (신설) ──
+        let templates_mgr = templates.clone();
         let tpl_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "template-catalog",
             embedder.clone(),
@@ -1057,11 +1077,26 @@ impl AiManager {
         let tc = tpl_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = tc.clone();
+            let mgr = templates_mgr.clone();
             async move {
-                let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
+                // skills 미러 — system(shipped) 스코프는 전원 공통, admin 스코프는 hub 면 그
+                // 인스턴스의 공유 allowlist(allowed_templates)에 든 slug 만 통과.
+                let hub_shared: Option<Vec<String>> = match hub_scope_of(&args) {
+                    Some(scope) => Some(mgr.shared_admin_slugs(Some(&scope)).await),
+                    None => None,
+                };
+                let scopes: Vec<String> = vec!["system:".into(), "admin:".into()];
                 let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
+                    .filter(|m| match &hub_shared {
+                        None => true,
+                        Some(shared) => {
+                            let src = m.extra.get("source").and_then(|v| v.as_str()).unwrap_or("");
+                            let slug = m.extra.get("slug").and_then(|v| v.as_str()).unwrap_or("");
+                            src == "system" || shared.iter().any(|s| s == slug)
+                        }
+                    })
                     .map(|m| serde_json::json!({
                         "slug": m.extra.get("slug").cloned().unwrap_or_default(),
                         "name": m.name,

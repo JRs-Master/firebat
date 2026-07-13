@@ -128,6 +128,19 @@ pub fn active_allowed_references() -> Option<Vec<String>> {
         .flatten()
 }
 
+/// hub owner 문자열에서 인스턴스 id 추출 — `"hub:<inst>[:<sid>]"`(skills/memory 류) 와
+/// `"<inst>[:<sid>]"`(templates 스코프) 양쪽 수용. admin/빈 = None (hub 아님).
+/// 매니저들이 owner 만으로 자기 인스턴스의 공유 allowlist 를 스스로 해석(단일 choke-point)할 때 사용.
+pub fn hub_instance_id_of_owner(owner: &str) -> Option<&str> {
+    let rest = owner.strip_prefix("hub:").unwrap_or(owner);
+    let inst = rest.split(':').next().unwrap_or("");
+    if inst.is_empty() || inst == "admin" {
+        None
+    } else {
+        Some(inst)
+    }
+}
+
 /// 현재 hub visitor 요청 중인지 — MCP handler 가 destructive / sysmod_* 처리 시 분기.
 pub fn is_hub_context_active() -> bool {
     CURRENT_HUB.try_with(|c| c.is_some()).unwrap_or(false)
@@ -412,6 +425,17 @@ mod tests {
         assert!(c("frontend/server.js").is_err());
         assert!(c("/etc/passwd").is_err());
         assert!(c("user/../system/x").is_err());
+    }
+
+    #[test]
+    fn instance_id_of_owner_parses_both_forms() {
+        // skills/memory 류("hub:" 접두사) + templates 스코프(접두사 없음) 양쪽 수용.
+        assert_eq!(hub_instance_id_of_owner("hub:inst1:sess1"), Some("inst1"));
+        assert_eq!(hub_instance_id_of_owner("inst1:sess1"), Some("inst1"));
+        assert_eq!(hub_instance_id_of_owner("inst1"), Some("inst1"));
+        assert_eq!(hub_instance_id_of_owner("admin"), None);
+        assert_eq!(hub_instance_id_of_owner(""), None);
+        assert_eq!(hub_instance_id_of_owner("hub:"), None);
     }
 
     #[test]

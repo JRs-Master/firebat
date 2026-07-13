@@ -50,7 +50,8 @@ impl CatalogSource for SkillCatalogSource {
     }
 }
 
-/// Templates — admin workspace (`list(None)`). id = `admin:{slug}`. Semantic text =
+/// Templates — system(shipped) ∪ admin workspace (`list(None)` merges). id = `{scope}:{slug}`
+/// (skills 미러 — hub 는 system 스코프 + allowlist 필터로 검색). Semantic text =
 /// name + description + tags (tags are the routing signal for report-style templates).
 pub struct TemplateCatalogSource {
     pub templates: Arc<TemplateManager>,
@@ -63,14 +64,18 @@ impl CatalogSource for TemplateCatalogSource {
             .list(None)
             .await
             .into_iter()
-            .map(|t| CatalogEntry {
-                id: format!("admin:{}", t.slug),
-                name: t.name.clone(),
-                description: format!("{} {}", t.description, t.tags.join(" ")).trim().to_string(),
-                extra: serde_json::json!({
-                    "slug": t.slug,
-                    "tags": t.tags,
-                }),
+            .map(|t| {
+                let scope = if t.source == "system" { "system" } else { "admin" };
+                CatalogEntry {
+                    id: format!("{}:{}", scope, t.slug),
+                    name: t.name.clone(),
+                    description: format!("{} {}", t.description, t.tags.join(" ")).trim().to_string(),
+                    extra: serde_json::json!({
+                        "slug": t.slug,
+                        "tags": t.tags,
+                        "source": t.source,
+                    }),
+                }
             })
             .collect()
     }
