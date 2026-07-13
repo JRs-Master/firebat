@@ -3932,6 +3932,80 @@ impl AiManager {
             ));
         }
 
+        // ── L5 fence-repair round (Intent Agent L5, 2026-07-14) — 관대 파서 4-rung(strict →
+        // 주석/콤마 → 제어문자 → 괄호 균형)까지 전패한 fence 만, **문법 수리 전용 LLM 1콜**로
+        // 재작성 시도(내용 불변·구문만 — 약한 모델의 닫기 산수 슬립 클래스). 성공 = last_text
+        // 의 깨진 body 를 치환 → 아래 정상 파이프라인(sanitize·dataCacheKey 주입·뱃지·영속)이
+        // 그대로 처리. 실패 = 기존 동작(raw 표시, 디버그 가능). 턴당 최대 2 fence 캡. ──
+        if last_text.contains("```firebat-render") || last_text.contains("<firebat-render>") {
+            let (_, probe_fences, probe_groups, _) =
+                render_exec::mask_and_sanitize_fences(&last_text, None);
+            let mut repairs = 0u8;
+            for (i, g) in probe_groups.iter().enumerate() {
+                if !g.is_null() || repairs >= 2 {
+                    continue;
+                }
+                let broken = render_exec::fence_store_body(&probe_fences[i]).to_string();
+                // 수리 대상 = "파싱 자체가 안 되는" fence 만. 파싱은 됐는데 컴포넌트 검증에서
+                // 전멸한 경우(g=Null 이지만 parse_ok)는 문법 수리로 고칠 게 없다.
+                if broken.trim().is_empty() || render_exec::fence_parse_ok(&broken) {
+                    continue;
+                }
+                repairs += 1;
+                let repair_prompt = format!(
+                    "The following block failed to parse as JSON. Output ONLY the corrected \
+                     JSON (an array of {{\"type\":..., \"props\":...}} component blocks). Fix \
+                     syntax only (brackets, commas, quotes, control characters) — do NOT \
+                     change, add, or drop any content. No code fence, no commentary, no \
+                     comments.\n\n{}",
+                    broken
+                );
+                match self.ask_text(&repair_prompt, &LlmCallOpts::default()).await {
+                    Ok(fixed) => {
+                        let candidate = render_exec::strip_wrapping_fence(&fixed);
+                        if render_exec::fence_parse_ok(&candidate) && last_text.contains(&broken)
+                        {
+                            last_text = last_text.replacen(&broken, &candidate, 1);
+                            // 라운드 루프가 이미 push 한 raw text 블록에도 같은 치환 — 화면은
+                            // blocks 의 텍스트를 렌더하므로(아래 표시 사본 재-sanitize 패스)
+                            // 여기 안 고치면 화면만 깨진 원문이 남는다.
+                            for b in blocks.iter_mut() {
+                                if b.get("type").and_then(|v| v.as_str()) != Some("text") {
+                                    continue;
+                                }
+                                if let Some(t) = b.get("text").and_then(|v| v.as_str()) {
+                                    if t.contains(&broken) {
+                                        b["text"] = serde_json::Value::String(
+                                            t.replacen(&broken, &candidate, 1),
+                                        );
+                                    }
+                                }
+                            }
+                            tracing::info!(
+                                target: "ai",
+                                fence = i,
+                                "[fence-repair] unparseable fence repaired by syntax-repair round"
+                            );
+                        } else {
+                            tracing::warn!(
+                                target: "ai",
+                                fence = i,
+                                "[fence-repair] repair output still unparseable — leaving raw"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "ai",
+                            fence = i,
+                            error = %e,
+                            "[fence-repair] repair call failed — leaving raw"
+                        );
+                    }
+                }
+            }
+        }
+
         // Phase B-17+ result processor — 모든 LLM 응답을 단일 정제 레이어 통과.
         // 옛 TS sanitize.ts 1:1 port. 모델별 quirk fix 모두 일반 로직으로 처리:
         // 1. sanitize_reply — Unicode escape / HTML 태그 / 마크다운 강조 마커 제거

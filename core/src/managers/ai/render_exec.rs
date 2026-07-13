@@ -668,6 +668,39 @@ fn parse_fence_json(body: &str) -> Option<Value> {
     })
 }
 
+// ── L5 fence-repair round helpers (ai.rs) — 관대 체인 전패 fence 를 문법 수리 전용 LLM 1콜로
+//    재작성할 때 쓰는 순수 헬퍼들. ──
+
+/// 관대 체인(strict → 주석/콤마 → 제어문자 → 괄호 균형)으로 파싱되는가 — 수리 대상/성공 판정.
+pub fn fence_parse_ok(body: &str) -> bool {
+    parse_fence_json(body).is_some()
+}
+
+/// `mask_and_sanitize_fences` 가 store 에 남긴 canonical fence 문자열에서 body 만 추출.
+/// (파싱 실패 fence 의 store = "```firebat-render\n{원문 body trim}\n```".)
+pub fn fence_store_body(stored: &str) -> &str {
+    stored
+        .trim()
+        .trim_start_matches("```firebat-render")
+        .trim_end_matches("```")
+        .trim()
+}
+
+/// LLM 수리 응답에서 JSON 후보 추출 — "ONLY the JSON" 지시에도 모델이 ```json 코드펜스로
+/// 감싸는 버릇 흡수(내용은 그대로). 펜스 없으면 trim 만.
+pub fn strip_wrapping_fence(s: &str) -> String {
+    let t = s.trim();
+    if let Some(rest) = t.strip_prefix("```") {
+        // 첫 줄(언어 태그) 제거 후 마지막 ``` 앞까지.
+        let body = rest.split_once('\n').map(|(_, b)| b).unwrap_or(rest);
+        if let Some(end) = body.rfind("```") {
+            return body[..end].trim().to_string();
+        }
+        return body.trim().to_string();
+    }
+    t.to_string()
+}
+
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
 /// Returns `(json_string, blocks_value)`. On parse/validation failure, returns the trimmed original
 /// string + `Null` blocks so the frontend renders it raw (visible + debuggable, never silently dropped).
