@@ -26,6 +26,8 @@ export function HubPanel() {
   const [creating, setCreating] = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [newName, setNewName] = useState('');
+  // instance kind — 'widget'(임베드 챗봇, 기본) | 'tenant'(풀 워크스페이스). 도구 게이트가 instance.kind 를 읽음.
+  const [newKind, setNewKind] = useState<'widget' | 'tenant'>('widget');
   const [selectedInstance, setSelectedInstance] = useState<HubInstancePb | null>(null);
   const slugId = useId();
   const nameId = useId();
@@ -59,12 +61,14 @@ export function HubPanel() {
           slug: newSlug.trim(),
           name: newName.trim(),
           enabled: true,
+          kind: newKind,
         },
         { category: 'hub' },
       );
       if (res.success) {
         setNewSlug('');
         setNewName('');
+        setNewKind('widget');
         setCreating(false);
         await loadInstances();
       } else {
@@ -73,7 +77,7 @@ export function HubPanel() {
     } catch (e) {
       logger.debug('hub', 'create_instance 실패', { error: e });
     }
-  }, [newSlug, newName, loadInstances]);
+  }, [newSlug, newName, newKind, loadInstances]);
 
   const handleDelete = useCallback(async (instance: HubInstancePb) => {
     const ok = await confirmDialog({
@@ -151,6 +155,40 @@ export function HubPanel() {
               autoComplete="off"
             />
           </div>
+          {/* 종류 — widget(임베드 챗봇) / tenant(풀 워크스페이스). 상세 화면에서도 변경 가능. */}
+          <div className="flex flex-col gap-1">
+            <div className="text-[11px] font-bold text-slate-600">종류</div>
+            <div className="flex flex-col gap-1">
+              <label className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="newHubKind"
+                  value="widget"
+                  checked={newKind === 'widget'}
+                  onChange={() => setNewKind('widget')}
+                  className="w-3.5 h-3.5 mt-0.5 border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="flex flex-col">
+                  <span className="font-semibold">위젯 (임베드 챗봇)</span>
+                  <span className="text-[10px] text-slate-400">익명 방문자용. 허용 자료·모듈만 노출되는 제한 세트.</span>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="newHubKind"
+                  value="tenant"
+                  checked={newKind === 'tenant'}
+                  onChange={() => setNewKind('tenant')}
+                  className="w-3.5 h-3.5 mt-0.5 border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div className="flex flex-col">
+                  <span className="font-semibold">테넌트 (풀 워크스페이스)</span>
+                  <span className="text-[10px] text-slate-400">admin 과 같은 도구 세트 (설정 관리 제외). 실주문 등 승인 필요 액션은 계속 차단됩니다.</span>
+                </div>
+              </label>
+            </div>
+          </div>
           <button
             onClick={handleCreate}
             disabled={!newSlug.trim() || !newName.trim()}
@@ -197,6 +235,9 @@ export function HubPanel() {
                   <div className="flex items-center gap-1.5">
                     <span className={`w-1.5 h-1.5 rounded-full ${inst.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     <span className="text-[13px] font-semibold text-slate-700 truncate">{inst.name}</span>
+                    {inst.kind === 'tenant' && (
+                      <span className="shrink-0 px-1 py-px text-[9px] font-bold rounded bg-blue-50 border border-blue-200 text-blue-600">테넌트</span>
+                    )}
                   </div>
                   <div className="text-[10px] text-slate-400 truncate mt-0.5 font-mono">{inst.slug}</div>
                 </InteractiveRow>

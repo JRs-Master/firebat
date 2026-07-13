@@ -20,6 +20,7 @@ interface SysmodEntry { name: string; description?: string }
  *
  * 편집 항목:
  *  - name / description
+ *  - kind (widget 임베드 챗봇 / tenant 풀 워크스페이스)
  *  - system_prompt (페르소나 / 가드레일)
  *  - allowed_references (Library Reference 영역 multi-select)
  *  - allowed_sysmods (sysmod 영역 multi-select)
@@ -39,6 +40,9 @@ export function HubInstanceDetail({
   const [description, setDescription] = useState(instance.description);
   const [systemPrompt, setSystemPrompt] = useState(instance.systemPrompt);
   const [enabled, setEnabled] = useState(instance.enabled);
+  // instance kind — 'widget'(임베드 챗봇) | 'tenant'(풀 워크스페이스). 도구 게이트(FC retain·MCP visibility)가
+  // owner 문자열이 아니라 instance.kind 를 읽으므로 저장 즉시 다음 턴부터 반영.
+  const [kind, setKind] = useState<'widget' | 'tenant'>(instance.kind === 'tenant' ? 'tenant' : 'widget');
   const [exposeWidget, setExposeWidget] = useState(instance.exposeWidget);
   const [exposePage, setExposePage] = useState(instance.exposePage);
   const [allowedReferences, setAllowedReferences] = useState<string[]>(instance.allowedReferences);
@@ -116,6 +120,7 @@ export function HubInstanceDetail({
           description,
           systemPrompt,
           enabled,
+          kind,
           exposeWidget,
           exposePage,
           allowedReferences,
@@ -141,7 +146,7 @@ export function HubInstanceDetail({
     } finally {
       setSaving(false);
     }
-  }, [instance.id, name, description, systemPrompt, enabled, exposeWidget, exposePage, allowedReferences, allowedSysmods, allowedDomains]);
+  }, [instance.id, name, description, systemPrompt, enabled, kind, exposeWidget, exposePage, allowedReferences, allowedSysmods, allowedDomains]);
 
   const handleRotateToken = useCallback(async () => {
     const ok = await confirmDialog({
@@ -239,6 +244,39 @@ export function HubInstanceDetail({
           />
           <span>활성 (외부 호출 허용)</span>
         </label>
+
+        {/* 종류 — widget(임베드 챗봇, 제한 세트) / tenant(풀 워크스페이스). 게이트가 instance.kind 를 읽어 저장 즉시 반영. */}
+        <div className="flex flex-col gap-1 border border-slate-200 rounded p-2 bg-slate-50/50">
+          <div className="text-[11px] font-bold text-slate-600 mb-1">종류</div>
+          <label className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer">
+            <input
+              type="radio"
+              name="hubKind"
+              value="widget"
+              checked={kind === 'widget'}
+              onChange={() => setKind('widget')}
+              className="w-3.5 h-3.5 mt-0.5 border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-col">
+              <span className="font-semibold">위젯 (임베드 챗봇)</span>
+              <span className="text-[10px] text-slate-400">익명 방문자용 제한 세트 — 아래 허용 자료·허용 모듈만 노출.</span>
+            </div>
+          </label>
+          <label className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer mt-1">
+            <input
+              type="radio"
+              name="hubKind"
+              value="tenant"
+              checked={kind === 'tenant'}
+              onChange={() => setKind('tenant')}
+              className="w-3.5 h-3.5 mt-0.5 border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex flex-col">
+              <span className="font-semibold">테넌트 (풀 워크스페이스)</span>
+              <span className="text-[10px] text-slate-400">admin 과 같은 도구 세트 (설정 관리 제외, 허용 모듈 목록 우회). 실주문 등 승인 필요 액션은 계속 차단됩니다.</span>
+            </div>
+          </label>
+        </div>
 
         {/* 노출 모드 — widget / page boolean 2개 (둘 다 동시 가능). 둘 다 OFF = instance 사실상 비활성. */}
         <div className="flex flex-col gap-1 border border-slate-200 rounded p-2 bg-slate-50/50">

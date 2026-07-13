@@ -64,6 +64,8 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         // 노출 모드 — undefined / null = backend default (둘 다 true)
         exposeWidget: typeof args?.exposeWidget === 'boolean' ? args.exposeWidget : undefined,
         exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
+        // instance kind — 'tenant'(풀 워크스페이스) | 'widget'(임베드 챗봇). 그 외 값 = backend default('widget')
+        kind: args?.kind === 'tenant' || args?.kind === 'widget' ? args.kind : undefined,
       });
     case 'list-instances':
       return listInstances();
@@ -87,6 +89,7 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         replaceAllowedDomains: args?.replaceAllowedDomains === true,
         exposeWidget: typeof args?.exposeWidget === 'boolean' ? args.exposeWidget : undefined,
         exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
+        kind: args?.kind === 'tenant' || args?.kind === 'widget' ? args.kind : undefined,
       });
     case 'delete-instance':
       return deleteInstance({ id: String(args?.id ?? '') });
