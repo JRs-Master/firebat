@@ -673,12 +673,15 @@ impl AiManager {
         self,
         embedder: Arc<dyn crate::ports::IEmbedderPort>,
         cache_port: Arc<dyn crate::ports::IEmbedderCachePort>,
+        secondary: Option<Arc<dyn crate::ports::IEmbedderPort>>,
     ) -> Self {
         let embedder_clone = embedder.clone();
         let cache_clone = cache_port.clone();
+        let secondary_clone = secondary.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let embedder = embedder_clone.clone();
             let cache = cache_clone.clone();
+            let secondary = secondary_clone.clone();
             async move {
                 let query = args
                     .get("query")
@@ -691,7 +694,7 @@ impl AiManager {
                     .map(|n| n as usize);
                 let opts = crate::managers::ai::component_search_index::ComponentSearchOpts { limit };
                 let matches =
-                    crate::managers::ai::component_search_index::query(embedder.clone(), cache.clone(), &query, opts)
+                    crate::managers::ai::component_search_index::query(embedder.clone(), cache.clone(), secondary.clone(), &query, opts)
                         .await?;
                 Ok(serde_json::json!({
                     "components": matches,
@@ -968,10 +971,19 @@ impl AiManager {
         media_mgr: Arc<crate::managers::media::MediaManager>,
         embedder: Arc<dyn crate::ports::IEmbedderPort>,
         cache_port: Arc<dyn crate::ports::IEmbedderCachePort>,
+        secondary: Option<Arc<dyn crate::ports::IEmbedderPort>>,
     ) -> Self {
         use crate::managers::ai::domain_catalogs::*;
         use crate::managers::ai::semantic_catalog::RefreshingCatalog;
         const TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+        // dual-embed 배선 — secondary(폴백/섀도우 A/B)가 오면 4 카탈로그 전부 양 공간 임베딩.
+        let with_sec = |cat: RefreshingCatalog| -> RefreshingCatalog {
+            match &secondary {
+                Some(s) => cat.with_secondary(s.clone()),
+                None => cat,
+            }
+        };
 
         fn is_hub_call(args: &serde_json::Value) -> bool {
             args.get("_hubScope")
@@ -987,13 +999,13 @@ impl AiManager {
         }
 
         // ── search_skills (semantic 승격 — 옛 substring 판 오버라이드) ──
-        let skill_cat = Arc::new(RefreshingCatalog::new(
+        let skill_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "skill-catalog",
             embedder.clone(),
             cache_port.clone(),
             Arc::new(SkillCatalogSource { skills }),
             TTL,
-        ));
+        )));
         // Intent Agent S0 — 스킬 카탈로그도 shadow TurnBrief 공유 (측정 전용).
         self.intent_skills = Some(skill_cat.clone());
         let sc = skill_cat.clone();
@@ -1035,13 +1047,13 @@ impl AiManager {
         });
 
         // ── search_templates (신설) ──
-        let tpl_cat = Arc::new(RefreshingCatalog::new(
+        let tpl_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "template-catalog",
             embedder.clone(),
             cache_port.clone(),
             Arc::new(TemplateCatalogSource { templates }),
             TTL,
-        ));
+        )));
         let tc = tpl_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = tc.clone();
@@ -1077,13 +1089,13 @@ impl AiManager {
         });
 
         // ── search_pages (신설) ──
-        let page_cat = Arc::new(RefreshingCatalog::new(
+        let page_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "page-catalog",
             embedder.clone(),
             cache_port.clone(),
             Arc::new(PageCatalogSource { pages }),
             TTL,
-        ));
+        )));
         let pc = page_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = pc.clone();
@@ -1119,13 +1131,13 @@ impl AiManager {
         });
 
         // ── search_media (semantic 승격 — 옛 substring 판 오버라이드) ──
-        let media_cat = Arc::new(RefreshingCatalog::new(
+        let media_cat = Arc::new(with_sec(RefreshingCatalog::new(
             "media-catalog",
             embedder.clone(),
             cache_port.clone(),
             Arc::new(MediaCatalogSource { media: media_mgr }),
             TTL,
-        ));
+        )));
         let mc = media_cat.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let cat = mc.clone();

@@ -64,6 +64,12 @@ impl ComponentSearchIndex {
         }
     }
 
+    /// Dual-embed passthrough — see `SemanticCatalog::with_secondary` (폴백 + 섀도우 A/B 로그).
+    pub fn with_secondary(mut self, secondary: Arc<dyn IEmbedderPort>) -> Self {
+        self.catalog = self.catalog.with_secondary(secondary);
+        self
+    }
+
     pub async fn query(
         &self,
         user_query: &str,
@@ -107,11 +113,18 @@ static GLOBAL: OnceCell<ComponentSearchIndex> = OnceCell::const_new();
 pub async fn query(
     embedder: Arc<dyn IEmbedderPort>,
     cache_port: Arc<dyn IEmbedderCachePort>,
+    secondary: Option<Arc<dyn IEmbedderPort>>,
     user_query: &str,
     opts: ComponentSearchOpts,
 ) -> InfraResult<Vec<ComponentMatch>> {
     let idx = GLOBAL
-        .get_or_init(|| async { ComponentSearchIndex::new(embedder.clone(), cache_port.clone()) })
+        .get_or_init(|| async {
+            let mut c = ComponentSearchIndex::new(embedder.clone(), cache_port.clone());
+            if let Some(s) = secondary.clone() {
+                c = c.with_secondary(s);
+            }
+            c
+        })
         .await;
     idx.query(user_query, opts).await
 }

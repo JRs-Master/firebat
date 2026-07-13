@@ -404,7 +404,7 @@ async fn search_components_handler_returns_top_k() {
     let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
     let tools = Arc::new(ToolManager::new());
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-    let mgr = AiManager::new(llm, tools.clone(), log).register_search_components_tool(embedder, cache_port);
+    let mgr = AiManager::new(llm, tools.clone(), log).register_search_components_tool(embedder, cache_port, None);
 
     // 도구 등록 됐는지 확인
     assert!(tools.handler_count() >= 1);

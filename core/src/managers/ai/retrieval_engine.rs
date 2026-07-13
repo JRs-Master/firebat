@@ -225,10 +225,45 @@ impl RetrievalEngine {
         let (history, entities, facts, events, library_hits) =
             tokio::join!(history_fut, entities_fut, facts_fut, events_fut, library_fut);
 
-        // 섀도우 A/B — history 회상 결과를 Upstage 등으로 병렬 재임베딩해 E5 와 순위·점수 비교(백그라운드,
-        // 턴 지연 0). 운영은 위 E5 결과 그대로 사용. 섀도우 미주입(운영 기본) 시 no-op.
-        if let (Some(shadow), false) = (&self.shadow, history.is_empty()) {
-            Self::spawn_shadow_history_compare(shadow.clone(), query.to_string(), &history);
+        // 섀도우 A/B — 회상 후보(5소스 전부)를 Upstage 등으로 병렬 재임베딩해 E5 와 순위·점수
+        // 비교(백그라운드, 턴 지연 0). 운영은 위 E5 결과 그대로 사용. 섀도우 미주입(기본) 시 no-op.
+        // 2026-07-13 확장: history 만 → recall(엔티티·사실·사건)·library 까지 — 무료기간 전 표면 실측.
+        if let Some(shadow) = &self.shadow {
+            if !history.is_empty() {
+                let cands = history
+                    .iter()
+                    .map(|h| (h.content_preview.chars().take(120).collect::<String>(), Some(h.score)))
+                    .collect();
+                Self::spawn_shadow_compare(shadow.clone(), "history", query.to_string(), cands);
+            }
+            if !entities.is_empty() {
+                let cands = entities
+                    .iter()
+                    .map(|e| (format!("{} ({})", e.name, e.entity_type), None))
+                    .collect();
+                Self::spawn_shadow_compare(shadow.clone(), "entities", query.to_string(), cands);
+            }
+            if !facts.is_empty() {
+                let cands = facts
+                    .iter()
+                    .map(|f| (format_fact_compact(f, 120), None))
+                    .collect();
+                Self::spawn_shadow_compare(shadow.clone(), "facts", query.to_string(), cands);
+            }
+            if !events.is_empty() {
+                let cands = events
+                    .iter()
+                    .map(|e| (format_event_line(e).chars().take(120).collect::<String>(), None))
+                    .collect();
+                Self::spawn_shadow_compare(shadow.clone(), "events", query.to_string(), cands);
+            }
+            if !library_hits.is_empty() {
+                let cands = library_hits
+                    .iter()
+                    .map(|h| (h.content.chars().take(120).collect::<String>(), Some(h.score)))
+                    .collect();
+                Self::spawn_shadow_compare(shadow.clone(), "library", query.to_string(), cands);
+            }
         }
 
         let mut sections: Vec<String> = Vec::new();
@@ -348,19 +383,17 @@ impl RetrievalEngine {
         }
     }
 
-    /// 섀도우 A/B (백그라운드) — E5 가 뽑은 history 후보를 shadow 임베더로 같은 쿼리 재임베딩 →
+    /// 섀도우 A/B (백그라운드) — E5 가 뽑은 회상 후보를 shadow 임베더로 같은 쿼리 재임베딩 →
     /// shadow 공간 cosine 재순위 → E5 순위·점수 vs shadow 순위·점수를 한 줄 JSON 으로 로그
-    /// (target="embed_shadow"). `journalctl -u firebat | grep embed_shadow` 로 비교. 운영 무영향.
-    fn spawn_shadow_history_compare(
+    /// (target="embed_shadow", `kind` = history/entities/facts/events/library).
+    /// `journalctl -u firebat | grep embed_shadow` 로 비교. 운영 무영향. E5 점수가 후보 레코드에
+    /// 없는 소스(facts/events/entities)는 score=None — 리스트 순서(=E5 순위)만으로 비교.
+    fn spawn_shadow_compare(
         shadow: Arc<dyn crate::ports::IEmbedderPort>,
+        kind: &'static str,
         query: String,
-        history: &[crate::managers::conversation::HistorySearchMatch],
+        cands: Vec<(String, Option<f32>)>,
     ) {
-        // 후보 = (미리보기, E5 점수, E5 순위) — history 는 이미 E5 점수 내림차순.
-        let cands: Vec<(String, f32)> = history
-            .iter()
-            .map(|h| (h.content_preview.chars().take(120).collect::<String>(), h.score))
-            .collect();
         tokio::spawn(async move {
             let qv = match shadow.embed_query(&query).await {
                 Ok(v) => v,
@@ -370,7 +403,7 @@ impl RetrievalEngine {
                 }
             };
             // 각 후보를 shadow 로 임베딩 → shadow cosine.
-            let mut rows: Vec<(usize, String, f32, f32)> = Vec::with_capacity(cands.len());
+            let mut rows: Vec<(usize, String, Option<f32>, f32)> = Vec::with_capacity(cands.len());
             for (e5_rank, (preview, e5_score)) in cands.iter().enumerate() {
                 let pv = match shadow.embed_passage(preview).await {
                     Ok(v) => v,
@@ -396,18 +429,19 @@ impl RetrievalEngine {
                     serde_json::json!({
                         "preview": preview,
                         "e5_rank": e5_rank,
-                        "e5_score": (*e5_score * 1000.0).round() / 1000.0,
+                        "e5_score": e5_score.map(|s| (s * 1000.0).round() / 1000.0),
                         "up_rank": up_rank_of[i],
                         "up_score": (*up_score * 1000.0).round() / 1000.0,
                     })
                 })
                 .collect();
             let payload = serde_json::json!({
+                "kind": kind,
                 "query": query,
                 "shadow": shadow.version(),
                 "results": items,
             });
-            tracing::info!(target: "embed_shadow", data = %payload, "history A/B");
+            tracing::info!(target: "embed_shadow", data = %payload, "recall A/B");
         });
     }
 

@@ -126,7 +126,9 @@ pub struct SemanticCatalog {
     /// used directly for 60s, avoiding a chain of remote timeouts on every search.
     primary_down_until: std::sync::atomic::AtomicI64,
     cache_port: Arc<dyn IEmbedderCachePort>,
-    state: RwLock<CatalogState>,
+    /// Arc — the background shadow-compare task re-reads the state after its (possibly remote)
+    /// query embed finishes, without cloning vector maps per query.
+    state: Arc<RwLock<CatalogState>>,
 }
 
 /// Hash keyed by the EMBEDDER's version (IEmbedderPort::version) — swapping the embedder
@@ -164,12 +166,12 @@ impl SemanticCatalog {
             secondary: None,
             primary_down_until: std::sync::atomic::AtomicI64::new(0),
             cache_port,
-            state: RwLock::new(CatalogState {
+            state: Arc::new(RwLock::new(CatalogState {
                 entries: Vec::new(),
                 vectors: HashMap::new(),
                 secondary_vectors: HashMap::new(),
                 corpus: String::new(),
-            }),
+            })),
         }
     }
 
@@ -452,7 +454,96 @@ impl SemanticCatalog {
         }
         scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(limit);
+        // 섀도우 A/B (백그라운드, 무료기간 전 표면 실측 2026-07-13) — 양 공간(dual-embed)이 있으면
+        // 같은 쿼리의 secondary 공간 cosine top-K 를 계산해 비교 로그(target="embed_shadow").
+        // 서빙(scored)은 불변. 폴백 서빙 중(use_secondary)엔 primary 가 죽어 있어 비교 불가라 skip.
+        if !use_secondary && !scored.is_empty() {
+            if let Some(sec) = &self.secondary {
+                self.spawn_shadow_compare(
+                    sec.clone(),
+                    q.clone(),
+                    embed_input.to_string(),
+                    scopes.map(|s| s.to_vec()),
+                    limit,
+                );
+            }
+        }
         Ok(CatalogQueryOutcome { matches: scored, dropped_tokens: dropped, all_oov: false })
+    }
+
+    /// 카탈로그 A/B (백그라운드) — primary(서빙) vs secondary 공간의 **cosine-only** top-K 비교
+    /// 로그. lexical boost 는 임베더 무관 동일 가산이라 제외(순수 변별력 비교). 판독:
+    /// `journalctl -u firebat | grep embed_shadow`. 방향은 배선이 결정 — 설정 solar 면
+    /// primary=Upstage vs shadow=E5, 로컬+`system:embed-shadow` 면 primary=E5 vs shadow=Upstage.
+    fn spawn_shadow_compare(
+        &self,
+        secondary: Arc<dyn IEmbedderPort>,
+        primary_q: Vec<f32>,
+        embed_input: String,
+        scopes: Option<Vec<String>>,
+        limit: usize,
+    ) {
+        let state = self.state.clone();
+        let catalog = self.cache_file.clone();
+        let primary_version = self.embedder.version().to_string();
+        tokio::spawn(async move {
+            let sq = match secondary.embed_query(&embed_input).await {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::warn!(target: "embed_shadow", catalog = %catalog, error = %e, "shadow embed_query failed");
+                    return;
+                }
+            };
+            let st = state.read().await;
+            let mut prim: Vec<(String, f32)> = Vec::new();
+            let mut secr: Vec<(String, f32)> = Vec::new();
+            for e in &st.entries {
+                if let Some(allowed) = &scopes {
+                    if !allowed.iter().any(|p| e.id.starts_with(p.as_str())) {
+                        continue;
+                    }
+                }
+                if let Some(v) = st.vectors.get(&e.id) {
+                    prim.push((e.id.clone(), cosine(&primary_q, v)));
+                }
+                if let Some(v) = st.secondary_vectors.get(&e.id) {
+                    secr.push((e.id.clone(), cosine(&sq, v)));
+                }
+            }
+            drop(st);
+            if secr.is_empty() {
+                return; // secondary 공간 미구축(임베딩 실패 등) — 비교 불가
+            }
+            let top = |mut v: Vec<(String, f32)>| {
+                v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                v.truncate(limit);
+                v
+            };
+            let prim = top(prim);
+            let secr = top(secr);
+            let top1_agree = match (prim.first(), secr.first()) {
+                (Some(a), Some(b)) => a.0 == b.0,
+                _ => false,
+            };
+            let prim_ids: std::collections::HashSet<&str> =
+                prim.iter().map(|(id, _)| id.as_str()).collect();
+            let overlap = secr.iter().filter(|(id, _)| prim_ids.contains(id.as_str())).count();
+            let fmt = |v: &[(String, f32)]| {
+                v.iter()
+                    .map(|(id, s)| serde_json::json!({ "id": id, "score": (s * 1000.0).round() / 1000.0 }))
+                    .collect::<Vec<_>>()
+            };
+            let payload = serde_json::json!({
+                "catalog": catalog,
+                "query": embed_input,
+                "primary": { "embedder": primary_version, "top": fmt(&prim) },
+                "shadow": { "embedder": secondary.version(), "top": fmt(&secr) },
+                "top1_agree": top1_agree,
+                "overlap": overlap,
+                "k": limit,
+            });
+            tracing::info!(target: "embed_shadow", data = %payload, "catalog A/B");
+        });
     }
 
     /// Exact lookup by id — the "detail" step after a search hit.

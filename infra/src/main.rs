@@ -618,50 +618,68 @@ async fn main() -> Result<()> {
         firebat_core::managers::skill_file::SkillFileManager::new(storage.clone()),
     );
 
-    // #search-tool 카탈로그 임베더 — assistant 탭 설정(`system:embed:catalog-provider`)이 소스.
-    // "solar" + Upstage 키 존재 = primary Upstage solar-embedding-2 + secondary E5 (dual-embed:
-    // 엔트리를 양쪽 공간에 임베딩해 두고, primary 장애 시 로컬 세트로 통째 폴백 — 공간 혼합 0).
-    // 그 외 = E5 단독 (기존 동작). 저장 벡터(히스토리·라이브러리·메모리)는 항상 E5 — 별개 공간.
-    let action_catalog = {
+    // #search-tool 카탈로그 임베더 게이트(카탈로그 6종 공용 — actions/components/skills/templates/
+    // pages/media). assistant 탭 설정(`system:embed:catalog-provider`) + 섀도우 토글이 소스:
+    //  - "solar" + Upstage 키: primary=Upstage(서빙) + secondary=E5(장애 시 통째 폴백 — 공간 혼합 0)
+    //  - 그 외 + `system:embed-shadow` on + 키: primary=E5(서빙 불변) + secondary=Upstage —
+    //    **섀도우 전용**(무료기간 전 표면 실측 2026-07-13: 양 공간 dual-embed + 검색마다 비교 로그
+    //    target="embed_shadow". E5 는 로컬이라 안 죽어 폴백 서빙은 사실상 미발동).
+    //  - 그 외: E5 단독. 저장 벡터(히스토리·라이브러리·메모리)는 항상 E5 — 별개 공간.
+    let (catalog_embedder, catalog_secondary): (
+        Arc<dyn firebat_core::ports::IEmbedderPort>,
+        Option<Arc<dyn firebat_core::ports::IEmbedderPort>>,
+    ) = {
         let provider = vault
             .get_secret(firebat_core::vault_keys::VK_SYSTEM_EMBED_CATALOG_PROVIDER)
             .unwrap_or_default();
         let upstage_key = vault.get_secret("system:upstage:api-key").unwrap_or_default();
-        let use_solar = provider == "solar" && !upstage_key.trim().is_empty();
-        let cat = if use_solar {
+        let shadow_on = vault
+            .get_secret("system:embed-shadow")
+            .map(|v| matches!(v.trim(), "1" | "true" | "on" | "yes"))
+            .unwrap_or(false);
+        if provider == "solar" && !upstage_key.trim().is_empty() {
             tracing::info!(
                 target: "semantic_catalog",
-                "module-action catalog embedder = upstage solar-embedding-2 (secondary = local E5 fallback)"
+                "catalog embedder = upstage solar-embedding-2 (secondary = local E5 fallback + shadow log)"
             );
-            firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
-                module_manager.clone(),
-                Arc::new(firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(
-                    upstage_key,
-                )),
-                component_cache_port.clone(),
+            (
+                Arc::new(firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(upstage_key)),
+                Some(embedder.clone()),
             )
-            .with_secondary(embedder.clone())
-        } else {
-            firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
-                module_manager.clone(),
+        } else if shadow_on && !upstage_key.trim().is_empty() {
+            tracing::info!(
+                target: "embed_shadow",
+                "catalog embedder = local E5 (shadow = upstage solar-embedding-2, compare-log only)"
+            );
+            (
                 embedder.clone(),
-                component_cache_port.clone(),
+                Some(Arc::new(firebat_infra::adapters::embedder::UpstageEmbedderAdapter::new(
+                    upstage_key,
+                )) as Arc<dyn firebat_core::ports::IEmbedderPort>),
             )
+        } else {
+            (embedder.clone(), None)
+        }
+    };
+    let action_catalog = {
+        let cat = firebat_core::managers::ai::action_catalog::ModuleActionCatalog::new(
+            module_manager.clone(),
+            catalog_embedder.clone(),
+            component_cache_port.clone(),
+        );
+        let cat = match &catalog_secondary {
+            Some(sec) => cat.with_secondary(sec.clone()),
+            None => cat,
         };
         Arc::new(cat)
     };
-    // Boot warm-up — API 임베더(solar)일 때만: 첫 전체 빌드(~600 entry, 네트워크)가 첫 검색을
-    // 막지 않게 백그라운드 선빌드. 로컬(E5)은 기존처럼 첫 검색 때 lazy — 부팅 직후 전체 임베딩은
-    // 1 vCPU 서버에서 CPU·스왑 폭풍(2026-07-13 실측: version-해시 전환 재임베딩 + boot warm 이
-    // 겹쳐 부팅 후 몇 분간 박스 마비 — "뻗은 줄"). 캐시 히트 시 warm 은 어차피 no-op.
-    {
-        let provider = vault
-            .get_secret(firebat_core::vault_keys::VK_SYSTEM_EMBED_CATALOG_PROVIDER)
-            .unwrap_or_default();
-        if provider == "solar" {
-            let cat = action_catalog.clone();
-            tokio::spawn(async move { cat.warm().await });
-        }
+    // Boot warm-up — 원격(Upstage) 슬롯이 있을 때만: 첫 전체 빌드(~600 entry, 네트워크-bound)가
+    // 첫 검색을 막지 않게 백그라운드 선빌드. E5 슬롯은 기존 해시 캐시 히트라 CPU 폭풍 없음
+    // (2026-07-13 실측: version-해시 전환 재임베딩 + boot warm 겹침 = 1 vCPU 몇 분 마비 — 그
+    // 클래스는 E5 전량 재임베딩일 때만이고, 원격 슬롯 백필은 네트워크 대기라 무해).
+    if catalog_secondary.is_some() {
+        let cat = action_catalog.clone();
+        tokio::spawn(async move { cat.warm().await });
     }
 
     let ai_manager = Arc::new(
@@ -694,7 +712,11 @@ async fn main() -> Result<()> {
             // search_components(query) 도구 등록 — 옛 production 배선 누락(테스트만 호출)이라
             // CLI(MCP)·FC 모델 둘 다 컴포넌트 propsSchema 검색 불가였음. ToolManager 등록 →
             // register_builtin_tools auto-sync 가 MCP(hosted) 에도 자동 노출(source="core").
-            .register_search_components_tool(embedder.clone(), component_cache_port.clone())
+            .register_search_components_tool(
+                catalog_embedder.clone(),
+                component_cache_port.clone(),
+                catalog_secondary.clone(),
+            )
             // #search-tool S2 — 모듈 액션 카탈로그(search_module_actions / get_action_schema).
             // config `actionCatalog` 선언 모듈(한투 275·키움 200+)의 액션 레벨 progressive disclosure.
             // 임베더 = 설정 게이트 action_catalog_embedder(아래) — solar 선택 시 dual-embed 폴백.
@@ -706,8 +728,9 @@ async fn main() -> Result<()> {
                 template_manager.clone(),
                 page_manager.clone(),
                 media_manager.clone(),
-                embedder.clone(),
+                catalog_embedder.clone(),
                 component_cache_port.clone(),
+                catalog_secondary.clone(),
             ),
     );
 
