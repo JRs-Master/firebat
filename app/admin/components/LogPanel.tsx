@@ -82,7 +82,7 @@ export function LogPanel() {
     <div className="flex flex-col gap-4">
       {/* 런타임 로그 레벨 — EnvFilter 동적 reload */}
       <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-        <span className="text-xs sm:text-sm font-bold text-slate-700">런타임 로그 레벨 (즉시 적용 · 재시작 불필요)</span>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">런타임 로그 레벨</span>
         <p className="text-[11px] text-slate-400">
           예: <code className="bg-slate-200 px-1 rounded">info</code> 또는 <code className="bg-slate-200 px-1 rounded">info,firebat_infra::adapters::sandbox=debug</code>
         </p>

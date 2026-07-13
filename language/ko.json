@@ -583,7 +583,7 @@
     "prompt_caching_on": "활성 (cache_control 마커 적용)",
     "prompt_caching_off": "비활성 (기본)",
     "subagent_label": "Sub-agent 병렬",
-    "subagent_help": "큰 작업 (다종목 백테스트·여러 분석) 을 sub-agent 에 위임하고 병렬 실행하여 시간이 1/N 로 단축됩니다. 단 sub-agent 마다 LLM 호출이 추가되어 API 모드면 비용이 N배 증가하고 CLI 모드면 한도/메모리 부담이 늘어납니다. 기본값은 OFF 입니다.",
+    "subagent_help": "큰 작업을 여러 sub-agent 로 나눠 병렬 실행합니다. sub-agent 수만큼 LLM 비용·한도 부담이 늘어납니다 (기본 OFF).",
     "subagent_aria": "Sub-agent 병렬 활성",
     "subagent_on": "활성 (spawn_subagent 도구 노출)",
     "subagent_off": "비활성 (기본 — 도구 자체 미노출)",

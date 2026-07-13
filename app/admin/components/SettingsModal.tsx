@@ -1140,17 +1140,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           />
                           <div className="flex-1">
                             <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
-                            {/* desc 는 <b> 태그 포함 리소스 — plain 렌더 시 태그가 문자로 노출 (2026-07-13 실측) */}
+                            {/* desc = <b> 태그 포함 리소스(innerHTML). 설명은 핵심 2줄만 — role 불릿·CLI·캐시
+                                주석은 과잉이라 제거 (2026-07-13 사용자: "필요한 것만 딱"). */}
                             <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_desc') }} />
-                            <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
-                              <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
-                              <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
-                            </ul>
                             <div className="text-[11px] text-slate-500 mt-1.5">{t('settings_modal.ai_assistant_current_model_note')}</div>
-                            <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_cli_note') }} />
-                            <div className="text-[11px] text-slate-400 mt-1.5">
-                              {t('settings_modal.ai_assistant_cache_note')}
-                            </div>
                             {!hasAssistantKey && (
                               <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
                                 {t('settings_modal.ai_assistant_no_key_warning')}

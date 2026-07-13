@@ -583,7 +583,7 @@
     "prompt_caching_on": "On (cache_control marker applied)",
     "prompt_caching_off": "Off (default)",
     "subagent_label": "Sub-agent parallel",
-    "subagent_help": "Delegate large jobs (multi-symbol backtests, several analyses) to sub-agents and run them in parallel to cut time by 1/N. Each sub-agent adds an LLM call, so API mode multiplies cost by N and CLI mode puts more load on quotas/memory. Default is OFF.",
+    "subagent_help": "Splits a large job across parallel sub-agents. Each sub-agent adds LLM cost/quota load (default OFF).",
     "subagent_aria": "Sub-agent parallel enabled",
     "subagent_on": "On (spawn_subagent tool exposed)",
     "subagent_off": "Off (default — tool not exposed)",
