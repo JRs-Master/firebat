@@ -48,7 +48,10 @@ fn base_prompt_contains_tool_system_sections() {
     assert!(prompt.contains("Firebat is an AI agent"));
     assert!(prompt.contains("Tool usage principles"));
     assert!(prompt.contains("Component rendering"));
-    assert!(prompt.contains("Reusable 5 rules"));
+    // 2026-07-14 diet: authoring detail (incl. "Reusable 5 rules") moved to system skills;
+    // tool_system keeps a Module authoring section that points at get_skill("module-authoring").
+    assert!(prompt.contains("Module authoring"));
+    assert!(prompt.contains("module-authoring"));
     assert!(prompt.contains("Scheduling"));
     assert!(prompt.contains("Pipeline"));
     assert!(prompt.contains("Page generation guide"));
