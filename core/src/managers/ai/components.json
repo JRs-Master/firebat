@@ -847,7 +847,7 @@
   {
     "name": "timeline",
     "componentType": "Timeline",
-    "description": "Chronology / event timeline. Date + title + description laid out vertically.",
+    "description": "Chronology / event timeline. Date + title + description laid out vertically. date is optional — omit it for dateless step/progress sequences.",
     "semanticText": "타임라인 연대기 이벤트 이력 히스토리 history timeline 일정 단계 progress steps",
     "propsSchema": {
       "type": "object",
@@ -863,10 +863,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "date",
-              "title"
-            ],
+            "required": ["title"],
             "properties": {
               "date": {
                 "type": "string"

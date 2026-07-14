@@ -3794,7 +3794,8 @@ function TimelineComp({ items }: {
           const inner = (
             <>
               <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
-              <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date ?? '')}</div>
+              {/* date optional — 날짜 없는 단계/진행 타임라인(스키마와 동일 계약)은 날짜 줄 생략 */}
+              {item.date && <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>}
               <div className="font-bold text-sm text-gray-900"><InlineMd text={item.title ?? ''} /></div>
               {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed"><InlineMd text={item.description} /></div>}
             </>
