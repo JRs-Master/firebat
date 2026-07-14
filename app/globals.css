@@ -573,7 +573,9 @@ mark[class^="fbhl-"] {
   line-height: 1.3;
   vertical-align: baseline;
 }
-.fbchip ruby { ruby-position: over; }
+/* ruby-align: 브라우저 기본 space-around 는 용어가 주석보다 길면 주석 단어를 칩 폭 전체에
+   배분(벌어짐 — 2026-07-14 사용자 피드백 "수조   원짜리   장비") → 가운데 정렬로 고정. */
+.fbchip ruby { ruby-position: over; ruby-align: center; }
 /* ^주석(루비) 칩 — inline-block 세로 마진은 라인박스에 반영되므로 위 주석이 이전 줄
    본문과 붙지 않게 숨통. rt padding-bottom = 주석↔용어 사이 간격. */
 .fbchip:has(ruby) { margin-top: 0.22em; margin-bottom: 0.06em; }
