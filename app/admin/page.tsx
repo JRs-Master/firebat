@@ -1112,12 +1112,19 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   const vi = Math.min(viewIdx, last);
   const latest = stages[last];
   const bs = latest.state;
-  const STEPS = [
-    { key: 'requirements', label: t('build.step_requirements') },
-    { key: 'design', label: t('build.step_design') },
-    { key: 'refine', label: t('build.step_refine') },
-    { key: 'implement', label: t('build.step_implement') },
-  ];
+  // 수정 빌드(mode='modify', start_build targetSlug) = 변경점→적용 2단계 — stepper 도 그 흐름만 표시.
+  const isModify = (bs as { mode?: string }).mode === 'modify';
+  const STEPS = isModify
+    ? [
+        { key: 'requirements', label: t('build.step_change_scope') },
+        { key: 'implement', label: t('build.step_apply') },
+      ]
+    : [
+        { key: 'requirements', label: t('build.step_requirements') },
+        { key: 'design', label: t('build.step_design') },
+        { key: 'refine', label: t('build.step_refine') },
+        { key: 'implement', label: t('build.step_implement') },
+      ];
   const expired = !!bs.createdAt && Date.now() - bs.createdAt > 30 * 24 * 60 * 60 * 1000;
   // 빌드 단계 = 만드는 중 / 완성(승인 대기, save_page pending) / 발행(승인됨). 캡션·종료 표시 분기.
   const savePage = (latest.pendingActions ?? []).find(p => p.name === 'save_page');
@@ -1141,7 +1148,7 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   return (
     <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
-        <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">🔨 {t('build.in_progress')}{bs.tier ? ` · ${bs.tier}` : ''}</span>
+        <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">{isModify ? `🔧 ${t('build.modify_in_progress')}` : `🔨 ${t('build.in_progress')}${bs.tier ? ` · ${bs.tier}` : ''}`}</span>
         <div className="flex items-center gap-1 flex-wrap">
           {STEPS.map((s, i) => {
             const stepDone = done || i < curIdx;

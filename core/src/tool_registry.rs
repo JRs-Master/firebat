@@ -1066,16 +1066,17 @@ fn template_owner_opt(args: &serde_json::Value) -> Option<String> {
 /// (requirements→design→refine→implement); the engine enforces the order via the advance gate.
 /// Independent of plan mode — app builds go through PB regardless of on/off (the prompt triggers it).
 fn register_build_tools(tools: &Arc<ToolManager>) {
-    use crate::utils::build_session::{self, BuildStep, BuildTier};
+    use crate::utils::build_session::{self, BuildMode, BuildStep, BuildTier};
 
     tools.register_tool(
         ToolDefinition {
             name: "start_build".to_string(),
-            description: "Call when building an app/page via the standard steps (requirements→design→refine→implement) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.)".to_string(),
+            description: "Call when building an app/page via the standard steps (requirements→design→refine→implement) — returns a new build session + the step-1 (requirements) instruction. Use this to start any multi-step build, regardless of plan mode. (A simple one-off page is fine with just save_page.) To MODIFY an existing published page/app on user request, pass targetSlug — the flow becomes change-scope→apply (the existing spec is loaded and edited, not rebuilt).".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "request": { "type": "string", "description": "the user's build request" },
+                    "targetSlug": { "type": "string", "description": "pass ONLY when MODIFYING an existing published page/app — its page slug. Switches the flow to modify mode (change-scope → apply, 2 steps). Omit for a new build." },
                     "convId": { "type": "string", "description": "current conversation id (from the [Build tracking] hint). On the CLI path it is NOT auto-injected, so pass it — it keys the build to THIS conversation for cross-turn continuation, so concurrent builds in other conversations/devices never mix up." }
                 },
                 "required": ["request"]
@@ -1088,13 +1089,23 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             // Injected by ai.rs (FC dispatch) · inject_hub_owner (MCP) — not set by the AI directly (not in the schema).
             let scope = args.get("hubOwner").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
                 .or_else(|| args.get("convId").and_then(|v| v.as_str()));
-            let id = build_session::create_session(scope, request);
+            // targetSlug 존재 = 수정 빌드 (변경점→적용 2단계, 기존 spec 로드). 검증은 M1 의
+            // get_page 가 담당(엔진은 페이지 매니저 무의존 유지 — 없는 slug = AI 가 안내 후 cancel).
+            let target = args
+                .get("targetSlug")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let mode = if target.is_some() { BuildMode::Modify } else { BuildMode::Create };
+            let id = build_session::create_session(scope, request, mode, target);
             Ok(serde_json::json!({
                 "success": true,
                 "data": {
                     "sessionId": id,
+                    "mode": if mode == BuildMode::Modify { "modify" } else { "create" },
+                    "targetSlug": target,
                     "step": BuildStep::Requirements.key(),
-                    "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None)
+                    "stepPrompt": build_session::step_prompt(BuildStep::Requirements, None, mode)
                 }
             }))
         },
@@ -1141,14 +1152,16 @@ fn register_build_tools(tools: &Arc<ToolManager>) {
             build_session::set_step_output(&session_id, output);
             match build_session::advance_step(&session_id) {
                 Ok(next) => {
-                    let tier = build_session::get_session(&session_id).and_then(|s| s.tier);
+                    let sess = build_session::get_session(&session_id);
+                    let tier = sess.as_ref().and_then(|s| s.tier);
+                    let mode = sess.as_ref().map(|s| s.mode).unwrap_or_default();
                     Ok(serde_json::json!({
                         "success": true,
                         "data": {
                             "sessionId": session_id,
                             "step": next.key(),
                             "done": next == BuildStep::Done,
-                            "stepPrompt": build_session::step_prompt(next, tier)
+                            "stepPrompt": build_session::step_prompt(next, tier, mode)
                         }
                     }))
                 }

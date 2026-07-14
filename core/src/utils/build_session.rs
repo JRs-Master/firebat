@@ -35,7 +35,7 @@ pub enum BuildStep {
 }
 
 impl BuildStep {
-    /// Linear next step. Per-tier branching is handled in next_for_tier.
+    /// Linear next step. Per-tier branching is handled in next_for.
     pub fn next(self) -> BuildStep {
         match self {
             BuildStep::Requirements => BuildStep::Design,
@@ -44,11 +44,16 @@ impl BuildStep {
             BuildStep::Implement | BuildStep::Done => BuildStep::Done,
         }
     }
-    /// Per-tier next step. Design now stays for ALL tiers — apps/games are visual (theme·skin·color·layout
-    /// is a real user choice), so "simple" ≠ "no design". (The AI keeps design light for trivial pages.)
-    /// Was: T1 skipped Design (requirements→implement) — dropped 2026-06-08, the skip was too aggressive.
-    pub fn next_for_tier(self, _tier: Option<BuildTier>) -> BuildStep {
-        self.next()
+    /// Mode/tier-aware next step.
+    /// - Create: Design stays for ALL tiers — apps/games are visual (theme·skin·color·layout is a
+    ///   real user choice), so "simple" ≠ "no design". (Was: T1 skipped Design — dropped 2026-06-08.)
+    /// - Modify: change-scope(Requirements) → apply(Implement). Design/Refine are create-only —
+    ///   the change-scope step already covers "what to change" (visual changes included as chips).
+    pub fn next_for(self, _tier: Option<BuildTier>, mode: BuildMode) -> BuildStep {
+        match (mode, self) {
+            (BuildMode::Modify, BuildStep::Requirements) => BuildStep::Implement,
+            _ => self.next(),
+        }
     }
     /// step_outputs key — for storing the step output and checking the transition gate.
     pub fn key(self) -> &'static str {
@@ -68,6 +73,16 @@ pub enum BuildTier {
     T1, // simple page (render/html, no module)
     T2, // page that calls existing modules·services
     T3, // needs a new user module (code generation)
+}
+
+/// Build mode — Create(신규, 4단계 S1~S4) | Modify(기존 발행 페이지 수정 — 변경점 → 적용 2단계).
+/// Modify = start_build 에 targetSlug 가 온 경우: 백지가 아니라 기존 spec 을 로드해 고친다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildMode {
+    #[default]
+    Create,
+    Modify,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +106,12 @@ pub struct BuildSession {
     /// Set in S1 (None before classification).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier: Option<BuildTier>,
+    /// Create(신규 4단계) | Modify(기존 페이지 수정 2단계). serde default = Create (옛 세션 호환).
+    #[serde(default)]
+    pub mode: BuildMode,
+    /// Modify 대상 페이지 slug — AI 가 get_page 로 spec 을 로드하고 같은 slug 로 save_page 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_slug: Option<String>,
     pub step: BuildStep,
     pub status: BuildStatus,
     /// Per-step output (key = BuildStep::key — requirements/design/refine/implement).
@@ -162,9 +183,15 @@ fn cleanup_expired(map: &mut HashMap<String, BuildSession>) {
     }
 }
 
-/// Create a new build session — status Active, step Requirements (S1). Returns the id.
+/// Create a new build session — status Active, step Requirements (S1/M1). Returns the id.
 /// conv_id = owning conversation (for cross-turn lookup, injected by ai.rs). None = single-turn build.
-pub fn create_session(conv_id: Option<&str>, request: &str) -> String {
+/// mode = Create(신규) | Modify(기존 페이지 수정 — target_slug 필수 동반).
+pub fn create_session(
+    conv_id: Option<&str>,
+    request: &str,
+    mode: BuildMode,
+    target_slug: Option<&str>,
+) -> String {
     let id = format!("build_{}", uuid::Uuid::new_v4().simple());
     let Ok(mut map) = store_lock().lock() else {
         return id;
@@ -187,6 +214,8 @@ pub fn create_session(conv_id: Option<&str>, request: &str) -> String {
             conv_id: conv_id.map(String::from),
             request: request.to_string(),
             tier: None,
+            mode,
+            target_slug: target_slug.map(String::from),
             step: BuildStep::Requirements,
             status: BuildStatus::Active,
             step_outputs: HashMap::new(),
@@ -346,7 +375,7 @@ pub fn advance_step(id: &str) -> Result<BuildStep, String> {
             s.step.key()
         ));
     }
-    let next = s.step.next_for_tier(s.tier);
+    let next = s.step.next_for(s.tier, s.mode);
     s.step = next;
     if next == BuildStep::Done {
         s.status = BuildStatus::Completed;
@@ -372,7 +401,10 @@ pub fn finish_session(id: &str, completed: bool) -> Option<BuildSession> {
 
 /// Per-step AI instruction — returned as the tool result to focus the AI on that step (the engine
 /// forces the flow). Each interactive step = present options as suggest chips, then stop.
-pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>) -> String {
+pub fn step_prompt(step: BuildStep, tier: Option<BuildTier>, mode: BuildMode) -> String {
+    if mode == BuildMode::Modify {
+        return modify_step_prompt(step);
+    }
     match step {
         BuildStep::Requirements => "S1 Feature selection: based on the user's request, present the options as suggest chips in ONE set (+ string-chip shortcuts 'proceed with the recommendation' / 'just do it all'). \
 **Choose the chip type that fits the choice — your call**: when several features are combinable, use a multi-select `toggle` so the user checks many then submits once; when it is a single mutually-exclusive pick, plain string chips are fine. **Ask everything in this one set — do NOT split into follow-up questions across turns.** \
@@ -407,5 +439,32 @@ these are the recurring causes of clipped/overflowing/too-fast apps. \
 (quotes·weather·news etc.), you may propose a recurring-refresh cron (schedule_task) alongside."
             .to_string(),
         BuildStep::Done => "The build is complete.".to_string(),
+    }
+}
+
+/// Modify-mode per-step instruction — 기존 발행 페이지 수정(변경점 → 적용 2단계).
+/// Design/Refine 은 create 전용이라 이 모드에선 도달하지 않음(방어적으로 apply 지시 반환).
+fn modify_step_prompt(step: BuildStep) -> String {
+    match step {
+        BuildStep::Requirements =>
+            "M1 Change scope — this is a MODIFY build of an EXISTING published page. FIRST load the current \
+spec with get_page(slug = this session's targetSlug); if the page does not exist, tell the user and call \
+cancel_build. Summarize in 1-2 lines what the page/app currently is, then present the change options as \
+suggest chips in ONE set: a **multi-select `toggle`** with the concrete changes inferred from the user's \
+request (plus obviously-paired fixes you notice in the loaded spec), a free-text **`input`** for changes in \
+the user's own words, and a string-chip shortcut 'proceed with the recommendation'. \
+**Do NOT call advance_build before the user responds** (one step per turn). The next step is Apply. \
+When the user responds, call advance_build(output=selected changes). Set auto=true ONLY for the shortcut."
+            .to_string(),
+        BuildStep::Done => "The modify build is complete.".to_string(),
+        // Implement (+ 방어: Design/Refine 은 Modify 흐름에서 skip 되어 정상 경로론 안 옴)
+        _ =>
+            "M2 Apply (LAST step): apply ONLY the selected changes to the loaded existing spec — do NOT \
+rebuild from scratch. Keep every untouched block/prop verbatim; keep title/slug/project unless a selected \
+change says otherwise. If the artifact is an interactive HTML app/game, call `get_skill(\"html-app-quality\")` \
+BEFORE editing the HTML and keep the checklist satisfied (responsive/canvas fit, 100dvh, delta-time). \
+**save_page with the SAME slug is the final action — call it and STOP. Do NOT call advance_build after \
+save_page** (the modify completes when the user approves the page)."
+            .to_string(),
     }
 }

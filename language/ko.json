@@ -47,6 +47,9 @@
   },
   "build": {
     "step_requirements": "기능",
+    "step_change_scope": "변경점",
+    "step_apply": "적용",
+    "modify_in_progress": "수정 진행",
     "step_design": "디자인",
     "step_implement": "구현",
     "step_refine": "검토",

@@ -47,6 +47,9 @@
   },
   "build": {
     "step_requirements": "Features",
+    "step_change_scope": "Changes",
+    "step_apply": "Apply",
+    "modify_in_progress": "Modifying",
     "step_design": "Design",
     "step_implement": "Build",
     "step_refine": "Review",

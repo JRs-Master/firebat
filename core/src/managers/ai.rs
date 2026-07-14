@@ -2125,10 +2125,16 @@ impl AiManager {
                                 sess.id, sess.step.key(), sess.id, composed
                             );
                         } else {
-                            let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier);
+                            let sp = crate::utils::build_session::step_prompt(sess.step, sess.tier, sess.mode);
+                            // 수정 빌드는 대상 slug 를 같이 배달 — M1/M2 지시("this session's targetSlug")의 실값.
+                            let target_line = sess
+                                .target_slug
+                                .as_deref()
+                                .map(|s| format!(", targetSlug: {s}"))
+                                .unwrap_or_default();
                             composed = format!(
-                                "[Project Builder in progress — sessionId={}, current step: {}]\n{}\nOnly one step advances per turn — present the options as suggest chips and, after the user chooses, call advance_build(sessionId=\"{}\", output, tier?, auto?) (calling before selection is rejected by the engine). To stop, call cancel_build(sessionId).\n\n{}",
-                                sess.id, sess.step.key(), sp, sess.id, composed
+                                "[Project Builder in progress — sessionId={}, current step: {}{}]\n{}\nOnly one step advances per turn — present the options as suggest chips and, after the user chooses, call advance_build(sessionId=\"{}\", output, tier?, auto?) (calling before selection is rejected by the engine). To stop, call cancel_build(sessionId).\n\n{}",
+                                sess.id, sess.step.key(), target_line, sp, sess.id, composed
                             );
                         }
                     }
