@@ -240,7 +240,7 @@
   {
     "name": "table",
     "componentType": "Table",
-    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns). Set sortable=true whenever the table has many rows and at least one orderable column (values with a natural order — numbers, amounts, dates, ranks) the user could rank by — not for small or fixed-order tables.",
+    "description": "Table — lay out and compare **multiple targets/records** (several stocks × several metrics, many rows) across rows and columns. Required when comparing 3+ numbers. For **a single target's attributes only**, key_value (single-target table) fits better — don't split multiple targets into key_value cards; use one table (targets = columns or rows). No markdown |---|. With many columns set stickyCol=true to pin the first column; with many rows set striped=true (zebra, readability) and stickyHeader=true to keep the header visible while scrolling. For long tables or mobile, set filterable=true (row search) and/or columnToggle=true (show only chosen columns). Set sortable=true ONLY when at least one column holds orderable VALUES (numbers, amounts, dates, ranks) AND re-ranking the rows is meaningful (price lists, rankings, history). If every column is prose/labels (concept, comparison, case-example tables) or the row order itself carries the meaning, do NOT set it — sorting text rows is noise.",
     "semanticText": "table grid rows columns headers list compare spreadsheet data ranking metrics revenue multiple stocks 표 테이블 행 열 헤더 나열 비교 정리 데이터 목록 항목 필드 매출 지표 순위 여러 종목 비교",
     "propsSchema": {
       "type": "object",
@@ -316,7 +316,7 @@
             "boolean",
             "null"
           ],
-          "description": "true makes column headers click-to-sort (asc -> desc -> original). Set it whenever the table has many rows AND at least one column whose values have a natural order (numbers, amounts, dates, ranks) — i.e. the user could plausibly want to rank the rows by a column. Skip only for short tables, single-target attribute tables, or when the given row order itself is the meaning. default false."
+          "description": "true makes column headers click-to-sort (asc -> desc -> original). HARD GATE: only when at least one column holds orderable values (numbers, amounts, dates, ranks) the user could re-rank by. NEVER for prose-only tables (concept/comparison/case tables — every cell text) or when the given row order is the meaning. default false."
         }
       }
     }
