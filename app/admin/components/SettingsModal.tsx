@@ -1550,17 +1550,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           {t('settings_modal.cli_badge_install_needed')}
                         </span>
                       )}
+                      {/* 업그레이드 명령은 아래 가이드 칸의 설치 명령과 동일(@latest)이라 별도 안내 없이 배지만 */}
                       {cliStatus?.updateAvailable && cliStatus.latestVersion && (
                         <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-50 border border-amber-300 text-amber-700" title={`${g.install}@latest`}>
                           {t('settings_modal.cli_badge_update', { latest: cliStatus.latestVersion })}
                         </span>
                       )}
                     </div>
-                    {cliStatus?.updateAvailable && (
-                      <div className="text-[11px] text-amber-700">
-                        {t('settings_modal.cli_update_cmd_label')}<code className="bg-amber-50 border border-amber-200 px-1 rounded">{g.install}@latest</code>
-                      </div>
-                    )}
                     <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                       <b>{t('settings_modal.cli_guide_title', { name: g.name })}</b>
                       <ul className="mt-1 ml-4 list-disc space-y-0.5">
