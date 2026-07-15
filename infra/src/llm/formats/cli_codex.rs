@@ -2,8 +2,10 @@
 //!
 //! 핵심 기능:
 //! - `codex exec <prompt>` non-interactive
-//! - `--json --skip-git-repo-check --sandbox read-only` (+ config.toml `approval_policy = "never"` —
-//!   신버전 codex exec 가 `--ask-for-approval` 플래그를 제거(clap exit 2)해서 config 키로 이전, 2026-07-15)
+//! - CLI 인자 최소화: `--json --skip-git-repo-check` 만 — sandbox/approval/model/effort 는 전부
+//!   config.toml(`sandbox_mode`/`approval_policy`/`model`/`model_reasoning_effort`, 매 턴 재생성).
+//!   신버전 codex 가 `exec` 에서 `--ask-for-approval`, `exec resume` 에서 `--sandbox` 를 제거해
+//!   (clap exit 2, 2026-07-15 실측) 플래그는 서브커맨드별 지뢰 → config 단일 소스.
 //! - `--image <path>` (첨부 이미지)
 //! - `--model <id>`
 //! - `-c model_reasoning_effort="<level>"` (thinking)
@@ -61,7 +63,14 @@ impl CodexCliHandler {
 
     /// CODEX_HOME 디렉토리 생성 + config.toml + auth.json 복사.
     /// 옛 TS `ensureCodexHome` 1:1. HTTP MCP (`experimental_use_rmcp_client = true`) + `bearer_token_env_var`.
-    fn ensure_codex_home(internal_mcp_token: Option<&str>, base_url: Option<&str>) -> Option<PathBuf> {
+    /// sandbox·model·effort 도 config.toml 로 기입 — `exec resume` 이 해당 플래그들을 안 받아
+    /// (clap exit 2) CLI 인자 대신 config 가 단일 소스(매 턴 재생성이라 옵션 변경도 반영됨).
+    fn ensure_codex_home(
+        internal_mcp_token: Option<&str>,
+        base_url: Option<&str>,
+        cli_model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Option<PathBuf> {
         let codex_home = std::env::temp_dir().join("firebat-codex-home");
         std::fs::create_dir_all(&codex_home).ok()?;
 
@@ -91,9 +100,18 @@ impl CodexCliHandler {
         // 승인 정책 — 옛 `--ask-for-approval never` CLI 플래그의 config 등가(전 버전 유효 키).
         // TOML 최상위 키라 첫 [table] 헤더보다 앞에 와야 함.
         toml.push_str("approval_policy = \"never\"\n");
+        // sandbox 도 config 로 — `exec resume` 이 `--sandbox` 플래그를 안 받음(2026-07-15 실측).
+        toml.push_str("sandbox_mode = \"read-only\"\n");
         // codex 자체 웹서치 제거 — 외부 검색은 Firebat 도구(naver-search 등)로만.
         // Claude CLI 의 --allowed-tools "mcp__firebat__*"(내장 도구 전면 차단)와 동등한 자세.
-        toml.push_str("web_search = \"disabled\"\n\n");
+        toml.push_str("web_search = \"disabled\"\n");
+        if let Some(m) = cli_model.filter(|m| !m.is_empty()) {
+            toml.push_str(&format!("model = \"{}\"\n", m));
+        }
+        if let Some(eff) = effort {
+            toml.push_str(&format!("model_reasoning_effort = \"{}\"\n", eff));
+        }
+        toml.push('\n');
         if let Some(_token) = internal_mcp_token {
             let mcp_path = std::env::var("FIREBAT_MCP_PATH")
                 .unwrap_or_else(|_| "/api/mcp-internal".to_string());
@@ -157,41 +175,37 @@ impl CodexCliHandler {
     }
 
     /// 도구 호출 인자 빌더.
+    ///
+    /// `options_in_config = true`(with_tools = 우리 CODEX_HOME 사용) 면 sandbox·model·effort 를
+    /// **config.toml 로 이전**하고 CLI 인자는 `--json --skip-git-repo-check` 만 남긴다 —
+    /// `codex exec resume` 서브커맨드가 `--sandbox`(및 잠재적으로 --model/-c)를 안 받아
+    /// clap exit 2 가 나던 것(2026-07-15 실측). exec/resume 공통 최소 인자 = 서브커맨드 차이 원천 회피.
+    /// tool-less(기본 ~/.codex 사용, resume 없음) 는 기존 플래그 유지.
     fn build_args(
         prompt: &str,
         opts: &LlmCallOpts,
         tmp_image_path: Option<&str>,
+        options_in_config: bool,
     ) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
         // `--ask-for-approval never` 는 신버전 codex exec 에서 플래그 자체가 제거되어(unknown
         // argument = exit 2, 2026-07-15 실측) config.toml `approval_policy = "never"` 로 이전.
-        let security_flags = ["--json", "--skip-git-repo-check", "--sandbox", "read-only"];
+        let base_flags = ["--json", "--skip-git-repo-check"];
 
-        // resume 시 서브커맨드: `codex exec resume <session_id> <prompt>`
+        // resume 시 서브커맨드: `codex exec resume <session_id> <prompt>` — with_tools 전용
+        // (options_in_config=true 라 sandbox/model/effort 는 config.toml 이 담당).
         if let Some(rid) = opts.cli_resume_session_id.as_deref() {
             if !rid.is_empty() {
                 args.push("exec".to_string());
                 args.push("resume".to_string());
                 args.push(rid.to_string());
                 args.push(prompt.to_string());
-                for f in security_flags {
+                for f in base_flags {
                     args.push(f.to_string());
-                }
-                if let Some(m) = opts.cli_model.as_deref() {
-                    if !m.is_empty() {
-                        args.push("--model".to_string());
-                        args.push(m.to_string());
-                    }
                 }
                 if let Some(p) = tmp_image_path {
                     args.push("--image".to_string());
                     args.push(p.to_string());
-                }
-                if let Some(eff) =
-                    Self::map_thinking_to_codex(opts.thinking_level.as_deref())
-                {
-                    args.push("-c".to_string());
-                    args.push(format!("model_reasoning_effort=\"{}\"", eff));
                 }
                 return args;
             }
@@ -199,22 +213,27 @@ impl CodexCliHandler {
         // 일반: `codex exec <prompt>`
         args.push("exec".to_string());
         args.push(prompt.to_string());
-        for f in security_flags {
+        for f in base_flags {
             args.push(f.to_string());
-        }
-        if let Some(m) = opts.cli_model.as_deref() {
-            if !m.is_empty() {
-                args.push("--model".to_string());
-                args.push(m.to_string());
-            }
         }
         if let Some(p) = tmp_image_path {
             args.push("--image".to_string());
             args.push(p.to_string());
         }
-        if let Some(eff) = Self::map_thinking_to_codex(opts.thinking_level.as_deref()) {
-            args.push("-c".to_string());
-            args.push(format!("model_reasoning_effort=\"{}\"", eff));
+        if !options_in_config {
+            // tool-less = 기본 ~/.codex 이므로 sandbox·model·effort 를 플래그로 (fresh exec 은 전부 수용).
+            args.push("--sandbox".to_string());
+            args.push("read-only".to_string());
+            if let Some(m) = opts.cli_model.as_deref() {
+                if !m.is_empty() {
+                    args.push("--model".to_string());
+                    args.push(m.to_string());
+                }
+            }
+            if let Some(eff) = Self::map_thinking_to_codex(opts.thinking_level.as_deref()) {
+                args.push("-c".to_string());
+                args.push(format!("model_reasoning_effort=\"{}\"", eff));
+            }
         }
         args
     }
@@ -243,11 +262,17 @@ impl CodexCliHandler {
             _ => final_prompt,
         };
 
-        let args = Self::build_args(&prompt_with_system, opts, tmp_image_path);
+        let args = Self::build_args(&prompt_with_system, opts, tmp_image_path, with_tools);
 
-        // CODEX_HOME 설정 (도구 호출 모드만)
+        // CODEX_HOME 설정 (도구 호출 모드만) — sandbox/model/effort 는 config.toml 이 담당
+        // (build_args 의 options_in_config=with_tools 와 짝).
         let codex_home = if with_tools {
-            Self::ensure_codex_home(opts.mcp_token.as_deref(), opts.mcp_base_url.as_deref())
+            Self::ensure_codex_home(
+                opts.mcp_token.as_deref(),
+                opts.mcp_base_url.as_deref(),
+                opts.cli_model.as_deref(),
+                Self::map_thinking_to_codex(opts.thinking_level.as_deref()),
+            )
         } else {
             None
         };
