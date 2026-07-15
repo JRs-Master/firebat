@@ -592,6 +592,7 @@
     "subagent_off": "비활성 (기본 — 도구 자체 미노출)",
     "cli_subscription_claude": "Claude Pro/Max 구독",
     "cli_subscription_codex": "ChatGPT Plus/Pro 구독",
+    "cli_login_note_codex": "헤드리스 서버는 장치 코드 인증입니다: ① chatgpt.com → 설정 → 보안 및 로그인 → 'Codex용 장치 코드 인증 활성화' ON ② 서버(SSH)에서 위 명령 실행 ③ PC 브라우저로 https://auth.openai.com/codex/device 접속 ④ 서버에 표시된 일회용 코드를 입력합니다.",
     "cli_subscription_gemini": "Google AI Pro 구독 (또는 무료 티어)",
     "cli_status_label": "CLI 인증 상태 — {{name}}",
     "cli_check_button": "상태 확인",

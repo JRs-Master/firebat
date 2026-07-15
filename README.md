@@ -362,7 +362,8 @@ Open `http://localhost:3000/admin` for the admin console. The frontend routes to
 **Subsequent settings** (after entering the admin console):
 1. **AI model**: Settings → AI tab → execution mode (API/CLI) → provider (OpenAI/Google/Anthropic) → model
    - **API mode**: Enter the provider API key (`sk-proj-…`, `AIza…`, `sk-ant-…`) or a Vertex Service Account JSON
-   - **CLI mode**: Run `claude auth login` / `codex login` / `gemini auth login` on the server and click **"Check status"**
+   - **CLI mode**: Run `claude auth login` / `codex login --device-auth` / `gemini auth login` on the server and click **"Check status"**
+     - Codex on a headless server uses device-code auth: enable **chatgpt.com → Settings → Security & login → "Device code authentication for Codex"** first, run `codex login --device-auth` over SSH, open `https://auth.openai.com/codex/device` in your PC browser, then enter the one-time code shown in the SSH session
 2. **Interface language**: Settings → General tab (ko/en toggle, plus CMS siteLang free-form text for ja/zh-CN etc.)
 3. **Timezone**: Settings → General tab (35 IANA options, shared with SetupWizard via `lib/timezones.ts`)
 4. **Admin credentials change**: Settings → General tab → verify the current password (argon2 verify_admin_password RPC); the new password follows the same policy

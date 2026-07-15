@@ -1475,6 +1475,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     name: string;
                     install: string;
                     login: string;
+                    /** 헤드리스 서버 전용 추가 절차 등 로그인 부연 (없으면 생략) */
+                    loginNote?: string;
                     subscription: string;
                     apiProvider: 'claude-code' | 'codex' | 'gemini';
                   }> = {
@@ -1488,7 +1490,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     codex: {
                       name: 'Codex CLI',
                       install: 'npm i -g @openai/codex',
-                      login: 'codex login',
+                      // 헤드리스 서버는 브라우저 리다이렉트가 안 되므로 장치 코드 인증 (2026-07-15 실측 플로우)
+                      login: 'codex login --device-auth',
+                      loginNote: t('settings_modal.cli_login_note_codex'),
                       subscription: t('settings_modal.cli_subscription_codex'),
                       apiProvider: 'codex',
                     },
@@ -1533,6 +1537,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         <li>{t('settings_modal.cli_guide_install_step')}</li>
                         <li>{t('settings_modal.cli_guide_install_label')}<code className="bg-white px-1 rounded">{g.install}</code></li>
                         <li>{t('settings_modal.cli_guide_login_label')}<code className="bg-white px-1 rounded">{g.login}</code></li>
+                        {g.loginNote && <li>{g.loginNote}</li>}
                         <li>{t('settings_modal.cli_guide_verify')}</li>
                         <li>{t('settings_modal.cli_guide_subscription', { subscription: g.subscription })}</li>
                         <li><span className="text-amber-700 font-bold">{t('settings_modal.cli_guide_tos_label')}</span>: {t('settings_modal.cli_guide_tos')}</li>
