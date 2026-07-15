@@ -54,14 +54,27 @@ impl CodexCliHandler {
         let codex_home = std::env::temp_dir().join("firebat-codex-home");
         std::fs::create_dir_all(&codex_home).ok()?;
 
-        // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지)
+        // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지) — **재로그인 전파**: 원본이 사본보다
+        // 새로우면 덮어씀. 옛 "없을 때만 복사"는 사용자가 재로그인해도(새 로그인 = 옛 세션 무효화)
+        // 죽은 토큰 사본이 남아 401 Missing bearer 가 나던 버그(2026-07-15 실측). 사본이 더
+        // 새로우면(codex 자체 토큰 갱신 회전) 그대로 유지.
         if let Some(home) =
             std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
         {
             let real_auth = PathBuf::from(home).join(".codex").join("auth.json");
             let tmp_auth = codex_home.join("auth.json");
-            if real_auth.exists() && !tmp_auth.exists() {
-                let _ = std::fs::copy(&real_auth, &tmp_auth);
+            if real_auth.exists() {
+                let real_newer = match (
+                    std::fs::metadata(&real_auth).and_then(|m| m.modified()),
+                    std::fs::metadata(&tmp_auth).and_then(|m| m.modified()),
+                ) {
+                    (Ok(r), Ok(t)) => r > t,
+                    // 사본 없음 / mtime 판독 불가 = 복사
+                    _ => true,
+                };
+                if real_newer {
+                    let _ = std::fs::copy(&real_auth, &tmp_auth);
+                }
             }
         }
 
