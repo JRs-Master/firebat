@@ -18,6 +18,7 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 /// 홈 디렉토리 해석 — env(HOME/USERPROFILE) 우선 + unix getpwuid 폴백(`std::env::home_dir`).
@@ -35,7 +36,8 @@ use crate::llm::adapter::FormatHandler;
 use crate::llm::formats::cli_image_helper::{cleanup_temp_file, write_image_temp_file};
 use firebat_core::llm::config::LlmModelConfig;
 use firebat_core::ports::{
-    InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
+    InfraResult, LlmCallOpts, LlmStreamEvent, LlmStreamSink, LlmTextResponse, LlmToolResponse,
+    ToolDefinition, ToolResult,
 };
 use firebat_core::utils::render_map::render_tool_map;
 
@@ -105,6 +107,9 @@ impl CodexCliHandler {
         // codex 자체 웹서치 제거 — 외부 검색은 Firebat 도구(naver-search 등)로만.
         // Claude CLI 의 --allowed-tools "mcp__firebat__*"(내장 도구 전면 차단)와 동등한 자세.
         toml.push_str("web_search = \"disabled\"\n");
+        // reasoning 요약 노출 — 미설정 시 summary 가 빈 배열(encrypted 만)이라 생각중 본문이
+        // 비어 있던 것(2026-07-15 실측). 요약을 받아 ThinkingBlock 에 표시.
+        toml.push_str("model_reasoning_summary = \"auto\"\n");
         if let Some(m) = cli_model.filter(|m| !m.is_empty()) {
             toml.push_str(&format!("model = \"{}\"\n", m));
         }
@@ -245,6 +250,7 @@ impl CodexCliHandler {
         prompt: &str,
         opts: &LlmCallOpts,
         with_tools: bool,
+        emit: Option<&LlmStreamSink>,
     ) -> InfraResult<CliRunOutcome> {
         // 첨부 이미지 임시 파일
         let tmp_image =
@@ -291,7 +297,7 @@ impl CodexCliHandler {
         // 턴 종료/취소/SSE 끊김으로 future 가 drop 되면 codex 자식을 kill — orphan 누적(메모리→OOM) 방지.
         cmd.kill_on_drop(true);
 
-        let child = cmd.spawn().map_err(|e| {
+        let mut child = cmd.spawn().map_err(|e| {
             cleanup_temp_file(tmp_image_path);
             format!(
                 "Codex CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `codex login` 한 번 실행했는지 확인",
@@ -299,28 +305,21 @@ impl CodexCliHandler {
             )
         })?;
 
-        // 턴 타임아웃 — codex 가 hang 하면 wait_with_output 이 무한 블록. 초과 시 future drop → child drop
-        // → kill_on_drop 이 프로세스 kill(orphan→OOM 방지). 배치(스트리밍 X)라 총 시간 기준, 정상 긴
-        // 에이전트 턴(수분~십수분) 안 끊기게 넉넉히 20분.
-        const CODEX_TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1200);
-        let output = match tokio::time::timeout(CODEX_TURN_TIMEOUT, child.wait_with_output()).await {
-            Ok(r) => r.map_err(|e| {
-                cleanup_temp_file(tmp_image_path);
-                firebat_core::i18n::t("core.error.llm.cli_failed", None, &[("name", "Codex"), ("stage", "wait"), ("detail", &e.to_string())])
-            })?,
-            Err(_) => {
-                cleanup_temp_file(tmp_image_path);
-                return Err(format!(
-                    "Codex CLI turn timeout — {}초 초과로 종료(hang/orphan 방지)",
-                    CODEX_TURN_TIMEOUT.as_secs()
-                ));
+        // stdout 줄 단위 스트리밍 — 옛 wait_with_output batch 는 턴이 끝나야 전부 파싱돼
+        // "생각중" 본문·도구 스텝이 라이브로 전혀 안 보였다(2026-07-15 사용자 보고). claude 미러:
+        // stderr 동시 드레인(파이프 버퍼 deadlock 방지) + idle timeout(hang/orphan 방지).
+        let stdout_pipe = child.stdout.take().ok_or_else(|| {
+            cleanup_temp_file(tmp_image_path);
+            "Codex CLI stdout 파이프 없음".to_string()
+        })?;
+        let stderr_pipe = child.stderr.take();
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = String::new();
+            if let Some(se) = stderr_pipe {
+                let _ = BufReader::new(se).read_to_string(&mut buf).await;
             }
-        };
-
-        cleanup_temp_file(tmp_image_path);
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+            buf
+        });
 
         let mut outcome = CliRunOutcome::default();
         let mut text_parts: Vec<String> = Vec::new();
@@ -329,11 +328,39 @@ impl CodexCliHandler {
         // CLI 네이티브 계획 도구(update_plan → todo_list 아이템)는 turn 당 한 번만 "계획 정리" 표시로 통합.
         let mut plan_noted = false;
 
-        for line in stdout.lines() {
+        // stdout 무응답 감지 — 장고 추론도 reasoning/tool 이벤트가 주기적으로 흐르므로 10분 무응답 =
+        // hang 으로 간주 kill(orphan→OOM 방지). kill_on_drop(future drop 케이스)과 보완.
+        const CODEX_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+        let mut reader = BufReader::new(stdout_pipe).lines();
+        loop {
+            let line = match tokio::time::timeout(CODEX_IDLE_TIMEOUT, reader.next_line()).await {
+                Ok(read_result) => match read_result {
+                    Ok(Some(line)) => line,
+                    Ok(None) => break, // EOF — codex 종료
+                    Err(e) => {
+                        errored = true;
+                        error_msg = Some(firebat_core::i18n::t(
+                            "core.error.llm.cli_failed",
+                            None,
+                            &[("name", "Codex"), ("stage", "stdout"), ("detail", &e.to_string())],
+                        ));
+                        break;
+                    }
+                },
+                Err(_elapsed) => {
+                    let _ = child.start_kill();
+                    errored = true;
+                    error_msg = Some(format!(
+                        "Codex CLI idle timeout — stdout {}초 무응답으로 종료(hang/orphan 방지)",
+                        CODEX_IDLE_TIMEOUT.as_secs()
+                    ));
+                    break;
+                }
+            };
             if line.trim().is_empty() {
                 continue;
             }
-            let ev: serde_json::Value = match serde_json::from_str(line) {
+            let ev: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
@@ -387,10 +414,25 @@ impl CodexCliHandler {
                 "item.started" | "item.completed" | "item.updated" => {
                     let Some(item) = ev.get("item") else { continue };
                     let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    // agent_message: 최종 텍스트 (completed 만)
+                    // agent_message (completed 만) — 신버전 codex 는 `phase` 로 채널 구분:
+                    // commentary = 작업 중 중간 코멘트("…하겠습니다") → 답변이 아니라 생각중 채널.
+                    // 옛 파서가 둘 다 답변에 합쳐 같은 말이 두 번 나오던 버그(2026-07-15 실측:
+                    // "정리할게요"+"정리했습니다"). phase 부재(구버전) = 최종 답변으로 간주.
                     if item_type == "agent_message" && ev_type == "item.completed" {
                         if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
-                            text_parts.push(t.to_string());
+                            let is_commentary =
+                                item.get("phase").and_then(|v| v.as_str()) == Some("commentary");
+                            if is_commentary {
+                                if !outcome.thinking_acc.is_empty() {
+                                    outcome.thinking_acc.push('\n');
+                                }
+                                outcome.thinking_acc.push_str(t);
+                                if let Some(tx) = emit {
+                                    let _ = tx.try_send(LlmStreamEvent::Thinking(format!("{t}\n")));
+                                }
+                            } else {
+                                text_parts.push(t.to_string());
+                            }
                         }
                         continue;
                     }
@@ -422,6 +464,10 @@ impl CodexCliHandler {
                                         outcome.thinking_acc.push('\n');
                                     }
                                     outcome.thinking_acc.push_str(&t);
+                                    // 실시간 emit — frontend ThinkingBlock bodyText 누적 (claude 미러).
+                                    if let Some(tx) = emit {
+                                        let _ = tx.try_send(LlmStreamEvent::Thinking(format!("{t}\n")));
+                                    }
                                 }
                             }
                         }
@@ -436,6 +482,13 @@ impl CodexCliHandler {
                                 outcome.thinking_acc.push('\n');
                             }
                             outcome.thinking_acc.push_str("[계획 정리]");
+                            if let Some(tx) = emit {
+                                let _ = tx.try_send(LlmStreamEvent::Thinking("[계획 정리]\n".to_string()));
+                                let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                    name: "plan".to_string(),
+                                    status: "start".to_string(),
+                                });
+                            }
                         }
                         continue;
                     }
@@ -459,7 +512,16 @@ impl CodexCliHandler {
                             if !outcome.thinking_acc.is_empty() {
                                 outcome.thinking_acc.push('\n');
                             }
-                            outcome.thinking_acc.push_str(&firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &tool_name)]));
+                            let marker = firebat_core::i18n::t("core.llm.tool_call_marker", None, &[("name", &tool_name)]);
+                            outcome.thinking_acc.push_str(&marker);
+                            // 실시간 emit — Thinking(마커) + ToolStep(진행 라벨) (claude 미러).
+                            if let Some(tx) = emit {
+                                let _ = tx.try_send(LlmStreamEvent::Thinking(format!("{marker}\n")));
+                                let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                    name: tool_name.to_string(),
+                                    status: "start".to_string(),
+                                });
+                            }
                             continue;
                         }
                         if ev_type == "item.completed" && server == "firebat" {
@@ -493,6 +555,13 @@ impl CodexCliHandler {
                                     error: error_msg,
                                     input: Some(args.clone()),
                                 });
+                                // 실시간 emit — 도구 완료/에러 (ToolStep done|error, claude 미러).
+                                if let Some(tx) = emit {
+                                    let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                        name: tool_name.to_string(),
+                                        status: if success { "done" } else { "error" }.to_string(),
+                                    });
+                                }
                             }
                             if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false)
                             {
@@ -603,14 +672,19 @@ impl CodexCliHandler {
             }
         }
 
+        cleanup_temp_file(tmp_image_path);
+        // 자식 reap + stderr 회수 (스트리밍 전환으로 wait_with_output 폐기).
+        let status = child.wait().await.ok();
+        let stderr_buf = stderr_task.await.unwrap_or_default();
+
         if errored {
             return Err(error_msg.unwrap_or_else(|| "Codex CLI 알 수 없는 에러".to_string()));
         }
         outcome.text = text_parts.join("");
-        if !output.status.success() {
+        if !status.map(|s| s.success()).unwrap_or(false) {
             return Err(format!(
                 "Codex 비정상 종료 (exit {:?}): {}",
-                output.status.code(),
+                status.and_then(|s| s.code()),
                 stderr_buf.chars().take(500).collect::<String>()
             ));
         }
@@ -632,9 +706,9 @@ struct CliRunOutcome {
     tokens_in: i64,
     tokens_out: i64,
     cached_tokens: i64,
-    /// reasoning event 본문 + 도구 호출 마커 누적. 옛 Node 의 onChunk({type:'thinking', ...})
-    /// 와 동등 — frontend ThinkingBlock bodyText 에 표시되어 사용자가 AI 의 추론·도구 호출
-    /// 흐름을 본다. streaming chunk emit 은 아직 X (turn 종료 후 batch 표시).
+    /// reasoning 요약 + commentary + 도구 호출 마커 누적 — frontend ThinkingBlock bodyText.
+    /// 2026-07-15 스트리밍 전환: run_cli 가 줄 단위로 파싱하며 emit(Thinking/ToolStep)을 실시간
+    /// 흘림(claude 미러). 이 누적본은 턴 종료 후 영속·리로드 표시용.
     thinking_acc: String,
 }
 
@@ -650,7 +724,7 @@ impl FormatHandler for CodexCliHandler {
         prompt: &str,
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmTextResponse> {
-        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false).await?;
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false, None).await?;
         Ok(LlmTextResponse {
             text: outcome.text,
             model_id: config.id.clone(),
@@ -667,8 +741,23 @@ impl FormatHandler for CodexCliHandler {
         api_key: Option<&str>,
         prompt: &str,
         tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+    ) -> InfraResult<LlmToolResponse> {
+        // 비스트리밍 = 스트리밍 변형에 emit None 위임 (단일 구현, claude 미러).
+        self.ask_with_tools_streaming(config, api_key, prompt, tools, prior_results, opts, None)
+            .await
+    }
+
+    async fn ask_with_tools_streaming(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
         _prior_results: &[ToolResult],
         opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
     ) -> InfraResult<LlmToolResponse> {
         // hosted MCP / CLI 자체 loop 모델 (features.mcp_connector=true) 은 빈 tools 여도
         // MCP config 가 필요하므로 ask_text 위임 금지.
@@ -687,7 +776,7 @@ impl FormatHandler for CodexCliHandler {
                 ..Default::default()
             });
         }
-        let outcome = Self::run_cli(&config.endpoint, prompt, opts, true).await?;
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, true, emit.as_ref()).await?;
         Ok(LlmToolResponse {
             text: outcome.text,
             tool_calls: vec![], // Codex 자체 MCP loop 처리 — 외부 dispatch 없음
