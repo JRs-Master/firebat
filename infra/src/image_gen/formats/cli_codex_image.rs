@@ -203,13 +203,9 @@ fn read_image_file(path: &str, mime_type: &str) -> InfraResult<ImageGenResult> {
 
 fn expand_home(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("USERPROFILE")
-            .or_else(|| std::env::var_os("HOME"))
-        {
-            return std::path::PathBuf::from(home)
-                .join(rest)
-                .to_string_lossy()
-                .into_owned();
+        // HOME env 미설정(systemd 루트 서비스) 폴백 포함 — cli_codex 공용 헬퍼.
+        if let Some(home) = crate::llm::formats::cli_codex::resolve_home_dir() {
+            return home.join(rest).to_string_lossy().into_owned();
         }
     }
     path.to_string()

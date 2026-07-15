@@ -18,6 +18,17 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Command;
 
+/// 홈 디렉토리 해석 — env(HOME/USERPROFILE) 우선 + unix getpwuid 폴백(`std::env::home_dir`).
+/// systemd 루트 서비스는 `User=` 미지정 시 HOME env 가 없어서 env 만 보면 `~/.codex` 복사가
+/// 조용히 스킵되어 codex 가 무인증으로 나가 401 Missing bearer 가 나던 버그(2026-07-15 실측).
+#[allow(deprecated)]
+pub(crate) fn resolve_home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .or_else(std::env::home_dir)
+}
+
 use crate::llm::adapter::FormatHandler;
 use crate::llm::formats::cli_image_helper::{cleanup_temp_file, write_image_temp_file};
 use firebat_core::llm::config::LlmModelConfig;
@@ -58,10 +69,8 @@ impl CodexCliHandler {
         // 새로우면 덮어씀. 옛 "없을 때만 복사"는 사용자가 재로그인해도(새 로그인 = 옛 세션 무효화)
         // 죽은 토큰 사본이 남아 401 Missing bearer 가 나던 버그(2026-07-15 실측). 사본이 더
         // 새로우면(codex 자체 토큰 갱신 회전) 그대로 유지.
-        if let Some(home) =
-            std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
-        {
-            let real_auth = PathBuf::from(home).join(".codex").join("auth.json");
+        if let Some(home) = resolve_home_dir() {
+            let real_auth = home.join(".codex").join("auth.json");
             let tmp_auth = codex_home.join("auth.json");
             if real_auth.exists() {
                 let real_newer = match (

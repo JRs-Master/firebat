@@ -137,8 +137,9 @@ impl ClaudeCodeCliHandler {
     /// `~/.claude/projects/*/tool-results/` 의 10분 이전 파일 청소 — 옛 TS `cleanupClaudeCacheFiles` 1:1.
     /// 디스크 누적 방지. 현재 실행 중 참조 방지를 위해 10분+ 만 제거.
     async fn cleanup_claude_cache_files() {
-        let home = match std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
-            Some(h) => PathBuf::from(h),
+        // HOME env 미설정(systemd 루트 서비스) 폴백 포함 — cli_codex 공용 헬퍼.
+        let home = match super::cli_codex::resolve_home_dir() {
+            Some(h) => h,
             None => return,
         };
         let claude_projects_dir = home.join(".claude").join("projects");
