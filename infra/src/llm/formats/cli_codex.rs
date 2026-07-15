@@ -103,6 +103,10 @@ impl CodexCliHandler {
             toml.push_str("[mcp_servers.firebat]\n");
             toml.push_str(&format!("url = \"{}\"\n", url));
             toml.push_str("bearer_token_env_var = \"FIREBAT_MCP_TOKEN\"\n");
+            // 신버전 codex(0.144 실측)는 MCP 도구 호출을 승인 대상으로 분류 — 비대화형(exec)은
+            // 승인을 물을 수 없어 전부 자동 취소("user cancelled MCP tool call") → 서버별 자동
+            // 승인. 파괴 작업 승인은 Firebat 자체 승인카드 계층이 게이트하므로 여기선 정당.
+            toml.push_str("default_tools_approval_mode = \"approve\"\n");
         } else {
             // stdio fallback — Firebat Core 매번 재부팅. 토큰 미설정 시.
             let project_dir = std::env::current_dir().ok()?;
@@ -113,6 +117,7 @@ impl CodexCliHandler {
             toml.push_str("command = \"npx\"\n");
             toml.push_str(&format!("args = [\"tsx\", \"{}\"]\n", stdio_str));
             toml.push_str(&format!("cwd = \"{}\"\n", cwd_str));
+            toml.push_str("default_tools_approval_mode = \"approve\"\n");
         }
         std::fs::write(codex_home.join("config.toml"), toml).ok()?;
         Some(codex_home)
