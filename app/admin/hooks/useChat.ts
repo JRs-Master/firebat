@@ -104,7 +104,14 @@ const TERMINAL_PENDING = new Set(['approved', 'rejected', 'error', 'past-runat']
 function preserveLocalPendingStatus(remote: Message[], local: Message[]): Message[] {
   const localById = new Map(local.map(m => [m.id, m]));
   return remote.map(rm => {
-    if (!rm.pendingActions?.length) return rm;
+    if (!rm.pendingActions?.length) {
+      // Remote copy LOST its pendingActions (e.g. a duplicate turn overwrote the row with an
+      // empty response — 2026-07-15 codex 실측: 재요청이 같은 세션 resume 으로 도구 0 응답을
+      // 만들어 행을 덮음) — keep the local card instead of wiping it; the next persistMessage
+      // (approve/reject) heals the DB copy.
+      const lm = localById.get(rm.id);
+      return lm?.pendingActions?.length ? { ...rm, pendingActions: lm.pendingActions } : rm;
+    }
     const lm = localById.get(rm.id);
     const localByPlan = lm?.pendingActions
       ? new Map(lm.pendingActions.map(p => [p.planId, p]))
@@ -1035,7 +1042,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // one status flip is wasteful → upsert only the changed message (the message carries its own id for the row
   // upsert; convId locates the conv). DB is the authority → reconcile reads it so cards/chips never resurrect.
   const persistMessage = useCallback((convId: string, msg: Message) => {
-    void convBackend.saveMessage(convId, msg);
+    // promise 반환 — 승인 직후 onRefresh(reconcile 읽기)가 이 쓰기를 추월하지 않게 콜러가 await 가능.
+    return convBackend.saveMessage(convId, msg);
   }, [convBackend]);
 
   // Persist after a pending-status change (approve/reject) — prevents card resurrection after reload/new-build.
@@ -1062,9 +1070,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         localStorage.setItem(convStorageKey, JSON.stringify(next));
       }
     } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
-    // 2) backend persistence — append only the changed message.
+    // 2) backend persistence — append only the changed message. promise 반환(콜러 await 용).
     const updatedMsg = updated.find(m => m.id === msgId);
-    if (updatedMsg) persistMessage(convId, updatedMsg);
+    return updatedMsg ? persistMessage(convId, updatedMsg) : Promise.resolve();
   }, [activeConvId, persistMessage]);
 
   // Pending tool 개별 승인
@@ -1076,10 +1084,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       if (data.success) {
         const rescheduled = action === 'reschedule' && newRunAt ? newRunAt : undefined;
         dispatch({ type: 'PENDING_APPROVED', msgId, planId, newRunAt: rescheduled });
+        // persist 를 refresh 보다 먼저 + await — onRefresh 의 reconcile 이 DB 를 읽으므로,
+        // fire-and-forget 이면 읽기가 쓰기를 추월해 승인 카드가 사라질 수 있음(2026-07-15 실측).
+        // 재예약이면 카드 실행 시각(args.runAt)도 새 시간으로 영속 (옛엔 원래 시간이 계속 표시)
+        await persistPendingChange(msgId, planId, { status: 'approved' }, rescheduled ? { runAt: rescheduled } : undefined);
         onRefresh();
         window.dispatchEvent(new Event('firebat-refresh'));
-        // 재예약이면 카드 실행 시각(args.runAt)도 새 시간으로 영속 (옛엔 원래 시간이 계속 표시)
-        persistPendingChange(msgId, planId, { status: 'approved' }, rescheduled ? { runAt: rescheduled } : undefined);
       } else if (data.code === 'PAST_RUNAT') {
         dispatch({ type: 'PENDING_PAST_RUNAT', msgId, planId, originalRunAt: data.originalRunAt });
         persistPendingChange(msgId, planId, { status: 'past-runat', originalRunAt: data.originalRunAt });
