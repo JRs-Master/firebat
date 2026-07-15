@@ -262,7 +262,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftModel]);
   // CLI 상태
-  const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
+  const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string; installedVersion?: string; latestVersion?: string; updateAvailable?: boolean } | null>(null);
   const [cliChecking, setCliChecking] = useState(false);
 
   // 일반 설정
@@ -1522,7 +1522,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           setCliChecking(true);
                           try {
                             const data = await apiGet<any>(`/api/auth/cli?provider=${g.apiProvider}`, { category: 'settings' });
-                            setCliStatus({ installed: !!data.installed, loggedIn: !!data.loggedIn, error: data.error });
+                            setCliStatus({
+                              installed: !!data.installed,
+                              loggedIn: !!data.loggedIn,
+                              error: data.error,
+                              installedVersion: data.installedVersion,
+                              latestVersion: data.latestVersion,
+                              updateAvailable: !!data.updateAvailable,
+                            });
                           } catch (e) {
                             setCliStatus({ installed: false, loggedIn: false, error: (e as Error).message });
                           } finally { setCliChecking(false); }
@@ -1534,9 +1541,26 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       {cliStatus && (
                         <span className={`text-[12px] font-bold ${cliStatus.loggedIn ? 'text-green-600' : cliStatus.installed ? 'text-amber-600' : 'text-red-600'}`}>
                           {cliStatus.loggedIn ? t('settings_modal.cli_status_logged_in') : cliStatus.installed ? t('settings_modal.cli_status_installed') : t('settings_modal.cli_status_not_installed')}
+                          {cliStatus.installedVersion && <span className="ml-1 font-normal text-slate-400">v{cliStatus.installedVersion}</span>}
+                        </span>
+                      )}
+                      {/* 미설치 = "설치 필요" / 신버전 존재 = 업그레이드 배지 (sysmod 패키지 배지와 동일 철학: 설치 버전 vs npm 최신) */}
+                      {cliStatus && !cliStatus.installed && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-red-50 border border-red-200 text-red-600">
+                          {t('settings_modal.cli_badge_install_needed')}
+                        </span>
+                      )}
+                      {cliStatus?.updateAvailable && cliStatus.latestVersion && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-50 border border-amber-300 text-amber-700" title={`${g.install}@latest`}>
+                          {t('settings_modal.cli_badge_update', { latest: cliStatus.latestVersion })}
                         </span>
                       )}
                     </div>
+                    {cliStatus?.updateAvailable && (
+                      <div className="text-[11px] text-amber-700">
+                        {t('settings_modal.cli_update_cmd_label')}<code className="bg-amber-50 border border-amber-200 px-1 rounded">{g.install}@latest</code>
+                      </div>
+                    )}
                     <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
                       <b>{t('settings_modal.cli_guide_title', { name: g.name })}</b>
                       <ul className="mt-1 ml-4 list-disc space-y-0.5">
