@@ -2,7 +2,8 @@
 //!
 //! 핵심 기능:
 //! - `codex exec <prompt>` non-interactive
-//! - `--json --skip-git-repo-check --sandbox read-only --ask-for-approval never`
+//! - `--json --skip-git-repo-check --sandbox read-only` (+ config.toml `approval_policy = "never"` —
+//!   신버전 codex exec 가 `--ask-for-approval` 플래그를 제거(clap exit 2)해서 config 키로 이전, 2026-07-15)
 //! - `--image <path>` (첨부 이미지)
 //! - `--model <id>`
 //! - `-c model_reasoning_effort="<level>"` (thinking)
@@ -65,6 +66,9 @@ impl CodexCliHandler {
         }
 
         let mut toml = String::new();
+        // 승인 정책 — 옛 `--ask-for-approval never` CLI 플래그의 config 등가(전 버전 유효 키).
+        // TOML 최상위 키라 첫 [table] 헤더보다 앞에 와야 함.
+        toml.push_str("approval_policy = \"never\"\n\n");
         if let Some(_token) = internal_mcp_token {
             let mcp_path = std::env::var("FIREBAT_MCP_PATH")
                 .unwrap_or_else(|_| "/api/mcp-internal".to_string());
@@ -124,14 +128,9 @@ impl CodexCliHandler {
         tmp_image_path: Option<&str>,
     ) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
-        let security_flags = [
-            "--json",
-            "--skip-git-repo-check",
-            "--sandbox",
-            "read-only",
-            "--ask-for-approval",
-            "never",
-        ];
+        // `--ask-for-approval never` 는 신버전 codex exec 에서 플래그 자체가 제거되어(unknown
+        // argument = exit 2, 2026-07-15 실측) config.toml `approval_policy = "never"` 로 이전.
+        let security_flags = ["--json", "--skip-git-repo-check", "--sandbox", "read-only"];
 
         // resume 시 서브커맨드: `codex exec resume <session_id> <prompt>`
         if let Some(rid) = opts.cli_resume_session_id.as_deref() {
