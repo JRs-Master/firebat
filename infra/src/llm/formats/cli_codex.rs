@@ -90,7 +90,10 @@ impl CodexCliHandler {
         let mut toml = String::new();
         // 승인 정책 — 옛 `--ask-for-approval never` CLI 플래그의 config 등가(전 버전 유효 키).
         // TOML 최상위 키라 첫 [table] 헤더보다 앞에 와야 함.
-        toml.push_str("approval_policy = \"never\"\n\n");
+        toml.push_str("approval_policy = \"never\"\n");
+        // codex 자체 웹서치 제거 — 외부 검색은 Firebat 도구(naver-search 등)로만.
+        // Claude CLI 의 --allowed-tools "mcp__firebat__*"(내장 도구 전면 차단)와 동등한 자세.
+        toml.push_str("web_search = \"disabled\"\n\n");
         if let Some(_token) = internal_mcp_token {
             let mcp_path = std::env::var("FIREBAT_MCP_PATH")
                 .unwrap_or_else(|_| "/api/mcp-internal".to_string());
@@ -99,7 +102,11 @@ impl CodexCliHandler {
                 base_url.unwrap_or("http://127.0.0.1:3000"),
                 mcp_path
             );
-            toml.push_str("[features]\nexperimental_use_rmcp_client = true\n\n");
+            // shell_tool = false — 내장 쉘 차단(Claude allowlist 동등). sandbox read-only 는 쓰기·
+            // 네트워크만 막고 읽기는 허용이라, 내장 쉘이 살아 있으면 vault.db 등 시크릿 read 유출 +
+            // 서버 탐색 쿼터 낭비(2026-06-19 Claude 사고 클래스) 벡터가 남는다. MCP 도구는 별도
+            // 서브시스템이라 영향 0(공식 config 레퍼런스 확인).
+            toml.push_str("[features]\nexperimental_use_rmcp_client = true\nshell_tool = false\n\n");
             toml.push_str("[mcp_servers.firebat]\n");
             toml.push_str(&format!("url = \"{}\"\n", url));
             toml.push_str("bearer_token_env_var = \"FIREBAT_MCP_TOKEN\"\n");
@@ -113,6 +120,7 @@ impl CodexCliHandler {
             let stdio_path = project_dir.join("mcp").join("stdio-user-ai.ts");
             let stdio_str = stdio_path.to_string_lossy().replace('\\', "\\\\");
             let cwd_str = project_dir.to_string_lossy().replace('\\', "\\\\");
+            toml.push_str("[features]\nshell_tool = false\n\n");
             toml.push_str("[mcp_servers.firebat]\n");
             toml.push_str("command = \"npx\"\n");
             toml.push_str(&format!("args = [\"tsx\", \"{}\"]\n", stdio_str));
