@@ -427,11 +427,49 @@ async fn search_components_handler_returns_top_k() {
         let s2 = w[1]["score"].as_f64().unwrap();
         assert!(s1 >= s2, "결과는 score 내림차순 정렬");
     }
-    // 각 결과는 name + description + propsSchema 설정
+    // 각 결과 = 트리거 행(name + description) — propsSchema 는 get_component_schema 몫.
     for c in components {
         assert!(c["name"].is_string());
         assert!(c["description"].is_string());
-        assert!(c["propsSchema"].is_object());
+        assert!(c.get("propsSchema").is_none(), "search rows are triggers only — no schema");
     }
+    // 소비시점 포인터 — 다음 단계(get_component_schema) 안내 동봉.
+    assert!(result["next"].as_str().unwrap().contains("get_component_schema"));
     let _ = mgr;
+}
+
+#[tokio::test]
+async fn get_component_schema_returns_props_and_did_you_mean() {
+    // search→get 계단의 get 단계 — 정확 이름 = propsSchema 반환 / 오타 = didYouMean 근접 후보.
+    let _g = env_lock();
+    let dir = tempfile::tempdir().unwrap();
+    unsafe {
+        std::env::set_var("FIREBAT_DATA_DIR", dir.path());
+    }
+    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    let cache_port: Arc<dyn firebat_core::ports::IEmbedderCachePort> = Arc::new(
+        firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter::new(dir.path()),
+    );
+
+    let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
+    let tools = Arc::new(ToolManager::new());
+    let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+    let _mgr = AiManager::new(llm, tools.clone(), log).register_search_components_tool(embedder, cache_port, None);
+
+    // 정확 이름 → 스키마 반환.
+    let ok = tools
+        .dispatch("get_component_schema", &serde_json::json!({"name": "table"}))
+        .await
+        .unwrap();
+    assert_eq!(ok["name"].as_str(), Some("table"));
+    assert!(ok["propsSchema"].is_object());
+
+    // 존재하지 않는 이름 → 실패 + didYouMean(근접 후보) + next 포인터.
+    let miss = tools
+        .dispatch("get_component_schema", &serde_json::json!({"name": "tabel"}))
+        .await
+        .unwrap();
+    assert_eq!(miss["success"].as_bool(), Some(false));
+    assert!(miss["didYouMean"].is_array());
+    assert!(miss["next"].is_string());
 }

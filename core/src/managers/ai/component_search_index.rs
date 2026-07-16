@@ -6,8 +6,9 @@
 //! 보장) 등 엔진 개선을 자동 상속. 디스크 캐시 파일(`component-embeddings.json`)과 포맷은
 //! 옛 구현과 호환(id=name, {hash, vector}) — 마이그레이션 재임베딩 0.
 //!
-//! 공개 API (`ComponentSearchIndex` / `ComponentMatch` / `ComponentSearchOpts`)는 불변.
-//! (임베딩 텍스트 포맷이 바뀌어 첫 부팅에 42개 1회 재임베딩 — 이후 해시 캐시 재사용.)
+//! 2026-07-16: search results are trigger rows only (no propsSchema) — the schema moved to the
+//! `get_component_schema` step so components follow the same search→get ladder as every other
+//! discovery surface (module actions / skills / templates).
 
 use serde::Serialize;
 use std::sync::Arc;
@@ -17,14 +18,16 @@ use crate::managers::ai::component_registry::{components, ComponentDef};
 use crate::managers::ai::semantic_catalog::{CatalogEntry, SemanticCatalog};
 use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 
-/// search_components 결과 — 옛 TS ComponentMatch 1:1.
+/// search_components 결과 — trigger row only (name + purpose + score). The props schema is
+/// deliberately NOT included: discovery surfaces return triggers, action material comes from a
+/// get step (`get_component_schema`) — the same search→get ladder as module actions / skills /
+/// templates. Fusing the schema into search results was the one deviation from that uniform
+/// procedure (2026-07-16 정리).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentMatch {
     pub name: String,
     pub description: String,
-    #[serde(rename = "propsSchema")]
-    pub props_schema: serde_json::Value,
     pub score: f32,
 }
 
@@ -44,7 +47,6 @@ fn component_entries() -> Vec<CatalogEntry> {
             name: c.name.clone(),
             description: format!("{} {}", c.description, c.semantic_text),
             extra: serde_json::json!({
-                "propsSchema": c.props_schema,
                 "displayDescription": c.description,
             }),
         })
@@ -96,11 +98,6 @@ impl ComponentSearchIndex {
                     .and_then(|v| v.as_str())
                     .unwrap_or(&m.description)
                     .to_string(),
-                props_schema: m
-                    .extra
-                    .get("propsSchema")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Null),
                 score: m.score,
             })
             .collect())

@@ -660,15 +660,11 @@ impl AiManager {
         self
     }
 
-    /// `search_components(query)` 도구 등록 — 옛 TS search_components handler 1:1.
-    /// IEmbedderPort 설정되어 있을 때만 호출. ToolManager 에 직접 register_handler.
-    ///
-    /// 사용 예 (Rust):
-    /// ```ignore
-    /// let ai = AiManager::new(llm, tools, log)
-    ///     .register_search_components_tool(embedder.clone());
-    /// // AI 가 `search_components({"query": "주식 차트"})` 호출 시 top-5 컴포넌트 + propsSchema 반환
-    /// ```
+    /// Component discovery tools — the same search→get ladder as module actions / skills /
+    /// templates ("index = trigger, action material comes from get"). `search_components` =
+    /// semantic candidates (name + purpose only) → `get_component_schema` = exact props schema.
+    /// Registered source="core" so register_builtin_tools auto-syncs both to hosted MCP
+    /// (dual-registry rule). IEmbedderPort 설정되어 있을 때만 호출.
     pub fn register_search_components_tool(
         self,
         embedder: Arc<dyn crate::ports::IEmbedderPort>,
@@ -699,31 +695,94 @@ impl AiManager {
                 Ok(serde_json::json!({
                     "components": matches,
                     "count": matches.len(),
+                    // Consumption-point pointer — rows are triggers, not the schema (인덱스=트리거).
+                    "next": "These rows are triggers only. Call get_component_schema {\"name\":\"<component>\"} for the props schema before writing the firebat-render fence.",
                 }))
             }
         });
         self.tools.register_handler("search_components", handler);
-        // 도구 schema 도 등록 — LLM 에게 노출.
         self.tools
             .register(crate::managers::tool::ToolDefinition {
                 name: "search_components".to_string(),
-                description: "사용자 발화 → 관련 render_* 컴포넌트 top-K 반환 (이름 + 설명 + propsSchema). render(name, props) 호출 전에 어떤 컴포넌트가 적합한지 검색 시 사용.".to_string(),
+                description: "Semantic search over render components (tables, charts, quizzes, maps, listening, ...). Describe what you want to show → ranked candidates (name + purpose). Results are TRIGGERS only — call get_component_schema(name) for the props schema before emitting the component.".to_string(),
                 parameters: serde_json::json!({
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "검색 쿼리 (사용자 발화 또는 컴포넌트 의도)",
+                            "description": "what you want to show, in natural language (Korean or English)",
                         },
                         "limit": {
                             "type": "integer",
-                            "description": "반환 개수 (default 5)",
+                            "description": "max results (default 5)",
                         }
                     },
                     "required": ["query"],
                 }),
                 source: "core".to_string(),
             });
+
+        // get_component_schema — the "get" step of the ladder. Exact registry lookup (no
+        // embedding); a miss resolves near matches via the semantic index (did-you-mean,
+        // get_action_schema 미러: one dead-end becomes the next step instead of a re-search).
+        let embedder2 = embedder.clone();
+        let cache2 = cache_port.clone();
+        let secondary2 = secondary.clone();
+        let schema_handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let embedder = embedder2.clone();
+            let cache = cache2.clone();
+            let secondary = secondary2.clone();
+            async move {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                match crate::managers::ai::component_registry::find_component(&name) {
+                    Some(c) => Ok(serde_json::json!({
+                        "name": c.name,
+                        "description": c.description,
+                        "propsSchema": c.props_schema,
+                    })),
+                    None => {
+                        let close = crate::managers::ai::component_search_index::query(
+                            embedder,
+                            cache,
+                            secondary,
+                            &name,
+                            crate::managers::ai::component_search_index::ComponentSearchOpts { limit: Some(3) },
+                        )
+                        .await
+                        .unwrap_or_default();
+                        Ok(serde_json::json!({
+                            "success": false,
+                            "error": format!(
+                                "no component named '{name}' — component names are exact; do not invent them."
+                            ),
+                            "didYouMean": close,
+                            "next": "Pick one of didYouMean (get_component_schema with its exact name), or search_components with different words.",
+                        }))
+                    }
+                }
+            }
+        });
+        self.tools.register_handler("get_component_schema", schema_handler);
+        self.tools.register(crate::managers::tool::ToolDefinition {
+            name: "get_component_schema".to_string(),
+            description: "Exact props schema for ONE render component found via search_components (or the fence catalog): full JSON schema + purpose. Call this before emitting an unfamiliar component in a firebat-render fence — do not guess props.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "exact component name (e.g. table, stock_chart, listening)" }
+                },
+                "required": ["name"],
+            }),
+            source: "core".to_string(),
+        });
+        // Discovery classification rides per_turn_limit declarations (search_module_actions 참조)
+        // — leaving this undeclared would leak it into the action class (stall 재개방·배너 억제).
+        self.tools.set_per_turn_limit("get_component_schema", 8);
         self
     }
 
@@ -3662,22 +3721,23 @@ impl AiManager {
                     discovery_only_rounds = 0;
                 }
                 if discovery_only_rounds == DISCOVERY_STALL_ROUNDS && !force_final {
-                    // get_action_schema stays OPEN: it is the CONVERGENT bridge of the ladder
-                    // (candidate → exact params → call), each call requires a concrete candidate,
-                    // and its own per-tool cap already bounds it. Closing it made our surfaces
-                    // contradict each other (11차 실측: 원장 CANDIDATE 지시 "get_action_schema
-                    // then call" 를 모델이 정확히 순종했는데 폐쇄가 firm 거부 → force final 날조).
-                    // The stall's evidence is DIVERGENT search-orbiting — search_* only.
+                    // get_*_schema tools stay OPEN: they are the CONVERGENT bridge of the ladder
+                    // (candidate → exact params/props → call), each call requires a concrete
+                    // candidate, and their own per-tool caps already bound them. Closing them made
+                    // our surfaces contradict each other (11차 실측: 원장 CANDIDATE 지시
+                    // "get_action_schema then call" 를 모델이 정확히 순종했는데 폐쇄가 firm 거부
+                    // → force final 날조). The stall's evidence is DIVERGENT search-orbiting —
+                    // search_* only.
                     let closed: Vec<String> = self
                         .tools
                         .per_turn_limited_names()
                         .into_iter()
-                        .filter(|n| n != "get_action_schema")
+                        .filter(|n| n != "get_action_schema" && n != "get_component_schema")
                         .collect();
                     self.log.warn(&format!(
                         "[AiManager] {DISCOVERY_STALL_ROUNDS} consecutive discovery-only rounds \
                          — closing search-class discovery tools (act with gathered results; \
-                         get_action_schema stays open): {:?}",
+                         get_*_schema stays open): {:?}",
                         closed
                     ));
                     stall_stripped.extend(closed.iter().cloned());

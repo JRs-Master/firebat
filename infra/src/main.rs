@@ -714,9 +714,9 @@ async fn main() -> Result<()> {
             .with_retrieval_engine(retrieval_engine)
             // fence `dataCacheKey` → 서버측 캐시 records 주입 (모델 손 복사 truncation·날조 차단)
             .with_sysmod_cache(cache_adapter.clone())
-            // search_components(query) 도구 등록 — 옛 production 배선 누락(테스트만 호출)이라
-            // CLI(MCP)·FC 모델 둘 다 컴포넌트 propsSchema 검색 불가였음. ToolManager 등록 →
-            // register_builtin_tools auto-sync 가 MCP(hosted) 에도 자동 노출(source="core").
+            // Component discovery ladder — search_components(트리거 행) + get_component_schema
+            // (props 스키마). 다른 발견 표면(액션/스킬/템플릿)과 같은 search→get 절차.
+            // ToolManager 등록 → register_builtin_tools auto-sync 가 MCP 에도 자동 노출(source="core").
             .register_search_components_tool(
                 catalog_embedder.clone(),
                 component_cache_port.clone(),

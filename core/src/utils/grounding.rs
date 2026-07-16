@@ -157,6 +157,7 @@ pub fn records_provenance(tool_name: &str) -> bool {
             | "get_module_config"
             | "get_module_schema"
             | "search_components"
+            | "get_component_schema"
             | "list_system_modules"
             | "list_user_modules"
             | "list_mcp_servers"
@@ -220,6 +221,7 @@ mod tests {
         assert!(!records_provenance("search_module_actions"));
         assert!(!records_provenance("get_module_config"));
         assert!(!records_provenance("search_components"));
+        assert!(!records_provenance("get_component_schema"));
         // Real data fetchers — recorded.
         assert!(records_provenance("sysmod_dart"));
         assert!(records_provenance("sysmod_kiwoom"));

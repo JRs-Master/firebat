@@ -1025,6 +1025,7 @@ const BUILD_TOOL_LABEL: Record<string, string> = {
   advance_build: 'build.tool.build',
   propose_plan: 'build.tool.plan',
   search_components: 'build.tool.search',
+  get_component_schema: 'build.tool.search',
 };
 
 // 빌드 라이브 상태 — 팩맨(루프·게임) 대신 실제 진행을 피드로. status(="도구 호출 중: render" 등 = lastMsg.statusText)가

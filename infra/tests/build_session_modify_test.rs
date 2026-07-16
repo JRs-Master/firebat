@@ -41,15 +41,18 @@ fn create_flow_unchanged_four_steps() {
     assert!(s.target_slug.is_none());
 
     let mut steps = vec![];
-    let mut cur = BuildStep::Requirements;
     for _ in 0..5 {
         build_session::reset_awaiting_for_conv("test-conv-create");
         build_session::set_step_output(&id, serde_json::json!("out"));
         match build_session::advance_step(&id) {
-            Ok(n) => { steps.push(n); cur = n; }
+            Ok(n) => {
+                steps.push(n);
+                if n == BuildStep::Done {
+                    break;
+                }
+            }
             Err(_) => break,
         }
-        if cur == BuildStep::Done { break; }
     }
     assert_eq!(steps, vec![BuildStep::Design, BuildStep::Refine, BuildStep::Implement, BuildStep::Done]);
     build_session::finish_session(&id, true);
