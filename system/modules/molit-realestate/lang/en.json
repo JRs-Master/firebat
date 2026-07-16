@@ -1,16 +1,17 @@
 {
-  "error": {
-    "stdin_parse": "Failed to parse stdin JSON.",
-    "api_key_missing": "DATA_GO_KR_API_KEY environment variable not set.",
-    "action_required": "action is required.",
-    "lawdCd_required": "lawdCd is required (5-digit district code, e.g., 11680=Gangnam-gu, Seoul).",
-    "dealYmd_required": "dealYmd is required (6-digit YYYYMM contract month, e.g., 202604).",
-    "unknown_action": "Unknown action: {{action}}. Valid: {{valid}}",
-    "lawdCd_format": "lawdCd must be 5 digits (e.g., 11680).",
-    "dealYmd_format": "dealYmd must be YYYYMM 6 digits (e.g., 202604).",
-    "http_status": "HTTP {{status}}",
-    "xml_auth": "{{message}}",
-    "api_error": "API error ({{code}}): {{message}}",
-    "runtime": "Exception: {{message}}"
-  }
+ "error": {
+  "stdin_parse": "Failed to parse stdin JSON.",
+  "api_key_missing": "DATA_GO_KR_API_KEY environment variable not set.",
+  "action_required": "action is required.",
+  "lawdCd_required": "lawdCd is required (5-digit district code, e.g., 11680=Gangnam-gu, Seoul).",
+  "dealYmd_required": "dealYmd is required (6-digit YYYYMM contract month, e.g., 202604).",
+  "unknown_action": "Unknown action: {{action}}. Valid: {{valid}}",
+  "lawdCd_format": "lawdCd must be 5 digits (e.g., 11680).",
+  "dealYmd_format": "dealYmd must be YYYYMM 6 digits (e.g., 202604).",
+  "http_status": "HTTP {{status}}",
+  "xml_auth": "{{message}}",
+  "api_error": "API error ({{code}}): {{message}}",
+  "runtime": "Exception: {{message}}",
+  "query_required": "query is required (region name, e.g. \"Gangnam-gu\")"
+ }
 }

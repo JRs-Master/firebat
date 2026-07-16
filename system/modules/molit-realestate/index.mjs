@@ -21,9 +21,14 @@
  *   land-trade       — RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade
  *   commercial-trade — RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade (상업업무용 매매)
  *   factory-trade    — RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade (공장·창고 매매)
+ *
+ * lookup — 지역명 → 시군구 5자리 법정동코드(LAWD_CD). 행안부 행정표준코드(StanReginCd) API 라이브
+ *   조회라 행정구역 개편(예: 2026-07 전남·광주·인천)도 원천에서 자동 반영 — 정적 테이블 없음.
+ *   같은 DATA_GO_KR_API_KEY 사용 (포털에서 "행정표준코드_법정동코드" 활용신청 필요).
  */
 
 const BASE = 'https://apis.data.go.kr/1613000';
+const REGION_CD_API = 'https://apis.data.go.kr/1741000/StanReginCd/getStanReginCdList';
 
 const ACTION_ENDPOINTS = {
   'apt-trade':        '/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade',
@@ -99,6 +104,92 @@ async function callApi(serviceKey, path, params) {
   return { ok: true, items: itemArr, totalCount: json?.response?.body?.totalCount ?? itemArr.length };
 }
 
+/**
+ * 지역명 → 시군구 후보 (행안부 StanReginCd). 응답은 type=json 요청 시
+ * {"StanReginCd":[{"head":[{totalCount},{RESULT:{resultCode}}]},{"row":[{region_cd(10자리),
+ * sido_cd,sgg_cd,umd_cd,ri_cd,locatadd_nm,...}]}]} — 단 인증 오류는 XML 로 오고, no-data 는
+ * {"RESULT":{...}} 평면 shape 라 전부 방어 파싱.
+ */
+async function lookupRegion(serviceKey, query) {
+  const url = new URL(REGION_CD_API);
+  url.searchParams.set('serviceKey', serviceKey);
+  url.searchParams.set('type', 'json');
+  url.searchParams.set('flag', 'Y');
+  url.searchParams.set('pageNo', '1');
+  url.searchParams.set('numOfRows', '300');
+  url.searchParams.set('locatadd_nm', query);
+
+  const res = await fetch(url.toString(), { method: 'GET' });
+  if (!res.ok) return { ok: false, errorKey: 'error.http_status', errorParams: { status: String(res.status) } };
+  const text = await res.text();
+
+  let rows = null;
+  let totalCount = 0;
+  if (text.trim().startsWith('{')) {
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* fallthrough to XML branch */ }
+    const parts = json?.StanReginCd;
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        if (Array.isArray(part?.head)) {
+          for (const h of part.head) {
+            if (h?.totalCount != null) totalCount = parseInt(h.totalCount, 10) || 0;
+            const rc = h?.RESULT?.resultCode;
+            // INFO-0 = 정상, INFO-200 = 데이터 없음(정상 빈 결과)
+            if (rc && rc !== 'INFO-0' && rc !== 'INFO-200') {
+              return { ok: false, errorKey: 'error.api_error', errorParams: { code: rc, message: h?.RESULT?.resultMsg ?? '' } };
+            }
+          }
+        }
+        if (Array.isArray(part?.row)) rows = part.row;
+      }
+      if (!rows) rows = [];
+    } else if (json?.RESULT) {
+      const rc = json.RESULT.resultCode;
+      if (rc === 'INFO-200') rows = [];
+      else return { ok: false, errorKey: 'error.api_error', errorParams: { code: String(rc ?? '?'), message: json.RESULT.resultMsg ?? '' } };
+    }
+  }
+  if (rows == null) {
+    // XML 응답 (인증 오류는 type=json 이어도 XML) — 기존 정규식 파싱 재사용.
+    const errMatch = text.match(/<returnAuthMsg>([^<]+)<\/returnAuthMsg>/) || text.match(/<errMsg>([^<]+)<\/errMsg>/);
+    if (errMatch) return { ok: false, errorKey: 'error.xml_auth', errorParams: { message: errMatch[1] } };
+    rows = [];
+    const rowPattern = /<row>([\s\S]*?)<\/row>/g;
+    let m;
+    while ((m = rowPattern.exec(text)) !== null) {
+      const body = m[1];
+      const fieldPattern = /<(\w+)>([^<]*)<\/\1>/g;
+      const obj = {};
+      let f;
+      while ((f = fieldPattern.exec(body)) !== null) obj[f[1]] = f[2].trim();
+      rows.push(obj);
+    }
+    const tc = text.match(/<totalCount>(\d+)<\/totalCount>/);
+    if (tc) totalCount = parseInt(tc[1], 10);
+  }
+
+  // 시군구(LAWD_CD 5자리) 단위 dedup — 시도 단독 행(sgg_cd=000)은 실거래가 조회에 못 쓰니 제외,
+  // 읍면동 히트는 소속 시군구로 승격(시군구 레벨 행의 이름 우선, 없으면 매칭된 동 이름 그대로).
+  const bySgg = new Map();
+  for (const r of rows) {
+    const regionCd = String(r.region_cd ?? '');
+    if (!/^\d{10}$/.test(regionCd)) continue;
+    const sgg = String(r.sgg_cd ?? '');
+    if (!sgg || sgg === '000') continue; // 시도 레벨 행
+    const lawdCd = regionCd.slice(0, 5);
+    const umd = String(r.umd_cd ?? '');
+    const ri = String(r.ri_cd ?? '');
+    const isSggLevel = umd === '000' && (ri === '00' || ri === '');
+    const prev = bySgg.get(lawdCd);
+    if (!prev || (isSggLevel && !prev.isSggLevel)) {
+      bySgg.set(lawdCd, { lawdCd, name: String(r.locatadd_nm ?? ''), isSggLevel });
+    }
+  }
+  const candidates = [...bySgg.values()].map(({ lawdCd, name }) => ({ lawdCd, name }));
+  return { ok: true, candidates, totalCount };
+}
+
 async function readStdin() {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -135,6 +226,25 @@ async function main() {
   if (!serviceKey) return outErr('error.api_key_missing', {});
 
   if (!action) return outErr('error.action_required', {});
+
+  // lookup — 지역명 → lawdCd resolver (실거래가 파라미터 불필요, grounding exempt).
+  if (action === 'lookup') {
+    const query = String(data.query ?? '').trim();
+    if (!query) return outErr('error.query_required', {});
+    try {
+      const r = await lookupRegion(serviceKey, query);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
+      const note = r.candidates.length === 0
+        ? 'no region matched — try a broader or official name (e.g. "강남구", "수원시")'
+        : r.candidates.length > 1
+          ? 'multiple regions matched — ask the user with a suggest picker, do not pick arbitrarily'
+          : 'single match — use this lawdCd directly';
+      return out(true, { candidates: r.candidates, totalCount: r.totalCount, note });
+    } catch (e) {
+      return outErr('error.runtime', { message: e?.message ?? String(e) });
+    }
+  }
+
   if (!lawdCd) return outErr('error.lawdCd_required', {});
   if (!dealYmd) return outErr('error.dealYmd_required', {});
 

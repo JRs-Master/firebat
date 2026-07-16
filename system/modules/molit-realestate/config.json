@@ -3,29 +3,42 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "국토교통부 실거래가 통합 — data.go.kr RTMSDataSvc 13 시리즈 (아파트 매매·전월세·분양권 / 연립다세대 / 오피스텔 / 단독·다가구 / 토지 / 상업업무용 / 공장창고). 시군구 5자리 (LAWD_CD) + 계약년월 6자리 (DEAL_YMD) 입력. 단일 키 (DATA_GO_KR_API_KEY) — kma-weather 와 공유.",
+  "description": "국토교통부 실거래가 통합 — data.go.kr RTMSDataSvc 13 시리즈 (아파트 매매·전월세·분양권 / 연립다세대 / 오피스텔 / 단독·다가구 / 토지 / 상업업무용 / 공장창고). 시군구 5자리 (LAWD_CD) + 계약년월 6자리 (DEAL_YMD) 입력. 지역명만 알면 {action:\"lookup\", query:\"지역명\"} 으로 lawdCd 먼저 조회 (행안부 행정표준코드 라이브 — 코드를 기억으로 추측하면 grounding 게이트가 거부). 단일 키 (DATA_GO_KR_API_KEY) — kma-weather 와 공유.",
   "runtime": "node",
   "capability": "real-estate",
   "providerType": "api",
   "secrets": ["DATA_GO_KR_API_KEY"],
+  "tags": ["부동산", "실거래가", "아파트", "매매", "전월세", "전세", "월세", "오피스텔", "연립다세대", "단독주택", "토지", "상가", "분양권", "법정동코드", "지역코드"],
+  "grounding": {
+    "lawdCd": {
+      "pattern": "^[0-9]{5}$",
+      "exemptActions": ["lookup"],
+      "resolveHint": "A lawdCd (시군구 5자리 법정동코드) must come from a lookup or the user, never from memory — region codes change with administrative reorganizations. Resolve it NOW with this same module: {\"action\":\"lookup\",\"query\":\"<지역명>\"} (e.g. \"강남구\", \"수원시 영통구\"). It returns candidates [{lawdCd,name}] from the live 행정표준코드 API; if several regions match, ask the user with a suggest picker instead of choosing."
+    }
+  },
   "input": {
     "type": "object",
-    "required": ["action", "lawdCd", "dealYmd"],
+    "required": ["action"],
     "properties": {
       "action": {
         "type": "string",
         "enum": [
+          "lookup",
           "apt-trade", "apt-trade-detail", "apt-rent", "apt-pre-trade",
           "rh-trade", "rh-rent",
           "offi-trade", "offi-rent",
           "sh-trade", "sh-rent",
           "land-trade", "commercial-trade", "factory-trade"
         ],
-        "description": "apt-trade=아파트 매매, apt-trade-detail=아파트 매매 상세 (층·동), apt-rent=아파트 전월세, apt-pre-trade=아파트 분양권 전매, rh-*=연립다세대, offi-*=오피스텔, sh-*=단독다가구, land-trade=토지, commercial-trade=상업업무용, factory-trade=공장·창고"
+        "description": "lookup=지역명→시군구 법정동코드(lawdCd) 조회 (query 만 필요), apt-trade=아파트 매매, apt-trade-detail=아파트 매매 상세 (층·동), apt-rent=아파트 전월세, apt-pre-trade=아파트 분양권 전매, rh-*=연립다세대, offi-*=오피스텔, sh-*=단독다가구, land-trade=토지, commercial-trade=상업업무용, factory-trade=공장·창고"
+      },
+      "query": {
+        "type": "string",
+        "description": "[lookup] 지역명 (부분 일치 — 예: \"강남구\", \"수원시 영통구\", \"세종\"). 읍면동 이름을 넣어도 소속 시군구 코드로 승격해 반환"
       },
       "lawdCd": {
         "type": "string",
-        "description": "시군구 5자리 행정표준코드 (예: 11680=서울 강남구, 11110=서울 종로구). www.code.go.kr 에서 조회"
+        "description": "시군구 5자리 법정동코드 (예: 11680=서울 강남구). 지역명만 알면 {action:\"lookup\", query:\"지역명\"} 으로 먼저 조회"
       },
       "dealYmd": {
         "type": "string",
@@ -42,12 +55,20 @@
         "description": "페이지당 결과 수 (최대 1000)"
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": { "properties": { "action": { "const": "lookup" } }, "required": ["action"] },
+        "then": { "required": ["query"] },
+        "else": { "required": ["lawdCd", "dealYmd"] }
+      }
+    ]
   },
   "output": {
     "type": "object",
     "properties": {
       "items": { "type": "array", "description": "거래 목록. action 별로 필드 다름 (아파트=거래금액·전용면적·층·건축년도·아파트명, 토지=용도지역·지목 등)" },
+      "candidates": { "type": "array", "description": "[lookup] 시군구 후보 [{lawdCd, name}] — 여러 개면 suggest 피커로 사용자 확인" },
       "totalCount": { "type": "integer" },
       "pageNo": { "type": "integer" },
       "lawdCd": { "type": "string" },
