@@ -755,7 +755,12 @@ async fn main() -> Result<()> {
     // LlmService — leaf 도메인 서비스(ILlmPort 위 plain ask_text). 오케스트레이터(Consolidation 추출 /
     // Task 파이프라인 LlmTransform)가 AiManager(오케스트레이터) 대신 이 leaf 를 의존 → orchestrator→
     // orchestrator 결합 제거 (Hexagonal+DDD+Mediator decomposition, 2026-06-26).
-    let llm_service = Arc::new(firebat_core::managers::llm_service::LlmService::new(llm.clone()));
+    // with_cost — worker 호출(consolidation 추출·파이프라인 LLM_TRANSFORM)도 llm_costs 누적
+    // (category "worker"). 옛엔 이 경로만 미기록이라 비용탭에 invisible (2026-07-06 갭).
+    let llm_service = Arc::new(
+        firebat_core::managers::llm_service::LlmService::new(llm.clone())
+            .with_cost(cost_manager.clone()),
+    );
 
     consolidation_manager.set_ai_hook(
         llm_service.clone(),

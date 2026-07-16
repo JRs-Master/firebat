@@ -309,17 +309,53 @@ fn substitute_str(s: &str, now: &DateTime<Tz>) -> String {
     out
 }
 
-/// 자유 포맷 — 친화 토큰 → 값. 긴 토큰부터 치환 (YYYY 전 YY, MM 전 M 충돌 방지).
+/// 자유 포맷 — 친화 토큰 → 값. 단일 패스 스캐너(긴 토큰 우선). 옛 replace 체인은 단일 `M`/`D`
+/// 가 영단어 리터럴("Monday" → "7onday") 안까지 치환됐음 — 단일 문자 토큰은 앞뒤가 영문자가
+/// 아닐 때만 토큰으로 인정(한국어 "M월 D일", 구두점 "M/D" 는 그대로 동작).
 fn format_date(now: &DateTime<Tz>, fmt: &str) -> String {
-    let mut out = fmt.to_string();
-    out = out.replace("YYYY", &format!("{:04}", now.year()));
-    out = out.replace("YY", &format!("{:02}", now.year().rem_euclid(100)));
-    out = out.replace("MM", &format!("{:02}", now.month()));
-    out = out.replace("DD", &format!("{:02}", now.day()));
-    out = out.replace("HH", &format!("{:02}", now.hour()));
-    out = out.replace("mm", &format!("{:02}", now.minute()));
-    out = out.replace('M', &now.month().to_string());
-    out = out.replace('D', &now.day().to_string());
+    let year4 = format!("{:04}", now.year());
+    let year2 = format!("{:02}", now.year().rem_euclid(100));
+    let month2 = format!("{:02}", now.month());
+    let day2 = format!("{:02}", now.day());
+    let hour2 = format!("{:02}", now.hour());
+    let min2 = format!("{:02}", now.minute());
+    let month1 = now.month().to_string();
+    let day1 = now.day().to_string();
+    // 긴 토큰 우선 — YYYY 전에 YY 가 먹으면 안 됨.
+    let multi: [(&str, &str); 6] = [
+        ("YYYY", &year4),
+        ("YY", &year2),
+        ("MM", &month2),
+        ("DD", &day2),
+        ("HH", &hour2),
+        ("mm", &min2),
+    ];
+    let chars: Vec<char> = fmt.chars().collect();
+    let starts_with_at = |i: usize, pat: &str| -> bool {
+        pat.chars().enumerate().all(|(k, p)| chars.get(i + k) == Some(&p))
+    };
+    let is_alpha = |c: Option<&char>| c.is_some_and(|c| c.is_ascii_alphabetic());
+    let mut out = String::with_capacity(fmt.len() + 8);
+    let mut i = 0;
+    'outer: while i < chars.len() {
+        for (pat, val) in &multi {
+            if starts_with_at(i, pat) {
+                out.push_str(val);
+                i += pat.len();
+                continue 'outer;
+            }
+        }
+        let c = chars[i];
+        if (c == 'M' || c == 'D')
+            && !is_alpha(if i == 0 { None } else { chars.get(i - 1) })
+            && !is_alpha(chars.get(i + 1))
+        {
+            out.push_str(if c == 'M' { &month1 } else { &day1 });
+        } else {
+            out.push(c);
+        }
+        i += 1;
+    }
     out
 }
 

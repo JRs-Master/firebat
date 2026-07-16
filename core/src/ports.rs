@@ -2811,6 +2811,13 @@ pub trait IMediaPort: Send + Sync {
     async fn read(&self, slug: &str) -> InfraResult<Option<(Vec<u8>, String, MediaFileRecord)>>;
     async fn stat(&self, slug: &str) -> InfraResult<Option<MediaFileRecord>>;
     async fn remove(&self, slug: &str) -> InfraResult<()>;
+    /// hub 격리 조회 — hub_owner 디렉토리(`user/hub/<inst>[/<sid>]/media/`)를 직접 본다.
+    /// stat()/remove() 는 admin scope(user/system)만 봐서 hub 소유 미디어를 못 찾고, 옛
+    /// list(limit 1000) 스캔 소유 검증은 1000+ 항목에서 false-deny 였다 — 둘 다 이걸로 해소.
+    /// hub_owner 형식 오류 = None(deny) — admin 폴백 금지 (MEDIA-DELETE-XTENANT 클래스).
+    async fn stat_owned(&self, slug: &str, hub_owner: &str) -> InfraResult<Option<MediaFileRecord>>;
+    /// hub 격리 삭제 — 그 hub 디렉토리 안에서만 찾고 지운다. 미소유/미존재 = 동일 에러(존재 비노출).
+    async fn remove_owned(&self, slug: &str, hub_owner: &str) -> InfraResult<()>;
     async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult>;
     async fn update_meta(&self, slug: &str, patch: &serde_json::Value) -> InfraResult<()>;
 

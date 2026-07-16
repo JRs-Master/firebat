@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use std::time::Duration;
 
 use firebat_core::ports::{INetworkPort, InfraResult, NetworkRequest, NetworkResponse};
-use firebat_core::utils::http_client::http_client;
+use firebat_core::utils::net_guard::guarded_http_client;
 
 pub struct ReqwestNetworkAdapter;
 
@@ -32,7 +32,11 @@ impl INetworkPort for ReqwestNetworkAdapter {
             .parse()
             .map_err(|e| format!("invalid method: {e}"))?;
 
-        let mut builder = http_client()
+        // Guarded client — INetworkPort consumers are AI-controlled (network_request tool,
+        // NETWORK_REQUEST pipeline step) or external APIs (telegram). Redirect hops are
+        // re-validated against the SSRF guard (initial-URL check alone is bypassable via 302);
+        // direct requests are NOT gated here, so legit internal callers stay unaffected.
+        let mut builder = guarded_http_client()
             .request(method, &req.url)
             .timeout(Duration::from_millis(req.timeout_ms));
 

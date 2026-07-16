@@ -644,23 +644,14 @@ impl MediaManager {
         self.media.remove(slug).await
     }
 
-    /// hub 격리 삭제 — hub_owner 지정 시 그 owner 의 미디어(user/hub/<id>/media/)인지 확인 후 삭제.
-    /// admin(None) 무검사. 미소유 = 권한 거부. 프론트 ownsMedia 가드 대신 core 강제.
+    /// hub 격리 삭제 — hub_owner 지정 시 포트 `remove_owned`(hub 디렉토리 직접)로 위임.
+    /// admin(None) = 기존 remove. 옛 list(limit 1000) 스캔 검증은 1000+ 항목 false-deny 였고,
+    /// 검증 통과 후 remove() 가 admin scope 만 봐서 hub 미디어를 못 지우는 잠복도 있었음.
     pub async fn remove_owned(&self, slug: &str, hub_owner: Option<&str>) -> InfraResult<()> {
-        if let Some(ho) = hub_owner.filter(|s| !s.is_empty()) {
-            let list = self
-                .media
-                .list(&MediaListOpts {
-                    hub_owner: Some(ho.to_string()),
-                    limit: Some(1000),
-                    ..Default::default()
-                })
-                .await?;
-            if !list.items.iter().any(|m| m.slug == slug) {
-                return Err("이 자료에 접근할 권한이 없습니다.".to_string());
-            }
+        match hub_owner.filter(|s| !s.is_empty()) {
+            Some(ho) => self.media.remove_owned(slug, ho).await,
+            None => self.media.remove(slug).await,
         }
-        self.media.remove(slug).await
     }
 
     pub async fn list(&self, opts: MediaListOpts) -> InfraResult<MediaListResult> {
@@ -723,24 +714,21 @@ impl MediaManager {
         slug: &str,
         hub_owner: Option<&str>,
     ) -> InfraResult<(GenerateImageResult, String)> {
-        if let Some(ho) = hub_owner.filter(|s| !s.is_empty()) {
-            let list = self
+        // 소유 검증 + 메타 조회를 한 번에 — hub 는 포트 `stat_owned`(hub 디렉토리 직접, 옛
+        // list(1000) 스캔 false-deny + admin-scope stat() 이 hub 미디어를 못 찾던 잠복 해소),
+        // admin 은 기존 stat.
+        let stat = match hub_owner.filter(|s| !s.is_empty()) {
+            Some(ho) => self
                 .media
-                .list(&MediaListOpts {
-                    hub_owner: Some(ho.to_string()),
-                    limit: Some(1000),
-                    ..Default::default()
-                })
-                .await?;
-            if !list.items.iter().any(|m| m.slug == slug) {
-                return Err("이 자료에 접근할 권한이 없습니다.".to_string());
-            }
-        }
-        let stat = self
-            .media
-            .stat(slug)
-            .await?
-            .ok_or_else(|| crate::i18n::t("core.error.media.not_found", None, &[]))?;
+                .stat_owned(slug, ho)
+                .await?
+                .ok_or_else(|| "이 자료에 접근할 권한이 없습니다.".to_string())?,
+            None => self
+                .media
+                .stat(slug)
+                .await?
+                .ok_or_else(|| crate::i18n::t("core.error.media.not_found", None, &[]))?,
+        };
         let prompt = stat
             .prompt
             .clone()
@@ -1354,18 +1342,48 @@ impl MediaManager {
                     ));
                     return None;
                 }
-                let client = crate::utils::http_client::http_client();
-                if let Ok(resp) = client.get(url).send().await {
+                // Guarded client — redirect hops re-validated (302 → internal address bypassed
+                // the initial-URL guard above). + size cap: AI-controlled URL could point at an
+                // arbitrarily large body — stream chunks and abort past the cap (950MB server).
+                const MAX_REFERENCE_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+                let client = crate::utils::net_guard::guarded_http_client();
+                if let Ok(mut resp) = client.get(url).send().await {
                     if resp.status().is_success() {
+                        if resp
+                            .content_length()
+                            .is_some_and(|len| len > MAX_REFERENCE_IMAGE_BYTES as u64)
+                        {
+                            self.log_error(&format!(
+                                "[MediaManager] referenceImage too large (content-length > {MAX_REFERENCE_IMAGE_BYTES} bytes) — {url}"
+                            ));
+                            return None;
+                        }
                         let content_type = resp
                             .headers()
                             .get("content-type")
                             .and_then(|v| v.to_str().ok())
                             .unwrap_or("image/png")
                             .to_string();
-                        if let Ok(bytes) = resp.bytes().await {
+                        let mut binary: Vec<u8> = Vec::new();
+                        loop {
+                            match resp.chunk().await {
+                                Ok(Some(chunk)) => {
+                                    if binary.len() + chunk.len() > MAX_REFERENCE_IMAGE_BYTES {
+                                        self.log_error(&format!(
+                                            "[MediaManager] referenceImage exceeded {MAX_REFERENCE_IMAGE_BYTES} bytes mid-stream — aborted: {url}"
+                                        ));
+                                        return None;
+                                    }
+                                    binary.extend_from_slice(&chunk);
+                                }
+                                Ok(None) => break,
+                                // Truncated download must not pass as a complete image.
+                                Err(_) => return None,
+                            }
+                        }
+                        if !binary.is_empty() {
                             return Some(ImageReferenceImage {
-                                binary: bytes.to_vec(),
+                                binary,
                                 content_type,
                             });
                         }

@@ -1317,9 +1317,21 @@ impl AiManager {
             .collect()
     }
 
-    /// 단순 텍스트 응답 — 도구 호출 없음 (Code Assistant 등 활용).
+    /// 단순 텍스트 응답 — 도구 호출 없음 (Code Assistant / L5 fence 수리 등 활용).
     pub async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
         let response = self.llm.ask_text(prompt, opts).await?;
+        // 비용 기록 — 도구 루프와 동일한 metering hook (이 경로만 빠져 있어 fence 수리·코드
+        // 어시스트 호출이 비용탭에 invisible 이었음).
+        if let Some(cost) = &self.cost {
+            let _ = cost.record(
+                &response.model_id,
+                response.tokens_in.unwrap_or(0),
+                response.tokens_out.unwrap_or(0),
+                response.cached_tokens.unwrap_or(0),
+                response.cost_usd.unwrap_or(0.0),
+                Some("user-ai"),
+            );
+        }
         Ok(response.text)
     }
 

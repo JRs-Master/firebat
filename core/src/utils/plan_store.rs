@@ -288,7 +288,10 @@ pub fn compiled_calls(plan: &StoredPlan) -> Vec<(String, serde_json::Value)> {
         .iter()
         .filter_map(|s| {
             let tool = s.tool.as_deref()?.trim();
-            if tool.is_empty() || matches!(tool, "propose_plan" | "suggest") {
+            // render/render_iframe 재생 제외 — 도구 경로 render 는 tool_mode 게이트가
+            // code/math/diagram 외 거부(12차 실측: 컴파일된 render 스텝이 재생 라운드를 거부로
+            // 낭비). 렌더는 합성 라운드의 fence 몫 — 스텝은 산문 지시로 폴백.
+            if tool.is_empty() || matches!(tool, "propose_plan" | "suggest" | "render" | "render_iframe") {
                 return None;
             }
             let args = s.args.as_ref()?;

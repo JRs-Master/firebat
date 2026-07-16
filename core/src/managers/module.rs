@@ -1383,11 +1383,30 @@ fn coerce_for_validation(
     serde_json::Value::Object(out)
 }
 
-/// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
-pub fn validate_value(
-    value: &serde_json::Value,
+/// 컴파일 스키마 캐시 — validate_value 가 호출마다 재컴파일하던 것(키움 313-enum 급 스키마가
+/// 도구 호출 hot path 에서 매번 파싱·컴파일). 키 = 스키마 직렬화 해시(내용 기반이라 config 편집
+/// 시 새 키 = 무효화 문제 0). 캡 초과 시 전체 드롭(단순 — 모듈 수 유한이라 사실상 미발동).
+fn compiled_schema_cached(
     schema: &serde_json::Value,
-) -> Result<(), String> {
+) -> Result<std::sync::Arc<jsonschema::JSONSchema>, String> {
+    use std::collections::HashMap;
+    use std::hash::{Hash, Hasher};
+    use std::sync::{Arc, Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<u64, Arc<jsonschema::JSONSchema>>>> = OnceLock::new();
+    const CACHE_CAP: usize = 128;
+
+    let key = {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        schema.to_string().hash(&mut h);
+        h.finish()
+    };
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    {
+        let guard = cache.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(c) = guard.get(&key) {
+            return Ok(c.clone());
+        }
+    }
     let compiled = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft7)
         .compile(schema)
@@ -1398,6 +1417,21 @@ pub fn validate_value(
                 &[("detail", &e.to_string())],
             )
         })?;
+    let arc = Arc::new(compiled);
+    let mut guard = cache.lock().unwrap_or_else(|p| p.into_inner());
+    if guard.len() >= CACHE_CAP {
+        guard.clear();
+    }
+    guard.insert(key, arc.clone());
+    Ok(arc)
+}
+
+/// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
+pub fn validate_value(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> Result<(), String> {
+    let compiled = compiled_schema_cached(schema)?;
     if let Err(errors) = compiled.validate(value) {
         let first = errors
             .into_iter()

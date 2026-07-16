@@ -195,3 +195,29 @@ async fn hub_shared_admin_templates_overlay() {
     assert_eq!(admin_list.len(), 2);
     assert!(admin_list.iter().all(|e| e.source == "user"));
 }
+
+#[test]
+fn apply_placeholders_date_format_literal_letters_untouched() {
+    use chrono::TimeZone;
+    use firebat_core::managers::template::apply_placeholders;
+
+    // 2026-07-05 09:08 KST 고정 시각.
+    let tz: chrono_tz::Tz = "Asia/Seoul".parse().unwrap();
+    let now = tz.with_ymd_and_hms(2026, 7, 5, 9, 8, 0).unwrap();
+
+    let mut config = make_template("date-test");
+    config.spec.body[0].props = serde_json::json!({
+        "korean": "{date:YYYY년 M월 D일}",
+        "slash": "{date:YY/MM/DD HH:mm}",
+        // 옛 replace 체인 회귀 케이스 — 리터럴 영단어 안의 M/D 가 치환되던 것 ("Monday" → "7onday").
+        "literal": "{date:Monday Deadline M/D}",
+        "shorthand": "{date} {time}",
+    });
+    apply_placeholders(&mut config, now);
+
+    let props = &config.spec.body[0].props;
+    assert_eq!(props["korean"], "2026년 7월 5일");
+    assert_eq!(props["slash"], "26/07/05 09:08");
+    assert_eq!(props["literal"], "Monday Deadline 7/5");
+    assert_eq!(props["shorthand"], "2026-07-05 09:08");
+}

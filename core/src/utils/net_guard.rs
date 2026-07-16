@@ -13,6 +13,32 @@
 //! later; this catches the realistic metadata/loopback/RFC1918 vectors.
 
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::sync::OnceLock;
+
+/// HTTP client for AI-controlled fetches (`network_request` tool, media referenceImage):
+/// re-validates EVERY redirect hop with `is_blocked_fetch_url`. The call-site guard only sees
+/// the initial URL — with the shared client's default policy a `302 → http://169.254.169.254/`
+/// would be followed blindly (redirect SSRF bypass). Normal external redirects still follow
+/// (hop cap 5). The check is pure string/IP-literal work — safe inside the redirect callback.
+pub fn guarded_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .pool_max_idle_per_host(8)
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() > 5 {
+                    return attempt.error("too many redirects");
+                }
+                if let Some(reason) = is_blocked_fetch_url(attempt.url().as_str()) {
+                    return attempt.error(format!("redirect blocked ({reason})"));
+                }
+                attempt.follow()
+            }))
+            .build()
+            .expect("guarded reqwest client build failed")
+    })
+}
 
 /// `Some(reason)` = block the request, `None` = allow. Reason is a short English string for the AI.
 pub fn is_blocked_fetch_url(url: &str) -> Option<String> {

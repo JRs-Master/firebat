@@ -156,20 +156,29 @@ impl LocalMediaAdapter {
         None
     }
 
-    /// hub-aware find — hub_owner 있으면 그 hub dir 만 검색, 없으면 admin (user + system).
-    /// 추후 hub-scoped read endpoint 도입 시점에 사용 (현재 dead code 로 보존).
-    #[allow(dead_code)]
-    async fn find_record_hub(&self, slug: &str, hub_owner: Option<&str>) -> Option<(MediaScope, MediaFileRecord)> {
-        if let Some(id) = hub_owner.filter(|id| Self::is_safe_hub_owner(id)) {
-            let path = self.effective_dir(MediaScope::User, Some(id)).join(format!("{slug}.meta.json"));
-            if let Ok(raw) = tokio::fs::read_to_string(&path).await {
-                if let Ok(record) = serde_json::from_str::<MediaFileRecord>(&raw) {
-                    return Some((MediaScope::User, record));
-                }
-            }
+    /// hub 격리 find — 그 hub dir(`user/hub/<inst>[/<sid>]/media/`)만 검색. `stat_owned`/
+    /// `remove_owned` 의 단일 소스. 형식 오류 hub_owner = None(deny) — admin 폴백 금지
+    /// (옛 dead-code 판은 형식 오류 시 admin find 로 새던 cross-tenant 폴백이 있었음).
+    /// slug 도 경로 세그먼트라 traversal 가드 — 미디어 slug 는 생성 규칙상 안전 charset.
+    async fn find_record_owned(&self, slug: &str, hub_owner: &str) -> Option<MediaFileRecord> {
+        if !Self::is_safe_hub_owner(hub_owner) || !Self::is_safe_media_slug(slug) {
             return None;
         }
-        self.find_record(slug).await
+        let path = self
+            .effective_dir(MediaScope::User, Some(hub_owner))
+            .join(format!("{slug}.meta.json"));
+        let raw = tokio::fs::read_to_string(&path).await.ok()?;
+        serde_json::from_str::<MediaFileRecord>(&raw).ok()
+    }
+
+    /// slug 경로 세그먼트 가드 — 영숫자 / 하이픈 / 언더스코어 / 점(확장자 아님, id 안 점) 허용,
+    /// 경로 구분자·`..` 거부.
+    fn is_safe_media_slug(slug: &str) -> bool {
+        !slug.is_empty()
+            && !slug.contains("..")
+            && slug
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     }
 
     fn url_for(scope: MediaScope, slug: &str, ext: &str) -> String {
@@ -335,6 +344,23 @@ impl IMediaPort for LocalMediaAdapter {
             .await
             .map_err(|e| format!("media meta 삭제 실패: {e}"))?;
         // variants 파일도 정리 — Phase B-15+ variant suffix 설정된 후 강화
+        Ok(())
+    }
+
+    async fn stat_owned(&self, slug: &str, hub_owner: &str) -> InfraResult<Option<MediaFileRecord>> {
+        Ok(self.find_record_owned(slug, hub_owner).await)
+    }
+
+    async fn remove_owned(&self, slug: &str, hub_owner: &str) -> InfraResult<()> {
+        let Some(record) = self.find_record_owned(slug, hub_owner).await else {
+            // 미소유·미존재 동일 메시지 — 타 hub 미디어 존재 여부 비노출 (manager 기존 문구 유지).
+            return Err("이 자료에 접근할 권한이 없습니다.".to_string());
+        };
+        let dir = self.effective_dir(MediaScope::User, Some(hub_owner));
+        let _ = tokio::fs::remove_file(dir.join(format!("{slug}.{}", record.ext))).await;
+        tokio::fs::remove_file(dir.join(format!("{slug}.meta.json")))
+            .await
+            .map_err(|e| format!("media meta 삭제 실패: {e}"))?;
         Ok(())
     }
 
