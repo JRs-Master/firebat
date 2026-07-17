@@ -3016,7 +3016,7 @@ function AlertComp({ message, type = 'info', title, action }: {
 
   const normTitle = title ? normalizeEscapes(title) : undefined;
   return (
-    <div className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
+    <div className={`fb-callout ${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
       <span className="text-lg shrink-0">{s.icon}</span>
       <div className="min-w-0 flex-1">
         {normTitle && (
@@ -4071,16 +4071,40 @@ type MapMarker = {
   labelAlways?: boolean | null;
 };
 
-/** Always-visible marker text chip (place name + metric). Shared by MapLibre + Kakao. */
+/** Always-visible marker text chip (place name + metric). Shared by MapLibre + Kakao.
+ *  width:max-content 필수 — 칩의 부모(마커 el ~12px / kakao overlay wrapper 0px)가 좁아
+ *  auto 폭이 붕괴하면 한 글자씩 세로로 쌓인다(2026-07-18 대방동 실거래가 지도 실측). */
 function buildLabelChipEl(label: string): HTMLDivElement {
   const chip = document.createElement('div');
+  chip.className = 'fb-map-chip';
   chip.textContent = label; // textContent = safe (no HTML injection); emoji renders inline
   chip.style.cssText =
     'white-space:pre-line;text-align:center;font-size:11px;font-weight:700;line-height:1.15;' +
     'color:#0f172a;background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.10);' +
     'border-radius:6px;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,0.18);pointer-events:none;' +
-    'max-width:140px;';
+    'width:max-content;max-width:140px;';
   return chip;
+}
+
+/** Label-chip declutter — 겹치는 칩만 숨김 (greedy, 배열 순서 = 우선순위).
+ *  줌 레벨에만 의존(팬은 상대 위치 불변)하므로 zoom 이벤트에서 재계산.
+ *  숨김 = visibility(hidden) — 레이아웃 유지라 offsetWidth 측정 가능, 줌 인 시 자동 복귀. */
+function declutterLabelChips(
+  chips: { el: HTMLElement; lat: number; lon: number }[],
+  project: (lat: number, lon: number) => { x: number; y: number } | null,
+) {
+  if (chips.length < 2) return;
+  const placed: { l: number; t: number; r: number; b: number }[] = [];
+  for (const c of chips) {
+    const p = project(c.lat, c.lon);
+    if (!p) { c.el.style.visibility = 'hidden'; continue; }
+    const cw = c.el.offsetWidth || 60;
+    const ch = c.el.offsetHeight || 16;
+    const rect = { l: p.x - cw / 2, t: p.y, r: p.x + cw / 2, b: p.y + ch };
+    const hit = placed.some(q => rect.l < q.r + 2 && rect.r > q.l - 2 && rect.t < q.b + 2 && rect.b > q.t - 2);
+    c.el.style.visibility = hit ? 'hidden' : 'visible';
+    if (!hit) placed.push(rect);
+  }
 }
 
 type MapCircle = {
@@ -4584,6 +4608,7 @@ function MapComp({
           // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
           // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
           let openInfo: any = null;
+          const labelChips: { el: HTMLElement; lat: number; lon: number }[] = [];
           for (const m of safeMarkers) {
             const pos = new w.kakao.maps.LatLng(m.lat, m.lon);
             const isWx = isWeatherIcon(m.icon);
@@ -4620,8 +4645,10 @@ function MapComp({
               if (m.labelAlways && m.label) {
                 const wrap = document.createElement('div');
                 wrap.style.cssText = 'padding-top:20px;pointer-events:none;';
-                wrap.appendChild(buildLabelChipEl(m.label));
+                const chipEl = buildLabelChipEl(m.label);
+                wrap.appendChild(chipEl);
                 new w.kakao.maps.CustomOverlay({ position: pos, content: wrap, yAnchor: 0, zIndex: 4 }).setMap(map);
+                labelChips.push({ el: chipEl, lat: m.lat, lon: m.lon });
               }
             }
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
@@ -4681,6 +4708,15 @@ function MapComp({
               bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon - dLon));
             }
             if (!bounds.isEmpty()) map.setBounds(bounds);
+          }
+          // 라벨 칩 declutter — 초기 1회(setBounds 후) + 줌 변경 시 겹친 칩 숨김/복귀.
+          if (labelChips.length >= 2) {
+            const runDeclutter = () => declutterLabelChips(labelChips, (lat, lon) => {
+              const pt = map.getProjection().containerPointFromCoords(new w.kakao.maps.LatLng(lat, lon));
+              return pt ? { x: pt.x, y: pt.y } : null;
+            });
+            w.kakao.maps.event.addListener(map, 'zoom_changed', runDeclutter);
+            setTimeout(runDeclutter, 0);
           }
         });
       };
@@ -4839,10 +4875,14 @@ function MapComp({
           }
         });
         // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
+        const labelChips: { el: HTMLElement; lat: number; lon: number }[] = [];
         for (const m of safeMarkers) {
           // 카테고리 핀은 anchor=bottom (끝이 좌표 지점). 그 외(태풍 소용돌이·원)는 center.
           const isPin = !!(m.icon && MARKER_ICON_EMOJI[m.icon]);
-          const marker = new ml.Marker({ element: buildMarkerEl(m), anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
+          const markerEl = buildMarkerEl(m);
+          const marker = new ml.Marker({ element: markerEl, anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
+          const chipEl = markerEl.querySelector('.fb-map-chip') as HTMLElement | null;
+          if (chipEl) labelChips.push({ el: chipEl, lat: m.lat, lon: m.lon });
           // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
           const cardHtml = m.popup
             ? popupToHtml(m.popup)
@@ -4852,6 +4892,15 @@ function MapComp({
               new ml.Popup({ offset: 16, closeButton: true, maxWidth: '280px', className: 'firebat-map-popup' }).setHTML(cardHtml)
             );
           }
+        }
+        // 라벨 칩 declutter — 초기 1회 + 줌 변경 시 겹친 칩 숨김/복귀 (팬은 상대 위치 불변).
+        if (labelChips.length >= 2) {
+          const runDeclutter = () => declutterLabelChips(labelChips, (lat, lon) => {
+            const pt = map.project([lon, lat]);
+            return pt ? { x: pt.x, y: pt.y } : null;
+          });
+          map.on('zoom', runDeclutter);
+          setTimeout(runDeclutter, 0);
         }
         // bounds fit — 컨테이너 크기 잡히면 한 번 (위 fitBoundsOnce, resize 로도 발동). 즉시 시도.
         fitBoundsOnce();

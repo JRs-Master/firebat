@@ -135,8 +135,9 @@ async function lookupRegion(serviceKey, query) {
           for (const h of part.head) {
             if (h?.totalCount != null) totalCount = parseInt(h.totalCount, 10) || 0;
             const rc = h?.RESULT?.resultCode;
-            // INFO-0 = 정상, INFO-200 = 데이터 없음(정상 빈 결과)
-            if (rc && rc !== 'INFO-0' && rc !== 'INFO-200') {
+            // INFO-0 = 정상 / INFO-200·INFO-3 = 데이터 없음(정상 빈 결과 — 실측 2026-07-18:
+            // 미매칭 지역명에 INFO-3 "데이터없음"이 옴. 에러가 아니라 빈 결과로 취급해야 재시도 사다리가 돈다).
+            if (rc && rc !== 'INFO-0' && rc !== 'INFO-200' && rc !== 'INFO-3') {
               return { ok: false, errorKey: 'error.api_error', errorParams: { code: rc, message: h?.RESULT?.resultMsg ?? '' } };
             }
           }
@@ -145,9 +146,9 @@ async function lookupRegion(serviceKey, query) {
       }
       if (!rows) rows = [];
     } else if (json?.RESULT) {
-      const rc = json.RESULT.resultCode;
-      if (rc === 'INFO-200') rows = [];
-      else return { ok: false, errorKey: 'error.api_error', errorParams: { code: String(rc ?? '?'), message: json.RESULT.resultMsg ?? '' } };
+      const rc = String(json.RESULT.resultCode ?? '');
+      if (rc === 'INFO-200' || rc === 'INFO-3') rows = [];
+      else return { ok: false, errorKey: 'error.api_error', errorParams: { code: rc || '?', message: json.RESULT.resultMsg ?? '' } };
     }
   }
   if (rows == null) {
@@ -188,6 +189,44 @@ async function lookupRegion(serviceKey, query) {
   }
   const candidates = [...bySgg.values()].map(({ lawdCd, name }) => ({ lawdCd, name }));
   return { ok: true, candidates, totalCount };
+}
+
+/** 시도 축약 표기 → 공식 명칭 (StanReginCd locatadd_nm 은 공식 전체 명칭 기준 매칭이라
+ *  "서울 동작구" 류 구어 표기가 미스남 — 표준 17개 시도 축약 = 유한 참조 데이터). */
+const SIDO_FULL = {
+  '서울': '서울특별시', '부산': '부산광역시', '대구': '대구광역시', '인천': '인천광역시',
+  '광주': '광주광역시', '대전': '대전광역시', '울산': '울산광역시', '세종': '세종특별자치시',
+  '경기': '경기도', '강원': '강원특별자치도', '충북': '충청북도', '충남': '충청남도',
+  '전북': '전북특별자치도', '전남': '전라남도', '경북': '경상북도', '경남': '경상남도',
+  '제주': '제주특별자치도',
+};
+
+/**
+ * lookup 재시도 사다리 — 원 쿼리 미스 시 표기 변형으로 자동 재조회 (모델 왕복 절약):
+ *   ① 원 쿼리 → ② 첫 토큰 시도 축약 → 공식명 확장(2+ 토큰일 때만 — "광주" 단독은
+ *   광역시/경기 광주시 모호라 확장 안 함) → ③ 왼쪽 토큰 drop(최대 2회 — "동작구 대방동" → "대방동").
+ *   실측 2026-07-18: "서울 동작구 대방동" 이 INFO-3 로 죽어 모델이 검색으로 후퇴하던 것.
+ */
+async function lookupRegionSmart(serviceKey, query) {
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const attempts = [query];
+  if (tokens.length >= 2 && SIDO_FULL[tokens[0]]) {
+    attempts.push([SIDO_FULL[tokens[0]], ...tokens.slice(1)].join(' '));
+  }
+  for (let i = 1; i <= Math.min(2, tokens.length - 1); i++) {
+    attempts.push(tokens.slice(i).join(' '));
+  }
+  const seen = new Set();
+  let last = null;
+  for (const q of attempts) {
+    if (seen.has(q)) continue;
+    seen.add(q);
+    const r = await lookupRegion(serviceKey, q);
+    if (!r.ok) return r; // 실제 API 에러(인증 등)는 즉시 반환 — no-data 는 ok+빈 candidates
+    if (r.candidates.length > 0) return { ...r, matchedQuery: q };
+    last = r;
+  }
+  return last ?? { ok: true, candidates: [], totalCount: 0 };
 }
 
 async function readStdin() {
@@ -232,14 +271,16 @@ async function main() {
     const query = String(data.query ?? '').trim();
     if (!query) return outErr('error.query_required', {});
     try {
-      const r = await lookupRegion(serviceKey, query);
+      const r = await lookupRegionSmart(serviceKey, query);
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       const note = r.candidates.length === 0
-        ? 'no region matched — try a broader or official name (e.g. "강남구", "수원시")'
+        ? 'no region matched (abbreviation/token-drop variants were retried too) — try a broader or official name (e.g. "강남구", "수원시")'
         : r.candidates.length > 1
           ? 'multiple regions matched — ask the user with a suggest picker, do not pick arbitrarily'
           : 'single match — use this lawdCd directly';
-      return out(true, { candidates: r.candidates, totalCount: r.totalCount, note });
+      const payload = { candidates: r.candidates, totalCount: r.totalCount, note };
+      if (r.matchedQuery && r.matchedQuery !== query) payload.matchedQuery = r.matchedQuery;
+      return out(true, payload);
     } catch (e) {
       return outErr('error.runtime', { message: e?.message ?? String(e) });
     }

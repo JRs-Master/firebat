@@ -442,7 +442,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', {
         numOfRows: limit, pageNo: 1, tmFc: t,
       });
-      if (isNoData(r)) return out(true, { items: [], tmFc: t, note: '발표시각 당일 태풍 통보문 박지 못한 영역 (한국 영역 태풍 시즌 = 7~10 월 중심)' });
+      if (isNoData(r)) return out(true, { items: [], tmFc: t, note: 'no typhoon advisories issued on this date (KR typhoon season peaks Jul-Oct). Retrying with other dates rarely helps — for a storm that has not formed yet (tropical depression stage), use naver-search for forecast news.' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc: t });
     }
@@ -453,7 +453,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
-      if (isNoData(r)) return out(true, { items: [], fromTmFc: fromYmd, toTmFc: toYmd, note: '본 기간 태풍 통보문 박지 못한 영역' });
+      if (isNoData(r)) return out(true, { items: [], fromTmFc: fromYmd, toTmFc: toYmd, note: 'no typhoon advisories in this period. A tropical depression (TD) that has not yet been named as a typhoon may not appear here — do NOT retry with other date ranges; check typhoon-list for today, or use naver-search for formation-forecast news.' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
@@ -480,7 +480,9 @@ async function main() {
         }
         if (seq != null) cands = cands.filter((x) => String(x.typhoonSeq) === String(seq));
         if (!cands.length) {
-          return out(true, { items: [], note: seq != null ? `태풍 ${seq}호 통보문 박지 못한 영역` : '활성 태풍 통보문 박지 못한 영역 (한국 영역 태풍 시즌 = 7~10 월 중심)' });
+          return out(true, { items: [], note: seq != null
+            ? `no advisory found for typhoon #${seq} (today/yesterday). If it has not officially formed yet (TD stage), KMA has no forecast data — use naver-search for news instead of retrying.`
+            : 'no active typhoon advisories today/yesterday (KR typhoon season peaks Jul-Oct). For a storm that is only expected to form, use naver-search — retrying this action will not surface it.' });
         }
         cands.sort((a, b) => String(b.announceTime).localeCompare(String(a.announceTime)));
         fc = cands[0].announceTime;
@@ -490,7 +492,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
         numOfRows: limit, pageNo: 1, tmFc: fc, typSeq: seq,
       });
-      if (isNoData(r)) return out(true, { items: [], tmFc: fc, typhoonNo: seq, note: '본 태풍 예상 정보 박지 못한 영역' });
+      if (isNoData(r)) return out(true, { items: [], tmFc: fc, typhoonNo: seq, note: 'no forecast data for this typhoon/announcement. Do not retry with parameter variations — the latest advisory content is already in typhoon-list items; for pre-formation outlooks use naver-search.' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc: fc, typhoonNo: seq });
     }

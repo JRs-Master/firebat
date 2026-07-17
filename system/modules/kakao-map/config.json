@@ -21,6 +21,11 @@
         "type": "string",
         "description": "[geocoding/search-address] 주소 또는 검색어 (예: '서울 강남구 역삼동' 또는 '강남역')"
       },
+      "addresses": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "[geocoding] batch mode — multiple addresses in ONE call (max 30). Use this instead of N single calls when placing many markers (e.g. apartment complexes). Returns results[] with {query, items} per address."
+      },
       "lat": {
         "type": "number",
         "description": "[reverse-geocoding] 위도 (예: 37.5665)"

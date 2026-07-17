@@ -83,6 +83,17 @@ async function main() {
 
   try {
     if (action === 'geocoding' || action === 'search-address') {
+      // Batch mode — `addresses` array (multi-marker maps: N places → one call instead of
+      // N tool rounds. 2026-07-18 실측: 13개 단지 지오코딩이 13콜 순차로 돌던 것). Cap 30.
+      const batch = Array.isArray(data.addresses) ? data.addresses.filter((a) => typeof a === 'string' && a.trim()) : null;
+      if (batch && batch.length > 0) {
+        const results = [];
+        for (const q of batch.slice(0, 30)) {
+          const r = await callApi(restKey, '/search/address.json', { query: q, size: 3 });
+          results.push(r.ok ? { query: q, items: r.items } : { query: q, items: [], error: r.errorParams?.message ?? r.errorKey });
+        }
+        return out(true, { results, note: batch.length > 30 ? 'capped at 30 addresses per call' : undefined });
+      }
       if (!address) return outErr('error.address_required', { action });
       const r = await callApi(restKey, '/search/address.json', {
         query: address,

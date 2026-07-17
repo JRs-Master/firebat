@@ -526,9 +526,15 @@ mark[class^="fbhl-"] {
   padding: 0.05em 0.15em;
   color: inherit;
   border-radius: 0.25em;
-  background-color: hsl(var(--fbhl-c) / 0.35);
+  /* 0.35 → 0.26 — 물 탄 톤 (2026-07-18 사용자 피드백: 살짝 더 연하게). */
+  background-color: hsl(var(--fbhl-c) / 0.26);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+/* 틴트 배경 컨테이너(Callout 등) 안에서는 농도 유지 — 같은 색조 배경 위에서
+   물 탄 형광펜이 묻히는 것 방지 (일반 대비 규칙, 케이스 아님). */
+.fb-callout mark[class^="fbhl-"] {
+  background-color: hsl(var(--fbhl-c) / 0.34);
 }
 .fbhl-yellow { --fbhl-c: 50 98% 62%; }
 .fbhl-pink   { --fbhl-c: 330 90% 72%; }
