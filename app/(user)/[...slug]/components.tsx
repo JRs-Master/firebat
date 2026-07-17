@@ -4186,12 +4186,13 @@ function buildPinSvgUrl(emoji: string, w: number, color = '#6366f1'): string {
   const tipY = h - 0.5;
   // 색 teardrop: bottom tip → 왼쪽 → 머리 원 arc → 오른쪽 → tip. 흰 외곽선으로 지도 위 대비.
   const path = `M ${cx} ${tipY} C ${cx - r * 0.55} ${cy + r * 1.05}, ${cx - r} ${cy + r * 0.35}, ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} C ${cx + r} ${cy + r * 0.35}, ${cx + r * 0.55} ${cy + r * 1.05}, ${cx} ${tipY} Z`;
-  const inner = r * 0.62;
+  // 이모지 없음 = 기본(plain) 핀 — 작은 흰 점만 (표준 위치핀 모양). 이모지 = 큰 흰 속원 + 글리프.
+  const inner = emoji ? r * 0.62 : r * 0.34;
   const fontSize = Math.round(inner * 1.4);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
     + `<path d="${path}" fill="${color}" stroke="white" stroke-width="1.5"/>`
     + `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="white"/>`
-    + `<text x="${cx}" y="${cy}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
+    + (emoji ? `<text x="${cx}" y="${cy}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>` : '')
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
@@ -4420,9 +4421,11 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const h = Math.round(headW * 1.32);
     el.innerHTML = `<img src="${buildPinSvgUrl(MARKER_ICON_EMOJI[m.icon], headW)}" width="${headW}" height="${h}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
   } else {
-    const color = colorHex(m.color, '#ef4444');
-    const size = markerPixelSize(m.size, false);
-    el.innerHTML = `<div style="background:${color};border:2px solid white;border-radius:50%;width:${size}px;height:${size}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`;
+    // 기본 마커 = 위치핀(둥근 머리 + 뾰족 끝, 이모지 없음) — 색은 m.color(가격대 구분 등), 미지정 = 빨강.
+    // 옛 납작한 색 원은 위치핀 관례와 어긋난다는 사용자 피드백(2026-07-18)으로 교체.
+    const headW = Math.round(markerPixelSize(m.size, true) * markerDeviceScale());
+    const h = Math.round(headW * 1.32);
+    el.innerHTML = `<img src="${buildPinSvgUrl('', headW, colorHex(m.color, '#ef4444'))}" width="${headW}" height="${h}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
   }
   // Always-visible label chip — absolutely positioned below the marker so the marker's anchor
   // point (icon/dot) stays exactly on the coordinate (the chip is out of layout flow).
@@ -4591,18 +4594,13 @@ function MapComp({
               strokeStyle: ln.style === 'dashed' ? 'dash' : 'solid',
             }).setMap(map);
           }
-          // 마커 — icon 이 있으면 emoji divIcon (태풍 / 카테고리), 없으면 color svg circle.
+          // 마커 — icon 이 있으면 emoji 핀 (태풍 / 카테고리), 그 외 = 위치핀(둥근 머리 + 뾰족 끝,
+          // m.color 로 색만 — 옛 납작한 색 원은 위치핀 관례와 어긋난다는 사용자 피드백 2026-07-18).
           // 클릭 시 항상 우리 popup 표시 (label 또는 m.popup), kakao 기본 place_url javascript:void 링크 회피.
-          const makeColorMarkerImage = (color: string, size = 22) => {
-            const r = Math.floor(size / 2) - 3;
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
-            const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size/2, size/2) });
-          };
-          const makeEmojiMarkerImage = (emoji: string, headW: number) => {
-            // 표준 핀(아래 뾰족 + 둥근 머리)에 이모지. 끝(tip)이 좌표 지점 → offset = (headW/2, h).
+          const makePinMarkerImage = (emoji: string, headW: number, color?: string) => {
+            // 표준 핀(아래 뾰족 + 둥근 머리). 이모지 없으면 작은 흰 점(기본 핀). 끝(tip)이 좌표 → offset = (headW/2, h).
             const h = Math.round(headW * 1.32);
-            const url = buildPinSvgUrl(emoji, headW);
+            const url = buildPinSvgUrl(emoji, headW, color);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(headW, h), { offset: new w.kakao.maps.Point(headW / 2, h) });
           };
           // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
@@ -4634,17 +4632,19 @@ function MapComp({
               const opts: { position: any; title: string; image?: any } = { position: pos, title: m.label };
               if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
                 const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-                opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
-              } else if (m.color) {
-                opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
+                opts.image = makePinMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
+              } else {
+                // 기본/색 마커 = 우리 위치핀 (미지정 = 빨강) — 카카오 raw 기본핀 대신 전 마커 스타일 통일.
+                const size = Math.round(markerPixelSize(m.size, true) * markerDeviceScale());
+                opts.image = makePinMarkerImage('', size, colorHex(m.color, '#ef4444'));
               }
-              // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀).
               marker = new w.kakao.maps.Marker(opts);
               marker.setMap(map);
               // Always-visible label chip (opt-in, generic markers only — weather badge has its own pill).
+              // 핀 마커는 좌표(뾰족 끝) 아래로 안 뻗으므로 6px 만 띄움 (옛 원형 시절 20px = 붕 뜸).
               if (m.labelAlways && m.label) {
                 const wrap = document.createElement('div');
-                wrap.style.cssText = 'padding-top:20px;pointer-events:none;';
+                wrap.style.cssText = 'padding-top:6px;pointer-events:none;';
                 const chipEl = buildLabelChipEl(m.label);
                 wrap.appendChild(chipEl);
                 new w.kakao.maps.CustomOverlay({ position: pos, content: wrap, yAnchor: 0, zIndex: 4 }).setMap(map);
@@ -4877,10 +4877,11 @@ function MapComp({
         // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
         const labelChips: { el: HTMLElement; lat: number; lon: number }[] = [];
         for (const m of safeMarkers) {
-          // 카테고리 핀은 anchor=bottom (끝이 좌표 지점). 그 외(태풍 소용돌이·원)는 center.
-          const isPin = !!(m.icon && MARKER_ICON_EMOJI[m.icon]);
+          // 핀류(카테고리 이모지 + 기본/색 핀)는 anchor=bottom (뾰족 끝이 좌표 지점).
+          // 중심 정렬은 태풍 소용돌이·날씨 배지만.
+          const isCentered = m.icon === 'typhoon' || m.icon === 'forecast' || isWeatherIcon(m.icon);
           const markerEl = buildMarkerEl(m);
-          const marker = new ml.Marker({ element: markerEl, anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
+          const marker = new ml.Marker({ element: markerEl, anchor: isCentered ? 'center' : 'bottom' }).setLngLat([m.lon, m.lat]).addTo(map);
           const chipEl = markerEl.querySelector('.fb-map-chip') as HTMLElement | null;
           if (chipEl) labelChips.push({ el: chipEl, lat: m.lat, lon: m.lon });
           // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
