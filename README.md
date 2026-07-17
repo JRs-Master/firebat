@@ -132,10 +132,11 @@ User prompt
 - **Three modes**: recurring (`cron`), one-shot (`runAt`), delay (`delaySec`)
 - **Pipelines**: Pre-compiled composite workflows — "MCP query → LLM summary → module dispatch"
 - **Seven pipeline steps**: `EXECUTE` (sandbox module), `MCP_CALL`, `NETWORK_REQUEST`, `LLM_TRANSFORM`, `CONDITION` (branching/early-stop), `SAVE_PAGE`, `TOOL_CALL` (Function Calling tools like `image_gen` from cron)
+- **Page↔module binding**: pages declare a `module` block (`pageBinding` opt-in per module) — baked server-side on publish, refreshed by a `rebake:<slug>` cron or resolved per-visit (SSR, TTL cache). LLM-free periodic pages.
 - **Persistence**: Jobs restored automatically on container/process restart (`data/cron-jobs.json`)
 - **Dynamic timezone**: Change per installation via settings
 
-> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. 컨테이너 재시작 시 `data/cron-jobs.json` 으로 자동 복원, 타임존 동적 변경.
+> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. **페이지↔모듈 바인딩** — 페이지의 `module` 블록(모듈 config `pageBinding` opt-in)을 발행 시 서버가 bake, `rebake:<slug>` 크론으로 정기 갱신 또는 방문 시 SSR resolve(TTL 캐시) = LLM 없는 정기 페이지. 컨테이너 재시작 시 `data/cron-jobs.json` 으로 자동 복원, 타임존 동적 변경.
 
 ### Project Builder
 

@@ -377,7 +377,12 @@ impl TaskExecutor for RealTaskExecutor {
     ) -> InfraResult<serde_json::Value> {
         self.log
             .info(&format!("[Pipeline] SAVE_PAGE → slug={}", slug));
-        let spec_str = serde_json::to_string(spec).map_err(|e| {
+        // module 블록 publish-bake — cron 파이프라인 재발행이 정기 페이지의 표준 경로.
+        let mut spec = spec.clone();
+        if let Some(modules) = &self.module {
+            crate::utils::page_binding::bake_spec(&mut spec, modules, None).await;
+        }
+        let spec_str = serde_json::to_string(&spec).map_err(|e| {
             crate::i18n::t(
                 "core.error.page.spec_serialize_failed",
                 None,

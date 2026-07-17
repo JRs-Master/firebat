@@ -222,6 +222,43 @@ def main():
             })
         return out(True, {'symbol': symbol, 'records': records})
 
+    # page_blocks — pageBinding contract: return render blocks ({success, data:{blocks:[...]}}).
+    # The module OWNS its rendering (framework never guesses a data->component mapping).
+    # Used by the page `module` block: publish-bake (save/rebake cron) and when=request SSR.
+    if action == 'page_blocks':
+        period = data.get('period', '3mo')
+        interval = data.get('interval', '1d')
+        df = t.history(period=period, interval=interval, auto_adjust=False)
+        records = history_records(df, None)
+        if not records:
+            return out_err('error.quote_not_found', {'symbol': symbol})
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
+        name = info.get('shortName') or info.get('longName') or symbol
+        price = safe_float(info.get('currentPrice') or info.get('regularMarketPrice')) or records[-1]['close']
+        change_pct = safe_float(info.get('regularMarketChangePercent'))
+        delta = None
+        if change_pct is not None:
+            delta = ('+' if change_pct >= 0 else '') + f'{change_pct:.2f}%'
+        metric_props = {'label': name, 'value': price}
+        if info.get('currency'):
+            metric_props['unit'] = info.get('currency')
+        if delta is not None:
+            metric_props['delta'] = delta
+            metric_props['deltaType'] = 'up' if change_pct >= 0 else 'down'
+        blocks = [
+            {'type': 'metric', 'props': metric_props},
+            {'type': 'stock_chart', 'props': {
+                'symbol': symbol,
+                'title': f'{name} ({period})',
+                'data': records,
+            }},
+        ]
+        return out(True, {'blocks': blocks})
+
     if action == 'info':
         info = t.info
         if not info or len(info) < 3:

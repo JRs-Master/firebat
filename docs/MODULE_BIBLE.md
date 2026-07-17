@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-07-08 (선언형 인프라 필드 8종 정착 — requiresApproval/grounding/ws/timeseries/actionCatalog · 표준 OHLCV 정규화 규약 · 타임아웃 60초 현행화)
+> 최종 개정: 2026-07-18 (페이지↔모듈 바인딩 `pageBinding` + 모듈 내장 이미지 `assets/` 규약 — 발행 bake·방문 SSR·rebake 크론·shortcode)
 
 ## 전문(前文)
 
@@ -265,6 +265,21 @@ node scripts/gen.mjs             # _apis.json → config + index
 - **description = 트리거만** ("인덱스 = 트리거"): 검색 결과에 파라미터 나열 금지(모델이 get 건너뛰고 추측). 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
 - **usermod authoring**: input 스키마에 `action` enum + 각 액션 설명을 넣으면 → 등록 즉시 search_module_actions 로 발견(파생). per-action 정밀 params 를 원하면 `actionCatalog` + `actions.json` 선언. 둘 다 없어도 단일 엔트리로 발견은 된다.
 
+#### `pageBinding` — 페이지↔모듈 바인딩 (발행 bake · 방문 SSR · rebake 크론 · shortcode, 2026-07-18)
+```json
+{
+  "pageBinding": { "alias": "stock", "action": "page_blocks" }
+}
+```
+발행 페이지가 모듈 데이터를 소비하는 표준 규약. PageSpec 의 `module` 블록(`{type:"module", props:{module, action?, args?, when, cacheTtl?}}`)이 이 선언을 참조한다 — **선언한 모듈의 선언된 액션 하나만** 페이지 표면에서 실행 가능(폐쇄 opt-in 집합 = "페이지 저장으로 임의 sysmod 실행" 원천 차단).
+- **액션 계약**: `{success, data:{blocks:[{type,props},...]}}` 반환 — **모듈이 렌더를 소유**한다(프레임워크가 결과→컴포넌트 매핑을 추측하지 않음). 레퍼런스 = yfinance `page_blocks`.
+- **when 축**: `publish`(기본) = 저장 경로가 서버에서 실행해 `_baked` 병기(바인딩은 산 채 유지 → `rebake:<slug>` 크론이 표준 정기 페이지) / `request` = 발행 SSR 이 방문 시 resolve(TTL 캐시 + single-flight, 실패 = `_baked` 폴백. 신규 공개 endpoint 0 — RSC 내부).
+- **보안**: `requiresApproval` 액션은 선언해도 전면 거부(page-form 게이트 미러) / hub-scope 저장 = bake skip(inert 저장) / `_baked` 캡 = 블록 50 · 256KB · 스펙당 바인딩 20. 게이트 로직 = Rust `page_binding.rs` ↔ TS `lib/page-binding-gate.ts` 미러(단일 정책).
+- **`alias`** (선택) = 템플릿 텍스트 sugar — text 블록의 `{stock symbol="005930.KS"}` 가 `get_template` 시 module 블록으로 컴파일(등록 alias 만, 미등록 `{word}` = 리터럴 유지).
+
+#### 모듈 내장 이미지 — `assets/` 디렉토리 (2026-07-18)
+모듈 디렉토리의 `assets/` 에 둔 이미지는 `/module-assets/<module>/<file>` 로 공개 서빙된다(system·user 공통, Rust axum route → next.config rewrite). 확장자 allowlist(png/jpg/jpeg/webp/gif/svg/ico) + 세그먼트 charset 가드 + CSP/nosniff(svg XSS 완화) + `Cache-Control: public,max-age=3600`. 페이지·render 블록에서 안정 URL 로 참조 — base64 인라인·외부 URL 의존이 필요 없어진다.
+
 > 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
 
 #### 선언형 필드 요약 표
@@ -280,6 +295,8 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
 | `tags` | 모듈 선택 신호 (얇은 도구 설명에 append) | 도구 등록 (dynamic_tools/mcp_server) |
+| `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
+| `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
 
 ---
 

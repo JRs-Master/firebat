@@ -9,24 +9,49 @@
   "providerType": "api",
   "timeseries": {
     "history": {
-      "idParams": {"symbol": "", "interval": "1d"},
+      "idParams": {
+        "symbol": "",
+        "interval": "1d"
+      },
       "startParam": "start",
       "endParam": "end",
       "paramFormat": "YYYY-MM-DD",
       "dateField": "date",
-      "rows": ["$", "_cache.records", "records"]
+      "rows": [
+        "$",
+        "_cache.records",
+        "records"
+      ]
     }
   },
-  "packages": ["yfinance==1.5.1"],
+  "packages": [
+    "yfinance==1.5.1"
+  ],
   "secrets": [],
   "input": {
     "type": "object",
-    "required": ["action", "symbol"],
+    "required": [
+      "action",
+      "symbol"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["quote", "history", "info", "financials", "dividends", "splits", "recommendations", "options", "holders", "news", "download"],
-        "description": "Action. quote=current price + key metrics / history=OHLCV time series / info=symbol metadata (100+ fields) / financials=financial statements / dividends=dividends / splits=stock splits / recommendations=analyst recommendations / options=options chain / holders=major and institutional holders / news=Yahoo news / download=multi-symbol batch (uses the symbols array)"
+        "enum": [
+          "quote",
+          "history",
+          "info",
+          "financials",
+          "dividends",
+          "splits",
+          "recommendations",
+          "options",
+          "holders",
+          "news",
+          "download",
+          "page_blocks"
+        ],
+        "description": "Action. quote=current price + key metrics / history=OHLCV time series / info=symbol metadata (100+ fields) / financials=financial statements / dividends=dividends / splits=stock splits / recommendations=analyst recommendations / options=options chain / holders=major and institutional holders / news=Yahoo news / download=multi-symbol batch (uses the symbols array) / page_blocks = page-binding blocks (metric + stock_chart) for the page module block — {symbol, period?, interval?}"
       },
       "symbol": {
         "type": "string",
@@ -34,17 +59,45 @@
       },
       "symbols": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "Multiple symbols (only used with action='download'). Example: ['AAPL', 'MSFT', '005930.KS']"
       },
       "period": {
         "type": "string",
-        "enum": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"],
+        "enum": [
+          "1d",
+          "5d",
+          "1mo",
+          "3mo",
+          "6mo",
+          "1y",
+          "2y",
+          "5y",
+          "10y",
+          "ytd",
+          "max"
+        ],
         "description": "history/download period. Use ONLY a value from the enum (no in-between buckets exist). For an in-between range, pick the next larger enum value and cap rows with limit. Max limits per interval: 1m=7 days / 2m,5m,15m,30m,90m=60 days / 60m,1h=730 days / 1d and above=unlimited. Defaults to 1mo if omitted."
       },
       "interval": {
         "type": "string",
-        "enum": ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"],
+        "enum": [
+          "1m",
+          "2m",
+          "5m",
+          "15m",
+          "30m",
+          "60m",
+          "90m",
+          "1h",
+          "1d",
+          "5d",
+          "1wk",
+          "1mo",
+          "3mo"
+        ],
         "description": "history/download candle interval. Defaults to 1d (daily) if omitted."
       },
       "start": {
@@ -57,12 +110,19 @@
       },
       "statement": {
         "type": "string",
-        "enum": ["income", "balance", "cashflow"],
+        "enum": [
+          "income",
+          "balance",
+          "cashflow"
+        ],
         "description": "Financial statement type for the financials action. income=income statement / balance=balance sheet / cashflow=cash flow statement. Defaults to income if omitted."
       },
       "frequency": {
         "type": "string",
-        "enum": ["quarterly", "annual"],
+        "enum": [
+          "quarterly",
+          "annual"
+        ],
         "description": "financials frequency. Defaults to annual if omitted."
       },
       "optionDate": {
@@ -77,7 +137,14 @@
     "additionalProperties": false
   },
   "output": {
-    "type": ["object", "array"],
+    "type": [
+      "object",
+      "array"
+    ],
     "description": "Result shape varies by action. action='quote' → object {symbol, price, change, changePct, marketCap, peRatio, ...} / action='history'·'financials'·'income-statement' 등 → array [{...}, ...] (재무제표 = [{날짜: 값, _index: 항목명}, ...]). 액션마다 object 또는 array."
+  },
+  "pageBinding": {
+    "alias": "stock",
+    "action": "page_blocks"
   }
 }

@@ -878,6 +878,9 @@ async fn main() -> Result<()> {
         ai_manager.clone(),
         task_manager.clone(),
         schedule_manager_with_hooks.clone(),
+        // page + module — cron `rebake:<slug>` 모드(페이지↔모듈 바인딩 재-bake, LLM 0).
+        page_manager.clone(),
+        module_manager.clone(),
     ));
     let core_cb = core.clone();
 
@@ -1127,7 +1130,9 @@ async fn main() -> Result<()> {
         grpc::project::ProjectServiceImpl::new(project_manager, page_manager.clone());
     let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone())
         .with_dynamic_tools(dynamic_tools_registry.clone());
-    let page_service = grpc::page::PageServiceImpl::new(page_manager.clone());
+    // modules = module 블록 publish-bake (pending 승인 commit·hub·admin 라우트 전부 이 Save 경유).
+    let page_service =
+        grpc::page::PageServiceImpl::new(page_manager.clone(), module_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =

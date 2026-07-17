@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { get as getPageRpc } from '../../../lib/api-gen/page';
 import { getVisibility as getProjectVisibility } from '../../../lib/api-gen/project';
-import { runModule, getModuleConfig } from '../../../lib/api-gen/module';
+import { runModule } from '../../../lib/api-gen/module';
 import { parsePageRecord } from '../../../lib/util/page-pb-convert';
+import { moduleActionDenied } from '../../../lib/page-binding-gate';
 
 /**
  * POST /api/page-form — 발행(공개) 페이지 form 콜백 (익명 · page-scoped allowlist).
@@ -93,17 +94,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 3) requiresApproval 선언 모듈(실주문 등) = 익명 표면 전면 거부.
-    //    true = 전 액션 / [액션…] = 해당 액션 요청 시 거부 (config 선언형 게이트 미러).
-    const cfgRes = await getModuleConfig({ name: moduleName });
-    if (cfgRes.ok && cfgRes.data && typeof cfgRes.data === 'object') {
-      const ra = (cfgRes.data as Record<string, unknown>).requiresApproval;
-      const action = typeof (data as Record<string, unknown> | undefined)?.action === 'string'
-        ? String((data as Record<string, unknown>).action)
-        : '';
-      const denied = ra === true || (Array.isArray(ra) && action !== '' && ra.includes(action));
-      if (denied) {
-        return NextResponse.json({ success: false, error: '이 모듈은 공개 페이지에서 실행할 수 없습니다.' }, { status: 403 });
-      }
+    //    판정 = lib/page-binding-gate.ts 공유 헬퍼 (request-resolve 와 단일 정책 — drift 차단).
+    const action = typeof (data as Record<string, unknown> | undefined)?.action === 'string'
+      ? String((data as Record<string, unknown>).action)
+      : '';
+    if (await moduleActionDenied(moduleName, action)) {
+      return NextResponse.json({ success: false, error: '이 모듈은 공개 페이지에서 실행할 수 없습니다.' }, { status: 403 });
     }
 
     const res = await runModule({ module: moduleName, dataJson: JSON.stringify(data ?? {}) });

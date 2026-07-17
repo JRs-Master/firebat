@@ -40,6 +40,12 @@ const nextConfig = {
         source: '/api/chatbot/:path*',
         destination: '/api/hub/:path*',
       },
+      // 모듈 내장 이미지 서빙 — Rust MCP HTTP 서버의 정적 asset route 로 프록시
+      // (`system|user/modules/<m>/assets/`, 페이지↔모듈 바인딩 S5). 가드는 Rust 측.
+      {
+        source: '/module-assets/:path*',
+        destination: `${process.env.FIREBAT_MCP_BASE_URL || 'http://127.0.0.1:50052'}/module-assets/:path*`,
+      },
     ];
   },
   /** Headers — /admin 경로의 ETag·304 응답 차단 + clickjacking 방어.

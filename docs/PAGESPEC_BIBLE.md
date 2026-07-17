@@ -1,6 +1,6 @@
 # PAGESPEC BIBLE — 페이지 및 채팅 렌더링 규약
 
-> 최종 개정: 2026-07-08 (컴포넌트 42종 현행화 · **렌더 채널 = firebat-render fence** — 콘텐츠=fence/액션=도구 · dataCacheKey 서버 주입 · 학습·인터랙티브·라이브 컴포넌트)
+> 최종 개정: 2026-07-18 (`module` 블록 — 페이지↔모듈 바인딩: publish bake · request SSR · rebake 크론 · 템플릿 shortcode)
 >
 > Firebat의 모든 **선언적 UI 렌더링**을 다룬다. AI는 React/TSX를 직접 작성하지 않고, PageSpec JSON 혹은 채팅 블록으로 UI를 선언한다.
 >
@@ -52,6 +52,25 @@
 - `contentMaxWidth`: 글로벌 max-width 무시. 페이지별 다른 폭 (XSS 가드 — `;{}<>` 차단 + 64자 한도).
 
 middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layout.tsx` 가 spec.head 조회 후 자동 적용.
+
+### 제1-2항. `module` 블록 — 페이지↔모듈 바인딩 (PageSpec 전용, 2026-07-18)
+
+페이지가 모듈 데이터를 소비하는 표준 블록. **components.json 미등록** — 채팅 fence 대상이 아니고, AI 는 save_page spec 저작으로만 사용한다.
+
+```json
+{ "type": "module", "props": {
+    "module": "yfinance", "action": "page_blocks", "args": { "symbol": "005930.KS" },
+    "when": "publish",            // "publish"(기본, 저장 시 bake) | "request"(방문 시 SSR resolve)
+    "cacheTtl": 300,              // request 모드 TTL(초, clamp 60~3600)
+    "_baked": [ { "type": "stock_chart", "props": { } } ],   // 서버 산출물 — 바인딩 옆 병기(치환 아님)
+    "_bakedAt": 1789000000000
+} }
+```
+
+- **게이트**: 모듈 config 가 `pageBinding: {alias?, action}` 을 선언한 경우 + **그 선언 액션만** 실행(폐쇄 opt-in). requiresApproval 액션 = 전면 거부. hub-scope 저장 = bake skip. 상세 = MODULE_BIBLE `pageBinding` 절.
+- **바인딩이 산 채 유지**되므로 `rebake:<slug>` 크론(schedule_task targetPath)이 표준 정기 페이지가 된다 — 발행 시점 데이터 고정(`dataCacheKey` bake)과 달리 갱신 가능.
+- **렌더**: 프론트 `Module` 컴포넌트가 `_baked` 블록 배열을 그대로 렌더(재귀 ComponentRenderer). `_baked` 없으면 빈 렌더(공백) — request 모드는 SSR 이 채움.
+- **텍스트 sugar**: 템플릿 text 블록의 `{alias k="v"}` (모듈 config 의 `pageBinding.alias`, 등록된 것만) 가 `get_template` 시 이 블록으로 컴파일된다. 미등록 `{word}` = 리터럴 유지(`{date}` 원리).
 
 ### 제2항. slug 규칙
 - 한글/영문/숫자/하이픈 허용

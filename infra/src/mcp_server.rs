@@ -21,7 +21,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -571,10 +571,65 @@ async fn handle_sse(
     (StatusCode::OK, "").into_response()
 }
 
+/// Module asset static serving — `GET /module-assets/:module/:file` (public, no token).
+///
+/// Serves images bundled inside a module directory (`system|user/modules/<m>/assets/<file>`)
+/// so pages/templates can reference stable URLs (page↔module binding, plan S5).
+/// Security: strict segment charset + `..` rejection + extension allowlist + assets/ only
+/// (no traversal into module source), CSP `default-src 'none'` + nosniff (svg XSS mitigation).
+const MODULE_ASSET_EXTS: &[(&str, &str)] = &[
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("webp", "image/webp"),
+    ("gif", "image/gif"),
+    ("svg", "image/svg+xml"),
+    ("ico", "image/x-icon"),
+];
+
+fn safe_asset_segment(s: &str) -> bool {
+    !s.is_empty()
+        && !s.contains("..")
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+async fn handle_module_asset(
+    axum::extract::Path((module, file)): axum::extract::Path<(String, String)>,
+) -> impl IntoResponse {
+    if !safe_asset_segment(&module) || !safe_asset_segment(&file) {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+    let ext = file.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let Some((_, mime)) = MODULE_ASSET_EXTS.iter().find(|(e, _)| *e == ext) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let root = std::env::var("FIREBAT_WORKSPACE_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+    for base in ["system", "user"] {
+        let path = root.join(base).join("modules").join(&module).join("assets").join(&file);
+        if let Ok(bytes) = tokio::fs::read(&path).await {
+            return (
+                StatusCode::OK,
+                [
+                    ("content-type", (*mime).to_string()),
+                    ("cache-control", "public, max-age=3600".to_string()),
+                    ("content-security-policy", "default-src 'none'".to_string()),
+                    ("x-content-type-options", "nosniff".to_string()),
+                ],
+                bytes,
+            )
+                .into_response();
+        }
+    }
+    (StatusCode::NOT_FOUND, "not found").into_response()
+}
+
 /// MCP HTTP server router.
 pub fn build_router(state: Arc<McpServerState>) -> Router {
     Router::new()
         .route("/mcp", post(handle_rpc).get(handle_sse))
+        .route("/module-assets/:module/:file", get(handle_module_asset))
         .with_state(state)
 }
 
@@ -976,6 +1031,8 @@ fn pending_or_passthrough(
 
 pub struct SavePageHandler {
     pub page: Arc<PageManager>,
+    /// module 블록 publish-bake — cron 직접 저장 분기용 (admin/hub 는 pending → commit → gRPC Save 가 bake).
+    pub module_manager: Arc<ModuleManager>,
 }
 #[async_trait::async_trait]
 impl McpToolHandler for SavePageHandler {
@@ -990,12 +1047,22 @@ impl McpToolHandler for SavePageHandler {
             return Ok(r);
         }
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
-        let spec = args
-            .get("spec")
-            .map(|v| serde_json::to_string(v).unwrap_or_default())
-            .ok_or_else(|| "spec 필수".to_string())?;
-        let status = obj_str(&args, "status").unwrap_or_else(|| "published".to_string());
         let project = obj_str(&args, "project");
+        let spec = match args.get("spec") {
+            Some(v) => {
+                // module 블록 publish-bake — 게이트는 page_binding 헬퍼 단일 소스.
+                let mut spec = v.clone();
+                firebat_core::utils::page_binding::bake_spec(
+                    &mut spec,
+                    &self.module_manager,
+                    project.as_deref(),
+                )
+                .await;
+                serde_json::to_string(&spec).unwrap_or_default()
+            }
+            None => return Err("spec 필수".to_string()),
+        };
+        let status = obj_str(&args, "status").unwrap_or_else(|| "published".to_string());
         let visibility = obj_str(&args, "visibility");
         let password = obj_str(&args, "password");
         match self.page.save(
@@ -1820,7 +1887,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "visibility": {"type": "string"},
             "password": {"type": "string"}
         })),
-        handler: Arc::new(SavePageHandler { page: deps.page.clone() }),
+        handler: Arc::new(SavePageHandler { page: deps.page.clone(), module_manager: deps.module.clone() }),
     }).await;
     state.register(McpTool {
         name: "delete_page".into(),
@@ -1874,7 +1941,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         description: "크론 / 일회성 작업 예약 — 특정 시각·주기에 작업을 자동 실행한다(스케줄). 단지 날짜·약속을 기록만 할 거면 sysmod_calendar(캘린더)를 써라. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
         input_schema: schema_object(serde_json::json!({
             "jobId": {"type": "string", "description": "고유 job id (이미 있는 jobId 면 덮어쓰기)"},
-            "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 아래 pipeline 필드 사용(이때 targetPath 는 라벨)"},
+            "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 아래 pipeline 필드 사용(이때 targetPath 는 라벨). 'rebake:<slug>' = 그 페이지의 module 블록 바인딩을 재실행해 데이터만 갱신(LLM 0 — 정기 갱신 페이지의 표준)"},
             "cronTime": {"type": "string", "description": "반복 cron 표현식 (분 시 일 월 요일). 없으면 runAt/delaySec 중 하나 지정"},
             "runAt": {"type": "string", "description": "1회 실행 ISO 8601 (반드시 timezone offset 포함, 예: +09:00)"},
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},

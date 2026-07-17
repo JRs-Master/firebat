@@ -16,6 +16,7 @@ import { estimateReadingTime } from '../reading-time';
 import { CmsBreadcrumb } from '../breadcrumb';
 import { CmsRelatedPosts } from '../cms-related-posts';
 import { safeJsonParse } from '../../../lib/util/json';
+import { resolveRequestBindings } from '../../../lib/page-binding-gate';
 
 /** 실제 사용할 base URL 해석 —
  *   1. SEO 설정의 siteUrl (관리자가 Firebat 설정에서 입력, 최우선)
@@ -297,6 +298,9 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   const head = spec.head ?? {};
   const body = spec.body ?? [];
+  // when=request module 블록 SSR resolve — 공개 endpoint 신설 없이 이 RSC 안에서만 실행
+  // (visibility 게이트 통과 뒤 지점). 게이트·TTL 캐시·single-flight·_baked 폴백 = 공유 헬퍼.
+  await resolveRequestBindings(body, slug);
   // 단일 Html + (script/deps) = 인터랙티브 앱(iframe 전체화면) → 페이지를 뷰포트에 잠가
   // 이중 스크롤(페이지 + iframe) 방지. iframe 이 100% 채우고 앱 내부만 단일 스크롤.
   // 정적 HTML·콘텐츠 페이지(ads/SEO 인덱싱)는 일반 레이아웃 그대로 유지.

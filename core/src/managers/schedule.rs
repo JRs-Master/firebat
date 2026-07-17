@@ -532,7 +532,27 @@ impl ScheduleManager {
                 error = Some("ScheduleHooks 미저장 — pipeline 모드 cron 작동 안 함".to_string());
             }
         }
-        // Mode 3: page URL 알림 (targetPath 가 / 시작)
+        // Mode 3: page rebake (targetPath = "rebake:<slug>") — 저장된 페이지의 module 블록
+        // 바인딩을 재실행해 _baked 갱신 + 재저장. LLM 0 정기 페이지의 표준 잡.
+        else if let Some(slug) = info.target_path.strip_prefix("rebake:") {
+            let slug = slug.trim();
+            if let Some(h) = hooks {
+                h.log.info(&format!(
+                    "[Cron] page rebake: {} → /{} ({:?})",
+                    info.job_id, slug, info.trigger
+                ));
+            }
+            match core.run_page_rebake(slug).await {
+                Ok(res) => {
+                    success = true;
+                    output = Some(res);
+                }
+                Err(e) => {
+                    error = Some(e);
+                }
+            }
+        }
+        // Mode 4: page URL 알림 (targetPath 가 / 시작)
         else if info.target_path.starts_with('/') {
             if let Some(h) = hooks {
                 h.log.info(&format!(
@@ -548,7 +568,7 @@ impl ScheduleManager {
             success = true;
             output = Some(serde_json::json!({"notified": info.target_path}));
         }
-        // Mode 4: sandbox 모듈 실행
+        // Mode 5: sandbox 모듈 실행
         else {
             if let Some(h) = hooks {
                 h.log.info(&format!(

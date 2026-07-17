@@ -963,13 +963,15 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         },
     );
 
-    // get_template — 1건 조회 + placeholder({date}/{time} 등) 현재 값 치환.
+    // get_template — 1건 조회 + placeholder({date}/{time} 등) 현재 값 치환 +
+    // 텍스트 shortcode({alias k="v"} — pageBinding 등록 alias 만) → module 블록 컴파일.
     let template = h.template.clone();
     let vault = h.vault.clone();
+    let modules_for_template = h.module.clone();
     tools.register_tool(
         ToolDefinition {
             name: "get_template".to_string(),
-            description: "템플릿 1건 조회 — spec(head+body)의 {date}/{time}/{datetime}/{year}/{month}/{day} 가 현재 값으로 치환돼 반환된다. 이 spec.body 를 save_page 의 body 골격으로 쓰고 동적 내용만 채워라. {slug}.".to_string(),
+            description: "템플릿 1건 조회 — spec(head+body)의 {date}/{time}/{datetime}/{year}/{month}/{day} 가 현재 값으로 치환되고, text 안의 {alias ...} shortcode(pageBinding 을 선언한 모듈의 alias — 예: {stock symbol=\"005930.KS\"})는 module 블록으로 컴파일돼 반환된다. 이 spec.body 를 save_page 의 body 골격으로 쓰고 동적 내용만 채워라. {slug}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "slug": { "type": "string" }, "owner": { "type": "string" } },
@@ -980,6 +982,7 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         move |args| {
             let template = template.clone();
             let vault = vault.clone();
+            let modules = modules_for_template.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -992,7 +995,20 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         let tz = resolve_user_tz(&vault);
                         let now = tz.from_utc_datetime(&Utc::now().naive_utc());
                         apply_placeholders(&mut config, now);
-                        Ok(serde_json::json!({"success": true, "data": config}))
+                        // shortcode → module 블록 컴파일 — 등록 alias(pageBinding) 만, 미등록 = 리터럴.
+                        let mut config_json = serde_json::to_value(&config)
+                            .unwrap_or(serde_json::Value::Null);
+                        if let Some(body) = config_json
+                            .pointer_mut("/spec/body")
+                            .and_then(|b| b.as_array_mut())
+                        {
+                            let aliases =
+                                crate::utils::page_binding::collect_aliases(&modules).await;
+                            let mut body_vec = std::mem::take(body);
+                            crate::utils::page_binding::compile_shortcodes(&mut body_vec, &aliases);
+                            *body = body_vec;
+                        }
+                        Ok(serde_json::json!({"success": true, "data": config_json}))
                     }
                     None => Ok(serde_json::json!({
                         "success": false,
@@ -1532,7 +1548,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     //  사이드바 SSE 갱신 hook 만 유지. Recall events = 의미 있는 happening 만, 루틴 운영 제외.)
     tools.register(ToolDefinition {
         name: "save_page".to_string(),
-        description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션.".to_string(),
+        description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 을 선언한 모듈만)을 실행해 결과 블록을 _baked 로 채움 — 정기 갱신 페이지용(rebake 크론과 짝).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -1549,11 +1565,13 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     });
     let page = h.page.clone();
     let event_for_save_page = h.event.clone();
+    let modules_for_save_page = h.module.clone();
     tools.register_handler(
         "save_page",
         make_handler(move |args| {
             let page = page.clone();
             let event = event_for_save_page.clone();
+            let modules = modules_for_save_page.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -1563,7 +1581,12 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let spec = args
                     .get("spec")
                     .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "spec")]))?;
-                let spec_str = serde_json::to_string(spec).map_err(|e| {
+                let project = args.get("project").and_then(|v| v.as_str());
+                // module 블록 publish-bake — 게이트(pageBinding opt-in·requiresApproval 거부·
+                // hub skip·캡)는 헬퍼 단일 소스. 실패 = 해당 블록만 skip(저장은 계속).
+                let mut spec = spec.clone();
+                crate::utils::page_binding::bake_spec(&mut spec, &modules, project).await;
+                let spec_str = serde_json::to_string(&spec).map_err(|e| {
                     crate::i18n::t(
                         "core.error.page.spec_serialize_failed",
                         None,
@@ -1574,7 +1597,6 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .get("status")
                     .and_then(|v| v.as_str())
                     .unwrap_or("published");
-                let project = args.get("project").and_then(|v| v.as_str());
                 let visibility = args.get("visibility").and_then(|v| v.as_str());
                 let password = args.get("password").and_then(|v| v.as_str());
                 page.save(&slug, &spec_str, status, project, visibility, password)?;
@@ -1774,7 +1796,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "type": "object",
             "properties": {
                 "jobId": {"type": "string"},
-                "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 pipeline 필드 사용(targetPath 는 라벨)"},
+                "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 pipeline 필드 사용(targetPath 는 라벨). 'rebake:<slug>' = 그 페이지의 module 블록 바인딩을 재실행해 데이터만 갱신(LLM 0 — 정기 갱신 페이지의 표준)"},
                 "cronTime": {"type": "string"},
                 "runAt": {"type": "string"},
                 "delaySec": {"type": "integer"},

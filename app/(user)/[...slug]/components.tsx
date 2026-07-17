@@ -64,6 +64,7 @@ const TYPE_ALIAS: Record<string, string> = {
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
   listening: 'Listening', lc: 'Listening',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
+  module: 'Module',
 };
 
 // ── Live components (WS 2b) — realtime watch events in chat. Lifetime rule: live only while
@@ -245,6 +246,9 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Passage':       return <PassageComp title={p.title} paragraphs={p.paragraphs ?? p.text ?? p.body ?? p.content} vocab={p.vocab ?? p.words} keyIdea={p.keyIdea ?? p.thesis ?? p.mainIdea} translation={p.translation ?? p.trans} />;
     case 'Concept':       return <ConceptComp title={p.title} intro={p.intro ?? p.overview ?? p.summary} steps={p.steps ?? p.sections ?? p.parts ?? []} example={p.example} misconception={p.misconception} check={p.check} />;
     case 'Listening':     return <ListeningComp title={p.title} audioUrl={p.audioUrl ?? p.audio ?? p.url} image={p.image ?? p.photo ?? p.imageUrl} script={p.script ?? p.transcript ?? p.lines} questions={p.questions ?? p.quizzes ?? p.items ?? []} browserTts={p.browserTts ?? p.browser} mode={p.mode ?? p.kind} view={p.view} />;
+    // module 블록(페이지 전용) — 서버가 채운 _baked render blocks 를 그대로 재귀 렌더.
+    // publish = save 시 bake / request = SSR 이 주입(page.tsx). 비어 있으면 조용히 없음.
+    case 'Module':        return <ComponentRenderer components={(p._baked as ComponentDef[] | undefined) ?? []} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)

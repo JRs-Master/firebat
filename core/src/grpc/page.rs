@@ -23,11 +23,17 @@ use crate::proto::{
 
 pub struct PageServiceImpl {
     manager: Arc<PageManager>,
+    /// module 블록 publish-bake — save 시 pageBinding 선언 모듈 실행(page_binding 헬퍼).
+    /// pending 승인 commit·hub·admin 라우트가 전부 이 Save 를 타므로 여기 배선이 그 표면 전체 커버.
+    modules: Arc<crate::managers::module::ModuleManager>,
 }
 
 impl PageServiceImpl {
-    pub fn new(manager: Arc<PageManager>) -> Self {
-        Self { manager }
+    pub fn new(
+        manager: Arc<PageManager>,
+        modules: Arc<crate::managers::module::ModuleManager>,
+    ) -> Self {
+        Self { manager, modules }
     }
 
     /// hub project scoping — project 지정 시 page.project 와 일치할 때만 통과. admin(None/빈값)은 무검사.
@@ -141,9 +147,23 @@ impl PageService for PageServiceImpl {
         let args = req.into_inner();
         let slug = args.slug.clone();
         let status = args.status.unwrap_or_else(|| "published".to_string());
+        // module 블록 publish-bake — spec 이 유효 JSON 일 때만(아니면 validate_spec 이 거부).
+        // 승인(pending commit) 후에 도달하는 지점이라 "실행 권한 = 저장 승인 권한" 정렬.
+        let spec_str = match serde_json::from_str::<serde_json::Value>(&args.spec) {
+            Ok(mut spec) => {
+                crate::utils::page_binding::bake_spec(
+                    &mut spec,
+                    &self.modules,
+                    args.project.as_deref(),
+                )
+                .await;
+                serde_json::to_string(&spec).unwrap_or(args.spec.clone())
+            }
+            Err(_) => args.spec.clone(),
+        };
         match self.manager.save(
             &args.slug,
-            &args.spec,
+            &spec_str,
             &status,
             args.project.as_deref(),
             args.visibility.as_deref(),
