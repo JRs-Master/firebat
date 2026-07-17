@@ -233,7 +233,9 @@
     "failed": "{{package}} install failed: {{error}}"
   },
   "table": {
-    "columns": "Columns"
+    "columns": "Columns",
+    "num_compact": "Compact",
+    "num_full": "Exact"
   },
   "common": {
     "save": "Save",

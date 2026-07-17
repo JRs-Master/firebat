@@ -11,6 +11,7 @@ import StockChart from '../../admin/chat-components/StockChart';
 import { BlockErrorBoundary } from '../../admin/components/BlockErrorBoundary';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { usePublicTranslations } from '../../../lib/i18n';
+import { formatCompactNumber } from '../../../lib/util/number';
 // Typhoon markers now render as DOM inline SVG (buildTyphoonSvg) — the old pre-gen PNGs are gone.
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
@@ -1834,6 +1835,19 @@ function formatNumberString(v: string | number | null | undefined): string {
   return String(v);
 }
 
+/** 큰 숫자 셀 축약 — "2,450,000,000,000" → "2,450억"(ko) / "2.45T"(en). AI 가 compactCols 로
+ *  지정한 컬럼만(opt-in — 연도·ID·%는 지정 대상 아님). 부호/방향 프리픽스(▲▼+−)와 짧은
+ *  단위 접미(원·달러 등)는 보존. 숫자꼴이 아니거나 축약 임계 미만이면 원본 그대로. */
+function compactNumberCell(raw: string, lang: 'ko' | 'en'): string {
+  const m = raw.trim().match(/^([▲▼+\-−]?)\s*([\d,]+(?:\.\d+)?)(\s*[^\d\s,.][^\s]{0,3})?$/);
+  if (!m) return raw;
+  const n = parseFloat(m[2].replace(/,/g, ''));
+  const threshold = lang === 'ko' ? 1e4 : 1e3;
+  if (!Number.isFinite(n) || Math.abs(n) < threshold) return raw;
+  const suffix = (m[3] ?? '').trim();
+  return `${m[1]}${formatCompactNumber(n, lang)}${suffix ? ` ${suffix}` : ''}`;
+}
+
 function TextComp({ content }: { content: string }) {
   // mdReady = 개행 정규화 + AI raw HTML escape + **bold** 주입 단일 로직. escape 후라 AI 가 쓴
   // raw <strong> 등은 literal 텍스트로 보이고(번짐 차단), 한국어 인접 **bold** 는 <strong> 렌더.
@@ -2128,7 +2142,7 @@ function hasInlineMd(s: string): boolean {
   return /\*\*[^\n*]+\*\*|<\/?(?:strong|b|em|i)\b/i.test(s);
 }
 
-function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign, filterable, columnToggle, sortable }: {
+function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign, filterable, columnToggle, sortable, compactCols }: {
   headers: string[]; rows: string[][]; stickyCol?: boolean;
   /** zebra 행 — 짝수 row 배경 살짝 어둡게. 행 많을 때 가독성 ↑. 기본 false. */
   striped?: boolean;
@@ -2142,8 +2156,29 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   columnToggle?: boolean;
   /** 헤더 클릭 정렬 — opt-in. 정렬이 의미 있는 표(여러 행 + 비교 가능 컬럼)만 AI 가 켬. 기본 false (정렬 불필요한 표에 ⇅ 노이즈 방지). */
   sortable?: boolean;
+  /** 큰 숫자 축약 대상 컬럼 — opt-in. 헤더명 또는 0-based 인덱스 배열. 지정 시 [간단히|자세히]
+   *  토글이 뜨고 기본 축약(2,450억/2.45T, hover=정확값). 금액·수량 컬럼만 — 연도·ID·% 제외. */
+  compactCols?: (string | number | null | undefined)[];
 }) {
   const t = usePublicTranslations();
+  // 숫자 축약 로케일 — usePublicTranslations 와 같은 <html lang> 패턴 (hydration-safe).
+  const [numLang, setNumLang] = useState<'ko' | 'en'>('ko');
+  useEffect(() => {
+    if (typeof document !== 'undefined') setNumLang(document.documentElement.lang === 'en' ? 'en' : 'ko');
+  }, []);
+  // compactCols 해석 — 헤더명(trim 일치) 또는 인덱스 → 컬럼 인덱스 집합. 미매칭 항목은 무시.
+  const compactSet = useMemo(() => {
+    const s = new Set<number>();
+    for (const c of compactCols ?? []) {
+      if (typeof c === 'number' && Number.isInteger(c) && c >= 0 && c < headers.length) s.add(c);
+      else if (typeof c === 'string') {
+        const i = headers.findIndex(h => String(h ?? '').trim() === c.trim());
+        if (i >= 0) s.add(i);
+      }
+    }
+    return s;
+  }, [compactCols, headers]);
+  const [compactOn, setCompactOn] = useState(true);
   // 헤더 행은 항상 sticky (세로 스크롤 시)
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
@@ -2267,9 +2302,27 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
 
   return (
     <div className="space-y-2">
-      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle opt-in 시만. 클라 전용. */}
-      {(filterable || columnToggle) && (
+      {/* 뷰 인터랙티브 toolbar — filterable/columnToggle/compactCols opt-in 시만. 클라 전용. */}
+      {(filterable || columnToggle || compactSet.size > 0) && (
         <div className="flex flex-wrap items-center gap-2">
+          {compactSet.size > 0 && (
+            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 overflow-hidden shrink-0" role="group" aria-label={t('table.num_compact')}>
+              {([['compact', 'table.num_compact'], ['full', 'table.num_full']] as const).map(([mode, key]) => {
+                const active = (mode === 'compact') === compactOn;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setCompactOn(mode === 'compact')}
+                    aria-pressed={active}
+                    className={`px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${active ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    {t(key)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {filterable && (
             <div className="relative flex-1 min-w-[140px] max-w-xs">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
@@ -2366,10 +2419,15 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                   const isPositive = /^[▲+]/.test(s);
                   const isNegative = /^[▼\-−]/.test(s);
                   const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
-                  const displayCell = formatNumberString(cell);
+                  let displayCell = formatNumberString(cell);
+                  // 큰 숫자 축약 — compactCols 지정 컬럼 + 토글 ON 일 때만. hover = 정확값.
+                  const compacted = compactOn && compactSet.has(ci) ? compactNumberCell(displayCell, numLang) : displayCell;
+                  const wasCompacted = compacted !== displayCell;
+                  displayCell = compacted;
                   return (
                     <td
                       key={ci}
+                      title={wasCompacted ? s : undefined}
                       className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, origRi)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
                     >
                       {typeof cell === 'string' && hasInlineMd(cell) ? <InlineMd text={cell} /> : displayCell}

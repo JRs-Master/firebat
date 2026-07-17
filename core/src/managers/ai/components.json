@@ -256,7 +256,9 @@
         "filter": "filterable",
         "columnSelect": "columnToggle",
         "selectableColumns": "columnToggle",
-        "sort": "sortable"
+        "sort": "sortable",
+        "compactColumns": "compactCols",
+        "abbreviateCols": "compactCols"
       },
       "properties": {
         "headers": {
@@ -317,6 +319,19 @@
             "null"
           ],
           "description": "true makes column headers click-to-sort (asc -> desc -> original). HARD GATE: only when at least one column holds orderable values (numbers, amounts, dates, ranks) the user could re-rank by. NEVER for prose-only tables (concept/comparison/case tables — every cell text) or when the given row order is the meaning. default false."
+        },
+        "compactCols": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "description": "opt-in: columns holding LARGE raw numbers (money amounts, trade volumes) to abbreviate — header names or 0-based indices. Adds a compact/exact toggle above the table; cells like 2,450,000,000,000 render as 2,450억 (ko) / 2.45T (en), hover shows the exact value. Put the RAW full number in the cell and let the toggle handle display. NEVER mark years, codes/IDs, percentages, or already-abbreviated values."
         }
       }
     }

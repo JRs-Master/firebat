@@ -233,7 +233,9 @@
     "failed": "{{package}} 설치에 실패했습니다: {{error}}"
   },
   "table": {
-    "columns": "컬럼"
+    "columns": "컬럼",
+    "num_compact": "간단히",
+    "num_full": "자세히"
   },
   "common": {
     "save": "저장",
