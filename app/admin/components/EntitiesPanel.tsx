@@ -95,6 +95,9 @@ export function EntitiesPanel({
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // 상세 모달 — 인라인은 컴팩트 프리뷰(최신 N)만, 전체 타임라인·승격 리뷰·이력은 모달에서
+  // (사실·사건이 쌓이면 사이드바가 한없이 길어지던 것 — 안쪽 스크롤 박스는 모바일 스크롤 트랩이라 모달).
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<Record<number, Fact[]>>({});
   const [entityEvents, setEntityEvents] = useState<Record<number, EventItem[]>>({});
   const [showCreate, setShowCreate] = useState(false);
@@ -382,21 +385,11 @@ export function EntitiesPanel({
                       <div className="text-[9px] text-slate-400 mb-2 flex items-center gap-2">
                         <Clock size={9} /> {formatDate(e.updatedAt)}
                       </div>
-                      {/* Timeline — 사실을 type 별로 묶고 태그로 교차 필터 */}
-                      <div className="text-[10px] font-bold text-slate-500 mb-1">Timeline ({facts.length})</div>
-                      <EntityTimeline
+                      {/* Timeline preview — 인라인은 최신 N 만, 전체·승격 리뷰는 모달 */}
+                      <FactsPreview
                         facts={facts}
-                        onPromote={async (fid) => {
-                          // Promote = user reviewed and confirmed → full confidence (recall-injectable).
-                          await backend.updateFact(fid, { confidence: 1.0 });
-                          await fetchTimeline(e.id, true);
-                          refreshStats();
-                        }}
-                        onRemove={async (fid) => {
-                          await backend.deleteFact(fid);
-                          await fetchTimeline(e.id, true);
-                          refreshStats();
-                        }}
+                        events={entityEvents[e.id] ?? []}
+                        onOpenDetail={() => setDetailId(e.id)}
                       />
                       <CreateFactInline
                         entityId={e.id}
@@ -409,30 +402,6 @@ export function EntitiesPanel({
                           refreshStats();
                         }}
                       />
-                      {/* Events — entity 와 link 된 사건 (Phase 6.2 entity ↔ event 시각화) */}
-                      {(() => {
-                        const evs = entityEvents[e.id] ?? [];
-                        if (evs.length === 0) return null;
-                        return (
-                          <div className="mt-2 pt-2 border-t border-slate-200">
-                            <div className="text-[10px] font-bold text-slate-500 mb-1">관련 사건 ({evs.length})</div>
-                            <ul className="list-none p-0 m-0 space-y-1">
-                              {evs.slice(0, 10).map(ev => (
-                                <li key={ev.id} className="bg-amber-50/50 border border-amber-100 rounded p-1.5">
-                                  <div className="flex items-center gap-1 mb-0.5">
-                                    <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold">{ev.type}</span>
-                                    <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{ev.title}</span>
-                                  </div>
-                                  <div className="text-[9px] text-slate-400 tabular-nums">
-                                    {formatDate(ev.occurredAt)}
-                                    {ev.who && ` · ${ev.who}`}
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        );
-                      })()}
                     </div>
                   )}
                 </li>
@@ -454,6 +423,31 @@ export function EntitiesPanel({
           }}
         />
       )}
+
+      {/* Detail modal — 전체 타임라인(태그 필터·승격 대기·값 이력) + 전체 사건 */}
+      {detailId != null && (() => {
+        const entity = entities.find(en => en.id === detailId);
+        if (!entity) return null;
+        return (
+          <EntityDetailModal
+            entity={entity}
+            facts={timeline[detailId] ?? []}
+            events={entityEvents[detailId] ?? []}
+            onClose={() => setDetailId(null)}
+            onPromote={async (fid) => {
+              // Promote = user reviewed and confirmed → full confidence (recall-injectable).
+              await backend.updateFact(fid, { confidence: 1.0 });
+              await fetchTimeline(detailId, true);
+              refreshStats();
+            }}
+            onRemove={async (fid) => {
+              await backend.deleteFact(fid);
+              await fetchTimeline(detailId, true);
+              refreshStats();
+            }}
+          />
+        );
+      })()}
         </>
       )}
     </div>
@@ -609,6 +603,143 @@ function EventsPanel({ hubContext, onMutate }: { hubContext?: EntitiesHubContext
 // 사실 타임라인 — type 별 그룹(접기/펴기) + 태그 교차 필터. 엔티티 = 정체성, 분류는 여기서.
 // Staging/supersession: active(승격·활성) 는 기존 그룹 렌더 / staged(confidence<임계) 는 접힌
 // "승격 대기" / superseded 는 접힌 "값 이력"(취소선) — 회상 주입은 active 만(백엔드 게이트).
+/** 인라인 컴팩트 프리뷰 — 최신 활성 사실 5 + 사건 3 + 카운트. 전체·승격 리뷰 = 모달. */
+const PREVIEW_FACTS = 5;
+const PREVIEW_EVENTS = 3;
+function FactsPreview({ facts, events, onOpenDetail }: {
+  facts: Fact[];
+  events: EventItem[];
+  onOpenDetail: () => void;
+}) {
+  const active = useMemo(
+    () => facts
+      .filter(f => !f.supersededBy && (f.confidence ?? 1) >= PROMOTE_THRESHOLD)
+      .slice()
+      .sort((a, b) => Number(b.occurredAt ?? b.createdAt ?? 0) - Number(a.occurredAt ?? a.createdAt ?? 0)),
+    [facts],
+  );
+  const stagedCount = useMemo(
+    () => facts.filter(f => !f.supersededBy && (f.confidence ?? 1) < PROMOTE_THRESHOLD).length,
+    [facts],
+  );
+  const historyCount = useMemo(() => facts.filter(f => !!f.supersededBy).length, [facts]);
+  const shown = active.slice(0, PREVIEW_FACTS);
+  const hasMore = active.length > shown.length || stagedCount > 0 || historyCount > 0 || events.length > PREVIEW_EVENTS;
+
+  return (
+    <div>
+      <div className="text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1.5">
+        <span>Timeline ({active.length})</span>
+        {stagedCount > 0 && (
+          <span className="text-[9px] px-1 rounded bg-amber-100 text-amber-700 font-bold">승격 대기 {stagedCount}</span>
+        )}
+        {historyCount > 0 && <span className="text-[9px] text-slate-400 font-normal">이력 {historyCount}</span>}
+      </div>
+      {facts.length === 0 ? (
+        <p className="text-[10px] text-slate-400 italic">기록 없음</p>
+      ) : (
+        <ul className="list-none p-0 m-0 space-y-1">
+          {shown.map(f => (
+            <li key={f.id} className="bg-white border border-slate-200 rounded p-1.5">
+              <div className="text-[10px] text-slate-700 leading-snug break-words line-clamp-2">{f.content}</div>
+              <div className="mt-0.5 flex items-center gap-1 text-[9px] text-slate-400">
+                {f.factType && <span className="px-1 rounded bg-slate-100 text-slate-500">{f.factType}</span>}
+                <span className="ml-auto tabular-nums">{formatDate(f.occurredAt ?? f.createdAt)}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {events.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-slate-200">
+          <div className="text-[10px] font-bold text-slate-500 mb-1">관련 사건 ({events.length})</div>
+          <ul className="list-none p-0 m-0 space-y-1">
+            {events.slice(0, PREVIEW_EVENTS).map(ev => (
+              <li key={ev.id} className="bg-amber-50/50 border border-amber-100 rounded p-1.5">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold">{ev.type}</span>
+                  <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{ev.title}</span>
+                </div>
+                <div className="text-[9px] text-slate-400 tabular-nums">
+                  {formatDate(ev.occurredAt)}
+                  {ev.who && ` · ${ev.who}`}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(hasMore || facts.length > 0) && (
+        <button
+          onClick={onOpenDetail}
+          className="mt-1.5 w-full flex items-center justify-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded py-1"
+        >
+          전체 보기 <ChevronRight size={10} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** 엔티티 상세 모달 — 전체 타임라인(태그 필터·승격 대기 리뷰·값 이력) + 전체 사건.
+ *  사이드바 인라인은 프리뷰만 — 항목이 쌓여도 사이드바가 안 길어진다. admin·hub 공용(backend 주입). */
+function EntityDetailModal({ entity, facts, events, onClose, onPromote, onRemove }: {
+  entity: Entity;
+  facts: Fact[];
+  events: EventItem[];
+  onClose: () => void;
+  onPromote: (id: number) => void;
+  onRemove: (id: number) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 overflow-hidden flex flex-col max-h-[85dvh]"
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-800 truncate">{entity.name}</h3>
+            {entity.aliases && entity.aliases.length > 0 && (
+              <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                {entity.aliases.map((a, i) => (
+                  <span key={i} className="text-[9px] px-1 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600">{a}</span>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded shrink-0">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="px-4 py-3 overflow-y-auto overscroll-contain">
+          <div className="text-[10px] font-bold text-slate-500 mb-1">Timeline ({facts.filter(f => !f.supersededBy).length})</div>
+          <EntityTimeline facts={facts} onPromote={onPromote} onRemove={onRemove} />
+          {events.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-slate-200">
+              <div className="text-[10px] font-bold text-slate-500 mb-1">관련 사건 ({events.length})</div>
+              <ul className="list-none p-0 m-0 space-y-1">
+                {events.map(ev => (
+                  <li key={ev.id} className="bg-amber-50/50 border border-amber-100 rounded p-1.5">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold">{ev.type}</span>
+                      <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{ev.title}</span>
+                    </div>
+                    <div className="text-[9px] text-slate-400 tabular-nums">
+                      {formatDate(ev.occurredAt)}
+                      {ev.who && ` · ${ev.who}`}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EntityTimeline({ facts, onPromote, onRemove }: {
   facts: Fact[];
   onPromote?: (id: number) => void;

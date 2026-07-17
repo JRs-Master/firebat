@@ -493,8 +493,10 @@ message ProjectDeleteResponse {}
 message ProjectRenameRequest {
   string old_name = 1;
   string new_name = 2;
-  // hub scoping — 지정 시 old_name 이 해당 hub 자료일 때만 rename 허용. admin 은 omit → 무검사.
+  // hub scoping — hub 프로젝트(hub:<inst>) 는 인스턴스 식별자라 rename 자체가 금지 (지정 시 거부).
   optional string hub_id = 3;
+  // 옛 주소(/old-project + 각 페이지) → 새 주소 자동 이동 등록. 기본 true — 공유된 링크·검색엔진 보존.
+  optional bool set_redirect = 4;
 }
 message ProjectRenameResponse {}
 

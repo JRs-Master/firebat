@@ -26,9 +26,9 @@ export const PATCH = withAuth(async (request: NextRequest) => {
 
   // 액션: rename — { action:'rename', project, newName, setRedirect? }
   if (action === 'rename') {
-    const { newName } = body as { newName?: string; setRedirect?: boolean };
+    const { newName, setRedirect } = body as { newName?: string; setRedirect?: boolean };
     if (!newName) return NextResponse.json({ success: false, error: 'newName 필수' }, { status: 400 });
-    const res = await renameProject({ oldName: project, newName });
+    const res = await renameProject({ oldName: project, newName, setRedirect: setRedirect !== false });
     if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 400 });
     return NextResponse.json({ success: true, data: res.data });
   }

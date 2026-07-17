@@ -280,6 +280,32 @@ impl ProjectManager {
         stored.as_deref() == Some(password)
     }
 
+    /// 프로젝트 rename 시 부속 메타 이관 — visibility/password vault 키 + `user/projects/{name}/config.json`.
+    /// 페이지 slug 일괄 rename(PageManager.rename_project)과 함께 호출(오케스트레이션 = grpc rename).
+    /// best-effort: 부속이 없으면 조용히 skip (신규 프로젝트는 vault·config 자체가 없음).
+    pub async fn migrate_meta(&self, old_name: &str, new_name: &str) -> InfraResult<()> {
+        if !is_safe_name(old_name) || !is_safe_name(new_name) {
+            return Err(crate::i18n::t("core.error.project.name_invalid", None, &[]));
+        }
+        // vault — visibility / password (있을 때만 복사 후 옛 키 삭제)
+        if let Some(v) = self.vault.get_secret(&vk_project_visibility(old_name)) {
+            self.vault.set_secret(&vk_project_visibility(new_name), &v);
+            self.vault.delete_secret(&vk_project_visibility(old_name));
+        }
+        if let Some(pw) = self.vault.get_secret(&vk_project_password(old_name)) {
+            self.vault.set_secret(&vk_project_password(new_name), &pw);
+            self.vault.delete_secret(&vk_project_password(old_name));
+        }
+        // config.json (theme override / customCss 등) — move
+        let old_path = format!("user/projects/{}/config.json", old_name);
+        if let Ok(raw) = self.storage.read(&old_path).await {
+            let new_path = format!("user/projects/{}/config.json", new_name);
+            self.storage.write(&new_path, &raw).await?;
+            let _ = self.storage.delete(&old_path).await;
+        }
+        Ok(())
+    }
+
     /// `user/projects/{name}/config.json` 의 theme override / customCss / layoutOverride 등.
     pub async fn get_config(&self, name: &str) -> Option<serde_json::Value> {
         if !is_safe_name(name) {

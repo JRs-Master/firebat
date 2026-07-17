@@ -20,11 +20,16 @@ use crate::proto::{
 
 pub struct ProjectServiceImpl {
     manager: Arc<ProjectManager>,
+    /// rename 오케스트레이션 — 페이지 slug 일괄 rename(+per-page redirect)은 PageManager 몫.
+    pages: Arc<crate::managers::page::PageManager>,
 }
 
 impl ProjectServiceImpl {
-    pub fn new(manager: Arc<ProjectManager>) -> Self {
-        Self { manager }
+    pub fn new(
+        manager: Arc<ProjectManager>,
+        pages: Arc<crate::managers::page::PageManager>,
+    ) -> Self {
+        Self { manager, pages }
     }
 }
 
@@ -160,13 +165,54 @@ impl ProjectService for ProjectServiceImpl {
 
     async fn rename(
         &self,
-        _req: Request<ProjectRenameRequest>,
+        req: Request<ProjectRenameRequest>,
     ) -> Result<Response<ProjectRenameResponse>, TonicStatus> {
-        // Phase B-8 미구현 — Phase B-9 PageManager (DB) 와 함께 (slug rename + redirect).
-        Err(TonicStatus::unimplemented(crate::i18n::t(
-            "core.error.rpc.rename_unimplemented",
-            None,
-            &[],
-        )))
+        let args = req.into_inner();
+        let old_name = args.old_name.trim().to_string();
+        let new_name = args.new_name.trim().to_string();
+        // hub 프로젝트(hub:<inst>) = 인스턴스 식별자 — rename 하면 자료 연결이 끊기므로 금지
+        // (frontend 도 차단하지만 서버가 최종 강제).
+        if args.hub_id.as_deref().is_some_and(|s| !s.is_empty())
+            || old_name.starts_with("hub:")
+            || new_name.starts_with("hub:")
+        {
+            return Err(TonicStatus::permission_denied(
+                "허브 프로젝트 이름은 변경할 수 없습니다.",
+            ));
+        }
+        // 기존 프로젝트와 충돌 = silent merge 위험 — 명시 거부.
+        if self
+            .manager
+            .scan()
+            .await
+            .iter()
+            .any(|p| p.name == new_name)
+        {
+            return Err(TonicStatus::already_exists(
+                "같은 이름의 프로젝트가 이미 있습니다.",
+            ));
+        }
+        // 기본 true — 공유된 링크·검색엔진 등록 주소 보존이 기본값.
+        let set_redirect = args.set_redirect.unwrap_or(true);
+        // ① 페이지 slug 일괄 rename (old/…→new/…, set_redirect 면 per-page redirect 포함)
+        let renamed = self
+            .pages
+            .rename_project(&old_name, &new_name, set_redirect)
+            .map_err(TonicStatus::invalid_argument)?;
+        // ② 부속 메타 이관 — visibility/password vault + user/projects/{name}/config.json
+        self.manager
+            .migrate_meta(&old_name, &new_name)
+            .await
+            .map_err(TonicStatus::internal)?;
+        // ③ 카탈로그 URL redirect — /old-project → /new-project (bare 프로젝트 경로)
+        if set_redirect {
+            self.pages.add_redirect(&old_name, &new_name);
+        }
+        tracing::info!(
+            target: "project",
+            old = %old_name, new = %new_name, pages = renamed.len(), set_redirect,
+            "[ProjectService] project renamed"
+        );
+        Ok(Response::new(ProjectRenameResponse {}))
     }
 }

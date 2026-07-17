@@ -347,6 +347,12 @@ impl PageManager {
         self.db.get_page_redirect(from_slug)
     }
 
+    /// 명시 redirect 등록 — 프로젝트 rename 시 카탈로그 URL(`/{old-project}` → `/{new-project}`)용.
+    /// 개별 페이지 redirect 는 rename() 이 처리하고, 이건 bare 프로젝트 경로 몫.
+    pub fn add_redirect(&self, from_slug: &str, to_slug: &str) {
+        self.db.upsert_page_redirect(from_slug, to_slug);
+    }
+
     /// app/(user)/ 하위 정적 페이지 slug 목록 (manifest.json 있는 디렉토리).
     pub async fn list_static(&self) -> Vec<String> {
         let Ok(entries) = self.storage.list_dir("app/(user)").await else {

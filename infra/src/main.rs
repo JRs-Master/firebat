@@ -1122,7 +1122,9 @@ async fn main() -> Result<()> {
     let status_service = grpc::status::StatusServiceImpl::new(status_manager);
     let tool_service = grpc::tool::ToolServiceImpl::new(tool_manager.clone());
     let cost_service = grpc::cost::CostServiceImpl::new(cost_manager);
-    let project_service = grpc::project::ProjectServiceImpl::new(project_manager);
+    // pages = rename 오케스트레이션(slug 일괄 rename + redirect) — PageManager 몫.
+    let project_service =
+        grpc::project::ProjectServiceImpl::new(project_manager, page_manager.clone());
     let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone())
         .with_dynamic_tools(dynamic_tools_registry.clone());
     let page_service = grpc::page::PageServiceImpl::new(page_manager.clone());
