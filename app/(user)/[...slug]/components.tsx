@@ -4073,16 +4073,42 @@ type MapMarker = {
 
 /** Always-visible marker text chip (place name + metric). Shared by MapLibre + Kakao.
  *  width:max-content 필수 — 칩의 부모(마커 el ~12px / kakao overlay wrapper 0px)가 좁아
- *  auto 폭이 붕괴하면 한 글자씩 세로로 쌓인다(2026-07-18 대방동 실거래가 지도 실측). */
+ *  auto 폭이 붕괴하면 한 글자씩 세로로 쌓인다(2026-07-18 대방동 실거래가 지도 실측).
+ *  "이름 값" 형태(꼬리 토큰에 숫자)는 이름 위·값 아래 2단 뱃지로 — 긴 단지명이 폭 캡(140px)에서
+ *  "13.5 / 억" 처럼 어중간하게 꺾이던 것을 구조로 해소(부동산 앱 가격 뱃지 관례). */
 function buildLabelChipEl(label: string): HTMLDivElement {
   const chip = document.createElement('div');
   chip.className = 'fb-map-chip';
-  chip.textContent = label; // textContent = safe (no HTML injection); emoji renders inline
   chip.style.cssText =
-    'white-space:pre-line;text-align:center;font-size:11px;font-weight:700;line-height:1.15;' +
-    'color:#0f172a;background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.10);' +
-    'border-radius:6px;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,0.18);pointer-events:none;' +
+    'text-align:center;line-height:1.25;color:#0f172a;' +
+    'background:rgba(255,255,255,0.95);border:1px solid rgba(0,0,0,0.08);' +
+    'border-radius:8px;padding:3px 8px;box-shadow:0 1px 4px rgba(0,0,0,0.16);pointer-events:none;' +
     'width:max-content;max-width:140px;';
+  // 명시 \n = 그대로 멀티라인. 아니면 마지막 공백 앞을 이름/값 경계로(값 토큰에 숫자 있을 때만).
+  let name = '';
+  let value = '';
+  if (!label.includes('\n')) {
+    const idx = label.lastIndexOf(' ');
+    const tail = idx > 0 ? label.slice(idx + 1) : '';
+    if (idx > 0 && /\d/.test(tail)) {
+      name = label.slice(0, idx).trim();
+      value = tail;
+    }
+  }
+  if (name && value) {
+    const n = document.createElement('div');
+    n.textContent = name; // textContent = safe (no HTML injection)
+    n.style.cssText = 'font-size:10.5px;font-weight:600;color:#475569;overflow-wrap:anywhere;';
+    const v = document.createElement('div');
+    v.textContent = value;
+    v.style.cssText = 'font-size:12.5px;font-weight:800;letter-spacing:-0.01em;';
+    chip.append(n, v);
+  } else {
+    chip.textContent = label;
+    chip.style.whiteSpace = 'pre-line';
+    chip.style.fontSize = '11px';
+    chip.style.fontWeight = '700';
+  }
   return chip;
 }
 
