@@ -4223,6 +4223,22 @@ function buildPinSvgUrl(emoji: string, w: number, color = '#6366f1'): string {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
+/** 카테고리 아이콘 원형 배지 — 실제 카카오맵 POI 관례(원 안에 아이콘, 좌표 = 원 중심).
+ *  핀 안에 이모지가 들어간 옛 모양이 어색하다는 사용자 피드백(2026-07-18)으로 교체.
+ *  색 링 + 흰 속원 + 이모지. anchor = center. */
+function buildBadgeSvgUrl(emoji: string, d: number, color = '#6366f1'): string {
+  const r = d / 2 - 1.5;
+  const c = d / 2;
+  const inner = r * 0.7;
+  const fontSize = Math.round(inner * 1.35);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 ${d} ${d}">`
+    + `<circle cx="${c}" cy="${c}" r="${r}" fill="${color}" stroke="white" stroke-width="1.5"/>`
+    + `<circle cx="${c}" cy="${c}" r="${inner}" fill="white"/>`
+    + `<text x="${c}" y="${c}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
+    + `</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
 /** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
  *  강도1 약(17~24) 초록 → 강도2 중(25~32) 파랑 → 강도3 강(33~43) 노랑 → 강도4 매우강(44~53) 주황
  *  → 강도5 초강력(54+) 빨강. 17 미만 = 열대저압부(TD) 회색. windSpeed 없으면 null (caller 가 color fallback). */
@@ -4442,10 +4458,9 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const size = Math.round(markerPixelSize(m.size ?? (m.icon === 'typhoon' ? 'large' : 'medium'), true) * markerDeviceScale());
     el.innerHTML = buildTyphoonSvg(m, size, m.icon === 'typhoon');
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-    // 색 핀(흰 속원 + 이모지) — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom). 속원만큼 크게.
-    const headW = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-    const h = Math.round(headW * 1.32);
-    el.innerHTML = `<img src="${buildPinSvgUrl(MARKER_ICON_EMOJI[m.icon], headW)}" width="${headW}" height="${h}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
+    // 카테고리 = 원형 배지(원 안에 아이콘) — 실제 카카오맵 POI 관례. 좌표 = 원 중심(anchor=center).
+    const d = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
+    el.innerHTML = `<img src="${buildBadgeSvgUrl(MARKER_ICON_EMOJI[m.icon], d, colorHex(m.color, '#6366f1'))}" width="${d}" height="${d}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
   } else {
     // 기본 마커 = 위치핀(둥근 머리 + 뾰족 끝, 이모지 없음) — 색은 m.color(가격대 구분 등), 미지정 = 빨강.
     // 옛 납작한 색 원은 위치핀 관례와 어긋난다는 사용자 피드백(2026-07-18)으로 교체.
@@ -4656,9 +4671,17 @@ function MapComp({
               clickEl = content;
             } else {
               const opts: { position: any; title: string; image?: any } = { position: pos, title: m.label };
+              // 칩 간격 — 핀은 좌표(뾰족 끝) 아래로 안 뻗어 6px, 원형 배지는 반지름만큼 아래로 뻗어 d/2+4px.
+              let chipPad = 6;
               if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-                const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
-                opts.image = makePinMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
+                // 카테고리 = 원형 배지(원 안에 아이콘, 좌표 = 원 중심) — 실제 카카오맵 POI 관례.
+                const d = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
+                opts.image = new w.kakao.maps.MarkerImage(
+                  buildBadgeSvgUrl(MARKER_ICON_EMOJI[m.icon], d, colorHex(m.color, '#6366f1')),
+                  new w.kakao.maps.Size(d, d),
+                  { offset: new w.kakao.maps.Point(d / 2, d / 2) },
+                );
+                chipPad = Math.round(d / 2) + 4;
               } else {
                 // 기본/색 마커 = 우리 위치핀 (미지정 = 빨강) — 카카오 raw 기본핀 대신 전 마커 스타일 통일.
                 const size = Math.round(markerPixelSize(m.size, true) * markerDeviceScale());
@@ -4667,10 +4690,9 @@ function MapComp({
               marker = new w.kakao.maps.Marker(opts);
               marker.setMap(map);
               // Always-visible label chip (opt-in, generic markers only — weather badge has its own pill).
-              // 핀 마커는 좌표(뾰족 끝) 아래로 안 뻗으므로 6px 만 띄움 (옛 원형 시절 20px = 붕 뜸).
               if (m.labelAlways && m.label) {
                 const wrap = document.createElement('div');
-                wrap.style.cssText = 'padding-top:6px;pointer-events:none;';
+                wrap.style.cssText = `padding-top:${chipPad}px;pointer-events:none;`;
                 const chipEl = buildLabelChipEl(m.label);
                 wrap.appendChild(chipEl);
                 new w.kakao.maps.CustomOverlay({ position: pos, content: wrap, yAnchor: 0, zIndex: 4 }).setMap(map);
@@ -4903,9 +4925,10 @@ function MapComp({
         // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
         const labelChips: { el: HTMLElement; lat: number; lon: number }[] = [];
         for (const m of safeMarkers) {
-          // 핀류(카테고리 이모지 + 기본/색 핀)는 anchor=bottom (뾰족 끝이 좌표 지점).
-          // 중심 정렬은 태풍 소용돌이·날씨 배지만.
-          const isCentered = m.icon === 'typhoon' || m.icon === 'forecast' || isWeatherIcon(m.icon);
+          // 기본/색 위치핀만 anchor=bottom (뾰족 끝이 좌표 지점). 중심 정렬 = 태풍 소용돌이·
+          // 날씨 배지·카테고리 원형 배지(원 중심 = 좌표).
+          const isCentered = m.icon === 'typhoon' || m.icon === 'forecast' || isWeatherIcon(m.icon)
+            || !!(m.icon && MARKER_ICON_EMOJI[m.icon]);
           const markerEl = buildMarkerEl(m);
           const marker = new ml.Marker({ element: markerEl, anchor: isCentered ? 'center' : 'bottom' }).setLngLat([m.lon, m.lat]).addTo(map);
           const chipEl = markerEl.querySelector('.fb-map-chip') as HTMLElement | null;
