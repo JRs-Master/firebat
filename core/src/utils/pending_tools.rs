@@ -196,12 +196,45 @@ impl PendingActionArgs {
                 crate::managers::task::normalize_pipeline_dialect(map);
             }
         }
-        serde_json::from_value(merged).map_err(|e| {
-            format!(
-                "PendingActionArgs parse 실패 (도구={}): {}",
-                name, e
-            )
-        })
+        match serde_json::from_value(merged.clone()) {
+            Ok(v) => Ok(v),
+            Err(first_err) => {
+                // Tolerant rung — CLI 모델이 중첩 객체 필드를 JSON *문자열*로 보내는 방언
+                // (2026-07-18 실측: retry="{\"count\":3,\"delayMs\":30000}" → CronRetry 파스 실패
+                // → 모델 2회 재시도 낭비). 객체 타입 필드 allowlist 만 unstringify 후 1회 재파스 —
+                // write_file.content 같은 정당한 문자열 필드는 건드리지 않는다(repair_tool_args 계보).
+                const OBJECT_FIELDS: &[&str] =
+                    &["retry", "notify", "runWhen", "inputData", "pipeline", "spec", "input", "args"];
+                let mut fixed = false;
+                if let serde_json::Value::Object(map) = &mut merged {
+                    for k in OBJECT_FIELDS {
+                        let parsed = match map.get(*k) {
+                            Some(serde_json::Value::String(s)) => serde_json::from_str::<serde_json::Value>(s)
+                                .ok()
+                                .filter(|p| p.is_object() || p.is_array()),
+                            _ => None,
+                        };
+                        if let Some(p) = parsed {
+                            map.insert((*k).to_string(), p);
+                            fixed = true;
+                        }
+                    }
+                    if fixed && (name == "schedule_task" || name == "run_task") {
+                        crate::managers::task::normalize_pipeline_dialect(map);
+                    }
+                }
+                if fixed {
+                    serde_json::from_value(merged).map_err(|e| {
+                        format!("PendingActionArgs parse 실패 (도구={}): {}", name, e)
+                    })
+                } else {
+                    Err(format!(
+                        "PendingActionArgs parse 실패 (도구={}): {}",
+                        name, first_err
+                    ))
+                }
+            }
+        }
     }
 }
 

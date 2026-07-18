@@ -1878,7 +1878,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "save_page".into(),
-        description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}.".into(),
+        description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(데이터 인라인/dataCacheKey bake·SAVE_PAGE 파이프라인 재발행 불필요).".into(),
         input_schema: schema_object(serde_json::json!({
             "slug": {"type": "string"},
             "spec": {"type": "object"},

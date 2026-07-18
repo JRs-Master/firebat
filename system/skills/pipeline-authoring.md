@@ -17,6 +17,15 @@ Only 7 step types allowed: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CO
 - **CONDITION** — conditional branching (a normal stop on false).
 - **SAVE_PAGE** — cron auto page publication (bypasses user approval).
 
+## SAVE_PAGE absolute rule — no $prev inside spec
+`$prev`/`$stepN` are **NOT resolved inside a SAVE_PAGE spec** — the step fails fast if any remain
+(they would otherwise be published as literal strings; large arrays are also auto-cache-truncated,
+so piping data into a spec cannot work). **A page that must refresh its data is NOT a pipeline job**:
+put a `module` block (`{type:"module", props:{module, args?, when:"publish"}}`, pageBinding-declared
+modules only) in the page spec at save_page time, then schedule `targetPath: "rebake:<slug>"` —
+zero LLM, no steps to author. SAVE_PAGE in a pipeline is only for specs whose content the earlier
+steps do NOT need to fill.
+
 ## LLM_TRANSFORM absolute rule — tool calls not allowed
 LLM_TRANSFORM is **text transformation only** (askText only). Even if you write a tool workflow in natural language in the instruction, tools will never run.
 

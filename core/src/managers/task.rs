@@ -654,6 +654,16 @@ impl TaskManager {
                 let Some(spec_value) = spec_value else {
                     return StepOutcome::Fail("SAVE_PAGE 실패: spec 미지정".to_string());
                 };
+                // spec 안 $prev/$stepN 은 해석되지 않는다 — literal 로 저장되면 페이지가 조용히
+                // 깨진다(2026-07-18 실측: data:"$prev...stk_dt_pole_chart_qry" 가 그대로 발행 +
+                // auto-cache 절단이라 원리적으로도 성립 불가). 저장 전 fail-fast + 정공 안내.
+                if let Some(bad) =
+                    crate::utils::pipeline_resolver::find_unresolved_ref(&spec_value)
+                {
+                    return StepOutcome::Fail(format!(
+                        "SAVE_PAGE 실패: spec 안에 해석되지 않는 참조 '{bad}' — spec 내부의 $prev/$stepN 은 지원되지 않습니다. 데이터가 매번 갱신되는 페이지는 spec 에 module 블록({{\"type\":\"module\",\"props\":{{\"module\",\"action\",\"args\",\"when\":\"publish\"}}}})을 넣고 크론 targetPath 를 'rebake:<slug>' 로 등록하세요 (SAVE_PAGE 파이프라인 재발행 불필요)."
+                    ));
+                }
                 let allow = allow_overwrite.unwrap_or(false);
                 match self.executor.save_page(&slug_str, &spec_value, allow).await {
                     Ok(v) => StepOutcome::Continue(v),
