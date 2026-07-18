@@ -1,0 +1,31 @@
+{
+  "name": "주식 브리핑",
+  "description": "종목 시세 shortcode 예제 템플릿 — text 안 {stock symbol=\"...\"} 이 get_template 시 module 블록으로 컴파일되고, 발행(save_page) 시 서버가 데이터를 구워 넣는다. 정기 갱신은 rebake:<slug> 크론과 짝.",
+  "tags": ["주식", "브리핑", "shortcode", "예제"],
+  "spec": {
+    "head": {
+      "title": "주식 브리핑 — {date}",
+      "description": "관심 종목 시세 브리핑 (발행 시점 데이터 자동 bake)"
+    },
+    "body": [
+      {
+        "type": "header",
+        "props": { "level": 1, "text": "📈 주식 브리핑 — {date}" }
+      },
+      {
+        "type": "text",
+        "props": {
+          "content": "아래 시세 블록은 페이지를 발행할 때 서버가 직접 조회해 채웁니다.\n\n{stock symbol=\"005930.KS\"}",
+          "_fill": "Keep the shortcode line as-is (it compiles into a module block). If the user wants different tickers, change only the symbol (KR = 6-digit code + .KS/.KQ, US = plain ticker) or add more {stock ...} shortcodes — one per ticker."
+        }
+      },
+      {
+        "type": "text",
+        "props": {
+          "content": "시장 코멘트",
+          "_fill": "Write 2-3 sentences summarizing today's market context for the tickers above, grounded in data you actually fetched this turn — no invented numbers."
+        }
+      }
+    ]
+  }
+}

@@ -588,20 +588,58 @@ const MODULE_ASSET_EXTS: &[(&str, &str)] = &[
 ];
 
 fn safe_asset_segment(s: &str) -> bool {
+    // 한글 등 유니코드 파일명 허용 (2026-07-18 사용자 정정 — ASCII 전용 아님).
+    // 진짜 가드는 구조적인 것: 경로 구분자·`..`·제어문자·Windows 예약 문자 차단 + 길이 캡.
+    // 단일 세그먼트 보장(구분자 불가) → join 이 assets/ 직속을 벗어날 수 없다.
     !s.is_empty()
+        && s.len() <= 255
         && !s.contains("..")
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && s.chars().all(|c| {
+            !c.is_control() && !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+        })
+}
+
+/// asset 404 — 브라우저 직접 방문(Accept: text/html)은 사이트 404 페이지와 같은 톤의
+/// 스타일된 안내(맨몸 "not found" 텍스트 = 만들다 만 느낌, 2026-07-18 사용자 피드백),
+/// `<img>`·프로그램 요청은 가벼운 텍스트 유지.
+fn module_asset_not_found(headers: &HeaderMap) -> axum::response::Response {
+    let wants_html = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|s| s.contains("text/html"));
+    if wants_html {
+        let html = "<!DOCTYPE html><html lang=\"ko\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+<title>404 — 파일을 찾을 수 없습니다</title>\
+<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Malgun Gothic',sans-serif;\
+background:#fff;color:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh}\
+main{text-align:center;padding:24px}h1{font-size:72px;font-weight:800;margin:0 0 8px}\
+p.t{font-size:20px;font-weight:600;margin:0 0 6px}p.s{font-size:14px;color:#64748b;margin:0 0 20px}\
+a{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:14px;font-weight:600;\
+border-radius:8px;padding:10px 18px}</style></head><body><main><h1>404</h1>\
+<p class=\"t\">파일을 찾을 수 없습니다</p><p class=\"s\">요청하신 모듈 이미지가 존재하지 않습니다.</p>\
+<a href=\"/\">홈으로</a></main></body></html>";
+        (
+            StatusCode::NOT_FOUND,
+            [("content-type", "text/html; charset=utf-8")],
+            html,
+        )
+            .into_response()
+    } else {
+        (StatusCode::NOT_FOUND, "not found").into_response()
+    }
 }
 
 async fn handle_module_asset(
     axum::extract::Path((module, file)): axum::extract::Path<(String, String)>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     if !safe_asset_segment(&module) || !safe_asset_segment(&file) {
-        return (StatusCode::NOT_FOUND, "not found").into_response();
+        return module_asset_not_found(&headers);
     }
     let ext = file.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     let Some((_, mime)) = MODULE_ASSET_EXTS.iter().find(|(e, _)| *e == ext) else {
-        return (StatusCode::NOT_FOUND, "not found").into_response();
+        return module_asset_not_found(&headers);
     };
     let root = std::env::var("FIREBAT_WORKSPACE_ROOT")
         .map(std::path::PathBuf::from)
@@ -622,7 +660,7 @@ async fn handle_module_asset(
                 .into_response();
         }
     }
-    (StatusCode::NOT_FOUND, "not found").into_response()
+    module_asset_not_found(&headers)
 }
 
 /// MCP HTTP server router.
