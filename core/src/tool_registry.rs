@@ -1799,7 +1799,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             "properties": {
                 "jobId": {"type": "string"},
                 "targetPath": {"type": "string", "description": "executionMode=agent 면 'agent'. 인라인 파이프라인은 pipeline 필드 사용(targetPath 는 라벨). 'rebake:<slug>' = 그 페이지의 module 블록 바인딩을 재실행해 데이터만 갱신(LLM 0 — 정기 갱신 페이지의 표준)"},
-                "cronTime": {"type": "string"},
+                "cronTime": {"type": "string", "description": "반복 cron (분 시 일 월 요일). 하루 여러 시각 = 한 잡으로: 분이 같으면 필드 리스트('0 8,20 * * *' = 08:00·20:00), 분이 다르면 '|' 로 표현식 병기('0 2 * * * | 55 16 * * *' = 02:00·16:55) — 별도 잡 분리 불필요"},
                 "runAt": {"type": "string"},
                 "delaySec": {"type": "integer"},
                 "title": {"type": "string"},

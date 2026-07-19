@@ -4,8 +4,17 @@ const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 /** cron 식 → 사람 말 (ko). 5필드(분 시 일 월 요일) + 6필드(초 포함 — 시스템 잡
  *  "0 0 (초/6단위) ..." 류는 초 필드를 떼고 같은 로직) 지원, 못 읽는 패턴이면 원문 반환.
+ *  복수 표현식(`|` 구분 = 한 잡의 여러 시각)은 각각 풀어서 " · " 로 병기.
  *  ScheduleModal 과 승인 카드(스케줄 실행 시각 표시)가 공유. */
 export function describeCron(expr: string): string {
+  if (expr.includes('|')) {
+    return expr
+      .split('|')
+      .map(e => e.trim())
+      .filter(Boolean)
+      .map(describeCron)
+      .join(' · ');
+  }
   let p = expr.trim().split(/\s+/);
   if (p.length === 6) p = p.slice(1);
   if (p.length !== 5) return expr;

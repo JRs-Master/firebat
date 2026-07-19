@@ -185,11 +185,27 @@ impl TokioCronAdapter {
         if t.split_whitespace().count() == 5 { format!("0 {t}") } else { t.to_string() }
     }
 
-    /// 다음 cron 발화 시각 — cron crate 활용.
+    /// 복수 cron 표현식 — `|` 구분 ("0 2 * * * | 55 16 * * *" = 02:00 + 16:55, 한 잡).
+    /// 표준 cron 필드 리스트(`0 8,20 * * *` = 08:00·20:00)로 안 되는 "분이 다른 복수 시각"을
+    /// 잡 하나로 수용 (2026-07-20 사용자: 같은 잡에 시간만 다른데 스케줄 여러 개 = 낭비).
+    fn split_cron_exprs(cron_time: &str) -> Vec<&str> {
+        cron_time
+            .split('|')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    /// 다음 cron 발화 시각 — cron crate 활용. 복수 표현식(`|`)이면 가장 이른 발화.
     fn next_cron_fire(cron_time: &str, tz_name: &str) -> Option<DateTime<Utc>> {
         let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::UTC);
-        let schedule = Schedule::from_str(&Self::normalize_cron(cron_time)).ok()?;
-        schedule.upcoming(tz).next().map(|d| d.with_timezone(&Utc))
+        Self::split_cron_exprs(cron_time)
+            .into_iter()
+            .filter_map(|expr| {
+                let schedule = Schedule::from_str(&Self::normalize_cron(expr)).ok()?;
+                schedule.upcoming(tz).next().map(|d| d.with_timezone(&Utc))
+            })
+            .min()
     }
 
     fn determine_mode(opts: &CronScheduleOptions, tz_name: &str) -> Result<CronJobMode, String> {
@@ -200,9 +216,16 @@ impl TokioCronAdapter {
         ) {
             (true, _, _) => {
                 // cron expression 유효성 검증 — 옛 TS `cron.validate(cronTime)` 1:1.
+                // 복수 표현식(`|`) 각각 검증 — 하나라도 틀리면 거부.
                 let cron_time = opts.cron_time.as_deref().unwrap_or("");
-                Schedule::from_str(&Self::normalize_cron(cron_time))
-                    .map_err(|e| format!("잘못된 CRON 표현식: {} ({e})", cron_time))?;
+                let parts = Self::split_cron_exprs(cron_time);
+                if parts.is_empty() {
+                    return Err(format!("잘못된 CRON 표현식: {}", cron_time));
+                }
+                for part in parts {
+                    Schedule::from_str(&Self::normalize_cron(part))
+                        .map_err(|e| format!("잘못된 CRON 표현식: {} ({e})", part))?;
+                }
                 Ok(CronJobMode::Cron)
             }
             (false, true, _) => {
@@ -543,22 +566,27 @@ impl ICronPort for TokioCronAdapter {
             match job.mode {
                 CronJobMode::Cron => {
                     if let Some(cron_time) = job.options.cron_time.as_deref() {
-                        if let Ok(schedule) = Schedule::from_str(&Self::normalize_cron(cron_time)) {
-                            let start_w = job
-                                .options
-                                .start_at
-                                .as_deref()
-                                .and_then(|s| Self::parse_in_timezone(s, &tz_name));
-                            let end_w = job
-                                .options
-                                .end_at
-                                .as_deref()
-                                .and_then(|e| Self::parse_in_timezone(e, &tz_name));
-                            // schedule.after 는 strictly after — anchor 직후부터. 예정은 미래만이라 하한을
-                            // now 로 막음 (과거 발화는 log 로 표시; 미래 달 조회는 from_dt 가 더 커 그대로).
-                            let occ_from = if from_dt > now_utc { from_dt } else { now_utc };
-                            let anchor =
-                                (occ_from - chrono::Duration::seconds(1)).with_timezone(&tz);
+                        let start_w = job
+                            .options
+                            .start_at
+                            .as_deref()
+                            .and_then(|s| Self::parse_in_timezone(s, &tz_name));
+                        let end_w = job
+                            .options
+                            .end_at
+                            .as_deref()
+                            .and_then(|e| Self::parse_in_timezone(e, &tz_name));
+                        // schedule.after 는 strictly after — anchor 직후부터. 예정은 미래만이라 하한을
+                        // now 로 막음 (과거 발화는 log 로 표시; 미래 달 조회는 from_dt 가 더 커 그대로).
+                        let occ_from = if from_dt > now_utc { from_dt } else { now_utc };
+                        let anchor =
+                            (occ_from - chrono::Duration::seconds(1)).with_timezone(&tz);
+                        // 복수 표현식(`|`) — 각 표현식 전개 후 병합·정렬·dedup (한 잡의 여러 시각).
+                        for expr in Self::split_cron_exprs(cron_time) {
+                            let Ok(schedule) = Schedule::from_str(&Self::normalize_cron(expr))
+                            else {
+                                continue;
+                            };
                             for fire in schedule.after(&anchor).take(MAX_PER_JOB) {
                                 let fire_utc = fire.with_timezone(&Utc);
                                 if fire_utc > to_dt {
@@ -576,6 +604,9 @@ impl ICronPort for TokioCronAdapter {
                                 fires.push(fire_utc);
                             }
                         }
+                        fires.sort();
+                        fires.dedup();
+                        fires.truncate(MAX_PER_JOB);
                     }
                 }
                 CronJobMode::Once => {
@@ -916,6 +947,44 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("CRON 표현식"));
+    }
+
+    #[tokio::test]
+    async fn schedule_accepts_multi_cron_expressions() {
+        // `|` 구분 복수 표현식 = 한 잡의 여러 시각 (02:00 + 16:55).
+        let (a, _dir) = adapter();
+        let r = a
+            .schedule(
+                "multi",
+                "/x",
+                CronScheduleOptions {
+                    cron_time: Some("0 2 * * * | 55 16 * * *".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(r.is_ok(), "multi-expression cron must be accepted: {r:?}");
+        // 한 파트라도 틀리면 전체 거부.
+        let bad = a
+            .schedule(
+                "multi-bad",
+                "/x",
+                CronScheduleOptions {
+                    cron_time: Some("0 2 * * * | nope".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(bad.is_err());
+    }
+
+    #[test]
+    fn next_cron_fire_picks_earliest_of_multi() {
+        // 매분 0초 표현식과 연 1회 표현식 병기 — 다음 발화는 매분 쪽(이른 쪽)이어야 한다.
+        let near = TokioCronAdapter::next_cron_fire("* * * * *", "Asia/Seoul").unwrap();
+        let multi =
+            TokioCronAdapter::next_cron_fire("0 0 1 1 * | * * * * *", "Asia/Seoul").unwrap();
+        assert_eq!(multi, near);
     }
 
     #[tokio::test]
