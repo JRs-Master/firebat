@@ -4333,9 +4333,16 @@ function labelToHtml(label: string): string {
  *  (2026-07-07 태풍 실측 — "우리 카드 안 쓰는 듯"). 방언 수용: label 에 넣든 popup 에 넣든 같은 카드. */
 function popupToHtml(popup: string): string {
   const hasHtml = /<[a-z][^>]*>/i.test(popup);
-  return hasHtml
-    ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(popup).replace(/\n/g, '<br>')}</div>`
-    : buildPopupCardHtml(popup);
+  if (!hasHtml) return buildPopupCardHtml(popup);
+  // 단순 서식 HTML(b/strong/i/em/br 만) = 우리 카드로 흡수 — 모델이 `<b>제목</b><br>...` 방언으로
+  // 보내는 게 실측 대부분(2026-07-19 여의도: raw div 로 떨어져 "우리 카드가 아닌" 팝업).
+  // 태그를 벗기고 <br> 을 줄바꿈으로 → 첫 줄 = 헤더인 우리 카드. 복합 HTML(div/img/a...)만 raw 유지.
+  const simple = !/<(?!\/?(?:b|strong|i|em|br)\b)[a-z][^>]*>/i.test(popup);
+  if (simple) {
+    const text = popup.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+    return buildPopupCardHtml(text);
+  }
+  return `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(popup).replace(/\n/g, '<br>')}</div>`;
 }
 
 /** 지도 popup 카드 HTML — 첫 줄 = 헤더, 나머지 = 본문 (라벨:값 행). 색 = Firebat 디자인 통일 (slate).

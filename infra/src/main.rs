@@ -794,7 +794,9 @@ async fn main() -> Result<()> {
         .with_capability(capability_manager.clone())
         // 무인(파이프라인) 정책 게이트 — EXECUTE 가 sandbox 직행이라 FC/MCP 디스패치 계층의
         // 비활성·requiresApproval 게이트를 우회하던 것을 executor 에서 동일 강제.
-        .with_module_manager(module_manager.clone()),
+        .with_module_manager(module_manager.clone())
+        // SAVE_PAGE dataCacheKey bake — 발행 시점 캐시 records 를 baked data 로 굳힘.
+        .with_sysmod_cache(cache_adapter.clone()),
     );
     // ToolManager 설정된 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
@@ -1132,7 +1134,11 @@ async fn main() -> Result<()> {
         .with_dynamic_tools(dynamic_tools_registry.clone());
     // modules = module 블록 publish-bake (pending 승인 commit·hub·admin 라우트 전부 이 Save 경유).
     let page_service =
-        grpc::page::PageServiceImpl::new(page_manager.clone(), module_manager.clone());
+        grpc::page::PageServiceImpl::new(
+            page_manager.clone(),
+            module_manager.clone(),
+            cache_adapter.clone(),
+        );
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =

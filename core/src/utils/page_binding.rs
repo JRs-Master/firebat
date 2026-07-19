@@ -24,6 +24,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use crate::managers::module::ModuleManager;
+use crate::utils::sysmod_cache::SysmodCacheAdapter;
 
 /// Per-spec bake budget — a decoy-nested spec cannot spawn unbounded module runs.
 const MAX_BINDINGS_PER_SPEC: usize = 20;
@@ -86,16 +87,22 @@ pub fn binding_gate(config: &serde_json::Value, requested_action: &str) -> Resul
 pub struct BakeReport {
     pub baked: usize,
     pub skipped: usize,
+    /// `dataCacheKey` props resolved into baked `data` (fence-injection contract, page edition).
+    pub cache_baked: usize,
     pub errors: Vec<String>,
 }
 
-/// Bake every `module` block (when != "request") in a page spec, in place.
+/// Bake every `module` block (when != "request") in a page spec, in place — and resolve any
+/// `dataCacheKey` props into baked `data` (the fence-injection contract, page edition: models
+/// habitually write dataCacheKey in page specs too, but a published page cannot resolve a
+/// 30-min sysmod cache at render time → silently empty chart. 2026-07-19 실측 2회).
 /// Failures never kill the save — the block keeps its previous `_baked` (stale-but-alive) and
 /// the reason lands in the report + WARN log.
 pub async fn bake_spec(
     spec: &mut serde_json::Value,
     modules: &Arc<ModuleManager>,
     project: Option<&str>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
 ) -> BakeReport {
     let mut report = BakeReport::default();
     // hub visitor save = inert binding (v1 — admin 컨텍스트만 bake).
@@ -106,11 +113,12 @@ pub async fn bake_spec(
         return report;
     };
     let mut budget = MAX_BINDINGS_PER_SPEC;
-    walk(body, modules, &mut report, &mut budget).await;
-    if report.baked > 0 || !report.errors.is_empty() {
+    walk(body, modules, cache, &mut report, &mut budget).await;
+    if report.baked > 0 || report.cache_baked > 0 || !report.errors.is_empty() {
         tracing::info!(
             target: "page_binding",
             baked = report.baked,
+            cache_baked = report.cache_baked,
             skipped = report.skipped,
             errors = report.errors.len(),
             "[page_binding] bake_spec done"
@@ -127,6 +135,7 @@ pub async fn bake_spec(
 fn walk<'a>(
     v: &'a mut serde_json::Value,
     modules: &'a Arc<ModuleManager>,
+    cache: Option<&'a Arc<SysmodCacheAdapter>>,
     report: &'a mut BakeReport,
     budget: &'a mut usize,
 ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
@@ -134,7 +143,7 @@ fn walk<'a>(
         match v {
             serde_json::Value::Array(arr) => {
                 for item in arr.iter_mut() {
-                    walk(item, modules, report, budget).await;
+                    walk(item, modules, cache, report, budget).await;
                 }
             }
             serde_json::Value::Object(obj) => {
@@ -142,13 +151,71 @@ fn walk<'a>(
                     bake_one(obj, modules, report, budget).await;
                     return; // do not descend into _baked
                 }
+                if obj
+                    .get("props")
+                    .and_then(|p| p.get("dataCacheKey"))
+                    .is_some()
+                {
+                    if let Some(props) = obj.get_mut("props").and_then(|p| p.as_object_mut()) {
+                        bake_cache_key(props, cache, report);
+                    }
+                }
                 for (_k, val) in obj.iter_mut() {
-                    walk(val, modules, report, budget).await;
+                    walk(val, modules, cache, report, budget).await;
                 }
             }
             _ => {}
         }
     })
+}
+
+/// `dataCacheKey` → baked `data` (fence FenceDataResolver 계약의 저장판 — 발행 페이지는
+/// 렌더 시점에 30분 sysmod 캐시를 해석할 수 없으므로 저장 시점에 굳힌다. dataRange/dataLimit
+/// 슬라이스·행 캡은 fence 주입과 동일 로직 공유).
+fn bake_cache_key(
+    props: &mut serde_json::Map<String, serde_json::Value>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
+    report: &mut BakeReport,
+) {
+    let Some(key) = props.get("dataCacheKey").and_then(|v| v.as_str()).map(String::from) else {
+        return;
+    };
+    let resolved = match cache {
+        Some(c) => c.read(&key, 0, usize::MAX).and_then(|v| {
+            v.get("records")
+                .and_then(|r| r.as_array())
+                .cloned()
+                .ok_or_else(|| "cache records missing".to_string())
+        }),
+        None => Err("no cache on this save path".to_string()),
+    };
+    match resolved {
+        Ok(records) => {
+            let props_view = serde_json::Value::Object(props.clone());
+            let sliced =
+                crate::managers::ai::render_exec::apply_data_slice(records, &props_view);
+            let rows = if sliced.len() > crate::managers::ai::render_exec::MAX_INJECT_ROWS {
+                sliced[sliced.len() - crate::managers::ai::render_exec::MAX_INJECT_ROWS..].to_vec()
+            } else {
+                sliced
+            };
+            props.remove("dataCacheKey");
+            props.insert("data".to_string(), serde_json::Value::Array(rows));
+            report.cache_baked += 1;
+        }
+        Err(err) => {
+            let has_data = props
+                .get("data")
+                .and_then(|v| v.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            if !has_data {
+                report.errors.push(format!(
+                    "dataCacheKey '{key}' resolve failed at save ({err}) — the published page will have no data; re-run the sysmod call and save with a fresh key, or use a module block"
+                ));
+            }
+        }
+    }
 }
 
 async fn bake_one(

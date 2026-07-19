@@ -116,15 +116,27 @@ async function main() {
     }
 
     if (action === 'search-keyword') {
-      if (!keyword) return outErr('error.keyword_required', {});
-      const params = { query: keyword, size: safeLimit };
-      if (categoryGroupCode) params.category_group_code = categoryGroupCode;
+      // Batch mode — `keywords` array (multi-marker maps: N places → one call. 2026-07-19 실측:
+      // 여의도 17개 단지명 좌표 찾기가 17콜 순차로 돌던 것 — 단지명 검색 = keyword 쪽이라
+      // geocoding 배치와 별개로 여기도 필요). Cap 30. 공통 옵션(중심·반경·카테고리) 공유.
+      const kwBatch = Array.isArray(data.keywords) ? data.keywords.filter((k) => typeof k === 'string' && k.trim()) : null;
+      const baseParams = {};
+      if (categoryGroupCode) baseParams.category_group_code = categoryGroupCode;
       if (typeof lat_center === 'number' && typeof lon_center === 'number') {
-        params.x = lon_center;
-        params.y = lat_center;
-        if (radius) params.radius = Math.min(20000, radius);
+        baseParams.x = lon_center;
+        baseParams.y = lat_center;
+        if (radius) baseParams.radius = Math.min(20000, radius);
       }
-      const r = await callApi(restKey, '/search/keyword.json', params);
+      if (kwBatch && kwBatch.length > 0) {
+        const results = [];
+        for (const q of kwBatch.slice(0, 30)) {
+          const r = await callApi(restKey, '/search/keyword.json', { ...baseParams, query: q, size: 3 });
+          results.push(r.ok ? { query: q, items: r.items } : { query: q, items: [], error: r.errorParams?.message ?? r.errorKey });
+        }
+        return out(true, { results, note: kwBatch.length > 30 ? 'capped at 30 keywords per call' : undefined });
+      }
+      if (!keyword) return outErr('error.keyword_required', {});
+      const r = await callApi(restKey, '/search/keyword.json', { ...baseParams, query: keyword, size: safeLimit });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, total: r.total });
     }

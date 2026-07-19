@@ -26,14 +26,17 @@ pub struct PageServiceImpl {
     /// module 블록 publish-bake — save 시 pageBinding 선언 모듈 실행(page_binding 헬퍼).
     /// pending 승인 commit·hub·admin 라우트가 전부 이 Save 를 타므로 여기 배선이 그 표면 전체 커버.
     modules: Arc<crate::managers::module::ModuleManager>,
+    /// dataCacheKey 페이지 bake — 저장 시 sysmod 캐시 records 를 baked data 로 굳힘.
+    cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
 }
 
 impl PageServiceImpl {
     pub fn new(
         manager: Arc<PageManager>,
         modules: Arc<crate::managers::module::ModuleManager>,
+        cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
     ) -> Self {
-        Self { manager, modules }
+        Self { manager, modules, cache }
     }
 
     /// hub project scoping — project 지정 시 page.project 와 일치할 때만 통과. admin(None/빈값)은 무검사.
@@ -155,6 +158,7 @@ impl PageService for PageServiceImpl {
                     &mut spec,
                     &self.modules,
                     args.project.as_deref(),
+                    Some(&self.cache),
                 )
                 .await;
                 serde_json::to_string(&spec).unwrap_or(args.spec.clone())

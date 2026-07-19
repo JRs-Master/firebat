@@ -38,6 +38,9 @@ pub struct RealTaskExecutor {
     /// EXECUTE 는 sandbox 직행이라 FC/MCP 디스패치 계층 게이트를 우회 — 같은 정책을 여기서 강제.
     /// None (테스트/경량 wiring) = 게이트 없음 (옛 동작).
     module: Option<Arc<crate::managers::module::ModuleManager>>,
+    /// SAVE_PAGE dataCacheKey bake — 저장 시 sysmod 캐시 records 를 baked data 로 굳힘.
+    /// None (테스트/경량 wiring) = bake skip.
+    sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
 }
 
 impl RealTaskExecutor {
@@ -58,6 +61,7 @@ impl RealTaskExecutor {
             log,
             capability: None,
             module: None,
+            sysmod_cache: None,
         }
     }
 
@@ -73,6 +77,15 @@ impl RealTaskExecutor {
         module: Arc<crate::managers::module::ModuleManager>,
     ) -> Self {
         self.module = Some(module);
+        self
+    }
+
+    /// SysmodCacheAdapter 설정된 채로 부팅 — SAVE_PAGE dataCacheKey bake 활성.
+    pub fn with_sysmod_cache(
+        mut self,
+        cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
+    ) -> Self {
+        self.sysmod_cache = Some(cache);
         self
     }
 
@@ -380,7 +393,13 @@ impl TaskExecutor for RealTaskExecutor {
         // module 블록 publish-bake — cron 파이프라인 재발행이 정기 페이지의 표준 경로.
         let mut spec = spec.clone();
         if let Some(modules) = &self.module {
-            crate::utils::page_binding::bake_spec(&mut spec, modules, None).await;
+            crate::utils::page_binding::bake_spec(
+                &mut spec,
+                modules,
+                None,
+                self.sysmod_cache.as_ref(),
+            )
+            .await;
         }
         let spec_str = serde_json::to_string(&spec).map_err(|e| {
             crate::i18n::t(

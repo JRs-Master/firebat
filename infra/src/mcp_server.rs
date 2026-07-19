@@ -1071,6 +1071,8 @@ pub struct SavePageHandler {
     pub page: Arc<PageManager>,
     /// module 블록 publish-bake — cron 직접 저장 분기용 (admin/hub 는 pending → commit → gRPC Save 가 bake).
     pub module_manager: Arc<ModuleManager>,
+    /// dataCacheKey 페이지 bake — 저장 시 sysmod 캐시 records 를 baked data 로 굳힘.
+    pub sysmod_cache: Arc<SysmodCacheAdapter>,
 }
 #[async_trait::async_trait]
 impl McpToolHandler for SavePageHandler {
@@ -1094,6 +1096,7 @@ impl McpToolHandler for SavePageHandler {
                     &mut spec,
                     &self.module_manager,
                     project.as_deref(),
+                    Some(&self.sysmod_cache),
                 )
                 .await;
                 serde_json::to_string(&spec).unwrap_or_default()
@@ -1916,7 +1919,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "save_page".into(),
-        description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(데이터 인라인/dataCacheKey bake·SAVE_PAGE 파이프라인 재발행 불필요).".into(),
+        description: "페이지 spec 저장 (생성/덮어쓰기). inputSchema: {slug, spec, status?, project?, visibility?, password?}. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 선언된 모듈만)을 실행해 결과 블록을 _baked 로 채운다 — 정기 갱신 페이지는 이 블록 + 크론 targetPath 'rebake:<slug>' 가 표준(SAVE_PAGE 파이프라인 재발행·agent 재발행 불필요). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워진다(1회 스냅샷 — 갱신은 안 됨).".into(),
         input_schema: schema_object(serde_json::json!({
             "slug": {"type": "string"},
             "spec": {"type": "object"},
@@ -1925,7 +1928,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "visibility": {"type": "string"},
             "password": {"type": "string"}
         })),
-        handler: Arc::new(SavePageHandler { page: deps.page.clone(), module_manager: deps.module.clone() }),
+        handler: Arc::new(SavePageHandler { page: deps.page.clone(), module_manager: deps.module.clone(), sysmod_cache: deps.cache.clone() }),
     }).await;
     state.register(McpTool {
         name: "delete_page".into(),

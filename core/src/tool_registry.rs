@@ -1548,7 +1548,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     //  사이드바 SSE 갱신 hook 만 유지. Recall events = 의미 있는 happening 만, 루틴 운영 제외.)
     tools.register(ToolDefinition {
         name: "save_page".to_string(),
-        description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 을 선언한 모듈만)을 실행해 결과 블록을 _baked 로 채움 — 정기 갱신 페이지용(rebake 크론과 짝).".to_string(),
+        description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션. spec.body 에 module 블록({type:\"module\", props:{module, args?, when:\"publish\"|\"request\"}})을 넣으면 저장 시 서버가 그 모듈(config 에 pageBinding 을 선언한 모듈만)을 실행해 결과 블록을 _baked 로 채움 — 정기 갱신 페이지용(rebake 크론과 짝). props 의 dataCacheKey 도 저장 시 실제 데이터로 구워짐(1회 스냅샷 — 갱신은 안 됨, 갱신 페이지는 module 블록).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -1566,12 +1566,14 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     let page = h.page.clone();
     let event_for_save_page = h.event.clone();
     let modules_for_save_page = h.module.clone();
+    let cache_for_save_page = h.cache.clone();
     tools.register_handler(
         "save_page",
         make_handler(move |args| {
             let page = page.clone();
             let event = event_for_save_page.clone();
             let modules = modules_for_save_page.clone();
+            let cache = cache_for_save_page.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -1585,7 +1587,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 // module 블록 publish-bake — 게이트(pageBinding opt-in·requiresApproval 거부·
                 // hub skip·캡)는 헬퍼 단일 소스. 실패 = 해당 블록만 skip(저장은 계속).
                 let mut spec = spec.clone();
-                crate::utils::page_binding::bake_spec(&mut spec, &modules, project).await;
+                crate::utils::page_binding::bake_spec(&mut spec, &modules, project, Some(&cache)).await;
                 let spec_str = serde_json::to_string(&spec).map_err(|e| {
                     crate::i18n::t(
                         "core.error.page.spec_serialize_failed",

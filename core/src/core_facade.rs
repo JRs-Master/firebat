@@ -78,9 +78,15 @@ impl Core {
             .ok_or_else(|| format!("page '{slug}' not found"))?;
         let mut spec: serde_json::Value = serde_json::from_str(&record.spec)
             .map_err(|e| format!("page '{slug}' spec is not valid JSON: {e}"))?;
-        let report =
-            crate::utils::page_binding::bake_spec(&mut spec, &self.module, record.project.as_deref())
-                .await;
+        // cache = None — rebake 는 등록 수 시간 뒤라 30분 sysmod 캐시는 이미 죽어 있음
+        // (dataCacheKey 는 저장 시점 1회 스냅샷 전용, 갱신은 module 블록 몫).
+        let report = crate::utils::page_binding::bake_spec(
+            &mut spec,
+            &self.module,
+            record.project.as_deref(),
+            None,
+        )
+        .await;
         if report.baked == 0 {
             // 바인딩이 없거나 전부 실패 — 재저장 없이 정직한 실패(빈 rebake 는 무의미).
             return Err(if report.errors.is_empty() {

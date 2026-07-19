@@ -27,7 +27,7 @@ pub type FenceDataResolver<'a> = &'a dyn Fn(&str) -> Result<Vec<Value>, String>;
 
 /// Injection row cap — protects message size when a huge cache (e.g. line-text cache of a
 /// scraped page) is referenced. Time-series keep the most recent rows (tail).
-const MAX_INJECT_ROWS: usize = 5000;
+pub(crate) const MAX_INJECT_ROWS: usize = 5000;
 
 /// Digits-only compare key: "2026-04-07" / "20260407" / "2026-04-07T09:30" all order
 /// correctly under prefix-truncated lexicographic compare.
@@ -62,7 +62,7 @@ fn date_in_bound(row_key: &str, bound: &str, is_from: bool) -> bool {
 /// oldest-first both handled). A slice that would empty the data falls back to the full
 /// records (bad range from the model must not blank the chart). Idempotent — re-running
 /// the sanitize pass on already-sliced data is a no-op.
-fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value> {
+pub(crate) fn apply_data_slice(records: Vec<Value>, props: &Value) -> Vec<Value> {
     let mut rows = records;
     if let Some(range) = props.get("dataRange").and_then(|v| v.as_object()) {
         let from = range.get("from").and_then(|v| v.as_str()).map(date_compare_key);
