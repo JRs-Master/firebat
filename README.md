@@ -494,6 +494,7 @@ systemctl restart firebat firebat-frontend
 ```
 
 - **system/-only change** (module config/code, prompts, skills, templates) = `git pull` + `systemctl restart firebat`. No build, no rsync — the dir is symlinked. (`components.json` is the exception: Rust `include_str!`-embeds it, so it needs a Rust rebuild.)
+- **⚠️ Ship Rust BEFORE (or with) config that a new binary must interpret.** `git pull` refreshes `system/` instantly, but a config field a *new* binary understands (e.g. a declarative `pageBinding.blocks`) is dead weight to the old binary — worse, if the module dropped its old code path in the same change, the feature breaks until the binary lands. When a change spans both channels, deploy the Rust artifact first, or accept a broken window between `git pull` and the binary swap.
 - **What triggers a Rust rebuild**: anything under `core/` `infra/` `proto/` `Cargo.*`. Module `.mjs`/`.py`/config/prompts are read at runtime (no rebuild).
 
 **Notes**
