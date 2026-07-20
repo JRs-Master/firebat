@@ -1010,7 +1010,7 @@ function OrderArgRows({ args, t, strict }: {
 /** Project Builder 빌드 카드 상태 — AiResponse.buildSession 직렬화 ({id, step, tier, status, createdAt}). */
 type BuildSessionView = { id?: string; step?: string; tier?: string; status?: string; createdAt?: number; request?: string };
 /** 빌드 세션의 한 단계(슬라이드) — 그 단계 메시지의 state + 칩/픽/pending. */
-type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: Message['suggestions']; pickedSuggestion?: string; pendingActions?: PendingAction[] };
+type BuildStageEntry = { msgId: string; state: BuildSessionView; suggestions?: Message['suggestions']; pickedSuggestion?: string; pendingActions?: PendingAction[]; note?: string };
 /** 빌드 카드 1개 = 세션의 단계들(슬라이드 캐러셀). anchor(마지막) 메시지에만 전달, 앞 단계 메시지는 fold. */
 type BuildCardData = { stages: BuildStageEntry[] };
 
@@ -1137,15 +1137,23 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   // buildSession 은 최종 AiResponse 에만 실려서, 없으면 생성 내내(one-shot 13분) stepper/로더가 직전
   // step 에 frozen. 턴 끝나면 liveStep=undefined 라 실제 bs.step 으로 복귀.
   const liveIdx = liveStep ? STEPS.findIndex(s => s.key === liveStep) : -1;
-  const curIdx = liveIdx >= 0 ? liveIdx : STEPS.findIndex(s => s.key === bs.step);
+  const rawIdx = liveIdx >= 0 ? liveIdx : STEPS.findIndex(s => s.key === bs.step);
   const stage = stages[vi];
   const onLatest = vi === last;
   // 로더(라이브 상태)는 **구현(앱 빌드)** 때만 — 구현 단계 OR 최신서 (완료 OR 구현 생성 중). 옛 `onLatest && building`
   // 은 디자인→검토 같은 옵션 단계 생성에도 떠서(사용자: "디자인부터 팩맨") 다음 생성 단계가 implement 일 때로 한정.
-  const genNextImplement = !!building && curIdx >= 0 && STEPS[Math.min(curIdx + 1, STEPS.length - 1)].key === 'implement';
+  const genNextImplement = !!building && rawIdx >= 0 && STEPS[Math.min(rawIdx + 1, STEPS.length - 1)].key === 'implement';
+  // 구현물을 만들고 있으면 stepper 도 '구현'으로 전진 — 옛엔 stepper 가 직전 단계(검토)에 머문 채 본문만
+  // "만드는 중이에요" 라 단계와 문구가 어긋났다(사용자: "검토단계에서 만드는 중 나오면 안 되지").
+  const implIdx = STEPS.findIndex(s => s.key === 'implement');
+  const curIdx = genNextImplement && implIdx >= 0 ? implIdx : rawIdx;
   const stageImplement = stage.state.step === 'implement' || (onLatest && (done || genNextImplement));
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
+  // 단계 안내문 — 옛엔 카드 *바깥* 일반 답변으로 떠서 카드와 따로 놀았다(사용자: "PB카드 위에 Continue,
+  // 마지막 옵션들 골라주세요 … 카드 내부로 흡수"). 내용 없는 진행 채움말("Continue." 류 = 모델이 단계만
+  // 넘기며 뱉는 신호)은 카드가 이미 stepper 로 표시하므로 생략 — 길이 기준(일반 규칙, 문구 나열 아님).
+  const note = stage.note && stage.note.trim().length > 12 ? stage.note.trim() : '';
   return (
     <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
@@ -1155,32 +1163,49 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
             const stepDone = done || i < curIdx;
             const cur = !done && i === curIdx;
             const stageIdx = stages.findIndex(st => st.state.step === s.key);
+            // 발행 완료 = 마지막 칩(구현)이 '완료'로 바뀜 — 별도 완료 배지를 옆에 띄우는 대신
+            // 진행 표시 자체가 종료 상태를 말하게 (사용자: "구현이 완료로 바뀌게 하는 게 낫지 않을까").
+            const isFinishChip = done && i === STEPS.length - 1;
             return (
               <div key={s.key} className="flex items-center gap-1">
                 <button type="button" disabled={stageIdx < 0} onClick={() => { if (stageIdx >= 0) setViewIdx(stageIdx); }}
                   className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                    stepDone ? 'bg-blue-100 text-blue-700'
+                    isFinishChip ? 'bg-emerald-100 text-emerald-700 font-bold'
+                    : stepDone ? 'bg-blue-100 text-blue-700'
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
                   } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}>
-                  {stepDone ? '✓ ' : `${i + 1}. `}{s.label}
+                  {stepDone ? '✓ ' : `${i + 1}. `}{isFinishChip ? t('build.done') : s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
               </div>
             );
           })}
         </div>
-        {done && <span className="text-[11px] text-emerald-600 font-semibold ml-auto">✓ {t('build.done')}</span>}
         {expired && <span className="text-[11px] text-slate-400 ml-auto">⏰ {t('build.expired')}</span>}
       </div>
       {stageImplement ? (
-        <div className="p-3 h-[310px] flex items-center justify-center"><BuildLiveStatus phase={buildPhase} status={buildStatus} /></div>
+        <div className="flex flex-col p-3 h-[310px]">
+          {note && (
+            <div className="shrink-0 max-h-[76px] overflow-y-auto text-[12.5px] leading-relaxed text-slate-600 mb-2">
+              {renderMarkdown(note)}
+            </div>
+          )}
+          <div className="flex-1 min-h-0 flex items-center justify-center"><BuildLiveStatus phase={buildPhase} status={buildStatus} /></div>
+        </div>
       ) : (
         <div className="flex flex-col gap-2.5 p-3 h-[310px]">
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 shrink-0">
             <FirebatGhostAssembly size={36} variant="accent" />
-            <span>{onLatest ? t('build.preparing') : (STEPS.find(s => s.key === stage.state.step)?.label ?? '')}</span>
+            {/* 옵션 단계 캡션 — 생성 중이면 PB 문맥 문구("다음 단계 준비 중"), 아니면 그 단계 이름.
+                옛 generic '준비 중' 은 채팅 상태줄 문구라 빌드 카드에선 어색했다(사용자 지적). */}
+            <span>{onLatest ? (building ? t('build.designing') : (STEPS[curIdx]?.label ?? t('build.preparing'))) : (STEPS.find(s => s.key === stage.state.step)?.label ?? '')}</span>
           </div>
+          {note && (
+            <div className="shrink-0 max-h-[76px] overflow-y-auto text-[12.5px] leading-relaxed text-slate-600">
+              {renderMarkdown(note)}
+            </div>
+          )}
           {stageChips && (
             <div className="flex-1 min-h-0 overflow-y-auto">
               <SuggestionButtons
@@ -1291,6 +1316,8 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
           })()}
           {(!msg.isThinking || msg.streaming || msg.content) && (
             <div className="flex flex-col gap-5">
+              {/* 빌드 카드가 붙는 메시지는 본문 텍스트를 카드 안(note)에서 렌더 — 카드 위에 안내문이 따로
+                  떠서 카드와 따로 놀던 것 흡수. 블록(차트 등)이 있는 턴은 정보라 그대로 표시. */}
               {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}
               {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
                 <div className="flex flex-col gap-3">
@@ -1315,7 +1342,7 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                 </div>
               ) : (
                 <>
-                  {msg.content && (
+                  {msg.content && !buildCard && (
                     <div className="text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1">
                       {renderMarkdown(msg.content)}
                     </div>
@@ -2485,7 +2512,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   mids.push(m.id);
                   let sm = byStep.get(bsv.id);
                   if (!sm) { sm = new Map<string, BuildStageEntry>(); byStep.set(bsv.id, sm); }
-                  sm.set(bsv.step ?? '', { msgId: m.id, state: bsv, suggestions: m.suggestions, pickedSuggestion: m.pickedSuggestion, pendingActions: m.pendingActions });
+                  // note = 그 단계의 안내 텍스트. 카드 *안*에서 렌더하고 메시지 본문에선 숨긴다
+                  // (카드 위에 따로 뜨던 "Continue." / "마지막 옵션들 골라주세요" 흡수).
+                  sm.set(bsv.step ?? '', { msgId: m.id, state: bsv, suggestions: m.suggestions, pickedSuggestion: m.pickedSuggestion, pendingActions: m.pendingActions, note: typeof m.content === 'string' ? m.content : undefined });
                 }
                 for (const [sid, sm] of byStep) {
                   const stages = STEP_ORDER.filter(s => sm.has(s)).map(s => sm.get(s)!);
@@ -2523,7 +2552,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                       const _real = _tt && !(Object.values(THINKING_STATUS) as string[]).includes(_tt)
                         ? (_tt.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('[도구') && !l.startsWith('[계획')).slice(-1)[0] || '')
                         : '';
-                      buildStatus = _real || lastMsg.statusText;
+                      // statusText fallback 은 **도구 진행("도구 호출 중: X")만** — 일반 상태문("답변 준비 중…")은
+                      // 채팅 상태줄 문구라 빌드 카드에 그대로 뜨면 어색했다(사용자 지적). 없으면 카드가 단계 문구 표시.
+                      const _st = lastMsg.statusText;
+                      buildStatus = _real || (_st && _st.includes(':') ? _st : undefined);
                       liveStep = lastMsg.liveBuildStep;
                       foldedBuildMsgIds.add(lastMsg.id);
                     }

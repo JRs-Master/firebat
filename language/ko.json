@@ -58,7 +58,7 @@
     "expired": "기간이 만료되었습니다",
     "now_step": "지금: {step} 단계",
     "preview_pending": "곧 미리보기가 나타나요",
-    "preparing": "준비 중",
+    "preparing": "단계 준비 중",
     "making": "만드는 중이에요",
     "completed": "완성했어요",
     "published": "발행했어요",
@@ -71,7 +71,8 @@
       "build": "빌드 진행 중",
       "plan": "계획 세우는 중",
       "search": "컴포넌트 찾는 중"
-    }
+    },
+    "designing": "다음 단계 준비 중이에요"
   },
   "error": {
     "module": {

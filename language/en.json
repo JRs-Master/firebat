@@ -58,7 +58,7 @@
     "expired": "expired",
     "now_step": "Now: {step}",
     "preview_pending": "Preview coming up",
-    "preparing": "Preparing",
+    "preparing": "Preparing step",
     "making": "Building…",
     "completed": "All done!",
     "published": "Published",
@@ -71,7 +71,8 @@
       "build": "Building",
       "plan": "Planning",
       "search": "Finding components"
-    }
+    },
+    "designing": "Preparing next step…"
   },
   "error": {
     "module": {
