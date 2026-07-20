@@ -658,7 +658,8 @@ export function CalendarPanel({
             job={job}
             hubContext={hubContext}
             onClose={() => setEditingCron(null)}
-            onSaved={() => { setEditingCron(null); void fetchCron(); }}
+            // 저장 = 목록 갱신만 (모달 유지 — 닫기는 명시적으로). CronPanel 과 동일.
+            onSaved={() => { void fetchCron(); }}
             onDelete={async () => { if (await deleteCronJob(job.jobId)) setEditingCron(null); }}
           />
         );

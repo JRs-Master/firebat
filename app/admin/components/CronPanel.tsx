@@ -406,7 +406,8 @@ export function CronPanel({
           job={editing}
           hubContext={hubContext}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); invalidateCron(); }}
+          // 저장 = 목록 갱신만 (모달 유지 — 사용자가 닫기를 눌러야 닫힘).
+          onSaved={() => { invalidateCron(); }}
           onDelete={() => { handleCancel(editing.jobId); setEditing(null); }}
         />
       )}
@@ -484,6 +485,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   const [permanent, setPermanent] = useState(!job?.endAt);
   const [showInCalendar, setShowInCalendar] = useState<boolean>(!!job?.showInCalendar);
   const [saving, setSaving] = useState(false);
+  const [savedTick, setSavedTick] = useState(false); // 저장 완료 순간 표시 (모달이 안 닫히므로 피드백 필요)
   const [error, setError] = useState('');
 
   // ── 표준 메커니즘: runWhen / retry / notify (JSON 직접 편집) ──
@@ -603,6 +605,13 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
           await apiPut('/api/cron', body, { category: 'cron' });
         }
         onSaved();
+        // 신규 등록 = 등록 후 목록으로 (관례) / 기존 편집 = 모달 유지 + "저장됨" 표시.
+        if (isNew) {
+          onClose();
+        } else {
+          setSavedTick(true);
+          setTimeout(() => setSavedTick(false), 2000);
+        }
       } catch (e: any) {
         setError(e?.message || '저장 실패');
       }
@@ -979,7 +988,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
               취소
             </button>
             <SaveButton
-              state={(saving ? 'saving' : 'idle') as SaveButtonState}
+              state={(saving ? 'saving' : savedTick ? 'saved' : 'idle') as SaveButtonState}
               label={isNew ? '등록' : undefined}
               onClick={handleSave}
             />
