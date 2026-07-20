@@ -185,7 +185,11 @@ export function CronPanel({
     invalidateCron();
   };
 
-  const formatCron = (expr: string) => {
+  const formatCron = (expr: string): string => {
+    // 복수 표현식(`|` = 한 잡의 여러 시각)은 각각 풀어서 " · " 로 병기 (describeCron 미러).
+    if (expr.includes('|')) {
+      return expr.split('|').map(e => e.trim()).filter(Boolean).map(formatCron).join(' · ');
+    }
     const parts = expr.split(/\s+/);
     if (parts.length !== 5) return expr;
     const [min, hour, dom, mon, dow] = parts;
@@ -666,7 +670,20 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-semibold text-slate-500">반복 주기</label>
-                <button onClick={() => setFreqType(freqType === 'advanced' ? 'minutes' : 'advanced')}
+                {/* 모드 전환 시 값 연동 — 간편→고급은 지금 조립된 표현식을 그대로 싣고,
+                    고급→간편은 입력된 표현식을 파싱해 시각·요일 행으로 복원(파싱 불가면 분 간격 기본). */}
+                <button onClick={() => {
+                  if (freqType === 'advanced') {
+                    const p = parseCronToFreq(advancedCron);
+                    setFreqTimes(p.times);
+                    setFreqDows(p.dows);
+                    setFreqInterval(p.interval);
+                    setFreqType(p.type === 'advanced' ? 'minutes' : p.type);
+                  } else {
+                    setAdvancedCron(buildCronTime());
+                    setFreqType('advanced');
+                  }
+                }}
                   className="text-[10px] text-blue-500 hover:text-blue-700 transition-colors">
                   {freqType === 'advanced' ? '간편 모드' : '고급'}
                 </button>
@@ -686,6 +703,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
                     <p>형식: 분(0-59) 시(0-23) 일(1-31) 월(1-12) 요일(0-6, 0=일)</p>
                     <p>* = 매번 · */N = N마다 · 1,3,5 = 특정 값</p>
                     <p>0 9 * * * = 매일 9시 · 0 9 * * 1-5 = 평일 9시 · */30 * * * * = 30분마다</p>
+                    <p>| 로 여러 시각 병기 = 잡 하나 (0 2 * * * | 55 16 * * * → 매일 2:00·16:55)</p>
                   </div>
                 </div>
               ) : (
