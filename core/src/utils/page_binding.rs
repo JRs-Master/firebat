@@ -37,9 +37,18 @@ const MAX_BAKED_BYTES: usize = 256 * 1024;
 pub struct PageBinding {
     /// Template text-sugar alias (`{stock symbol="..."}`). Optional — block form works without it.
     pub alias: Option<String>,
-    /// The ONE action allowed to run from a page binding. Its contract:
-    /// `{success, data:{blocks:[{type,props},...]}}`(모듈이 렌더 소유).
+    /// The ONE action allowed to run from a page binding.
     pub action: String,
+    /// Fixed args merged under the block's own args (e.g. a constant API flag).
+    pub args: Option<serde_json::Value>,
+    /// **Declarative render template** — the general path: any module can expose page data with
+    /// config alone (no module code), because the framework never has to guess the mapping:
+    /// the template says which response field feeds which component.
+    ///   `"$.a.b"` (whole string) → that path of the module's `data`
+    ///   `"{name}"` (whole string) → that block arg
+    /// Unresolvable prop → dropped; a block whose `$.` data is missing → skipped.
+    /// Absent = the module returns `data.blocks` itself (code path, for computed values).
+    pub blocks: Option<Vec<serde_json::Value>>,
 }
 
 pub fn parse_page_binding(config: &serde_json::Value) -> Option<PageBinding> {
@@ -53,7 +62,88 @@ pub fn parse_page_binding(config: &serde_json::Value) -> Option<PageBinding> {
         .and_then(|v| v.as_str())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
-    Some(PageBinding { alias, action })
+    let args = pb.get("args").filter(|v| v.is_object()).cloned();
+    let blocks = pb
+        .get("blocks")
+        .and_then(|v| v.as_array())
+        .filter(|a| !a.is_empty())
+        .cloned();
+    Some(PageBinding { alias, action, args, blocks })
+}
+
+/// Declarative template fill — `"$.path"` from the module response, `"{arg}"` from block args.
+/// Returns None when a reference cannot be resolved (caller drops that prop / block).
+fn fill_template(
+    tpl: &serde_json::Value,
+    data: &serde_json::Value,
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    match tpl {
+        serde_json::Value::String(s) => {
+            if let Some(path) = s.strip_prefix("$.") {
+                return crate::utils::path_resolve::resolve_field_path(data, path).cloned();
+            }
+            if s.len() > 2 && s.starts_with('{') && s.ends_with('}') && !s.contains(' ') {
+                let key = &s[1..s.len() - 1];
+                return args.get(key).cloned();
+            }
+            Some(tpl.clone())
+        }
+        serde_json::Value::Array(arr) => Some(serde_json::Value::Array(
+            arr.iter().filter_map(|v| fill_template(v, data, args)).collect(),
+        )),
+        serde_json::Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (k, v) in map {
+                // 해결 안 된 참조는 그 prop 만 빠진다 — 빈 문자열이 컴포넌트에 흘러드는 것보다 낫다.
+                if let Some(filled) = fill_template(v, data, args) {
+                    out.insert(k.clone(), filled);
+                }
+            }
+            Some(serde_json::Value::Object(out))
+        }
+        _ => Some(tpl.clone()),
+    }
+}
+
+/// 선언형 blocks 템플릿 → 실제 블록. `$.` 데이터 참조가 하나라도 해결 안 된 블록은 통째 skip
+/// (데이터 없는 차트/표를 그리느니 빼는 게 낫다).
+pub fn render_declared_blocks(
+    template: &[serde_json::Value],
+    data: &serde_json::Value,
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for tpl in template {
+        // 이 블록이 요구하는 데이터 경로가 실제로 있는지 먼저 확인.
+        let mut missing = false;
+        collect_data_refs(tpl, &mut |path| {
+            if crate::utils::path_resolve::resolve_field_path(data, path).is_none() {
+                missing = true;
+            }
+        });
+        if missing {
+            continue;
+        }
+        if let Some(v) = fill_template(tpl, data, args) {
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// 템플릿 안 `"$.path"` 참조 순회 (블록 skip 판정용).
+fn collect_data_refs(v: &serde_json::Value, f: &mut impl FnMut(&str)) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let Some(p) = s.strip_prefix("$.") {
+                f(p);
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|x| collect_data_refs(x, f)),
+        serde_json::Value::Object(m) => m.values().for_each(|x| collect_data_refs(x, f)),
+        _ => {}
+    }
 }
 
 /// Pure gate decision — shared by publish-bake (Rust) and mirrored by the TS request-resolve
@@ -268,27 +358,43 @@ async fn bake_one(
 
     // 실행 — run_raw = 풀 데이터(auto-cache truncation 없음). 게이트(enabled·스키마 검증·
     // sandbox·net_guard)는 run_impl 이 그대로 적용.
-    let mut input = serde_json::Map::new();
-    input.insert("action".to_string(), serde_json::Value::String(action.clone()));
+    // 인자 = config 의 고정 args(기본값) 위에 블록 args 를 덮어씀.
+    let binding = parse_page_binding(&config);
+    let mut block_args = serde_json::Map::new();
+    if let Some(fixed) = binding.as_ref().and_then(|b| b.args.as_ref()).and_then(|a| a.as_object()) {
+        for (k, v) in fixed {
+            block_args.insert(k.clone(), v.clone());
+        }
+    }
     if let Some(args) = props.get("args").and_then(|a| a.as_object()) {
         for (k, val) in args {
             if k != "action" {
-                input.insert(k.clone(), val.clone());
+                block_args.insert(k.clone(), val.clone());
             }
         }
     }
+    let mut input = block_args.clone();
+    input.insert("action".to_string(), serde_json::Value::String(action.clone()));
     match modules.run_raw(&module, &serde_json::Value::Object(input)).await {
         Ok(out) if out.success => {
-            let blocks = out
-                .data
-                .get("blocks")
-                .and_then(|b| b.as_array())
-                .cloned()
-                .unwrap_or_default();
+            // 블록 소스 2갈래 — 선언형 템플릿(config `pageBinding.blocks`, 모듈 코드 0)이 있으면
+            // 그것으로 조립하고, 없으면 모듈이 직접 반환한 `data.blocks`(계산이 필요한 모듈의 탈출구).
+            let declared = binding.as_ref().and_then(|b| b.blocks.as_ref());
+            let blocks = match declared {
+                Some(tpl) => render_declared_blocks(tpl, &out.data, &block_args),
+                None => out
+                    .data
+                    .get("blocks")
+                    .and_then(|b| b.as_array())
+                    .cloned()
+                    .unwrap_or_default(),
+            };
             if blocks.is_empty() {
-                report
-                    .errors
-                    .push(format!("'{module}:{action}' returned no data.blocks — pageBinding contract"));
+                report.errors.push(if declared.is_some() {
+                    format!("'{module}:{action}' declared blocks resolved to nothing — check the `$.` paths in pageBinding.blocks against the action's response")
+                } else {
+                    format!("'{module}:{action}' returned no data.blocks — pageBinding contract")
+                });
                 return;
             }
             if blocks.len() > MAX_BAKED_BLOCKS {

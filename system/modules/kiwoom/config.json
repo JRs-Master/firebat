@@ -433,7 +433,6 @@
       "action": {
         "type": "string",
         "enum": [
-          "page_blocks",
           "ka00001",
           "ka00198",
           "ka01300",
@@ -757,18 +756,6 @@
       "mock": {
         "type": "boolean",
         "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."
-      },
-      "stk_cd": {
-        "type": "string",
-        "description": "[page_blocks] 6자리 종목코드 (예: 005930). params 안에 넣어도 된다."
-      },
-      "limit": {
-        "type": "number",
-        "description": "[page_blocks] 차트 봉 개수 (기본 120, 최대 600)."
-      },
-      "title": {
-        "type": "string",
-        "description": "[page_blocks] 차트 제목 (기본: 종목코드)."
       }
     },
     "additionalProperties": false
@@ -1102,6 +1089,24 @@
   ],
   "pageBinding": {
     "alias": "kstock",
-    "action": "page_blocks"
+    "action": "ka10081",
+    "args": {
+      "upd_stkpc_tp": "1"
+    },
+    "blocks": [
+      {
+        "type": "stock_chart",
+        "props": {
+          "symbol": "{stk_cd}",
+          "title": "{title}",
+          "data": "$.stk_dt_pole_chart_qry",
+          "indicators": [
+            "MA5",
+            "MA20",
+            "MA60"
+          ]
+        }
+      }
+    ]
   }
 }

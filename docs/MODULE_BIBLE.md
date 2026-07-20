@@ -268,10 +268,19 @@ node scripts/gen.mjs             # _apis.json → config + index
 #### `pageBinding` — 페이지↔모듈 바인딩 (발행 bake · 방문 SSR · rebake 크론 · shortcode, 2026-07-18)
 ```json
 {
-  "pageBinding": { "alias": "stock", "action": "page_blocks" }
+  "pageBinding": {
+    "alias": "kstock",
+    "action": "ka10081",
+    "args": { "upd_stkpc_tp": "1" },
+    "blocks": [
+      { "type": "stock_chart",
+        "props": { "symbol": "{stk_cd}", "title": "{title}", "data": "$.stk_dt_pole_chart_qry" } }
+    ]
+  }
 }
 ```
 발행 페이지가 모듈 데이터를 소비하는 표준 규약. PageSpec 의 `module` 블록(`{type:"module", props:{module, action?, args?, when, cacheTtl?}}`)이 이 선언을 참조한다 — **선언한 모듈의 선언된 액션 하나만** 페이지 표면에서 실행 가능(폐쇄 opt-in 집합 = "페이지 저장으로 임의 sysmod 실행" 원천 차단).
+- **블록 소스 2갈래 — 선언형이 기본**: config `blocks` 템플릿을 쓰면 **모듈 코드 0**으로 기존 액션을 그대로 페이지에 붙인다(프레임워크가 매핑을 추측하지 않는 이유 = 템플릿이 어느 응답 필드가 어느 컴포넌트로 가는지 말해주기 때문). 치환 규칙 = `"$.a.b"`(문자열 전체) → 모듈 응답 `data` 의 그 경로 / `"{name}"` → 블록 args(+config `args` 기본값). 해결 안 된 prop = 그 prop 만 제거 / `$.` 데이터가 없는 블록 = 통째 skip. **계산·가공이 필요한 모듈만**(등락률 산출, 단위 변환 등) `blocks` 없이 전용 액션을 만들어 `data.blocks` 를 직접 반환(탈출구 — yfinance `page_blocks`).
 - **액션 계약**: `{success, data:{blocks:[{type,props},...]}}` 반환 — **모듈이 렌더를 소유**한다(프레임워크가 결과→컴포넌트 매핑을 추측하지 않음). 레퍼런스 = yfinance `page_blocks`.
 - **when 축**: `publish`(기본) = 저장 경로가 서버에서 실행해 `_baked` 병기(바인딩은 산 채 유지 → `rebake:<slug>` 크론이 표준 정기 페이지) / `request` = 발행 SSR 이 방문 시 resolve(TTL 캐시 + single-flight, 실패 = `_baked` 폴백. 신규 공개 endpoint 0 — RSC 내부).
 - **보안**: `requiresApproval` 액션은 선언해도 전면 거부(page-form 게이트 미러) / hub-scope 저장 = bake skip(inert 저장) / `_baked` 캡 = 블록 50 · 256KB · 스펙당 바인딩 20. 게이트 로직 = Rust `page_binding.rs` ↔ TS `lib/page-binding-gate.ts` 미러(단일 정책).
