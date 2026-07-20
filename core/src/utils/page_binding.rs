@@ -374,8 +374,29 @@ async fn bake_one(
             }
         }
     }
-    let mut input = block_args.clone();
+    // Envelope dialect — big modules (kiwoom·한투) declare a top-level `params` object and reject
+    // flat args (`additionalProperties: false`); small modules (yfinance) take flat args. Mirror
+    // the model's own successful call shape: wrap non-action args into `params` when the schema
+    // declares it, else spread flat. Schema-driven (no per-module hardcode), same philosophy as
+    // the run_impl `inputData` absorber. Presentation-only args (e.g. a chart `title`) ride along
+    // harmlessly — a params object without additionalProperties:false accepts them and the module
+    // reads only what it needs (they still feed the block template via `block_args`).
+    let wants_params = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.get("params"))
+        .and_then(|p| p.get("type"))
+        .and_then(|t| t.as_str())
+        == Some("object");
+    let mut input = serde_json::Map::new();
     input.insert("action".to_string(), serde_json::Value::String(action.clone()));
+    if wants_params {
+        input.insert("params".to_string(), serde_json::Value::Object(block_args.clone()));
+    } else {
+        for (k, v) in &block_args {
+            input.insert(k.clone(), v.clone());
+        }
+    }
     match modules.run_raw(&module, &serde_json::Value::Object(input)).await {
         Ok(out) if out.success => {
             // 모듈이 큰 배열을 `_cache` 로 빼는 관행(응답엔 _cacheKey 만 남음)을 흡수 — 방금 그
