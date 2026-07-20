@@ -250,7 +250,7 @@ async function handleDetail(OC, data) {
     return out(true, {
       found: false,
       requested: { target, ID: id ?? null, MST: mst ?? null },
-      note: 'the API returned an empty body for this id — do NOT treat this as content. Re-check the id against the search result field (판례일련번호 / 법령일련번호 of THAT target), or open 판례상세링크 from the search item. If the body cannot be retrieved, say so instead of writing from memory.',
+      note: 'the API returned an empty body for this id — do NOT treat this as content. Re-check the id against the search result field (판례일련번호 / 법령일련번호 of THAT target), or open 판례상세링크 from the search item.',
     });
   }
   // 조문이 빈 경우 디버그용 키 목록 포함
@@ -345,16 +345,19 @@ function parseSearchResult(target, json) {
 
 // ── 본문 결과 파싱 ──────────────────────────────────────────────────────────
 // API 응답 root 키: 영어(law) 또는 한국어(법령) 둘 다 가능
+// 검색(lawSearch.do)은 `XxxSearch`, 상세(lawService.do)는 `XxxService` 래퍼로 응답한다.
+// 2026-07-20 실측: 판례 상세가 {"PrecService":{판시사항…}} 인데 후보 키에 없어 root 를 못 찾고
+// 전 필드가 빈 값 → cleanObject 가 {} 로 만들어 "본문 없음"처럼 보였다(파서 버그).
 const ROOT_KEYS = {
-  law:       ['law', 'eflaw', '법령'],
-  eflaw:     ['eflaw', 'law', '법령'],
-  prec:      ['prec', '판례'],
-  admrul:    ['admrul', '행정규칙'],
-  ordin:     ['ordin', '자치법규'],
-  detc:      ['detc', '헌재결정례'],
-  expc:      ['expc', '법령해석례'],
-  trty:      ['trty', '조약'],
-  lsHistory: ['lsHistory', '연혁법령', 'law', '법령'],
+  law:       ['law', 'eflaw', '법령', 'LawService', 'EfLawService'],
+  eflaw:     ['eflaw', 'law', '법령', 'LawService', 'EfLawService'],
+  prec:      ['prec', '판례', 'PrecService'],
+  admrul:    ['admrul', '행정규칙', 'AdmRulService'],
+  ordin:     ['ordin', '자치법규', 'OrdinService'],
+  detc:      ['detc', '헌재결정례', 'DetcService'],
+  expc:      ['expc', '법령해석례', 'ExpcService'],
+  trty:      ['trty', '조약', 'TrtyService'],
+  lsHistory: ['lsHistory', '연혁법령', 'law', '법령', 'LawService'],
 };
 
 function findRoot(json, target) {
@@ -367,6 +370,15 @@ function findRoot(json, target) {
   for (const vals of Object.values(ROOT_KEYS)) {
     for (const k of vals) {
       if (json[k]) return json[k];
+    }
+  }
+  // 미등록 래퍼 흡수 — 응답이 객체 키 하나짜리 래퍼({"XxxService":{…}})면 그 값이 root.
+  // 래퍼 이름이 바뀌거나 새 target 이 생겨도 파서가 따라간다(이름 나열에만 의존하지 않음).
+  if (json && typeof json === 'object' && !Array.isArray(json)) {
+    const outer = Object.keys(json).filter(k => k !== '_raw');
+    if (outer.length === 1) {
+      const inner = json[outer[0]];
+      if (inner && typeof inner === 'object') return inner;
     }
   }
   return json;
