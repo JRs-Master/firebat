@@ -203,24 +203,18 @@ def main():
         # limit 명시 — 마지막 N개 cut
         if isinstance(limit, int) and limit > 0 and len(records) > limit:
             records = records[-limit:]
-        # 50행+ → cache 모드 (큰 응답을 메인 context 에 포함하지 않음). 이하 → 인라인 records.
-        # 임계값 50 — 행당 ~7 필드 × 평균 60자 = ~420자/행 × 50 = ~21KB. 그 이상이면 cache 가치.
-        if len(records) >= 50:
-            return out(True, {
-                'symbol': symbol,
-                'period': period,
-                'interval': interval,
-                'firstDate': records[0].get('date') if records else None,
-                'lastDate': records[-1].get('date') if records else None,
-                '_cache': {
-                    'records': records,
-                    'sysmod': 'yfinance',
-                    'action': 'history',
-                    'params': {'symbol': symbol, 'period': period, 'interval': interval, 'start': start, 'end': end},
-                    'ttlSec': 600,
-                },
-            })
-        return out(True, {'symbol': symbol, 'records': records})
+        # 캐시는 인프라 몫 — sandbox auto-cache 가 크기와 무관하게 _cacheKey 를 붙이고 큰 응답만
+        # 잘라 보낸다. 모듈이 50행 임계로 스스로 records 를 빼던 옛 분기는 폐기: 응답 shape 이
+        # 크기에 따라 달라져(작으면 records, 크면 없음) 소비 절차가 갈렸고, 페이지 선언형 바인딩도
+        # 그 필드를 못 잡았다. 항상 같은 필드로 돌려준다.
+        return out(True, {
+            'symbol': symbol,
+            'period': period,
+            'interval': interval,
+            'firstDate': records[0].get('date') if records else None,
+            'lastDate': records[-1].get('date') if records else None,
+            'records': records,
+        })
 
     # page_blocks — pageBinding contract: return render blocks ({success, data:{blocks:[...]}}).
     # The module OWNS its rendering (framework never guesses a data->component mapping).

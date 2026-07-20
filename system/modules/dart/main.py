@@ -363,21 +363,11 @@ def main():
         records = result.get('list', [])
         # sub-query 적용 (where/fields. limit 은 page_count 로 이미 처리)
         records = apply_subquery(records, fields=data.get('fields'), where=data.get('where'))
-        # 50건+ → cache 모드. limit=100 정확히 받아도 발동 (DART API max page_count=100).
-        if len(records) >= 50:
-            return out(True, {
-                'corp_code': corp_code,
-                'total_count': result.get('total_count', 0),
-                'total_page': result.get('total_page', 0),
-                '_cache': {
-                    'records': records,
-                    'sysmod': 'dart',
-                    'action': 'list',
-                    'params': {'corp_code': corp_code, 'bgn_de': data.get('bgn_de'), 'end_de': data.get('end_de')},
-                    'ttlSec': 600,
-                },
-            })
+        # 캐시는 인프라 몫(sandbox auto-cache = 크기 무관 _cacheKey + 큰 응답만 절단).
+        # 옛 50건 분기는 응답 shape 을 크기에 따라 바꿔(50건+ 면 `list` 키가 통째로 사라짐)
+        # 소비 절차를 갈랐다 → 항상 `list` 로 통일.
         return out(True, {
+            'corp_code': corp_code,
             'list': records,
             'total_count': result.get('total_count', 0),
             'total_page': result.get('total_page', 0),

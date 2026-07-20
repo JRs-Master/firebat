@@ -238,7 +238,7 @@ fn walk<'a>(
             }
             serde_json::Value::Object(obj) => {
                 if obj.get("type").and_then(|t| t.as_str()) == Some("module") {
-                    bake_one(obj, modules, report, budget).await;
+                    bake_one(obj, modules, cache, report, budget).await;
                     return; // do not descend into _baked
                 }
                 if obj
@@ -311,6 +311,7 @@ fn bake_cache_key(
 async fn bake_one(
     block: &mut serde_json::Map<String, serde_json::Value>,
     modules: &Arc<ModuleManager>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
     report: &mut BakeReport,
     budget: &mut usize,
 ) {
@@ -377,6 +378,25 @@ async fn bake_one(
     input.insert("action".to_string(), serde_json::Value::String(action.clone()));
     match modules.run_raw(&module, &serde_json::Value::Object(input)).await {
         Ok(out) if out.success => {
+            // 모듈이 큰 배열을 `_cache` 로 빼는 관행(응답엔 _cacheKey 만 남음)을 흡수 — 방금 그
+            // 호출로 저장된 캐시라 확실히 살아 있다. 되살려 `records` 로 병합하면 선언형 템플릿이
+            // "인라인이든 캐시든" 같은 `$.records` 경로로 접근한다(모듈 관행에 템플릿이 안 끌려감).
+            let mut out = out;
+            if let (Some(c), Some(key)) = (
+                cache,
+                out.data.get("_cacheKey").and_then(|v| v.as_str()).map(String::from),
+            ) {
+                if out.data.get("records").and_then(|v| v.as_array()).is_none() {
+                    if let Ok(rows) = c.read(&key, 0, usize::MAX) {
+                        if let Some(arr) = rows.get("records").and_then(|r| r.as_array()) {
+                            if let Some(obj) = out.data.as_object_mut() {
+                                obj.insert("records".to_string(), serde_json::Value::Array(arr.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            let out = out;
             // 블록 소스 2갈래 — 선언형 템플릿(config `pageBinding.blocks`, 모듈 코드 0)이 있으면
             // 그것으로 조립하고, 없으면 모듈이 직접 반환한 `data.blocks`(계산이 필요한 모듈의 탈출구).
             let declared = binding.as_ref().and_then(|b| b.blocks.as_ref());
