@@ -187,7 +187,13 @@ async function handleSearch(OC, data) {
   const json = await apiFetch(`${BASE}/lawSearch.do?${p}`);
   if (json._raw) return out(true, { rawText: json._raw });
 
-  out(true, parseSearchResult(target, json));
+  const searchResult = parseSearchResult(target, json);
+  // 0건 = 검색어 문제인 경우가 대부분 (법제처 검색은 AND 매칭이라 긴 복합어가 통째로 0건).
+  // 빈 배열만 돌려주면 모델이 원인을 몰라 파라미터를 변주하며 재시도한다 → 다음 수를 명시.
+  if (searchResult.totalCnt === 0 && searchResult.items.length === 0) {
+    searchResult.note = 'no results — this API matches ALL words (AND). Retry with a SHORTER core term (1-2 words, e.g. "폭행치사" instead of "폭행치사 예견가능성"); adding words narrows, never broadens. Legal doctrine keywords are often absent from case titles.';
+  }
+  out(true, searchResult);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,6 +243,16 @@ async function handleDetail(OC, data) {
   if (json._raw) return out(true, { rawText: json._raw });
 
   const result = parseDetailResult(target, json);
+  // 빈 본문에 success:true 를 주면 모델은 "본문을 확보했다"로 오인한 채 진행한다
+  // (2026-07-20 실측: 판례 detail 이 {} 인데 성공으로 보여, 본문 없이 답변이 작성됨).
+  // 호출 자체는 성공이므로 에러 대신 found:false + 다음 수를 명시한다.
+  if (!result || Object.keys(result).length === 0) {
+    return out(true, {
+      found: false,
+      requested: { target, ID: id ?? null, MST: mst ?? null },
+      note: 'the API returned an empty body for this id — do NOT treat this as content. Re-check the id against the search result field (판례일련번호 / 법령일련번호 of THAT target), or open 판례상세링크 from the search item. If the body cannot be retrieved, say so instead of writing from memory.',
+    });
+  }
   // 조문이 빈 경우 디버그용 키 목록 포함
   if ((target === 'law' || target === 'eflaw') && result && !result.조문) {
     result._debugKeys = Object.keys(json).slice(0, 10);
