@@ -301,3 +301,33 @@ export function splitFirebatRender(text: string): MdSegment[] {
   if (last < text.length) out.push({ md: text.slice(last) });
   return out;
 }
+
+/** 답변 텍스트 정제 — **bold** 주입 + CLI thought 마커/환각 컴포넌트 JSON 덤프 제거.
+ *  admin 채팅과 공유 페이지가 **같은 정제**를 쓰도록 공용화(옛엔 admin 로컬이라 공유에만 잔여 덤프가 보였다). */
+export function cleanMarkdown(text: string): string {
+  // **text** → <strong>text</strong> 변환 (CommonMark 파서가 한국어+따옴표 조합에서 볼드 인식 실패 방지)
+  let cleaned = text.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
+  // 남은 고아 ** 제거
+  cleaned = cleaned.replace(/\*\*/g, '');
+  // Gemini CLI 사고 과정 마커 — 파서가 놓친 경우 UI 에서 마지막 안전장치로 제거
+  //   '[Thought: true]...' 이 한 번이라도 등장하면 그 이후 블록 전체 thought 로 간주하여 삭제
+  if (cleaned.includes('[Thought:')) {
+    cleaned = cleaned.replace(/\[Thought:\s*(?:true|false)\][\s\S]*?(?=\[Thought:\s*(?:true|false)\]|$)/g, '');
+  }
+  // AI 가 render_* / PageSpec 컴포넌트를 코드블록에 출력한 경우 제거 (렌더링 안 되고 길게 늘어지는 환각 텍스트)
+  // 지원 패턴:
+  //   1. "type":"render_xxx" 형태
+  //   2. render_xxx(...) 함수 호출 형태
+  //   3. "type":"Header"/"Metric"/"Grid" 등 PageSpec 컴포넌트 JSON (AI 가 tool 대신 text 로 뱉음)
+  //   4. // 로 시작하는 주석이 있는 json 블록
+  //   5. OHLCV/차트용 props 덤프 (symbol + data 배열 + open/high/low/close)
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']type["']\s*:\s*["']render_[a-z_]+["'][\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?render_[a-z_]+\s*\([\s\S]*?```/g, '');
+  // PageSpec 컴포넌트 JSON (type + props 쌍 1회 이상) — 대부분 AI 가 tool 호출 대신 텍스트로 뱉는 환각
+  // 주요 PascalCase 컴포넌트 이름 목록 매치 (의도하지 않은 코드 예시 제거 방지)
+  const COMP_NAMES = 'Header|Text|Image|Form|Button|Divider|Table|Card|Grid|Html|Slider|Tabs|Accordion|Progress|Badge|Alert|Callout|List|Carousel|Countdown|Chart|StockChart|Metric|Timeline|Compare|KeyValue|StatusBadge|PlanCard|AdSlot';
+  cleaned = cleaned.replace(new RegExp(`\`\`\`[a-zA-Z]*\\s*[\\s\\S]*?["']type["']\\s*:\\s*["'](?:${COMP_NAMES})["'][\\s\\S]*?["']props["']\\s*:[\\s\\S]*?\`\`\``, 'g'), '');
+  cleaned = cleaned.replace(/```json\s*\n\s*\/\/[^\n]*\n[\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']symbol["']\s*:[\s\S]*?["']data["']\s*:\s*\[[\s\S]*?["'](open|close|high|low)["'][\s\S]*?```/g, '');
+  return cleaned;
+}

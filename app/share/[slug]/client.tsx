@@ -11,12 +11,12 @@ import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
-import { maskMath, splitFirebatRender, highlightMarksToHtml, closeStrayScript } from '../../../lib/util/md';
+import { maskMath, splitFirebatRender, highlightMarksToHtml, closeStrayScript, cleanMarkdown } from '../../../lib/util/md';
 
 /** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML escape + **bold** 주입 → 형광펜/용어칩 → 복원
  *  (admin renderMarkdown 과 동일 취지). 옛엔 highlightMarksToHtml 누락이라 공유에선 ==형광펜== / [[칩]] 미렌더. */
 function prepShare(s: string): string {
-  const { masked, restore } = maskMath(s);
+  const { masked, restore } = maskMath(cleanMarkdown(s));
   return restore(
     highlightMarksToHtml(
       escapeHtmlTagMentions(masked)
@@ -44,11 +44,24 @@ type ShareMessage = {
   data?: ({ blocks?: Array<{ type: 'text' | 'html' | 'component'; text?: string; htmlContent?: string; htmlHeight?: string; name?: string; props?: Record<string, unknown> }>; buildSession?: { step?: string; status?: string } } & Record<string, unknown>) | unknown[];
 };
 
+/** 마크다운 표 박스 — admin MarkdownTableBox 와 동일(뷰포트 비례 max-height + 얇은 스크롤바). */
+function ShareMarkdownTableBox(props: any) {
+  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  return (
+    <div
+      className="overflow-auto mb-2 rounded-xl border border-slate-200 scrollbar-thin"
+      style={{ maxHeight: maxH ? `${maxH}px` : '480px' }}
+    >
+      <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
+    </div>
+  );
+}
+
 const mdComponents = {
-  h1: (props: any) => <h1 className="text-[18px] font-bold text-slate-800 mt-5 mb-2" {...props} />,
-  h2: (props: any) => <h2 className="text-[16px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
-  h3: (props: any) => <h3 className="text-[15px] font-bold text-slate-800 mt-3 mb-1" {...props} />,
-  h4: (props: any) => <h4 className="text-[14px] font-bold text-slate-700 mt-2 mb-1" {...props} />,
+  h1: (props: any) => <h1 className="text-[18px] sm:text-[19px] font-extrabold text-slate-800 mt-5 mb-2" {...props} />,
+  h2: (props: any) => <h2 className="text-[16px] sm:text-[17px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
+  h3: (props: any) => <h3 className="text-[15px] sm:text-[16px] font-bold text-slate-800 mt-3 mb-1" {...props} />,
+  h4: (props: any) => <h4 className="text-[15px] font-semibold text-slate-700 mt-2 mb-1" {...props} />,
   p: (props: any) => <p className="mb-2 last:mb-0" {...props} />,
   ul: (props: any) => <ul className="list-disc list-outside ml-5 mb-2 space-y-1" {...props} />,
   ol: (props: any) => <ol className="list-decimal list-outside ml-5 mb-2 space-y-1" {...props} />,
@@ -60,18 +73,21 @@ const mdComponents = {
     // react-markdown v10 은 inline prop 미제공 → language- 클래스/줄바꿈으로 블록 판별(인라인 코드가 블록 카드로 떨어지던 버그)
     const text = String(children).replace(/\n$/, '');
     const isBlock = /language-/.test(className || '') || text.includes('\n');
-    if (!isBlock) return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
+    if (!isBlock) {
+      // 도구/모듈 이름 = indigo 칩 (admin 채팅과 동일 이펙트 — 옛 공유엔 회색 코드칩으로만 보였다).
+      const TOOL_NAMES = new Set(['render_iframe','execute','write_file','read_file','save_page','delete_page','delete_file','list_dir','list_pages','get_page','schedule_task','cancel_task','run_task','request_secret','suggest','mcp_call','network_request','list_cron_jobs','list_files']);
+      if (TOOL_NAMES.has(text) || text.startsWith('sysmod_') || text.startsWith('mcp_')) {
+        return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
+      }
+      return <code className="px-1.5 py-0.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-md text-[13px] font-mono" {...props}>{children}</code>;
+    }
     const lang = className?.replace('language-', '') || 'plaintext';
     return <CodeComp code={text} language={lang} showLineNumbers={false} />;
   },
   // 펜스 블록 기본 <pre> 래퍼 제거 — CodeComp 가 자체 <pre> 카드를 그림(중첩 pre 방지).
   pre: ({ children }: any) => <>{children}</>,
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
-  table: (props: any) => (
-    <div className="overflow-auto mb-2 rounded-xl border border-slate-200 scrollbar-thin">
-      <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
-    </div>
-  ),
+  table: (props: any) => <ShareMarkdownTableBox {...props} />,
   th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,
   td: (props: any) => <td className="px-3 py-1.5 text-slate-600 border-b border-slate-100 min-w-[120px] align-top break-words" {...props} />,
 };
@@ -252,7 +268,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
           {msg.image && (
             <img src={msg.image} alt="첨부" className="max-w-[240px] max-h-[180px] rounded-2xl border border-slate-300 shadow-md object-cover" />
           )}
-          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[14px] sm:text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit">
+          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed break-words border border-slate-700 w-fit">
             {msg.content}
           </div>
         </div>
@@ -275,7 +291,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
             if (b.type === 'text' && b.text) {
               return (
-                <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed ${wrapCls}`}>
+                <div key={i} className={`text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1 ${wrapCls}`}>
                   {/* text 블록도 firebat-render fence 분리 — 단일 text 블록(전체 답변)으로 와도 fence 가
                       raw 코드로 안 보이게 + 블록↔텍스트 간격 일관(admin renderMarkdown 과 동일). */}
                   {renderShareSegments(b.text)}
@@ -305,7 +321,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             return null;
           })
         ) : msg.content ? (
-          <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed">
+          <div className="text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1">
             {/* firebat-render fence(텍스트 채널 render)는 ComponentRenderer 직접, 나머지만 마크다운 + 간격 일관 */}
             {renderShareSegments(msg.content ?? '')}
           </div>
