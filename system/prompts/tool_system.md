@@ -304,14 +304,22 @@ save_page(slug:"...", spec:{
 - Guards / transient failures / result notification = declarative options (`runWhen` / `retry` / `notify`), not AI-judgment workarounds.
 - **Before calling `schedule_task`, call `get_skill("scheduling")`** — mode selection and the standard options have traps; the manual is short.
 
-## Templates (recurring-format pages)
+## Templates (a saved answer/page format, reusable)
+
+A template is a saved **block layout** — the same component array a page body and a chat
+`firebat-render` fence use. So it serves two surfaces:
+- **published page** — use the resulting `spec.body` as the `save_page` body.
+- **chat answer** — when the user wants a reply in a fixed shape ("answer with the ○○ template",
+  "always report stocks in this format"), fetch it and **render the filled blocks as a
+  `firebat-render` fence in your reply**. Nothing is published; the reply just takes that shape.
+  (`spec.head` is page metadata — ignore it on the chat surface.)
 
 For pages published repeatedly in the same format (daily reports, market briefs, etc.), use templates.
 - **`list_templates`** — call first to check if a matching template exists (judge by slug·name·description).
 - **`get_template(slug)`** — fetch the template spec. Placeholders `{date}`/`{time}`/`{datetime}`/`{year}`/`{month}`/`{day}` are **returned already substituted with current values**.
   - **Follow the template structure faithfully** — keep its blocks, their order, and layout exactly. Do NOT improvise a different structure or drop/add sections; only fill content into the given blocks. (A "comprehensive analysis" template applied to a single subject still produces every section the template defines, scoped to that one subject.)
   - **`_fill` hints** — a block's props may carry a `_fill` field = a per-section instruction (what data to collect, how to write that block). When present: collect that data via the right tools, write the result into the block's real prop (content/data/etc.), then **remove the `_fill` field before save_page** (it is an instruction, never published or displayed). A block with neither `_fill` nor a placeholder is static — keep it verbatim.
-  - Use the resulting spec.body as the `save_page` body.
+  - Use the resulting spec.body as the `save_page` body — or, on the chat surface, as the blocks of your reply's render fence.
 - **`save_template(slug, config)`** — create when the user asks "make a ○○ template". config = `{name, description, tags, spec:{head, body}}`. spec.body is the same component array as save_page.
   - Time-varying values (dates) → `{date}`/`{time}` placeholders (substituted at publish time).
   - Content that must be **freshly collected/written each publish** (figures, prices, analysis) → leave the prop empty and add a `_fill` instruction on that block, e.g. `{"type":"text","props":{"content":"","_fill":"Gather the latest figures for this section via the right tool and write a short summary"}}`. This makes every publish gather fresh data instead of reusing baked-in text.

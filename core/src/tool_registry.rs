@@ -971,7 +971,7 @@ fn register_template_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register_tool(
         ToolDefinition {
             name: "get_template".to_string(),
-            description: "템플릿 1건 조회 — spec(head+body)의 {date}/{time}/{datetime}/{year}/{month}/{day} 가 현재 값으로 치환되고, text 안의 {alias ...} shortcode(pageBinding 을 선언한 모듈의 alias — 예: {stock symbol=\"005930.KS\"})는 module 블록으로 컴파일돼 반환된다. 이 spec.body 를 save_page 의 body 골격으로 쓰고 동적 내용만 채워라. {slug}.".to_string(),
+            description: "템플릿 1건 조회 — spec(head+body)의 {date}/{time}/{datetime}/{year}/{month}/{day} 가 현재 값으로 치환되고, text 안의 {alias ...} shortcode(pageBinding 을 선언한 모듈의 alias — 예: {stock symbol=\"005930.KS\"})는 module 블록으로 컴파일돼 반환된다. 이 spec.body 를 save_page 의 body 골격으로 쓰거나, 채팅에서 정해진 형식으로 답할 때는 그대로 firebat-render fence 로 렌더해라(발행 없이 답변 모양만 그 템플릿). 동적 내용만 채운다. {slug}.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": { "slug": { "type": "string" }, "owner": { "type": "string" } },
