@@ -404,8 +404,13 @@ curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt install -y nod
 # 6. directories + source (system/ + language/ are symlinked so `git pull` updates them in place)
 mkdir -p /opt/firebat/{data,user/media,frontend}
 cd /opt && git clone https://github.com/JRs-Master/firebat.git firebat-src
+# Symlink git-tracked dirs so `git pull` alone refreshes them (no rebuild/rsync).
+#   system   -> Rust core reads modules/prompts/skills/templates from here
+#   language -> Rust core i18n         (backend)
+#   frontend/language -> Next.js i18n  (frontend — same source, second reader)
 ln -sfn /opt/firebat-src/system   /opt/firebat/system
 ln -sfn /opt/firebat-src/language /opt/firebat/language
+ln -sfn /opt/firebat-src/language /opt/firebat/frontend/language
 
 # 7. firebat-core binary
 #    GitHub -> Actions -> ci-rust -> latest green run -> Artifacts -> firebat-core-linux-x86_64, unzip it,
@@ -413,12 +418,13 @@ ln -sfn /opt/firebat-src/language /opt/firebat/language
 #    (or build on a capable machine: `cargo build --release` -> target/release/firebat-core)
 chmod +x /opt/firebat/firebat-core
 
-# 8. frontend build + deploy (3 rsync targets: standalone + static + language)
+# 8. frontend build + deploy (2 rsync targets: standalone + static)
+#    language/ is NOT rsynced — frontend/language is a symlink to the git-tracked dir (step 6),
+#    so `git pull` alone refreshes it.
 cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
 rsync -a .next/standalone/ /opt/firebat/frontend/
 rsync -a .next/static/     /opt/firebat/frontend/.next/static/
-rsync -a language/         /opt/firebat/frontend/language/
 #    The E5 embedding model (~470MB) downloads lazily on first use (hf-hub -> ~/.cache/huggingface/hub/).
 #    Set FIREBAT_EMBEDDER=stub to disable embeddings.
 
@@ -470,7 +476,25 @@ Open `http://SERVER_IP` and finish the **SetupWizard** (admin password + timezon
 
 **Verify** — `systemctl status firebat firebat-frontend caddy --no-pager` + `journalctl -u firebat -n 50 --no-pager`. After `reboot`, all three should be `enabled` + `active (running)`.
 
-**Update flow** — `git pull`, then frontend `npm run build` + the 3 rsync; Rust `cargo build` / new artifact upload; finally `systemctl restart firebat firebat-frontend`.
+**Update flow** — deploy only the channels a change actually touches:
+
+```sh
+cd /opt/firebat-src && git pull        # always — refreshes system/ + language/ (symlinked) in place
+
+# Frontend changed (app/ lib/ language/ next.config.mjs) — rebuild + 2 rsync (language is symlinked, not rsynced):
+npm install --legacy-peer-deps && npm run build
+rsync -a .next/standalone/ /opt/firebat/frontend/
+rsync -a .next/static/     /opt/firebat/frontend/.next/static/
+
+# Rust changed (core/ infra/ proto/ Cargo.*) — drop in the new binary:
+#   GitHub Actions -> ci-rust -> latest green run -> Artifacts -> firebat-core-linux-x86_64,
+#   scp it to /opt/firebat/firebat-core  (or build on a capable box)
+
+systemctl restart firebat firebat-frontend
+```
+
+- **system/-only change** (module config/code, prompts, skills, templates) = `git pull` + `systemctl restart firebat`. No build, no rsync — the dir is symlinked. (`components.json` is the exception: Rust `include_str!`-embeds it, so it needs a Rust rebuild.)
+- **What triggers a Rust rebuild**: anything under `core/` `infra/` `proto/` `Cargo.*`. Module `.mjs`/`.py`/config/prompts are read at runtime (no rebuild).
 
 **Notes**
 - `python3` runs the sysmods (yfinance / playwright / …); `pip` installs their packages via `pip install --target python_modules` — no venv (isolation is per-directory; `python3-pip` pulls `python3` as a dependency).
