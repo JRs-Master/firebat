@@ -468,8 +468,9 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   const parsedFreq = parseCronToFreq(job?.cronTime);
   const [freqType, setFreqType] = useState<FreqType>(parsedFreq.type);
   const [freqInterval, setFreqInterval] = useState(parsedFreq.interval);
-  const [freqHour, setFreqHour] = useState(parsedFreq.hour);
-  const [freqMinute, setFreqMinute] = useState(parsedFreq.minute);
+  // 하루 실행 시각 목록 — "시간 추가"로 여러 개(예: 02:00 + 16:55). 잡 하나에 담긴다
+  // (cron 표현식은 buildTimeExprs 가 조립: 같은 분은 필드 리스트, 다른 분은 `|` 병기).
+  const [freqTimes, setFreqTimes] = useState<FreqTime[]>(parsedFreq.times);
   const [freqDows, setFreqDows] = useState<number[]>(parsedFreq.dows);
   const [advancedCron, setAdvancedCron] = useState(job?.cronTime || '');
 
@@ -499,13 +500,23 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   const toggleDow = (d: number) => {
     setFreqDows(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
   };
+  const setTimeAt = (i: number, patch: Partial<FreqTime>) =>
+    setFreqTimes(prev => prev.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
+  const addTime = () =>
+    setFreqTimes(prev => {
+      const lastT = prev[prev.length - 1];
+      // 새 행 기본값 = 마지막 시각의 다음 시(하루 넘어가면 0시) — 중복 시각으로 시작하지 않게.
+      return [...prev, { h: lastT ? (lastT.h + 1) % 24 : 9, m: lastT ? lastT.m : 0 }];
+    });
+  const removeTime = (i: number) =>
+    setFreqTimes(prev => (prev.length <= 1 ? prev : prev.filter((_, idx) => idx !== i)));
 
   const buildCronTime = (): string => {
     switch (freqType) {
       case 'minutes': return `*/${freqInterval} * * * *`;
       case 'hours': return `0 */${freqInterval} * * *`;
-      case 'daily': return `${freqMinute} ${freqHour} * * *`;
-      case 'weekly': return `${freqMinute} ${freqHour} * * ${freqDows.length > 0 ? freqDows.join(',') : '*'}`;
+      case 'daily': return buildTimeExprs(freqTimes, '*');
+      case 'weekly': return buildTimeExprs(freqTimes, freqDows.length > 0 ? freqDows.join(',') : '*');
       case 'advanced': return advancedCron;
     }
   };
@@ -708,19 +719,42 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
                     </div>
                   )}
 
+                  {/* 실행 시각 — 여러 개 등록 가능(잡 하나에 담김). 시간만 다른 잡을 복제할 필요 없다. */}
                   {(freqType === 'daily' || freqType === 'weekly') && (
-                    <div className="flex items-center gap-2">
-                      <input type="number" min={0} max={23} value={freqHour}
-                        onChange={e => setFreqHour(Number(e.target.value))}
-                        aria-label="시"
-                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqHour" autoComplete="off" id={freqHourId} />
-                      <span className="text-[12px] text-slate-600">시</span>
-                      <input type="number" min={0} max={59} value={freqMinute}
-                        onChange={e => setFreqMinute(Number(e.target.value))}
-                        aria-label="분"
-                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqMinute" autoComplete="off" id={freqMinuteId} />
-                      <span className="text-[12px] text-slate-600">분</span>
+                    <div className="space-y-1.5">
+                      {freqTimes.map((tm, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <input type="number" min={0} max={23} value={tm.h}
+                            onChange={e => setTimeAt(i, { h: Math.min(23, Math.max(0, Number(e.target.value) || 0)) })}
+                            aria-label={`${i + 1}번째 실행 시각 — 시`}
+                            className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name={`freqHour${i}`} autoComplete="off" id={`${freqHourId}-${i}`} />
+                          <span className="text-[12px] text-slate-600">시</span>
+                          <input type="number" min={0} max={59} value={tm.m}
+                            onChange={e => setTimeAt(i, { m: Math.min(59, Math.max(0, Number(e.target.value) || 0)) })}
+                            aria-label={`${i + 1}번째 실행 시각 — 분`}
+                            className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name={`freqMinute${i}`} autoComplete="off" id={`${freqMinuteId}-${i}`} />
+                          <span className="text-[12px] text-slate-600">분</span>
+                          {freqTimes.length > 1 && (
+                            <button type="button" onClick={() => removeTime(i)} aria-label={`${i + 1}번째 실행 시각 삭제`}
+                              className="ml-auto text-[12px] text-slate-400 hover:text-rose-500 px-1.5 py-0.5 rounded transition-colors">✕</button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={addTime}
+                          className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold px-1.5 py-0.5 rounded hover:bg-blue-50 transition-colors">
+                          + 시간 추가
+                        </button>
+                        {freqTimes.length > 1 && (
+                          <span className="text-[10px] text-slate-400">하루 {freqTimes.length}회 · 잡 하나로 실행</span>
+                        )}
+                      </div>
                     </div>
+                  )}
+
+                  {/* 조립된 표현식 미리보기 — 사람 말로(복수 시각도 " · " 병기). */}
+                  {(freqType === 'daily' || freqType === 'weekly') && (
+                    <p className="text-[10px] text-blue-600 px-1">→ {describeCron(buildCronTime())}</p>
                   )}
                 </>
               )}
@@ -949,21 +983,73 @@ function toLocalInput(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 크론 표현식 → 사용자 친화적 주기 파싱 */
-function parseCronToFreq(cronTime?: string) {
-  const defaults = { type: 'minutes' as const, interval: 5, hour: 9, minute: 0, dows: [1] as number[] };
-  if (!cronTime) return defaults;
-  const parts = cronTime.split(' ');
-  if (parts.length !== 5) return { ...defaults, type: 'advanced' as const };
-  const [min, hour, dom, , dow] = parts;
+/** 하루 실행 시각 1건 (매일·매주 반복에서 시각을 여러 개 둘 수 있다). */
+export type FreqTime = { h: number; m: number };
 
-  if (min.startsWith('*/')) return { ...defaults, type: 'minutes' as const, interval: parseInt(min.slice(2)) || 5 };
-  if (hour.startsWith('*/')) return { ...defaults, type: 'hours' as const, interval: parseInt(hour.slice(2)) || 1 };
-  if (dow !== '*') {
-    const dows = dow.split(',').map(d => parseInt(d)).filter(d => !isNaN(d));
-    return { ...defaults, type: 'weekly' as const, hour: parseInt(hour) || 0, minute: parseInt(min) || 0, dows };
+/** 시각 목록 → cron 표현식. 같은 분끼리 묶어 표준 필드 리스트로(`0 8,20 * * *`),
+ *  분이 다르면 `|` 로 병기(`0 2 * * * | 55 16 * * *` — 어댑터가 흡수하는 복수 표현식).
+ *  잡 하나에 여러 시각을 담는 규약이라 "시간만 다른 잡 복제"가 필요 없다. */
+function buildTimeExprs(times: FreqTime[], dow: string): string {
+  const uniq = new Map<string, FreqTime>();
+  for (const t of times) uniq.set(`${t.h}:${t.m}`, t);
+  const sorted = [...uniq.values()].sort((a, b) => a.h - b.h || a.m - b.m);
+  if (sorted.length === 0) return `0 9 * * ${dow}`;
+  const byMin = new Map<number, number[]>();
+  for (const t of sorted) {
+    const hs = byMin.get(t.m) ?? [];
+    hs.push(t.h);
+    byMin.set(t.m, hs);
   }
-  if (dom !== '*') return { ...defaults, type: 'advanced' as const }; // 매월 특정일 → 고급
-  if (min !== '*' && hour !== '*') return { ...defaults, type: 'daily' as const, hour: parseInt(hour) || 0, minute: parseInt(min) || 0 };
-  return defaults;
+  return [...byMin.entries()]
+    .map(([m, hs]) => `${m} ${hs.join(',')} * * ${dow}`)
+    .join(' | ');
+}
+
+/** 크론 표현식 → 사용자 친화적 주기 파싱. 복수 표현식(`|`)·시 리스트(`8,20`)는
+ *  시각 목록으로 전개 — UI 가 "시간 추가" 행으로 그대로 복원한다. */
+function parseCronToFreq(cronTime?: string) {
+  const defaults = { type: 'minutes' as const, interval: 5, times: [{ h: 9, m: 0 }] as FreqTime[], dows: [1] as number[] };
+  if (!cronTime) return defaults;
+  const exprs = cronTime.split('|').map(s => s.trim()).filter(Boolean);
+  if (exprs.length === 0) return defaults;
+
+  const times: FreqTime[] = [];
+  let dows: number[] = [];
+  let kind: 'daily' | 'weekly' | null = null;
+  for (const expr of exprs) {
+    const parts = expr.split(/\s+/);
+    if (parts.length !== 5) return { ...defaults, type: 'advanced' as const };
+    const [min, hour, dom, , dow] = parts;
+    // 간격형(*/N)은 단일 표현식일 때만 간편 모드로 복원 (혼합은 고급).
+    if (min.startsWith('*/')) {
+      return exprs.length === 1
+        ? { ...defaults, type: 'minutes' as const, interval: parseInt(min.slice(2)) || 5 }
+        : { ...defaults, type: 'advanced' as const };
+    }
+    if (hour.startsWith('*/')) {
+      return exprs.length === 1
+        ? { ...defaults, type: 'hours' as const, interval: parseInt(hour.slice(2)) || 1 }
+        : { ...defaults, type: 'advanced' as const };
+    }
+    if (dom !== '*') return { ...defaults, type: 'advanced' as const }; // 매월 특정일 → 고급
+    if (min === '*' || hour === '*') return { ...defaults, type: 'advanced' as const };
+    const m = parseInt(min);
+    if (isNaN(m)) return { ...defaults, type: 'advanced' as const };
+    const hs = hour.split(',').map(h => parseInt(h)).filter(h => !isNaN(h));
+    if (hs.length === 0) return { ...defaults, type: 'advanced' as const };
+    for (const h of hs) times.push({ h, m });
+    const thisKind: 'daily' | 'weekly' = dow === '*' ? 'daily' : 'weekly';
+    if (kind && kind !== thisKind) return { ...defaults, type: 'advanced' as const }; // 요일 조건 혼합 = 고급
+    kind = thisKind;
+    if (thisKind === 'weekly') {
+      const d = dow.split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+      if (dows.length > 0 && d.join(',') !== dows.join(',')) return { ...defaults, type: 'advanced' as const };
+      dows = d;
+    }
+  }
+  if (!kind || times.length === 0) return defaults;
+  times.sort((a, b) => a.h - b.h || a.m - b.m);
+  return kind === 'weekly'
+    ? { ...defaults, type: 'weekly' as const, times, dows: dows.length > 0 ? dows : [1] }
+    : { ...defaults, type: 'daily' as const, times };
 }
