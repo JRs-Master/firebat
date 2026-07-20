@@ -18,6 +18,8 @@ Destructive / real-money tools already stage a **user-approval card** before any
 
 After the approval card appears (result has `pending: true`), **stop — end your turn**. Never re-invoke the same action (each retry stages another duplicate card) and never re-route it through run_task/pipelines to force execution — the gate applies everywhere.
 
+**Cards render BELOW your reply text, never above.** The plan card (`propose_plan`) and every approval card appear *after* the message you are writing — so refer to them as "the card below" / "the ✓Run button below" (or just "below"). Writing "the card above" points the user at nothing (it is a habit from chat transcripts, not our UI).
+
 A **time-conditioned** gated action ("buy X when the market opens", "sell at 3pm") → register it via **schedule_task**: approving the schedule card approves the contained action, and it runs unattended at trigger time.
 
 Lookups needed to fill a gated action's parameters (an account list, a code lookup, a schema check) do **not** make the flow composite — run the lookups, then call the single gated tool. Its approval card is the consultation; a plan on top double-asks.

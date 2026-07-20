@@ -174,12 +174,25 @@ function build(apis) {
       properties: {
         action: {
           type: 'string',
-          enum: allActions,
+          // page_blocks = pageBinding(페이지 module 블록) 전용 액션 — API ID 파생이 아니라 손유지.
+          enum: ['page_blocks', ...allActions],
           description: '키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시.',
         },
         params: {
           type: 'object',
           description: '키움 API request body 의 모든 필드. 각 API 의 필드는 키움 REST API 공식 문서 참조.',
+        },
+        stk_cd: {
+          type: 'string',
+          description: '[page_blocks] 6자리 종목코드 (예: 005930). params 안에 넣어도 된다.',
+        },
+        limit: {
+          type: 'number',
+          description: '[page_blocks] 차트 봉 개수 (기본 120, 최대 600).',
+        },
+        title: {
+          type: 'string',
+          description: '[page_blocks] 차트 제목 (기본: 종목코드).',
         },
         mock: {
           type: 'boolean',
@@ -333,6 +346,57 @@ process.stdin.on('end', async () => {
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
     const params = data.params || {};
+    // page_blocks — pageBinding 계약: 페이지가 소비할 render 블록 반환({success,data:{blocks:[…]}}).
+    // 모듈이 자기 렌더를 소유하므로 프레임워크가 데이터→컴포넌트 매핑을 추측하지 않는다.
+    // 페이지 \`module\` 블록(발행 bake · rebake 크론 · when=request)이 이 액션만 호출한다.
+    if (action === 'page_blocks') {
+      const p = { ...params, ...data };
+      const stkCd = String(p.stk_cd || p.symbol || '').replace(/[^0-9A-Za-z]/g, '');
+      if (!stkCd) {
+        console.log(JSON.stringify({ success: false, error: 'page_blocks: stk_cd(6자리 종목코드)가 필요합니다. 종목명만 안다면 sysmod_stock-lookup 으로 코드를 먼저 확인하세요.' }));
+        return;
+      }
+      const limit = Math.min(600, Math.max(5, parseInt(p.limit, 10) || 120));
+      const nowKst = new Date(Date.now() + 9 * 3600 * 1000);
+      const baseDt = nowKst.toISOString().slice(0, 10).replace(/-/g, '');
+      const chart = await callApi(base, token, 'ka10081', { stk_cd: stkCd, base_dt: baseDt, upd_stkpc_tp: '1' });
+      normalizeCandleRows(chart);
+      const rc0 = chart?.return_code;
+      if (rc0 !== undefined && rc0 !== null && rc0 !== 0) {
+        console.log(JSON.stringify({ success: false, error: chart?.return_msg || ('키움 API 오류 (return_code=' + rc0 + ')') }));
+        return;
+      }
+      const rows = Array.isArray(chart?.stk_dt_pole_chart_qry) ? chart.stk_dt_pole_chart_qry.slice(0, limit) : [];
+      if (rows.length === 0) {
+        console.log(JSON.stringify({ success: false, error: 'page_blocks: ' + stkCd + ' 일봉 데이터가 비어 있습니다.' }));
+        return;
+      }
+      const latest = rows[0]; // 키움 일봉 = 최신순
+      const num = (v) => { const n = Number(String(v ?? '').replace(/[+,]/g, '')); return Number.isFinite(n) ? n : null; };
+      const close = num(latest.close);
+      const diff = num(latest.pred_pre);
+      const prevClose = close !== null && diff !== null ? close - diff : null;
+      const pct = prevClose ? (diff / prevClose) * 100 : null;
+      const deltaProps = diff === null ? {} : {
+        delta: pct === null ? String(diff) : ((pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'),
+        deltaType: diff >= 0 ? 'up' : 'down',
+      };
+      const metric = (label, value, extra) => ({ type: 'metric', props: { label, value, ...(extra || {}) } });
+      const children = [
+        metric('종가', close, { unit: '원', subLabel: latest.date, ...deltaProps }),
+        metric('전일대비', diff, { unit: '원' }),
+        metric('거래량', num(latest.volume), { unit: '주' }),
+        metric('시가', num(latest.open), { unit: '원' }),
+        metric('고가', num(latest.high), { unit: '원' }),
+        metric('저가', num(latest.low), { unit: '원' }),
+      ];
+      const blocks = [
+        { type: 'grid', props: { columns: 3, children } },
+        { type: 'stock_chart', props: { symbol: stkCd, title: p.title || stkCd, data: rows, indicators: ['MA5', 'MA20', 'MA60'] } },
+      ];
+      console.log(JSON.stringify({ success: true, data: { blocks } }));
+      return;
+    }
     const result = await callApi(base, token, action, params);
     normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →

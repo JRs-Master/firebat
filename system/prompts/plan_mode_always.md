@@ -48,3 +48,4 @@ ALWAYS-mode rule priority:
 
 ─────────────────────────────────────
 
+**Cards render BELOW your reply text, never above.** The plan card (`propose_plan`) and every approval card appear *after* the message you are writing — so refer to them as "the card below" / "the ✓Run button below" (or just "below"). Writing "the card above" points the user at nothing (it is a habit from chat transcripts, not our UI).

@@ -433,6 +433,7 @@
       "action": {
         "type": "string",
         "enum": [
+          "page_blocks",
           "ka00001",
           "ka00198",
           "ka01300",
@@ -756,6 +757,18 @@
       "mock": {
         "type": "boolean",
         "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."
+      },
+      "stk_cd": {
+        "type": "string",
+        "description": "[page_blocks] 6자리 종목코드 (예: 005930). params 안에 넣어도 된다."
+      },
+      "limit": {
+        "type": "number",
+        "description": "[page_blocks] 차트 봉 개수 (기본 120, 최대 600)."
+      },
+      "title": {
+        "type": "string",
+        "description": "[page_blocks] 차트 제목 (기본: 종목코드)."
       }
     },
     "additionalProperties": false
@@ -1086,5 +1099,9 @@
     "조건검색",
     "실시간 스트림",
     "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · 통합/SOR — stk_cd 프리픽스(KRX:005930 / NXT:005930 / SOR:005930_AL) 또는 stex_tp(1.KRX 2.NXT 3.통합)"
-  ]
+  ],
+  "pageBinding": {
+    "alias": "kstock",
+    "action": "page_blocks"
+  }
 }
