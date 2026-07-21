@@ -729,6 +729,15 @@ function normalizeCandleRows(obj, depth = 0) {
   }
 }
 
+// base_dt (chart endpoint's query end-date anchor) — the API semantics are "latest = today".
+// Static bindings (page bake / scheduled pages) carry no date (a fixed one would go stale), so
+// default an empty base_dt to today (KST) for chart-endpoint calls. Covers bake, rebake, and any
+// model call that omits it — the module owns this "latest" dialect, not the caller.
+function kstToday() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -756,6 +765,7 @@ process.stdin.on('end', async () => {
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
     const params = data.params || {};
+    if (URL_CATEGORY[action] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
     const result = await callApi(base, token, action, params);
     normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
