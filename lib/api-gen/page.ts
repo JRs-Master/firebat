@@ -14,6 +14,8 @@ import {
   PageListItemPb,
   PageRecordPb,
   PageRenameRequestSchema,
+  PageResolveBindingRequestSchema,
+  PageResolveBindingResponse,
   PageSaveRequestSchema,
   PageSaveResultPb,
   PageSearchRequestSchema,
@@ -142,6 +144,15 @@ export async function listAllTags(): Promise<RpcResult<TagSummaryPb[]>> {
   try {
       const response = await pageClient.listAllTags({});
       return { ok: true, data: unBigInt(response.tags) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function resolveBinding(args: MessageInitShape<typeof PageResolveBindingRequestSchema>): Promise<RpcResult<PageResolveBindingResponse>> {
+  try {
+      const response = await pageClient.resolveBinding(args ?? {});
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

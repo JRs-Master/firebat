@@ -16,7 +16,8 @@ use crate::proto::{
     PageGetRedirectResponse, PageGetRequest, PageListAllTagsRequest, PageListItemPb,
     PageFindRelatedResponse, PageListRequest, PageListResponse, PageListStaticRequest,
     PageListStaticResponse, PageSearchResponse,
-    PageRecordPb, PageRenameRequest, PageRenameResponse, PageSaveRequest, PageSaveResultPb,
+    PageRecordPb, PageRenameRequest, PageRenameResponse, PageResolveBindingRequest,
+    PageResolveBindingResponse, PageSaveRequest, PageSaveResultPb,
     PageSearchRequest, PageSetVisibilityRequest, PageSetVisibilityResponse, PageVerifyPasswordRequest,
     PageVerifyPasswordResponse, TagListPb, TagSummaryPb,
 };
@@ -305,6 +306,47 @@ impl PageService for PageServiceImpl {
             .map(Into::into)
             .collect();
         Ok(Response::new(TagListPb { tags }))
+    }
+
+    /// when=request SSR resolver — 발행 페이지 방문 시 module 바인딩 실행. 실행·게이트·봉투·
+    /// 템플릿 렌더 전부 publish-bake 와 같은 `resolve_binding` 단일 소스(TS 재구현 = drift 금지).
+    /// 내부 gRPC(:50051) = frontend 서버(RSC)만 도달 — 공개 endpoint 아님. TTL 캐시·single-flight
+    /// 는 호출자(lib/page-binding-gate.ts) 몫.
+    async fn resolve_binding(
+        &self,
+        req: Request<PageResolveBindingRequest>,
+    ) -> Result<Response<PageResolveBindingResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let block_args = if args.args_json.trim().is_empty() {
+            None
+        } else {
+            serde_json::from_str::<serde_json::Value>(&args.args_json)
+                .ok()
+                .and_then(|v| v.as_object().cloned())
+        };
+        match crate::utils::page_binding::resolve_binding(
+            &self.modules,
+            Some(&self.cache),
+            args.module.trim(),
+            args.action.trim(),
+            block_args.as_ref(),
+        )
+        .await
+        {
+            Ok(blocks) => Ok(Response::new(PageResolveBindingResponse {
+                success: true,
+                blocks_json: serde_json::to_string(&blocks).unwrap_or_else(|_| "[]".to_string()),
+                error: String::new(),
+            })),
+            Err(e) => {
+                tracing::warn!(target: "page_binding", "[page_binding] request-resolve failed: {e}");
+                Ok(Response::new(PageResolveBindingResponse {
+                    success: false,
+                    blocks_json: String::new(),
+                    error: e,
+                }))
+            }
+        }
     }
 }
 

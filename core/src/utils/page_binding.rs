@@ -308,6 +308,135 @@ fn bake_cache_key(
     }
 }
 
+/// Gate + execute + render for ONE binding — the single execution source shared by
+/// publish-bake (below) and the when=request SSR resolver (gRPC `PageService.ResolveBinding`,
+/// called from `lib/page-binding-gate.ts`). Keeping execution here means the TS side never
+/// re-implements envelope wrapping / config-args merge / declarative template rendering —
+/// exactly the trio that drifted when they lived in two places.
+/// `block_args_in` = the block's own `args` object (config `pageBinding.args` is merged under it).
+pub async fn resolve_binding(
+    modules: &Arc<ModuleManager>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
+    module: &str,
+    requested_action: &str,
+    block_args_in: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    // 게이트 — opt-in 선언 + 선언 액션 + requiresApproval 거부.
+    let Some(config) = modules.get_config_any_scope(module).await else {
+        return Err(format!("module '{module}' not found"));
+    };
+    let action = binding_gate(&config, requested_action).map_err(|reason| format!("'{module}': {reason}"))?;
+
+    // 실행 — run_raw = 풀 데이터(auto-cache truncation 없음). 게이트(enabled·스키마 검증·
+    // sandbox·net_guard)는 run_impl 이 그대로 적용.
+    // 인자 = config 의 고정 args(기본값) 위에 블록 args 를 덮어씀.
+    let binding = parse_page_binding(&config);
+    let mut block_args = serde_json::Map::new();
+    if let Some(fixed) = binding.as_ref().and_then(|b| b.args.as_ref()).and_then(|a| a.as_object()) {
+        for (k, v) in fixed {
+            block_args.insert(k.clone(), v.clone());
+        }
+    }
+    if let Some(args) = block_args_in {
+        for (k, val) in args {
+            if k != "action" {
+                block_args.insert(k.clone(), val.clone());
+            }
+        }
+    }
+    // Envelope dialect — big modules (kiwoom·한투) declare a top-level `params` object and reject
+    // flat args (`additionalProperties: false`); small modules (yfinance) take flat args. Mirror
+    // the model's own successful call shape: wrap non-action args into `params` when the schema
+    // declares it, else spread flat. Schema-driven (no per-module hardcode), same philosophy as
+    // the run_impl `inputData` absorber. Presentation-only args (e.g. a chart `title`) ride along
+    // harmlessly — a params object without additionalProperties:false accepts them and the module
+    // reads only what it needs (they still feed the block template via `block_args`).
+    let wants_params = config
+        .get("input")
+        .and_then(|i| i.get("properties"))
+        .and_then(|p| p.get("params"))
+        .and_then(|p| p.get("type"))
+        .and_then(|t| t.as_str())
+        == Some("object");
+    let mut input = serde_json::Map::new();
+    input.insert("action".to_string(), serde_json::Value::String(action.clone()));
+    if wants_params {
+        input.insert("params".to_string(), serde_json::Value::Object(block_args.clone()));
+    } else {
+        for (k, v) in &block_args {
+            input.insert(k.clone(), v.clone());
+        }
+    }
+    match modules.run_raw(module, &serde_json::Value::Object(input)).await {
+        Ok(out) if out.success => {
+            // 모듈이 큰 배열을 `_cache` 로 빼는 관행(응답엔 _cacheKey 만 남음)을 흡수 — 방금 그
+            // 호출로 저장된 캐시라 확실히 살아 있다. 되살려 `records` 로 병합하면 선언형 템플릿이
+            // "인라인이든 캐시든" 같은 `$.records` 경로로 접근한다(모듈 관행에 템플릿이 안 끌려감).
+            let mut out = out;
+            if let (Some(c), Some(key)) = (
+                cache,
+                out.data.get("_cacheKey").and_then(|v| v.as_str()).map(String::from),
+            ) {
+                if out.data.get("records").and_then(|v| v.as_array()).is_none() {
+                    if let Ok(rows) = c.read(&key, 0, usize::MAX) {
+                        if let Some(arr) = rows.get("records").and_then(|r| r.as_array()) {
+                            if let Some(obj) = out.data.as_object_mut() {
+                                obj.insert("records".to_string(), serde_json::Value::Array(arr.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            let out = out;
+            // 블록 소스 2갈래 — 선언형 템플릿(config `pageBinding.blocks`, 모듈 코드 0)이 있으면
+            // 그것으로 조립하고, 없으면 모듈이 직접 반환한 `data.blocks`(계산이 필요한 모듈의 탈출구).
+            let declared = binding.as_ref().and_then(|b| b.blocks.as_ref());
+            let blocks = match declared {
+                Some(tpl) => render_declared_blocks(tpl, &out.data, &block_args),
+                None => out
+                    .data
+                    .get("blocks")
+                    .and_then(|b| b.as_array())
+                    .cloned()
+                    .unwrap_or_default(),
+            };
+            if blocks.is_empty() {
+                return Err(if declared.is_some() {
+                    format!("'{module}:{action}' declared blocks resolved to nothing — check the `$.` paths in pageBinding.blocks against the action's response")
+                } else {
+                    format!("'{module}:{action}' returned no data.blocks — pageBinding contract")
+                });
+            }
+            if blocks.len() > MAX_BAKED_BLOCKS {
+                return Err(format!(
+                    "'{module}:{action}' returned {} blocks (cap {MAX_BAKED_BLOCKS})",
+                    blocks.len()
+                ));
+            }
+            let serialized = serde_json::to_string(&blocks).unwrap_or_default();
+            if serialized.len() > MAX_BAKED_BYTES {
+                return Err(format!(
+                    "'{module}:{action}' baked output {}B exceeds cap {MAX_BAKED_BYTES}B",
+                    serialized.len()
+                ));
+            }
+            // 유효 블록 shape 만(각 항목 = object with string type) — 모듈 실수 방어.
+            if !blocks
+                .iter()
+                .all(|b| b.get("type").and_then(|t| t.as_str()).is_some())
+            {
+                return Err(format!("'{module}:{action}' blocks must be objects with a string type"));
+            }
+            Ok(blocks)
+        }
+        Ok(out) => Err(format!(
+            "'{module}:{action}' failed: {}",
+            out.error.unwrap_or_else(|| "module returned success:false".to_string())
+        )),
+        Err(e) => Err(format!("'{module}:{action}' error: {e}")),
+    }
+}
+
 async fn bake_one(
     block: &mut serde_json::Map<String, serde_json::Value>,
     modules: &Arc<ModuleManager>,
@@ -343,126 +472,10 @@ async fn bake_one(
     }
     *budget -= 1;
 
-    // 게이트 — opt-in 선언 + 선언 액션 + requiresApproval 거부.
-    let Some(config) = modules.get_config_any_scope(&module).await else {
-        report.errors.push(format!("module '{module}' not found"));
-        return;
-    };
-    let requested = props.get("action").and_then(|v| v.as_str()).unwrap_or("");
-    let action = match binding_gate(&config, requested) {
-        Ok(a) => a,
-        Err(reason) => {
-            report.errors.push(format!("'{module}': {reason}"));
-            return;
-        }
-    };
-
-    // 실행 — run_raw = 풀 데이터(auto-cache truncation 없음). 게이트(enabled·스키마 검증·
-    // sandbox·net_guard)는 run_impl 이 그대로 적용.
-    // 인자 = config 의 고정 args(기본값) 위에 블록 args 를 덮어씀.
-    let binding = parse_page_binding(&config);
-    let mut block_args = serde_json::Map::new();
-    if let Some(fixed) = binding.as_ref().and_then(|b| b.args.as_ref()).and_then(|a| a.as_object()) {
-        for (k, v) in fixed {
-            block_args.insert(k.clone(), v.clone());
-        }
-    }
-    if let Some(args) = props.get("args").and_then(|a| a.as_object()) {
-        for (k, val) in args {
-            if k != "action" {
-                block_args.insert(k.clone(), val.clone());
-            }
-        }
-    }
-    // Envelope dialect — big modules (kiwoom·한투) declare a top-level `params` object and reject
-    // flat args (`additionalProperties: false`); small modules (yfinance) take flat args. Mirror
-    // the model's own successful call shape: wrap non-action args into `params` when the schema
-    // declares it, else spread flat. Schema-driven (no per-module hardcode), same philosophy as
-    // the run_impl `inputData` absorber. Presentation-only args (e.g. a chart `title`) ride along
-    // harmlessly — a params object without additionalProperties:false accepts them and the module
-    // reads only what it needs (they still feed the block template via `block_args`).
-    let wants_params = config
-        .get("input")
-        .and_then(|i| i.get("properties"))
-        .and_then(|p| p.get("params"))
-        .and_then(|p| p.get("type"))
-        .and_then(|t| t.as_str())
-        == Some("object");
-    let mut input = serde_json::Map::new();
-    input.insert("action".to_string(), serde_json::Value::String(action.clone()));
-    if wants_params {
-        input.insert("params".to_string(), serde_json::Value::Object(block_args.clone()));
-    } else {
-        for (k, v) in &block_args {
-            input.insert(k.clone(), v.clone());
-        }
-    }
-    match modules.run_raw(&module, &serde_json::Value::Object(input)).await {
-        Ok(out) if out.success => {
-            // 모듈이 큰 배열을 `_cache` 로 빼는 관행(응답엔 _cacheKey 만 남음)을 흡수 — 방금 그
-            // 호출로 저장된 캐시라 확실히 살아 있다. 되살려 `records` 로 병합하면 선언형 템플릿이
-            // "인라인이든 캐시든" 같은 `$.records` 경로로 접근한다(모듈 관행에 템플릿이 안 끌려감).
-            let mut out = out;
-            if let (Some(c), Some(key)) = (
-                cache,
-                out.data.get("_cacheKey").and_then(|v| v.as_str()).map(String::from),
-            ) {
-                if out.data.get("records").and_then(|v| v.as_array()).is_none() {
-                    if let Ok(rows) = c.read(&key, 0, usize::MAX) {
-                        if let Some(arr) = rows.get("records").and_then(|r| r.as_array()) {
-                            if let Some(obj) = out.data.as_object_mut() {
-                                obj.insert("records".to_string(), serde_json::Value::Array(arr.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-            let out = out;
-            // 블록 소스 2갈래 — 선언형 템플릿(config `pageBinding.blocks`, 모듈 코드 0)이 있으면
-            // 그것으로 조립하고, 없으면 모듈이 직접 반환한 `data.blocks`(계산이 필요한 모듈의 탈출구).
-            let declared = binding.as_ref().and_then(|b| b.blocks.as_ref());
-            let blocks = match declared {
-                Some(tpl) => render_declared_blocks(tpl, &out.data, &block_args),
-                None => out
-                    .data
-                    .get("blocks")
-                    .and_then(|b| b.as_array())
-                    .cloned()
-                    .unwrap_or_default(),
-            };
-            if blocks.is_empty() {
-                report.errors.push(if declared.is_some() {
-                    format!("'{module}:{action}' declared blocks resolved to nothing — check the `$.` paths in pageBinding.blocks against the action's response")
-                } else {
-                    format!("'{module}:{action}' returned no data.blocks — pageBinding contract")
-                });
-                return;
-            }
-            if blocks.len() > MAX_BAKED_BLOCKS {
-                report.errors.push(format!(
-                    "'{module}:{action}' returned {} blocks (cap {MAX_BAKED_BLOCKS})",
-                    blocks.len()
-                ));
-                return;
-            }
-            let serialized = serde_json::to_string(&blocks).unwrap_or_default();
-            if serialized.len() > MAX_BAKED_BYTES {
-                report.errors.push(format!(
-                    "'{module}:{action}' baked output {}B exceeds cap {MAX_BAKED_BYTES}B",
-                    serialized.len()
-                ));
-                return;
-            }
-            // 유효 블록 shape 만(각 항목 = object with string type) — 모듈 실수 방어.
-            if !blocks
-                .iter()
-                .all(|b| b.get("type").and_then(|t| t.as_str()).is_some())
-            {
-                report
-                    .errors
-                    .push(format!("'{module}:{action}' blocks must be objects with a string type"));
-                return;
-            }
+    let requested = props.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let block_args = props.get("args").and_then(|a| a.as_object()).cloned();
+    match resolve_binding(modules, cache, &module, &requested, block_args.as_ref()).await {
+        Ok(blocks) => {
             props.insert("_baked".to_string(), serde_json::Value::Array(blocks));
             props.insert(
                 "_bakedAt".to_string(),
@@ -470,14 +483,8 @@ async fn bake_one(
             );
             report.baked += 1;
         }
-        Ok(out) => {
-            report.errors.push(format!(
-                "'{module}:{action}' failed: {}",
-                out.error.unwrap_or_else(|| "module returned success:false".to_string())
-            ));
-        }
         Err(e) => {
-            report.errors.push(format!("'{module}:{action}' error: {e}"));
+            report.errors.push(e);
         }
     }
 }

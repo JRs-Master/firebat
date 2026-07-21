@@ -11,7 +11,8 @@
  * + single-flight(스탬피드 방지). 실패 = 저장된 `_baked` 폴백(stale-but-alive).
  */
 
-import { getModuleConfig, runModule } from './api-gen/module';
+import { getModuleConfig } from './api-gen/module';
+import { resolveBinding } from './api-gen/page';
 
 type Json = Record<string, unknown>;
 
@@ -68,21 +69,19 @@ function clampTtlMs(raw: unknown): number {
   return Math.min(3600, Math.max(60, Math.floor(sec))) * 1000;
 }
 
+/**
+ * 실행 = Rust 단일 소스 (`PageService.ResolveBinding` → `page_binding::resolve_binding`,
+ * publish-bake 와 같은 함수). 옛 TS 재구현은 봉투 방언(params wrap)·config args 병합·선언형
+ * blocks 템플릿 렌더를 전부 빠뜨려 kiwoom 류에서 방문-resolve 가 원리적으로 실패했다 — 실행
+ * 의미론은 두 곳에 두지 않는다. TS 몫 = 게이트 선필터 + TTL 캐시 + single-flight 뿐.
+ */
 async function runBinding(moduleName: string, action: string, args: unknown): Promise<unknown[] | null> {
-  const input: Json = { action };
-  if (args && typeof args === 'object') {
-    for (const [k, v] of Object.entries(args as Json)) {
-      if (k !== 'action') input[k] = v;
-    }
-  }
-  const res = await runModule({ module: moduleName, dataJson: JSON.stringify(input) }).catch(() => null);
-  if (!res?.ok || !res.data?.success || !res.data.dataJson) return null;
+  const argsJson = args && typeof args === 'object' ? JSON.stringify(args) : '';
+  const res = await resolveBinding({ module: moduleName, action, argsJson }).catch(() => null);
+  if (!res?.ok || !res.data?.success || !res.data.blocksJson) return null;
   try {
-    const data = JSON.parse(res.data.dataJson) as Json;
-    const blocks = data.blocks;
+    const blocks = JSON.parse(res.data.blocksJson);
     if (!Array.isArray(blocks) || blocks.length === 0) return null;
-    // pageBinding 계약 방어 — 각 항목 = {type:string, ...}
-    if (!blocks.every(b => b && typeof b === 'object' && typeof (b as Json).type === 'string')) return null;
     return blocks;
   } catch {
     return null;

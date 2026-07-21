@@ -411,6 +411,23 @@ message PageFindRelatedRequest {
 }
 message PageListAllTagsRequest {}
 
+// when=request SSR resolver — 발행 페이지 방문 시 module 바인딩을 Rust 단일 소스로 실행.
+// 게이트(opt-in·선언 액션·requiresApproval)+봉투 방언+config args 병합+선언형 blocks 템플릿
+// 렌더+캡 전부 bake 와 같은 `resolve_binding` 공유(TS 재구현 = drift 반복이라 금지).
+message PageResolveBindingRequest {
+  string module = 1;
+  // 빈 문자열 = config 선언 액션 사용.
+  string action = 2;
+  // 블록의 args object 직렬화 (없으면 빈 문자열).
+  string args_json = 3;
+}
+message PageResolveBindingResponse {
+  bool success = 1;
+  // 성공 시 렌더 블록 배열 직렬화.
+  string blocks_json = 2;
+  string error = 3;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 3. PageService — PageManager
 // ──────────────────────────────────────────────────────────────────────────
@@ -428,6 +445,7 @@ service PageService {
   rpc VerifyPassword(PageVerifyPasswordRequest) returns (PageVerifyPasswordResponse);
   rpc FindRelated(PageFindRelatedRequest) returns (PageFindRelatedResponse);
   rpc ListAllTags(PageListAllTagsRequest) returns (TagListPb);
+  rpc ResolveBinding(PageResolveBindingRequest) returns (PageResolveBindingResponse);
 }
 
 // ─── ProjectService typed messages ───────────────────────────────────────────
