@@ -24,7 +24,13 @@ use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DiskCacheEntry {
     hash: String,
-    vector: Vec<f32>,
+    /// Primary slot — Option 이라 **한쪽 slot 만 성공해도 엔트리가 영속**된다(slot-wise).
+    /// 옛 "primary 있는 엔트리만 영속" 불변식은 스왑 마이그레이션에서 재앙이었음: 원격
+    /// primary(429)가 실패하면 방금 계산한 로컬 secondary 까지 통째 버려져 매 재빌드가
+    /// 같은 E5 를 재계산(1 vCPU 수 분 CPU 폭풍 = 2026-07-22 턴 랙 실측). 구 캐시 파일의
+    /// `vector: [..]` 는 Some 으로 자연 역직렬화(하위호환).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vector: Option<Vec<f32>>,
     /// Secondary (local fallback) slot — dual-embed when a remote primary is configured.
     /// serde-default so pre-dual cache files deserialize as None → only the secondary gets
     /// backfilled (local = free), the primary vectors are reused untouched.
@@ -207,10 +213,12 @@ impl SemanticCatalog {
             let hash = sha1_hash(&version, &text);
             let sec_hash = sec_version.as_deref().map(|v| sha1_hash(v, &text));
             let hit = disk.get(&e.id);
-            if hit.map(|h| h.hash == hash).unwrap_or(false) {
-                vectors.insert(e.id.clone(), hit.unwrap().vector.clone());
-            } else {
-                prim_needed.push((e.id.clone(), text.clone()));
+            // slot-wise 재사용 — hash 일치 + 벡터 실재(실패 slot 은 hash 만 남을 수 있음).
+            match hit.and_then(|h| if h.hash == hash { h.vector.clone() } else { None }) {
+                Some(v) => {
+                    vectors.insert(e.id.clone(), v);
+                }
+                None => prim_needed.push((e.id.clone(), text.clone())),
             }
             let secondary_ok = match (&sec_hash, hit) {
                 (Some(sh), Some(h)) => {
@@ -235,29 +243,26 @@ impl SemanticCatalog {
         }
         let embedded = prim_needed.len();
         let sec_backfill = sec_needed.len();
-        // ── primary — bounded concurrent (로컬 임베더 전제, per-entry) ──
-        let sem = Arc::new(tokio::sync::Semaphore::new(8));
-        let mut tasks = tokio::task::JoinSet::new();
-        for (id, text) in prim_needed {
-            let emb = self.embedder.clone();
-            let sem = sem.clone();
-            tasks.spawn(async move {
-                let _permit = sem.acquire().await;
-                (id, emb.embed_passage(&text).await)
-            });
-        }
-        while let Some(res) = tasks.join_next().await {
-            let Ok((id, primary)) = res else { continue };
-            match primary {
-                Ok(vec) => {
-                    vectors.insert(id, vec);
+        // ── primary — **배치**(embed_passages) ──
+        // 옛 per-entry 개별 호출(Semaphore 8)은 로컬 임베더 전제였는데, 스왑으로 primary 가
+        // 원격(Upstage)이 되자 재빌드마다 수백 개별 콜 = RPM(100) 즉시 소진 → 429 + 엔트리당
+        // WARN 폭풍(2026-07-22 실측: 재빌드가 턴 안에서 ~100개씩만 전진). 배치는 어댑터가
+        // 64개/콜 청크 = 920 엔트리 ≈ 15콜로 RPM 안. 로컬(E5)은 trait 기본 구현이 순차 루프라
+        // 동작 동일(1 vCPU 에선 동시성 이득도 없음). 실패 = WARN 1줄 + 이번 빌드 slot skip.
+        if !prim_needed.is_empty() {
+            let texts: Vec<String> = prim_needed.iter().map(|(_, t)| t.clone()).collect();
+            match self.embedder.embed_passages(&texts).await {
+                Ok(vecs) => {
+                    for ((id, _), v) in prim_needed.iter().zip(vecs) {
+                        vectors.insert(id.clone(), v);
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(
                         target: "semantic_catalog",
-                        "embed failed for {} ({}): {} — skipped",
-                        id,
+                        "primary batch embed failed ({}, {} entries): {} — slot skipped this build",
                         self.cache_file,
+                        prim_needed.len(),
                         err
                     );
                 }
@@ -288,19 +293,23 @@ impl SemanticCatalog {
                 }
             }
         }
-        // ── fresh 재구성 — primary 벡터가 있는 엔트리만 영속(기존 불변식). secondary 는 이번에
-        //    확보된 것만 실림 → 다음 재빌드가 나머지를 이어서 백필. ──
+        // ── fresh 재구성 — **slot-wise**: 어느 한쪽 벡터라도 확보된 엔트리는 영속. 실패한
+        //    slot 은 None 으로 남고 다음 재빌드가 그 slot 만 이어서 채움(성공분 재계산 0). ──
         let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
         for e in &entries {
-            let Some(v) = vectors.get(&e.id) else { continue };
+            let pv = vectors.get(&e.id).cloned();
+            let sv = secondary_vectors.get(&e.id).cloned();
+            if pv.is_none() && sv.is_none() {
+                continue;
+            }
             let (hash, sec_hash) = hashes.get(&e.id).cloned().unwrap_or_default();
             fresh.insert(
                 e.id.clone(),
                 DiskCacheEntry {
                     hash,
-                    vector: v.clone(),
+                    vector: pv,
                     secondary_hash: sec_hash,
-                    secondary: secondary_vectors.get(&e.id).cloned(),
+                    secondary: sv,
                 },
             );
         }
@@ -402,7 +411,13 @@ impl SemanticCatalog {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         let primary_cooling = self.primary_down_until.load(std::sync::atomic::Ordering::Relaxed) > now_ms;
-        let (q, use_secondary) = if self.secondary.is_some() && primary_cooling {
+        // Coverage gate — 스왑 마이그레이션 중엔 원격 primary 공간이 재빌드마다 증분으로
+        // 차오른다(429 rate limit). 반쪽 공간으로 서빙하면 미임베딩 엔트리가 검색에서 조용히
+        // 증발(2026-07-22 실측: 202/920 상태에서 recall 0) → 더 꽉 찬 공간을 서빙한다.
+        // 완성되면 자동으로 primary 로 넘어감. 동률 = primary.
+        let primary_incomplete =
+            self.secondary.is_some() && state.secondary_vectors.len() > state.vectors.len();
+        let (q, use_secondary) = if self.secondary.is_some() && (primary_cooling || primary_incomplete) {
             let sec = self.secondary.as_ref().unwrap();
             (sec.embed_query(embed_input).await?, true)
         } else {
