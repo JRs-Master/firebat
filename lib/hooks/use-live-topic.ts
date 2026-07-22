@@ -28,6 +28,20 @@ export function canLiveHere(): boolean {
   return liveSurface() !== false;
 }
 
+/**
+ * WS emit 봉투 언랩 — 스트림 프레임은 `{count, records:[{...}], trId}` (sandbox/ws 공용 배열
+ * 봉투)로 도착한다. 소비자(live_chart·live_stock_chart)의 dot-path valueField(예: STCK_PRPR)는
+ * **레코드 기준**이라, records 배열이면 레코드별로 콜백을 부른다(멀티레코드 = 틱 여러 개 = count>1
+ * 프레임도 전부 반영). 봉투가 아니면 프레임 그대로 전달(하위호환).
+ */
+function deliverFrame(data: unknown, cb: (d: unknown) => void): void {
+  if (data && typeof data === 'object' && Array.isArray((data as { records?: unknown }).records)) {
+    for (const rec of (data as { records: unknown[] }).records) cb(rec);
+    return;
+  }
+  cb(data);
+}
+
 export function useLiveTopic(
   topic: string | undefined,
   active: boolean,
@@ -42,9 +56,9 @@ export function useLiveTopic(
       // 재방문 재생 (2026-07-13) — 링버퍼의 최근 프레임을 구독 직전에 되감기해 "틱 대기" 빈
       // 화면을 즉시 채운다. 스냅샷과 라이브 구독 사이 프레임 1개가 중복 전달될 수 있으나
       // 피드 줄·차트 점 중복 1건 = 무해 (dedup 비용 > 이득).
-      for (const data of getTopicBuffer(topic)) cb.current(data);
+      for (const data of getTopicBuffer(topic)) deliverFrame(data, cb.current);
       const unsub = subscribeServerEvents((ev: { type?: string; data?: unknown }) => {
-        if (ev?.type === topic) cb.current(ev.data);
+        if (ev?.type === topic) deliverFrame(ev.data, cb.current);
       });
       return unsub;
     }
@@ -62,7 +76,7 @@ export function useLiveTopic(
       es.onmessage = (m) => {
         try {
           const ev = JSON.parse(m.data) as { type?: string; data?: unknown };
-          if (ev?.type === topic) cb.current(ev.data);
+          if (ev?.type === topic) deliverFrame(ev.data, cb.current);
         } catch { /* keepalive/비JSON 무시 */ }
       };
       es.onerror = () => es.close();
