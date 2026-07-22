@@ -3214,7 +3214,11 @@
         },
         "data": {
           "type": "array",
-          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}) at the SAME granularity as interval (minute seed for interval=60, daily seed for interval=86400); live ticks continue on the last (current-period) candle"
+          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}) at the SAME granularity as interval (minute seed for interval=60, daily seed for interval=86400); live ticks continue on the last (current-period) candle. Omit when using `seed` (fresh-on-visit)."
+        },
+        "seed": {
+          "type": "object",
+          "description": "fresh-on-visit seed binding — {module, action, args}. On a PUBLISHED page the server re-fetches the seed candles per visit (TTL-cached) so there is no stale creation-time gap. The module.action must be a pageBinding-declared candle action (e.g. kiwoom.ka10081 for daily). Prefer this over a static `data` for a published live chart."
         },
         "indicators": {
           "type": "array",

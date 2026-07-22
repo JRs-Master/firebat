@@ -99,6 +99,9 @@ export async function resolveRequestBindings(body: unknown, slug: string): Promi
   if (tasks.length > 0) await Promise.all(tasks);
 }
 
+/** 라이브 컴포넌트 type — seed 바인딩 fresh-on-visit resolve 대상. */
+const LIVE_SEED_TYPES = new Set(['live_stock_chart', 'livestockchart', 'live_chart', 'livechart']);
+
 function walk(node: unknown, path: string, tasks: Promise<void>[], slug: string) {
   if (Array.isArray(node)) {
     node.forEach((c, i) => walk(c, `${path}.${i}`, tasks, slug));
@@ -114,7 +117,54 @@ function walk(node: unknown, path: string, tasks: Promise<void>[], slug: string)
     }
     return; // _baked 안쪽으로 하강 금지 (Rust walk 미러)
   }
+  // 라이브 봉/라인 차트 — seed:{module,action,args} 선언 시 방문마다 최신 시드 재fetch(정기 페이지의
+  // 생성시점 스냅샷 갭 해소). 라이브 틱은 그 위에서 이어짐. 게이트 = 일반 module 바인딩과 동일.
+  if (LIVE_SEED_TYPES.has(type)) {
+    const props = rec.props as Json | undefined;
+    const seed = props?.seed as Json | undefined;
+    if (props && seed && typeof seed.module === 'string') {
+      tasks.push(resolveLiveSeed(props, seed, path, slug));
+    }
+    return;
+  }
   for (const v of Object.values(rec)) walk(v, path, tasks, slug);
+}
+
+/** 라이브 시드 resolve — pageBinding 게이트로 모듈을 방문 시점 실행하고, 반환 블록에서 캔들 배열
+ *  (첫 번째 `props.data` 배열)을 뽑아 라이브 블록의 `data`(시드)로 주입. 실패 = 기존 data 유지. */
+async function resolveLiveSeed(props: Json, seed: Json, path: string, slug: string): Promise<void> {
+  const moduleName = String(seed.module);
+  const requested = typeof seed.action === 'string' ? (seed.action as string) : '';
+  const action = await pageBindingGate(moduleName, requested);
+  if (!action) return;
+  const key = cacheKey(slug, `${path}#seed`, moduleName, action, seed.args);
+  const ttlMs = clampTtlMs(props.cacheTtl);
+  const now = Date.now();
+  if (resultCache.size > 1000) resultCache.clear();
+  const hit = resultCache.get(key);
+  if (!hit || now - hit.t >= hit.ttlMs) {
+    let p = inflight.get(key);
+    if (!p) {
+      p = runBinding(moduleName, action, seed.args).finally(() => inflight.delete(key));
+      inflight.set(key, p);
+    }
+    const blocks = await p;
+    if (blocks) resultCache.set(key, { blocks, t: now, ttlMs });
+  }
+  const cached = resultCache.get(key);
+  const rows = cached ? firstDataArray(cached.blocks) : null;
+  if (rows && rows.length > 0) props.data = rows;
+}
+
+/** 렌더 블록 배열에서 첫 번째 `props.data` 배열(캔들 행) 추출. */
+function firstDataArray(blocks: unknown[]): unknown[] | null {
+  for (const b of blocks) {
+    if (b && typeof b === 'object') {
+      const d = (((b as Json).props as Json | undefined)?.data);
+      if (Array.isArray(d) && d.length > 0) return d;
+    }
+  }
+  return null;
 }
 
 async function resolveOne(props: Json, path: string, slug: string): Promise<void> {
