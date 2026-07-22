@@ -21,12 +21,15 @@ description: 라이브러리 시험지 PDF → 퀴즈 렌더. 태그 - 시험지
    { "type": "object", "properties": {
        "questions": { "type": "array", "items": { "type": "object", "properties": {
          "number":  { "type": "string", "description": "문항 번호" },
-         "passage": { "type": "string", "description": "이 문항이 딸린 지문/대화문(있을 때만)" },
-         "stem":    { "type": "string", "description": "문제 문장(빈칸 __ 포함, 밑줄·지시문 포함)" },
+         "passage": { "type": "string", "description": "이 문항의 지문/대화문(있을 때만). 원문에서 답을 써넣도록 비워둔 자리(밑줄·빈칸)가 있으면 그 자리에 정확히 [[BLANK]] 표기를 넣어 문장을 완성할 것. 문장 순서는 원문 그대로." },
+         "stem":    { "type": "string", "description": "문제 지시문. 지시문 안에 비워둔 자리가 있으면 거기에도 [[BLANK]] 표기" },
          "choices": { "type": "array", "items": { "type": "string" }, "description": "보기 4~5개, 번호표 제외한 텍스트만, 원 순서 유지" }
        } } }
    } }
    ```
+
+   **빈칸 표기 필수** — `[[BLANK]]` 지시를 빼면 IE 가 빈칸을 서식 노이즈로 보고 지워버려
+   "어디에 들어갈 말인지" 사라진다(실측). 렌더 시 `[[BLANK]]` → `______`(밑줄) 로 치환해 표시.
 
 3. **렌더** — 반환 `questions` 를 `quiz_group` 으로. 매핑: `stem`→`question`, `choices`→`choices`,
    `number`→`number`. 지문 공유 묶음은 그 지문을 quiz_group 의 `passage` 로 두고 문항을 함께 넣는다
@@ -45,3 +48,10 @@ description: 라이브러리 시험지 PDF → 퀴즈 렌더. 태그 - 시험지
   대상이 아니다.
 - 보기 텍스트는 원 순서 그대로(스키마가 순서를 보존). 번호(①②③④)는 컴포넌트가 자동으로 붙이니
   `choices` 텍스트에 원 번호를 넣지 말 것(중복 표기 방지).
+- **빈칸 위치는 근사일 수 있다(엔진 한계)** — IE 는 의미 추출기라 문항↔보기 귀속·문장 순서는
+  정확하지만 빈칸이 문장 안 어느 단어 사이인지는 한두 단어 어긋날 수 있다(실측: 문장 맨 앞
+  빈칸이 두 번째 단어 뒤로). 빈칸 자리가 풀이에 결정적인 문항이면 "빈칸 위치는 원본과 다를 수
+  있다"고 한 줄 덧붙이고, 정확한 원문이 필요하면 원본 PDF 를 함께 안내할 것. 임의로 옮겨
+  "고쳐 놓지" 말 것(추측 배치 = 날조).
+- 이미지로만 된 문항(채팅 캡처·화면 캡처 등)도 IE 는 **원본 PDF 를 직접 보므로** 추출된다 —
+  라이브러리 파싱 텍스트(search_library)에 그 문항이 없다고 해서 빼지 말 것.
