@@ -78,7 +78,8 @@ function normalizeDate(d: string): string {
 function shortDate(d: string): string {
   const n = normalizeDate(d);
   // 날짜부만 MM/DD — ISO datetime("2026-01-02T00:00:00+09:00")이 그대로 와도 시각·TZ 를 흘리지 않는다.
-  const m = n.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // "YYYYMMDD HH:MM"(분봉 시드/라이브) 도 앞 8자리로 MM/DD 추출 — 안 그러면 풀 문자열이 노출된다.
+  const m = n.match(/^(\d{4})-(\d{2})-(\d{2})/) || n.match(/^(\d{4})(\d{2})(\d{2})/);
   return m ? `${m[2]}/${m[3]}` : n;
 }
 
@@ -527,9 +528,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const changeColor = isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-slate-400';
   const changeArrow = isUp ? '▲' : isDown ? '▼' : '–';
   const changeSign = isUp ? '+' : '';
-  const firstDate = shortDate(viewFirst.date);
-  const lastDate = shortDate(viewLatest.date);
-  const periodLabel = firstDate === lastDate ? `${firstDate} · 1일` : `${firstDate} ~ ${lastDate} · ${n}일`;
+  // 기간 라벨 — 인트라데이(분/시간봉)면 봉 개수를 "일"로 세면 안 됨("25일" 버그). 시각(HH:MM)이
+  // 있고 자정이 아닌 봉이 있으면 인트라데이로 보고 범위는 시:분 위주, 개수 단위는 "봉".
+  const timeOf = (d: string): string => {
+    const m = normalizeDate(d).match(/(\d{2}:\d{2})/);
+    return m ? m[1] : '';
+  };
+  const isIntraday = safeData.some(d => { const t = timeOf(d.date); return t && t !== '00:00'; });
+  const rangeLabel = (d: string): string => {
+    if (!isIntraday) return shortDate(d);
+    const t = timeOf(d);
+    return t ? `${shortDate(d)} ${t}` : shortDate(d);
+  };
+  const firstDate = rangeLabel(viewFirst.date);
+  const lastDate = rangeLabel(viewLatest.date);
+  const countUnit = isIntraday ? '봉' : '일';
+  const periodLabel = firstDate === lastDate
+    ? `${firstDate} · 1${countUnit}`
+    : `${firstDate} ~ ${lastDate} · ${n}${countUnit}`;
   const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
   const showSymbolChip = titleText !== symbol;
   const periodHigh = Math.max(...safeData.map(d => d.high));
