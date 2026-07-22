@@ -49,6 +49,38 @@ pub struct PageBinding {
     /// Unresolvable prop → dropped; a block whose `$.` data is missing → skipped.
     /// Absent = the module returns `data.blocks` itself (code path, for computed values).
     pub blocks: Option<Vec<serde_json::Value>>,
+    /// 추가 허용 액션 — `action → {args?, blocks?}`. 페이지 표면의 폐쇄 집합을 여러 액션으로
+    /// 확장한다(예: 일봉 ka10081 + 분봉 ka10080 — 라이브 차트의 분봉 fresh 시드용). 각 액션은
+    /// 자기 고정 args·blocks 템플릿을 갖고, 없으면 최상위 것을 상속. 미선언 = 기본 액션 하나만.
+    pub actions: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl PageBinding {
+    /// 페이지 표면에서 이 액션 실행이 허용되는가 (기본 액션 또는 추가 선언 액션).
+    pub fn allows(&self, action: &str) -> bool {
+        action == self.action
+            || self.actions.as_ref().is_some_and(|m| m.contains_key(action))
+    }
+
+    /// 그 액션의 (고정 args, blocks 템플릿) — 추가 액션이 자기 것을 선언했으면 그것, 아니면 기본.
+    pub fn spec_for(
+        &self,
+        action: &str,
+    ) -> (Option<serde_json::Value>, Option<Vec<serde_json::Value>>) {
+        if action != self.action {
+            if let Some(entry) = self.actions.as_ref().and_then(|m| m.get(action)) {
+                let args = entry.get("args").filter(|v| v.is_object()).cloned().or_else(|| self.args.clone());
+                let blocks = entry
+                    .get("blocks")
+                    .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
+                    .cloned()
+                    .or_else(|| self.blocks.clone());
+                return (args, blocks);
+            }
+        }
+        (self.args.clone(), self.blocks.clone())
+    }
 }
 
 pub fn parse_page_binding(config: &serde_json::Value) -> Option<PageBinding> {
@@ -68,7 +100,12 @@ pub fn parse_page_binding(config: &serde_json::Value) -> Option<PageBinding> {
         .and_then(|v| v.as_array())
         .filter(|a| !a.is_empty())
         .cloned();
-    Some(PageBinding { alias, action, args, blocks })
+    let actions = pb
+        .get("actions")
+        .and_then(|v| v.as_object())
+        .filter(|m| !m.is_empty())
+        .cloned();
+    Some(PageBinding { alias, action, args, blocks, actions })
 }
 
 /// Declarative template fill — `"$.path"` from the module response, `"{arg}"` from block args.
@@ -158,10 +195,20 @@ pub fn binding_gate(config: &serde_json::Value, requested_action: &str) -> Resul
     } else {
         requested_action.trim().to_string()
     };
-    if action != binding.action {
+    if !binding.allows(&action) {
         return Err(format!(
-            "action '{}' is not the declared pageBinding action '{}'",
-            action, binding.action
+            "action '{}' is not a declared pageBinding action (declared: '{}'{})",
+            action,
+            binding.action,
+            binding
+                .actions
+                .as_ref()
+                .map(|m| {
+                    let mut extra: Vec<&str> = m.keys().map(|k| k.as_str()).collect();
+                    extra.sort_unstable();
+                    format!(", '{}'", extra.join("', '"))
+                })
+                .unwrap_or_default()
         ));
     }
     // requiresApproval(주문류) 는 페이지 표면에서 실행 금지 — page-form 게이트 미러.
@@ -331,8 +378,13 @@ pub async fn resolve_binding(
     // sandbox·net_guard)는 run_impl 이 그대로 적용.
     // 인자 = config 의 고정 args(기본값) 위에 블록 args 를 덮어씀.
     let binding = parse_page_binding(&config);
+    // 액션별 spec — 추가 선언 액션(일봉/분봉 등)은 자기 args·blocks, 없으면 기본 상속.
+    let (fixed_args, declared_blocks) = binding
+        .as_ref()
+        .map(|b| b.spec_for(&action))
+        .unwrap_or((None, None));
     let mut block_args = serde_json::Map::new();
-    if let Some(fixed) = binding.as_ref().and_then(|b| b.args.as_ref()).and_then(|a| a.as_object()) {
+    if let Some(fixed) = fixed_args.as_ref().and_then(|a| a.as_object()) {
         for (k, v) in fixed {
             block_args.insert(k.clone(), v.clone());
         }
@@ -390,7 +442,7 @@ pub async fn resolve_binding(
             let out = out;
             // 블록 소스 2갈래 — 선언형 템플릿(config `pageBinding.blocks`, 모듈 코드 0)이 있으면
             // 그것으로 조립하고, 없으면 모듈이 직접 반환한 `data.blocks`(계산이 필요한 모듈의 탈출구).
-            let declared = binding.as_ref().and_then(|b| b.blocks.as_ref());
+            let declared = declared_blocks.as_ref();
             let blocks = match declared {
                 Some(tpl) => render_declared_blocks(tpl, &out.data, &block_args),
                 None => out

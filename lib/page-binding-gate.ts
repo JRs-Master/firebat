@@ -39,7 +39,10 @@ export async function pageBindingGate(moduleName: string, requestedAction: strin
   const declared = typeof pb?.action === 'string' ? (pb.action as string).trim() : '';
   if (!declared) return null; // pageBinding 미선언 = opt-in 아님
   const action = requestedAction.trim() || declared;
-  if (action !== declared) return null;
+  // 추가 선언 액션(pageBinding.actions) 도 허용 — Rust binding_gate `allows()` 미러.
+  const extra = pb?.actions as Json | undefined;
+  const allowed = action === declared || !!(extra && typeof extra === 'object' && action in extra);
+  if (!allowed) return null;
   const ra = cfg.requiresApproval;
   if (ra === true || (Array.isArray(ra) && ra.includes(action))) return null;
   return action;

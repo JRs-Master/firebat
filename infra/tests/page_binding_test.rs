@@ -37,6 +37,32 @@ fn parse_filters_invalid_alias_chars() {
 }
 
 #[test]
+fn gate_allows_extra_declared_actions_only() {
+    // 폐쇄 집합 확장 — pageBinding.actions 에 선언한 액션만 추가 허용(일봉+분봉), 나머지는 거부.
+    let c = cfg(json!({ "pageBinding": {
+        "action": "ka10081",
+        "args": { "upd_stkpc_tp": "1" },
+        "blocks": [{ "type": "stock_chart", "props": { "data": "$.daily" } }],
+        "actions": { "ka10080": {
+            "args": { "tic_scope": "1" },
+            "blocks": [{ "type": "stock_chart", "props": { "data": "$.minute" } }]
+        } }
+    } }));
+    assert_eq!(binding_gate(&c, "ka10081").unwrap(), "ka10081");
+    assert_eq!(binding_gate(&c, "ka10080").unwrap(), "ka10080");
+    assert!(binding_gate(&c, "ka10001").is_err(), "미선언 액션은 거부");
+
+    // spec_for — 추가 액션은 자기 args·blocks, 기본은 최상위.
+    let b = parse_page_binding(&c).expect("declared");
+    let (args_min, blocks_min) = b.spec_for("ka10080");
+    assert_eq!(args_min.unwrap()["tic_scope"], json!("1"));
+    assert_eq!(blocks_min.unwrap()[0]["props"]["data"], json!("$.minute"));
+    let (args_day, blocks_day) = b.spec_for("ka10081");
+    assert_eq!(args_day.unwrap()["upd_stkpc_tp"], json!("1"));
+    assert_eq!(blocks_day.unwrap()[0]["props"]["data"], json!("$.daily"));
+}
+
+#[test]
 fn gate_undeclared_module_is_refused() {
     let c = cfg(json!({ "input": {} }));
     assert!(binding_gate(&c, "").is_err());

@@ -1107,6 +1107,28 @@
           ]
         }
       }
-    ]
+    ],
+    "actions": {
+      "ka10080": {
+        "args": {
+          "upd_stkpc_tp": "1",
+          "tic_scope": "1"
+        },
+        "blocks": [
+          {
+            "type": "stock_chart",
+            "props": {
+              "symbol": "{stk_cd}",
+              "title": "{title}",
+              "data": "$.stk_min_pole_chart_qry",
+              "indicators": [
+                "MA5",
+                "MA20"
+              ]
+            }
+          }
+        ]
+      }
+    }
   }
 }
