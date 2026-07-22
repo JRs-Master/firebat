@@ -150,9 +150,11 @@ When the user asks to build an app/tool/game, the AI enters a guided build flow 
 
 ### Realtime (WebSocket watches + live components)
 
-Declarative `ws` config per module routes actions over WebSocket (broker condition-search and quote APIs that REST can't reach). `stream_watch_start` keeps a persistent watch alive (auto-reconnect, survives restarts, Telegram fan-out), and `live_feed` / `live_chart` components render those events live in chat — alive while visible in the viewport, frozen with a timestamp when hidden.
+Declarative `ws` config per module routes actions over WebSocket (broker condition-search and quote APIs that REST can't reach). `stream_watch_start` keeps a persistent watch alive (auto-reconnect, survives restarts, Telegram fan-out), and `live_feed` / `live_chart` / `live_stock_chart` components render those events live — alive while visible in the viewport, frozen with a timestamp when hidden.
 
-> 🇰🇷 **실시간** — 모듈 config `ws` 선언만으로 WS 전용 API(조건검색·실시간 시세) 호출, `stream_watch_*` 상시 감시(재부팅 복원·텔레그램 알림), `live_feed`/`live_chart` 컴포넌트가 채팅에서 실시간 렌더(뷰포트 가시성 = 수명).
+Live rendering also works on **published pages**, not just admin chat: a topic-scoped public relay (`/api/page-stream`) streams only the topics that page's own spec declares (page must be public; per-IP connection cap), so an anonymous visitor sees ticks without touching any admin endpoint. `live_stock_chart` aggregates ticks into candles at any granularity — 1-minute buckets or **daily** (today's candle updates live, a new one rolls at date change) — and can declare a `seed` binding so the server re-fetches the seed candles on every visit instead of serving a stale publish-time snapshot.
+
+> 🇰🇷 **실시간** — 모듈 config `ws` 선언만으로 WS 전용 API(조건검색·실시간 시세) 호출, `stream_watch_*` 상시 감시(재부팅 복원·텔레그램 알림), `live_feed`/`live_chart`/`live_stock_chart` 컴포넌트가 실시간 렌더(뷰포트 가시성 = 수명). **발행 페이지도 라이브** — 그 페이지 spec 에 선언된 topic 만 흐르는 공개 릴레이(익명 방문자도 admin endpoint 무접촉). 봉차트는 분봉·일봉 모두 지원(일봉 = 오늘 봉이 갱신), `seed` 바인딩 선언 시 방문마다 시드를 최신으로 재fetch.
 
 ### MCP (Model Context Protocol)
 
@@ -251,6 +253,12 @@ After a week of continuous use, "How did that turn out?" returns the full timeli
 > 🇰🇷 **Recall · 회상(retrieval) 시스템** — 대화는 휘발해도 사실은 영속. 쓸수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "1주 전에 본 그건 어떻게 됐지?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
 
 > 🇰🇷 **Library RAG** (2026-05-17, 2026-06-01 하이브리드) — 사용자 업로드 자료(PDF/TXT/MD/URL) NotebookLM 식 RAG. **dense(E5) + sparse(BM25/SQLite FTS5) 하이브리드 + RRF** 검색 — 의미 + 정확 토큰(고유명사·법조문 코드)까지. parent-doc 맥락 확장 + 경계 인식 청킹. RetrievalEngine 5번째 source 로 자동 주입(AI Assistant 토글 ON 시) + `search_library` 도구로 AI 능동 검색. 쿼리당 LLM 비용 0 — ANN/벡터DB 없이 SQLite 만으로.
+
+### Structured extraction (documents → JSON)
+
+RAG search answers "what does this say about X"; structured extraction answers "give me every question/line-item/clause as data". `library_extract_structured` sends the **original uploaded file** (not the parsed text) to an extraction model against a JSON schema — so scanned/image-only regions are read too, and item↔sub-item binding (a question and its choices, a line item and its price) is structural rather than dependent on layout reading order. Omit the schema and one is generated from the document. For one-off documents outside the library (receipts, invoices, business cards) the `upstage-ie` module takes a URL or base64 instead.
+
+> 🇰🇷 **구조화 추출** — RAG 검색이 "이 문서가 X 에 대해 뭐라 하나"라면, 구조화 추출은 "문항·항목·조항을 전부 데이터로". 라이브러리 문서는 **파싱 텍스트가 아니라 원본 파일**을 스키마 대비 추출(이미지 문항도 읽힘, 문항↔보기 귀속이 레이아웃 순서와 무관). 스키마 생략 시 문서에서 자동 생성. 라이브러리 밖 일회성 문서(영수증·명함)는 `upstage-ie` 모듈이 URL/base64 로 처리.
 
 ### Observability — Runtime Logs
 

@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-07-18 (페이지↔모듈 바인딩 `pageBinding` + 모듈 내장 이미지 `assets/` 규약 — 발행 bake·방문 SSR·rebake 크론·shortcode)
+> 최종 개정: 2026-07-22 (pageBinding `actions` 다액션 확장 + secrets `vaultKey` 시스템 키 재사용 + 라이브 차트 fresh 시드)
 
 ## 전문(前文)
 
@@ -275,7 +275,16 @@ node scripts/gen.mjs             # _apis.json → config + index
     "blocks": [
       { "type": "stock_chart",
         "props": { "symbol": "{stk_cd}", "title": "{title}", "data": "$.stk_dt_pole_chart_qry" } }
-    ]
+    ],
+    "actions": {
+      "ka10080": {
+        "args": { "upd_stkpc_tp": "1", "tic_scope": "1" },
+        "blocks": [
+          { "type": "stock_chart",
+            "props": { "symbol": "{stk_cd}", "title": "{title}", "data": "$.stk_min_pole_chart_qry" } }
+        ]
+      }
+    }
   }
 }
 ```
@@ -283,6 +292,8 @@ node scripts/gen.mjs             # _apis.json → config + index
 - **블록 소스 2갈래 — 선언형이 기본**: config `blocks` 템플릿을 쓰면 **모듈 코드 0**으로 기존 액션을 그대로 페이지에 붙인다(프레임워크가 매핑을 추측하지 않는 이유 = 템플릿이 어느 응답 필드가 어느 컴포넌트로 가는지 말해주기 때문). 치환 규칙 = `"$.a.b"`(문자열 전체) → 모듈 응답 `data` 의 그 경로 / `"{name}"` → 블록 args(+config `args` 기본값). 해결 안 된 prop = 그 prop 만 제거 / `$.` 데이터가 없는 블록 = 통째 skip. **계산·가공이 필요한 모듈만**(등락률 산출, 단위 변환 등) `blocks` 없이 전용 액션을 만들어 `data.blocks` 를 직접 반환(탈출구 — yfinance `page_blocks`).
 - **액션 계약**: `{success, data:{blocks:[{type,props},...]}}` 반환 — **모듈이 렌더를 소유**한다(프레임워크가 결과→컴포넌트 매핑을 추측하지 않음). 레퍼런스 = yfinance `page_blocks`.
 - **when 축**: `publish`(기본) = 저장 경로가 서버에서 실행해 `_baked` 병기(바인딩은 산 채 유지 → `rebake:<slug>` 크론이 표준 정기 페이지) / `request` = 발행 SSR 이 방문 시 resolve(TTL 캐시 + single-flight, 실패 = `_baked` 폴백. 신규 공개 endpoint 0 — RSC 내부).
+- **`actions`** (선택, 2026-07-22) = 폐쇄 집합을 **여러 액션으로 확장**. `action → {args?, blocks?}` — 각 액션이 자기 고정 args·blocks 템플릿을 갖고, 없으면 최상위 것을 상속. 같은 모듈이 페이지 표면에 안전하게 낼 수 있는 read 액션이 둘 이상일 때(예: 일봉 `ka10081` + 분봉 `ka10080` — 라이브 차트의 분봉 fresh 시드). **미선언 액션은 그대로 거부**(폐쇄성 불변).
+- **라이브 차트 fresh 시드**: `live_stock_chart` 등 라이브 블록이 `seed:{module,action,args}` 를 선언하면 발행 SSR 이 **방문마다** 그 바인딩을 resolve 해 시드 캔들을 최신으로 교체한다(라이브 틱은 그 위에서 이어짐). 라이브 봉 자체는 client 상태(비영속)라 저장하지 않는다 — 갭의 해법은 "저장"이 아니라 "방문 시 시드 재fetch".
 - **보안**: `requiresApproval` 액션은 선언해도 전면 거부(page-form 게이트 미러) / hub-scope 저장 = bake skip(inert 저장) / `_baked` 캡 = 블록 50 · 256KB · 스펙당 바인딩 20. 게이트 로직 = Rust `page_binding.rs` ↔ TS `lib/page-binding-gate.ts` 미러(단일 정책).
 - **`alias`** (선택) = 템플릿 텍스트 sugar — text 블록의 `{stock symbol="005930.KS"}` 가 `get_template` 시 module 블록으로 컴파일(등록 alias 만, 미등록 `{word}` = 리터럴 유지).
 
@@ -338,10 +349,11 @@ node scripts/gen.mjs             # _apis.json → config + index
 
 | field | 영역 |
 |---|---|
-| `name` | Vault 키 이름 (필수) |
+| `name` | env 변수명 = Vault 키 이름 (필수). 기본 조회 경로 = `user:<name>` |
 | `type` | `"key"` — 사용자 입력 / `"token"` — 자동 발급 (OAuth · API token cache 등) |
 | `lifetimeSec` | token 만료 (초). 자동 갱신 cron 의 trigger 시점 결정 (lifetime × 0.8 도달 시 refresh) |
 | `refreshFrom` | refresh_token 의 vault 키 이름 — access 만료 시 본 키로 갱신 (kakao OAuth refresh 패턴) |
+| `vaultKey` | **Vault 키 전체 경로 오버라이드** (2026-07-22) — 이미 등록된 시스템 공급자 키를 재사용한다. 예: `{"name":"UPSTAGE_API_KEY","vaultKey":"system:upstage:api-key"}` → 설정>AI 에서 등록한 Upstage 키가 그대로 env 로 주입되고, **모듈 설정에서 같은 키를 다시 입력받지 않는다**(중복 입력 제거). 모듈별 하드코드 0 — 어느 모듈이든 어느 시스템 키든 선언으로 참조. |
 
 ### 제2항. type 별 동작 차이
 
