@@ -425,7 +425,16 @@ const stripChoiceMarker = (s: any): string => {
 // answerIndex 3=④, answer 1=②). 내부 ans 는 1-based(보기 번호 = i+1)라 +1 환산. 먼저 온 값 사용.
 const quizAns = (answer?: number, answerIndex?: number): number | undefined => {
   const idx = typeof answer === 'number' ? answer : typeof answerIndex === 'number' ? answerIndex : undefined;
-  return idx === undefined ? undefined : idx + 1;
+  return idx == null ? undefined : idx + 1;
+};
+
+// 이 문항에 공개할 게 있나 — 정답(OX/보기) 또는 해설. 없으면 "정답 확인" 버튼이 헛돈다(누르면
+// 버튼만 사라지고 드러날 게 없음) → 버튼 게이팅·미제공 안내에 사용.
+const quizHasReveal = (q: { answer?: number | string; answerIndex?: number; correctIndex?: number; explanation?: string; type?: string }): boolean => {
+  const aidx = q.answerIndex ?? q.correctIndex;
+  const ox = oxConfig(q.type, q.answer, aidx);
+  const ans = ox ? ox.ans : quizAns(typeof q.answer === 'number' ? q.answer : undefined, aidx);
+  return ans != null || (q.explanation?.trim()?.length ?? 0) > 0;
 };
 
 // OX(일치/불일치) / TFNG(True·False·Not Given) 모드 — 라벨 + 정답 인덱스(1-based).
@@ -557,6 +566,7 @@ function QuizBody({
       )}
       {showAnswer && (
         <div className="mt-3.5">
+          {ans == null && !explanation && <div className="text-[12px] text-slate-400">정답·해설이 제공되지 않았습니다.</div>}
           {ans != null && <div className="text-[13px] font-bold text-green-700 mb-2">정답: {ox ? (ox.labels[ans - 1] ?? ans) : (marks[ans - 1] ?? ans)}</div>}
           {explanation && (
             <div className="rounded-lg border border-[#d9cdae] p-3 sm:p-3.5">
@@ -1831,6 +1841,8 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
   const hasContent = (question?.trim()?.length ?? 0) > 0
     || (choices?.length ?? 0) > 0 || (statements?.length ?? 0) > 0 || (boxes?.length ?? 0) > 0;
   if (!hasContent) return null;
+  // 공개할 정답·해설이 없으면 "정답 확인" 버튼을 띄우지 않음(누르면 버튼만 사라지던 헛동작 방지).
+  const anyReveal = quizHasReveal({ answer, answerIndex, explanation, type });
   return (
     <div className="my-2">
       {points != null && (
@@ -1841,7 +1853,7 @@ function QuizComp({ number, points, question, boxes, figures, statements, choice
         choices={choices} answer={answer} answerIndex={answerIndex} explanation={explanation} type={type} marker={marker} view={view}
         selected={selected} revealed={revealed} onSelect={setSelected}
       />
-      {view === 'interactive' && !revealed && (
+      {view === 'interactive' && !revealed && anyReveal && (
         <div className="flex justify-end mt-2">
           <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">정답 확인</button>
         </div>
@@ -1860,6 +1872,8 @@ function QuizGroupComp({ passage, boxes, figures, questions, type, marker, view 
   const qs = (questions ?? []).filter((q) => q && ((q.question?.trim()?.length ?? 0) > 0 || (q.choices?.length ?? 0) > 0 || (q.options?.length ?? 0) > 0 || (q.statements?.length ?? 0) > 0));
   // 내용 있는 문항 0 + 공유 지문/도표도 없음 = 빈 quiz_group → 죽은 박스 대신 안 띄움(정직).
   if (qs.length === 0 && !passage && !(boxes?.length) && !(figures?.length)) return null;
+  // 한 문항이라도 공개할 정답·해설이 있을 때만 "정답 확인" 버튼(전부 없으면 헛동작이라 숨김).
+  const anyReveal = qs.some((q) => quizHasReveal({ ...q, answerIndex: q.answerIndex ?? q.correctIndex }));
   return (
     <div style={PAPER_STYLE} className="border border-[#e9e2d0] rounded-lg p-3 sm:p-4 bg-[#faf8f0] my-2">
       {view !== 'answers' && passage && (
@@ -1882,7 +1896,7 @@ function QuizGroupComp({ passage, boxes, figures, questions, type, marker, view 
           />
         ))}
       </div>
-      {view === 'interactive' && !revealed && (
+      {view === 'interactive' && !revealed && anyReveal && (
         <div className="flex justify-end mt-3">
           <button type="button" onClick={() => setRevealed(true)} className="px-3.5 py-1.5 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md">{qs.length === 1 ? '정답 확인' : '전체 정답 확인'}</button>
         </div>
