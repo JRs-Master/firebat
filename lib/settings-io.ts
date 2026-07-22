@@ -190,7 +190,7 @@ export async function saveSettings(body: Record<string, any>, owner?: string) {
   if (typeof body.ttsAlignProvider === 'string') {
     await setGeminiKey({ key: 'system:tts:align_provider', value: body.ttsAlignProvider });
   }
-  // ── assistant tab (worker axis) — all immediate-save toggles/selects ──
+  // ── assistant tab (worker axis) — toggles/selects, persisted via the Save button batch ──
   if (body.embedCatalogProvider === 'local' || body.embedCatalogProvider === 'solar') {
     await setGeminiKey({ key: VK_SYSTEM_EMBED_CATALOG_PROVIDER, value: body.embedCatalogProvider });
   }

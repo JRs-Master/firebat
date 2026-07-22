@@ -727,7 +727,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
     // Settings batch — single owner-injected endpoint, identical full payload for admin & hub.
     // The hub backend persists only its per-tenant fields; the rest are read-only there.
-    // aiRouterEnabled 등 assistant 탭 설정은 즉시저장(토글 onChange PATCH)이라 배치에 없음.
+    // assistant 탭 설정도 이 배치(draft → Save) — 즉시저장 혼재는 UX 혼란(2026-07-22 사용자).
     const ok = await settingsEndpoint.save({
       timezone: userTimezone,
       aiModel: draftModel,
@@ -741,6 +741,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       ttsVoice,
       ttsAlignProvider,
       lastModelByCategory: nextLastModelByCategory,
+      aiRouterEnabled,
+      memoryAutoSave,
+      embedCatalogProvider,
+      libraryParseProvider,
+      retentionEnabled,
+      retentionDays,
     });
     if (!ok) return false;
 
@@ -1136,19 +1142,17 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 {aiSubTab === 'cost' && <CostTabContent />}
                 {aiSubTab === 'memory' && <MemoryTabContent hubContext={hubContext} />}
                 {/* assistant 하위탭 — 잡일(보조 AI) 축 전용 홈: 자동 기억 적립·임베딩·문서 파싱·휴지통 정리·메모리 관리.
-                    전부 즉시저장(하단 Save 게이트 무관). sub-agent(분해 위임 = 메인 체급)는 LLM 탭에 남음 — 두 축 안 섞음. */}
+                    저장 = 하단 Save 버튼(다른 탭과 통일 — 옛 즉시저장 혼재가 UX 혼란, 2026-07-22 사용자).
+                    키 입력만 자체 저장 버튼(vault 즉시 반영 = LLM 탭 키 입력과 동일 패턴).
+                    sub-agent(분해 위임 = 메인 체급)는 LLM 탭에 남음 — 두 축 안 섞음. */}
                 {aiSubTab === 'assistant' && !hubMode && (
                 <div className="flex flex-col gap-5">
                   {(() => {
                     // Intelligence 자동 등록 — 리콜(대상·사실·사건)과 메모리(규칙·교훈)를 분리 게이트
                     // (2026-07-13 사용자 확정: 마스터 토글 없이 세부 2개). 추출 워커 = 메인 모델 추종.
+                    // 저장 = 하단 Save 버튼(draft — 다른 탭과 통일).
                     const hasAssistantKey =
                       execMode === 'cli' || !!googleApiKey || !!vertexSaJson || !!geminiApiKey || !!anthropicApiKey || !!upstageApiKey;
-                    const saveIntel = async (patch: Record<string, boolean>) => {
-                      await apiPatch('/api/settings', patch, { category: 'settings' });
-                      // CronPanel(['settings','ai-router'])의 consolidation 회색 처리가 이 캐시를 읽음.
-                      queryClient.invalidateQueries({ queryKey: ['settings'] });
-                    };
                     return (
                       <div className="flex flex-col gap-2">
                         <FieldLabel>Intelligence</FieldLabel>
@@ -1159,11 +1163,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               className="mt-0.5"
                               checked={aiRouterEnabled}
                               disabled={!hasAssistantKey}
-                              onChange={async e => {
-                                const next = e.target.checked;
-                                setAiRouterEnabled(next);
-                                await saveIntel({ aiRouterEnabled: next });
-                              }}
+                              onChange={e => setAiRouterEnabled(e.target.checked)}
                               aria-label={t('settings_modal.intel_recall_label')}
                               name="recallAutoSave" autoComplete="off" id={aiRouterEnabledId}
                             />
@@ -1178,11 +1178,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               className="mt-0.5"
                               checked={memoryAutoSave}
                               disabled={!hasAssistantKey}
-                              onChange={async e => {
-                                const next = e.target.checked;
-                                setMemoryAutoSave(next);
-                                await saveIntel({ memoryAutoSave: next });
-                              }}
+                              onChange={e => setMemoryAutoSave(e.target.checked)}
                               aria-label={t('settings_modal.intel_memory_label')}
                               name="memoryAutoSave" autoComplete="off"
                             />
@@ -1203,10 +1199,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   <Field label={t('settings_modal.assistant_embed_label')} help={t('settings_modal.assistant_embed_help')}>
                     <SelectInput
                       value={embedCatalogProvider}
-                      onChange={async (v) => {
-                        setEmbedCatalogProvider(v as 'local' | 'solar');
-                        await apiPatch('/api/settings', { embedCatalogProvider: v }, { category: 'settings' });
-                      }}
+                      onChange={(v) => setEmbedCatalogProvider(v as 'local' | 'solar')}
                       options={[
                         { value: 'local', label: t('settings_modal.assistant_embed_local') },
                         // 정식 모델명 표기 (2026-07-13 사용자) — API 모델 = solar-embedding-2-query/passage.
@@ -1217,10 +1210,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   <Field label={t('settings_modal.assistant_parse_label')} help={t('settings_modal.assistant_parse_help')}>
                     <SelectInput
                       value={libraryParseProvider}
-                      onChange={async (v) => {
-                        setLibraryParseProvider(v as 'none' | 'solar' | 'gemini');
-                        await apiPatch('/api/settings', { libraryParseProvider: v }, { category: 'settings' });
-                      }}
+                      onChange={(v) => setLibraryParseProvider(v as 'none' | 'solar' | 'gemini')}
                       options={[
                         { value: 'none', label: t('settings_modal.assistant_parse_none') },
                         { value: 'solar', label: 'Solar Document Parse', disabled: !upstageApiKey },
@@ -1233,11 +1223,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <input
                         type="checkbox"
                         checked={retentionEnabled}
-                        onChange={async (e) => {
-                          const next = e.target.checked;
-                          setRetentionEnabled(next);
-                          await apiPatch('/api/settings', { retentionEnabled: next }, { category: 'settings' });
-                        }}
+                        onChange={(e) => setRetentionEnabled(e.target.checked)}
                         aria-label={t('settings_modal.assistant_retention_label')}
                         className="w-4 h-4 cursor-pointer" name="retentionEnabled" autoComplete="off" id={retentionEnabledId}
                       />
@@ -1247,11 +1233,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <div className="mt-2">
                         <SelectInput
                           value={String(retentionDays)}
-                          onChange={async (v) => {
+                          onChange={(v) => {
                             const d = parseInt(v, 10);
-                            if (!Number.isFinite(d)) return;
-                            setRetentionDays(d);
-                            await apiPatch('/api/settings', { retentionDays: d }, { category: 'settings' });
+                            if (Number.isFinite(d)) setRetentionDays(d);
                           }}
                           options={[7, 14, 30, 60, 90].map(d => ({
                             value: String(d),
@@ -2390,9 +2374,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             {t('common.close')}
           </button>
-          {/* 전역 저장은 handleSave 가 실제로 저장하는 탭(일반 = timezone·admin / AI>LLM = 모델·토글·키)에서만 노출.
-              나머지 탭(프롬프트·이미지·비용·메모리·시크릿·MCP·시스템·로그)은 자체 인라인 저장이 있어 중복 버튼 제거. */}
-          {(settingsTab === 'general' || (settingsTab === 'ai' && (aiSubTab === 'llm' || aiSubTab === 'image' || aiSubTab === 'prompt' || aiSubTab === 'tts'))) && (
+          {/* 전역 저장은 handleSave 가 실제로 저장하는 탭(일반 = timezone·admin / AI>LLM = 모델·토글·키 / assistant = 자동기억·임베딩·파싱·휴지통).
+              나머지 탭(비용·메모리·시크릿·MCP·시스템·로그)은 자체 인라인 저장이 있어 중복 버튼 제거. */}
+          {(settingsTab === 'general' || (settingsTab === 'ai' && (aiSubTab === 'llm' || aiSubTab === 'assistant' || aiSubTab === 'image' || aiSubTab === 'prompt' || aiSubTab === 'tts'))) && (
             <SaveButton
               size="md"
               state={(
