@@ -3196,8 +3196,8 @@
   {
     "name": "live_stock_chart",
     "componentType": "LiveStockChart",
-    "description": "Realtime candlestick chart: aggregates stream ticks (SSE topic from stream_watch_start) into fixed-interval OHLC candles on top of the full StockChart renderer (MA lines, zoom, crosshair). Seed past candles via data (standard OHLCV rows). Live while visible; frozen when hidden. For a plain line, use live_chart instead.",
-    "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 체결가 스트리밍 틱 집계 realtime candle chart 실시간 캔들 OHLC 주가 차트",
+    "description": "Realtime candlestick chart: aggregates stream ticks (SSE topic from stream_watch_start) into candles on top of the full StockChart renderer (MA lines, zoom, crosshair). Works at any granularity via interval: 60 = 1-minute candles, 86400 = DAILY (the current day's candle updates live, a new candle rolls at date change — seed with daily REST candles). Seed past candles via data (standard OHLCV rows, same granularity as interval). Live while visible; frozen when hidden. For a plain line, use live_chart instead.",
+    "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 일봉 체결가 스트리밍 틱 집계 realtime candle chart daily 실시간 캔들 OHLC 주가 차트 오늘 봉 갱신",
     "propsSchema": {
       "type": "object",
       "properties": {
@@ -3214,7 +3214,7 @@
         },
         "data": {
           "type": "array",
-          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}), e.g. a REST minute-candle fetch; live ticks continue after the seed"
+          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}) at the SAME granularity as interval (minute seed for interval=60, daily seed for interval=86400); live ticks continue on the last (current-period) candle"
         },
         "indicators": {
           "type": "array",
@@ -3222,15 +3222,19 @@
         },
         "valueField": {
           "type": "string",
-          "description": "dot-path to the tick price inside the event frame (default \"value\")"
+          "description": "dot-path to the tick price inside the event frame (default \"value\"; KIS trade = \"STCK_PRPR\")"
+        },
+        "volumeField": {
+          "type": "string",
+          "description": "optional dot-path to a cumulative-volume field for the current candle (e.g. KIS \"ACML_VOL\" for daily today-volume); omit to keep the seed volume"
         },
         "interval": {
           "type": "number",
-          "description": "candle bucket seconds (default 60 = 1-minute candles)"
+          "description": "candle period seconds — 60 = 1-min (default), 300 = 5-min, 86400 = daily (current day's candle updates live)"
         },
         "maxCandles": {
           "type": "number",
-          "description": "kept candles (default 240)"
+          "description": "kept candles (default 240 intraday / 120 daily)"
         }
       },
       "required": [
