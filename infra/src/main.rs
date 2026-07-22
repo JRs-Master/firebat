@@ -842,6 +842,9 @@ async fn main() -> Result<()> {
             cache: cache_adapter.clone(),
             task: task_manager.clone(),
             library: library_manager.clone(),
+            extract: Arc::new(firebat_infra::adapters::structured_extract::UpstageIeAdapter::new(
+                vault.clone(),
+            )),
             secret: secret_manager.clone(),
             network: network_port.clone(),
             template: template_manager.clone(),

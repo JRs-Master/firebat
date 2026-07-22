@@ -112,6 +112,9 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             cache,
             task: task_mgr,
             library: library_mgr,
+            extract: Arc::new(firebat_infra::adapters::structured_extract::UpstageIeAdapter::new(
+                vault.clone(),
+            )),
             secret: secret_mgr,
             network: network_port,
             template: template_mgr,
@@ -205,14 +208,15 @@ async fn registered_tool_count() {
     // AiManager 시맨틱 판이 유일 등록) +
     // conversation: 2 (search_history/search_memory) + entity: 5 + episodic: 3 + consolidation: 2 +
     // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
-    // task_library: 2 (run_task/search_library) + meta: 3 (render/suggest/propose_plan) +
+    // task_library: 3 (run_task/search_library/library_extract_structured) +
+    // meta: 3 (render/suggest/propose_plan) +
     // infra_parity: 4 (execute/run_cron_job/request_secret/network_request) +
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
     // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
-    // stream_watch: 3 (start/stop/list — 실시간 감시) = 62
-    assert_eq!(stats.total, 62);
-    assert_eq!(stats.by_source.get("core").copied(), Some(62));
+    // stream_watch: 3 (start/stop/list — 실시간 감시) = 63
+    assert_eq!(stats.total, 63);
+    assert_eq!(stats.by_source.get("core").copied(), Some(63));
 }
 
 #[tokio::test]

@@ -29,7 +29,7 @@ use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::{make_handler, ToolDefinition, ToolManager};
 use crate::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, INetworkPort,
-    IStoragePort, ITtsPort, IVaultPort, ListRecentOpts, NetworkRequest,
+    IStoragePort, IStructuredExtractPort, ITtsPort, IVaultPort, ListRecentOpts, NetworkRequest,
     SandboxExecuteOpts, SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
@@ -58,6 +58,9 @@ pub struct CoreToolHandlers {
     pub task: Arc<TaskManager>,
     /// 자료 라이브러리 하이브리드 검색 (search_library).
     pub library: Arc<LibraryManager>,
+    /// 라이브러리 문서 → 구조화 JSON (library_extract_structured, Upstage IE). 시험지·논문 등
+    /// 업로드 자료를 스키마 대비 구조화(문항↔보기 귀속 구조적) — parse 의 reading-order 한계 우회.
+    pub extract: Arc<dyn IStructuredExtractPort>,
     /// 시크릿 조회 (request_secret) — 옛 MCP 전용이라 FC 모델이 못 쓰던 것 대칭화.
     pub secret: Arc<SecretManager>,
     /// HTTP 요청 (network_request) — 옛 MCP 전용 대칭화.
@@ -931,6 +934,74 @@ fn register_task_library_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         "hint": "매치된 자료가 없습니다. 동의어·핵심 명사·상위어 등 다른 키워드로 재검색하거나, referenceIds 를 비워 전체 자료를 검색해 보세요."
                     })),
                     Ok(hits) => Ok(serde_json::json!({"success": true, "data": hits})),
+                    Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+                }
+            }
+        },
+    );
+
+    // library_extract_structured — 라이브러리 문서를 스키마 대비 구조화 JSON 으로 (Upstage IE).
+    // search_library(RAG 검색)와 다른 축: 이건 시험지·논문·계약서를 통째로 구조화(문항·조항 등)
+    // → quiz/table 등으로 렌더. schema 미지정 = 문서에서 자동 생성. reading-order 무관(의미 추출).
+    let library_x = h.library.clone();
+    let extract = h.extract.clone();
+    tools.register_tool(
+        ToolDefinition {
+            name: "library_extract_structured".to_string(),
+            description: "라이브러리 업로드 문서를 구조화 JSON 으로 추출 (Upstage 정보추출). 시험지→문항/보기, 계약서→조항, 표 문서 등 '구조가 있는 문서'를 스키마대로 뽑을 때. RAG 의미검색은 search_library, 이건 문서 통째 구조화(렌더용). sourceId 필수(search_library 결과·list 의 소스 id). schema = JSON schema object 또는 {name,schema} (미지정 = 문서에서 자동 생성). 반환 = 스키마 매칭 JSON.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "sourceId": { "type": "string", "description": "라이브러리 소스 id (업로드 문서)" },
+                    "schema": {
+                        "type": "object",
+                        "description": "추출 JSON schema (미지정 = 문서에서 자동 생성). 예: {type:'object', properties:{questions:{type:'array', items:{...}}}}"
+                    },
+                    "owner": { "type": "string" }
+                },
+                "required": ["sourceId"]
+            }),
+            source: "core".to_string(),
+        },
+        move |args| {
+            let library = library_x.clone();
+            let extract = extract.clone();
+            async move {
+                let owner = args.get("owner").and_then(|v| v.as_str()).unwrap_or("admin").to_string();
+                let source_id = args
+                    .get("sourceId")
+                    .or_else(|| args.get("source_id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "library_extract_structured: sourceId 필수".to_string())?
+                    .to_string();
+                // schema = object 그대로 문자열화(어댑터가 정규화), 미지정 = None(자동 생성).
+                let schema_json: Option<String> = args
+                    .get("schema")
+                    .filter(|v| !v.is_null())
+                    .map(|v| v.to_string());
+                let source = library
+                    .get_source(&source_id)
+                    .await
+                    .map_err(|e| format!("소스 조회 실패: {e}"))?
+                    .ok_or_else(|| format!("소스를 찾을 수 없습니다: {source_id}"))?;
+                // owner-scope — 그 소스의 reference 를 이 owner 가 소유하는지 확인(cross-tenant 차단).
+                let owned = library
+                    .is_reference_owned(&source.reference_id, &owner)
+                    .await
+                    .unwrap_or(false);
+                if !owned {
+                    return Err("이 문서에 접근 권한이 없습니다.".to_string());
+                }
+                let Some(file_path) = source.file_path.filter(|p| !p.is_empty()) else {
+                    return Err("원본 파일이 서버에 없습니다 (재업로드 필요).".to_string());
+                };
+                match extract.extract_structured(&file_path, schema_json.as_deref()).await {
+                    Ok(json_str) => {
+                        // 모델이 바로 렌더에 쓰도록 파싱된 JSON 을 data 로(문자열이면 그대로).
+                        let data: serde_json::Value = serde_json::from_str(&json_str)
+                            .unwrap_or(serde_json::Value::String(json_str));
+                        Ok(serde_json::json!({"success": true, "data": data}))
+                    }
                     Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
                 }
             }

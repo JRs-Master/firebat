@@ -31,3 +31,4 @@ pub mod notifier_telegram;
 // service 안에서 `system/prompts/{name}/lang/{lang}.md` 자동 scan + `prompt.{name}` lookup.
 pub mod embedder_cache;
 pub mod config;
+pub mod structured_extract;

@@ -112,6 +112,19 @@ pub trait IVaultPort: Send + Sync {
     fn list_keys_by_prefix(&self, prefix: &str) -> Vec<String>;
 }
 
+/// 문서 → 구조화 JSON 추출 (Upstage Information Extraction). 라이브러리 통합 IE 도구가 소비.
+/// Document Parse(레이아웃→텍스트, reading-order 는 엔진 몫)와 달리 스키마 대비 의미 추출이라
+/// 문항↔보기 귀속이 구조적. `schema_json` None = 문서에서 스키마 자동 생성(자동 인식).
+#[async_trait::async_trait]
+pub trait IStructuredExtractPort: Send + Sync {
+    /// `file_path` = 서버 파일 경로(라이브러리 원본). 반환 = 스키마 매칭 JSON 문서 문자열.
+    async fn extract_structured(
+        &self,
+        file_path: &str,
+        schema_json: Option<&str>,
+    ) -> InfraResult<String>;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Auth — 통합 세션 (session + api 토큰)
 // ──────────────────────────────────────────────────────────────────────────
