@@ -185,6 +185,20 @@ function LiveChartComp({ topic, title, valueField, maxPoints }: { topic: string;
   );
 }
 
+/** 라이브 봉 date 포맷터 — StockChart 는 date 문자열 정렬(localeCompare)이라 라이브 봉이 시드와
+ *  같은 포맷이어야 뒤로 붙는다("10:13" 은 "20260722 09:22" 보다 앞으로 정렬돼 새 봉이 왼쪽에
+ *  붙던 버그). 시드 마지막 봉의 포맷을 감지해 미러(YYYYMMDD HH:MM / ISO), 시드 없으면 기본. */
+function makeLiveDateFmt(sampleDate: string): (d: Date) => string {
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(sampleDate); // "2026-07-22 ..." → ISO 구분자 유지
+  return (d) => {
+    const ymd = iso
+      ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+      : `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
+    return `${ymd} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  };
+}
+
 /** 실시간 봉차트 (S7) — 스트림 틱을 고정 간격 버킷으로 OHLC 집계해 StockChart 렌더 코어에 태움.
  *  분 내 = 마지막 봉 in-place 갱신(배열 길이 고정 → StockChart 의 길이변화 줌 리셋 회피),
  *  새 버킷 = append 1회(그때만 최신-pin 리셋 = 라이브 추종이라 오히려 원하는 동작).
@@ -210,6 +224,12 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       return bar.date && [bar.open, bar.high, bar.low, bar.close].every(Number.isFinite) ? [bar] : [];
     });
   }
+  // 라이브 봉 date 포맷 = 시드 마지막 봉 포맷 미러(정렬 일관 → 새 봉이 오른쪽에 붙음).
+  const fmtRef = useRef<((d: Date) => string) | null>(null);
+  if (fmtRef.current === null) {
+    const seed = candlesRef.current!;
+    fmtRef.current = makeLiveDateFmt(seed.length > 0 ? seed[seed.length - 1].date : '');
+  }
   const bucketRef = useRef<number>(-1);
   useLiveTopic(topic, visible, (frame) => {
     // 틱 가격 추출 — 프레임 top-level `value`(kiwoom quotes 표준) 기본, dot-path 오버라이드.
@@ -224,10 +244,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     const bucket = Math.floor(Date.now() / ivMs);
     if (bucket !== bucketRef.current) {
       bucketRef.current = bucket;
-      const d = new Date(bucket * ivMs);
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mm = String(d.getMinutes()).padStart(2, '0');
-      arr.push({ date: `${hh}:${mm}`, open: n, high: n, low: n, close: n, volume: 0 });
+      arr.push({ date: fmtRef.current!(new Date(bucket * ivMs)), open: n, high: n, low: n, close: n, volume: 0 });
       if (arr.length > cap) arr.splice(0, arr.length - cap);
     } else {
       const last = arr[arr.length - 1];
