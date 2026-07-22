@@ -3192,5 +3192,50 @@
         "topic"
       ]
     }
+  },
+  {
+    "name": "live_stock_chart",
+    "componentType": "LiveStockChart",
+    "description": "Realtime candlestick chart: aggregates stream ticks (SSE topic from stream_watch_start) into fixed-interval OHLC candles on top of the full StockChart renderer (MA lines, zoom, crosshair). Seed past candles via data (standard OHLCV rows). Live while visible; frozen when hidden. For a plain line, use live_chart instead.",
+    "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 체결가 스트리밍 틱 집계 realtime candle chart 실시간 캔들 OHLC 주가 차트",
+    "propsSchema": {
+      "type": "object",
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "SSE topic from stream_watch_start"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "instrument label shown in the header (e.g. 005930)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "data": {
+          "type": "array",
+          "description": "seed candles — standard OHLCV rows ({date,open,high,low,close,volume}), e.g. a REST minute-candle fetch; live ticks continue after the seed"
+        },
+        "indicators": {
+          "type": "array",
+          "description": "moving averages to draw, subset of [\"MA5\",\"MA10\",\"MA20\",\"MA60\"]"
+        },
+        "valueField": {
+          "type": "string",
+          "description": "dot-path to the tick price inside the event frame (default \"value\")"
+        },
+        "interval": {
+          "type": "number",
+          "description": "candle bucket seconds (default 60 = 1-minute candles)"
+        },
+        "maxCandles": {
+          "type": "number",
+          "description": "kept candles (default 240)"
+        }
+      },
+      "required": [
+        "topic"
+      ]
+    }
   }
 ]

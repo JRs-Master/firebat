@@ -4,7 +4,7 @@ import { get as getPageRpc, getRedirect, verifyPassword as verifyPagePasswordRpc
 import { getInstanceBySlug } from '../../../lib/api-gen/hub';
 import { ConsoleLayoutInner } from '../../admin/layout-client';
 import { HubChatClient } from '../../hub/[slug]/HubChatClient';
-import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getVisibility as getProjectVisibility, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
+import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
 import { getCmsSettings } from '../../../lib/api-gen/module';
 import { isReady as isMediaReady } from '../../../lib/api-gen/media';
 import { parsePageRecord } from '../../../lib/util/page-pb-convert';
@@ -53,18 +53,8 @@ function safeDecodeSlug(slugArr: string[] | string): string {
   return raw;
 }
 
-/** 페이지 visibility를 해석 (페이지 자체 → 프로젝트 상속 → 기본 public) */
-async function resolveVisibility(spec: { _visibility?: string; project?: string }): Promise<'public' | 'password' | 'private'> {
-  const pageVis = spec._visibility;
-  if (pageVis === 'private' || pageVis === 'password') return pageVis;
-  // 프로젝트 상속
-  if (spec.project) {
-    const visRes = await getProjectVisibility({ project: spec.project });
-    const projectVis = visRes.ok ? visRes.data : undefined;
-    if (projectVis === 'private' || projectVis === 'password') return projectVis;
-  }
-  return 'public';
-}
+/** 페이지 visibility 해석 — /api/page-stream 게이트와 공유하는 단일 정책 (lib/page-visibility). */
+import { resolvePageVisibility as resolveVisibility } from '../../../lib/page-visibility';
 
 type Props = { params: Promise<{ slug: string[] }>; searchParams?: Promise<{ page?: string }> };
 

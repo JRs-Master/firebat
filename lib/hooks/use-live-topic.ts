@@ -10,10 +10,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { subscribeServerEvents, getTopicBuffer } from '../../app/admin/hooks/events-manager';
 
-/** Live surfaces: the events SSE is admin-authed — published/shared pages stay frozen. */
-export function canLiveHere(): boolean {
+/**
+ * Live surfaces (S6): admin = 인증 전체 스트림(events-manager 싱글톤) / 발행 페이지 =
+ * per-topic 공개 relay(/api/page-stream, 서버측 topic 필터 + 페이지 spec allowlist).
+ * share 전사본은 동결 유지(라이브 표면 아님).
+ */
+export function liveSurface(): 'admin' | 'page' | false {
   if (typeof window === 'undefined') return false;
-  return window.location.pathname.startsWith('/admin');
+  const path = window.location.pathname;
+  if (path.startsWith('/admin')) return 'admin';
+  if (path.startsWith('/share/')) return false;
+  return 'page'; // published page (catch-all) — /api/page-stream 게이트가 최종 판정
+}
+
+/** 하위호환 별칭 — "이 표면에서 라이브 가능한가". */
+export function canLiveHere(): boolean {
+  return liveSurface() !== false;
 }
 
 export function useLiveTopic(
@@ -24,15 +36,39 @@ export function useLiveTopic(
   const cb = useRef(onEvent);
   cb.current = onEvent;
   useEffect(() => {
-    if (!topic || !active || !canLiveHere()) return;
-    // 재방문 재생 (2026-07-13) — 링버퍼의 최근 프레임을 구독 직전에 되감기해 "틱 대기" 빈
-    // 화면을 즉시 채운다. 스냅샷과 라이브 구독 사이 프레임 1개가 중복 전달될 수 있으나
-    // 피드 줄·차트 점 중복 1건 = 무해 (dedup 비용 > 이득).
-    for (const data of getTopicBuffer(topic)) cb.current(data);
-    const unsub = subscribeServerEvents((ev: { type?: string; data?: unknown }) => {
-      if (ev?.type === topic) cb.current(ev.data);
-    });
-    return unsub;
+    if (!topic || !active) return;
+    const surface = liveSurface();
+    if (surface === 'admin') {
+      // 재방문 재생 (2026-07-13) — 링버퍼의 최근 프레임을 구독 직전에 되감기해 "틱 대기" 빈
+      // 화면을 즉시 채운다. 스냅샷과 라이브 구독 사이 프레임 1개가 중복 전달될 수 있으나
+      // 피드 줄·차트 점 중복 1건 = 무해 (dedup 비용 > 이득).
+      for (const data of getTopicBuffer(topic)) cb.current(data);
+      const unsub = subscribeServerEvents((ev: { type?: string; data?: unknown }) => {
+        if (ev?.type === topic) cb.current(ev.data);
+      });
+      return unsub;
+    }
+    if (surface === 'page') {
+      // 발행 페이지 — 경량 per-topic EventSource. 게이트(공개 판정·spec allowlist·IP 캡)는
+      // 라우트 몫. 거부(403/404)면 재시도 폭풍 방지 위해 즉시 close(동결 = 기존 동작).
+      const slug = (() => {
+        try { return decodeURIComponent(window.location.pathname.slice(1)); }
+        catch { return window.location.pathname.slice(1); }
+      })();
+      if (!slug) return;
+      const es = new EventSource(
+        `/api/page-stream?slug=${encodeURIComponent(slug)}&topic=${encodeURIComponent(topic)}`,
+      );
+      es.onmessage = (m) => {
+        try {
+          const ev = JSON.parse(m.data) as { type?: string; data?: unknown };
+          if (ev?.type === topic) cb.current(ev.data);
+        } catch { /* keepalive/비JSON 무시 */ }
+      };
+      es.onerror = () => es.close();
+      return () => es.close();
+    }
+    return;
   }, [topic, active]);
 }
 

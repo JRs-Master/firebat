@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import StockChart from '../../admin/chat-components/StockChart';
+import StockChart, { type OhlcvBar } from '../../admin/chat-components/StockChart';
 import { BlockErrorBoundary } from '../../admin/components/BlockErrorBoundary';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { usePublicTranslations } from '../../../lib/i18n';
@@ -64,6 +64,7 @@ const TYPE_ALIAS: Record<string, string> = {
   concept: 'Concept', explainer: 'Concept', lesson: 'Concept',
   listening: 'Listening', lc: 'Listening',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
+  live_stock_chart: 'LiveStockChart', livestockchart: 'LiveStockChart',
   module: 'Module',
 };
 
@@ -119,7 +120,7 @@ function LiveFeedComp({ topic, title, maxItems }: { topic: string; title?: strin
       <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
         {items.length === 0 ? (
           <p className="px-3 py-3 text-[11px] text-slate-400">
-            {canLiveHere() ? '이벤트 대기 중입니다 — 감시가 활성인 동안 실시간으로 수신됩니다.' : '라이브 표시는 admin 채팅에서만 지원됩니다.'}
+            {canLiveHere() ? '이벤트 대기 중입니다 — 감시가 활성인 동안 실시간으로 수신됩니다.' : '이 화면에서는 라이브 표시가 지원되지 않습니다.'}
           </p>
         ) : items.map((it, i) => (
           <div key={`${it.t}-${i}`} className="px-3 py-1.5">
@@ -173,12 +174,86 @@ function LiveChartComp({ topic, title, valueField, maxPoints }: { topic: string;
       </div>
       {points.length < 2 ? (
         <p className="px-3 py-4 text-[11px] text-slate-400">
-          {canLiveHere() ? '틱 대기 중입니다 — 수신되는 값으로 라인이 그려집니다.' : '라이브 표시는 admin 채팅에서만 지원됩니다.'}
+          {canLiveHere() ? '틱 대기 중입니다 — 수신되는 값으로 라인이 그려집니다.' : '이 화면에서는 라이브 표시가 지원되지 않습니다.'}
         </p>
       ) : (
         <svg viewBox={`0 0 ${w} ${h}`} className="w-full block" preserveAspectRatio="none" style={{ height: 140 }}>
           <path d={path} fill="none" stroke="#2563eb" strokeWidth="1.5" />
         </svg>
+      )}
+    </div>
+  );
+}
+
+/** 실시간 봉차트 (S7) — 스트림 틱을 고정 간격 버킷으로 OHLC 집계해 StockChart 렌더 코어에 태움.
+ *  분 내 = 마지막 봉 in-place 갱신(배열 길이 고정 → StockChart 의 길이변화 줌 리셋 회피),
+ *  새 버킷 = append 1회(그때만 최신-pin 리셋 = 라이브 추종이라 오히려 원하는 동작).
+ *  시드 = props.data(표준 OHLCV 행, REST 분봉) — 라이브 틱이 그 뒤를 이어붙임. */
+function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, interval, maxCandles }: {
+  topic: string; symbol?: string; title?: string; data?: unknown; indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
+  valueField?: string; interval?: number; maxCandles?: number;
+}) {
+  const [ref, visible] = useInViewport<HTMLDivElement>();
+  const [lastMs, setLastMs] = useState<number | null>(null);
+  const [, force] = useState(0);
+  const ivMs = Math.min(Math.max(Number(interval) || 60, 5), 3600) * 1000;
+  const cap = Math.min(Math.max(Number(maxCandles) || 240, 30), 1000);
+  // 시드 정규화 — 표준 OHLCV 행만 수용(숫자 coerce), 이상 행은 조용히 drop.
+  const candlesRef = useRef<OhlcvBar[] | null>(null);
+  if (candlesRef.current === null) {
+    const rows = Array.isArray(data) ? data : [];
+    candlesRef.current = rows.flatMap((r): OhlcvBar[] => {
+      if (!r || typeof r !== 'object') return [];
+      const o = r as Record<string, unknown>;
+      const num = (x: unknown) => (typeof x === 'number' ? x : parseFloat(String(x ?? '').replace(/[+,]/g, '')));
+      const bar = { date: String(o.date ?? ''), open: num(o.open), high: num(o.high), low: num(o.low), close: num(o.close), volume: num(o.volume) || 0 };
+      return bar.date && [bar.open, bar.high, bar.low, bar.close].every(Number.isFinite) ? [bar] : [];
+    });
+  }
+  const bucketRef = useRef<number>(-1);
+  useLiveTopic(topic, visible, (frame) => {
+    // 틱 가격 추출 — 프레임 top-level `value`(kiwoom quotes 표준) 기본, dot-path 오버라이드.
+    let v: unknown = frame;
+    for (const seg of String(valueField || 'value').split('.')) {
+      if (v == null || typeof v !== 'object') break;
+      v = (v as Record<string, unknown>)[seg];
+    }
+    const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[+,]/g, ''));
+    if (!Number.isFinite(n)) return;
+    const arr = candlesRef.current!;
+    const bucket = Math.floor(Date.now() / ivMs);
+    if (bucket !== bucketRef.current) {
+      bucketRef.current = bucket;
+      const d = new Date(bucket * ivMs);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      arr.push({ date: `${hh}:${mm}`, open: n, high: n, low: n, close: n, volume: 0 });
+      if (arr.length > cap) arr.splice(0, arr.length - cap);
+    } else {
+      const last = arr[arr.length - 1];
+      last.close = n;
+      if (n > last.high) last.high = n;
+      if (n < last.low) last.low = n;
+    }
+    setLastMs(Date.now());
+    force(x => x + 1);
+  });
+  const live = visible && canLiveHere();
+  const candles = candlesRef.current!;
+  return (
+    <div ref={ref} className="my-3">
+      <div className="flex items-center justify-end mb-1">
+        <LiveBadge live={live} lastMs={lastMs} />
+      </div>
+      {candles.length === 0 ? (
+        <div className="border border-slate-200 rounded-lg bg-white px-3 py-4">
+          <p className="text-[11px] text-slate-400">
+            {canLiveHere() ? '틱 대기 중입니다 — 수신되는 체결가로 봉이 그려집니다.' : '이 화면에서는 라이브 표시가 지원되지 않습니다.'}
+          </p>
+        </div>
+      ) : (
+        // 스프레드 사본 — 같은 길이의 새 배열 참조로 StockChart memo 를 깨워 틱마다 다시 그림.
+        <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators} />
       )}
     </div>
   );
@@ -199,6 +274,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Divider':       return <DividerComp />;
     case 'LiveFeed':      return <LiveFeedComp topic={p.topic ?? ''} title={p.title} maxItems={p.maxItems} />;
     case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
+    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} interval={p.interval} maxCandles={p.maxCandles} />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;

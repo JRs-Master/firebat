@@ -60,15 +60,29 @@ impl EventService for EventServiceImpl {
     /// 실시간 이벤트 구독 — EventManager 에 listener 등록 → 매 emit 을 server-stream 으로 forward.
     /// EventManager listener 는 sync `Fn(&FirebatEvent)` 라 unbounded mpsc 로 async stream 에 브리지.
     /// 이벤트는 작고 드물어 unbounded 로 backpressure 부담 없음. 끊김 시 guard 가 unsubscribe.
+    /// `topics` 비면 All(admin /api/events 기존 동작) / 있으면 서버측 Types 필터 — 공개 표면
+    /// (발행 페이지 SSE)은 topic 을 좁혀 어드민 이벤트가 스트림에 실리지 않게 한다 (S6).
     async fn subscribe(
         &self,
-        _req: Request<EventSubscribeRequest>,
+        req: Request<EventSubscribeRequest>,
     ) -> Result<Response<Self::SubscribeStream>, TonicStatus> {
+        let topics: Vec<String> = req
+            .into_inner()
+            .topics
+            .into_iter()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+        let filter = if topics.is_empty() {
+            EventFilter::All
+        } else {
+            EventFilter::Types(topics)
+        };
         let (tx, rx) =
             tokio::sync::mpsc::unbounded_channel::<Result<EventStreamPb, TonicStatus>>();
         let manager = self.manager.clone();
         let sub_id = manager.subscribe(
-            EventFilter::All,
+            filter,
             Arc::new(move |ev: &FirebatEvent| {
                 // rx drop 후엔 send 가 조용히 실패 — guard 가 곧 unsubscribe.
                 let _ = tx.send(Ok(EventStreamPb {

@@ -1668,7 +1668,11 @@ message EventListAuditLogResponse {
 }
 
 // 실시간 이벤트 구독 — Rust EventManager → Frontend SSE 다리.
-message EventSubscribeRequest {}
+message EventSubscribeRequest {
+  // 구독할 이벤트 type 목록 — 빈 배열 = 전체(All, admin /api/events 기존 동작).
+  // 공개 표면(발행 페이지 SSE)은 반드시 topic 을 좁혀 어드민 이벤트 누출을 차단한다 (S6).
+  repeated string topics = 1;
+}
 message EventStreamPb {
   // 이벤트 type — 'status:update' / 'cron:complete' / 'gallery:refresh' / 'sidebar:refresh' 등.
   string type = 1;

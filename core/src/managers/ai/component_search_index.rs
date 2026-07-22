@@ -1,4 +1,4 @@
-//! Component Search Index — 42 컴포넌트 시맨틱 검색 (`search_components`).
+//! Component Search Index — 43 컴포넌트 시맨틱 검색 (`search_components`).
 //!
 //! 2026-07-07 #search-tool 수렴: 자체 임베딩/캐시/cosine 기계를 걷어내고 **S1 공용 엔진**
 //! (`semantic_catalog::SemanticCatalog`) 위에 얹었다 — 엔진 하나에 카탈로그 N (components /
