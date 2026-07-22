@@ -1,0 +1,51 @@
+{
+  "name": "upstage-ie",
+  "type": "data",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "문서(영수증·명함·청구서·계약서 등) → 구조화 JSON 추출. URL 또는 base64 로 넘긴 PDF·이미지를 스키마대로 뽑는다(Upstage Information Extraction). 스키마 미지정 = 문서에서 자동 생성. 라이브러리에 업로드된 문서는 library_extract_structured 를 쓸 것 — 이 모듈은 라이브러리 밖 일회성 문서용. 태그: 영수증 가계부 명함 청구서 문서 구조화 추출 receipt invoice document extraction OCR 구조화",
+  "runtime": "node",
+  "capability": "document-extraction",
+  "secrets": [
+    { "name": "UPSTAGE_API_KEY", "vaultKey": "system:upstage:api-key" }
+  ],
+  "tags": "영수증 receipt 가계부 명함 business-card 청구서 invoice 계약서 문서추출 구조화 JSON 스키마 information extraction",
+  "input": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["extract", "generate-schema"],
+        "description": "extract = 문서를 스키마대로 구조화 JSON 추출 (schema 미지정 시 자동 생성 후 추출). generate-schema = 문서를 보고 추출 스키마만 자동 생성(반복 문서의 스키마를 한 번 만들어 재사용할 때)."
+      },
+      "params": {
+        "type": "object",
+        "description": "문서 지정은 url 또는 base64 중 하나 필수.",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "문서 URL (PDF·PNG·JPG). 공개 URL 이어야 하며 내부/사설 주소는 차단된다."
+          },
+          "base64": {
+            "type": "string",
+            "description": "문서 바이트의 base64 (url 대신). 데이터 URL prefix 없이 순수 base64."
+          },
+          "mime": {
+            "type": "string",
+            "description": "base64 사용 시 MIME (기본 application/pdf). 이미지면 image/png · image/jpeg 등."
+          },
+          "schema": {
+            "type": "object",
+            "description": "추출 JSON schema (미지정 = 문서에서 자동 생성). 예: {type:'object', properties:{store:{type:'string'}, total:{type:'number'}, items:{type:'array'}}}. 값을 비워둔 자리(빈칸)를 보존해야 하면 해당 필드 description 에 '[[BLANK]] 표기' 를 지시할 것."
+          }
+        }
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "description": "{ success, data: { extracted: <스키마 매칭 JSON> } } — generate-schema 는 data.schema 로 생성된 스키마 반환."
+  }
+}

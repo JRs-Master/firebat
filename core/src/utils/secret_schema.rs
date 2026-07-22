@@ -33,11 +33,24 @@ pub struct SecretMeta {
     /// OAuth 자동 발급 스펙 — 인프라 TokenProvider 가 본 메타로 토큰 발급·갱신 (token kind 만).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthSpec>,
+    /// Vault 키 **전체 경로** 오버라이드 — 기본은 `user:<name>`(모듈 설정에서 입력받는 값)이지만,
+    /// 이미 시스템에 있는 공급자 키(예: 설정>AI 에서 등록한 Upstage 키)를 재사용할 때 그 키를
+    /// 선언한다: `{"name":"UPSTAGE_API_KEY","vaultKey":"system:upstage:api-key"}`.
+    /// 같은 키를 모듈마다 다시 입력받는 중복을 없앤다(선언형 — 모듈별 하드코드 0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_key: Option<String>,
 }
 
 impl SecretMeta {
     pub fn key(name: impl Into<String>) -> Self {
-        Self { name: name.into(), kind: SecretKind::Key, lifetime_sec: None, refresh_from: None, oauth: None }
+        Self {
+            name: name.into(),
+            kind: SecretKind::Key,
+            lifetime_sec: None,
+            refresh_from: None,
+            oauth: None,
+            vault_key: None,
+        }
     }
 }
 
@@ -141,7 +154,13 @@ fn parse_entry(entry: &serde_json::Value) -> Option<SecretMeta> {
             }
         },
     };
-    Some(SecretMeta { name, kind, lifetime_sec, refresh_from, oauth })
+    // vaultKey — 기존 시스템 공급자 키 재사용(예: "system:upstage:api-key"). 없으면 user:<name>.
+    let vault_key = obj
+        .get("vaultKey")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some(SecretMeta { name, kind, lifetime_sec, refresh_from, oauth, vault_key })
 }
 
 /// 편의: name 만 추출 (description note · scanner 등 메타 불요 site).

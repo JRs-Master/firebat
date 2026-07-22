@@ -917,6 +917,9 @@ impl ProcessSandboxAdapter {
                         .and_then(|j| j.get("t").and_then(|t| t.as_str()).map(String::from))
                         .unwrap_or(raw)
                 })
+            } else if let Some(vk) = &meta.vault_key {
+                // 선언형 vaultKey — 이미 등록된 시스템 공급자 키 재사용(모듈마다 재입력 0).
+                vault.get_secret(vk)
             } else {
                 vault.get_secret(&format!("user:{}", meta.name))
             };
