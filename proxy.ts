@@ -52,6 +52,12 @@ export function proxy(request: NextRequest) {
   if (pathname === '/api/health' && request.method === 'GET') return NextResponse.next();
   // 사이트 내 검색 — 사용자 페이지 접근, 토큰 없이 호출. private 페이지는 DB 레벨에서 제외.
   if (pathname === '/api/search' && request.method === 'GET') return NextResponse.next();
+  // 발행 페이지 라이브 SSE (S6) — 익명 방문자의 EventSource. admin 쿠키 X. 라우트가 자체
+  // 3중 게이트(페이지 public + topic ∈ 그 페이지 spec live 블록 + IP 동시연결 캡)로 검증.
+  if (pathname === '/api/page-stream' && request.method === 'GET') return NextResponse.next();
+  // 발행 페이지 form 공개 콜백 (#9) — 익명 방문자 제출. admin 쿠키 X. 라우트가 자체 게이트
+  // (페이지 public + bindModule ∈ 그 페이지 spec form 블록 + requiresApproval 거부 + IP rate).
+  if (pathname === '/api/page-form' && request.method === 'POST') return NextResponse.next();
   // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
   if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
