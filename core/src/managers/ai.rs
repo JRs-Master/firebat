@@ -4030,9 +4030,17 @@ impl AiManager {
             };
             // model= 로 궤적 분리 — recall/분류기 라벨은 강한 모델(Claude) 궤적이 ground truth,
             // 약한 모델(Solar) 궤적은 오선택·루프가 섞여 라벨 오염(카나리아 행동 데이터로만).
+            // 서빙 임베더 태그 — post-Upstage(스왑) 데이터를 날짜 추측 없이 필터링 (S0 분석 전제:
+            // action recall 은 임베더별로 갈리는데 옛 로그엔 임베더 식별자가 없어 stale E5 와 섞였다).
+            let embedder_label = self
+                .intent_actions
+                .as_ref()
+                .map(|c| c.embedder_label().to_string())
+                .unwrap_or_else(|| "none".to_string());
             self.log.info(&format!(
-                "[intent_shadow] model={} q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
+                "[intent_shadow] model={} embedder={} q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
                 last_model_id,
+                embedder_label,
                 prompt.chars().take(80).collect::<String>().replace('\n', " "),
                 fmt_short(&shadow_actions),
                 fmt_short(&shadow_skills),

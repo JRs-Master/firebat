@@ -604,6 +604,11 @@ impl ModuleActionCatalog {
         self.catalog.warm().await;
     }
 
+    /// Primary embedder version label — S0 섀도우 로그에 어느 임베더의 shortlist 인지 태그.
+    pub fn embedder_label(&self) -> &str {
+        self.catalog.embedder_label()
+    }
+
     /// Cross-module (default) or per-module semantic action search. Returns DISCOVERY rows
     /// only — id/name/domain/one-line desc/approval flag, deliberately NO param information:
     /// an index line must be a trigger, never enough to act on, or models guess the call

@@ -188,6 +188,12 @@ impl SemanticCatalog {
         self
     }
 
+    /// Primary embedder version label (e.g. "upstage-solar-embed-2" / "e5-small-multilingual-v1")
+    /// — 서빙 임베더 식별용. S0 섀도우 로그에 태그해 어느 임베더의 shortlist 인지 사후 판독 가능.
+    pub fn embedder_label(&self) -> &str {
+        self.embedder.version()
+    }
+
     /// Replace the entry set, embedding incrementally: unchanged (id, text-hash) pairs reuse
     /// the disk-cached vector, only new/changed entries hit the embedder (bounded-concurrent —
     /// an API embedder's first full build of ~600 entries would take minutes serially).
@@ -638,6 +644,11 @@ impl RefreshingCatalog {
     pub fn with_secondary(mut self, secondary: Arc<dyn IEmbedderPort>) -> Self {
         self.catalog = self.catalog.with_secondary(secondary);
         self
+    }
+
+    /// Primary embedder version label — S0 섀도우 로그 태그용.
+    pub fn embedder_label(&self) -> &str {
+        self.catalog.embedder_label()
     }
 
     /// Boot-time warm-up — build the catalog (and its embedding cache) before the first user
