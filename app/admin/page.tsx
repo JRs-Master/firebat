@@ -575,6 +575,20 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
   );
 }
 
+/** 생각 티커 표시용 — 인라인 마크다운 마커만 벗긴다(렌더가 아니라 제거).
+ *  추론 요약 서식은 공급자마다 다르다: Claude 는 평문이지만 GPT 계열은 `**소제목**` 형태를
+ *  쓰기 때문에 그대로 두면 별표가 글자로 보인다. 티커는 한 줄 truncate + rtl 이라 마크다운을
+ *  실제로 렌더하면 레이아웃이 깨지므로, 표시용으로 마커만 제거하는 게 맞다. */
+function stripInlineMd(line: string): string {
+  return line
+    .replace(/^#{1,6}\s+/, '') // 헤딩 마커
+    .replace(/^[-*+]\s+/, '') // 불릿
+    .replace(/\*\*(.+?)\*\*/g, '$1') // **굵게**
+    .replace(/__(.+?)__/g, '$1') // __굵게__
+    .replace(/`([^`]+)`/g, '$1') // `코드`
+    .trim();
+}
+
 // ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 표시.
 // 완료 후엔 spinner 끄고 "답변완료" 라벨 유지 (옛 동작 — 응답 끝났는지 사용자가 즉시 인지).
 function ThinkingBlock({
@@ -600,7 +614,11 @@ function ThinkingBlock({
   // 계속 갱신되되 화면 높이는 한 줄 고정 — 끝을 보여주려고 rtl 방향 truncate(앞에 …) + <bdi dir=ltr>
   // 로 실제 글자 순서 보존. (옛 줄바꿈 누적 = 화면 높이 왔다갔다 → 단일 라인 ticker.)
   const bodyLine = rawBody
-    ? rawBody.split('\n').map((l) => l.trim()).filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l)).join('  ')
+    ? rawBody
+        .split('\n')
+        .map((l) => stripInlineMd(l.trim()))
+        .filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
+        .join('  ')
     : '';
   return (
     <div className="flex items-center gap-2 text-slate-400 min-w-0">
