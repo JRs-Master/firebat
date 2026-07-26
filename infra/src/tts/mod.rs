@@ -1514,12 +1514,21 @@ fn prep_synth_text(text: &str, speakers: &[TtsSpeaker]) -> String {
 mod align_tests {
     use super::coarse_to_fine_lines;
 
-    /// 실측 회귀 — 라벨 낭독형 시험지 오디오(TOEIC Part 1, 2026-07-27 서버 wav 파형 측정값).
-    /// 각 보기가 "A." + 쉼 + 문장 구조라 **줄마다 쉼이 2개** → 후보가 줄 수의 2배.
-    /// 옛 `-|t-exp| + 2.0·dur` 는 긴 안내문이 기대시각을 뒤로 밀어(~1.2s) 진짜 문장 경계 대신
-    /// 다음 줄 라벨 뒤 쉼을 골랐고, 그 줄이 1.2초 늘어나 노래방 fill 이 발화보다 늦었다.
+    /// 실측 회귀 — 라벨 낭독형 시험지 오디오(TOEIC Part 1). 아래 gap 13개는 서버 wav
+    /// (33.80s, 24kHz)를 `signal_align` 과 **같은 방식**으로 잰 값이다: 5ms 프레임 mean-abs
+    /// 엔벨로프, 임계 = 최대치의 6%, 양 끝 제외한 interior 무음, 후보는 ≥0.25s.
+    ///
+    /// 이 오디오가 어려운 이유 두 가지가 실제로 다 들어있다:
+    ///   1. 각 보기가 "A." + 쉼 + 문장 구조라 **줄마다 쉼이 2개**(라벨 뒤 0.70~0.78)
+    ///   2. 앞의 긴 안내문 안에도 **문장 쉼 5개**(0.39~0.80) — 라벨 쉼보다 긴 것도 있다
+    /// 그래서 경계 4개를 뽑는데 후보가 13개다.
+    ///
+    /// 옛 점수 `-|t-exp| + 2.0·dur` 는 안내문(16초)이 음절가중 기대시각을 뒤로 밀어 진짜
+    /// 문장 경계(25.12, 0.95s) 대신 다음 줄 라벨 뒤 쉼(26.38, 0.71s)을 골랐다 — 운영 산출물
+    /// (tts-152afa11….wav.lrc.json)에 B 줄이 [22.02→26.38] 로 남아 있었고, 실제 발화는
+    /// 25.1 에 끝나 노래방 fill 이 발화보다 늦고 다음 줄 라벨 "C."(26.10)까지 삼켰다.
     #[test]
-    fn label_pause_is_not_a_line_boundary() {
+    fn label_and_intra_paragraph_pauses_are_not_line_boundaries() {
         let parsed: Vec<(Option<String>, String)> = [
             "Directions: For each question in this part, you will hear four statements about a picture in your test book. These statements will be spoken only one time, and will not be printed in your test book. Select the statement that best describes what you see in the picture.",
             "A. The woman is putting a binder on a shelf.",
@@ -1531,32 +1540,46 @@ mod align_tests {
         .map(|t| (None, t.to_string()))
         .collect();
 
-        // (start, end, dur, minenv) — 파형에서 잰 값. 라벨 뒤 쉼(≈0.65~0.70)과
-        // 진짜 문장 경계(≈0.90~1.27)가 섞여 있다.
+        // (start, end, dur, minenv) — 전부 실측.
         let gaps: Vec<(f64, f64, f64, f64)> = vec![
-            (16.62, 17.89, 1.27, 0.0), // Directions | A   ← 진짜
-            (18.10, 18.75, 0.65, 0.0), //   A 라벨 뒤
-            (21.07, 22.02, 0.95, 0.0), // A | B             ← 진짜
-            (22.30, 22.95, 0.65, 0.0), //   B 라벨 뒤
-            (25.15, 26.05, 0.90, 0.0), // B | C             ← 진짜
-            (26.35, 27.05, 0.70, 0.0), //   C 라벨 뒤
-            (29.23, 30.21, 0.98, 0.0), // C | D             ← 진짜
-            (30.50, 31.10, 0.60, 0.0), //   D 라벨 뒤
+            (1.04, 1.80, 0.76, 1.6),  //   안내문 내부 문장 쉼
+            (3.50, 3.90, 0.40, 3.7),  //   안내문 내부
+            (6.98, 7.77, 0.80, 1.6),  //   안내문 내부 — 라벨 쉼보다 길다
+            (10.29, 10.68, 0.39, 3.7), //  안내문 내부
+            (12.51, 13.28, 0.77, 1.6), //  안내문 내부
+            (16.62, 17.89, 1.27, 0.7), // ← Directions | A  (진짜)
+            (18.15, 18.93, 0.78, 1.0), //   A 라벨 뒤
+            (21.07, 22.02, 0.95, 0.0), // ← A | B            (진짜)
+            (22.27, 23.00, 0.74, 0.4), //   B 라벨 뒤
+            (25.12, 26.07, 0.95, 0.7), // ← B | C            (진짜)
+            (26.38, 27.09, 0.71, 0.9), //   C 라벨 뒤 — 옛 로직이 B|C 로 오인한 그 쉼
+            (29.23, 30.21, 0.97, 0.2), // ← C | D            (진짜)
+            (30.45, 31.14, 0.70, 0.0), //   D 라벨 뒤
         ];
         let (starts, ends) = coarse_to_fine_lines(&parsed, &gaps, &gaps, 0.30, 33.20);
 
         assert_eq!(starts.len(), 5);
-        // B 줄이 라벨 쉼까지 삼키면 end 가 26.35 로 늘어난다(옛 버그). 진짜 경계는 25.15.
-        let b_end = ends[2];
-        assert!(
-            (b_end - 25.15).abs() < 0.3,
-            "B 줄 끝이 진짜 문장 경계여야 한다 (got {b_end}, 옛 버그값 ≈26.35)"
-        );
-        // 나머지 경계도 라벨 쉼이 아닌 진짜 쉼으로.
-        assert!((ends[1] - 21.07).abs() < 0.3, "A|B (got {})", ends[1]);
-        assert!((ends[3] - 29.23).abs() < 0.3, "C|D (got {})", ends[3]);
-        // 다음 줄 시작 = 그 쉼의 끝(발화 재개 지점).
-        assert!((starts[3] - 26.05).abs() < 0.3, "C 시작 (got {})", starts[3]);
+        assert_eq!(ends.len(), 5);
+        // 진짜 경계 4개만 골라야 한다(라벨 쉼·안내문 내부 쉼 9개는 전부 탈락).
+        for (i, want) in [16.62, 21.07, 25.12, 29.23].iter().enumerate() {
+            assert!(
+                (ends[i] - want).abs() < 0.05,
+                "줄 {i} 끝 = {} (기대 {want})",
+                ends[i]
+            );
+        }
+        for (i, want) in [17.89, 22.02, 26.07, 30.21].iter().enumerate() {
+            assert!(
+                (starts[i + 1] - want).abs() < 0.05,
+                "줄 {} 시작 = {} (기대 {want})",
+                i + 1,
+                starts[i + 1]
+            );
+        }
+        // 옛 버그값이 다시 나오지 않는지 못 박기 — B 줄이 라벨 쉼까지 삼키면 26.38.
+        assert!((ends[2] - 26.38).abs() > 0.5, "B 줄이 다음 라벨 쉼을 삼켰다");
+        // C 줄은 26.07 에 시작해 26.10 의 "C." 낭독을 품어야 한다.
+        assert!(starts[3] < 26.10, "C 줄이 자기 라벨 낭독을 놓쳤다 ({})", starts[3]);
     }
 }
 
