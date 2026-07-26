@@ -42,15 +42,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -109,15 +109,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -174,15 +174,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -241,15 +241,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -306,15 +306,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1068,15 +1068,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1122,15 +1122,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1176,15 +1176,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1230,15 +1230,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1284,15 +1284,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
@@ -1338,15 +1338,15 @@
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
+              "ko": "Medium (중간)",
+              "en": "Medium"
             }
           },
           {
             "value": "high",
             "labels": {
-              "ko": "High (높음)",
-              "en": "High"
+              "ko": "High (높음, 기본)",
+              "en": "High (default)"
             }
           },
           {
