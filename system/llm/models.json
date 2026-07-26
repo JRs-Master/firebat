@@ -580,7 +580,7 @@
     },
     {
       "id": "gpt-5.6-sol",
-      "maxOutput": 64000,
+      "maxOutput": 128000,
       "displayName": "GPT-5.6 Sol",
       "provider": "OpenAI",
       "format": "openai-responses",
@@ -595,7 +595,8 @@
       },
       "pricing": {
         "input": 5,
-        "output": 30
+        "output": 30,
+        "cachedInput": 0.5
       },
       "thinking": {
         "kind": "reasoning",
@@ -649,7 +650,7 @@
     },
     {
       "id": "gpt-5.6-terra",
-      "maxOutput": 64000,
+      "maxOutput": 128000,
       "displayName": "GPT-5.6 Terra",
       "provider": "OpenAI",
       "format": "openai-responses",
@@ -664,7 +665,8 @@
       },
       "pricing": {
         "input": 2.5,
-        "output": 15
+        "output": 15,
+        "cachedInput": 0.25
       },
       "thinking": {
         "kind": "reasoning",
@@ -718,7 +720,7 @@
     },
     {
       "id": "gpt-5.6-luna",
-      "maxOutput": 64000,
+      "maxOutput": 128000,
       "displayName": "GPT-5.6 Luna",
       "provider": "OpenAI",
       "format": "openai-responses",
@@ -733,7 +735,8 @@
       },
       "pricing": {
         "input": 1,
-        "output": 6
+        "output": 6,
+        "cachedInput": 0.1
       },
       "thinking": {
         "kind": "reasoning",
@@ -1627,7 +1630,8 @@
       },
       "execMode": "cli",
       "cliProvider": "codex",
-      "category": "cli-codex"
+      "category": "cli-codex",
+      "maxOutput": 128000
     },
     {
       "id": "cli-codex-gpt-5.6-terra",
@@ -1688,7 +1692,8 @@
       },
       "execMode": "cli",
       "cliProvider": "codex",
-      "category": "cli-codex"
+      "category": "cli-codex",
+      "maxOutput": 128000
     },
     {
       "id": "cli-codex-gpt-5.6-luna",
@@ -1749,7 +1754,8 @@
       },
       "execMode": "cli",
       "cliProvider": "codex",
-      "category": "cli-codex"
+      "category": "cli-codex",
+      "maxOutput": 128000
     },
     {
       "id": "cli-codex-gpt-5.5",
