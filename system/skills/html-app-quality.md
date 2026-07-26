@@ -1,7 +1,7 @@
 ---
 name: html-app-quality
 kind: tool-usage
-description: HTML 앱·게임 구현 품질 체크리스트 — 태그: html 앱, 게임, canvas, 반응형, 모바일 잘림, 100dvh, delta-time. 인터랙티브 HTML 을 저장(save_page)하기 전 반드시 get_skill 로 본문을 읽고 전 항목을 만족시킬 것.
+description: HTML 앱·게임 구현 품질 체크리스트 — 태그: html 앱, 게임, canvas, 반응형, 모바일 잘림, 100dvh, delta-time. 인터랙티브 HTML 을 저장(save_page)하기 전 반드시 get_skill 로 본문을 읽고 전 항목을 만족시킬 것. 쓰지 말 것 — 데이터·시황 페이지(PageSpec 컴포넌트로 충분), 정적 문서 페이지, 모듈·파이프라인 제작.
 ---
 
 # HTML app implementation checklist (required before save_page of an interactive app)

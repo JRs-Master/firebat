@@ -437,11 +437,19 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         description: "Load the full manual for a skill by slug. Slugs come from the \
             <SKILLS_AVAILABLE> index. Before doing a task that matches an available skill, get it and \
             follow it. A skill is a case manual — how to use tools/templates for that case (design \
-            themes, tool-usage procedures, response styles, etc.)."
+            themes, tool-usage procedures, response styles, etc.). A large skill splits its detail \
+            into reference documents: the manual body lists them, and you load one at a time with \
+            `reference`. Read the reference instead of guessing what it contains."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
-            "properties": { "slug": {"type": "string"} },
+            "properties": {
+                "slug": {"type": "string"},
+                "reference": {
+                    "type": "string",
+                    "description": "optional — load one reference document of this skill instead of the manual body. Names are listed at the end of the manual; call without it first."
+                }
+            },
             "required": ["slug"]
         }),
         source: "core".to_string(),
@@ -457,6 +465,17 @@ fn register_skill_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| "get_skill: slug required".to_string())?;
                 let owner = args.get("owner").and_then(|v| v.as_str());
+                // reference 지정 = 그 스킬의 참조 문서 한 편만. 본문은 색인이고 상세는 여기 —
+                // 큰 매뉴얼을 통째 로드하지 않기 위한 온디맨드 경로.
+                if let Some(r) = args
+                    .get("reference")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    let body = sf.read_reference(owner, slug, r).await?;
+                    return Ok(serde_json::json!({ "slug": slug, "reference": r, "body": body }));
+                }
                 let entry = sf.read(owner, slug).await?;
                 serde_json::to_value(entry).map_err(|e| e.to_string())
             }

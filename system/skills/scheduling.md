@@ -1,7 +1,7 @@
 ---
 name: scheduling
 kind: procedure
-description: 스케줄(cron) 등록 매뉴얼 — 태그: 예약, 스케줄, 반복 실행, cron, 매일, 알림 주기, executionMode, runWhen, retry, notify. 등록 전 반드시 get_skill 로 본문을 읽을 것 (모드 선택·표준 옵션에 함정 다수).
+description: 스케줄(cron) 등록 매뉴얼 — 태그: 예약, 스케줄, 반복 실행, cron, 매일, 알림 주기, executionMode, runWhen, retry, notify. 등록 전 반드시 get_skill 로 본문을 읽을 것 (모드 선택·표준 옵션에 함정 다수). 쓰지 말 것 — 지금 한 번 실행하는 요청(그냥 수행), 파이프라인 스텝 내용 작성(pipeline-authoring), 캘린더 일정 등록(calendar sysmod).
 ---
 
 # Scheduling — job registration manual (schedule_task)

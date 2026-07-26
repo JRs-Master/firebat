@@ -115,10 +115,80 @@ impl SkillFileManager {
         self.storage.write(&path, &serialize_entry(entry)).await
     }
 
+    /// 디렉토리형 스킬의 참조 파일 하나를 읽는다 — `<slug>/references/<name>.md`.
+    /// owner-writable 우선, 없으면 shipped system.
+    pub async fn read_reference(
+        &self,
+        owner: Option<&str>,
+        slug: &str,
+        name: &str,
+    ) -> InfraResult<String> {
+        let user_path = resolve_reference_path(&owner_dir(&self.user_dir, owner)?, slug, name)?;
+        if let Ok(raw) = self.storage.read(&user_path).await {
+            return Ok(raw);
+        }
+        let sys_path = resolve_reference_path(&self.system_dir, slug, name)?;
+        self.storage.read(&sys_path).await.map_err(|_| {
+            format!("skill reference not found: {slug}/{name}. Call get_skill(\"{slug}\") first — its body lists the available references.")
+        })
+    }
+
+    /// 그 스킬이 가진 참조 파일 이름들(확장자 제외). 단일 파일 스킬이면 빈 벡터.
+    async fn reference_names(&self, base: &Path, slug: &str) -> Vec<String> {
+        let s = slug.trim().trim_end_matches(".md");
+        if s.is_empty() || s.contains("..") || s.contains('/') || s.contains('\\') {
+            return Vec::new();
+        }
+        let dir = base.join(s).join("references").to_string_lossy().to_string();
+        let mut names: Vec<String> = self
+            .storage
+            .list_dir(&dir)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| !e.is_directory && e.name.ends_with(".md"))
+            .map(|e| e.name.trim_end_matches(".md").to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
     /// Read a single skill (owner-writable first, then shipped system). Errors if missing in both.
+    /// 단일 파일(`<slug>.md`)과 디렉토리(`<slug>/SKILL.md`) 두 형태를 모두 받는다. 디렉토리형이면
+    /// 본문 끝에 **가진 참조 목록을 자동으로 덧붙인다** — 저작자가 목록 갱신을 잊어도 모델이 뭘
+    /// 더 읽을 수 있는지 항상 보이게(선언은 있는데 발견 표면이 비어 기능이 죽는 클래스 방지).
     pub async fn read(&self, owner: Option<&str>, slug: &str) -> InfraResult<SkillEntry> {
         let stem = slug.trim().trim_end_matches(".md");
-        let user_path = resolve_path(&owner_dir(&self.user_dir, owner)?, slug)?;
+        let user_base = owner_dir(&self.user_dir, owner)?;
+        // 디렉토리형 우선 조회(같은 slug 가 둘 다 있으면 디렉토리형이 상세판이므로 그쪽).
+        for (base, source) in [(&user_base, "user"), (&self.system_dir, "system")] {
+            let p = resolve_dir_path(base, slug)?;
+            if let Ok(raw) = self.storage.read(&p).await {
+                let mut e = parse_entry(stem, &raw, source);
+                let refs = self.reference_names(base, slug).await;
+                if !refs.is_empty() {
+                    e.content.push_str(&format!(
+                        "\n\n---\n## 이 스킬의 참조 문서 (필요할 때만 읽기)\n\
+                         `get_skill(slug: \"{stem}\", reference: \"<이름>\")` 로 한 편씩 불러온다. \
+                         본문에 없는 상세는 여기 있다 — 추측하지 말고 읽을 것.\n{}\n",
+                        refs.iter()
+                            .map(|r| format!("- `{r}`"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ));
+                }
+                if source == "user" {
+                    e.overrides_system = self
+                        .storage
+                        .read(&resolve_dir_path(&self.system_dir, slug)?)
+                        .await
+                        .is_ok()
+                        || self.storage.read(&resolve_path(&self.system_dir, slug)?).await.is_ok();
+                }
+                return Ok(e);
+            }
+        }
+        let user_path = resolve_path(&user_base, slug)?;
         let sys_path = resolve_path(&self.system_dir, slug)?;
         if let Ok(raw) = self.storage.read(&user_path).await {
             let mut e = parse_entry(stem, &raw, "user");
@@ -180,7 +250,15 @@ impl SkillFileManager {
         let entries = self.storage.list_dir(&dir).await.unwrap_or_default();
         let mut out = Vec::new();
         for e in entries {
-            if e.is_directory || !e.name.ends_with(".md") {
+            // 디렉토리형 스킬 — `<slug>/SKILL.md`. 색인에 안 실으면 존재 자체가 안 보인다.
+            if e.is_directory {
+                let p = dir_buf.join(&e.name).join("SKILL.md").to_string_lossy().to_string();
+                if let Ok(raw) = self.storage.read(&p).await {
+                    out.push(parse_entry(&e.name, &raw, source));
+                }
+                continue;
+            }
+            if !e.name.ends_with(".md") {
                 continue;
             }
             let stem = e.name.trim_end_matches(".md").to_string();
@@ -276,6 +354,41 @@ fn resolve_path(dir: &Path, slug: &str) -> InfraResult<String> {
         format!("{trimmed}.md")
     };
     Ok(dir.join(file).to_string_lossy().to_string())
+}
+
+/// 디렉토리형 스킬의 본문 경로 — `<dir>/<slug>/SKILL.md`.
+/// 단일 파일(`<slug>.md`)로 담기엔 큰 매뉴얼(거대 API 치트시트 등)을 색인 + 온디맨드 참조로
+/// 쪼개기 위한 형태. 색인만 get_skill 로 오고 상세는 필요할 때 reference 로 따로 읽는다 —
+/// 스킬 **안쪽에도** progressive disclosure 를 적용하는 것(도구·컴포넌트엔 이미 적용돼 있다).
+fn resolve_dir_path(dir: &Path, slug: &str) -> InfraResult<String> {
+    let trimmed = slug.trim().trim_end_matches(".md");
+    if trimmed.is_empty() {
+        return Err("skill slug required".to_string());
+    }
+    if trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(format!("invalid skill slug: {slug}"));
+    }
+    Ok(dir.join(trimmed).join("SKILL.md").to_string_lossy().to_string())
+}
+
+/// 참조 파일 경로 — `<dir>/<slug>/references/<name>.md`. slug·name 둘 다 탈출 차단.
+fn resolve_reference_path(dir: &Path, slug: &str, name: &str) -> InfraResult<String> {
+    let s = slug.trim().trim_end_matches(".md");
+    let n = name.trim().trim_end_matches(".md");
+    if s.is_empty() || n.is_empty() {
+        return Err("skill slug and reference name required".to_string());
+    }
+    for seg in [s, n] {
+        if seg.contains("..") || seg.contains('/') || seg.contains('\\') {
+            return Err(format!("invalid skill reference: {slug}/{name}"));
+        }
+    }
+    Ok(dir
+        .join(s)
+        .join("references")
+        .join(format!("{n}.md"))
+        .to_string_lossy()
+        .to_string())
 }
 
 fn serialize_entry(e: &SkillEntry) -> String {
@@ -440,6 +553,25 @@ mod tests {
         );
         assert!(owner_dir(user, Some("hub:../etc:x")).is_err());
         assert!(owner_dir(user, Some("garbage")).is_err());
+    }
+
+    #[test]
+    fn resolve_dir_and_reference_paths_block_traversal() {
+        let dir = Path::new("user/skills");
+        // 디렉토리형 본문 — `<slug>/SKILL.md`
+        assert!(resolve_dir_path(dir, "big-api").unwrap().ends_with("SKILL.md"));
+        assert!(resolve_dir_path(dir, "../secret").is_err());
+        assert!(resolve_dir_path(dir, "a/b").is_err());
+        // 참조 — slug·name 두 세그먼트 다 탈출 차단(둘 중 하나만 막으면 구멍).
+        assert!(resolve_reference_path(dir, "big-api", "orders").unwrap().ends_with("orders.md"));
+        assert!(resolve_reference_path(dir, "big-api", "../../etc/passwd").is_err());
+        assert!(resolve_reference_path(dir, "..", "orders").is_err());
+        assert!(resolve_reference_path(dir, "big-api", "").is_err());
+        // ".md" 를 붙여 불러도 같은 경로(모델이 확장자를 붙이는 경우 흡수).
+        assert_eq!(
+            resolve_reference_path(dir, "big-api", "orders.md").unwrap(),
+            resolve_reference_path(dir, "big-api", "orders").unwrap()
+        );
     }
 
     #[test]

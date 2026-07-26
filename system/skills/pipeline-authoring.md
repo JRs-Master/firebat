@@ -1,7 +1,7 @@
 ---
 name: pipeline-authoring
 kind: procedure
-description: 파이프라인 스텝 작성 매뉴얼 — 태그: 파이프라인, 스텝, EXECUTE, MCP_CALL, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL, $prev, inputData. 스텝을 쓰기 전 반드시 get_skill 로 본문을 읽을 것 (봉투·분할 절대 규칙 있음).
+description: 파이프라인 스텝 작성 매뉴얼 — 태그: 파이프라인, 스텝, EXECUTE, MCP_CALL, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL, $prev, inputData. 스텝을 쓰기 전 반드시 get_skill 로 본문을 읽을 것 (봉투·분할 절대 규칙 있음). 쓰지 말 것 — 단발 도구 호출(그냥 호출), 크론 등록 자체(scheduling), 모듈 제작(module-authoring).
 ---
 
 # Pipeline — step authoring manual (run_task / schedule_task pipeline)

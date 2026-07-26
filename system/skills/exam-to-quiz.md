@@ -1,7 +1,7 @@
 ---
 name: exam-to-quiz
 kind: tool-usage
-description: 라이브러리 시험지 PDF → 퀴즈 렌더. 태그 - 시험지, 문제지, 기출, 퀴즈로, 문제 풀기, exam, quiz, 객관식, 보기. 라이브러리에 올린 시험지/문제지를 문항·보기로 구조화해 quiz_group 으로 보여줄 때 get_skill 로 본문을 읽고 그대로 따를 것.
+description: 라이브러리 시험지 PDF → 퀴즈 렌더. 태그 - 시험지, 문제지, 기출, 퀴즈로, 문제 풀기, exam, quiz, 객관식, 보기. 라이브러리에 올린 시험지/문제지를 문항·보기로 구조화해 quiz_group 으로 보여줄 때 get_skill 로 본문을 읽고 그대로 따를 것. 쓰지 말 것 — 라이브러리 밖 문서(upstage-ie sysmod), 시험지 없이 새 문제를 창작하는 요청(그냥 생성), 문항이 아닌 지문 해설·구문독해(sentence/passage 컴포넌트).
 ---
 
 # 라이브러리 시험지 → quiz 렌더 (library_extract_structured)
