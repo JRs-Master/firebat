@@ -1,7 +1,7 @@
 //! Codex CLI 이미지 생성 — `$imagegen` skill (구독 기반, gpt-image-2 native).
 //!
 //! 옛 TS `infra/image/formats/cli-codex-image.ts` 1:1 port.
-//! `codex exec --output-format stream-json --skip-git-repo-check "$imagegen <prompt>"` spawn →
+//! `codex exec --json --skip-git-repo-check "$imagegen <prompt>"` spawn →
 //! stream-json 이벤트에서 image binary 추출 (3가지 패턴 매칭).
 //!
 //! 공식 프로토콜 문서 부재 — 옛 TS 와 같이 실측 후 보강. cost_usd None (구독 포함).
@@ -110,10 +110,14 @@ impl ImageFormatHandler for CliCodexImageFormat {
         };
         let prompt = format!("$imagegen {}{}{}", opts.prompt, size_hint, quality_hint);
 
+        // 플래그 = `--json --skip-git-repo-check` 만 (LLM 경로 `cli_codex.rs` 와 동일 base_flags).
+        // 옛 `--output-format stream-json` 은 신버전 codex exec 에서 제거돼 exit 2 로 죽는다
+        // (2026-07-23 실측: "unexpected argument '--output-format' … a similar argument exists:
+        // '--output-schema'"). LLM 경로는 2026-07-15 에 같은 클래스(`--ask-for-approval` 제거)를
+        // 겪고 고쳤는데 이미지젠 형제가 남아 drift — spawn 지점이 둘이면 둘 다 갱신할 것.
         let mut cmd = Command::new("codex");
         cmd.arg("exec")
-            .arg("--output-format")
-            .arg("stream-json")
+            .arg("--json")
             .arg("--skip-git-repo-check")
             .arg(&prompt)
             .stdin(std::process::Stdio::null())

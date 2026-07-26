@@ -343,8 +343,29 @@ pub fn confine_to_user(path: &str) -> Result<String, String> {
              {{\"action\": \"<action>\", \"params\": {{...}}}}. `execute` is only for user/modules."
         ));
     }
+    // Host-absolute path = the caller is reaching for a file of ITS OWN runtime, not a Firebat
+    // workspace file: a CLI client's spilled tool-result, its session dir, its skill bundle
+    // (2026-07-23 실측: read_file('/root/.claude/.../tool-results/…get_module_config….txt') 과
+    // '/tmp/firebat-codex-home/skills/.system/imagegen/SKILL.md' 둘 다 이 가드에 걸려 결과를
+    // 잃었다). Firebat's file tools are sandboxed to its workspace on purpose, so the fix is to
+    // name the right vehicle — the caller's own file reader — instead of a Firebat tool it will
+    // fail with again.
+    let host_abs = path.starts_with('/')
+        || path.starts_with("\\\\")
+        || path.chars().nth(1) == Some(':');
+    if host_abs {
+        return Err(format!(
+            "'{path}' is outside the Firebat workspace, so Firebat's sandboxed file tools cannot \
+             read it. If this is your own runtime's file (a spilled tool result, your session dir, \
+             your skill bundle), read it with YOUR OWN file-reading tool — not a Firebat tool. \
+             Firebat file tools only reach paths under user/."
+        ));
+    }
     Err(format!(
-        "file access is restricted to the user/ workspace (got '{path}'); system source, data, and binaries are off-limits — use get_module_config / list_system_modules for module metadata"
+        "file access is restricted to the user/ workspace (got '{path}'); system source, data, and \
+         binaries are off-limits — for module metadata use get_action_schema(module, action) for one \
+         action's contract, list_system_modules to enumerate, and get_module_config only when you \
+         need the whole declaration (large modules return a lot)"
     ))
 }
 

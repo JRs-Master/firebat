@@ -194,6 +194,25 @@ fn declared_template_fills_data_path_and_args() {
 }
 
 #[test]
+fn declared_template_resolves_arg_nested_in_envelope() {
+    // 중첩 봉투(한투 `query.*`) 안의 인자도 `{name}` 으로 잡힌다 — 안 그러면 symbol/title 이
+    // 통째 빠져 차트 헤더가 빈다.
+    let tpl = vec![json!({
+        "type": "stock_chart",
+        "props": { "symbol": "{FID_INPUT_ISCD}", "title": "{title}", "data": "$.records" }
+    })];
+    let data = json!({ "records": [{ "date": "20260724", "close": 249500 }] });
+    let args = args_of(json!({
+        "query": { "FID_INPUT_ISCD": "005930", "FID_COND_MRKT_DIV_CODE": "J" },
+        "title": "삼성전자"
+    }));
+    let out = render_declared_blocks(&tpl, &data, &args);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0]["props"]["symbol"], "005930");
+    assert_eq!(out[0]["props"]["title"], "삼성전자");
+}
+
+#[test]
 fn declared_template_skips_block_when_data_path_missing() {
     // 응답에 해당 필드가 없으면 그 블록은 빠진다(빈 차트를 그리느니 생략).
     let tpl = vec![json!({ "type": "stock_chart", "props": { "data": "$.nope" } })];

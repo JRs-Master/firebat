@@ -3218,7 +3218,7 @@
         },
         "seed": {
           "type": "object",
-          "description": "fresh-on-visit seed binding — {module, action, args}. On a PUBLISHED page the server re-fetches the seed candles per visit (TTL-cached) so there is no stale creation-time gap. The module.action must be a pageBinding-declared candle action (e.g. kiwoom.ka10081 for daily). Prefer this over a static `data` for a published live chart."
+          "description": "fresh-on-visit seed binding — {module, action, args}. On a PUBLISHED page the server re-fetches the seed candles per visit (TTL-cached) so there is no stale creation-time gap. REQUIRED for a published live chart — a static `data` freezes at authoring time, leaving a growing hole between the last saved candle and the visit. Pick the action from a search_module_actions row carrying `pageBinding: true` (only those are accepted); the same module that serves the stream usually also serves its candles. Omit the time/date anchor in args — the module fills \"latest\" per visit; a pinned anchor re-freezes the seed."
         },
         "indicators": {
           "type": "array",

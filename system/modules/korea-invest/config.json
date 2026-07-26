@@ -32,6 +32,59 @@
       "exemptActions": []
     }
   },
+  "pageBinding": {
+    "alias": "kisstock",
+    "action": "v1_국내주식-016",
+    "args": {
+      "query": {
+        "FID_COND_MRKT_DIV_CODE": "J",
+        "FID_PERIOD_DIV_CODE": "D",
+        "FID_ORG_ADJ_PRC": "0"
+      }
+    },
+    "blocks": [
+      {
+        "type": "stock_chart",
+        "props": {
+          "symbol": "{FID_INPUT_ISCD}",
+          "title": "{title}",
+          "data": "$.records",
+          "indicators": ["MA5", "MA20", "MA60"]
+        }
+      },
+      {
+        "type": "stock_chart",
+        "props": {
+          "symbol": "{FID_INPUT_ISCD}",
+          "title": "{title}",
+          "data": "$.output2",
+          "indicators": ["MA5", "MA20", "MA60"]
+        }
+      }
+    ],
+    "actions": {
+      "v1_국내주식-022": {
+        "args": {
+          "query": {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_PW_DATA_INCU_YN": "N",
+            "FID_ETC_CLS_CODE": ""
+          }
+        },
+        "blocks": [
+          {
+            "type": "stock_chart",
+            "props": {
+              "symbol": "{FID_INPUT_ISCD}",
+              "title": "{title}",
+              "data": "$.output2",
+              "indicators": ["MA5", "MA20"]
+            }
+          }
+        ]
+      }
+    }
+  },
   "timeseries": {
     "v1_국내주식-016": {
       "idParams": {

@@ -110,6 +110,39 @@ pub fn parse_page_binding(config: &serde_json::Value) -> Option<PageBinding> {
 
 /// Declarative template fill — `"$.path"` from the module response, `"{arg}"` from block args.
 /// Returns None when a reference cannot be resolved (caller drops that prop / block).
+/// 인자 오버레이 = 재귀 병합. config 의 고정 args 는 **기본값**이고 블록/페이지 args 는 변수부만
+/// 준다 — 봉투가 중첩된 모듈(한투 `query.*`)에서 얕은 덮어쓰기를 하면 요청이 `query` 를 통째
+/// 갈아치워 config 기본값(시장코드·기간구분 등)이 소멸한다(= 검증 실패).
+fn merge_arg(
+    target: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    val: &serde_json::Value,
+) {
+    if let (Some(serde_json::Value::Object(base)), serde_json::Value::Object(over)) =
+        (target.get_mut(key), val)
+    {
+        for (k, v) in over {
+            merge_arg(base, k, v);
+        }
+        return;
+    }
+    target.insert(key.to_string(), val.clone());
+}
+
+/// `{name}` 인자 조회 — 최상위에 없으면 중첩 객체(봉투) 안을 한 단계 훑는다. 한투처럼 인자가
+/// `query.FID_INPUT_ISCD` 로 감싸인 모듈에서도 템플릿이 `{FID_INPUT_ISCD}` 로 쓸 수 있게.
+fn lookup_arg<'a>(
+    args: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a serde_json::Value> {
+    if let Some(v) = args.get(key) {
+        return Some(v);
+    }
+    args.values()
+        .filter_map(|v| v.as_object())
+        .find_map(|inner| inner.get(key))
+}
+
 fn fill_template(
     tpl: &serde_json::Value,
     data: &serde_json::Value,
@@ -122,7 +155,7 @@ fn fill_template(
             }
             if s.len() > 2 && s.starts_with('{') && s.ends_with('}') && !s.contains(' ') {
                 let key = &s[1..s.len() - 1];
-                return args.get(key).cloned();
+                return lookup_arg(args, key).cloned();
             }
             Some(tpl.clone())
         }
@@ -392,7 +425,7 @@ pub async fn resolve_binding(
     if let Some(args) = block_args_in {
         for (k, val) in args {
             if k != "action" {
-                block_args.insert(k.clone(), val.clone());
+                merge_arg(&mut block_args, k, val);
             }
         }
     }

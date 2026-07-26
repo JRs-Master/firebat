@@ -2071,6 +2071,38 @@ function normalizeCandleRow(row) {
     else if ('cntg_vol' in row) { row.volume = kisNum(row.cntg_vol); delete row.cntg_vol; }
   }
 }
+// Candle "latest" dialect — KIS anchors chart queries on an explicit time/date, but a page binding
+// (publish bake / rebake / fresh-on-visit seed) carries no clock: a value frozen at authoring time
+// would return the same stale window on every later visit. So when the anchor is omitted, default
+// it to now/today (KST) — the module owns this dialect, not the caller. Mirrors kiwoom `base_dt`.
+function kstParts() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return {
+    day: `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}`,
+    hms: `${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}`,
+  };
+}
+// Intraday-minute actions anchor on FID_INPUT_HOUR_1 (query end time); period actions anchor on
+// FID_INPUT_DATE_2 (end date, with DATE_1 as the window start).
+const MINUTE_ANCHOR_ACTIONS = new Set(['v1_국내주식-022', '국내주식-213', 'v1_국내주식-045', 'v1_국내선물-012']);
+const PERIOD_ANCHOR_ACTIONS = new Set(['v1_국내주식-016', 'v1_국내주식-021', 'v1_국내선물-008', 'v1_해외주식-010']);
+function applyLatestDefaults(action, query) {
+  const { day, hms } = kstParts();
+  if (MINUTE_ANCHOR_ACTIONS.has(action) && !query.FID_INPUT_HOUR_1) {
+    query.FID_INPUT_HOUR_1 = hms;
+  }
+  if (PERIOD_ANCHOR_ACTIONS.has(action)) {
+    if (!query.FID_INPUT_DATE_2) query.FID_INPUT_DATE_2 = day;
+    if (!query.FID_INPUT_DATE_1) {
+      // ~4 months back — enough for MA60 on daily candles.
+      const d = new Date(Date.now() + 9 * 3600 * 1000 - 120 * 86400 * 1000);
+      const p = (n) => String(n).padStart(2, '0');
+      query.FID_INPUT_DATE_1 = `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}`;
+    }
+  }
+}
+
 function normalizeCandles(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 2) return;
   for (const v of Object.values(obj)) {
@@ -2110,6 +2142,7 @@ process.stdin.on('end', async () => {
     const base = isMock ? BASE_MOCK : BASE_REAL;
     const query = data.query || {};
     const body = data.body || {};
+    applyLatestDefaults(action, query);
     const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     normalizeCandles(result);
     const meta = API_TABLE[action];

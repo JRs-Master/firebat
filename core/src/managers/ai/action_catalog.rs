@@ -49,6 +49,23 @@ impl ModuleActionSource {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
         let mut entries = self.action_entries(scope, name, &config, &approval_decl).await;
+        // Page-binding eligibility is a DISCOVERABLE property, not lore. A live chart's
+        // fresh-on-visit `seed` (and a page `module` block) only accepts a pageBinding-declared
+        // action, but nothing told the model WHICH actions qualify — so it fell back to a static
+        // snapshot and the published page froze at authoring time (2026-07-23 실측: 분봉 페이지가
+        // 09:05 에 멈춤). Flag it on the row, same join-from-config shape as requiresApproval.
+        if let Some(binding) = crate::utils::page_binding::parse_page_binding(&config) {
+            for e in entries.iter_mut() {
+                let Some(act) = e.extra.get("action").and_then(|v| v.as_str()).map(String::from) else {
+                    continue;
+                };
+                if binding.allows(&act) {
+                    if let Some(obj) = e.extra.as_object_mut() {
+                        obj.insert("pageBinding".to_string(), serde_json::Value::Bool(true));
+                    }
+                }
+            }
+        }
         // F4 — realtime WS subscriptions are actions too, as far as discovery is concerned. Without
         // this a "실시간 차트" request can never reach `stream_watch_start`: search_module_actions
         // only indexed REST actions, so the model silently substituted a static snapshot
@@ -181,6 +198,41 @@ impl ModuleActionSource {
 /// "실시간 / live" query surfaces `stream_watch_start` alongside REST actions. Entries are tagged
 /// `kind: "stream"`; `get_action_schema(module, <key>)` returns the subscribe contract. Pure data —
 /// the loader knows nothing about any provider.
+/// Subscribe/unsubscribe 프레임의 `{name}` · `{name:default}` placeholder = 그 스트림이 받는 인자
+/// 이름(선언이 유일한 소스 — 모듈별 하드코딩 0). `{TOKEN}` 은 인프라가 채우므로 제외.
+fn stream_arg_names(decl: &serde_json::Value) -> Vec<(String, Option<String>)> {
+    fn walk(v: &serde_json::Value, acc: &mut Vec<(String, Option<String>)>) {
+        match v {
+            serde_json::Value::String(s) => {
+                let t = s.trim();
+                if t.len() > 2 && t.starts_with('{') && t.ends_with('}') {
+                    let inner = &t[1..t.len() - 1];
+                    if inner == "TOKEN" || inner.contains(' ') {
+                        return;
+                    }
+                    let (n, d) = match inner.split_once(':') {
+                        Some((n, d)) => (n.to_string(), Some(d.to_string())),
+                        None => (inner.to_string(), None),
+                    };
+                    if !n.is_empty() && !acc.iter().any(|(existing, _)| existing == &n) {
+                        acc.push((n, d));
+                    }
+                }
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, acc)),
+            serde_json::Value::Object(m) => m.values().for_each(|x| walk(x, acc)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for section in ["subscribe", "unsubscribe"] {
+        if let Some(frame) = decl.get(section) {
+            walk(frame, &mut out);
+        }
+    }
+    out
+}
+
 fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogEntry> {
     let Some(streams) = config
         .get("ws")
@@ -215,7 +267,36 @@ fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogE
             if !key_desc.is_empty() {
                 extra["keyDesc"] = serde_json::Value::String(key_desc.to_string());
             }
-            for field in ["trId", "realtimeMatch"] {
+            // Name the subscribe args explicitly. The declaration already carries them as
+            // `{name}` / `{name:default}` placeholders in the frame, but the catalog only exposed
+            // `keyDesc` — a description with no NAME. So the model read the frame's wire field and
+            // called with it (2026-07-23 실측: 한투 프레임의 `tr_key` → "required param missing:
+            // key"). Derived from the declaration, so no per-module hardcode.
+            let arg_names = stream_arg_names(decl);
+            if !arg_names.is_empty() {
+                let mut params = serde_json::Map::new();
+                let mut example = serde_json::Map::new();
+                for (n, default) in &arg_names {
+                    let mut desc = if n == "key" && !key_desc.is_empty() {
+                        key_desc.to_string()
+                    } else {
+                        format!("subscribe arg `{n}`")
+                    };
+                    if let Some(d) = default {
+                        desc.push_str(&format!(" — optional, defaults to \"{d}\""));
+                        example.insert(n.clone(), serde_json::Value::String(d.clone()));
+                    } else {
+                        desc.push_str(" — required");
+                        example.insert(n.clone(), serde_json::Value::String(format!("<{n}>")));
+                    }
+                    params.insert(n.clone(), serde_json::Value::String(desc));
+                }
+                extra["params"] = serde_json::Value::Object(params);
+                extra["example"] = serde_json::json!({
+                    "module": name, "stream": key, "args": serde_json::Value::Object(example)
+                });
+            }
+            for field in ["trId", "realtimeMatch", "typeCodes"] {
                 if let Some(v) = decl.get(field) {
                     extra[field] = v.clone();
                 }
@@ -681,6 +762,14 @@ impl ModuleActionCatalog {
                 let desc = clip_row_desc(&m.description);
                 if !desc.is_empty() && desc != m.name {
                     row["desc"] = serde_json::Value::String(desc);
+                }
+                // Only surface the flag when true — a `false` on every other row is noise.
+                if m.extra.get("pageBinding").and_then(|v| v.as_bool()) == Some(true) {
+                    row["pageBinding"] = serde_json::Value::Bool(true);
+                    row["pageBindingNote"] = serde_json::Value::String(
+                        "usable as a page binding: a published page can re-run this per visit — live chart `seed` {module,action,args} or a `module` block."
+                            .to_string(),
+                    );
                 }
                 row
             })
