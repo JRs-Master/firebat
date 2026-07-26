@@ -1939,9 +1939,16 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // 옛 TS image_gen 도구 1:1 — referenceImage (slug/url/base64) image-to-image 자동 활성.
     tools.register(ToolDefinition {
         name: "image_gen".to_string(),
-        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환 → AI 가 save_page 설정할 수 있음. \
-                      사용자 페이지 reload 시 실제 이미지로 swap. \
-                      referenceImage (slug/url/base64) 설정하면 image-to-image 변환 (OpenAI gpt-image / Gemini 지원).".to_string(),
+        description: "Generate an image and get back a URL you can use anywhere an image URL is \
+                      accepted — a component you emit in chat (e.g. a listening card's `image`, an \
+                      `image` block, a gallery), or a saved page. **This is the image generator: use \
+                      it whenever the user asks for a picture/photo/illustration, not only for pages.** \
+                      Returns immediately with a placeholder URL that is swapped for the finished \
+                      image, so you can emit the component or save the page in the same turn without \
+                      waiting. Set `referenceImage` (slug/url/base64) for image-to-image. If image \
+                      generation is not configured the call returns an error — report that you could \
+                      not produce the image rather than describing one you did not create."
+            .to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "required": ["prompt"],
