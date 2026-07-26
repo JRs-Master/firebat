@@ -8,8 +8,75 @@
   "libraryExtractionProModel": "gemini-3.1-pro-preview",
   "models": [
     {
+      "id": "claude-opus-5",
+      "maxOutput": 128000,
+      "displayName": "Claude Opus 5",
+      "provider": "Anthropic",
+      "format": "anthropic-messages",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyVaultKey": "system:anthropic:api-key",
+      "features": {
+        "mcpConnector": true,
+        "extendedThinking": true,
+        "imageInput": true,
+        "promptCache": true
+      },
+      "extraHeaders": {
+        "anthropic-version": "2023-06-01"
+      },
+      "pricing": {
+        "input": 5,
+        "output": 25,
+        "cachedInput": 0.5
+      },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 예산)",
+              "en": "Max (highest budget)"
+            }
+          }
+        ],
+        "onWhenOmitted": true,
+        "disableMaxEffort": "high"
+      },
+      "execMode": "api",
+      "category": "api-anthropic"
+    },
+    {
       "id": "claude-opus-4-8",
-      "maxOutput": 64000,
+      "maxOutput": 128000,
       "displayName": "Claude Opus 4.8",
       "provider": "Anthropic",
       "format": "anthropic-messages",
@@ -132,14 +199,16 @@
               "en": "Max (highest budget)"
             }
           }
-        ]
+        ],
+        "onWhenOmitted": true,
+        "canDisable": false
       },
       "execMode": "api",
       "category": "api-anthropic"
     },
     {
       "id": "claude-sonnet-5",
-      "maxOutput": 64000,
+      "maxOutput": 128000,
       "displayName": "Claude Sonnet 5",
       "provider": "Anthropic",
       "format": "anthropic-messages",
@@ -197,7 +266,8 @@
               "en": "Max (highest budget)"
             }
           }
-        ]
+        ],
+        "onWhenOmitted": true
       },
       "execMode": "api",
       "category": "api-anthropic"
@@ -264,7 +334,8 @@
         ]
       },
       "execMode": "api",
-      "category": "api-anthropic"
+      "category": "api-anthropic",
+      "maxOutput": 64000
     },
     {
       "id": "gemini-3.1-pro-preview",
@@ -508,9 +579,9 @@
       "category": "vertex-google"
     },
     {
-      "id": "gpt-5.5",
+      "id": "gpt-5.6-sol",
       "maxOutput": 64000,
-      "displayName": "GPT-5.5",
+      "displayName": "GPT-5.6 Sol",
       "provider": "OpenAI",
       "format": "openai-responses",
       "endpoint": "https://api.openai.com/v1/responses",
@@ -523,9 +594,8 @@
         "imageInput": true
       },
       "pricing": {
-        "input": 10,
-        "output": 60,
-        "cachedInput": 1
+        "input": 5,
+        "output": 30
       },
       "thinking": {
         "kind": "reasoning",
@@ -533,15 +603,8 @@
           {
             "value": "none",
             "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
-          },
-          {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
+              "ko": "None (사고 없음)",
+              "en": "None"
             }
           },
           {
@@ -571,6 +634,13 @@
               "ko": "Extra High (더 높음)",
               "en": "Extra High"
             }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
           }
         ]
       },
@@ -578,9 +648,9 @@
       "category": "api-openai"
     },
     {
-      "id": "gpt-5.4",
+      "id": "gpt-5.6-terra",
       "maxOutput": 64000,
-      "displayName": "GPT-5.4",
+      "displayName": "GPT-5.6 Terra",
       "provider": "OpenAI",
       "format": "openai-responses",
       "endpoint": "https://api.openai.com/v1/responses",
@@ -593,9 +663,147 @@
         "imageInput": true
       },
       "pricing": {
-        "input": 5,
-        "output": 30,
-        "cachedInput": 0.5
+        "input": 2.5,
+        "output": 15
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none",
+            "labels": {
+              "ko": "None (사고 없음)",
+              "en": "None"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
+          }
+        ]
+      },
+      "execMode": "api",
+      "category": "api-openai"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "maxOutput": 64000,
+      "displayName": "GPT-5.6 Luna",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": {
+        "mcpConnector": true,
+        "strictTools": true,
+        "reasoning": true,
+        "toolSearch": true,
+        "imageInput": true
+      },
+      "pricing": {
+        "input": 1,
+        "output": 6
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none",
+            "labels": {
+              "ko": "None (사고 없음)",
+              "en": "None"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
+          }
+        ]
+      },
+      "execMode": "api",
+      "category": "api-openai"
+    },
+    {
+      "id": "gpt-5.5",
+      "maxOutput": 64000,
+      "displayName": "GPT-5.5",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": {
+        "mcpConnector": true,
+        "strictTools": true,
+        "reasoning": true,
+        "toolSearch": true,
+        "imageInput": true
+      },
+      "pricing": {
+        "input": 10,
+        "output": 60,
+        "cachedInput": 1
       },
       "thinking": {
         "kind": "reasoning",
@@ -803,9 +1011,27 @@
       "thinking": {
         "kind": "reasoning",
         "levels": [
-          {"value": "low", "labels": {"ko": "Low (추론 OFF)", "en": "Low (reasoning off)"}},
-          {"value": "medium", "labels": {"ko": "Medium (기본)", "en": "Medium (default)"}},
-          {"value": "high", "labels": {"ko": "High", "en": "High"}}
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (추론 OFF)",
+              "en": "Low (reasoning off)"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High",
+              "en": "High"
+            }
+          }
         ]
       },
       "pricing": {
@@ -819,6 +1045,60 @@
     {
       "id": "cli-claude-code-auto",
       "displayName": "Claude Code CLI (Auto)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": {
+        "mcpConnector": true,
+        "extendedThinking": true
+      },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 예산)",
+              "en": "Max (highest budget)"
+            }
+          }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "claude",
+      "category": "cli-claude"
+    },
+    {
+      "id": "cli-claude-code-opus-5",
+      "displayName": "Claude Opus 5 (Claude Code CLI)",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
@@ -1289,191 +1569,191 @@
       "category": "cli-codex"
     },
     {
+      "id": "cli-codex-gpt-5.6-sol",
+      "displayName": "GPT-5.6 Sol (Codex CLI)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": {
+        "mcpConnector": true,
+        "reasoning": true
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none",
+            "labels": {
+              "ko": "None (사고 없음)",
+              "en": "None"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
+          }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "codex",
+      "category": "cli-codex"
+    },
+    {
+      "id": "cli-codex-gpt-5.6-terra",
+      "displayName": "GPT-5.6 Terra (Codex CLI)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": {
+        "mcpConnector": true,
+        "reasoning": true
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none",
+            "labels": {
+              "ko": "None (사고 없음)",
+              "en": "None"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
+          }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "codex",
+      "category": "cli-codex"
+    },
+    {
+      "id": "cli-codex-gpt-5.6-luna",
+      "displayName": "GPT-5.6 Luna (Codex CLI)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": {
+        "mcpConnector": true,
+        "reasoning": true
+      },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          {
+            "value": "none",
+            "labels": {
+              "ko": "None (사고 없음)",
+              "en": "None"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "Extra High (더 높음)",
+              "en": "Extra High"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max (최대 — 가장 어려운 작업)",
+              "en": "Max (hardest tasks)"
+            }
+          }
+        ]
+      },
+      "execMode": "cli",
+      "cliProvider": "codex",
+      "category": "cli-codex"
+    },
+    {
       "id": "cli-codex-gpt-5.5",
       "displayName": "Codex CLI (GPT-5.5)",
-      "provider": "CLI",
-      "format": "cli-codex",
-      "endpoint": "codex",
-      "features": {
-        "mcpConnector": true,
-        "reasoning": true
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
-          },
-          {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
-          },
-          {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
-          },
-          {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
-          },
-          {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
-          },
-          {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "codex",
-      "category": "cli-codex"
-    },
-    {
-      "id": "cli-codex-gpt-5.4",
-      "displayName": "Codex CLI (GPT-5.4)",
-      "provider": "CLI",
-      "format": "cli-codex",
-      "endpoint": "codex",
-      "features": {
-        "mcpConnector": true,
-        "reasoning": true
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
-          },
-          {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
-          },
-          {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
-          },
-          {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
-          },
-          {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
-          },
-          {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "codex",
-      "category": "cli-codex"
-    },
-    {
-      "id": "cli-codex-gpt-5.4-mini",
-      "displayName": "Codex CLI (GPT-5.4 Mini)",
-      "provider": "CLI",
-      "format": "cli-codex",
-      "endpoint": "codex",
-      "features": {
-        "mcpConnector": true,
-        "reasoning": true
-      },
-      "thinking": {
-        "kind": "reasoning",
-        "levels": [
-          {
-            "value": "none",
-            "labels": {
-              "ko": "None (추론 없음, 최저 지연)",
-              "en": "None (no reasoning, lowest latency)"
-            }
-          },
-          {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
-          },
-          {
-            "value": "low",
-            "labels": {
-              "ko": "Low (낮음)",
-              "en": "Low"
-            }
-          },
-          {
-            "value": "medium",
-            "labels": {
-              "ko": "Medium (중간, 기본)",
-              "en": "Medium (default)"
-            }
-          },
-          {
-            "value": "high",
-            "labels": {
-              "ko": "High (높음)",
-              "en": "High"
-            }
-          },
-          {
-            "value": "xhigh",
-            "labels": {
-              "ko": "Extra High (더 높음)",
-              "en": "Extra High"
-            }
-          }
-        ]
-      },
-      "execMode": "cli",
-      "cliProvider": "codex",
-      "category": "cli-codex"
-    },
-    {
-      "id": "cli-codex-5.3-codex",
-      "displayName": "Codex CLI (5.3-Codex)",
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",

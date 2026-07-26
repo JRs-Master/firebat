@@ -26,6 +26,42 @@ impl AnthropicMessagesHandler {
         Self
     }
 
+    /// "사고 끔" 요청 처리. 기본은 파라미터 생략(옛 세대 = 그게 곧 off)이고, 생략해도 사고하는
+    /// 세대(`thinking.onWhenOmitted`)만 명시적으로 `{type:"disabled"}` 를 보낸다. 끌 수 없는 모델
+    /// (Fable 5 = disabled 가 400)은 생략하되, 사고가 켜진 채로 도니 **출력 여유는 확보**해 답이
+    /// 잘리지 않게 한다 — thinking 이 max_tokens 를 응답과 함께 먹기 때문.
+    fn apply_thinking_off(
+        body: &mut serde_json::Value,
+        config: &LlmModelConfig,
+        opts: &LlmCallOpts,
+    ) {
+        let Some(t) = config.thinking.as_ref().filter(|t| t.on_when_omitted) else {
+            return; // 옛 세대 — 생략이 곧 off. 옛 동작 그대로.
+        };
+        if t.can_disable {
+            body["thinking"] = serde_json::json!({ "type": "disabled" });
+            // 끄기가 effort 상한에 걸리는 모델(Opus 5 = disabled+xhigh/max 는 400)이면 상한으로 낮춘다.
+            if let Some(cap) = t.disable_max_effort.as_deref() {
+                if let Some(oc) = body.get_mut("output_config").and_then(|v| v.as_object_mut()) {
+                    let over = oc
+                        .get("effort")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|e| matches!(e, "xhigh" | "max"));
+                    if over {
+                        oc.insert("effort".to_string(), serde_json::Value::from(cap));
+                    }
+                }
+            }
+            return;
+        }
+        // 끌 수 없음 → 사고는 켜진 채로 돈다. 출력 여유만 보장.
+        let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        let want = opts.max_tokens.or(config.max_output).unwrap_or(16000).max(16000);
+        if cur < want {
+            body["max_tokens"] = serde_json::Value::from(want);
+        }
+    }
+
     /// Extended thinking 요청 파라미터 주입 — features.extendedThinking 활성 + thinking_level 실 레벨일 때만.
     /// 4.6+ (Opus 4.6/4.7/4.8·Sonnet 4.6/5·Fable) = **adaptive thinking + output_config.effort**.
     /// budget_tokens(`{type:enabled}`)는 4.7/4.8/Sonnet5/Fable 에서 400 → adaptive. 레벨(low~max)=effort 1:1.
@@ -41,7 +77,15 @@ impl AnthropicMessagesHandler {
         }
         let level = match opts.thinking_level.as_deref() {
             Some(l @ ("low" | "medium" | "high" | "xhigh" | "max")) => l,
-            _ => return, // none / minimal / 미설정 → thinking off (param 생략 = 비활성)
+            // none / minimal / 미설정 = 사용자가 "끔"을 고른 것. **생략 = 비활성은 세대별로만 참**:
+            // Opus 4.8/4.7/4.6·Sonnet 4.6·Haiku 는 생략이면 안 하지만, Opus 5·Sonnet 5·Fable 5 는
+            // 생략해도 adaptive 로 사고한다. 그 모델에서 그냥 생략하면 (a) 껐다고 믿은 요청이 사고하고
+            // (b) thinking 이 max_tokens 를 응답과 함께 먹어 답이 중간에 잘린다. → 선언(onWhenOmitted)
+            // 을 보고 명시적으로 disabled 를 보낸다.
+            _ => {
+                Self::apply_thinking_off(body, config, opts);
+                return;
+            }
         };
         let cur = body.get("max_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
         if config.id.contains("haiku") {
@@ -415,5 +459,94 @@ impl FormatHandler for AnthropicMessagesHandler {
             thinking_text,
             ..Default::default()
         })
+    }
+}
+
+#[cfg(test)]
+mod thinking_contract_tests {
+    use super::*;
+
+    /// 최소 fixture — thinking 계약만 바꿔가며 검증(새 serde 필드도 같이 확인).
+    fn cfg(thinking: serde_json::Value) -> LlmModelConfig {
+        serde_json::from_value(serde_json::json!({
+            "id": "test-model",
+            "displayName": "Test",
+            "provider": "Anthropic",
+            "format": "anthropic-messages",
+            "endpoint": "https://api.anthropic.com/v1/messages",
+            "features": { "extendedThinking": true },
+            "thinking": thinking,
+        }))
+        .expect("fixture")
+    }
+
+    fn levels() -> serde_json::Value {
+        serde_json::json!([{ "value": "high", "labels": { "en": "High" } }])
+    }
+
+    fn off_opts() -> LlmCallOpts {
+        LlmCallOpts { thinking_level: Some("none".to_string()), ..Default::default() }
+    }
+
+    #[test]
+    fn off_on_old_generation_omits_the_param() {
+        // Opus 4.8/4.7/4.6·Sonnet 4.6·Haiku — 생략이 곧 off. 옛 동작 보존.
+        let c = cfg(serde_json::json!({ "kind": "extendedThinking", "levels": levels() }));
+        let mut body = serde_json::json!({ "max_tokens": 4096 });
+        AnthropicMessagesHandler::apply_extended_thinking(&mut body, &c, &off_opts());
+        assert!(body.get("thinking").is_none(), "옛 세대는 파라미터 생략이 off");
+        assert_eq!(body["max_tokens"], 4096, "건드리지 않음");
+    }
+
+    #[test]
+    fn off_on_thinking_by_default_model_sends_disabled() {
+        // Opus 5·Sonnet 5 — 생략하면 adaptive 로 켜지므로 명시적으로 꺼야 한다.
+        let c = cfg(serde_json::json!({
+            "kind": "extendedThinking", "levels": levels(), "onWhenOmitted": true
+        }));
+        let mut body = serde_json::json!({ "max_tokens": 4096 });
+        AnthropicMessagesHandler::apply_extended_thinking(&mut body, &c, &off_opts());
+        assert_eq!(body["thinking"]["type"], "disabled");
+    }
+
+    #[test]
+    fn off_clamps_effort_when_disable_is_capped() {
+        // Opus 5 — `disabled` + xhigh/max 조합은 400. 상한(high)으로 낮춘다.
+        let c = cfg(serde_json::json!({
+            "kind": "extendedThinking", "levels": levels(),
+            "onWhenOmitted": true, "disableMaxEffort": "high"
+        }));
+        let mut body = serde_json::json!({
+            "max_tokens": 4096, "output_config": { "effort": "xhigh" }
+        });
+        AnthropicMessagesHandler::apply_extended_thinking(&mut body, &c, &off_opts());
+        assert_eq!(body["thinking"]["type"], "disabled");
+        assert_eq!(body["output_config"]["effort"], "high", "400 조합 회피");
+    }
+
+    #[test]
+    fn off_on_undisableable_model_reserves_output_room() {
+        // Fable 5 — disabled 가 400 이라 못 끈다. 사고가 켜진 채 도니 답이 잘리지 않게 여유 확보.
+        let c = cfg(serde_json::json!({
+            "kind": "extendedThinking", "levels": levels(),
+            "onWhenOmitted": true, "canDisable": false
+        }));
+        let mut body = serde_json::json!({ "max_tokens": 4096 });
+        AnthropicMessagesHandler::apply_extended_thinking(&mut body, &c, &off_opts());
+        assert!(body.get("thinking").is_none(), "disabled 를 보내면 400");
+        assert!(body["max_tokens"].as_i64().unwrap() >= 16000, "thinking 이 응답과 예산을 나눠 쓴다");
+    }
+
+    #[test]
+    fn level_set_uses_adaptive_with_summarized_display() {
+        let c = cfg(serde_json::json!({ "kind": "extendedThinking", "levels": levels() }));
+        let mut body = serde_json::json!({ "max_tokens": 4096, "temperature": 0.7 });
+        let opts = LlmCallOpts { thinking_level: Some("xhigh".to_string()), ..Default::default() };
+        AnthropicMessagesHandler::apply_extended_thinking(&mut body, &c, &opts);
+        assert_eq!(body["thinking"]["type"], "adaptive");
+        // display 기본이 "omitted" 인 세대(Opus 5/4.8/4.7·Sonnet 5·Fable)에서 사고가 안 보이는 것 방지.
+        assert_eq!(body["thinking"]["display"], "summarized");
+        assert_eq!(body["output_config"]["effort"], "xhigh");
+        assert!(body.get("temperature").is_none(), "thinking 은 sampling 파라미터와 공존 불가");
     }
 }

@@ -78,6 +78,24 @@ pub struct ThinkingConfig {
     pub kind: String,
     /// 허용 thinking 레벨 — frontend dropdown 그대로 표시.
     pub levels: Vec<ThinkingLevel>,
+    /// **파라미터를 생략했을 때** 그 모델이 사고를 하는가. 세대마다 갈리는데 요청 shape 로는 구분이
+    /// 안 돼 선언이 필요하다: Opus 4.8/4.7/4.6·Sonnet 4.6·Haiku = 생략이면 **안 함**(기본 false) /
+    /// **Opus 5·Sonnet 5·Fable 5 = 생략해도 adaptive 로 함**(true). true 인데 생략하면 "껐다"고
+    /// 믿은 요청이 사고를 하고, thinking 이 max_tokens 를 응답과 함께 먹어 답이 잘린다.
+    #[serde(rename = "onWhenOmitted", default)]
+    pub on_when_omitted: bool,
+    /// 명시적으로 끌 수 있는가. Fable 5 는 `{type:"disabled"}` 자체가 400 이라 끌 방법이 없다.
+    /// `on_when_omitted` 가 true 인 모델에서만 의미 있음(false 면 생략이 곧 off).
+    #[serde(rename = "canDisable", default = "default_true")]
+    pub can_disable: bool,
+    /// 끄기가 허용되는 effort 상한 — Opus 5 는 `disabled` + `xhigh`/`max` 조합이 400 이라 "high".
+    /// 미지정 = 상한 없음.
+    #[serde(rename = "disableMaxEffort", default, skip_serializing_if = "Option::is_none")]
+    pub disable_max_effort: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
