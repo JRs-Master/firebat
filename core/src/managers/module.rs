@@ -1412,22 +1412,32 @@ fn coerce_for_validation(
     };
     let mut out = obj.clone();
     for (k, v) in obj {
-        let Some(s) = v.as_str() else { continue };
         let Some(ty) = props.get(k).and_then(|p| p.get("type")).and_then(|t| t.as_str()) else {
             continue;
         };
-        match ty {
-            "integer" => {
+        match (ty, v) {
+            ("integer", serde_json::Value::String(s)) => {
                 if let Ok(n) = s.trim().parse::<i64>() {
                     out.insert(k.clone(), serde_json::json!(n));
                 }
             }
-            "number" => {
+            ("number", serde_json::Value::String(s)) => {
                 if let Ok(n) = s.trim().parse::<f64>() {
                     if let Some(num) = serde_json::Number::from_f64(n) {
                         out.insert(k.clone(), serde_json::Value::Number(num));
                     }
                 }
+            }
+            // 역방향 — 스키마가 string 인데 모델이 스칼라를 따옴표 없이 보낸 경우.
+            // 옛 구현은 string→number 한 방향뿐이라 `typhoonNo: 13` 이 그대로 400 이었다
+            // (2026-07-27 실측: 태풍 조회가 한 라운드 낭비). 모델의 JSON 스칼라 타입 흔들림은
+            // 양방향으로 나오므로 대칭으로 받는다. 값 자체는 따옴표만 붙는 것이라 손실 0이고,
+            // enum·pattern 제약은 뒤 검증이 그대로 잡는다.
+            ("string", serde_json::Value::Number(n)) => {
+                out.insert(k.clone(), serde_json::Value::String(n.to_string()));
+            }
+            ("string", serde_json::Value::Bool(b)) => {
+                out.insert(k.clone(), serde_json::Value::String(b.to_string()));
             }
             _ => {}
         }
@@ -1581,3 +1591,64 @@ impl ModuleManager {
 
 
 // Tests 이관 — `infra/tests/module_manager_test.rs` (integration test).
+
+// 순수 함수 단위 테스트만 여기 — ModuleManager 통합 테스트는 위 주석의 integration 파일.
+#[cfg(test)]
+mod coercion_tests {
+    use super::*;
+
+    fn schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "typhoonNo": { "type": "string" },
+                "count":     { "type": "integer" },
+                "ratio":     { "type": "number" },
+                "flag":      { "type": "string" },
+                "note":      { "type": "string" }
+            }
+        })
+    }
+
+    /// 모델의 JSON 스칼라 타입 흔들림은 양방향으로 나온다 — 양쪽 다 받아야 한다.
+    /// 회귀 대상: `typhoonNo: 13` 이 400 나서 라운드를 낭비한 건(2026-07-27 실측).
+    #[test]
+    fn coerces_both_directions() {
+        let input = serde_json::json!({
+            "typhoonNo": 13,        // number → string (옛 구현이 놓치던 방향)
+            "count": "7",           // string → integer
+            "ratio": "1.5",         // string → number
+            "flag": true,           // bool → string
+            "note": "그대로"        // 이미 맞는 타입 = 무변
+        });
+        let out = coerce_for_validation(&input, &schema());
+        assert_eq!(out["typhoonNo"], serde_json::json!("13"));
+        assert_eq!(out["count"], serde_json::json!(7));
+        assert_eq!(out["ratio"], serde_json::json!(1.5));
+        assert_eq!(out["flag"], serde_json::json!("true"));
+        assert_eq!(out["note"], serde_json::json!("그대로"));
+        // 강제 후에는 스키마를 통과해야 한다(이게 목적).
+        assert!(validate_value(&out, &schema()).is_ok());
+    }
+
+    /// 스키마에 없는 키·타입 미선언 키는 건드리지 않는다.
+    #[test]
+    fn leaves_undeclared_untouched() {
+        let input = serde_json::json!({ "unknown": 5, "typhoonNo": "13" });
+        let out = coerce_for_validation(&input, &schema());
+        assert_eq!(out["unknown"], serde_json::json!(5));
+        assert_eq!(out["typhoonNo"], serde_json::json!("13"));
+    }
+
+    /// enum·pattern 제약은 강제 뒤 검증이 그대로 잡아야 한다(강제가 검증을 무르게 하면 안 됨).
+    #[test]
+    fn coercion_does_not_bypass_enum() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": { "action": { "type": "string", "enum": ["quote", "history"] } }
+        });
+        let out = coerce_for_validation(&serde_json::json!({ "action": 7 }), &sch);
+        assert_eq!(out["action"], serde_json::json!("7"));
+        assert!(validate_value(&out, &sch).is_err(), "enum 밖 값은 여전히 거부");
+    }
+}
