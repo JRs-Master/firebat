@@ -3941,9 +3941,13 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
         {icon && <span>{icon}</span>}
         <span className="font-medium">{cleanPlainText(label)}</span>
       </div>
-      <div className={`flex items-baseline gap-1 w-full ${justify(va)}`}>
-        <span className="text-2xl font-bold text-gray-900 tabular-nums">{valStr}</span>
-        {unit && <span className="text-sm text-gray-500">{cleanPlainText(unit)}</span>}
+      {/* min-w-0 + overflow-wrap:anywhere — flex 항목의 기본 min-width 는 content 라, 긴 값
+          (예: 범위 표기 "246,000~258,500")이 카드를 밀어내고 그 폭이 페이지 전체로 번져
+          모바일에서 좌우로 흔들렸다(2026-07-27 실측). anywhere 는 넘칠 때만 끊어서 짧은 값의
+          렌더는 그대로 유지한다. 숫자를 자르지 않으니 데이터 손실 0. */}
+      <div className={`flex items-baseline gap-1 w-full min-w-0 ${justify(va)}`}>
+        <span className="text-2xl font-bold text-gray-900 tabular-nums min-w-0 [overflow-wrap:anywhere]">{valStr}</span>
+        {unit && <span className="text-sm text-gray-500 shrink-0">{cleanPlainText(unit)}</span>}
       </div>
       {delta != null && (
         <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`} style={deltaStyle}>
