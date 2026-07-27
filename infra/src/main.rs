@@ -710,6 +710,11 @@ async fn main() -> Result<()> {
             .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())
             .with_media(media.clone())
+            // CLI 내장 이미지 도구 산출물 수확 → 갤러리 편입. 생성 경로와 같은 후처리
+            // (variants·썸네일·blurhash)를 타도록 MediaManager 를 좁은 포트로 넘긴다.
+            .with_image_import(Arc::new(
+                firebat_core::managers::media::MediaImageImporter(media_manager.clone()),
+            ))
             .with_tool_dispatcher(tool_dispatcher.clone())
             .with_retrieval_engine(retrieval_engine)
             // fence `dataCacheKey` → 서버측 캐시 records 주입 (모델 손 복사 truncation·날조 차단)

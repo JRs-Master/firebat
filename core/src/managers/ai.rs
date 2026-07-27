@@ -300,6 +300,8 @@ pub struct AiManager {
     /// 남아 있어 slug URL 그대로 가면 decode fail → LLM API "could not be processed" 결과.
     /// 본 layer 가 LLM 호출 전 image 부분을 data URL 형태로 강제 변환.
     media: Option<Arc<dyn crate::ports::IMediaPort>>,
+    /// CLI 내장 이미지 도구 산출물 편입(후처리 포함) — MediaManager 가 구현.
+    image_import: Option<Arc<dyn crate::managers::media::IImageImportPort>>,
     /// MemoryFileManager (옵션) — data/memory 운영 메모리 인덱스를 매 턴 시스템 프롬프트에
     /// `<OPERATIONAL_MEMORY>` 로 prepend. ai-router 토글과 무관하게 항상 주입 (큐레이트 운영지식은
     /// CLAUDE.md 처럼 늘 효력). 현재 owner=="admin" 만 주입 (hub 는 게이트 OFF). 미설정 시 주입 skip.
@@ -340,6 +342,7 @@ impl AiManager {
             config_port: None,
             retrieval_engine: None,
             media: None,
+            image_import: None,
             memory_file: None,
             skill_file: None,
             sysmod_cache: None,
@@ -384,6 +387,15 @@ impl AiManager {
         self
     }
 
+    /// CLI 내장 도구 산출물 편입 경로 — 미설정 시 수확물은 갤러리에 안 들어간다(원본은 보존).
+    pub fn with_image_import(
+        mut self,
+        importer: Arc<dyn crate::managers::media::IImageImportPort>,
+    ) -> Self {
+        self.image_import = Some(importer);
+        self
+    }
+
     /// CLI 어댑터가 수확해 온 내장-도구 이미지 파일 → 갤러리 적재. 반환 = 발급된 URL 목록.
     ///
     /// 왜 필요한가: CLI(codex)는 자기 런타임 내장 이미지 도구를 가지고 있어 `image_gen` 도구를
@@ -397,7 +409,10 @@ impl AiManager {
         hub_owner: Option<&str>,
         prompt: &str,
     ) -> Vec<String> {
-        let Some(media) = self.media.as_ref() else {
+        let Some(importer) = self.image_import.as_ref() else {
+            // 미배선 = 수확물을 갤러리에 못 넣는다. 원본은 지우지 않으므로 유실은 아니다.
+            self.log
+                .warn("[AiManager] image_import 미설정 — CLI 수확 이미지를 갤러리에 편입하지 못했습니다");
             return Vec::new();
         };
         let mut urls = Vec::new();
@@ -410,6 +425,7 @@ impl AiManager {
                     continue;
                 }
             };
+            let bytes = binary.len();
             let ext = std::path::Path::new(path)
                 .extension()
                 .and_then(|e| e.to_str())
@@ -420,24 +436,27 @@ impl AiManager {
                 "webp" => "image/webp",
                 _ => "image/png",
             };
-            let opts = crate::ports::MediaSaveOptions {
-                scope: Some(crate::ports::MediaScope::User),
+            // 생성 경로와 **같은 파이프라인**(크롭·variants·썸네일·blurhash·메타·갤러리 이벤트).
+            // 옛 IMediaPort.save 직행은 원본만 남겨 같은 갤러리 안에서 경로별로 메타가 달랐다.
+            let input = crate::managers::media::GenerateImageInput {
+                // 갤러리 검색은 프롬프트로 한다 — 비우면 그 이미지는 영영 못 찾는다. 모델이 실제로
+                // 쓴 이미지 프롬프트는 CLI 안에 있어 못 받으므로 사용자 요청문을 쓴다(사용자가
+                // 기억하는 문구이기도 하다).
+                prompt: prompt.chars().take(400).collect(),
                 // 출처가 드러나는 라벨 — 옛 "cli-builtin" 은 어느 CLI 인지 안 보였다.
                 model: Some("cli-codex-builtin".to_string()),
-                // 갤러리 검색은 프롬프트로 한다 — 비우면 그 이미지는 영영 못 찾는다.
-                // 모델이 실제로 쓴 이미지 프롬프트는 CLI 안에 있어 못 받으므로 사용자 요청문을
-                // 쓴다(그게 사용자가 기억하는 문구이기도 하다).
-                prompt: Some(prompt.chars().take(400).collect()),
-                source: Some("ai-generated".to_string()),
+                scope: Some(crate::ports::MediaScope::User),
                 hub_owner: hub_owner.map(String::from),
+                // size·quality·aspectRatio 는 CLI 가 안 받는 파라미터라 애초에 없다.
                 ..Default::default()
             };
-            match media.save(&binary, content_type, &opts).await {
+            match importer.import_image(binary, content_type, input).await {
                 Ok(saved) => {
                     self.log.info(&format!(
-                        "[AiManager] CLI 내장 도구 이미지 수확 → 갤러리: {} ({} bytes)",
+                        "[AiManager] CLI 내장 도구 이미지 수확 → 갤러리: {} ({} bytes, variants={})",
                         saved.url,
-                        binary.len()
+                        bytes,
+                        saved.variants.len()
                     ));
                     urls.push(saved.url);
                     // 갤러리에 사본이 생겼으므로 원본 정리 — CLI 홈 무한 증식 방지.
@@ -445,7 +464,7 @@ impl AiManager {
                 }
                 Err(e) => {
                     self.log
-                        .warn(&format!("[AiManager] CLI 이미지 갤러리 저장 실패: {e}"));
+                        .warn(&format!("[AiManager] CLI 이미지 갤러리 편입 실패: {e}"));
                 }
             }
         }

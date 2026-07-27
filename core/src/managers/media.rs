@@ -28,7 +28,7 @@ use crate::managers::event::EventManager;
 use crate::managers::status::StatusManager;
 use crate::ports::{
     FitMode, IImageGenPort, IImageProcessorPort, ILogPort, IMediaPort, IVaultPort, ImageFormat,
-    ImageGenCallOpts, ImageGenOpts, ImageModelInfo, ImageReferenceImage, InfraResult,
+    ImageGenCallOpts, ImageGenOpts, ImageGenResult, ImageModelInfo, ImageReferenceImage, InfraResult,
     MediaFileRecord, MediaListOpts, MediaListResult, MediaSaveOptions, MediaSaveResult,
     MediaScope, MediaVariant, MediaVariantMeta, ResizeOpts,
 };
@@ -93,6 +93,36 @@ pub struct GenerateImageInput {
     pub focus_point: Option<serde_json::Value>,
     #[serde(rename = "referenceImage", default, skip_serializing_if = "Option::is_none")]
     pub reference_image: Option<ReferenceImageInput>,
+}
+
+/// 외부에서 만들어진 이미지 바이너리의 갤러리 편입 — `MediaManager` 구현.
+///
+/// AiManager(오케스트레이터)가 MediaManager(생성 오케스트레이터)를 통째로 잡지 않도록 끼우는
+/// 좁은 포트. 매니저가 코어 포트를 구현해 manager→manager 결합을 끊는 `IMemoryFacadePort` 선례.
+#[async_trait::async_trait]
+pub trait IImageImportPort: Send + Sync {
+    async fn import_image(
+        &self,
+        binary: Vec<u8>,
+        content_type: &str,
+        input: GenerateImageInput,
+    ) -> InfraResult<GenerateImageResult>;
+}
+
+/// `Arc<MediaManager>` → `IImageImportPort` 어댑터.
+/// (MediaManager 의 이미지 메서드가 `self: &Arc<Self>` 라 trait 을 직접 impl 할 수 없다.)
+pub struct MediaImageImporter(pub Arc<MediaManager>);
+
+#[async_trait::async_trait]
+impl IImageImportPort for MediaImageImporter {
+    async fn import_image(
+        &self,
+        binary: Vec<u8>,
+        content_type: &str,
+        input: GenerateImageInput,
+    ) -> InfraResult<GenerateImageResult> {
+        self.0.import_image(binary, content_type, input).await
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -904,11 +934,52 @@ impl MediaManager {
         input: GenerateImageInput,
         existing_slug: Option<&str>,
     ) -> InfraResult<GenerateImageResult> {
+        self.produce_image(input, existing_slug, None).await
+    }
+
+    /// **이미 만들어진** 이미지 바이너리를 갤러리에 편입 — 생성만 건너뛰고 후처리는 동일.
+    ///
+    /// 용도 = CLI(codex)가 자기 런타임 내장 이미지 도구로 만들어 놓은 산출물 수확. 그 경로는
+    /// 우리 image_gen 포트를 안 타므로 바이너리만 들고 오는데, 예전엔 `IMediaPort.save` 로
+    /// 원본만 저장해 variants·thumbnail·blurhash·해상도가 통째로 비었다(2026-07-27 실측 —
+    /// 갤러리에서 같은 종류 이미지가 경로에 따라 메타가 다르게 보였다).
+    /// 후처리를 복제하지 않고 같은 파이프라인에 바이너리만 주입한다 = 구현 하나, 소비 둘.
+    pub async fn import_image(
+        self: &Arc<Self>,
+        binary: Vec<u8>,
+        content_type: &str,
+        input: GenerateImageInput,
+    ) -> InfraResult<GenerateImageResult> {
+        let preset = ImageGenResult {
+            binary,
+            content_type: content_type.to_string(),
+            width: None,
+            height: None,
+            revised_prompt: None,
+            // 구독 CLI 산출물 = 별도 과금 없음(비용은 그 CLI 턴에 이미 잡힌다).
+            cost_usd: None,
+        };
+        self.produce_image(input, None, Some(preset)).await
+    }
+
+    /// generate_image / import_image 공용 본체. `preset` 이 있으면 생성 단계만 건너뛴다 —
+    /// 크롭·저장·variants·썸네일·blurhash·메타 갱신·갤러리 이벤트는 두 경로가 완전히 동일.
+    async fn produce_image(
+        self: &Arc<Self>,
+        input: GenerateImageInput,
+        existing_slug: Option<&str>,
+        preset: Option<ImageGenResult>,
+    ) -> InfraResult<GenerateImageResult> {
         let started_at = SystemTime::now();
-        let image_gen = self
-            .image_gen
-            .as_ref()
-            .ok_or_else(|| crate::i18n::t("core.error.media.image_gen_missing", None, &[]))?;
+        // 편입 경로는 생성기가 필요 없다 — 키 미설정이어도 수확물은 갤러리에 들어가야 한다.
+        let image_gen: Option<&Arc<dyn IImageGenPort>> = match &preset {
+            Some(_) => None,
+            None => Some(
+                self.image_gen
+                    .as_ref()
+                    .ok_or_else(|| crate::i18n::t("core.error.media.image_gen_missing", None, &[]))?,
+            ),
+        };
         let processor = self
             .processor
             .as_ref()
@@ -941,10 +1012,13 @@ impl MediaManager {
             quality.as_deref().unwrap_or("handler-default")
         ));
 
-        // 1) referenceImage resolve (image-to-image)
-        let reference_image = self.resolve_reference_image(input.reference_image.as_ref()).await;
+        // 1) referenceImage resolve (image-to-image) — 편입 경로는 생성이 없어 불필요.
+        let reference_image = match image_gen {
+            Some(_) => self.resolve_reference_image(input.reference_image.as_ref()).await,
+            None => None,
+        };
 
-        // 2) image_gen.generate
+        // 2) image_gen.generate — preset 이 있으면 그 바이너리를 그대로 쓴다(편입 경로).
         let gen_opts = ImageGenOpts {
             prompt: input.prompt.clone(),
             size: size.clone(),
@@ -958,7 +1032,13 @@ impl MediaManager {
             model: Some(model_id.clone()),
             corr_id: None,
         };
-        let gen_result = match image_gen.generate(&gen_opts, &call_opts).await {
+        let generated = match (preset, image_gen) {
+            (Some(r), _) => Ok(r),
+            (None, Some(g)) => g.generate(&gen_opts, &call_opts).await,
+            // image_gen 부재는 위에서 이미 걸러진다(preset 없을 때만 required).
+            (None, None) => Err(crate::i18n::t("core.error.media.image_gen_missing", None, &[])),
+        };
+        let gen_result = match generated {
             Ok(r) => r,
             Err(e) => {
                 self.log_error(&format!("[MediaManager] [{model_id}] 생성 실패: {e}"));
