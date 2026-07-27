@@ -84,6 +84,10 @@ pub struct CatalogQueryOutcome {
     /// Tokens dropped as OOV (absent from every entry text, even after suffix trim).
     pub dropped_tokens: Vec<String>,
     pub all_oov: bool,
+    /// 실제로 임베딩된 질의 — 원문과 다를 수 있다(OOV 제거 후). 응답에 실어 모델이
+    /// "내가 물은 것"과 "실제로 검색된 것"의 차이를 그 자리에서 보게 한다. 이게 없어서
+    /// 모델이 시행착오로 질의 위생을 스스로 학습했다(2026-07-27 cxmt 턴 실측).
+    pub searched_with: String,
 }
 
 /// Drop query tokens that appear in NO catalog entry text — they cannot contribute any
@@ -378,6 +382,7 @@ impl SemanticCatalog {
             matches: Vec::new(),
             dropped_tokens: dropped,
             all_oov,
+            searched_with: String::new(),
         };
         if user_query.trim().is_empty() {
             return Ok(empty(false, Vec::new()));
@@ -491,7 +496,12 @@ impl SemanticCatalog {
                 );
             }
         }
-        Ok(CatalogQueryOutcome { matches: scored, dropped_tokens: dropped, all_oov: false })
+        Ok(CatalogQueryOutcome {
+            matches: scored,
+            dropped_tokens: dropped,
+            all_oov: false,
+            searched_with: embed_input.to_string(),
+        })
     }
 
     /// 카탈로그 A/B (백그라운드) — primary(서빙) vs secondary 공간의 **cosine-only** top-K 비교

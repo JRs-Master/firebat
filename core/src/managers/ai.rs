@@ -994,7 +994,7 @@ impl AiManager {
                         }));
                     }
                 }
-                let (mut rows, all_oov, dropped) =
+                let (mut rows, all_oov, dropped, searched_with) =
                     cat.search_analyzed(&query, module.as_deref(), limit.clamp(1, 20)).await?;
                 if all_oov {
                     // Zero-signal query (every token is a subject name / OOV for the catalog) —
@@ -1026,6 +1026,20 @@ impl AiManager {
                     "count": rows.len(),
                     "next": "Rows with kind=\"action\": call get_action_schema(module, action) for exact params + call envelope before invoking. Rows with kind=\"stream\": this is a live realtime subscription — call stream_watch_start({module, stream, args}) and render the returned topic with a live_chart / live_feed component (a REST action can only give a static snapshot, never live data). Identifiers are MODULE-SCOPED — an action/stream belongs only to the module in its own row; never reuse a name from one module on another. Only the catalogedModules are searchable — an action of any OTHER module will never appear here; call that module directly instead of re-searching.",
                 });
+                // 실제로 검색된 질의를 되돌려준다 — OOV 토큰은 조용히 떨궈지고 있었는데(로그에만
+                // 남음) 모델은 그걸 몰라서 "왜 엉뚱한 게 나오지"를 시행착오로 풀었다. 2026-07-27
+                // cxmt 턴: 주제어를 섞은 질의는 shopping-keywords 를 물어왔고, 모델이 스스로
+                // 영문 액션명만 남긴 질의로 바꾼 뒤에야 맞췄다. 무엇이 검색됐는지 보여주면 그
+                // 한 수를 응답이 알려준다("각 계단이 다음 수를 스스로 말해야").
+                if !dropped.is_empty() {
+                    resp["searchedWith"] = serde_json::json!(searched_with);
+                    resp["droppedTokens"] = serde_json::json!(dropped);
+                    resp["note"] = serde_json::json!(
+                        "Tokens above are absent from every action's text, so they were removed before \
+                         searching — actions are indexed by CAPABILITY (what they do), not by subject \
+                         or topic words. If the results look off, re-search with capability terms only."
+                    );
+                }
                 // catalogedModules only on cross-module searches — a module-scoped search already
                 // resolved its module; repeating the 18-name list every call is token noise.
                 if module.is_none() {

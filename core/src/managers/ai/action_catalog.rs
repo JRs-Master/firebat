@@ -722,7 +722,7 @@ impl ModuleActionCatalog {
         query: &str,
         module: Option<&str>,
         limit: usize,
-    ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>), String> {
+    ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>, String), String> {
         let scopes: Option<Vec<String>> = module.map(|m| vec![format!("{}:", m)]);
         let outcome = self
             .catalog
@@ -731,6 +731,7 @@ impl ModuleActionCatalog {
             .map_err(|e| e.to_string())?;
         let all_oov = outcome.all_oov;
         let dropped = outcome.dropped_tokens;
+        let searched_with = outcome.searched_with;
         let rows = outcome
             .matches
             .into_iter()
@@ -787,7 +788,7 @@ impl ModuleActionCatalog {
                 row
             })
             .collect();
-        Ok((rows, all_oov, dropped))
+        Ok((rows, all_oov, dropped, searched_with))
     }
 
     /// Full detail for one action — params with descriptions + example + call envelope +
