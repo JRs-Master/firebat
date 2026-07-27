@@ -90,7 +90,8 @@
       "unknown_validation": "Unknown validation failure",
       "packages_missing": "[{{module}}] Required package '{{package}}' is not installed. Click [Install] in the Settings system tab.",
       "ws_only_unsupported": "'{{action}}' of module '{{name}}' needs a persistent WebSocket connection (realtime) and is not supported yet. Please use the snapshot query action instead.",
-      "ws_not_wired": "No WebSocket transport is wired for module '{{name}}'."
+      "ws_not_wired": "No WebSocket transport is wired for module '{{name}}'.",
+      "input_validation_failed_wrong_module": "[{{name}}] Input validation failed: {{detail}} — `{{action}}` belongs to the **{{owner}}** module. Call it with the {{owner}} tool using the same arguments (no re-discovery needed)."
     },
     "page": {
       "save_failed": "Failed to save page: {{slug}}",

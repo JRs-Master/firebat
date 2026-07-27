@@ -300,13 +300,35 @@ impl ModuleManager {
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
                 let for_val = coerce_for_validation(&input_for_validation(input_data), input_schema);
-                validate_value(&for_val, input_schema).map_err(|e| {
-                    crate::i18n::t(
+                if let Err(detail) = validate_value(&for_val, input_schema) {
+                    // 도구↔액션 짝 어긋남이면 소유 모듈을 짚어준다 — 실측 2026-07-27:
+                    // `("kakao_map","v1_국내주식-008")` 처럼 한 라운드에 여러 도구를 병렬 호출하다
+                    // 짝이 엇갈렸다. sysmod 도구는 발견 강제를 위해 파라미터가 숨겨져 있어 어느
+                    // 도구든 임의 action 문자열을 받으므로 이 검증이 유일한 그물이다. 기존 힌트는
+                    // "다시 search→schema 하라" 라 라운드를 하나 더 쓰는데, 인자는 이미 맞으므로
+                    // 옳은 도구 이름만 알려주면 바로 성공한다("각 계단이 다음 수를 스스로 말해야").
+                    if let Some(action) = input_data.get("action").and_then(|v| v.as_str()) {
+                        if !schema_declares_action(input_schema, action) {
+                            if let Some(owner) = self.find_action_owner(action, module_name).await {
+                                return Err(crate::i18n::t(
+                                    "core.error.module.input_validation_failed_wrong_module",
+                                    None,
+                                    &[
+                                        ("name", module_name),
+                                        ("detail", &detail),
+                                        ("action", action),
+                                        ("owner", &owner),
+                                    ],
+                                ));
+                            }
+                        }
+                    }
+                    return Err(crate::i18n::t(
                         "core.error.module.input_validation_failed_catalog",
                         None,
-                        &[("name", module_name), ("detail", &e)],
-                    )
-                })?;
+                        &[("name", module_name), ("detail", &detail)],
+                    ));
+                }
             }
         }
 
@@ -806,6 +828,36 @@ impl ModuleManager {
         if let Ok(raw) = serde_json::to_string(&metas) {
             self.vault.set_secret(VK_SYSTEM_WS_WATCHES, &raw);
         }
+    }
+
+    /// 그 액션을 선언한 **다른** 모듈 이름 — 검증 실패가 도구↔액션 짝 어긋남일 때 다음 수 포인터.
+    ///
+    /// 소스 = 각 모듈 config 의 `input.properties.action.enum` — 검증이 쓰는 바로 그 데이터라
+    /// 불일치가 생길 수 없다(별도 카탈로그를 참조하면 refresh 시점 차이로 어긋난다).
+    /// 실패 경로에서만 도는 스캔이라 정상 호출 비용은 0.
+    pub async fn find_action_owner(&self, action: &str, exclude: &str) -> Option<String> {
+        let mut names: Vec<String> = self
+            .list_system_modules()
+            .await
+            .into_iter()
+            .chain(self.list_user_modules().await)
+            .map(|e| e.name)
+            .filter(|n| n != exclude)
+            .collect();
+        names.dedup();
+        for name in names {
+            let Some(config) = self.get_config_any_scope(&name).await else {
+                continue;
+            };
+            if config
+                .get("input")
+                .map(|s| schema_declares_action(s, action))
+                .unwrap_or(false)
+            {
+                return Some(name);
+            }
+        }
+        None
     }
 
     /// system/modules/ 시스템 모듈 list.
@@ -1427,6 +1479,17 @@ fn compiled_schema_cached(
 }
 
 /// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
+/// input 스키마의 `action` enum 에 그 값이 선언돼 있나. enum 이 없으면(단일 액션 모듈) false.
+fn schema_declares_action(input_schema: &serde_json::Value, action: &str) -> bool {
+    input_schema
+        .get("properties")
+        .and_then(|p| p.get("action"))
+        .and_then(|a| a.get("enum"))
+        .and_then(|e| e.as_array())
+        .map(|arr| arr.iter().any(|v| v.as_str() == Some(action)))
+        .unwrap_or(false)
+}
+
 pub fn validate_value(
     value: &serde_json::Value,
     schema: &serde_json::Value,
