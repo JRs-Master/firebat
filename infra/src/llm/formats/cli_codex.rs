@@ -753,7 +753,15 @@ impl CodexCliHandler {
         if errored {
             return Err(error_msg.unwrap_or_else(|| "Codex CLI 알 수 없는 에러".to_string()));
         }
-        outcome.text = text_parts.join("");
+        // 각 조각 = 완결된 agent_message 한 통(item.completed 단위)이지 스트림 파편이 아니다.
+        // 빈 문자열로 이으면 도구 앞 메시지와 최종 답변이 "…확인해 보겠습니다.부산에는" 처럼
+        // 문장 경계 없이 붙는다(2026-07-27 실측). 메시지 사이는 문단으로 띄운다.
+        outcome.text = text_parts
+            .iter()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         if !status.map(|s| s.success()).unwrap_or(false) {
             return Err(format!(
                 "Codex 비정상 종료 (exit {:?}): {}",
