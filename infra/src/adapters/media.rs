@@ -156,6 +156,43 @@ impl LocalMediaAdapter {
         None
     }
 
+    /// variant 파일 read — `<slug>-<suffix>` stem 으로 온 요청을 그 base 레코드가 **선언한**
+    /// variant URL 에서만 해석한다.
+    ///
+    /// 왜 필요한가: URL 핸들러는 파일명에서 확장자만 떼고 나머지를 slug 로 넘기는데, variant
+    /// 파일명(`2026-07-27-ec08-thumb.webp`)은 레코드 slug 가 아니라 `find_record` 가 실패해
+    /// **모든 variant(-thumb/-full/-480w/…)가 404** 였다(2026-07-27 실측 — 갤러리 미리보기가
+    /// thumbnailUrl 을 쓰는데 그게 전부 깨졌다. variant 없는 이미지만 우연히 정상으로 보였다).
+    ///
+    /// 디렉토리를 뒤지거나 확장자를 추측하지 않고 레코드가 선언한 URL 목록에서만 찾는다 —
+    /// 미선언 파일은 서빙되지 않고 경로 조립도 없다. content-type 은 그 variant 의 실제 포맷.
+    async fn read_declared_variant(
+        &self,
+        stem: &str,
+    ) -> Option<(Vec<u8>, String, MediaFileRecord)> {
+        let base = stem.rsplit_once('-')?.0;
+        let (scope, record) = self.find_record(base).await?;
+        let declared = record
+            .thumbnail_url
+            .iter()
+            .map(String::as_str)
+            .chain(record.variants.iter().map(|v| v.url.as_str()));
+        let filename = declared
+            .filter_map(|url| url.rsplit('/').next())
+            .find(|name| name.rsplit_once('.').map(|(s, _)| s == stem).unwrap_or(false))?
+            .to_string();
+        let binary = tokio::fs::read(self.scope_dir(scope).join(&filename))
+            .await
+            .ok()?;
+        let content_type = match filename.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()) {
+            Some(e) if e == "webp" => "image/webp",
+            Some(e) if e == "avif" => "image/avif",
+            Some(e) if e == "jpg" || e == "jpeg" => "image/jpeg",
+            _ => "image/png",
+        };
+        Some((binary, content_type.to_string(), record))
+    }
+
     /// hub 격리 find — 그 hub dir(`user/hub/<inst>[/<sid>]/media/`)만 검색. `stat_owned`/
     /// `remove_owned` 의 단일 소스. 형식 오류 hub_owner = None(deny) — admin 폴백 금지
     /// (옛 dead-code 판은 형식 오류 시 admin find 로 새던 cross-tenant 폴백이 있었음).
@@ -317,7 +354,8 @@ impl IMediaPort for LocalMediaAdapter {
         // read 는 hub_owner 인자 없음 — admin scope 우선 + 매 hub dir 스캔 X (URL handler 가
         // hub-scoped URL 영역 별도 처리해야). 본 메서드는 admin only path.
         let Some((scope, record)) = self.find_record(slug).await else {
-            return Ok(None);
+            // 레코드가 없으면 variant stem(`<slug>-thumb` 등)일 수 있다 — 선언된 것만 해석.
+            return Ok(self.read_declared_variant(slug).await);
         };
         let bin_path = self.binary_path(scope, slug, &record.ext);
         let binary = match tokio::fs::read(&bin_path).await {
@@ -760,6 +798,49 @@ mod tests {
         assert_eq!(read.0, b"hello bytes");
         assert_eq!(read.1, "image/png");
         assert_eq!(read.2.prompt.as_deref(), Some("a cat"));
+    }
+
+    /// variant 파일명(`<slug>-<suffix>.<fmt>`)으로 온 read 가 서빙돼야 한다.
+    /// 회귀 대상 = 갤러리 미리보기 전멸(thumbnailUrl 404, 2026-07-27 실측).
+    #[tokio::test]
+    async fn read_serves_declared_variant_by_filename_stem() {
+        let (a, _dir) = adapter();
+        let saved = a
+            .save(b"base png", "image/png", &MediaSaveOptions::default())
+            .await
+            .unwrap();
+        let meta = MediaVariantMeta {
+            width: 256,
+            height: None,
+            format: "webp".to_string(),
+            bytes: 9,
+        };
+        a.save_variant(&saved.slug, "user", "thumb", "webp", b"thumb-bin", &meta)
+            .await
+            .unwrap();
+        // 갤러리가 thumbnailUrl 을 쓰려면 레코드에 선언돼 있어야 한다.
+        a.update_meta(
+            &saved.slug,
+            &serde_json::json!({
+                "thumbnailUrl": format!("/user/media/{}-thumb.webp", saved.slug)
+            }),
+        )
+        .await
+        .unwrap();
+
+        // URL 핸들러가 넘기는 형태 = 확장자 뗀 stem
+        let stem = format!("{}-thumb", saved.slug);
+        let read = a.read(&stem).await.unwrap().expect("variant 가 서빙돼야 함");
+        assert_eq!(read.0, b"thumb-bin");
+        assert_eq!(read.1, "image/webp", "variant 자기 포맷이어야 함(base png 아님)");
+        assert_eq!(read.2.slug, saved.slug, "base 레코드를 돌려줘야 scope 검증이 산다");
+
+        // 선언 안 된 stem 은 서빙 금지 — 파일이 있어도(경로 조립 방지)
+        a.save_variant(&saved.slug, "user", "secret", "webp", b"x", &meta)
+            .await
+            .unwrap();
+        let undeclared = format!("{}-secret", saved.slug);
+        assert!(a.read(&undeclared).await.unwrap().is_none());
     }
 
     #[tokio::test]
