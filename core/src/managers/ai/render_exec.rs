@@ -419,17 +419,20 @@ pub fn mask_and_sanitize_fences(
 /// 어떤 답변 구성에서도 맞고 최악이라도 "사진이 카드 안이 아니라 그 아래에 뜬다" 뿐이다.
 ///
 /// 붙이는 자리 = 마지막 fence 의 blocks 배열 끝. fence 가 없거나 파싱이 안 되면 새 fence 를 만든다.
-pub fn append_image_blocks(text: &str, urls: &[String], alt: &str) -> String {
+///
+/// `alt` 는 비운다 — 이미지 컴포넌트가 alt 를 **캡션으로 노출**해서, 사용자 요청문을 넣었더니
+/// 토익 문제 사진 밑에 "토익 파트1 문제 하나 만들어줘…" 가 그대로 찍혔다(2026-07-27 실측).
+/// 캡션은 모델이 필요하다고 판단할 때 자기 블록으로 쓸 몫이지 프레임워크가 끼워 넣을 것이 아니다.
+pub fn append_image_blocks(text: &str, urls: &[String]) -> String {
     if urls.is_empty() {
         return text.to_string();
     }
-    let alt: String = alt.chars().take(120).collect();
     let new_blocks: Vec<Value> = urls
         .iter()
         .map(|u| {
             serde_json::json!({
                 "type": "image",
-                "props": { "src": u, "alt": alt, "width": null, "height": null }
+                "props": { "src": u, "alt": null, "width": null, "height": null }
             })
         })
         .collect();
@@ -1003,7 +1006,7 @@ mod tests {
 [{\"type\":\"text\",\"props\":{\"text\":\"hi\"}}]
 ```
 꼬리";
-        let out = append_image_blocks(text, &["/user/media/a.png".to_string()], "가을 제주");
+        let out = append_image_blocks(text, &["/user/media/a.png".to_string()]);
         assert!(out.starts_with("설명"), "앞 텍스트 보존");
         assert!(out.trim_end().ends_with("꼬리"), "뒤 텍스트 보존");
         let (_, _, groups, _) = mask_and_sanitize_fences(&out, None);
@@ -1011,12 +1014,12 @@ mod tests {
         assert_eq!(blocks.len(), 2, "기존 블록 + 이미지 1");
         assert_eq!(blocks[1]["type"], "image");
         assert_eq!(blocks[1]["props"]["src"], "/user/media/a.png");
-        assert_eq!(blocks[1]["props"]["alt"], "가을 제주");
+        assert!(blocks[1]["props"]["alt"].is_null(), "alt 는 비운다 — 캡션으로 노출되므로");
     }
 
     #[test]
     fn append_image_blocks_creates_fence_when_absent() {
-        let out = append_image_blocks("사진을 만들었습니다.", &["/user/media/b.webp".to_string()], "alt");
+        let out = append_image_blocks("사진을 만들었습니다.", &["/user/media/b.webp".to_string()]);
         let (_, _, groups, _) = mask_and_sanitize_fences(&out, None);
         let blocks = groups[0].as_array().expect("새 fence 가 유효해야 함");
         assert_eq!(blocks.len(), 1);
@@ -1026,6 +1029,6 @@ mod tests {
     #[test]
     fn append_image_blocks_noop_without_urls() {
         let text = "그대로";
-        assert_eq!(append_image_blocks(text, &[], "alt"), text);
+        assert_eq!(append_image_blocks(text, &[]), text);
     }
 }

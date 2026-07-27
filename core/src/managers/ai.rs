@@ -2784,13 +2784,10 @@ impl AiManager {
                     .await;
                 if !urls.is_empty() {
                     // 렌더 블록으로 붙여 답변 안에서 보이게 한다 — 모델은 URL 이 없어 못 넣었다.
-                    last_text = render_exec::append_image_blocks(&last_text, &urls, prompt);
-                    let note = crate::i18n::t(
-                        "core.media.cli_harvested",
-                        None,
-                        &[("urls", &urls.join(" "))],
-                    );
-                    last_text = format!("{}\n\n{}", last_text, note);
+                    // 안내 문구는 붙이지 않는다: 사진이 답변에 이미 보이는데 "갤러리에 저장했습니다"
+                    // 를 덧붙이면 프레임워크가 모델 답변에 군더더기를 끼워 넣는 꼴이다(2026-07-27
+                    // 사용자 지적). 저장 사실은 갤러리 자체와 journal 로 확인된다.
+                    last_text = render_exec::append_image_blocks(&last_text, &urls);
                 }
             }
 
