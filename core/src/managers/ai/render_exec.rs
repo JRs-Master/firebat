@@ -407,6 +407,55 @@ pub fn mask_and_sanitize_fences(
     (out, store, block_groups, failed_groups)
 }
 
+/// 수확한 이미지 URL 을 답변의 렌더 블록으로 붙인다. 반환 = 수정된 텍스트.
+///
+/// 왜 필요한가: CLI 가 자기 런타임 내장 이미지 도구를 쓰면 산출물이 우리 URL 이 아니라 모델이
+/// 컴포넌트에 넣을 수가 없다. 2026-07-27 실측에서 모델은 `get_component_schema("image")` 까지
+/// 부르고 "Integrating local image path in listening component" 를 고민하다 URL 이 없어 포기했다.
+/// 호스트가 거둔 뒤에야 URL 이 생기므로 그 자리를 대신 채운다 — 모델 의도의 완성이다.
+///
+/// **컴포넌트 타입별 지식은 쓰지 않는다.** "listening 의 image prop" 같은 걸 짚어 채우면 케이스
+/// 하드코딩이고, 그 슬롯이 없는 컴포넌트 구성에선 틀린다. 대신 독립 `image` 블록으로 덧붙인다 —
+/// 어떤 답변 구성에서도 맞고 최악이라도 "사진이 카드 안이 아니라 그 아래에 뜬다" 뿐이다.
+///
+/// 붙이는 자리 = 마지막 fence 의 blocks 배열 끝. fence 가 없거나 파싱이 안 되면 새 fence 를 만든다.
+pub fn append_image_blocks(text: &str, urls: &[String], alt: &str) -> String {
+    if urls.is_empty() {
+        return text.to_string();
+    }
+    let alt: String = alt.chars().take(120).collect();
+    let new_blocks: Vec<Value> = urls
+        .iter()
+        .map(|u| {
+            serde_json::json!({
+                "type": "image",
+                "props": { "src": u, "alt": alt, "width": null, "height": null }
+            })
+        })
+        .collect();
+
+    // 마지막 fence 의 절대 좌표 — find_fence_region 은 상대 좌표라 누적한다.
+    let mut offset = 0usize;
+    let mut last: Option<(usize, usize)> = None;
+    while let Some(r) = find_fence_region(&text[offset..]) {
+        last = Some((offset + r.body_start, offset + r.body_end));
+        offset += r.end;
+    }
+
+    if let Some((body_start, body_end)) = last {
+        if let Ok(mut blocks) = serde_json::from_str::<Vec<Value>>(text[body_start..body_end].trim())
+        {
+            blocks.extend(new_blocks.iter().cloned());
+            if let Ok(ser) = serde_json::to_string_pretty(&blocks) {
+                return format!("{}{}\n{}", &text[..body_start], ser, &text[body_end..]);
+            }
+        }
+    }
+    let ser = serde_json::to_string_pretty(&new_blocks).unwrap_or_default();
+    let sep = if text.trim().is_empty() { "" } else { "\n\n" };
+    format!("{}{}```firebat-render\n{}\n```", text, sep, ser)
+}
+
 const FENCE_OPEN: &str = "```firebat-render";
 const TAG_OPEN: &str = "<firebat-render>";
 const TAG_CLOSE: &str = "</firebat-render>";
@@ -941,5 +990,42 @@ mod tests {
         let data = out["blocks"][0]["props"]["data"].as_array().unwrap();
         assert_eq!(data.len(), 2, "dataLimit applied at injection");
         assert_eq!(data[0]["date"], "2026-01-03");
+    }
+
+    // ── append_image_blocks — CLI 내장 도구 산출물을 답변에 실어 보내기 ──────────
+    // 회귀 대상: 모델이 자기 내장 이미지 도구를 써서 URL 이 없으면 사진이 답변에서 사라졌다.
+
+    #[test]
+    fn append_image_blocks_extends_last_fence() {
+        let text = "설명
+
+```firebat-render
+[{\"type\":\"text\",\"props\":{\"text\":\"hi\"}}]
+```
+꼬리";
+        let out = append_image_blocks(text, &["/user/media/a.png".to_string()], "가을 제주");
+        assert!(out.starts_with("설명"), "앞 텍스트 보존");
+        assert!(out.trim_end().ends_with("꼬리"), "뒤 텍스트 보존");
+        let (_, _, groups, _) = mask_and_sanitize_fences(&out, None);
+        let blocks = groups[0].as_array().expect("fence 가 유효해야 함");
+        assert_eq!(blocks.len(), 2, "기존 블록 + 이미지 1");
+        assert_eq!(blocks[1]["type"], "image");
+        assert_eq!(blocks[1]["props"]["src"], "/user/media/a.png");
+        assert_eq!(blocks[1]["props"]["alt"], "가을 제주");
+    }
+
+    #[test]
+    fn append_image_blocks_creates_fence_when_absent() {
+        let out = append_image_blocks("사진을 만들었습니다.", &["/user/media/b.webp".to_string()], "alt");
+        let (_, _, groups, _) = mask_and_sanitize_fences(&out, None);
+        let blocks = groups[0].as_array().expect("새 fence 가 유효해야 함");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["props"]["src"], "/user/media/b.webp");
+    }
+
+    #[test]
+    fn append_image_blocks_noop_without_urls() {
+        let text = "그대로";
+        assert_eq!(append_image_blocks(text, &[], "alt"), text);
     }
 }

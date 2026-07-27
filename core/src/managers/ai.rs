@@ -2764,16 +2764,14 @@ impl AiManager {
                     )
                     .await;
                 if !urls.is_empty() {
+                    // 렌더 블록으로 붙여 답변 안에서 보이게 한다 — 모델은 URL 이 없어 못 넣었다.
+                    last_text = render_exec::append_image_blocks(&last_text, &urls, prompt);
                     let note = crate::i18n::t(
                         "core.media.cli_harvested",
                         None,
                         &[("urls", &urls.join(" "))],
                     );
-                    last_text = if last_text.trim().is_empty() {
-                        note
-                    } else {
-                        format!("{}\n\n{}", last_text, note)
-                    };
+                    last_text = format!("{}\n\n{}", last_text, note);
                 }
             }
 
