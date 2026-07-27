@@ -957,6 +957,43 @@ impl AiManager {
                         }));
                     }
                 }
+                // 목록 모드 — module 만 주고 query 를 비우면 그 모듈의 액션 색인을 그대로 준다.
+                // reasoning 실측(2026-07-27): "이 모듈에 뭐가 있나" 를 물을 통로가 없어 모델이
+                // `{action:"noop"}` 같은 **일부러 틀린 값**으로 검증 에러를 유발해 enum 을 뽑아냈다.
+                // 순위·params 없이 색인만 주므로 progressive disclosure 를 깨지 않는다(상세는 스키마).
+                // 인자 없음 = 0단 색인(어떤 모듈이 검색·열람 가능한가). 계단이
+                // 모듈 → 도메인 → 액션 → 스키마 로 끊김 없이 이어진다.
+                if module.is_none() && query.trim().is_empty() {
+                    return Ok(serde_json::json!({
+                        "catalogedModules": cataloged,
+                        "mode": "modules",
+                        "next": "Pick a module and call again with {module} to browse its actions, or pass a `query` to search across all of them. Modules NOT listed here have no action catalog — call their tool directly.",
+                    }));
+                }
+                if let Some(m) = module.as_deref() {
+                    let domain = args.get("domain").and_then(|v| v.as_str()).filter(|d| !d.is_empty());
+                    if query.trim().is_empty() || domain.is_some() {
+                        let rows = cat.list_module_actions(m, domain).await;
+                        // 액션이 많은 모듈(한투 280)을 통째로 주면 우리가 없앤 enum 덤프로
+                        // 되돌아간다 — 도메인 색인으로 한 단 좁힌 뒤 열람하게 한다.
+                        const LIST_CAP: usize = 40;
+                        if domain.is_none() && rows.len() > LIST_CAP {
+                            let domains = cat.module_domains(m).await;
+                            return Ok(serde_json::json!({
+                                "domains": domains,
+                                "actionCount": rows.len(),
+                                "mode": "domains",
+                                "next": "This module has too many actions to list at once. Either pick a `domain` from above and call again with {module, domain} to see that domain's actions, or pass a `query` describing WHAT you need to rank across the whole module.",
+                            }));
+                        }
+                        return Ok(serde_json::json!({
+                            "actions": rows,
+                            "count": rows.len(),
+                            "mode": "list",
+                            "next": "Full action index — no ranking, no params. Pick one, then get_action_schema(module, action) for exact params + call envelope. To rank by intent instead, pass a `query` describing WHAT you need.",
+                        }));
+                    }
+                }
                 let (mut rows, all_oov, dropped) =
                     cat.search_analyzed(&query, module.as_deref(), limit.clamp(1, 20)).await?;
                 if all_oov {
@@ -1000,15 +1037,16 @@ impl AiManager {
         self.tools.register_handler("search_module_actions", search_handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_module_actions".to_string(),
-            description: "Semantic search over module ACTIONS (broker/API modules with hundreds of cryptic action IDs). Describe what data/operation you need in natural language → ranked candidates across all cataloged modules (or one module via `module`). NEVER guess an action ID for a large module — search first, then call get_action_schema for exact params. Results flag requiresApproval (real-money orders).".to_string(),
+            description: "Find module ACTIONS (broker/API modules with hundreds of cryptic action IDs). Two modes: (1) SEARCH — pass `query` describing what data/operation you need → ranked candidates across all cataloged modules, or one module via `module`. (2) BROWSE — pass `module` with NO `query` → that module's full action index, unranked; if the module is large you get its `domains` first, then call again with `{module, domain}`. Use BROWSE when you want to see what a module can do; use SEARCH when you know what you need. Either way, call get_action_schema for exact params before invoking — never guess an action ID. Results flag requiresApproval (real-money orders).".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — e.g. \"일봉 일별 차트 캔들 daily candle\" — one rich query beats several terse retries. Never put a subject name (company/stock/region) in it." },
-                    "module": { "type": "string", "description": "optional module name to scope the search (e.g. kiwoom, korea-invest)" },
-                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                    "query": { "type": "string", "description": "SEARCH mode: what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — e.g. \"일봉 일별 차트 캔들 daily candle\" — one rich query beats several terse retries. Never put a subject name (company/stock/region) in it. Omit to BROWSE a module instead." },
+                    "module": { "type": "string", "description": "module name (e.g. kiwoom, korea-invest). Scopes SEARCH, or selects the module to BROWSE when `query` is omitted." },
+                    "domain": { "type": "string", "description": "BROWSE mode: drill into one domain returned by a previous browse of a large module." },
+                    "limit": { "type": "integer", "description": "SEARCH mode: max results (default 5)" }
                 },
-                "required": ["query"],
+                "required": [],
             }),
             source: "core".to_string(),
         });

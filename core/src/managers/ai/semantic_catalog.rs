@@ -605,6 +605,19 @@ impl SemanticCatalog {
         out.dedup();
         out
     }
+
+    /// 한 prefix(=모듈)의 엔트리 전체 — 임베딩을 거치지 않는 **목록** 경로.
+    /// 검색이 못 미더울 때 모델이 쓰는 통로(관측: 틀린 action 을 일부러 넣어 검증 에러로 enum 을
+    /// 뽑아내는 프로브). 순위 없이 선언 순서를 유지한다.
+    pub async fn entries_with_prefix(&self, prefix: &str) -> Vec<CatalogEntry> {
+        let state = self.state.read().await;
+        state
+            .entries
+            .iter()
+            .filter(|e| e.id.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
 }
 
 /// A catalog data source — enumerates the current entries (e.g. skills on disk, module
@@ -704,6 +717,11 @@ impl RefreshingCatalog {
     pub async fn id_prefixes(&self) -> Vec<String> {
         self.ensure().await;
         self.catalog.id_prefixes().await
+    }
+
+    pub async fn entries_with_prefix(&self, prefix: &str) -> Vec<CatalogEntry> {
+        self.ensure().await;
+        self.catalog.entries_with_prefix(prefix).await
     }
 }
 

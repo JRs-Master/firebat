@@ -847,6 +847,70 @@ impl ModuleActionCatalog {
     pub async fn cataloged_modules(&self) -> Vec<String> {
         self.catalog.id_prefixes().await
     }
+
+    /// 한 모듈의 액션 **목록**(순위 없음, params 없음) — 의미검색이 아니라 색인 열람.
+    ///
+    /// 왜: reasoning 실측(2026-07-27)에서 모델이 `sysmod_yfinance {action:"noop"}` 처럼 **일부러
+    /// 틀린 값**을 넣어 검증 에러가 뱉는 enum 으로 액션 목록을 얻어냈다. "이 모듈에 뭐가 있나"를
+    /// 물을 통로가 없어서 에러를 발견 채널로 쓴 것이다. 정직한 통로를 준다.
+    ///
+    /// params·envelope 은 넣지 않는다 — 인덱스는 트리거만(상세는 get_action_schema). 옛 enum
+    /// 통째 덤프로 되돌아가면 약한 모델 오선택이 재발한다.
+    pub async fn list_module_actions(
+        &self,
+        module: &str,
+        domain: Option<&str>,
+    ) -> Vec<serde_json::Value> {
+        let tool = sysmod_tool_name(module);
+        self.catalog
+            .entries_with_prefix(&format!("{}:", module))
+            .await
+            .into_iter()
+            .filter(|e| match domain {
+                Some(d) => e.extra.get("domain").and_then(|v| v.as_str()) == Some(d),
+                None => true,
+            })
+            .map(|e| {
+                let is_stream = e.extra.get("kind").and_then(|v| v.as_str()) == Some("stream");
+                let mut row = serde_json::json!({
+                    "module": module,
+                    "kind": if is_stream { "stream" } else { "action" },
+                    "name": e.name,
+                    "tool": if is_stream { "stream_watch_start".to_string() } else { tool.clone() },
+                });
+                let key = if is_stream { "stream" } else { "action" };
+                if let Some(v) = e.extra.get(key) {
+                    row[key] = v.clone();
+                }
+                for k in ["domain", "requiresApproval", "pageBinding"] {
+                    if let Some(v) = e.extra.get(k) {
+                        row[k] = v.clone();
+                    }
+                }
+                row["desc"] = serde_json::json!(clip_row_desc(&e.description));
+                row
+            })
+            .collect()
+    }
+
+    /// 그 모듈의 도메인별 액션 수 — 액션이 너무 많은 모듈(한투 280)의 1단 색인.
+    /// 280 개를 통째로 주면 우리가 없앤 enum 덤프로 되돌아간다. 도메인 → 액션 2단으로 좁힌다.
+    pub async fn module_domains(&self, module: &str) -> Vec<serde_json::Value> {
+        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+        for e in self.catalog.entries_with_prefix(&format!("{}:", module)).await {
+            let d = e
+                .extra
+                .get("domain")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            *counts.entry(d).or_insert(0) += 1;
+        }
+        counts
+            .into_iter()
+            .map(|(domain, count)| serde_json::json!({ "domain": domain, "actions": count }))
+            .collect()
+    }
 }
 
 #[cfg(test)]
