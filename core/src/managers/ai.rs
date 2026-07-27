@@ -395,6 +395,7 @@ impl AiManager {
         &self,
         paths: &[String],
         hub_owner: Option<&str>,
+        prompt: &str,
     ) -> Vec<String> {
         let Some(media) = self.media.as_ref() else {
             return Vec::new();
@@ -421,7 +422,12 @@ impl AiManager {
             };
             let opts = crate::ports::MediaSaveOptions {
                 scope: Some(crate::ports::MediaScope::User),
-                model: Some("cli-builtin".to_string()),
+                // 출처가 드러나는 라벨 — 옛 "cli-builtin" 은 어느 CLI 인지 안 보였다.
+                model: Some("cli-codex-builtin".to_string()),
+                // 갤러리 검색은 프롬프트로 한다 — 비우면 그 이미지는 영영 못 찾는다.
+                // 모델이 실제로 쓴 이미지 프롬프트는 CLI 안에 있어 못 받으므로 사용자 요청문을
+                // 쓴다(그게 사용자가 기억하는 문구이기도 하다).
+                prompt: Some(prompt.chars().take(400).collect()),
                 source: Some("ai-generated".to_string()),
                 hub_owner: hub_owner.map(String::from),
                 ..Default::default()
@@ -2754,6 +2760,7 @@ impl AiManager {
                     .import_cli_generated_images(
                         &response.cli_generated_images,
                         hub_owner.as_deref(),
+                        prompt,
                     )
                     .await;
                 if !urls.is_empty() {
