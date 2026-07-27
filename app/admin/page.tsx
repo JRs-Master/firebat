@@ -1027,7 +1027,9 @@ function BuildLiveStatus({ status, phase }: { status?: string; phase: 'building'
   const [hist, setHist] = useState<string[]>([]);
   useEffect(() => {
     if (phase !== 'building') return; // 생성 중에만 라이브 도구 피드 누적.
-    const raw = (status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').trim();
+    // GPT reasoning 요약은 `**Clarifying build output options**` 처럼 마크다운을 그대로 실어 보낸다
+    // — 이 피드는 평문 줄이라 `**` 가 화면에 노출됐다(2026-07-28 실측). 표시 직전에 인라인 마크다운 제거.
+    const raw = stripInlineMd((status || '').replace(/^도구 호출 중:\s*/, '').replace(/^sysmod[_-]/, '').trim());
     if (!raw) return;
     const key = BUILD_TOOL_LABEL[raw];
     const label = key ? t(key) : raw.replace(/_/g, ' ').trim();
@@ -1047,7 +1049,9 @@ function BuildLiveStatus({ status, phase }: { status?: string; phase: 'building'
     return (
       <div className="flex flex-col items-center justify-center gap-3 h-full w-full px-4">
         <FirebatGhostAssembly size={56} variant="accent" settled />
-        <div className="text-[13px] font-bold text-emerald-600">{t('build.completed')}</div>
+        {/* 완성(승인 대기) = 아직 빌드 흐름 안 — 진행 색(파랑) 유지. 녹색은 **발행**에만 쓴다
+            (사용자 2026-07-28: "불은 원래랑 같은 파란계열, 발행하면 발행색"). */}
+        <div className="text-[13px] font-bold text-blue-600">{t('build.completed')}</div>
       </div>
     );
   }
@@ -1150,6 +1154,9 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
         <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">{isModify ? `🔧 ${t('build.modify_in_progress')}` : `🔨 ${t('build.in_progress')}${bs.tier ? ` · ${bs.tier}` : ''}`}</span>
         <div className="flex items-center gap-1 flex-wrap">
+          {/* 색 축 2개를 분리한다 — **파랑 = 진행**(완료·현재 단계), **회색 링 = 지금 보고 있는 슬라이드**.
+              옛엔 보는 중 표시도 파란 링이라, 빌드가 구현으로 넘어갔는데 캐러셀이 검토를 보고 있으면
+              "파란불은 구현, 테두리는 검토"로 갈려 버그처럼 읽혔다(2026-07-28 실측). */}
           {STEPS.map((s, i) => {
             const stepDone = done || i < curIdx;
             const cur = !done && i === curIdx;
@@ -1165,7 +1172,7 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
                     : stepDone ? 'bg-blue-100 text-blue-700'
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
-                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`}>
+                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-slate-400' : ''}`}>
                   {stepDone ? '✓ ' : `${i + 1}. `}{isFinishChip ? t('build.done') : s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
@@ -1321,7 +1328,13 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
                     return (
                       <BlockErrorBoundary key={i} label={label}>
                         {b.type === 'text' ? (
-                          <div className={`text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                          // 빌드 카드가 붙은 메시지의 text 블록은 숨긴다 — 그 텍스트가 카드 안
+                          // `note` 로 이미 렌더된다. 억제가 plain content 경로(아래 `!buildCard`)에만
+                          // 걸려 있어서, blocks 로 온 답변은 카드 위 채팅과 카드 안에 **두 번** 떴다
+                          // (2026-07-28 실측). 컴포넌트·html 블록은 그대로 — 카드가 대신 안 그린다.
+                          buildCard ? null : (
+                            <div className={`text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                          )
                         ) : b.type === 'html' ? (
                           <div className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>
                         ) : b.type === 'component' ? (
