@@ -648,6 +648,13 @@ impl CatalogSource for ModuleActionSource {
     }
 }
 
+/// 모듈명 → 실제로 노출되는 sysmod 도구 이름. `mcp_server` 등록 규칙(`sysmod_<name>`, dash→
+/// underscore)의 단일 소스를 발견 응답 쪽에서도 그대로 쓴다 — 두 곳이 어긋나면 모델이 없는
+/// 도구를 부른다.
+pub(crate) fn sysmod_tool_name(module: &str) -> String {
+    format!("sysmod_{}", module.replace('-', "_"))
+}
+
 pub struct ModuleActionCatalog {
     catalog: RefreshingCatalog,
 }
@@ -750,10 +757,16 @@ impl ModuleActionCatalog {
                         "score": score,
                     });
                 }
+                let module_name = m.extra.get("module").cloned().unwrap_or_default();
                 let mut row = serde_json::json!({
-                    "module": m.extra.get("module").cloned().unwrap_or_default(),
+                    "module": module_name,
                     "action": m.extra.get("action").cloned().unwrap_or_default(),
                     "kind": "action",
+                    // 호출할 도구 이름 — 모듈명(`kma-weather`)과 노출 도구명(`sysmod_kma_weather`)이
+                    // 달라서, 이게 없으면 모델이 자기 도구 목록을 뒤져 이름을 맞춘다(2026-07-27 실측:
+                    // 두 턴 모두 `ALL_TOOLS.filter(x => x.name.includes("sysmod_..."))` 로 한 라운드
+                    // 소모). stream 행은 이미 `tool` 을 주고 있었는데 action 행에만 없었다.
+                    "tool": sysmod_tool_name(module_name.as_str().unwrap_or_default()),
                     "name": m.name,
                     "domain": m.extra.get("domain").cloned().unwrap_or_default(),
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
@@ -794,6 +807,8 @@ impl ModuleActionCatalog {
             "module": module,
             "action": action,
             "name": entry.name,
+            // 검색 행과 동일 — 스키마만 보고 바로 호출할 수 있게 도구 이름을 함께 준다.
+            "tool": sysmod_tool_name(module),
         });
         if let Some(obj) = entry.extra.as_object() {
             for (k, v) in obj {
