@@ -1,28 +1,39 @@
-//! Codex CLI 이미지 생성 — `$imagegen` skill (구독 기반, gpt-image-2 native).
+//! Codex CLI 이미지 생성 — 내장 `image_gen` 도구 (구독 기반, gpt-image-2 native).
 //!
-//! 옛 TS `infra/image/formats/cli-codex-image.ts` 1:1 port.
-//! `codex exec --json --skip-git-repo-check "$imagegen <prompt>"` spawn →
-//! stream-json 이벤트에서 image binary 추출 (3가지 패턴 매칭).
+//! `codex exec --json --skip-git-repo-check "$imagegen <prompt>"` spawn → 프로세스 종료 후
+//! **`$CODEX_HOME/generated_images/` 에서 산출 파일 수확**.
 //!
-//! 공식 프로토콜 문서 부재 — 옛 TS 와 같이 실측 후 보강. cost_usd None (구독 포함).
+//! **stdout 파싱을 안 쓰는 이유**(2026-07-27 서버 실측): 내장 도구는 이벤트 스트림에 이미지
+//! 바이트를 싣지 않고 파일로만 저장한다 — codex 내장 imagegen 스킬이 문서화한 계약
+//! ("In built-in tool mode, Codex saves generated images under `$CODEX_HOME/*` by default" /
+//! "move or copy the selected output from `$CODEX_HOME/generated_images/...`"). 옛 구현은 stdout
+//! 에서 base64·path 를 찾는 3패턴이라 매칭이 원리적으로 불가능했고, 그래서 생성이 성공해도
+//! 타임아웃까지 기다렸다가 실패했다(제주 4장 요청 = 정확히 300초 후 `bytes: 0` 에러 레코드).
+//!
+//! 원래 그 이동은 codex 가 자기 쉘로 하지만 우리 config 는 `shell_tool = false` + read-only
+//! sandbox 라 codex 쪽 배달 수단이 없다 → 호스트가 거둔다.
+//!
+//! cost_usd None (구독 포함).
 
-use std::time::Duration;
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
-use base64::Engine;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
 use crate::image_gen::format_handler::{ImageFormatHandler, ImageFormatHandlerContext};
+use crate::llm::formats::cli_codex::{copy_auth_json, harvest_generated_images};
 use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraResult};
 
-const CODEX_TIMEOUT: Duration = Duration::from_secs(300);
+/// 1장 생성 기준 여유 — 실측 단일 이미지 60~90초. 옛 300초는 프롬프트에 "4장" 이 들어오면
+/// (모델이 순차로 4번 호출) 그대로 벽에 부딪혔다. 아래에서 1장으로 고정하므로 이 값은 재시도·
+/// 추론 지연까지 덮는 여유분.
+const CODEX_TIMEOUT: Duration = Duration::from_secs(420);
 
-// Codex CLI stream-json 프로토콜 식별자 (공식 문서 부재 — 실측 기반).
-// 명명 상수로 묶어 string match 의도 명시 + protocol drift 시 한 곳만 수정.
-const EV_ITEM_COMPLETED: &str = "item.completed";
-const EV_TOOL_RESULT: &str = "tool_result";
-const ITEM_IMAGE_TYPES: &[&str] = &["image", "agent_image", "generated_image"];
+/// 이미지 전용 CODEX_HOME — LLM 채팅 경로(`firebat-codex-home`)와 분리.
+/// 분리 이유: 수확 워터마크가 채팅 턴의 산출물과 섞이지 않게(경로별 독립).
+const IMAGE_CODEX_HOME_DIR: &str = "firebat-codex-image-home";
 
 pub struct CliCodexImageFormat;
 
@@ -31,57 +42,24 @@ impl CliCodexImageFormat {
         Self
     }
 
-    /// stream-json 이벤트에서 이미지 binary 추출. 옛 TS `tryExtractImage` 1:1.
-    /// 공식 프로토콜 미문서화 — 3가지 패턴 매칭 + 실측 후 보강 필요.
-    fn try_extract_image(ev: &serde_json::Value) -> Option<InfraResult<ImageGenResult>> {
-        let event_type = ev.get("type").and_then(|v| v.as_str())?;
-        let item = ev.get("item");
+    /// 이미지 전용 CODEX_HOME 준비 — auth 복사 + 최소 config.toml.
+    /// MCP 서버는 등록하지 않는다(이미지 생성에 Firebat 도구 불필요 = 표면 최소).
+    fn ensure_image_codex_home() -> Option<PathBuf> {
+        let codex_home = std::env::temp_dir().join(IMAGE_CODEX_HOME_DIR);
+        std::fs::create_dir_all(&codex_home).ok()?;
+        copy_auth_json(&codex_home);
 
-        // 패턴 1: item.completed + item.type=image/agent_image/generated_image + data(base64) | path
-        if event_type == EV_ITEM_COMPLETED {
-            if let Some(item_obj) = item.and_then(|v| v.as_object()) {
-                let item_type = item_obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                if ITEM_IMAGE_TYPES.contains(&item_type) {
-                    let mime_type = item_obj
-                        .get("mime_type")
-                        .and_then(|v| v.as_str())
-                        .or_else(|| item_obj.get("mimeType").and_then(|v| v.as_str()))
-                        .unwrap_or("image/png")
-                        .to_string();
-                    if let Some(data) = item_obj.get("data").and_then(|v| v.as_str()) {
-                        match base64::engine::general_purpose::STANDARD.decode(data) {
-                            Ok(binary) => {
-                                return Some(Ok(ImageGenResult {
-                                    binary,
-                                    content_type: mime_type,
-                                    width: None,
-                                    height: None,
-                                    revised_prompt: None,
-                                    cost_usd: None,
-                                }));
-                            }
-                            Err(e) => {
-                                return Some(Err(format!("base64 decode 실패: {e}")));
-                            }
-                        }
-                    }
-                    if let Some(path) = item_obj.get("path").and_then(|v| v.as_str()) {
-                        return Some(read_image_file(path, &mime_type));
-                    }
-                }
-            }
-        }
-
-        // 패턴 2: tool_result + content 의 .png/.jpg/.webp path 매칭
-        if event_type == EV_TOOL_RESULT {
-            if let Some(content) = ev.get("content").and_then(|v| v.as_str()) {
-                if let Some(path) = extract_image_path(content) {
-                    return Some(read_image_file(&path, "image/png"));
-                }
-            }
-        }
-
-        None
+        // 비대화형이라 승인 불가 → never. sandbox read-only + 쉘 차단 = LLM 경로와 같은 자세
+        // (산출물은 우리가 파일로 거두므로 codex 에 쓰기 권한을 줄 이유가 없다).
+        let toml = concat!(
+            "approval_policy = \"never\"\n",
+            "sandbox_mode = \"read-only\"\n",
+            "web_search = \"disabled\"\n",
+            "\n",
+            "[features]\nshell_tool = false\n",
+        );
+        std::fs::write(codex_home.join("config.toml"), toml).ok()?;
+        Some(codex_home)
     }
 }
 
@@ -108,13 +86,20 @@ impl ImageFormatHandler for CliCodexImageFormat {
             Some(q) => format!(" quality:{}", q),
             _ => String::new(),
         };
-        let prompt = format!("$imagegen {}{}{}", opts.prompt, size_hint, quality_hint);
+        // "정확히 1장" 고정 — 이 포트는 1 호출 = 1 이미지 계약(openai-image·gemini 와 동일)이고,
+        // 프롬프트에 장수가 섞여 들어오면 codex 가 순차로 N 번 호출해 시간만 N 배가 된다.
+        let prompt = format!(
+            "$imagegen {}{}{}\n\nGenerate exactly one image.",
+            opts.prompt, size_hint, quality_hint
+        );
+
+        let codex_home = Self::ensure_image_codex_home();
+        // 수확 워터마크 — spawn 직전. 이전 실행 잔여물 재수확 차단.
+        let started_at = SystemTime::now();
 
         // 플래그 = `--json --skip-git-repo-check` 만 (LLM 경로 `cli_codex.rs` 와 동일 base_flags).
         // 옛 `--output-format stream-json` 은 신버전 codex exec 에서 제거돼 exit 2 로 죽는다
-        // (2026-07-23 실측: "unexpected argument '--output-format' … a similar argument exists:
-        // '--output-schema'"). LLM 경로는 2026-07-15 에 같은 클래스(`--ask-for-approval` 제거)를
-        // 겪고 고쳤는데 이미지젠 형제가 남아 drift — spawn 지점이 둘이면 둘 다 갱신할 것.
+        // (2026-07-23 실측). spawn 지점이 둘이면 둘 다 갱신할 것.
         let mut cmd = Command::new("codex");
         cmd.arg("exec")
             .arg("--json")
@@ -123,6 +108,9 @@ impl ImageFormatHandler for CliCodexImageFormat {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
+        if let Some(home) = &codex_home {
+            cmd.env("CODEX_HOME", home);
+        }
 
         let mut child = cmd.spawn().map_err(|e| format!("Codex CLI spawn 실패: {e}"))?;
         let stdout = child
@@ -134,52 +122,87 @@ impl ImageFormatHandler for CliCodexImageFormat {
             .take()
             .ok_or_else(|| "Codex stderr pipe 없음".to_string())?;
 
-        let extraction = async {
+        // stdout 은 진단용으로만 흘려보낸다(파이프가 차서 자식이 멈추는 것도 방지).
+        let drain = async {
             let mut reader = BufReader::new(stdout).lines();
             let mut last_lines: Vec<String> = Vec::new();
-            while let Some(line) = reader
-                .next_line()
-                .await
-                .map_err(|e| format!("Codex stdout read: {e}"))?
-            {
+            while let Ok(Some(line)) = reader.next_line().await {
                 if line.trim().is_empty() {
                     continue;
                 }
-                last_lines.push(line.clone());
+                last_lines.push(line);
                 if last_lines.len() > 20 {
                     last_lines.remove(0);
                 }
-                if let Ok(ev) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if let Some(result) = Self::try_extract_image(&ev) {
-                        return result;
-                    }
-                }
             }
-            // EOF without 추출 — stderr / 마지막 stdout 으로 진단
-            let stderr_text = read_stderr(stderr).await;
-            Err(format!(
-                "Codex CLI 이미지 추출 실패 (stderr: {} / 마지막 stdout: {})",
-                truncate(&stderr_text, 500),
-                truncate(&last_lines.join("\n"), 500),
-            ))
+            last_lines
         };
 
-        let result = match timeout(CODEX_TIMEOUT, extraction).await {
-            Ok(r) => r,
-            Err(_) => Err(format!(
-                "Codex CLI 이미지 생성 타임아웃 ({}초)",
-                CODEX_TIMEOUT.as_secs()
-            )),
+        let run = async {
+            let last_lines = drain.await;
+            let status = child.wait().await;
+            (last_lines, status)
         };
 
+        // None = 타임아웃(자식 미종료) / Some(tail) = 정상 종료 + 마지막 stdout 줄들.
+        let stdout_tail: Option<Vec<String>> = match timeout(CODEX_TIMEOUT, run).await {
+            Ok((last_lines, _status)) => Some(last_lines),
+            Err(_) => None,
+        };
         // child kill — 이미 종료됐어도 silent ok
         let _ = child.kill().await;
-        result
+
+        // 타임아웃이어도 수확은 시도한다 — 이미지가 이미 떨어졌는데 마무리 단계에서 시간이
+        // 끊긴 경우 산출물을 버릴 이유가 없다.
+        let harvested = match &codex_home {
+            Some(home) => harvest_generated_images(home, started_at),
+            None => Vec::new(),
+        };
+
+        if harvested.is_empty() {
+            let stderr_text = read_stderr(stderr).await;
+            let tail = match &stdout_tail {
+                None => format!("타임아웃 ({}초) — 산출 파일 없음", CODEX_TIMEOUT.as_secs()),
+                Some(lines) => format!("마지막 stdout: {}", truncate(&lines.join("\n"), 500)),
+            };
+            return Err(format!(
+                "Codex CLI 이미지 수확 실패 ({tail} / stderr: {})",
+                truncate(&stderr_text, 500)
+            ));
+        }
+
+        // 이 포트는 1장 계약 — 가장 최근 파일을 쓴다. 여러 장이 나오면 나머지는 쓰이지 않으므로
+        // 조용히 버리지 않고 남긴다(호출자가 장수 불일치를 판독할 수 있게).
+        if harvested.len() > 1 {
+            tracing::info!(
+                target: "media",
+                "[cli-codex-image] {} 장 수확 — 포트 계약상 1 장만 사용(나머지 {} 장 폐기)",
+                harvested.len(),
+                harvested.len() - 1
+            );
+        }
+        let picked = harvested.last().expect("non-empty");
+        let binary = std::fs::read(picked)
+            .map_err(|e| format!("이미지 파일 읽기 실패 ({}): {e}", picked.display()))?;
+        let content_type = content_type_for(picked);
+
+        // 소비한 산출물 정리 — /tmp 무한 증식 방지(장당 ~2MB).
+        for path in &harvested {
+            let _ = std::fs::remove_file(path);
+        }
+
+        Ok(ImageGenResult {
+            binary,
+            content_type,
+            width: None,
+            height: None,
+            revised_prompt: None,
+            cost_usd: None,
+        })
     }
 }
 
 async fn read_stderr(stderr: tokio::process::ChildStderr) -> String {
-    use tokio::io::AsyncReadExt;
     let mut buf = Vec::new();
     let mut reader = BufReader::new(stderr);
     let _ = reader.read_to_end(&mut buf).await;
@@ -190,119 +213,61 @@ fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// `~` home 확장 + 파일 read.
-fn read_image_file(path: &str, mime_type: &str) -> InfraResult<ImageGenResult> {
-    let expanded = expand_home(path);
-    let binary =
-        std::fs::read(&expanded).map_err(|e| format!("이미지 파일 읽기 실패 ({}): {e}", expanded))?;
-    Ok(ImageGenResult {
-        binary,
-        content_type: mime_type.to_string(),
-        width: None,
-        height: None,
-        revised_prompt: None,
-        cost_usd: None,
-    })
-}
-
-fn expand_home(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix("~/") {
-        // HOME env 미설정(systemd 루트 서비스) 폴백 포함 — cli_codex 공용 헬퍼.
-        if let Some(home) = crate::llm::formats::cli_codex::resolve_home_dir() {
-            return home.join(rest).to_string_lossy().into_owned();
-        }
+/// 확장자 → MIME. 수확 파일은 codex 가 이름 짓는다.
+fn content_type_for(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg".to_string(),
+        "webp" => "image/webp".to_string(),
+        _ => "image/png".to_string(),
     }
-    path.to_string()
-}
-
-/// 옛 TS 의 `/([/~][\w/.-]+\.(?:png|jpg|webp))/` 매칭. 일반 로직 — 단순 substring + ext 검사.
-fn extract_image_path(content: &str) -> Option<String> {
-    // 모든 단어를 후보로 — `/` 또는 `~` 로 시작하고 `.png|.jpg|.webp` 로 끝나는 토큰 찾음.
-    for token in content.split(|c: char| c.is_whitespace() || c == '"' || c == '\'') {
-        if (token.starts_with('/') || token.starts_with('~'))
-            && (token.ends_with(".png") || token.ends_with(".jpg") || token.ends_with(".webp"))
-        {
-            return Some(token.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
-    fn extract_image_path_finds_png_path() {
-        assert_eq!(
-            extract_image_path("Saved to /tmp/abc-123.png yay"),
-            Some("/tmp/abc-123.png".to_string())
-        );
-        assert_eq!(
-            extract_image_path("File: ~/Pictures/out.jpg"),
-            Some("~/Pictures/out.jpg".to_string())
-        );
-        assert_eq!(extract_image_path("no image here"), None);
-        // ext 만 있고 path 안 보이면 null
-        assert_eq!(extract_image_path(".png alone"), None);
+    fn content_type_maps_by_extension() {
+        assert_eq!(content_type_for(std::path::Path::new("a/b.png")), "image/png");
+        assert_eq!(content_type_for(std::path::Path::new("a/b.JPG")), "image/jpeg");
+        assert_eq!(content_type_for(std::path::Path::new("a/b.webp")), "image/webp");
+        // 확장자 없음 = png 기본
+        assert_eq!(content_type_for(std::path::Path::new("a/b")), "image/png");
     }
 
+    /// 수확기는 워터마크 이후 파일만, 세션 하위 디렉토리까지 훑는다.
     #[test]
-    fn try_extract_image_pattern_1_base64() {
-        let ev = serde_json::json!({
-            "type": "item.completed",
-            "item": {
-                "type": "image",
-                "data": "iVBORw0KGgo=",
-                "mime_type": "image/png"
-            }
-        });
-        let result = CliCodexImageFormat::try_extract_image(&ev);
-        let Some(Ok(image)) = result else {
-            panic!("expected Some(Ok)");
-        };
-        assert_eq!(image.content_type, "image/png");
-        // base64 decode "iVBORw0KGgo=" → PNG header bytes
-        assert_eq!(&image.binary[..4], &[0x89, 0x50, 0x4E, 0x47]);
-        assert_eq!(image.cost_usd, None);
-    }
+    fn harvest_respects_watermark_and_nested_dirs() {
+        let root = std::env::temp_dir().join(format!(
+            "firebat-harvest-test-{}",
+            std::process::id()
+        ));
+        let session = root.join("generated_images").join("sess-1");
+        std::fs::create_dir_all(&session).unwrap();
 
-    #[test]
-    fn try_extract_image_pattern_1_camelcase_mime() {
-        let ev = serde_json::json!({
-            "type": "item.completed",
-            "item": {
-                "type": "agent_image",
-                "data": "iVBORw0KGgo=",
-                "mimeType": "image/webp"
-            }
-        });
-        let result = CliCodexImageFormat::try_extract_image(&ev);
-        let Some(Ok(image)) = result else {
-            panic!("expected Some(Ok)");
-        };
-        assert_eq!(image.content_type, "image/webp");
-    }
+        // 워터마크 이전 파일
+        let old = session.join("call_old.png");
+        std::fs::File::create(&old).unwrap().write_all(b"x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let watermark = SystemTime::now();
+        std::thread::sleep(std::time::Duration::from_millis(30));
 
-    #[test]
-    fn try_extract_image_unrelated_event_returns_none() {
-        let ev = serde_json::json!({"type": "item.started", "item": {"type": "thinking"}});
-        assert!(CliCodexImageFormat::try_extract_image(&ev).is_none());
-    }
+        // 워터마크 이후 파일 + 이미지 아닌 파일
+        let new = session.join("call_new.png");
+        std::fs::File::create(&new).unwrap().write_all(b"y").unwrap();
+        let txt = session.join("notes.txt");
+        std::fs::File::create(&txt).unwrap().write_all(b"z").unwrap();
 
-    #[test]
-    fn try_extract_image_invalid_base64_errors() {
-        let ev = serde_json::json!({
-            "type": "item.completed",
-            "item": {
-                "type": "image",
-                "data": "not-valid-base64-!!!"
-            }
-        });
-        let result = CliCodexImageFormat::try_extract_image(&ev);
-        let Some(Err(e)) = result else {
-            panic!("expected Some(Err)");
-        };
-        assert!(e.contains("base64 decode"));
+        let found = harvest_generated_images(&root, watermark);
+        assert_eq!(found.len(), 1, "워터마크 이후 이미지 1장만: {:?}", found);
+        assert_eq!(found[0].file_name().unwrap(), "call_new.png");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

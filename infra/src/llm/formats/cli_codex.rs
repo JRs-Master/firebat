@@ -16,8 +16,9 @@
 //! - stream-json output: `thread.started` / `turn.failed` / `item.completed (agent_message / mcp_tool_call)`
 //! - `mcp_tool_call` 결과 → render_* / pending / suggestions 추출
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::SystemTime;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
@@ -30,6 +31,89 @@ pub(crate) fn resolve_home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .or_else(std::env::home_dir)
+}
+
+/// `~/.codex/auth.json` → 우리 CODEX_HOME 복사 (구독 OAuth 세션 계승).
+///
+/// **재로그인 전파**: 원본이 사본보다 새로우면 덮어씀. 옛 "없을 때만 복사"는 사용자가 재로그인해도
+/// (새 로그인 = 옛 세션 무효화) 죽은 토큰 사본이 남아 401 Missing bearer 가 나던 버그(2026-07-15
+/// 실측). 사본이 더 새로우면(codex 자체 토큰 갱신 회전) 그대로 유지.
+///
+/// LLM 경로·이미지 경로가 각자 CODEX_HOME 을 두므로 공용.
+pub(crate) fn copy_auth_json(codex_home: &Path) {
+    let Some(home) = resolve_home_dir() else {
+        return;
+    };
+    let real_auth = home.join(".codex").join("auth.json");
+    if !real_auth.exists() {
+        return;
+    }
+    let tmp_auth = codex_home.join("auth.json");
+    let real_newer = match (
+        std::fs::metadata(&real_auth).and_then(|m| m.modified()),
+        std::fs::metadata(&tmp_auth).and_then(|m| m.modified()),
+    ) {
+        (Ok(r), Ok(t)) => r > t,
+        // 사본 없음 / mtime 판독 불가 = 복사
+        _ => true,
+    };
+    if real_newer {
+        let _ = std::fs::copy(&real_auth, &tmp_auth);
+    }
+}
+
+/// codex 이미지 확장자 allowlist — 수확 대상 판별.
+const CODEX_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp"];
+
+/// codex 내장 `image_gen` 도구 산출물 수확 — `since` 이후 생성된 파일만, mtime 오름차순.
+///
+/// **왜 파일시스템인가**: 내장 도구는 stdout 이벤트에 이미지 바이트를 싣지 않고
+/// `$CODEX_HOME/generated_images/<session-id>/call_*.png` 로 저장한다. codex 내장 imagegen 스킬이
+/// 문서화한 계약("Codex saves generated images under `$CODEX_HOME/*`" / "move or copy the selected
+/// output from `$CODEX_HOME/generated_images/...`")이고 서버 실측으로 확인됨(2026-07-27). 옛 구현이
+/// stdout 에서 base64·path 를 찾던 3패턴은 실제로 한 번도 매칭될 수 없어 타임아웃까지 대기했다.
+///
+/// 원래 이 이동은 codex 가 자기 쉘로 하지만 우리 config 는 `shell_tool = false` + read-only
+/// sandbox 라 codex 쪽 배달 경로가 없다 → 호스트가 거둔다.
+///
+/// `since` 워터마크로 이전 실행 잔여물 재수확을 차단한다.
+pub(crate) fn harvest_generated_images(codex_home: &Path, since: SystemTime) -> Vec<PathBuf> {
+    let root = codex_home.join("generated_images");
+    let mut found: Vec<(SystemTime, PathBuf)> = Vec::new();
+    // 세션 하위 디렉토리 1단 + 루트 직속 둘 다 — 저장 레이아웃 변화에 견디게.
+    collect_new_images(&root, since, &mut found);
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                collect_new_images(&entry.path(), since, &mut found);
+            }
+        }
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.into_iter().map(|(_, p)| p).collect()
+}
+
+fn collect_new_images(dir: &Path, since: SystemTime, out: &mut Vec<(SystemTime, PathBuf)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_image = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| CODEX_IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+            .unwrap_or(false);
+        if !is_image {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+            continue;
+        };
+        if modified > since {
+            out.push((modified, path));
+        }
+    }
 }
 
 use crate::llm::adapter::FormatHandler;
@@ -76,27 +160,8 @@ impl CodexCliHandler {
         let codex_home = std::env::temp_dir().join("firebat-codex-home");
         std::fs::create_dir_all(&codex_home).ok()?;
 
-        // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지) — **재로그인 전파**: 원본이 사본보다
-        // 새로우면 덮어씀. 옛 "없을 때만 복사"는 사용자가 재로그인해도(새 로그인 = 옛 세션 무효화)
-        // 죽은 토큰 사본이 남아 401 Missing bearer 가 나던 버그(2026-07-15 실측). 사본이 더
-        // 새로우면(codex 자체 토큰 갱신 회전) 그대로 유지.
-        if let Some(home) = resolve_home_dir() {
-            let real_auth = home.join(".codex").join("auth.json");
-            let tmp_auth = codex_home.join("auth.json");
-            if real_auth.exists() {
-                let real_newer = match (
-                    std::fs::metadata(&real_auth).and_then(|m| m.modified()),
-                    std::fs::metadata(&tmp_auth).and_then(|m| m.modified()),
-                ) {
-                    (Ok(r), Ok(t)) => r > t,
-                    // 사본 없음 / mtime 판독 불가 = 복사
-                    _ => true,
-                };
-                if real_newer {
-                    let _ = std::fs::copy(&real_auth, &tmp_auth);
-                }
-            }
-        }
+        // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지) — 이미지 경로와 공용 헬퍼.
+        copy_auth_json(&codex_home);
 
         let mut toml = String::new();
         // 승인 정책 — 옛 `--ask-for-approval never` CLI 플래그의 config 등가(전 버전 유효 키).
