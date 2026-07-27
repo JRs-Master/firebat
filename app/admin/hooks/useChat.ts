@@ -372,6 +372,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
   // 요청 중단용 AbortController
   const abortRef = useRef<AbortController | null>(null);
+  /// 이미지 모드 턴 저장 요청 플래그 — dispatch 반영 후(effect)에 실제 messages 로 저장.
+  const pendingImageSaveRef = useRef(false);
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -491,6 +493,32 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       localStorage.setItem(convStorageKey, JSON.stringify(updated));
       return updated;
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
+
+  // 이미지 모드 턴 저장 — 이 경로만 프론트가 저장한다.
+  //
+  // 이미지 모드는 LLM(chat route)을 우회해 /api/media/generate 로 직행하므로 서버가 턴을 남길
+  // 지점이 없다 → 대화가 목록에 아예 안 남았다(2026-07-27 실측: app.db 에 레코드 0). 서버에서
+  // 남기려면 2건만 upsert 해야 하는데 save_conversation 은 incoming 배열로 메시지를 치환하므로
+  // 앞선 대화가 날아간다 → 전체 목록을 쥔 클라이언트가 보내는 게 맞다.
+  //
+  // dispatch 직후가 아니라 effect 로 미루는 이유 = 그때의 `messages` 는 아직 옛 상태라
+  // 메시지를 손으로 조립해야 하고 리듀서 산출 모양과 어긋난다. 실제 state 를 그대로 보낸다.
+  // title 은 서버가 첫 user 메시지에서 파생한다(DEFAULT 를 보내면 derive 발동).
+  useEffect(() => {
+    if (!pendingImageSaveRef.current) return;
+    pendingImageSaveRef.current = false;
+    // hub 는 대상 아님 — /api/media/generate 가 admin 전용(withAuth)이라 이미지 모드가 안 돈다.
+    if (hubContext || !activeConvId) return;
+    const cleanMsgs = cleanMessages(messages);
+    if (cleanMsgs.length === 0) return;
+    const title = conversations.find(c => c.id === activeConvId)?.title || '새 대화';
+    fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: activeConvId, title, messages: cleanMsgs }),
+    }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
@@ -837,6 +865,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         }
       } finally {
         dispatch({ type: 'FINALIZE', id: systemId });
+        // LLM 경로와 달리 서버가 턴을 남길 지점이 없다 — 위 effect 가 반영된 messages 로 저장.
+        pendingImageSaveRef.current = true;
         setLoading(false);
         abortRef.current = null;
       }
