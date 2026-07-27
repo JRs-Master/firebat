@@ -133,16 +133,21 @@ impl CodexCliHandler {
     }
 
     /// Firebat thinking level → Codex `model_reasoning_effort` 값.
-    /// 옛 TS `mapThinkingToCodex` 1:1. max → xhigh 매핑 (Codex 는 max 미지원).
+    ///
+    /// **레벨 지원 여부는 여기서 판단하지 않는다** — models.json `thinking.levels` 선언이 단일
+    /// 진실이고 선택 UI 도 그 선언만 보여준다. 옛 TS 시절엔 레벨 목록이 전 모델 공통이라 핸들러가
+    /// `max → xhigh` 로 깎아야 했지만(그때는 max 를 가진 GPT 가 없었다), 모델별 선언으로 바뀐
+    /// 지금 그 강등표는 새 모델이 나오는 순간 조용히 거짓이 된다 — 실제로 GPT-5.6 이 max 를
+    /// 지원하는데도 UI 는 Max, 실제 전송은 xhigh 였다(2026-07-27). 선언을 그대로 통과시킨다.
     fn map_thinking_to_codex(level: Option<&str>) -> Option<&'static str> {
         match level {
             Some("none") | None => None,
-            Some("max") => Some("xhigh"),
             Some("minimal") => Some("minimal"),
             Some("low") => Some("low"),
             Some("medium") => Some("medium"),
             Some("high") => Some("high"),
             Some("xhigh") => Some("xhigh"),
+            Some("max") => Some("max"),
             Some(_) => None,
         }
     }
@@ -887,8 +892,14 @@ mod tests {
     #[test]
     fn map_thinking_known_levels() {
         assert_eq!(CodexCliHandler::map_thinking_to_codex(Some("low")), Some("low"));
+        // max 는 그대로 통과 — 지원 여부는 models.json 선언이 정하고 UI 도 그것만 보여준다.
+        // 옛 `max → xhigh` 강등은 GPT-5.6(max 지원) 등장으로 거짓이 됐다.
         assert_eq!(
             CodexCliHandler::map_thinking_to_codex(Some("max")),
+            Some("max")
+        );
+        assert_eq!(
+            CodexCliHandler::map_thinking_to_codex(Some("xhigh")),
             Some("xhigh")
         );
         assert_eq!(
