@@ -777,5 +777,8 @@
   },
   "llm": {
     "tool_call_marker": "[tool call: {{name}}]"
+  },
+  "media": {
+    "cli_harvested": "Generated image saved to the gallery: {{urls}}"
   }
 }

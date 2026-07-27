@@ -348,6 +348,9 @@ impl CodexCliHandler {
             None
         };
 
+        // 내장 이미지 도구 산출물 수확 워터마크 — spawn 직전에 찍어 이전 턴 잔여물을 배제.
+        let harvest_since = SystemTime::now();
+
         let mut cmd = Command::new(binary);
         cmd.args(&args);
         cmd.stdin(Stdio::null());
@@ -753,6 +756,17 @@ impl CodexCliHandler {
                 stderr_buf.chars().take(500).collect::<String>()
             ));
         }
+        // 내장 이미지 도구 산출물 수확 — codex 가 `image_gen` 도구 대신 자기 내장 도구를 쓰면
+        // 결과가 CODEX_HOME 에 갇혀 사용자에게 안 닿는다(2026-07-27 토익 턴 실측: 1.88MB PNG 가
+        // 파일로만 남고 Firebat 은 인지 0). shell_tool=false + read-only 라 codex 스스로 옮길
+        // 수단도 없으므로 호스트가 거둬 callee 가 갤러리에 담는다. 정공은 프롬프트가 `image_gen`
+        // 도구로 유도하는 것(URL 이 있어야 컴포넌트에 박힌다) — 이건 유실 0 안전망.
+        if let Some(home) = &codex_home {
+            outcome.generated_images = harvest_generated_images(home, harvest_since)
+                .into_iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+        }
         Ok(outcome)
     }
 }
@@ -775,6 +789,8 @@ struct CliRunOutcome {
     /// 2026-07-15 스트리밍 전환: run_cli 가 줄 단위로 파싱하며 emit(Thinking/ToolStep)을 실시간
     /// 흘림(claude 미러). 이 누적본은 턴 종료 후 영속·리로드 표시용.
     thinking_acc: String,
+    /// codex 가 자기 내장 이미지 도구로 CODEX_HOME 에 남긴 산출 파일 — 턴 종료 후 수확.
+    generated_images: Vec<String>,
 }
 
 // codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 모두 포함되어
@@ -858,6 +874,7 @@ impl FormatHandler for CodexCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
+            cli_generated_images: outcome.generated_images,
             thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
         })
     }

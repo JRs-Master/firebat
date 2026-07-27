@@ -693,6 +693,8 @@ impl FormatHandler for GeminiCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
+            // Gemini CLI 는 내장 이미지 생성 도구가 없어 수확 대상 0 (codex 전용 채널).
+            cli_generated_images: Vec::new(),
             thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
         })
     }

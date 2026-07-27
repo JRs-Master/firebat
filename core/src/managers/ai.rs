@@ -384,6 +384,68 @@ impl AiManager {
         self
     }
 
+    /// CLI 어댑터가 수확해 온 내장-도구 이미지 파일 → 갤러리 적재. 반환 = 발급된 URL 목록.
+    ///
+    /// 왜 필요한가: CLI(codex)는 자기 런타임 내장 이미지 도구를 가지고 있어 `image_gen` 도구를
+    /// 우회할 수 있는데, 그 산출물은 CLI 홈에 파일로만 남아 사용자에게 닿지 않는다(2026-07-27
+    /// 실측). 어댑터가 턴 종료 후 경로를 실어 보내면 여기서 갤러리에 담고 원본을 정리한다.
+    /// 정공은 프롬프트가 `image_gen` 을 쓰게 유도하는 것 — 이건 유실 0 안전망이라 실패해도 조용히
+    /// 넘긴다(본 답변을 죽이지 않는다).
+    async fn import_cli_generated_images(
+        &self,
+        paths: &[String],
+        hub_owner: Option<&str>,
+    ) -> Vec<String> {
+        let Some(media) = self.media.as_ref() else {
+            return Vec::new();
+        };
+        let mut urls = Vec::new();
+        for path in paths {
+            let binary = match tokio::fs::read(path).await {
+                Ok(b) => b,
+                Err(e) => {
+                    self.log
+                        .warn(&format!("[AiManager] CLI 이미지 읽기 실패 ({path}): {e}"));
+                    continue;
+                }
+            };
+            let ext = std::path::Path::new(path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("png")
+                .to_ascii_lowercase();
+            let content_type = match ext.as_str() {
+                "jpg" | "jpeg" => "image/jpeg",
+                "webp" => "image/webp",
+                _ => "image/png",
+            };
+            let opts = crate::ports::MediaSaveOptions {
+                scope: Some(crate::ports::MediaScope::User),
+                model: Some("cli-builtin".to_string()),
+                source: Some("ai-generated".to_string()),
+                hub_owner: hub_owner.map(String::from),
+                ..Default::default()
+            };
+            match media.save(&binary, content_type, &opts).await {
+                Ok(saved) => {
+                    self.log.info(&format!(
+                        "[AiManager] CLI 내장 도구 이미지 수확 → 갤러리: {} ({} bytes)",
+                        saved.url,
+                        binary.len()
+                    ));
+                    urls.push(saved.url);
+                    // 갤러리에 사본이 생겼으므로 원본 정리 — CLI 홈 무한 증식 방지.
+                    let _ = tokio::fs::remove_file(path).await;
+                }
+                Err(e) => {
+                    self.log
+                        .warn(&format!("[AiManager] CLI 이미지 갤러리 저장 실패: {e}"));
+                }
+            }
+        }
+        urls
+    }
+
     /// opts.image 가 slug URL (`/user/attachments/<filename>` 또는 `/user/media/<slug>.<ext>`)
     /// 일 때 fs read + base64 data URL 변환 수행. 해당 형태가 아니거나 변환 fail 시 옛 값 그대로.
     /// LLM adapter (cli_image_helper / anthropic 등) 의 base64 가정 코드 호환.
@@ -2673,6 +2735,39 @@ impl AiManager {
                     crate::i18n::t(key, None, &[]),
                     last_text
                 );
+            }
+
+            // CLI 내장 이미지 도구 산출물 수확 → 갤러리. 모델이 `image_gen` 을 쓰지 않고 자기
+            // 내장 도구로 만들면 결과가 CLI 홈에 갇혀 사용자에게 안 닿는다(2026-07-27 실측) —
+            // 컴포넌트에 URL 을 박을 시점은 이미 지났으므로 인라인 복원은 불가하고, 갤러리 적재 +
+            // 링크 한 줄로 산출물 유실만 막는다. 정공은 프롬프트 유도(그때는 여기 걸릴 게 없다).
+            // emit 앞에 두는 이유 = 안내 줄이 같은 text chunk 로 함께 흘러야 하기 때문.
+            if !response.cli_generated_images.is_empty() {
+                let hub_owner = ai_opts.hub_context.as_ref().map(|ctx| {
+                    if ctx.session_id.is_empty() {
+                        ctx.instance_id.clone()
+                    } else {
+                        format!("{}:{}", ctx.instance_id, ctx.session_id)
+                    }
+                });
+                let urls = self
+                    .import_cli_generated_images(
+                        &response.cli_generated_images,
+                        hub_owner.as_deref(),
+                    )
+                    .await;
+                if !urls.is_empty() {
+                    let note = crate::i18n::t(
+                        "core.media.cli_harvested",
+                        None,
+                        &[("urls", &urls.join(" "))],
+                    );
+                    last_text = if last_text.trim().is_empty() {
+                        note
+                    } else {
+                        format!("{}\n\n{}", last_text, note)
+                    };
+                }
             }
 
             // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.

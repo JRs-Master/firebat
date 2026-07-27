@@ -777,5 +777,8 @@
   },
   "llm": {
     "tool_call_marker": "[도구 호출: {{name}}]"
+  },
+  "media": {
+    "cli_harvested": "생성된 이미지를 갤러리에 저장했습니다: {{urls}}"
   }
 }

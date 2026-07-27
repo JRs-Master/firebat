@@ -862,6 +862,8 @@ impl FormatHandler for ClaudeCodeCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
+            // Claude CLI 는 내장 이미지 생성 도구가 없어 수확 대상 0 (codex 전용 채널).
+            cli_generated_images: Vec::new(),
             // thinking_text 는 항상 채운다(codex/gemini 어댑터와 동일) — reasoningTrace/finalReasoning
             // 영속(사후 DB 판독)에 필요. 스트리밍 중 이미 live emit 됐으므로 AiManager 는 CLI 응답의
             // thinking 을 재emit 하지 않는다(cli_session_id 로 판별) → 이중표시 없이 persist.

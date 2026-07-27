@@ -1633,6 +1633,12 @@ pub struct LlmToolResponse {
     /// AiManager 가 다음 turn `tool_exchanges` 에 echo → thought_signature 보존.
     #[serde(rename = "rawModelParts", default, skip_serializing_if = "Option::is_none")]
     pub raw_model_parts: Option<serde_json::Value>,
+    /// CLI 가 **자기 런타임 내장 이미지 도구**로 만들어 놓은 산출 파일의 호스트 경로.
+    /// 그 도구는 Firebat 을 안 거쳐서 결과가 CLI 홈에 갇히고 사용자에게 닿지 않는다 — 어댑터가
+    /// 턴 종료 후 거둬(harvest) 여기 실으면 AiManager 가 갤러리에 담고 파일을 정리한다.
+    /// 정공은 모델이 `image_gen` 도구를 쓰는 것(그래야 URL 이 컴포넌트에 박힌다)이고 이건 안전망.
+    #[serde(rename = "cliGeneratedImages", default, skip_serializing_if = "Vec::is_empty")]
+    pub cli_generated_images: Vec<String>,
     /// CLI 가 자체 MCP loop 에서 받은 도구 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 용.
     /// 옛 TS 의 에러 뱃지 표시 채널 1:1 port. `internallyUsedTools` 가 도구 이름만 전달하던 한계 보완.
     /// 형식: `{name: string, success: bool, error?: string, input?: object}`.
