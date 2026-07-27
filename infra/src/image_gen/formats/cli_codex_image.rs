@@ -35,6 +35,27 @@ const CODEX_TIMEOUT: Duration = Duration::from_secs(420);
 /// 분리 이유: 수확 워터마크가 채팅 턴의 산출물과 섞이지 않게(경로별 독립).
 const IMAGE_CODEX_HOME_DIR: &str = "firebat-codex-image-home";
 
+/// 산출 파일 폴링 주기 / 크기 안정 확인 간격(쓰는 중 truncated read 방지).
+const HARVEST_POLL: Duration = Duration::from_millis(1000);
+const HARVEST_SETTLE: Duration = Duration::from_millis(700);
+
+/// 실행이 어떻게 끝났나 — 에러 메시지 문맥 + 재수확 여부 결정.
+enum RunEnd {
+    /// 산출 파일을 먼저 건져 조기 종료(정상 경로).
+    Harvested(Vec<PathBuf>),
+    /// codex 가 스스로 끝남. 마지막 stdout 줄들(진단용).
+    Exited(Vec<String>),
+    TimedOut,
+}
+
+/// 파일별 크기 — 두 번 찍어 같으면 쓰기 완료로 본다.
+fn file_sizes(paths: &[PathBuf]) -> Vec<u64> {
+    paths
+        .iter()
+        .map(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0))
+        .collect()
+}
+
 pub struct CliCodexImageFormat;
 
 impl CliCodexImageFormat {
@@ -140,30 +161,69 @@ impl ImageFormatHandler for CliCodexImageFormat {
 
         let run = async {
             let last_lines = drain.await;
-            let status = child.wait().await;
-            (last_lines, status)
+            let _ = child.wait().await;
+            last_lines
         };
 
-        // None = 타임아웃(자식 미종료) / Some(tail) = 정상 종료 + 마지막 stdout 줄들.
-        let stdout_tail: Option<Vec<String>> = match timeout(CODEX_TIMEOUT, run).await {
-            Ok((last_lines, _status)) => Some(last_lines),
-            Err(_) => None,
+        // **완료 신호 = 산출 파일, 프로세스 종료가 아니다.** codex 는 이미지를 낸 뒤에도 한참
+        // 안 끝난다(2026-07-27 실측: 생성 56초 / 종료 대기 420초 = 타임아웃까지 감). 도구 결과에
+        // "The generated image is already displayed to the user" 라고 적혀 있어 모델은 더 할 일이
+        // 없다고 보고 마무리를 서두르지 않는다 — 우리가 기다릴 이유가 없다.
+        // 파일이 보이면 크기가 안정될 때까지만 확인(쓰는 중 truncated read 방지) 후 즉시 종료.
+        let watch = async {
+            loop {
+                tokio::time::sleep(HARVEST_POLL).await;
+                let Some(home) = codex_home.as_ref() else {
+                    continue;
+                };
+                let files = harvest_generated_images(home, started_at);
+                if files.is_empty() {
+                    continue;
+                }
+                let before = file_sizes(&files);
+                tokio::time::sleep(HARVEST_SETTLE).await;
+                let after = harvest_generated_images(home, started_at);
+                if after.len() == files.len() && file_sizes(&after) == before {
+                    return after;
+                }
+            }
         };
-        // child kill — 이미 종료됐어도 silent ok
+
+        let end = match timeout(CODEX_TIMEOUT, async {
+            tokio::select! {
+                files = watch => RunEnd::Harvested(files),
+                lines = run => RunEnd::Exited(lines),
+            }
+        })
+        .await
+        {
+            Ok(e) => e,
+            Err(_) => RunEnd::TimedOut,
+        };
+        // child kill — 파일을 먼저 건졌으면 아직 살아 있다(그게 정상 경로).
         let _ = child.kill().await;
 
-        // 타임아웃이어도 수확은 시도한다 — 이미지가 이미 떨어졌는데 마무리 단계에서 시간이
-        // 끊긴 경우 산출물을 버릴 이유가 없다.
-        let harvested = match &codex_home {
-            Some(home) => harvest_generated_images(home, started_at),
-            None => Vec::new(),
+        // 종료·타임아웃으로 끝난 경우엔 여기서 한 번 더 훑는다. 타임아웃이어도 수확을 시도하는
+        // 이유 = 이미 떨어진 산출물을 버릴 이유가 없어서.
+        let harvested = match end {
+            RunEnd::Harvested(ref files) => files.clone(),
+            _ => codex_home
+                .as_ref()
+                .map(|h| harvest_generated_images(h, started_at))
+                .unwrap_or_default(),
         };
 
         if harvested.is_empty() {
             let stderr_text = read_stderr(stderr).await;
-            let tail = match &stdout_tail {
-                None => format!("타임아웃 ({}초) — 산출 파일 없음", CODEX_TIMEOUT.as_secs()),
-                Some(lines) => format!("마지막 stdout: {}", truncate(&lines.join("\n"), 500)),
+            let tail = match &end {
+                RunEnd::TimedOut => {
+                    format!("타임아웃 ({}초) — 산출 파일 없음", CODEX_TIMEOUT.as_secs())
+                }
+                RunEnd::Exited(lines) => {
+                    format!("마지막 stdout: {}", truncate(&lines.join("\n"), 500))
+                }
+                // Harvested 인데 비었다 = 도달 불가(watch 는 비면 return 안 함)
+                RunEnd::Harvested(_) => "산출 파일 없음".to_string(),
             };
             return Err(format!(
                 "Codex CLI 이미지 수확 실패 ({tail} / stderr: {})",
