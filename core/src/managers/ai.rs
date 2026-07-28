@@ -1001,7 +1001,7 @@ impl AiManager {
                         }));
                     }
                 }
-                let (mut rows, all_oov, dropped, searched_with) =
+                let (mut rows, all_oov, dropped, searched_with, embedder) =
                     cat.search_analyzed(&query, module.as_deref(), limit.clamp(1, 20)).await?;
                 if all_oov {
                     // Zero-signal query (every token is a subject name / OOV for the catalog) —
@@ -1049,6 +1049,11 @@ impl AiManager {
                 // 한 수를 응답이 알려준다("각 계단이 다음 수를 스스로 말해야").
                 if !dropped.is_empty() {
                     resp["searchedWith"] = serde_json::json!(searched_with);
+                    // 어느 벡터 공간이 서빙했는가 — 같은 질의의 순위가 뒤집히는 세 번째 원인.
+                    // 이게 없으면 임베더 전환을 "질의를 바꿔서"로 오귀인하게 된다.
+                    if !embedder.is_empty() {
+                        resp["embedder"] = serde_json::json!(embedder);
+                    }
                     resp["droppedTokens"] = serde_json::json!(dropped);
                     resp["note"] = serde_json::json!(
                         "Tokens above are absent from every action's text, so they were removed before \

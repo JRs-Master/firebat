@@ -88,6 +88,13 @@ pub struct CatalogQueryOutcome {
     /// "내가 물은 것"과 "실제로 검색된 것"의 차이를 그 자리에서 보게 한다. 이게 없어서
     /// 모델이 시행착오로 질의 위생을 스스로 학습했다(2026-07-27 cxmt 턴 실측).
     pub searched_with: String,
+    /// **실제로 서빙한 임베더** — 같은 질의가 다른 순위를 내는 세 번째 경로. dual-embed 는
+    /// primary 장애(60초 쿨다운)뿐 아니라 **primary 공간이 아직 덜 찼을 때**(스왑 마이그레이션
+    /// 중 429 로 증분 임베딩)도 secondary 로 서빙하고, 재빌드(300초)로 다 차는 순간 조용히
+    /// primary 로 넘어간다. 두 공간은 top-1 이 자주 갈리므로(섀도우 로그 `top1_agree:false`
+    /// 다수) 이 전환이 곧 순위 반전인데, 응답에 아무 표시가 없어 "질의를 바꿔서 그런가"와
+    /// 구분이 안 됐다. A/B 는 임베더를 고정하고 재야 한다.
+    pub embedder: String,
 }
 
 /// Drop query tokens that appear in NO catalog entry text — they cannot contribute any
@@ -395,6 +402,7 @@ impl SemanticCatalog {
             dropped_tokens: dropped,
             all_oov,
             searched_with: String::new(),
+            embedder: String::new(),
         };
         if user_query.trim().is_empty() {
             return Ok(empty(false, Vec::new()));
@@ -514,6 +522,11 @@ impl SemanticCatalog {
             dropped_tokens: dropped,
             all_oov: false,
             searched_with: embed_input.to_string(),
+            embedder: if use_secondary {
+                self.secondary.as_ref().map(|s| s.version().to_string()).unwrap_or_default()
+            } else {
+                self.embedder.version().to_string()
+            },
         })
     }
 

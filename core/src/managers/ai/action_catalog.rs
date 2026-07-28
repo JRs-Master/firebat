@@ -793,7 +793,7 @@ impl ModuleActionCatalog {
         Ok(self.search_analyzed(query, module, limit).await?.0)
     }
 
-    /// `search` + the OOV analysis (rows, all_oov, dropped_tokens) — the search tool handler
+    /// `search` + the OOV analysis (rows, all_oov, dropped_tokens, searched_with, embedder) — the handler
     /// uses `all_oov` to answer a zero-signal query (bare subject name) with a teaching hint
     /// instead of confident junk rows.
     pub async fn search_analyzed(
@@ -801,7 +801,7 @@ impl ModuleActionCatalog {
         query: &str,
         module: Option<&str>,
         limit: usize,
-    ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>, String), String> {
+    ) -> Result<(Vec<serde_json::Value>, bool, Vec<String>, String, String), String> {
         let scopes: Option<Vec<String>> = module.map(|m| vec![format!("{}:", m)]);
         let outcome = self
             .catalog
@@ -811,6 +811,7 @@ impl ModuleActionCatalog {
         let all_oov = outcome.all_oov;
         let dropped = outcome.dropped_tokens;
         let searched_with = outcome.searched_with;
+        let embedder = outcome.embedder;
         let rows = outcome
             .matches
             .into_iter()
@@ -867,7 +868,7 @@ impl ModuleActionCatalog {
                 row
             })
             .collect();
-        Ok((rows, all_oov, dropped, searched_with))
+        Ok((rows, all_oov, dropped, searched_with, embedder))
     }
 
     /// Full detail for one action — params with descriptions + example + call envelope +
