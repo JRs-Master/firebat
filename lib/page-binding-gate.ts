@@ -157,6 +157,49 @@ async function resolveLiveSeed(props: Json, seed: Json, path: string, slug: stri
   const cached = resultCache.get(key);
   const rows = cached ? firstDataArray(cached.blocks) : null;
   if (rows && rows.length > 0) props.data = rows;
+  if (rows && rows.length > 0 && props.derive) await resolveDerived(props, rows, path, slug);
+}
+
+/** 시드 봉을 받아 **파생 분석**을 방문 시점에 재계산 — `derive:{module,action,args?}`.
+ *
+ *  왜 필요한가: `seed` 는 봉만 새로 가져오므로 그 봉으로 계산한 분석(엘리엇 파동·추세선 등)은
+ *  페이지 생성 시점에 굳어 버린다. 실측 페이지가 정확히 그랬다 — 봉은 최신인데 파동 분석은
+ *  몇 시간 전 텍스트였고("실시간인데 실시간이 아니다"), 차트엔 주석이 아예 없었다.
+ *
+ *  계약 = pageBinding 그대로 — 파생 모듈이 렌더 블록을 반환하고, 그 **첫 블록의 props**(data 제외)를
+ *  라이브 차트 props 에 병합한다. 무엇을 그릴지는 모듈이 소유하고 프레임워크는 추측하지 않는다.
+ *  봉은 선언한 인자 이름(기본 `bars`)으로 주입한다. 실패 = 조용히 주석 없이(차트는 살아 있음). */
+async function resolveDerived(props: Json, rows: unknown[], path: string, slug: string): Promise<void> {
+  const d = props.derive as Json | undefined;
+  if (!d || typeof d.module !== 'string') return;
+  const moduleName = String(d.module);
+  const action = await pageBindingGate(moduleName, typeof d.action === 'string' ? (d.action as string) : '');
+  if (!action) return;
+  const barsArg = typeof d.barsArg === 'string' && d.barsArg ? (d.barsArg as string) : 'bars';
+  const args = { ...((d.args as Record<string, unknown>) ?? {}), [barsArg]: rows };
+  // 캐시 키에 봉 개수·마지막 봉을 섞는다 — 같은 시드면 재계산 0, 새 봉이 오면 자동 무효화.
+  const lastRow = rows[rows.length - 1];
+  const stamp = `${rows.length}:${typeof lastRow === 'object' && lastRow ? String((lastRow as Json).date ?? '') : ''}`;
+  const key = cacheKey(slug, `${path}#derive:${stamp}`, moduleName, action, d.args);
+  const ttlMs = clampTtlMs(props.cacheTtl);
+  const now = Date.now();
+  const hit = resultCache.get(key);
+  if (!hit || now - hit.t >= hit.ttlMs) {
+    let p = inflight.get(key);
+    if (!p) {
+      p = runBinding(moduleName, action, args).finally(() => inflight.delete(key));
+      inflight.set(key, p);
+    }
+    const blocks = await p;
+    if (blocks) resultCache.set(key, { blocks, t: now, ttlMs });
+  }
+  const first = resultCache.get(key)?.blocks?.[0];
+  const derived = first && typeof first === 'object' ? ((first as Json).props as Json | undefined) : undefined;
+  if (!derived) return;
+  for (const [k, v] of Object.entries(derived)) {
+    if (k === 'data' || k === 'seed' || k === 'derive') continue; // 시드·선언은 덮지 않는다
+    props[k] = v;
+  }
 }
 
 /** 렌더 블록 배열에서 첫 번째 `props.data` 배열(캔들 행) 추출. */

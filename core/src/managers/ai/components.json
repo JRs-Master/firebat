@@ -3301,8 +3301,8 @@
   {
     "name": "live_stock_chart",
     "componentType": "LiveStockChart",
-    "description": "Realtime candlestick chart: aggregates stream ticks (SSE topic from stream_watch_start) into candles on top of the full StockChart renderer (MA lines, zoom, crosshair). Works at any granularity via interval: 60 = 1-minute candles, 86400 = DAILY (the current day's candle updates live, a new candle rolls at date change — seed with daily REST candles). Seed past candles via data (standard OHLCV rows, same granularity as interval). Live while visible; frozen when hidden. For a plain line, use live_chart instead.",
-    "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 일봉 체결가 스트리밍 틱 집계 realtime candle chart daily 실시간 캔들 OHLC 주가 차트 오늘 봉 갱신",
+    "description": "Realtime candlestick chart: aggregates stream ticks (SSE topic from stream_watch_start) into candles on top of the full StockChart renderer (MA lines, zoom, crosshair). Works at any granularity via interval: 60 = 1-minute candles, 86400 = DAILY (the current day's candle updates live, a new candle rolls at date change — seed with daily REST candles). Seed past candles via data (standard OHLCV rows, same granularity as interval). Live while visible; frozen when hidden. For a plain line, use live_chart instead. Seed past candles via `seed` (fresh-on-visit) and keep any overlay analysis current with `derive` — writing analysis numbers into page text freezes them at authoring time while the candles keep moving.",
+    "semanticText": "실시간 봉차트 캔들 차트 live candlestick 분봉 일봉 체결가 스트리밍 틱 집계 realtime candle chart daily 실시간 캔들 OHLC 주가 차트 오늘 봉 갱신 엘리엇 파동 주석 추세선 실시간 재계산 annotations derive 방문마다 갱신",
     "propsSchema": {
       "type": "object",
       "properties": {
@@ -3344,6 +3344,26 @@
         "maxCandles": {
           "type": "number",
           "description": "kept candles (default 240 intraday / 120 daily)"
+        },
+        "derive": {
+          "type": "object",
+          "description": "fresh-on-visit ANALYSIS binding — {module, action, args?, barsArg?}. Runs AFTER `seed` and receives the freshly fetched candles as an argument (default arg name `bars`), then merges the module's returned block props (annotations, futureSlots, ...) into this chart. This is how an analysis stays current on a published page: `seed` alone refreshes only the candles, so anything you compute at authoring time and write into text freezes there. Use it for wave/trendline/indicator overlays — e.g. {module:\"technical-analysis\", action:\"chart_annotations\"} draws the wave skeleton, channel, projected path and invalidation line, recomputed every visit. Pick an action from a search_module_actions row carrying `pageBinding: true`."
+        },
+        "cacheTtl": {
+          "type": "number",
+          "description": "seconds before the seed/derive result is re-fetched on visit (clamped 60..3600, default 300). Match it to the candle period — a 1-minute chart with the 300s default is up to 5 candles behind."
+        },
+        "annotations": {
+          "type": "array",
+          "description": "same annotation layer as stock_chart (path/hline/zone/marker, `barsAhead` for future coordinates). Prefer `derive` on a published page so these recompute per visit; a literal array here is a snapshot."
+        },
+        "futureSlots": {
+          "type": "number",
+          "description": "empty candle slots reserved on the right for projections (same as stock_chart). Set from the analysis module's projectBars."
+        },
+        "scale": {
+          "type": "string",
+          "description": "\"linear\" (default) or \"log\" — log suits wide ranges and future projections."
         }
       },
       "required": [

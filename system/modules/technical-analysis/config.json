@@ -53,9 +53,10 @@
         "enum": [
           "pivots",
           "elliott_candidates",
+          "chart_annotations",
           "fib_targets"
         ],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산"
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`."
       },
       "bars": {
         "type": "array",
@@ -80,6 +81,11 @@
       "projectBars": {
         "type": "integer",
         "description": "채널·목표를 미래로 몇 봉 연장할지 (기본 = 기간의 20%, 5~60). 차트의 futureSlots 를 이 값 이상으로 주면 채널이 여백을 정확히 채웁니다."
+      },
+      "candidateIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "chart_annotations 전용 — confidence 내림차순에서 몇 번째 후보를 그릴지(기본 0 = 1위). 다른 카운트를 보려면 올리세요."
       }
     }
   },
@@ -109,7 +115,19 @@
       "projectBars": {
         "type": "integer",
         "description": "실제 적용된 투영 길이. stock_chart 의 futureSlots 를 이 값 이상으로 설정하세요."
+      },
+      "blocks": {
+        "type": "array",
+        "description": "chart_annotations 전용 — 렌더 블록 1개(`stock_chart`)의 props 에 annotations·futureSlots 가 담깁니다. 페이지 바인딩(`derive`)이 이 props 를 라이브 차트에 병합합니다."
+      },
+      "summary": {
+        "type": "object",
+        "description": "chart_annotations 전용 — 고른 후보의 structure·labels·inProgress·confidence·threshold·invalidation·projectedPath·candidateCount. 답변 문장은 이걸로 쓰세요(주석은 차트가 그립니다)."
       }
     }
+  },
+  "pageBinding": {
+    "alias": "ta",
+    "action": "chart_annotations"
   }
 }

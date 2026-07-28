@@ -718,6 +718,39 @@ def fib_targets(pts):
     return out
 
 
+def chart_annotation_set(cand, structure_label=None):
+    """후보 하나를 **stock_chart annotations 배열**로 바꾼다.
+
+    왜 모듈이 이걸 하나: 지금은 모델이 매 턴 손으로 annotations JSON 을 조립하는데, 그러면
+    빠뜨리는 턴이 생긴다(실측: 실시간 페이지가 분석을 본문 텍스트로만 싣고 차트엔 아무것도
+    안 그림). 좌표는 전부 결정론이라 모듈이 만들어 주면 채팅·페이지가 같은 그림을 얻는다.
+    모델 몫은 **어느 후보를 택하고 그게 무슨 뜻인지** 말하는 것으로 남는다.
+    """
+    ann = []
+    pivots = cand.get("pivots") or []
+    if pivots:
+        ann.append({
+            "kind": "path",
+            "label": structure_label or cand.get("structure"),
+            "points": [{"i": pv["i"], "price": pv["price"], "label": pv.get("label")} for pv in pivots],
+        })
+    ch = cand.get("channel") or {}
+    tri = str(cand.get("structure", "")).startswith("triangle")
+    for key, name in (("base", "A-C" if tri else "기준선"), ("parallel", "B-D" if tri else "평행선")):
+        pts = ch.get(key)
+        if pts:
+            ann.append({"kind": "path", "label": name, "points": pts, "projected": True, "dashed": True})
+    pp = (cand.get("projectedPath") or {}).get("points")
+    if pp:
+        ann.append({"kind": "path", "label": "예상 경로", "points": pp, "projected": True})
+    inv = cand.get("invalidation") or {}
+    if inv.get("price") is not None:
+        arrow = "▲" if inv.get("beyond") == "above" else "▼"
+        ann.append({"kind": "hline", "label": f"무효화 {arrow} {inv['price']:,.0f}",
+                    "points": [{"price": inv["price"]}], "color": "#dc2626", "dashed": True})
+    return ann
+
+
 def main():
     inp = _read_input()
     action = inp.get("action")
@@ -739,6 +772,55 @@ def main():
         pv = zigzag(bars, threshold)
         print(json.dumps({"success": True, "data": {
             "pivots": pv, "count": len(pv), "threshold": round(threshold, 2), "barRange": bar_range,
+        }}, ensure_ascii=False))
+        return
+
+    if action == "chart_annotations":
+        # 차트에 바로 얹을 주석 한 벌 — 급(threshold) 하나, 후보 하나(기본 = 최고 confidence).
+        # pageBinding 계약(`blocks`)으로 반환하므로 **페이지 바인딩이 방문마다 재계산**할 수 있고,
+        # 채팅에서도 같은 배열을 그대로 stock_chart 에 넣으면 된다.
+        last_i = bars[-1]["i"]
+        project_bars = int(inp.get("projectBars") or max(5, min(60, round(len(bars) * 0.2))))
+        try:
+            t = float(inp.get("threshold") or threshold)
+        except (TypeError, ValueError):
+            t = threshold
+        t = round(max(1.5, min(25.0, t)), 2)
+        pv = zigzag(bars, t)
+        cands = sorted(
+            elliott_candidates(pv, 8, last_i, project_bars, bars)
+            + corrective_candidates(pv, 8, last_i, project_bars, bars),
+            key=lambda c: c["confidence"], reverse=True,
+        )
+        pick = int(inp.get("candidateIndex") or 0)
+        cand = cands[pick] if 0 <= pick < len(cands) else (cands[0] if cands else None)
+        if not cand:
+            # 후보가 없는 것도 정직한 답 — 빈 주석을 주고 이유를 말한다(억지 카운트 금지).
+            print(json.dumps({"success": True, "data": {
+                "blocks": [{"type": "stock_chart", "props": {"annotations": [], "futureSlots": project_bars}}],
+                "summary": {"structure": None, "threshold": t, "pivotCount": len(pv),
+                            "reason": "이 급에서 엘리엇 규칙을 만족하는 후보가 없습니다 — threshold 를 바꿔 보세요."},
+                "barRange": bar_range,
+            }}, ensure_ascii=False))
+            return
+        print(json.dumps({"success": True, "data": {
+            "blocks": [{"type": "stock_chart", "props": {
+                "annotations": chart_annotation_set(cand),
+                "futureSlots": project_bars,
+            }}],
+            "summary": {
+                "structure": cand["structure"], "labels": cand["labels"],
+                "inProgress": cand.get("inProgress"), "complete": cand.get("complete"),
+                "confidence": cand["confidence"], "threshold": t,
+                "invalidation": cand.get("invalidation"),
+                "projectedPath": cand.get("projectedPath"),
+                "notes": cand.get("notes"),
+                "candidateCount": len(cands),
+            },
+            "barRange": bar_range,
+            "note": ("차트 주석은 `blocks[0].props` 를 그대로 쓰세요(annotations + futureSlots). "
+                     "이 답은 barRange(기간) + threshold(급) 쌍에 대해서만 유효합니다 — 답변에 둘 다 밝히세요. "
+                     "다른 카운트를 보려면 candidateIndex 또는 threshold 를 바꿔 재호출하세요."),
         }}, ensure_ascii=False))
         return
 
