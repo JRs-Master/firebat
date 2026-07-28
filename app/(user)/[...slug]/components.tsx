@@ -72,11 +72,39 @@ const TYPE_ALIAS: Record<string, string> = {
 // visible in the viewport (IntersectionObserver), frozen at the last value with a timestamp
 // when hidden; the persisted message stays the creation-time snapshot (live data = client
 // state only). The events SSE is admin-authed — other surfaces render the frozen shell.
-function LiveBadge({ live, lastMs }: { live: boolean; lastMs: number | null }) {
+/**
+ * 라이브 상태 배지 — **실제로 받고 있을 때만** LIVE.
+ *
+ * 옛 판정은 `live = 보이는가 && 이 화면에서 라이브 가능한가` 뿐이라, 구독은 붙었는데 틱이 하나도
+ * 안 와도 초록 LIVE 가 깜빡였다(2026-07-29 실측: kiwoom quotes 프레임이 전부 버려져 틱 0개인데
+ * 배지는 켜짐). 배지가 거짓말을 하면 화면만 보고는 고장을 알 수 없다.
+ *
+ * 네 상태 — 일시정지(화면 밖·미지원) / **수신 대기**(한 번도 못 받음, 임계 없는 사실) /
+ * LIVE(최근 수신) / 마지막 시각(받다가 끊김).
+ */
+function LiveBadge({ live, lastMs, staleMs = 60_000 }: { live: boolean; lastMs: number | null; staleMs?: number }) {
+  // 틱이 끊기면 이벤트가 없어 리렌더도 없다 → 스스로 깨어나 상태를 갱신한다(받은 뒤에만).
+  const [, bump] = useState(0);
+  useEffect(() => {
+    if (!live || lastMs === null) return;
+    const t = setInterval(() => bump(x => x + 1), 5000);
+    return () => clearInterval(t);
+  }, [live, lastMs]);
+
+  const fresh = lastMs !== null && Date.now() - lastMs < staleMs;
+  const tone = !live ? 'text-slate-400' : fresh ? 'text-emerald-600' : lastMs === null ? 'text-slate-400' : 'text-amber-600';
+  const dot = !live ? 'bg-slate-300' : fresh ? 'bg-emerald-500 animate-pulse' : lastMs === null ? 'bg-slate-300' : 'bg-amber-400';
+  const text = !live
+    ? '일시정지'
+    : fresh
+      ? 'LIVE'
+      : lastMs === null
+        ? '수신 대기'
+        : `${new Date(lastMs).toLocaleTimeString('ko-KR')} 기준`;
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] ${live ? 'text-emerald-600' : 'text-slate-400'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-      {live ? 'LIVE' : lastMs ? `${new Date(lastMs).toLocaleTimeString('ko-KR')} 기준` : '대기'}
+    <span className={`inline-flex items-center gap-1 text-[10px] ${tone}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
+      {text}
     </span>
   );
 }
@@ -289,7 +317,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   return (
     <div ref={ref} className="my-3">
       <div className="flex items-center justify-end mb-1">
-        <LiveBadge live={live} lastMs={lastMs} />
+        <LiveBadge live={live} lastMs={lastMs} staleMs={Math.max(60_000, ivSec * 1500)} />
       </div>
       {candles.length === 0 ? (
         <div className="border border-slate-200 rounded-lg bg-white px-3 py-4">
