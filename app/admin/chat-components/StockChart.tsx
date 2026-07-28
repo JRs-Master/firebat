@@ -394,12 +394,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       el.scrollLeft = leftPad + idx * barPx - offsetX;
       zoomAnchorRef.current = null;
     } else if (pinnedRightRef.current) {
-      el.scrollLeft = el.scrollWidth;
+      // 미래 구간이 있으면 끝까지 밀면 **빈 여백만** 화면에 남는다 — 모바일처럼 뷰포트가 좁으면
+      // 점선만 보이고 봉이 하나도 안 보였다(2026-07-28 사용자 지적). 마지막 봉을 화면 가운데에
+      // 두어 지나온 파동과 투영 구간이 함께 보이게 한다. 여백이 없으면(기본 2슬롯) 옛대로 끝까지.
+      const anchor =
+        futureSlots > 0
+          ? leftPad + (fullN - 1) * barPx + barPx / 2 - el.clientWidth / 2
+          : el.scrollWidth;
+      el.scrollLeft = Math.max(0, Math.min(anchor, el.scrollWidth - el.clientWidth));
     } else if (prevBarRef.current && prevBarRef.current !== barPx) {
       el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);
     }
     prevBarRef.current = barPx;
-  }, [barPx, boxW, fullN, leftPad]);
+  }, [barPx, boxW, fullN, leftPad, futureSlots]);
 
   const { xs, xAt, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
