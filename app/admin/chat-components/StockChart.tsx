@@ -636,12 +636,29 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     placedLabels.push({ cx, cy, w, h });
     return cy;
   };
-  /** 파동 번호 — 흰 후광 텍스트. 꼭짓점 바로 위/아래라 리더선 없이도 귀속이 분명하다. */
-  const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number) => {
+  /** 파동 번호 — 흰 후광 텍스트. 꼭짓점 바로 위/아래라 리더선 없이도 귀속이 분명하다.
+   *
+   *  `toRight` = 마지막 꼭짓점(= 현재 위치)처럼 **위아래로 밀 데가 없는** 자리. 그 구간은
+   *  아래가 날짜축, 위가 캔들, 옆이 "지금" 구분선이라 세로로 어디로 가도 뭔가를 덮는데,
+   *  마침 **오른쪽 미래 구간이 비어 있다**(2026-07-28 실측: "4?" 가 축에 물림). 가로로 빼면
+   *  아무것도 안 가리고 제일 중요한 라벨(지금 어디냐)이 가장 잘 보인다. */
+  const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number, toRight = false) => {
     const h = 13;
     const w = Math.max(11, label.length * 7.5);
     const top = padTop + h;
-    const bottom = padTop + plotH - h;
+    // 날짜축이 플롯 바로 아래라 여유를 더 준다 — 옛 -h 는 축 글자에 닿았다.
+    const bottom = padTop + plotH - h - 6;
+    if (toRight && W - cx > w + 16) {
+      const cy = placeLabelY(cx + w / 2 + 12, py, w, h, -1, top, bottom);
+      return (
+        <g>
+          <line x1={cx + 3} y1={py} x2={cx + 9} y2={cy} stroke={color} strokeWidth={1} opacity={0.35} />
+          <text x={cx + 12} y={cy + 4} fontSize={12} fontWeight={800} fill={color} textAnchor="start"
+                stroke="#fff" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round"
+                fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
+        </g>
+      );
+    }
     let dir = dirIn;
     if (dir < 0 && py - 13 < top) dir = 1;
     else if (dir > 0 && py + 13 > bottom) dir = -1;
@@ -825,7 +842,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                   return (
                     <g key={pi}>
                       <circle cx={px(pt)} cy={yPrice(pt.price)} r={2.5} fill={stroke} />
-                      {pt.label && waveBadge(px(pt), yPrice(pt.price), String(pt.label), stroke, isPeak ? -1 : 1)}
+                      {pt.label && waveBadge(
+                        px(pt), yPrice(pt.price), String(pt.label), stroke, isPeak ? -1 : 1,
+                        // 마지막 점이면서 데이터 끝(최근 2봉) 근처 = 세로로 밀 데가 없는 자리.
+                        pi === an.points.length - 1 && px(pt) >= xAt(fullN - 2),
+                      )}
                     </g>
                   );
                 })}
