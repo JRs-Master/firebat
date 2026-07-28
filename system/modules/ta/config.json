@@ -6,22 +6,56 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "technical-analysis",
-  "description": "기술적 분석 계산 — OHLCV 배열을 넣으면 스윙 피벗(ZigZag), 엘리엇 파동 라벨링 후보(완결 5파 + 진행 중 부분 카운트, 급별, 전형성 점수 포함), 피보나치 되돌림·확장 목표를 계산합니다. 외부 API 없이 순수 계산이라 시세 소스를 가리지 않습니다. **수치는 반드시 이 도구로 계산하세요** — 차트에서 눈대중으로 고점·저점을 읽거나 되돌림 비율을 암산하면 틀립니다. 결과 좌표는 stock_chart 의 annotations 에 그대로 넣습니다. 조정파 A-B-C 라벨링은 아직 미지원(추진파만).",
+  "description": "기술적 분석 계산 — OHLCV 배열을 넣으면 스윙 피벗(ZigZag), 엘리엇 파동 라벨링 후보(추진파 1-2-3-4-5 + 조정파 A-B-C·삼각수렴, 완결 + 진행 중, 급별, 신뢰도 점수), 피보나치 되돌림·확장 목표를 계산합니다. 외부 API 없이 순수 계산이라 시세 소스를 가리지 않습니다. **수치는 반드시 이 도구로 계산하세요** — 차트에서 눈대중으로 고점·저점을 읽거나 되돌림 비율을 암산하면 틀립니다. 결과 좌표는 stock_chart 의 annotations 에 그대로 넣습니다.",
   "tags": [
-    "기술적분석", "엘리엇", "엘리어트", "파동", "파동분석", "임펄스", "추진파",
-    "피벗", "스윙", "고점 저점", "지그재그", "피보나치", "되돌림", "확장",
-    "목표가", "추세선", "지지 저항",
-    "technical analysis", "elliott wave", "impulse", "pivot", "zigzag",
-    "fibonacci", "retracement", "extension"
+    "기술적분석",
+    "엘리엇",
+    "엘리어트",
+    "파동",
+    "파동분석",
+    "임펄스",
+    "추진파",
+    "피벗",
+    "스윙",
+    "고점 저점",
+    "지그재그",
+    "피보나치",
+    "되돌림",
+    "확장",
+    "목표가",
+    "추세선",
+    "지지 저항",
+    "technical analysis",
+    "elliott wave",
+    "impulse",
+    "pivot",
+    "zigzag",
+    "fibonacci",
+    "retracement",
+    "extension",
+    "조정파",
+    "플랫",
+    "삼각수렴",
+    "abc",
+    "flat",
+    "triangle",
+    "corrective"
   ],
   "input": {
     "type": "object",
-    "required": ["action", "bars"],
+    "required": [
+      "action",
+      "bars"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["pivots", "elliott_candidates", "fib_targets"],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 하드룰 통과 카운트 열거(완결 + 진행 중, 급별, 전형성 점수) / fib_targets = 되돌림·확장 목표 계산"
+        "enum": [
+          "pivots",
+          "elliott_candidates",
+          "fib_targets"
+        ],
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산"
       },
       "bars": {
         "type": "array",
@@ -62,7 +96,7 @@
       },
       "candidates": {
         "type": "array",
-        "description": "라벨링 후보 — [{labels, pivots:[{i,price,label,tentative}], complete, inProgress, guidelineFit, ratios, notes}]. **완결 5파와 진행 중 부분 카운트를 모두** 담습니다(complete:false + inProgress:'3' = 3파 진행 중). 하드룰(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)은 **끝난 파동에 대해서만** 판정 — '3파 최단'은 5파가 나와야 알 수 있으므로 진행 중 카운트를 미리 탈락시키지 않습니다. `guidelineFit`(0~1) = 교과서 비율 근접도(2파 0.5~0.618 / 3파 1.618 / 4파 0.382 / 5파 ≈1파 / 교대) — 룰과 달리 **탈락 기준이 아니라 전형성 점수**이고 이 순서로 정렬됩니다. 어느 후보·어느 급을 택할지는 판단이므로 모델이 고르되 근거를 밝히고, **목록 밖 카운트를 지어내지 마세요**"
+        "description": "라벨링 후보 — [{structure, labels, pivots:[{i,price,label,tentative}], complete, inProgress, guidelineFit, confidence, evidencePivots, ratios, followsImpulseEndingAt?, notes}]. **추진파와 조정파를 함께** 담습니다. `structure` = impulse(1-2-3-4-5) / zigzag / flat / expanded-flat (+`-running` 변형) / triangle(A-B-C-D-E). 완결과 진행 중을 모두 담습니다(complete:false + inProgress:'3' = 3파 진행 중). 하드룰(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)은 **끝난 파동에 대해서만** 판정 — '3파 최단'은 5파가 나와야 알 수 있으므로 진행 중 카운트를 미리 탈락시키지 않습니다. `guidelineFit`(0~1) = 교과서 비율 근접도, `confidence` = guidelineFit × 증거량(설명하는 피벗 수) — **정렬 기준은 confidence** 입니다(3피벗 조각이 비율 하나 맞았다고 완결 구조를 밀어내지 않도록). `followsImpulseEndingAt` 이 있으면 그 조정이 직전 추진파 종료점에서 이어진다는 뜻이라 '5파 완결 후 ABC 조정 중'으로 읽으면 됩니다. 어느 후보·어느 급을 택할지는 판단이므로 모델이 고르되 근거를 밝히고, **목록 밖 카운트를 지어내지 마세요**"
       },
       "targets": {
         "type": "array",

@@ -219,6 +219,131 @@ def guideline_fit(pts):
     return fit, detail
 
 
+def _confidence(fit, pivot_count):
+    """전형성 × 증거량. **정렬의 기준은 fit 단독이면 안 된다.**
+
+    3피벗 조각(0-1-2)은 비율 하나만 맞아도 fit=1.0 이 나오는데, 설명하는 가격 구간이
+    거의 없어 정보량이 사실상 0 이다. 그런데 fit 만으로 줄을 세우면 그런 조각이 완결
+    5파나 ABC 조정을 밀어낸다(실측: 조정 테스트에서 3피벗 임펄스가 상위 3개 독차지).
+    피벗을 많이 설명할수록 값어치가 크므로 증거량으로 가중한다.
+    """
+    w = max(0.0, min(1.0, (pivot_count - 2) / 4.0))  # 3→0.25, 4→0.5, 5→0.75, 6→1.0
+    return round((fit if fit is not None else 0.0) * w, 3)
+
+
+def _corrective(pts):
+    """조정 구조 판별 — A-B-C(지그재그/플랫) 또는 A-B-C-D-E(삼각수렴).
+
+    조정은 추진파보다 룰이 훨씬 느슨하다. 확정적으로 쓸 수 있는 건 **방향 정합**(A·C 는 같은
+    방향, B 는 반대)과 **B 되돌림 상한**뿐이고, 나머지는 유형 분류와 전형성 점수의 몫이다.
+
+    유형은 B 가 A 를 얼마나 되돌렸는지로 갈린다 — 교과서 구분 그대로:
+        < 0.9      지그재그(sharp, 5-3-5)
+        0.9~1.05   플랫(3-3-5)
+        1.05~1.38  확장 플랫(expanded flat)
+        > 1.38     조정으로 보기 어려움 → 탈락
+    C 가 A 끝을 못 넘으면 running 변형으로 표시한다.
+    """
+    n = len(pts)
+    p = [x["price"] for x in pts]
+    if n < 4:
+        return None
+    sign = 1 if p[1] > p[0] else -1  # A 다리 방향
+    wa = abs(p[1] - p[0])
+    if wa <= 0:
+        return None
+
+    # 삼각수렴 — 5개 다리가 번갈아 가며 점점 좁아진다.
+    if n >= 6:
+        legs = [(p[k + 1] - p[k]) for k in range(5)]
+        if all(legs[k] * legs[k + 1] < 0 for k in range(4)):
+            mags = [abs(x) for x in legs]
+            contracting = all(mags[k + 2] < mags[k] for k in range(3))
+            if contracting:
+                return {
+                    "structure": "triangle",
+                    "labels": ["0", "A", "B", "C", "D", "E"],
+                    "ratios": {"legs": [round(m / wa, 3) for m in mags]},
+                    "fit": 1.0,
+                    "notes": "수렴 삼각형 — 보통 마지막 조정 국면(이후 추진 재개)",
+                }
+
+    # A-B-C
+    if (p[2] - p[1]) * sign >= 0:
+        return None  # B 가 A 를 되돌리지 않음
+    if (p[3] - p[2]) * sign <= 0:
+        return None  # C 가 A 와 다른 방향
+    rb = abs(p[2] - p[1]) / wa
+    if rb > 1.38:
+        return None
+    wc = abs(p[3] - p[2])
+    rc = wc / wa
+    if rb < 0.9:
+        kind, ideal_b, ideal_c = "zigzag", 0.559, 1.0
+    elif rb <= 1.05:
+        kind, ideal_b, ideal_c = "flat", 1.0, 1.0
+    else:
+        kind, ideal_b, ideal_c = "expanded-flat", 1.236, 1.618
+    running = (p[3] - p[1]) * sign < 0  # C 가 A 끝을 못 넘음
+    scores = [s for s in (_closeness(rb, ideal_b, 0.15), _closeness(rc, ideal_c, 0.4)) if s is not None]
+    return {
+        "structure": kind + ("-running" if running else ""),
+        "labels": ["0", "A", "B", "C"],
+        "ratios": {"waveBRetrace": round(rb, 3), "waveCOfWaveA": round(rc, 3)},
+        "fit": round(sum(scores) / len(scores), 3) if scores else None,
+        "notes": (
+            {"zigzag": "지그재그 — 날카로운 조정",
+             "flat": "플랫 — 횡보형 조정",
+             "expanded-flat": "확장 플랫 — B 가 A 시작을 넘어선 조정"}[kind]
+            + (" (running: C 가 A 끝에 못 미침 — 추세 방향 압력이 강함)" if running else "")
+        ),
+    }
+
+
+def corrective_candidates(pivots, limit):
+    """조정 구조 후보 — 진행 중(부분)도 포함.
+
+    5파가 끝나면 다음은 조정이라, 추진파만 세면 그 구간 전체가 "후보 0"이 된다(사용자 지적
+    2026-07-28). 창은 삼각형(6) → ABC(4) 순으로 보고, 마지막 피벗이 잠정이면 그 파동이 진행 중.
+    """
+    out, seen = [], set()
+    for size in (6, 4):
+        for start in range(len(pivots) - size, -1, -1):
+            window = pivots[start:start + size]
+            info = _corrective(window)
+            if not info:
+                continue
+            labels = info["labels"]
+            # 6피벗 창이 삼각형이 아니면 앞 4개만 써서 ABC 로 분류된다 — 그때 증거량을 창 크기(6)로
+            # 세면 신뢰도가 부풀어 완결 구조를 밀어낸다. **실제로 쓴 피벗 수**로 센다.
+            used = window[:len(labels)]
+            key = (used[0]["i"], used[-1]["i"])
+            if key in seen:
+                continue
+            seen.add(key)
+            last_tentative = bool(used[-1].get("tentative"))
+            out.append({
+                "structure": info["structure"],
+                "guidelineFit": info["fit"],
+                "confidence": _confidence(info["fit"], len(used)),
+                "evidencePivots": len(used),
+                "ratios": info["ratios"],
+                "labels": labels,
+                "pivots": [
+                    {"i": w["i"], "price": w["price"], "label": lb, "date": w.get("date", ""),
+                     "tentative": bool(w.get("tentative"))}
+                    for w, lb in zip(used, labels)
+                ],
+                "direction": "up" if used[1]["price"] > used[0]["price"] else "down",
+                "complete": not last_tentative,
+                "inProgress": labels[-1] if last_tentative else None,
+                "rulesPassed": True,
+                "notes": info["notes"],
+            })
+    out.sort(key=lambda c: (c["confidence"], c["pivots"][-1]["i"]), reverse=True)
+    return out[:limit]
+
+
 def elliott_candidates(pivots, limit):
     """Counts that survive the applicable hard rules — complete AND in-progress.
 
@@ -245,7 +370,10 @@ def elliott_candidates(pivots, limit):
             last_tentative = bool(window[-1].get("tentative"))
             fit, fit_detail = guideline_fit(window)
             out.append({
+                "structure": "impulse",
                 "guidelineFit": fit,
+                "confidence": _confidence(fit, size),
+                "evidencePivots": size,
                 "ratios": fit_detail,
                 "labels": labels,
                 "pivots": [
@@ -273,7 +401,7 @@ def elliott_candidates(pivots, limit):
         if len(out) >= limit * 3:
             break
     # 정렬 근거 = 가이드라인 전형성(없으면 0) → 완결 여부 → 최신. 옛 "최신 순"은 근거가 없었다.
-    out.sort(key=lambda c: (c.get("guidelineFit") or 0, c["complete"], c["pivots"][-1]["i"]), reverse=True)
+    out.sort(key=lambda c: (c["confidence"], c["complete"], c["pivots"][-1]["i"]), reverse=True)
     return out[:limit]
 
 
@@ -346,11 +474,21 @@ def main():
             except (TypeError, ValueError):
                 continue
             pv = zigzag(bars, t)
+            imp = elliott_candidates(pv, limit)
+            cor = corrective_candidates(pv, limit)
+            # 조정이 어느 추진파 뒤에 붙는지 — 5파 끝 피벗 == 조정 시작 피벗이면 이어진다.
+            # "5파 완결 후 ABC 조정 중"이 한 번에 읽히게(분석의 실제 값어치가 여기 있다).
+            imp_ends = {c["pivots"][-1]["i"]: c["labels"][-1] for c in imp}
+            for c in cor:
+                prev = imp_ends.get(c["pivots"][0]["i"])
+                if prev:
+                    c["followsImpulseEndingAt"] = c["pivots"][0]["i"]
+                    c["notes"] += f" · 직전 추진파 {prev}파 종료점에서 이어짐"
             degrees.append({
                 "threshold": t,
                 "pivotCount": len(pv),
                 "pivots": pv,
-                "candidates": elliott_candidates(pv, limit),
+                "candidates": sorted(imp + cor, key=lambda c: c["confidence"], reverse=True)[:limit],
             })
         print(json.dumps({
             "success": True,
@@ -365,7 +503,7 @@ def main():
                     "반드시 밝히세요. `complete:false` + `inProgress:'3'` 은 그 파동이 아직 "
                     "진행 중이라는 뜻이고, 마지막 피벗의 `tentative:true` 는 다음 봉에서 "
                     "갱신될 수 있다는 뜻입니다. 후보가 0개면 그 급에서는 룰을 통과하는 "
-                    "추진파가 없다는 뜻이니, 조정 국면으로 읽거나 다른 급을 보세요 — "
+                    "추진파도 조정 구조도 없다는 뜻이니 다른 급을 보세요 — "
                     "목록에 없는 카운트를 지어내지 마세요."
                 ),
             },
