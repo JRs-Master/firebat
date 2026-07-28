@@ -362,17 +362,32 @@ impl AiManager {
         }
     }
 
-    /// 턴 취소 신호를 등록하고 수신기를 돌려준다. 같은 id 가 이미 있으면 교체(재전송 케이스).
-    pub fn register_cancel(&self, turn_id: &str) -> tokio::sync::watch::Receiver<bool> {
+    /// 턴 취소 신호를 등록하고 수신기를 돌려준다.
+    ///
+    /// **같은 turn_id 가 이미 있으면 `None`** — 그 턴이 지금 돌고 있다는 뜻이고, 두 번째 요청은
+    /// 중복이다. 실측(2026-07-28 판독): 사용자 메시지 1개인데 턴이 두 번 돌았다 —
+    /// `u-1785206028164` 하나에 LLM 호출이 11:33:48·11:34:04 두 번, 섀도우도 두 번, 그런데
+    /// system 행은 하나(같은 id 라 두 번째가 덮어씀) → 답이 17초 뒤 제자리에서 바뀌었다
+    /// (사용자: "방금 니 답변이 바뀐거 같노"). 전송마다 id 를 새로 뽑으므로 **같은 id = 같은
+    /// 요청이 두 번 나간 것**(클라이언트 재시도 계열). 무엇이 재전송하는지는 아직 미상이라
+    /// 여기서 막고 로그를 남긴다 — 다음 발생이 트리거를 말하게.
+    pub fn register_cancel(&self, turn_id: &str) -> Option<tokio::sync::watch::Receiver<bool>> {
         let (tx, rx) = tokio::sync::watch::channel(false);
-        if let Ok(mut m) = self.cancels.lock() {
-            // 무한 증식 방지 — 정상 종료가 항상 unregister 하지만 패닉 경로를 대비한 상한.
-            if m.len() > 64 {
-                m.clear();
-            }
-            m.insert(turn_id.to_string(), tx);
+        let mut m = self.cancels.lock().ok()?;
+        if m.contains_key(turn_id) {
+            tracing::warn!(
+                category = "ai",
+                "duplicate turn rejected — turn_id={} 가 이미 실행 중(같은 요청 재전송)",
+                turn_id
+            );
+            return None;
         }
-        rx
+        // 무한 증식 방지 — 정상 종료가 항상 unregister 하지만 패닉 경로를 대비한 상한.
+        if m.len() > 64 {
+            m.clear();
+        }
+        m.insert(turn_id.to_string(), tx);
+        Some(rx)
     }
 
     pub fn unregister_cancel(&self, turn_id: &str) {

@@ -146,7 +146,15 @@ impl AiService for AiServiceImpl {
         // 턴 id — 프론트가 발급한 `aiMsgId`. 이게 있어야 사용자가 중지를 눌렀을 때 **이 턴**을
         // 지목해 끊을 수 있다(크론·에이전트 턴은 없으므로 취소 대상이 아니다).
         let turn_id = ai_opts.ai_msg_id.clone();
-        let cancel_rx = turn_id.as_deref().map(|id| manager.register_cancel(id));
+        // 등록 실패 = 같은 턴 id 가 이미 실행 중(중복 전송) → 두 번째는 돌리지 않는다.
+        // 옛엔 그대로 돌아 같은 id 로 답을 덮어써서 사용자 눈앞에서 답이 바뀌었다(실측).
+        let (cancel_rx, duplicate) = match turn_id.as_deref() {
+            Some(id) => match manager.register_cancel(id) {
+                Some(rx) => (Some(rx), false),
+                None => (None, true),
+            },
+            None => (None, false),
+        };
         tokio::spawn(async move {
             let opts_local = opts;
             let ai_opts_local = ai_opts;
@@ -159,6 +167,12 @@ impl AiService for AiServiceImpl {
             );
             // 중지 = 턴 future 를 **drop** 한다. SSE 끊김과 달리 사용자가 명시적으로 누른 신호라,
             // drop 이 곧 CLI 자식 kill(kill_on_drop)이고 영속 단계에 도달하지 않아 유령 답도 안 남는다.
+            if duplicate {
+                let _ = final_tx
+                    .send(Err("같은 요청이 이미 처리 중입니다 — 중복 실행을 막았습니다.".to_string()))
+                    .await;
+                return;
+            }
             let res = match cancel_rx {
                 Some(mut rx) => {
                     tokio::select! {
