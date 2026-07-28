@@ -222,6 +222,9 @@
   },
   "pageBinding": {
     "alias": "ta",
-    "action": "chart_annotations"
+    "action": "chart_annotations",
+    "actions": {
+      "signals": {}
+    }
   }
 }

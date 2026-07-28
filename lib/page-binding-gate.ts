@@ -200,6 +200,11 @@ async function resolveDerived(props: Json, rows: unknown[], path: string, slug: 
     if (k === 'data' || k === 'seed' || k === 'derive') continue; // 시드·선언은 덮지 않는다
     props[k] = v;
   }
+  // 첫 블록 뒤에 더 있으면 **차트 아래에 그대로 얹는다** — 신호 모듈이 체결 표·지표 카드를
+  // 함께 돌려주는 경우(모의투자). 프레임워크가 무엇을 그릴지 추측하지 않고 모듈이 준 블록을
+  // 그 자리에 놓기만 한다. `_baked` 와 같은 프레임워크-전용 키라 모델이 저작하지 않는다.
+  const rest = resultCache.get(key)?.blocks?.slice(1) ?? [];
+  props._after = rest.length > 0 ? rest : undefined;
 }
 
 /** 렌더 블록 배열에서 첫 번째 `props.data` 배열(캔들 행) 추출. */

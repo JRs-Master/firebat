@@ -3347,7 +3347,7 @@
         },
         "derive": {
           "type": "object",
-          "description": "fresh-on-visit ANALYSIS binding — {module, action, args?, barsArg?}. Runs AFTER `seed` and receives the freshly fetched candles as an argument (default arg name `bars`), then merges the module's returned block props (annotations, futureSlots, ...) into this chart. This is how an analysis stays current on a published page: `seed` alone refreshes only the candles, so anything you compute at authoring time and write into text freezes there. Use it for wave/trendline/indicator overlays — e.g. {module:\"technical-analysis\", action:\"chart_annotations\"} draws the wave skeleton, channel, projected path and invalidation line, recomputed every visit. Pick an action from a search_module_actions row carrying `pageBinding: true`."
+          "description": "fresh-on-visit ANALYSIS binding — {module, action, args?, barsArg?}. Runs AFTER `seed` and receives the freshly fetched candles as an argument (default arg name `bars`), then merges the module's returned block props (annotations, futureSlots, ...) into this chart. This is how an analysis stays current on a published page: `seed` alone refreshes only the candles, so anything you compute at authoring time and write into text freezes there. Use it for wave/trendline/indicator overlays — e.g. {module:\"technical-analysis\", action:\"chart_annotations\"} draws the wave skeleton, channel, projected path and invalidation line, recomputed every visit. Pick an action from a search_module_actions row carrying `pageBinding: true`. If the derived module returns MORE blocks than one, the extra blocks are rendered directly BELOW the chart — that is how a signal module ships its fills table and summary cards alongside the arrows, all recomputed on the same visit from the same numbers (e.g. technical-analysis  → chart arrows + 체결 기록 table + 승률/누적/MDD metrics)."
         },
         "cacheTtl": {
           "type": "number",
@@ -3364,6 +3364,20 @@
         "scale": {
           "type": "string",
           "description": "\"linear\" (default) or \"log\" — log suits wide ranges and future projections."
+        },
+        "buyPoints": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "buy markers — same shape as stock_chart ({label, price, date}); an up arrow under the matching candle. Prefer generating them with derive so they recompute per visit."
+        },
+        "sellPoints": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "sell markers — down arrow above the matching candle."
         }
       },
       "required": [

@@ -322,7 +322,13 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Divider':       return <DividerComp />;
     case 'LiveFeed':      return <LiveFeedComp topic={p.topic ?? ''} title={p.title} maxItems={p.maxItems} />;
     case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
-    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
+    case 'LiveStockChart': return (
+      <>
+        <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />
+        {/* `_after` = derive 가 실어 온 추가 블록(체결 표·지표 카드). 프레임워크-전용 키 — `_baked` 와 같은 규약. */}
+        {Array.isArray(p._after) && p._after.length > 0 && <ComponentRenderer components={p._after as ComponentDef[]} />}
+      </>
+    );
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;

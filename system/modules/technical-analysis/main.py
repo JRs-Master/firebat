@@ -1040,8 +1040,31 @@ def main():
                             "feeRate/slippageRate 로 넣지 않으면 0이라 실제보다 좋게 나옵니다. "
                             "같은 구간으로 규칙을 고르면 과최적화이니, 규칙을 만든 구간 밖에서 다시 재세요."),
         }
+        # 페이지 바인딩 계약(`blocks`) — 첫 블록 props 는 차트에 병합되고, 나머지는 차트 아래에
+        # 그대로 얹힌다. **모의투자 표를 모델이 매번 손으로 조립하지 않게** 모듈이 만들어 준다
+        # (좌표·수치가 전부 결정론이라 모듈이 만드는 게 맞다 — chart_annotations 와 같은 이유).
+        def _pct(x):
+            return "—" if x is None else ("%+.2f%%" % x)
+        rows = [[t["entryDate"], "%,.2f" % t["entryPrice"] if False else round(t["entryPrice"], 2),
+                 t["exitDate"], round(t["exitPrice"], 2), _pct(t["returnPct"]), t["entryLabel"], t["exitLabel"]]
+                for t in trades]
+        if pos:
+            rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", pos["entryLabel"], "—"])
+        blocks = [
+            {"type": "stock_chart", "props": {"buyPoints": buy, "sellPoints": sell}},
+            {"type": "table", "props": {
+                "headers": ["진입일", "진입가", "청산일", "청산가", "수익률", "진입 신호", "청산 신호"],
+                "rows": rows, "stickyCol": False, "striped": True, "sortable": True}},
+            {"type": "metric", "props": {"label": "체결", "value": len(trades), "unit": "건",
+                                         "subLabel": "미청산 %d" % (1 if pos else 0)}},
+            {"type": "metric", "props": {"label": "승률", "value": backtest["winRate"] if trades else "—", "unit": "%"}},
+            {"type": "metric", "props": {"label": "누적 수익", "value": backtest["totalReturnPct"] if trades else "—",
+                                         "unit": "%", "deltaType": "up" if (backtest["totalReturnPct"] or 0) > 0 else "down"}},
+            {"type": "metric", "props": {"label": "최대 낙폭", "value": backtest["maxDrawdownPct"] if trades else "—", "unit": "%"}},
+        ]
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
+            "blocks": blocks,
             "buyPoints": buy, "sellPoints": sell,
             "counts": {"buy": len(buy), "sell": len(sell)},
             "backtest": backtest,
