@@ -4511,7 +4511,7 @@ function buildPopupCardHtml(rawLabel: string): string {
     : 'font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px;background:#f8fafc;';
   return (
     `<div style="min-width:120px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
-    + `<div style="${headStyle}">${head}</div>`
+    + `<div class="fb-popup-head" style="${headStyle}">${head}</div>`
     + (bodyRows ? `<div style="padding:9px 13px;font-size:12px;line-height:1.55;background:#fff;">${bodyRows}</div>` : '')
     + `</div>`
   );

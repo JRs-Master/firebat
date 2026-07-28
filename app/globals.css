@@ -467,7 +467,15 @@ html::-webkit-scrollbar-thumb:hover,
   border: 1px solid #e2e8f0;
   overflow: hidden;
 }
+/* 헤더 텍스트와 닫기 버튼의 자리를 나눈다 — 옛엔 버튼이 헤더 위에 절대배치로 겹쳐 앉아,
+   제목이 짧은 팝업("제13호 돌핀 현재")은 멀쩡한데 긴 제목("제13호 · 07/29 15시 예측")은
+   글자에 × 가 붙어 버렸다(2026-07-29 실측). 버튼 폭 + 여백만큼 헤더 오른쪽을 비운다. */
+.firebat-map-popup .fb-popup-head {
+  padding-right: 36px !important;
+}
 .firebat-map-popup .maplibregl-popup-close-button {
+  top: 5px;
+  right: 6px;
   width: 22px;
   height: 22px;
   font-size: 16px;

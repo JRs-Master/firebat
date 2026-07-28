@@ -2575,7 +2575,7 @@
   {
     "name": "map",
     "componentType": "Map",
-    "description": "Map + markers + radius circles + legend. Visualize any located data (points with coordinates). **Provider auto-switch**: Korean coordinates (lat 33–38.7, lon 124.5–132) with a Kakao JS key set → Kakao Map; **outside Korea → Leaflet+OSM** (free CDN; Kakao is precise for Korea only). Without a Kakao key, Korean coordinates also fall back to Leaflet. Coordinates must come only from a sysmod (kakao-map geocoding/search-keyword, etc.) — filling them from AI memory shows the wrong building/neighborhood.",
+    "description": "Map + markers + radius circles + forecast cones + legend. Visualize any located data (points with coordinates). **Provider auto-switch**: Korean coordinates (lat 33–38.7, lon 124.5–132) with a Kakao JS key set → Kakao Map; **outside Korea → Leaflet+OSM** (free CDN; Kakao is precise for Korea only). Without a Kakao key, Korean coordinates also fall back to Leaflet. Coordinates must come only from a sysmod (kakao-map geocoding/search-keyword, etc.) — filling them from AI memory shows the wrong building/neighborhood.",
     "semanticText": "지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea",
     "propsSchema": {
       "type": "object",
@@ -2759,7 +2759,7 @@
             "array",
             "null"
           ],
-          "description": "radius circle. For areas like a 1.5km radius around a station, a school district, a typhoon forecast probability radius, etc. Coordinates same as markers — sysmod results only.",
+          "description": "radius circle for a STATIC area — a 1.5 km radius around a station, a school district, a delivery zone. Coordinates same as markers — sysmod results only. **Not for typhoons**: a storm's gale and probability radii grow along the track, so they belong in `cone`, which draws them as one smooth widening area. Drawing them as circles at the current position adds two dashed rings on top of the cone that say the same thing twice.",
           "items": {
             "type": "object",
             "required": [
