@@ -1944,9 +1944,21 @@ impl AiManager {
         // 비용 = 쿼리 E5 임베딩 2회(로컬, ms 단위). 카탈로그 미배선(테스트 등) = skip.
         let mut shadow_actions: Vec<(String, f32)> = Vec::new(); // "module:action"
         let mut shadow_skills: Vec<(String, f32)> = Vec::new(); // slug
+        // 질의 위생 사실 — shortlist 가 실제로 무엇을 보고 뽑혔나. 이 사실 없이 recall 을 세면
+        // **측정이 낮게 나온다**: 기능어가 없는 질의(순수 URL·맥락 의존 후속 질문)는 shortlist 가
+        // 커버할 수가 없는데 분모엔 들어간다(2026-07-29 판독: 불일치 7 중 2가 이 계열).
+        // 여기서는 **사실만 남긴다** — 어떤 턴을 집계에서 뺄지는 판독 쪽 규칙이고, 검증도 안 된
+        // 분류기를 로거에 박으면 그 heuristic 이 배포에 굳는다.
+        let mut history_chars: usize = 0;
+        let mut shadow_searched_with = String::new();
+        let mut shadow_dropped: Vec<String> = Vec::new();
         if prompt.trim().len() >= 2 {
             if let Some(cat) = &self.intent_actions {
-                if let Ok(rows) = cat.search(prompt, None, 8).await {
+                if let Ok((rows, _oov, dropped, searched_with, _emb)) =
+                    cat.search_analyzed(prompt, None, 8).await
+                {
+                    shadow_searched_with = searched_with;
+                    shadow_dropped = dropped;
                     for r in rows {
                         let m = r.get("module").and_then(|v| v.as_str()).unwrap_or("");
                         let a = r.get("action").and_then(|v| v.as_str()).unwrap_or("");
@@ -2033,6 +2045,8 @@ impl AiManager {
                         .or(ai_opts.conversation_id.as_deref());
                     // 직전 연속성 — recent N턴 (현재 대화, owner-keyed 단일 스토어).
                     if let Some(hist) = hr.resolve(owner, conv_id) {
+                        // 0 = 대화 첫 턴(기댈 맥락 없음) / >0 = 모델이 맥락을 보고 움직일 수 있었다.
+                        history_chars = hist.chars().count();
                         extra_parts.push(hist);
                     }
                     // 관련 과거 회상 — 벡터(E5) 보강. 빌드 세션 중엔 skip (진행 칩이 prompt 라 헛돔).
@@ -4285,10 +4299,15 @@ impl AiManager {
                 .map(|c| c.embedder_label().to_string())
                 .unwrap_or_else(|| "none".to_string());
             self.log.info(&format!(
-                "[intent_shadow] model={} embedder={} q=\"{}\" actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
+                "[intent_shadow] model={} embedder={} q=\"{}\" searched_with=\"{}\" q_kept={} q_dropped={} dropped_tokens={:?} history_chars={} actions=[{}] skills=[{}] dispatched_actions={:?} dispatched_skills={:?} action_recall={}/{} skill_recall={}/{}",
                 last_model_id,
                 embedder_label,
                 prompt.chars().take(80).collect::<String>().replace('\n', " "),
+                shadow_searched_with.chars().take(80).collect::<String>().replace('\n', " "),
+                shadow_searched_with.split_whitespace().count(),
+                shadow_dropped.len(),
+                shadow_dropped,
+                history_chars,
                 fmt_short(&shadow_actions),
                 fmt_short(&shadow_skills),
                 dispatched_actions,
