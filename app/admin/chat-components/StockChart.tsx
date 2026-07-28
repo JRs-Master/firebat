@@ -12,6 +12,24 @@ export type OhlcvBar = {
   volume: number;
 };
 
+/** 차트 위 주석의 한 점. `i` = 캔들 인덱스 / `barsAhead` = 마지막 봉 기준 미래 오프셋(둘 중 하나). */
+export type ChartAnnotationPoint = { i?: number; barsAhead?: number; price: number; label?: string };
+
+/**
+ * 차트 주석 — 좌표를 가진 선·구간·수평선·라벨. **특정 분석 기법 전용이 아니다**:
+ * 엘리엇 파동·추세선·지지저항·피보나치 목표·이벤트 마킹이 전부 같은 부품을 쓴다.
+ * 미래 구간(`barsAhead`)도 좌표계가 같아 그대로 얹힌다.
+ */
+export type ChartAnnotation = {
+  kind: 'path' | 'hline' | 'zone' | 'marker';
+  points: ChartAnnotationPoint[];
+  label?: string;
+  color?: string;
+  dashed?: boolean;
+  /** 해석임을 드러내는 표시 — 관측 데이터가 아니라 제안된 시나리오일 때. */
+  projected?: boolean;
+};
+
 export type StockChartProps = {
   symbol: string;
   title?: string;
@@ -19,6 +37,15 @@ export type StockChartProps = {
   indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
   buyPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
   sellPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
+  /** 마지막 봉 오른쪽에 비워 둘 슬롯 수 — 미래 투영 구간. 0 이면 기존 여백만. */
+  futureSlots?: number;
+  /** 주석 레이어 (위 타입 참조). */
+  annotations?: ChartAnnotation[];
+  /**
+   * 가격축 스케일. `log` 는 **같은 %가 같은 거리**라 비율 기반 목표(피보나치·파동 투영)가
+   * 왜곡 없이 읽힌다. 장기 구간에도 유리. pMin ≤ 0 이면 자동으로 linear 폴백.
+   */
+  scale?: 'linear' | 'log';
 };
 
 const MA_COLORS: Record<string, string> = {
@@ -122,7 +149,7 @@ function niceCeil(v: number): number {
   return nice * mag;
 }
 
-export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints }: StockChartProps) {
+export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots = 0, annotations, scale = 'linear' }: StockChartProps) {
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const volScrollRef = useRef<HTMLDivElement>(null); // 거래량 차트 — 가격과 가로 스크롤 동기화
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -343,7 +370,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   barPxRef.current = barPx;
   zoomBoundsRef.current = { eff: effCps, min: cpsMin, max: cpsMax };
   // 데이터가 화면보다 적으면 봉을 늘리지 않고 우측 정렬 — 우측 여백 슬롯 맞춰 끝에서 시작, 남는 만큼 좌측 여백.
-  const contentW = padLeft + (fullN + ZOOM_RIGHT_PAD_SLOTS) * barPx;
+  // 미래 구간 = 우측 여백 슬롯을 넓히는 것. 캔들·MA 는 데이터 인덱스까지만 그려지므로
+  // 자연히 빈 칸이 되고, 주석은 같은 좌표계로 그 위에 얹힌다.
+  const rightPadSlots = Math.max(ZOOM_RIGHT_PAD_SLOTS, futureSlots);
+  const contentW = padLeft + (fullN + rightPadSlots) * barPx;
   const slack = Math.max(0, Math.round(boxW) - Math.round(contentW));
   const leftPad = padLeft + slack;                                          // 캔들 시작 x (sparse 시 우측 정렬)
   leftPadRef.current = leftPad;
@@ -371,7 +401,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     prevBarRef.current = barPx;
   }, [barPx, boxW, fullN, leftPad]);
 
-  const { xs, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
+  const { xs, xAt, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
     const closes = safeData.map(d => d.close);
     // 화면에 보이는 구간(scrollX ~ scrollX+boxW)만 추출 → Y축(가격·거래량)을 그 구간 min/max 로 동적 스케일.
     // 전체 범위 고정 시 과거 저가 구간 봉이 납작해지던 문제 해결. xs/캔들은 전체 렌더(가로 스크롤) 유지.
@@ -393,7 +423,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     }
     // 캔들 x = 각 캔들 슬롯(barPx) 중앙. 폭은 barPx 비례.
     const xs = safeData.map((_, i) => leftPad + i * barPx + barPx / 2);
-    const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
+    // 인덱스 → x. 데이터 범위를 넘는 값(미래 슬롯)도 같은 식으로 계산된다 — 주석이 미래 구간에
+    // 얹히는 근거. 소수 인덱스도 허용(파동 꼭짓점이 봉 사이에 올 수 있다).
+    const xAt = (i: number) => leftPad + i * barPx + barPx / 2;
+    // 로그 스케일 — 같은 %가 같은 거리라 비율 기반 목표(피보나치·파동 투영)가 왜곡 없이 읽힌다.
+    // pMin ≤ 0 이면 log 가 정의되지 않으므로 자동 linear 폴백(조용한 NaN 방지).
+    const useLog = scale === 'log' && pMin > 0 && pMax > pMin;
+    const lo = useLog ? Math.log(pMin) : 0;
+    const hi = useLog ? Math.log(pMax) : 1;
+    const yPrice = (p: number) =>
+      useLog
+        ? padTop + plotH - ((Math.log(Math.max(p, Number.EPSILON)) - lo) / (hi - lo)) * plotH
+        : padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
     const candleW = Math.max(1.5, barPx * 0.6);
     const maLines = indicators.map(ind => {
@@ -403,8 +444,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const d = pts.length ? 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ') : '';
       return { name: ind, d, color: MA_COLORS[ind], values };
     });
-    return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick]);
+    return { xs, xAt, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
+  }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick, scale]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {
@@ -658,6 +699,77 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           {priceTicks.map(t => {
             const y = yPrice(t);
             return <line key={t} x1={padLeft} x2={W} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />;
+          })}
+
+          {/* 주석 레이어 — 좌표를 가진 선·구간·수평선·라벨. 특정 분석 기법 전용이 아니라
+              엘리엇 파동·추세선·지지저항·피보나치 목표가 전부 이 하나를 쓴다. `barsAhead` 좌표는
+              마지막 봉 오른쪽(미래 슬롯)에 그대로 얹힌다 — xAt 이 범위를 안 자르기 때문. */}
+          {futureSlots > 0 && (
+            <line
+              x1={xAt(fullN - 0.5)} x2={xAt(fullN - 0.5)} y1={padTop} y2={padTop + plotH}
+              stroke={MUTED} strokeWidth={1} strokeDasharray="3 3"
+            />
+          )}
+          {annotations?.map((an, ai) => {
+            const px = (pt: ChartAnnotationPoint) =>
+              xAt(pt.barsAhead != null ? fullN - 1 + pt.barsAhead : (pt.i ?? 0));
+            const stroke = an.color || '#7c3aed';
+            const dash = an.dashed || an.projected ? '5 4' : undefined;
+            if (an.kind === 'hline' && an.points[0]) {
+              const y = yPrice(an.points[0].price);
+              return (
+                <g key={'an' + ai}>
+                  <line x1={padLeft} x2={W} y1={y} y2={y} stroke={stroke} strokeWidth={1} strokeDasharray={dash} opacity={0.8} />
+                  {an.label && <text x={padLeft + 4} y={y - 3} fontSize={9} fill={stroke}>{an.label}</text>}
+                </g>
+              );
+            }
+            if (an.kind === 'zone' && an.points.length >= 2) {
+              const [a, b] = an.points;
+              const y1 = yPrice(a.price), y2 = yPrice(b.price);
+              const x1 = px(a), x2 = px(b);
+              return (
+                <g key={'an' + ai}>
+                  <rect x={Math.min(x1, x2)} y={Math.min(y1, y2)} width={Math.abs(x2 - x1)} height={Math.abs(y2 - y1)}
+                        fill={stroke} opacity={0.08} stroke={stroke} strokeDasharray={dash} strokeWidth={1} />
+                  {an.label && <text x={Math.min(x1, x2) + 4} y={Math.min(y1, y2) + 11} fontSize={9} fill={stroke}>{an.label}</text>}
+                </g>
+              );
+            }
+            if (an.kind === 'marker') {
+              return (
+                <g key={'an' + ai}>
+                  {an.points.map((pt, pi) => (
+                    <g key={pi}>
+                      <circle cx={px(pt)} cy={yPrice(pt.price)} r={3} fill={stroke} opacity={an.projected ? 0.6 : 1} />
+                      {(pt.label || an.label) && (
+                        <text x={px(pt)} y={yPrice(pt.price) - 6} fontSize={10} fontWeight={700} fill={stroke} textAnchor="middle">
+                          {pt.label ?? an.label}
+                        </text>
+                      )}
+                    </g>
+                  ))}
+                </g>
+              );
+            }
+            // path — 파동 골격(꼭짓점 잇기). 각 점 라벨(1·2·3·4·5 / A·B·C)은 점 위에.
+            const pts = an.points.map(pt => `${px(pt).toFixed(1)},${yPrice(pt.price).toFixed(1)}`);
+            return (
+              <g key={'an' + ai}>
+                <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth={1.5}
+                          strokeDasharray={dash} opacity={an.projected ? 0.75 : 1} />
+                {an.points.map((pt, pi) => (
+                  <g key={pi}>
+                    <circle cx={px(pt)} cy={yPrice(pt.price)} r={2.5} fill={stroke} />
+                    {pt.label && (
+                      <text x={px(pt)} y={yPrice(pt.price) - 7} fontSize={10} fontWeight={700} fill={stroke} textAnchor="middle">
+                        {pt.label}
+                      </text>
+                    )}
+                  </g>
+                ))}
+              </g>
+            );
           })}
 
           {/* 매수 — date 있으면 해당 봉 아래 ↑ 화살표(매수 시점), 없으면 price 레벨 수평선(지지) */}

@@ -170,6 +170,109 @@
             "additionalProperties": false
           },
           "description": "sell signals. With date, draws a ↓ arrow on that candle (sell timing); without date, a horizontal line at the price level (resistance). use [] if none."
+        },
+        "scale": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "linear",
+            "log",
+            null
+          ],
+          "description": "price axis scale. 'log' makes equal PERCENT moves equal distances — use it for ratio-based targets (fibonacci, wave projections) and long histories."
+        },
+        "futureSlots": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "empty bar slots reserved to the RIGHT of the last candle, for projections. Annotations with barsAhead land there. 0 or omitted = none."
+        },
+        "annotations": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "coordinate annotations drawn over the chart — trendlines, support/resistance, wave skeletons, fibonacci targets, event markers. Generic: not tied to any one analysis method.",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "points"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "path",
+                  "hline",
+                  "zone",
+                  "marker"
+                ]
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "price"
+                  ],
+                  "properties": {
+                    "i": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "candle index"
+                    },
+                    "barsAhead": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "description": "offset from the LAST candle — use for future projections"
+                    },
+                    "price": {
+                      "type": "number"
+                    },
+                    "label": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "color": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "dashed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "projected": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "mark as an interpretation/scenario rather than observed data — rendered dashed and faded"
+              }
+            }
+          }
         }
       }
     }
@@ -878,7 +981,9 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["title"],
+            "required": [
+              "title"
+            ],
             "properties": {
               "date": {
                 "type": "string"

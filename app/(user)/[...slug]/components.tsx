@@ -333,7 +333,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
       const ct = p.chartType ?? p.type;
       return <ChartComp type={(ct === 'donut' ? 'doughnut' : ct) ?? 'bar'} data={p.data ?? p.values ?? []} labels={p.labels ?? []} series={p.series ?? p.datasets} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     }
-    case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
+    case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} futureSlots={p.futureSlots} annotations={p.annotations} scale={p.scale} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? p.events ?? []} />;
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
