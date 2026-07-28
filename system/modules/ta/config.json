@@ -6,30 +6,13 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "technical-analysis",
-  "description": "기술적 분석 계산 — OHLCV 배열을 넣으면 스윙 피벗(ZigZag), 엘리엇 파동 라벨링 후보, 피보나치 되돌림·확장 목표를 계산합니다. 외부 API 를 쓰지 않는 순수 계산이라 시세 소스(yfinance·korea-invest·kiwoom·upbit 무관)를 가리지 않습니다. **수치는 반드시 이 도구로 계산하세요** — 차트에서 눈대중으로 고점·저점을 읽거나 되돌림 비율을 암산하면 틀립니다. 결과 좌표는 stock_chart 의 annotations 에 그대로 넣을 수 있습니다.",
+  "description": "기술적 분석 계산 — OHLCV 배열을 넣으면 스윙 피벗(ZigZag), 엘리엇 파동 라벨링 후보(완결 5파 + 진행 중 부분 카운트, 급별, 전형성 점수 포함), 피보나치 되돌림·확장 목표를 계산합니다. 외부 API 없이 순수 계산이라 시세 소스를 가리지 않습니다. **수치는 반드시 이 도구로 계산하세요** — 차트에서 눈대중으로 고점·저점을 읽거나 되돌림 비율을 암산하면 틀립니다. 결과 좌표는 stock_chart 의 annotations 에 그대로 넣습니다. 조정파 A-B-C 라벨링은 아직 미지원(추진파만).",
   "tags": [
-    "기술적분석",
-    "엘리엇",
-    "엘리어트",
-    "파동",
-    "파동분석",
-    "피벗",
-    "스윙",
-    "고점 저점",
-    "지그재그",
-    "피보나치",
-    "되돌림",
-    "확장",
-    "목표가",
-    "추세선",
-    "지지 저항",
-    "technical analysis",
-    "elliott wave",
-    "pivot",
-    "zigzag",
-    "fibonacci",
-    "retracement",
-    "extension"
+    "기술적분석", "엘리엇", "엘리어트", "파동", "파동분석", "임펄스", "추진파",
+    "피벗", "스윙", "고점 저점", "지그재그", "피보나치", "되돌림", "확장",
+    "목표가", "추세선", "지지 저항",
+    "technical analysis", "elliott wave", "impulse", "pivot", "zigzag",
+    "fibonacci", "retracement", "extension"
   ],
   "input": {
     "type": "object",
@@ -38,36 +21,48 @@
       "action": {
         "type": "string",
         "enum": ["pivots", "elliott_candidates", "fib_targets"],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 엘리엇 하드룰을 통과하는 라벨링 후보 열거 / fib_targets = 선택한 파동에서 되돌림·확장 목표 계산"
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 하드룰 통과 카운트 열거(완결 + 진행 중, 급별, 전형성 점수) / fib_targets = 되돌림·확장 목표 계산"
       },
       "bars": {
         "type": "array",
-        "description": "OHLCV 배열 (오래된 → 최신). 각 항목 {date, open, high, low, close, volume}. 시세 도구 결과를 그대로 넣으면 됩니다."
+        "description": "OHLCV 배열 (오래된 → 최신). 각 항목 {date, open, high, low, close, volume}. 시세 도구 결과를 그대로 넣습니다. **이 배열의 기간이 곧 분석 기간**입니다 — 엘리엇 표준 절차는 큰 시간틀(주봉·월봉)에서 카운트를 세우고 작은 시간틀로 내려오며 모순 없이 맞추는 톱다운이므로, 중요한 판단이면 기간을 달리해 두 번 부르세요."
       },
       "threshold": {
         "type": "number",
-        "description": "pivots·elliott_candidates: 스윙으로 인정할 최소 반전 폭(%). 기본 5. 크게 잡을수록 큰 파동만 남습니다."
+        "description": "스윙으로 인정할 최소 반전 폭(%) = 급(degree)의 프록시. **생략 권장** — 생략 시 데이터 변동폭에 비례해 자동 산정되어, 20일·120일·240일 차트가 각자 알맞은 급을 잡습니다. 고정값을 넣으면 짧은 차트는 피벗 0개, 긴 차트는 잔물결 수십 개가 됩니다. 참고: 엘리엇 이론에 표준 %는 없습니다(급은 원래 기간으로 정의) — 이 값은 우리 프록시입니다."
+      },
+      "thresholds": {
+        "type": "array",
+        "description": "급별로 한 번에 계산할 임계 목록. 생략 시 자동값의 0.5×·1×·2× 세 급을 함께 계산합니다. 엘리엇은 프랙탈이라 잔 급의 5파 전체가 큰 급의 1파일 수 있으므로 여러 급을 함께 보는 것이 정석입니다."
       },
       "maxCandidates": {
         "type": "integer",
-        "description": "elliott_candidates: 반환할 후보 수 상한 (기본 5)"
+        "description": "급마다 반환할 후보 수 상한 (기본 5). 전형성 높은 순으로 잘립니다."
       },
       "pivotIndices": {
         "type": "array",
-        "description": "fib_targets: 기준으로 삼을 파동의 피벗 인덱스들. 보통 elliott_candidates 가 준 후보의 pivots 를 그대로 넘깁니다."
+        "description": "fib_targets: 기준 파동의 피벗 인덱스들. 보통 채택한 후보의 pivots[].i 를 그대로 넘깁니다."
       }
     }
   },
   "output": {
     "type": "object",
     "properties": {
+      "barRange": {
+        "type": "object",
+        "description": "{count, from, to} — 이 답이 어느 기간에 대한 것인지. **답변에 기간과 급을 반드시 함께 밝히세요**('240일 일봉, 8% 급 기준 3파'). 둘 없이 '지금 3파'는 의미가 없는 문장입니다"
+      },
       "pivots": {
         "type": "array",
-        "description": "스윙 피벗 — [{i, date, price, kind:'high'|'low'}]. i·price 는 실제 봉에서 온 값이라 그대로 stock_chart annotations 의 좌표로 쓸 수 있습니다"
+        "description": "스윙 피벗 — [{i, date, price, kind:'high'|'low', tentative?}]. i·price 는 실제 봉에서 온 값이라 stock_chart annotations 좌표로 그대로 씁니다. 마지막 피벗의 tentative:true = 아직 반전이 오지 않은 진행 중 극점(다음 봉에서 갱신 가능)"
+      },
+      "degrees": {
+        "type": "array",
+        "description": "elliott_candidates 결과 — 급별 [{threshold, pivotCount, pivots, candidates}]. 급마다 카운트가 다른 것이 정상입니다"
       },
       "candidates": {
         "type": "array",
-        "description": "엘리엇 라벨링 후보 — [{labels:['1'..'5'|'A'..'C'], pivots:[{i,price,label}], rulesPassed, notes}]. 하드룰 3개(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)를 통과한 것만 담깁니다. 어느 후보를 택할지는 상위 시간틀·맥락을 보는 판단이므로 모델이 고르되, 목록 밖 카운트를 지어내지 마세요"
+        "description": "라벨링 후보 — [{labels, pivots:[{i,price,label,tentative}], complete, inProgress, guidelineFit, ratios, notes}]. **완결 5파와 진행 중 부분 카운트를 모두** 담습니다(complete:false + inProgress:'3' = 3파 진행 중). 하드룰(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)은 **끝난 파동에 대해서만** 판정 — '3파 최단'은 5파가 나와야 알 수 있으므로 진행 중 카운트를 미리 탈락시키지 않습니다. `guidelineFit`(0~1) = 교과서 비율 근접도(2파 0.5~0.618 / 3파 1.618 / 4파 0.382 / 5파 ≈1파 / 교대) — 룰과 달리 **탈락 기준이 아니라 전형성 점수**이고 이 순서로 정렬됩니다. 어느 후보·어느 급을 택할지는 판단이므로 모델이 고르되 근거를 밝히고, **목록 밖 카운트를 지어내지 마세요**"
       },
       "targets": {
         "type": "array",
