@@ -368,6 +368,110 @@ def _channel(pts, structure, last_i, project_bars):
     }
 
 
+def _median(xs):
+    s = sorted(xs)
+    return s[len(s) // 2] if s else 0
+
+
+def _projected_path(pts, structure, last_i):
+    """**예상 경로** — 진행 중인 파동의 남은 구간 + 그 다음 반등을 비율로 이어 그린다.
+
+    채널(평행선)은 "구간"을 보여주지만 "이 다음에 어디로 가는가"를 한 줄로 말해주진 않는다.
+    사용자가 원한 건 후자다 — 지금 E파 진행 중이면 **E 가 어디서 끝나고, 거기서 반등이 어디까지**
+    가는지가 현재 위치에서 쭉 이어진 선으로 보여야 한다(2026-07-28).
+
+    각 구간의 목표는 교과서 비율에서 그대로 나온다:
+      추진 3파 = 1파의 1.618 / 추진 5파 = 1파와 동등 / 조정 C = A와 동등
+      삼각형 E = A-C 추세선 위 / 구조 완료 후 반등 = 전체 되돌림 0.5
+    시간축은 엘리엇에서 느슨하므로 **앞선 다리들의 봉 수 중앙값**을 쓴다(추정임을 명시).
+    """
+    p = [x["price"] for x in pts]
+    idx = [x["i"] for x in pts]
+    n = len(p)
+    if n < 3:
+        return None
+    sign = 1 if p[1] > p[0] else -1
+    leg_bars = [idx[k + 1] - idx[k] for k in range(n - 1)]
+    span = max(3, int(_median(leg_bars) or 5))
+    elapsed = max(0, last_i - idx[-1])
+    remain = max(3, span - elapsed)
+
+    w1 = (p[1] - p[0]) * sign
+    cur = p[-1]
+
+    def first_beyond(base, unit, ratios, dirn):
+        """현재가를 **이미 지난** 비율은 건너뛴다. 3파가 1.618 을 넘었는데 그 값을 목표로 주면
+        선이 뒤로 그어진다(실측: 현재 150.3 인데 목표 142.9). 다음 단계로 올린다."""
+        for r in ratios:
+            t = base + unit * r * dirn
+            if (t - cur) * dirn > 0:
+                return t, r
+        t = base + unit * ratios[-1] * dirn
+        return t, ratios[-1]
+
+    target = None
+    label = None
+    # 두 번째 구간(반등)은 구조마다 뜻이 다르다 — 뭉뚱그리면 틀린 그림이 된다.
+    next_ratio, next_label = 0.5, "이후 반등 목표(전체 0.5 되돌림)"
+    if structure == "impulse":
+        if n == 6:
+            target, r = first_beyond(p[4], w1, [1.0, 1.618, 2.618], sign)
+            label = f"5파 목표(1파의 {r})"
+            next_ratio, next_label = 0.5, "5파 완결 후 조정(전체 0.5 되돌림)"
+        elif n == 5:
+            w3 = (p[3] - p[2]) * sign
+            target, r = first_beyond(p[3], w3, [0.382, 0.5, 0.618], -sign)
+            label = f"4파 목표(3파의 {r} 되돌림)"
+            next_ratio, next_label = -1.0, "이후 5파(4파 저점에서 1파 동등)"
+        elif n == 4:
+            target, r = first_beyond(p[2], w1, [1.618, 2.618, 4.236], sign)
+            label = f"3파 목표(1파의 {r})"
+            next_ratio, next_label = 0.382, "이후 4파(3파의 0.382 되돌림)"
+    elif structure == "triangle":
+        if idx[3] != idx[1]:
+            slope = (p[3] - p[1]) / (idx[3] - idx[1])
+            target = p[1] + slope * (last_i + remain - idx[1])
+            label = "E 목표(A-C 추세선)"
+            # 삼각형 이탈 = 가장 넓은 폭(A-B)만큼 직전 추세 방향으로 밀어낸다(교과서 thrust).
+            next_ratio, next_label = None, "삼각형 이탈 목표(A-B 폭만큼 돌파)"
+    else:
+        if n >= 4:
+            wa = (p[1] - p[0]) * sign
+            target, r = first_beyond(p[2], wa, [1.0, 1.618], sign)
+            label = f"C 목표(A의 {r})"
+            next_ratio, next_label = 0.5, "조정 완료 후 반등(조정 전체의 0.5)"
+    if target is None:
+        return None
+
+    points = [
+        {"i": idx[-1], "price": round(p[-1], 6), "label": None},
+        {"barsAhead": remain, "price": round(target, 6), "label": label},
+    ]
+    if structure == "triangle":
+        width = abs(p[2] - p[1])  # A-B 폭
+        thrust = target + width * (1 if p[1] > p[0] else -1) * -1
+        second = thrust
+    elif next_ratio is None:
+        second = target
+    elif next_ratio < 0:
+        second = target + w1 * sign  # 4파 뒤 5파 = 1파 동등
+    else:
+        second = target - (target - p[0]) * next_ratio
+    points.append({
+        "barsAhead": remain + span,
+        "price": round(second, 6),
+        "label": next_label,
+    })
+    return {
+        "points": points,
+        "barsEstimated": True,
+        "note": (
+            "가격 목표는 교과서 비율에서 나온 값이고 **시간축은 앞선 다리들의 봉 수 중앙값 추정**"
+            "이다(엘리엇은 시간 비율을 규정하지 않는다). 예측이므로 차트엔 projected:true 로."
+        ),
+    }
+
+
 def _corrective(pts):
     """조정 구조 판별 — A-B-C(지그재그/플랫) 또는 A-B-C-D-E(삼각수렴).
 
@@ -466,6 +570,7 @@ def corrective_candidates(pivots, limit, last_i=0, project_bars=0):
                 "evidencePivots": len(used),
                 "invalidation": _invalidation(used, info["structure"]),
                 "channel": _channel(used, info["structure"], last_i, project_bars),
+                "projectedPath": _projected_path(used, info["structure"].split("-")[0], last_i),
                 "ratios": info["ratios"],
                 "labels": labels,
                 "pivots": [
@@ -515,6 +620,7 @@ def elliott_candidates(pivots, limit, last_i=0, project_bars=0):
                 "evidencePivots": size,
                 "invalidation": _invalidation(window, "impulse"),
                 "channel": _channel(window, "impulse", last_i, project_bars),
+                "projectedPath": _projected_path(window, "impulse", last_i),
                 "ratios": fit_detail,
                 "labels": labels,
                 "pivots": [
@@ -641,7 +747,9 @@ def main():
                 "projectBars": project_bars,
                 "degrees": degrees,
                 "note": (
-                    "각 후보의 `channel` 은 기준선·평행선 두 줄이며 끝점이 barsAhead 라 차트 미래 구간까지 "
+                    "각 후보의 **`projectedPath`** 는 현재 위치에서 이어지는 예상 경로다(진행 중 파동의 남은 "
+                    "구간 → 그 다음 반등). **차트에 kind:\"path\", projected:true 로 그대로 넣으세요** — 사용자가 "
+                    "보고 싶은 건 '다음에 어디로'라 이게 제일 중요합니다. `channel` 은 기준선·평행선 두 줄이며 끝점이 barsAhead 라 차트 미래 구간까지 "
                     "이어집니다 — stock_chart annotations 에 kind:\"path\", projected:true 로 두 줄을 넣고 "
                     f"futureSlots 를 {project_bars} 이상으로 주세요. "
                     "이 답은 barRange(기간) + threshold(급) 쌍에 대해서만 유효합니다 — "
