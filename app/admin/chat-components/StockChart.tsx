@@ -592,12 +592,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const periodHigh = Math.max(...safeData.map(d => d.high));
   const periodLow = Math.min(...safeData.map(d => d.low));
   const periodVolume = safeData.reduce((sum, d) => sum + d.volume, 0);
-  // 가격 표시 반올림 — yfinance 수정주가가 소수점을 달고 와("119,951.722") 헤더·카드가 지저분.
-  // 1000 이상(원화권) = 정수, 미만(저가·해외 주식) = 소수 2자리.
-  const fmtPrice = (x: number) =>
-    x >= 1000
-      ? Math.round(x).toLocaleString('ko-KR')
-      : x.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
+  // 가격 표시 — yfinance 수정주가가 소수점을 달고 와("119,951.722") 헤더·카드가 지저분해서
+  // 자릿수를 값 크기로 정한다. **자릿수는 통화가 아니라 데이터가 정한다**(종목마다 소스가 달라
+  // 통화를 알 수 없고, 알아도 코인·해외주식이 같은 규칙을 쓰지 않는다).
+  //   ≥1000  원화권 → 정수
+  //   ≥1     미국 주식 등 → **소수 2자리 고정**. maximumFractionDigits 만 주면 63.40 이 "63.4" 로
+  //          찍혀 시세처럼 안 보인다(2026-07-28 사용자 지적: "64.40 이렇게 나오는 게 맞다")
+  //   <1     코인 등 소액 → 유효자리 확보(0.000486 이 0 으로 뭉개지지 않게)
+  const fmtPrice = (x: number) => {
+    const abs = Math.abs(x);
+    if (abs >= 1000) return Math.round(x).toLocaleString('ko-KR');
+    if (abs >= 1) return x.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return x.toLocaleString('ko-KR', { maximumFractionDigits: 6 });
+  };
 
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
