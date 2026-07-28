@@ -19,27 +19,68 @@ def _read_input():
     return json.loads(raw) if raw.strip() else {}
 
 
+_TUPLE_ORDER = ("date", "open", "high", "low", "close", "volume")
+
+
+def _pick(row, *names):
+    """대소문자 무시 키 조회 — yfinance/pandas 계열은 `Close`, 우리 정규화는 `close` 로 온다.
+    소스마다 케이스가 갈리는 건 흔한 일이라 받아준다(추측이 아니라 알려진 관례)."""
+    lowered = {str(k).lower(): v for k, v in row.items()}
+    for n in names:
+        v = lowered.get(n.lower())
+        if v is not None:
+            return v
+    return None
+
+
 def _bars(data):
-    """Normalize the OHLCV rows. Missing OHLC falls back to close (flat bar) — broker
-    payloads vary, and dropping a row would silently shift every pivot index."""
+    """Normalize the OHLCV rows.
+
+    Tolerates the shapes this codebase already emits: dict rows (any key case) and the
+    tuple form `[date, open, high, low, close, volume]` that StockChart also accepts.
+    Missing OHLC falls back to close (flat bar) — dropping a row would silently shift
+    every pivot index.
+    """
     out = []
     for i, b in enumerate(data or []):
+        if isinstance(b, (list, tuple)):
+            b = {k: v for k, v in zip(_TUPLE_ORDER, b)}
         if not isinstance(b, dict):
             continue
         try:
-            close = float(b.get("close"))
+            close = float(_pick(b, "close", "c"))
         except (TypeError, ValueError):
             continue
-        high = b.get("high")
-        low = b.get("low")
+        high = _pick(b, "high", "h")
+        low = _pick(b, "low", "l")
         out.append({
             "i": i,
-            "date": str(b.get("date") or b.get("datetime") or ""),
+            "date": str(_pick(b, "date", "datetime", "time") or ""),
             "high": float(high) if high is not None else close,
             "low": float(low) if low is not None else close,
             "close": close,
         })
     return out
+
+
+def _bars_error(data):
+    """빈 결과의 **이유를 말하는** 에러. 옛 메시지("bars 가 비어 있거나 close 를 읽을 수
+    없습니다")는 둘 중 무엇인지도, 무엇을 봤는지도 안 알려줘서 호출자가 고칠 수가 없었다
+    (2026-07-28 실측: 모델이 올바른 shape 을 만들고도 두 번 실패하고 포기). 각 계단의
+    응답이 다음 수를 스스로 말해야 한다."""
+    if not isinstance(data, list):
+        return f"bars 는 배열이어야 합니다 — 받은 타입: {type(data).__name__}. 시세 도구의 records 배열을 그대로 넣으세요."
+    if not data:
+        return "bars 가 빈 배열입니다. 캐시를 썼다면 cache_read 로 records 를 먼저 읽어 그 배열을 넣으세요."
+    first = data[0]
+    if isinstance(first, dict):
+        keys = list(first.keys())[:12]
+        return (
+            f"행에서 종가를 못 찾았습니다. 첫 행 키: {keys} — 'close'(대소문자 무관) 또는 'c' 가 "
+            f"필요하고 숫자여야 합니다(null 이면 전 행이 버려집니다). 첫 행 샘플: "
+            f"{json.dumps(first, ensure_ascii=False)[:200]}"
+        )
+    return f"행이 객체도 배열도 아닙니다 — 첫 행 타입: {type(first).__name__}, 값: {str(first)[:120]}"
 
 
 def auto_threshold(bars):
@@ -231,6 +272,38 @@ def _confidence(fit, pivot_count):
     return round((fit if fit is not None else 0.0) * w, 3)
 
 
+def _invalidation(pts, structure):
+    """이 카운트가 **틀렸다고 판정되는 가격**.
+
+    엘리엇 분석에서 목표가보다 실용적인 출력이다 — "어디까지 가면 내가 틀린 것인가"가
+    손절·시나리오 전환의 기준이 된다. 하드룰에서 그대로 나오므로 결정론적이다.
+
+      2파 진행: 1파 시작 이탈 = 2파가 100% 되돌린 것 → 무효
+      3파 진행: 2파 저점 이탈 = 추진 구조가 깨짐
+      4파 진행: 1파 영역 침범 = 4파-1파 미겹침 룰 위반
+      5파 진행/완결: 4파 저점 이탈
+      조정: 조정 시작점(0) 이탈 = 그 조정으로 볼 수 없음
+    """
+    p = [x["price"] for x in pts]
+    n = len(p)
+    sign = 1 if p[1] > p[0] else -1
+    if structure != "impulse":
+        return {"price": round(p[0], 6),
+                "beyond": "below" if sign > 0 else "above",
+                "reason": "조정 시작점 이탈 — 이 조정 구조로 볼 수 없음"}
+    table = {
+        2: (0, "1파 시작 이탈 — 2파가 1파를 100% 되돌림"),
+        3: (2, "2파 저점 이탈 — 추진 구조 붕괴"),
+        4: (1, "1파 영역 침범 — 4파는 1파와 겹칠 수 없음"),
+        5: (4, "4파 저점 이탈 — 5파 무효"),
+    }
+    last = n - 1  # 마지막 라벨 번호
+    idx, why = table.get(last, table[5])
+    return {"price": round(p[idx], 6),
+            "beyond": "below" if sign > 0 else "above",
+            "reason": why}
+
+
 def _corrective(pts):
     """조정 구조 판별 — A-B-C(지그재그/플랫) 또는 A-B-C-D-E(삼각수렴).
 
@@ -327,6 +400,7 @@ def corrective_candidates(pivots, limit):
                 "guidelineFit": info["fit"],
                 "confidence": _confidence(info["fit"], len(used)),
                 "evidencePivots": len(used),
+                "invalidation": _invalidation(used, info["structure"]),
                 "ratios": info["ratios"],
                 "labels": labels,
                 "pivots": [
@@ -374,6 +448,7 @@ def elliott_candidates(pivots, limit):
                 "guidelineFit": fit,
                 "confidence": _confidence(fit, size),
                 "evidencePivots": size,
+                "invalidation": _invalidation(window, "impulse"),
                 "ratios": fit_detail,
                 "labels": labels,
                 "pivots": [
@@ -435,7 +510,7 @@ def main():
     action = inp.get("action")
     bars = _bars(inp.get("bars"))
     if not bars:
-        print(json.dumps({"success": False, "error": "bars 가 비어 있거나 close 를 읽을 수 없습니다."}, ensure_ascii=False))
+        print(json.dumps({"success": False, "error": _bars_error(inp.get("bars"))}, ensure_ascii=False))
         return
     # 임계 미지정 = 데이터에 비례하는 자동값. 기간(20일·120일·240일)이 바뀌면 급도 따라 바뀐다.
     threshold = float(inp["threshold"]) if inp.get("threshold") else auto_threshold(bars)
