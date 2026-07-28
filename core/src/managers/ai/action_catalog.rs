@@ -509,18 +509,31 @@ fn derive_entries_from_input(
             .filter_map(|a| a.as_str())
             .map(|act| {
                 let frag = derive_action_fragment(action_desc_blob, act, &all_actions);
-                // Semantic text = the action name (distinguishes quote↔history) + its fragment,
-                // or the module blurb when no fragment is parseable.
-                let sem = if frag.is_empty() {
-                    format!("{} {}", act, module_blurb)
+                let extra = make_extra(act);
+                // Semantic text = the action's OWN signal only. The module blurb used to become the
+                // whole document whenever no fragment parsed — identical text across actions can't
+                // discriminate, and worse, it drags every one of them toward whatever the blurb
+                // enumerates (naver-search's blurb lists 뉴스·블로그 → shopping actions beat plain
+                // `search` on a news query, 2026-07-28 실측). Only the module's identity clause is
+                // kept as a last resort, never its type enumerations.
+                let mut sem = if frag.is_empty() {
+                    format!("{} {}", act, first_clause(&module_blurb))
                 } else {
                     frag
                 };
+                // Enum values of THIS action's params are the sharpest declared signal for what it
+                // covers — `search` carries type=[webkr, blog, news, image, shop, …], which is what
+                // actually connects a news query to it. Declared data, no per-module wiring.
+                let vals = param_enum_values(&extra);
+                if !vals.is_empty() {
+                    sem.push(' ');
+                    sem.push_str(&vals.join(" "));
+                }
                 CatalogEntry {
                     id: format!("{}:{}", name, act),
                     name: act.to_string(),
                     description: sem.trim().to_string(),
-                    extra: make_extra(act),
+                    extra,
                 }
             })
             .collect(),
@@ -531,6 +544,37 @@ fn derive_entries_from_input(
             extra: make_extra(name),
         }],
     }
+}
+
+/// Module blurb's identity clause — up to the first `—`/`(`/`.`/newline. The rest is usually a
+/// type enumeration that homogenizes every action's document (see `derive_entries_from_input`).
+fn first_clause(blurb: &str) -> String {
+    let cut = blurb
+        .char_indices()
+        .find(|(_, c)| *c == '—' || *c == '(' || *c == '\n' || *c == '.')
+        .map(|(i, _)| i)
+        .unwrap_or(blurb.len());
+    blurb[..cut].trim().to_string()
+}
+
+/// Enum values declared on this action's params, flattened for the search document. Reads the
+/// `(enum: a, b, c)` hint the param map already carries, so there is one source of truth.
+fn param_enum_values(extra: &serde_json::Value) -> Vec<String> {
+    let Some(params) = extra.get("params").and_then(|p| p.as_object()) else { return Vec::new() };
+    let mut out = Vec::new();
+    for v in params.values() {
+        let Some(desc) = v.as_str() else { continue };
+        let Some(at) = desc.find("(enum: ") else { continue };
+        let rest = &desc[at + "(enum: ".len()..];
+        let Some(end) = rest.find(')') else { continue };
+        for tok in rest[..end].split(',') {
+            let t = tok.trim();
+            if !t.is_empty() && out.len() < 40 && !out.iter().any(|x: &String| x == t) {
+                out.push(t.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// Action ids may contain '-'/'_' ("ultra-short" vs "short") — a token boundary must treat
@@ -557,6 +601,41 @@ fn clip_row_desc(s: &str) -> String {
 /// - compound: `a/b/c=desc` — every slash-joined action in the key shares the description.
 /// Both sides token-boundary checked with [`is_id_char`].
 fn find_action_marker(blob: &str, action: &str) -> Option<(usize, usize)> {
+    // Wildcard markers — a blob often documents a family once (`shopping-*=쇼핑인사이트`) instead of
+    // listing every id. Without this, every member fell through to the module blurb, so five naver
+    // shopping actions were indexed with the module's news/blog-heavy text and outranked plain
+    // `search` on a NEWS query (2026-07-28 실측: 정답이 7위). Longest prefix wins so `a-b-*` beats `a-*`.
+    if !action.is_empty() {
+        let mut best: Option<(usize, usize, usize)> = None; // (prefix_len, key_start, desc_start)
+        let mut from = 0usize;
+        while let Some(rel) = blob[from..].find('*') {
+            let star = from + rel;
+            from = star + 1;
+            // The prefix is the id-chars immediately before `*`, and it must prefix this action.
+            let key_start = key_true_start(blob, star);
+            let prefix = &blob[key_start..star];
+            if prefix.is_empty() || !action.starts_with(prefix) || prefix == action {
+                continue;
+            }
+            // Only a real marker — `prefix*` must be followed by a separator (`=` or `:`).
+            let after = blob[star + 1..].trim_start();
+            let Some(c) = after.chars().next() else { continue };
+            if c != '=' && c != ':' {
+                continue;
+            }
+            let desc_start = blob.len() - after.len() + c.len_utf8();
+            if best.map(|(l, _, _)| prefix.len() > l).unwrap_or(true) {
+                best = Some((prefix.len(), key_start, desc_start));
+            }
+        }
+        if let Some((_, k, d)) = best {
+            return Some((k, d));
+        }
+    }
+    find_exact_action_marker(blob, action)
+}
+
+fn find_exact_action_marker(blob: &str, action: &str) -> Option<(usize, usize)> {
     let mut search_from = 0;
     while let Some(rel) = blob[search_from..].find(action) {
         let pos = search_from + rel;
@@ -1033,6 +1112,50 @@ mod action_fragment_tests {
     fn unknown_action_returns_empty() {
         let blob = "quote=current price";
         assert_eq!(derive_action_fragment(blob, "history", &["quote", "history"]), "");
+    }
+
+    /// 와일드카드 marker — 한 줄이 가족 전체를 문서화한 blob(실측: naver-search)에서 각 멤버가
+    /// 그 조각을 받아야 한다. 못 받으면 모듈 공통 설명이 문서가 되어 뉴스 질의에 쇼핑 액션이 이긴다.
+    #[test]
+    fn wildcard_action_marker() {
+        const ACTS: &[&str] = &[
+            "search", "search-trend", "shopping-categories", "shopping-keywords",
+            "shopping-by-device", "shopping-by-gender", "shopping-by-age",
+        ];
+        let blob = "API 액션. search=네이버 검색, search-trend=검색어 트렌드, shopping-*=쇼핑인사이트";
+        assert_eq!(derive_action_fragment(blob, "search", ACTS), "네이버 검색");
+        assert_eq!(derive_action_fragment(blob, "search-trend", ACTS), "검색어 트렌드");
+        for a in ["shopping-categories", "shopping-keywords", "shopping-by-age"] {
+            assert_eq!(derive_action_fragment(blob, a, ACTS), "쇼핑인사이트", "action={a}");
+        }
+        // 더 긴 접두사가 이긴다.
+        let blob2 = "a-*=넓은 것, a-b-*=좁은 것";
+        assert_eq!(derive_action_fragment(blob2, "a-b-c", &["a-b-c", "a-x"]), "좁은 것");
+        assert_eq!(derive_action_fragment(blob2, "a-x", &["a-b-c", "a-x"]), "넓은 것");
+    }
+
+    /// 모듈 공통 설명은 **첫 절만** — 뒤의 타입 열거가 모든 액션 문서를 동질화한다.
+    #[test]
+    fn module_blurb_first_clause_only() {
+        let blurb = "네이버 검색 + 데이터랩 API — 텍스트·뉴스·해석 용도 (주가 뉴스·블로그·쇼핑 키워드). 검색: webkr/blog/news";
+        let c = first_clause(blurb);
+        assert_eq!(c, "네이버 검색 + 데이터랩 API");
+        assert!(!c.contains("뉴스"), "열거가 새면 안 된다: {c}");
+    }
+
+    /// 액션 고유 열거값이 검색 문서에 들어가야 — `search` 의 type=[news, …] 가 뉴스 질의를 잡는다.
+    #[test]
+    fn action_enum_values_enter_document() {
+        let extra = serde_json::json!({
+            "params": {
+                "type": "검색 종류 (enum: webkr, blog, news, image, shop)",
+                "query": "검색어",
+            }
+        });
+        let vals = param_enum_values(&extra);
+        assert!(vals.contains(&"news".to_string()), "{vals:?}");
+        assert!(vals.contains(&"shop".to_string()));
+        assert_eq!(param_enum_values(&serde_json::json!({})), Vec::<String>::new());
     }
 
     #[test]

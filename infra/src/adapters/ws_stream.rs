@@ -475,6 +475,14 @@ async fn run_session(
         "ws stream live"
     );
 
+    // Skipped-frame shapes seen on this connection, capped per kind. We log only `frame_kind`
+    // today, which is exactly why a live watch that delivered ZERO ticks could not be diagnosed:
+    // kiwoom quotes stayed connected and every frame was skipped as `SYSTEM`, and with no body we
+    // cannot tell whether that is a notice frame or misclassified tick data (2026-07-28 실측 —
+    // 삼성 1분봉 페이지의 라이브 배지가 죽어 있던 원인). Preview the first few per kind so the next
+    // market session answers it; capped so a burst cannot flood the journal.
+    let mut skipped_seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+
     // Realtime loop — cancel-aware.
     loop {
         tokio::select! {
@@ -547,12 +555,26 @@ async fn run_session(
                     }
                     continue;
                 }
-                tracing::info!(
-                    target: "ws_stream",
-                    watch_id = %spec.watch_id,
-                    frame_kind = %kind,
-                    "skip unrelated stream frame"
-                );
+                let seen = skipped_seen.entry(kind.to_string()).or_insert(0);
+                *seen += 1;
+                if *seen <= 3 {
+                    tracing::info!(
+                        target: "ws_stream",
+                        watch_id = %spec.watch_id,
+                        frame_kind = %kind,
+                        expected = %spec.realtime_match,
+                        seen = *seen,
+                        body = %text.chars().take(400).collect::<String>(),
+                        "skip unrelated stream frame"
+                    );
+                } else if *seen == 4 {
+                    tracing::info!(
+                        target: "ws_stream",
+                        watch_id = %spec.watch_id,
+                        frame_kind = %kind,
+                        "skip unrelated stream frame — 이후 같은 kind 는 로그 생략"
+                    );
+                }
             }
         }
     }
