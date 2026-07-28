@@ -1265,6 +1265,9 @@ async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--mcp-stdio") {
         let mcp_state = std::sync::Arc::new(
             firebat_infra::mcp_server::McpServerState::new(vault.clone())
+                .with_image_import(Arc::new(
+                    firebat_core::managers::media::MediaImageImporter(media_manager.clone()),
+                ))
                 .with_auth(auth_manager.clone())
                 .with_module_manager(module_manager.clone()),
         );
@@ -1303,6 +1306,9 @@ async fn main() -> Result<()> {
     if mcp_enabled {
         let mcp_state = std::sync::Arc::new(
             firebat_infra::mcp_server::McpServerState::new(vault.clone())
+                .with_image_import(Arc::new(
+                    firebat_core::managers::media::MediaImageImporter(media_manager.clone()),
+                ))
                 .with_auth(auth_manager.clone())
                 .with_module_manager(module_manager.clone()),
         );

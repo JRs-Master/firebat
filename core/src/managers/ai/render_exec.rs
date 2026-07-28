@@ -153,7 +153,24 @@ pub fn render_blocks(
     let mut rendered = Vec::with_capacity(blocks.len());
     let mut failed: Vec<Value> = Vec::new();
     for (idx, block) in blocks.iter().enumerate() {
+        // Dialect absorb — the render TOOL's own OUTPUT shape is `{type:"component", name, props}`,
+        // and the model feeds it straight back when it re-emits as a fence: the tool-mode rejection
+        // tells it to "emit these as a fence", so it reuses the payload already in hand. Keying off
+        // `type` alone then yields the non-existent component "component" and the whole fence drops
+        // to plain text (2026-07-28 실측: 태풍/서울 날씨 답변이 통째로 텍스트가 됐다 — fence 는
+        // 있었는데 파싱이 안 됐다). When `type=="component"`, the real type lives in `name`.
         let block_type = match block.get("type").and_then(|v| v.as_str()) {
+            Some("component") => match block.get("name").and_then(|v| v.as_str()) {
+                Some(n) => n,
+                None => {
+                    failed.push(serde_json::json!({
+                        "idx": idx,
+                        "type": "component",
+                        "error": format!("blocks[{idx}]: type=\"component\" 이면 'name' 에 실제 컴포넌트 이름이 필요합니다"),
+                    }));
+                    continue;
+                }
+            },
             Some(t) => t,
             None => {
                 failed.push(serde_json::json!({
@@ -1030,5 +1047,33 @@ mod tests {
     fn append_image_blocks_noop_without_urls() {
         let text = "그대로";
         assert_eq!(append_image_blocks(text, &[]), text);
+    }
+
+    /// 렌더 **도구 결과 shape**(`{type:"component", name, props}`)이 fence 로 되돌아와도 살아야 한다.
+    /// 회귀 대상: tool_mode 거부 후 모델이 손에 있던 결과 payload 를 그대로 fence 에 넣어
+    /// 답변 전체가 텍스트로 떨어졌다(2026-07-28 태풍/서울 날씨 실측).
+    #[test]
+    fn fence_absorbs_render_tool_output_shape() {
+        let text = "설명
+
+```firebat-render
+[{\"name\":\"Header\",\"props\":{\"level\":2,\"text\":\"제13호 태풍\"},\"type\":\"component\"}]
+```";
+        let (_, _, groups, failed) = mask_and_sanitize_fences(text, None);
+        let blocks = groups[0].as_array().expect("fence 가 유효해야 함");
+        assert_eq!(blocks.len(), 1, "실패: {:?}", failed);
+        assert_eq!(blocks[0]["name"], "Header");
+        assert_eq!(blocks[0]["props"]["text"], "제13호 태풍");
+    }
+
+    /// type="component" 인데 name 이 없으면 조용히 통과시키지 않는다.
+    #[test]
+    fn component_shape_without_name_fails_loudly() {
+        let out = render_blocks(
+            &serde_json::json!({ "blocks": [{ "type": "component", "props": {} }] }),
+            false,
+            None,
+        );
+        assert!(out.is_err() || out.unwrap()["failed"].as_array().map(|a| !a.is_empty()).unwrap_or(false));
     }
 }

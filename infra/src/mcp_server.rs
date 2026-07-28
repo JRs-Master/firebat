@@ -78,6 +78,9 @@ pub struct McpServerState {
     /// L1 grounding 선언 — tool_name → grounded params (모듈 config 의 `grounding`).
     /// sysmod 등록 시 1회 parse. tools/call 게이트가 사용 (Fact-Provenance Firewall, plan #8-2).
     pub grounding: RwLock<HashMap<String, Vec<GroundedParam>>>,
+    /// CLI 자기 홈에 떨어진 이미지의 갤러리 편입 — 도구 인자 치환에 사용(아래 게이트).
+    /// 미설정 시 치환 skip(옛 동작).
+    pub image_import: Option<Arc<dyn firebat_core::managers::media::IImageImportPort>>,
 }
 
 impl McpServerState {
@@ -88,7 +91,17 @@ impl McpServerState {
             auth: None,
             module_manager: None,
             grounding: RwLock::new(HashMap::new()),
+            image_import: None,
         }
+    }
+
+    /// CLI 로컬 이미지 → 갤러리 편입 경로 설정(도구 인자 치환).
+    pub fn with_image_import(
+        mut self,
+        importer: Arc<dyn firebat_core::managers::media::IImageImportPort>,
+    ) -> Self {
+        self.image_import = Some(importer);
+        self
     }
 
     /// 외부 사용자 API token 검증 활성 — AuthManager 설정.
@@ -526,6 +539,99 @@ fn observed_corpus(session: &str) -> Vec<String> {
 /// covers both (args-based, per the hub-scope lesson that task-local alone is a no-op on FC).
 /// Returns the handler's result; a grounding rejection surfaces as `Err(hint)` → the existing
 /// isError tool-result path delivers the hint to the model, which retries (resolve → use).
+/// CLI 자기 홈(temp)에 떨어진 이미지 파일 경로를 갤러리 URL 로 치환한다.
+///
+/// 왜 게이트인가: CLI(codex)가 자기 내장 이미지 도구를 쓰면 **로컬 파일 경로**만 손에 쥐고, 그걸
+/// 그대로 Firebat 도구 인자에 넣는다. 2026-07-28 실측 — 발행된 페이지 spec 에
+/// `"src": "/tmp/firebat-codex-home/generated_images/…/call_….png"` 가 박혀 브라우저에서 이미지가
+/// 안 떴다. 턴 종료 후 수확(AiManager)은 채팅엔 붙지만 **이미 실행된 save_page 는 못 고친다** —
+/// 인자가 지나가는 이 지점이 유일하게 이른 choke point 이고, save_page·render·tts 어디로 가든 걸린다.
+///
+/// 범위 = **temp 디렉토리 아래 + 이미지 확장자 + 실재하는 파일**. CLI 홈이 temp 에 있다는 사실만
+/// 쓰므로 codex 전용 로직이 아니고, 임의 호스트 경로 읽기로 번지지도 않는다
+/// (`/user/media/x.png` 같은 URL 은 실재 파일이 아니라 자연히 제외).
+async fn substitute_cli_local_images(state: &Arc<McpServerState>, args: Value) -> Value {
+    let Some(importer) = state.image_import.as_ref() else {
+        return args;
+    };
+    let mut paths: Vec<String> = Vec::new();
+    collect_local_image_paths(&args, &mut paths);
+    if paths.is_empty() {
+        return args;
+    }
+    let mut out = args;
+    for path in paths {
+        let Ok(binary) = tokio::fs::read(&path).await else {
+            continue;
+        };
+        let ext = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("png")
+            .to_ascii_lowercase();
+        let content_type = match ext.as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            _ => "image/png",
+        };
+        let input = firebat_core::managers::media::GenerateImageInput {
+            prompt: "CLI 내장 도구 생성 이미지".to_string(),
+            model: Some("cli-codex-builtin".to_string()),
+            scope: Some(firebat_core::ports::MediaScope::User),
+            ..Default::default()
+        };
+        match importer.import_image(binary, content_type, input).await {
+            Ok(saved) => {
+                tracing::info!(
+                    target: "media",
+                    "CLI local image in tool args → gallery: {} → {}", path, saved.url
+                );
+                replace_string_value(&mut out, &path, &saved.url);
+            }
+            Err(e) => tracing::warn!(target: "media", "CLI local image import failed ({path}): {e}"),
+        }
+    }
+    out
+}
+
+fn is_cli_local_image(s: &str) -> bool {
+    const EXTS: &[&str] = &[".png", ".jpg", ".jpeg", ".webp"];
+    let lower = s.to_ascii_lowercase();
+    if !EXTS.iter().any(|e| lower.ends_with(e)) {
+        return false;
+    }
+    let tmp = std::env::temp_dir();
+    let p = std::path::Path::new(s);
+    p.is_absolute() && p.starts_with(&tmp) && p.is_file()
+}
+
+fn collect_local_image_paths(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) => {
+            if is_cli_local_image(s) && !out.contains(s) {
+                out.push(s.clone());
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_local_image_paths(x, out)),
+        Value::Object(o) => o.values().for_each(|x| collect_local_image_paths(x, out)),
+        _ => {}
+    }
+}
+
+/// 문자열 값 전체 치환 — 부분 일치(경로가 더 긴 문자열 안에 박힌 경우)도 함께.
+fn replace_string_value(v: &mut Value, from: &str, to: &str) {
+    match v {
+        Value::String(s) => {
+            if s.contains(from) {
+                *s = s.replace(from, to);
+            }
+        }
+        Value::Array(a) => a.iter_mut().for_each(|x| replace_string_value(x, from, to)),
+        Value::Object(o) => o.values_mut().for_each(|x| replace_string_value(x, from, to)),
+        _ => {}
+    }
+}
+
 async fn gated_tool_call(
     state: &Arc<McpServerState>,
     name: &str,
@@ -533,6 +639,8 @@ async fn gated_tool_call(
     handler: &Arc<dyn McpToolHandler>,
     session: &str,
 ) -> Result<Value, String> {
+    // CLI 로컬 이미지 경로 → 갤러리 URL (grounding 검사보다 먼저 — 치환된 값이 게이트를 통과해야).
+    let args = substitute_cli_local_images(state, args).await;
     let grounded = {
         let map = state.grounding.read().await;
         map.get(name).cloned()
