@@ -592,19 +592,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const periodHigh = Math.max(...safeData.map(d => d.high));
   const periodLow = Math.min(...safeData.map(d => d.low));
   const periodVolume = safeData.reduce((sum, d) => sum + d.volume, 0);
-  // 가격 표시 — yfinance 수정주가가 소수점을 달고 와("119,951.722") 헤더·카드가 지저분해서
-  // 자릿수를 값 크기로 정한다. **자릿수는 통화가 아니라 데이터가 정한다**(종목마다 소스가 달라
-  // 통화를 알 수 없고, 알아도 코인·해외주식이 같은 규칙을 쓰지 않는다).
-  //   ≥1000  원화권 → 정수
-  //   ≥1     미국 주식 등 → **소수 2자리 고정**. maximumFractionDigits 만 주면 63.40 이 "63.4" 로
-  //          찍혀 시세처럼 안 보인다(2026-07-28 사용자 지적: "64.40 이렇게 나오는 게 맞다")
-  //   <1     코인 등 소액 → 유효자리 확보(0.000486 이 0 으로 뭉개지지 않게)
-  const fmtPrice = (x: number) => {
-    const abs = Math.abs(x);
-    if (abs >= 1000) return Math.round(x).toLocaleString('ko-KR');
-    if (abs >= 1) return x.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return x.toLocaleString('ko-KR', { maximumFractionDigits: 6 });
-  };
+  // 가격 자릿수 — **시리즈 전체를 보고 한 번 정한다**(값마다 다르면 열이 들쭉날쭉).
+  //
+  // 크기로 가르면 틀린다: 미국 주식은 금액과 무관하게 센트 단위라 BKNG $5,432.10 처럼 네 자리도
+  // 소수 2자리다(2026-07-28 사용자 지적 — 옛 "≥1000 = 정수" 규칙이 그 종목들을 깨뜨렸다).
+  // 원래 풀던 문제는 yfinance **수정주가의 가짜 소수**("119,951.722")인데, 그건 크기가 아니라
+  // 자릿수 패턴으로 갈린다 — 진짜 센트는 2자리로 딱 떨어지고 수정 잡음은 꼬리가 길다.
+  const priceDecimals = useMemo(() => {
+    const vals = safeData.flatMap(d => [d.close, d.high, d.low]).filter(v => Number.isFinite(v));
+    if (!vals.length) return 0;
+    const maxAbs = Math.max(...vals.map(Math.abs));
+    if (maxAbs < 1) return 6;                                  // 코인 등 소액 — 0 으로 뭉개지지 않게
+    if (vals.every(v => Number.isInteger(v))) return 0;        // 원화 원본 = 전부 정수
+    const fitsCents = vals.every(v => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6);
+    if (fitsCents) return 2;                                   // 진짜 센트 단위(미국 주식 등)
+    return maxAbs >= 1000 ? 0 : 2;                             // 꼬리 긴 소수 = 수정주가 잡음
+  }, [safeData]);
+  const fmtPrice = (x: number) =>
+    x.toLocaleString('ko-KR', { minimumFractionDigits: priceDecimals, maximumFractionDigits: priceDecimals });
 
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
