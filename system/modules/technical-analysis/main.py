@@ -15,8 +15,20 @@ import sys
 
 
 def _read_input():
+    """stdin 프로토콜 = `{correlationId, data:{...}}` 봉투 (sandbox.rs 가 감싸 보낸다).
+
+    처음엔 봉투를 안 벗겨서 `action`·`bars` 가 전부 None 이었고, bars 검사가 먼저라
+    "bars 가 비어 있거나…" 만 뱉었다(2026-07-28 실측 — 모델은 올바른 배열을 넘겼는데
+    모듈이 못 읽은 것). 직접 stdin 테스트는 봉투 없이 먹여서 통과했기에 더 늦게 잡혔다.
+    봉투가 없어도 동작하게 둔다(테스트·수동 호출 편의, 위험 0).
+    """
     raw = sys.stdin.read()
-    return json.loads(raw) if raw.strip() else {}
+    if not raw.strip():
+        return {}
+    payload = json.loads(raw)
+    if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
+        return payload["data"]
+    return payload
 
 
 _TUPLE_ORDER = ("date", "open", "high", "low", "close", "volume")
