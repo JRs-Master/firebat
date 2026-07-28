@@ -840,8 +840,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                   const nextP = an.points[pi + 1];
                   const isPeak = (!prevP || pt.price >= prevP.price) && (!nextP || pt.price >= nextP.price);
                   return (
+                    // 꼭짓점 점은 안 찍는다 — 꺾은선의 방향 전환이 이미 꼭짓점을 보여주고,
+                    // 라벨이 그 위에 붙어 있어 중복이다. 점까지 얹으니 복잡해 보였다(사용자 지적).
                     <g key={pi}>
-                      <circle cx={px(pt)} cy={yPrice(pt.price)} r={2.5} fill={stroke} />
                       {pt.label && waveBadge(
                         px(pt), yPrice(pt.price), String(pt.label), stroke, isPeak ? -1 : 1,
                         // 마지막 점이면서 데이터 끝(최근 2봉) 근처 = 세로로 밀 데가 없는 자리.
