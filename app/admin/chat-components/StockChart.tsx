@@ -645,9 +645,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number, toRight = false) => {
     const h = 13;
     const w = Math.max(11, label.length * 7.5);
-    const top = padTop + h;
-    // 날짜축이 플롯 바로 아래라 여유를 더 준다 — 옛 -h 는 축 글자에 닿았다.
-    const bottom = padTop + plotH - h - 6;
+    // 라벨이 쓸 수 있는 세로 범위. **고점은 위 / 저점은 아래**가 원칙이고, 경계 뒤집기는
+    // 진짜 넘칠 때만 해야 한다 — 여유를 좁게 잡았더니 하락 추세의 저점들이 전부 위로
+    // 뒤집혀 고점 라벨과 겹쳤다(2026-07-28 사용자 지적: "지금은 둘 다 위라 겹치네").
+    // Y축이 위아래 5% 를 비워두므로 그 여백까지 라벨 자리로 쓴다.
+    const top = padTop + 6;
+    const bottom = padTop + plotH - 4;
     if (toRight && W - cx > w + 16) {
       const cy = placeLabelY(cx + w / 2 + 12, py, w, h, -1, top, bottom);
       return (
@@ -659,9 +662,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </g>
       );
     }
+    // 뒤집기 = 라벨 상자가 실제로 범위를 벗어날 때만(옛 판정은 여유 없이 13px 만 봐서 과했다).
     let dir = dirIn;
-    if (dir < 0 && py - 13 < top) dir = 1;
-    else if (dir > 0 && py + 13 > bottom) dir = -1;
+    if (dir < 0 && py - 13 - h / 2 < top) dir = 1;
+    else if (dir > 0 && py + 13 + h / 2 > bottom) dir = -1;
     const cy = placeLabelY(cx, py + dir * 13, w, h, dir, top, bottom);
     // 회피로 많이 밀렸을 때만 리더선 — 붙어 있으면 선이 오히려 지저분하다.
     const far = Math.abs(cy - py) > 20;
