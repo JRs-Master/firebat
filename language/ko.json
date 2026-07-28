@@ -72,7 +72,8 @@
       "plan": "계획 세우는 중",
       "search": "컴포넌트 찾는 중"
     },
-    "designing": "다음 단계 준비 중이에요"
+    "designing": "다음 단계 준비 중이에요",
+    "step_published": "발행"
   },
   "error": {
     "module": {

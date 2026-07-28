@@ -205,9 +205,14 @@ function makeLiveDateFmt(sampleDate: string, daily: boolean): (d: Date) => strin
  *  종가·고저로 갱신**(새 봉은 날짜 바뀔 때만). 같은 기간 = 마지막 봉 in-place 갱신(배열 길이
  *  고정 → StockChart 줌 리셋 회피), 새 기간 = append. 시드 = props.data(표준 OHLCV 행, REST
  *  분봉/일봉) — 라이브 틱이 마지막(=현재 기간) 봉부터 이어감. */
-function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles }: {
+function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles, annotations, futureSlots, scale }: {
   topic: string; symbol?: string; title?: string; data?: unknown; indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
   valueField?: string; volumeField?: string; interval?: number; maxCandles?: number;
+  // 주석 레이어 — 라이브 차트도 정적 차트와 **같은 부품**을 쓴다. 옛엔 이 셋을 안 받아 넘겨서
+  // 라이브 차트엔 파동·추세선·미래 구간을 아예 얹을 수 없었다(실측: 엘리엇 페이지가 분석을 본문
+  // 텍스트로만 싣고 차트엔 못 그림, 2026-07-28).
+  annotations?: React.ComponentProps<typeof StockChart>['annotations'];
+  futureSlots?: number; scale?: 'linear' | 'log';
 }) {
   const [ref, visible] = useInViewport<HTMLDivElement>();
   const [lastMs, setLastMs] = useState<number | null>(null);
@@ -290,7 +295,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
         </div>
       ) : (
         // 스프레드 사본 — 같은 길이의 새 배열 참조로 StockChart memo 를 깨워 틱마다 다시 그림.
-        <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators} />
+        <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators}
+          annotations={annotations} futureSlots={futureSlots} scale={scale} />
       )}
     </div>
   );
@@ -311,7 +317,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Divider':       return <DividerComp />;
     case 'LiveFeed':      return <LiveFeedComp topic={p.topic ?? ''} title={p.title} maxItems={p.maxItems} />;
     case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
-    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} />;
+    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;

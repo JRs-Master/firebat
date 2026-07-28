@@ -37,7 +37,10 @@ impl OpenAiResponsesHandler {
             Some("minimal") => "minimal",
             Some("low") => "low",
             Some("medium") => "medium",
-            Some("high") | Some("xhigh") | Some("max") => "high",
+            // xhigh = GPT-5.6 가 실제로 받는 값(에러 메시지가 supported 목록으로 확인해 줌) — 옛 코드는
+            // high 로 강등해 사용자가 고른 깊이를 삼켰다. max 는 Responses API 미지원이라 xhigh 로.
+            Some("high") => "high",
+            Some("xhigh") | Some("max") => "xhigh",
             _ => return, // none / 미설정
         };
         body["reasoning"] = serde_json::json!({ "effort": effort });

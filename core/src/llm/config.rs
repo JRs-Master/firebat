@@ -98,6 +98,36 @@ fn default_true() -> bool {
     true
 }
 
+/// Thinking effort ladder — 백엔드 값의 강도 순서. 스냅 계산에만 쓴다(전송 값은 문자열 그대로).
+const THINKING_LADDER: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+impl ThinkingConfig {
+    /// 요청 레벨을 **이 모델이 선언한 레벨** 중 하나로 스냅한다.
+    ///
+    /// 왜 필요한가: 호출자가 의도("가장 싼 추론" = `minimal`)를 문자열로 박아 보내는데, 그 값을
+    /// 선언하지 않은 모델은 400 으로 거부한다(실측: consolidation 이 `minimal` 을 보내 GPT-5.6 이
+    /// `unsupported_value` 400 → 기억 추출이 조용히 전멸). 모델별 매핑을 핸들러마다 박는 게 아니라
+    /// **선언(models.json)이 유일한 진실**이 되게 여기서 한 번 막는다.
+    ///
+    /// 규칙 = ladder 상 가장 가까운 선언 레벨, **동률이면 위쪽**(품질 쪽이 안전 — `minimal` 은
+    /// "추론 끄기"가 아니라 "가장 얕은 추론"이 의도라 `none` 보다 `low` 가 맞다).
+    pub fn snap_level(&self, requested: &str) -> Option<String> {
+        if self.levels.is_empty() {
+            return Some(requested.to_string()); // 선언 없음 = 검증 불가, 그대로 통과(하위호환)
+        }
+        if self.levels.iter().any(|l| l.value == requested) {
+            return Some(requested.to_string());
+        }
+        let rank = |v: &str| THINKING_LADDER.iter().position(|x| *x == v);
+        let want = rank(requested)?;
+        self.levels
+            .iter()
+            .filter_map(|l| rank(&l.value).map(|r| (l.value.clone(), r)))
+            .min_by_key(|(_, r)| (r.abs_diff(want), if *r < want { 1 } else { 0 }))
+            .map(|(v, _)| v)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingLevel {
     /// 백엔드에 전달되는 값 ("none" / "minimal" / "low" / "medium" / "high" / "xhigh" / "max").

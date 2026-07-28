@@ -303,6 +303,20 @@ impl ConfigDrivenAdapter {
                 enriched.cli_model = Some(m);
             }
         }
+        // Thinking 레벨을 **모델 선언 집합**으로 스냅 — 호출자가 박은 값(consolidation 의 "minimal" 등)이
+        // 그 모델에 없으면 provider 가 400 으로 거부한다. 포맷 핸들러마다 모델별 매핑을 박는 대신
+        // 선언(models.json)이 유일한 진실이 되게 여기서 한 번 막는다.
+        if let (Some(req), Some(tc)) = (enriched.thinking_level.as_deref(), config.thinking.as_ref()) {
+            let snapped = tc.snap_level(req);
+            if snapped.as_deref() != Some(req) {
+                tracing::debug!(
+                    category = "ai",
+                    "thinking level snap — model={} requested={} → {:?} (선언 밖)",
+                    config.id, req, snapped
+                );
+            }
+            enriched.thinking_level = snapped;
+        }
         // 진단 — CLI 가 실제 받는 모델 확인용(per-request 모델이 로그에 없어 "AI 멍청해짐" 추적 불가했던 갭).
         // None = CLI 기본 모델 / Some = --model 로 전송. effort 도 같이(추론 깊이).
         if config.format.starts_with("cli-") {

@@ -436,6 +436,8 @@ impl ConsolidationManager {
         let full_prompt = format!("{}\n{}{}{}", prompt_with_lang, transcript, mem_note, ent_note);
         let opts = LlmCallOpts {
             model: Some(resolve_worker_model(hook.vault.as_ref(), model_id)),
+            // 의도 = "가장 얕은 추론"(배경 잡이라 싸게). 이 값을 선언하지 않은 모델에선 어댑터가
+            // 선언 집합으로 스냅한다(ThinkingConfig::snap_level) — 옛엔 그대로 나가 400 이었다.
             thinking_level: Some("minimal".to_string()),
             // Structured output — schema-constrained JSON so extraction survives weak worker
             // models (malformed-JSON passes observed on solar-pro3, e.g. unquoted keys mid-

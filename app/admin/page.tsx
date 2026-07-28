@@ -1087,7 +1087,7 @@ function BuildLiveStatus({ status, phase }: { status?: string; phase: 'building'
 
 // Project Builder 빌드 카드 — 세션의 단계들을 한 카드 안 캐러셀(슬라이더)로. 헤더 stepper(최신 기준) + 본문은
 // 보고 있는 단계(viewIdx, 기본=최신, auto-follow). 옵션 단계=칩(과거=잠김/현재=활성) / 구현=라이브 상태 피드.
-function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggestion, onLockSuggestion }: {
+function BuildCard({ stages: rawStages, loading, building, buildStatus, liveStep, onSuggestion, onLockSuggestion }: {
   stages: BuildStageEntry[];
   loading: boolean;
   building?: boolean; // 다음 단계 생성 중 — 최신 슬라이드 본문을 팩맨(대기 애니)으로.
@@ -1097,16 +1097,8 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   onLockSuggestion?: (msgId: string, picked: string) => void;
 }) {
   const t = useTranslations();
-  const last = stages.length - 1;
-  const [viewIdx, setViewIdx] = useState(last);
-  const prevLen = useRef(stages.length);
-  useEffect(() => {
-    // auto-follow — 최신 보던 중이면 새 단계로 따라감 / 과거 리뷰 중이면 유지(+ '최신으로' cue).
-    setViewIdx(v => (v >= prevLen.current - 1 ? stages.length - 1 : v));
-    prevLen.current = stages.length;
-  }, [stages.length]);
-  const vi = Math.min(viewIdx, last);
-  const latest = stages[last];
+  const [viewIdx, setViewIdx] = useState(rawStages.length - 1);
+  const latest = rawStages[rawStages.length - 1];
   const bs = latest.state;
   // 수정 빌드(mode='modify', start_build targetSlug) = 변경점→적용 2단계 — stepper 도 그 흐름만 표시.
   const isModify = (bs as { mode?: string }).mode === 'modify';
@@ -1133,8 +1125,6 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   // step 에 frozen. 턴 끝나면 liveStep=undefined 라 실제 bs.step 으로 복귀.
   const liveIdx = liveStep ? STEPS.findIndex(s => s.key === liveStep) : -1;
   const rawIdx = liveIdx >= 0 ? liveIdx : STEPS.findIndex(s => s.key === bs.step);
-  const stage = stages[vi];
-  const onLatest = vi === last;
   // 로더(라이브 상태)는 **구현(앱 빌드)** 때만 — 구현 단계 OR 최신서 (완료 OR 구현 생성 중). 옛 `onLatest && building`
   // 은 디자인→검토 같은 옵션 단계 생성에도 떠서(사용자: "디자인부터 팩맨") 다음 생성 단계가 implement 일 때로 한정.
   const genNextImplement = !!building && rawIdx >= 0 && STEPS[Math.min(rawIdx + 1, STEPS.length - 1)].key === 'implement';
@@ -1142,7 +1132,30 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   // "만드는 중이에요" 라 단계와 문구가 어긋났다(사용자: "검토단계에서 만드는 중 나오면 안 되지").
   const implIdx = STEPS.findIndex(s => s.key === 'implement');
   const curIdx = genNextImplement && implIdx >= 0 ? implIdx : rawIdx;
-  const stageImplement = stage.state.step === 'implement' || (onLatest && (done || genNextImplement));
+  // **구현 슬라이드를 실제로 만든다** — 구현은 메시지가 턴 끝에야 오므로, 옛엔 카드가 검토 슬라이드에
+  // 머문 채 stepper 만 구현으로 갔다: 파란불은 구현 / 회색 링(보는 중)은 검토 / 본문은 검토 note /
+  // 그 밑에 구현 로더가 붙어 네 표시가 서로 다른 단계를 말했다(사용자 2026-07-28). 가상 슬라이드를
+  // 붙이면 캐러셀 점·회색 링·본문이 전부 구현으로 함께 넘어가고, 실제 구현 메시지가 도착하면
+  // 같은 자리에서 교체된다(길이 불변 → 보던 위치 유지).
+  const stages = useMemo(() => {
+    const hasImpl = rawStages.some(st => st.state.step === 'implement');
+    if (hasImpl || !genNextImplement || implIdx < 0) return rawStages;
+    return [...rawStages, {
+      msgId: `${latest.msgId}#implement`,
+      state: { ...latest.state, step: 'implement' } as BuildSessionView,
+    }];
+  }, [rawStages, genNextImplement, implIdx, latest]);
+  const last = stages.length - 1;
+  const vi = Math.min(viewIdx, last);
+  const stage = stages[vi];
+  const onLatest = vi === last;
+  const prevLen = useRef(stages.length);
+  useEffect(() => {
+    // auto-follow — 최신 보던 중이면 새 단계로 따라감 / 과거 리뷰 중이면 유지(+ '최신으로' cue).
+    setViewIdx(v => (v >= prevLen.current - 1 ? stages.length - 1 : v));
+    prevLen.current = stages.length;
+  }, [stages.length]);
+  const stageImplement = stage.state.step === 'implement';
   const stageChips = !!stage.suggestions && stage.suggestions.length > 0
     && !stage.pendingActions?.some(p => p.status === 'past-runat');
   // 단계 안내문 — 옛엔 카드 *바깥* 일반 답변으로 떠서 카드와 따로 놀았다(사용자: "PB카드 위에 Continue,
@@ -1150,8 +1163,8 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
   // 넘기며 뱉는 신호)은 카드가 이미 stepper 로 표시하므로 생략 — 길이 기준(일반 규칙, 문구 나열 아님).
   const note = stage.note && stage.note.trim().length > 12 ? stage.note.trim() : '';
   return (
-    <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
+    <div className={`mt-2 rounded-2xl border shadow-sm overflow-hidden ${done ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-slate-50' : 'border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50'}`}>
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b ${done ? 'border-emerald-200/60' : 'border-blue-200/60'}`}>
         <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">{isModify ? `🔧 ${t('build.modify_in_progress')}` : `🔨 ${t('build.in_progress')}${bs.tier ? ` · ${bs.tier}` : ''}`}</span>
         <div className="flex items-center gap-1 flex-wrap">
           {/* 색 축 2개를 분리한다 — **파랑 = 진행**(완료·현재 단계), **회색 링 = 지금 보고 있는 슬라이드**.
@@ -1163,17 +1176,23 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
             const stageIdx = stages.findIndex(st => st.state.step === s.key);
             // 발행 완료 = 마지막 칩(구현)이 '완료'로 바뀜 — 별도 완료 배지를 옆에 띄우는 대신
             // 진행 표시 자체가 종료 상태를 말하게 (사용자: "구현이 완료로 바뀌게 하는 게 낫지 않을까").
-            const isFinishChip = done && i === STEPS.length - 1;
+            // 마지막 칩이 세 상태를 말한다: **구현**(만드는 중) → **완료**(다 만들고 승인 대기)
+            // → **발행**(승인됨). 완료는 아직 빌드 흐름 안이라 진행색(파랑), 발행만 발행색(에메랄드)
+            // — 사용자 규칙: "완료는 원래랑 같은 파란계열, 발행하면 발행색"(2026-07-28).
+            const isLastChip = i === STEPS.length - 1;
+            const finishLabel = published ? t('build.step_published') : awaiting ? t('build.done') : null;
+            const isFinishChip = isLastChip && !!finishLabel;
             return (
               <div key={s.key} className="flex items-center gap-1">
                 <button type="button" disabled={stageIdx < 0} onClick={() => { if (stageIdx >= 0) setViewIdx(stageIdx); }}
                   className={`inline-flex items-center text-[11px] px-2 py-0.5 rounded-full transition-colors ${
-                    isFinishChip ? 'bg-emerald-100 text-emerald-700 font-bold'
+                    isFinishChip && published ? 'bg-emerald-100 text-emerald-700 font-bold'
+                    : isFinishChip ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200'
                     : stepDone ? 'bg-blue-100 text-blue-700'
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
-                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-slate-400' : ''}`}>
-                  {stepDone ? '✓ ' : `${i + 1}. `}{isFinishChip ? t('build.done') : s.label}
+                  } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-blue-400' : ''}`}>
+                  {stepDone || isFinishChip ? '✓ ' : `${i + 1}. `}{finishLabel ?? s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
               </div>
@@ -1218,10 +1237,10 @@ function BuildCard({ stages, loading, building, buildStatus, liveStep, onSuggest
         </div>
       )}
       {stages.length > 1 && (
-        <div className="flex items-center justify-center gap-3 px-3 py-2 border-t border-blue-200/50 bg-white/40">
+        <div className={`flex items-center justify-center gap-3 px-3 py-2 border-t bg-white/40 ${done ? 'border-emerald-200/50' : 'border-blue-200/50'}`}>
           <button type="button" disabled={vi <= 0} onClick={() => setViewIdx(Math.max(0, vi - 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">←</button>
           <div className="flex items-center gap-1">
-            {stages.map((_, i) => <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === vi ? 'bg-blue-600' : 'bg-slate-300'}`} />)}
+            {stages.map((_, i) => <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === vi ? (done ? 'bg-emerald-600' : 'bg-blue-600') : 'bg-slate-300'}`} />)}
           </div>
           <button type="button" disabled={vi >= last} onClick={() => setViewIdx(Math.min(last, vi + 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">→</button>
           {vi < last && <button type="button" onClick={() => setViewIdx(last)} className="text-[11px] text-blue-600 hover:underline ml-1">{t('build.view_latest')}</button>}

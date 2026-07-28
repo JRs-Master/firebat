@@ -72,7 +72,8 @@
       "plan": "Planning",
       "search": "Finding components"
     },
-    "designing": "Preparing next step…"
+    "designing": "Preparing next step…",
+    "step_published": "Live"
   },
   "error": {
     "module": {
