@@ -316,6 +316,58 @@ def _invalidation(pts, structure):
             "reason": why}
 
 
+def _channel(pts, structure, last_i, project_bars):
+    """엘리엇 **채널** — 기준선 + 평행선으로 진행 구간을 가둔다.
+
+    파동 비율이 정해져 있다는 성질의 직접적인 귀결이고, 교과서 작도법 그대로다:
+      추진파(0..4 확보) — 2·4 를 잇는 기준선, 3 을 지나는 평행선 → **5파는 대개 평행선에서 끝난다**
+      추진파(0..3 확보) — 1·3 기준선, 2 통과 평행선(초기 채널)
+      조정파 A-B-C      — A·C 기준선, B 통과 평행선
+    꺾은선(파동 골격)만 그리면 "다음이 어디냐"가 안 보이는데, 채널은 **미래 구간까지 연장**되어
+    그 교점이 곧 목표가 된다(사용자 지적 2026-07-28: "비율이 정해져 있으니 추세선으로 표시").
+
+    반환 좌표는 stock_chart annotations 규약 그대로 — 시작점은 `i`, 끝점은 `barsAhead`(마지막
+    봉 기준)라 미래 여백에 그대로 얹힌다.
+    """
+    p = [x["price"] for x in pts]
+    idx = [x["i"] for x in pts]
+    n = len(p)
+    if structure == "impulse":
+        if n >= 5:
+            a, b, thru, label = 2, 4, 3, "2-4 기준선 · 3 통과 평행선 (5파 종착 추정)"
+        elif n >= 4:
+            a, b, thru, label = 1, 3, 2, "1-3 기준선 · 2 통과 평행선 (초기 채널)"
+        else:
+            return None
+    else:
+        if n >= 4:
+            a, b, thru, label = 1, 3, 2, "A-C 기준선 · B 통과 평행선"
+        else:
+            return None
+    if idx[b] == idx[a]:
+        return None
+    slope = (p[b] - p[a]) / (idx[b] - idx[a])
+    end_i = last_i + project_bars
+
+    def at(i, ax, ay):
+        return ay + slope * (i - ax)
+
+    return {
+        "label": label,
+        "slopePerBar": round(slope, 6),
+        "base": [
+            {"i": idx[a], "price": round(p[a], 6)},
+            {"barsAhead": project_bars, "price": round(at(end_i, idx[a], p[a]), 6)},
+        ],
+        "parallel": [
+            {"i": idx[thru], "price": round(p[thru], 6)},
+            {"barsAhead": project_bars, "price": round(at(end_i, idx[thru], p[thru]), 6)},
+        ],
+        # 평행선 위 투영값 = 이 채널이 말하는 목표. 미래값이므로 예측이다(관측 아님).
+        "projectedTarget": round(at(end_i, idx[thru], p[thru]), 6),
+    }
+
+
 def _corrective(pts):
     """조정 구조 판별 — A-B-C(지그재그/플랫) 또는 A-B-C-D-E(삼각수렴).
 
@@ -385,7 +437,7 @@ def _corrective(pts):
     }
 
 
-def corrective_candidates(pivots, limit):
+def corrective_candidates(pivots, limit, last_i=0, project_bars=0):
     """조정 구조 후보 — 진행 중(부분)도 포함.
 
     5파가 끝나면 다음은 조정이라, 추진파만 세면 그 구간 전체가 "후보 0"이 된다(사용자 지적
@@ -413,6 +465,7 @@ def corrective_candidates(pivots, limit):
                 "confidence": _confidence(info["fit"], len(used)),
                 "evidencePivots": len(used),
                 "invalidation": _invalidation(used, info["structure"]),
+                "channel": _channel(used, info["structure"], last_i, project_bars),
                 "ratios": info["ratios"],
                 "labels": labels,
                 "pivots": [
@@ -430,7 +483,7 @@ def corrective_candidates(pivots, limit):
     return out[:limit]
 
 
-def elliott_candidates(pivots, limit):
+def elliott_candidates(pivots, limit, last_i=0, project_bars=0):
     """Counts that survive the applicable hard rules — complete AND in-progress.
 
     Windows of consecutive pivots only (waves are consecutive swings; enumerating subsets
@@ -461,6 +514,7 @@ def elliott_candidates(pivots, limit):
                 "confidence": _confidence(fit, size),
                 "evidencePivots": size,
                 "invalidation": _invalidation(window, "impulse"),
+                "channel": _channel(window, "impulse", last_i, project_bars),
                 "ratios": fit_detail,
                 "labels": labels,
                 "pivots": [
@@ -546,6 +600,9 @@ def main():
         # 급(degree) — 엘리엇은 프랙탈이라 임계 하나로는 "지금이 몇 파"가 정해지지 않는다.
         # 5% 로 잡힌 5파 전체가 15% 로 보면 그냥 1파일 수 있다. 같은 계산을 임계별로 돌려
         # 급마다 답을 주면 "잔 급에선 3파 진행, 큰 급에선 그게 1파" 라는 정직한 답이 된다.
+        last_i = bars[-1]["i"]
+        # 투영 길이 = 기간의 20%(5~60봉). 차트 futureSlots 와 맞춰 쓰면 채널이 여백을 정확히 채운다.
+        project_bars = int(inp.get("projectBars") or max(5, min(60, round(len(bars) * 0.2))))
         thresholds = inp.get("thresholds")
         if not isinstance(thresholds, list) or not thresholds:
             # 급을 안 고르면 자동값 기준 3단(잔 급 / 기준 / 큰 급)을 함께 본다 — 어느 하나가
@@ -561,8 +618,8 @@ def main():
             except (TypeError, ValueError):
                 continue
             pv = zigzag(bars, t)
-            imp = elliott_candidates(pv, limit)
-            cor = corrective_candidates(pv, limit)
+            imp = elliott_candidates(pv, limit, last_i, project_bars)
+            cor = corrective_candidates(pv, limit, last_i, project_bars)
             # 조정이 어느 추진파 뒤에 붙는지 — 5파 끝 피벗 == 조정 시작 피벗이면 이어진다.
             # "5파 완결 후 ABC 조정 중"이 한 번에 읽히게(분석의 실제 값어치가 여기 있다).
             imp_ends = {c["pivots"][-1]["i"]: c["labels"][-1] for c in imp}
@@ -581,8 +638,12 @@ def main():
             "success": True,
             "data": {
                 "barRange": bar_range,
+                "projectBars": project_bars,
                 "degrees": degrees,
                 "note": (
+                    "각 후보의 `channel` 은 기준선·평행선 두 줄이며 끝점이 barsAhead 라 차트 미래 구간까지 "
+                    "이어집니다 — stock_chart annotations 에 kind:\"path\", projected:true 로 두 줄을 넣고 "
+                    f"futureSlots 를 {project_bars} 이상으로 주세요. "
                     "이 답은 barRange(기간) + threshold(급) 쌍에 대해서만 유효합니다 — "
                     "답변에 반드시 둘 다 밝히세요('240일 일봉, 8% 급 기준 3파'). "
                     "급(threshold)마다 카운트가 다른 것이 정상입니다 — 엘리엇은 프랙탈이라 "
