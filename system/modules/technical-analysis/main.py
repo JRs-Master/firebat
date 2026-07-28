@@ -300,8 +300,9 @@ def _invalidation(pts, structure):
     n = len(p)
     sign = 1 if p[1] > p[0] else -1
     if structure != "impulse":
+        # 조정이 시작점 대비 어디로 갔나(순변화)로 판정 — 삼각형 첫 다리는 방향을 못 말한다.
         return {"price": round(p[0], 6),
-                "beyond": "below" if sign > 0 else "above",
+                "beyond": "above" if p[-1] < p[0] else "below",
                 "reason": "조정 시작점 이탈 — 이 조정 구조로 볼 수 없음"}
     table = {
         2: (0, "1파 시작 이탈 — 2파가 1파를 100% 되돌림"),
@@ -339,6 +340,30 @@ def _channel(pts, structure, last_i, project_bars):
             a, b, thru, label = 1, 3, 2, "1-3 기준선 · 2 통과 평행선 (초기 채널)"
         else:
             return None
+    elif structure == "triangle" and n >= 6:
+        # 수렴 삼각형은 두 경계선이 **만난다**(apex) — 평행 채널이 아니다.
+        # 옛 코드는 A-C 에 B 통과 평행선을 그어 위로 벌어지는 상단선을 만들고
+        # 그 미래값(코스피 실측 7,235)을 "채널 목표"로 내놨다. 수렴 구조에 평행선은 없다.
+        if idx[3] == idx[1] or idx[4] == idx[2]:
+            return None
+        s1 = (p[3] - p[1]) / (idx[3] - idx[1])   # A-C
+        s2 = (p[4] - p[2]) / (idx[4] - idx[2])   # B-D
+        end_i = last_i + project_bars
+        out = {
+            "label": "A-C · B-D 수렴 경계선 (평행 아님 — 두 선이 apex 에서 만난다)",
+            "convergingSlopes": [round(s1, 6), round(s2, 6)],
+            "base": [{"i": idx[1], "price": round(p[1], 6)},
+                     {"barsAhead": project_bars, "price": round(p[1] + s1 * (end_i - idx[1]), 6)}],
+            "parallel": [{"i": idx[2], "price": round(p[2], 6)},
+                         {"barsAhead": project_bars, "price": round(p[2] + s2 * (end_i - idx[2]), 6)}],
+        }
+        if abs(s1 - s2) > 1e-12:
+            ax = (p[2] - s2 * idx[2] - p[1] + s1 * idx[1]) / (s1 - s2)
+            if ax > last_i:
+                # apex = 시간 목표. 스러스트는 대개 apex 도달 전(약 60~80% 지점)에 나온다.
+                out["apex"] = {"barsAhead": int(round(ax - last_i)),
+                               "price": round(p[1] + s1 * (ax - idx[1]), 6)}
+        return out
     else:
         if n >= 4:
             a, b, thru, label = 1, 3, 2, "A-C 기준선 · B 통과 평행선"
@@ -440,7 +465,7 @@ def _projected_path(pts, structure, last_i, bars=None):
             else:
                 target = line
                 label = "E 목표(A-C 추세선)"
-            next_ratio, next_label = None, "삼각형 이탈 목표(A-B 폭만큼 돌파)"
+            next_ratio, next_label = None, "스러스트 목표(삼각형 최대 폭 A-B 를 E 에서 투영)"
     else:
         if n >= 4:
             wa = (p[1] - p[0]) * sign
@@ -455,7 +480,7 @@ def _projected_path(pts, structure, last_i, bars=None):
         {"barsAhead": remain, "price": round(target, 6), "label": label},
     ]
     if structure == "triangle":
-        # 삼각형 이탈(thrust)은 **삼각형에 들어오기 전 추세**를 잇는다 — 삼각형 자체는 횡보라
+        # 스러스트(thrust — 표준 용어)은 **삼각형에 들어오기 전 추세**를 잇는다 — 삼각형 자체는 횡보라
         # 자기 다리 방향으로는 알 수 없다. 앞선 봉들의 흐름을 보고, 없으면 삼각형 순변화로 대체.
         # 옛 식은 A 다리 방향을 뒤집어 써서 하락 뒤 삼각형인데 위로 돌파를 그렸다(실측 7,364).
         trend = 1 if p[-1] > p[0] else -1
