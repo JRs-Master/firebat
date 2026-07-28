@@ -373,7 +373,7 @@ def _median(xs):
     return s[len(s) // 2] if s else 0
 
 
-def _projected_path(pts, structure, last_i):
+def _projected_path(pts, structure, last_i, bars=None):
     """**예상 경로** — 진행 중인 파동의 남은 구간 + 그 다음 반등을 비율로 이어 그린다.
 
     채널(평행선)은 "구간"을 보여주지만 "이 다음에 어디로 가는가"를 한 줄로 말해주진 않는다.
@@ -430,9 +430,16 @@ def _projected_path(pts, structure, last_i):
     elif structure == "triangle":
         if idx[3] != idx[1]:
             slope = (p[3] - p[1]) / (idx[3] - idx[1])
-            target = p[1] + slope * (last_i + remain - idx[1])
-            label = "E 목표(A-C 추세선)"
-            # 삼각형 이탈 = 가장 넓은 폭(A-B)만큼 직전 추세 방향으로 밀어낸다(교과서 thrust).
+            line = p[1] + slope * (last_i + remain - idx[1])
+            e_dir = 1 if p[5] - p[4] > 0 else -1   # E 가 가는 방향
+            if (line - cur) * e_dir < 0:
+                # E 가 A-C 추세선을 이미 뚫었다 = 수렴 이탈 → **삼각형 무효 신호**.
+                # 뒤에 있는 선값을 목표로 주면 화살표가 거꾸로 그어진다(실측: 현재 6205 / 목표 6389).
+                target = cur
+                label = "A-C 추세선 이탈 — 삼각형 무효 가능(E 가 선을 넘었음)"
+            else:
+                target = line
+                label = "E 목표(A-C 추세선)"
             next_ratio, next_label = None, "삼각형 이탈 목표(A-B 폭만큼 돌파)"
     else:
         if n >= 4:
@@ -448,9 +455,18 @@ def _projected_path(pts, structure, last_i):
         {"barsAhead": remain, "price": round(target, 6), "label": label},
     ]
     if structure == "triangle":
-        width = abs(p[2] - p[1])  # A-B 폭
-        thrust = target + width * (1 if p[1] > p[0] else -1) * -1
-        second = thrust
+        # 삼각형 이탈(thrust)은 **삼각형에 들어오기 전 추세**를 잇는다 — 삼각형 자체는 횡보라
+        # 자기 다리 방향으로는 알 수 없다. 앞선 봉들의 흐름을 보고, 없으면 삼각형 순변화로 대체.
+        # 옛 식은 A 다리 방향을 뒤집어 써서 하락 뒤 삼각형인데 위로 돌파를 그렸다(실측 7,364).
+        trend = 1 if p[-1] > p[0] else -1
+        if bars:
+            back = max(0, idx[0] - span)
+            prev_close = next((b["close"] for b in bars if b["i"] == back), None)
+            start_close = next((b["close"] for b in bars if b["i"] == idx[0]), None)
+            if prev_close is not None and start_close is not None and prev_close != start_close:
+                trend = 1 if start_close > prev_close else -1
+        width = abs(p[2] - p[1])  # A-B 폭 = 가장 넓은 구간
+        second = target + width * trend
     elif next_ratio is None:
         second = target
     elif next_ratio < 0:
@@ -541,7 +557,7 @@ def _corrective(pts):
     }
 
 
-def corrective_candidates(pivots, limit, last_i=0, project_bars=0):
+def corrective_candidates(pivots, limit, last_i=0, project_bars=0, bars_ref=None):
     """조정 구조 후보 — 진행 중(부분)도 포함.
 
     5파가 끝나면 다음은 조정이라, 추진파만 세면 그 구간 전체가 "후보 0"이 된다(사용자 지적
@@ -570,7 +586,7 @@ def corrective_candidates(pivots, limit, last_i=0, project_bars=0):
                 "evidencePivots": len(used),
                 "invalidation": _invalidation(used, info["structure"]),
                 "channel": _channel(used, info["structure"], last_i, project_bars),
-                "projectedPath": _projected_path(used, info["structure"].split("-")[0], last_i),
+                "projectedPath": _projected_path(used, info["structure"].split("-")[0], last_i, bars_ref),
                 "ratios": info["ratios"],
                 "labels": labels,
                 "pivots": [
@@ -588,7 +604,7 @@ def corrective_candidates(pivots, limit, last_i=0, project_bars=0):
     return out[:limit]
 
 
-def elliott_candidates(pivots, limit, last_i=0, project_bars=0):
+def elliott_candidates(pivots, limit, last_i=0, project_bars=0, bars_ref=None):
     """Counts that survive the applicable hard rules — complete AND in-progress.
 
     Windows of consecutive pivots only (waves are consecutive swings; enumerating subsets
@@ -620,7 +636,7 @@ def elliott_candidates(pivots, limit, last_i=0, project_bars=0):
                 "evidencePivots": size,
                 "invalidation": _invalidation(window, "impulse"),
                 "channel": _channel(window, "impulse", last_i, project_bars),
-                "projectedPath": _projected_path(window, "impulse", last_i),
+                "projectedPath": _projected_path(window, "impulse", last_i, bars_ref),
                 "ratios": fit_detail,
                 "labels": labels,
                 "pivots": [
@@ -724,8 +740,8 @@ def main():
             except (TypeError, ValueError):
                 continue
             pv = zigzag(bars, t)
-            imp = elliott_candidates(pv, limit, last_i, project_bars)
-            cor = corrective_candidates(pv, limit, last_i, project_bars)
+            imp = elliott_candidates(pv, limit, last_i, project_bars, bars)
+            cor = corrective_candidates(pv, limit, last_i, project_bars, bars)
             # 조정이 어느 추진파 뒤에 붙는지 — 5파 끝 피벗 == 조정 시작 피벗이면 이어진다.
             # "5파 완결 후 ABC 조정 중"이 한 번에 읽히게(분석의 실제 값어치가 여기 있다).
             imp_ends = {c["pivots"][-1]["i"]: c["labels"][-1] for c in imp}
