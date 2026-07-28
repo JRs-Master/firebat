@@ -19,7 +19,12 @@ interface LogEntry {
   level: string;
   target: string;
   message: string;
+  /** 실제 tracing target(모듈 경로) — EnvFilter directive 로 쓸 수 있는 유일한 이름. */
+  module?: string;
 }
+
+/** EnvFilter 레벨 사다리 — 런타임 레벨 조립기의 선택지. */
+const ENV_LEVELS = ['off', 'error', 'warn', 'info', 'debug', 'trace'] as const;
 
 const LEVEL_COLOR: Record<string, string> = {
   ERROR: 'bg-red-100 text-red-700 border-red-200',
@@ -34,6 +39,8 @@ const TAIL_MAX_ROWS = 1000;
 
 export function LogPanel() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
+  // load 가 loadFacets 보다 위에 정의돼 있어 ref 로 잇는다(선언 순서 의존 없이).
+  const loadFacetsRef = useRef<(() => Promise<void>) | null>(null);
   const [minLevel, setMinLevel] = useState('');
   const [targetPrefix, setTargetPrefix] = useState('');
   const [contains, setContains] = useState('');
@@ -45,7 +52,14 @@ export function LogPanel() {
   // 시 usePolling 이 자동 일시정지. 새 줄은 위에 쌓임(최신순 뷰 유지 = 스크롤 고정 불필요).
   const [tail, setTail] = useState(false);
   // 런타임 EnvFilter — ssh `kill -HUP` 대신 UI 에서 즉시 적용 (재빌드/재시작 0).
-  const [filterStr, setFilterStr] = useState('info');
+  // 런타임 EnvFilter 는 **조립해서** 만든다 — 옛 자유입력은 모듈 경로를 외워야 해서 못 썼다
+  // (사용자 2026-07-29: "뭘 적어야 할지를 모르잖아"). 기본 레벨 + 모듈별 오버라이드 → 문자열.
+  const [baseLevel, setBaseLevel] = useState('info');
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const filterStr = useMemo(
+    () => [baseLevel, ...Object.entries(overrides).map(([m, lv]) => `${m}=${lv}`)].join(','),
+    [baseLevel, overrides],
+  );
   const [filterMsg, setFilterMsg] = useState<string | null>(null);
   // tail 폴링 커서 — 마지막으로 본 ts (그 이후만 요청). ref = 폴링 tick 간 상태 레이스 회피.
   const lastTsRef = useRef(0);
@@ -61,6 +75,7 @@ export function LogPanel() {
   }, [minLevel, targetPrefix, contains, limit]);
 
   const load = useCallback(async () => {
+    void loadFacetsRef.current?.();  // 목록도 함께 갱신 — 새 target/module 이 바로 보이게
     setLoading(true);
     try {
       const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
@@ -112,12 +127,39 @@ export function LogPanel() {
     setTail(true);
   }, []);
 
-  // target 자동완성 — 로드된 엔트리에서 distinct target 파생 (백엔드 0).
-  const targetOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of entries) set.add(e.target);
-    return Array.from(set).sort();
-  }, [entries]);
+  // target 목록 — **필터와 독립**으로 따로 받는다. 옛엔 화면에 로드된 엔트리에서 파생해서,
+  // `ai` 로 거르는 순간 목록이 `ai` 하나로 쪼그라들어 다음 target 으로 못 넘어갔다.
+  // 백엔드 0(같은 조회 API 를 조건 없이 한 번 더) — admin 전용 로컬 sqlite 라 값싸다.
+  const [facets, setFacets] = useState<Array<{ target: string; count: number; warn: boolean }>>([]);
+  /// EnvFilter 로 실제 켜고 끌 수 있는 대상 — 로그가 기록해 둔 모듈 경로에서 그대로 읽는다.
+  /// 목록을 코드에 박지 않으므로 모듈이 늘면 UI 도 저절로 는다.
+  const [modules, setModules] = useState<Array<{ module: string; count: number }>>([]);
+  const loadFacets = useCallback(async () => {
+    try {
+      const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
+        '/api/logs?limit=1000', { category: 'logs' },
+      );
+      if (!data?.success) return;
+      const acc = new Map<string, { count: number; warn: boolean }>();
+      for (const e of data.entries ?? []) {
+        const cur = acc.get(e.target) ?? { count: 0, warn: false };
+        cur.count += 1;
+        const lv = (e.level || '').toUpperCase();
+        if (lv === 'WARN' || lv === 'ERROR') cur.warn = true;
+        acc.set(e.target, cur);
+      }
+      setFacets(
+        Array.from(acc, ([target, v]) => ({ target, ...v })).sort((a, b) => b.count - a.count),
+      );
+      const mods = new Map<string, number>();
+      for (const e of data.entries ?? []) {
+        if (e.module) mods.set(e.module, (mods.get(e.module) ?? 0) + 1);
+      }
+      setModules(Array.from(mods, ([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count));
+    } catch { /* 목록은 보조 — 실패해도 조회는 된다 */ }
+  }, []);
+  loadFacetsRef.current = loadFacets;
+  useEffect(() => { void loadFacets(); }, [loadFacets]);
 
   const applyFilter = useCallback(async () => {
     setFilterMsg(null);
@@ -140,18 +182,51 @@ export function LogPanel() {
       <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
         <span className="text-xs sm:text-sm font-bold text-slate-700">런타임 로그 레벨</span>
         <p className="text-[11px] text-slate-400">
-          예: <code className="bg-slate-200 px-1 rounded">info</code> 또는 <code className="bg-slate-200 px-1 rounded">info,firebat_infra::adapters::sandbox=debug</code>
+          기본 레벨을 고르고, 더 자세히 볼 모듈만 따로 올립니다 — 이름을 외워서 적을 필요 없이 실제 로그에 찍힌 모듈에서 고릅니다.
         </p>
-        <div className="flex gap-2">
-          <input
-            id="log-filter"
-            name="logFilter"
-            type="text"
-            value={filterStr}
-            onChange={e => setFilterStr(e.target.value)}
-            placeholder="info,target=debug"
-            className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-slate-600">기본</span>
+          {ENV_LEVELS.map(lv => (
+            <button key={lv} type="button" onClick={() => setBaseLevel(lv)}
+              className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
+                baseLevel === lv ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                 : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+              {lv}
+            </button>
+          ))}
+        </div>
+        {modules.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold text-slate-600">모듈별로 더 자세히 (선택)</span>
+            <div className="flex flex-wrap gap-1">
+              {modules.map(m => {
+                const cur = overrides[m.module];
+                return (
+                  <button key={m.module} type="button"
+                    // 클릭할 때마다 off → debug → trace → 해제. 한 컨트롤로 켜고 끄고 강도까지.
+                    onClick={() => setOverrides(o => {
+                      const next = { ...o };
+                      if (!cur) next[m.module] = 'debug';
+                      else if (cur === 'debug') next[m.module] = 'trace';
+                      else delete next[m.module];
+                      return next;
+                    })}
+                    title={`${m.module} — 최근 ${m.count}건 (클릭: debug → trace → 해제)`}
+                    className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
+                      cur ? 'bg-amber-500 text-white border-amber-500 font-bold'
+                          : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}`}>
+                    {m.module.split('::').slice(-2).join('::')}{cur ? ` = ${cur}` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div className="flex gap-2 items-center">
+          {/* 조립 결과를 그대로 보여준다 — 무엇이 적용되는지 숨기지 않는다. */}
+          <code className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono text-slate-600 overflow-x-auto whitespace-nowrap">
+            {filterStr}
+          </code>
           <button
             type="button"
             onClick={applyFilter}
@@ -181,21 +256,32 @@ export function LogPanel() {
             <option value="DEBUG">DEBUG 이상</option>
           </select>
         </div>
-        <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
-          <label htmlFor="log-target" className="text-[11px] font-semibold text-slate-600">target</label>
-          <input
-            id="log-target"
-            name="targetPrefix"
-            type="text"
-            list="log-target-options"
-            value={targetPrefix}
-            onChange={e => setTargetPrefix(e.target.value)}
-            placeholder="sandbox / cron / ai …"
-            className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <datalist id="log-target-options">
-            {targetOptions.map(t => <option key={t} value={t} />)}
-          </datalist>
+        <div className="flex flex-col gap-1 w-full order-last">
+          <label className="text-[11px] font-semibold text-slate-600">
+            target {targetPrefix && <span className="font-normal text-slate-400">— {targetPrefix}</span>}
+          </label>
+          {/* 이름을 외워서 치는 대신 **있는 것 중에 고른다**. 건수로 정렬하고, 경고·에러가
+              섞인 target 은 점으로 표시 — "어디를 봐야 하나"가 목록 자체에서 읽힌다. */}
+          <div className="flex flex-wrap gap-1">
+            <button type="button" onClick={() => setTargetPrefix('')}
+              className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
+                targetPrefix === '' ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+              전체
+            </button>
+            {facets.map(f => (
+              <button key={f.target} type="button"
+                onClick={() => setTargetPrefix(targetPrefix === f.target ? '' : f.target)}
+                title={`${f.target} — 최근 ${f.count}건`}
+                className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors inline-flex items-center gap-1 ${
+                  targetPrefix === f.target ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
+                {f.warn && <span className={`w-1.5 h-1.5 rounded-full ${targetPrefix === f.target ? 'bg-white' : 'bg-amber-500'}`} />}
+                {f.target}
+                <span className={targetPrefix === f.target ? 'text-blue-100' : 'text-slate-400'}>{f.count}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
           <label htmlFor="log-contains" className="text-[11px] font-semibold text-slate-600">검색 (메시지·target 포함)</label>

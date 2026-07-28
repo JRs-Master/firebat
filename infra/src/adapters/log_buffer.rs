@@ -28,6 +28,12 @@ pub struct LogRow {
     pub level: String,
     pub target: String,
     pub message: String,
+    /// 진짜 tracing target(= 모듈 경로). `category` 필드가 있으면 위 `target` 은 표시용으로
+    /// 승격된 카테고리라, **EnvFilter 가 실제로 매칭하는 이름을 잃어버린다** — 그래서 admin 이
+    /// "이 로그 디버그 켜기"를 하려면 모듈 경로를 외워서 쳐야 했다(2026-07-29 사용자: "뭘 적어야
+    /// 할지를 모르잖아"). 분류를 문자열에 섞지 않고 **컬럼으로** 함께 보관해, UI 가 유효한
+    /// directive 목록을 로그에서 그대로 읽어 고르게 한다(하드코딩 0).
+    pub module: String,
 }
 
 /// 조회 필터 — LogService.QueryLogs 가 변환해 전달.
@@ -156,6 +162,7 @@ impl<S: Subscriber> Layer<S> for LogBufferLayer {
             level: meta.level().to_string(),
             target,
             message,
+            module: meta.target().to_string(),
         };
         // send 실패 (writer thread 종료) = silent — 로그 1건 누락이 서버 죽이면 안 됨.
         let _ = self.tx.send(row);
@@ -176,8 +183,8 @@ fn log_writer_loop(db_path: PathBuf, capacity: usize, rx: mpsc::Receiver<LogRow>
     let mut since_trim = 0usize;
     for row in rx {
         let _ = conn.execute(
-            "INSERT INTO logs (ts_ms, level, target, message) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![row.ts_ms, row.level, row.target, row.message],
+            "INSERT INTO logs (ts_ms, level, target, message, module) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![row.ts_ms, row.level, row.target, row.message, row.module],
         );
         since_trim += 1;
         // 매 100건마다 ring trim — capacity 초과분(oldest) 삭제. 매 insert 비용 회피.
@@ -204,11 +211,15 @@ fn init_log_db(db_path: &Path) -> Result<Connection, String> {
             ts_ms INTEGER NOT NULL,
             level TEXT NOT NULL,
             target TEXT NOT NULL,
-            message TEXT NOT NULL
+            message TEXT NOT NULL,
+            module TEXT NOT NULL DEFAULT ''
         )",
         [],
     )
     .map_err(|e| e.to_string())?;
+    // 방어 ALTER — 기존 logs.db 엔 module 컬럼이 없다. 실패(이미 있음) = 무시.
+    // 인덱스는 ALTER 뒤에(INFRA_BIBLE — 순서 뒤집히면 기동 crash-loop).
+    let _ = conn.execute("ALTER TABLE logs ADD COLUMN module TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs (ts_ms DESC)", []);
     Ok(conn)
 }
@@ -220,6 +231,7 @@ fn row_to_log(r: &rusqlite::Row) -> rusqlite::Result<LogRow> {
         level: r.get(1)?,
         target: r.get(2)?,
         message: r.get(3)?,
+        module: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
     })
 }
 
@@ -246,7 +258,7 @@ pub fn query_logs(db_path: &Path, filter: &LogQueryFilter) -> Result<Vec<LogRow>
         let pat = format!("%{}%", like_escape(c));
         let mut stmt = conn
             .prepare(
-                "SELECT ts_ms, level, target, message FROM logs \
+                "SELECT ts_ms, level, target, message, module FROM logs \
                  WHERE (message LIKE ?1 ESCAPE '\\' OR target LIKE ?1 ESCAPE '\\') \
                  ORDER BY id DESC LIMIT ?2",
             )
@@ -257,7 +269,7 @@ pub fn query_logs(db_path: &Path, filter: &LogQueryFilter) -> Result<Vec<LogRow>
         rows.flatten().collect()
     } else {
         let mut stmt = conn
-            .prepare("SELECT ts_ms, level, target, message FROM logs ORDER BY id DESC LIMIT ?1")
+            .prepare("SELECT ts_ms, level, target, message, module FROM logs ORDER BY id DESC LIMIT ?1")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(rusqlite::params![scan_limit], row_to_log)

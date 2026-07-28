@@ -3129,6 +3129,9 @@ message LogEntryPb {
   string level = 2;
   string target = 3;
   string message = 4;
+  // 실제 tracing target(모듈 경로). `target` 은 category 가 있으면 그걸로 승격된 표시용 이름이라
+  // EnvFilter directive 로 못 쓴다 — 런타임 레벨 UI 가 유효한 대상을 목록에서 고르게 하려면 이게 필요.
+  string module = 5;
 }
 
 message LogQueryRequest {

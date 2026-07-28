@@ -78,6 +78,7 @@ impl LogService for LogServiceImpl {
                 level: r.level,
                 target: r.target,
                 message: r.message,
+                module: r.module,
             })
             .collect();
         Ok(Response::new(LogQueryResponse { entries }))
