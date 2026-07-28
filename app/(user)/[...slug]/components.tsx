@@ -205,7 +205,7 @@ function makeLiveDateFmt(sampleDate: string, daily: boolean): (d: Date) => strin
  *  종가·고저로 갱신**(새 봉은 날짜 바뀔 때만). 같은 기간 = 마지막 봉 in-place 갱신(배열 길이
  *  고정 → StockChart 줌 리셋 회피), 새 기간 = append. 시드 = props.data(표준 OHLCV 행, REST
  *  분봉/일봉) — 라이브 틱이 마지막(=현재 기간) 봉부터 이어감. */
-function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles, annotations, futureSlots, scale }: {
+function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles, annotations, futureSlots, scale, buyPoints, sellPoints }: {
   topic: string; symbol?: string; title?: string; data?: unknown; indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
   valueField?: string; volumeField?: string; interval?: number; maxCandles?: number;
   // 주석 레이어 — 라이브 차트도 정적 차트와 **같은 부품**을 쓴다. 옛엔 이 셋을 안 받아 넘겨서
@@ -213,6 +213,10 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   // 텍스트로만 싣고 차트엔 못 그림, 2026-07-28).
   annotations?: React.ComponentProps<typeof StockChart>['annotations'];
   futureSlots?: number; scale?: 'linear' | 'log';
+  // 매수·매도 화살표 — 정적 차트와 같은 부품. `derive` 로 규칙을 방문마다 재평가하면
+  // 라이브 차트에서도 신호가 최신 봉 기준으로 갱신된다.
+  buyPoints?: React.ComponentProps<typeof StockChart>['buyPoints'];
+  sellPoints?: React.ComponentProps<typeof StockChart>['sellPoints'];
 }) {
   const [ref, visible] = useInViewport<HTMLDivElement>();
   const [lastMs, setLastMs] = useState<number | null>(null);
@@ -296,7 +300,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       ) : (
         // 스프레드 사본 — 같은 길이의 새 배열 참조로 StockChart memo 를 깨워 틱마다 다시 그림.
         <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators}
-          annotations={annotations} futureSlots={futureSlots} scale={scale} />
+          annotations={annotations} futureSlots={futureSlots} scale={scale}
+          buyPoints={buyPoints} sellPoints={sellPoints} />
       )}
     </div>
   );
@@ -317,7 +322,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Divider':       return <DividerComp />;
     case 'LiveFeed':      return <LiveFeedComp topic={p.topic ?? ''} title={p.title} maxItems={p.maxItems} />;
     case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
-    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} />;
+    case 'LiveStockChart': return <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} filterable={p.filterable ?? p.searchable} columnToggle={p.columnToggle ?? p.columnSelect} sortable={p.sortable ?? p.sort} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} title={p.title} content={p.content ?? p.description ?? p.text ?? p.body} badge={p.badge} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;

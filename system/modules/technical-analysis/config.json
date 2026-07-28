@@ -54,9 +54,11 @@
           "pivots",
           "elliott_candidates",
           "chart_annotations",
-          "fib_targets"
+          "fib_targets",
+          "indicators",
+          "signals"
         ],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`."
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`. / `indicators` = 고전 지표 묶음(MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용). **신호 판정은 하지 않습니다.** / `signals` = **선언한 규칙**이 참인 봉을 찾아 `buyPoints`/`sellPoints`(차트에 그대로 넣으면 ↑↓ 화살표)와 `backtest`(체결 기록·승률·누적수익·MDD)를 반환. 전략은 코드가 아니라 `rules` 인자로 받으므로 모듈이 투자 의견을 갖지 않습니다. 지금 시점 주문 판단에는 `firedOnLastBar` 만 쓰세요."
       },
       "bars": {
         "type": "array",
@@ -86,6 +88,74 @@
         "type": "integer",
         "minimum": 0,
         "description": "chart_annotations 전용 — confidence 내림차순에서 몇 번째 후보를 그릴지(기본 0 = 1위). 다른 카운트를 보려면 올리세요."
+      },
+      "which": {
+        "type": "array",
+        "description": "[indicators] 계산할 지표 — macd/rsi/bollinger/stochastic/ichimoku 중 일부. 생략 = 전부."
+      },
+      "seriesTail": {
+        "type": "integer",
+        "description": "[indicators] series 로 돌려줄 뒤 봉 수(기본 120). 차트 폭에 맞춰 줄이면 응답이 가벼워집니다."
+      },
+      "rules": {
+        "type": "array",
+        "description": "[signals] **전략 선언**. [{side:\"buy\"|\"sell\", label?, note?, when:[{a,op,b},…]}] — 한 rule 의 when 은 전부 참일 때(AND) 신호, OR 는 rule 을 여러 개. a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. 경로 = close/open/high/low/volume, rsi, macd.macd|signal|hist, bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, ichimoku.tenkan|kijun|senkouA|senkouB. 틀린 경로는 사용 가능 목록과 함께 거부됩니다."
+      },
+      "feeRate": {
+        "type": "number",
+        "description": "[signals] 편도 수수료 비율(예 0.00015). 미지정 0 — 넣지 않으면 백테스트가 실제보다 좋게 나옵니다."
+      },
+      "slippageRate": {
+        "type": "number",
+        "description": "[signals] 편도 슬리피지 비율(예 0.0005). 미지정 0."
+      },
+      "rsiPeriod": {
+        "type": "number",
+        "description": "[indicators/signals] RSI 기간(기본 14)"
+      },
+      "macdFast": {
+        "type": "number",
+        "description": "[indicators/signals] MACD 단기 EMA(기본 12)"
+      },
+      "macdSlow": {
+        "type": "number",
+        "description": "[indicators/signals] MACD 장기 EMA(기본 26)"
+      },
+      "macdSignal": {
+        "type": "number",
+        "description": "[indicators/signals] MACD 시그널 EMA(기본 9)"
+      },
+      "bbPeriod": {
+        "type": "number",
+        "description": "[indicators/signals] 볼린저 기간(기본 20)"
+      },
+      "bbMult": {
+        "type": "number",
+        "description": "[indicators/signals] 볼린저 표준편차 배수(기본 2)"
+      },
+      "stochK": {
+        "type": "number",
+        "description": "[indicators/signals] 스토캐스틱 %K 기간(기본 14)"
+      },
+      "stochD": {
+        "type": "number",
+        "description": "[indicators/signals] 스토캐스틱 %D 기간(기본 3)"
+      },
+      "stochSmooth": {
+        "type": "number",
+        "description": "[indicators/signals] %K 평활(기본 3, slow)"
+      },
+      "tenkan": {
+        "type": "number",
+        "description": "[indicators/signals] 일목 전환선(기본 9)"
+      },
+      "kijun": {
+        "type": "number",
+        "description": "[indicators/signals] 일목 기준선(기본 26)"
+      },
+      "senkouB": {
+        "type": "number",
+        "description": "[indicators/signals] 일목 선행스팬B(기본 52)"
       }
     }
   },
@@ -123,6 +193,30 @@
       "summary": {
         "type": "object",
         "description": "chart_annotations 전용 — 고른 후보의 structure·labels·inProgress·confidence·threshold·invalidation·projectedPath·candidateCount. 답변 문장은 이걸로 쓰세요(주석은 차트가 그립니다)."
+      },
+      "latest": {
+        "type": "object",
+        "description": "[indicators] 마지막 봉 기준 지표 값 — 답변 문장은 이걸로."
+      },
+      "series": {
+        "type": "object",
+        "description": "[indicators] 차트 오버레이용 시리즈(뒤 seriesTail 봉). 일목 senkouA/B 는 `shift` 만큼 미래로 밀어 그립니다."
+      },
+      "buyPoints": {
+        "type": "array",
+        "description": "[signals] 매수 신호 봉 — stock_chart·live_stock_chart 에 그대로 넣으면 봉 아래 ↑ 화살표."
+      },
+      "sellPoints": {
+        "type": "array",
+        "description": "[signals] 매도 신호 봉 — 봉 위 ↓ 화살표."
+      },
+      "firedOnLastBar": {
+        "type": "array",
+        "description": "[signals] **마지막 봉에서 방금 발생한 신호만**. 과거 신호를 지금 주문으로 착각하지 않게 분리됩니다 — 자동매매는 이것만 봅니다."
+      },
+      "backtest": {
+        "type": "object",
+        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·수익률) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요."
       }
     }
   },

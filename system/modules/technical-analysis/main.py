@@ -751,6 +751,139 @@ def chart_annotation_set(cand, structure_label=None):
     return ann
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 고전 지표 — 전부 **순수 산술**이라 모듈이 소유한다(엘리엇의 결정론/판단 분리와 같은 원칙).
+# 여기 있는 것에 "사야 한다/팔아야 한다"는 없다. 그건 전략이고, 전략은 선언 데이터다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ema(xs, n):
+    """지수이동평균. 시드 = 첫 n개 단순평균(표준 관행 — 첫 값만 쓰면 초반이 왜곡된다)."""
+    if len(xs) < n or n <= 0:
+        return [None] * len(xs)
+    out = [None] * (n - 1)
+    k = 2.0 / (n + 1)
+    prev = sum(xs[:n]) / n
+    out.append(prev)
+    for x in xs[n:]:
+        prev = x * k + prev * (1 - k)
+        out.append(prev)
+    return out
+
+
+def _sma(xs, n):
+    out = [None] * len(xs)
+    if n <= 0 or len(xs) < n:
+        return out
+    run = sum(xs[:n])
+    out[n - 1] = run / n
+    for i in range(n, len(xs)):
+        run += xs[i] - xs[i - n]
+        out[i] = run / n
+    return out
+
+
+def _stdev(xs, n):
+    out = [None] * len(xs)
+    for i in range(n - 1, len(xs)):
+        w = xs[i - n + 1: i + 1]
+        m = sum(w) / n
+        out[i] = (sum((x - m) ** 2 for x in w) / n) ** 0.5
+    return out
+
+
+def macd(closes, fast=12, slow=26, signal=9):
+    """MACD = EMA(fast) - EMA(slow), 시그널 = 그 EMA(signal), 히스토그램 = 차이."""
+    ef, es = _ema(closes, fast), _ema(closes, slow)
+    line = [(a - b) if (a is not None and b is not None) else None for a, b in zip(ef, es)]
+    solid = [x for x in line if x is not None]
+    sig_tail = _ema(solid, signal)
+    sig = [None] * (len(line) - len(sig_tail)) + sig_tail
+    hist = [(l - g) if (l is not None and g is not None) else None for l, g in zip(line, sig)]
+    return {"macd": line, "signal": sig, "hist": hist}
+
+
+def rsi(closes, n=14):
+    """RSI — Wilder 평활(단순평균 아님). 표준 정의라 다른 차트와 값이 맞는다."""
+    out = [None] * len(closes)
+    if len(closes) <= n:
+        return out
+    gains = losses = 0.0
+    for i in range(1, n + 1):
+        d = closes[i] - closes[i - 1]
+        gains += max(d, 0.0)
+        losses += max(-d, 0.0)
+    ag, al = gains / n, losses / n
+    out[n] = 100.0 if al == 0 else 100 - 100 / (1 + ag / al)
+    for i in range(n + 1, len(closes)):
+        d = closes[i] - closes[i - 1]
+        ag = (ag * (n - 1) + max(d, 0.0)) / n
+        al = (al * (n - 1) + max(-d, 0.0)) / n
+        out[i] = 100.0 if al == 0 else 100 - 100 / (1 + ag / al)
+    return out
+
+
+def bollinger(closes, n=20, mult=2.0):
+    mid = _sma(closes, n)
+    sd = _stdev(closes, n)
+    up = [(m + mult * s) if (m is not None and s is not None) else None for m, s in zip(mid, sd)]
+    lo = [(m - mult * s) if (m is not None and s is not None) else None for m, s in zip(mid, sd)]
+    # %B = 밴드 안 위치(0=하단, 1=상단), 밴드폭 = 변동성 수축/확장 판단 재료.
+    pctb, width = [], []
+    for c, u, l, m in zip(closes, up, lo, mid):
+        if u is None or l is None or u == l or not m:
+            pctb.append(None); width.append(None)
+        else:
+            pctb.append((c - l) / (u - l))
+            width.append((u - l) / m)
+    return {"mid": mid, "upper": up, "lower": lo, "percentB": pctb, "bandwidth": width}
+
+
+def stochastic(bars_hlc, k=14, d=3, smooth=3):
+    """스토캐스틱 slow — 원시 %K 를 smooth 로 한 번 평활한 뒤 %D = 그 SMA(d)."""
+    highs = [b["high"] for b in bars_hlc]
+    lows = [b["low"] for b in bars_hlc]
+    closes = [b["close"] for b in bars_hlc]
+    raw = [None] * len(closes)
+    for i in range(k - 1, len(closes)):
+        hh, ll = max(highs[i - k + 1: i + 1]), min(lows[i - k + 1: i + 1])
+        raw[i] = 50.0 if hh == ll else (closes[i] - ll) / (hh - ll) * 100
+    solid = [x for x in raw if x is not None]
+    ktail = _sma(solid, smooth)
+    kline = [None] * (len(raw) - len(ktail)) + ktail
+    ksolid = [x for x in kline if x is not None]
+    dtail = _sma(ksolid, d)
+    dline = [None] * (len(kline) - len(dtail)) + dtail
+    return {"k": kline, "d": dline}
+
+
+def ichimoku(bars_hlc, tenkan=9, kijun=26, senkou_b=52):
+    """일목균형표. 선행스팬은 **미래로 kijun 만큼 shift** — 차트 미래 구간(futureSlots)에 그대로 얹힌다."""
+    highs = [b["high"] for b in bars_hlc]
+    lows = [b["low"] for b in bars_hlc]
+    closes = [b["close"] for b in bars_hlc]
+
+    def mid(n):
+        out = [None] * len(highs)
+        for i in range(n - 1, len(highs)):
+            out[i] = (max(highs[i - n + 1: i + 1]) + min(lows[i - n + 1: i + 1])) / 2
+        return out
+
+    t, k = mid(tenkan), mid(kijun)
+    a = [((x + y) / 2) if (x is not None and y is not None) else None for x, y in zip(t, k)]
+    b = mid(senkou_b)
+    return {
+        "tenkan": t, "kijun": k,
+        "senkouA": a, "senkouB": b,
+        "shift": kijun,          # 선행스팬 A·B 를 오른쪽으로 이 만큼 민다
+        "chikou": closes, "chikouShift": -kijun,   # 후행스팬 = 종가를 왼쪽으로
+    }
+
+
+def _tail(xs, n):
+    """직렬화 절감 — 시리즈는 뒤 n개만(차트·판정에 필요한 건 최근 구간)."""
+    return xs[-n:] if n and len(xs) > n else xs
+
+
 def main():
     inp = _read_input()
     action = inp.get("action")
@@ -772,6 +905,200 @@ def main():
         pv = zigzag(bars, threshold)
         print(json.dumps({"success": True, "data": {
             "pivots": pv, "count": len(pv), "threshold": round(threshold, 2), "barRange": bar_range,
+        }}, ensure_ascii=False))
+        return
+
+    if action == "signals":
+        # **규칙은 데이터로 받는다.** 전략을 모듈 코드에 넣으면 그 순간 프레임워크가 투자 의견을
+        # 갖게 되고, 사용자가 바꾸려면 배포를 해야 한다. 여기가 하는 일은 딱 두 가지 —
+        # ① 지표를 계산하고 ② 선언된 조건이 참인 봉을 찾아 차트가 그대로 쓸 좌표로 돌려준다.
+        # 좋은 전략인지는 판정하지 않는다(그건 백테스트와 사람 몫).
+        rules = inp.get("rules")
+        if not isinstance(rules, list) or not rules:
+            print(json.dumps({"success": False, "error":
+                "rules 가 필요합니다 — 예: [{\"side\":\"buy\",\"label\":\"골든크로스\","
+                "\"when\":[{\"a\":\"macd.hist\",\"op\":\"crossUp\",\"b\":0},"
+                "{\"a\":\"rsi\",\"op\":\"<\",\"b\":45}]}]. "
+                "a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. "
+                "한 rule 의 when 은 전부 참일 때(AND) 신호. OR 는 rule 을 여러 개 두세요. "
+                "경로: close/open/high/low/volume, rsi, macd.macd|signal|hist, "
+                "bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, "
+                "ichimoku.tenkan|kijun|senkouA|senkouB"}, ensure_ascii=False))
+            return
+        closes = [b["close"] for b in bars]
+        m = macd(closes, int(inp.get("macdFast") or 12), int(inp.get("macdSlow") or 26), int(inp.get("macdSignal") or 9))
+        bb = bollinger(closes, int(inp.get("bbPeriod") or 20), float(inp.get("bbMult") or 2.0))
+        st = stochastic(bars, int(inp.get("stochK") or 14), int(inp.get("stochD") or 3), int(inp.get("stochSmooth") or 3))
+        ic = ichimoku(bars, int(inp.get("tenkan") or 9), int(inp.get("kijun") or 26), int(inp.get("senkouB") or 52))
+        series = {
+            # 정규화된 봉이 open 을 안 실을 수 있다 — 없으면 종가로 대체(경로는 유지해 규칙이 안 깨지게).
+            "close": closes, "open": [b.get("open", b["close"]) for b in bars],
+            "high": [b["high"] for b in bars], "low": [b["low"] for b in bars],
+            "volume": [b.get("volume", 0) or 0 for b in bars],
+            "rsi": rsi(closes, int(inp.get("rsiPeriod") or 14)),
+            "macd.macd": m["macd"], "macd.signal": m["signal"], "macd.hist": m["hist"],
+            "bollinger.mid": bb["mid"], "bollinger.upper": bb["upper"], "bollinger.lower": bb["lower"],
+            "bollinger.percentB": bb["percentB"], "bollinger.bandwidth": bb["bandwidth"],
+            "stochastic.k": st["k"], "stochastic.d": st["d"],
+            "ichimoku.tenkan": ic["tenkan"], "ichimoku.kijun": ic["kijun"],
+            "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
+        }
+
+        def val(ref, i):
+            if isinstance(ref, (int, float)):
+                return float(ref)
+            sq = series.get(str(ref))
+            if sq is None or i >= len(sq):
+                return None
+            v = sq[i]
+            return None if v is None else float(v)
+
+        unknown = sorted({str(c.get(side)) for r in rules for c in (r.get("when") or [])
+                          for side in ("a", "b")
+                          if not isinstance(c.get(side), (int, float)) and str(c.get(side)) not in series})
+        if unknown:
+            print(json.dumps({"success": False, "error":
+                "알 수 없는 지표 경로: %s — 사용 가능: %s" % (", ".join(unknown), ", ".join(sorted(series)))},
+                ensure_ascii=False))
+            return
+
+        def holds(cond, i):
+            op = str(cond.get("op", ">"))
+            a, b = val(cond.get("a"), i), val(cond.get("b"), i)
+            if a is None or b is None:
+                return False
+            if op in ("crossUp", "crossDown"):
+                if i == 0:
+                    return False
+                pa, pb = val(cond.get("a"), i - 1), val(cond.get("b"), i - 1)
+                if pa is None or pb is None:
+                    return False
+                # 교차 = 직전엔 반대쪽, 지금은 이쪽. 같은 값 유지는 교차가 아니다.
+                return (pa <= pb and a > b) if op == "crossUp" else (pa >= pb and a < b)
+            return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}.get(op, False)
+
+        buy, sell = [], []
+        for r in rules:
+            side = str(r.get("side", "buy")).lower()
+            when = r.get("when") or []
+            if not when:
+                continue
+            label = str(r.get("label") or ("매수" if side == "buy" else "매도"))
+            bucket = buy if side == "buy" else sell
+            for i, b in enumerate(bars):
+                if all(holds(c, i) for c in when):
+                    bucket.append({"date": b["date"], "price": round(b["close"], 6), "label": label,
+                                   "note": r.get("note") or None})
+        last_i = len(bars) - 1
+        fired_now = [p for p in buy + sell if p["date"] == bars[last_i]["date"]]
+
+        # ── 체결 기록 + 수익률 (규칙을 그대로 따라갔다면?) ──
+        # 이게 없으면 신호는 그냥 화살표다. 규칙을 주문에 연결하기 전에 **과거에 어땠는지**를
+        # 같은 답에서 보여 준다 — 좋아 보이는 규칙과 실제로 벌었던 규칙은 다르다.
+        # 규칙: 매수 신호에 없으면 진입, 매도 신호에 있으면 청산(1포지션·전량, 롱 전용).
+        # 수수료·슬리피지는 선언값(기본 0) — 넣지 않으면 실제보다 좋게 보인다는 걸 답에 밝힌다.
+        fee = float(inp.get("feeRate") or 0.0)          # 편도 비율 (예: 0.00015)
+        slip = float(inp.get("slippageRate") or 0.0)    # 편도 비율
+        marks = sorted(
+            [(p["date"], "buy", p["price"], p["label"]) for p in buy]
+            + [(p["date"], "sell", p["price"], p["label"]) for p in sell],
+            key=lambda t: [b["date"] for b in bars].index(t[0]),
+        )
+        trades, pos = [], None
+        for date, side, price, label in marks:
+            if side == "buy" and pos is None:
+                pos = {"entryDate": date, "entryPrice": price * (1 + slip), "entryLabel": label}
+            elif side == "sell" and pos is not None:
+                exit_px = price * (1 - slip)
+                gross = exit_px / pos["entryPrice"] - 1
+                net = gross - fee * 2
+                trades.append({**pos, "exitDate": date, "exitPrice": round(exit_px, 6),
+                               "exitLabel": label, "returnPct": round(net * 100, 4)})
+                pos = None
+        wins = [t for t in trades if t["returnPct"] > 0]
+        equity = 1.0
+        for t in trades:
+            equity *= 1 + t["returnPct"] / 100
+        peak = run = 1.0
+        mdd = 0.0
+        for t in trades:
+            run *= 1 + t["returnPct"] / 100
+            peak = max(peak, run)
+            mdd = min(mdd, run / peak - 1)
+        backtest = {
+            "trades": trades,
+            "openPosition": pos,
+            "tradeCount": len(trades),
+            "winRate": round(len(wins) / len(trades) * 100, 2) if trades else None,
+            "totalReturnPct": round((equity - 1) * 100, 4) if trades else None,
+            "avgReturnPct": round(sum(t["returnPct"] for t in trades) / len(trades), 4) if trades else None,
+            "bestPct": max((t["returnPct"] for t in trades), default=None),
+            "worstPct": min((t["returnPct"] for t in trades), default=None),
+            "maxDrawdownPct": round(mdd * 100, 4) if trades else None,
+            "feeRate": fee, "slippageRate": slip,
+            "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 수수료·슬리피지는 "
+                            "feeRate/slippageRate 로 넣지 않으면 0이라 실제보다 좋게 나옵니다. "
+                            "같은 구간으로 규칙을 고르면 과최적화이니, 규칙을 만든 구간 밖에서 다시 재세요."),
+        }
+        print(json.dumps({"success": True, "data": {
+            "barRange": bar_range,
+            "buyPoints": buy, "sellPoints": sell,
+            "counts": {"buy": len(buy), "sell": len(sell)},
+            "backtest": backtest,
+            # 자동매매가 볼 곳 — **마지막 봉에서 방금 발생한 것만**. 과거 신호를 지금 주문으로
+            # 착각하지 않게 분리한다.
+            "firedOnLastBar": fired_now,
+            "note": ("`buyPoints`/`sellPoints` 를 stock_chart·live_stock_chart 에 그대로 넣으면 봉 아래 ↑ / "
+                     "위 ↓ 화살표로 표시됩니다. **주문 판단은 이 액션이 하지 않습니다** — 규칙이 참인 봉을 "
+                     "표시할 뿐이고, 규칙이 좋은지는 백테스트와 사람이 정합니다. 지금 시점 주문 판단에는 "
+                     "`firedOnLastBar` 만 쓰세요(과거 신호는 이미 지난 것). `backtest` = 그 규칙을 "
+                     "그대로 따라갔을 때의 체결 기록·승률·누적수익·MDD — 표로 보여 주면 규칙의 값어치가 "
+                     "화살표보다 훨씬 잘 읽힙니다. 가정(assumptions)을 반드시 함께 밝히세요."),
+        }}, ensure_ascii=False))
+        return
+
+    if action == "indicators":
+        # 고전 지표 묶음. **신호 판정은 하지 않는다** — 여기 나오는 건 전부 계산된 값이고,
+        # "그래서 사야 하나"는 전략(선언 데이터)과 사람 몫이다. 값과 판단을 섞지 않는 것이
+        # 엘리엇 쪽과 같은 원칙이고, 섞으면 모듈이 조용히 투자 의견을 갖게 된다.
+        closes = [b["close"] for b in bars]
+        want = inp.get("which")
+        want = [str(w) for w in want] if isinstance(want, list) and want else                ["macd", "rsi", "bollinger", "stochastic", "ichimoku"]
+        keep = int(inp.get("seriesTail") or 120)
+        out, latest = {}, {}
+        if "macd" in want:
+            m = macd(closes, int(inp.get("macdFast") or 12), int(inp.get("macdSlow") or 26),
+                     int(inp.get("macdSignal") or 9))
+            out["macd"] = {k: _tail(v, keep) for k, v in m.items()}
+            latest["macd"] = {k: (v[-1] if v and v[-1] is not None else None) for k, v in m.items()}
+        if "rsi" in want:
+            r = rsi(closes, int(inp.get("rsiPeriod") or 14))
+            out["rsi"] = _tail(r, keep)
+            latest["rsi"] = r[-1] if r and r[-1] is not None else None
+        if "bollinger" in want:
+            bb = bollinger(closes, int(inp.get("bbPeriod") or 20), float(inp.get("bbMult") or 2.0))
+            out["bollinger"] = {k: _tail(v, keep) for k, v in bb.items()}
+            latest["bollinger"] = {k: (v[-1] if v and v[-1] is not None else None) for k, v in bb.items()}
+        if "stochastic" in want:
+            st = stochastic(bars, int(inp.get("stochK") or 14), int(inp.get("stochD") or 3),
+                            int(inp.get("stochSmooth") or 3))
+            out["stochastic"] = {k: _tail(v, keep) for k, v in st.items()}
+            latest["stochastic"] = {k: (v[-1] if v and v[-1] is not None else None) for k, v in st.items()}
+        if "ichimoku" in want:
+            ic = ichimoku(bars, int(inp.get("tenkan") or 9), int(inp.get("kijun") or 26),
+                          int(inp.get("senkouB") or 52))
+            out["ichimoku"] = {k: (_tail(v, keep) if isinstance(v, list) else v) for k, v in ic.items()}
+            latest["ichimoku"] = {k: (v[-1] if isinstance(v, list) and v and v[-1] is not None else
+                                      (v if not isinstance(v, list) else None)) for k, v in ic.items()}
+        print(json.dumps({"success": True, "data": {
+            "barRange": bar_range,
+            "latest": latest,
+            "series": out,
+            "seriesTail": keep,
+            "note": ("`latest` = 마지막 봉 기준 값(답변 문장은 이걸로), `series` = 차트 오버레이용 뒤 "
+                     f"{keep}봉. 일목의 senkouA/B 는 `shift` 만큼 **미래로** 밀어 그린다(futureSlots 확보). "
+                     "**이 액션은 신호를 내지 않는다** — 매수·매도 판정은 전략 규칙과 사람 몫이고, "
+                     "값만 보고 단정하지 말 것. 과매수/과매도 같은 관용 해석을 붙이려면 근거 수치를 함께 밝힐 것."),
         }}, ensure_ascii=False))
         return
 
