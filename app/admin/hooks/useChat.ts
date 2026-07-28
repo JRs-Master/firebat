@@ -22,7 +22,7 @@ import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
 import { CHAT_WATCHDOG_IDLE_MS } from '../../../lib/config';
 import { safeJsonParse, logger } from '../../../lib/util';
-import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { apiGet, apiPost, apiDelete, redirectToLoginIfExpired } from '../../../lib/api-fetch';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -959,6 +959,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // "응답이 비어있습니다 (SSE 연결 누락 가능성)" 표시되어 root cause 가려지는 영역 fix.
       const contentType = res.headers.get('content-type') ?? '';
       if (!res.ok || !contentType.includes('text/event-stream')) {
+        // 세션 만료 = 오류 메시지가 아니라 로그인 화면으로(공통 판정 재사용).
+        if (redirectToLoginIfExpired('/api/chat/stream', res.status)) return;
         let errMsg = `요청 실패 (HTTP ${res.status})`;
         try {
           const errJson = await res.json();

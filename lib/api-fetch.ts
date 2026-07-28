@@ -39,6 +39,25 @@ interface ApiFetchOpts extends RequestInit {
   category?: string;
 }
 
+/**
+ * 세션 만료 → 로그인 페이지로. 옛엔 401 을 그냥 에러 메시지("권한 없음")로 띄워, 사용자가
+ * 왜 안 되는지 모른 채 채팅·설정에서 막혔다(2026-07-29 지적). 만료는 오류가 아니라 **상태**라
+ * 화면이 그 상태로 가야 한다.
+ *
+ * 리디렉션하지 않는 경우: ① 서버 사이드 ② 이미 로그인 화면 ③ **hub 경로** — hub 는 토큰 인증이라
+ * 방문자를 admin 로그인으로 보내면 안 된다. `next` 로 돌아올 위치를 남긴다.
+ */
+export function redirectToLoginIfExpired(url: string, status: number): boolean {
+  if (status !== 401) return false;
+  if (typeof window === 'undefined') return false;
+  if (url.includes('/api/hub/')) return false;
+  const here = window.location.pathname;
+  if (here.startsWith('/login')) return false;
+  const next = encodeURIComponent(here + window.location.search);
+  window.location.assign(`/login?next=${next}`);
+  return true;
+}
+
 async function apiFetch<T>(url: string, opts: ApiFetchOpts = {}): Promise<T> {
   const { jsonBody, category = 'api', body: rawBody, ...init } = opts;
   const headers = new Headers(init.headers);
@@ -73,6 +92,8 @@ async function apiFetch<T>(url: string, opts: ApiFetchOpts = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    // 만료면 여기서 화면이 떠난다 — 아래 throw 는 이동 전 잔여 처리를 위해 그대로 둔다.
+    redirectToLoginIfExpired(url, response.status);
     const errorMsg =
       (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string')
         ? parsed.error

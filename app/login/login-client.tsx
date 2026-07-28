@@ -40,7 +40,11 @@ export function LoginInner() {
     setSubmitting(true);
     try {
       await apiPost('/api/auth', { id, password }, { category: 'login' });
-      window.location.href = '/admin';
+      // 만료로 튕겨 온 경우 원래 보던 곳으로 복귀 — 세션 만료가 작업 위치까지 잃게 하지 않는다.
+      // 오픈 리디렉트 방지: 같은 사이트 절대경로(`/…`)만 허용, `//host` 형태는 거부.
+      const next = new URLSearchParams(window.location.search).get('next');
+      const safe = next && next.startsWith('/') && !next.startsWith('//') ? next : '/admin';
+      window.location.href = safe;
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 429) {
