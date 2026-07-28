@@ -1004,6 +1004,13 @@ def main():
         fee = float(inp.get("feeRate") or 0.0)          # 편도 비율 (예: 0.00015)
         tax = float(inp.get("taxRate") or 0.0)          # 매도에만 (증권거래세)
         slip = float(inp.get("slippageRate") or 0.0)    # 편도 비율
+        # 틱 기준 슬리피지 — 실매매는 시장가가 아니라 **한 틱 위/아래 지정가**로 넣으므로 밀리는
+        # 폭이 비율이 아니라 호가단위의 정수배다. 비율만 쓰면 가격대에 따라 크게 어긋난다
+        # (삼성전자 224,000원의 1틱 500원 = 0.22% vs 5,000원짜리 1틱 5원 = 0.1%).
+        # 호가단위 표는 시장마다 달라 **모듈에 넣지 않는다** — 아는 쪽(호출자)이 tickSize 로 선언한다.
+        tick_size = float(inp.get("tickSize") or 0.0)
+        slip_ticks = float(inp.get("slippageTicks") or 0.0)
+        tick_slip = tick_size * slip_ticks              # 편도 절대금액
         marks = sorted(
             [(p["date"], "buy", p["price"], p["label"]) for p in buy]
             + [(p["date"], "sell", p["price"], p["label"]) for p in sell],
@@ -1012,9 +1019,9 @@ def main():
         trades, pos = [], None
         for date, side, price, label in marks:
             if side == "buy" and pos is None:
-                pos = {"entryDate": date, "entryPrice": price * (1 + slip), "entryLabel": label}
+                pos = {"entryDate": date, "entryPrice": price * (1 + slip) + tick_slip, "entryLabel": label}
             elif side == "sell" and pos is not None:
-                exit_px = price * (1 - slip)
+                exit_px = max(price * (1 - slip) - tick_slip, 0.0)
                 # 곱셈으로 — 매입원가 = 체결가×(1+수수료), 매도수취 = 체결가×(1-수수료-세금).
                 cost = pos["entryPrice"] * (1 + fee)
                 proceeds = exit_px * (1 - fee - tax)
@@ -1044,11 +1051,17 @@ def main():
             "worstPct": min((t["returnPct"] for t in trades), default=None),
             "maxDrawdownPct": round(mdd * 100, 4) if trades else None,
             "feeRate": fee, "taxRate": tax, "slippageRate": slip,
+            "tickSize": tick_size, "slippageTicks": slip_ticks,
             "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 비용은 부과 시점이 달라 "
                             "따로 받습니다 — 수수료(feeRate)=매수·매도 양쪽 / 세금(taxRate)=**매도에만** / "
                             "슬리피지(slippageRate)=체결가 자체가 밀리는 폭. 셋 다 0이면 실제보다 좋게 "
                             "나옵니다. 각 체결의 grossPct(비용 전)와 returnPct(비용 후)를 비교하면 "
                             "비용이 얼마나 먹는지 보이고, 1분봉처럼 체결이 잦을수록 그 차이가 커집니다. "
+                            "실매매처럼 한 틱 위/아래 지정가를 가정하려면 tickSize + slippageTicks 로 "
+                            "절대금액을 주세요(비율만 쓰면 가격대에 따라 크게 어긋납니다). "
+                            "**비체결은 모델에 없습니다** — 지정가는 안 채워질 수 있는데 이 백테스트는 "
+                            "모든 신호가 체결됐다고 봅니다. 어떤 비용값으로도 이 낙관은 지워지지 않으니 "
+                            "실매매 기대치는 여기서 한 번 더 깎아 보세요. "
                             "같은 구간으로 규칙을 고르면 과최적화이니, 규칙을 만든 구간 밖에서 다시 재세요."),
         }
         # 페이지 바인딩 계약(`blocks`) — 첫 블록 props 는 차트에 병합되고, 나머지는 차트 아래에

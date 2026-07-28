@@ -160,6 +160,14 @@
       "taxRate": {
         "type": "number",
         "description": "[signals] 증권거래세 — **매도에만** 붙습니다(예 0.0015). 수수료와 부과 시점이 달라 따로 받습니다. 요율은 해마다 바뀌었으니 현재 값을 확인해 넣으세요. 미지정 0."
+      },
+      "tickSize": {
+        "type": "number",
+        "description": "[signals] 호가단위(절대금액, 예 삼성전자 500). slippageTicks 와 함께 쓰면 슬리피지를 비율이 아니라 틱의 정수배로 계산합니다 — 실매매의 한 틱 위/아래 지정가에 맞는 모델. 호가단위 표는 시장마다 달라 모듈이 갖지 않으니 호출자가 넣습니다."
+      },
+      "slippageTicks": {
+        "type": "number",
+        "description": "[signals] 편도 몇 틱 밀릴지(예 1). tickSize 와 함께. slippageRate 와 동시 사용 가능(둘 다 적용)."
       }
     }
   },
