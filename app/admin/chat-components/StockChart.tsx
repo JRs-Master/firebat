@@ -611,40 +611,48 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const fmtPrice = (x: number) =>
     x.toLocaleString('ko-KR', { minimumFractionDigits: priceDecimals, maximumFractionDigits: priceDecimals });
 
-  // ── 파동 라벨 배지 ──────────────────────────────────────────────────────────
-  // 점유 상자 목록 — 렌더 패스마다 새로 만든다(순수 계산이라 리렌더 결과가 항상 같다).
+  // ── 파동 라벨 ──────────────────────────────────────────────────────────────
+  // 두 번 고쳤다. 10px 맨 텍스트는 캔들 위에서 묻혔고(1차), 채운 알약은 캔들보다 무거워
+  // 차트를 덮었다(2차, 사용자: "더 이상해졌는데"). 정답은 **흰 후광 텍스트** —
+  // paint-order:stroke 로 글자 뒤에 흰 테두리를 깔면 어떤 배경에서도 읽히면서 차트 톤을
+  // 안 해친다(가벼움 + 대비를 동시에).
+  //
+  // 점유 상자는 렌더 패스마다 새로 만든다(순수 계산이라 리렌더 결과 동일).
   const placedLabels: Array<{ cx: number; cy: number; w: number; h: number }> = [];
-  /** 겹치지 않는 y 를 찾는다 — dir 방향으로 한 칸씩 비키며 최대 10회. */
-  const freeY = (cx: number, y0: number, w: number, h: number, dir: number) => {
-    let cy = y0;
-    for (let k = 0; k < 10; k++) {
+  /** 겹치지 않는 y — dir 방향으로 비키되 **경계 클램프를 먼저 적용**한 좌표로 판정한다.
+   *  1차 구현은 회피 후에 클램프해서 비켜놓은 라벨이 도로 겹쳤다(오른쪽 아래 두 개). */
+  const placeLabelY = (cx: number, y0: number, w: number, h: number, dir: number, top: number, bottom: number) => {
+    let cy = Math.max(top, Math.min(bottom, y0));
+    for (let k = 0; k < 12; k++) {
       const hit = placedLabels.some(
         p => Math.abs(p.cx - cx) < (p.w + w) / 2 + 2 && Math.abs(p.cy - cy) < (p.h + h) / 2 + 2,
       );
       if (!hit) break;
-      cy += dir * (h + 4);
+      const next = cy + dir * (h + 2);
+      // 경계에 닿으면 반대 방향으로 계속 비킨다(한쪽 끝에 쌓여 겹치는 것 방지).
+      cy = next < top || next > bottom ? cy - dir * (h + 2) : next;
+      cy = Math.max(top, Math.min(bottom, cy));
     }
     placedLabels.push({ cx, cy, w, h });
     return cy;
   };
-  /** 알약 배지 + 리더선. 맨 텍스트는 캔들 위에서 안 읽혀서 색 채운 배지로 대비를 준다. */
+  /** 파동 번호 — 흰 후광 텍스트. 꼭짓점 바로 위/아래라 리더선 없이도 귀속이 분명하다. */
   const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number) => {
-    const h = 17;
-    const w = Math.max(17, 9 + label.length * 7);
-    // 차트 위/아래 끝을 넘으면 반대쪽으로 뒤집는다 — 안 그러면 최고점·최저점 라벨이 잘린다.
-    const top = padTop + h / 2 + 2;
-    const bottom = padTop + plotH - h / 2 - 2;
+    const h = 13;
+    const w = Math.max(11, label.length * 7.5);
+    const top = padTop + h;
+    const bottom = padTop + plotH - h;
     let dir = dirIn;
-    if (dir < 0 && py - 16 < top) dir = 1;
-    else if (dir > 0 && py + 16 > bottom) dir = -1;
-    const cy = Math.max(top, Math.min(bottom, freeY(cx, py + dir * 16, w, h, dir)));
-    const edge = cy + (dir < 0 ? h / 2 : -h / 2);
+    if (dir < 0 && py - 13 < top) dir = 1;
+    else if (dir > 0 && py + 13 > bottom) dir = -1;
+    const cy = placeLabelY(cx, py + dir * 13, w, h, dir, top, bottom);
+    // 회피로 많이 밀렸을 때만 리더선 — 붙어 있으면 선이 오히려 지저분하다.
+    const far = Math.abs(cy - py) > 20;
     return (
       <g>
-        <line x1={cx} y1={py} x2={cx} y2={edge} stroke={color} strokeWidth={1} opacity={0.45} />
-        <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={h / 2}
-              fill={color} stroke="#fff" strokeWidth={1.5} />
-        <text x={cx} y={cy + 4} fontSize={11.5} fontWeight={800} fill="#fff" textAnchor="middle"
+        {far && <line x1={cx} y1={py} x2={cx} y2={cy - Math.sign(cy - py) * 6} stroke={color} strokeWidth={1} opacity={0.35} />}
+        <text x={cx} y={cy + 4} fontSize={12} fontWeight={800} fill={color} textAnchor="middle"
+              stroke="#fff" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round"
               fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
       </g>
     );
