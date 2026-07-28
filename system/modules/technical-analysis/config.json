@@ -103,11 +103,11 @@
       },
       "feeRate": {
         "type": "number",
-        "description": "[signals] 편도 수수료 비율(예 0.00015). 미지정 0 — 넣지 않으면 백테스트가 실제보다 좋게 나옵니다."
+        "description": "[signals] 증권사 수수료 — **편도 비율**로 매수·매도 양쪽에 붙습니다(예 0.00015). 미지정 0."
       },
       "slippageRate": {
         "type": "number",
-        "description": "[signals] 편도 슬리피지 비율(예 0.0005). 미지정 0."
+        "description": "[signals] 슬리피지 — 세금이 아니라 **체결가 자체가 밀리는 폭**(신호와 실제 체결 사이 가격 이동 + 호가 깊이). 편도 비율(예 0.0005). 1분봉처럼 체결이 잦을수록 영향이 큽니다. 미지정 0."
       },
       "rsiPeriod": {
         "type": "number",
@@ -156,6 +156,10 @@
       "senkouB": {
         "type": "number",
         "description": "[indicators/signals] 일목 선행스팬B(기본 52)"
+      },
+      "taxRate": {
+        "type": "number",
+        "description": "[signals] 증권거래세 — **매도에만** 붙습니다(예 0.0015). 수수료와 부과 시점이 달라 따로 받습니다. 요율은 해마다 바뀌었으니 현재 값을 확인해 넣으세요. 미지정 0."
       }
     }
   },
@@ -216,7 +220,7 @@
       },
       "backtest": {
         "type": "object",
-        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·수익률) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요."
+        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요."
       }
     }
   },

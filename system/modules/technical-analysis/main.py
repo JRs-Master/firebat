@@ -997,7 +997,12 @@ def main():
         # 같은 답에서 보여 준다 — 좋아 보이는 규칙과 실제로 벌었던 규칙은 다르다.
         # 규칙: 매수 신호에 없으면 진입, 매도 신호에 있으면 청산(1포지션·전량, 롱 전용).
         # 수수료·슬리피지는 선언값(기본 0) — 넣지 않으면 실제보다 좋게 보인다는 걸 답에 밝힌다.
+        # 비용 3종은 **부과 시점이 다르다** — 섞으면 결과가 틀린다.
+        #   수수료 = 매수·매도 양쪽 / 세금(증권거래세) = **매도에만** / 슬리피지 = 체결가 자체가 밀림
+        # 옛 코드는 수수료만 양쪽에서 빼서, 사용자가 세금을 feeRate 에 섞어 넣으면 매수에도
+        # 세금이 붙었다(2026-07-29 사용자 질문에서 드러남).
         fee = float(inp.get("feeRate") or 0.0)          # 편도 비율 (예: 0.00015)
+        tax = float(inp.get("taxRate") or 0.0)          # 매도에만 (증권거래세)
         slip = float(inp.get("slippageRate") or 0.0)    # 편도 비율
         marks = sorted(
             [(p["date"], "buy", p["price"], p["label"]) for p in buy]
@@ -1010,10 +1015,13 @@ def main():
                 pos = {"entryDate": date, "entryPrice": price * (1 + slip), "entryLabel": label}
             elif side == "sell" and pos is not None:
                 exit_px = price * (1 - slip)
-                gross = exit_px / pos["entryPrice"] - 1
-                net = gross - fee * 2
+                # 곱셈으로 — 매입원가 = 체결가×(1+수수료), 매도수취 = 체결가×(1-수수료-세금).
+                cost = pos["entryPrice"] * (1 + fee)
+                proceeds = exit_px * (1 - fee - tax)
+                net = proceeds / cost - 1 if cost else 0.0
                 trades.append({**pos, "exitDate": date, "exitPrice": round(exit_px, 6),
-                               "exitLabel": label, "returnPct": round(net * 100, 4)})
+                               "exitLabel": label, "returnPct": round(net * 100, 4),
+                               "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)})
                 pos = None
         wins = [t for t in trades if t["returnPct"] > 0]
         equity = 1.0
@@ -1035,9 +1043,12 @@ def main():
             "bestPct": max((t["returnPct"] for t in trades), default=None),
             "worstPct": min((t["returnPct"] for t in trades), default=None),
             "maxDrawdownPct": round(mdd * 100, 4) if trades else None,
-            "feeRate": fee, "slippageRate": slip,
-            "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 수수료·슬리피지는 "
-                            "feeRate/slippageRate 로 넣지 않으면 0이라 실제보다 좋게 나옵니다. "
+            "feeRate": fee, "taxRate": tax, "slippageRate": slip,
+            "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 비용은 부과 시점이 달라 "
+                            "따로 받습니다 — 수수료(feeRate)=매수·매도 양쪽 / 세금(taxRate)=**매도에만** / "
+                            "슬리피지(slippageRate)=체결가 자체가 밀리는 폭. 셋 다 0이면 실제보다 좋게 "
+                            "나옵니다. 각 체결의 grossPct(비용 전)와 returnPct(비용 후)를 비교하면 "
+                            "비용이 얼마나 먹는지 보이고, 1분봉처럼 체결이 잦을수록 그 차이가 커집니다. "
                             "같은 구간으로 규칙을 고르면 과최적화이니, 규칙을 만든 구간 밖에서 다시 재세요."),
         }
         # 페이지 바인딩 계약(`blocks`) — 첫 블록 props 는 차트에 병합되고, 나머지는 차트 아래에
@@ -1046,14 +1057,17 @@ def main():
         def _pct(x):
             return "—" if x is None else ("%+.2f%%" % x)
         rows = [[t["entryDate"], "%,.2f" % t["entryPrice"] if False else round(t["entryPrice"], 2),
-                 t["exitDate"], round(t["exitPrice"], 2), _pct(t["returnPct"]), t["entryLabel"], t["exitLabel"]]
+                 t["exitDate"], round(t["exitPrice"], 2), _pct(t["grossPct"]), _pct(t["returnPct"]),
+                 t["entryLabel"], t["exitLabel"]]
                 for t in trades]
         if pos:
-            rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", pos["entryLabel"], "—"])
+            rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", "—",
+                         pos["entryLabel"], "—"])
         blocks = [
             {"type": "stock_chart", "props": {"buyPoints": buy, "sellPoints": sell}},
             {"type": "table", "props": {
-                "headers": ["진입일", "진입가", "청산일", "청산가", "수익률", "진입 신호", "청산 신호"],
+                "headers": ["진입일", "진입가", "청산일", "청산가", "수익률(비용전)", "수익률(비용후)",
+                            "진입 신호", "청산 신호"],
                 "rows": rows, "stickyCol": False, "striped": True, "sortable": True}},
             {"type": "metric", "props": {"label": "체결", "value": len(trades), "unit": "건",
                                          "subLabel": "미청산 %d" % (1 if pos else 0)}},
