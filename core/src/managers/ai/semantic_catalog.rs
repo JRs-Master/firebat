@@ -124,6 +124,18 @@ fn clean_query(user_query: &str, corpus: &str) -> (String, Vec<String>) {
     (kept.join(" "), dropped)
 }
 
+/// 질의가 정제로 **망가졌는가** — 드롭이 있었는데 살아남은 토큰이 1개 이하.
+///
+/// `all_oov`(전부 OOV)만 막던 게 너무 좁았다: "이번 주 로또 당첨번호 정확히 예측" 은 "주" 하나가
+/// 살아남아 가드를 통과하고 예비특보를 1위로 돌려줬다(2026-07-28 사용자 A/B). 한 토큰은 변별을
+/// 못 하는데 임베딩은 반드시 무언가를 1위로 뱉기 때문에, 남은 게 1개면 결과 모양의 잡탕이 된다.
+///
+/// **임계 없음** — 점수 컷은 액션 문서 품질 fix 가 배포되어 분포가 바뀐 뒤에 재본다. 여기 조건은
+/// 순전히 구조적이라 임베더가 바뀌어도 유효하다. 드롭이 0인 짧은 질의("일봉")는 발동하지 않는다.
+pub fn query_degraded(kept: &str, dropped: &[String]) -> bool {
+    !dropped.is_empty() && kept.split_whitespace().count() <= 1
+}
+
 pub struct SemanticCatalog {
     /// Disk cache filename — `{stem}-embeddings.json` under the embedder cache dir.
     cache_file: String,
@@ -397,9 +409,10 @@ impl SemanticCatalog {
             return Ok(empty(false, Vec::new()));
         }
         let (cleaned, dropped) = clean_query(user_query, &state.corpus);
-        if cleaned.is_empty() && !dropped.is_empty() {
-            // Every token is OOV — a bare subject name ("<회사명>") or pure chitchat.
-            // No embedding search: any top-K would be confident junk.
+        if query_degraded(&cleaned, &dropped) {
+            // 전부 OOV(빈 질의)이거나, 드롭 뒤 한 토큰만 남아 변별력이 없는 경우 — 둘 다 검색을
+            // 하지 않는다. 임베딩은 무엇이든 1위로 뱉으므로 결과 모양의 잡탕이 되고, 그 잡탕이
+            // 모델을 변형 재검색의 죽음 나선으로 밀어 넣는다(2026-07-11/12/28 실측).
             return Ok(empty(true, dropped));
         }
         let embed_input: &str = if dropped.is_empty() {
@@ -763,6 +776,11 @@ mod tests {
         assert!(cleaned.is_empty());
         assert_eq!(dropped.len(), 1);
         // fully in-vocab query untouched
+        // 정제 후 한 토큰만 남으면 검색을 하지 않는다 — 드롭 0 인 짧은 질의는 발동하지 않아야.
+        assert!(query_degraded("주", &["로또".into(), "당첨번호".into()]));
+        assert!(query_degraded("", &["LG에너지솔루션".into()]));
+        assert!(!query_degraded("일봉", &[]), "드롭 없는 짧은 질의는 정상");
+        assert!(!query_degraded("내일 비", &["서울".into(), "우산".into()]), "2토큰은 검색한다");
         let (cleaned, dropped) = clean_query("일봉 차트", &corpus);
         assert_eq!(cleaned, "일봉 차트");
         assert!(dropped.is_empty());
