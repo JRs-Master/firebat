@@ -8,7 +8,7 @@ description: 태풍 경로·정보를 지도에 표시하는 방법 — 태그: 
 
 태풍 경로·위치·예상진로 질문이면 **Map 컴포넌트를 풀로** 렌더한다. Map엔 태풍 전용 기능이
 있으니 전부 쓴다. 흔한 실수 = plain 색 점만 찍고 반경을 별도 표에 넣는 것 — 반경·예측은
-**지도 위(cone + circles + 허리케인 마커 + 팝업)** 에 올린다.
+**지도 위(cone + 허리케인 마커 + 팝업)** 에 올린다.
 
 ## 1. 데이터 수집 (kma_weather sysmod)
 
@@ -39,7 +39,7 @@ description: 태풍 경로·정보를 지도에 표시하는 방법 — 태그: 
 - 막연히 "태풍" → 주력(가장 강하거나 한국 근접) 1개로 그리고, 다른 활동 태풍이 데이터에 있으면
   "제N호 NAME 도 활동 중" 한 줄 언급(데이터에 있는 것만 — 만들어내지 말 것).
 
-아래 markers + line + circles + cone 레시피는 **태풍 1개당** 세트 — 단일은 1세트, 다중 같이는 태풍마다 누적한다.
+아래 markers + line + cone 레시피는 **태풍 1개당** 세트 — 단일은 1세트, 다중 같이는 태풍마다 누적한다.
 
 **markers** — 각 태풍의 현재 + 예측 시점마다 (plain `color` 점 금지):
 - 현재: `{ lat: typLat, lon: typLon, icon: "typhoon", windSpeed: typWs, size: "large",
@@ -53,14 +53,14 @@ description: 태풍 경로·정보를 지도에 표시하는 방법 — 태그: 
 **lines** — 각 태풍의 경로(현재 → 예측 체인). 태풍마다 한 줄, 얇은 실선:
 `{ points: [{lat: typLat, lon: typLon}, ...예측 각 {lat, lon}], color: "<태풍별 색>", style: "solid" }`
 
-**circles** — 각 태풍 현재 강풍·폭풍반경 (m = km × 1000):
-`{ lat: typLat, lon: typLon, radius: typ15*1000, color: "#06b6d4" }`,
-`{ lat: typLat, lon: typLon, radius: typ25*1000, color: "#6366f1" }`
+**circles** — 쓰지 않는다. 현재 강풍·폭풍반경은 아래 cone 의 **첫 점**이 이미 그 크기로 시작하므로,
+현재 위치에 원을 또 그리면 콘 위에 점선 링 두 개가 겹쳐 같은 말을 두 번 한다(2026-07-29 실측 —
+"점선 원이 2개네 둘다 없애고 콘만"). 숫자는 마커 팝업에 있다.
 
 **cone** — 각 태풍 예측 영역, 2개 겹침(크기 cone + 70% 확률 cone):
 `{ points: [{lat: typLat, lon: typLon, radius: typ15*1000}, ...예측 각 {lat, lon, radius: rad15*1000}], color: "#06b6d4" }`,
 `{ points: [{lat: typLat, lon: typLon, radius: 0}, ...예측 각 {lat, lon, radius: radPr*1000}], color: "#6366f1" }`
 
 지도 위 metric Grid는 **대표 태풍(가장 강하거나 한국에 가까운)** 기준 1세트(현재 위치 / 중심기압 /
-최대풍속 / 이동)면 충분 — 강풍/폭풍반경을 **별도 표로 또 넣지 말 것**(반경은 지도 cone+circles+팝업에
+최대풍속 / 이동)면 충분 — 강풍/폭풍반경을 **별도 표로 또 넣지 말 것**(반경은 지도 cone+팝업에
 산다). 여러 태풍이면 나머지 태풍 정보는 각 마커 팝업으로 본다.
