@@ -1585,6 +1585,18 @@ pub struct LlmTextResponse {
     pub cached_tokens: Option<i64>,
 }
 
+/// CLI 가 자기 런타임 내장 이미지 도구로 만들어 놓은 산출물 1개.
+/// `prompt` = **모델이 실제로 넘긴 프롬프트**(어댑터가 세션 로그에서 call_id 로 조인). 사용자
+/// 요청문("가을 제주 사진")과 달리 장면·조명·구도까지 적힌 원문이라 갤러리 검색·재생성에서
+/// 값이 다르다. 못 찾으면 None → 호출자가 폴백.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliGeneratedImage {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmToolResponse {
@@ -1638,7 +1650,7 @@ pub struct LlmToolResponse {
     /// 턴 종료 후 거둬(harvest) 여기 실으면 AiManager 가 갤러리에 담고 파일을 정리한다.
     /// 정공은 모델이 `image_gen` 도구를 쓰는 것(그래야 URL 이 컴포넌트에 박힌다)이고 이건 안전망.
     #[serde(rename = "cliGeneratedImages", default, skip_serializing_if = "Vec::is_empty")]
-    pub cli_generated_images: Vec<String>,
+    pub cli_generated_images: Vec<CliGeneratedImage>,
     /// CLI 가 자체 MCP loop 에서 받은 도구 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 용.
     /// 옛 TS 의 에러 뱃지 표시 채널 1:1 port. `internallyUsedTools` 가 도구 이름만 전달하던 한계 보완.
     /// 형식: `{name: string, success: bool, error?: string, input?: object}`.

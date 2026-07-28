@@ -23,7 +23,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 use crate::image_gen::format_handler::{ImageFormatHandler, ImageFormatHandlerContext};
-use crate::llm::formats::cli_codex::{copy_auth_json, harvest_generated_images};
+use crate::llm::formats::cli_codex::{copy_auth_json, extract_image_prompt, harvest_generated_images};
 use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraResult};
 
 /// 1장 생성 기준 여유 — 실측 단일 이미지 60~90초. 옛 300초는 프롬프트에 "4장" 이 들어오면
@@ -251,12 +251,15 @@ impl ImageFormatHandler for CliCodexImageFormat {
             let _ = std::fs::remove_file(path);
         }
 
+        // 모델이 실제로 넘긴 프롬프트 — 우리가 준 한 줄이 아니라 장면·조명·구도까지 확장된 원문.
+        // 갤러리가 그걸 보여줘야 검색·재생성이 의미 있다(사용자 지적 2026-07-28).
+        let revised_prompt = extract_image_prompt(picked);
         Ok(ImageGenResult {
             binary,
             content_type,
             width: None,
             height: None,
-            revised_prompt: None,
+            revised_prompt,
             cost_usd: None,
         })
     }

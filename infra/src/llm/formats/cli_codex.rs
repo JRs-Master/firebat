@@ -93,6 +93,75 @@ pub(crate) fn harvest_generated_images(codex_home: &Path, since: SystemTime) -> 
     found.into_iter().map(|(_, p)| p).collect()
 }
 
+/// 그 이미지를 만든 **실제 프롬프트** — codex 가 자기 내장 도구에 넘긴 원문.
+///
+/// 왜 가능한가: 산출 파일명이 `call_<call_id>.png` 이고, 세션 rollout 의 그 호출 레코드에
+/// 같은 `call_id` 와 `arguments.prompt` 가 함께 있다. 파일명 stem == call_id 라 추측 없는 정확
+/// 조인이다. 경로만으로 세션·홈을 역산한다: `<home>/generated_images/<session>/call_x.png`.
+///
+/// 없으면 None — 갤러리는 호출자가 주는 폴백(사용자 요청문)을 쓴다. 사용자 요청문은 "가을 제주
+/// 여행 사진" 한 줄인데 모델이 실제로 넘긴 건 장면·조명·구도까지 적힌 문단이라, 갤러리 검색·
+/// 재생성에서 값이 다르다(사용자 지적 2026-07-28).
+pub(crate) fn extract_image_prompt(image_path: &Path) -> Option<String> {
+    let call_id = image_path.file_stem()?.to_str()?;
+    let session_dir = image_path.parent()?;
+    let session_id = session_dir.file_name()?.to_str()?;
+    let home = session_dir.parent()?.parent()?; // generated_images/ → <home>
+    let rollout = find_rollout(&home.join("sessions"), session_id)?;
+    let file = std::fs::File::open(rollout).ok()?;
+    use std::io::BufRead;
+    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+        if !line.contains(call_id) {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let p = v.get("payload").unwrap_or(&v);
+        if p.get("call_id").and_then(|c| c.as_str()) != Some(call_id) {
+            continue;
+        }
+        // arguments 는 JSON 문자열(function_call) 또는 객체 — 둘 다 수용.
+        let args = p.get("arguments").or_else(|| p.get("input"))?;
+        let parsed: serde_json::Value = match args.as_str() {
+            Some(s) => serde_json::from_str(s).ok()?,
+            None => args.clone(),
+        };
+        let prompt = parsed.get("prompt")?.as_str()?.trim();
+        if !prompt.is_empty() {
+            return Some(prompt.to_string());
+        }
+    }
+    None
+}
+
+/// `sessions/YYYY/MM/DD/rollout-*-<session_id>.jsonl` 탐색 — 날짜 경로를 모르므로 3단 순회.
+fn find_rollout(sessions_root: &Path, session_id: &str) -> Option<PathBuf> {
+    fn walk(dir: &Path, session_id: &str, depth: u8) -> Option<PathBuf> {
+        let entries = std::fs::read_dir(dir).ok()?;
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if depth == 0 {
+                    continue;
+                }
+                if let Some(found) = walk(&p, session_id, depth - 1) {
+                    return Some(found);
+                }
+            } else if p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.contains(session_id) && n.ends_with(".jsonl"))
+                .unwrap_or(false)
+            {
+                return Some(p);
+            }
+        }
+        None
+    }
+    walk(sessions_root, session_id, 3)
+}
+
 fn collect_new_images(dir: &Path, since: SystemTime, out: &mut Vec<(SystemTime, PathBuf)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -777,7 +846,10 @@ impl CodexCliHandler {
         if let Some(home) = &codex_home {
             outcome.generated_images = harvest_generated_images(home, harvest_since)
                 .into_iter()
-                .map(|p| p.to_string_lossy().into_owned())
+                .map(|p| firebat_core::ports::CliGeneratedImage {
+                    prompt: extract_image_prompt(&p),
+                    path: p.to_string_lossy().into_owned(),
+                })
                 .collect();
         }
         Ok(outcome)
@@ -803,7 +875,7 @@ struct CliRunOutcome {
     /// 흘림(claude 미러). 이 누적본은 턴 종료 후 영속·리로드 표시용.
     thinking_acc: String,
     /// codex 가 자기 내장 이미지 도구로 CODEX_HOME 에 남긴 산출 파일 — 턴 종료 후 수확.
-    generated_images: Vec<String>,
+    generated_images: Vec<firebat_core::ports::CliGeneratedImage>,
 }
 
 // codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 모두 포함되어

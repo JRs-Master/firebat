@@ -575,7 +575,9 @@ async fn substitute_cli_local_images(state: &Arc<McpServerState>, args: Value) -
             _ => "image/png",
         };
         let input = firebat_core::managers::media::GenerateImageInput {
-            prompt: "CLI 내장 도구 생성 이미지".to_string(),
+            // 그 파일을 만든 실제 프롬프트(rollout 의 call_id 조인). 못 찾으면 최소 표기.
+            prompt: crate::llm::formats::cli_codex::extract_image_prompt(std::path::Path::new(&path))
+                .unwrap_or_else(|| "CLI 내장 도구 생성 이미지".to_string()),
             model: Some("cli-codex-builtin".to_string()),
             scope: Some(firebat_core::ports::MediaScope::User),
             ..Default::default()

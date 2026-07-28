@@ -405,7 +405,7 @@ impl AiManager {
     /// 넘긴다(본 답변을 죽이지 않는다).
     async fn import_cli_generated_images(
         &self,
-        paths: &[String],
+        images: &[crate::ports::CliGeneratedImage],
         hub_owner: Option<&str>,
         prompt: &str,
     ) -> Vec<String> {
@@ -416,7 +416,8 @@ impl AiManager {
             return Vec::new();
         };
         let mut urls = Vec::new();
-        for path in paths {
+        for img in images {
+            let path = &img.path;
             let binary = match tokio::fs::read(path).await {
                 Ok(b) => b,
                 Err(e) => {
@@ -439,10 +440,16 @@ impl AiManager {
             // 생성 경로와 **같은 파이프라인**(크롭·variants·썸네일·blurhash·메타·갤러리 이벤트).
             // 옛 IMediaPort.save 직행은 원본만 남겨 같은 갤러리 안에서 경로별로 메타가 달랐다.
             let input = crate::managers::media::GenerateImageInput {
-                // 갤러리 검색은 프롬프트로 한다 — 비우면 그 이미지는 영영 못 찾는다. 모델이 실제로
-                // 쓴 이미지 프롬프트는 CLI 안에 있어 못 받으므로 사용자 요청문을 쓴다(사용자가
-                // 기억하는 문구이기도 하다).
-                prompt: prompt.chars().take(400).collect(),
+                // 갤러리 검색은 프롬프트로 한다 — 비우면 그 이미지는 영영 못 찾는다.
+                // **모델이 실제로 넘긴 프롬프트**를 우선(어댑터가 세션 로그에서 call_id 조인).
+                // 못 찾을 때만 사용자 요청문으로 폴백.
+                prompt: img
+                    .prompt
+                    .as_deref()
+                    .unwrap_or(prompt)
+                    .chars()
+                    .take(400)
+                    .collect(),
                 // 출처가 드러나는 라벨 — 옛 "cli-builtin" 은 어느 CLI 인지 안 보였다.
                 model: Some("cli-codex-builtin".to_string()),
                 scope: Some(crate::ports::MediaScope::User),
