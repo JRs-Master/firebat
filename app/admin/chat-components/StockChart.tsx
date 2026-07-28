@@ -611,6 +611,45 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const fmtPrice = (x: number) =>
     x.toLocaleString('ko-KR', { minimumFractionDigits: priceDecimals, maximumFractionDigits: priceDecimals });
 
+  // ── 파동 라벨 배지 ──────────────────────────────────────────────────────────
+  // 점유 상자 목록 — 렌더 패스마다 새로 만든다(순수 계산이라 리렌더 결과가 항상 같다).
+  const placedLabels: Array<{ cx: number; cy: number; w: number; h: number }> = [];
+  /** 겹치지 않는 y 를 찾는다 — dir 방향으로 한 칸씩 비키며 최대 10회. */
+  const freeY = (cx: number, y0: number, w: number, h: number, dir: number) => {
+    let cy = y0;
+    for (let k = 0; k < 10; k++) {
+      const hit = placedLabels.some(
+        p => Math.abs(p.cx - cx) < (p.w + w) / 2 + 2 && Math.abs(p.cy - cy) < (p.h + h) / 2 + 2,
+      );
+      if (!hit) break;
+      cy += dir * (h + 4);
+    }
+    placedLabels.push({ cx, cy, w, h });
+    return cy;
+  };
+  /** 알약 배지 + 리더선. 맨 텍스트는 캔들 위에서 안 읽혀서 색 채운 배지로 대비를 준다. */
+  const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number) => {
+    const h = 17;
+    const w = Math.max(17, 9 + label.length * 7);
+    // 차트 위/아래 끝을 넘으면 반대쪽으로 뒤집는다 — 안 그러면 최고점·최저점 라벨이 잘린다.
+    const top = padTop + h / 2 + 2;
+    const bottom = padTop + plotH - h / 2 - 2;
+    let dir = dirIn;
+    if (dir < 0 && py - 16 < top) dir = 1;
+    else if (dir > 0 && py + 16 > bottom) dir = -1;
+    const cy = Math.max(top, Math.min(bottom, freeY(cx, py + dir * 16, w, h, dir)));
+    const edge = cy + (dir < 0 ? h / 2 : -h / 2);
+    return (
+      <g>
+        <line x1={cx} y1={py} x2={cx} y2={edge} stroke={color} strokeWidth={1} opacity={0.45} />
+        <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={h / 2}
+              fill={color} stroke="#fff" strokeWidth={1.5} />
+        <text x={cx} y={cy + 4} fontSize={11.5} fontWeight={800} fill="#fff" textAnchor="middle"
+              fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
+      </g>
+    );
+  };
+
   const hoverBar = hoverIdx != null ? safeData[hoverIdx] : null;
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
   // 십자선 가로 + 가격축 태그 — hoverPos.y(priceBox px) = viewBox y (priceH=priceChartHeightPx 라 1:1).
@@ -713,6 +752,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             return <line key={t} x1={padLeft} x2={W} y1={y} y2={y} stroke={GRID} strokeWidth={1} strokeDasharray="2 3" />;
           })}
 
+          {/* 파동 라벨 배치 — 맨 텍스트 10px 는 캔들 위에서 묻히고 꼭짓점에 붙어 겹쳤다
+              (2026-07-28 실측). 알약 배지 + 리더선으로 대비를 주고, **고점은 위 / 저점은 아래**로
+              밀어 캔들을 안 가리게 한 뒤, 이미 놓인 라벨과 부딪히면 같은 방향으로 한 칸씩 비킨다.
+              점유 상자는 렌더 패스마다 새로 만든다(순수 계산 — 리렌더 시 항상 같은 결과). */}
           {/* 주석 레이어 — 좌표를 가진 선·구간·수평선·라벨. 특정 분석 기법 전용이 아니라
               엘리엇 파동·추세선·지지저항·피보나치 목표가 전부 이 하나를 쓴다. `barsAhead` 좌표는
               마지막 봉 오른쪽(미래 슬롯)에 그대로 얹힌다 — xAt 이 범위를 안 자르기 때문. */}
@@ -754,11 +797,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                   {an.points.map((pt, pi) => (
                     <g key={pi}>
                       <circle cx={px(pt)} cy={yPrice(pt.price)} r={3} fill={stroke} opacity={an.projected ? 0.6 : 1} />
-                      {(pt.label || an.label) && (
-                        <text x={px(pt)} y={yPrice(pt.price) - 6} fontSize={10} fontWeight={700} fill={stroke} textAnchor="middle">
-                          {pt.label ?? an.label}
-                        </text>
-                      )}
+                      {(pt.label || an.label) && waveBadge(px(pt), yPrice(pt.price), String(pt.label ?? an.label), stroke, -1)}
                     </g>
                   ))}
                 </g>
@@ -770,16 +809,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               <g key={'an' + ai}>
                 <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth={1.5}
                           strokeDasharray={dash} opacity={an.projected ? 0.75 : 1} />
-                {an.points.map((pt, pi) => (
-                  <g key={pi}>
-                    <circle cx={px(pt)} cy={yPrice(pt.price)} r={2.5} fill={stroke} />
-                    {pt.label && (
-                      <text x={px(pt)} y={yPrice(pt.price) - 7} fontSize={10} fontWeight={700} fill={stroke} textAnchor="middle">
-                        {pt.label}
-                      </text>
-                    )}
-                  </g>
-                ))}
+                {an.points.map((pt, pi) => {
+                  // 고점(이웃보다 높음)이면 위, 아니면 아래 — 라벨이 캔들 몸통을 안 덮게.
+                  const prevP = an.points[pi - 1];
+                  const nextP = an.points[pi + 1];
+                  const isPeak = (!prevP || pt.price >= prevP.price) && (!nextP || pt.price >= nextP.price);
+                  return (
+                    <g key={pi}>
+                      <circle cx={px(pt)} cy={yPrice(pt.price)} r={2.5} fill={stroke} />
+                      {pt.label && waveBadge(px(pt), yPrice(pt.price), String(pt.label), stroke, isPeak ? -1 : 1)}
+                    </g>
+                  );
+                })}
               </g>
             );
           })}
