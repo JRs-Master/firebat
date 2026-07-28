@@ -22,7 +22,10 @@ description: 태풍 경로·정보를 지도에 표시하는 방법 — 태그: 
 - 각 태풍 현재 필드: `typLat`·`typLon`(위치) / `typWs`(최대풍속 m/s) / `typPs`(중심기압 hPa) /
   `typDir`(진행방향) / `typSp`(이동속도 km/h) / `typ15`(강풍반경 km) / `typ25`(폭풍반경 km) / 이름·위치 문구.
 
-각 활동 태풍마다 `kma_weather { action: "typhoon-forecast", typhoonNo: <호수, 예 7> }` → **예측** items(시점별).
+각 활동 태풍마다 `kma_weather { action: "typhoon-forecast", typhoonNo: <호수, 예 7>, tmFc: <그 태풍의 최신 발표시각> }`
+→ **예측** items(시점별). ⚠️ **`tmFc` 를 반드시 넘긴다** — 생략하면 위에서 읽은 회차와 다른 회차가 와서
+본문의 현재값과 지도의 예상 경로가 서로 다른 발표를 가리킨다(2026-07-29 실측: 같은 질문에 한 턴은
+고정하고 한 턴은 생략해 결과가 갈렸다).
 각 item: `tm`(예상시각) / `lat`·`lon` / `ws`(m/s) / `ps`(hPa) / `dir` / `sp` /
 `rad15`(강풍반경 km) / `rad25`(폭풍반경 km) / `radPr`(70% 확률반경 km).
 
