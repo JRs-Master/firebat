@@ -372,11 +372,25 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
   // 요청 중단용 AbortController
   const abortRef = useRef<AbortController | null>(null);
+  /// 진행 중인 턴 id(=systemId). 중지 버튼이 **서버에 이 턴을 지목해** 끊기 위해 필요하다 —
+  /// fetch abort 만으로는 서버가 "탭 닫힘"과 구분하지 못해 턴이 끝까지 돌고 답을 저장했다
+  /// (실측 2026-07-29: 중지 후 재전송 → CLI 두 개 동시 기동, 답 2개).
+  const activeTurnRef = useRef<string | null>(null);
   /// 이미지 모드 턴 저장 요청 플래그 — dispatch 반영 후(effect)에 실제 messages 로 저장.
   const pendingImageSaveRef = useRef(false);
   const handleStop = useCallback(() => {
+    const turnId = activeTurnRef.current;
     abortRef.current?.abort();
     abortRef.current = null;
+    activeTurnRef.current = null;
+    // 표시는 즉시 멈추고, 서버 턴은 명시 신호로 끊는다(실패해도 UI 는 이미 멈춘 상태 — 조용히 무시).
+    if (turnId) {
+      void fetch('/api/chat/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turnId }),
+      }).catch(() => {});
+    }
   }, []);
   // Watchdog — N분 넘게 무응답이면 강제 터미널 + 에러 뱃지
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -903,6 +917,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      activeTurnRef.current = systemId;
       cancelWatchdog();
       // onFire 핸들러 등록 — SSE 이벤트 올 때마다 resetWatchdog 가 이걸로 재스케줄
       watchdogOnFireRef.current = () => {
@@ -1057,6 +1072,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // 스트림 종료 안전망 — 여전히 in-flight 면 reducer 의 FINALIZE + enforceInvariant 가 자동 복구
       dispatch({ type: 'FINALIZE', id: systemId });
       abortRef.current = null;
+      if (activeTurnRef.current === systemId) activeTurnRef.current = null;
       setLoading(false);
       // AI 응답 영속 = chat route 가 server-side (post-system append, client disconnect 시에도 relay 완주 후).
       // 옛 프론트 saveToDb (turn-end 저장) 폐기 — admin·hub 둘 다 server-authoritative.

@@ -319,6 +319,16 @@ pub struct AiManager {
     /// 좁히기의 임계·정확도를 실측으로 확정하기 위한 선행 측정 (plan Intent Agent 섹션).
     intent_actions: Option<Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>>,
     intent_skills: Option<Arc<crate::managers::ai::semantic_catalog::RefreshingCatalog>>,
+    /// 진행 중인 턴의 취소 신호 — 키 = 프론트가 발급한 턴 id(`aiMsgId`).
+    ///
+    /// 왜 필요한가: 턴은 **detached 태스크**로 돈다(클라이언트가 탭을 닫아도 답을 잃지 않게 넣은
+    /// 백그라운드 재개). 그래서 SSE 가 끊겨도 턴은 끝까지 돌고 답을 저장한다 — 의도한 동작이다.
+    /// 문제는 **사용자가 중지 버튼을 눌러도 구분이 안 된다**는 것: 프론트는 fetch 를 abort 할 뿐이라
+    /// 서버에는 "연결이 끊겼다"로만 보인다. 실측(2026-07-29): 오타로 중지 후 다시 보냈더니 두 턴이
+    /// 동시에 돌아 codex CLI 두 개가 기동하고 답이 2개 저장됐다.
+    /// → 끊김과 중지는 다른 사건이므로 **명시적 신호**로 가른다. 취소 시 턴 future 를 drop 하면
+    /// `kill_on_drop` 이 CLI 자식을 죽이고, 영속 단계에 도달하지 않아 유령 답도 안 남는다.
+    cancels: Arc<std::sync::Mutex<std::collections::HashMap<String, tokio::sync::watch::Sender<bool>>>>,
 }
 
 impl AiManager {
@@ -348,6 +358,39 @@ impl AiManager {
             sysmod_cache: None,
             intent_actions: None,
             intent_skills: None,
+            cancels: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    /// 턴 취소 신호를 등록하고 수신기를 돌려준다. 같은 id 가 이미 있으면 교체(재전송 케이스).
+    pub fn register_cancel(&self, turn_id: &str) -> tokio::sync::watch::Receiver<bool> {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        if let Ok(mut m) = self.cancels.lock() {
+            // 무한 증식 방지 — 정상 종료가 항상 unregister 하지만 패닉 경로를 대비한 상한.
+            if m.len() > 64 {
+                m.clear();
+            }
+            m.insert(turn_id.to_string(), tx);
+        }
+        rx
+    }
+
+    pub fn unregister_cancel(&self, turn_id: &str) {
+        if let Ok(mut m) = self.cancels.lock() {
+            m.remove(turn_id);
+        }
+    }
+
+    /// 진행 중인 턴을 취소한다. 반환 = 그런 턴이 있었나(없으면 이미 끝났다는 뜻).
+    pub fn cancel_turn(&self, turn_id: &str) -> bool {
+        let tx = self.cancels.lock().ok().and_then(|m| m.get(turn_id).cloned());
+        match tx {
+            Some(tx) => {
+                let _ = tx.send(true);
+                tracing::info!(category = "ai", "turn cancelled by user — turn_id={}", turn_id);
+                true
+            }
+            None => false,
         }
     }
 

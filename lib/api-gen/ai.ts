@@ -5,6 +5,7 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  AiCancelTurnRequestSchema,
   AiCodeAssistRequestSchema,
   AiConsumePendingRequestSchema,
   AiCreatePendingRequestSchema,
@@ -76,6 +77,15 @@ export async function spawnSubAgent(args: MessageInitShape<typeof AiSpawnSubAgen
   try {
       const response = await aiClient.spawnSubAgent(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function cancelTurn(args: MessageInitShape<typeof AiCancelTurnRequestSchema>): Promise<RpcResult<boolean>> {
+  try {
+      const response = await aiClient.cancelTurn(args ?? {});
+      return { ok: true, data: unBigInt(response.cancelled) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -11,7 +11,7 @@ use crate::managers::ai::{AiManager, AiStreamEvent};
 use crate::ports::{LlmCallOpts, ToolDefinition};
 use crate::proto::{
     ai_service_server::AiService, ai_stream_event_pb::Event as AiStreamEventOneof,
-    AiChunkEventPb, AiCodeAssistRequest, AiCodeAssistResponse, AiConsumePendingRequest,
+    AiCancelTurnRequest, AiCancelTurnResponse, AiChunkEventPb, AiCodeAssistRequest, AiCodeAssistResponse, AiConsumePendingRequest,
     AiConsumePendingResponse, AiCreatePendingRequest, AiCreatePendingResponse,
     AiErrorEventPb, AiGetPendingRequest, AiGetPendingResponse, AiIsSubAgentEnabledRequest,
     AiIsSubAgentEnabledResponse, AiProcessRequest, AiProcessResponse, AiRejectPendingRequest,
@@ -143,18 +143,36 @@ impl AiService for AiServiceImpl {
             tokio::sync::mpsc::channel::<Result<crate::managers::ai::AiResponse, String>>(1);
 
         let manager = self.manager.clone();
+        // 턴 id — 프론트가 발급한 `aiMsgId`. 이게 있어야 사용자가 중지를 눌렀을 때 **이 턴**을
+        // 지목해 끊을 수 있다(크론·에이전트 턴은 없으므로 취소 대상이 아니다).
+        let turn_id = ai_opts.ai_msg_id.clone();
+        let cancel_rx = turn_id.as_deref().map(|id| manager.register_cancel(id));
         tokio::spawn(async move {
             let opts_local = opts;
             let ai_opts_local = ai_opts;
-            let res = manager
-                .process_with_tools_opts_with_emit(
-                    &prompt,
-                    &tools,
-                    &opts_local,
-                    &ai_opts_local,
-                    Some(event_tx),
-                )
-                .await;
+            let run = manager.process_with_tools_opts_with_emit(
+                &prompt,
+                &tools,
+                &opts_local,
+                &ai_opts_local,
+                Some(event_tx),
+            );
+            // 중지 = 턴 future 를 **drop** 한다. SSE 끊김과 달리 사용자가 명시적으로 누른 신호라,
+            // drop 이 곧 CLI 자식 kill(kill_on_drop)이고 영속 단계에 도달하지 않아 유령 답도 안 남는다.
+            let res = match cancel_rx {
+                Some(mut rx) => {
+                    tokio::select! {
+                        r = run => r,
+                        _ = rx.changed() => {
+                            Err("turn cancelled by user".to_string())
+                        }
+                    }
+                }
+                None => run.await,
+            };
+            if let Some(id) = &turn_id {
+                manager.unregister_cancel(id);
+            }
             let _ = final_tx.send(res).await;
         });
 
@@ -291,6 +309,15 @@ impl AiService for AiServiceImpl {
                 "note": crate::i18n::t("core.error.ai.tool_dispatcher_unready", None, &[])
             })),
         }))
+    }
+
+    async fn cancel_turn(
+        &self,
+        req: Request<AiCancelTurnRequest>,
+    ) -> Result<Response<AiCancelTurnResponse>, TonicStatus> {
+        let turn_id = req.into_inner().turn_id;
+        let cancelled = !turn_id.is_empty() && self.manager.cancel_turn(&turn_id);
+        Ok(Response::new(AiCancelTurnResponse { cancelled }))
     }
 
     async fn spawn_sub_agent(
