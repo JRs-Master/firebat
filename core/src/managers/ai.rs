@@ -1010,12 +1010,21 @@ impl AiManager {
                     return Ok(serde_json::json!({
                         "actions": [],
                         "count": 0,
+                        // A verdict, not just an empty list — the model needs to know this is
+                        // "no such capability", otherwise it re-words the query forever or
+                        // invents an action. Paired with the two next moves below.
+                        "matchStatus": "none",
+                        "droppedTokens": dropped.clone(),
                         "error": format!(
-                            "Query {:?} contains no capability words — it looks like a subject \
-                             name only. Actions are searched by WHAT they do (e.g. 일봉 차트, \
-                             잔고 조회, 실시간 체결), never by a subject's name. Re-search with a \
-                             capability description, and resolve the subject's code with a \
-                             lookup/list action — then pass it as a parameter.",
+                            "No action matched: these words appear in no action's description, so \
+                             too little of the query survived to search with — {:?}. Actions are \
+                             searched by WHAT they do (일봉 차트 / 잔고 조회 / 실시간 체결), never \
+                             by a subject's name, and never by wording for a capability that may \
+                             not exist. Next: (a) re-search with a capability description, \
+                             resolving any subject's code via a lookup/list action, or (b) if you \
+                             suspect the capability may not exist at all, call \
+                             search_module_actions with only {{\"module\": \"<name>\"}} to LIST that \
+                             module's actions and see for yourself — never invent an action.",
                             dropped.join(" ")
                         ),
                     }));
