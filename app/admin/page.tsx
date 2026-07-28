@@ -1163,8 +1163,8 @@ function BuildCard({ stages: rawStages, loading, building, buildStatus, liveStep
   // 넘기며 뱉는 신호)은 카드가 이미 stepper 로 표시하므로 생략 — 길이 기준(일반 규칙, 문구 나열 아님).
   const note = stage.note && stage.note.trim().length > 12 ? stage.note.trim() : '';
   return (
-    <div className={`mt-2 rounded-2xl border shadow-sm overflow-hidden ${done ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-slate-50' : 'border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50'}`}>
-      <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b ${done ? 'border-emerald-200/60' : 'border-blue-200/60'}`}>
+    <div className="mt-2 rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-slate-50 shadow-sm overflow-hidden">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 border-b border-blue-200/60">
         <span className="text-[12px] font-bold text-slate-700 whitespace-nowrap">{isModify ? `🔧 ${t('build.modify_in_progress')}` : `🔨 ${t('build.in_progress')}${bs.tier ? ` · ${bs.tier}` : ''}`}</span>
         <div className="flex items-center gap-1 flex-wrap">
           {/* 색 축 2개를 분리한다 — **파랑 = 진행**(완료·현재 단계), **회색 링 = 지금 보고 있는 슬라이드**.
@@ -1192,7 +1192,7 @@ function BuildCard({ stages: rawStages, loading, building, buildStatus, liveStep
                     : cur ? 'bg-blue-600 text-white font-bold ring-2 ring-blue-200 step-pulse'
                     : 'bg-white text-slate-400 border border-slate-200'
                   } ${stageIdx >= 0 ? 'cursor-pointer' : 'cursor-default'} ${stageIdx === vi && stageIdx >= 0 ? 'ring-1 ring-offset-1 ring-blue-400' : ''}`}>
-                  {stepDone || isFinishChip ? '✓ ' : `${i + 1}. `}{finishLabel ?? s.label}
+                  {stepDone || isFinishChip ? '✓ ' : `${i + 1}. `}{isFinishChip ? finishLabel : s.label}
                 </button>
                 {i < STEPS.length - 1 && <span className={`text-[10px] ${i < curIdx ? 'text-blue-400' : 'text-slate-300'}`}>→</span>}
               </div>
@@ -1237,10 +1237,10 @@ function BuildCard({ stages: rawStages, loading, building, buildStatus, liveStep
         </div>
       )}
       {stages.length > 1 && (
-        <div className={`flex items-center justify-center gap-3 px-3 py-2 border-t bg-white/40 ${done ? 'border-emerald-200/50' : 'border-blue-200/50'}`}>
+        <div className="flex items-center justify-center gap-3 px-3 py-2 border-t border-blue-200/50 bg-white/40">
           <button type="button" disabled={vi <= 0} onClick={() => setViewIdx(Math.max(0, vi - 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">←</button>
           <div className="flex items-center gap-1">
-            {stages.map((_, i) => <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === vi ? (done ? 'bg-emerald-600' : 'bg-blue-600') : 'bg-slate-300'}`} />)}
+            {stages.map((_, i) => <span key={i} className={`w-1.5 h-1.5 rounded-full ${i === vi ? 'bg-blue-600' : 'bg-slate-300'}`} />)}
           </div>
           <button type="button" disabled={vi >= last} onClick={() => setViewIdx(Math.min(last, vi + 1))} className="text-[14px] text-slate-500 disabled:opacity-30 hover:text-slate-700">→</button>
           {vi < last && <button type="button" onClick={() => setViewIdx(last)} className="text-[11px] text-blue-600 hover:underline ml-1">{t('build.view_latest')}</button>}
