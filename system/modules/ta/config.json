@@ -1,0 +1,78 @@
+{
+  "name": "ta",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "runtime": "python",
+  "providerType": "compute",
+  "capability": "technical-analysis",
+  "description": "기술적 분석 계산 — OHLCV 배열을 넣으면 스윙 피벗(ZigZag), 엘리엇 파동 라벨링 후보, 피보나치 되돌림·확장 목표를 계산합니다. 외부 API 를 쓰지 않는 순수 계산이라 시세 소스(yfinance·korea-invest·kiwoom·upbit 무관)를 가리지 않습니다. **수치는 반드시 이 도구로 계산하세요** — 차트에서 눈대중으로 고점·저점을 읽거나 되돌림 비율을 암산하면 틀립니다. 결과 좌표는 stock_chart 의 annotations 에 그대로 넣을 수 있습니다.",
+  "tags": [
+    "기술적분석",
+    "엘리엇",
+    "엘리어트",
+    "파동",
+    "파동분석",
+    "피벗",
+    "스윙",
+    "고점 저점",
+    "지그재그",
+    "피보나치",
+    "되돌림",
+    "확장",
+    "목표가",
+    "추세선",
+    "지지 저항",
+    "technical analysis",
+    "elliott wave",
+    "pivot",
+    "zigzag",
+    "fibonacci",
+    "retracement",
+    "extension"
+  ],
+  "input": {
+    "type": "object",
+    "required": ["action", "bars"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["pivots", "elliott_candidates", "fib_targets"],
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 엘리엇 하드룰을 통과하는 라벨링 후보 열거 / fib_targets = 선택한 파동에서 되돌림·확장 목표 계산"
+      },
+      "bars": {
+        "type": "array",
+        "description": "OHLCV 배열 (오래된 → 최신). 각 항목 {date, open, high, low, close, volume}. 시세 도구 결과를 그대로 넣으면 됩니다."
+      },
+      "threshold": {
+        "type": "number",
+        "description": "pivots·elliott_candidates: 스윙으로 인정할 최소 반전 폭(%). 기본 5. 크게 잡을수록 큰 파동만 남습니다."
+      },
+      "maxCandidates": {
+        "type": "integer",
+        "description": "elliott_candidates: 반환할 후보 수 상한 (기본 5)"
+      },
+      "pivotIndices": {
+        "type": "array",
+        "description": "fib_targets: 기준으로 삼을 파동의 피벗 인덱스들. 보통 elliott_candidates 가 준 후보의 pivots 를 그대로 넘깁니다."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "pivots": {
+        "type": "array",
+        "description": "스윙 피벗 — [{i, date, price, kind:'high'|'low'}]. i·price 는 실제 봉에서 온 값이라 그대로 stock_chart annotations 의 좌표로 쓸 수 있습니다"
+      },
+      "candidates": {
+        "type": "array",
+        "description": "엘리엇 라벨링 후보 — [{labels:['1'..'5'|'A'..'C'], pivots:[{i,price,label}], rulesPassed, notes}]. 하드룰 3개(2파 100% 미만 되돌림 / 3파 최단 아님 / 4파 1파 미겹침)를 통과한 것만 담깁니다. 어느 후보를 택할지는 상위 시간틀·맥락을 보는 판단이므로 모델이 고르되, 목록 밖 카운트를 지어내지 마세요"
+      },
+      "targets": {
+        "type": "array",
+        "description": "피보나치 목표 — [{ratio, price, kind:'retracement'|'extension'}]. 미래 투영이므로 차트에 projected 로 표시하세요"
+      }
+    }
+  }
+}
