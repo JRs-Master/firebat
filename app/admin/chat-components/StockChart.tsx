@@ -497,11 +497,28 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const firstVis = Math.max(0, Math.floor((scrollX - leftPad) / barPx));
     const lastVis = Math.min(safeData.length - 1, Math.ceil((scrollX + boxW - leftPad) / barPx));
     const vis = lastVis >= firstVis ? safeData.slice(firstVis, lastVis + 1) : safeData;
-    const liveMaxP = Math.max(...vis.map(d => d.high));
-    const liveMinP = Math.min(...vis.map(d => d.low));
+    let liveMaxP = Math.max(...vis.map(d => d.high));
+    let liveMinP = Math.min(...vis.map(d => d.low));
+    // 주석 가격도 축에 넣는다 — 축을 캔들만 보고 잡으면 **차트가 자기가 그리는 것을 못 담는다**
+    // (2026-07-29 실측: 3파 목표 204,944 가 저가 211,000 아래라 예상선이 바닥을 뚫고 나감).
+    // 다만 무효화선처럼 멀리 있는 값이 축을 통째로 늘려 캔들을 납작하게 만들면 안 되므로,
+    // 캔들 범위의 60% 까지만 확장을 허용한다(그 밖은 화면 밖에 두는 게 낫다).
+    {
+      const barRange = liveMaxP - liveMinP || 1;
+      const room = barRange * 0.6;
+      for (const a of annotations ?? []) {
+        for (const pt of a.points) {
+          if (!Number.isFinite(pt.price)) continue;
+          if (pt.price > liveMaxP && pt.price <= liveMaxP + room) liveMaxP = pt.price;
+          if (pt.price < liveMinP && pt.price >= liveMinP - room) liveMinP = pt.price;
+        }
+      }
+    }
     const rangeP = liveMaxP - liveMinP || 1;
-    const livePMin = liveMinP - rangeP * 0.05;
-    const livePMax = liveMaxP + rangeP * 0.05;
+    // 주석이 있으면 위아래 여유를 조금 더 — 꼭짓점 라벨이 축 경계에 눌리지 않게(파동 "0" 사례).
+    const padFrac = (annotations?.length ?? 0) > 0 ? 0.08 : 0.05;
+    const livePMin = liveMinP - rangeP * padFrac;
+    const livePMax = liveMaxP + rangeP * padFrac;
     const liveMaxV = niceCeil(Math.max(...vis.map(d => d.volume), 1));  // 거래량 축 상한 = 보이는 구간 max 의 nice 올림.
     // Y축 freeze — 줌 제스처 중엔 직전 라이브 Y 유지(가로 줌인데 세로 출렁임 방지), 끝나면(zoomEndTick) 라이브 재스케일.
     let pMin = livePMin, pMax = livePMax, maxV = liveMaxV;
@@ -534,7 +551,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return { name: ind, d, color: MA_COLORS[ind], values };
     });
     return { xs, xAt, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
-  }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick, scale]);
+  }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick, scale, annotations]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
   const updateHoverFromClientX = useCallback((clientX: number) => {

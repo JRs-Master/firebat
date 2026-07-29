@@ -298,9 +298,10 @@ function liveStats(bars: OhlcvBar[]) {
 }
 
 /** 전광판 한 칸. */
-// 전광판 색 = 캔들과 **같은 값**이어야 한 화면에서 따로 놀지 않는다(StockChart 의 UP/DOWN).
-const TICK_UP = '#ef4444';
-const TICK_DOWN = '#3b82f6';
+// 전광판 색 = 차트 헤더의 고가/저가와 **같은 값**. 캔들 채움색(#ef4444/#3b82f6)을 쓰면 글자로는
+// 연하게 읽혀 같은 화면의 고가·저가보다 흐려 보인다(2026-07-29 사용자). 텍스트는 한 단계 진한 쪽.
+const TICK_UP = '#dc2626';   // text-red-600 — 헤더 고가와 동일
+const TICK_DOWN = '#2563eb'; // text-blue-600 — 헤더 저가와 동일
 
 function Tick({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
