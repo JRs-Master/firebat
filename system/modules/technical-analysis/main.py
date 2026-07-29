@@ -1121,6 +1121,8 @@ def main():
         if pos:
             rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", "—",
                          pos["entryLabel"], "—"])
+        asof = bar_range.get("to") if isinstance(bar_range, dict) else None
+
         def _last(seq):
             for v in reversed(seq):
                 if v is not None:
@@ -1133,7 +1135,8 @@ def main():
         # Current values of the indicators the rules actually evaluated. Pulled from the same series
         # rather than recomputed, so the numbers on screen can never disagree with the signal.
         live_now = [
-            {"type": "metric", "props": {"label": "RSI", "value": _r(_last(series["rsi"])), "subLabel": "14"}},
+            {"type": "metric", "props": {"label": "RSI", "value": _r(_last(series["rsi"])),
+                                         "subLabel": "14 · %s 기준" % (asof[-5:] if asof else "-")}},
             {"type": "metric", "props": {"label": "MACD 히스토그램", "value": _r(_last(series["macd.hist"]), 3),
                                          "subLabel": "0 상향 = 매수 조건"}},
             {"type": "metric", "props": {"label": "볼린저 %B", "value": _r(_last(series["bollinger.percentB"]), 3),
@@ -1150,17 +1153,22 @@ def main():
                               "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
                              for b in bars]} if inp.get("lastSessionOnly") else {}),
             }},
-            {"type": "table", "props": {
-                "headers": ["진입일", "진입가", "청산일", "청산가", "수익률(비용전)", "수익률(비용후)",
-                            "진입 신호", "청산 신호"],
-                "rows": rows, "stickyCol": False, "striped": True, "sortable": True}},
+        ]
+        # 한 줄에 하나씩 쌓이면 스크롤만 길어진다 — 관련된 것끼리 Grid 한 줄로 묶어 내보낸다.
+        blocks.append({"type": "grid", "props": {"columns": 4, "children": live_now}})
+        blocks.append({"type": "grid", "props": {"columns": 4, "children": [
             {"type": "metric", "props": {"label": "체결", "value": len(trades), "unit": "건",
                                          "subLabel": "미청산 %d" % (1 if pos else 0)}},
             {"type": "metric", "props": {"label": "승률", "value": backtest["winRate"] if trades else "—", "unit": "%"}},
             {"type": "metric", "props": {"label": "누적 수익", "value": backtest["totalReturnPct"] if trades else "—",
-                                         "unit": "%", "deltaType": "up" if (backtest["totalReturnPct"] or 0) > 0 else "down"}},
+                                         "unit": "%",
+                                         "deltaType": "up" if (backtest["totalReturnPct"] or 0) > 0 else "down"}},
             {"type": "metric", "props": {"label": "최대 낙폭", "value": backtest["maxDrawdownPct"] if trades else "—", "unit": "%"}},
-        ] + live_now
+        ]}})
+        blocks.append({"type": "table", "props": {
+            "headers": ["진입일", "진입가", "청산일", "청산가", "수익률(비용전)", "수익률(비용후)",
+                        "진입 신호", "청산 신호"],
+            "rows": rows, "stickyCol": False, "striped": True, "sortable": True}})
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
             "blocks": blocks,
@@ -1282,7 +1290,7 @@ def main():
                 **({"data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
                               "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
                              for b in bars]} if inp.get("lastSessionOnly") else {}),
-            }}] + wave_cards,
+            }}, {"type": "grid", "props": {"columns": 3, "children": wave_cards}}],
             "summary": {
                 "structure": cand["structure"], "labels": cand["labels"],
                 "inProgress": cand.get("inProgress"), "complete": cand.get("complete"),

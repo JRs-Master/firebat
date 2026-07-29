@@ -256,6 +256,58 @@ function saveLiveTail(topic: string, ivSec: number, bars: OhlcvBar[]): void {
   }
 }
 
+/** 틱마다 다시 계산하는 전광판 지표 — 서버 카드는 방문마다라 정지 화면처럼 보인다.
+ *  표시 전용이고 매매 판정은 서버(signals)가 그대로 한다. 공식은 모듈과 같은 표준식. */
+function liveStats(bars: OhlcvBar[]) {
+  const c = bars.map(b => b.close).filter(Number.isFinite);
+  if (c.length < 2) return null;
+  const ema = (xs: number[], n: number) => {
+    if (xs.length < n) return null;
+    const k = 2 / (n + 1);
+    let p = xs.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    for (let i = n; i < xs.length; i++) p = xs[i] * k + p * (1 - k);
+    return p;
+  };
+  // MACD 히스토그램 — 시그널선은 macd 시리즈의 EMA 라 전체 시리즈가 필요하다.
+  let hist: number | null = null;
+  if (c.length >= 35) {
+    const line: number[] = [];
+    for (let i = 26; i <= c.length; i++) {
+      const f = ema(c.slice(0, i), 12), sl = ema(c.slice(0, i), 26);
+      if (f != null && sl != null) line.push(f - sl);
+    }
+    const sig = ema(line, 9);
+    if (sig != null && line.length) hist = line[line.length - 1] - sig;
+  }
+  // RSI(14) — Wilder 평활.
+  let rsi: number | null = null;
+  if (c.length > 15) {
+    let g = 0, l = 0;
+    for (let i = 1; i <= 14; i++) { const d = c[i] - c[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); }
+    let ag = g / 14, al = l / 14;
+    for (let i = 15; i < c.length; i++) {
+      const d = c[i] - c[i - 1];
+      ag = (ag * 13 + Math.max(d, 0)) / 14;
+      al = (al * 13 + Math.max(-d, 0)) / 14;
+    }
+    rsi = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+  }
+  const last = bars[bars.length - 1];
+  const first = bars[0];
+  const dayVol = bars.reduce((a, b) => a + (b.volume || 0), 0);
+  return { price: last.close, chg: first ? last.close - first.close : 0, rsi, hist, dayVol, barVol: last.volume || 0 };
+}
+
+/** 전광판 한 칸. */
+function Tick({ label, value, tone = 'text-slate-900' }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center px-2 py-1.5 min-w-0">
+      <span className="text-[9px] font-semibold tracking-wider text-slate-400 uppercase">{label}</span>
+      <span className={`text-[13px] font-extrabold tabular-nums truncate ${tone}`}>{value}</span>
+    </div>
+  );
+}
+
 function makeLiveDateFmt(sampleDate: string, daily: boolean): (d: Date) => string {
   const p2 = (n: number) => String(n).padStart(2, '0');
   const iso = /^\d{4}-\d{2}-\d{2}/.test(sampleDate); // "2026-07-22 ..." → ISO 구분자 유지
@@ -397,6 +449,27 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       <div className="flex items-center justify-end mb-1">
         <LiveBadge live={live} lastMs={lastMs} staleMs={Math.max(60_000, ivSec * 1500)} />
       </div>
+      {/* 전광판 — 틱마다 다시 계산해 숫자가 실제로 움직인다. 서버 카드(방문마다)와 달리
+          이건 화면이 살아 있다는 걸 보여 주는 자리다. */}
+      {(() => {
+        const st = liveStats(candlesRef.current ?? []);
+        if (!st) return null;
+        const up = st.chg >= 0;
+        const n = (v: number | null, d = 0) =>
+          v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+        return (
+          <div className="mb-2 grid grid-cols-3 sm:grid-cols-6 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
+            <div className="bg-white"><Tick label="현재가" value={n(st.price)} tone={up ? 'text-red-600' : 'text-blue-600'} /></div>
+            <div className="bg-white"><Tick label="시가대비" value={`${up ? '▲' : '▼'} ${n(Math.abs(st.chg))}`} tone={up ? 'text-red-600' : 'text-blue-600'} /></div>
+            <div className="bg-white"><Tick label="RSI 14" value={n(st.rsi, 1)}
+              tone={st.rsi == null ? 'text-slate-400' : st.rsi >= 70 ? 'text-red-600' : st.rsi <= 30 ? 'text-blue-600' : 'text-slate-900'} /></div>
+            <div className="bg-white"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
+              tone={st.hist == null ? 'text-slate-400' : st.hist >= 0 ? 'text-emerald-600' : 'text-orange-600'} /></div>
+            <div className="bg-white"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
+            <div className="bg-white"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
+          </div>
+        );
+      })()}
       {candles.length === 0 ? (
         <div className="border border-slate-200 rounded-lg bg-white px-3 py-4">
           <p className="text-[11px] text-slate-400">

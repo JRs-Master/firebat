@@ -57,6 +57,10 @@ const MA_COLORS: Record<string, string> = {
 
 const UP = '#ef4444';   // 상승 빨강
 const DOWN = '#3b82f6'; // 하락 파랑
+// 신호 화살표는 **캔들 색을 쓰면 안 된다** — 옛 코드가 UP/DOWN 을 그대로 써서 청산 화살표가
+// 하락봉과 같은 파랑이라 봉 사이에서 안 보였다(2026-07-29 실측). 빨강·파랑 밖의 색 + 흰 후광.
+const SIG_BUY = '#059669';   // 진입 — emerald
+const SIG_SELL = '#ea580c';  // 청산 — orange
 const FG = '#0f172a';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
@@ -957,16 +961,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               const ay = yPrice(safeData[idx].low) + 4; // 봉 저가 아래 — 위로 가리킴
               return (
                 <g key={'bp' + i}>
-                  <polygon points={arrowPath(x, ay, true)} fill={UP} />
-                  {bp.label && <text x={x} y={ay + 26} fill={UP} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
+                  <polygon points={arrowPath(x, ay, true)} fill={SIG_BUY} stroke="#fff" strokeWidth={1.2} strokeLinejoin="round" />
+                  {bp.label && <text x={x} y={ay + 26} fill={SIG_BUY} fontSize="10" fontWeight="800" textAnchor="middle"
+                    stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+                    fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
                 </g>
               );
             }
             const y = yPrice(bp.price);
             return (
               <g key={'bp' + i}>
-                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={UP} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
-                <text x={padLeft + 4} y={y - 4} fill={UP} fontSize="10" fontWeight="700" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label} {bp.price.toLocaleString('ko-KR')}</text>
+                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={SIG_BUY} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
+                <text x={padLeft + 4} y={y - 4} fill={SIG_BUY} fontSize="10" fontWeight="700" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label} {bp.price.toLocaleString('ko-KR')}</text>
               </g>
             );
           })}
@@ -978,15 +984,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               const ay = yPrice(safeData[idx].high) - 4; // 봉 고가 위 — 아래로 가리킴
               return (
                 <g key={'sp' + i}>
-                  <polygon points={arrowPath(x, ay, false)} fill={DOWN} />
-                  {sp.label && <text x={x} y={ay - 22} fill={DOWN} fontSize="9" fontWeight="700" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
+                  <polygon points={arrowPath(x, ay, false)} fill={SIG_SELL} stroke="#fff" strokeWidth={1.2} strokeLinejoin="round" />
+                  {sp.label && <text x={x} y={ay - 22} fill={SIG_SELL} fontSize="10" fontWeight="800" textAnchor="middle"
+                    stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+                    fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
                 </g>
               );
             }
             const y = yPrice(sp.price);
             return (
               <g key={'sp' + i}>
-                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={DOWN} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
+                <line x1={padLeft} x2={W} y1={y} y2={y} stroke={SIG_SELL} strokeWidth={1} strokeDasharray="4 2" opacity={0.5} />
                 <text x={padLeft + 4} y={y - 4} fill={DOWN} fontSize="10" fontWeight="700" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label} {sp.price.toLocaleString('ko-KR')}</text>
               </g>
             );
@@ -1261,8 +1269,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           설명은 헤더에 한 번만 두고, 각 발생은 "시각 — 가격" 한 줄로. 높이를 제한해 스크롤. */}
       {(buyPoints?.length || sellPoints?.length) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-          <PointGroup title="매수 포인트" points={buyPoints} tone="text-red-600" />
-          <PointGroup title="매도 포인트" points={sellPoints} tone="text-blue-600" />
+          <PointGroup title="진입 (매수)" points={buyPoints} tone="text-emerald-600" />
+          <PointGroup title="청산 (매도)" points={sellPoints} tone="text-orange-600" />
         </div>
       ) : null}
     </div>
