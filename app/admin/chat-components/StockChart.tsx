@@ -88,8 +88,11 @@ function arrowPath(x: number, y0: number, up: boolean): string {
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
 // 기본 줌 = 봉 폭(슬롯 px)을 고정 → 한 화면 개수는 화면 폭에 맞춰 자동(넓으면 많이·좁으면 적게).
 // 봉 크기가 화면·데이터에 따라 들쭉날쭉하지 않게(주식차트 가독). 보기 좋은 값으로 디바이스별 분리.
-const DEFAULT_BAR_PX_PC = 18;     // PC 기본 캔들 슬롯 폭 (몸통 ~0.6×≈11px) — 넓은 화면서 보기 좋은 굵기
-const DEFAULT_BAR_PX_MOBILE = 11; // 모바일 — 터치·가독 위해 약간 굵게 (→ 한 화면 개수도 더 적음)
+// 기본 캔들 슬롯 폭. 봉 영역 높이를 폭에서 유도하게 바뀌어(404px on PC) 봉이 얇아도 몸통이 읽히므로,
+// 한 화면 개수를 늘려 맥락이 보이게 한다 — 18px 는 PC 에서 62봉뿐이라 하루 흐름이 안 보였다.
+// 9px → ~124봉(1분봉 두 시간), 몸통 ~5.4px. 모바일 7px → ~47봉, 몸통 ~4.2px.
+const DEFAULT_BAR_PX_PC = 9;
+const DEFAULT_BAR_PX_MOBILE = 7;
 const ZOOM_MAX_BAR = 36;     // 줌인 한계 (봉 ~36px, 그 이상 안 커짐)
 const ZOOM_MIN_BAR = 3;      // 줌아웃 한계 (봉 ~3px, 그 이하 안 작아짐)
 const ZOOM_RIGHT_PAD_SLOTS = 2; // 최신 캔들 우측 여백(slot 수) — 데이터 적으면 이 여백 맞춰 우측 정렬.
@@ -503,11 +506,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       el.scrollLeft = leftPad + idx * barPx - offsetX;
       zoomAnchorRef.current = null;
     } else if (pinnedRightRef.current) {
-      // 미래 구간이 있으면 끝까지 밀면 **빈 여백만** 화면에 남는다 — 모바일처럼 뷰포트가 좁으면
-      // 점선만 보이고 봉이 하나도 안 보였다(2026-07-28 사용자 지적). 마지막 봉을 화면 가운데에
-      // 두어 지나온 파동과 투영 구간이 함께 보이게 한다. 여백이 없으면(기본 2슬롯) 옛대로 끝까지.
+      // 미래 구간이 화면을 크게 차지할 때만 마지막 봉을 가운데로 온다. 옛 조건은 futureSlots>0 이면
+      // 무조건 가운데라, 여백이 몇 칸뿐이어도 **화면 오른쪽 절반이 텅 비었다**(2026-07-29 사용자:
+      // "제일 보기 좋은 상태로 기본화면 시작하게"). 미래 구간이 뷰포트의 35% 미만이면 끝까지 밀어
+      // 최신 봉을 최대한 보이고, 그 이상이면 옛대로 가운데(좁은 화면에서 점선만 남는 것 방지).
+      const visSlots = Math.max(1, el.clientWidth / barPx);
       const anchor =
-        futureSlots > 0
+        futureSlots > visSlots * 0.6
           ? leftPad + (fullN - 1) * barPx + barPx / 2 - el.clientWidth / 2
           : el.scrollWidth;
       el.scrollLeft = Math.max(0, Math.min(anchor, el.scrollWidth - el.clientWidth));
