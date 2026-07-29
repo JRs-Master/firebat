@@ -1121,6 +1121,26 @@ def main():
         if pos:
             rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", "—",
                          pos["entryLabel"], "—"])
+        def _last(seq):
+            for v in reversed(seq):
+                if v is not None:
+                    return v
+            return None
+
+        def _r(v, n=2):
+            return None if v is None else round(v, n)
+
+        # Current values of the indicators the rules actually evaluated. Pulled from the same series
+        # rather than recomputed, so the numbers on screen can never disagree with the signal.
+        live_now = [
+            {"type": "metric", "props": {"label": "RSI", "value": _r(_last(series["rsi"])), "subLabel": "14"}},
+            {"type": "metric", "props": {"label": "MACD 히스토그램", "value": _r(_last(series["macd.hist"]), 3),
+                                         "subLabel": "0 상향 = 매수 조건"}},
+            {"type": "metric", "props": {"label": "볼린저 %B", "value": _r(_last(series["bollinger.percentB"]), 3),
+                                         "subLabel": "0=하단 1=상단"}},
+            {"type": "metric", "props": {"label": "스토캐스틱 %K", "value": _r(_last(series["stochastic.k"])),
+                                         "subLabel": "%D " + str(_r(_last(series["stochastic.d"])))}},
+        ]
         blocks = [
             {"type": "stock_chart", "props": {
                 "buyPoints": buy, "sellPoints": sell,
@@ -1140,7 +1160,7 @@ def main():
             {"type": "metric", "props": {"label": "누적 수익", "value": backtest["totalReturnPct"] if trades else "—",
                                          "unit": "%", "deltaType": "up" if (backtest["totalReturnPct"] or 0) > 0 else "down"}},
             {"type": "metric", "props": {"label": "최대 낙폭", "value": backtest["maxDrawdownPct"] if trades else "—", "unit": "%"}},
-        ]
+        ] + live_now
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
             "blocks": blocks,
@@ -1242,6 +1262,19 @@ def main():
                 "barRange": bar_range,
             }}, ensure_ascii=False))
             return
+        inv = cand.get("invalidation") or {}
+        wave_cards = [
+            {"type": "metric", "props": {
+                "label": "현재 파동",
+                "value": cand.get("inProgress") or (cand["labels"][-1] if cand.get("labels") else "-"),
+                "subLabel": cand["structure"]}},
+            {"type": "metric", "props": {
+                "label": "카운트 신뢰도", "value": round(cand["confidence"] * 100, 1), "unit": "%",
+                "subLabel": "급 %.2f%%" % t}},
+            {"type": "metric", "props": {
+                "label": "무효화 가격", "value": inv.get("price"),
+                "subLabel": ("이 위로 가면 무효" if inv.get("beyond") == "above" else "이 아래로 가면 무효")}},
+        ]
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart", "props": {
                 "annotations": chart_annotation_set(cand),
@@ -1249,7 +1282,7 @@ def main():
                 **({"data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
                               "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
                              for b in bars]} if inp.get("lastSessionOnly") else {}),
-            }}],
+            }}] + wave_cards,
             "summary": {
                 "structure": cand["structure"], "labels": cand["labels"],
                 "inProgress": cand.get("inProgress"), "complete": cand.get("complete"),
