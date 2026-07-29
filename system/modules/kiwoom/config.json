@@ -932,7 +932,7 @@
         "chartField": "10",
         "chartAbs": true,
         "desc": "국내주식 실시간 시세 구독 (체결·호가 등 실시간 타입)",
-        "keyDesc": "item = 종목코드. 거래소 프리픽스 지원 — KRX:005930(정규) / NXT:005930(넥스트레이드) / SOR:005930_AL(통합). type = 실시간 타입(기본 0B=체결). 라이브 차트 = live_chart 에 topic 만 넘기면 됨 — 프레임에 현재가가 top-level `value` 로 디코드되어 기본 valueField 그대로 그려진다 (valueField 지정 불필요)."
+        "keyDesc": "item = 종목코드 **6자리 순수 코드만** (예: 005930). ⚠️ 실시간 REG 에는 거래소 프리픽스를 붙이지 마세요 — `KRX:005930` 은 REG 가 return_code=0 으로 정상 응답한 뒤 **데이터를 하나도 보내지 않습니다**(2026-07-29 장중 직접 검증: `005930` → 5초에 REAL 34건 / `KRX:005930` → REAL 0건, PING 만). 프리픽스는 REST 조회용이고 실시간과 다릅니다. type = 실시간 타입(기본 0B=체결). 라이브 차트 = live_stock_chart 에 topic 만 넘기면 됩니다 — 프레임에 현재가가 top-level `value` 로 디코드되어 기본 valueField 그대로 그려집니다(valueField 지정 불필요). **세션 제약**: 키움은 App key 당 WS 세션 1개입니다 — 새로 접속하면 기존 세션이 `SYSTEM R10001` 과 함께 종료됩니다. watch 를 여러 개 띄우지 말고 한 세션에 여러 종목을 REG 하세요."
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
