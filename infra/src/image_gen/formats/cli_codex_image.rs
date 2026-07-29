@@ -66,7 +66,7 @@ impl CliCodexImageFormat {
     /// 이미지 전용 CODEX_HOME 준비 — auth 복사 + 최소 config.toml.
     /// MCP 서버는 등록하지 않는다(이미지 생성에 Firebat 도구 불필요 = 표면 최소).
     fn ensure_image_codex_home() -> Option<PathBuf> {
-        let codex_home = std::env::temp_dir().join(IMAGE_CODEX_HOME_DIR);
+        let codex_home = crate::llm::formats::cli_codex::codex_home_base().join("image");
         std::fs::create_dir_all(&codex_home).ok()?;
         copy_auth_json(&codex_home);
 

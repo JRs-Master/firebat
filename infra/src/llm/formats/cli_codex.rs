@@ -196,6 +196,48 @@ use firebat_core::utils::render_map::render_tool_map;
 
 pub struct CodexCliHandler;
 
+/// CODEX_HOME base directory — **on disk, not in `/tmp`**.
+///
+/// `/tmp` on the production box is tmpfs: the rollout logs were consuming 179 MB of a 1 GB server's
+/// RAM, and every restart wiped them (2026-07-29 실측). Those rollouts are the only record of what a
+/// CLI model actually reasoned about — reading them is a standing practice, so they must survive a
+/// reboot and must not compete with the server for memory. Falls back to the temp dir only when the
+/// workspace is unavailable, so a dev box without the env var still works.
+pub fn codex_home_base() -> PathBuf {
+    match std::env::var("FIREBAT_WORKSPACE_ROOT") {
+        Ok(root) if !root.trim().is_empty() => PathBuf::from(root).join("data").join("codex"),
+        _ => std::env::current_dir()
+            .map(|d| d.join("data").join("codex"))
+            .unwrap_or_else(|_| std::env::temp_dir()),
+    }
+}
+
+/// Drop rollout/session files older than `days` so the reasoning archive does not grow without
+/// bound. Best-effort: a failure here must never affect a turn.
+fn prune_codex_sessions(codex_home: &std::path::Path, days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(days * 86_400));
+    let Some(cutoff) = cutoff else { return };
+    fn walk(dir: &std::path::Path, cutoff: std::time::SystemTime) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                walk(&path, cutoff);
+                let _ = std::fs::remove_dir(&path); // only succeeds when empty
+            } else if e
+                .metadata()
+                .and_then(|m| m.modified())
+                .map(|m| m < cutoff)
+                .unwrap_or(false)
+            {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    walk(&codex_home.join("sessions"), cutoff);
+}
+
 impl CodexCliHandler {
     pub fn new() -> Self {
         Self
@@ -231,8 +273,10 @@ impl CodexCliHandler {
         cli_model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<PathBuf> {
-        let codex_home = std::env::temp_dir().join("firebat-codex-home");
+        let codex_home = codex_home_base().join("chat");
         std::fs::create_dir_all(&codex_home).ok()?;
+        // 14일 보존 — 추론 판독은 보통 며칠 안이고, 그보다 오래된 건 용량만 먹는다.
+        prune_codex_sessions(&codex_home, 14);
 
         // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지) — 이미지 경로와 공용 헬퍼.
         copy_auth_json(&codex_home);
