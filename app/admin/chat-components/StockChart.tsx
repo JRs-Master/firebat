@@ -240,7 +240,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) 에 cap 적용.
   // 봉 영역 = 차트 영역 (헤더 뺀 나머지) 의 약 78% (옛 280/360 비율) — 봉 ≥ 2/3 요청 충족.
   // flexbox (flex-1 + SVG h-full) 폐기 — 봉/거래량 겹침 발생 → 명시 px 방식 복원.
-  const containerMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.6, breakpoint: 640, mobileMaxPx: 320, desktopMaxPx: 480 });
+  // 모바일 세로가 짧아 **가격 범위가 넓은 날 봉이 납작해진다** — 오늘 삼성전자는 하루 폭이 24%
+  // (189,200~234,000)라 151px 짜리 가격 영역에서 1분봉 몸통이 몇 px 밖에 안 됐다(2026-07-29 실측).
+  // 봉 개수 문제가 아니라 세로 문제라 높이를 올리는 게 맞다. PC 는 이미 넉넉해 그대로.
+  const containerMaxH = useViewportMaxHeight({ mobile: 0.6, desktop: 0.6, breakpoint: 640, mobileMaxPx: 440, desktopMaxPx: 480 });
   // 헤더 영역 (제목+가격+4카드+범례+gap+padding) 추정 px — breakpoint 640 기준. 정확 measure 대신 근사.
   const { vw: _vwForHeader } = useViewportSize();
   const headerEstPx = (_vwForHeader != null && _vwForHeader < 640) ? 125 : 155;
@@ -766,12 +769,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     // Y축이 위아래 5% 를 비워두므로 그 여백까지 라벨 자리로 쓴다.
     const top = padTop + 6;
     const bottom = padTop + plotH - 4;
-    if (toRight && W - cx > w + 16) {
-      const cy = placeLabelY(cx + w / 2 + 12, py, w, h, -1, top, bottom);
+    if (toRight && W - cx > w + 20) {
+      // 이 분기만 세로 offset 이 없어서, 간격을 올려도 **마지막 꼭짓점 라벨만 선에 붙어** 있었다
+      // (2026-07-29 실측: "라벨이 더 붙었는데"). 가로로 빼면서 세로로도 dirIn 방향으로 띄운다.
+      const wantY = Math.max(top + h / 2, Math.min(bottom - h / 2, py + dirIn * (h / 2 + 10)));
+      const cy = placeLabelY(cx + w / 2 + 16, wantY, w, h, dirIn, top, bottom);
       return (
         <g>
-          <line x1={cx + 3} y1={py} x2={cx + 9} y2={cy} stroke={color} strokeWidth={1} opacity={0.35} />
-          <text x={cx + 12} y={cy + 4} fontSize={fs} fontWeight={800} fill={color} textAnchor="start"
+          <line x1={cx + 3} y1={py} x2={cx + 12} y2={cy} stroke={color} strokeWidth={1} opacity={0.35} />
+          <text x={cx + 16} y={cy + 4} fontSize={fs} fontWeight={800} fill={color} textAnchor="start"
                 stroke="#fff" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round"
                 fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
         </g>
