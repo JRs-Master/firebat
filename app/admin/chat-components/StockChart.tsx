@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
-import { useViewportMaxHeight, useViewportSize } from '../../../lib/use-viewport-size';
+import { useViewportSize } from '../../../lib/use-viewport-size';
 
 export type OhlcvBar = {
   date: string; // YYYY-MM-DD or YYYYMMDD
@@ -244,13 +244,31 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 모바일 세로가 짧아 **가격 범위가 넓은 날 봉이 납작해진다** — 오늘 삼성전자는 하루 폭이 24%
   // (189,200~234,000)라 151px 짜리 가격 영역에서 1분봉 몸통이 몇 px 밖에 안 됐다(2026-07-29 실측).
   // 봉 개수 문제가 아니라 세로 문제라 높이를 올리는 게 맞다. PC 는 이미 넉넉해 그대로.
-  const containerMaxH = useViewportMaxHeight({ mobile: 0.6, desktop: 0.6, breakpoint: 640, mobileMaxPx: 440, desktopMaxPx: 480 });
+  // 캔들 스크롤 뷰포트 폭 — 높이를 여기서 유도하므로 높이 계산보다 먼저 선언한다.
+  const [boxW, setBoxW] = useState(720);
   // 헤더 영역 (제목+가격+4카드+범례+gap+padding) 추정 px — breakpoint 640 기준. 정확 measure 대신 근사.
-  const { vw: _vwForHeader } = useViewportSize();
+  const { vw: _vwForHeader, vh: _vhForHeight } = useViewportSize();
   const headerEstPx = (_vwForHeader != null && _vwForHeader < 640) ? 125 : 155;
-  const cap = containerMaxH ?? 320;
-  // 차트 영역 (봉 + 거래량) = 전체 cap - 헤더 추정. 최소 140 보장.
-  const chartAreaH = Math.max(cap - headerEstPx, 140);
+  //
+  // **높이를 폭에서 유도한다.** 옛 방식은 높이를 뷰포트 비율+상한으로만 잡아서, 폭이 넓어져도
+  // 높이가 상한(480)에 묶여 1920 화면에서 봉 영역이 5.6:1 까지 납작해졌다(2026-07-29 실측).
+  // 화면마다 상한을 손보는 것보다 **비율을 상수로 잡는 쪽이 예측 가능**하다.
+  //
+  // 목표 비율은 폭에 따라 연속 보간한다 — 세로 화면(폭 ~330)에 데스크톱 비율(2.9:1)을 적용하면
+  // 봉 영역이 110px 밖에 안 되고, 반대로 넓은 화면에 1.35:1 은 과하게 높다. 양 끝을 잡고 잇는다:
+  //   폭 360 → 1.35:1 (네이버 모바일 금융과 같은 대역)
+  //   폭 1280+ → 2.9:1 (TradingView·네이버 데스크톱의 2.5~3:1 대역)
+  // 세로 예산으로 클램프해 짧은 화면(1366x768 노트북)에서는 자동으로 낮아진다.
+  const wEff = boxW > 0 ? boxW : (_vwForHeader ?? 1024) * 0.9;
+  const isNarrowChart = (_vwForHeader ?? 1024) < 640;
+  const targetRatio = Math.max(1.35, Math.min(2.9, 1.35 + ((wEff - 360) * (2.9 - 1.35)) / (1280 - 360)));
+  const vhBudget = Math.max(
+    140,
+    Math.floor((_vhForHeight ?? 800) * (isNarrowChart ? 0.62 : 0.75)) - headerEstPx,
+  );
+  // 봉:거래량 = 280:80 이므로 차트 영역 = 봉 × 360/280.
+  const wantAreaH = Math.round((wEff / targetRatio) * 360 / 280);
+  const chartAreaH = Math.max(140, Math.min(wantAreaH, vhBudget));
   const priceChartHeightPx = Math.floor(chartAreaH * 280 / 360);  // 봉 영역 px (옛 280/360 비율)
   const priceChartHeight = `${priceChartHeightPx}px`;
   const volChartHeightPx = Math.floor(chartAreaH * 80 / 360);
@@ -259,7 +277,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 봉 영역 실제 렌더 width 측정 — viewBox 동적 (찌그러짐 fix). preserveAspectRatio="none" 를 쓴
   // 경우 viewBox aspect (W:priceH) ≠ box aspect (boxW:priceChartHeightPx) 면 봉이 가로/세로 stretch
   // 찌그러짐. viewBox priceH 영역을 box 비율 맞춰 동적 계산 → 찌그러짐 0 + 크로스헤어 1:1 유지.
-  const [boxW, setBoxW] = useState(720);
+
   useEffect(() => {
     if (!priceBoxRef.current) return;
     const ro = new ResizeObserver((entries) => {
