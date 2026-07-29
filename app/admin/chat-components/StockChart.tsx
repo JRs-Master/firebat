@@ -788,7 +788,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     // 기본 간격 13 은 상자 윗변이 꼭짓점에서 6.5px 밖에 안 떨어져, 2px 파동선 + 캔들 꼬리에
     // 바로 닿았다(2026-07-29 실측: "2파 3파 라벨도 더 올리고 더 내려야할듯"). 한 자리 번호도
     // 확실히 떨어지게 기본을 올리고, 긴 라벨은 폭에 비례해 더 띄운다.
-    const GAP = h / 2 + 11 + Math.min(10, Math.max(0, (w - 24) * 0.22));
+    // 꼭짓점에서 띄우는 거리 = 상자 반높이 + 여유. 여유 11px 로는 촘촘한 봉(줌아웃 시 3px)
+    // 위에서 여전히 붙어 보였다(2026-07-29 실측, 두 번째 지적) → 18px. 긴 라벨은 폭에 비례해 더.
+    const GAP = h / 2 + 18 + Math.min(10, Math.max(0, (w - 24) * 0.22));
     const dir = dirIn;
     let cy = py + dir * GAP;
     for (let k = 0; k < 8; k++) {
