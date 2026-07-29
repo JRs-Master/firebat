@@ -737,11 +737,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </g>
       );
     }
-    // 뒤집기 = 라벨 상자가 실제로 범위를 벗어날 때만(옛 판정은 여유 없이 13px 만 봐서 과했다).
+    // 자리가 빠듯하면 **뒤집지 말고 경계에 붙인다.** 뒤집으면 반대편 캔들 무더기 속으로
+    // 들어가 파묻히는데, 꼭짓점보다 위/아래이기만 하면 귀속은 분명하다. 파동의 첫 점과
+    // 저점은 거의 항상 y축 양 끝(최고가·최저가)이라 이 경우가 예외가 아니라 기본이다
+    // (2026-07-29 실측: 저점 "1" 이 위로 뒤집혀 캔들에 묻힘 — "꼭지 선 밑에 나와야 보일듯").
+    // 진짜 뒤집는 건 붙여도 꼭짓점을 덮어버릴 때뿐.
+    const GAP = 13;
     let dir = dirIn;
-    if (dir < 0 && py - 13 - h / 2 < top) dir = 1;
-    else if (dir > 0 && py + 13 + h / 2 > bottom) dir = -1;
-    const cy = placeLabelY(cx, py + dir * 13, w, h, dir, top, bottom);
+    let want = py + dir * GAP;
+    if (dir < 0 && want - h / 2 < top) {
+      const clamped = top + h / 2;
+      if (clamped < py - 4) want = clamped;   // 위에 붙일 수 있으면 붙인다
+      else { dir = 1; want = py + GAP; }      // 붙여도 꼭짓점을 덮으면 그때 뒤집는다
+    } else if (dir > 0 && want + h / 2 > bottom) {
+      const clamped = bottom - h / 2;
+      if (clamped > py + 4) want = clamped;
+      else { dir = -1; want = py - GAP; }
+    }
+    const cy = placeLabelY(cx, want, w, h, dir, top, bottom);
     // 회피로 많이 밀렸을 때만 리더선 — 붙어 있으면 선이 오히려 지저분하다.
     const far = Math.abs(cy - py) > 20;
     return (
