@@ -444,7 +444,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 더 크게 하는 방법뿐인가"). 봉을 줄여서 맞추는 게 답이라 zoom 을 데이터+여백 기준으로 잡는다.
   // 사용자가 직접 줌한 뒤에는 건드리지 않는다.
   const fitCps = fullN + Math.max(ZOOM_RIGHT_PAD_SLOTS, futureSlots);
-  const wantCps = futureSlots > 0 ? Math.max(baseCps, fitCps) : baseCps;
+  // **읽을 수 있을 때만 맞춘다.** 좁은 화면에 봉 100+개와 미래 구간을 억지로 넣으면 봉이 2~3px 로
+  // 찌그러져 캔들이 캔들이 아니게 된다(2026-07-29 모바일 실측). 그 선을 넘으면 fit 을 포기하고
+  // 기본 폭 + 가로 스크롤에 맡긴다 — 예상선은 밀어서 보는 게 뭉갠 봉을 보는 것보다 낫다.
+  const FIT_MIN_BAR = isMobileChart ? 6 : 5;
+  const fitFits = plotBoxW / Math.max(1, fitCps) >= FIT_MIN_BAR;
+  const wantCps = futureSlots > 0 && fitFits ? Math.max(baseCps, fitCps) : baseCps;
   const targetCps = userZoomed ? cps : wantCps;  // 사용자 줌 시 cps, 아니면 폭 기반 기본.
   // 데이터 수와 무관하게 봉 폭 고정 (옛 min(cps, fullN) 폐기 — 데이터 적다고 봉이 커지지 않게).
   const effCps = Math.max(cpsMin, Math.min(cpsMax, targetCps));            // 한 화면 캔들 수
