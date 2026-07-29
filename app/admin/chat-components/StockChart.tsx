@@ -439,7 +439,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const cpsMax = Math.max(cpsMin + 1, Math.round(plotBoxW / ZOOM_MIN_BAR)); // 줌아웃 한계 (봉 ~3px)
   // 기본 줌 = 디바이스별 고정 봉 폭 → 한 화면 개수 자동(넓을수록 많이·좁을수록 적게, 봉 크기는 일정).
   const baseCps = Math.round(plotBoxW / (isMobileChart ? DEFAULT_BAR_PX_MOBILE : DEFAULT_BAR_PX_PC));
-  const targetCps = userZoomed ? cps : baseCps;  // 사용자 줌 시 cps, 아니면 폭 기반 기본.
+  // 미래 구간이 있으면 **기본 줌을 그 전체가 들어오게** 잡는다. 고정 봉 폭을 그대로 쓰면 예상
+  // 경로가 화면 밖으로 나가 스크롤해야만 보였다(2026-07-29 사용자: "예상선이 잘리는데 차트를
+  // 더 크게 하는 방법뿐인가"). 봉을 줄여서 맞추는 게 답이라 zoom 을 데이터+여백 기준으로 잡는다.
+  // 사용자가 직접 줌한 뒤에는 건드리지 않는다.
+  const fitCps = fullN + Math.max(ZOOM_RIGHT_PAD_SLOTS, futureSlots);
+  const wantCps = futureSlots > 0 ? Math.max(baseCps, fitCps) : baseCps;
+  const targetCps = userZoomed ? cps : wantCps;  // 사용자 줌 시 cps, 아니면 폭 기반 기본.
   // 데이터 수와 무관하게 봉 폭 고정 (옛 min(cps, fullN) 폐기 — 데이터 적다고 봉이 커지지 않게).
   const effCps = Math.max(cpsMin, Math.min(cpsMax, targetCps));            // 한 화면 캔들 수
   const barPx = plotBoxW / effCps;                                          // 캔들 슬롯 px (기본 = 고정 폭)

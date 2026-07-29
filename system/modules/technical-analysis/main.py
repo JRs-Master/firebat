@@ -800,6 +800,11 @@ def chart_annotation_set(cand, structure_label=None):
             lab = q.get("label") or ""
             if lab and q.get("price") is not None:
                 head = lab.split("(")[0].strip() or lab
+                # "이후 4파" 처럼 서술형으로 시작하면 다른 라벨과 형식이 어긋난다 — 전부 "N파 목표"로.
+                if head.startswith("이후 "):
+                    head = head[3:].strip()
+                if head and not head.endswith("목표") and "무효" not in head and "이탈" not in head:
+                    head += " 목표"
                 q["label"] = "%s %s" % (head, format(int(round(q["price"])), ","))
         ann.append({"kind": "path", "label": "예상 경로", "color": WAVE, "width": 2,
                     "points": pp, "projected": True})
