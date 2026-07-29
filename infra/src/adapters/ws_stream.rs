@@ -482,10 +482,25 @@ async fn run_session(
     // 삼성 1분봉 페이지의 라이브 배지가 죽어 있던 원인). Preview the first few per kind so the next
     // market session answers it; capped so a burst cannot flood the journal.
     let mut skipped_seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    // Liveness proof. Without this, "the loop is alive and nothing arrives" and "the loop is stuck"
+    // look the same in the journal — both are simply no log lines (2026-07-29 실측: subscribe acked,
+    // connection open, zero frames for minutes). A periodic line separates them, and after a healthy
+    // session it also shows the arrival rate.
+    let mut frames_seen: u64 = 0;
+    let mut hb = tokio::time::interval(std::time::Duration::from_secs(60));
+    hb.tick().await; // fire immediately once, then every 60s
 
     // Realtime loop — cancel-aware.
     loop {
         tokio::select! {
+            _ = hb.tick() => {
+                tracing::info!(
+                    target: "ws_stream",
+                    watch_id = %spec.watch_id,
+                    frames_seen,
+                    "ws heartbeat — 수신 프레임 누적(0 이면 구독 후 아무것도 안 오는 것)"
+                );
+            }
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {
                     if let Some(unsub) = &spec.unsubscribe_frame {
@@ -505,10 +520,31 @@ async fn run_session(
                     Some(Err(e)) => return SessionEnd::Dropped(format!("read failed: {e}")),
                     Some(Ok(m)) => m,
                 };
+                frames_seen += 1;
                 let text = match msg {
                     Message::Text(t) => t,
                     Message::Close(_) => return SessionEnd::Dropped("server closed".to_string()),
-                    _ => continue,
+                    // Third silent path: Binary / Ping / Pong were dropped with no log at all, so a
+                    // broker pushing binary payloads looked identical to a broker pushing nothing
+                    // (2026-07-29: both brokers silent, zero log lines of any kind). Name the type.
+                    other => {
+                        let kind = match other {
+                            Message::Binary(_) => "binary",
+                            Message::Ping(_) => "ping",
+                            Message::Pong(_) => "pong",
+                            _ => "other",
+                        };
+                        let seen = skipped_seen.entry(format!("<{kind}>")).or_insert(0);
+                        *seen += 1;
+                        if *seen <= 3 {
+                            tracing::info!(
+                                target: "ws_stream", watch_id = %spec.watch_id,
+                                msg_kind = kind, seen = *seen,
+                                "frame dropped — text 가 아닌 메시지"
+                            );
+                        }
+                        continue;
+                    }
                 };
 
                 // 한투 positional realtime frame: `flag|TR_ID|count|f1^f2^…` (flag 1 = AES256).
