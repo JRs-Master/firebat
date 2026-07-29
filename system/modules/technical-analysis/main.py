@@ -1318,8 +1318,32 @@ def main():
             }}, ensure_ascii=False))
             return
         ann = chart_annotation_set(cand)
+        # 미래 지평선 = **예상 경로가 필요로 하는 만큼**. 채널은 project_bars(기간의 20%)까지
+        # 뻗도록 계산되는데 그게 예상 경로보다 훨씬 멀면(실측: 예상 +6봉 / 채널 +40봉) 화면이
+        # 빈 여백으로 채워지고 봉이 잘게 눌린다. 채널은 경계선이라 얼마나 길지가 본질이 아니므로
+        # 예상 경로에 맞춰 잘라 준다 — 선 위의 점이라 선형 보간으로 정확히 줄일 수 있다.
+        proj_need = max(
+            (pt["barsAhead"] for a in ann if a.get("label") == "예상 경로"
+             for pt in a["points"] if "barsAhead" in pt),
+            default=0,
+        )
+        horizon = int(proj_need) + 2 if proj_need else project_bars
+        for a in ann:
+            pts = a.get("points") or []
+            if len(pts) != 2 or "barsAhead" not in pts[-1] or "i" not in pts[0]:
+                continue
+            h = pts[-1]["barsAhead"]
+            if h <= horizon:
+                continue
+            x0, y0 = pts[0]["i"], pts[0]["price"]
+            span = (last_i + h) - x0
+            if span <= 0:
+                continue
+            slope = (pts[-1]["price"] - y0) / span
+            pts[-1]["barsAhead"] = horizon
+            pts[-1]["price"] = round(y0 + slope * ((last_i + horizon) - x0), 6)
         need = max((pt["barsAhead"] for a in ann for pt in a["points"] if "barsAhead" in pt), default=0)
-        future_slots = max(project_bars, int(need) + 2)
+        future_slots = max(int(need) + 2, 5)
         inv = cand.get("invalidation") or {}
         wave_cards = [
             {"type": "metric", "props": {
