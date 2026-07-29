@@ -97,9 +97,6 @@ function sma(values: number[], period: number): (number | null)[] {
   return out;
 }
 
-/** 포인트를 목록으로 나열할 최대 개수 — 넘으면 요약 한 줄(차트 화살표가 본체). */
-const POINT_LIST_MAX = 8;
-
 function normalizeDate(d: string): string {
   if (/^\d{8}$/.test(d)) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
   return d;
@@ -168,6 +165,56 @@ function niceCeil(v: number): number {
   const norm = v / mag;
   const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
   return nice * mag;
+}
+
+/** 신호 지점 시각 — "MM/DD HH:MM"(분봉) 또는 "MM/DD"(일봉). 목록에서 각 줄을 구분하는 유일한 정보. */
+function pointStamp(date?: string): string {
+  if (!date) return '';
+  const n = normalizeDate(date);
+  const t = n.match(/(\d{2}:\d{2})/);
+  return t ? `${shortDate(n)} ${t[1]}` : shortDate(n);
+}
+
+/** 규칙별로 묶은 신호 목록 — 설명은 헤더에 한 번, 각 발생은 한 줄, 넘치면 스크롤. */
+function PointGroup({ title, points, tone }: {
+  title: string;
+  points?: Array<{ label: string; price: number; note?: string; date?: string }>;
+  tone: string;
+}) {
+  if (!points || points.length === 0) return null;
+  const groups = new Map<string, { note?: string; items: typeof points }>();
+  for (const p of points) {
+    const g = groups.get(p.label) ?? { note: p.note ?? undefined, items: [] as typeof points };
+    g.items.push(p);
+    groups.set(p.label, g);
+  }
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">
+        {title} <span className="text-slate-400 font-normal">{points.length}</span>
+      </div>
+      {Array.from(groups, ([label, g]) => (
+        <div key={label} className="flex flex-col gap-0.5 min-w-0">
+          <div className="flex items-baseline gap-1.5 min-w-0">
+            <span className={`font-bold text-[13px] shrink-0 ${tone}`}>{label}</span>
+            <span className="text-slate-400 text-[11px] shrink-0">{g.items.length}</span>
+            {g.note && <span className="text-slate-400 text-[11px] truncate">{g.note}</span>}
+          </div>
+          {/* 최신이 위 — 방금 난 신호를 스크롤 없이 본다. */}
+          <div className="max-h-40 overflow-y-auto pr-1 flex flex-col gap-0.5">
+            {[...g.items].reverse().map((p, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
+                <span className="tabular-nums text-slate-500 shrink-0">{pointStamp(p.date)}</span>
+                <span className="tabular-nums font-semibold text-slate-900 shrink-0">
+                  {p.price.toLocaleString('ko-KR')}원
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots = 0, annotations, scale = 'linear' }: StockChartProps) {
@@ -1183,39 +1230,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       </div>
       )}
 
-      {/* 매수/매도 포인트 — 소수(추천 지점 몇 곳)일 때만 목록. 규칙 신호처럼 수십 개면 목록이
-          화면을 도배하고(2026-07-29 실측) 정보는 차트 화살표 + 체결 표에 이미 있다 → 요약 한 줄. */}
-      {(buyPoints?.length ?? 0) + (sellPoints?.length ?? 0) > POINT_LIST_MAX ? (
-        <div className="pt-3 border-t border-slate-100 text-[12px] text-slate-500">
-          신호 <b className="text-red-600">매수 {buyPoints?.length ?? 0}</b> ·{' '}
-          <b className="text-blue-600">매도 {sellPoints?.length ?? 0}</b> — 위 차트의 ↑↓ 로 표시했습니다.
-        </div>
-      ) : (buyPoints?.length || sellPoints?.length) ? (
+      {/* 매수/매도 포인트 — **언제** 발생했는지가 이 목록의 정보다. 옛 목록은 시각이 없고
+          같은 라벨·설명만 수십 줄 반복돼 읽을 수가 없었다(2026-07-29 실측). 규칙별로 묶어
+          설명은 헤더에 한 번만 두고, 각 발생은 "시각 — 가격" 한 줄로. 높이를 제한해 스크롤. */}
+      {(buyPoints?.length || sellPoints?.length) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-          {buyPoints && buyPoints.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <div className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">매수 포인트</div>
-              {buyPoints.map((p, i) => (
-                <div key={i} className="flex items-baseline justify-between gap-2 text-[13px]">
-                  <span className="font-bold text-red-600 shrink-0">{p.label}</span>
-                  <span className="text-slate-500 text-[11px] flex-1 truncate">{p.note || ''}</span>
-                  <span className="tabular-nums font-bold text-slate-900 shrink-0">~{p.price.toLocaleString('ko-KR')}원</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {sellPoints && sellPoints.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <div className="text-[11px] font-bold text-slate-500 tracking-wider uppercase">매도 포인트</div>
-              {sellPoints.map((p, i) => (
-                <div key={i} className="flex items-baseline justify-between gap-2 text-[13px]">
-                  <span className="font-bold text-blue-600 shrink-0">{p.label}</span>
-                  <span className="text-slate-500 text-[11px] flex-1 truncate">{p.note || ''}</span>
-                  <span className="tabular-nums font-bold text-slate-900 shrink-0">~{p.price.toLocaleString('ko-KR')}원</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <PointGroup title="매수 포인트" points={buyPoints} tone="text-red-600" />
+          <PointGroup title="매도 포인트" points={sellPoints} tone="text-blue-600" />
         </div>
       ) : null}
     </div>
