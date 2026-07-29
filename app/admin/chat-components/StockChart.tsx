@@ -209,7 +209,8 @@ function PointGroup({ title, points, tone }: {
             {g.note && <span className="text-slate-400 text-[11px] truncate">{g.note}</span>}
           </div>
           {/* 최신이 위 — 방금 난 신호를 스크롤 없이 본다. */}
-          <div className="max-h-40 overflow-y-auto pr-1 flex flex-col gap-0.5">
+          {/* 스크롤바는 차트와 **같은 얇은 것**으로 — 기본 OS 바가 굵어 목록이 투박해 보였다. */}
+          <div className="max-h-40 overflow-y-auto scrollbar-thin pr-1 flex flex-col gap-0.5">
             {[...g.items].reverse().map((p, i) => (
               <div key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
                 <span className="tabular-nums text-slate-500 shrink-0">{pointStamp(p.date)}</span>
