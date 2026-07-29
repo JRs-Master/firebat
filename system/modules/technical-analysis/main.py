@@ -1020,6 +1020,11 @@ def main():
                                    "note": r.get("note") or None})
         last_i = len(bars) - 1
         fired_now = [p for p in buy + sell if p["date"] == bars[last_i]["date"]]
+        # **마지막 봉은 아직 안 닫혔을 수 있다.** 형성 중인 봉으로 판정한 신호는 그 분이
+        # 끝나면서 사라질 수 있고(repainting), 자동매매가 그걸 보고 주문하면 없던 신호에
+        # 체결한 게 된다. 모듈은 시계를 모르므로 **둘 다 준다** — 확정 신호는 이쪽을 쓴다.
+        fired_closed = ([p for p in buy + sell if p["date"] == bars[last_i - 1]["date"]]
+                        if last_i >= 1 else [])
 
         # ── 체결 기록 + 수익률 (규칙을 그대로 따라갔다면?) ──
         # 이게 없으면 신호는 그냥 화살표다. 규칙을 주문에 연결하기 전에 **과거에 어땠는지**를
@@ -1134,10 +1139,16 @@ def main():
             # 자동매매가 볼 곳 — **마지막 봉에서 방금 발생한 것만**. 과거 신호를 지금 주문으로
             # 착각하지 않게 분리한다.
             "firedOnLastBar": fired_now,
+            "firedOnLastClosedBar": fired_closed,
+            "lastBarDate": bars[last_i]["date"],
+            "lastClosedBarDate": bars[last_i - 1]["date"] if last_i >= 1 else None,
             "note": ("`buyPoints`/`sellPoints` 를 stock_chart·live_stock_chart 에 그대로 넣으면 봉 아래 ↑ / "
                      "위 ↓ 화살표로 표시됩니다. **주문 판단은 이 액션이 하지 않습니다** — 규칙이 참인 봉을 "
                      "표시할 뿐이고, 규칙이 좋은지는 백테스트와 사람이 정합니다. 지금 시점 주문 판단에는 "
-                     "`firedOnLastBar` 만 쓰세요(과거 신호는 이미 지난 것). `backtest` = 그 규칙을 "
+                     "지금 시점 판단에는 마지막 두 필드만 보세요 — `firedOnLastBar` 는 **형성 중일 수 있는** "
+                     "봉이라 신호가 떴다 사라질 수 있고(repainting), 확정 판단은 "
+                     "**`firedOnLastClosedBar`**(직전 닫힌 봉)입니다. 모듈은 시계를 모르니 둘 다 주고 "
+                     "고르는 건 호출자 몫입니다 — 화면 표시는 앞엣것, 주문은 뒤엣것. `backtest` = 그 규칙을 "
                      "그대로 따라갔을 때의 체결 기록·승률·누적수익·MDD — 표로 보여 주면 규칙의 값어치가 "
                      "화살표보다 훨씬 잘 읽힙니다. 가정(assumptions)을 반드시 함께 밝히세요."),
         }}, ensure_ascii=False))

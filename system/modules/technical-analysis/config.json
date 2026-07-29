@@ -228,11 +228,15 @@
       },
       "firedOnLastBar": {
         "type": "array",
-        "description": "[signals] **마지막 봉에서 방금 발생한 신호만**. 과거 신호를 지금 주문으로 착각하지 않게 분리됩니다 — 자동매매는 이것만 봅니다."
+        "description": "[signals] 마지막 봉에서 발생한 신호 — 그 봉이 **아직 형성 중일 수 있어** 신호가 떴다 사라질 수 있습니다(repainting). 화면 표시용."
       },
       "backtest": {
         "type": "object",
         "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요."
+      },
+      "firedOnLastClosedBar": {
+        "type": "array",
+        "description": "[signals] **직전 닫힌 봉**에서 발생한 신호 — 확정입니다. 주문 판단은 이것만 쓰세요. lastBarDate/lastClosedBarDate 로 어느 봉인지 확인할 수 있습니다."
       }
     }
   },
