@@ -132,7 +132,18 @@ def auto_threshold(bars):
     if lo <= 0 or hi <= lo:
         return 5.0
     span_pct = (hi - lo) / lo * 100.0
-    return max(1.5, min(25.0, span_pct / 8.0))
+    # 하한을 1.5% 로 박아뒀더니 **분봉에서 파동이 죽었다** — 하루 등락이 3~4% 인 1분봉에서
+    # 1.5% 반전은 하루 두세 번뿐이라 피벗이 3~4개, 추진파와 조정파가 거의 동점이 되어 방문마다
+    # 카운트가 뒤집혔다(2026-07-29 실측: "1파2파3파 됐다가 A파B파 됐다가"). 노이즈 기준은
+    # 절대 % 가 아니라 **그 시리즈의 전형적인 봉 변동**이어야 기간·종목·주기가 바뀌어도 성립한다.
+    moves = sorted(
+        abs(b["close"] / a["close"] - 1) * 100.0
+        for a, b in zip(bars, bars[1:])
+        if a["close"] > 0
+    )
+    typical = moves[len(moves) // 2] if moves else 0.0
+    floor = max(0.05, typical * 3.0)   # 전형 변동의 3배 = 잔물결과 스윙의 경계
+    return max(floor, min(25.0, span_pct / 8.0))
 
 
 def zigzag(bars, threshold_pct):
@@ -736,6 +747,20 @@ def fib_targets(pts):
     return out
 
 
+def _direction_ko(cand):
+    """추진파·조정파의 **진행 방향**을 한국어로.
+
+    엘리엇의 1-2-3-4-5 는 "상승"이 아니라 **큰 추세 방향**이라, 하락 추세에서는 1이 아래로 간다.
+    표기는 맞는데 화면이 방향을 말하지 않으면 "1·2·3인데 왜 내려가냐"로 읽힌다(2026-07-29 사용자).
+    추진파는 1파 방향 = 추세 방향, 조정파는 순변화로 판정한다.
+    """
+    p = [x["price"] for x in (cand.get("pivots") or [])]
+    if len(p) < 2:
+        return ""
+    up = (p[1] > p[0]) if str(cand.get("structure", "")).startswith("impulse") else (p[-1] > p[0])
+    return "상승" if up else "하락"
+
+
 def chart_annotation_set(cand, structure_label=None):
     """후보 하나를 **stock_chart annotations 배열**로 바꾼다.
 
@@ -755,7 +780,7 @@ def chart_annotation_set(cand, structure_label=None):
     if pivots:
         ann.append({
             "kind": "path",
-            "label": structure_label or cand.get("structure"),
+            "label": structure_label or ("%s %s" % (_direction_ko(cand), cand.get("structure"))).strip(),
             "color": WAVE, "width": 2,
             "points": [{"i": pv["i"], "price": pv["price"], "label": pv.get("label")} for pv in pivots],
         })
@@ -769,6 +794,13 @@ def chart_annotation_set(cand, structure_label=None):
                         "projected": True, "dashed": False, "width": 0.8})
     pp = (cand.get("projectedPath") or {}).get("points")
     if pp:
+        # 라벨은 **가격**이 본체다. "3파 목표(1파의 1.618)" 처럼 근거를 길게 달면 차트에서
+        # 글자가 선을 덮는다(2026-07-29 사용자). 근거는 summary 에 남고 차트엔 숫자만.
+        for q in pp:
+            lab = q.get("label") or ""
+            if lab and q.get("price") is not None:
+                head = lab.split("(")[0].strip() or lab
+                q["label"] = "%s %s" % (head, format(int(round(q["price"])), ","))
         ann.append({"kind": "path", "label": "예상 경로", "color": WAVE, "width": 2,
                     "points": pp, "projected": True})
     inv = cand.get("invalidation") or {}
@@ -1262,7 +1294,7 @@ def main():
             t = float(inp.get("threshold") or threshold)
         except (TypeError, ValueError):
             t = threshold
-        t = round(max(1.5, min(25.0, t)), 2)
+        t = round(max(0.05, min(25.0, t)), 2)
         pv = zigzag(bars, t)
         cands = sorted(
             elliott_candidates(pv, 8, last_i, project_bars, bars)
@@ -1288,7 +1320,7 @@ def main():
             {"type": "metric", "props": {
                 "label": "현재 파동",
                 "value": cand.get("inProgress") or (cand["labels"][-1] if cand.get("labels") else "-"),
-                "subLabel": cand["structure"]}},
+                "subLabel": ("%s %s" % (_direction_ko(cand), cand["structure"])).strip()}},
             {"type": "metric", "props": {
                 "label": "카운트 신뢰도", "value": round(cand["confidence"] * 100, 1), "unit": "%",
                 "subLabel": "급 %.2f%%" % t}},
@@ -1338,7 +1370,7 @@ def main():
             # 사다리에도 auto_threshold 와 같은 클램프 — 하한 아래로 내려가면 봉마다 피벗이
             # 찍혀 파동이 아니라 노이즈가 된다(20일 차트에서 0.75% → 피벗 20개 실측).
             ladder = [threshold * 0.5, threshold, threshold * 2]
-            thresholds = sorted({round(max(1.5, min(25.0, t)), 2) for t in ladder})
+            thresholds = sorted({round(max(0.05, min(25.0, t)), 2) for t in ladder})
         degrees = []
         for t in thresholds:
             try:

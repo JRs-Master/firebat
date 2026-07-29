@@ -61,8 +61,10 @@ const UP = '#ef4444';   // 상승 빨강
 const DOWN = '#3b82f6'; // 하락 파랑
 // 신호 화살표는 **캔들 색을 쓰면 안 된다** — 옛 코드가 UP/DOWN 을 그대로 써서 청산 화살표가
 // 하락봉과 같은 파랑이라 봉 사이에서 안 보였다(2026-07-29 실측). 빨강·파랑 밖의 색 + 흰 후광.
-const SIG_BUY = '#059669';   // 진입 — emerald
-const SIG_SELL = '#ea580c';  // 청산 — orange
+// 관례대로 진입=빨강 / 청산=파랑을 쓰되, 캔들(#ef4444 / #3b82f6)보다 **한 단계 진하게** 해서
+// 봉 사이에서 구분되게 한다(2026-07-29 사용자: 초록·주황 말고 빨강·파랑, 대신 봉보다 진하게).
+const SIG_BUY = '#b91c1c';   // 진입 — red-700
+const SIG_SELL = '#1d4ed8';  // 청산 — blue-700
 const FG = '#0f172a';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
@@ -743,24 +745,25 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </g>
       );
     }
-    // 자리가 빠듯하면 **뒤집지 말고 경계에 붙인다.** 뒤집으면 반대편 캔들 무더기 속으로
-    // 들어가 파묻히는데, 꼭짓점보다 위/아래이기만 하면 귀속은 분명하다. 파동의 첫 점과
-    // 저점은 거의 항상 y축 양 끝(최고가·최저가)이라 이 경우가 예외가 아니라 기본이다
-    // (2026-07-29 실측: 저점 "1" 이 위로 뒤집혀 캔들에 묻힘 — "꼭지 선 밑에 나와야 보일듯").
-    // 진짜 뒤집는 건 붙여도 꼭짓점을 덮어버릴 때뿐.
+    // **위치는 변곡의 종류로 고정한다** — 상승→하락 꼭지는 항상 위, 하락→상승 골은 항상 아래.
+    // 뒤집기·반대편 회피를 넣었더니 스크롤·줌마다 라벨이 위아래로 튀어 읽을 수가 없었다
+    // (2026-07-29 사용자: "파 라벨은 왔다갔다 하지 말고 … 일치시키면 될거 같은데").
+    // 겹칠 땐 **같은 방향으로만** 더 밀고, 꼭짓점을 절대 가로지르지 않는다. 그래서 어느 상태에서
+    // 봐도 같은 라벨이 같은 쪽에 있다.
     const GAP = 13;
-    let dir = dirIn;
-    let want = py + dir * GAP;
-    if (dir < 0 && want - h / 2 < top) {
-      const clamped = top + h / 2;
-      if (clamped < py - 4) want = clamped;   // 위에 붙일 수 있으면 붙인다
-      else { dir = 1; want = py + GAP; }      // 붙여도 꼭짓점을 덮으면 그때 뒤집는다
-    } else if (dir > 0 && want + h / 2 > bottom) {
-      const clamped = bottom - h / 2;
-      if (clamped > py + 4) want = clamped;
-      else { dir = -1; want = py - GAP; }
+    const dir = dirIn;
+    let cy = py + dir * GAP;
+    for (let k = 0; k < 8; k++) {
+      const hit = placedLabels.some(
+        q => Math.abs(q.cx - cx) < (q.w + w) / 2 + 2 && Math.abs(q.cy - cy) < (q.h + h) / 2 + 2,
+      );
+      if (!hit) break;
+      cy += dir * (h + 2);
     }
-    const cy = placeLabelY(cx, want, w, h, dir, top, bottom);
+    cy = dir < 0
+      ? Math.max(top + h / 2, Math.min(cy, py - 4))     // 위쪽: 플롯 안 + 꼭짓점 위 유지
+      : Math.min(bottom - h / 2, Math.max(cy, py + 4)); // 아래쪽: 플롯 안 + 꼭짓점 아래 유지
+    placedLabels.push({ cx, cy, w, h });
     // 회피로 많이 밀렸을 때만 리더선 — 붙어 있으면 선이 오히려 지저분하다.
     const far = Math.abs(cy - py) > 20;
     return (
@@ -1274,8 +1277,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           설명은 헤더에 한 번만 두고, 각 발생은 "시각 — 가격" 한 줄로. 높이를 제한해 스크롤. */}
       {(buyPoints?.length || sellPoints?.length) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-          <PointGroup title="진입 (매수)" points={buyPoints} tone="text-emerald-600" />
-          <PointGroup title="청산 (매도)" points={sellPoints} tone="text-orange-600" />
+          <PointGroup title="진입 (매수)" points={buyPoints} tone="text-red-700" />
+          <PointGroup title="청산 (매도)" points={sellPoints} tone="text-blue-700" />
         </div>
       ) : null}
     </div>
