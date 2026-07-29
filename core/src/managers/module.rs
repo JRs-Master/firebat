@@ -802,6 +802,19 @@ impl ModuleManager {
                 .get("chartAbs")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            chart_session_field: decl
+                .get("chartSessionField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            chart_session_regular: decl
+                .get("chartSessionRegular")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
             mock: meta.mock,
         };
         port.start(spec).await?;

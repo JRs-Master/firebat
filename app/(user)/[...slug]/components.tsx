@@ -82,7 +82,7 @@ const TYPE_ALIAS: Record<string, string> = {
  * 네 상태 — 일시정지(화면 밖·미지원) / **수신 대기**(한 번도 못 받음, 임계 없는 사실) /
  * LIVE(최근 수신) / 마지막 시각(받다가 끊김).
  */
-function LiveBadge({ live, lastMs, staleMs = 60_000 }: { live: boolean; lastMs: number | null; staleMs?: number }) {
+function LiveBadge({ live, lastMs, staleMs = 60_000, hint }: { live: boolean; lastMs: number | null; staleMs?: number; hint?: string | null }) {
   // 틱이 끊기면 이벤트가 없어 리렌더도 없다 → 스스로 깨어나 상태를 갱신한다(받은 뒤에만).
   const [, bump] = useState(0);
   useEffect(() => {
@@ -91,6 +91,16 @@ function LiveBadge({ live, lastMs, staleMs = 60_000 }: { live: boolean; lastMs: 
     return () => clearInterval(t);
   }, [live, lastMs]);
 
+  // 틱은 오는데 차트에 안 담는 상태(시간외·세션 경계)는 "LIVE" 도 "수신 대기" 도 아니다 —
+  // 둘 중 하나로 보이면 사용자가 버그로 읽는다. 이유를 그대로 띄운다.
+  if (live && hint) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-amber-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+        {hint}
+      </span>
+    );
+  }
   const fresh = lastMs !== null && Date.now() - lastMs < staleMs;
   const tone = !live ? 'text-slate-400' : fresh ? 'text-emerald-600' : lastMs === null ? 'text-slate-400' : 'text-amber-600';
   const dot = !live ? 'bg-slate-300' : fresh ? 'bg-emerald-500 animate-pulse' : lastMs === null ? 'bg-slate-300' : 'bg-amber-400';
@@ -358,6 +368,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   // Only a fallback — frames stop arriving at the close, so a page that relies on them alone loses
   // the number for the rest of the day. The seed prevClose above is the primary source.
   const frameChangeRef = useRef<{ chg: number; rate: number } | null>(null);
+  // 틱이 왔지만 봉으로 담지 않은 이유 — 배지에 그대로 띄운다(null = 정상 반영 중).
+  const skipNoteRef = useRef<string | null>(null);
   const ivSec = Math.min(Math.max(Number(interval) || 60, 5), 86400); // 5초 ~ 1일(일봉)
   const daily = ivSec >= 86400;
   const cap = Math.min(Math.max(Number(maxCandles) || (daily ? 120 : 240), 30), 1000);
@@ -414,6 +426,21 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     };
     const n = dotGet(valueField || 'value');
     if (!Number.isFinite(n)) return;
+    // 정규장 밖 체결은 봉을 만들지 않는다. 장전·장후 시간외 종가매매는 **전일 종가**로 체결되므로
+    // 장중 1분봉에 이으면 가격이 뚝 떨어진 봉이 하나 생긴다(2026-07-30 실측: 08:32 봉).
+    // 판단은 시계가 아니라 거래소가 프레임에 실어 준 장구분이다 — 휴장·개장 지연·임의연장을
+    // 시계로는 알 수 없다. 서버가 config 선언대로 regularSession 으로 디코드해 준다.
+    const flags = (frame ?? {}) as Record<string, unknown>;
+    if (flags.regularSession === false) {
+      skipNoteRef.current = '시간외 (봉 미반영)';
+      setLastMs(Date.now());
+      return;
+    }
+    // 전날 봉이 함께 있는 건 막지 않는다. 시드는 REST 의 최신 거래일이라 장 시작 전엔 어제
+    // 것인데, 오늘 틱을 거부하면 아침에 열어 둔 페이지가 정규장이 시작돼도 하루 종일 멈춰 있다.
+    // 이어 붙이면 maxCandles 트림이 어제 봉을 밀어내며 저절로 정리되고, 어제 종가에서 오늘
+    // 시가로 이어지는 구간도 볼 값이 있다.
+    skipNoteRef.current = null;
     // 거래량은 **의미가 두 가지**라 섞으면 안 된다.
     //   volumeField 지정 = 그 필드가 이미 누적값(한투 일봉 ACML_VOL) → 봉에 **대입**
     //   미지정          = 서버가 내려준 top-level `volumeTick`(체결량, 틱당) → 봉에 **합산**
@@ -470,7 +497,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   return (
     <div ref={ref} className="my-3">
       <div className="flex items-center justify-end mb-1">
-        <LiveBadge live={live} lastMs={lastMs} staleMs={Math.max(60_000, ivSec * 1500)} />
+        <LiveBadge live={live} lastMs={lastMs} staleMs={Math.max(60_000, ivSec * 1500)}
+                   hint={skipNoteRef.current} />
       </div>
       {/* 전광판 — 틱마다 다시 계산해 숫자가 실제로 움직인다. 서버 카드(방문마다)와 달리
           이건 화면이 살아 있다는 걸 보여 주는 자리다. */}

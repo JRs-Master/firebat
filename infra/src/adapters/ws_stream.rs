@@ -713,6 +713,7 @@ fn decorate_realtime_frame(
         && spec.chart_field.is_none()
         && spec.chart_volume_field.is_none()
         && spec.chart_change_field.is_none()
+        && spec.chart_session_field.is_none()
     {
         return frame;
     }
@@ -722,6 +723,9 @@ fn decorate_realtime_frame(
     let mut vol_tick: Option<f64> = None;
     let mut change: Option<f64> = None;
     let mut change_rate: Option<f64> = None;
+    // Regular session or not, per the exchange's own marker. None when the frame omits it — an
+    // unknown session must not silently drop ticks, so consumers treat absence as "chart it".
+    let mut regular_session: Option<bool> = None;
     if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
             let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
@@ -737,6 +741,17 @@ fn decorate_realtime_frame(
                         if let Ok(n) = cleaned.parse::<f64>() {
                             // kiwoom price sign = 등락 방향, not a negative price.
                             chart_value = Some(if spec.chart_abs { n.abs() } else { n });
+                        }
+                    }
+                }
+            }
+            if let Some(sf) = &spec.chart_session_field {
+                if regular_session.is_none() {
+                    if let Some(raw) = values.get(sf.as_str()).and_then(|v| v.as_str()) {
+                        let code = raw.trim();
+                        if !code.is_empty() {
+                            regular_session =
+                                Some(spec.chart_session_regular.iter().any(|r| r == code));
                         }
                     }
                 }
@@ -792,6 +807,9 @@ fn decorate_realtime_frame(
         }
         if let Some(v) = vol_tick {
             obj.insert("volumeTick".into(), serde_json::json!(v));
+        }
+        if let Some(v) = regular_session {
+            obj.insert("regularSession".into(), serde_json::json!(v));
         }
         if let Some(v) = change {
             obj.insert("change".into(), serde_json::json!(v));

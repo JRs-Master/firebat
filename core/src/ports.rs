@@ -772,6 +772,13 @@ pub struct WsStreamSpec {
     /// know yesterday's close, so the broker's own figure is the only correct source.
     pub chart_change_field: Option<String>,
     pub chart_change_rate_field: Option<String>,
+    /// Which `values` key says which trading session the tick belongs to, and which of its values
+    /// count as the regular session (config `chartSessionField` / `chartSessionRegular`). Decoded
+    /// to a top-level boolean `regularSession` so consumers never need the broker's codes: an
+    /// intraday chart must not draw pre/post-market prints, and the clock cannot tell you that
+    /// (holidays, delayed opens, 임의연장) — the exchange says it on every frame.
+    pub chart_session_field: Option<String>,
+    pub chart_session_regular: Vec<String>,
     pub mock: bool,
 }
 
