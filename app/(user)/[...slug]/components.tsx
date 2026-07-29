@@ -293,17 +293,21 @@ function liveStats(bars: OhlcvBar[]) {
     rsi = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
   }
   const last = bars[bars.length - 1];
-  const first = bars[0];
   const dayVol = bars.reduce((a, b) => a + (b.volume || 0), 0);
-  return { price: last.close, chg: first ? last.close - first.close : 0, rsi, hist, dayVol, barVol: last.volume || 0 };
+  return { price: last.close, rsi, hist, dayVol, barVol: last.volume || 0 };
 }
 
 /** 전광판 한 칸. */
-function Tick({ label, value, tone = 'text-slate-900' }: { label: string; value: string; tone?: string }) {
+// 전광판 색 = 캔들과 **같은 값**이어야 한 화면에서 따로 놀지 않는다(StockChart 의 UP/DOWN).
+const TICK_UP = '#ef4444';
+const TICK_DOWN = '#3b82f6';
+
+function Tick({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="flex flex-col items-center justify-center px-2 py-1.5 min-w-0">
       <span className="text-[9px] font-semibold tracking-wider text-slate-400 uppercase">{label}</span>
-      <span className={`text-[13px] font-extrabold tabular-nums truncate ${tone}`}>{value}</span>
+      <span className="text-[13px] font-extrabold tabular-nums truncate"
+            style={{ color: color ?? '#0f172a' }}>{value}</span>
     </div>
   );
 }
@@ -340,6 +344,9 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   const [ref, visible] = useInViewport<HTMLDivElement>();
   const [lastMs, setLastMs] = useState<number | null>(null);
   const [, force] = useState(0);
+  // 전일대비 — **브로커가 프레임으로 준 값**만 쓴다. 당일 봉만 들고 있는 클라이언트는 전일 종가를
+  // 알 수 없어서 시가대비로 대신하면 아예 다른 숫자가 된다(2026-07-29 사용자).
+  const prevCloseRef = useRef<{ chg: number; rate: number } | null>(null);
   const ivSec = Math.min(Math.max(Number(interval) || 60, 5), 86400); // 5초 ~ 1일(일봉)
   const daily = ivSec >= 86400;
   const cap = Math.min(Math.max(Number(maxCandles) || (daily ? 120 : 240), 30), 1000);
@@ -421,6 +428,11 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       });
       if (arr.length > cap) arr.splice(0, arr.length - cap);
     }
+    const fChg = dotGet('change');
+    if (Number.isFinite(fChg)) {
+      const fRate = dotGet('changeRate');
+      prevCloseRef.current = { chg: fChg, rate: Number.isFinite(fRate) ? fRate : 0 };
+    }
     setLastMs(Date.now());
     // Persist only the tail past the seed — cheap (≤120 bars) and reload-safe.
     saveLiveTail(topic, ivSec, arr.filter(b => digitsKey(b.date) > (seedLastKeyRef.current ?? '')));
@@ -454,17 +466,20 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       {(() => {
         const st = liveStats(candlesRef.current ?? []);
         if (!st) return null;
-        const up = st.chg >= 0;
+        const pc = prevCloseRef.current;
+        const dirColor = !pc || pc.chg === 0 ? undefined : pc.chg > 0 ? TICK_UP : TICK_DOWN;
         const n = (v: number | null, d = 0) =>
           v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
         return (
           <div className="mb-2 grid grid-cols-3 sm:grid-cols-6 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
-            <div className="bg-white"><Tick label="현재가" value={n(st.price)} tone={up ? 'text-red-600' : 'text-blue-600'} /></div>
-            <div className="bg-white"><Tick label="시가대비" value={`${up ? '▲' : '▼'} ${n(Math.abs(st.chg))}`} tone={up ? 'text-red-600' : 'text-blue-600'} /></div>
+            <div className="bg-white"><Tick label="현재가" value={n(st.price)} color={dirColor} /></div>
+            <div className="bg-white"><Tick label="전일대비"
+              value={pc ? `${pc.chg > 0 ? '▲' : pc.chg < 0 ? '▼' : ''} ${n(Math.abs(pc.chg))} (${pc.rate > 0 ? '+' : ''}${pc.rate.toFixed(2)}%)` : '—'}
+              color={dirColor} /></div>
             <div className="bg-white"><Tick label="RSI 14" value={n(st.rsi, 1)}
-              tone={st.rsi == null ? 'text-slate-400' : st.rsi >= 70 ? 'text-red-600' : st.rsi <= 30 ? 'text-blue-600' : 'text-slate-900'} /></div>
+              color={st.rsi == null ? undefined : st.rsi >= 70 ? TICK_UP : st.rsi <= 30 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
-              tone={st.hist == null ? 'text-slate-400' : st.hist >= 0 ? 'text-emerald-600' : 'text-orange-600'} /></div>
+              color={st.hist == null ? undefined : st.hist >= 0 ? TICK_UP : TICK_DOWN} /></div>
             <div className="bg-white"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
             <div className="bg-white"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
           </div>
