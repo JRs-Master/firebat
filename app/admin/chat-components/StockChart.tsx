@@ -770,10 +770,16 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const top = padTop + 6;
     const bottom = padTop + plotH - 4;
     if (toRight && W - cx > w + 20) {
-      // 이 분기만 세로 offset 이 없어서, 간격을 올려도 **마지막 꼭짓점 라벨만 선에 붙어** 있었다
-      // (2026-07-29 실측: "라벨이 더 붙었는데"). 가로로 빼면서 세로로도 dirIn 방향으로 띄운다.
-      const wantY = Math.max(top + h / 2, Math.min(bottom - h / 2, py + dirIn * (h / 2 + 10)));
-      const cy = placeLabelY(cx + w / 2 + 16, wantY, w, h, dirIn, top, bottom);
+      // 세로로 **자리가 있는 쪽**으로 뺀다. 마지막 꼭짓점은 그 구간의 최고점(또는 최저점)인 일이
+      // 많아 원래 방향엔 여유가 없고, 경계에 눌리면 결국 선에 붙는다(2026-07-29 실측 2회).
+      // 이 분기는 이미 가로로 빈 미래 구간에 나가 있어 귀속은 리더선이 담당하므로, 방향을 바꿔도
+      // 읽기에 문제가 없다.
+      const need = h / 2 + 12;
+      const roomUp = py - (top + h / 2);
+      const roomDown = (bottom - h / 2) - py;
+      const vdir = dirIn < 0 ? (roomUp >= need ? -1 : 1) : (roomDown >= need ? 1 : -1);
+      const wantY = Math.max(top + h / 2, Math.min(bottom - h / 2, py + vdir * need));
+      const cy = placeLabelY(cx + w / 2 + 16, wantY, w, h, vdir, top, bottom);
       return (
         <g>
           <line x1={cx + 3} y1={py} x2={cx + 12} y2={cy} stroke={color} strokeWidth={1} opacity={0.35} />
