@@ -826,7 +826,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       <div className="relative" style={{ paddingRight: padRight }}>
       <div
         ref={priceBoxRef}
-        className="relative select-none overflow-x-auto overflow-y-hidden scrollbar-thin"
+        className="relative select-none overflow-x-auto overflow-y-hidden scrollbar-none"
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onScroll={(e) => {
@@ -834,7 +834,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           const sl = el.scrollLeft;
           pinnedRightRef.current = sl >= (el.scrollWidth - el.clientWidth) - 2; // 우측 끝이면 최신 고정 유지
           setScrollX(sl);
-          if (volScrollRef.current) volScrollRef.current.scrollLeft = sl;
+          if (volScrollRef.current && volScrollRef.current.scrollLeft !== sl) {
+            volScrollRef.current.scrollLeft = sl;
+          }
           if (lastPointerXRef.current != null) updateHoverFromClientX(lastPointerXRef.current);
         }}
         onTouchStart={handleTouchStart}
@@ -1199,7 +1201,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           close-only 데이터는 거래량이 전무(0 폴백)라 pane 자체를 숨김. */}
       {!closeOnly && (
       <div className="relative" style={{ paddingRight: padRight }}>
-      <div ref={volScrollRef} className="relative overflow-x-hidden">
+      {/* 보이는 스크롤바는 여기 하나 — 위젯 맨 아래. 가격 컨테이너는 바를 숨기고 스크롤만 하며,
+          두 방향 모두 동기화한다(여기서 끌어도 가격이 따라오게). */}
+      <div
+        ref={volScrollRef}
+        className="relative overflow-x-auto overflow-y-hidden scrollbar-thin"
+        onScroll={(e) => {
+          const sl = (e.currentTarget as HTMLDivElement).scrollLeft;
+          if (priceBoxRef.current && priceBoxRef.current.scrollLeft !== sl) {
+            priceBoxRef.current.scrollLeft = sl;
+          }
+        }}
+      >
         <svg viewBox={`0 0 ${W} ${volH}`} className="block" width={W} preserveAspectRatio="none" style={{ height: volChartHeight }}>
           {volTicks.map(t => {
             const y = yVol(t);

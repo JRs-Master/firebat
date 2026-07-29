@@ -65,6 +65,12 @@ html::-webkit-scrollbar-thumb:hover,
   .scrollbar-hide { scrollbar-width: none; }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
 }
+/* 스크롤 기능은 유지하되 바만 숨김 — 스크롤 소유 컨테이너가 위쪽이라 네이티브 바가 두 차트
+   **사이**에 그려지던 것을 없앤다(2026-07-29 실측: 가격봉과 거래량봉 사이에 스크롤바).
+   눈에 보이는 바는 맨 아래(거래량) 컨테이너 하나만 둔다. */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
 /* 마우스(fine pointer) 기기에서만 hover/focus 파랑 — 터치 탭 후 sticky '파란불' 방지.
    Tailwind hover: 가 일부 기기서 hover:hover 로 잡혀 sticky 되던 것을 pointer:fine 로 터치 확실히 배제. */
 @media (hover: hover) and (pointer: fine) {
