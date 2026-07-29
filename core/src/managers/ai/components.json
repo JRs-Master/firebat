@@ -3369,6 +3369,10 @@
           "type": "string",
           "description": "\"linear\" (default) or \"log\" — log suits wide ranges and future projections."
         },
+        "prevClose": {
+          "type": "number",
+          "description": "previous session's closing price, used as the fixed baseline for the live scoreboard's change-on-the-day. Comes from the analysis module when it trims the series to one session; a client holding only today's bars cannot derive it, and realtime frames stop carrying it once the market closes."
+        },
         "buyPoints": {
           "type": [
             "array",

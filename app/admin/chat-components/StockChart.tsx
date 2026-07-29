@@ -506,15 +506,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       el.scrollLeft = leftPad + idx * barPx - offsetX;
       zoomAnchorRef.current = null;
     } else if (pinnedRightRef.current) {
-      // 미래 구간이 화면을 크게 차지할 때만 마지막 봉을 가운데로 온다. 옛 조건은 futureSlots>0 이면
-      // 무조건 가운데라, 여백이 몇 칸뿐이어도 **화면 오른쪽 절반이 텅 비었다**(2026-07-29 사용자:
-      // "제일 보기 좋은 상태로 기본화면 시작하게"). 미래 구간이 뷰포트의 35% 미만이면 끝까지 밀어
-      // 최신 봉을 최대한 보이고, 그 이상이면 옛대로 가운데(좁은 화면에서 점선만 남는 것 방지).
-      const visSlots = Math.max(1, el.clientWidth / barPx);
-      const anchor =
-        futureSlots > visSlots * 0.6
-          ? leftPad + (fullN - 1) * barPx + barPx / 2 - el.clientWidth / 2
-          : el.scrollWidth;
+      // Opening position: let the future gutter take at most 40% of the viewport and fill the rest
+      // with candles. This used to branch on a futureSlots threshold, but the gutter is 0 slots with
+      // no wave overlay and 40+ when a projection runs long, so the same page opened differently on
+      // every visit. One ratio covers both ends — no gutter lands at the far right by itself, a big
+      // one puts the last bar at the 60% mark, and there is no cliff in between.
+      const lastBarRight = leftPad + fullN * barPx;
+      const tail = Math.max(0, el.scrollWidth - lastBarRight);   // future gutter + right padding
+      const anchor = lastBarRight + Math.min(tail, el.clientWidth * 0.4) - el.clientWidth;
       el.scrollLeft = Math.max(0, Math.min(anchor, el.scrollWidth - el.clientWidth));
     } else if (prevBarRef.current && prevBarRef.current !== barPx) {
       el.scrollLeft = el.scrollLeft * (barPx / prevBarRef.current);

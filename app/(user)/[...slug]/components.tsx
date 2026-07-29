@@ -329,7 +329,7 @@ function makeLiveDateFmt(sampleDate: string, daily: boolean): (d: Date) => strin
  *  종가·고저로 갱신**(새 봉은 날짜 바뀔 때만). 같은 기간 = 마지막 봉 in-place 갱신(배열 길이
  *  고정 → StockChart 줌 리셋 회피), 새 기간 = append. 시드 = props.data(표준 OHLCV 행, REST
  *  분봉/일봉) — 라이브 틱이 마지막(=현재 기간) 봉부터 이어감. */
-function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles, annotations, futureSlots, scale, buyPoints, sellPoints }: {
+function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField, volumeField, interval, maxCandles, annotations, futureSlots, scale, buyPoints, sellPoints, prevClose }: {
   topic: string; symbol?: string; title?: string; data?: unknown; indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
   valueField?: string; volumeField?: string; interval?: number; maxCandles?: number;
   // 주석 레이어 — 라이브 차트도 정적 차트와 **같은 부품**을 쓴다. 옛엔 이 셋을 안 받아 넘겨서
@@ -341,13 +341,17 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   // 라이브 차트에서도 신호가 최신 봉 기준으로 갱신된다.
   buyPoints?: React.ComponentProps<typeof StockChart>['buyPoints'];
   sellPoints?: React.ComponentProps<typeof StockChart>['sellPoints'];
+  // Previous session's close, from the REST seed. Fixed for the life of the page — see the
+  // scoreboard below for why a live figure cannot stand in for it.
+  prevClose?: number;
 }) {
   const [ref, visible] = useInViewport<HTMLDivElement>();
   const [lastMs, setLastMs] = useState<number | null>(null);
   const [, force] = useState(0);
-  // 전일대비 — **브로커가 프레임으로 준 값**만 쓴다. 당일 봉만 들고 있는 클라이언트는 전일 종가를
-  // 알 수 없어서 시가대비로 대신하면 아예 다른 숫자가 된다(2026-07-29 사용자).
-  const prevCloseRef = useRef<{ chg: number; rate: number } | null>(null);
+  // Change on the day, when no seed baseline is available: the broker's own figure off a frame.
+  // Only a fallback — frames stop arriving at the close, so a page that relies on them alone loses
+  // the number for the rest of the day. The seed prevClose above is the primary source.
+  const frameChangeRef = useRef<{ chg: number; rate: number } | null>(null);
   const ivSec = Math.min(Math.max(Number(interval) || 60, 5), 86400); // 5초 ~ 1일(일봉)
   const daily = ivSec >= 86400;
   const cap = Math.min(Math.max(Number(maxCandles) || (daily ? 120 : 240), 30), 1000);
@@ -432,7 +436,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     const fChg = dotGet('change');
     if (Number.isFinite(fChg)) {
       const fRate = dotGet('changeRate');
-      prevCloseRef.current = { chg: fChg, rate: Number.isFinite(fRate) ? fRate : 0 };
+      frameChangeRef.current = { chg: fChg, rate: Number.isFinite(fRate) ? fRate : 0 };
     }
     setLastMs(Date.now());
     // Persist only the tail past the seed — cheap (≤120 bars) and reload-safe.
@@ -467,7 +471,12 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       {(() => {
         const st = liveStats(candlesRef.current ?? []);
         if (!st) return null;
-        const pc = prevCloseRef.current;
+        // 기준선은 고정값(시드 전일 종가)이고 움직이는 건 현재가뿐이다 — 그래야 장이 닫힌 뒤에도
+        // 같은 숫자가 남는다. 시드에 전일이 없으면(단일 세션 응답) 프레임 값으로 물러난다.
+        const base = Number(prevClose);
+        const pc = Number.isFinite(base) && base > 0 && st.price != null
+          ? { chg: st.price - base, rate: ((st.price - base) / base) * 100 }
+          : frameChangeRef.current;
         const dirColor = !pc || pc.chg === 0 ? undefined : pc.chg > 0 ? TICK_UP : TICK_DOWN;
         const n = (v: number | null, d = 0) =>
           v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -519,7 +528,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'LiveChart':     return <LiveChartComp topic={p.topic ?? ''} title={p.title} valueField={p.valueField} maxPoints={p.maxPoints} />;
     case 'LiveStockChart': return (
       <>
-        <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />
+        <LiveStockChartComp topic={p.topic ?? ''} symbol={p.symbol} title={p.title} data={p.data} indicators={p.indicators} valueField={p.valueField} volumeField={p.volumeField} interval={p.interval} maxCandles={p.maxCandles} annotations={p.annotations} futureSlots={p.futureSlots} scale={p.scale} buyPoints={p.buyPoints} sellPoints={p.sellPoints} prevClose={p.prevClose} />
         {/* `_after` = derive 가 실어 온 추가 블록(체결 표·지표 카드). 프레임워크-전용 키 — `_baked` 와 같은 규약. */}
         {Array.isArray(p._after) && p._after.length > 0 && <ComponentRenderer components={p._after as ComponentDef[]} />}
       </>
