@@ -256,7 +256,9 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   const candlesRef = useRef<OhlcvBar[] | null>(null);
   if (candlesRef.current === null) {
     const rows = Array.isArray(data) ? data : [];
-    candlesRef.current = rows.flatMap((r): OhlcvBar[] => {
+    // 시드도 maxCandles 로 자른다 — 옛엔 시드를 통째로 넣어(ka10080 = 900봉) "1분봉 240개" 를
+    // 요청해도 4일치가 그려졌다(2026-07-29 실측). cap 은 라이브 append 에만 걸려 있었다.
+    candlesRef.current = rows.slice(-cap).flatMap((r): OhlcvBar[] => {
       if (!r || typeof r !== 'object') return [];
       const o = r as Record<string, unknown>;
       const num = (x: unknown) => (typeof x === 'number' ? x : parseFloat(String(x ?? '').replace(/[+,]/g, '')));

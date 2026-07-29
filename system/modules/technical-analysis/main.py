@@ -65,13 +65,31 @@ def _bars(data):
             continue
         high = _pick(b, "high", "h")
         low = _pick(b, "low", "l")
-        out.append({
-            "i": i,
+        row = {
             "date": str(_pick(b, "date", "datetime", "time") or ""),
             "high": float(high) if high is not None else close,
             "low": float(low) if low is not None else close,
             "close": close,
-        })
+        }
+        if "open" in b or "o" in b or "Open" in b:
+            o = _pick(b, "open", "o")
+            if o is not None:
+                row["open"] = float(o)
+        v = _pick(b, "volume", "v")
+        if v is not None:
+            try:
+                row["volume"] = float(v)
+            except (TypeError, ValueError):
+                pass
+        out.append(row)
+    # **시간 오름차순 강제.** 브로커마다 순서가 다르다 — kiwoom 분봉(ka10080)은 최신순으로 준다.
+    # 순서를 믿고 계산하면 EMA·RSI·MACD 가 통째로 거꾸로 나오고, 신호 페어링도 뒤집혀
+    # "청산일이 진입일보다 빠른" 체결 기록이 만들어진다(2026-07-29 실측 스크린샷).
+    # 날짜 문자열은 zero-padded 라 사전순 = 시간순(YYYY-MM-DD HH:MM / YYYYMMDD). 빈 날짜는 원래 자리 유지.
+    if any(r["date"] for r in out):
+        out.sort(key=lambda r: r["date"])
+    for i, r in enumerate(out):
+        r["i"] = i          # 인덱스는 **정렬 후** 부여 — 피벗·주석 좌표가 차트와 어긋나지 않게
     return out
 
 
@@ -909,6 +927,17 @@ def main():
         return
 
     if action == "signals":
+        # 데이 트레이딩 뷰 — 마지막 거래일 봉만. 시계·타임존에 의존하지 않고 **데이터의 최신
+        # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
+        # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
+        if inp.get("lastSessionOnly") and bars:
+            day = bars[-1]["date"][:10]
+            kept = [b for b in bars if b["date"][:10] == day]
+            if kept:
+                for i, b in enumerate(kept):
+                    b["i"] = i
+                bars = kept
+                bar_range = {"count": len(bars), "from": bars[0]["date"], "to": bars[-1]["date"]}
         # **규칙은 데이터로 받는다.** 전략을 모듈 코드에 넣으면 그 순간 프레임워크가 투자 의견을
         # 갖게 되고, 사용자가 바꾸려면 배포를 해야 한다. 여기가 하는 일은 딱 두 가지 —
         # ① 지표를 계산하고 ② 선언된 조건이 참인 봉을 찾아 차트가 그대로 쓸 좌표로 돌려준다.
@@ -1077,7 +1106,14 @@ def main():
             rows.append([pos["entryDate"], round(pos["entryPrice"], 2), "보유 중", "—", "—", "—",
                          pos["entryLabel"], "—"])
         blocks = [
-            {"type": "stock_chart", "props": {"buyPoints": buy, "sellPoints": sell}},
+            {"type": "stock_chart", "props": {
+                "buyPoints": buy, "sellPoints": sell,
+                # 분석에 쓴 봉을 그대로 차트에도 — lastSessionOnly 로 잘랐을 때 차트와 표가
+                # 다른 구간을 보여 주면 수치가 어긋난 것처럼 읽힌다.
+                **({"data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
+                              "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
+                             for b in bars]} if inp.get("lastSessionOnly") else {}),
+            }},
             {"type": "table", "props": {
                 "headers": ["진입일", "진입가", "청산일", "청산가", "수익률(비용전)", "수익률(비용후)",
                             "진입 신호", "청산 신호"],

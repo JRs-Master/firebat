@@ -197,7 +197,9 @@ async function resolveDerived(props: Json, rows: unknown[], path: string, slug: 
   const derived = first && typeof first === 'object' ? ((first as Json).props as Json | undefined) : undefined;
   if (!derived) return;
   for (const [k, v] of Object.entries(derived)) {
-    if (k === 'data' || k === 'seed' || k === 'derive') continue; // 시드·선언은 덮지 않는다
+    // 선언(seed/derive)은 덮지 않는다. `data` 는 **덮는다** — 파생 모듈이 봉을 돌려줬다면
+    // "내가 분석한 구간이 이것" 이라는 뜻이고, 차트가 다른 구간을 보여 주면 표와 어긋난다.
+    if (k === 'seed' || k === 'derive') continue;
     props[k] = v;
   }
   // 첫 블록 뒤에 더 있으면 **차트 아래에 그대로 얹는다** — 신호 모듈이 체결 표·지표 카드를

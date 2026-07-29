@@ -538,8 +538,34 @@ async fn run_session(
                 }
 
                 // JSON frame (kiwoom REAL / 한투 PINGPONG or control).
-                let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
-                let Some(kind) = frame_get(&frame, &spec.match_field).and_then(|v| v.as_str()) else { continue };
+                // **소리 없이 버리던 두 경로** — JSON 파싱 실패, match_field 부재. 로그가 없어서
+                // "프레임이 안 온다"와 "와도 우리가 못 읽는다"를 구분할 수 없었다(2026-07-29 장중:
+                // 구독 성공 후 ws_stream 로그가 0줄인데 틱도 0개). 앞 몇 건만 본문과 함께 남긴다.
+                let Ok(frame) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    let seen = skipped_seen.entry("<non-json>".to_string()).or_insert(0);
+                    *seen += 1;
+                    if *seen <= 3 {
+                        tracing::info!(
+                            target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
+                            body = %text.chars().take(400).collect::<String>(),
+                            "frame dropped — JSON 파싱 실패"
+                        );
+                    }
+                    continue;
+                };
+                let Some(kind) = frame_get(&frame, &spec.match_field).and_then(|v| v.as_str()) else {
+                    let seen = skipped_seen.entry("<no-match-field>".to_string()).or_insert(0);
+                    *seen += 1;
+                    if *seen <= 3 {
+                        tracing::info!(
+                            target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
+                            match_field = %spec.match_field,
+                            body = %text.chars().take(400).collect::<String>(),
+                            "frame dropped — match_field 없음(스펙과 실제 프레임 shape 불일치)"
+                        );
+                    }
+                    continue;
+                };
                 if spec.echo_values.iter().any(|e| e == kind) {
                     let _ = ws.send(Message::Text(text)).await;
                     continue;

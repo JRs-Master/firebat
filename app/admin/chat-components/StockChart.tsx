@@ -97,9 +97,30 @@ function sma(values: number[], period: number): (number | null)[] {
   return out;
 }
 
+/** 포인트를 목록으로 나열할 최대 개수 — 넘으면 요약 한 줄(차트 화살표가 본체). */
+const POINT_LIST_MAX = 8;
+
 function normalizeDate(d: string): string {
   if (/^\d{8}$/.test(d)) return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
   return d;
+}
+
+/**
+ * 신호 지점 → 봉 인덱스. 옛 비교는 `slice(0, 10)`(날짜만)이라 **1분봉에서 그날 신호가 전부
+ * 그날 첫 봉 하나로 뭉쳤다**(2026-07-29 실측: 화살표가 안 보이고 가격이 엉뚱하게 찍힘).
+ * 시각까지 준 지점은 시각까지 맞추고, 날짜만 준 지점(일봉 관례)은 그날 첫 봉으로 — 둘 다 산다.
+ */
+function findBarIndex(bars: Array<{ date: string }>, when: string): number {
+  const target = normalizeDate(when);
+  const hasTime = /\d{2}:\d{2}/.test(target);
+  if (hasTime) {
+    const exact = bars.findIndex(b => normalizeDate(b.date) === target);
+    if (exact >= 0) return exact;
+    // 포맷 차이(초 유무·구분자) 보정 — 숫자만 뽑아 분 단위(12자리)까지 비교.
+    const key = target.replace(/\D/g, '').slice(0, 12);
+    return bars.findIndex(b => normalizeDate(b.date).replace(/\D/g, '').slice(0, 12) === key);
+  }
+  return bars.findIndex(b => normalizeDate(b.date).slice(0, 10) === target.slice(0, 10));
 }
 
 function shortDate(d: string): string {
@@ -868,7 +889,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
           {/* 매수 — date 있으면 해당 봉 아래 ↑ 화살표(매수 시점), 없으면 price 레벨 수평선(지지) */}
           {buyPoints?.map((bp, i) => {
-            const idx = bp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(bp.date!).slice(0, 10)) : -1;
+            const idx = bp.date ? findBarIndex(safeData, bp.date) : -1;
             if (idx >= 0) {
               const x = xs[idx];
               const ay = yPrice(safeData[idx].low) + 4; // 봉 저가 아래 — 위로 가리킴
@@ -889,7 +910,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           })}
           {/* 매도 — date 있으면 해당 봉 위 ↓ 화살표(매도 시점), 없으면 price 레벨 수평선(저항) */}
           {sellPoints?.map((sp, i) => {
-            const idx = sp.date ? safeData.findIndex(d => normalizeDate(d.date).slice(0, 10) === normalizeDate(sp.date!).slice(0, 10)) : -1;
+            const idx = sp.date ? findBarIndex(safeData, sp.date) : -1;
             if (idx >= 0) {
               const x = xs[idx];
               const ay = yPrice(safeData[idx].high) - 4; // 봉 고가 위 — 아래로 가리킴
@@ -1162,8 +1183,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       </div>
       )}
 
-      {/* 매수/매도 포인트 */}
-      {(buyPoints?.length || sellPoints?.length) ? (
+      {/* 매수/매도 포인트 — 소수(추천 지점 몇 곳)일 때만 목록. 규칙 신호처럼 수십 개면 목록이
+          화면을 도배하고(2026-07-29 실측) 정보는 차트 화살표 + 체결 표에 이미 있다 → 요약 한 줄. */}
+      {(buyPoints?.length ?? 0) + (sellPoints?.length ?? 0) > POINT_LIST_MAX ? (
+        <div className="pt-3 border-t border-slate-100 text-[12px] text-slate-500">
+          신호 <b className="text-red-600">매수 {buyPoints?.length ?? 0}</b> ·{' '}
+          <b className="text-blue-600">매도 {sellPoints?.length ?? 0}</b> — 위 차트의 ↑↓ 로 표시했습니다.
+        </div>
+      ) : (buyPoints?.length || sellPoints?.length) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
           {buyPoints && buyPoints.length > 0 && (
             <div className="flex flex-col gap-1.5">

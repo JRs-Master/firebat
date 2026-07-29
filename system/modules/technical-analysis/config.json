@@ -168,6 +168,10 @@
       "slippageTicks": {
         "type": "number",
         "description": "[signals] 편도 몇 틱 밀릴지(예 1). tickSize 와 함께. slippageRate 와 동시 사용 가능(둘 다 적용)."
+      },
+      "lastSessionOnly": {
+        "type": "boolean",
+        "description": "[signals] 마지막 거래일 봉만 분석 — 데이 트레이딩 뷰. 시계가 아니라 **데이터의 최신 날짜**로 자르므로 타임존·장 시작 전 상황에도 안전합니다. 켜면 분석에 쓴 봉을 blocks[0].props.data 로 함께 돌려줘 차트와 표가 같은 구간을 봅니다. 잘린 만큼 지표 warmup 이 짧아질 수 있습니다."
       }
     }
   },
