@@ -786,6 +786,14 @@ impl ModuleManager {
                 .get("chartVolumeField")
                 .and_then(|v| v.as_str())
                 .map(String::from),
+            chart_change_field: decl
+                .get("chartChangeField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            chart_change_rate_field: decl
+                .get("chartChangeRateField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             chart_field: decl
                 .get("chartField")
                 .and_then(|v| v.as_str())

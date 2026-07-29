@@ -766,6 +766,12 @@ pub struct WsStreamSpec {
     /// can accumulate a bar's volume without the caller guessing dot-paths. Distinct from a
     /// day-cumulative field: this one is added up within a bar, not assigned.
     pub chart_volume_field: Option<String>,
+    /// Which `values` keys carry the change against the PREVIOUS session's close and its percent
+    /// (config `chartChangeField` / `chartChangeRateField`). Decoded to top-level `change` and
+    /// `changeRate`, mirroring `value`. A live chart seeded with today's bars alone has no way to
+    /// know yesterday's close, so the broker's own figure is the only correct source.
+    pub chart_change_field: Option<String>,
+    pub chart_change_rate_field: Option<String>,
     pub mock: bool,
 }
 

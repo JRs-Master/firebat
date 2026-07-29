@@ -712,6 +712,7 @@ fn decorate_realtime_frame(
     if spec.field_labels.is_empty()
         && spec.chart_field.is_none()
         && spec.chart_volume_field.is_none()
+        && spec.chart_change_field.is_none()
     {
         return frame;
     }
@@ -719,6 +720,8 @@ fn decorate_realtime_frame(
     // Per-tick traded quantity summed across the frame's records — one REAL frame can carry
     // several fills, and dropping the extras would undercount the bar.
     let mut vol_tick: Option<f64> = None;
+    let mut change: Option<f64> = None;
+    let mut change_rate: Option<f64> = None;
     if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
             let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
@@ -750,6 +753,26 @@ fn decorate_realtime_frame(
                     }
                 }
             }
+            // 전일대비·등락율은 **부호가 의미**라 절대값을 취하지 않는다(가격과 반대).
+            for (fieldopt, slot) in [
+                (&spec.chart_change_field, &mut change),
+                (&spec.chart_change_rate_field, &mut change_rate),
+            ] {
+                if slot.is_some() {
+                    continue;
+                }
+                if let Some(f) = fieldopt {
+                    if let Some(raw) = values.get(f.as_str()).and_then(|v| v.as_str()) {
+                        let cleaned: String = raw
+                            .chars()
+                            .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '+' || *c == '.')
+                            .collect();
+                        if let Ok(n) = cleaned.trim_start_matches('+').parse::<f64>() {
+                            *slot = Some(n);
+                        }
+                    }
+                }
+            }
             if !spec.field_labels.is_empty() {
                 let mut labeled = serde_json::Map::new();
                 for (code, label) in &spec.field_labels {
@@ -769,6 +792,12 @@ fn decorate_realtime_frame(
         }
         if let Some(v) = vol_tick {
             obj.insert("volumeTick".into(), serde_json::json!(v));
+        }
+        if let Some(v) = change {
+            obj.insert("change".into(), serde_json::json!(v));
+        }
+        if let Some(v) = change_rate {
+            obj.insert("changeRate".into(), serde_json::json!(v));
         }
     }
     frame
