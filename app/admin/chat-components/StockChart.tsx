@@ -732,8 +732,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
    *  마침 **오른쪽 미래 구간이 비어 있다**(2026-07-28 실측: "4?" 가 축에 물림). 가로로 빼면
    *  아무것도 안 가리고 제일 중요한 라벨(지금 어디냐)이 가장 잘 보인다. */
   const waveBadge = (cx: number, py: number, label: string, color: string, dirIn: number, toRight = false) => {
-    const h = 13;
-    const w = Math.max(11, label.length * 7.5);
+    // SVG 는 컨테이너 폭에 맞춰 그려지는데 글자만 절대 px 이라, 좁은 화면에선 같은 12px 이
+    // 훨씬 크게 **보인다**. 모바일은 봉도 넓게 잡아 확대돼 있어 더 심하다(2026-07-29 실측:
+    // "모바일에서 글자가 너무 큰듯 pc보다 큰거 같은데"). 화면 등급에 맞춰 낮춘다.
+    const fs = isMobileChart ? 10 : 12;
+    const h = fs + 1;
+    const w = Math.max(11, label.length * fs * 0.62);
     // 라벨이 쓸 수 있는 세로 범위. **고점은 위 / 저점은 아래**가 원칙이고, 경계 뒤집기는
     // 진짜 넘칠 때만 해야 한다 — 여유를 좁게 잡았더니 하락 추세의 저점들이 전부 위로
     // 뒤집혀 고점 라벨과 겹쳤다(2026-07-28 사용자 지적: "지금은 둘 다 위라 겹치네").
@@ -745,7 +749,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       return (
         <g>
           <line x1={cx + 3} y1={py} x2={cx + 9} y2={cy} stroke={color} strokeWidth={1} opacity={0.35} />
-          <text x={cx + 12} y={cy + 4} fontSize={12} fontWeight={800} fill={color} textAnchor="start"
+          <text x={cx + 12} y={cy + 4} fontSize={fs} fontWeight={800} fill={color} textAnchor="start"
                 stroke="#fff" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round"
                 fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
         </g>
@@ -772,10 +776,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     placedLabels.push({ cx, cy, w, h });
     // 회피로 많이 밀렸을 때만 리더선 — 붙어 있으면 선이 오히려 지저분하다.
     const far = Math.abs(cy - py) > 20;
+    // 오른쪽 끝에서 가운데 정렬이면 글자 절반이 화면 밖으로 나간다("이후 4파 22" 처럼 잘림).
+    // 넘칠 자리면 끝 정렬로 바꿔 안쪽으로 눕힌다.
+    const overflowsRight = cx + w / 2 > W - 4;
+    const anchor = overflowsRight ? 'end' : 'middle';
+    const tx = overflowsRight ? Math.min(cx + w / 2, W - 4) : cx;
     return (
       <g>
         {far && <line x1={cx} y1={py} x2={cx} y2={cy - Math.sign(cy - py) * 6} stroke={color} strokeWidth={1} opacity={0.35} />}
-        <text x={cx} y={cy + 4} fontSize={12} fontWeight={800} fill={color} textAnchor="middle"
+        <text x={tx} y={cy + 4} fontSize={fs} fontWeight={800} fill={color} textAnchor={anchor}
               stroke="#fff" strokeWidth={3.5} paintOrder="stroke" strokeLinejoin="round"
               fontFamily="'Pretendard Variable', Pretendard, sans-serif">{label}</text>
       </g>
@@ -976,7 +985,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               return (
                 <g key={'bp' + i}>
                   <polygon points={arrowPath(x, ay, true)} fill={SIG_BUY} stroke="#fff" strokeWidth={1.2} strokeLinejoin="round" />
-                  {bp.label && <text x={x} y={ay + 26} fill={SIG_BUY} fontSize="10" fontWeight="800" textAnchor="middle"
+                  {bp.label && <text x={x} y={ay + 26} fill={SIG_BUY} fontSize={isMobileChart ? 9 : 10} fontWeight="800" textAnchor="middle"
                     stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
                     fontFamily="'Pretendard Variable', Pretendard, sans-serif">{bp.label}</text>}
                 </g>
@@ -999,7 +1008,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               return (
                 <g key={'sp' + i}>
                   <polygon points={arrowPath(x, ay, false)} fill={SIG_SELL} stroke="#fff" strokeWidth={1.2} strokeLinejoin="round" />
-                  {sp.label && <text x={x} y={ay - 22} fill={SIG_SELL} fontSize="10" fontWeight="800" textAnchor="middle"
+                  {sp.label && <text x={x} y={ay - 22} fill={SIG_SELL} fontSize={isMobileChart ? 9 : 10} fontWeight="800" textAnchor="middle"
                     stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
                     fontFamily="'Pretendard Variable', Pretendard, sans-serif">{sp.label}</text>}
                 </g>
