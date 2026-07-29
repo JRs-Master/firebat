@@ -217,6 +217,45 @@ function LiveChartComp({ topic, title, valueField, maxPoints }: { topic: string;
  *  같은 포맷이어야 뒤로 붙는다("10:13" 은 "20260722 09:22" 보다 앞으로 정렬돼 새 봉이 왼쪽에
  *  붙던 버그). 시드 마지막 봉 포맷 감지(YYYYMMDD HH:MM / ISO) + granularity: daily = 시각 없이
  *  날짜만(일봉 = 오늘 봉 하나가 갱신). */
+/** Live-appended bars survive a reload. Storage key is per topic+interval so two charts never mix. */
+function liveTailKey(topic: string, ivSec: number): string {
+  return `firebat:livetail:${topic}:${ivSec}`;
+}
+
+/**
+ * Bars the client built from ticks, beyond what the REST seed covers.
+ *
+ * Why persist them: the seed is TTL-cached (60s floor), so a reload can hand back a seed that is
+ * OLDER than what the user was just watching — every bar the ticks had built vanished and the chart
+ * jumped backwards (2026-07-29 실측: "f5하면 실시간으로 생긴 봉이 사라진다"). The seed stays
+ * authoritative for closed bars; this only carries the tail past it.
+ */
+function loadLiveTail(topic: string, ivSec: number): OhlcvBar[] {
+  if (typeof window === 'undefined' || !topic) return [];
+  try {
+    const raw = window.sessionStorage.getItem(liveTailKey(topic, ivSec));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { savedMs?: number; bars?: OhlcvBar[] };
+    // Stale across sessions is worse than missing — a tail from hours ago would draw a fake gap.
+    if (!parsed?.savedMs || Date.now() - parsed.savedMs > 6 * 3600_000) return [];
+    return Array.isArray(parsed.bars) ? parsed.bars : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLiveTail(topic: string, ivSec: number, bars: OhlcvBar[]): void {
+  if (typeof window === 'undefined' || !topic) return;
+  try {
+    window.sessionStorage.setItem(
+      liveTailKey(topic, ivSec),
+      JSON.stringify({ savedMs: Date.now(), bars: bars.slice(-120) }),
+    );
+  } catch {
+    /* quota / private mode — losing the tail is acceptable, breaking the chart is not */
+  }
+}
+
 function makeLiveDateFmt(sampleDate: string, daily: boolean): (d: Date) => string {
   const p2 = (n: number) => String(n).padStart(2, '0');
   const iso = /^\d{4}-\d{2}-\d{2}/.test(sampleDate); // "2026-07-22 ..." → ISO 구분자 유지
@@ -267,6 +306,9 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     });
   }
   // 라이브 봉 date 포맷 = 시드 마지막 봉 포맷 미러(정렬 일관 → 새 봉이 오른쪽에 붙음).
+  // 시드의 마지막 봉 키 — "어디까지가 서버가 준 확정 봉인가"의 고정 기준. 틱이 배열을 늘려도
+  // 이 값은 안 움직여야 저장 범위가 흔들리지 않는다.
+  const seedLastKeyRef = useRef<string | null>(null);
   const fmtRef = useRef<((d: Date) => string) | null>(null);
   if (fmtRef.current === null) {
     const seed = candlesRef.current!;
@@ -277,6 +319,11 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   const p2 = (v: number) => String(v).padStart(2, '0');
   const keyLen = daily ? 8 : 12;
   const digitsKey = (dateStr: string) => dateStr.replace(/\D/g, '').slice(0, keyLen);
+  // 시드의 마지막 봉 키 — "어디까지가 서버가 준 확정 봉인가"의 고정 기준. digitsKey 정의 뒤여야 한다.
+  if (seedLastKeyRef.current === null) {
+    const seed = candlesRef.current!;
+    seedLastKeyRef.current = seed.length > 0 ? digitsKey(seed[seed.length - 1].date) : '';
+  }
   const nowKey = () => {
     const d = new Date();
     const base = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
@@ -312,8 +359,26 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       if (arr.length > cap) arr.splice(0, arr.length - cap);
     }
     setLastMs(Date.now());
+    // Persist only the tail past the seed — cheap (≤120 bars) and reload-safe.
+    saveLiveTail(topic, ivSec, arr.filter(b => digitsKey(b.date) > (seedLastKeyRef.current ?? '')));
     force(x => x + 1);
   });
+  // Reload recovery — splice the persisted tail back on, keeping only bars strictly newer than the
+  // seed's last one (the seed wins on any overlap: REST is authoritative for closed bars).
+  const [, forceMount] = useState(0);
+  useEffect(() => {
+    const arr = candlesRef.current;
+    if (!arr) return;
+    const tail = loadLiveTail(topic, ivSec);
+    if (tail.length === 0) return;
+    const lastSeed = arr.length > 0 ? digitsKey(arr[arr.length - 1].date) : '';
+    const add = tail.filter(b => digitsKey(b.date) > lastSeed);
+    if (add.length === 0) return;
+    arr.push(...add);
+    if (arr.length > cap) arr.splice(0, arr.length - cap);
+    forceMount(x => x + 1);
+  }, []); // mount only — later ticks are handled by the stream
+
   const live = visible && canLiveHere();
   const candles = candlesRef.current!;
   return (
