@@ -744,12 +744,20 @@ def chart_annotation_set(cand, structure_label=None):
     안 그림). 좌표는 전부 결정론이라 모듈이 만들어 주면 채팅·페이지가 같은 그림을 얻는다.
     모델 몫은 **어느 후보를 택하고 그게 무슨 뜻인지** 말하는 것으로 남는다.
     """
+    # 색 = 의미 구분. 전부 같은 보라로 나가면 파동·채널·예상선이 한 덩어리로 보인다
+    # (2026-07-29 사용자: "채널과 엘리어트 선 색도 구분해야 잘보일듯").
+    #   파동 계열 = 보라 — 실선(지나온 길) / 점선(갈 길)로 한 가족임을 유지
+    #   채널      = 청록 — 파동이 아니라 경계선이라 별개 색
+    #   무효화    = 빨강(아래에서 지정)
+    # 캔들(빨강·파랑)·신호 화살표(초록·주황)와도 겹치지 않는 색만 골랐다.
+    WAVE, CHANNEL = "#7c3aed", "#0891b2"
     ann = []
     pivots = cand.get("pivots") or []
     if pivots:
         ann.append({
             "kind": "path",
             "label": structure_label or cand.get("structure"),
+            "color": WAVE,
             "points": [{"i": pv["i"], "price": pv["price"], "label": pv.get("label")} for pv in pivots],
         })
     ch = cand.get("channel") or {}
@@ -757,10 +765,11 @@ def chart_annotation_set(cand, structure_label=None):
     for key, name in (("base", "A-C" if tri else "기준선"), ("parallel", "B-D" if tri else "평행선")):
         pts = ch.get(key)
         if pts:
-            ann.append({"kind": "path", "label": name, "points": pts, "projected": True, "dashed": True})
+            ann.append({"kind": "path", "label": name, "color": CHANNEL, "points": pts,
+                        "projected": True, "dashed": True})
     pp = (cand.get("projectedPath") or {}).get("points")
     if pp:
-        ann.append({"kind": "path", "label": "예상 경로", "points": pp, "projected": True})
+        ann.append({"kind": "path", "label": "예상 경로", "color": WAVE, "points": pp, "projected": True})
     inv = cand.get("invalidation") or {}
     if inv.get("price") is not None:
         arrow = "▲" if inv.get("beyond") == "above" else "▼"
@@ -1270,6 +1279,9 @@ def main():
                 "barRange": bar_range,
             }}, ensure_ascii=False))
             return
+        ann = chart_annotation_set(cand)
+        need = max((pt["barsAhead"] for a in ann for pt in a["points"] if "barsAhead" in pt), default=0)
+        future_slots = max(project_bars, int(need) + 2)
         inv = cand.get("invalidation") or {}
         wave_cards = [
             {"type": "metric", "props": {
@@ -1285,8 +1297,11 @@ def main():
         ]
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart", "props": {
-                "annotations": chart_annotation_set(cand),
-                "futureSlots": project_bars,
+                "annotations": ann,
+                # 여백은 **주석이 실제로 쓰는 만큼**. 옛 코드는 project_bars 를 그대로 넣었는데,
+                # 예상 경로의 시간 좌표는 앞선 다리 길이에서 나오므로 그보다 멀리 갈 수 있다
+                # (실측: futureSlots 16 인데 예상선이 +20·+41봉 → 화면 밖이라 아예 안 보임).
+                "futureSlots": future_slots,
                 **({"data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
                               "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
                              for b in bars]} if inp.get("lastSessionOnly") else {}),
