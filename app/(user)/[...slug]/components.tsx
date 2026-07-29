@@ -303,12 +303,16 @@ function liveStats(bars: OhlcvBar[]) {
 const TICK_UP = '#dc2626';   // text-red-600 — 헤더 고가와 동일
 const TICK_DOWN = '#2563eb'; // text-blue-600 — 헤더 저가와 동일
 
-function Tick({ label, value, color }: { label: string; value: string; color?: string }) {
+function Tick({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center px-2 py-1.5 min-w-0">
+    <div className="flex flex-col items-center justify-center px-2 py-1.5 min-w-0 w-full">
       <span className="text-[9px] font-semibold tracking-wider text-slate-400 uppercase">{label}</span>
-      <span className="text-[13px] font-extrabold tabular-nums truncate"
+      <span className="max-w-full text-[13px] font-extrabold tabular-nums truncate"
             style={{ color: color ?? '#0f172a' }}>{value}</span>
+      {sub && (
+        <span className="max-w-full text-[10px] font-bold tabular-nums truncate"
+              style={{ color: color ?? '#64748b' }}>{sub}</span>
+      )}
     </div>
   );
 }
@@ -482,16 +486,19 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
           v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
         return (
           <div className="mb-2 grid grid-cols-3 sm:grid-cols-6 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
-            <div className="bg-white"><Tick label="현재가" value={n(st.price)} color={dirColor} /></div>
-            <div className="bg-white"><Tick label="전일대비"
-              value={pc ? `${pc.chg > 0 ? '▲' : pc.chg < 0 ? '▼' : ''} ${n(Math.abs(pc.chg))} (${pc.rate > 0 ? '+' : ''}${pc.rate.toFixed(2)}%)` : '—'}
+            <div className="bg-white min-w-0"><Tick label="현재가" value={n(st.price)} color={dirColor} /></div>
+            {/* 등락은 숫자와 비율을 두 줄로 나눈다 — 한 줄로 이으면 3분할 칸(모바일)에 절대 안 들어가고,
+                넘친 글자가 옆 칸 위로 올라갔다(2026-07-29 실측). */}
+            <div className="bg-white min-w-0"><Tick label="전일대비"
+              value={pc ? `${pc.chg > 0 ? '▲' : pc.chg < 0 ? '▼' : ''} ${n(Math.abs(pc.chg))}` : '—'}
+              sub={pc ? `${pc.rate > 0 ? '+' : ''}${pc.rate.toFixed(2)}%` : undefined}
               color={dirColor} /></div>
-            <div className="bg-white"><Tick label="RSI 14" value={n(st.rsi, 1)}
+            <div className="bg-white min-w-0"><Tick label="RSI 14" value={n(st.rsi, 1)}
               color={st.rsi == null ? undefined : st.rsi >= 70 ? TICK_UP : st.rsi <= 30 ? TICK_DOWN : undefined} /></div>
-            <div className="bg-white"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
+            <div className="bg-white min-w-0"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
               color={st.hist == null ? undefined : st.hist >= 0 ? TICK_UP : TICK_DOWN} /></div>
-            <div className="bg-white"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
-            <div className="bg-white"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
+            <div className="bg-white min-w-0"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
+            <div className="bg-white min-w-0"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
           </div>
         );
       })()}

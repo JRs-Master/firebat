@@ -997,10 +997,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const sw = typeof an.width === 'number' && an.width > 0 ? an.width : 1.5;
             if (an.kind === 'hline' && an.points[0]) {
               const y = yPrice(an.points[0].price);
+              // The label rides the viewport, not the content: it used to sit at the content's left
+              // edge, so on a chart wider than the screen you had to drag all the way left to learn
+              // what the line meant. A horizontal line is the same price everywhere, so its label
+              // belongs wherever you happen to be looking. Halo so it stays legible over candles.
+              const lx = Math.max(padLeft + 4, scrollX + 4);
               return (
                 <g key={'an' + ai}>
                   <line x1={padLeft} x2={W} y1={y} y2={y} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} opacity={0.8} />
-                  {an.label && <text x={padLeft + 4} y={y - 3} fontSize={9} fill={stroke}>{an.label}</text>}
+                  {an.label && (
+                    <text x={lx} y={y - 4} fontSize={isMobileChart ? 10 : 11} fontWeight={700} fill={stroke}
+                          stroke="#fff" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round"
+                          fontFamily="'Pretendard Variable', Pretendard, sans-serif">{an.label}</text>
+                  )}
                 </g>
               );
             }

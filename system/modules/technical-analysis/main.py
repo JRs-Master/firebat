@@ -811,7 +811,10 @@ def chart_annotation_set(cand, structure_label=None):
     inv = cand.get("invalidation") or {}
     if inv.get("price") is not None:
         arrow = "▲" if inv.get("beyond") == "above" else "▼"
-        ann.append({"kind": "hline", "label": f"무효화 {arrow} {inv['price']:,.0f}",
+        # "invalidation" is the standard Elliott term, but "무효화 가격" reads like a price that has
+        # been voided. Naming the count is what makes it plain: the level is where this count stops
+        # being a valid count, not where the price stops being valid.
+        ann.append({"kind": "hline", "label": f"카운트 무효 {arrow} {inv['price']:,.0f}",
                     "points": [{"price": inv["price"]}], "color": "#dc2626", "dashed": True})
     return ann
 
@@ -1403,8 +1406,9 @@ def main():
                 "label": "카운트 신뢰도", "value": round(cand["confidence"] * 100, 1), "unit": "%",
                 "subLabel": "급 %.2f%%" % t}},
             {"type": "metric", "props": {
-                "label": "무효화 가격", "value": inv.get("price"),
-                "subLabel": ("이 위로 가면 무효" if inv.get("beyond") == "above" else "이 아래로 가면 무효")}},
+                "label": "카운트 무효 기준", "value": inv.get("price"),
+                "subLabel": ("이 위로 가면 카운트 무효" if inv.get("beyond") == "above"
+                             else "이 아래로 가면 카운트 무효")}},
         ]
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart", "props": {
