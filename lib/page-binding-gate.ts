@@ -157,7 +157,18 @@ async function resolveLiveSeed(props: Json, seed: Json, path: string, slug: stri
   const cached = resultCache.get(key);
   const rows = cached ? firstDataArray(cached.blocks) : null;
   if (rows && rows.length > 0) props.data = rows;
-  if (rows && rows.length > 0 && props.derive) await resolveDerived(props, rows, path, slug);
+  if (rows && rows.length > 0 && props.derive) {
+    // `derive` 는 하나여도 되고 여러 단계여도 된다 — 파동 주석(chart_annotations)과 매매 신호
+    // (signals)를 한 차트에 겹치려면 두 모듈 출력이 같은 봉 위에 병합돼야 한다(사용자 2026-07-29).
+    // 순서대로 돌리고 각 단계의 첫 블록 props 를 차트에 병합, 나머지 블록은 차트 아래로 누적한다.
+    const steps = Array.isArray(props.derive) ? props.derive : [props.derive];
+    const after: unknown[] = [];
+    for (let i = 0; i < steps.length; i++) {
+      const extra = await resolveDerived(props, rows, `${path}#${i}`, slug, steps[i] as Json);
+      after.push(...extra);
+    }
+    props._after = after.length > 0 ? after : undefined;
+  }
 }
 
 /** 시드 봉을 받아 **파생 분석**을 방문 시점에 재계산 — `derive:{module,action,args?}`.
@@ -169,12 +180,14 @@ async function resolveLiveSeed(props: Json, seed: Json, path: string, slug: stri
  *  계약 = pageBinding 그대로 — 파생 모듈이 렌더 블록을 반환하고, 그 **첫 블록의 props**(data 제외)를
  *  라이브 차트 props 에 병합한다. 무엇을 그릴지는 모듈이 소유하고 프레임워크는 추측하지 않는다.
  *  봉은 선언한 인자 이름(기본 `bars`)으로 주입한다. 실패 = 조용히 주석 없이(차트는 살아 있음). */
-async function resolveDerived(props: Json, rows: unknown[], path: string, slug: string): Promise<void> {
-  const d = props.derive as Json | undefined;
-  if (!d || typeof d.module !== 'string') return;
+async function resolveDerived(
+  props: Json, rows: unknown[], path: string, slug: string, step: Json,
+): Promise<unknown[]> {
+  const d = step;
+  if (!d || typeof d.module !== 'string') return [];
   const moduleName = String(d.module);
   const action = await pageBindingGate(moduleName, typeof d.action === 'string' ? (d.action as string) : '');
-  if (!action) return;
+  if (!action) return [];
   const barsArg = typeof d.barsArg === 'string' && d.barsArg ? (d.barsArg as string) : 'bars';
   const args = { ...((d.args as Record<string, unknown>) ?? {}), [barsArg]: rows };
   // 캐시 키에 봉 개수·마지막 봉을 섞는다 — 같은 시드면 재계산 0, 새 봉이 오면 자동 무효화.
@@ -195,18 +208,17 @@ async function resolveDerived(props: Json, rows: unknown[], path: string, slug: 
   }
   const first = resultCache.get(key)?.blocks?.[0];
   const derived = first && typeof first === 'object' ? ((first as Json).props as Json | undefined) : undefined;
-  if (!derived) return;
+  if (!derived) return [];
   for (const [k, v] of Object.entries(derived)) {
     // 선언(seed/derive)은 덮지 않는다. `data` 는 **덮는다** — 파생 모듈이 봉을 돌려줬다면
     // "내가 분석한 구간이 이것" 이라는 뜻이고, 차트가 다른 구간을 보여 주면 표와 어긋난다.
     if (k === 'seed' || k === 'derive') continue;
     props[k] = v;
   }
-  // 첫 블록 뒤에 더 있으면 **차트 아래에 그대로 얹는다** — 신호 모듈이 체결 표·지표 카드를
+  // 첫 블록 뒤에 더 있으면 **차트 아래에 그대로 얹는다**(호출자가 단계별로 모아 붙인다) — 신호 모듈이 체결 표·지표 카드를
   // 함께 돌려주는 경우(모의투자). 프레임워크가 무엇을 그릴지 추측하지 않고 모듈이 준 블록을
   // 그 자리에 놓기만 한다. `_baked` 와 같은 프레임워크-전용 키라 모델이 저작하지 않는다.
-  const rest = resultCache.get(key)?.blocks?.slice(1) ?? [];
-  props._after = rest.length > 0 ? rest : undefined;
+  return resultCache.get(key)?.blocks?.slice(1) ?? [];
 }
 
 /** 렌더 블록 배열에서 첫 번째 `props.data` 배열(캔들 행) 추출. */

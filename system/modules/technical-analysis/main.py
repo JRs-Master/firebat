@@ -902,6 +902,24 @@ def _tail(xs, n):
     return xs[-n:] if n and len(xs) > n else xs
 
 
+def _last_session(bars, bar_range):
+    """Keep only the most recent trading day's bars, re-indexed from 0.
+
+    Judged from the data's newest date, never the clock — no timezone or pre-open edge cases. The
+    re-index matters: annotation and pivot coordinates are bar indices, so a filtered series must
+    renumber or every overlay lands on the wrong candle.
+    """
+    if not bars:
+        return bars, bar_range
+    day = bars[-1]["date"][:10]
+    kept = [b for b in bars if b["date"][:10] == day]
+    if not kept:
+        return bars, bar_range
+    for i, b in enumerate(kept):
+        b["i"] = i
+    return kept, {"count": len(kept), "from": kept[0]["date"], "to": kept[-1]["date"]}
+
+
 def main():
     inp = _read_input()
     action = inp.get("action")
@@ -930,14 +948,7 @@ def main():
         # 데이 트레이딩 뷰 — 마지막 거래일 봉만. 시계·타임존에 의존하지 않고 **데이터의 최신
         # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
         # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
-        if inp.get("lastSessionOnly") and bars:
-            day = bars[-1]["date"][:10]
-            kept = [b for b in bars if b["date"][:10] == day]
-            if kept:
-                for i, b in enumerate(kept):
-                    b["i"] = i
-                bars = kept
-                bar_range = {"count": len(bars), "from": bars[0]["date"], "to": bars[-1]["date"]}
+        bars, bar_range = _last_session(bars, bar_range) if inp.get("lastSessionOnly") else (bars, bar_range)
         # **규칙은 데이터로 받는다.** 전략을 모듈 코드에 넣으면 그 순간 프레임워크가 투자 의견을
         # 갖게 되고, 사용자가 바꾸려면 배포를 해야 한다. 여기가 하는 일은 딱 두 가지 —
         # ① 지표를 계산하고 ② 선언된 조건이 참인 봉을 찾아 차트가 그대로 쓸 좌표로 돌려준다.
@@ -1200,6 +1211,10 @@ def main():
         return
 
     if action == "chart_annotations":
+        # 신호(signals)와 한 차트에 겹칠 때 **같은 구간**을 봐야 한다 — 주석 좌표가 봉 인덱스라
+        # 구간이 다르면 파동이 엉뚱한 캔들에 얹힌다.
+        if inp.get("lastSessionOnly"):
+            bars, bar_range = _last_session(bars, bar_range)
         # 차트에 바로 얹을 주석 한 벌 — 급(threshold) 하나, 후보 하나(기본 = 최고 confidence).
         # pageBinding 계약(`blocks`)으로 반환하므로 **페이지 바인딩이 방문마다 재계산**할 수 있고,
         # 채팅에서도 같은 배열을 그대로 stock_chart 에 넣으면 된다.
@@ -1231,6 +1246,9 @@ def main():
             "blocks": [{"type": "stock_chart", "props": {
                 "annotations": chart_annotation_set(cand),
                 "futureSlots": project_bars,
+                **({"data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
+                              "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
+                             for b in bars]} if inp.get("lastSessionOnly") else {}),
             }}],
             "summary": {
                 "structure": cand["structure"], "labels": cand["labels"],

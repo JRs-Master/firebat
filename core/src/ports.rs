@@ -761,6 +761,11 @@ pub struct WsStreamSpec {
     /// Take |value| for the chart number (config `chartAbs`) — kiwoom prices carry a +/- sign
     /// that means 등락 방향, not a negative price.
     pub chart_abs: bool,
+    /// Which `values` key carries the PER-TICK traded quantity (config `chartVolumeField`).
+    /// Decoded to a top-level `volumeTick` on the sink frame, mirroring `value`, so a live chart
+    /// can accumulate a bar's volume without the caller guessing dot-paths. Distinct from a
+    /// day-cumulative field: this one is added up within a bar, not assigned.
+    pub chart_volume_field: Option<String>,
     pub mock: bool,
 }
 

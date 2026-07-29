@@ -782,6 +782,10 @@ impl ModuleManager {
                         .collect()
                 })
                 .unwrap_or_default(),
+            chart_volume_field: decl
+                .get("chartVolumeField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             chart_field: decl
                 .get("chartField")
                 .and_then(|v| v.as_str())

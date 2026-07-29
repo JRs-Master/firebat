@@ -709,10 +709,16 @@ fn decorate_realtime_frame(
     spec: &WsStreamSpec,
     mut frame: serde_json::Value,
 ) -> serde_json::Value {
-    if spec.field_labels.is_empty() && spec.chart_field.is_none() {
+    if spec.field_labels.is_empty()
+        && spec.chart_field.is_none()
+        && spec.chart_volume_field.is_none()
+    {
         return frame;
     }
     let mut chart_value: Option<f64> = None;
+    // Per-tick traded quantity summed across the frame's records — one REAL frame can carry
+    // several fills, and dropping the extras would undercount the bar.
+    let mut vol_tick: Option<f64> = None;
     if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
             let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
@@ -732,6 +738,18 @@ fn decorate_realtime_frame(
                     }
                 }
             }
+            if let Some(vf) = &spec.chart_volume_field {
+                if let Some(raw) = values.get(vf.as_str()).and_then(|v| v.as_str()) {
+                    let cleaned: String = raw
+                        .chars()
+                        .filter(|c| c.is_ascii_digit() || *c == '.')
+                        .collect();
+                    if let Ok(n) = cleaned.parse::<f64>() {
+                        // Sign on kiwoom quantities marks 매수/매도 방향, not a negative count.
+                        *vol_tick.get_or_insert(0.0) += n;
+                    }
+                }
+            }
             if !spec.field_labels.is_empty() {
                 let mut labeled = serde_json::Map::new();
                 for (code, label) in &spec.field_labels {
@@ -745,9 +763,12 @@ fn decorate_realtime_frame(
             }
         }
     }
-    if let Some(n) = chart_value {
-        if let Some(obj) = frame.as_object_mut() {
+    if let Some(obj) = frame.as_object_mut() {
+        if let Some(n) = chart_value {
             obj.insert("value".into(), serde_json::json!(n));
+        }
+        if let Some(v) = vol_tick {
+            obj.insert("volumeTick".into(), serde_json::json!(v));
         }
     }
     frame

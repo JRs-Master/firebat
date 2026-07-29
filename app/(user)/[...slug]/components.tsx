@@ -344,7 +344,13 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     };
     const n = dotGet(valueField || 'value');
     if (!Number.isFinite(n)) return;
-    const vol = volumeField ? dotGet(volumeField) : NaN; // 일봉 ACML_VOL(누적) = 오늘 거래량
+    // 거래량은 **의미가 두 가지**라 섞으면 안 된다.
+    //   volumeField 지정 = 그 필드가 이미 누적값(한투 일봉 ACML_VOL) → 봉에 **대입**
+    //   미지정          = 서버가 내려준 top-level `volumeTick`(체결량, 틱당) → 봉에 **합산**
+    // 옛 코드는 대입만 해서, volumeField 를 안 준 분봉 차트는 거래량이 영영 시드값에 멈춰 있었다
+    // (2026-07-29 실측: "거래량이 실시간 누적이 안되는듯").
+    const vol = volumeField ? dotGet(volumeField) : NaN;
+    const tickVol = volumeField ? NaN : dotGet('volumeTick');
     const arr = candlesRef.current!;
     const k = nowKey();
     const last = arr.length > 0 ? arr[arr.length - 1] : null;
@@ -354,8 +360,13 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       if (n > last.high) last.high = n;
       if (n < last.low) last.low = n;
       if (Number.isFinite(vol)) last.volume = vol;
+      else if (Number.isFinite(tickVol)) last.volume = (last.volume || 0) + tickVol;
     } else {
-      arr.push({ date: fmtRef.current!(new Date()), open: n, high: n, low: n, close: n, volume: Number.isFinite(vol) ? vol : 0 });
+      arr.push({
+        date: fmtRef.current!(new Date()), open: n, high: n, low: n, close: n,
+        // 새 봉은 이 틱의 체결량에서 시작한다(0 이 아니라) — 첫 틱을 버리면 봉마다 조금씩 샌다.
+        volume: Number.isFinite(vol) ? vol : (Number.isFinite(tickVol) ? tickVol : 0),
+      });
       if (arr.length > cap) arr.splice(0, arr.length - cap);
     }
     setLastMs(Date.now());
