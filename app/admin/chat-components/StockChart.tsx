@@ -498,7 +498,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     prevBarRef.current = barPx;
   }, [barPx, boxW, fullN, leftPad, futureSlots]);
 
-  const { xs, xAt, yPrice, yVol, candleW, minP, maxP, maxV, maLines } = useMemo(() => {
+  const { xs, xAt, yPrice, yVol, candleW, minP, maxP, maxV, maLines, reserve, band } = useMemo(() => {
     const closes = safeData.map(d => d.close);
     // 화면에 보이는 구간(scrollX ~ scrollX+boxW)만 추출 → Y축(가격·거래량)을 그 구간 min/max 로 동적 스케일.
     // 전체 범위 고정 시 과거 저가 구간 봉이 납작해지던 문제 해결. xs/캔들은 전체 렌더(가로 스크롤) 유지.
@@ -545,10 +545,21 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const useLog = scale === 'log' && pMin > 0 && pMax > pMin;
     const lo = useLog ? Math.log(pMin) : 0;
     const hi = useLog ? Math.log(pMax) : 1;
+    // **라벨 자리를 픽셀로 확보한다.** 파동 꼭짓점은 정의상 가격 극단이라 y축 경계가 늘 바로
+    // 옆에 있고, 라벨 간격 상수를 올려도 경계 클램프가 되돌려 놓는다(2026-07-29 같은 증상 4회).
+    // 가격 여백(%)을 키우는 건 화면 비율에 따라 확보되는 픽셀이 달라져 신뢰할 수 없으므로,
+    // 가격축을 위아래 reserve 만큼 **좁힌 띠**에만 매핑한다 — 극단값이 정확히 그만큼 안쪽에 온다.
+    const hasPointLabels = (annotations ?? []).some(a => a.points.some(q => q.label));
+    // 사용자 표현 그대로 — "차트영역이 180이면 봉 영역을 160 정도로 잡고 아래 위 공간을 둔다".
+    // 라벨 상자(약 31px)가 들어갈 만큼은 확보하되, 짧은 차트에서 띠가 사라지지 않게 상한도 둔다.
+    const reserve = hasPointLabels
+      ? Math.min(34, Math.max(22, plotH * 0.13), plotH * 0.2)
+      : 0;
+    const band = Math.max(1, plotH - reserve * 2);
     const yPrice = (p: number) =>
       useLog
-        ? padTop + plotH - ((Math.log(Math.max(p, Number.EPSILON)) - lo) / (hi - lo)) * plotH
-        : padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
+        ? padTop + reserve + band - ((Math.log(Math.max(p, Number.EPSILON)) - lo) / (hi - lo)) * band
+        : padTop + reserve + band - ((p - pMin) / (pMax - pMin)) * band;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
     const candleW = Math.max(1.5, barPx * 0.6);
     const maLines = indicators.map(ind => {
@@ -558,7 +569,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const d = pts.length ? 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ') : '';
       return { name: ind, d, color: MA_COLORS[ind], values };
     });
-    return { xs, xAt, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
+    return { xs, xAt, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines, reserve, band };
   }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick, scale, annotations]);
 
   // clientX → 캔들 인덱스 (툴팁/호버용) — 가로 스크롤(scrollLeft) 반영.
@@ -837,7 +848,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
   // 십자선 가로 + 가격축 태그 — hoverPos.y(priceBox px) = viewBox y (priceH=priceChartHeightPx 라 1:1).
   const hoverY = hoverPos ? Math.max(padTop, Math.min(priceH - padBottom, hoverPos.y)) : null;
-  const hoverPrice = hoverY != null ? minP + ((padTop + plotH - hoverY) / plotH) * (maxP - minP) : null;
+  // 역변환도 같은 띠 기준이어야 십자선 가격 태그가 실제 y 와 맞는다.
+  const hoverPrice = hoverY != null
+    ? minP + ((padTop + reserve + band - hoverY) / band) * (maxP - minP)
+    : null;
   // 툴팁용 — 호버 봉의 "그려진" 이평선 값만 (indicators 에 있는 것만, null 제외).
   const hoverMAs = hoverIdx != null
     ? maLines.map(m => ({ name: m.name, color: m.color, value: m.values[hoverIdx] })).filter(m => m.value != null)
