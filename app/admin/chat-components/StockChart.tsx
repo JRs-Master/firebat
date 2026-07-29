@@ -690,6 +690,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
+  // 날짜 경계 — 분·시간봉이 여러 날에 걸치면 어디서 하루가 끝났는지 그림만 봐서는 알 수 없다
+  // (실측: 어제 종가와 오늘 시가가 한 줄로 이어져 급락처럼 보였다). HTS 처럼 세로 구분선을 둔다.
+  // 봉 하나가 하루인 일·주·월봉에선 모든 봉이 경계라 선이 도배되므로 그 경우엔 그리지 않는다.
+  const dayBreaks = useMemo(() => {
+    const day = (v: string) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
+    const out: number[] = [];
+    for (let i = 1; i < safeData.length; i++) {
+      const a = day(safeData[i - 1].date), b = day(safeData[i].date);
+      if (a && b && a !== b) out.push(i);
+    }
+    return out.length >= Math.max(1, safeData.length - 1) ? [] : out;
+  }, [safeData]);
+  const dayBreakLabel = (v: string) => {
+    const d = String(v ?? '').replace(/\D/g, '');
+    return d.length >= 8 ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : '';
+  };
   const volTicks = useMemo(() => [maxV / 2, maxV], [maxV]);  // 거래량 축 = 중간·상한 2단계 (maxV = nice 올림된 동적 상한, 라벨 항상 표시).
 
   // 빈 데이터 가드 — 아래 파생(viewFirst.date 등)이 undefined 참조로 크래시하기 *전*에.
@@ -981,6 +997,20 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           {/* 주석 레이어 — 좌표를 가진 선·구간·수평선·라벨. 특정 분석 기법 전용이 아니라
               엘리엇 파동·추세선·지지저항·피보나치 목표가 전부 이 하나를 쓴다. `barsAhead` 좌표는
               마지막 봉 오른쪽(미래 슬롯)에 그대로 얹힌다 — xAt 이 범위를 안 자르기 때문. */}
+          {dayBreaks.map(i => {
+            const bx = xAt(i - 0.5);
+            return (
+              <g key={'db' + i}>
+                <line x1={bx} x2={bx} y1={padTop} y2={padTop + plotH}
+                      stroke={MUTED} strokeWidth={1} strokeDasharray="3 3" opacity={0.7} />
+                <text x={bx + 3} y={padTop + 10} fill={MUTED} fontSize={isMobileChart ? 9 : 10}
+                      fontWeight={600} textAnchor="start"
+                      fontFamily="'Pretendard Variable', Pretendard, sans-serif">
+                  {dayBreakLabel(safeData[i].date)}
+                </text>
+              </g>
+            );
+          })}
           {futureSlots > 0 && (
             <line
               x1={xAt(fullN - 0.5)} x2={xAt(fullN - 0.5)} y1={padTop} y2={padTop + plotH}
@@ -1358,6 +1388,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const h = Math.max((4 + volPlotH) - y, 0);
             return <rect key={'v' + i} x={x - candleW / 2} y={y} width={candleW} height={h} fill={color} opacity={0.55} rx={1} />;
           })}
+          {dayBreaks.map(i => (
+            <line key={'dbv' + i} x1={xs[i] - barPx / 2} x2={xs[i] - barPx / 2} y1={0} y2={volH}
+                  stroke={MUTED} strokeWidth={1} strokeDasharray="3 3" opacity={0.7} />
+          ))}
           {hoverX != null && (
             <line x1={hoverX} x2={hoverX} y1={0} y2={volH} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.3} />
           )}
