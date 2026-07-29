@@ -746,18 +746,17 @@ def chart_annotation_set(cand, structure_label=None):
     """
     # 색 = 의미 구분. 전부 같은 보라로 나가면 파동·채널·예상선이 한 덩어리로 보인다
     # (2026-07-29 사용자: "채널과 엘리어트 선 색도 구분해야 잘보일듯").
-    #   파동 계열 = 보라 — 실선(지나온 길) / 점선(갈 길)로 한 가족임을 유지
-    #   채널      = 청록 — 파동이 아니라 경계선이라 별개 색
-    #   무효화    = 빨강(아래에서 지정)
-    # 캔들(빨강·파랑)·신호 화살표(초록·주황)와도 겹치지 않는 색만 골랐다.
-    WAVE, CHANNEL = "#7c3aed", "#0891b2"
+    #   선 **모양**이 시간을 나른다 — 실선 = 지나온 길 / 점선 = 갈 길
+    #   파동 = 보라 굵은 선(주인공) / 채널 = 얇은 회색 실선(배경으로 물러남) / 무효화 = 빨강
+    # 캔들(빨강·파랑)·신호 화살표(초록·주황)와 겹치지 않는 색만 골랐다.
+    WAVE, CHANNEL = "#7c3aed", "#64748b"
     ann = []
     pivots = cand.get("pivots") or []
     if pivots:
         ann.append({
             "kind": "path",
             "label": structure_label or cand.get("structure"),
-            "color": WAVE,
+            "color": WAVE, "width": 2,
             "points": [{"i": pv["i"], "price": pv["price"], "label": pv.get("label")} for pv in pivots],
         })
     ch = cand.get("channel") or {}
@@ -765,11 +764,13 @@ def chart_annotation_set(cand, structure_label=None):
     for key, name in (("base", "A-C" if tri else "기준선"), ("parallel", "B-D" if tri else "평행선")):
         pts = ch.get(key)
         if pts:
+            # dashed=False 로 명시 — 미래로 연장되지만 배경 선이라 점선보다 얇은 실선이 낫다.
             ann.append({"kind": "path", "label": name, "color": CHANNEL, "points": pts,
-                        "projected": True, "dashed": True})
+                        "projected": True, "dashed": False, "width": 0.8})
     pp = (cand.get("projectedPath") or {}).get("points")
     if pp:
-        ann.append({"kind": "path", "label": "예상 경로", "color": WAVE, "points": pp, "projected": True})
+        ann.append({"kind": "path", "label": "예상 경로", "color": WAVE, "width": 2,
+                    "points": pp, "projected": True})
     inv = cand.get("invalidation") or {}
     if inv.get("price") is not None:
         arrow = "▲" if inv.get("beyond") == "above" else "▼"

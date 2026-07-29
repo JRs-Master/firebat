@@ -26,6 +26,8 @@ export type ChartAnnotation = {
   label?: string;
   color?: string;
   dashed?: boolean;
+  /** 선 굵기(px). 미지정 = 1.5. 채널처럼 배경으로 물러나야 하는 선은 얇게. */
+  width?: number;
   /** 해석임을 드러내는 표시 — 관측 데이터가 아니라 제안된 시나리오일 때. */
   projected?: boolean;
 };
@@ -892,12 +894,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const px = (pt: ChartAnnotationPoint) =>
               xAt(pt.barsAhead != null ? fullN - 1 + pt.barsAhead : (pt.i ?? 0));
             const stroke = an.color || '#7c3aed';
-            const dash = an.dashed || an.projected ? '5 4' : undefined;
+            // `dashed: false` 는 **명시적 해제**라 projected 보다 우선한다 — 채널은 미래로
+            // 연장되지만 점선이 아니라 얇은 실선으로 배경에 두는 게 읽기 좋다(사용자 2026-07-29).
+            const dash = an.dashed === false ? undefined : (an.dashed || an.projected) ? '5 4' : undefined;
+            const sw = typeof an.width === 'number' && an.width > 0 ? an.width : 1.5;
             if (an.kind === 'hline' && an.points[0]) {
               const y = yPrice(an.points[0].price);
               return (
                 <g key={'an' + ai}>
-                  <line x1={padLeft} x2={W} y1={y} y2={y} stroke={stroke} strokeWidth={1} strokeDasharray={dash} opacity={0.8} />
+                  <line x1={padLeft} x2={W} y1={y} y2={y} stroke={stroke} strokeWidth={sw} strokeDasharray={dash} opacity={0.8} />
                   {an.label && <text x={padLeft + 4} y={y - 3} fontSize={9} fill={stroke}>{an.label}</text>}
                 </g>
               );
@@ -930,8 +935,8 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const pts = an.points.map(pt => `${px(pt).toFixed(1)},${yPrice(pt.price).toFixed(1)}`);
             return (
               <g key={'an' + ai}>
-                <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth={1.5}
-                          strokeDasharray={dash} opacity={an.projected ? 0.75 : 1} />
+                <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth={sw}
+                          strokeDasharray={dash} opacity={an.dashed === false ? 0.55 : an.projected ? 0.75 : 1} />
                 {an.points.map((pt, pi) => {
                   // 고점(이웃보다 높음)이면 위, 아니면 아래 — 라벨이 캔들 몸통을 안 덮게.
                   const prevP = an.points[pi - 1];
