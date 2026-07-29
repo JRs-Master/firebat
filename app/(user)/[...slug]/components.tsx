@@ -4130,10 +4130,12 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
   const text    = (a: string) => a === 'center' ? 'text-center'    : a === 'right' ? 'text-right'   : 'text-left';
 
   // link 설정되어 있으면 카드 전체 anchor 로 wrap, 없으면 div.
-  const cardCls = `bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline' : ''}`;
+  // 밀도 — 값 한 줄짜리 카드에 p-4 + text-2xl 이면 내용보다 여백이 커서, 여러 장을 세로로
+  // 늘어놓았을 때 스크롤만 길어진다(2026-07-29 사용자: "내용은 짧은데 박스만 크노").
+  const cardCls = `bg-white border border-gray-100 rounded-xl px-3 py-2.5 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline' : ''}`;
   const inner = (
     <>
-      <div className={`flex items-center gap-1.5 text-xs text-gray-500 mb-1 ${justify(la)}`}>
+      <div className={`flex items-center gap-1.5 text-[11px] text-gray-500 mb-0.5 ${justify(la)}`}>
         {icon && <span>{icon}</span>}
         <span className="font-medium">{cleanPlainText(label)}</span>
       </div>
@@ -4142,7 +4144,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
           모바일에서 좌우로 흔들렸다(2026-07-27 실측). anywhere 는 넘칠 때만 끊어서 짧은 값의
           렌더는 그대로 유지한다. 숫자를 자르지 않으니 데이터 손실 0. */}
       <div className={`flex items-baseline gap-1 w-full min-w-0 ${justify(va)}`}>
-        <span className="text-2xl font-bold text-gray-900 tabular-nums min-w-0 [overflow-wrap:anywhere]">{valStr}</span>
+        <span className="text-xl font-bold text-gray-900 tabular-nums min-w-0 [overflow-wrap:anywhere]">{valStr}</span>
         {unit && <span className="text-sm text-gray-500 shrink-0">{cleanPlainText(unit)}</span>}
       </div>
       {delta != null && (
@@ -4150,7 +4152,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
           {deltaArrow} {formatNumberString(deltaText)}
         </div>
       )}
-      {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{cleanPlainText(subLabel)}</div>}
+      {subLabel && <div className={`text-[11px] text-gray-400 mt-0.5 ${text(sa)}`}>{cleanPlainText(subLabel)}</div>}
       {link?.href && link?.label && (
         <div className="text-[11px] font-bold mt-2 pt-2 border-t border-gray-100" style={{ color: 'var(--cms-primary)' }}>
           {link.label} →
