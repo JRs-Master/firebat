@@ -1103,25 +1103,52 @@ def main():
         tick_size = float(inp.get("tickSize") or 0.0)
         slip_ticks = float(inp.get("slippageTicks") or 0.0)
         tick_slip = tick_size * slip_ticks              # 편도 절대금액
-        marks = sorted(
-            [(p["date"], "buy", p["price"], p["label"]) for p in buy]
-            + [(p["date"], "sell", p["price"], p["label"]) for p in sell],
-            key=lambda t: [b["date"] for b in bars].index(t[0]),
-        )
+        # ── 포지션 기준 청산 ──
+        # 규칙(`rules`)은 봉 지표만 보므로 "진입가 대비 몇 %" 를 표현할 수 없다. 그런데 실측에서
+        # 이게 결정적이었다(2026-07-29): 진입 7건 중 5건은 +1.4~2.2% 익절 기회가 있었는데 손절이
+        # 없어 두 건이 −6% 까지 끌려가며 전부를 삼켰다. 진입가를 아는 건 이 루프뿐이라 여기서 판정한다.
+        stop_pct = float(inp.get("stopLossPct") or 0.0) / 100.0
+        take_pct = float(inp.get("takeProfitPct") or 0.0) / 100.0
+        trail_pct = float(inp.get("trailingStopPct") or 0.0) / 100.0
+        buy_at = {p["date"]: p for p in buy}
+        sell_at = {p["date"]: p for p in sell}
+
+        def _close_trade(pos, date, raw_px, label, reason):
+            exit_px = max(raw_px * (1 - slip) - tick_slip, 0.0)
+            # 곱셈으로 — 매입원가 = 체결가×(1+수수료), 매도수취 = 체결가×(1-수수료-세금).
+            cost = pos["entryPrice"] * (1 + fee)
+            proceeds = exit_px * (1 - fee - tax)
+            net = proceeds / cost - 1 if cost else 0.0
+            return {**pos, "exitDate": date, "exitPrice": round(exit_px, 6),
+                    "exitLabel": label, "exitReason": reason,
+                    "returnPct": round(net * 100, 4),
+                    "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)}
+
         trades, pos = [], None
-        for date, side, price, label in marks:
-            if side == "buy" and pos is None:
-                pos = {"entryDate": date, "entryPrice": price * (1 + slip) + tick_slip, "entryLabel": label}
-            elif side == "sell" and pos is not None:
-                exit_px = max(price * (1 - slip) - tick_slip, 0.0)
-                # 곱셈으로 — 매입원가 = 체결가×(1+수수료), 매도수취 = 체결가×(1-수수료-세금).
-                cost = pos["entryPrice"] * (1 + fee)
-                proceeds = exit_px * (1 - fee - tax)
-                net = proceeds / cost - 1 if cost else 0.0
-                trades.append({**pos, "exitDate": date, "exitPrice": round(exit_px, 6),
-                               "exitLabel": label, "returnPct": round(net * 100, 4),
-                               "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)})
-                pos = None
+        for b in bars:
+            date = b["date"]
+            if pos is not None:
+                entry = pos["entryPrice"]
+                pos["peak"] = max(pos.get("peak", entry), b["high"])
+                # 같은 봉에서 손절·익절이 다 닿을 수 있다 — 봉 안 순서는 알 수 없으므로
+                # **손절이 먼저 닿았다고 본다**(낙관 금지).
+                if stop_pct > 0 and b["low"] <= entry * (1 - stop_pct):
+                    trades.append(_close_trade(pos, date, entry * (1 - stop_pct), "손절", "stop"))
+                    pos = None
+                elif trail_pct > 0 and b["low"] <= pos["peak"] * (1 - trail_pct):
+                    trades.append(_close_trade(pos, date, pos["peak"] * (1 - trail_pct), "트레일링", "trailing"))
+                    pos = None
+                elif take_pct > 0 and b["high"] >= entry * (1 + take_pct):
+                    trades.append(_close_trade(pos, date, entry * (1 + take_pct), "익절", "take"))
+                    pos = None
+                elif date in sell_at:
+                    m = sell_at[date]
+                    trades.append(_close_trade(pos, date, m["price"], m["label"], "rule"))
+                    pos = None
+            if pos is None and date in buy_at:
+                m = buy_at[date]
+                pos = {"entryDate": date, "entryPrice": m["price"] * (1 + slip) + tick_slip,
+                       "entryLabel": m["label"], "peak": m["price"]}
         wins = [t for t in trades if t["returnPct"] > 0]
         equity = 1.0
         for t in trades:
@@ -1134,7 +1161,7 @@ def main():
             mdd = min(mdd, run / peak - 1)
         backtest = {
             "trades": trades,
-            "openPosition": pos,
+            "openPosition": {k: v for k, v in pos.items() if k != "peak"} if pos else None,
             "tradeCount": len(trades),
             "winRate": round(len(wins) / len(trades) * 100, 2) if trades else None,
             "totalReturnPct": round((equity - 1) * 100, 4) if trades else None,
@@ -1143,6 +1170,8 @@ def main():
             "worstPct": min((t["returnPct"] for t in trades), default=None),
             "maxDrawdownPct": round(mdd * 100, 4) if trades else None,
             "feeRate": fee, "taxRate": tax, "slippageRate": slip,
+            "stopLossPct": stop_pct * 100, "takeProfitPct": take_pct * 100,
+            "trailingStopPct": trail_pct * 100,
             "tickSize": tick_size, "slippageTicks": slip_ticks,
             "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 비용은 부과 시점이 달라 "
                             "따로 받습니다 — 수수료(feeRate)=매수·매도 양쪽 / 세금(taxRate)=**매도에만** / "

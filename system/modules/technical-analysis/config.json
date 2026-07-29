@@ -172,6 +172,18 @@
       "lastSessionOnly": {
         "type": "boolean",
         "description": "[signals] 마지막 거래일 봉만 분석 — 데이 트레이딩 뷰. 시계가 아니라 **데이터의 최신 날짜**로 자르므로 타임존·장 시작 전 상황에도 안전합니다. 켜면 분석에 쓴 봉을 blocks[0].props.data 로 함께 돌려줘 차트와 표가 같은 구간을 봅니다. 잘린 만큼 지표 warmup 이 짧아질 수 있습니다."
+      },
+      "stopLossPct": {
+        "type": "number",
+        "description": "[signals] 손절 — 진입가 대비 %(예 1.0). 봉 저가가 그 선에 닿으면 그 가격에 청산. rules 는 봉 지표만 보므로 \"진입가 대비\"를 표현할 수 없어 여기서 받습니다. 같은 봉에서 손절·익절이 다 닿으면 **손절이 먼저**라고 봅니다(낙관 금지)."
+      },
+      "takeProfitPct": {
+        "type": "number",
+        "description": "[signals] 익절 — 진입가 대비 %(예 1.5). 봉 고가가 닿으면 그 가격에 청산."
+      },
+      "trailingStopPct": {
+        "type": "number",
+        "description": "[signals] 트레일링 손절 — 진입 후 최고가 대비 %. 1분봉처럼 잔진동이 큰 주기에서는 즉시 털려 성과가 나빠질 수 있습니다(실측 확인)."
       }
     }
   },
@@ -232,7 +244,7 @@
       },
       "backtest": {
         "type": "object",
-        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요."
+        "description": "[signals] 그 규칙을 그대로 따라갔을 때의 체결 기록(trades: 진입·청산·grossPct 비용전·returnPct 비용후) + winRate·totalReturnPct·avgReturnPct·maxDrawdownPct·openPosition + assumptions. 표(table) + metric 으로 보여 주면 규칙의 값어치가 화살표보다 잘 읽힙니다. 가정을 반드시 함께 밝히세요. 각 체결의  = rule(규칙) / stop(손절) / take(익절) / trailing 이라 무엇이 포지션을 끝냈는지 구분됩니다."
       },
       "firedOnLastClosedBar": {
         "type": "array",
