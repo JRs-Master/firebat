@@ -307,12 +307,14 @@ function Tick({ label, value, sub, color }: { label: string; value: string; sub?
   return (
     <div className="flex flex-col items-center justify-center px-2 py-1.5 min-w-0 w-full">
       <span className="text-[9px] font-semibold tracking-wider text-slate-400 uppercase">{label}</span>
-      <span className="max-w-full text-[13px] font-extrabold tabular-nums truncate"
-            style={{ color: color ?? '#0f172a' }}>{value}</span>
-      {sub && (
-        <span className="max-w-full text-[10px] font-bold tabular-nums truncate"
-              style={{ color: color ?? '#64748b' }}>{sub}</span>
-      )}
+      {/* 보조 수치는 **같은 줄에** 인라인으로. 아래에 흘리면 한 칸만 3줄이 되어 행 높이가 그 칸에
+          끌려가고 전광판 리듬이 깨진다. 값 글자는 좁은 화면에서 한 단 작게 — 3분할 칸에
+          "▼ 11,500 -5.23%" 나 9자리 거래량이 들어가야 한다. */}
+      <span className="flex max-w-full items-baseline gap-1 overflow-hidden whitespace-nowrap"
+            style={{ color: color ?? '#0f172a' }}>
+        <span className="text-[12px] sm:text-[13px] font-extrabold tabular-nums">{value}</span>
+        {sub && <span className="text-[10px] font-bold tabular-nums opacity-80">{sub}</span>}
+      </span>
     </div>
   );
 }
