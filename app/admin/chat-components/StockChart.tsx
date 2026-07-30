@@ -88,9 +88,10 @@ function arrowPath(x: number, y0: number, up: boolean): string {
 // 줌 = 한 화면 캔들 수. 봉 폭(px)으로 캡 — 화면폭 무관 일관.
 // 기본 줌 = 봉 폭(슬롯 px)을 고정 → 한 화면 개수는 화면 폭에 맞춰 자동(넓으면 많이·좁으면 적게).
 // 봉 크기가 화면·데이터에 따라 들쭉날쭉하지 않게(주식차트 가독). 보기 좋은 값으로 디바이스별 분리.
-// 기본 캔들 슬롯 폭. 봉 영역 높이를 폭에서 유도하게 바뀌어(404px on PC) 봉이 얇아도 몸통이 읽히므로,
-// 한 화면 개수를 늘려 맥락이 보이게 한다 — 18px 는 PC 에서 62봉뿐이라 하루 흐름이 안 보였다.
-// 9px → ~124봉(1분봉 두 시간), 몸통 ~5.4px. 모바일 7px → ~47봉, 몸통 ~4.2px.
+// Default candle slot width. Now that the price panel's height follows its width (404px on desktop)
+// a thinner candle still reads, so more of them fit and the shape of the session becomes visible —
+// 18px left only 62 bars on desktop, too few to see a day. 9px gives ~124 bars (two hours of
+// one-minute candles) with a ~5.4px body; mobile 7px gives ~47 bars with a ~4.2px body.
 const DEFAULT_BAR_PX_PC = 9;
 const DEFAULT_BAR_PX_MOBILE = 7;
 const ZOOM_MAX_BAR = 36;     // 줌인 한계 (봉 ~36px, 그 이상 안 커짐)
@@ -690,9 +691,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
-  // 날짜 경계 — 분·시간봉이 여러 날에 걸치면 어디서 하루가 끝났는지 그림만 봐서는 알 수 없다
-  // (실측: 어제 종가와 오늘 시가가 한 줄로 이어져 급락처럼 보였다). HTS 처럼 세로 구분선을 둔다.
-  // 봉 하나가 하루인 일·주·월봉에선 모든 봉이 경계라 선이 도배되므로 그 경우엔 그리지 않는다.
+  // Day boundaries. On a minute or hourly chart spanning several sessions the picture alone does not
+  // say where one day ended — measured: yesterday's close running into today's open read as a gap in
+  // the price. A vertical rule marks it, as trading terminals do. Charts whose every bar is its own
+  // day (daily, weekly, monthly) are left alone rather than covered in rules.
   const dayBreaks = useMemo(() => {
     const day = (v: string) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
     const out: number[] = [];

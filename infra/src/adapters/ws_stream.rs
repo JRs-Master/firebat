@@ -617,8 +617,8 @@ async fn run_session(
     }
     // One subscribe frame per registration. A rejection is the provider refusing *those* args, so
     // it removes that watch alone - its neighbours on the socket keep their ticks.
-    // 한투 carries the approval_key in the subscribe frame header via a token placeholder; kiwoom
-    // has none there, so filling it is a no-op.
+    // Korea Investment carries its approval key in the subscribe frame header via a token
+    // placeholder; kiwoom has none there, so filling it is a no-op.
     let mut decrypt_keys: Option<(String, String)> = None;
     let mut drop_ids: Vec<String> = Vec::new();
     for idx in 0..members.len() {
@@ -730,7 +730,7 @@ async fn run_session(
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {
                     // Every registration gets its own unsubscribe. The token must be filled here
-                    // too: 한투 carries the approval_key in every frame header, so an unfilled
+                    // too: Korea Investment carries its approval key in every frame header, so an
                     // unsubscribe is rejected, and best-effort means that failure is silent -
                     // which is exactly how it went unnoticed.
                     for m in members.iter() {

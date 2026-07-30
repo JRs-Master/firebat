@@ -5,7 +5,7 @@
  *
  * sqlite ring buffer (data/logs.db) 조회 + 런타임 EnvFilter reload (ssh SIGHUP 대신 UI).
  * journalctl 실질 대체: 전문 검색(contains, ring 전체 LIKE) + 실시간 tail(since 폴링,
- * 탭 백그라운드 자동 일시정지) + target·모듈 목록(조회 조건·창 크기와 독립인 별 표본에서 파생).
+ * 탭 백그라운드 자동 일시정지) + target/module lists accumulated from rows already fetched.
  * 범위 = 조회 / 필터 / 검색 / tail 만 (대시보드 / 그래프 / 알림 X — observability paradox 룰).
  */
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -35,10 +35,10 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 
 /**
- * 목록(target·모듈)의 **첫 표본**만 이 크기로 받는다. 그 뒤로는 조회·tail 응답에서 누적하므로
- * 추가 비용이 없다 — 매번 큰 표본을 받아 다시 세는 것은 10개 카운트를 얻으려 수만 행을 실어
- * 오는 낭비다(사용자 2026-07-30). 정확한 해법은 SQL 이 세는 것(`GROUP BY target` → 10행)인데
- * 그건 proto·코어까지 붙는 별 작업이라 트래커에 남겼다.
+ * Size of the ONE sample taken to seed the target/module lists. Everything after that accumulates
+ * from rows the table and the tail already fetched, so it costs nothing — refetching a large sample
+ * to derive a handful of counts means shipping thousands of rows to learn ten numbers. Having the
+ * database count them is the correct answer and is tracked separately; it needs a new call.
  */
 const FACET_SAMPLE = 1000;
 /** tail 중 화면에 쌓아둘 최대 줄 수 — 무한 누적 방지 (오래된 것부터 drop). */
@@ -92,7 +92,7 @@ export function LogPanel() {
       if (data?.success) {
         const rows = data.entries ?? [];
         setEntries(rows);
-        // 목록은 이 응답에서 누적한다 — 목록만을 위한 두 번째 요청은 보내지 않는다.
+        // Feed the lists from this response — no second request just for them.
         mergeFacetsRef.current?.(rows);
         lastTsRef.current = rows[0]?.tsMs ?? Date.now();
       }
@@ -137,22 +137,21 @@ export function LogPanel() {
     setTail(true);
   }, []);
 
-  // target·모듈 목록 — 두 가지 이유로 **조회와 독립**이다.
-  //  · 필터와 독립: 화면에 로드된 엔트리에서 파생하면 `ai` 로 거르는 순간 목록이 `ai` 하나로
-  //    쪼그라들어 다음 target 으로 넘어갈 수가 없다.
-  //  · 창 크기와 독립: 1000건으로 뽑던 옛 코드는 빈발 target 하나가 그 창을 다 먹으면
-  //    (실측: ws_stream 925/1000) 드물게 찍히는 target 이 목록에서 사라져, 로그에는 있는데
-  //    UI 에는 없는 상태가 됐다("아까는 page_binding 이 있었는데 지금은 안 보이노").
-  // 백엔드 0(같은 조회 API 를 조건 없이 한 번 더) — admin 전용 로컬 sqlite 라 값싸다.
+  // The lists must not follow the query, for two separate reasons.
+  //  · Not the filter: derived from the loaded entries, picking one target shrinks the list to that
+  //    target, and there is no way back to the others.
+  //  · Not the window: built from the newest thousand rows, a chatty target crowding it (measured:
+  //    ws_stream held 925 of 1000) makes rarer ones vanish from the UI while still being in the log.
+  // No backend work — the same query API, and a local admin-only sqlite makes it cheap.
   const [facets, setFacets] = useState<Array<{ target: string; count: number; warn: boolean }>>([]);
   /// EnvFilter 로 실제 켜고 끌 수 있는 대상 — 로그가 기록해 둔 모듈 경로에서 그대로 읽는다.
   /// 목록을 코드에 박지 않으므로 모듈이 늘면 UI 도 저절로 는다.
   const [modules, setModules] = useState<Array<{ module: string; count: number }>>([]);
   /**
-   * 이미 받은 줄에서 목록을 **누적**한다. 조회·tail 응답을 그대로 먹이므로 추가 요청이 없고,
-   * 한 번 본 target 은 다음 조회가 그것을 안 담아도 목록에 남는다 — 필터를 바꾸다 목록이
-   * 쪼그라들거나, 빈발 target 에 밀려 사라지는 문제가 둘 다 사라진다.
-   * 카운트는 그래서 "이 세션에서 관측한 수"다(ring 전체 통계가 아니다).
+   * Accumulate the lists from rows already in hand. Query and tail responses feed it, so no extra
+   * request is made, and a target once seen stays listed even when a later query omits it — which
+   * removes both failure modes above. The counts are therefore what this session observed, not a
+   * statistic over the ring.
    */
   const mergeFacets = useCallback((rows: LogEntry[]) => {
     if (rows.length === 0) return;
@@ -181,11 +180,11 @@ export function LogPanel() {
         `/api/logs?limit=${FACET_SAMPLE}`, { category: 'logs' },
       );
       if (data?.success) mergeFacets(data.entries ?? []);
-    } catch { /* 목록은 보조 — 실패해도 조회는 된다 */ }
+    } catch { /* the lists are secondary — a failure here still leaves the query working */ }
   }, [mergeFacets]);
   loadFacetsRef.current = loadFacets;
   mergeFacetsRef.current = mergeFacets;
-  // 첫 표본만 따로 받는다 — 그 뒤 갱신은 조회·tail 응답 누적이 맡는다.
+  // Only the first sample is fetched for its own sake; accumulation handles the rest.
   useEffect(() => { void loadFacets(); }, [loadFacets]);
 
   const applyFilter = useCallback(async () => {
@@ -207,10 +206,9 @@ export function LogPanel() {
     <div className="flex flex-col gap-4">
       {/* 런타임 로그 레벨 — EnvFilter 동적 reload */}
       <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+        {/* No explanatory paragraph: the controls have to say what they are. A caption telling the
+            reader how to use two dropdowns is a sign the dropdowns are not labelled well enough. */}
         <span className="text-xs sm:text-sm font-bold text-slate-700">런타임 로그 레벨</span>
-        <p className="text-[11px] text-slate-400">
-          기본 레벨을 고르고, 더 자세히 볼 모듈만 따로 올립니다 — 이름을 외워서 적을 필요 없이 실제 로그에 찍힌 모듈에서 고릅니다.
-        </p>
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] font-semibold text-slate-600">기본</span>
           {ENV_LEVELS.map(lv => (
@@ -224,9 +222,9 @@ export function LogPanel() {
         </div>
         {modules.length > 0 && (
           <div className="flex flex-col gap-1">
-            {/* 고르는 곳은 리스트 하나, 켜 둔 것만 뱃지로 남긴다 — 모듈이 늘어도 화면이 안 덮이고
-                "지금 무엇이 올라가 있나"가 한눈에 보인다. */}
-            <span className="text-[11px] font-semibold text-slate-600">모듈별로 더 자세히 (선택)</span>
+            {/* One list to pick from, and badges for what is currently raised: the panel does not
+                fill up as modules multiply, and what is turned up reads at a glance. */}
+            <span className="text-[11px] font-semibold text-slate-600">모듈별 상세</span>
             <div className="flex flex-wrap items-center gap-1.5">
               <select
                 aria-label="자세히 볼 모듈"
@@ -237,13 +235,13 @@ export function LogPanel() {
                 }}
                 className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono max-w-[260px]"
               >
-                <option value="">모듈 고르기…</option>
+                <option value="">모듈 선택 → debug</option>
                 {modules.filter(m => !overrides[m.module]).map(m => (
                   <option key={m.module} value={m.module}>{m.module} ({m.count})</option>
                 ))}
               </select>
               {Object.keys(overrides).length === 0
-                ? <span className="text-[11px] text-slate-400">고르면 debug 로 올립니다</span>
+                ? null
                 : Object.entries(overrides).map(([mod, lv]) => (
                     <span key={mod}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-mono border bg-amber-500 text-white border-amber-500 font-bold">
@@ -295,14 +293,14 @@ export function LogPanel() {
         </div>
         <div className="flex flex-col gap-1 w-full order-last">
           <label className="text-[11px] font-semibold text-slate-600">
-            target <span className="font-normal text-slate-400">— 괄호는 관측 건수</span>
-            {targetPrefix && <span className="font-normal text-slate-400"> · {targetPrefix}</span>}
+            target{targetPrefix && <span className="font-normal text-slate-400"> · {targetPrefix}</span>}
           </label>
-          {/* 이름을 외워서 치는 대신 **있는 것 중에 고른다**. 칩을 전부 늘어놓던 옛 UI 는 target 이
-              늘수록 화면을 덮었고, 위쪽 "모듈별로 더 자세히" 와 이름이 겹쳐 같은 것을 두 번
-              보여주는 것처럼 읽혔다(둘은 사실 같은 조회에서 뽑은 두 축 — 아래는 필터, 위는 수집
-              레벨). 건수 순으로 정렬하고 경고·에러가 섞인 것은 점을 붙여, "어디를 봐야 하나"는
-              목록 안에서 읽히게 둔다. */}
+          {/* Pick from what exists rather than typing a remembered name. Laying every value out as
+              a chip filled the panel as targets multiplied, and the names overlapped the module list
+              above it so the two read as the same thing shown twice — they are in fact two axes of
+              one query: this one filters the view, that one raises the collection level. Ordered by
+              count with a dot on anything carrying warnings, so "where should I look" reads out of
+              the list itself. */}
           <select
             aria-label="target 필터"
             value={targetPrefix}
@@ -318,7 +316,7 @@ export function LogPanel() {
           </select>
         </div>
         <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
-          <label htmlFor="log-contains" className="text-[11px] font-semibold text-slate-600">검색 (메시지·target 포함)</label>
+          <label htmlFor="log-contains" className="text-[11px] font-semibold text-slate-600">검색</label>
           <input
             id="log-contains"
             name="contains"

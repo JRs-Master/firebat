@@ -811,9 +811,9 @@ def chart_annotation_set(cand, structure_label=None):
     inv = cand.get("invalidation") or {}
     if inv.get("price") is not None:
         arrow = "▲" if inv.get("beyond") == "above" else "▼"
-        # "invalidation" is the standard Elliott term, but "무효화 가격" reads like a price that has
-        # been voided. Naming the count is what makes it plain: the level is where this count stops
-        # being a valid count, not where the price stops being valid.
+        # "Invalidation" is the standard Elliott term, but rendered as "invalid price" in Korean it
+        # reads like a price that has been voided. Naming the count makes it plain: the level is where
+        # this count stops being a valid count, not where the price stops being valid.
         ann.append({"kind": "hline", "label": f"카운트 무효 {arrow} {inv['price']:,.0f}",
                     "points": [{"price": inv["price"]}], "color": "#dc2626", "dashed": True})
     return ann
@@ -1245,18 +1245,20 @@ def main():
             {"type": "stock_chart", "props": {
                 "buyPoints": buy, "sellPoints": sell,
                 **({"prevClose": prev_close} if prev_close is not None else {}),
-                # 봉 배열은 내지 않는다. 진입·청산은 **날짜로** 찍히므로 표시 구간을 소유할 이유가
-                # 없고, 소유하면 이쪽의 좁은 분석 구간(당일)이 차트 전체를 덮어써 버린다 —
-                # 파동은 역사가 있어야 잡히는데 당일 32봉만 남는 식으로(2026-07-30 실측).
+                # No bar array here. Entries and exits are placed BY DATE, so this action has no
+                # reason to own the display range, and owning it would let a deliberately narrow
+                # analysis window overwrite the whole chart — measured: a wave count needs history
+                # to find pivots at all, and it was left with 32 bars of the current session.
             }},
         ]
         # 한 줄에 하나씩 쌓이면 스크롤만 길어진다 — 관련된 것끼리 Grid 한 줄로 묶어 내보낸다.
-        # 지표 4종(RSI·MACD 히스토그램·볼린저 %B·스토캐스틱 %K)은 **라이브 전광판이 담당**한다.
-        # 여기서 같은 값을 카드로 또 내면 방문 시각에 굳은 숫자와 틱마다 바뀌는 숫자가 한 화면에
-        # 공존해 어느 쪽이 지금인지 사용자가 판단해야 한다(2026-07-30: "얘네들 실시간으로 안나오고").
+        # The four indicators (RSI, MACD histogram, Bollinger %B, stochastic %K) belong to the live
+        # board. Emitting them as cards here too would put a figure frozen at page-load time next to
+        # one moving with every tick, leaving the reader to work out which is current.
         _ = live_now
-        # 승률·누적수익·최대낙폭 카드는 내지 않는다 — 이 창의 체결만 보고 낸 숫자라 창이 바뀌면
-        # 값이 달라진다. 누적된 전체를 가진 쪽(페이지)이 내야 한다. 계산에 쓸 재료는 아래 레코드다.
+        # No win-rate, cumulative-return or drawdown cards: those are computed from the fills in
+        # this window alone, so they change whenever the window does. Whoever holds the accumulated
+        # record should present them; the records below are the material for it.
         blocks.append({"type": "paper_trades", "props": {"records": trades}})
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
@@ -1409,8 +1411,9 @@ def main():
                 # 예상 경로의 시간 좌표는 앞선 다리 길이에서 나오므로 그보다 멀리 갈 수 있다
                 # (실측: futureSlots 16 인데 예상선이 +20·+41봉 → 화면 밖이라 아예 안 보임).
                 "futureSlots": future_slots,
-                # 주석 좌표는 봉 **인덱스**다. 그래서 좌표를 내는 쪽이 그 좌표가 가리키는 배열을
-                # 반드시 함께 낸다 — 차트가 다른 구간을 들고 있으면 파동이 엉뚱한 캔들에 얹힌다.
+                # Annotation coordinates are bar INDICES, so whoever emits them must also emit the
+                # array they index — a chart holding a different range would draw the wave on the
+                # wrong candles.
                 "data": [{"date": b["date"], "open": b.get("open", b["close"]), "high": b["high"],
                           "low": b["low"], "close": b["close"], "volume": b.get("volume", 0)}
                          for b in bars],

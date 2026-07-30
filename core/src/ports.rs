@@ -776,7 +776,7 @@ pub struct WsStreamSpec {
     /// count as the regular session (config `chartSessionField` / `chartSessionRegular`). Decoded
     /// to a top-level boolean `regularSession` so consumers never need the broker's codes: an
     /// intraday chart must not draw pre/post-market prints, and the clock cannot tell you that
-    /// (holidays, delayed opens, 임의연장) — the exchange says it on every frame.
+    /// (holidays, delayed opens, discretionary extensions) — the exchange says it on every frame.
     pub chart_session_field: Option<String>,
     pub chart_session_regular: Vec<String>,
     /// Share one socket across every watch on the same endpoint + credential (config

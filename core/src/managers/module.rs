@@ -1840,13 +1840,13 @@ mod ws_frame_tests {
 
     #[test]
     fn an_absent_optional_arg_drops_its_key() {
-        // 주문체결/잔고 같은 계좌 기준 타입은 등록 요소를 무시한다 - 그래도 필수로 요구하면
-        // 더미 값을 지어내야만 구독할 수 있다.
+        // Account-scoped realtime types (order fills, holdings) ignore the subscription id, yet
+        // requiring it meant inventing a value just to subscribe to your own fills.
         let tpl = json!({"trnm": "REG", "data": [{"item": ["{item?}"], "type": ["{type:00}"]}]});
         let out = substitute_ws_frame(&tpl, &json!({})).unwrap();
         assert!(out["data"][0].get("item").is_none(), "key is left out, not sent empty");
         assert_eq!(out["data"][0]["type"][0], "00");
-        // 값을 주면 평소대로 실린다.
+        // Supplied as usual when a value is given.
         let out = substitute_ws_frame(&tpl, &json!({"item": "005930"})).unwrap();
         assert_eq!(out["data"][0]["item"][0], "005930");
     }
