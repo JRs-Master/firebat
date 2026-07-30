@@ -755,9 +755,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     : `${firstDate} ~ ${lastDate} · ${n}${countUnit}`;
   const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
   const showSymbolChip = titleText !== symbol;
-  const periodHigh = Math.max(...safeData.map(d => d.high));
-  const periodLow = Math.min(...safeData.map(d => d.low));
-  const periodVolume = safeData.reduce((sum, d) => sum + d.volume, 0);
+  // Stat cards describe the LAST SESSION, not the whole loaded range. An intraday series now spans
+  // several days, and summing across them produced a volume that matched no trading terminal (89.07M
+  // over two days against 80.8M for the day) while the open came from yesterday's afternoon.
+  // Daily and longer series keep the whole range, where "period" is what the cards mean.
+  const statSlice = (() => {
+    if (!isIntraday) return safeData;
+    const dayOf = (v: string) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
+    const last = dayOf(safeData[safeData.length - 1]?.date ?? '');
+    const sameDay = safeData.filter(d => dayOf(d.date) === last);
+    return sameDay.length > 0 ? sameDay : safeData;
+  })();
+  const periodHigh = Math.max(...statSlice.map(d => d.high));
+  const periodLow = Math.min(...statSlice.map(d => d.low));
+  const periodVolume = statSlice.reduce((sum, d) => sum + d.volume, 0);
+  // The session's open, not the first bar currently in view — scrolling must not change what the
+  // card says happened at the open.
+  const sessionOpen = statSlice[0]?.open ?? viewFirst.open;
   // 가격 자릿수 — **시리즈 전체를 보고 한 번 정한다**(값마다 다르면 열이 들쭉날쭉).
   //
   // 크기로 가르면 틀린다: 미국 주식은 금액과 무관하게 센트 단위라 BKNG $5,432.10 처럼 네 자리도
@@ -929,7 +943,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               { label: '최저', v: periodLow, color: 'text-blue-600' },
             ]
           : [
-              { label: '시가', v: viewFirst.open, color: 'text-slate-700' },
+              { label: '시가', v: sessionOpen, color: 'text-slate-700' },
               { label: '고가', v: periodHigh, color: 'text-red-600' },
               { label: '저가', v: periodLow, color: 'text-blue-600' },
               { label: '거래량', v: periodVolume, color: 'text-slate-700', compact: true },

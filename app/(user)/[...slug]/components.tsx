@@ -701,8 +701,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
             {/* 브로커가 주는 세션 누적값이 있으면 그것이 정답 — 우리 합산은 유실된 틱·시드 경계에
                 영향을 받는다. 없을 때만(장 시작 전 등) 마지막 날 봉 합산으로 물러난다. */}
             <div className="bg-white min-w-0"><Tick label="누적 거래량"
-              value={n(dayVolRef.current ?? st.dayVol)}
-              sub={dayVolRef.current == null ? '봉 합산' : undefined} /></div>
+              value={n(dayVolRef.current ?? st.dayVol)} /></div>
           </div>
         );
       })()}
