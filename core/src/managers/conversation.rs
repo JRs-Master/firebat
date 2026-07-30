@@ -905,6 +905,50 @@ fn collect_prose(v: &serde_json::Value, acc: &mut Vec<String>) {
     }
 }
 
+/// Shapes `search_history` output so the result itself names the next move.
+///
+/// The standing prompt already said "stop rewording, widen instead" and it did not take: measured
+/// 2026-07-31, a turn that had already found one session ran three more reworded searches before
+/// reaching for the session list. A pointer carried by the RESULT lands where the decision is made,
+/// which is the same reason validation errors here name the tool to call next.
+///
+/// Also groups the hits by session, because that is the unit the next call takes — the model had to
+/// derive it from a flat list of message hits every time.
+pub fn describe_history_matches(matches: Vec<HistorySearchMatch>) -> serde_json::Value {
+    let mut sessions: Vec<serde_json::Value> = Vec::new();
+    for m in &matches {
+        if let Some(existing) = sessions
+            .iter_mut()
+            .find(|s| s.get("convId").and_then(|v| v.as_str()) == Some(m.conv_id.as_str()))
+        {
+            let n = existing.get("hits").and_then(|v| v.as_i64()).unwrap_or(0) + 1;
+            if let Some(obj) = existing.as_object_mut() {
+                obj.insert("hits".to_string(), serde_json::json!(n));
+            }
+            continue;
+        }
+        sessions.push(serde_json::json!({
+            "convId": m.conv_id,
+            "title": m.conv_title,
+            "hits": 1,
+        }));
+    }
+    let next_step = if matches.is_empty() {
+        "No message matched by meaning. Rewording rarely helps here — a session made of short \
+         replies cannot be matched semantically. Use list_conversations (narrow with since/until) \
+         and read a session with read_conversation."
+    } else {
+        "Each match is ONE message, not a summary. To see what actually happened, call \
+         read_conversation with that convId around its msgIdx. If none of these is the right \
+         session, use list_conversations rather than rewording."
+    };
+    serde_json::json!({
+        "matches": matches,
+        "sessions": sessions,
+        "nextStep": next_step,
+    })
+}
+
 /// Strips whitespace and markdown emphasis markers so the plaintext and markdown copies of the same
 /// answer compare equal. Not a general normalizer — just enough to spot the duplicate channel.
 fn normalize_for_dedup(s: &str) -> String {

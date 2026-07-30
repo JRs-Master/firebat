@@ -2111,7 +2111,11 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     include_blocks: args.get("includeBlocks").and_then(|v| v.as_bool()).unwrap_or(false),
                 };
                 let matches = conversation.search_history(&owner, &query, opts).await?;
-                Ok(serde_json::to_value(matches).unwrap_or_default())
+                let mut out = crate::managers::conversation::describe_history_matches(matches);
+                if let Some(obj) = out.as_object_mut() {
+                    obj.insert("success".to_string(), serde_json::Value::Bool(true));
+                }
+                Ok(out)
             }
         }),
     );
@@ -2128,12 +2132,17 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         description: "List the caller's own chat sessions (newest first) — id, title and times. A \
             session holds many messages; the title is taken from its opening line, so it often does \
             not name what the session is about. Use this when search_history returns fragments or \
-            nothing: pick the session by time and title, then read it with read_conversation."
+            nothing: narrow by time with since/until, then read the session with read_conversation."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "max sessions to return (default 30)"}
+                "limit": {"type": "integer", "description": "max sessions to return (default 30)"},
+                // A question about a period ("last year", "last night") wants a time window, and
+                // without one the only lever was a bigger limit plus reading the dates — which stops
+                // working as sessions accumulate.
+                "since": {"type": "string", "description": "only sessions active at or after this time — YYYY-MM-DD or epoch ms"},
+                "until": {"type": "string", "description": "only sessions active before this time — YYYY-MM-DD or epoch ms"}
             }
         }),
         source: "core".to_string(),
@@ -2151,13 +2160,22 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .map(|n| n as usize)
                     .unwrap_or(30)
                     .clamp(1, 200);
+                let since = crate::utils::time::parse_time_bound(args.get("since"));
+                let until = crate::utils::time::parse_time_bound(args.get("until"));
                 let mut rows = conversation.list(&owner);
+                let total_all = rows.len();
+                rows.retain(|c| {
+                    since.map(|s| c.updated_at >= s).unwrap_or(true)
+                        && until.map(|u| c.updated_at < u).unwrap_or(true)
+                });
                 rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-                let total = rows.len();
+                let matched = rows.len();
                 rows.truncate(limit);
                 Ok(serde_json::json!({
                     "success": true,
-                    "total": total,
+                    // Both counts, so a narrow window does not read as "this is all there is".
+                    "total": total_all,
+                    "matched": matched,
                     "returned": rows.len(),
                     "conversations": rows,
                 }))

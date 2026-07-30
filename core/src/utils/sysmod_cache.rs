@@ -291,6 +291,17 @@ impl SysmodCacheAdapter {
     }
 }
 
+/// Ordering for the comparison ops. Numbers first, then a lexicographic fallback for strings.
+///
+/// The fallback is the fix for a silent wrong answer: `grep(field="date", op="gte",
+/// value="2025-07-31")` on cached candles compared two strings that parse as no number, so every
+/// record failed the test and the call returned **zero matches with success: true**. A caller cannot
+/// tell that from "there is no data in that range" — the only reason it did not produce a wrong
+/// answer on 2026-07-31 was that the model noticed and re-read the whole series instead.
+///
+/// Lexicographic order is the correct order for the formats this actually meets — ISO dates and
+/// timestamps (`YYYY-MM-DD`, `YYYY-MM-DD HH:MM`) sort chronologically as text. It is only compared
+/// when both sides are strings, so a numeric field keeps numeric semantics ("9" < "10").
 fn num_cmp(a: &serde_json::Value, b: &serde_json::Value) -> Option<i32> {
     let to_num = |v: &serde_json::Value| -> Option<f64> {
         match v {
@@ -299,9 +310,17 @@ fn num_cmp(a: &serde_json::Value, b: &serde_json::Value) -> Option<i32> {
             _ => None,
         }
     };
-    let na = to_num(a)?;
-    let nb = to_num(b)?;
-    Some(if na > nb { 1 } else if na < nb { -1 } else { 0 })
+    if let (Some(na), Some(nb)) = (to_num(a), to_num(b)) {
+        return Some(if na > nb { 1 } else if na < nb { -1 } else { 0 });
+    }
+    match (a.as_str(), b.as_str()) {
+        (Some(sa), Some(sb)) => Some(match sa.cmp(sb) {
+            std::cmp::Ordering::Greater => 1,
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+        }),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -345,6 +364,45 @@ mod tests {
         let result = c.grep(&key, "price", "gt", &serde_json::json!(150)).unwrap();
         assert_eq!(result["matched"], 1);
         assert_eq!(result["records"][0]["id"], 2);
+    }
+
+    #[test]
+    fn grep_compares_iso_dates_as_dates() {
+        let (c, _dir) = cache();
+        let records = vec![
+            serde_json::json!({"date": "2025-07-30", "close": 1}),
+            serde_json::json!({"date": "2025-07-31", "close": 2}),
+            serde_json::json!({"date": "2026-02-09", "close": 3}),
+        ];
+        let key = c
+            .data("kiwoom", "ka10081", serde_json::json!({}), records, None)
+            .unwrap();
+        let from = c
+            .grep(&key, "date", "gte", &serde_json::json!("2025-07-31"))
+            .unwrap();
+        assert_eq!(from["matched"], 2);
+        assert_eq!(from["records"][0]["close"], 2);
+        let before = c
+            .grep(&key, "date", "lt", &serde_json::json!("2026-01-01"))
+            .unwrap();
+        assert_eq!(before["matched"], 2);
+    }
+
+    #[test]
+    fn grep_keeps_numeric_semantics_for_numeric_strings() {
+        // "9" vs "10" must compare as numbers, not as text — the string fallback is only for values
+        // that are not numbers at all.
+        let (c, _dir) = cache();
+        let records = vec![
+            serde_json::json!({"qty": "9"}),
+            serde_json::json!({"qty": "10"}),
+        ];
+        let key = c
+            .data("test", "list", serde_json::json!({}), records, None)
+            .unwrap();
+        let r = c.grep(&key, "qty", "gt", &serde_json::json!("9")).unwrap();
+        assert_eq!(r["matched"], 1);
+        assert_eq!(r["records"][0]["qty"], "10");
     }
 
     #[test]

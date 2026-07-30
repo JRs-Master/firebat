@@ -773,20 +773,31 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     : `${firstDate} ~ ${lastDate} · ${n}${countUnit}`;
   const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
   const showSymbolChip = titleText !== symbol;
-  // Stat cards describe the LAST SESSION, not the whole loaded range. An intraday series now spans
-  // several days, and summing across them produced a volume that matched no trading terminal (89.07M
-  // over two days against 80.8M for the day) while the open came from yesterday's afternoon.
-  // Daily and longer series keep the whole range, where "period" is what the cards mean.
+  // Stat cards describe the LAST SESSION — the same basis as the change beside the last price, so
+  // the whole header row answers one question: what happened in the latest session.
+  //
+  // Range-wide figures were wrong twice for the same reason. Intraday spanning several days summed a
+  // volume no trading terminal showed (89.07M over two days against 80.8M for the day). Then a
+  // one-year daily chart put last July's open under a card labelled 시가 and a year of turnover under
+  // one labelled 거래량 — 65억 against that session's real figure. The labels never said "range", so
+  // range values sitting there could only mislead. The chart itself shows the range extremes; the
+  // cards are the session.
   const statSlice = (() => {
-    if (!isIntraday) return safeData;
+    // Non-intraday: one bar IS one session (daily, weekly, monthly alike).
+    if (!isIntraday) return safeData.slice(-1);
     const dayOf = (v: string) => String(v ?? '').replace(/\D/g, '').slice(0, 8);
     const last = dayOf(safeData[safeData.length - 1]?.date ?? '');
     const sameDay = safeData.filter(d => dayOf(d.date) === last);
-    return sameDay.length > 0 ? sameDay : safeData;
+    return sameDay.length > 0 ? sameDay : safeData.slice(-1);
   })();
-  const periodHigh = Math.max(...statSlice.map(d => d.high));
-  const periodLow = Math.min(...statSlice.map(d => d.low));
-  const periodVolume = statSlice.reduce((sum, d) => sum + d.volume, 0);
+  const sessionHigh = Math.max(...statSlice.map(d => d.high));
+  const sessionLow = Math.min(...statSlice.map(d => d.low));
+  const sessionVolume = statSlice.reduce((sum, d) => sum + d.volume, 0);
+  // Close-only series (indices, FX — no open/high/low/volume) label their cards 시작·최고·최저, which
+  // claim the RANGE, so that is what they get. Same principle as above, opposite answer: the basis
+  // follows what the label says, not what is convenient.
+  const rangeHigh = Math.max(...safeData.map(d => d.high));
+  const rangeLow = Math.min(...safeData.map(d => d.low));
   // The session's open, not the first bar currently in view — scrolling must not change what the
   // card says happened at the open.
   const sessionOpen = statSlice[0]?.open ?? viewFirst.open;
@@ -952,22 +963,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </div>
       </div>
 
-      {/* 스탯 카드 — 전부 기간 기준으로 통일. 옛엔 시가·거래량=최신 봉 / 고가·저가=기간 혼재라
-          "시가 118K 인데 저가 49K" 처럼 한 줄에 다른 기준이 섞여 이상하게 읽혔다(2026-07-06 실측).
-          기간 라벨(01/02~12/30·N일)이 바로 위라 기간 기준이 자연스럽게 읽힘. 현재가·전일대비는 헤더. */}
+      {/* 스탯 카드 — 라벨이 주장하는 기준을 그대로 쓴다. OHLCV(시가·고가·저가·거래량) = 마지막 세션
+          (헤더의 전일대비와 같은 기준 → 한 줄이 한 질문에 답한다) / close-only(시작·최고·최저) = 기간.
+          한 줄에 두 기준을 섞었던 옛 카드가 "시가 118K 인데 저가 49K"로 읽혔고(2026-07-06), 전부 기간으로
+          바꾸자 1년 일봉에서 시가가 작년 첫 봉·거래량이 1년 합산이 됐다(2026-07-31). 기준은 라벨이 정한다. */}
       <div className={`grid ${closeOnly ? 'grid-cols-3' : 'grid-cols-4'} gap-2 sm:gap-3`}>
         {(closeOnly
           ? [
               // close-only = 시가·거래량 데이터가 없음 — 종가 기반 카드만 (시작=첫 종가).
               { label: '시작', v: viewFirst.close, color: 'text-slate-700' },
-              { label: '최고', v: periodHigh, color: 'text-red-600' },
-              { label: '최저', v: periodLow, color: 'text-blue-600' },
+              { label: '최고', v: rangeHigh, color: 'text-red-600' },
+              { label: '최저', v: rangeLow, color: 'text-blue-600' },
             ]
           : [
               { label: '시가', v: sessionOpen, color: 'text-slate-700' },
-              { label: '고가', v: periodHigh, color: 'text-red-600' },
-              { label: '저가', v: periodLow, color: 'text-blue-600' },
-              { label: '거래량', v: periodVolume, color: 'text-slate-700', compact: true },
+              { label: '고가', v: sessionHigh, color: 'text-red-600' },
+              { label: '저가', v: sessionLow, color: 'text-blue-600' },
+              { label: '거래량', v: sessionVolume, color: 'text-slate-700', compact: true },
             ]
         ).map((s: { label: string; v: number; color: string; compact?: boolean }, i) => (
           <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 flex flex-col gap-0.5 min-w-0">

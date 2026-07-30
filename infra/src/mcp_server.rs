@@ -1771,7 +1771,12 @@ impl McpToolHandler for SearchHistoryHandler {
             include_blocks: obj_bool(&args, "includeBlocks").unwrap_or(false),
         };
         match self.conversation.search_history(&owner, &query, opts).await {
-            Ok(matches) => Ok(serde_json::json!({"success": true, "data": matches})),
+            // Same shaping helper as the core-side handler — the pointer the result carries must not
+            // differ between the two transports.
+            Ok(matches) => Ok(serde_json::json!({
+                "success": true,
+                "data": firebat_core::managers::conversation::describe_history_matches(matches),
+            })),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }
     }
@@ -1788,13 +1793,26 @@ impl McpToolHandler for ListConversationsHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let owner = obj_str(&args, "owner").unwrap_or_else(|| "admin".to_string());
         let limit = obj_i64(&args, "limit").map(|v| v as usize).unwrap_or(30).clamp(1, 200);
+        let since = firebat_core::utils::time::parse_time_bound(args.get("since"));
+        let until = firebat_core::utils::time::parse_time_bound(args.get("until"));
         let mut rows = self.conversation.list(&owner);
+        let total_all = rows.len();
+        rows.retain(|c| {
+            since.map(|s| c.updated_at >= s).unwrap_or(true)
+                && until.map(|u| c.updated_at < u).unwrap_or(true)
+        });
         rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        let total = rows.len();
+        let matched = rows.len();
         rows.truncate(limit);
         Ok(serde_json::json!({
             "success": true,
-            "data": {"total": total, "returned": rows.len(), "conversations": rows},
+            // Both counts, so a narrow window does not read as "this is all there is".
+            "data": {
+                "total": total_all,
+                "matched": matched,
+                "returned": rows.len(),
+                "conversations": rows,
+            },
         }))
     }
 }
@@ -2311,8 +2329,13 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         name: "list_conversations".into(),
         description: "List the caller's own chat sessions, newest first. A session holds many \
             messages and its title comes from the opening line, so it often does not name the \
-            topic — pick by time and title, then read it. inputSchema: {owner?, limit?}.".into(),
-        input_schema: schema_object(serde_json::json!({"limit": {"type":"integer"}})),
+            topic — narrow by time, then read the session. since/until accept YYYY-MM-DD or epoch \
+            ms. inputSchema: {owner?, limit?, since?, until?}.".into(),
+        input_schema: schema_object(serde_json::json!({
+            "limit": {"type": "integer"},
+            "since": {"type": "string"},
+            "until": {"type": "string"},
+        })),
         handler: Arc::new(ListConversationsHandler { conversation: deps.conversation.clone() }),
     }).await;
     state.register(McpTool {
