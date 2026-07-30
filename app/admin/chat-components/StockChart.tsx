@@ -730,12 +730,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 헤더 변동: 전일 종가 대비 (일간 변동, 증권앱 표준). 전일 없으면 기간 시작 대비 폴백.
   const prevClose = fullData[fullN - 2]?.close;
   const viewLatest = safeData[n - 1];
-  // Compare against the previous SESSION's close when it is known. Falling back to the preceding
-  // bar was silently wrong on intraday charts: it reported a one-minute move as the day's change.
-  const baseClose = sessionPrevClose && sessionPrevClose > 0
-    ? sessionPrevClose
-    : (prevClose ?? viewFirst?.close ?? 0);
-  const change = latest && baseClose ? latest.close - baseClose : 0;
+  // Every trading terminal shows the same thing next to the last price: change against the PREVIOUS
+  // SESSION'S CLOSE, on intraday charts too. So that is what this is.
+  //   · told the previous close  → use it (correct for any interval)
+  //   · not told, daily or longer → the preceding bar IS the previous session's close
+  //   · not told, intraday        → we do not know it, so show nothing rather than a bar-over-bar
+  //     move sitting where a daily change belongs. That ambiguity is what made a one-minute delta
+  //     read as the day's change for hours without anyone noticing (2026-07-30).
+  const knownPrevClose =
+    sessionPrevClose && sessionPrevClose > 0
+      ? sessionPrevClose
+      : isIntraday
+        ? null
+        : (prevClose ?? null);
+  const baseClose = knownPrevClose ?? 0;
+  const hasChange = latest != null && baseClose > 0;
+  const change = hasChange ? latest.close - baseClose : 0;
   const changePct = baseClose ? (change / baseClose) * 100 : 0;
   const isUp = change > 0;
   const isDown = change < 0;
@@ -932,9 +942,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 tabular-nums">{fmtPrice(latest.close)}</span>
-          <span className={`text-[12px] font-bold tabular-nums ${changeColor}`}>
-            {changeArrow} {fmtPrice(Math.abs(change))} ({changeSign}{changePct.toFixed(2)}%)
-          </span>
+          {hasChange && (
+            <span className={`text-[12px] font-bold tabular-nums ${changeColor}`}
+                  title="전일 종가 대비">
+              {changeArrow} {fmtPrice(Math.abs(change))} ({changeSign}{changePct.toFixed(2)}%)
+            </span>
+          )}
         </div>
       </div>
 
