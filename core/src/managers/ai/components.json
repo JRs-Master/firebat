@@ -94,14 +94,9 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": [
-              "MA5",
-              "MA10",
-              "MA20",
-              "MA60"
-            ]
+            "pattern": "^MA[0-9]+$"
           },
-          "description": "moving averages. default [\"MA5\",\"MA20\"]. use [] if not needed."
+          "description": "moving averages as MA<period> — ANY period, e.g. [\"MA5\",\"MA20\",\"MA60\",\"MA120\"] (the usual set on Korean charts) or [\"MA50\",\"MA200\"] (a golden cross). Default [\"MA5\",\"MA20\"]; [] for none. Draw the averages the ANALYSIS is about — a golden-cross answer whose chart shows MA5/MA20 does not show the cross it is talking about. A period longer than the loaded series is skipped, so load enough bars for the longest one."
         },
         "buyPoints": {
           "type": "array",

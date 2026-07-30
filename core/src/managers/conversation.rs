@@ -933,14 +933,20 @@ pub fn describe_history_matches(matches: Vec<HistorySearchMatch>) -> serde_json:
             "hits": 1,
         }));
     }
+    // `sessions` is provenance for the hits above — never a listing. Spelling that out because the
+    // grouping alone read as one: asked for "yesterday's conversations", a turn answered straight
+    // from these rows instead of calling list_conversations, and the answer only looked right
+    // because the top-K happened to cover the day (2026-07-31).
     let next_step = if matches.is_empty() {
         "No message matched by meaning. Rewording rarely helps here — a session made of short \
          replies cannot be matched semantically. Use list_conversations (narrow with since/until) \
          and read a session with read_conversation."
     } else {
-        "Each match is ONE message, not a summary. To see what actually happened, call \
-         read_conversation with that convId around its msgIdx. If none of these is the right \
-         session, use list_conversations rather than rewording."
+        "Each match is ONE message, not a summary, and `sessions` only says which sessions these \
+         particular hits came from — it is NOT a list of the caller's sessions and never answers \
+         'which conversations happened in period X'; list_conversations(since, until) does. To see \
+         what actually happened, call read_conversation with that convId around its msgIdx. If none \
+         of these is the right session, use list_conversations rather than rewording."
     };
     serde_json::json!({
         "matches": matches,

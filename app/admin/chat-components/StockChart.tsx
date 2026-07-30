@@ -36,7 +36,12 @@ export type StockChartProps = {
   symbol: string;
   title?: string;
   data: OhlcvBar[];
-  indicators?: Array<'MA5' | 'MA10' | 'MA20' | 'MA60'>;
+  /**
+   * Moving averages as `MA<period>` — any period. The old closed set (5/10/20/60) could express
+   * neither convention it had to serve: 120 is standard on Korean charts, and a golden cross is
+   * 50/200 everywhere else, so a request for either silently drew the defaults instead.
+   */
+  indicators?: string[];
   buyPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
   sellPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
   /** 마지막 봉 오른쪽에 비워 둘 슬롯 수 — 미래 투영 구간. 0 이면 기존 여백만. */
@@ -53,12 +58,24 @@ export type StockChartProps = {
   scale?: 'linear' | 'log';
 };
 
+// Familiar periods keep their familiar colour; anything else takes the next palette slot in order,
+// so an arbitrary period is still visually distinct and stable within one chart.
 const MA_COLORS: Record<string, string> = {
   MA5: '#f59e0b',
   MA10: '#8b5cf6',
   MA20: '#3b82f6',
   MA60: '#10b981',
+  MA120: '#ec4899',
+  MA200: '#0ea5e9',
 };
+const MA_PALETTE = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#64748b'];
+
+/** `MA20` → 20. Anything that is not `MA<digits>` is dropped rather than drawn as a flat line. */
+function maPeriod(name: string): number | null {
+  const m = /^MA(\d+)$/i.exec(name.trim());
+  const p = m ? Number(m[1]) : NaN;
+  return Number.isFinite(p) && p >= 1 ? p : null;
+}
 
 const UP = '#ef4444';   // 상승 빨강
 const DOWN = '#3b82f6'; // 하락 파랑
@@ -197,11 +214,14 @@ function spanLabel(first: string, last: string): string {
   const b = dateToMs(last);
   if (a == null || b == null || b <= a) return '';
   const days = Math.round((b - a) / DAY);
-  if (days >= 365) {
-    const years = days / 365;
-    return years >= 1.9 ? `${Math.round(years)}년` : years >= 1.1 ? `${years.toFixed(1)}년` : '1년';
+  // A calendar year of trading data is a day or two short of 365, and "12개월" for what everyone
+  // calls a year reads as a mistake. Round to months first, then say years once it reaches twelve.
+  const months = Math.round(days / 30.44);
+  if (months >= 12) {
+    const years = months / 12;
+    return years >= 1.9 ? `${Math.round(years)}년` : years >= 1.15 ? `${years.toFixed(1)}년` : '1년';
   }
-  if (days >= 28) return `${Math.round(days / 30)}개월`;
+  if (months >= 1) return `${months}개월`;
   if (days >= 7) return `${Math.round(days / 7)}주`;
   if (days >= 1) return `${days}일`;
   const hours = Math.round((b - a) / 3_600_000);
@@ -654,13 +674,20 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         : padTop + reserve + band - ((p - pMin) / (pMax - pMin)) * band;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
     const candleW = Math.max(1.5, barPx * 0.6);
-    const maLines = indicators.map(ind => {
-      const period = parseInt(ind.replace('MA', ''), 10);
-      const values = sma(closes, period);
-      const pts = values.map((v, i) => v == null ? null : [xs[i], yPrice(v)] as [number, number]).filter(Boolean) as [number, number][];
-      const d = pts.length ? 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ') : '';
-      return { name: ind, d, color: MA_COLORS[ind], values };
-    });
+    const maLines = indicators
+      .map((ind, idx) => {
+        const period = maPeriod(ind);
+        if (period == null) return null;
+        // A period longer than the series has no defined value anywhere — drawing nothing is right,
+        // but so is not claiming it in the legend.
+        const values = sma(closes, period);
+        const pts = values.map((v, i) => v == null ? null : [xs[i], yPrice(v)] as [number, number]).filter(Boolean) as [number, number][];
+        if (!pts.length) return null;
+        const d = 'M ' + pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' L ');
+        const name = `MA${period}`;
+        return { name, d, color: MA_COLORS[name] ?? MA_PALETTE[idx % MA_PALETTE.length], values };
+      })
+      .filter((m): m is { name: string; d: string; color: string; values: Array<number | null> } => m != null);
     return { xs, xAt, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines, reserve, band };
   }, [safeData, indicators, barPx, plotH, leftPad, padTop, volPlotH, scrollX, boxW, zoomEndTick, scale, annotations]);
 
@@ -847,8 +874,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   ]
     .filter(Boolean)
     .join(' · ');
-  const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
-  const showSymbolChip = titleText !== symbol;
+  // `005930.KS` is yfinance's way of naming an exchange, not the code anyone quotes — and which
+  // suffix appears depends only on which module happened to fetch the data, so the same stock was
+  // labelled two different ways. Strip it when the part before the dot is a pure number; an
+  // alphabetic ticker (AAPL, BRK.B) is never touched.
+  const displaySymbol = symbol.replace(/^(\d+)\.[A-Za-z]+$/, '$1');
+  const titleText = title && title.trim() && title.trim() !== displaySymbol ? title : displaySymbol;
+  const showSymbolChip = titleText !== displaySymbol;
   // Stat cards describe the LAST SESSION — the same basis as the change beside the last price, so
   // the whole header row answers one question: what happened in the latest session.
   //
@@ -1024,7 +1056,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         <div className="flex flex-col">
           <div className="flex items-baseline gap-2">
             <span className="text-[16px] sm:text-[18px] font-extrabold text-slate-900 tracking-tight">{titleText}</span>
-            {showSymbolChip && <span className="text-[11px] text-slate-400 font-semibold">{symbol}</span>}
+            {showSymbolChip && <span className="text-[11px] text-slate-400 font-semibold">{displaySymbol}</span>}
           </div>
           <span className="text-[11px] text-slate-400 mt-0.5">{periodLabel}</span>
         </div>
@@ -1068,7 +1100,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       </div>
 
       {/* 범례 */}
-      {indicators.length > 0 && (
+      {maLines.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 -mt-1">
           {maLines.map(m => (
             <span key={m.name} className="flex items-center gap-1.5 text-[11px] text-slate-500 font-semibold">
