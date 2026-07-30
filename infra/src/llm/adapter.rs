@@ -306,13 +306,29 @@ impl ConfigDrivenAdapter {
         // Thinking 레벨을 **모델 선언 집합**으로 스냅 — 호출자가 박은 값(consolidation 의 "minimal" 등)이
         // 그 모델에 없으면 provider 가 400 으로 거부한다. 포맷 핸들러마다 모델별 매핑을 박는 대신
         // 선언(models.json)이 유일한 진실이 되게 여기서 한 번 막는다.
-        if let (Some(req), Some(tc)) = (enriched.thinking_level.as_deref(), config.thinking.as_ref()) {
-            let snapped = tc.snap_level(req);
-            if snapped.as_deref() != Some(req) {
-                tracing::debug!(
+        if let Some(req) = enriched.thinking_level.as_deref().map(str::to_string) {
+            let snapped = match config.thinking.as_ref() {
+                // The model declares its levels — snap onto that set.
+                Some(tc) => tc.snap_level(&req),
+                // It declares nothing, and this guard used to skip that case entirely, which is
+                // precisely where the failure lived: a caller asking for the cheapest reasoning sent
+                // "minimal", an undeclared model rejected it with a 400, and consolidation died on
+                // every conversation for weeks. With no declaration to snap onto, only send values
+                // that are portable across providers and drop the rest — an omitted level cannot be
+                // rejected, whereas an exotic one can.
+                None => match req.as_str() {
+                    "low" | "medium" | "high" => Some(req.clone()),
+                    _ => None,
+                },
+            };
+            if snapped.as_deref() != Some(req.as_str()) {
+                tracing::info!(
                     category = "ai",
-                    "thinking level snap — model={} requested={} → {:?} (선언 밖)",
-                    config.id, req, snapped
+                    "thinking level adjusted — model={} requested={} → {:?} (declared={})",
+                    config.id,
+                    req,
+                    snapped,
+                    config.thinking.is_some()
                 );
             }
             enriched.thinking_level = snapped;
