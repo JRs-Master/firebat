@@ -320,3 +320,47 @@ mod tests {
         assert_eq!(f.limit, 0); // default 0 → query_logs clamp(1,..) 에서 1로
     }
 }
+
+/// One row of a `GROUP BY` over the whole ring.
+pub struct LogFacet {
+    pub name: String,
+    pub count: i64,
+    pub warn_count: i64,
+}
+
+/// Target/module counts over the ENTIRE ring, plus the row total.
+///
+/// The panel used to accumulate these client-side from whatever rows a query happened to return, so
+/// the dropdown showed "what is on screen" and a target only appeared once you raised the row count
+/// far enough to catch it. Shipping 20,000 rows to count ten names is also the wrong way round —
+/// counting is what the database is for.
+///
+/// Empty names are skipped: `module` is only populated on rows written since that column was added,
+/// and an unnamed entry cannot be selected or filtered by anyway.
+pub fn log_facets(db_path: &Path) -> Result<(Vec<LogFacet>, Vec<LogFacet>, i64), String> {
+    let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    let group = |column: &str| -> Result<Vec<LogFacet>, String> {
+        let sql = format!(
+            "SELECT {column} AS name, COUNT(*) AS n, \
+             SUM(CASE WHEN level IN ('WARN','ERROR') THEN 1 ELSE 0 END) AS w \
+             FROM logs WHERE {column} <> '' GROUP BY {column} ORDER BY n DESC LIMIT 200"
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(LogFacet {
+                    name: r.get::<_, String>(0)?,
+                    count: r.get::<_, i64>(1)?,
+                    warn_count: r.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        Ok(rows.flatten().collect())
+    };
+    let targets = group("target")?;
+    let modules = group("module")?;
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM logs", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    Ok((targets, modules, total))
+}

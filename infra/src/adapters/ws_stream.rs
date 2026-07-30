@@ -713,6 +713,8 @@ async fn run_session(
     // connection open, zero frames for minutes). A periodic line separates them, and after a healthy
     // session it also shows the arrival rate.
     let mut frames_seen: u64 = 0;
+    // Frame count at the previous beat — a beat is only worth INFO when nothing arrived since.
+    let mut frames_at_last_beat: u64 = 0;
     let mut hb = tokio::time::interval(std::time::Duration::from_secs(60));
     hb.tick().await; // fire immediately once, then every 60s
 
@@ -720,12 +722,29 @@ async fn run_session(
     loop {
         tokio::select! {
             _ = hb.tick() => {
-                tracing::info!(
-                    target: "ws_stream",
-                    watches = members.len(),
-                    frames_seen,
-                    "ws heartbeat"
-                );
+                // A healthy beat says nothing new, and one line per minute per socket is not free:
+                // measured 2026-07-31, heartbeats alone were a third of the 20,000-line admin ring.
+                // So the loud beat is the one where NOTHING arrived — that is the case worth seeing,
+                // and it is what distinguishes "alive but silent" from "stuck". A beat that carries
+                // frames stays at debug, where the arrival rate is still there when asked for.
+                let arrived = frames_seen.saturating_sub(frames_at_last_beat);
+                if arrived == 0 {
+                    tracing::info!(
+                        target: "ws_stream",
+                        watches = members.len(),
+                        frames_seen,
+                        "ws heartbeat — no frames in the last minute"
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "ws_stream",
+                        watches = members.len(),
+                        frames_seen,
+                        arrived,
+                        "ws heartbeat"
+                    );
+                }
+                frames_at_last_beat = frames_seen;
             }
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {

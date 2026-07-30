@@ -3122,6 +3122,8 @@ service HubService {
 service LogService {
   rpc QueryLogs(LogQueryRequest) returns (LogQueryResponse);
   rpc SetLogFilter(SetLogFilterRequest) returns (SetLogFilterResponse);
+  // 화면이 서버 상태를 추측하지 않게 하는 한 번의 호출 — 지금 걸린 필터 + 링 전체 집계.
+  rpc GetLogState(GetLogStateRequest) returns (GetLogStateResponse);
 }
 
 message LogEntryPb {
@@ -3144,6 +3146,23 @@ message LogQueryRequest {
 
 message LogQueryResponse {
   repeated LogEntryPb entries = 1;
+}
+
+message GetLogStateRequest {}
+
+// 링 전체를 GROUP BY 한 한 줄. 옛 UI 는 조회된 행에서 클라이언트가 세어서, 목록이 "지금 화면에
+// 있는 것"이었고 건수를 늘려야 항목이 나타났다 — 20,000행을 받아 열 개를 세는 것도 낭비였다.
+message LogFacetPb {
+  string name = 1;        // target(표시용) 또는 module(EnvFilter 가 받는 실제 이름)
+  int64 count = 2;
+  int64 warn_count = 3;   // WARN·ERROR 수 — "어디를 봐야 하나" 가 목록에서 바로 읽히게
+}
+
+message GetLogStateResponse {
+  string filter = 1;                 // 지금 적용돼 있는 EnvFilter 문자열
+  repeated LogFacetPb targets = 2;   // 표시용 이름별 집계
+  repeated LogFacetPb modules = 3;   // 모듈 경로별 집계 (레벨 조절 대상)
+  int64 total = 4;                   // 링에 든 전체 행 수
 }
 
 message SetLogFilterRequest {

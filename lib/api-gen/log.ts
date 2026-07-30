@@ -5,6 +5,7 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  GetLogStateResponse,
   LogEntryPb,
   LogQueryRequestSchema,
   LogService,
@@ -31,6 +32,15 @@ export async function queryLogs(args: MessageInitShape<typeof LogQueryRequestSch
 export async function setLogFilter(args: MessageInitShape<typeof SetLogFilterRequestSchema>): Promise<RpcResult<SetLogFilterResponse>> {
   try {
       const response = await logClient.setLogFilter(args ?? {});
+      return { ok: true, data: unBigInt(response) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function getLogState(): Promise<RpcResult<GetLogStateResponse>> {
+  try {
+      const response = await logClient.getLogState({});
       return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);

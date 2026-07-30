@@ -33,7 +33,7 @@
         },
         "title": {
           "type": "string",
-          "description": "stock display name — not the symbol code"
+          "description": "stock display name ONLY — not the symbol code, and NOT the period or interval. The chart derives and shows '일봉 · 1년 · 2025/07/30 ~ 2026/07/30 · 243일' from the data itself, so a title like '삼성전자 최근 1년 일봉' says the same thing twice."
         },
         "dataCacheKey": {
           "type": "string",

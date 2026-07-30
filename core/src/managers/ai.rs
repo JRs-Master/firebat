@@ -1096,6 +1096,30 @@ impl AiManager {
                         .map(|m| hub_module_allowed(&args, m))
                         .unwrap_or(true)
                 });
+                // A module-scoped search hides every other module by construction, and the model is
+                // the one who scoped it — so when the scope was the wrong guess, nothing says so.
+                // Measured 2026-07-31: asked for a golden-cross backtest, the model searched
+                // {module: "yfinance"} twice, never saw technical-analysis (which does exactly that),
+                // hand-rolled the calculation and rendered "0 signals" as a confident answer. The same query
+                // across the catalog is cheap (local embeddings, already warm), so run it and name
+                // what the scope excluded rather than letting a wrong guess look like an answer.
+                let mut outside: Vec<serde_json::Value> = Vec::new();
+                if module.is_some() {
+                    if let Ok((all_rows, _, _, _, _)) =
+                        cat.search_analyzed(&query, None, limit.clamp(1, 20)).await
+                    {
+                        let scoped = module.as_deref().unwrap_or("");
+                        outside = all_rows
+                            .into_iter()
+                            .filter(|r| {
+                                r.get("module").and_then(|v| v.as_str()).is_some_and(|m| {
+                                    m != scoped && hub_module_allowed(&args, m)
+                                })
+                            })
+                            .take(3)
+                            .collect();
+                    }
+                }
                 let mut resp = serde_json::json!({
                     "actions": rows,
                     "count": rows.len(),
@@ -1118,6 +1142,15 @@ impl AiManager {
                         "Tokens above are absent from every action's text, so they were removed before \
                          searching — actions are indexed by CAPABILITY (what they do), not by subject \
                          or topic words. If the results look off, re-search with capability terms only."
+                    );
+                }
+                if !outside.is_empty() {
+                    resp["alsoOutsideThisModule"] = serde_json::json!(outside);
+                    resp["scopeWarning"] = serde_json::json!(
+                        "You scoped this search to one module. The actions above rank HIGHER for the \
+                         same query in OTHER modules and were hidden by that scope — a dedicated \
+                         module usually beats assembling the result by hand from a generic one. \
+                         Re-search without `module` if any of them fits."
                     );
                 }
                 // catalogedModules only on cross-module searches — a module-scoped search already

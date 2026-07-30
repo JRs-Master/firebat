@@ -7,13 +7,31 @@
  * /api/log (단수) 는 별개 — 브라우저 로그 수집 (Phase 2). 본 route 는 admin 조회/제어.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { queryLogs, setLogFilter } from '../../../lib/api-gen/log';
+import { getLogState, queryLogs, setLogFilter } from '../../../lib/api-gen/log';
 import { withAuth } from '../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
+  // ?state=1 — the applied filter plus whole-ring counts. Separate from the row query because the
+  // panel needs it once on mount, not on every refresh.
+  if (sp.get('state')) {
+    const st = await getLogState();
+    if (!st.ok) {
+      return NextResponse.json({ success: false, error: st.message }, { status: 500 });
+    }
+    const d = st.data as
+      | { filter?: string; targets?: unknown[]; modules?: unknown[]; total?: bigint | number }
+      | undefined;
+    return NextResponse.json({
+      success: true,
+      filter: d?.filter ?? 'info',
+      targets: d?.targets ?? [],
+      modules: d?.modules ?? [],
+      total: Number(d?.total ?? 0),
+    });
+  }
   const res = await queryLogs({
     minLevel: sp.get('minLevel') ?? '',
     targetPrefix: sp.get('targetPrefix') ?? '',

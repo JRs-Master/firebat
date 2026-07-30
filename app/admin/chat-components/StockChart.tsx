@@ -135,12 +135,77 @@ function findBarIndex(bars: Array<{ date: string }>, when: string): number {
   return bars.findIndex(b => normalizeDate(b.date).slice(0, 10) === target.slice(0, 10));
 }
 
-function shortDate(d: string): string {
+/** 봉 날짜의 [연, 월, 일] — 어느 표기로 와도(ISO datetime · YYYYMMDD · 공백 구분) 같은 답. */
+function dateParts(d: string): [string, string, string] | null {
   const n = normalizeDate(d);
-  // 날짜부만 MM/DD — ISO datetime("2026-01-02T00:00:00+09:00")이 그대로 와도 시각·TZ 를 흘리지 않는다.
-  // "YYYYMMDD HH:MM"(분봉 시드/라이브) 도 앞 8자리로 MM/DD 추출 — 안 그러면 풀 문자열이 노출된다.
   const m = n.match(/^(\d{4})-(\d{2})-(\d{2})/) || n.match(/^(\d{4})(\d{2})(\d{2})/);
-  return m ? `${m[2]}/${m[3]}` : n;
+  return m ? [m[1], m[2], m[3]] : null;
+}
+
+function shortDate(d: string): string {
+  const p = dateParts(d);
+  // 날짜부만 MM/DD — ISO datetime("2026-01-02T00:00:00+09:00")이 그대로 와도 시각·TZ 를 흘리지 않는다.
+  return p ? `${p[1]}/${p[2]}` : normalizeDate(d);
+}
+
+/** 연도까지 — 기간 줄에 쓴다. MM/DD 만 쓰면 1년 범위의 양끝이 같은 글자가 된다("07/30 ~ 07/30"). */
+function fullDate(d: string): string {
+  const p = dateParts(d);
+  return p ? `${p[0]}/${p[1]}/${p[2]}` : normalizeDate(d);
+}
+
+/** 봉 날짜 → epoch ms. 간격·기간 계산용이라 자정 기준이면 충분(TZ 는 양끝에 같이 걸려 상쇄). */
+function dateToMs(d: string): number | null {
+  const n = normalizeDate(d);
+  const p = dateParts(d);
+  if (!p) return null;
+  const t = n.match(/(\d{2}):(\d{2})/);
+  return Date.UTC(
+    Number(p[0]), Number(p[1]) - 1, Number(p[2]),
+    t ? Number(t[1]) : 0, t ? Number(t[2]) : 0,
+  );
+}
+
+const MINUTE = 60_000;
+const DAY = 86_400_000;
+
+/**
+ * 봉 주기를 데이터에서 읽는다 — 호출자가 "일봉"이라고 알려주지 않아도 화면이 스스로 안다.
+ *
+ * 중앙값을 쓰는 이유: 주말·휴장·거래 없는 분이 평균을 늘 왜곡한다. 정렬한 간격의 가운데 값은
+ * 그 구멍들에 흔들리지 않는다.
+ */
+function intervalLabel(dates: string[]): string {
+  const ms = dates.map(dateToMs).filter((v): v is number => v != null);
+  if (ms.length < 2) return '';
+  const gaps = ms.slice(1).map((v, i) => v - ms[i]).filter(g => g > 0).sort((a, b) => a - b);
+  if (!gaps.length) return '';
+  const g = gaps[Math.floor(gaps.length / 2)];
+  if (g < DAY) {
+    const mins = Math.max(1, Math.round(g / MINUTE));
+    return mins % 60 === 0 ? `${mins / 60}시간봉` : `${mins}분봉`;
+  }
+  if (g <= DAY * 4) return '일봉';
+  if (g <= DAY * 10) return '주봉';
+  if (g <= DAY * 45) return '월봉';
+  return '연봉';
+}
+
+/** 첫 봉 ~ 마지막 봉이 실제로 덮는 기간 — "1년" 처럼 한눈에 크기를 알려주는 값. */
+function spanLabel(first: string, last: string): string {
+  const a = dateToMs(first);
+  const b = dateToMs(last);
+  if (a == null || b == null || b <= a) return '';
+  const days = Math.round((b - a) / DAY);
+  if (days >= 365) {
+    const years = days / 365;
+    return years >= 1.9 ? `${Math.round(years)}년` : years >= 1.1 ? `${years.toFixed(1)}년` : '1년';
+  }
+  if (days >= 28) return `${Math.round(days / 30)}개월`;
+  if (days >= 7) return `${Math.round(days / 7)}주`;
+  if (days >= 1) return `${days}일`;
+  const hours = Math.round((b - a) / 3_600_000);
+  return hours >= 1 ? `${hours}시간` : `${Math.round((b - a) / MINUTE)}분`;
 }
 
 // 숫자를 간결하게 (한 줄에 들어가도록 짧게)
@@ -760,17 +825,28 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const changeArrow = isUp ? '▲' : isDown ? '▼' : '–';
   const changeSign = isUp ? '+' : '';
   // 기간 라벨 — 인트라데이면 봉 개수를 "일"로 세면 안 됨("25일" 버그). 범위는 시:분 위주, 단위는 "봉".
-  const rangeLabel = (d: string): string => {
-    if (!isIntraday) return shortDate(d);
-    const t = timeOf(d);
-    return t ? `${shortDate(d)} ${t}` : shortDate(d);
-  };
-  const firstDate = rangeLabel(viewFirst.date);
-  const lastDate = rangeLabel(viewLatest.date);
+  // 기간 줄 = 주기 · 기간 · 시작~끝 · 봉 수. 넷 다 데이터에서 나오므로 호출자가 제목에 "최근 1년
+  // 일봉" 을 적을 이유가 없다(스키마에도 그렇게 못 박았다 — 적으면 이 줄과 두 번 말하게 된다).
+  //
+  // 연도를 반드시 쓴다: MM/DD 만 쓰던 옛 줄은 1년 범위의 양끝이 "07/30 ~ 07/30" 으로 같아져
+  // `firstDate === lastDate` 분기에 걸렸고, 243일치 차트가 "07/30 · 1일" 로 표시됐다(2026-07-31).
+  const firstDate = isIntraday
+    ? `${fullDate(viewFirst.date)} ${timeOf(viewFirst.date)}`.trim()
+    : fullDate(viewFirst.date);
+  const lastDate = isIntraday
+    ? `${fullDate(viewLatest.date)} ${timeOf(viewLatest.date)}`.trim()
+    : fullDate(viewLatest.date);
   const countUnit = isIntraday ? '봉' : '일';
-  const periodLabel = firstDate === lastDate
-    ? `${firstDate} · 1${countUnit}`
-    : `${firstDate} ~ ${lastDate} · ${n}${countUnit}`;
+  const interval = intervalLabel(safeData.map(d => d.date));
+  const span = spanLabel(viewFirst.date, viewLatest.date);
+  const periodLabel = [
+    interval,
+    span,
+    firstDate === lastDate ? firstDate : `${firstDate} ~ ${lastDate}`,
+    `${n}${countUnit}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
   const showSymbolChip = titleText !== symbol;
   // Stat cards describe the LAST SESSION — the same basis as the change beside the last price, so

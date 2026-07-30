@@ -1,12 +1,12 @@
 'use client';
 
 /**
- * LogPanel — admin 설정 로그 탭 (로그 시스템 Phase 5, 2026-05-21 / 고도화 2026-07-14).
+ * LogPanel — the log tab in admin settings.
  *
- * sqlite ring buffer (data/logs.db) 조회 + 런타임 EnvFilter reload (ssh SIGHUP 대신 UI).
- * journalctl 실질 대체: 전문 검색(contains, ring 전체 LIKE) + 실시간 tail(since 폴링,
- * 탭 백그라운드 자동 일시정지) + target/module lists accumulated from rows already fetched.
- * 범위 = 조회 / 필터 / 검색 / tail 만 (대시보드 / 그래프 / 알림 X — observability paradox 룰).
+ * Reads the sqlite ring buffer (data/logs.db) and reloads the runtime EnvFilter from the UI instead
+ * of an ssh SIGHUP. Stands in for journalctl: full-text search across the whole ring, a live tail
+ * (2s polling, auto-paused while the tab is in the background), and target/module lists counted
+ * server-side. Scope is query / filter / search / tail only — no dashboards, graphs or alerts.
  */
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Loader2, RefreshCw, Filter, Play, Pause } from 'lucide-react';
@@ -20,12 +20,22 @@ interface LogEntry {
   level: string;
   target: string;
   message: string;
-  /** 실제 tracing target(모듈 경로) — EnvFilter directive 로 쓸 수 있는 유일한 이름. */
+  /** The real tracing target (module path) — the only name an EnvFilter directive accepts. */
   module?: string;
 }
 
-/** EnvFilter 레벨 사다리 — 런타임 레벨 조립기의 선택지. */
+/** The EnvFilter level ladder — the choices the runtime level builder offers. */
 const ENV_LEVELS = ['off', 'error', 'warn', 'info', 'debug', 'trace'] as const;
+
+/**
+ * Dependency crates pinned to warn whenever the global level goes below info.
+ *
+ * A bare `debug` in EnvFilter is global in the literal sense — it turns on the HTTP/2 and connection
+ * pool internals too. Measured 2026-07-31: one hour at debug wrote 4,639 h2 frame lines and cut the
+ * 20,000-line ring from nine days of history down to about an hour. None of it is ours and none of it
+ * has ever answered a question here, so raising OUR level must not raise theirs.
+ */
+const NOISY_DEPS = ['h2', 'hyper', 'hyper_util', 'tonic', 'tower', 'rustls', 'reqwest'] as const;
 
 const LEVEL_COLOR: Record<string, string> = {
   ERROR: 'bg-red-100 text-red-700 border-red-200',
@@ -35,43 +45,45 @@ const LEVEL_COLOR: Record<string, string> = {
   TRACE: 'bg-slate-50 text-slate-400 border-slate-200',
 };
 
-/**
- * Size of the ONE sample taken to seed the target/module lists. Everything after that accumulates
- * from rows the table and the tail already fetched, so it costs nothing — refetching a large sample
- * to derive a handful of counts means shipping thousands of rows to learn ten numbers. Having the
- * database count them is the correct answer and is tracked separately; it needs a new call.
- */
-const FACET_SAMPLE = 1000;
-/** tail 중 화면에 쌓아둘 최대 줄 수 — 무한 누적 방지 (오래된 것부터 drop). */
+/** Rows the tail keeps on screen — bounded so it cannot grow forever (oldest drop first). */
 const TAIL_MAX_ROWS = 1000;
 
 export function LogPanel() {
   const t = useTranslations();
   const [entries, setEntries] = useState<LogEntry[]>([]);
-  // load 가 loadFacets 보다 위에 정의돼 있어 ref 로 잇는다(선언 순서 의존 없이).
+  // load is defined above loadState, so a ref links them without depending on declaration order.
   const loadFacetsRef = useRef<(() => Promise<void>) | null>(null);
-  const mergeFacetsRef = useRef<((rows: LogEntry[]) => void) | null>(null);
   const [minLevel, setMinLevel] = useState('');
   const [targetPrefix, setTargetPrefix] = useState('');
   const [contains, setContains] = useState('');
-  // 입력 중 자유롭게 비울 수 있게 문자열 상태 — 조회 시점에만 1~2000 보정.
-  // (옛 숫자 상태 + `Number("")||50` 은 "50" 의 5 를 지우면 즉시 50 으로 복귀 → 200 입력 불가였음)
+  // Kept as a string so the box can be emptied while typing; clamped to 1..2000 only at query time.
+  // (A numeric state with `Number("")||50` snapped back to 50 the moment "50" lost a digit, which
+  // made 200 impossible to type.)
   const [limit, setLimit] = useState('50');
   const [loading, setLoading] = useState(false);
-  // 실시간 tail — journalctl -f 등가. since 폴링(2초)이라 SSE 배선 없이 견고, 탭 백그라운드
-  // 시 usePolling 이 자동 일시정지. 새 줄은 위에 쌓임(최신순 뷰 유지 = 스크롤 고정 불필요).
+  // Live tail, the equivalent of journalctl -f. Polling on a since cursor (2s) is robust without
+  // any SSE wiring, and usePolling pauses it while the tab is in the background. New rows are
+  // prepended, which keeps the newest-first view without any scroll anchoring.
   const [tail, setTail] = useState(false);
-  // 런타임 EnvFilter — ssh `kill -HUP` 대신 UI 에서 즉시 적용 (재빌드/재시작 0).
-  // 런타임 EnvFilter 는 **조립해서** 만든다 — 옛 자유입력은 모듈 경로를 외워야 해서 못 썼다
-  // (사용자 2026-07-29: "뭘 적어야 할지를 모르잖아"). 기본 레벨 + 모듈별 오버라이드 → 문자열.
+  // The runtime EnvFilter, applied from the UI instead of an ssh `kill -HUP` — no rebuild, no
+  // restart. It is ASSEMBLED rather than typed: the old free-text box required remembering module
+  // paths, so it went unused ("you don't know what to write in it"). Global level + per-module
+  // overrides compose the directive.
   const [baseLevel, setBaseLevel] = useState('info');
   const [overrides, setOverrides] = useState<Record<string, string>>({});
-  const filterStr = useMemo(
-    () => [baseLevel, ...Object.entries(overrides).map(([m, lv]) => `${m}=${lv}`)].join(','),
-    [baseLevel, overrides],
-  );
+  const filterStr = useMemo(() => {
+    const parts: string[] = [baseLevel];
+    // Only below info — at info and above the dependency crates are already quiet, and pinning them
+    // then would just be noise in the directive the user reads.
+    if (baseLevel === 'debug' || baseLevel === 'trace') {
+      parts.push(...NOISY_DEPS.map(d => `${d}=warn`));
+    }
+    parts.push(...Object.entries(overrides).map(([m, lv]) => `${m}=${lv}`));
+    return parts.join(',');
+  }, [baseLevel, overrides]);
   const [filterMsg, setFilterMsg] = useState<string | null>(null);
-  // tail 폴링 커서 — 마지막으로 본 ts (그 이후만 요청). ref = 폴링 tick 간 상태 레이스 회피.
+  // Tail cursor — the newest ts seen, so each poll asks only for what is after it. A ref rather
+  // than state so consecutive ticks cannot race.
   const lastTsRef = useRef(0);
 
   const buildParams = useCallback((sinceMs?: number) => {
@@ -94,24 +106,22 @@ export function LogPanel() {
       if (data?.success) {
         const rows = data.entries ?? [];
         setEntries(rows);
-        // Feed the lists from this response — no second request just for them.
-        mergeFacetsRef.current?.(rows);
         lastTsRef.current = rows[0]?.tsMs ?? Date.now();
       }
     } catch (e) {
-      logger.error('logs', '로그 조회 실패', e);
+      logger.error('logs', 'log query failed', e);
     } finally {
       setLoading(false);
     }
   }, [buildParams]);
 
-  // 탭 진입 시 1회 조회
+  // One query on entering the tab.
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 실시간 tail — since 커서 이후 새 줄만 받아 위에 prepend. 필터/검색 조건 그대로 적용.
+  // Live tail — only rows newer than the cursor, prepended. The query conditions still apply.
   usePolling({
     interval: 2000,
     enabled: tail,
@@ -125,69 +135,70 @@ export function LogPanel() {
         const rows = data?.entries ?? [];
         if (!data?.success || rows.length === 0) return;
         lastTsRef.current = Math.max(lastTsRef.current, rows[0]?.tsMs ?? 0);
-        mergeFacetsRef.current?.(rows);
         setEntries(prev => [...rows, ...prev].slice(0, TAIL_MAX_ROWS));
       } catch (e) {
-        logger.debug('logs', 'tail 폴링 실패', { error: e });
+        logger.debug('logs', 'tail poll failed', { error: e });
       }
     },
   });
 
   const startTail = useCallback(() => {
-    // 커서를 지금으로 — 켜는 순간부터의 새 로그만 흐르게 (과거는 조회 버튼 몫).
+    // Start the cursor at now, so the tail carries only what arrives from here on (the past is
+    // what the query button is for).
     if (lastTsRef.current === 0) lastTsRef.current = Date.now();
     setTail(true);
   }, []);
 
-  // The lists must not follow the query, for two separate reasons.
-  //  · Not the filter: derived from the loaded entries, picking one target shrinks the list to that
-  //    target, and there is no way back to the others.
-  //  · Not the window: built from the newest thousand rows, a chatty target crowding it (measured:
-  //    ws_stream held 925 of 1000) makes rarer ones vanish from the UI while still being in the log.
-  // No backend work — the same query API, and a local admin-only sqlite makes it cheap.
+  // The lists count the WHOLE ring, server-side (GROUP BY), not the rows a query happened to return.
+  // Accumulating client-side made the dropdown mean "what is on screen": a target only appeared once
+  // the row count was raised far enough to catch it, and the counts were session observations rather
+  // than facts. Shipping 20,000 rows to count ten names was also the wrong way round.
   const [facets, setFacets] = useState<Array<{ target: string; count: number; warn: boolean }>>([]);
-  /// EnvFilter 로 실제 켜고 끌 수 있는 대상 — 로그가 기록해 둔 모듈 경로에서 그대로 읽는다.
-  /// 목록을 코드에 박지 않으므로 모듈이 늘면 UI 도 저절로 는다.
+  /// What an EnvFilter directive can actually address, read from the module paths the logs recorded.
+  /// Nothing is hardcoded, so the UI grows by itself as modules are added.
   const [modules, setModules] = useState<Array<{ module: string; count: number }>>([]);
   /**
-   * Accumulate the lists from rows already in hand. Query and tail responses feed it, so no extra
-   * request is made, and a target once seen stays listed even when a later query omits it — which
-   * removes both failure modes above. The counts are therefore what this session observed, not a
-   * statistic over the ring.
+   * One call for everything the panel cannot know on its own: the filter the server is actually
+   * running and the ring-wide counts. Without the filter the panel drew its own default, so a level
+   * raised minutes earlier read as reverted when the tab was reopened — it had not been (2026-07-31:
+   * the server was at debug the whole time, and the debug rows were in the ring).
    */
-  const mergeFacets = useCallback((rows: LogEntry[]) => {
-    if (rows.length === 0) return;
-    setFacets(prev => {
-      const acc = new Map(prev.map(f => [f.target, { count: f.count, warn: f.warn }]));
-      for (const e of rows) {
-        const cur = acc.get(e.target) ?? { count: 0, warn: false };
-        cur.count += 1;
-        const lv = (e.level || '').toUpperCase();
-        if (lv === 'WARN' || lv === 'ERROR') cur.warn = true;
-        acc.set(e.target, cur);
-      }
-      return Array.from(acc, ([target, v]) => ({ target, ...v })).sort((a, b) => b.count - a.count);
-    });
-    setModules(prev => {
-      const acc = new Map(prev.map(m => [m.module, m.count]));
-      for (const e of rows) {
-        if (e.module) acc.set(e.module, (acc.get(e.module) ?? 0) + 1);
-      }
-      return Array.from(acc, ([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count);
-    });
-  }, []);
-  const loadFacets = useCallback(async () => {
+  const loadState = useCallback(async () => {
     try {
-      const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
-        `/api/logs?limit=${FACET_SAMPLE}`, { category: 'logs' },
+      const data = await apiGet<{
+        success?: boolean;
+        filter?: string;
+        targets?: Array<{ name: string; count: number | string; warnCount?: number | string }>;
+        modules?: Array<{ name: string; count: number | string }>;
+      }>('/api/logs?state=1', { category: 'logs' });
+      if (!data?.success) return;
+      setFacets(
+        (data.targets ?? []).map(f => ({
+          target: f.name,
+          count: Number(f.count) || 0,
+          warn: Number(f.warnCount ?? 0) > 0,
+        })),
       );
-      if (data?.success) mergeFacets(data.entries ?? []);
+      setModules((data.modules ?? []).map(m => ({ module: m.name, count: Number(m.count) || 0 })));
+      // Split the directive back into the two controls. Anything that is not `name=level` is the
+      // global level; dependency pins are re-derived from the global level, so they are dropped here
+      // rather than shown as if the user had set them.
+      const parts = (data.filter ?? '').split(',').map(p => p.trim()).filter(Boolean);
+      const next: Record<string, string> = {};
+      let base = '';
+      for (const p of parts) {
+        const eq = p.indexOf('=');
+        if (eq < 0) { if (!base) base = p; continue; }
+        const name = p.slice(0, eq);
+        if ((NOISY_DEPS as readonly string[]).includes(name)) continue;
+        next[name] = p.slice(eq + 1);
+      }
+      if (base) setBaseLevel(base);
+      setOverrides(next);
     } catch { /* the lists are secondary — a failure here still leaves the query working */ }
-  }, [mergeFacets]);
-  loadFacetsRef.current = loadFacets;
-  mergeFacetsRef.current = mergeFacets;
-  // Only the first sample is fetched for its own sake; accumulation handles the rest.
-  useEffect(() => { void loadFacets(); }, [loadFacets]);
+  }, []);
+  loadFacetsRef.current = loadState;
+  useEffect(() => { void loadState(); }, [loadState]);
 
   const applyFilter = useCallback(async () => {
     setFilterMsg(null);
@@ -200,13 +211,13 @@ export function LogPanel() {
       setFilterMsg(data?.success ? t('common.log_applied') : (data?.error || t('common.log_apply_failed')));
     } catch (e) {
       setFilterMsg(t('common.log_apply_failed'));
-      logger.error('logs', '로그 필터 적용 실패', e);
+      logger.error('logs', 'log filter apply failed', e);
     }
   }, [filterStr, t]);
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 런타임 로그 레벨 — EnvFilter 동적 reload */}
+      {/* Runtime log level — reloads the EnvFilter in place. */}
       <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
         <span className="text-xs sm:text-sm font-bold text-slate-700">{t('common.log_section_settings')}</span>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -248,8 +259,8 @@ export function LogPanel() {
                 ))}
               </select>
               {Object.keys(overrides).length === 0 ? (
-                // The empty state is a value, not a blank: "모듈 추가" alone left it unclear whether
-                // some default was already in effect.
+                // The empty state is a value, not a blank: the add-module control alone left it
+                // unclear whether some default was already in effect.
                 <span className="px-2 py-1 rounded-md text-[11px] font-mono border bg-white text-slate-400 border-slate-200">
                   {t('common.log_module_none')}
                 </span>
@@ -279,7 +290,7 @@ export function LogPanel() {
           </div>
         )}
         <div className="flex gap-2 items-center">
-          {/* 조립 결과를 그대로 보여준다 — 무엇이 적용되는지 숨기지 않는다. */}
+          {/* Show the assembled directive verbatim — never hide what is about to be applied. */}
           <code className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono text-slate-600 overflow-x-auto whitespace-nowrap">
             {filterStr}
           </code>
@@ -385,7 +396,7 @@ export function LogPanel() {
         </div>
       </div>
 
-      {/* 로그 목록 */}
+      {/* The rows. */}
       <div className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto border border-slate-200 rounded-lg p-2 bg-white">
         {entries.length === 0 ? (
           <div className="text-center py-8 text-[13px] text-slate-400">
@@ -394,7 +405,8 @@ export function LogPanel() {
         ) : (
           entries.map((e, i) => (
             <div key={`${e.tsMs}-${i}`} className="flex flex-col gap-0.5 py-1.5 border-b border-slate-50 last:border-0 text-[12px] font-mono">
-              {/* 메타 한 줄 (날짜·레벨·타겟) — 메시지는 다음 줄 전체 폭이라 타겟 길이로 폭이 들쭉날쭉하지 않음 */}
+              {/* Meta on one line (time, level, target); the message takes the next line at full
+                  width, so a long target name cannot make the column ragged. */}
               <div className="flex items-center gap-2">
                 <span className="text-slate-400 shrink-0 tabular-nums" title={new Date(e.tsMs).toLocaleString('ko-KR', { hour12: false })}>
                   {new Date(e.tsMs).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}

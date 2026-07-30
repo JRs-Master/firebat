@@ -10,11 +10,11 @@ use std::path::PathBuf;
 use tonic::{Request, Response, Status};
 
 use firebat_core::proto::{
-    log_service_server::LogService, LogEntryPb, LogQueryRequest, LogQueryResponse,
-    SetLogFilterRequest, SetLogFilterResponse,
+    log_service_server::LogService, GetLogStateRequest, GetLogStateResponse, LogEntryPb,
+    LogFacetPb, LogQueryRequest, LogQueryResponse, SetLogFilterRequest, SetLogFilterResponse,
 };
 
-use crate::adapters::log_buffer::{query_logs, LogQueryFilter};
+use crate::adapters::log_buffer::{log_facets, query_logs, LogFacet, LogQueryFilter};
 use crate::adapters::tracing_log::{reload_log_filter, LogReloadHandle};
 
 pub struct LogServiceImpl {
@@ -82,6 +82,43 @@ impl LogService for LogServiceImpl {
             })
             .collect();
         Ok(Response::new(LogQueryResponse { entries }))
+    }
+
+    async fn get_log_state(
+        &self,
+        _req: Request<GetLogStateRequest>,
+    ) -> Result<Response<GetLogStateResponse>, Status> {
+        // The active filter, read from the same file the apply path writes and boot reads. Without
+        // this the panel had no way to know what was running and always drew its own default, so a
+        // level raised minutes earlier looked like it had reverted (2026-07-31: it had not — the
+        // server was at debug the whole time).
+        let filter = std::fs::read_to_string(self.log_db_path.with_file_name("log-filter.txt"))
+            .map(|s| s.trim().to_string())
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| std::env::var("RUST_LOG").ok())
+            .unwrap_or_else(|| "info".to_string());
+
+        let db = self.log_db_path.clone();
+        let (targets, modules, total) = tokio::task::spawn_blocking(move || log_facets(&db))
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .map_err(Status::internal)?;
+        let to_pb = |f: Vec<LogFacet>| -> Vec<LogFacetPb> {
+            f.into_iter()
+                .map(|x| LogFacetPb {
+                    name: x.name,
+                    count: x.count,
+                    warn_count: x.warn_count,
+                })
+                .collect()
+        };
+        Ok(Response::new(GetLogStateResponse {
+            filter,
+            targets: to_pb(targets),
+            modules: to_pb(modules),
+            total,
+        }))
     }
 
     async fn set_log_filter(
