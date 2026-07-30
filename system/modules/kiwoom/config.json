@@ -943,7 +943,8 @@
         "routeItemPath": "item",
         "routeTypePath": "type",
         "routeItemArg": "item",
-        "routeTypeArg": "type"
+        "routeTypeArg": "type",
+        "chartTimeField": "20"
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
@@ -1026,7 +1027,9 @@
           "228": "체결강도",
           "290": "장구분",
           "51020": "현지 체결시간"
-        }
+        },
+        "chartTimeField": "20",
+        "chartDateField": "22"
       },
       "condition": {
         "preFrames": [

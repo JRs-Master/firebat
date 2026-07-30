@@ -819,6 +819,14 @@ impl ModuleManager {
                         .collect()
                 })
                 .unwrap_or_default(),
+            chart_time_field: decl
+                .get("chartTimeField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            chart_date_field: decl
+                .get("chartDateField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             share_connection: ws
                 .get("shareConnection")
                 .and_then(|v| v.as_bool())

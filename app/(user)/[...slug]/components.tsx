@@ -406,13 +406,28 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     const seed = candlesRef.current!;
     seedLastKeyRef.current = seed.length > 0 ? digitsKey(seed[seed.length - 1].date) : '';
   }
-  const nowKey = () => {
-    const d = new Date();
+  // 어느 봉에 담길 시각인가. 기준 시각을 인자로 받는다 — 브라우저의 지금이 아니라 거래소가
+  // 알려 준 체결시각으로 가르기 위해서다.
+  const periodKey = (d: Date) => {
     const base = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
     if (daily) return base;
     const intMin = Math.max(1, Math.round(ivSec / 60));
     const floored = Math.floor((d.getHours() * 60 + d.getMinutes()) / intMin) * intMin;
     return `${base}${p2(Math.floor(floored / 60))}${p2(floored % 60)}`;
+  };
+  // 거래소 체결시각(YYYYMMDDHHmmss 또는 HHmmss) → Date. 없으면 null 이고 그때만 시계를 쓴다.
+  const stampFromTick = (raw: unknown): Date | null => {
+    const t = typeof raw === 'string' ? raw.replace(/\D/g, '') : '';
+    const num = (a: number, b: number) => Number(t.slice(a, b));
+    if (t.length >= 14) {
+      return new Date(num(0, 4), num(4, 6) - 1, num(6, 8), num(8, 10), num(10, 12), num(12, 14));
+    }
+    if (t.length >= 6) {
+      const d = new Date();
+      d.setHours(num(0, 2), num(2, 4), num(4, 6), 0);
+      return d;
+    }
+    return null;
   };
   useLiveTopic(topic, visible, (frame) => {
     // 틱 가격 추출 — 프레임 top-level `value`(kiwoom quotes 표준) 기본, dot-path 오버라이드.
@@ -449,7 +464,10 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     const vol = volumeField ? dotGet(volumeField) : NaN;
     const tickVol = volumeField ? NaN : dotGet('volumeTick');
     const arr = candlesRef.current!;
-    const k = nowKey();
+    // 봉의 시각 = 거래소가 준 체결시각. 브라우저 시계로 찍으면 지연·시계 오차·다른 시간대에서
+    // 온 뷰어가 모두 틱을 엉뚱한 분에 넣는다 — 특히 장 마지막 봉이 그 피해를 본다.
+    const stamp = stampFromTick(flags.tickTime) ?? new Date();
+    const k = periodKey(stamp);
     const last = arr.length > 0 ? arr[arr.length - 1] : null;
     if (last && digitsKey(last.date) === k) {
       // 현재 기간 봉 갱신(일봉 = 오늘 봉). 거래량은 volumeField 있을 때만(없으면 시드값 유지).
@@ -460,7 +478,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       else if (Number.isFinite(tickVol)) last.volume = (last.volume || 0) + tickVol;
     } else {
       arr.push({
-        date: fmtRef.current!(new Date()), open: n, high: n, low: n, close: n,
+        date: fmtRef.current!(stamp), open: n, high: n, low: n, close: n,
         // 새 봉은 이 틱의 체결량에서 시작한다(0 이 아니라) — 첫 틱을 버리면 봉마다 조금씩 샌다.
         volume: Number.isFinite(vol) ? vol : (Number.isFinite(tickVol) ? tickVol : 0),
       });

@@ -1007,6 +1007,7 @@ fn decorate_realtime_frame(
         && spec.chart_volume_field.is_none()
         && spec.chart_change_field.is_none()
         && spec.chart_session_field.is_none()
+        && spec.chart_time_field.is_none()
     {
         return frame;
     }
@@ -1019,6 +1020,9 @@ fn decorate_realtime_frame(
     // Regular session or not, per the exchange's own marker. None when the frame omits it — an
     // unknown session must not silently drop ticks, so consumers treat absence as "chart it".
     let mut regular_session: Option<bool> = None;
+    // The exchange's clock for this print: HHmmss, with the trading date alongside it when the
+    // type carries one (a US session spans midnight KST, so the date cannot be assumed).
+    let mut tick_time: Option<String> = None;
     if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
             let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
@@ -1034,6 +1038,26 @@ fn decorate_realtime_frame(
                         if let Ok(n) = cleaned.parse::<f64>() {
                             // kiwoom price sign = 등락 방향, not a negative price.
                             chart_value = Some(if spec.chart_abs { n.abs() } else { n });
+                        }
+                    }
+                }
+            }
+            if let Some(tf) = &spec.chart_time_field {
+                if tick_time.is_none() {
+                    if let Some(t) = values.get(tf.as_str()).and_then(|v| v.as_str()) {
+                        let t = t.trim();
+                        if t.len() >= 6 && t.chars().all(|c| c.is_ascii_digit()) {
+                            let date = spec
+                                .chart_date_field
+                                .as_ref()
+                                .and_then(|df| values.get(df.as_str()))
+                                .and_then(|v| v.as_str())
+                                .map(|d| d.trim())
+                                .filter(|d| d.len() == 8 && d.chars().all(|c| c.is_ascii_digit()));
+                            tick_time = Some(match date {
+                                Some(d) => format!("{d}{t}"),
+                                None => t.to_string(),
+                            });
                         }
                     }
                 }
@@ -1100,6 +1124,9 @@ fn decorate_realtime_frame(
         }
         if let Some(v) = vol_tick {
             obj.insert("volumeTick".into(), serde_json::json!(v));
+        }
+        if let Some(v) = &tick_time {
+            obj.insert("tickTime".into(), serde_json::json!(v));
         }
         if let Some(v) = regular_session {
             obj.insert("regularSession".into(), serde_json::json!(v));

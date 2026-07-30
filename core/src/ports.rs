@@ -784,6 +784,13 @@ pub struct WsStreamSpec {
     /// sessions: kiwoom allows **one session per token**, so a second watch used to evict the
     /// first, while the protocol is designed for many registrations on one socket. Modules that
     /// do not declare it keep a socket per watch.
+    /// Which `values` keys carry the exchange's own timestamp for the print, and the date it
+    /// belongs to (config `chartTimeField` / `chartDateField`). Decoded to a top-level `tickTime`
+    /// so a live chart buckets bars by when the trade happened rather than when the browser
+    /// received it — latency, a skewed clock, or a viewer in another timezone all put ticks in the
+    /// wrong minute otherwise, and the last bar of a session is the one that suffers.
+    pub chart_time_field: Option<String>,
+    pub chart_date_field: Option<String>,
     pub share_connection: bool,
     /// How to tell which watch a realtime record belongs to when a socket is shared: the dot-path
     /// to the record's subscription id and its type (config `routeItemPath` / `routeTypePath`),
