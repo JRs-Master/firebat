@@ -224,7 +224,7 @@ export function LogPanel() {
           <div className="flex flex-col gap-1">
             {/* One list to pick from, and badges for what is currently raised: the panel does not
                 fill up as modules multiply, and what is turned up reads at a glance. */}
-            <span className="text-[11px] font-semibold text-slate-600">모듈별 상세</span>
+            <span className="text-[11px] font-semibold text-slate-600">모듈별 상세 레벨</span>
             <div className="flex flex-wrap items-center gap-1.5">
               <select
                 aria-label="자세히 볼 모듈"
@@ -235,7 +235,7 @@ export function LogPanel() {
                 }}
                 className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono max-w-[260px]"
               >
-                <option value="">모듈 선택 → debug</option>
+                <option value="">모듈 추가</option>
                 {modules.filter(m => !overrides[m.module]).map(m => (
                   <option key={m.module} value={m.module}>{m.module} ({m.count})</option>
                 ))}
@@ -245,7 +245,7 @@ export function LogPanel() {
                 : Object.entries(overrides).map(([mod, lv]) => (
                     <span key={mod}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-mono border bg-amber-500 text-white border-amber-500 font-bold">
-                      <button type="button" title="debug ↔ trace"
+                      <button type="button" title="클릭 — debug ↔ trace 전환"
                         onClick={() => setOverrides(o => ({ ...o, [mod]: o[mod] === 'debug' ? 'trace' : 'debug' }))}>
                         {mod.split('::').slice(-2).join('::')} = {lv}
                       </button>
