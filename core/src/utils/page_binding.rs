@@ -731,3 +731,256 @@ fn try_parse_shortcode(
     }
     Some((end + 1, alias, serde_json::Value::Object(args)))
 }
+
+/// Accumulated rows kept in a page - bounded like every other spec-resident value.
+const MAX_ACCUMULATED_ROWS: usize = 2000;
+
+#[derive(Debug, Default)]
+pub struct AccumulateReport {
+    /// Blocks whose accumulated state was touched.
+    pub blocks: usize,
+    /// Rows newly written (already-present keys are left alone).
+    pub added: usize,
+    pub errors: Vec<String>,
+}
+
+/// Accumulate declared results into the page's own state, in place.
+///
+/// A page sometimes has to KEEP something rather than re-derive it. The case at hand is a demo
+/// trade log: the analysis module pairs fills out of whatever bar window it was handed, so
+/// recomputing with a different window silently changed what "happened" - widening the chart's
+/// candle cap was enough to alter yesterday's record. Rows already written must therefore win.
+///
+/// Where this sits matters. Writing is driven by the rebake job, never by a page view: an
+/// anonymous GET must not be able to drive database writes or module runs (the same reason
+/// `_baked` is only ever written at authoring time or by cron). A page visit stays read-only and
+/// simply renders what is stored - with the side benefit that the record grows whether or not
+/// anyone is watching.
+pub async fn accumulate_spec(
+    spec: &mut serde_json::Value,
+    modules: &Arc<ModuleManager>,
+    project: Option<&str>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
+) -> AccumulateReport {
+    let mut report = AccumulateReport::default();
+    // hub visitor save = inert, mirroring bake_spec.
+    if project.is_some_and(|p| p.starts_with("hub:")) {
+        return report;
+    }
+    let Some(body) = spec.get_mut("body") else {
+        return report;
+    };
+    let mut budget = MAX_BINDINGS_PER_SPEC;
+    accumulate_walk(body, modules, cache, &mut report, &mut budget).await;
+    if report.blocks > 0 || !report.errors.is_empty() {
+        tracing::info!(
+            target: "page_binding",
+            blocks = report.blocks,
+            added = report.added,
+            errors = report.errors.len(),
+            "[page_binding] accumulate_spec done"
+        );
+        for e in &report.errors {
+            tracing::warn!(target: "page_binding", "[page_binding] {e}");
+        }
+    }
+    report
+}
+
+fn accumulate_walk<'a>(
+    v: &'a mut serde_json::Value,
+    modules: &'a Arc<ModuleManager>,
+    cache: Option<&'a Arc<SysmodCacheAdapter>>,
+    report: &'a mut AccumulateReport,
+    budget: &'a mut usize,
+) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    Box::pin(async move {
+        match v {
+            serde_json::Value::Array(arr) => {
+                for item in arr.iter_mut() {
+                    accumulate_walk(item, modules, cache, report, budget).await;
+                }
+            }
+            serde_json::Value::Object(obj) => {
+                let has_chain = obj
+                    .get("props")
+                    .map(|p| p.get("seed").is_some() && p.get("derive").is_some())
+                    .unwrap_or(false);
+                if has_chain {
+                    if let Some(props) = obj.get_mut("props").and_then(|p| p.as_object_mut()) {
+                        accumulate_one(props, modules, cache, report, budget).await;
+                    }
+                    return; // stored state is not a binding - do not descend into it
+                }
+                for (_k, val) in obj.iter_mut() {
+                    accumulate_walk(val, modules, cache, report, budget).await;
+                }
+            }
+            _ => {}
+        }
+    })
+}
+
+/// Run one block's seed -> derive chain and merge whatever its steps declared into the block.
+async fn accumulate_one(
+    props: &mut serde_json::Map<String, serde_json::Value>,
+    modules: &Arc<ModuleManager>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
+    report: &mut AccumulateReport,
+    budget: &mut usize,
+) {
+    let steps: Vec<serde_json::Value> = props
+        .get("derive")
+        .map(|d| match d {
+            serde_json::Value::Array(a) => a.clone(),
+            other => vec![other.clone()],
+        })
+        .unwrap_or_default();
+    // Nothing declares accumulation - the chain is a render-time concern only, skip the work.
+    if !steps.iter().any(|st| st.get("accumulate").is_some()) {
+        return;
+    }
+    let seed = props.get("seed").cloned().unwrap_or(serde_json::Value::Null);
+    let rows = match seed_rows(&seed, modules, cache, budget).await {
+        Ok(r) => r,
+        Err(e) => {
+            report.errors.push(e);
+            return;
+        }
+    };
+    let mut touched = false;
+    for step in &steps {
+        let Some(acc) = step.get("accumulate") else { continue };
+        let into = acc.get("into").and_then(|v| v.as_str()).unwrap_or("");
+        let key = acc.get("key").and_then(|v| v.as_str()).unwrap_or("");
+        let from = acc.get("from").and_then(|v| v.as_str()).unwrap_or("");
+        if into.is_empty() || key.is_empty() || from.is_empty() {
+            report
+                .errors
+                .push("accumulate needs into/key/from".to_string());
+            continue;
+        }
+        let module = step.get("module").and_then(|v| v.as_str()).unwrap_or("");
+        let action = step.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        let bars_arg = step
+            .get("barsArg")
+            .and_then(|v| v.as_str())
+            .unwrap_or("bars");
+        let mut args = step
+            .get("args")
+            .and_then(|a| a.as_object())
+            .cloned()
+            .unwrap_or_default();
+        args.insert(bars_arg.to_string(), serde_json::Value::Array(rows.clone()));
+        if *budget == 0 {
+            report.errors.push("binding budget exhausted".to_string());
+            return;
+        }
+        *budget -= 1;
+        let blocks = match resolve_binding(modules, cache, module, action, Some(&args)).await {
+            Ok(b) => b,
+            Err(e) => {
+                report.errors.push(format!("'{module}:{action}': {e}"));
+                continue;
+            }
+        };
+        // The source array has to live inside a block: resolve_binding returns blocks only, so
+        // anything outside them is unreachable from here.
+        let Some(fresh) = find_array_prop(&blocks, from) else {
+            report
+                .errors
+                .push(format!("'{module}:{action}' returned no '{from}' array to accumulate"));
+            continue;
+        };
+        let added = merge_by_key(props, into, key, &fresh);
+        report.added += added;
+        touched = true;
+    }
+    if touched {
+        report.blocks += 1;
+        props.insert(
+            "_accumulatedAt".to_string(),
+            serde_json::json!(chrono::Utc::now().timestamp_millis()),
+        );
+    }
+}
+
+/// Resolve the chain's seed and hand back its rows. The seed's declaration names where they sit,
+/// so the rows arrive as a block prop rather than being guessed out of the provider's envelope.
+async fn seed_rows(
+    seed: &serde_json::Value,
+    modules: &Arc<ModuleManager>,
+    cache: Option<&Arc<SysmodCacheAdapter>>,
+    budget: &mut usize,
+) -> Result<Vec<serde_json::Value>, String> {
+    let module = seed.get("module").and_then(|v| v.as_str()).unwrap_or("");
+    let action = seed.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    if module.is_empty() {
+        return Err("seed has no module".to_string());
+    }
+    if *budget == 0 {
+        return Err("binding budget exhausted".to_string());
+    }
+    *budget -= 1;
+    let args = seed.get("args").and_then(|a| a.as_object()).cloned();
+    let blocks = resolve_binding(modules, cache, module, action, args.as_ref())
+        .await
+        .map_err(|e| format!("seed '{module}:{action}': {e}"))?;
+    find_array_prop(&blocks, "data")
+        .ok_or_else(|| format!("seed '{module}:{action}' returned no data rows"))
+}
+
+/// First block prop with this name that holds an array.
+fn find_array_prop(blocks: &[serde_json::Value], name: &str) -> Option<Vec<serde_json::Value>> {
+    for b in blocks {
+        if let Some(arr) = b
+            .get("props")
+            .and_then(|p| p.get(name))
+            .and_then(|v| v.as_array())
+        {
+            return Some(arr.clone());
+        }
+    }
+    None
+}
+
+/// Merge fresh rows into the stored array, keyed. Already-stored keys are left exactly as they
+/// were - that is the whole point: a later recomputation must not rewrite what was recorded.
+/// Returns how many rows were newly written.
+fn merge_by_key(
+    props: &mut serde_json::Map<String, serde_json::Value>,
+    into: &str,
+    key: &str,
+    fresh: &[serde_json::Value],
+) -> usize {
+    let mut stored: Vec<serde_json::Value> = props
+        .get(into)
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let key_of = |row: &serde_json::Value| -> Option<String> {
+        row.get(key).map(|v| match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        })
+    };
+    let seen: std::collections::HashSet<String> = stored.iter().filter_map(key_of).collect();
+    let mut added = 0usize;
+    for row in fresh {
+        let Some(k) = key_of(row) else { continue };
+        if seen.contains(&k) {
+            continue;
+        }
+        stored.push(row.clone());
+        added += 1;
+    }
+    // Chronological by key, so a record read top-to-bottom reads forward in time whatever order
+    // the provider or a backfill happened to deliver.
+    stored.sort_by(|a, b| key_of(a).cmp(&key_of(b)));
+    if stored.len() > MAX_ACCUMULATED_ROWS {
+        let cut = stored.len() - MAX_ACCUMULATED_ROWS;
+        stored.drain(0..cut);
+    }
+    props.insert(into.to_string(), serde_json::Value::Array(stored));
+    added
+}

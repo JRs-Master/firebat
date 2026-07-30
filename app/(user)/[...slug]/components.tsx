@@ -51,6 +51,7 @@ const TYPE_ALIAS: Record<string, string> = {
   metric: 'Metric', timeline: 'Timeline', compare: 'Compare', key_value: 'KeyValue', keyvalue: 'KeyValue',
   status_badge: 'StatusBadge', statusbadge: 'StatusBadge', plan_card: 'PlanCard', plancard: 'PlanCard',
   stock_chart: 'StockChart', stockchart: 'StockChart', header: 'Header', text: 'Text', image: 'Image',
+  paper_trades: 'PaperTrades', papertrades: 'PaperTrades',
   form: 'Form', button: 'Button', divider: 'Divider', table: 'Table', card: 'Card', grid: 'Grid',
   html: 'Html', slider: 'Slider', tabs: 'Tabs', accordion: 'Accordion', progress: 'Progress',
   badge: 'Badge', alert: 'Alert', callout: 'Callout', list: 'List', carousel: 'Carousel',
@@ -342,6 +343,95 @@ function Tick({ label, value, sub, color }: { label: string; value: string; sub?
         <span className="text-[12px] sm:text-[13px] font-extrabold tabular-nums">{value}</span>
         {sub && <span className="text-[10px] font-bold tabular-nums opacity-80">{sub}</span>}
       </span>
+    </div>
+  );
+}
+
+/** 체결 한 건 — 진입과 청산이 짝지어진 왕복. 페이지가 이 배열을 자기 상태로 누적해 갖는다. */
+type PaperTrade = {
+  entryDate?: string; entryPrice?: number; entryLabel?: string;
+  exitDate?: string; exitPrice?: number; exitLabel?: string; exitReason?: string;
+  returnPct?: number; grossPct?: number;
+};
+
+/**
+ * 누적된 체결 기록 표 + 성적.
+ *
+ * 성적을 **여기서** 내는 이유: 승률·누적수익·최대낙폭은 기록 **전체**에 대해서만 뜻이 있다. 분석
+ * 모듈은 그때 받은 봉 구간만 보므로 창이 바뀌면 값이 달라진다(실측: 차트 봉 상한을 400→1000 으로
+ * 올렸을 뿐인데 과거 체결 건수가 달라졌다). 전체를 가진 쪽이 낸다.
+ */
+function PaperTradesComp({ records, title }: { records?: unknown; title?: string }) {
+  const rows: PaperTrade[] = Array.isArray(records) ? (records as PaperTrade[]) : [];
+  if (rows.length === 0) {
+    return (
+      <div className="border border-slate-200 rounded-xl bg-white px-4 py-5">
+        <p className="text-[12px] text-slate-400">아직 기록된 체결이 없습니다.</p>
+      </div>
+    );
+  }
+  const rets = rows.map(t => Number(t.returnPct)).filter(Number.isFinite);
+  const wins = rets.filter(r => r > 0).length;
+  // 누적은 곱으로 — 수익률을 더하면 복리가 아니라 다른 수가 된다.
+  let equity = 1, peak = 1, mdd = 0;
+  for (const r of rets) {
+    equity *= 1 + r / 100;
+    peak = Math.max(peak, equity);
+    mdd = Math.min(mdd, equity / peak - 1);
+  }
+  const pct = (v: number, d = 2) => `${v > 0 ? '+' : ''}${v.toFixed(d)}%`;
+  const won = rets.length > 0;
+  const stats: Array<{ label: string; value: string; tone?: string }> = [
+    { label: '체결', value: `${rows.length}건` },
+    { label: '승률', value: won ? `${((wins / rets.length) * 100).toFixed(1)}%` : '—' },
+    { label: '누적 수익', value: won ? pct((equity - 1) * 100) : '—',
+      tone: !won ? undefined : equity >= 1 ? TICK_UP : TICK_DOWN },
+    { label: '최대 낙폭', value: won ? pct(mdd * 100) : '—', tone: won && mdd < 0 ? TICK_DOWN : undefined },
+  ];
+  const num = (v: unknown) =>
+    Number.isFinite(Number(v)) ? Number(v).toLocaleString('ko-KR', { maximumFractionDigits: 0 }) : '—';
+  const ret = (v: unknown) => (Number.isFinite(Number(v)) ? pct(Number(v)) : '—');
+  return (
+    <div className="flex flex-col gap-2">
+      {title && <h3 className="text-[13px] font-bold text-slate-700">{title}</h3>}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
+        {stats.map(st => (
+          <div key={st.label} className="bg-white flex flex-col items-center justify-center px-2 py-2">
+            <span className="text-[9px] font-semibold tracking-wider text-slate-400 uppercase">{st.label}</span>
+            <span className="text-[13px] font-extrabold tabular-nums" style={{ color: st.tone ?? '#0f172a' }}>{st.value}</span>
+          </div>
+        ))}
+      </div>
+      {/* 넓은 표는 자기 안에서만 가로 스크롤 — 페이지 본문이 밀리지 않게. */}
+      <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500">
+              {['진입일', '진입가', '청산일', '청산가', '비용전', '비용후', '진입 신호', '청산 신호'].map(h => (
+                <th key={h} className="px-2.5 py-2 text-left font-semibold whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {/* 최근 것이 위 — 기록을 볼 때 궁금한 건 방금 무슨 일이 있었나다. */}
+            {[...rows].reverse().map((t, i) => (
+              <tr key={`${t.entryDate}-${i}`} className="border-t border-slate-100">
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums text-slate-600">{t.entryDate ?? '—'}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums">{num(t.entryPrice)}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums text-slate-600">{t.exitDate ?? '—'}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums">{num(t.exitPrice)}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums text-slate-400">{ret(t.grossPct)}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap tabular-nums font-bold"
+                    style={{ color: Number(t.returnPct) > 0 ? TICK_UP : Number(t.returnPct) < 0 ? TICK_DOWN : undefined }}>
+                  {ret(t.returnPct)}
+                </td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-500">{t.entryLabel ?? '—'}</td>
+                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-500">{t.exitReason || t.exitLabel || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -662,6 +752,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
       return <ChartComp type={(ct === 'donut' ? 'doughnut' : ct) ?? 'bar'} data={p.data ?? p.values ?? []} labels={p.labels ?? []} series={p.series ?? p.datasets} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     }
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} futureSlots={p.futureSlots} annotations={p.annotations} scale={p.scale} />;
+    case 'PaperTrades':   return <PaperTradesComp records={p.records} title={p.title} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? p.events ?? []} />;
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;

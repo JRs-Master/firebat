@@ -87,12 +87,23 @@ impl Core {
             None,
         )
         .await;
-        if report.baked == 0 {
+        // 페이지가 스스로 누적해 갖는 상태(데모 체결 기록 등). 방문이 아니라 이 잡이 쓴다 —
+        // 익명 GET 이 DB 쓰기를 유발하지 않게 한 성질을 그대로 둔 채, 안 보고 있어도 쌓이게.
+        let acc = crate::utils::page_binding::accumulate_spec(
+            &mut spec,
+            &self.module,
+            record.project.as_deref(),
+            None,
+        )
+        .await;
+        if report.baked == 0 && acc.blocks == 0 {
             // 바인딩이 없거나 전부 실패 — 재저장 없이 정직한 실패(빈 rebake 는 무의미).
-            return Err(if report.errors.is_empty() {
-                format!("page '{slug}' has no bakeable module blocks")
+            let mut why = report.errors.clone();
+            why.extend(acc.errors.clone());
+            return Err(if why.is_empty() {
+                format!("page '{slug}' has nothing to rebake or accumulate")
             } else {
-                format!("rebake '{slug}' baked 0 blocks: {}", report.errors.join(" / "))
+                format!("rebake '{slug}' produced nothing: {}", why.join(" / "))
             });
         }
         let spec_str = serde_json::to_string(&spec).map_err(|e| e.to_string())?;

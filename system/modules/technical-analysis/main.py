@@ -1139,7 +1139,8 @@ def main():
             cost = pos["entryPrice"] * (1 + fee)
             proceeds = exit_px * (1 - fee - tax)
             net = proceeds / cost - 1 if cost else 0.0
-            return {**pos, "exitDate": date, "exitPrice": round(exit_px, 6),
+            return {**{k: v for k, v in pos.items() if k != "peak"},
+                    "exitDate": date, "exitPrice": round(exit_px, 6),
                     "exitLabel": label, "exitReason": reason,
                     "returnPct": round(net * 100, 4),
                     "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)}
@@ -1254,19 +1255,9 @@ def main():
         # 여기서 같은 값을 카드로 또 내면 방문 시각에 굳은 숫자와 틱마다 바뀌는 숫자가 한 화면에
         # 공존해 어느 쪽이 지금인지 사용자가 판단해야 한다(2026-07-30: "얘네들 실시간으로 안나오고").
         _ = live_now
-        blocks.append({"type": "grid", "props": {"columns": 4, "children": [
-            {"type": "metric", "props": {"label": "체결", "value": len(trades), "unit": "건",
-                                         "subLabel": "미청산 %d" % (1 if pos else 0)}},
-            {"type": "metric", "props": {"label": "승률", "value": backtest["winRate"] if trades else "—", "unit": "%"}},
-            {"type": "metric", "props": {"label": "누적 수익", "value": backtest["totalReturnPct"] if trades else "—",
-                                         "unit": "%",
-                                         "deltaType": "up" if (backtest["totalReturnPct"] or 0) > 0 else "down"}},
-            {"type": "metric", "props": {"label": "최대 낙폭", "value": backtest["maxDrawdownPct"] if trades else "—", "unit": "%"}},
-        ]}})
-        blocks.append({"type": "table", "props": {
-            "headers": ["진입일", "진입가", "청산일", "청산가", "수익률(비용전)", "수익률(비용후)",
-                        "진입 신호", "청산 신호"],
-            "rows": rows, "stickyCol": False, "striped": True, "sortable": True}})
+        # 승률·누적수익·최대낙폭 카드는 내지 않는다 — 이 창의 체결만 보고 낸 숫자라 창이 바뀌면
+        # 값이 달라진다. 누적된 전체를 가진 쪽(페이지)이 내야 한다. 계산에 쓸 재료는 아래 레코드다.
+        blocks.append({"type": "paper_trades", "props": {"records": trades}})
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
             "blocks": blocks,
