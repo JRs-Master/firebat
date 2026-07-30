@@ -206,7 +206,9 @@ async fn registered_tool_count() {
     let stats = tools.stats();
     // page: 4 + storage: 4 + schedule: 3 + media: 2 (image_gen/regenerate — search_media 는
     // AiManager 시맨틱 판이 유일 등록) +
-    // conversation: 2 (search_history/search_memory) + entity: 5 + episodic: 3 + consolidation: 2 +
+    // conversation: 4 (search_history/search_memory + list_conversations/read_conversation — the
+    //   two steps that widen a single-message hit into the session around it) +
+    // entity: 5 + episodic: 3 + consolidation: 2 +
     // module: 3 + mcp: 2 (mcp_call 포함) + cache: 4 (read/grep/aggregate/drop) +
     // task_library: 3 (run_task/search_library/library_extract_structured) +
     // meta: 3 (render/suggest/propose_plan) +
@@ -214,9 +216,9 @@ async fn registered_tool_count() {
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
     // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
-    // stream_watch: 3 (start/stop/list — 실시간 감시) = 63
-    assert_eq!(stats.total, 63);
-    assert_eq!(stats.by_source.get("core").copied(), Some(63));
+    // stream_watch: 3 (start/stop/list — 실시간 감시) = 65
+    assert_eq!(stats.total, 65);
+    assert_eq!(stats.by_source.get("core").copied(), Some(65));
 }
 
 #[tokio::test]

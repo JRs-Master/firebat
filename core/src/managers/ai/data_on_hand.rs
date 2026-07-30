@@ -41,10 +41,20 @@ pub fn build_index(
         }
     }
     if keys.is_empty() {
+        // Logged so a failed follow-up can be told apart: nothing recorded (this path) vs recorded
+        // but expired vs injected-and-ignored. Without the distinction the only observable is "the
+        // model fetched again", which has three different causes and three different fixes.
+        tracing::debug!(
+            target: "data_on_hand",
+            conv_id,
+            scanned = messages.len() - start,
+            "no cache keys recorded in recent turns — nothing to offer"
+        );
         return None;
     }
 
     let now = crate::utils::time::now_ms();
+    let keys_seen = keys.len();
     let mut lines: Vec<String> = Vec::new();
     for key in keys {
         // Expired or evicted keys are simply absent — never advertise a key that cannot be read,
@@ -64,8 +74,21 @@ pub fn build_index(
         }
     }
     if lines.is_empty() {
+        tracing::debug!(
+            target: "data_on_hand",
+            conv_id,
+            recorded = keys_seen,
+            "every recorded cache key has expired — nothing to offer"
+        );
         return None;
     }
+    tracing::debug!(
+        target: "data_on_hand",
+        conv_id,
+        recorded = keys_seen,
+        offered = lines.len(),
+        "data-on-hand index injected"
+    );
 
     Some(format!(
         "Already fetched in this conversation and still readable — use cache_read / cache_grep / \
