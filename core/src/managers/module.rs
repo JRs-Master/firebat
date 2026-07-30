@@ -1764,3 +1764,65 @@ mod coercion_tests {
         assert!(validate_value(&out, &sch).is_err(), "enum 밖 값은 여전히 거부");
     }
 }
+
+#[cfg(test)]
+mod ws_frame_tests {
+    use super::{substitute_ws_frame, ws_group_no, ws_str_list};
+    use serde_json::json;
+
+    #[test]
+    fn fills_scalars_and_defaults() {
+        let tpl = json!({"trnm": "REG", "grp_no": "{grpNo}", "data": [{"item": ["{item}"], "type": ["{type:0B}"]}]});
+        let out = substitute_ws_frame(&tpl, &json!({"item": "005930", "grpNo": "1234"})).unwrap();
+        assert_eq!(out["grp_no"], "1234");
+        assert_eq!(out["data"][0]["item"][0], "005930");
+        assert_eq!(out["data"][0]["type"][0], "0B", "an absent arg falls back to the declared default");
+    }
+
+    #[test]
+    fn a_lone_placeholder_in_a_list_expands_into_the_list() {
+        // One declaration has to serve one symbol and a batch of them: on a provider that caps
+        // sessions per token, needing a frame per symbol is the whole difficulty.
+        let tpl = json!({"data": [{"item": ["{item}"]}]});
+        let out = substitute_ws_frame(&tpl, &json!({"item": ["005930", "000660"]})).unwrap();
+        assert_eq!(out["data"][0]["item"], json!(["005930", "000660"]));
+    }
+
+    #[test]
+    fn builds_the_object_a_provider_expects() {
+        // kiwoom's US registration takes {jmcode, stex_tp} where the domestic one takes a code.
+        let tpl = json!({"data": [{"item": [{"jmcode": "{item}", "stex_tp": "{stexTp:ND}"}]}]});
+        let out = substitute_ws_frame(&tpl, &json!({"item": "NVDA"})).unwrap();
+        assert_eq!(out["data"][0]["item"][0]["jmcode"], "NVDA");
+        assert_eq!(out["data"][0]["item"][0]["stex_tp"], "ND");
+    }
+
+    #[test]
+    fn structured_args_reach_the_wire_intact() {
+        let tpl = json!({"data": "{payload}"});
+        let out = substitute_ws_frame(&tpl, &json!({"payload": [{"a": 1}]})).unwrap();
+        assert_eq!(out["data"], json!([{"a": 1}]));
+    }
+
+    #[test]
+    fn a_missing_required_arg_is_an_error_not_an_empty_frame() {
+        let tpl = json!({"item": "{item}"});
+        assert!(substitute_ws_frame(&tpl, &json!({})).is_err());
+    }
+
+    #[test]
+    fn group_numbers_differ_per_watch_and_are_stable() {
+        let a = ws_group_no("ws-kiwoom-quotes-aaaa1111");
+        let b = ws_group_no("ws-kiwoom-quotes-bbbb2222");
+        assert_ne!(a, b, "watches sharing a group would tear down each other's registrations");
+        assert_eq!(a, ws_group_no("ws-kiwoom-quotes-aaaa1111"), "must survive a restart");
+        assert_eq!(a.len(), 4, "the provider caps the group field at four characters");
+    }
+
+    #[test]
+    fn subscription_lists_accept_one_value_or_many() {
+        assert_eq!(ws_str_list(Some(&json!("005930"))), vec!["005930"]);
+        assert_eq!(ws_str_list(Some(&json!(["005930", "000660"]))), vec!["005930", "000660"]);
+        assert!(ws_str_list(None).is_empty(), "no declaration means route everything on the type");
+    }
+}
