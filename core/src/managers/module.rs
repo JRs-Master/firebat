@@ -819,6 +819,10 @@ impl ModuleManager {
                         .collect()
                 })
                 .unwrap_or_default(),
+            chart_day_volume_field: decl
+                .get("chartDayVolumeField")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             chart_time_field: decl
                 .get("chartTimeField")
                 .and_then(|v| v.as_str())

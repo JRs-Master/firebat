@@ -1028,7 +1028,8 @@
         "routeTypePath": "type",
         "routeItemArg": "item",
         "routeTypeArg": "type",
-        "chartTimeField": "20"
+        "chartTimeField": "20",
+        "chartDayVolumeField": "13"
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
@@ -1113,7 +1114,8 @@
           "51020": "현지 체결시간"
         },
         "chartTimeField": "20",
-        "chartDateField": "22"
+        "chartDateField": "22",
+        "chartDayVolumeField": "13"
       },
       "condition": {
         "preFrames": [

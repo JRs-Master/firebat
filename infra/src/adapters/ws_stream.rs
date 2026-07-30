@@ -1008,6 +1008,7 @@ fn decorate_realtime_frame(
         && spec.chart_change_field.is_none()
         && spec.chart_session_field.is_none()
         && spec.chart_time_field.is_none()
+        && spec.chart_day_volume_field.is_none()
     {
         return frame;
     }
@@ -1023,6 +1024,8 @@ fn decorate_realtime_frame(
     // The exchange's clock for this print: HHmmss, with the trading date alongside it when the
     // type carries one (a US session spans midnight KST, so the date cannot be assumed).
     let mut tick_time: Option<String> = None;
+    // Cumulative volume for the session, straight from the exchange.
+    let mut day_volume: Option<f64> = None;
     if let Some(items) = frame.get_mut("data").and_then(|d| d.as_array_mut()) {
         for item in items.iter_mut() {
             let Some(values) = item.get("values").and_then(|v| v.as_object()).cloned() else {
@@ -1038,6 +1041,17 @@ fn decorate_realtime_frame(
                         if let Ok(n) = cleaned.parse::<f64>() {
                             // kiwoom price sign = 등락 방향, not a negative price.
                             chart_value = Some(if spec.chart_abs { n.abs() } else { n });
+                        }
+                    }
+                }
+            }
+            if let Some(df) = &spec.chart_day_volume_field {
+                if day_volume.is_none() {
+                    if let Some(raw) = values.get(df.as_str()).and_then(|v| v.as_str()) {
+                        let cleaned: String =
+                            raw.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+                        if let Ok(n) = cleaned.parse::<f64>() {
+                            day_volume = Some(n);
                         }
                     }
                 }
@@ -1124,6 +1138,9 @@ fn decorate_realtime_frame(
         }
         if let Some(v) = vol_tick {
             obj.insert("volumeTick".into(), serde_json::json!(v));
+        }
+        if let Some(v) = day_volume {
+            obj.insert("dayVolume".into(), serde_json::json!(v));
         }
         if let Some(v) = &tick_time {
             obj.insert("tickTime".into(), serde_json::json!(v));

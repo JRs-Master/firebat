@@ -321,7 +321,13 @@ function liveStats(bars: OhlcvBar[]) {
     rsi = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
   }
   const last = bars[bars.length - 1];
-  const dayVol = bars.reduce((a, b) => a + (b.volume || 0), 0);
+  // 누적 거래량은 **그 세션의 값**이다. 시리즈 전체를 더하면 여러 날을 합쳐 버린다 — 07/27~07/30
+  // 900봉을 더해 1.3억이 나왔고 오늘치는 3천만대였다(2026-07-30 실측). 마지막 날 봉만 더한다.
+  const lastDay = String(last.date ?? '').replace(/\D/g, '').slice(0, 8);
+  const dayVol = bars.reduce(
+    (a, b) => (String(b.date ?? '').replace(/\D/g, '').slice(0, 8) === lastDay ? a + (b.volume || 0) : a),
+    0,
+  );
   return { price: last.close, rsi, hist, percentB, stochK, dayVol, barVol: last.volume || 0 };
 }
 
@@ -477,6 +483,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   const frameChangeRef = useRef<{ chg: number; rate: number } | null>(null);
   // 틱이 왔지만 봉으로 담지 않은 이유 — 배지에 그대로 띄운다(null = 정상 반영 중).
   const skipNoteRef = useRef<string | null>(null);
+  // 거래소가 준 세션 누적 거래량. 봉 합산보다 정확하다(유실 틱·시드 경계 무관).
+  const dayVolRef = useRef<number | null>(null);
   const ivSec = Math.min(Math.max(Number(interval) || 60, 5), 86400); // 5초 ~ 1일(일봉)
   const daily = ivSec >= 86400;
   const cap = Math.min(Math.max(Number(maxCandles) || (daily ? 120 : 240), 30), 1000);
@@ -575,6 +583,8 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     // 이어 붙이면 maxCandles 트림이 어제 봉을 밀어내며 저절로 정리되고, 어제 종가에서 오늘
     // 시가로 이어지는 구간도 볼 값이 있다.
     skipNoteRef.current = null;
+    const dv = dotGet('dayVolume');
+    if (Number.isFinite(dv) && dv > 0) dayVolRef.current = dv;
     // 거래량은 **의미가 두 가지**라 섞으면 안 된다.
     //   volumeField 지정 = 그 필드가 이미 누적값(한투 일봉 ACML_VOL) → 봉에 **대입**
     //   미지정          = 서버가 내려준 top-level `volumeTick`(체결량, 틱당) → 봉에 **합산**
@@ -688,7 +698,11 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
             <div className="bg-white min-w-0"><Tick label="스토캐스틱 %K" value={n(st.stochK, 1)}
               color={st.stochK == null ? undefined : st.stochK >= 80 ? TICK_UP : st.stochK <= 20 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white min-w-0"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
-            <div className="bg-white min-w-0"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
+            {/* 브로커가 주는 세션 누적값이 있으면 그것이 정답 — 우리 합산은 유실된 틱·시드 경계에
+                영향을 받는다. 없을 때만(장 시작 전 등) 마지막 날 봉 합산으로 물러난다. */}
+            <div className="bg-white min-w-0"><Tick label="누적 거래량"
+              value={n(dayVolRef.current ?? st.dayVol)}
+              sub={dayVolRef.current == null ? '봉 합산' : undefined} /></div>
           </div>
         );
       })()}

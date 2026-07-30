@@ -789,6 +789,10 @@ pub struct WsStreamSpec {
     /// so a live chart buckets bars by when the trade happened rather than when the browser
     /// received it — latency, a skewed clock, or a viewer in another timezone all put ticks in the
     /// wrong minute otherwise, and the last bar of a session is the one that suffers.
+    /// Which `values` key carries the session's cumulative volume (config `chartDayVolumeField`).
+    /// Decoded to a top-level `dayVolume`. Summing the displayed bars is not a substitute: a chart
+    /// spanning several sessions would add them all up, and the figure people check is today's.
+    pub chart_day_volume_field: Option<String>,
     pub chart_time_field: Option<String>,
     pub chart_date_field: Option<String>,
     pub share_connection: bool,
