@@ -35,6 +35,8 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 
 /** tail 중 화면에 쌓아둘 최대 줄 수 — 무한 누적 방지 (오래된 것부터 drop). */
+/** 목록(target·모듈)을 뽑을 표본 — 조회 창과 독립이라야 한다. */
+const FACET_SAMPLE = 20000;
 const TAIL_MAX_ROWS = 1000;
 
 export function LogPanel() {
@@ -127,7 +129,9 @@ export function LogPanel() {
     setTail(true);
   }, []);
 
-  // target 목록 — **필터와 독립**으로 따로 받는다. 옛엔 화면에 로드된 엔트리에서 파생해서,
+  // target 목록 — **필터와 독립**으로 따로 받고, 표본도 조회 창보다 넓게 잡는다. 1000건으로
+  // 뽑던 옛 코드는 빈발 target 하나가 그 창을 다 먹으면(실측: ws_stream 925/1000) 드물게 찍히는
+  // target 이 목록에서 사라져, 있는데 없는 것처럼 보였다("아까는 page_binding 이 있었는데"). 옛엔 화면에 로드된 엔트리에서 파생해서,
   // `ai` 로 거르는 순간 목록이 `ai` 하나로 쪼그라들어 다음 target 으로 못 넘어갔다.
   // 백엔드 0(같은 조회 API 를 조건 없이 한 번 더) — admin 전용 로컬 sqlite 라 값싸다.
   const [facets, setFacets] = useState<Array<{ target: string; count: number; warn: boolean }>>([]);
@@ -137,7 +141,7 @@ export function LogPanel() {
   const loadFacets = useCallback(async () => {
     try {
       const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
-        '/api/logs?limit=1000', { category: 'logs' },
+        `/api/logs?limit=${FACET_SAMPLE}`, { category: 'logs' },
       );
       if (!data?.success) return;
       const acc = new Map<string, { count: number; warn: boolean }>();
@@ -197,28 +201,38 @@ export function LogPanel() {
         </div>
         {modules.length > 0 && (
           <div className="flex flex-col gap-1">
+            {/* 고르는 곳은 리스트 하나, 켜 둔 것만 뱃지로 남긴다 — 모듈이 늘어도 화면이 안 덮이고
+                "지금 무엇이 올라가 있나"가 한눈에 보인다. */}
             <span className="text-[11px] font-semibold text-slate-600">모듈별로 더 자세히 (선택)</span>
-            <div className="flex flex-wrap gap-1">
-              {modules.map(m => {
-                const cur = overrides[m.module];
-                return (
-                  <button key={m.module} type="button"
-                    // 클릭할 때마다 off → debug → trace → 해제. 한 컨트롤로 켜고 끄고 강도까지.
-                    onClick={() => setOverrides(o => {
-                      const next = { ...o };
-                      if (!cur) next[m.module] = 'debug';
-                      else if (cur === 'debug') next[m.module] = 'trace';
-                      else delete next[m.module];
-                      return next;
-                    })}
-                    title={`${m.module} — 최근 ${m.count}건 (클릭: debug → trace → 해제)`}
-                    className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
-                      cur ? 'bg-amber-500 text-white border-amber-500 font-bold'
-                          : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}`}>
-                    {m.module.split('::').slice(-2).join('::')}{cur ? ` = ${cur}` : ''}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <select
+                aria-label="자세히 볼 모듈"
+                value=""
+                onChange={e => {
+                  const m = e.target.value;
+                  if (m) setOverrides(o => ({ ...o, [m]: 'debug' }));
+                }}
+                className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono max-w-[260px]"
+              >
+                <option value="">모듈 고르기…</option>
+                {modules.filter(m => !overrides[m.module]).map(m => (
+                  <option key={m.module} value={m.module}>{m.module} ({m.count})</option>
+                ))}
+              </select>
+              {Object.keys(overrides).length === 0
+                ? <span className="text-[11px] text-slate-400">고르면 debug 로 올립니다</span>
+                : Object.entries(overrides).map(([mod, lv]) => (
+                    <span key={mod}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-mono border bg-amber-500 text-white border-amber-500 font-bold">
+                      <button type="button" title="debug ↔ trace"
+                        onClick={() => setOverrides(o => ({ ...o, [mod]: o[mod] === 'debug' ? 'trace' : 'debug' }))}>
+                        {mod.split('::').slice(-2).join('::')} = {lv}
+                      </button>
+                      <button type="button" aria-label={`${mod} 해제`} title="해제"
+                        onClick={() => setOverrides(o => { const n = { ...o }; delete n[mod]; return n; })}
+                        className="opacity-80 hover:opacity-100">×</button>
+                    </span>
+                  ))}
             </div>
           </div>
         )}
@@ -260,28 +274,24 @@ export function LogPanel() {
           <label className="text-[11px] font-semibold text-slate-600">
             target {targetPrefix && <span className="font-normal text-slate-400">— {targetPrefix}</span>}
           </label>
-          {/* 이름을 외워서 치는 대신 **있는 것 중에 고른다**. 건수로 정렬하고, 경고·에러가
-              섞인 target 은 점으로 표시 — "어디를 봐야 하나"가 목록 자체에서 읽힌다. */}
-          <div className="flex flex-wrap gap-1">
-            <button type="button" onClick={() => setTargetPrefix('')}
-              className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
-                targetPrefix === '' ? 'bg-blue-600 text-white border-blue-600 font-bold'
-                                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
-              전체
-            </button>
+          {/* 이름을 외워서 치는 대신 **있는 것 중에 고른다**. 칩을 전부 늘어놓던 옛 UI 는 target 이
+              늘수록 화면을 덮었고, 위쪽 "모듈별로 더 자세히" 와 이름이 겹쳐 같은 것을 두 번
+              보여주는 것처럼 읽혔다(둘은 사실 같은 조회에서 뽑은 두 축 — 아래는 필터, 위는 수집
+              레벨). 건수 순으로 정렬하고 경고·에러가 섞인 것은 점을 붙여, "어디를 봐야 하나"는
+              목록 안에서 읽히게 둔다. */}
+          <select
+            aria-label="target 필터"
+            value={targetPrefix}
+            onChange={e => setTargetPrefix(e.target.value)}
+            className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono"
+          >
+            <option value="">전체</option>
             {facets.map(f => (
-              <button key={f.target} type="button"
-                onClick={() => setTargetPrefix(targetPrefix === f.target ? '' : f.target)}
-                title={`${f.target} — 최근 ${f.count}건`}
-                className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors inline-flex items-center gap-1 ${
-                  targetPrefix === f.target ? 'bg-blue-600 text-white border-blue-600 font-bold'
-                                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
-                {f.warn && <span className={`w-1.5 h-1.5 rounded-full ${targetPrefix === f.target ? 'bg-white' : 'bg-amber-500'}`} />}
-                {f.target}
-                <span className={targetPrefix === f.target ? 'text-blue-100' : 'text-slate-400'}>{f.count}</span>
-              </button>
+              <option key={f.target} value={f.target}>
+                {f.warn ? '● ' : ''}{f.target} ({f.count})
+              </option>
             ))}
-          </div>
+          </select>
         </div>
         <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
           <label htmlFor="log-contains" className="text-[11px] font-semibold text-slate-600">검색 (메시지·target 포함)</label>
