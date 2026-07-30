@@ -1417,19 +1417,37 @@ fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
 /// String values of the exact form `"{param}"` / `"{param:default}"` are replaced with the
 /// input arg (coerced to string); `"{param}"` with no default and no arg = error (required).
 /// `"{TOKEN}"` is left as-is — the transport adapter fills it after the token fetch.
-/// The parameter name of a value that is nothing but a placeholder, e.g. `{item}` or
-/// `{type:0B}` - used to tell "this slot IS the argument" from a string that merely contains one.
-fn lone_placeholder(v: &serde_json::Value) -> Option<&str> {
+/// The parameter of a value that is nothing but a placeholder - `{item}`, `{type:0B}`, `{item?}` -
+/// used to tell "this slot IS the argument" from a string that merely contains one. The trailing
+/// `?` marks an argument the provider does not require; the bool reports it.
+fn lone_placeholder(v: &serde_json::Value) -> Option<(&str, bool)> {
     let s = v.as_str()?;
     let inner = s.strip_prefix('{')?.strip_suffix('}')?;
     if inner == "TOKEN" {
         return None;
     }
     let param = inner.split_once(':').map(|(p, _)| p).unwrap_or(inner);
+    let optional = param.ends_with('?');
+    let param = param.trim_end_matches('?');
     if param.is_empty() || !param.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
-    Some(param)
+    Some((param, optional))
+}
+
+/// Whether a template slot is an optional argument that this call did not supply - in which case
+/// the key it sits under is left out of the frame entirely rather than sent empty. Realtime types
+/// scoped to the account, and the market-wide ones, ignore the subscription id; requiring it made
+/// them impossible to register without inventing a value.
+fn omit_optional(v: &serde_json::Value, input: &serde_json::Value) -> bool {
+    let unresolved = |x: &serde_json::Value| match lone_placeholder(x) {
+        Some((name, true)) => input.get(name).is_none(),
+        _ => false,
+    };
+    match v {
+        serde_json::Value::Array(a) => !a.is_empty() && a.iter().all(unresolved),
+        other => unresolved(other),
+    }
 }
 
 fn substitute_ws_frame(
@@ -1449,6 +1467,7 @@ fn substitute_ws_frame(
                     Some((p, d)) => (p, Some(d)),
                     None => (inner, None),
                 };
+                let param = param.trim_end_matches('?');
                 if param.is_empty() || !param.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                     return Ok(v.clone()); // not a placeholder (e.g. literal JSON-ish string)
                 }
@@ -1474,6 +1493,9 @@ fn substitute_ws_frame(
             serde_json::Value::Object(map) => {
                 let mut out = serde_json::Map::new();
                 for (k, val) in map {
+                    if omit_optional(val, input) {
+                        continue;
+                    }
                     out.insert(k.clone(), walk(val, input)?);
                 }
                 Ok(serde_json::Value::Object(out))
@@ -1485,7 +1507,7 @@ fn substitute_ws_frame(
                     // declaration covers a single subscription and a batch of them alike. Without
                     // this, subscribing to two symbols would need two frames - and on a provider
                     // that caps sessions per token, two frames is the whole difficulty.
-                    if let Some(name) = lone_placeholder(item) {
+                    if let Some((name, _)) = lone_placeholder(item) {
                         if let Some(serde_json::Value::Array(vals)) = input.get(name) {
                             out.extend(vals.iter().cloned());
                             continue;
@@ -1810,6 +1832,19 @@ mod ws_frame_tests {
         let tpl = json!({"data": "{payload}"});
         let out = substitute_ws_frame(&tpl, &json!({"payload": [{"a": 1}]})).unwrap();
         assert_eq!(out["data"], json!([{"a": 1}]));
+    }
+
+    #[test]
+    fn an_absent_optional_arg_drops_its_key() {
+        // 주문체결/잔고 같은 계좌 기준 타입은 등록 요소를 무시한다 - 그래도 필수로 요구하면
+        // 더미 값을 지어내야만 구독할 수 있다.
+        let tpl = json!({"trnm": "REG", "data": [{"item": ["{item?}"], "type": ["{type:00}"]}]});
+        let out = substitute_ws_frame(&tpl, &json!({})).unwrap();
+        assert!(out["data"][0].get("item").is_none(), "key is left out, not sent empty");
+        assert_eq!(out["data"][0]["type"][0], "00");
+        // 값을 주면 평소대로 실린다.
+        let out = substitute_ws_frame(&tpl, &json!({"item": "005930"})).unwrap();
+        assert_eq!(out["data"][0]["item"][0], "005930");
     }
 
     #[test]
