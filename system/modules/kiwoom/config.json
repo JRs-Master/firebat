@@ -1260,5 +1260,36 @@
         ]
       }
     }
+  },
+  "timeseries": {
+    "ka10080": {
+      "fetchMode": "cursor",
+      "anchorParam": "base_dt",
+      "countParam": "",
+      "nextCursorField": "",
+      "idParams": {
+        "stk_cd": "",
+        "tic_scope": "1"
+      },
+      "dateField": "date",
+      "rows": [
+        "stk_min_pole_chart_qry",
+        "records"
+      ]
+    },
+    "ka10081": {
+      "fetchMode": "cursor",
+      "anchorParam": "base_dt",
+      "countParam": "",
+      "nextCursorField": "",
+      "idParams": {
+        "stk_cd": ""
+      },
+      "dateField": "date",
+      "rows": [
+        "stk_dt_pole_chart_qry",
+        "records"
+      ]
+    }
   }
 }
