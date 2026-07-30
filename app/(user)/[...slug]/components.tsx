@@ -289,6 +289,23 @@ function liveStats(bars: OhlcvBar[]) {
     const sig = ema(line, 9);
     if (sig != null && line.length) hist = line[line.length - 1] - sig;
   }
+  // 볼린저 %B(20, 2σ) — 0=하단 1=상단. 모듈과 같은 정의라 두 값이 어긋나지 않는다.
+  let percentB: number | null = null;
+  if (c.length >= 20) {
+    const w = c.slice(-20);
+    const mean = w.reduce((a, b) => a + b, 0) / 20;
+    const sd = Math.sqrt(w.reduce((a, b) => a + (b - mean) ** 2, 0) / 20);
+    const upper = mean + 2 * sd, lower = mean - 2 * sd;
+    if (upper > lower) percentB = (c[c.length - 1] - lower) / (upper - lower);
+  }
+  // 스토캐스틱 %K(14) — 최근 14봉의 고·저 범위에서 현재 종가의 위치.
+  let stochK: number | null = null;
+  if (bars.length >= 14) {
+    const w = bars.slice(-14);
+    const hi = Math.max(...w.map(b => b.high));
+    const lo = Math.min(...w.map(b => b.low));
+    if (hi > lo) stochK = ((c[c.length - 1] - lo) / (hi - lo)) * 100;
+  }
   // RSI(14) — Wilder 평활.
   let rsi: number | null = null;
   if (c.length > 15) {
@@ -304,7 +321,7 @@ function liveStats(bars: OhlcvBar[]) {
   }
   const last = bars[bars.length - 1];
   const dayVol = bars.reduce((a, b) => a + (b.volume || 0), 0);
-  return { price: last.close, rsi, hist, dayVol, barVol: last.volume || 0 };
+  return { price: last.close, rsi, hist, percentB, stochK, dayVol, barVol: last.volume || 0 };
 }
 
 /** 전광판 한 칸. */
@@ -379,7 +396,15 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     const rows = Array.isArray(data) ? data : [];
     // 시드도 maxCandles 로 자른다 — 옛엔 시드를 통째로 넣어(ka10080 = 900봉) "1분봉 240개" 를
     // 요청해도 4일치가 그려졌다(2026-07-29 실측). cap 은 라이브 append 에만 걸려 있었다.
-    candlesRef.current = rows.slice(-cap).flatMap((r): OhlcvBar[] => {
+    // 시드는 브로커 순서를 그대로 들고 온다 — kiwoom 분봉(ka10080)은 **최신순**이다. 순서를 믿고
+    // 뒤에서 cap 개를 자르면 가장 **오래된** 구간이 잡힌다(2026-07-30 실측: 09:38 까지 받은 900봉에서
+    // 07/27~07/28 400봉이 그려졌다). 자르기 전에 시간순으로 세운다 — 날짜 문자열은 zero-padded 라
+    // 사전순 = 시간순이고, 날짜가 빈 행은 원래 자리에 둔다.
+    const ordered = rows.every(r => r && typeof r === 'object' && (r as Record<string, unknown>).date)
+      ? [...rows].sort((a, b) => String((a as Record<string, unknown>).date)
+          .localeCompare(String((b as Record<string, unknown>).date)))
+      : rows;
+    candlesRef.current = ordered.slice(-cap).flatMap((r): OhlcvBar[] => {
       if (!r || typeof r !== 'object') return [];
       const o = r as Record<string, unknown>;
       const num = (x: unknown) => (typeof x === 'number' ? x : parseFloat(String(x ?? '').replace(/[+,]/g, '')));
@@ -533,7 +558,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
         const n = (v: number | null, d = 0) =>
           v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
         return (
-          <div className="mb-2 grid grid-cols-3 sm:grid-cols-6 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
+          <div className="mb-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
             <div className="bg-white min-w-0"><Tick label="현재가" value={n(st.price)} color={dirColor} /></div>
             {/* 등락은 숫자와 비율을 두 줄로 나눈다 — 한 줄로 이으면 3분할 칸(모바일)에 절대 안 들어가고,
                 넘친 글자가 옆 칸 위로 올라갔다(2026-07-29 실측). */}
@@ -545,6 +570,14 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
               color={st.rsi == null ? undefined : st.rsi >= 70 ? TICK_UP : st.rsi <= 30 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white min-w-0"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
               color={st.hist == null ? undefined : st.hist >= 0 ? TICK_UP : TICK_DOWN} /></div>
+            {/* 볼린저·스토캐스틱은 서버 카드에서 뺐다 — 방문 시각에 굳은 숫자와 틱마다 바뀌는
+                숫자가 한 화면에 있으면 어느 쪽이 지금인지 사용자가 판단해야 한다. */}
+            <div className="bg-white min-w-0"><Tick label="볼린저 %B"
+              value={st.percentB == null ? '—' : st.percentB.toFixed(2)}
+              sub={st.percentB == null ? undefined : st.percentB >= 1 ? '상단 돌파' : st.percentB <= 0 ? '하단 이탈' : undefined}
+              color={st.percentB == null ? undefined : st.percentB >= 0.8 ? TICK_UP : st.percentB <= 0.2 ? TICK_DOWN : undefined} /></div>
+            <div className="bg-white min-w-0"><Tick label="스토캐스틱 %K" value={n(st.stochK, 1)}
+              color={st.stochK == null ? undefined : st.stochK >= 80 ? TICK_UP : st.stochK <= 20 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white min-w-0"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
             <div className="bg-white min-w-0"><Tick label="누적 거래량" value={n(st.dayVol)} /></div>
           </div>
