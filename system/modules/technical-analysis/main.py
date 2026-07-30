@@ -11,6 +11,7 @@ The model can therefore never produce a wave count that breaks the rules — it 
 from candidates this module already validated.
 """
 import json
+import re
 import sys
 
 
@@ -829,6 +830,11 @@ def chart_annotation_set(cand, structure_label=None):
 # 여기 있는 것에 "사야 한다/팔아야 한다"는 없다. 그건 전략이고, 전략은 선언 데이터다.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# `ma50` / `ema20` — a rule references a moving average by naming its period, so no period list is
+# declared anywhere and both conventions (5/20/60/120 and 50/200) work.
+_MA_REF = re.compile(r"^(ma|ema)(\d+)$")
+
+
 def _ema(xs, n):
     """지수이동평균. 시드 = 첫 n개 단순평균(표준 관행 — 첫 값만 쓰면 초반이 왜곡된다)."""
     if len(xs) < n or n <= 0:
@@ -1056,6 +1062,37 @@ def main():
             "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
         }
 
+        # Moving averages, at whatever periods the rules actually name.
+        #
+        # The vocabulary above had none — bollinger.mid is an SMA(20) and ichimoku carries midpoints,
+        # but the plainest trend line in technical analysis was absent, so the most common strategy
+        # there is could not be written at all: `ma50 crossUp ma200` was rejected as an unknown path
+        # (2026-07-31, a golden-cross request). Periods are read off the rules instead of declared,
+        # so 5/20/60/120 and 50/200 all work without this module choosing a convention.
+        ma_refs = sorted({
+            str(c.get(side)) for r in rules for c in (r.get("when") or [])
+            for side in ("a", "b")
+            if isinstance(c.get(side), str) and _MA_REF.match(str(c.get(side)))
+        })
+        ma_used = []
+        too_long = []
+        for ref in ma_refs:
+            kind, period = _MA_REF.match(ref).groups()
+            n = int(period)
+            if n < 1 or n > len(closes):
+                # A known kind over too short a window. Reporting it as "unknown path" would send the
+                # caller looking for a spelling mistake instead of loading more bars.
+                too_long.append((ref, n))
+                continue
+            series[ref] = _ema(closes, n) if kind == "ema" else _sma(closes, n)
+            ma_used.append((kind, n))
+        if too_long:
+            print(json.dumps({"success": False, "error":
+                "이동평균 기간이 봉 수(%d)보다 깁니다: %s — 그만큼의 과거 봉을 더 실어 주십시오"
+                % (len(closes), ", ".join("%s(%d)" % (r, n) for r, n in too_long))},
+                ensure_ascii=False))
+            return
+
         def val(ref, i):
             if isinstance(ref, (int, float)):
                 return float(ref)
@@ -1246,9 +1283,16 @@ def main():
             {"type": "metric", "props": {"label": "스토캐스틱 %K", "value": _r(_last(series["stochastic.k"])),
                                          "subLabel": "%D " + str(_r(_last(series["stochastic.d"])))}},
         ]
+        # Whoever produced the signal knows which averages it turned on, so it says so rather than
+        # leaving the caller to guess: a golden-cross answer whose chart draws MA5 and MA20 does not
+        # show the cross it is describing. Same rule as the annotations — the side that emits the
+        # coordinates emits what they refer to.
+        chart_indicators = ["MA%d" % n for kind, n in sorted(set(ma_used), key=lambda x: x[1])
+                            if kind == "ma"]
         blocks = [
             {"type": "stock_chart", "props": {
                 "buyPoints": buy, "sellPoints": sell,
+                **({"indicators": chart_indicators} if chart_indicators else {}),
                 **({"prevClose": prev_close} if prev_close is not None else {}),
                 # No bar array here. Entries and exits are placed BY DATE, so this action has no
                 # reason to own the display range, and owning it would let a deliberately narrow

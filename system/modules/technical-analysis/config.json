@@ -99,7 +99,7 @@
       },
       "rules": {
         "type": "array",
-        "description": "[signals] **필수 — 전략 선언**. [{side:\"buy\"|\"sell\", label?, note?, when:[{a,op,b},…]}] — 한 rule 의 when 은 전부 참일 때(AND) 신호, OR 는 rule 을 여러 개. a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. 경로 = close/open/high/low/volume, rsi, macd.macd|signal|hist, bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, ichimoku.tenkan|kijun|senkouA|senkouB. 틀린 경로는 사용 가능 목록과 함께 거부됩니다."
+        "description": "[signals] **필수 — 전략 선언**. [{side:\"buy\"|\"sell\", label?, note?, when:[{a,op,b},…]}] — 한 rule 의 when 은 전부 참일 때(AND) 신호, OR 는 rule 을 여러 개. a/b = 지표 경로 또는 숫자. op = > < >= <= crossUp crossDown. 경로 = close/open/high/low/volume, ma<기간>·ema<기간>(기간은 아무 값 — ma50/ma200 골든크로스, ma5/ma20/ma60/ma120 국내 관례), rsi, macd.macd|signal|hist, bollinger.mid|upper|lower|percentB|bandwidth, stochastic.k|d, ichimoku.tenkan|kijun|senkouA|senkouB. 틀린 경로는 사용 가능 목록과 함께 거부됩니다."
       },
       "feeRate": {
         "type": "number",
