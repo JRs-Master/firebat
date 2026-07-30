@@ -491,10 +491,15 @@ def _projected_path(pts, structure, last_i, bars=None):
                 # 뒤에 있는 선값을 목표로 주면 화살표가 거꾸로 그어진다(실측: 현재 6205 / 목표 6389).
                 target = cur
                 label = "A-C 추세선 이탈 — 삼각형 무효 가능(E 가 선을 넘었음)"
+                # A target beyond a count already broken is meaningless, and drawn next to the
+                # invalidation it reads as a prediction the pattern no longer supports. Measured
+                # 2026-07-30: the chart showed "invalidation possible" at the current price and a
+                # thrust target below it at the same time.
+                next_ratio, next_label = None, None
             else:
                 target = line
                 label = "E 목표(A-C 추세선)"
-            next_ratio, next_label = None, "스러스트 목표(삼각형 최대 폭 A-B 를 E 에서 투영)"
+                next_ratio, next_label = None, "스러스트 목표(삼각형 최대 폭 A-B 를 E 에서 투영)"
     else:
         if n >= 4:
             wa = (p[1] - p[0]) * sign
