@@ -41,6 +41,9 @@ export type StockChartProps = {
   sellPoints?: Array<{ label: string; price: number; note?: string; date?: string }>;
   /** 마지막 봉 오른쪽에 비워 둘 슬롯 수 — 미래 투영 구간. 0 이면 기존 여백만. */
   futureSlots?: number;
+  /** Previous session's close. Without it the header can only compare with the preceding bar, which
+   *  on a one-minute chart is a one-minute change wearing the label of a daily one. */
+  prevClose?: number;
   /** 주석 레이어 (위 타입 참조). */
   annotations?: ChartAnnotation[];
   /**
@@ -230,7 +233,7 @@ function PointGroup({ title, points, tone }: {
   );
 }
 
-export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots = 0, annotations, scale = 'linear' }: StockChartProps) {
+export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints, futureSlots = 0, annotations, scale = 'linear', prevClose: sessionPrevClose }: StockChartProps) {
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const volScrollRef = useRef<HTMLDivElement>(null); // 거래량 차트 — 가격과 가로 스크롤 동기화
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -727,7 +730,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 헤더 변동: 전일 종가 대비 (일간 변동, 증권앱 표준). 전일 없으면 기간 시작 대비 폴백.
   const prevClose = fullData[fullN - 2]?.close;
   const viewLatest = safeData[n - 1];
-  const baseClose = prevClose ?? viewFirst?.close ?? 0;
+  // Compare against the previous SESSION's close when it is known. Falling back to the preceding
+  // bar was silently wrong on intraday charts: it reported a one-minute move as the day's change.
+  const baseClose = sessionPrevClose && sessionPrevClose > 0
+    ? sessionPrevClose
+    : (prevClose ?? viewFirst?.close ?? 0);
   const change = latest && baseClose ? latest.close - baseClose : 0;
   const changePct = baseClose ? (change / baseClose) * 100 : 0;
   const isUp = change > 0;

@@ -662,46 +662,28 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
         <LiveBadge live={live} lastMs={lastMs} staleMs={Math.max(60_000, ivSec * 1500)}
                    hint={skipNoteRef.current} />
       </div>
-      {/* 전광판 — 틱마다 다시 계산해 숫자가 실제로 움직인다. 서버 카드(방문마다)와 달리
-          이건 화면이 살아 있다는 걸 보여 주는 자리다. */}
+      {/* Indicators only. Price facts — last, change on the day, open, high, low, volume — are what
+          the chart already states about the series it draws, so repeating them here puts two copies of
+          the same number on one screen; that overlap only became visible once the chart's cards were
+          pinned to the session. What stays is what the chart does not draw. Recomputed on every tick,
+          unlike the server-rendered cards, so this row is where the screen shows it is alive. */}
       {(() => {
         const st = liveStats(candlesRef.current ?? []);
         if (!st) return null;
-        // 기준선은 고정값(시드 전일 종가)이고 움직이는 건 현재가뿐이다 — 그래야 장이 닫힌 뒤에도
-        // 같은 숫자가 남는다. 시드에 전일이 없으면(단일 세션 응답) 프레임 값으로 물러난다.
-        const base = Number(prevClose);
-        const pc = Number.isFinite(base) && base > 0 && st.price != null
-          ? { chg: st.price - base, rate: ((st.price - base) / base) * 100 }
-          : frameChangeRef.current;
-        const dirColor = !pc || pc.chg === 0 ? undefined : pc.chg > 0 ? TICK_UP : TICK_DOWN;
         const n = (v: number | null, d = 0) =>
           v == null ? '—' : v.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
         return (
-          <div className="mb-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
-            <div className="bg-white min-w-0"><Tick label="현재가" value={n(st.price)} color={dirColor} /></div>
-            {/* 등락은 숫자와 비율을 두 줄로 나눈다 — 한 줄로 이으면 3분할 칸(모바일)에 절대 안 들어가고,
-                넘친 글자가 옆 칸 위로 올라갔다(2026-07-29 실측). */}
-            <div className="bg-white min-w-0"><Tick label="전일대비"
-              value={pc ? `${pc.chg > 0 ? '▲' : pc.chg < 0 ? '▼' : ''} ${n(Math.abs(pc.chg))}` : '—'}
-              sub={pc ? `${pc.rate > 0 ? '+' : ''}${pc.rate.toFixed(2)}%` : undefined}
-              color={dirColor} /></div>
+          <div className="mb-2 grid grid-cols-2 sm:grid-cols-4 gap-px rounded-xl overflow-hidden bg-slate-200 border border-slate-200">
             <div className="bg-white min-w-0"><Tick label="RSI 14" value={n(st.rsi, 1)}
               color={st.rsi == null ? undefined : st.rsi >= 70 ? TICK_UP : st.rsi <= 30 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white min-w-0"><Tick label="MACD Hist" value={st.hist == null ? '—' : (st.hist >= 0 ? '+' : '') + n(st.hist, 1)}
               color={st.hist == null ? undefined : st.hist >= 0 ? TICK_UP : TICK_DOWN} /></div>
-            {/* 볼린저·스토캐스틱은 서버 카드에서 뺐다 — 방문 시각에 굳은 숫자와 틱마다 바뀌는
-                숫자가 한 화면에 있으면 어느 쪽이 지금인지 사용자가 판단해야 한다. */}
             <div className="bg-white min-w-0"><Tick label="볼린저 %B"
               value={st.percentB == null ? '—' : st.percentB.toFixed(2)}
               sub={st.percentB == null ? undefined : st.percentB >= 1 ? '상단 돌파' : st.percentB <= 0 ? '하단 이탈' : undefined}
               color={st.percentB == null ? undefined : st.percentB >= 0.8 ? TICK_UP : st.percentB <= 0.2 ? TICK_DOWN : undefined} /></div>
             <div className="bg-white min-w-0"><Tick label="스토캐스틱 %K" value={n(st.stochK, 1)}
               color={st.stochK == null ? undefined : st.stochK >= 80 ? TICK_UP : st.stochK <= 20 ? TICK_DOWN : undefined} /></div>
-            <div className="bg-white min-w-0"><Tick label="이 봉 거래량" value={n(st.barVol)} /></div>
-            {/* 브로커가 주는 세션 누적값이 있으면 그것이 정답 — 우리 합산은 유실된 틱·시드 경계에
-                영향을 받는다. 없을 때만(장 시작 전 등) 마지막 날 봉 합산으로 물러난다. */}
-            <div className="bg-white min-w-0"><Tick label="누적 거래량"
-              value={n(dayVolRef.current ?? st.dayVol)} /></div>
           </div>
         );
       })()}
@@ -715,7 +697,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
         // 스프레드 사본 — 같은 길이의 새 배열 참조로 StockChart memo 를 깨워 틱마다 다시 그림.
         <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators}
           annotations={shifted} futureSlots={futureSlots} scale={scale}
-          buyPoints={buyPoints} sellPoints={sellPoints} />
+          buyPoints={buyPoints} sellPoints={sellPoints} prevClose={Number(prevClose) || undefined} />
       )}
     </div>
   );
@@ -764,7 +746,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
       const ct = p.chartType ?? p.type;
       return <ChartComp type={(ct === 'donut' ? 'doughnut' : ct) ?? 'bar'} data={p.data ?? p.values ?? []} labels={p.labels ?? []} series={p.series ?? p.datasets} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     }
-    case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} futureSlots={p.futureSlots} annotations={p.annotations} scale={p.scale} />;
+    case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} futureSlots={p.futureSlots} annotations={p.annotations} scale={p.scale} prevClose={p.prevClose} />;
     case 'PaperTrades':   return <PaperTradesComp records={p.records} title={p.title} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? p.events ?? []} />;
