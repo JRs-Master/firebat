@@ -2218,10 +2218,10 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "cache_grep".into(),
-        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation, op=eq/ne/gt/gte/lt/lte/contains/in. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. inputSchema: {cacheKey, field, op, value}.".into(),
+        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation, op=eq/ne/gt/gte/lt/lte/contains/in. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. Date ranges work: an ISO date or timestamp string (`2025-07-31`, `2026-07-31 09:00`) compares chronologically with gt/gte/lt/lte, so filter a period here instead of paging through offsets to find its boundaries. inputSchema: {cacheKey, field, op, value}.".into(),
         input_schema: schema_object(serde_json::json!({
             "cacheKey": {"type": "string"},
-            "field": {"type": "string", "description": "필드 경로 (점 표기)"},
+            "field": {"type": "string", "description": "field path, dot notation"},
             "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in"]},
             "value": {"description": "비교값 (op 따라 타입 다름)"}
         })),
@@ -2329,8 +2329,9 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         name: "list_conversations".into(),
         description: "List the caller's own chat sessions, newest first. A session holds many \
             messages and its title comes from the opening line, so it often does not name the \
-            topic — narrow by time, then read the session. since/until accept YYYY-MM-DD or epoch \
-            ms. inputSchema: {owner?, limit?, since?, until?}.".into(),
+            topic — narrow by time, then read the session. since/until accept YYYY-MM-DD (read as \
+            UTC) or epoch ms; for a local-day window pass epoch ms. inputSchema: {owner?, limit?, \
+            since?, until?}.".into(),
         input_schema: schema_object(serde_json::json!({
             "limit": {"type": "integer"},
             "since": {"type": "string"},

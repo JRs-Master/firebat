@@ -1436,14 +1436,14 @@ fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // cache_grep — 조건 필터 (9 op)
     tools.register(ToolDefinition {
         name: "cache_grep".to_string(),
-        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation (e.g. `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=comparison value. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate.".to_string(),
+        description: "Filter rows inside a cached sysmod result (`_cacheKey`) by condition — large results are cached instead of inlined, so use this to find matching rows without re-fetching. field=dot notation (e.g. `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=comparison value. For rendering full data use dataCacheKey in the fence; for aggregates use cache_aggregate. Date ranges work: an ISO date or timestamp string (`2025-07-31`, `2026-07-31 09:00`) compares chronologically with gt/gte/lt/lte, so filter a period here instead of paging through offsets to find its boundaries.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
                 "cacheKey": {"type": "string"},
-                "field": {"type": "string", "description": "필드 경로 (점 표기)"},
+                "field": {"type": "string", "description": "field path, dot notation"},
                 "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in"]},
-                "value": {"description": "비교값 (op 따라 타입 다름)"}
+                "value": {"description": "comparison value; type follows op"}
             },
             "required": ["cacheKey", "field", "op", "value"]
         }),
@@ -2141,8 +2141,8 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 // A question about a period ("last year", "last night") wants a time window, and
                 // without one the only lever was a bigger limit plus reading the dates — which stops
                 // working as sessions accumulate.
-                "since": {"type": "string", "description": "only sessions active at or after this time — YYYY-MM-DD or epoch ms"},
-                "until": {"type": "string", "description": "only sessions active before this time — YYYY-MM-DD or epoch ms"}
+                "since": {"type": "string", "description": "only sessions active at or after this time — YYYY-MM-DD (read as UTC) or epoch ms; for a local-day window pass epoch ms"},
+                "until": {"type": "string", "description": "only sessions active before this time — YYYY-MM-DD (read as UTC) or epoch ms"}
             }
         }),
         source: "core".to_string(),
