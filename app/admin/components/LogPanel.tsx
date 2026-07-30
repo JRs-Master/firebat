@@ -208,9 +208,9 @@ export function LogPanel() {
       <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
         {/* No explanatory paragraph: the controls have to say what they are. A caption telling the
             reader how to use two dropdowns is a sign the dropdowns are not labelled well enough. */}
-        <span className="text-xs sm:text-sm font-bold text-slate-700">런타임 로그 레벨</span>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">기록 설정 — 서버가 무엇을 남길지</span>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-semibold text-slate-600">기본</span>
+          <span className="text-[11px] font-semibold text-slate-600">전역 최소 레벨</span>
           {ENV_LEVELS.map(lv => (
             <button key={lv} type="button" onClick={() => setBaseLevel(lv)}
               className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors ${
@@ -276,7 +276,7 @@ export function LogPanel() {
       {/* 조회 필터 */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
-          <label htmlFor="log-min-level" className="text-[11px] font-semibold text-slate-600">최소 레벨</label>
+          <label htmlFor="log-min-level" className="text-[11px] font-semibold text-slate-600">레벨 필터</label>
           <select
             id="log-min-level"
             name="minLevel"
