@@ -724,7 +724,7 @@ async fn run_session(
                     target: "ws_stream",
                     watches = members.len(),
                     frames_seen,
-                    "ws heartbeat — 수신 프레임 누적(0 이면 구독 후 아무것도 안 오는 것)"
+                    "ws heartbeat"
                 );
             }
             _ = cancel_rx.changed() => {
@@ -809,7 +809,7 @@ async fn run_session(
                             tracing::info!(
                                 target: "ws_stream", watch_id = %spec.watch_id,
                                 msg_kind = kind, seen = *seen,
-                                "frame dropped — text 가 아닌 메시지"
+                                "frame dropped: not a text message"
                             );
                         }
                         continue;
@@ -846,7 +846,7 @@ async fn run_session(
                         tracing::info!(
                             target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
                             body = %text.chars().take(400).collect::<String>(),
-                            "frame dropped — JSON 파싱 실패"
+                            "frame dropped: not JSON"
                         );
                     }
                     continue;
@@ -859,7 +859,7 @@ async fn run_session(
                             target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
                             match_field = %spec.match_field,
                             body = %text.chars().take(400).collect::<String>(),
-                            "frame dropped — match_field 없음(스펙과 실제 프레임 shape 불일치)"
+                            "frame dropped: no match field"
                         );
                     }
                     continue;
@@ -927,7 +927,7 @@ async fn run_session(
                         target: "ws_stream",
                         watch_id = %spec.watch_id,
                         frame_kind = %kind,
-                        "skip unrelated stream frame — 이후 같은 kind 는 로그 생략"
+                        "skip unrelated stream frame (further ones suppressed)"
                     );
                 }
             }

@@ -34,8 +34,13 @@ const LEVEL_COLOR: Record<string, string> = {
   TRACE: 'bg-slate-50 text-slate-400 border-slate-200',
 };
 
-/** 목록(target·모듈)을 뽑을 표본 — 조회 창과 독립이라야 한다. */
-const FACET_SAMPLE = 20000;
+/**
+ * 목록(target·모듈)의 **첫 표본**만 이 크기로 받는다. 그 뒤로는 조회·tail 응답에서 누적하므로
+ * 추가 비용이 없다 — 매번 큰 표본을 받아 다시 세는 것은 10개 카운트를 얻으려 수만 행을 실어
+ * 오는 낭비다(사용자 2026-07-30). 정확한 해법은 SQL 이 세는 것(`GROUP BY target` → 10행)인데
+ * 그건 proto·코어까지 붙는 별 작업이라 트래커에 남겼다.
+ */
+const FACET_SAMPLE = 1000;
 /** tail 중 화면에 쌓아둘 최대 줄 수 — 무한 누적 방지 (오래된 것부터 drop). */
 const TAIL_MAX_ROWS = 1000;
 
@@ -43,6 +48,7 @@ export function LogPanel() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   // load 가 loadFacets 보다 위에 정의돼 있어 ref 로 잇는다(선언 순서 의존 없이).
   const loadFacetsRef = useRef<(() => Promise<void>) | null>(null);
+  const mergeFacetsRef = useRef<((rows: LogEntry[]) => void) | null>(null);
   const [minLevel, setMinLevel] = useState('');
   const [targetPrefix, setTargetPrefix] = useState('');
   const [contains, setContains] = useState('');
@@ -77,7 +83,6 @@ export function LogPanel() {
   }, [minLevel, targetPrefix, contains, limit]);
 
   const load = useCallback(async () => {
-    void loadFacetsRef.current?.();  // 목록도 함께 갱신 — 새 target/module 이 바로 보이게
     setLoading(true);
     try {
       const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
@@ -87,6 +92,8 @@ export function LogPanel() {
       if (data?.success) {
         const rows = data.entries ?? [];
         setEntries(rows);
+        // 목록은 이 응답에서 누적한다 — 목록만을 위한 두 번째 요청은 보내지 않는다.
+        mergeFacetsRef.current?.(rows);
         lastTsRef.current = rows[0]?.tsMs ?? Date.now();
       }
     } catch (e) {
@@ -116,6 +123,7 @@ export function LogPanel() {
         const rows = data?.entries ?? [];
         if (!data?.success || rows.length === 0) return;
         lastTsRef.current = Math.max(lastTsRef.current, rows[0]?.tsMs ?? 0);
+        mergeFacetsRef.current?.(rows);
         setEntries(prev => [...rows, ...prev].slice(0, TAIL_MAX_ROWS));
       } catch (e) {
         logger.debug('logs', 'tail 폴링 실패', { error: e });
@@ -140,31 +148,44 @@ export function LogPanel() {
   /// EnvFilter 로 실제 켜고 끌 수 있는 대상 — 로그가 기록해 둔 모듈 경로에서 그대로 읽는다.
   /// 목록을 코드에 박지 않으므로 모듈이 늘면 UI 도 저절로 는다.
   const [modules, setModules] = useState<Array<{ module: string; count: number }>>([]);
-  const loadFacets = useCallback(async () => {
-    try {
-      const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
-        `/api/logs?limit=${FACET_SAMPLE}`, { category: 'logs' },
-      );
-      if (!data?.success) return;
-      const acc = new Map<string, { count: number; warn: boolean }>();
-      for (const e of data.entries ?? []) {
+  /**
+   * 이미 받은 줄에서 목록을 **누적**한다. 조회·tail 응답을 그대로 먹이므로 추가 요청이 없고,
+   * 한 번 본 target 은 다음 조회가 그것을 안 담아도 목록에 남는다 — 필터를 바꾸다 목록이
+   * 쪼그라들거나, 빈발 target 에 밀려 사라지는 문제가 둘 다 사라진다.
+   * 카운트는 그래서 "이 세션에서 관측한 수"다(ring 전체 통계가 아니다).
+   */
+  const mergeFacets = useCallback((rows: LogEntry[]) => {
+    if (rows.length === 0) return;
+    setFacets(prev => {
+      const acc = new Map(prev.map(f => [f.target, { count: f.count, warn: f.warn }]));
+      for (const e of rows) {
         const cur = acc.get(e.target) ?? { count: 0, warn: false };
         cur.count += 1;
         const lv = (e.level || '').toUpperCase();
         if (lv === 'WARN' || lv === 'ERROR') cur.warn = true;
         acc.set(e.target, cur);
       }
-      setFacets(
-        Array.from(acc, ([target, v]) => ({ target, ...v })).sort((a, b) => b.count - a.count),
-      );
-      const mods = new Map<string, number>();
-      for (const e of data.entries ?? []) {
-        if (e.module) mods.set(e.module, (mods.get(e.module) ?? 0) + 1);
+      return Array.from(acc, ([target, v]) => ({ target, ...v })).sort((a, b) => b.count - a.count);
+    });
+    setModules(prev => {
+      const acc = new Map(prev.map(m => [m.module, m.count]));
+      for (const e of rows) {
+        if (e.module) acc.set(e.module, (acc.get(e.module) ?? 0) + 1);
       }
-      setModules(Array.from(mods, ([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count));
-    } catch { /* 목록은 보조 — 실패해도 조회는 된다 */ }
+      return Array.from(acc, ([module, count]) => ({ module, count })).sort((a, b) => b.count - a.count);
+    });
   }, []);
+  const loadFacets = useCallback(async () => {
+    try {
+      const data = await apiGet<{ success?: boolean; entries?: LogEntry[] }>(
+        `/api/logs?limit=${FACET_SAMPLE}`, { category: 'logs' },
+      );
+      if (data?.success) mergeFacets(data.entries ?? []);
+    } catch { /* 목록은 보조 — 실패해도 조회는 된다 */ }
+  }, [mergeFacets]);
   loadFacetsRef.current = loadFacets;
+  mergeFacetsRef.current = mergeFacets;
+  // 첫 표본만 따로 받는다 — 그 뒤 갱신은 조회·tail 응답 누적이 맡는다.
   useEffect(() => { void loadFacets(); }, [loadFacets]);
 
   const applyFilter = useCallback(async () => {
@@ -274,7 +295,8 @@ export function LogPanel() {
         </div>
         <div className="flex flex-col gap-1 w-full order-last">
           <label className="text-[11px] font-semibold text-slate-600">
-            target {targetPrefix && <span className="font-normal text-slate-400">— {targetPrefix}</span>}
+            target <span className="font-normal text-slate-400">— 괄호는 관측 건수</span>
+            {targetPrefix && <span className="font-normal text-slate-400"> · {targetPrefix}</span>}
           </label>
           {/* 이름을 외워서 치는 대신 **있는 것 중에 고른다**. 칩을 전부 늘어놓던 옛 UI 는 target 이
               늘수록 화면을 덮었고, 위쪽 "모듈별로 더 자세히" 와 이름이 겹쳐 같은 것을 두 번
