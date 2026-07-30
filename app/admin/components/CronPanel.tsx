@@ -256,6 +256,18 @@ export function CronPanel({
     }
   };
 
+  /** What the job actually runs, read off its target. Without this a job whose target the panel does
+   *  not recognise fell back to the pipeline editor and showed an empty pipeline, so a page-refresh
+   *  job looked like a broken one. */
+  const jobKind = (job: CronJob) => {
+    const t = job.targetPath || '';
+    if (t.startsWith('builtin:')) return `시스템 · ${t.slice(8)}`;
+    if (t.startsWith('rebake:')) return `페이지 갱신 · ${t.slice(7)}`;
+    if (t.startsWith('/')) return `페이지 방문 · ${t}`;
+    if (job.executionMode === 'agent' || job.agentPrompt) return 'AI 에이전트';
+    if (job.pipeline?.length) return `파이프라인 ${job.pipeline.length}단계`;
+    return t || '대상 미설정';
+  };
   const modeLabel = (job: CronJob) => {
     if (job.mode === 'cron') {
       let label = formatCron(job.cronTime!);
@@ -299,7 +311,7 @@ export function CronPanel({
                   {job.system && <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{gatedOff ? '비활성' : '시스템'}</span>}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
-                  {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
+                  {modeLabel(job)} · {jobKind(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
               </div>
               <span className={rowActionsClass(jobSelected)}>

@@ -91,6 +91,14 @@ impl LogService for LogServiceImpl {
         let filter = req.into_inner().filter;
         match reload_log_filter(&self.reload_handle, &filter) {
             Ok(_) => {
+                // Persist beside the log database. Raising a module to debug and losing it on the next
+                // restart means the level you set is not the level that runs — and a restart is exactly
+                // what often happens while chasing the thing you turned it up for. This is the same
+                // file the SIGHUP path reads, so the two ways of setting a filter agree.
+                let path = self.log_db_path.with_file_name("log-filter.txt");
+                if let Err(e) = std::fs::write(&path, &filter) {
+                    tracing::warn!(error = %e, "[log] filter applied but not persisted");
+                }
                 tracing::info!(filter = %filter, "[log] filter reloaded (RPC)");
                 Ok(Response::new(SetLogFilterResponse {
                     ok: true,

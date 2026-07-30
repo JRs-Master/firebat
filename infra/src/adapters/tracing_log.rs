@@ -72,8 +72,23 @@ pub type LogReloadHandle = reload::Handle<EnvFilter, Registry>;
 /// filter 통과 event 가 journalctl + sqlite 둘 다 기록. SIGHUP reload 시 둘 다 레벨 변경.
 /// log_db_path = data/logs.db (sqlite ring buffer, 최근 20000건). admin 로그 탭 (Phase 5) 조회용.
 pub fn init_tracing(log_db_path: PathBuf) -> LogReloadHandle {
+    // Boot filter: RUST_LOG wins, then the level last applied from the UI, then info. Without the
+    // middle step a raised module silently reverted on every restart, so what the panel showed and
+    // what the process was doing had drifted apart.
+    let saved = std::fs::read_to_string(log_db_path.with_file_name("log-filter.txt"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let filter = EnvFilter::try_from_default_env()
+        .or_else(|_| match saved.as_deref() {
+            Some(s) => EnvFilter::try_new(s),
+            None => EnvFilter::try_new("info"),
+        })
         .unwrap_or_else(|_| EnvFilter::new("info"));
+    if let Some(s) = saved.as_deref() {
+        // Say it out loud — a filter that survives a restart should not be a surprise later.
+        eprintln!("[log] boot filter from data/log-filter.txt: {s}");
+    }
     let (filter_layer, reload_handle) = reload::Layer::new(filter);
 
     let json_format = std::env::var("FIREBAT_LOG_FORMAT")
