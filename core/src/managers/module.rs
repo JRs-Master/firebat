@@ -694,7 +694,11 @@ impl ModuleManager {
             }
         }
 
-        let args_view = ws_args_view(ws, &meta.args);
+        let mut args_view = ws_args_view(ws, &meta.args);
+        if let Some(o) = args_view.as_object_mut() {
+            o.entry("grpNo".to_string())
+                .or_insert_with(|| serde_json::Value::String(ws_group_no(&meta.watch_id)));
+        }
         let subscribe = decl
             .get("subscribe")
             .ok_or_else(|| format!("[{}] ws.streams.{}.subscribe missing", meta.module, meta.stream))?;
@@ -814,6 +818,30 @@ impl ModuleManager {
                         .filter_map(|v| v.as_str().map(String::from))
                         .collect()
                 })
+                .unwrap_or_default(),
+            share_connection: ws
+                .get("shareConnection")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            route_item_path: decl
+                .get("routeItemPath")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            route_type_path: decl
+                .get("routeTypePath")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            // What this watch actually subscribed, read from the args the subscribe frame was
+            // built from — the rendered frame is provider-shaped, the args are not.
+            subscribe_items: decl
+                .get("routeItemArg")
+                .and_then(|v| v.as_str())
+                .map(|k| ws_str_list(args_view.get(k)))
+                .unwrap_or_default(),
+            subscribe_types: decl
+                .get("routeTypeArg")
+                .and_then(|v| v.as_str())
+                .map(|k| ws_str_list(args_view.get(k)))
                 .unwrap_or_default(),
             mock: meta.mock,
         };
@@ -1230,6 +1258,34 @@ fn parse_ws_login(ws: &serde_json::Value) -> Option<WsLoginSpec> {
 /// Module arg-container convention — some modules nest API params under a field
 /// (e.g. kiwoom `{action, params:{…}}`, declared as ws.argsField). Overlay the nested
 /// object over the root so templates resolve from either level (nested wins).
+/// A declared arg that may be a single value or a list — normalized to a list of strings.
+fn ws_str_list(v: Option<&serde_json::Value>) -> Vec<String> {
+    match v {
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|x| match x {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            })
+            .collect(),
+        Some(serde_json::Value::String(s)) if !s.is_empty() => vec![s.clone()],
+        Some(serde_json::Value::Number(n)) => vec![n.to_string()],
+        _ => Vec::new(),
+    }
+}
+
+/// A registration group number unique to this watch, derived from its id so it survives restarts.
+/// Sharing one socket makes this necessary: providers key unsubscribe by group, so watches sitting
+/// on a hardcoded group would tear down each other's registrations.
+fn ws_group_no(watch_id: &str) -> String {
+    let mut h: u32 = 2166136261;
+    for b in watch_id.as_bytes() {
+        h = (h ^ *b as u32).wrapping_mul(16777619);
+    }
+    format!("{}", 1000 + (h % 9000))
+}
+
 fn ws_args_view(ws: &serde_json::Value, input: &serde_json::Value) -> serde_json::Value {
     match ws
         .get("argsField")
@@ -1353,6 +1409,21 @@ fn extract_field_order(raw: &str, tr_id: &str) -> Vec<String> {
 /// String values of the exact form `"{param}"` / `"{param:default}"` are replaced with the
 /// input arg (coerced to string); `"{param}"` with no default and no arg = error (required).
 /// `"{TOKEN}"` is left as-is — the transport adapter fills it after the token fetch.
+/// The parameter name of a value that is nothing but a placeholder, e.g. `{item}` or
+/// `{type:0B}` - used to tell "this slot IS the argument" from a string that merely contains one.
+fn lone_placeholder(v: &serde_json::Value) -> Option<&str> {
+    let s = v.as_str()?;
+    let inner = s.strip_prefix('{')?.strip_suffix('}')?;
+    if inner == "TOKEN" {
+        return None;
+    }
+    let param = inner.split_once(':').map(|(p, _)| p).unwrap_or(inner);
+    if param.is_empty() || !param.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(param)
+}
+
 fn substitute_ws_frame(
     template: &serde_json::Value,
     input: &serde_json::Value,
@@ -1381,6 +1452,11 @@ fn substitute_ws_frame(
                     Some(serde_json::Value::Bool(b)) => {
                         Ok(serde_json::Value::String(b.to_string()))
                     }
+                    // Structured values pass through untouched. Some providers want an object
+                    // where others want a code - kiwoom's US realtime registration takes
+                    // {jmcode, stex_tp} - and stringifying it would corrupt the frame.
+                    Some(v @ serde_json::Value::Object(_)) => Ok(v.clone()),
+                    Some(v @ serde_json::Value::Array(_)) => Ok(v.clone()),
                     _ => match default {
                         Some(d) => Ok(serde_json::Value::String(d.to_string())),
                         None => Err(format!("required param missing: {param}")),
@@ -1394,12 +1470,23 @@ fn substitute_ws_frame(
                 }
                 Ok(serde_json::Value::Object(out))
             }
-            serde_json::Value::Array(items) => Ok(serde_json::Value::Array(
-                items
-                    .iter()
-                    .map(|i| walk(i, input))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )),
+            serde_json::Value::Array(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    // A lone placeholder in a list position expands into the list it names, so one
+                    // declaration covers a single subscription and a batch of them alike. Without
+                    // this, subscribing to two symbols would need two frames - and on a provider
+                    // that caps sessions per token, two frames is the whole difficulty.
+                    if let Some(name) = lone_placeholder(item) {
+                        if let Some(serde_json::Value::Array(vals)) = input.get(name) {
+                            out.extend(vals.iter().cloned());
+                            continue;
+                        }
+                    }
+                    out.push(walk(item, input)?);
+                }
+                Ok(serde_json::Value::Array(out))
+            }
             other => Ok(other.clone()),
         }
     }

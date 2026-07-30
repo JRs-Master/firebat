@@ -779,6 +779,21 @@ pub struct WsStreamSpec {
     /// (holidays, delayed opens, 임의연장) — the exchange says it on every frame.
     pub chart_session_field: Option<String>,
     pub chart_session_regular: Vec<String>,
+    /// Share one socket across every watch on the same endpoint + credential (config
+    /// `ws.shareConnection`). Opt-in per module because it only applies where the provider caps
+    /// sessions: kiwoom allows **one session per token**, so a second watch used to evict the
+    /// first, while the protocol is designed for many registrations on one socket. Modules that
+    /// do not declare it keep a socket per watch.
+    pub share_connection: bool,
+    /// How to tell which watch a realtime record belongs to when a socket is shared: the dot-path
+    /// to the record's subscription id and its type (config `routeItemPath` / `routeTypePath`),
+    /// against the values this watch subscribed with (`routeItemArg` / `routeTypeArg`). An empty
+    /// subscription list means "everything on this type" — correct for account-scoped and
+    /// market-wide broadcasts, where the provider ignores the id entirely.
+    pub route_item_path: Option<String>,
+    pub route_type_path: Option<String>,
+    pub subscribe_items: Vec<String>,
+    pub subscribe_types: Vec<String>,
     pub mock: bool,
 }
 

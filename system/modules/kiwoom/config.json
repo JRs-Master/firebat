@@ -858,7 +858,7 @@
         "subscribe": {
           "frame": {
             "trnm": "REG",
-            "grp_no": "1",
+            "grp_no": "{grpNo}",
             "refresh": "1",
             "data": [
               {
@@ -880,7 +880,7 @@
         "unsubscribe": {
           "frame": {
             "trnm": "REMOVE",
-            "grp_no": "1",
+            "grp_no": "{grpNo}",
             "refresh": "1",
             "data": [
               {
@@ -932,12 +932,18 @@
         "chartField": "10",
         "chartAbs": true,
         "desc": "국내주식 실시간 시세 구독 (체결·호가 등 실시간 타입)",
-        "keyDesc": "item = 종목코드 **6자리 순수 코드만** (예: 005930). ⚠️ 실시간 REG 에는 거래소 프리픽스를 붙이지 마세요 — `KRX:005930` 은 REG 가 return_code=0 으로 정상 응답한 뒤 **데이터를 하나도 보내지 않습니다**(2026-07-29 장중 직접 검증: `005930` → 5초에 REAL 34건 / `KRX:005930` → REAL 0건, PING 만). 프리픽스는 REST 조회용이고 실시간과 다릅니다. type = 실시간 타입(기본 0B=체결). 라이브 차트 = live_stock_chart 에 topic 만 넘기면 됩니다 — 프레임에 현재가가 top-level `value` 로 디코드되어 기본 valueField 그대로 그려집니다(valueField 지정 불필요). **세션 제약**: 키움은 App key 당 WS 세션 1개입니다 — 새로 접속하면 기존 세션이 `SYSTEM R10001` 과 함께 종료됩니다. watch 를 여러 개 띄우지 말고 한 세션에 여러 종목을 REG 하세요.",
+        "keyDesc": "item = 거래소별 종목코드입니다. KRX 는 6자리 코드 그대로(예: 005930), NXT 는 `_NX`, SOR(통합)은 `_AL` 접미사를 붙입니다(예: 005930_NX, 005930_AL). ⚠️ `KRX:005930` 처럼 접두사를 붙이면 REG 는 return_code=0 으로 정상 응답한 뒤 데이터를 하나도 보내지 않습니다 — 공식 문서의 `KRX:` 는 값의 일부가 아니라 \"KRX 면 이 값\" 이라는 라벨입니다(2026-07-29 장중 실측: `005930` → 5초에 REAL 34건 / `KRX:005930` → 0건). type = 실시간 항목(기본 0B=체결). 여러 종목을 한 번에 구독하려면 item 에 배열을 넘기세요. 라이브 차트 = live_stock_chart 에 topic 만 넘기면 됩니다 — 프레임에 현재가가 top-level `value` 로 디코드되어 기본 valueField 그대로 그려집니다(valueField 지정 불필요). **세션 한도**: 키움은 토큰당 WS 세션 1개, 세션당 실시간 시세 200종목, 조건검색 10건입니다. watch 를 여러 개 띄워도 서버가 소켓 하나를 공유하므로 종목마다 watch 를 따로 두면 됩니다.",
         "chartSessionField": "290",
-          "chartSessionRegular": ["2"],
-          "chartVolumeField": "15",
+        "chartSessionRegular": [
+          "2"
+        ],
+        "chartVolumeField": "15",
         "chartChangeField": "11",
-        "chartChangeRateField": "12"
+        "chartChangeRateField": "12",
+        "routeItemPath": "item",
+        "routeTypePath": "type",
+        "routeItemArg": "item",
+        "routeTypeArg": "type"
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
@@ -945,7 +951,7 @@
         "subscribe": {
           "frame": {
             "trnm": "REG",
-            "grp_no": "1",
+            "grp_no": "{grpNo}",
             "refresh": "1",
             "data": [
               {
@@ -967,7 +973,7 @@
         "unsubscribe": {
           "frame": {
             "trnm": "REMOVE",
-            "grp_no": "1",
+            "grp_no": "{grpNo}",
             "refresh": "1",
             "data": [
               {
@@ -989,7 +995,11 @@
           "FT": "미국주식 10호가"
         },
         "desc": "미국주식 실시간 시세 구독",
-        "keyDesc": "item = 미국 종목코드. type = 실시간 타입(기본 FE)."
+        "keyDesc": "item = 미국 종목코드. type = 실시간 타입(기본 FE).",
+        "routeItemPath": "item",
+        "routeTypePath": "type",
+        "routeItemArg": "item",
+        "routeTypeArg": "type"
       },
       "condition": {
         "preFrames": [
@@ -1072,7 +1082,8 @@
       "usa20281",
       "usa20290",
       "usa20291"
-    ]
+    ],
+    "shareConnection": true
   },
   "grounding": {
     "stk_cd": {

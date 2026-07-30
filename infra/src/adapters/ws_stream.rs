@@ -64,6 +64,16 @@ pub struct WsStreamAdapter {
     /// lazily by watch tasks, so boot-restored watches see the sink once it's wired.
     sink: Arc<Mutex<Option<WsStreamSink>>>,
     tasks: Mutex<HashMap<String, WatchTask>>,
+    /// Shared connections, keyed by endpoint + credential. Only modules that declare
+    /// `ws.shareConnection` land here; everything else keeps a socket per watch.
+    conns: Mutex<HashMap<String, ConnHandle>>,
+    /// watch_id → connection key, so stop() knows which connection to unsubscribe from.
+    watch_conn: Mutex<HashMap<String, String>>,
+}
+
+struct ConnHandle {
+    cmd: tokio::sync::mpsc::UnboundedSender<ConnCmd>,
+    cancel: tokio::sync::watch::Sender<bool>,
 }
 
 impl WsStreamAdapter {
@@ -73,6 +83,8 @@ impl WsStreamAdapter {
             token_provider: None,
             sink: Arc::new(Mutex::new(None)),
             tasks: Mutex::new(HashMap::new()),
+            conns: Mutex::new(HashMap::new()),
+            watch_conn: Mutex::new(HashMap::new()),
         }
     }
 
@@ -154,15 +166,59 @@ impl IWsStreamPort for WsStreamAdapter {
 
         let watch_id = spec.watch_id.clone();
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
-        tokio::spawn(watch_loop(
+        let member = Member {
             spec,
-            cancel_rx,
             status,
-            token_provider,
-            token_spec,
-            sink_getter,
-            Some(first_tx),
-        ));
+            first: Some(first_tx),
+            rejects: 0,
+        };
+        if member.spec.share_connection {
+            // One socket per endpoint + credential. The provider caps sessions per token, so a
+            // second socket would evict the first; registrations stack on the one that exists.
+            let key = conn_key(&member.spec);
+            let mut conns = self.conns.lock().unwrap_or_else(|p| p.into_inner());
+            let handle = conns.entry(key.clone()).or_insert_with(|| {
+                let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+                let (conn_cancel_tx, conn_cancel_rx) = tokio::sync::watch::channel(false);
+                tokio::spawn(conn_loop(
+                    Vec::new(),
+                    Some(cmd_rx),
+                    conn_cancel_rx,
+                    token_provider.clone(),
+                    None,
+                    sink_getter.clone(),
+                ));
+                ConnHandle {
+                    cmd: cmd_tx,
+                    cancel: conn_cancel_tx,
+                }
+            });
+            if handle.cmd.send(ConnCmd::Add(member, token_spec)).is_err() {
+                // The task died between lookup and send — drop the entry so the next start()
+                // rebuilds it rather than talking to a closed channel forever.
+                conns.remove(&key);
+                drop(conns);
+                self.tasks
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&watch_id);
+                return Err("shared ws connection is gone — retry".to_string());
+            }
+            drop(conns);
+            self.watch_conn
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(watch_id.clone(), key);
+        } else {
+            tokio::spawn(conn_loop(
+                vec![member],
+                None,
+                cancel_rx,
+                token_provider,
+                token_spec,
+                sink_getter,
+            ));
+        }
 
         // Bounded wait for the first handshake outcome. A subscribe NACK is deterministic
         // (our args are wrong) — fail the registration so the caller (the model, in-turn)
@@ -190,6 +246,25 @@ impl IWsStreamPort for WsStreamAdapter {
         {
             let _ = task.cancel.send(true);
         }
+        // On a shared connection the socket outlives the watch: unsubscribe just this
+        // registration and leave the others running.
+        let key = self
+            .watch_conn
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(watch_id);
+        if let Some(key) = key {
+            let mut conns = self.conns.lock().unwrap_or_else(|p| p.into_inner());
+            let dead = match conns.get(&key) {
+                Some(h) => h.cmd.send(ConnCmd::Remove(watch_id.to_string())).is_err(),
+                None => false,
+            };
+            if dead {
+                if let Some(h) = conns.remove(&key) {
+                    let _ = h.cancel.send(true);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -215,14 +290,86 @@ impl IWsStreamPort for WsStreamAdapter {
 
 // ── the long-lived task ─────────────────────────────────────────────────────
 
-async fn watch_loop(
+/// One watch attached to a connection. A private connection holds exactly one; a shared one holds
+/// every watch that landed on the same endpoint + credential.
+struct Member {
     spec: WsStreamSpec,
-    mut cancel_rx: tokio::sync::watch::Receiver<bool>,
     status: Arc<Mutex<StatusInner>>,
+    first: Option<FirstResultTx>,
+    /// Consecutive subscribe rejections for this registration alone — a NACK is the provider
+    /// refusing these args, so it must not take the shared socket (or its neighbours) down.
+    rejects: u32,
+}
+
+/// What a running shared connection accepts. Registrations arrive and leave while the socket
+/// stays up, which is the whole point: reconnecting to add a symbol would evict the session.
+enum ConnCmd {
+    Add(Member, Option<(String, OAuthSpec, u64)>),
+    Remove(String),
+}
+
+/// Connections are shared per endpoint + credential. Endpoint matters because a provider can serve
+/// several markets on separate paths, and the credential because the session cap is per token.
+fn conn_key(spec: &WsStreamSpec) -> String {
+    let cred = spec
+        .login
+        .as_ref()
+        .and_then(|l| l.token_secret.as_deref())
+        .or(spec.token_secret.as_deref())
+        .unwrap_or("-");
+    format!("{}|{}|{}", spec.endpoint, cred, spec.mock)
+}
+
+/// Which records of a realtime frame belong to this watch — `None` when none do. A watch that
+/// declares no routing path gets the frame untouched, which is how a private connection and every
+/// non-JSON dialect keep behaving exactly as before.
+fn route_frame(frame: &serde_json::Value, spec: &WsStreamSpec) -> Option<serde_json::Value> {
+    let Some(item_path) = &spec.route_item_path else {
+        return Some(frame.clone());
+    };
+    let Some(records) = frame.get("data").and_then(|d| d.as_array()) else {
+        return Some(frame.clone());
+    };
+    let matches = |rec: &serde_json::Value, path: &Option<String>, want: &[String]| -> bool {
+        // No expectation declared = the provider ignores this axis for the type (account-scoped
+        // and market-wide broadcasts), so everything on it is ours.
+        if want.is_empty() {
+            return true;
+        }
+        match path
+            .as_ref()
+            .and_then(|p| frame_get(rec, p))
+            .and_then(|v| v.as_str())
+        {
+            Some(v) => want.iter().any(|w| w == v),
+            None => true, // record does not carry the field — do not silently drop it
+        }
+    };
+    let keep: Vec<serde_json::Value> = records
+        .iter()
+        .filter(|r| {
+            matches(r, &Some(item_path.clone()), &spec.subscribe_items)
+                && matches(r, &spec.route_type_path, &spec.subscribe_types)
+        })
+        .cloned()
+        .collect();
+    if keep.is_empty() {
+        return None;
+    }
+    let mut out = frame.clone();
+    if let Some(o) = out.as_object_mut() {
+        o.insert("data".into(), serde_json::Value::Array(keep));
+    }
+    Some(out)
+}
+
+async fn conn_loop(
+    mut members: Vec<Member>,
+    mut cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<ConnCmd>>,
+    mut cancel_rx: tokio::sync::watch::Receiver<bool>,
     token_provider: Option<Arc<OAuthTokenProvider>>,
-    token_spec: Option<(String, OAuthSpec, u64)>,
+    mut token_spec: Option<(String, OAuthSpec, u64)>,
     sink_getter: Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
-    mut first: Option<FirstResultTx>,
 ) {
     let mut backoff_idx = 0usize;
     let mut consecutive_rejects = 0u32;
@@ -237,82 +384,82 @@ async fn watch_loop(
         if *cancel_rx.borrow() {
             break;
         }
-        set_state(&status, "connecting", None);
+        // A shared connection outlives its registrations. With none left, hold the socket closed
+        // and wait instead of reconnecting on a timer to serve nobody.
+        if members.is_empty() {
+            let Some(rx) = cmd_rx.as_mut() else { break };
+            tokio::select! {
+                cmd = rx.recv() => match cmd {
+                    None => break,
+                    Some(ConnCmd::Add(m, ts)) => {
+                        if token_spec.is_none() {
+                            token_spec = ts;
+                        }
+                        members.push(m);
+                    }
+                    Some(ConnCmd::Remove(_)) => {}
+                },
+                _ = cancel_rx.changed() => { if *cancel_rx.borrow() { break; } }
+            }
+            continue;
+        }
+        for m in members.iter() {
+            set_state(&m.status, "connecting", None);
+        }
         let session_started = Instant::now();
         match run_session(
-            &spec,
+            &mut members,
+            &mut cmd_rx,
             &mut cancel_rx,
-            &status,
             &token_provider,
-            &token_spec,
+            &mut token_spec,
             &sink_getter,
-            &mut first,
             std::mem::take(&mut force_token),
         )
         .await
         {
             SessionEnd::Cancelled => break,
             SessionEnd::Dropped(reason) => {
-                // Subscribe NACK = the provider rejected our args (application-level, not
-                // transport). It cannot heal by reconnecting with the same args.
+                // Subscribe rejections are handled per registration inside the session — only
+                // login and transport failures reach here, and those are connection-wide.
                 let is_login_reject = reason.starts_with("login rejected");
                 if is_login_reject {
                     force_token = true;
                 }
-                let is_reject = reason.starts_with("subscribe rejected");
-                consecutive_rejects =
-                    if is_reject || is_login_reject { consecutive_rejects + 1 } else { 0 };
+                consecutive_rejects = if is_login_reject { consecutive_rejects + 1 } else { 0 };
                 if is_login_reject && consecutive_rejects >= MAX_SUBSCRIBE_REJECTS {
                     // Forced refresh already tried between attempts — the credential itself
                     // is bad. Stop the churn; the user fixes the key and restarts the watch.
-                    set_state(&status, "failed", Some(reason.clone()));
-                    failed = true;
-                    if let Some(tx) = first.take() {
-                        let _ = tx.send(Err(reason.clone()));
+                    for m in members.iter_mut() {
+                        set_state(&m.status, "failed", Some(reason.clone()));
+                        if let Some(tx) = m.first.take() {
+                            let _ = tx.send(Err(reason.clone()));
+                        }
                     }
+                    failed = true;
                     tracing::error!(
                         target: "ws_stream",
-                        watch_id = %spec.watch_id,
                         reason = %reason,
                         attempts = consecutive_rejects,
-                        "ws stream giving up — login/token repeatedly rejected even after forced refresh"
+                        "ws connection giving up — login/token repeatedly rejected even after forced refresh"
                     );
                     break;
-                }
-                if is_reject {
-                    if let Some(tx) = first.take() {
-                        // Very first subscribe attempt — surface to start() and stop.
-                        let _ = tx.send(Err(reason.clone()));
-                        set_state(&status, "failed", Some(reason.clone()));
-                        failed = true;
-                        break;
-                    }
-                    if consecutive_rejects >= MAX_SUBSCRIBE_REJECTS {
-                        set_state(&status, "failed", Some(reason.clone()));
-                        failed = true;
-                        tracing::error!(
-                            target: "ws_stream",
-                            watch_id = %spec.watch_id,
-                            reason = %reason,
-                            attempts = consecutive_rejects,
-                            "ws stream giving up — subscribe repeatedly rejected (fix the watch args and restart it)"
-                        );
-                        break;
-                    }
                 }
                 if session_started.elapsed() >= STABLE_SESSION {
                     backoff_idx = 0;
                 }
                 let wait = BACKOFF_STEPS_SEC[backoff_idx.min(BACKOFF_STEPS_SEC.len() - 1)];
                 backoff_idx += 1;
-                set_state(
-                    &status,
-                    "reconnecting",
-                    Some(format!("{reason} — retry in {wait}s")),
-                );
+                for m in members.iter() {
+                    set_state(
+                        &m.status,
+                        "reconnecting",
+                        Some(format!("{reason} — retry in {wait}s")),
+                    );
+                }
                 tracing::warn!(
                     target: "ws_stream",
-                    watch_id = %spec.watch_id,
+                    watches = members.len(),
                     reason = %reason,
                     retry_in_sec = wait,
                     "ws stream session dropped — will reconnect"
@@ -325,9 +472,54 @@ async fn watch_loop(
         }
     }
     if !failed {
-        set_state(&status, "stopped", None);
+        for m in members.iter() {
+            set_state(&m.status, "stopped", None);
+        }
     }
-    tracing::info!(target: "ws_stream", watch_id = %spec.watch_id, "watch stopped");
+    tracing::info!(target: "ws_stream", "ws connection closed");
+}
+
+/// Hand a realtime payload to every registration it belongs to. On a shared socket one frame can
+/// be nobody's, one watch's, or several — routing decides, and each watch decodes with its own
+/// declarations so a shared socket looks no different from a private one downstream.
+fn deliver(
+    members: &[Member],
+    sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
+    kind: &str,
+    frame: &serde_json::Value,
+    decorate: bool,
+) {
+    let Some(sink) = sink_getter() else { return };
+    for m in members {
+        if !m.spec.realtime_match.is_empty() && m.spec.realtime_match != kind {
+            continue;
+        }
+        let Some(mine) = route_frame(frame, &m.spec) else {
+            continue;
+        };
+        {
+            let mut s = m.status.lock().unwrap_or_else(|p| p.into_inner());
+            s.last_event_ms = Some(now_ms());
+            s.event_count += 1;
+        }
+        let payload = if decorate {
+            decorate_realtime_frame(&m.spec, mine)
+        } else {
+            mine
+        };
+        sink(&m.spec, payload);
+    }
+}
+
+/// Pending-forever when a connection takes no commands (the private case), so `select!` can hold
+/// the branch without a second code path.
+async fn recv_cmd(
+    rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<ConnCmd>>,
+) -> Option<ConnCmd> {
+    match rx.as_mut() {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 enum SessionEnd {
@@ -336,15 +528,19 @@ enum SessionEnd {
 }
 
 async fn run_session(
-    spec: &WsStreamSpec,
+    members: &mut Vec<Member>,
+    cmd_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<ConnCmd>>,
     cancel_rx: &mut tokio::sync::watch::Receiver<bool>,
-    status: &Arc<Mutex<StatusInner>>,
     token_provider: &Option<Arc<OAuthTokenProvider>>,
-    token_spec: &Option<(String, OAuthSpec, u64)>,
+    token_spec_slot: &mut Option<(String, OAuthSpec, u64)>,
     sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
-    first: &mut Option<FirstResultTx>,
     force_token: bool,
 ) -> SessionEnd {
+    // Connection-level settings (endpoint, login, keepalive, wire format) belong to the socket, not
+    // to any one registration - sharing requires them to agree, which the connection key ensures.
+    let conn_spec = members[0].spec.clone();
+    let spec = &conn_spec;
+    let token_spec = &*token_spec_slot;
     // Token (proactive per (re)connect). Present when a secret is declared in the LOGIN frame
     // (kiwoom) or at spec level (한투 approval_key — rides in the subscribe frame, no LOGIN).
     let needs_token = spec
@@ -419,53 +615,83 @@ async fn run_session(
             Err(e) => return SessionEnd::Dropped(format!("pre-frame: {e}")),
         }
     }
-    // For 한투 (token_secret at spec level), the approval_key rides in the subscribe frame
-    // header via `{TOKEN}`. kiwoom has no `{TOKEN}` here so fill_token is a no-op.
-    let subscribe_frame = fill_token(&spec.subscribe_frame, token.as_deref());
-    if let Err(e) = send(&mut ws, &subscribe_frame).await {
-        return SessionEnd::Dropped(e);
-    }
-    // Captured from the subscribe ack for KIS 체결통보 (flag 1) — the ack body carries iv/key.
+    // One subscribe frame per registration. A rejection is the provider refusing *those* args, so
+    // it removes that watch alone - its neighbours on the socket keep their ticks.
+    // 한투 carries the approval_key in the subscribe frame header via a token placeholder; kiwoom
+    // has none there, so filling it is a no-op.
     let mut decrypt_keys: Option<(String, String)> = None;
-    if !spec.subscribe_match.is_empty() {
-        match exchange(&mut ws, spec, &spec.subscribe_match).await {
+    let mut drop_ids: Vec<String> = Vec::new();
+    for idx in 0..members.len() {
+        let msp = members[idx].spec.clone();
+        let frame = fill_token(&msp.subscribe_frame, token.as_deref());
+        if let Err(e) = send(&mut ws, &frame).await {
+            return SessionEnd::Dropped(e);
+        }
+        if msp.subscribe_match.is_empty() {
+            continue;
+        }
+        match exchange(&mut ws, &msp, &msp.subscribe_match).await {
             Ok(resp) => {
-                if let Some(rule) = &spec.subscribe_success {
+                if let Some(rule) = &msp.subscribe_success {
                     if !field_eq(&resp, rule) {
-                        return SessionEnd::Dropped(format!(
-                            "subscribe rejected: {}",
-                            frame_error(&resp, spec)
-                        ));
+                        let reason = format!("subscribe rejected: {}", frame_error(&resp, &msp));
+                        let m = &mut members[idx];
+                        m.rejects += 1;
+                        // A first attempt is reported to start() and abandoned: the args are wrong
+                        // and retrying cannot fix them. A watch that used to work gets a few
+                        // reconnects before being given up on.
+                        let give_up = m.first.is_some() || m.rejects >= MAX_SUBSCRIBE_REJECTS;
+                        if let Some(tx) = m.first.take() {
+                            let _ = tx.send(Err(reason.clone()));
+                        }
+                        if give_up {
+                            set_state(&m.status, "failed", Some(reason.clone()));
+                            drop_ids.push(msp.watch_id.clone());
+                            tracing::error!(
+                                target: "ws_stream", watch_id = %msp.watch_id,
+                                reason = %reason, attempts = m.rejects,
+                                "ws stream giving up - subscribe rejected (fix the watch args and restart it)"
+                            );
+                        }
+                        continue;
                     }
                 }
-                // KIS ack carries the AES iv/key — capture (never forward: it's a secret).
-                if let Some(dec) = &spec.decrypt {
+                members[idx].rejects = 0;
+                // KIS ack carries the AES iv/key - capture it, never forward it: that is a secret.
+                if let Some(dec) = &msp.decrypt {
                     decrypt_keys = capture_decrypt_keys(&resp, dec);
                     if decrypt_keys.is_none() {
                         tracing::warn!(
                             target: "ws_stream",
-                            watch_id = %spec.watch_id,
-                            "encrypted stream but subscribe ack had no iv/key — flag-1 frames will be skipped"
+                            watch_id = %msp.watch_id,
+                            "encrypted stream but subscribe ack had no iv/key - flag-1 frames will be skipped"
                         );
                     }
                 }
-                // For JSON providers the ack often carries the initial snapshot — forward it so
+                // For JSON providers the ack often carries the initial snapshot - forward it so
                 // consumers start from full state. For KisPipe the ack is a control message
                 // (and may hold the decrypt key), so it is never forwarded.
-                if spec.frame_format == WsFrameFormat::Json {
+                if msp.frame_format == WsFrameFormat::Json {
                     if let Some(sink) = sink_getter() {
-                        sink(spec, resp);
+                        sink(&msp, resp);
                     }
                 }
             }
             Err(e) => return SessionEnd::Dropped(format!("subscribe: {e}")),
         }
     }
+    members.retain(|m| !drop_ids.contains(&m.spec.watch_id));
+    if members.is_empty() {
+        let _ = ws.close(None).await;
+        return SessionEnd::Cancelled;
+    }
 
-    set_state(status, "live", None);
-    // First successful subscribe — release start() (registration confirmed good).
-    if let Some(tx) = first.take() {
-        let _ = tx.send(Ok(()));
+    for m in members.iter_mut() {
+        set_state(&m.status, "live", None);
+        // First successful subscribe - release start() (registration confirmed good).
+        if let Some(tx) = m.first.take() {
+            let _ = tx.send(Ok(()));
+        }
     }
     tracing::info!(
         target: "ws_stream",
@@ -496,22 +722,65 @@ async fn run_session(
             _ = hb.tick() => {
                 tracing::info!(
                     target: "ws_stream",
-                    watch_id = %spec.watch_id,
+                    watches = members.len(),
                     frames_seen,
                     "ws heartbeat — 수신 프레임 누적(0 이면 구독 후 아무것도 안 오는 것)"
                 );
             }
             _ = cancel_rx.changed() => {
                 if *cancel_rx.borrow() {
-                    if let Some(unsub) = &spec.unsubscribe_frame {
-                        // Must fill `{TOKEN}` here too — 한투 carries the approval_key in every
-                        // frame header, so an un-filled unsubscribe is rejected (best-effort, and
-                        // the failure is silent, which is exactly how it stayed unnoticed).
-                        let frame = fill_token(unsub, token.as_deref());
-                        let _ = send(&mut ws, &frame).await;
+                    // Every registration gets its own unsubscribe. The token must be filled here
+                    // too: 한투 carries the approval_key in every frame header, so an unfilled
+                    // unsubscribe is rejected, and best-effort means that failure is silent -
+                    // which is exactly how it went unnoticed.
+                    for m in members.iter() {
+                        if let Some(unsub) = &m.spec.unsubscribe_frame {
+                            let frame = fill_token(unsub, token.as_deref());
+                            let _ = send(&mut ws, &frame).await;
+                        }
                     }
                     let _ = ws.close(None).await;
                     return SessionEnd::Cancelled;
+                }
+            }
+            // Registrations arriving or leaving while the socket is up. Reconnecting to add a
+            // symbol is not an option: the provider caps sessions per token, so a fresh socket
+            // would evict this one and every watch on it.
+            cmd = recv_cmd(cmd_rx) => {
+                match cmd {
+                    None => return SessionEnd::Cancelled,
+                    Some(ConnCmd::Add(m, ts)) => {
+                        if token_spec_slot.is_none() {
+                            *token_spec_slot = ts;
+                        }
+                        let frame = fill_token(&m.spec.subscribe_frame, token.as_deref());
+                        let wid = m.spec.watch_id.clone();
+                        members.push(m);
+                        if let Err(e) = send(&mut ws, &frame).await {
+                            return SessionEnd::Dropped(e);
+                        }
+                        tracing::info!(
+                            target: "ws_stream", watch_id = %wid, watches = members.len(),
+                            "ws registration added to the live socket"
+                        );
+                        // The ack is picked up by the frame loop below rather than waited for
+                        // inline: a blocking wait would swallow the realtime frames that arrive
+                        // in between, and those are the ones we exist to deliver.
+                    }
+                    Some(ConnCmd::Remove(watch_id)) => {
+                        if let Some(pos) = members.iter().position(|m| m.spec.watch_id == watch_id) {
+                            let gone = members.remove(pos);
+                            if let Some(unsub) = &gone.spec.unsubscribe_frame {
+                                let frame = fill_token(unsub, token.as_deref());
+                                let _ = send(&mut ws, &frame).await;
+                            }
+                            set_state(&gone.status, "stopped", None);
+                        }
+                        if members.is_empty() {
+                            let _ = ws.close(None).await;
+                            return SessionEnd::Cancelled;
+                        }
+                    }
                 }
             }
             msg = ws.next() => {
@@ -555,14 +824,7 @@ async fn run_session(
                             if !spec.realtime_match.is_empty() && tr_id != spec.realtime_match {
                                 continue;
                             }
-                            {
-                                let mut s = status.lock().unwrap_or_else(|p| p.into_inner());
-                                s.last_event_ms = Some(now_ms());
-                                s.event_count += 1;
-                            }
-                            if let Some(sink) = sink_getter() {
-                                sink(spec, value);
-                            }
+                            deliver(members, sink_getter, &tr_id, &value, false);
                         }
                         None => tracing::warn!(
                             target: "ws_stream",
@@ -606,14 +868,45 @@ async fn run_session(
                     let _ = ws.send(Message::Text(text)).await;
                     continue;
                 }
-                if kind == spec.realtime_match {
-                    {
-                        let mut s = status.lock().unwrap_or_else(|p| p.into_inner());
-                        s.last_event_ms = Some(now_ms());
-                        s.event_count += 1;
+                if members.iter().any(|m| m.spec.realtime_match == kind) {
+                    deliver(members, sink_getter, kind, &frame, true);
+                    continue;
+                }
+                // Ack for a registration added mid-session (see the Add command above). Resolving
+                // it here keeps the frame loop running while we wait.
+                if members.iter().any(|m| m.spec.subscribe_match == kind) {
+                    let rule = members
+                        .iter()
+                        .find(|m| m.spec.subscribe_match == kind)
+                        .and_then(|m| m.spec.subscribe_success.clone());
+                    let ok = rule.map(|r| field_eq(&frame, &r)).unwrap_or(true);
+                    let reason = if ok {
+                        None
+                    } else {
+                        Some(format!("subscribe rejected: {}", frame_error(&frame, spec)))
+                    };
+                    let pending: Vec<String> = members
+                        .iter()
+                        .filter(|m| m.first.is_some())
+                        .map(|m| m.spec.watch_id.clone())
+                        .collect();
+                    for m in members.iter_mut().filter(|m| m.first.is_some()) {
+                        if let Some(tx) = m.first.take() {
+                            let _ = tx.send(match &reason {
+                                None => Ok(()),
+                                Some(r) => Err(r.clone()),
+                            });
+                        }
+                        set_state(&m.status, if ok { "live" } else { "failed" }, reason.clone());
                     }
-                    if let Some(sink) = sink_getter() {
-                        sink(spec, decorate_realtime_frame(spec, frame));
+                    // A rejected registration must come off the socket: it will never receive a
+                    // frame, and leaving it in place would route ticks to a dead watch.
+                    if !ok {
+                        members.retain(|m| !pending.contains(&m.spec.watch_id));
+                        if members.is_empty() {
+                            let _ = ws.close(None).await;
+                            return SessionEnd::Cancelled;
+                        }
                     }
                     continue;
                 }
