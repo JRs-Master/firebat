@@ -740,7 +740,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const knownPrevClose =
     sessionPrevClose && sessionPrevClose > 0
       ? sessionPrevClose
-      : isIntraday
+      : safeData.some(d => { const t = timeOf(d.date); return t && t !== '00:00'; })
         ? null
         : (prevClose ?? null);
   const baseClose = knownPrevClose ?? 0;
