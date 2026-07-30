@@ -730,6 +730,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 헤더 변동: 전일 종가 대비 (일간 변동, 증권앱 표준). 전일 없으면 기간 시작 대비 폴백.
   const prevClose = fullData[fullN - 2]?.close;
   const viewLatest = safeData[n - 1];
+  // 인트라데이(분/시간봉) 판정 — 시각(HH:MM)이 있고 자정이 아닌 봉이 있으면 인트라데이. 헤더의 변동
+  // 기준과 기간 라벨이 둘 다 이 값을 보므로 그 둘보다 먼저 선언한다(선언 전 호출 = 렌더 크래시).
+  const timeOf = (d: string): string => {
+    const m = normalizeDate(d).match(/(\d{2}:\d{2})/);
+    return m ? m[1] : '';
+  };
+  const isIntraday = safeData.some(d => { const t = timeOf(d.date); return t && t !== '00:00'; });
   // Every trading terminal shows the same thing next to the last price: change against the PREVIOUS
   // SESSION'S CLOSE, on intraday charts too. So that is what this is.
   //   · told the previous close  → use it (correct for any interval)
@@ -740,7 +747,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const knownPrevClose =
     sessionPrevClose && sessionPrevClose > 0
       ? sessionPrevClose
-      : safeData.some(d => { const t = timeOf(d.date); return t && t !== '00:00'; })
+      : isIntraday
         ? null
         : (prevClose ?? null);
   const baseClose = knownPrevClose ?? 0;
@@ -752,13 +759,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const changeColor = isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-slate-400';
   const changeArrow = isUp ? '▲' : isDown ? '▼' : '–';
   const changeSign = isUp ? '+' : '';
-  // 기간 라벨 — 인트라데이(분/시간봉)면 봉 개수를 "일"로 세면 안 됨("25일" 버그). 시각(HH:MM)이
-  // 있고 자정이 아닌 봉이 있으면 인트라데이로 보고 범위는 시:분 위주, 개수 단위는 "봉".
-  const timeOf = (d: string): string => {
-    const m = normalizeDate(d).match(/(\d{2}:\d{2})/);
-    return m ? m[1] : '';
-  };
-  const isIntraday = safeData.some(d => { const t = timeOf(d.date); return t && t !== '00:00'; });
+  // 기간 라벨 — 인트라데이면 봉 개수를 "일"로 세면 안 됨("25일" 버그). 범위는 시:분 위주, 단위는 "봉".
   const rangeLabel = (d: string): string => {
     if (!isIntraday) return shortDate(d);
     const t = timeOf(d);

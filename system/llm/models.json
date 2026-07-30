@@ -1531,13 +1531,6 @@
             }
           },
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
-          },
-          {
             "value": "low",
             "labels": {
               "ko": "Low (낮음)",
@@ -1778,13 +1771,6 @@
             }
           },
           {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
-            }
-          },
-          {
             "value": "low",
             "labels": {
               "ko": "Low (낮음)",
@@ -1836,13 +1822,6 @@
             "labels": {
               "ko": "None (추론 없음, 최저 지연)",
               "en": "None (no reasoning, lowest latency)"
-            }
-          },
-          {
-            "value": "minimal",
-            "labels": {
-              "ko": "Minimal (최소, 빠름)",
-              "en": "Minimal (fastest)"
             }
           },
           {
