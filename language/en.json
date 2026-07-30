@@ -276,7 +276,12 @@
     "restore": "Restore",
     "regenerate": "Regenerate",
     "move_up": "Move up",
-    "move_down": "Move down"
+    "move_down": "Move down",
+    "cron_kind_system": "System",
+    "cron_kind_module": "Module",
+    "cron_kind_page": "Page",
+    "cron_kind_user": "User",
+    "cron_disabled": "Off"
   },
   "login": {
     "title": "Sign in to Firebat",

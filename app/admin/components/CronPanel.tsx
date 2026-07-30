@@ -256,6 +256,21 @@ export function CronPanel({
     }
   };
 
+  /**
+   * Where a job came from. Only the built-in ones carried a badge, so anything else — a page refresh,
+   * a module run — was indistinguishable from a schedule the user wrote by hand. The rank also orders
+   * the list: system first, then module, then page, then the user's own, which is roughly least to
+   * most likely to need attention.
+   */
+  const jobOrigin = (job: CronJob): { rank: number; label: string } => {
+    // Not `t` — that name belongs to the translator in this scope.
+    const target = job.targetPath || '';
+    if (job.system || target.startsWith('builtin:')) return { rank: 0, label: t('common.cron_kind_system') };
+    if (target.startsWith('sysmod_') || target.startsWith('module:')) return { rank: 1, label: t('common.cron_kind_module') };
+    if (target.startsWith('rebake:') || target.startsWith('/')) return { rank: 2, label: t('common.cron_kind_page') };
+    return { rank: 3, label: t('common.cron_kind_user') };
+  };
+
   /** What the job actually runs, read off its target. Without this a job whose target the panel does
    *  not recognise fell back to the pipeline editor and showed an empty pipeline, so a page-refresh
    *  job looked like a broken one. */
@@ -292,7 +307,12 @@ export function CronPanel({
         <p className="px-3 pb-2 text-[11px] text-slate-400 italic">등록된 잡 없음</p>
       ) : (
         <div className="pb-2 px-2 space-y-0.5">
-          {jobs.map(job => {
+          {[...jobs]
+            .sort((a, b) => {
+              const d = jobOrigin(a).rank - jobOrigin(b).rank;
+              return d !== 0 ? d : (a.title || a.jobId).localeCompare(b.title || b.jobId);
+            })
+            .map(job => {
             const jobSelected = selectedJobId === job.jobId;
             // consolidation 시스템 스케줄은 AI 토글 OFF 면 회색(비활성) — retention 은 항상 활성.
             const gatedOff = job.builtinKind === 'consolidation' && !aiRouterEnabled;
@@ -308,7 +328,9 @@ export function CronPanel({
                 <p className={`text-[12px] font-semibold truncate flex items-center gap-1 ${gatedOff ? 'text-slate-400' : 'text-slate-700'}`}>
                   {job.system && <Lock size={9} className="text-slate-400 shrink-0" />}
                   <span className="truncate">{job.title || job.jobId}</span>
-                  {job.system && <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{gatedOff ? '비활성' : '시스템'}</span>}
+                  <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">
+                    {gatedOff ? t('common.cron_disabled') : jobOrigin(job).label}
+                  </span>
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
                   {modeLabel(job)} · {jobKind(job)}{job.description ? ` · ${job.description}` : ''}

@@ -276,7 +276,12 @@
     "restore": "복원",
     "regenerate": "재발급",
     "move_up": "위로",
-    "move_down": "아래로"
+    "move_down": "아래로",
+    "cron_kind_system": "시스템",
+    "cron_kind_module": "모듈",
+    "cron_kind_page": "페이지",
+    "cron_kind_user": "사용자",
+    "cron_disabled": "비활성"
   },
   "login": {
     "title": "Firebat 로그인",
