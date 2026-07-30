@@ -1777,6 +1777,63 @@ impl McpToolHandler for SearchHistoryHandler {
     }
 }
 
+/// The two steps above `search_history`. That tool matches a single message, so a hit inside a long
+/// exchange came back as an isolated fragment with no way to widen. These mirror the core-side
+/// handlers exactly (see `register_conversation_tools`) — no drift between the FC and MCP paths.
+pub struct ListConversationsHandler {
+    pub conversation: Arc<ConversationManager>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for ListConversationsHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let owner = obj_str(&args, "owner").unwrap_or_else(|| "admin".to_string());
+        let limit = obj_i64(&args, "limit").map(|v| v as usize).unwrap_or(30).clamp(1, 200);
+        let mut rows = self.conversation.list(&owner);
+        rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        let total = rows.len();
+        rows.truncate(limit);
+        Ok(serde_json::json!({
+            "success": true,
+            "data": {"total": total, "returned": rows.len(), "conversations": rows},
+        }))
+    }
+}
+
+pub struct ReadConversationHandler {
+    pub conversation: Arc<ConversationManager>,
+}
+#[async_trait::async_trait]
+impl McpToolHandler for ReadConversationHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let owner = obj_str(&args, "owner").unwrap_or_else(|| "admin".to_string());
+        let conv_id = obj_str(&args, "convId")
+            .or_else(|| obj_str(&args, "conversationId"))
+            .ok_or_else(|| {
+                firebat_core::i18n::t("core.error.tool.conversation_id_required", None, &[])
+            })?;
+        let from = obj_i64(&args, "from").unwrap_or(0).max(0) as usize;
+        let to = obj_i64(&args, "to").filter(|v| *v >= 0).map(|v| v as usize);
+        let max_chars = obj_i64(&args, "maxChars")
+            .map(|v| v as usize)
+            .unwrap_or(12_000)
+            .clamp(500, 60_000);
+        match self
+            .conversation
+            .read_messages(&owner, &conv_id, from, to, max_chars)
+        {
+            Some(window) => Ok(serde_json::json!({"success": true, "data": window})),
+            None => Ok(serde_json::json!({
+                "success": false,
+                "error": firebat_core::i18n::t(
+                    "core.error.tool.conversation_not_found",
+                    None,
+                    &[("id", conv_id.as_str())],
+                ),
+            })),
+        }
+    }
+}
+
 // 라이브러리(업로드 자료) 검색 — E5(dense) + BM25(sparse) 하이브리드. AI 가 직접 호출해
 // 질의를 다듬고 재검색할 수 있는 도구 (자동 주입과 별개로 AI 가 E5 를 능동 제어).
 pub struct SearchLibraryHandler {
@@ -2243,9 +2300,28 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // Conversation
     state.register(McpTool {
         name: "search_history".into(),
-        description: "이전 대화 검색 (embedding). inputSchema: {owner?, query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks?}.".into(),
+        description: "Semantic search over prior conversations — matches ONE message per hit, so the \
+            result is a fragment plus its convId/msgIdx. Read around a hit with read_conversation; \
+            when hits are useless or empty, fall back to list_conversations. inputSchema: {owner?, \
+            query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks?}.".into(),
         input_schema: schema_object(serde_json::json!({"query": {"type":"string"}})),
-        handler: Arc::new(SearchHistoryHandler { conversation: deps.conversation }),
+        handler: Arc::new(SearchHistoryHandler { conversation: deps.conversation.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "list_conversations".into(),
+        description: "List the caller's own chat sessions, newest first. A session holds many \
+            messages and its title comes from the opening line, so it often does not name the \
+            topic — pick by time and title, then read it. inputSchema: {owner?, limit?}.".into(),
+        input_schema: schema_object(serde_json::json!({"limit": {"type":"integer"}})),
+        handler: Arc::new(ListConversationsHandler { conversation: deps.conversation.clone() }),
+    }).await;
+    state.register(McpTool {
+        name: "read_conversation".into(),
+        description: "Read a range of messages from one session, in order. `to` is exclusive; omit \
+            for the end. Long ranges stop at a character cap and report nextFrom. inputSchema: \
+            {owner?, convId, from?, to?, maxChars?}.".into(),
+        input_schema: schema_object(serde_json::json!({"convId": {"type":"string"}})),
+        handler: Arc::new(ReadConversationHandler { conversation: deps.conversation }),
     }).await;
     state.register(McpTool {
         name: "search_library".into(),

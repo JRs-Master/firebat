@@ -1717,6 +1717,31 @@ pub struct ToolResultSummary {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<serde_json::Value>,
+    /// The `_cacheKey` this call's payload carried, if any. Persisted with the turn so a LATER turn
+    /// can be told which data is still on hand — without it the next turn had no way to know the
+    /// previous turn had already fetched anything and re-ran the whole discovery ladder.
+    #[serde(default, rename = "cacheKey", skip_serializing_if = "Option::is_none")]
+    pub cache_key: Option<String>,
+}
+
+/// Pulls the `_cacheKey` out of a tool payload. Sandbox attaches it at the top level of `data`
+/// (uniformly, regardless of size), but a few paths return it un-enveloped — check both rather than
+/// depending on which one produced this payload.
+pub fn extract_cache_key(payload: &serde_json::Value) -> Option<String> {
+    for path in [Some("data"), None] {
+        let scope = match path {
+            Some(p) => payload.get(p),
+            None => Some(payload),
+        };
+        if let Some(key) = scope
+            .and_then(|v| v.get("_cacheKey"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            return Some(key.to_string());
+        }
+    }
+    None
 }
 
 /// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.

@@ -91,6 +91,31 @@ pub struct HistorySearchMatch {
     pub blocks: Option<serde_json::Value>,
 }
 
+/// One message inside a read window.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWindowMessage {
+    pub msg_idx: i64,
+    pub role: String,
+    pub text: String,
+}
+
+/// A contiguous slice of one session, as returned to the caller of `read_messages`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWindow {
+    pub conv_id: String,
+    pub title: String,
+    /// Message count of the whole session, so the caller knows how much is outside this window.
+    pub total: i64,
+    pub from: i64,
+    pub messages: Vec<ConversationWindowMessage>,
+    /// Set when the character cap ended the window early — resume here. Absent = the window covers
+    /// everything that was asked for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_from: Option<i64>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchHistoryOpts {
     pub current_conv_id: Option<String>,
@@ -133,6 +158,60 @@ impl ConversationManager {
 
     pub fn get(&self, owner: &str, id: &str) -> Option<ConversationRecord> {
         self.db.get_conversation(owner, id)
+    }
+
+    /// Reads a window of one session's messages as flat text.
+    ///
+    /// `search_history` matches a SINGLE message, so a hit on a long exchange returns a fragment
+    /// ("아니야") with nothing around it and there was no way to widen — a 20-question game could not
+    /// be reconstructed at all. This is that missing step: the search hands back `convId` + `msgIdx`,
+    /// this reads the neighbourhood.
+    ///
+    /// `to` is exclusive. Output is capped by `max_chars`; when the cap cuts the window short the
+    /// result reports the index to resume from instead of silently truncating.
+    pub fn read_messages(
+        &self,
+        owner: &str,
+        id: &str,
+        from: usize,
+        to: Option<usize>,
+        max_chars: usize,
+    ) -> Option<ConversationWindow> {
+        let record = self.db.get_conversation(owner, id)?;
+        let messages = record.messages.as_array().cloned().unwrap_or_default();
+        let total = messages.len();
+        let end = to.unwrap_or(total).min(total);
+        let start = from.min(end);
+
+        let mut out: Vec<ConversationWindowMessage> = Vec::new();
+        let mut used = 0usize;
+        let mut next_from: Option<usize> = None;
+        for (offset, msg) in messages[start..end].iter().enumerate() {
+            let idx = start + offset;
+            let Some(parsed) = message_to_text(msg) else {
+                continue;
+            };
+            let len = parsed.text.chars().count();
+            if used + len > max_chars && !out.is_empty() {
+                next_from = Some(idx);
+                break;
+            }
+            used += len;
+            out.push(ConversationWindowMessage {
+                msg_idx: idx as i64,
+                role: parsed.role,
+                text: parsed.text,
+            });
+        }
+
+        Some(ConversationWindow {
+            conv_id: record.id,
+            title: record.title,
+            total: total as i64,
+            from: start as i64,
+            messages: out,
+            next_from: next_from.map(|n| n as i64),
+        })
     }
 
     /// Consolidation watermark reads/writes (see IDatabasePort docs).
@@ -714,6 +793,26 @@ fn message_to_text(msg: &serde_json::Value) -> Option<ParsedMessage> {
         }
     }
 
+    // The CLI path writes the SAME answer into both channels — `content` as plaintext and a `text`
+    // block as markdown — so joining them blindly embedded every reply twice. That halved the
+    // usable window of the passage encoder for long messages and made the stored preview read like
+    // a stutter. Drop a part whose text is already carried by an earlier one.
+    let mut deduped: Vec<String> = Vec::with_capacity(parts.len());
+    for part in parts {
+        let key = normalize_for_dedup(&part);
+        if key.is_empty() {
+            continue;
+        }
+        if deduped
+            .iter()
+            .any(|kept| normalize_for_dedup(kept).contains(&key))
+        {
+            continue;
+        }
+        deduped.push(part);
+    }
+    let parts = deduped;
+
     if !parts.is_empty() {
         return Some(ParsedMessage {
             role,
@@ -806,7 +905,15 @@ fn collect_prose(v: &serde_json::Value, acc: &mut Vec<String>) {
     }
 }
 
-/// `sha1(version:text)` → hex. 옛 TS 와 동일 (모델 교체 시 cache 자동 무효화).
+/// Strips whitespace and markdown emphasis markers so the plaintext and markdown copies of the same
+/// answer compare equal. Not a general normalizer — just enough to spot the duplicate channel.
+fn normalize_for_dedup(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_whitespace() && !matches!(c, '*' | '_' | '`' | '#' | '~'))
+        .collect()
+}
+
+/// `sha1(version:text)` → hex. Same as the old TS (a model swap invalidates the cache by itself).
 fn sha1_hex(s: &str) -> String {
     let mut hasher = Sha1::new();
     hasher.update(s.as_bytes());
@@ -832,6 +939,32 @@ mod tests {
         let p = message_to_text(&msg).unwrap();
         assert_eq!(p.role, "user");
         assert_eq!(p.text, "hello");
+    }
+
+    #[test]
+    fn message_to_text_drops_the_markdown_copy_of_the_same_answer() {
+        // The CLI path stores the answer twice — plaintext in `content`, markdown in a text block.
+        let msg = serde_json::json!({
+            "role": "assistant",
+            "content": "좋아, 내가 맞혀볼게\n1번째 질문: 살아 있는 것이야?",
+            "data": {"blocks": [
+                {"type": "text", "text": "좋아, 내가 맞혀볼게\n**1번째 질문: 살아 있는 것이야?**"}
+            ]}
+        });
+        let p = message_to_text(&msg).unwrap();
+        assert_eq!(p.text, "좋아, 내가 맞혀볼게\n1번째 질문: 살아 있는 것이야?");
+    }
+
+    #[test]
+    fn message_to_text_keeps_a_block_that_adds_content() {
+        let msg = serde_json::json!({
+            "role": "assistant",
+            "content": "결과입니다",
+            "data": {"blocks": [{"type": "text", "text": "추가 설명"}]}
+        });
+        let p = message_to_text(&msg).unwrap();
+        assert!(p.text.contains("결과입니다"));
+        assert!(p.text.contains("추가 설명"));
     }
 
     #[test]

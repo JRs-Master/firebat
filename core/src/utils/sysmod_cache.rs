@@ -1,16 +1,14 @@
-//! SysmodCacheAdapter — sysmod 결과 cache JSONL + LRU.
+//! SysmodCacheAdapter — sysmod result cache, JSONL records + meta JSON, with an LRU bound.
 //!
-//! 옛 TS 4-29 설정: 큰 sysmod 응답 (yfinance 시계열 100행+ / DART 공시 100건+) 를 메인 context 안
-//! 하지 않고 cacheKey 받아 read/grep/aggregate. JSONL 저장 + meta JSON.
+//! Large sysmod responses (100+ price rows, 100+ DART filings) never enter the model's context. The
+//! caller gets a `_cacheKey` and drills in with read/grep/aggregate instead.
 //!
-//! Phase B-17.5b minimum:
-//! - cache_data — records[] → JSONL 저장 + meta.json
-//! - cache_read — pagination + filter
-//! - cache_grep — 9 op (eq/ne/gt/gte/lt/lte/contains/in/regex)
-//! - cache_aggregate — count/sum/avg/min/max
-//! - cache_drop — 단일 키 또는 전체
-//! - TTL 30분 (만료 시 자동 정리)
-//! - LRU 100개 (capacity 초과 시 가장 오래된 것 정리)
+//! - `data` — records[] → JSONL + meta.json, returns the key
+//! - `read` — pagination
+//! - `grep` — eq/ne/gt/gte/lt/lte/contains/in
+//! - `aggregate` — count/sum/avg/min/max
+//! - `drop_key` — remove one key
+//! - TTL 30 minutes; LRU 100 keys (the oldest is dropped past capacity)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -40,7 +38,7 @@ pub struct CacheMeta {
 
 pub struct SysmodCacheAdapter {
     cache_dir: PathBuf,
-    /// in-memory LRU — 키 → 마지막 access 시각. capacity 초과 시 가장 오래된 것 evict.
+    /// In-memory LRU: key -> last access time. Past capacity the oldest entry is evicted.
     lru: Mutex<HashMap<String, i64>>,
 }
 
@@ -69,7 +67,7 @@ impl SysmodCacheAdapter {
     fn touch(&self, key: &str) {
         let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
         lru.insert(key.to_string(), now_ms());
-        // capacity 초과 → 가장 오래된 것 evict
+        // Past capacity: evict the oldest.
         if lru.len() > LRU_CAPACITY {
             if let Some((oldest_key, _)) = lru.iter().min_by_key(|(_, t)| **t) {
                 let oldest = oldest_key.clone();
@@ -92,7 +90,7 @@ impl SysmodCacheAdapter {
         let ttl_ms = ttl_sec.map(|s| s * 1000).unwrap_or(TTL_MS);
         let expires_at = now + ttl_ms;
 
-        // 키 합성 — sysmod + action + params hash (옛 TS 패턴 simplify)
+        // Key = sysmod + action + params hash + creation time.
         let params_hash = {
             let raw = serde_json::to_string(&params).unwrap_or_default();
             let mut h: u64 = 0xcbf29ce484222325;
@@ -155,20 +153,17 @@ impl SysmodCacheAdapter {
         Ok(out)
     }
 
+    /// Meta for a key that is still within its TTL, or None (missing / unreadable / expired). Public
+    /// so a caller can describe cached data without loading the records — the data-on-hand index a
+    /// later turn is shown is built from these.
+    pub fn meta(&self, key: &str) -> Option<CacheMeta> {
+        let raw = std::fs::read_to_string(self.meta_path(key)).ok()?;
+        let meta: CacheMeta = serde_json::from_str(&raw).ok()?;
+        (meta.expires_at > now_ms()).then_some(meta)
+    }
+
     fn is_valid(&self, key: &str) -> bool {
-        let meta_path = self.meta_path(key);
-        if !meta_path.exists() {
-            return false;
-        }
-        let raw = match std::fs::read_to_string(&meta_path) {
-            Ok(s) => s,
-            Err(_) => return false,
-        };
-        let meta: CacheMeta = match serde_json::from_str(&raw) {
-            Ok(m) => m,
-            Err(_) => return false,
-        };
-        meta.expires_at > now_ms()
+        self.meta(key).is_some()
     }
 
     pub fn read(
@@ -389,7 +384,7 @@ mod tests {
                 "list",
                 serde_json::json!({}),
                 vec![serde_json::json!({"x": 1})],
-                Some(-1), // 즉시 만료
+                Some(-1), // expires immediately
             )
             .unwrap();
         let result = c.read(&key, 0, 10);

@@ -162,7 +162,9 @@
       "llm_call_failed": "LLM call failed: {{detail}}"
     },
     "tool": {
-      "handler_not_registered": "Tool handler not registered: {{name}}"
+      "handler_not_registered": "Tool handler not registered: {{name}}",
+      "conversation_id_required": "convId is required — get it from search_history or list_conversations.",
+      "conversation_not_found": "Conversation not found: {{id}}. Use list_conversations to see the available sessions."
     },
     "task": {
       "execute_unimplemented": "EXECUTE not implemented (Phase B-16+) — path={{path}}",

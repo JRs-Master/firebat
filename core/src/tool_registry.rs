@@ -2116,6 +2116,119 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
+    // list_conversations + read_conversation — the two steps above search_history.
+    //
+    // search_history matches ONE message, so a hit on a long exchange came back as a fragment with
+    // no way to widen: a 20-question game (40 short turns, only one of which names the game) was
+    // unreachable unless the user already knew a rare word inside it. These make the same ladder the
+    // module tools use — index, then detail: list sessions, then read the range that matters.
+    let conversation = h.conversation.clone();
+    tools.register(ToolDefinition {
+        name: "list_conversations".to_string(),
+        description: "List the caller's own chat sessions (newest first) — id, title and times. A \
+            session holds many messages; the title is taken from its opening line, so it often does \
+            not name what the session is about. Use this when search_history returns fragments or \
+            nothing: pick the session by time and title, then read it with read_conversation."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "max sessions to return (default 30)"}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    tools.register_handler(
+        "list_conversations",
+        make_handler(move |args| {
+            let conversation = conversation.clone();
+            async move {
+                // owner injected by ai.rs (hub visitors see only their own) — mirrors search_history.
+                let owner = args.get("owner").and_then(|v| v.as_str()).unwrap_or("admin").to_string();
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(30)
+                    .clamp(1, 200);
+                let mut rows = conversation.list(&owner);
+                rows.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+                let total = rows.len();
+                rows.truncate(limit);
+                Ok(serde_json::json!({
+                    "success": true,
+                    "total": total,
+                    "returned": rows.len(),
+                    "conversations": rows,
+                }))
+            }
+        }),
+    );
+
+    let conversation = h.conversation.clone();
+    tools.register(ToolDefinition {
+        name: "read_conversation".to_string(),
+        description: "Read a range of messages from one of the caller's own sessions, in order. \
+            Pass the convId from search_history or list_conversations. `from`/`to` are message \
+            indices (`to` exclusive, omit for the end); search_history's msgIdx tells you where a \
+            match sits, so read around it. Long ranges are cut at a character cap and the response \
+            says where to resume (nextFrom)."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "required": ["convId"],
+            "properties": {
+                "convId": {"type": "string"},
+                "from": {"type": "integer", "description": "first message index (default 0)"},
+                "to": {"type": "integer", "description": "end index, exclusive (default: end of session)"},
+                "maxChars": {"type": "integer", "description": "character cap for the window (default 12000)"}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    tools.register_handler(
+        "read_conversation",
+        make_handler(move |args| {
+            let conversation = conversation.clone();
+            async move {
+                let owner = args.get("owner").and_then(|v| v.as_str()).unwrap_or("admin").to_string();
+                let conv_id = args
+                    .get("convId")
+                    .or_else(|| args.get("conversationId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if conv_id.is_empty() {
+                    return Err(crate::i18n::t("core.error.tool.conversation_id_required", None, &[]));
+                }
+                let from = args.get("from").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let to = args.get("to").and_then(|v| v.as_u64()).map(|n| n as usize);
+                let max_chars = args
+                    .get("maxChars")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(12_000)
+                    .clamp(500, 60_000);
+                match conversation.read_messages(&owner, &conv_id, from, to, max_chars) {
+                    Some(window) => {
+                        let mut out = serde_json::to_value(window).unwrap_or_default();
+                        if let Some(obj) = out.as_object_mut() {
+                            obj.insert("success".to_string(), serde_json::Value::Bool(true));
+                        }
+                        Ok(out)
+                    }
+                    // The id is wrong or belongs to someone else — same answer either way, and the
+                    // next step is named rather than left to guesswork.
+                    None => Err(crate::i18n::t(
+                        "core.error.tool.conversation_not_found",
+                        None,
+                        &[("id", conv_id.as_str())],
+                    )),
+                }
+            }
+        }),
+    );
+
     // search_memory — unified recall across history + Recall (entities/facts/events) + Library in
     // one call (RetrievalEngine — the same merge that auto-injects when the AI-assistant toggle is
     // on). Built here from the handler's own managers so the AI can trigger it on demand; no shared

@@ -554,6 +554,7 @@ impl ClaudeCodeCliHandler {
                                 success,
                                 error: error_msg,
                                 input: Some(pending.input.clone()),
+                                cache_key: firebat_core::ports::extract_cache_key(&payload),
                             });
                             // 실시간 emit — 도구 완료/에러 (ToolStep done|error).
                             if let Some(tx) = emit {

@@ -493,6 +493,7 @@ impl GeminiCliHandler {
                         success,
                         error: error_msg,
                         input: Some(pending.parameters.clone()),
+                        cache_key: firebat_core::ports::extract_cache_key(&payload),
                     });
                 }
                 if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {

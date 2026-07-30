@@ -14,6 +14,7 @@
 pub mod prompt_builder;
 pub mod system_context;
 pub mod history_resolver;
+pub mod data_on_hand;
 pub mod tool_dispatcher;
 pub mod result_processor;
 pub mod retrieval_engine;
@@ -2215,6 +2216,40 @@ impl AiManager {
                         ));
                     }
                 }
+                // Data already on hand — the cache keys this conversation's earlier turns produced
+                // that are still within their TTL.
+                //
+                // History injection carries message TEXT only, never tool results, so a follow-up
+                // question arrived with no evidence that anything had been fetched: measured
+                // 2026-07-30, one follow-up ("just give me the target prices") re-ran the entire
+                // discovery ladder — 11 calls, all identical to the turn 250 seconds earlier, whose
+                // caches were still alive. Re-injecting the DATA would blow the context; the index
+                // is a few lines and the model drills in with cache_read / cache_grep.
+                if let (Some(conv), Some(cache)) = (&self.conversation, &self.sysmod_cache) {
+                    let owner = effective_opts
+                        .owner
+                        .as_deref()
+                        .or(ai_opts.owner.as_deref())
+                        .unwrap_or("admin");
+                    let conv_id = effective_opts
+                        .conversation_id
+                        .as_deref()
+                        .or(ai_opts.conversation_id.as_deref())
+                        .filter(|s| !s.is_empty());
+                    if let Some(index) = conv_id.and_then(|cid| {
+                        crate::managers::ai::data_on_hand::build_index(
+                            conv.as_ref(),
+                            cache.as_ref(),
+                            owner,
+                            cid,
+                        )
+                    }) {
+                        extra_parts.push(format!(
+                            "<DATA_ON_HAND>\n{}\n</DATA_ON_HAND>",
+                            index
+                        ));
+                    }
+                }
                 // Memory write mode — 토글이 *proactive*(자율 durable) 저장만 게이트. 명시 "기억해"는
                 // 항상 허용 / 자율 저장은 토글 ON 일 때만(안 시킨 tool-call 토큰 소비라 opt-in).
                 // owner=="admin" 만 주입 (hub 는 태그 없음 → tool_system 이 manual 로 간주).
@@ -4143,6 +4178,7 @@ impl AiManager {
                     success,
                     error,
                     input: Some(tc.arguments.clone()),
+                    cache_key: crate::ports::extract_cache_key(&action.result),
                 });
             }
 
@@ -4449,6 +4485,7 @@ impl AiManager {
                 success: true,
                 error: None,
                 input: Some(serde_json::json!({ "blocks": blocks })),
+                cache_key: None,
             });
         }
         // 검증 실패 fence 블록 — 옛엔 silent skip(로그 warn 만)이라 사용자가 "왜 빠졌나" 몰랐음.
@@ -4475,6 +4512,7 @@ impl AiManager {
                 success: false,
                 error: Some(errs.join(" / ")),
                 input: Some(serde_json::json!({ "failed": failed })),
+                cache_key: None,
             });
         }
 

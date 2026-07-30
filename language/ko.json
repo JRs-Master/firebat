@@ -162,7 +162,9 @@
       "llm_call_failed": "LLM 호출에 실패했습니다: {{detail}}"
     },
     "tool": {
-      "handler_not_registered": "도구 핸들러가 등록되지 않았습니다: {{name}}"
+      "handler_not_registered": "도구 핸들러가 등록되지 않았습니다: {{name}}",
+      "conversation_id_required": "convId 를 넣어 주십시오 — search_history 또는 list_conversations 결과에서 얻을 수 있습니다.",
+      "conversation_not_found": "대화를 찾을 수 없습니다: {{id}}. list_conversations 로 세션 목록을 확인해 주십시오."
     },
     "task": {
       "execute_unimplemented": "EXECUTE 가 구현되지 않았습니다 (Phase B-16+) — path={{path}}",
