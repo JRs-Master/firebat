@@ -3549,7 +3549,19 @@ impl AiManager {
                         name: call.name.clone(),
                         result: serde_json::json!({
                             "success": false,
-                            "error": format!("Tool '{}' does not exist. Never call it again — it will not exist no matter how many times you try. Real tools: scheduled runs = schedule_task / run now = run_task / plan = propose_plan / notes = sysmod_notes / calendar = sysmod_calendar. Use only tool names listed in the system context.", effective_call.name),
+                            // Name the real tools that look closest instead of a fixed handful of
+                            // examples. The old text listed scheduling and notes tools whatever was
+                            // actually called, which helped only by coincidence — a call to
+                            // "sites.list_sites" got advice about cron jobs. Candidates come from the
+                            // live registry, so the answer cannot drift from what exists.
+                            "error": format!(
+                                "Tool '{}' does not exist. Never call it again — it will not exist no matter how many times you try.{} Use only tool names listed in the system context.",
+                                effective_call.name,
+                                match nearest_tool_names(&self.tools, &effective_call.name, 5) {
+                                    n if n.is_empty() => String::new(),
+                                    n => format!(" Closest real tools: {}.", n.join(", ")),
+                                }
+                            ),
                             "unknownTool": true,
                         }),
                         success: false,
@@ -5053,4 +5065,94 @@ mod tests {
         assert!(!is_past_iso(""));
     }
 
+}
+
+/// Real tool names that look closest to one the model invented, best first.
+///
+/// Scored on shared word parts before character overlap: a hallucinated name usually keeps the verb
+/// or the noun of the thing it wanted ("list_sites" wanted "list_pages"), and matching on words finds
+/// that where a pure edit distance would rank unrelated short names higher.
+fn nearest_tool_names(tools: &Arc<ToolManager>, wanted: &str, k: usize) -> Vec<String> {
+    let names = tools
+        .list(&ToolListFilter::default())
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+    rank_tool_names(wanted, names, k)
+}
+
+/// The scoring itself, separated so it can be tested without a registry.
+fn rank_tool_names(wanted: &str, names: Vec<String>, k: usize) -> Vec<String> {
+    let parts = |s: &str| -> Vec<String> {
+        s.split(|c: char| c == '_' || c == '.' || c == '-')
+            .filter(|p| !p.is_empty())
+            .map(|p| p.to_ascii_lowercase())
+            .collect()
+    };
+    let want = parts(wanted);
+    if want.is_empty() {
+        return Vec::new();
+    }
+    let mut scored: Vec<(usize, usize, String)> = names
+        .into_iter()
+        .map(|name| {
+            let have = parts(&name);
+            // Exact shared words first; then words that merely share a stem, which catches
+            // singular/plural and verb tense drift ("site" vs "sites").
+            let exact = want.iter().filter(|w| have.contains(w)).count();
+            let stem = want
+                .iter()
+                .filter(|w| {
+                    have.iter()
+                        .any(|h| (h.starts_with(&w[..w.len().min(4)]) || w.starts_with(&h[..h.len().min(4)])) && h != *w)
+                })
+                .count();
+            (exact, stem, name)
+        })
+        .filter(|(exact, stem, _)| *exact > 0 || *stem > 0)
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)).then(a.2.cmp(&b.2)));
+    scored.into_iter().take(k).map(|(_, _, n)| n).collect()
+}
+
+#[cfg(test)]
+mod unknown_tool_hint_tests {
+    use super::rank_tool_names;
+
+    fn registry() -> Vec<String> {
+        [
+            "list_pages", "get_page", "save_page", "delete_page", "list_skills", "get_skill",
+            "list_templates", "get_template", "search_library", "schedule_task", "run_task",
+            "list_cron_jobs", "search_history", "write_file", "read_file",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    #[test]
+    fn points_at_the_tool_the_invented_name_was_reaching_for() {
+        // Measured 2026-07-30: asked to look at the pages in a project, the model called
+        // "sites.list_sites" twice — a namespace this system does not have — while list_pages existed
+        // and the error said only "unknown tool".
+        let out = rank_tool_names("sites.list_sites", registry(), 5);
+        assert!(!out.is_empty(), "an invented name must still produce candidates");
+        assert!(
+            out.iter().take(4).any(|n| n == "list_pages"),
+            "list_pages should be near the front, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn a_shared_verb_is_enough_to_be_suggested() {
+        let out = rank_tool_names("get_document", registry(), 3);
+        assert!(out.iter().any(|n| n.starts_with("get_")), "got {out:?}");
+    }
+
+    #[test]
+    fn nothing_in_common_suggests_nothing() {
+        // Better silent than misleading — a fixed list of examples was the old behaviour and it
+        // answered a question nobody asked.
+        assert!(rank_tool_names("zzz", registry(), 5).is_empty());
+    }
 }
