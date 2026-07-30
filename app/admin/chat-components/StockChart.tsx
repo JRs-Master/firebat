@@ -70,6 +70,26 @@ const MA_COLORS: Record<string, string> = {
 };
 const MA_PALETTE = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899', '#0ea5e9', '#64748b'];
 
+/**
+ * The identifier a person quotes for this stock: a 6-digit code in Korea, a ticker in the US.
+ *
+ * What arrives depends only on which module fetched the data, so one stock was labelled two ways —
+ * `005930` from the broker, `005930.KS` from yfinance. Both decorations are venue notation, not part
+ * of the identifier:
+ *   · `NASDAQ:AAPL` → `AAPL`   — a colon never appears inside a ticker, so the prefix is always venue
+ *   · `005930.KS` → `005930`   — a numeric code carries no share class, so any suffix is venue
+ *   · `AAPL.US` → `AAPL`       — two or more letters after the dot is a venue (US, TO, HK …)
+ *   · `BRK.B` → `BRK.B`        — ONE letter after an alphabetic base is a share class. Keep it.
+ * The last line is why this is not simply "drop everything after the dot".
+ */
+function tickerOf(symbol: string): string {
+  const afterVenue = symbol.includes(':') ? symbol.slice(symbol.lastIndexOf(':') + 1) : symbol;
+  const s = afterVenue.trim();
+  return s
+    .replace(/^(\d+)\.[A-Za-z]+$/, '$1')
+    .replace(/^([A-Za-z][A-Za-z0-9]*)\.[A-Za-z]{2,}$/, '$1');
+}
+
 /** `MA20` → 20. Anything that is not `MA<digits>` is dropped rather than drawn as a flat line. */
 function maPeriod(name: string): number | null {
   const m = /^MA(\d+)$/i.exec(name.trim());
@@ -874,11 +894,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   ]
     .filter(Boolean)
     .join(' · ');
-  // `005930.KS` is yfinance's way of naming an exchange, not the code anyone quotes — and which
-  // suffix appears depends only on which module happened to fetch the data, so the same stock was
-  // labelled two different ways. Strip it when the part before the dot is a pure number; an
-  // alphabetic ticker (AAPL, BRK.B) is never touched.
-  const displaySymbol = symbol.replace(/^(\d+)\.[A-Za-z]+$/, '$1');
+  const displaySymbol = tickerOf(symbol);
   const titleText = title && title.trim() && title.trim() !== displaySymbol ? title : displaySymbol;
   const showSymbolChip = titleText !== displaySymbol;
   // Stat cards describe the LAST SESSION — the same basis as the change beside the last price, so
