@@ -392,6 +392,9 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   const cap = Math.min(Math.max(Number(maxCandles) || (daily ? 120 : 240), 30), 1000);
   // 시드 정규화 — 표준 OHLCV 행만 수용(숫자 coerce), 이상 행은 조용히 drop.
   const candlesRef = useRef<OhlcvBar[] | null>(null);
+  // cap 때문에 앞에서 버린 봉 수. 주석 좌표는 **모듈이 계산한 배열의 인덱스**라, 우리가 앞을
+  // 자르면 그만큼 밀어 줘야 파동이 같은 캔들에 얹힌다.
+  const droppedRef = useRef(0);
   if (candlesRef.current === null) {
     const rows = Array.isArray(data) ? data : [];
     // 시드도 maxCandles 로 자른다 — 옛엔 시드를 통째로 넣어(ka10080 = 900봉) "1분봉 240개" 를
@@ -404,6 +407,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       ? [...rows].sort((a, b) => String((a as Record<string, unknown>).date)
           .localeCompare(String((b as Record<string, unknown>).date)))
       : rows;
+    droppedRef.current = Math.max(0, ordered.length - cap);
     candlesRef.current = ordered.slice(-cap).flatMap((r): OhlcvBar[] => {
       if (!r || typeof r !== 'object') return [];
       const o = r as Record<string, unknown>;
@@ -537,6 +541,21 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
 
   const live = visible && canLiveHere();
   const candles = candlesRef.current!;
+  // 좌표 보정. 미래 좌표(barsAhead)는 마지막 봉 기준이라 그대로 두고, 창 왼쪽으로 나간 점만
+  // 버린다. 남은 점이 1개뿐이면 선이 될 수 없으니 그 주석 자체를 뺀다.
+  const shifted = (() => {
+    const drop = droppedRef.current;
+    if (!annotations || drop <= 0) return annotations;
+    return annotations.flatMap(an => {
+      const pts = an.points.flatMap(pt => {
+        if (pt.i == null) return [pt];
+        const i = pt.i - drop;
+        return i >= 0 ? [{ ...pt, i }] : [];
+      });
+      const usable = an.kind === 'hline' ? pts.length >= 1 : pts.length >= 2;
+      return usable ? [{ ...an, points: pts }] : [];
+    });
+  })();
   return (
     <div ref={ref} className="my-3">
       <div className="flex items-center justify-end mb-1">
@@ -592,7 +611,7 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
       ) : (
         // 스프레드 사본 — 같은 길이의 새 배열 참조로 StockChart memo 를 깨워 틱마다 다시 그림.
         <StockChart symbol={symbol || topic} title={title} data={[...candles]} indicators={indicators}
-          annotations={annotations} futureSlots={futureSlots} scale={scale}
+          annotations={shifted} futureSlots={futureSlots} scale={scale}
           buyPoints={buyPoints} sellPoints={sellPoints} />
       )}
     </div>
