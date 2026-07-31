@@ -1049,12 +1049,13 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 // 여기 보이는 건 슬롯이 채워졌는지 여부뿐이다.
 interface AccountRow {
   id: string;
-  label?: string;
   mode?: string;
   markets?: string[];
   accountNo?: string;
   credentials?: Record<string, boolean>;
 }
+const BOTH_MARKETS = '__both__';
+
 interface AccountsData {
   declared?: { modes?: string[]; markets?: string[] };
   credentials?: string[];
@@ -1090,7 +1091,7 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
   const startEdit = (row?: AccountRow) => {
     setError(null);
     setValues({});
-    setDraft(row ? { ...row } : { id: '', label: '', mode: modes[0] ?? 'real', markets: [], accountNo: '' });
+    setDraft(row ? { ...row } : { id: '', mode: modes[0] ?? 'real', markets: [], accountNo: '' });
   };
 
   const save = async (makePrimary: boolean) => {
@@ -1104,7 +1105,6 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
           module: moduleName,
           account: {
             id: draft.id.trim(),
-            label: draft.label ?? '',
             mode: draft.mode ?? modes[0],
             markets: draft.markets ?? [],
             accountNo: draft.accountNo ?? '',
@@ -1136,12 +1136,17 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
     } catch (e) { logger.debug('system-module', 'accounts delete 실패', { error: e }); }
   };
 
-  const toggleMarket = (m: string) => {
-    setDraft(d => {
-      if (!d) return d;
-      const cur = d.markets ?? [];
-      return { ...d, markets: cur.includes(m) ? cur.filter(x => x !== m) : [...cur, m] };
-    });
+  // One choice, not a checklist: each market separately, plus "both" (= every declared market)
+  // when the broker issues one key that covers them. Two half-overlapping selections read as a
+  // question the user has to answer twice.
+  const marketChoices = markets.length > 1 ? [...markets, BOTH_MARKETS] : markets;
+  const chosenMarket = (d: AccountRow) => {
+    const cur = d.markets ?? [];
+    if (cur.length > 1) return BOTH_MARKETS;
+    return cur[0] ?? '';
+  };
+  const pickMarket = (choice: string) => {
+    setDraft(d => (d ? { ...d, markets: choice === BOTH_MARKETS ? [...markets] : [choice] } : d));
   };
 
   const inputClass =
@@ -1168,7 +1173,7 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
           <div key={row.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[13px] font-bold text-slate-700 break-all">{row.label || row.id}</span>
+                <span className="text-[13px] font-bold text-slate-700 break-all">{row.id}</span>
                 {data.primary === row.id && (
                   <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-100 rounded">
                     {t('system_modules.accounts.primary_badge')}
@@ -1181,9 +1186,9 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
                   <span key={m} className="px-1.5 py-0.5 text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded">{m}</span>
                 ))}
               </div>
-              <div className="text-[11px] text-slate-400 font-medium break-all">
-                {row.id}{row.accountNo ? ` · ${row.accountNo}` : ''}
-              </div>
+              {row.accountNo && (
+                <div className="text-[11px] text-slate-400 font-medium break-all">{row.accountNo}</div>
+              )}
             </div>
             <button
               onClick={() => startEdit(row)}
@@ -1210,15 +1215,6 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
               <input
                 value={draft.id}
                 onChange={e => setDraft(d => (d ? { ...d, id: e.target.value } : d))}
-                placeholder={t('system_modules.accounts.alias_hint')}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.label')}</span>
-              <input
-                value={draft.label ?? ''}
-                onChange={e => setDraft(d => (d ? { ...d, label: e.target.value } : d))}
                 className={inputClass}
               />
             </label>
@@ -1250,15 +1246,15 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
             <div className="flex flex-col gap-1">
               <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.markets')}</span>
               <div className="flex flex-wrap gap-1.5">
-                {markets.map(m => {
-                  const on = (draft.markets ?? []).includes(m);
+                {marketChoices.map(m => {
+                  const on = chosenMarket(draft) === m;
                   return (
                     <button
                       key={m}
-                      onClick={() => toggleMarket(m)}
+                      onClick={() => pickMarket(m)}
                       className={`px-2.5 py-1 text-[12px] font-bold rounded-lg border transition-colors ${on ? 'text-white bg-blue-600 border-blue-600' : 'text-slate-500 bg-white border-slate-300 hover:bg-slate-50'}`}
                     >
-                      {m}
+                      {m === BOTH_MARKETS ? t('system_modules.accounts.market_both') : m}
                     </button>
                   );
                 })}

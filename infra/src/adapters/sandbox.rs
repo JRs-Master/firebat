@@ -917,17 +917,8 @@ impl ProcessSandboxAdapter {
             let value = if infra_managed {
                 let key =
                     firebat_core::utils::account_secrets::secret_key(&meta.name, account, mock);
-                // An account whose token has not been minted yet falls back to the shared slot
-                // rather than running with no token at all.
                 vault
                     .get_secret(&key)
-                    .or_else(|| {
-                        account.and_then(|_| {
-                            vault.get_secret(&firebat_core::utils::account_secrets::secret_key(
-                                &meta.name, None, mock,
-                            ))
-                        })
-                    })
                     .map(|raw| {
                     // `{t,iat}` JSON → raw .t. non-JSON(옛 raw 형식) → 그대로.
                     serde_json::from_str::<serde_json::Value>(&raw)
@@ -939,13 +930,12 @@ impl ProcessSandboxAdapter {
                 // 선언형 vaultKey — 이미 등록된 시스템 공급자 키 재사용(모듈마다 재입력 0).
                 vault.get_secret(vk)
             } else {
-                // Account-scoped first, then the shared value — so a module that has never had
-                // accounts registered keeps working untouched.
-                vault
-                    .get_secret(&firebat_core::utils::account_secrets::secret_key(
-                        &meta.name, account, false,
-                    ))
-                    .or_else(|| vault.get_secret(&format!("user:{}", meta.name)))
+                // Exactly one key: the account's when a call runs as one, the module-wide value
+                // when it does not. No fallback between them — an account is a full credential set
+                // or it is not registered.
+                vault.get_secret(&firebat_core::utils::account_secrets::secret_key(
+                    &meta.name, account, false,
+                ))
             };
             if let Some(value) = value {
                 env.insert(meta.name, value);

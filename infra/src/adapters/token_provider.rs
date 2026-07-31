@@ -241,13 +241,11 @@ impl OAuthTokenProvider {
         let re = RE.get_or_init(|| regex::Regex::new(r"\$\{([A-Za-z0-9_]+)\}").unwrap());
         re.replace_all(s, |caps: &regex::Captures| {
             let var = &caps[1];
-            // The credential that mints this token belongs to the same account as the token does.
-            let scoped = firebat_core::utils::account_secrets::secret_key(var, account, false);
-            match self
-                .vault
-                .get_secret(&scoped)
-                .or_else(|| self.vault.get_secret(&format!("user:{var}")))
-            {
+            // The credential that mints this token belongs to the same account as the token does —
+            // and to no other. Falling back to the module-wide value would mint a token for the
+            // wrong account without saying so.
+            let key = firebat_core::utils::account_secrets::secret_key(var, account, false);
+            match self.vault.get_secret(&key) {
                 Some(val) => val,
                 None => {
                     tracing::warn!(target: "secret", secret = %name, var = %var, "oauth body placeholder unresolved");
@@ -353,16 +351,15 @@ mod tests {
     }
 
     #[test]
-    fn substitute_prefers_the_account_credential_and_falls_back_to_the_shared_one() {
+    fn substitute_reads_only_the_named_accounts_credential() {
         let mut v = HashMap::new();
         v.insert("user:KIS_APP_KEY".to_string(), "SHARED".to_string());
         v.insert("user:KIS_APP_KEY@sub".to_string(), "SUBKEY".to_string());
-        v.insert("user:KIS_SECRET".to_string(), "ONLY_SHARED".to_string());
         let p = provider(v);
         assert_eq!(p.substitute("T", "${KIS_APP_KEY}", Some("sub")), "SUBKEY");
-        // A credential that account never registered still resolves — an account overrides
-        // only the values it actually holds.
-        assert_eq!(p.substitute("T", "${KIS_SECRET}", Some("sub")), "ONLY_SHARED");
+        // The module-wide value is NOT a fallback — minting a mock account's token from the live
+        // credential would look like it worked and fail at the broker.
+        assert_eq!(p.substitute("T", "${KIS_APP_KEY}", Some("other")), "");
         assert_eq!(p.substitute("T", "${KIS_APP_KEY}", None), "SHARED");
     }
 

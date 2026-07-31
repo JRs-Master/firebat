@@ -479,7 +479,6 @@
       "title": "계좌",
       "add": "계좌 추가",
       "alias": "별칭",
-      "alias_hint": "영문·숫자·-·_",
       "mode": "구분",
       "mode_real": "실제",
       "mode_mock": "모의",
@@ -494,7 +493,7 @@
       "delete_confirm": "이 계좌와 저장된 앱키를 함께 삭제합니다.",
       "empty": "등록된 계좌가 없습니다.",
       "cancel": "취소",
-      "label": "계좌 이름"
+      "market_both": "둘 다"
     }
   },
   "calendar": {

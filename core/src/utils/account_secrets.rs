@@ -48,11 +48,9 @@ pub fn registry_key(module: &str) -> String {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountEntry {
-    /// Alias — what the user types and what scopes the vault keys. Stable; renaming means
-    /// re-registering the credentials.
+    /// Alias — the account's name, what the caller passes as `account`, and what scopes the vault
+    /// keys. Stable: renaming means re-registering the credentials.
     pub id: String,
-    #[serde(default)]
-    pub label: String,
     /// `"real"` or `"mock"`. Mock keys are rejected on the live domain and vice versa, so this is
     /// the account's nature rather than a per-call option.
     #[serde(default)]
@@ -61,8 +59,10 @@ pub struct AccountEntry {
     /// covers both at Korea Investment, while Kiwoom issues a separate key per market.
     #[serde(default)]
     pub markets: Vec<String>,
-    /// Account number as the broker reports it — filled from the module's `listAction`, shown
-    /// beside the alias. Never used to authenticate (the credential IS the account).
+    /// Account number exactly as the broker shows it, hyphens and all (`12345678-01`). It never
+    /// authenticates anything — the credential IS the account — so it is stored verbatim and
+    /// reshaped at the point of use ([`digits`]), rather than normalised on the way in where the
+    /// broker's own formatting would be lost.
     #[serde(default)]
     pub account_no: Option<String>,
 }
@@ -70,6 +70,17 @@ pub struct AccountEntry {
 impl AccountEntry {
     pub fn is_mock(&self) -> bool {
         self.mode.eq_ignore_ascii_case("mock")
+    }
+
+    /// The account number as an API wants it — digits only. Brokers print a separator the request
+    /// body does not take (KIS splits the same digits into `CANO` + `ACNT_PRDT_CD`).
+    pub fn digits(&self) -> String {
+        self.account_no
+            .as_deref()
+            .unwrap_or_default()
+            .chars()
+            .filter(char::is_ascii_digit)
+            .collect()
     }
 
     /// `별칭 (계좌번호, 모의, kr/us)` — the one-line form the settings UI and the model both read.
@@ -82,8 +93,7 @@ impl AccountEntry {
         if !self.markets.is_empty() {
             parts.push(self.markets.join("/"));
         }
-        let name = if self.label.is_empty() { &self.id } else { &self.label };
-        format!("{name} ({})", parts.join(", "))
+        format!("{} ({})", self.id, parts.join(", "))
     }
 }
 
@@ -199,15 +209,22 @@ mod registry_tests {
     }
 
     #[test]
+    fn the_account_number_keeps_its_separator_but_yields_digits_on_demand() {
+        let e = AccountEntry { account_no: Some("12345678-01".into()), ..Default::default() };
+        assert_eq!(e.account_no.as_deref(), Some("12345678-01"));
+        assert_eq!(e.digits(), "1234567801");
+        assert_eq!(AccountEntry::default().digits(), "");
+    }
+
+    #[test]
     fn describe_reads_as_one_line() {
         let e = AccountEntry {
-            id: "mock-kr".into(),
-            label: "모의 국내".into(),
+            id: "모의국내".into(),
             mode: "mock".into(),
             markets: vec!["kr".into()],
             account_no: Some("81012345-01".into()),
         };
-        assert_eq!(e.describe(), "모의 국내 (81012345-01, mock, kr)");
+        assert_eq!(e.describe(), "모의국내 (81012345-01, mock, kr)");
     }
 }
 

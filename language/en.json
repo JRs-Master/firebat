@@ -479,7 +479,6 @@
       "title": "Accounts",
       "add": "Add account",
       "alias": "Alias",
-      "alias_hint": "letters, digits, - or _",
       "mode": "Type",
       "mode_real": "Real",
       "mode_mock": "Mock",
@@ -494,7 +493,7 @@
       "delete_confirm": "This deletes the account and the app keys stored under it.",
       "empty": "No accounts registered yet.",
       "cancel": "Cancel",
-      "label": "Display name"
+      "market_both": "Both"
     }
   },
   "calendar": {

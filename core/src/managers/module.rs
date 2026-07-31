@@ -345,8 +345,64 @@ impl ModuleManager {
                         )
                     })?
                     .cloned();
-                match (entry, input_data.as_object()) {
+                // A module that declares accounts has no credentials of its own — "none registered"
+                // is a setup step, not a reason to try the call and let the broker refuse it.
+                let entry = match entry {
+                    Some(e) => e,
+                    None => {
+                        let known: Vec<String> =
+                            reg.accounts.iter().map(|a| a.id.clone()).collect();
+                        let detail = if known.is_empty() {
+                            "no account is registered for this module — register one (app key + secret) in the module settings first.".to_string()
+                        } else {
+                            format!(
+                                "no primary account is designated — pass `account` as one of: {}.",
+                                known.join(", ")
+                            )
+                        };
+                        return Err(crate::i18n::t(
+                            "core.error.module.input_validation_failed",
+                            None,
+                            &[("name", module_name), ("detail", &detail)],
+                        ));
+                    }
+                };
+                match (Some(entry), input_data.as_object()) {
                     (Some(e), Some(obj)) => {
+                        // Credentials do not fall back to the module-wide values: running a mock
+                        // account on the live app key looks like it worked until the broker says
+                        // otherwise. Say which slot is empty instead.
+                        let (declared, _) = Self::declared_secret_names(cfg);
+                        let missing: Vec<&str> = declared
+                            .iter()
+                            .filter(|name| {
+                                self.vault
+                                    .get_secret(&crate::utils::account_secrets::secret_key(
+                                        name,
+                                        Some(&e.id),
+                                        false,
+                                    ))
+                                    .is_none()
+                            })
+                            .map(|s| s.as_str())
+                            .collect();
+                        if !missing.is_empty() {
+                            return Err(crate::i18n::t(
+                                "core.error.module.input_validation_failed",
+                                None,
+                                &[
+                                    ("name", module_name),
+                                    (
+                                        "detail",
+                                        &format!(
+                                            "account '{}' has no {} stored — register it in the module settings.",
+                                            e.id,
+                                            missing.join(", ")
+                                        ),
+                                    ),
+                                ],
+                            ));
+                        }
                         let mut out = obj.clone();
                         out.insert("account".to_string(), serde_json::json!(e.id));
                         // Only when the module actually has a mock notion — nothing else may
@@ -1201,8 +1257,15 @@ impl ModuleManager {
         make_primary: bool,
     ) -> Result<(), String> {
         let id = entry.id.trim().to_string();
-        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return Err("account alias must be alphanumeric, - or _".to_string());
+        // The alias IS the account's name, so it may be Korean — it only has to survive being part
+        // of a vault key and a tool argument. `@` separates the key, whitespace and control
+        // characters make the alias unquotable in an error message.
+        if id.is_empty()
+            || id.len() > 60
+            || id.contains('@')
+            || id.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
+            return Err("account alias must be non-empty, under 60 bytes, and contain no '@' or whitespace".to_string());
         }
         let config = self
             .module_config(module)
