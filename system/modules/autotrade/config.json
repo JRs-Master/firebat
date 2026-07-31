@@ -1,0 +1,145 @@
+{
+  "name": "autotrade",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "runtime": "python",
+  "providerType": "compute",
+  "capability": "auto-trading",
+  "description": "선언된 전략을 봉마감·틱 트리거로 실행하고 전략별 원장을 소유한다. 신호는 technical-analysis, 주문·잔고는 증권사 모듈(stock-trading) 몫이고 이 모듈은 판단·수량·평단·대조만 한다. 계좌는 증권사 모듈의 계좌 별칭으로 지목하며 실전/모의는 그 계좌가 정한다. 태그: 자동매매 매매전략 원장 평단가 포지션 리스크관리 백테스트반영 autotrade strategy ledger position risk",
+  "tags": [
+    "자동매매",
+    "매매전략",
+    "원장",
+    "평단가",
+    "포지션",
+    "수량관리",
+    "리스크관리",
+    "손절",
+    "익절",
+    "무한매수법",
+    "분할매수",
+    "내부이전",
+    "잔고대조",
+    "autotrade",
+    "trading strategy",
+    "ledger",
+    "position sizing",
+    "risk limits",
+    "reconciliation"
+  ],
+  "dependencies": {
+    "capabilities": ["stock-trading", "technical-analysis"],
+    "tools": ["cache_read", "stream_watch_start", "stream_watch_stop", "stream_watch_list"],
+    "maxDepth": 1,
+    "maxCalls": 400
+  },
+  "requiresApproval": [
+    "liquidate_all",
+    "cancel_all",
+    "resolve_unassigned",
+    "import_position"
+  ],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "cycle",
+          "on_stream_event",
+          "reconcile",
+          "report",
+          "positions",
+          "orders",
+          "ledger",
+          "halt",
+          "selftest",
+          "liquidate_all",
+          "cancel_all",
+          "resolve_unassigned",
+          "import_position"
+        ],
+        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated."
+      },
+      "strategyId": {
+        "type": "string",
+        "description": "Which declared strategy to run. Omit on `cycle` to run every enabled strategy whose trigger matches."
+      },
+      "bars": {
+        "type": "array",
+        "description": "OHLCV rows for the strategy's symbol, newest last. Supply this (or barsCacheKey) when calling from a pipeline that already fetched the candles.",
+        "items": { "type": "object" }
+      },
+      "barsCacheKey": {
+        "type": "string",
+        "description": "Cache key from the broker's candle response — expanded into `bars` before validation, so the rows never ride in the call."
+      },
+      "signal": {
+        "type": "object",
+        "description": "A technical-analysis `signals` response. Supply it when the caller already ran ta; otherwise this module asks ta itself."
+      },
+      "quote": {
+        "type": "object",
+        "description": "Current price snapshot for the volatility guard: {last, bid?, ask?}. Falls back to the last closed bar's close when absent."
+      },
+      "position": {
+        "type": "object",
+        "description": "Broker-reported holding for reconciliation: {qty, avgPrice}. Supplying it makes `reconcile` runnable from a pipeline."
+      },
+      "frames": {
+        "type": "array",
+        "description": "Realtime frames delivered by the stream sink (coalesced).",
+        "items": { "type": "object" }
+      },
+      "watchId": { "type": "string", "description": "Stream watch the frames came from." },
+      "cycleId": {
+        "type": "string",
+        "description": "Idempotency window. Omit and it is derived from the last closed bar (bar-close) or the debounce window (tick) — one order per strategy per window."
+      },
+      "symbol": { "type": "string", "description": "Which symbol this call is about. On `cycle` it selects every enabled strategy declared for that symbol — which is what lets two strategies on one symbol offset each other in the ledger instead of sending opposing orders. Also required by reconcile and the one-off actions." },
+      "qty": { "type": "number", "description": "Quantity for the one-off actions." },
+      "price": { "type": "number", "description": "Price for import_position." },
+      "limit": { "type": "integer", "description": "Row cap for the read actions (default 50)." },
+      "mock": {
+        "type": "boolean",
+        "description": "Reserved by the framework — the account decides real vs mock, so this module only reads it."
+      },
+      "account": {
+        "type": "string",
+        "description": "Reserved by the framework. Accounts are named per strategy, not per call."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "required": ["success"],
+    "properties": {
+      "success": { "type": "boolean" },
+      "data": { "type": "object" },
+      "error": { "type": "string" }
+    }
+  },
+  "settings_fields": [
+    { "key": "mode", "type": "select", "options": ["dryrun", "mock", "real"], "defaultValue": "dryrun", "tab": "실행", "group": "모드" },
+    { "key": "killSwitch", "type": "toggle", "defaultValue": false, "tab": "실행", "group": "모드" },
+    { "key": "realArmed", "type": "toggle", "defaultValue": false, "tab": "실행", "group": "모드" },
+    { "key": "realMaxNotionalKrw", "type": "number", "defaultValue": 100000, "tab": "실행", "group": "한도" },
+    { "key": "dailyLossLimitKrw", "type": "number", "defaultValue": 50000, "tab": "실행", "group": "한도" },
+    { "key": "accountMaxNotionalKrw", "type": "number", "defaultValue": 1000000, "tab": "실행", "group": "한도" },
+    { "key": "maxOrdersPerCycle", "type": "number", "defaultValue": 4, "tab": "실행", "group": "한도" },
+    { "key": "feeInCost", "type": "toggle", "defaultValue": true, "tab": "원장", "group": "평단" },
+    { "key": "confirmTimeoutSec", "type": "number", "defaultValue": 20, "tab": "실행", "group": "확인" },
+    { "key": "unknownTimeoutSec", "type": "number", "defaultValue": 120, "tab": "실행", "group": "확인" },
+    { "key": "brokers", "type": "textarea", "defaultValue": "[]", "tab": "전략", "group": "증권사" },
+    { "key": "strategies", "type": "textarea", "defaultValue": "[]", "tab": "전략", "group": "전략 목록" }
+  ],
+  "pageBinding": {
+    "alias": "autotrade",
+    "action": "report",
+    "actions": { "ledger": {}, "positions": {} }
+  },
+  "cacheInputs": ["bars"]
+}

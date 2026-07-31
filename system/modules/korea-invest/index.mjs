@@ -2038,8 +2038,10 @@ function kisNum(v) {
   return Number.isFinite(n) ? n : v;
 }
 function kisDate8(s) {
+  // \d was missing its backslash, so YYYYMMDD never matched and KIS dates stayed unhyphenated
+  // while kiwoom's did — the two brokers' `date` vocabularies silently diverged.
   s = String(s ?? '');
-  return /^d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
+  return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
 }
 function normalizeCandleRow(row) {
   // 해외 기간별시세 (HHDFS76240000 류): xymd + clos (+open/high/low/tvol)
