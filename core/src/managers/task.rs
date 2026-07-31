@@ -109,8 +109,9 @@ pub enum PipelineStep {
     ForEach {
         /// A list: `"$step2.orders"`, `"$prev.rows"`, or a literal array.
         items: Value,
-        /// Steps run per item. `$prev` is the current item at the first inner step; later inner
-        /// steps see the previous inner step, exactly as at the top level.
+        /// Steps run per item. `$prev` is the current item at the first inner step and the
+        /// previous inner result after that; `$stepN` still addresses the OUTER steps, which is
+        /// where a loop body's shared inputs live (a cache key fetched once before the loop).
         steps: Vec<PipelineStep>,
         /// Cap on items processed (clamped to `MAX_FOREACH_ITEMS`). Anything dropped is reported
         /// rather than silently skipped.
@@ -748,13 +749,15 @@ impl TaskManager {
                 let mut failed: Vec<Value> = Vec::new();
                 for (idx, item) in list.iter().take(cap).enumerate() {
                     let mut inner_prev = item.clone();
-                    let mut inner_results: Vec<Value> = Vec::new();
                     let mut item_error: Option<String> = None;
                     for st in inner {
-                        match Box::pin(self.run_step(st, &inner_prev, &inner_results)).await {
+                        // Inner steps keep seeing the OUTER `$stepN`, because that is where the
+                        // things a loop body needs usually are — the cache key fetched once
+                        // before the loop, the config read in step 1. `$prev` carries the item
+                        // into the first inner step and the previous inner result after that.
+                        match Box::pin(self.run_step(st, &inner_prev, step_results)).await {
                             StepOutcome::Continue(v) => {
-                                inner_prev = v.clone();
-                                inner_results.push(v);
+                                inner_prev = v;
                             }
                             StepOutcome::EarlyExit(v) => {
                                 inner_prev = v;
@@ -980,6 +983,33 @@ mod tests {
             }
             other => panic!("wrong variant: {}", other.step_type()),
         }
+    }
+
+    #[test]
+    fn foreach_body_can_reach_the_step_before_the_loop() {
+        // The shape every sweep needs: fetch once, then repeat something that uses both the item
+        // and that one fetch. If `$step1` resolved to an inner result instead, the body would
+        // silently receive the wrong value rather than fail.
+        let step: PipelineStep = serde_json::from_value(json!({
+            "type": "FOREACH",
+            "items": "$step2.runs",
+            "steps": [{
+                "type": "TOOL_CALL",
+                "tool": "sysmod_technical_analysis",
+                "inputData": "$prev.args",
+                "inputMap": {"barsCacheKey": "$step1._cacheKey"}
+            }]
+        }))
+        .expect("FOREACH should parse");
+        let PipelineStep::ForEach { steps, .. } = &step else { panic!("wrong variant") };
+        let PipelineStep::ToolCall { input_data, input_map, .. } = &steps[0] else {
+            panic!("wrong inner variant")
+        };
+        let outer = vec![json!({"_cacheKey": "k-1"}), json!({"runs": []})];
+        let item = json!({"args": {"action": "signals", "rules": []}});
+        let resolved = resolve_pipeline_input(input_data, input_map, &item, &outer);
+        assert_eq!(resolved["action"], "signals");
+        assert_eq!(resolved["barsCacheKey"], "k-1");
     }
 
     #[test]
