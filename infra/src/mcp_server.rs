@@ -308,11 +308,6 @@ fn verify_token(
     if firebat_core::utils::hub_context::is_registered_token(token) {
         return Ok(token.to_string());
     }
-    // 1.6. module-call token — sandbox 가 `dependencies` 선언 모듈에 1회용으로 발급한 것.
-    //      handle_rpc 가 컨텍스트를 CURRENT_MODULE_CALL 에 주입하고, dispatch 게이트가 선언 범위만 허용한다.
-    if firebat_core::utils::module_call::is_registered_token(token) {
-        return Ok(token.to_string());
-    }
     // 2. 외부 사용자 API token 매칭 (AuthManager.validate_api_token).
     if let Some(auth_mgr) = &state.auth {
         if auth_mgr.validate_api_token(token).is_some() {
@@ -342,20 +337,6 @@ async fn handle_rpc(
     // active_* (inject_hub_owner / hub_blocks_tool / is_tool_visible / SearchLibraryHandler 등)는
     // 전역이 아니라 이 CURRENT_HUB 만 읽으므로 동시 요청이 서로 격리된다.
     let hub_ctx = firebat_core::utils::hub_context::lookup(&token);
-    // A module token carries its own scope. Modules speak only the three methods they need —
-    // anything else on this connection is not something a sysmod has business doing.
-    let module_ctx = firebat_core::utils::module_call::lookup(&token);
-    if module_ctx.is_some()
-        && !matches!(req.method.as_str(), "initialize" | "tools/list" | "tools/call")
-    {
-        return rpc_error(
-            req.id.unwrap_or(Value::Null),
-            -32601,
-            "this token may only call initialize, tools/list and tools/call",
-        );
-    }
-    firebat_core::utils::module_call::CURRENT_MODULE_CALL
-        .scope(module_ctx, async move {
     firebat_core::utils::hub_context::CURRENT_HUB
         .scope(hub_ctx, async move {
     match req.method.as_str() {
@@ -464,8 +445,6 @@ async fn handle_rpc(
             &format!("method not found: {}", other),
         ),
     }
-        })
-        .await
         })
         .await
 }
@@ -655,67 +634,6 @@ fn replace_string_value(v: &mut Value, from: &str, to: &str) {
     }
 }
 
-/// Which module a `sysmod_*` tool belongs to, plus that module's capability.
-///
-/// Tool names flatten dashes to underscores and domain-split modules append a suffix
-/// (`sysmod_korea_invest_domestic_stock`), so the module name cannot be read off the first
-/// segment. Same resolution as `is_tool_visible`: try each dash-joined prefix and keep the longest
-/// one that is a real module.
-async fn resolve_sysmod(state: &Arc<McpServerState>, tool: &str) -> Option<(String, Option<String>)> {
-    let mm = state.module_manager.as_ref()?;
-    let rest = tool.strip_prefix("sysmod_")?;
-    let segs: Vec<&str> = rest.split('_').collect();
-    let mut best: Option<String> = None;
-    for n in 1..=segs.len() {
-        let candidate = segs[..n].join("-");
-        if mm.module_config(&candidate).await.is_some() {
-            best = Some(candidate);
-        }
-    }
-    let name = best?;
-    let capability = mm.capability_of(&name).await;
-    Some((name, capability))
-}
-
-/// The declared-scope check for a module-issued token. Runs at the one dispatch choke so no
-/// handler can be reached around it.
-async fn module_call_denial(state: &Arc<McpServerState>, name: &str) -> Option<Value> {
-    use firebat_core::utils::module_call as mc;
-    let ctx = mc::active()?;
-    let verdict = if name.starts_with("sysmod_") {
-        match resolve_sysmod(state, name).await {
-            Some((module, capability)) => {
-                mc::permits_module(&ctx, &module, capability.as_deref())
-            }
-            // An unresolvable sysmod name is not a module this caller declared.
-            None => Err(mc::Deny::NotDeclared),
-        }
-    } else {
-        mc::permits_tool(&ctx, name)
-    };
-    let verdict = verdict.and_then(|_| mc::consume_budget(&ctx));
-    match verdict {
-        Ok(()) => {
-            tracing::info!(target: "module_call", caller = %ctx.caller, tool = name, allowed = true, "module call");
-            None
-        }
-        Err(deny) => {
-            tracing::warn!(
-                target: "module_call",
-                caller = %ctx.caller, tool = name, code = deny.code(),
-                "module call denied"
-            );
-            // A tool result rather than a JSON-RPC error: the caller is a program that must branch
-            // on this, and an error frame gives it nothing to branch on.
-            Some(serde_json::json!({
-                "success": false,
-                "error": deny.message(&ctx.caller, name),
-                "code": deny.code(),
-            }))
-        }
-    }
-}
-
 async fn gated_tool_call(
     state: &Arc<McpServerState>,
     name: &str,
@@ -723,9 +641,6 @@ async fn gated_tool_call(
     handler: &Arc<dyn McpToolHandler>,
     session: &str,
 ) -> Result<Value, String> {
-    if let Some(denial) = module_call_denial(state, name).await {
-        return Ok(denial);
-    }
     // CLI 로컬 이미지 경로 → 갤러리 URL (grounding 검사보다 먼저 — 치환된 값이 게이트를 통과해야).
     let args = substitute_cli_local_images(state, args).await;
     let grounded = {
@@ -910,11 +825,8 @@ impl McpToolHandler for SysmodToolHandler {
         // 담긴 액션(실주문 포함) 승인으로 간주 — 사용자 확정 2026-07-07, destructive 빌트인
         // passthrough 와 동일 철학) / hub = 차단(root 계좌).
         let action_name = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
-        // A module call carries its parent's approval: a scheduled cycle's orders go through, an
-        // interactive one's do not. Inherited, never granted here.
         if !action_name.is_empty()
             && !firebat_core::utils::cron_context::is_cron_context_active()
-            && !firebat_core::utils::module_call::current_inherits_approval()
         {
             let cfg = match self
                 .module_manager
@@ -939,19 +851,6 @@ impl McpToolHandler for SysmodToolHandler {
                         "success": false,
                         "error": "실주문 등 승인 필요 액션은 hub 에서 사용할 수 없습니다.",
                         "approvalBlocked": "hub",
-                    }));
-                }
-                if firebat_core::utils::module_call::is_module_call_active() {
-                    // An approval card is answered by the frontend calling again — a waiting child
-                    // process would hang to its timeout with an order in an unknown state. Refuse
-                    // now and let it decide.
-                    return Ok(serde_json::json!({
-                        "success": false,
-                        "error": format!(
-                            "'{}' 의 '{}' 는 승인이 필요한 액션이라 모듈 호출로는 실행하지 않습니다.                              예약(크론) 실행에서만 통과합니다.",
-                            self.module_name, action_name
-                        ),
-                        "code": "approval_required",
                     }));
                 }
                 let pargs = firebat_core::utils::pending_tools::PendingActionArgs::RunModule(
@@ -2270,7 +2169,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
             "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "매 trigger 같은 절차면 pipeline(권장 — 결정적, 런타임 LLM 0회 또는 합성 1회), 매 trigger 런타임 판단 필요하면 agent(매번 LLM 루프)"},
-            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL, ...}. Cross-step reference: $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction; optional `model` pins a cheaper worker model for that step — omit for the current main model)", "items": {"type": "object"}},
+            "pipeline": {"type": "array", "description": "executionMode=pipeline deterministic steps. step={type: EXECUTE|MCP_CALL|NETWORK_REQUEST|CONDITION|LLM_TRANSFORM|SAVE_PAGE|TOOL_CALL|FOREACH, ...}. FOREACH{items,steps} runs its steps once per item of a list an earlier step produced (items: \"$prev.orders\"); inside, $prev is the current item at the first inner step — use it when the count is only known at runtime. Cross-step reference: $prev IS the previous step's output itself (module {success,data} envelopes auto-unwrap to data) — path from there, e.g. $prev.result[0].accountSeq. Never invent wrappers like .output[]; an unresolved path fails the step. If you already know a value from a lookup this turn, bake the literal instead of a reference. Threshold/rule checks = CONDITION. Synthesis (summary/report) = one LLM_TRANSFORM step (no auto context — put format directives in instruction; optional `model` pins a cheaper worker model for that step — omit for the current main model)", "items": {"type": "object"}},
             "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 매 trigger 받는 자연어 지시문"}
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),

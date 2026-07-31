@@ -98,7 +98,34 @@ pub enum PipelineStep {
         #[serde(rename = "inputMap", default, skip_serializing_if = "Option::is_none")]
         input_map: Option<Value>,
     },
+    /// Run the same steps once per item of a list.
+    ///
+    /// The one thing a fixed step list cannot express is "do this N times, where N is decided by
+    /// an earlier step" — place these orders, notify these people, fetch these pages. Without it,
+    /// anything variable-length has to be pushed inside a module, which is where per-case code
+    /// starts piling up: each module grows its own way of calling other modules and the framework
+    /// stops being the thing that mediates. So the loop belongs here, next to the wiring it uses.
+    #[serde(rename_all = "camelCase")]
+    ForEach {
+        /// A list: `"$step2.orders"`, `"$prev.rows"`, or a literal array.
+        items: Value,
+        /// Steps run per item. `$prev` is the current item at the first inner step; later inner
+        /// steps see the previous inner step, exactly as at the top level.
+        steps: Vec<PipelineStep>,
+        /// Cap on items processed (clamped to `MAX_FOREACH_ITEMS`). Anything dropped is reported
+        /// rather than silently skipped.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_items: Option<usize>,
+        /// Keep going when one item fails. Off by default: for a list of orders, "three went out
+        /// and the fourth failed" should stop, not continue into an unknown state.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continue_on_error: Option<bool>,
+    },
 }
+
+/// Hard ceiling on one FOREACH. A list that arrives longer than this is a bug upstream, and the
+/// blast radius of being wrong here is N real side effects.
+pub const MAX_FOREACH_ITEMS: usize = 100;
 
 impl PipelineStep {
     pub fn step_type(&self) -> &'static str {
@@ -110,6 +137,7 @@ impl PipelineStep {
             PipelineStep::Condition { .. } => "CONDITION",
             PipelineStep::SavePage { .. } => "SAVE_PAGE",
             PipelineStep::ToolCall { .. } => "TOOL_CALL",
+            PipelineStep::ForEach { .. } => "FOREACH",
         }
     }
 }
@@ -386,6 +414,22 @@ impl TaskManager {
                 PipelineStep::ToolCall { tool, .. } => {
                     if tool.trim().is_empty() {
                         return Some(format!("[Step {n}] TOOL_CALL에 tool 이름이 없습니다 (예: \"image_gen\", \"search_history\")."));
+                    }
+                }
+                PipelineStep::ForEach { items, steps: inner, .. } => {
+                    if items.is_null() {
+                        return Some(format!("[Step {n}] FOREACH에 items가 없습니다 (예: \"$step2.orders\")."));
+                    }
+                    if inner.is_empty() {
+                        return Some(format!("[Step {n}] FOREACH에 실행할 steps가 없습니다."));
+                    }
+                    // Nesting is refused rather than supported: the useful cases are one level
+                    // deep, and a nested loop multiplies side effects by two unchecked lengths.
+                    if inner.iter().any(|s| matches!(s, PipelineStep::ForEach { .. })) {
+                        return Some(format!("[Step {n}] FOREACH 안에 FOREACH를 넣을 수 없습니다."));
+                    }
+                    if let Some(err) = self.validate_pipeline(inner) {
+                        return Some(format!("[Step {n}] FOREACH 안 {err}"));
                     }
                 }
             }
@@ -670,6 +714,80 @@ impl TaskManager {
                     Err(e) => StepOutcome::Fail(format!("SAVE_PAGE 실패: {e}")),
                 }
             }
+            PipelineStep::ForEach {
+                items,
+                steps: inner,
+                max_items,
+                continue_on_error,
+            } => {
+                let resolved =
+                    crate::utils::pipeline_resolver::resolve_value(items, prev, step_results);
+                if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&resolved) {
+                    return unresolved_ref_fail("FOREACH", &bad);
+                }
+                let Some(list) = resolved.as_array() else {
+                    return StepOutcome::Fail(format!(
+                        "FOREACH items 가 배열이 아닙니다 (받은 값: {}).",
+                        type_name_of(&resolved)
+                    ));
+                };
+                let cap = max_items.unwrap_or(MAX_FOREACH_ITEMS).min(MAX_FOREACH_ITEMS);
+                let dropped = list.len().saturating_sub(cap);
+                if dropped > 0 {
+                    // Saying so is the point: a truncated run that reports success reads as
+                    // "everything was handled".
+                    self.log.info(&format!(
+                        "[Pipeline] FOREACH: {} 개 중 {} 개만 실행합니다 (상한 {}).",
+                        list.len(),
+                        cap,
+                        cap
+                    ));
+                }
+                let keep_going = continue_on_error.unwrap_or(false);
+                let mut results: Vec<Value> = Vec::new();
+                let mut failed: Vec<Value> = Vec::new();
+                for (idx, item) in list.iter().take(cap).enumerate() {
+                    let mut inner_prev = item.clone();
+                    let mut inner_results: Vec<Value> = Vec::new();
+                    let mut item_error: Option<String> = None;
+                    for st in inner {
+                        match Box::pin(self.run_step(st, &inner_prev, &inner_results)).await {
+                            StepOutcome::Continue(v) => {
+                                inner_prev = v.clone();
+                                inner_results.push(v);
+                            }
+                            StepOutcome::EarlyExit(v) => {
+                                inner_prev = v;
+                                break;
+                            }
+                            StepOutcome::Fail(e) => {
+                                item_error = Some(e);
+                                break;
+                            }
+                        }
+                    }
+                    match item_error {
+                        None => results.push(inner_prev),
+                        Some(e) => {
+                            let row = serde_json::json!({"index": idx, "error": e});
+                            if !keep_going {
+                                return StepOutcome::Fail(format!(
+                                    "FOREACH {} 번째 항목 실패: {}",
+                                    idx + 1,
+                                    row["error"].as_str().unwrap_or("")
+                                ));
+                            }
+                            failed.push(row);
+                        }
+                    }
+                }
+                StepOutcome::Continue(serde_json::json!({
+                    "count": results.len(),
+                    "results": results,
+                    "failed": failed,
+                    "dropped": dropped,
+                }))
+            }
             PipelineStep::ToolCall {
                 tool,
                 input_data,
@@ -707,6 +825,17 @@ fn unresolved_ref_fail(kind: &str, bad: &str) -> StepOutcome {
 }
 
 /// (2)+(3) 호출 결과 → 스텝 outcome — envelope 실패 판정 + 성공 시 data 언랩.
+fn type_name_of(v: &Value) -> &'static str {
+    match v {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 fn call_outcome(kind: &str, target: &str, res: InfraResult<Value>) -> StepOutcome {
     match res {
         Ok(v) if !is_module_level_failure(&v) => StepOutcome::Continue(unwrap_module_result(v)),
@@ -829,6 +958,29 @@ fn parse_spec_if_string(spec: Value) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn foreach_deserializes_and_names_itself() {
+        let step: PipelineStep = serde_json::from_value(json!({
+            "type": "FOREACH",
+            "items": "$prev.orders",
+            "steps": [{"type": "TOOL_CALL", "tool": "cache_read", "inputMap": {"key": "$prev.id"}}],
+            "maxItems": 3
+        }))
+        .expect("FOREACH should parse");
+        assert_eq!(step.step_type(), "FOREACH");
+        match step {
+            PipelineStep::ForEach { items, steps, max_items, continue_on_error } => {
+                assert_eq!(items, json!("$prev.orders"));
+                assert_eq!(steps.len(), 1);
+                assert_eq!(max_items, Some(3));
+                // Stopping on the first failure is the default — a half-placed list of orders
+                // must not be reported as a completed run.
+                assert_eq!(continue_on_error, None);
+            }
+            other => panic!("wrong variant: {}", other.step_type()),
+        }
+    }
 
     #[test]
     fn unwrap_strips_success_data_wrapper() {

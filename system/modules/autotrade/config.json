@@ -28,12 +28,6 @@
     "risk limits",
     "reconciliation"
   ],
-  "dependencies": {
-    "capabilities": ["stock-trading", "technical-analysis"],
-    "tools": ["cache_read", "stream_watch_start", "stream_watch_stop", "stream_watch_list"],
-    "maxDepth": 1,
-    "maxCalls": 400
-  },
   "requiresApproval": [
     "liquidate_all",
     "cancel_all",
@@ -42,7 +36,9 @@
   ],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "additionalProperties": false,
     "properties": {
       "action": {
@@ -71,7 +67,9 @@
       "bars": {
         "type": "array",
         "description": "OHLCV rows for the strategy's symbol, newest last. Supply this (or barsCacheKey) when calling from a pipeline that already fetched the candles.",
-        "items": { "type": "object" }
+        "items": {
+          "type": "object"
+        }
       },
       "barsCacheKey": {
         "type": "string",
@@ -92,17 +90,34 @@
       "frames": {
         "type": "array",
         "description": "Realtime frames delivered by the stream sink (coalesced).",
-        "items": { "type": "object" }
+        "items": {
+          "type": "object"
+        }
       },
-      "watchId": { "type": "string", "description": "Stream watch the frames came from." },
+      "watchId": {
+        "type": "string",
+        "description": "Stream watch the frames came from."
+      },
       "cycleId": {
         "type": "string",
         "description": "Idempotency window. Omit and it is derived from the last closed bar (bar-close) or the debounce window (tick) — one order per strategy per window."
       },
-      "symbol": { "type": "string", "description": "Which symbol this call is about. On `cycle` it selects every enabled strategy declared for that symbol — which is what lets two strategies on one symbol offset each other in the ledger instead of sending opposing orders. Also required by reconcile and the one-off actions." },
-      "qty": { "type": "number", "description": "Quantity for the one-off actions." },
-      "price": { "type": "number", "description": "Price for import_position." },
-      "limit": { "type": "integer", "description": "Row cap for the read actions (default 50)." },
+      "symbol": {
+        "type": "string",
+        "description": "Which symbol this call is about. On `cycle` it selects every enabled strategy declared for that symbol — which is what lets two strategies on one symbol offset each other in the ledger instead of sending opposing orders. Also required by reconcile and the one-off actions."
+      },
+      "qty": {
+        "type": "number",
+        "description": "Quantity for the one-off actions."
+      },
+      "price": {
+        "type": "number",
+        "description": "Price for import_position."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Row cap for the read actions (default 50)."
+      },
       "mock": {
         "type": "boolean",
         "description": "Reserved by the framework — the account decides real vs mock, so this module only reads it."
@@ -115,32 +130,122 @@
   },
   "output": {
     "type": "object",
-    "required": ["success"],
+    "required": [
+      "success"
+    ],
     "properties": {
-      "success": { "type": "boolean" },
-      "data": { "type": "object" },
-      "error": { "type": "string" }
+      "success": {
+        "type": "boolean"
+      },
+      "data": {
+        "type": "object"
+      },
+      "error": {
+        "type": "string"
+      }
     }
   },
   "settings_fields": [
-    { "key": "mode", "type": "select", "options": ["dryrun", "mock", "real"], "defaultValue": "dryrun", "tab": "실행", "group": "모드" },
-    { "key": "killSwitch", "type": "toggle", "defaultValue": false, "tab": "실행", "group": "모드" },
-    { "key": "realArmed", "type": "toggle", "defaultValue": false, "tab": "실행", "group": "모드" },
-    { "key": "realMaxNotionalKrw", "type": "number", "defaultValue": 100000, "tab": "실행", "group": "한도" },
-    { "key": "dailyLossLimitKrw", "type": "number", "defaultValue": 50000, "tab": "실행", "group": "한도" },
-    { "key": "accountMaxNotionalKrw", "type": "number", "defaultValue": 1000000, "tab": "실행", "group": "한도" },
-    { "key": "maxOrdersPerCycle", "type": "number", "defaultValue": 4, "tab": "실행", "group": "한도" },
-    { "key": "feeInCost", "type": "toggle", "defaultValue": true, "tab": "원장", "group": "평단" },
-    { "key": "confirmTimeoutSec", "type": "number", "defaultValue": 20, "tab": "실행", "group": "확인" },
-    { "key": "unknownTimeoutSec", "type": "number", "defaultValue": 120, "tab": "실행", "group": "확인" },
-    { "key": "brokers", "type": "textarea", "defaultValue": "[]", "tab": "전략", "group": "증권사" },
-    { "key": "strategies", "type": "textarea", "defaultValue": "[]", "tab": "전략", "group": "전략 목록" }
+    {
+      "key": "mode",
+      "type": "select",
+      "options": [
+        "dryrun",
+        "mock",
+        "real"
+      ],
+      "defaultValue": "dryrun",
+      "tab": "실행",
+      "group": "모드"
+    },
+    {
+      "key": "killSwitch",
+      "type": "toggle",
+      "defaultValue": false,
+      "tab": "실행",
+      "group": "모드"
+    },
+    {
+      "key": "realArmed",
+      "type": "toggle",
+      "defaultValue": false,
+      "tab": "실행",
+      "group": "모드"
+    },
+    {
+      "key": "realMaxNotionalKrw",
+      "type": "number",
+      "defaultValue": 100000,
+      "tab": "실행",
+      "group": "한도"
+    },
+    {
+      "key": "dailyLossLimitKrw",
+      "type": "number",
+      "defaultValue": 50000,
+      "tab": "실행",
+      "group": "한도"
+    },
+    {
+      "key": "accountMaxNotionalKrw",
+      "type": "number",
+      "defaultValue": 1000000,
+      "tab": "실행",
+      "group": "한도"
+    },
+    {
+      "key": "maxOrdersPerCycle",
+      "type": "number",
+      "defaultValue": 4,
+      "tab": "실행",
+      "group": "한도"
+    },
+    {
+      "key": "feeInCost",
+      "type": "toggle",
+      "defaultValue": true,
+      "tab": "원장",
+      "group": "평단"
+    },
+    {
+      "key": "confirmTimeoutSec",
+      "type": "number",
+      "defaultValue": 20,
+      "tab": "실행",
+      "group": "확인"
+    },
+    {
+      "key": "unknownTimeoutSec",
+      "type": "number",
+      "defaultValue": 120,
+      "tab": "실행",
+      "group": "확인"
+    },
+    {
+      "key": "brokers",
+      "type": "textarea",
+      "defaultValue": "[]",
+      "tab": "전략",
+      "group": "증권사"
+    },
+    {
+      "key": "strategies",
+      "type": "textarea",
+      "defaultValue": "[]",
+      "tab": "전략",
+      "group": "전략 목록"
+    }
   ],
   "pageBinding": {
     "alias": "autotrade",
     "action": "report",
-    "actions": { "ledger": {}, "positions": {} }
+    "actions": {
+      "ledger": {},
+      "positions": {}
+    }
   },
-  "cacheInputs": ["bars"],
+  "cacheInputs": [
+    "bars"
+  ],
   "timeoutMs": 120000
 }

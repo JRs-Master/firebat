@@ -512,56 +512,6 @@ impl ModuleManager {
                 {
                     exec_opts.timeout_ms = Some(ms.clamp(1_000, 600_000));
                 }
-                // A module that declared `dependencies` gets a token scoped to exactly that
-                // declaration, alive only while this process runs. Everything else gets nothing —
-                // the absence of the env var is how a module knows the path is unavailable.
-                let _call_guard = config
-                    .as_ref()
-                    .and_then(crate::utils::module_call::parse_dependencies)
-                    .map(|deps| {
-                        let parent = crate::utils::module_call::active();
-                        let depth = parent.as_ref().map(|p| p.depth + 1).unwrap_or(0);
-                        let mut chain = parent
-                            .as_ref()
-                            .map(|p| p.chain.clone())
-                            .unwrap_or_default();
-                        chain.push(module_name.to_string());
-                        // Approval is inherited, never granted here: a scheduled run carries it,
-                        // an interactive one does not, and a nested call carries whatever its
-                        // parent had.
-                        let approved = crate::utils::cron_context::is_cron_context_active()
-                            || parent.map(|p| p.approved).unwrap_or(false);
-                        let lifetime = exec_opts.timeout_ms.unwrap_or(60_000) as i64;
-                        let (guard, token) = crate::utils::module_call::ModuleCallGuard::enter(
-                            module_name.to_string(),
-                            chain,
-                            depth,
-                            deps,
-                            approved,
-                            lifetime,
-                        );
-                        exec_opts
-                            .env
-                            .insert("FIREBAT_RPC_URL".to_string(), module_rpc_url());
-                        exec_opts
-                            .env
-                            .insert("FIREBAT_RPC_TOKEN".to_string(), token);
-                        exec_opts
-                            .env
-                            .insert("FIREBAT_MODULE_NAME".to_string(), module_name.to_string());
-                        exec_opts.env.insert(
-                            "FIREBAT_UNATTENDED".to_string(),
-                            if approved { "1" } else { "0" }.to_string(),
-                        );
-                        tracing::debug!(
-                            target: "module_call",
-                            module = %module_name,
-                            depth,
-                            approved,
-                            "module-call token issued"
-                        );
-                        guard
-                    });
                 if let Some(ts_cfg) = config.as_ref().and_then(|c| c.get("timeseries")) {
                     let action = input_data
                         .get("action")
@@ -1734,18 +1684,6 @@ impl ModuleManager {
 // 시니어 audit 결과 설정된 module I/O contract 강제. config.json 의 input/output schema
 // 형태가 JSON Schema 와 호환 (type/properties/required/enum/etc) 이므로 jsonschema
 // crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
-
-/// Where a module reaches the framework back. Always loopback: `FIREBAT_MCP_LISTEN` may bind
-/// `0.0.0.0` for external MCP clients, but a child process on this host has no business leaving it.
-fn module_rpc_url() -> String {
-    let listen = std::env::var("FIREBAT_MCP_LISTEN").unwrap_or_default();
-    let port = listen
-        .rsplit(':')
-        .next()
-        .and_then(|p| p.trim().parse::<u16>().ok())
-        .unwrap_or(50052);
-    format!("http://127.0.0.1:{port}/mcp")
-}
 
 /// hub 프레임워크가 도구 호출 args 에 자동 주입하는 예약 메타 키 (owner/hubOwner/_hubScope/project).
 /// 모듈 본체는 이 키들(특히 `_hubScope` = 데이터 디렉토리 hub-scope 분기)을 받아 쓰지만, config.json 의
