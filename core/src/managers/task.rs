@@ -592,7 +592,7 @@ impl TaskManager {
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
-                    return unresolved_ref_fail("EXECUTE", &bad);
+                    return unresolved_ref_fail_at("EXECUTE", &bad, Some(step_results.len()));
                 }
                 // Capability fallback lives INSIDE the executor (RealTaskExecutor.execute_module
                 // — with_capability). A second manager-level fallback here used to re-run the
@@ -614,7 +614,7 @@ impl TaskManager {
                     arguments.clone().unwrap_or(Value::Object(Default::default()))
                 };
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&args) {
-                    return unresolved_ref_fail("MCP_CALL", &bad);
+                    return unresolved_ref_fail_at("MCP_CALL", &bad, Some(step_results.len()));
                 }
                 // server 미기재 = 자기 자신(firebat) — tool 이 mcp__<srv>__ 네임스페이스를
                 // 품고 있으면 executor 의 split_mcp_name 이 그쪽을 우선한다.
@@ -747,7 +747,7 @@ impl TaskManager {
                 let resolved =
                     crate::utils::pipeline_resolver::resolve_value(items, prev, step_results);
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&resolved) {
-                    return unresolved_ref_fail("FOREACH", &bad);
+                    return unresolved_ref_fail_at("FOREACH", &bad, Some(step_results.len()));
                 }
                 let Some(list) = resolved.as_array() else {
                     return StepOutcome::Fail(format!(
@@ -821,7 +821,7 @@ impl TaskManager {
             } => {
                 let input = resolve_pipeline_input(input_data, input_map, prev, step_results);
                 if let Some(bad) = crate::utils::pipeline_resolver::find_unresolved_ref(&input) {
-                    return unresolved_ref_fail("TOOL_CALL", &bad);
+                    return unresolved_ref_fail_at("TOOL_CALL", &bad, Some(step_results.len()));
                 }
                 call_outcome("TOOL_CALL", tool, self.executor.execute_tool(tool, &input).await)
             }
@@ -844,9 +844,24 @@ enum StepOutcome {
 // 팔마다 복붙하면 드리프트(실측 2건)라 한 함수로 수렴 — 새 스텝 타입도 이 둘만 쓰면 규약 상속.
 
 /// (1) 미해석 참조 fail-fast — 스텝 종류 무관 동일 메시지.
-fn unresolved_ref_fail(kind: &str, bad: &str) -> StepOutcome {
+/// The unresolved-reference message, told with the two facts that actually resolve it: how many
+/// steps have run, and that `$stepN` counts from zero.
+///
+/// `$step1` looks like "the first step" and is the second — the pipeline log calls them Step 1/4
+/// while the reference base is 0, so a reader following the log writes the wrong index and gets
+/// "no such path" (2026-08-01: `$step2.runs` for the second step resolved to a step that had not
+/// run). The indexing cannot change without breaking every stored pipeline, so the error says it.
+fn unresolved_ref_fail_at(kind: &str, bad: &str, ran: Option<usize>) -> StepOutcome {
+    let counted = match ran {
+        Some(n) if n > 0 => format!(
+            " 지금까지 {n}개 스텝이 끝났습니다 — **$stepN 은 0부터** 세므로 첫 스텝은 $step0, 직전 스텝은 $step{}.",
+            n - 1
+        ),
+        Some(_) => " 아직 끝난 스텝이 없습니다 — 첫 스텝에서는 $prev·$stepN 을 쓸 수 없습니다.".to_string(),
+        None => " **$stepN 은 0부터** 세므로 첫 스텝은 $step0 입니다.".to_string(),
+    };
     StepOutcome::Fail(format!(
-        "{kind} 미해석 참조: '{bad}' — 이전 스텝 출력에 그 경로가 없습니다. $prev = 이전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요 (예: $prev.result[0].accountSeq). 이미 아는 값이면 참조 대신 literal 로 넣으세요."
+        "{kind} 미해석 참조: '{bad}' — 그 경로가 없습니다.{counted} $prev = 직전 스텝 출력 자체(모듈 {{success,data}} 래핑은 자동 언랩)이며 .output 같은 래퍼를 지어내지 마세요. 이미 아는 값이면 참조 대신 literal 로 넣으세요."
     ))
 }
 
