@@ -6,7 +6,7 @@
   "runtime": "python",
   "providerType": "compute",
   "capability": "auto-trading",
-  "description": "선언된 전략을 봉마감·틱 트리거로 실행하고 전략별 원장을 소유한다. 신호는 technical-analysis, 주문·잔고는 증권사 모듈(stock-trading) 몫이고 이 모듈은 판단·수량·평단·대조만 한다. 계좌는 증권사 모듈의 계좌 별칭으로 지목하며 실전/모의는 그 계좌가 정한다. 태그: 자동매매 매매전략 원장 평단가 포지션 리스크관리 백테스트반영 autotrade strategy ledger position risk",
+  "description": "Runs declared trading strategies on a bar-close or tick trigger and owns the per-strategy ledger. Signals come from technical-analysis and orders/balances from a broker module (stock-trading); this module decides quantity, tracks average cost and reconciles against the broker. An account is named by the broker module's alias, and that account decides real vs mock. Actions: cycle (one decision pass), reconcile, report/positions/orders/ledger (read the ledger), halt (kill switch), selftest. Tags: autotrade trading strategy ledger average cost position sizing risk limits reconciliation backtest 자동매매 매매전략 원장 평단가 포지션 리스크관리",
   "tags": [
     "자동매매",
     "매매전략",

@@ -1850,6 +1850,31 @@ impl ProcessSandboxAdapter {
                 stderr_preview = %stderr_buf.chars().take(300).collect::<String>(),
                 "[sandbox] sysmod abnormal exit"
             );
+            // A module that reported properly and then exited non-zero used to lose the report:
+            // several modules print `{success:false, errorKey, errorParams}` and call
+            // `process.exit(1)`, and everything above was thrown away in favour of
+            // "exit code: Some(1)". The reason existed and the framework dropped it — upbit
+            // answering "404 Code not found" for an unlisted market read as a crash (2026-08-01).
+            // A non-zero exit is worth keeping in the record, not worth erasing the record.
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(stdout_buf.trim()) {
+                if parsed.get("success").is_some() || parsed.get("errorKey").is_some() {
+                    let (ok, message) = firebat_core::ports::summarize_tool_payload(&parsed);
+                    return Ok(ModuleOutput {
+                        protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
+                        success: ok
+                            && parsed.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
+                        data: parsed.get("data").cloned().unwrap_or(serde_json::Value::Null),
+                        error: message,
+                        error_key: parsed
+                            .get("errorKey")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        error_params: parsed.get("errorParams").cloned(),
+                        stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
+                        exit_code,
+                    });
+                }
+            }
             // stderr 에 패키지 누락 관련 정보가 있으니 error 에 포함 (try_auto_install 매칭용)
             let combined_err = if !stderr_buf.is_empty() {
                 stderr_buf.clone()

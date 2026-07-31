@@ -827,23 +827,22 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
-  // 도구 이름 → toolResults 안 fail 결과 매칭 (옛 TS 에러 뱃지 메커니즘 1:1).
-  const errorFromTool = (action: string): string | null => {
-    const t = toolResults?.find(r => r.name === action && !r.success);
-    return t?.error || null;
-  };
-  // 도구 이름 → toolResults 안 input 매칭 (success/fail 무관, 첫 매칭). 같은 도구 N회 호출 시 첫 호출만.
-  const inputFromTool = (action: string): unknown => {
-    const t = toolResults?.find(r => r.name === action);
-    return t?.input;
+  // Calling one tool N times collapses into a single badge, and what that badge should open is
+  // the call that FAILED. The error used to be read from the first failing result and the
+  // arguments from the first result of any kind, so a red badge could show a successful call's
+  // arguments — a pairing that tells you nothing about what died. Both now come from one result,
+  // the failing one when there is one.
+  const resultFor = (action: string) => {
+    const all = toolResults?.filter(r => r.name === action) ?? [];
+    return all.find(r => !r.success) ?? all[0];
   };
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap gap-2">
         {order.map((action, i) => {
           const step = steps?.find(s => s.type === action && s.status === 'error');
-          const toolErr = errorFromTool(action);
-          const isError = !!step || !!toolErr;
+          const failed = resultFor(action);
+          const isError = !!step || (!!failed && !failed.success);
           const n = counts.get(action) || 1;
           return (
             <div
@@ -860,9 +859,9 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
       {openIdx !== null && (() => {
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
-        const toolErr = errorFromTool(action);
-        const errMsg = step?.error || toolErr;
-        const input = inputFromTool(action);
+        const shown = resultFor(action);
+        const errMsg = step?.error || (shown && !shown.success ? shown.error : null);
+        const input = shown?.input;
         return (
           <div className="flex flex-col gap-1.5">
             {errMsg && (

@@ -121,14 +121,52 @@ export function inlineFormatTagsToMarkdown(text: string): string {
  * remark-math 가 정상 파싱한다. placeholder `@@FBMATH<n>@@` 는 어떤 마크다운/HTML 변환에도 안 걸리고
  * 본문에 나올 일 없는 토큰이다.
  *
- * 인라인 `$...$` 는 여는 `$` 뒤 공백 금지 + 닫는 `$` 앞 공백 금지(KaTeX 관례)로 매칭해 통화 표기
- * 같은 오탐을 줄인다. display `$$...$$` 우선.
+ * Inline `$...$` requires no space after the opener and none before the closer (the KaTeX
+ * convention) and, since 2026-08-01, refuses to open on a digit. A price written `$0.00057` with
+ * another `$0.00063` later in the sentence used to match as one formula: everything between them
+ * rendered in the math font and the `<strong>` inside came out as literal tags. Prose about money
+ * is far more common here than inline math that starts with a digit, and `$$...$$` still covers
+ * real formulas.
+ *
+ * The same dollars are also escaped, because remark-math matches on its own rules further down the
+ * pipeline and would pair them even after masking declined to.
  */
+/** A `$` sitting right before a digit is money, not a delimiter — escape it so nothing downstream
+ *  can pair it. Code spans and fences are skipped: a backslash would be visible there. */
+function escapeCurrencyDollars(s: string): string {
+  if (!s.includes('$')) return s;
+  let out = '';
+  let fence = false;
+  let code = false;
+  for (let i = 0; i < s.length; i++) {
+    if (s.startsWith('```', i)) {
+      fence = !fence;
+      out += '```';
+      i += 2;
+      continue;
+    }
+    const c = s[i];
+    if (!fence && c === '`') {
+      code = !code;
+      out += c;
+      continue;
+    }
+    const next = s[i + 1] ?? '';
+    if (!fence && !code && c === '$' && next >= '0' && next <= '9' && s[i - 1] !== '\\' && s[i - 1] !== '$') {
+      out += '\\$';
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 export function maskMath(s: string): { masked: string; restore: (t: string) => string } {
   const identity = (t: string) => t;
   if (!s) return { masked: s, restore: identity };
+  s = escapeCurrencyDollars(s);
   const store: string[] = [];
-  const masked = s.replace(/\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]*?(?<!\s)\$/g, (m) => {
+  const masked = s.replace(/\$\$[\s\S]+?\$\$|\$(?![\s\d])[^$\n]*?(?<!\s)\$/g, (m) => {
     store.push(m);
     return '@@FBMATH' + (store.length - 1) + '@@';
   });

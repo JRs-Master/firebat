@@ -727,14 +727,8 @@ impl CodexCliHandler {
                             let args = item.get("arguments").cloned().unwrap_or(serde_json::json!({}));
                             // 도구 결과 요약 — 성공/실패 모두 Frontend 에러 뱃지 UI 채널로 push.
                             {
-                                let success = payload
-                                    .get("success")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false);
-                                let error_msg = payload
-                                    .get("error")
-                                    .and_then(|v| v.as_str())
-                                    .map(String::from);
+                                let (success, error_msg) =
+                                    firebat_core::ports::summarize_tool_payload(&payload);
                                 outcome.tool_results.push(firebat_core::ports::ToolResultSummary {
                                     name: tool_name.to_string(),
                                     success,

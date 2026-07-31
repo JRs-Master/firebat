@@ -1729,6 +1729,52 @@ pub struct ToolResultSummary {
     pub cache_key: Option<String>,
 }
 
+/// Did this tool payload fail, and if so why?
+///
+/// Both CLI adapters used to read `payload.success` with `unwrap_or(false)`, which makes every
+/// tool that returns a bare result — no `success` key, because most core tools just return their
+/// data — look like a failure. The badge went red with nothing to show, since there was no error
+/// either. `cache_read` was patched once by adding `success: true` to its own return
+/// (`sysmod_cache.rs`), which fixed that one tool and left the rule wrong for the rest.
+///
+/// The rule: a payload is a failure only when it says so — `success: false`, or an error field.
+/// Absence of a marker is success, because that is what a plain result looks like. And a failure
+/// always carries a reason: the i18n envelope (`errorKey`/`errorParams`) and non-string error
+/// values are rendered rather than dropped, and a failure with nothing readable still gets a line
+/// saying so. A red badge with an empty body tells the reader less than no badge at all.
+pub fn summarize_tool_payload(payload: &serde_json::Value) -> (bool, Option<String>) {
+    let explicit_false = payload.get("success").and_then(|v| v.as_bool()) == Some(false);
+    let error_field = payload.get("error").filter(|v| !v.is_null());
+    let error_key = payload.get("errorKey").and_then(|v| v.as_str());
+    if !explicit_false && error_field.is_none() && error_key.is_none() {
+        return (true, None);
+    }
+    let message = match (error_field, error_key) {
+        (Some(v), _) => Some(
+            v.as_str()
+                .map(String::from)
+                .unwrap_or_else(|| v.to_string()),
+        ),
+        (None, Some(key)) => {
+            // The key is the i18n id; the params carry the actual detail (status, message).
+            let params = payload
+                .get("errorParams")
+                .map(|p| p.to_string())
+                .unwrap_or_default();
+            Some(if params.is_empty() || params == "null" {
+                key.to_string()
+            } else {
+                format!("{key} {params}")
+            })
+        }
+        (None, None) => None,
+    };
+    (
+        false,
+        message.or_else(|| Some("도구가 실패 사유를 반환하지 않았습니다.".to_string())),
+    )
+}
+
 /// Pulls the `_cacheKey` out of a tool payload. Sandbox attaches it at the top level of `data`
 /// (uniformly, regardless of size), but a few paths return it un-enveloped — check both rather than
 /// depending on which one produced this payload.
