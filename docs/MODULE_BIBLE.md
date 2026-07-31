@@ -313,6 +313,24 @@ node scripts/gen.mjs             # _apis.json → config + index
 
 > 위 필드들의 공통 원리 = **"모듈은 dumb, 인프라가 config 로 처리"** (auto-cache · secrets env 주입 · 토큰 생명주기와 동일 계열). 새 provider 방언이 config 데이터로 안 되면(한투 approval_key+AES 등) 그때만 infra 에 dialect 조각 추가 — 모듈 코드에 넣지 않는다.
 
+#### `accounts` — 계좌별 자격증명 (2026-07-31)
+```json
+{
+  "accounts": {
+    "modes": ["real", "mock"],
+    "markets": ["kr", "us"],
+    "listAction": "ka00001"
+  }
+}
+```
+- 브로커 앱키는 **계좌 단위 발급**이다(키움 모의 키를 실전 도메인에 쓰면 `8030` 거부, 한투 동일). 키움 주문 body 에 계좌 필드가 없는 것도 같은 이유 — **자격증명이 곧 계좌**.
+- 등록 계좌 = `AccountEntry{ id(별칭), label, mode, markets, accountNo }`, 레지스트리 = vault `module-accounts:<모듈>` (`primary` = 별칭 지목). **주계좌도 등록 계좌 중 하나** — 시세·차트처럼 `account` 없이 온 호출이 그 계좌로 돈다.
+- 자격증명은 `user:<SECRET>@<별칭>` 에 저장되고 **모듈은 계좌의 존재를 모른다** — sandbox 가 그 계좌의 값을 모듈이 이미 읽는 env 이름에 넣는다. 계좌 추가 = vault 쓰기(코드 0). 계좌 스코프 값이 없으면 공용 키로 폴백.
+- 입력할 자격증명 목록 = `secrets` 에서 파생(`type:"token"` = 프레임워크가 발급하는 슬롯, 그 외 = 사람이 넣는 키) — 선언 중복 0.
+- 호출 시 `account: "<별칭>"` 으로 고른다. `mock` 은 계좌가 정한다(선언 mode) — 둘이 모순될 수 없다. 미등록 별칭은 등록된 별칭을 열거한 에러.
+- 채팅 노출 = `get_action_schema` 의 `account` 파라미터(등록 별칭·계좌번호·모드·시장) + `get_module_config` 의 `accounts.registered`. 계좌 목록은 색인이 아니라 **호출 시점 조회**(vault 쓰기 즉시 반영).
+- `listAction` = 브로커에서 계좌번호를 받아 오는 액션(표시용, 인증에 안 씀).
+
 #### 선언형 필드 요약 표
 
 | 필드 | 기능 | 처리 계층 |
@@ -326,6 +344,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
 | `tags` | 모듈 선택 신호 (얇은 도구 설명에 append) | 도구 등록 (dynamic_tools/mcp_server) |
+| `accounts` | 계좌별 앱키 등록·주계좌 지정 (`account` 로 선택, `mock` 은 계좌가 결정) | `ModuleManager.run` + sandbox/WS 시크릿 해석 (`account_secrets.rs`) |
 | `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |

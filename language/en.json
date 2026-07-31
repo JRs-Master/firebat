@@ -474,6 +474,27 @@
       "mcp_stdio_ssh_required_title": "SSH key required",
       "mcp_stdio_ssh_required_body": "stdio mode requires an SSH key registered on the server. Ask your server administrator to register your SSH public key.",
       "mcp_stdio_ssh_required_note": "Replace SSH_KEY_PATH, USER, SERVER_IP, and the firebat path with actual values."
+    },
+    "accounts": {
+      "title": "Accounts",
+      "add": "Add account",
+      "alias": "Alias",
+      "alias_hint": "letters, digits, - or _",
+      "mode": "Type",
+      "mode_real": "Real",
+      "mode_mock": "Mock",
+      "markets": "Markets",
+      "account_no": "Account number",
+      "primary": "Primary",
+      "primary_badge": "Primary",
+      "set_primary": "Make primary",
+      "credentials": "Credentials",
+      "keep_stored": "Stored — leave blank to keep",
+      "delete": "Delete",
+      "delete_confirm": "This deletes the account and the app keys stored under it.",
+      "empty": "No accounts registered yet.",
+      "cancel": "Cancel",
+      "label": "Display name"
     }
   },
   "calendar": {

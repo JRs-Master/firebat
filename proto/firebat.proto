@@ -574,6 +574,27 @@ message ModuleGetConfigResponse {
   // Config 객체 JSON (any-scope 자동 탐색).
   string raw_json = 1;
 }
+message ModuleGetAccountsRequest {
+  string module = 1;
+}
+message ModuleGetAccountsResponse {
+  // { module, declared, credentials:[name], primary, accounts:[{id,label,mode,markets,accountNo,credentials:{name:bool}}] }
+  string raw_json = 1;
+}
+message ModuleSaveAccountRequest {
+  string module = 1;
+  // AccountEntry JSON — { id, label, mode, markets, accountNo }.
+  string account_json = 2;
+  // { SECRET_NAME: value } — 빈 값은 기존 저장값 유지.
+  string credentials_json = 3;
+  bool make_primary = 4;
+}
+message ModuleSaveAccountResponse {}
+message ModuleDeleteAccountRequest {
+  string module = 1;
+  string id = 2;
+}
+message ModuleDeleteAccountResponse {}
 message ModuleSetSettingsRequest {
   string name = 1;
   string settings_json = 2;
@@ -630,6 +651,11 @@ service ModuleService {
   // 사용자 명시 trigger (설정 화면 [설치] / [업그레이드] 버튼) 박은 path. 2026-05-16.
   rpc InstallPackages(ModuleInstallPackagesRequest) returns (ModuleInstallPackagesResponse);
   rpc GetPackageStatus(ModuleGetPackageStatusRequest) returns (ModuleGetPackageStatusResponse);
+  // 계좌 등록 — config `accounts` 선언 모듈 전용. 브로커 앱키가 계좌 단위로 발급돼 한 모듈이
+  // 여러 계좌(실전/모의 · 국내/해외)를 들고 있어야 한다. 자격증명 값은 반환하지 않는다.
+  rpc GetAccounts(ModuleGetAccountsRequest) returns (ModuleGetAccountsResponse);
+  rpc SaveAccount(ModuleSaveAccountRequest) returns (ModuleSaveAccountResponse);
+  rpc DeleteAccount(ModuleDeleteAccountRequest) returns (ModuleDeleteAccountResponse);
 }
 
 /** 임의 JSON 직렬화 blob — 동적 스키마 / 설정값 전달용. raw_json = JSON 문자열 (null 이면 "null"). */

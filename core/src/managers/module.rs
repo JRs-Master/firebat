@@ -319,13 +319,68 @@ impl ModuleManager {
         };
         let input_data: &serde_json::Value = expanded.as_ref().unwrap_or(input_data);
 
+        // Which registered account this call runs as (config `accounts`). Resolved once, here, so
+        // the sandbox, the WS transport and the token provider all receive a concrete id — and so
+        // an alias the user never registered fails with the registered ones listed instead of an
+        // authentication error from the broker. `mock` follows the account rather than the caller:
+        // a mock app key is rejected outright on the live domain (kiwoom 8030), so the two must
+        // not be able to contradict each other.
+        let account_scoped: Option<serde_json::Value> = match config
+            .as_ref()
+            .filter(|c| c.get("accounts").is_some())
+        {
+            Some(cfg) => {
+                let reg = crate::utils::account_secrets::AccountRegistry::load(
+                    self.vault.as_ref(),
+                    module_name,
+                );
+                let requested = input_data.get("account").and_then(|v| v.as_str());
+                let entry = reg
+                    .resolve(requested)
+                    .map_err(|detail| {
+                        crate::i18n::t(
+                            "core.error.module.input_validation_failed",
+                            None,
+                            &[("name", module_name), ("detail", &detail)],
+                        )
+                    })?
+                    .cloned();
+                match (entry, input_data.as_object()) {
+                    (Some(e), Some(obj)) => {
+                        let mut out = obj.clone();
+                        out.insert("account".to_string(), serde_json::json!(e.id));
+                        // Only when the module actually has a mock notion — nothing else may
+                        // learn a field its schema never declared.
+                        if cfg
+                            .pointer("/input/properties/mock")
+                            .is_some()
+                        {
+                            out.insert("mock".to_string(), serde_json::json!(e.is_mock()));
+                        }
+                        tracing::info!(
+                            target: "module",
+                            module = %module_name,
+                            account = %e.id,
+                            mock = e.is_mock(),
+                            "running as registered account"
+                        );
+                        Some(serde_json::Value::Object(out))
+                    }
+                    _ => None,
+                }
+            }
+            None => None,
+        };
+        let input_data: &serde_json::Value = account_scoped.as_ref().unwrap_or(input_data);
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
         // uniformly points back to search_module_actions → get_action_schema.
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
-                let for_val = coerce_for_validation(&input_for_validation(input_data), input_schema);
+                let for_val =
+                    coerce_for_validation(&input_for_validation(input_data, input_schema), input_schema);
                 if let Err(detail) = validate_value(&for_val, input_schema) {
                     // 도구↔액션 짝 어긋남이면 소유 모듈을 짚어준다 — 실측 2026-07-27:
                     // `("kakao_map","v1_국내주식-008")` 처럼 한 라운드에 여러 도구를 병렬 호출하다
@@ -527,6 +582,10 @@ impl ModuleManager {
                 .and_then(|v| v.as_str())
                 .map(String::from),
             mock,
+            account: input_data
+                .get("account")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             timeout_ms: action_decl
                 .get("timeoutMs")
                 .or_else(|| ws.get("timeoutMs"))
@@ -761,6 +820,14 @@ impl ModuleManager {
         };
         let spec = WsStreamSpec {
             watch_id: meta.watch_id.clone(),
+            // Account rides in `args` like every other caller-supplied value, so a per-account
+            // watch (체결·잔고) is just a different arg set — and the idempotency key separates
+            // two accounts watching the same stream on its own.
+            account: meta
+                .args
+                .get("account")
+                .and_then(|v| v.as_str())
+                .map(String::from),
             topic: meta.topic.clone(),
             module: meta.module.clone(),
             stream: meta.stream.clone(),
@@ -999,6 +1066,195 @@ impl ModuleManager {
             }
         }
         None
+    }
+
+    /// Config from whichever scope holds the module — for read paths that only know the name.
+    pub async fn module_config(&self, name: &str) -> Option<serde_json::Value> {
+        match self.get_module_config("system", name).await {
+            Some(c) => Some(c),
+            None => self.get_module_config("user", name).await,
+        }
+    }
+
+    /// Accounts registered for this module (the index, never the credentials).
+    pub fn account_registry(&self, module: &str) -> crate::utils::account_secrets::AccountRegistry {
+        crate::utils::account_secrets::AccountRegistry::load(self.vault.as_ref(), module)
+    }
+
+    pub fn save_account_registry(
+        &self,
+        module: &str,
+        registry: &crate::utils::account_secrets::AccountRegistry,
+    ) -> Result<(), String> {
+        let raw = serde_json::to_string(registry).map_err(|e| e.to_string())?;
+        let key = crate::utils::account_secrets::registry_key(module);
+        if self.vault.set_secret(&key, &raw) {
+            Ok(())
+        } else {
+            Err(format!("failed to write {key}"))
+        }
+    }
+
+    /// How discovery surfaces describe the `account` parameter: one line naming every registered
+    /// alias, so picking an account never needs a lookup round trip. None when the module declares
+    /// no accounts, or declares them but has none registered yet (nothing to choose between).
+    pub async fn account_param_doc(&self, module: &str) -> Option<String> {
+        let config = self.module_config(module).await?;
+        config.get("accounts")?;
+        let reg = self.account_registry(module);
+        if reg.is_empty() {
+            return None;
+        }
+        let choices: Vec<String> = reg
+            .accounts
+            .iter()
+            .map(|a| format!("{} = {}", a.id, a.describe()))
+            .collect();
+        let default = match reg.primary_entry() {
+            Some(p) => format!("omit to use the primary account ({})", p.id),
+            None => "no primary is designated — name one".to_string(),
+        };
+        Some(format!(
+            "Which registered account to run as — {default}. Choices: {}.",
+            choices.join("; ")
+        ))
+    }
+
+    /// Secret names the module declares, split into the credentials a person enters and the
+    /// token slots the framework mints. Derived from `secrets` so the accounts UI can never drift
+    /// from what the module actually reads (same join-from-declaration rule as requiresApproval).
+    fn declared_secret_names(config: &serde_json::Value) -> (Vec<String>, Vec<String>) {
+        let mut creds = Vec::new();
+        let mut tokens = Vec::new();
+        for entry in config
+            .get("secrets")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+        {
+            let (name, kind) = match entry {
+                serde_json::Value::String(s) => (s.as_str(), "key"),
+                other => (
+                    other.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    other.get("type").and_then(|v| v.as_str()).unwrap_or("key"),
+                ),
+            };
+            if name.is_empty() {
+                continue;
+            }
+            if kind == "token" {
+                tokens.push(name.to_string());
+            } else {
+                creds.push(name.to_string());
+            }
+        }
+        (creds, tokens)
+    }
+
+    /// Everything the accounts UI needs: what the module supports, which accounts are registered,
+    /// and which credentials each one actually holds. Values are never returned — only whether a
+    /// slot is filled, so a screenshot of this screen leaks nothing.
+    pub async fn account_overview(&self, module: &str) -> Option<serde_json::Value> {
+        let config = self.module_config(module).await?;
+        let decl = config.get("accounts")?.clone();
+        let (credentials, _tokens) = Self::declared_secret_names(&config);
+        let reg = self.account_registry(module);
+        let accounts: Vec<serde_json::Value> = reg
+            .accounts
+            .iter()
+            .map(|a| {
+                let filled: serde_json::Map<String, serde_json::Value> = credentials
+                    .iter()
+                    .map(|c| {
+                        let has = self
+                            .vault
+                            .get_secret(&crate::utils::account_secrets::secret_key(
+                                c,
+                                Some(&a.id),
+                                false,
+                            ))
+                            .is_some();
+                        (c.clone(), serde_json::json!(has))
+                    })
+                    .collect();
+                let mut row = serde_json::to_value(a).unwrap_or_default();
+                row["credentials"] = serde_json::Value::Object(filled);
+                row
+            })
+            .collect();
+        Some(serde_json::json!({
+            "module": module,
+            "declared": decl,
+            "credentials": credentials,
+            "primary": reg.primary_entry().map(|p| p.id.clone()),
+            "accounts": accounts,
+        }))
+    }
+
+    /// Registers or updates one account. Credentials are optional on update — an empty value
+    /// leaves the stored one alone, so re-saving a label never wipes an app key.
+    pub async fn save_account(
+        &self,
+        module: &str,
+        entry: crate::utils::account_secrets::AccountEntry,
+        credentials: &serde_json::Map<String, serde_json::Value>,
+        make_primary: bool,
+    ) -> Result<(), String> {
+        let id = entry.id.trim().to_string();
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return Err("account alias must be alphanumeric, - or _".to_string());
+        }
+        let config = self
+            .module_config(module)
+            .await
+            .ok_or_else(|| format!("module {module} not found"))?;
+        if config.get("accounts").is_none() {
+            return Err(format!("module {module} does not declare accounts"));
+        }
+        let (declared, _) = Self::declared_secret_names(&config);
+        for (name, value) in credentials {
+            let Some(value) = value.as_str().map(str::trim).filter(|v| !v.is_empty()) else {
+                continue;
+            };
+            if !declared.iter().any(|d| d == name) {
+                return Err(format!("{name} is not a credential this module declares"));
+            }
+            let key = crate::utils::account_secrets::secret_key(name, Some(&id), false);
+            if !self.vault.set_secret(&key, value) {
+                return Err(format!("failed to store {name}"));
+            }
+        }
+        let mut reg = self.account_registry(module);
+        let mut entry = entry;
+        entry.id = id.clone();
+        match reg.accounts.iter_mut().find(|a| a.id == id) {
+            Some(existing) => *existing = entry,
+            None => reg.accounts.push(entry),
+        }
+        if make_primary || reg.accounts.len() == 1 {
+            reg.primary = Some(id);
+        }
+        self.save_account_registry(module, &reg)
+    }
+
+    /// Removes an account and the credentials stored under it — a deleted account must not leave
+    /// a usable app key behind in the vault.
+    pub async fn delete_account(&self, module: &str, id: &str) -> Result<(), String> {
+        let config = self
+            .module_config(module)
+            .await
+            .ok_or_else(|| format!("module {module} not found"))?;
+        let (creds, tokens) = Self::declared_secret_names(&config);
+        for name in creds.iter().chain(tokens.iter()) {
+            let key = crate::utils::account_secrets::secret_key(name, Some(id), false);
+            self.vault.delete_secret(&key);
+        }
+        let mut reg = self.account_registry(module);
+        reg.accounts.retain(|a| a.id != id);
+        if reg.primary.as_deref() == Some(id) {
+            reg.primary = None;
+        }
+        self.save_account_registry(module, &reg)
     }
 
     /// 모듈 dir 안 선언 파일 read (config `actionCatalog.file` 등) — 파일명만 허용 (path traversal 차단).
@@ -1553,12 +1809,28 @@ fn substitute_ws_frame(
     walk(template, input)
 }
 
-fn input_for_validation(input_data: &serde_json::Value) -> std::borrow::Cow<'_, serde_json::Value> {
+fn input_for_validation<'a>(
+    input_data: &'a serde_json::Value,
+    input_schema: &serde_json::Value,
+) -> std::borrow::Cow<'a, serde_json::Value> {
+    // `account` is infra-injected the same way (config `accounts` declares the capability, the
+    // framework resolves the alias) — strip it unless the module declares the name itself.
+    let declares = |k: &str| {
+        input_schema
+            .get("properties")
+            .and_then(|p| p.get(k))
+            .is_some()
+    };
+    let strip: Vec<&str> = RESERVED_HUB_META_KEYS
+        .iter()
+        .copied()
+        .chain(std::iter::once("account").filter(|k| !declares(k)))
+        .collect();
     match input_data.as_object() {
-        Some(obj) if RESERVED_HUB_META_KEYS.iter().any(|k| obj.contains_key(*k)) => {
+        Some(obj) if strip.iter().any(|k| obj.contains_key(*k)) => {
             let mut cleaned = obj.clone();
-            for k in RESERVED_HUB_META_KEYS {
-                cleaned.remove(*k);
+            for k in strip {
+                cleaned.remove(k);
             }
             std::borrow::Cow::Owned(serde_json::Value::Object(cleaned))
         }
@@ -1749,7 +2021,8 @@ impl ModuleManager {
         })?;
         validate_module_definition(&config)?;
         if let Some(input_schema) = config.get("input") {
-            validate_value(&input_for_validation(input_data), input_schema).map_err(|e| {
+            validate_value(&input_for_validation(input_data, input_schema), input_schema).map_err(
+                |e| {
                 crate::i18n::t(
                     "core.error.module.input_validation_failed_scoped",
                     None,

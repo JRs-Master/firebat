@@ -2796,7 +2796,22 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .unwrap_or("system");
                 let result = module.get_module_config(scope, &name).await;
-                Ok(result.unwrap_or(serde_json::Value::Null))
+                let Some(mut config) = result else {
+                    return Ok(serde_json::Value::Null);
+                };
+                // A module that declares `accounts` supports being called as one of several
+                // registered accounts. The declaration says which credentials an account holds;
+                // it cannot say which accounts exist (that is a vault write), so the registry is
+                // merged in here — aliases and account numbers, never credentials.
+                if config.get("accounts").is_some() {
+                    let reg = module.account_registry(&name);
+                    config["accounts"]["registered"] =
+                        serde_json::to_value(&reg.accounts).unwrap_or_default();
+                    if let Some(p) = reg.primary_entry() {
+                        config["accounts"]["primary"] = serde_json::json!(p.id);
+                    }
+                }
+                Ok(config)
             }
         }),
     );

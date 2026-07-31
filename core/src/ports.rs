@@ -682,6 +682,9 @@ pub struct WsApiCall {
     /// e.g. "return_msg") — used for the error string when success_when doesn't match.
     pub error_msg_field: Option<String>,
     pub mock: bool,
+    /// Registered account this call runs as — picks the credential set (and token slot) the
+    /// adapter resolves. None = the module's shared credentials, exactly as before accounts.
+    pub account: Option<String>,
     pub timeout_ms: u64,
 }
 
@@ -719,6 +722,8 @@ pub struct WsDecryptSpec {
 #[derive(Debug, Clone)]
 pub struct WsStreamSpec {
     pub watch_id: String,
+    /// Registered account this stream runs as — see `WsApiCall::account`.
+    pub account: Option<String>,
     /// Event-bus topic the sink publishes to (`ws-stream:{module}:{stream}:{watch_id}`).
     pub topic: String,
     pub module: String,

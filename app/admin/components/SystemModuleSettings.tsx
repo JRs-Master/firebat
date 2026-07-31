@@ -217,6 +217,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const resolvedName = MODULE_NAME_ALIASES[moduleName] ?? moduleName;
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
   const [langData, setLangData] = useState<Record<string, any> | null>(null);
+  // Modules whose app keys are per account (config `accounts`) get the accounts editor, and the
+  // per-secret fields disappear: the same key entered in two places would be two answers to
+  // "which credentials does this module use".
+  const [declaresAccounts, setDeclaresAccounts] = useState(false);
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -326,7 +330,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
               for (const s of cf.oauthSecrets) oauthManagedNames.add(s);
             }
           }
-          const autoFields = secretsToFields(configSecrets, oauthManagedNames);
+          const hasAccounts = !!config?.accounts;
+          setDeclaresAccounts(hasAccounts);
+          const autoFields = hasAccounts ? [] : secretsToFields(configSecrets, oauthManagedNames);
 
           const allFields = [...autoFields, ...configFields];
           // title — lang/{lang}.json 의 'title' 키 우선 (mcp-server-app / mcp-server-llm 등) → 옛 alias 입력값 → resolved 모듈명
@@ -1002,6 +1008,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
               </Fragment>
               );
             })}
+            {declaresAccounts && <AccountsSection moduleName={resolvedName} />}
             {resolvedName === 'telegram' && <TelegramWebhookSection />}
             </>
           )}
@@ -1031,6 +1038,276 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           );
         })()}
       </div>
+    </div>
+  );
+}
+
+// ── 계좌 등록 — config.json 이 `accounts` 를 선언한 모듈에만 붙는다 ─────────────
+// 브로커 앱키는 계좌 단위로 발급된다(모의 키는 실전 도메인에서 거부). 그래서 한 모듈이 여러
+// 자격증명 세트를 들고, 호출은 `account` 로 그중 하나를 고른다. 값은 vault 를 떠나지 않고,
+// 여기 보이는 건 슬롯이 채워졌는지 여부뿐이다.
+interface AccountRow {
+  id: string;
+  label?: string;
+  mode?: string;
+  markets?: string[];
+  accountNo?: string;
+  credentials?: Record<string, boolean>;
+}
+interface AccountsData {
+  declared?: { modes?: string[]; markets?: string[] };
+  credentials?: string[];
+  primary?: string | null;
+  accounts?: AccountRow[];
+}
+
+function AccountsSection({ moduleName }: { moduleName: string }) {
+  const t = useTranslations();
+  const [data, setData] = useState<AccountsData | null>(null);
+  const [draft, setDraft] = useState<AccountRow | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiGet<{ success: boolean; accounts?: AccountsData | null }>(
+        `/api/module/accounts?module=${encodeURIComponent(moduleName)}`,
+        { category: 'system-module' },
+      );
+      if (res.success) setData(res.accounts ?? null);
+    } catch (e) { logger.debug('system-module', 'accounts load 실패', { error: e }); }
+  }, [moduleName]);
+  useEffect(() => { load(); }, [load]);
+
+  if (!data) return null;
+  const modes = data.declared?.modes ?? ['real', 'mock'];
+  const markets = data.declared?.markets ?? [];
+  const credentials = data.credentials ?? [];
+  const rows = data.accounts ?? [];
+
+  const startEdit = (row?: AccountRow) => {
+    setError(null);
+    setValues({});
+    setDraft(row ? { ...row } : { id: '', label: '', mode: modes[0] ?? 'real', markets: [], accountNo: '' });
+  };
+
+  const save = async (makePrimary: boolean) => {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await apiPost<{ success: boolean; error?: string }>(
+        '/api/module/accounts',
+        {
+          module: moduleName,
+          account: {
+            id: draft.id.trim(),
+            label: draft.label ?? '',
+            mode: draft.mode ?? modes[0],
+            markets: draft.markets ?? [],
+            accountNo: draft.accountNo ?? '',
+          },
+          credentials: values,
+          makePrimary,
+        },
+        { category: 'system-module' },
+      );
+      if (res.success) { setDraft(null); await load(); }
+      else setError(res.error ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setSaving(false); }
+  };
+
+  const remove = async (id: string) => {
+    if (!(await confirmDialog({
+      message: t('system_modules.accounts.delete_confirm'),
+      danger: true,
+      okLabel: t('system_modules.accounts.delete'),
+    }))) return;
+    try {
+      await apiDelete(
+        `/api/module/accounts?module=${encodeURIComponent(moduleName)}&id=${encodeURIComponent(id)}`,
+        { category: 'system-module' },
+      );
+      await load();
+    } catch (e) { logger.debug('system-module', 'accounts delete 실패', { error: e }); }
+  };
+
+  const toggleMarket = (m: string) => {
+    setDraft(d => {
+      if (!d) return d;
+      const cur = d.markets ?? [];
+      return { ...d, markets: cur.includes(m) ? cur.filter(x => x !== m) : [...cur, m] };
+    });
+  };
+
+  const inputClass =
+    'px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs sm:text-sm font-bold text-slate-700">{t('system_modules.accounts.title')}</span>
+        <button
+          onClick={() => startEdit()}
+          className="flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-bold text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+        >
+          <Plus size={14} /> {t('system_modules.accounts.add')}
+        </button>
+      </div>
+
+      {rows.length === 0 && !draft && (
+        <p className="text-[12px] text-slate-400 font-medium">{t('system_modules.accounts.empty')}</p>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        {rows.map(row => (
+          <div key={row.id} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[13px] font-bold text-slate-700 break-all">{row.label || row.id}</span>
+                {data.primary === row.id && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-700 bg-blue-100 rounded">
+                    {t('system_modules.accounts.primary_badge')}
+                  </span>
+                )}
+                <span className="px-1.5 py-0.5 text-[10px] font-bold text-slate-600 bg-slate-200 rounded">
+                  {row.mode === 'mock' ? t('system_modules.accounts.mode_mock') : t('system_modules.accounts.mode_real')}
+                </span>
+                {(row.markets ?? []).map(m => (
+                  <span key={m} className="px-1.5 py-0.5 text-[10px] font-bold text-slate-500 bg-white border border-slate-200 rounded">{m}</span>
+                ))}
+              </div>
+              <div className="text-[11px] text-slate-400 font-medium break-all">
+                {row.id}{row.accountNo ? ` · ${row.accountNo}` : ''}
+              </div>
+            </div>
+            <button
+              onClick={() => startEdit(row)}
+              className="px-2.5 py-1.5 text-[12px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+            >
+              {t('system_modules.common.change')}
+            </button>
+            <button
+              onClick={() => remove(row.id)}
+              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+              aria-label={t('system_modules.accounts.delete')}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {draft && (
+        <div className="flex flex-col gap-2 p-3 bg-white border border-blue-200 rounded-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.alias')}</span>
+              <input
+                value={draft.id}
+                onChange={e => setDraft(d => (d ? { ...d, id: e.target.value } : d))}
+                placeholder={t('system_modules.accounts.alias_hint')}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.label')}</span>
+              <input
+                value={draft.label ?? ''}
+                onChange={e => setDraft(d => (d ? { ...d, label: e.target.value } : d))}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.mode')}</span>
+              <select
+                value={draft.mode ?? modes[0]}
+                onChange={e => setDraft(d => (d ? { ...d, mode: e.target.value } : d))}
+                className={inputClass}
+              >
+                {modes.map(m => (
+                  <option key={m} value={m}>
+                    {m === 'mock' ? t('system_modules.accounts.mode_mock') : t('system_modules.accounts.mode_real')}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.account_no')}</span>
+              <input
+                value={draft.accountNo ?? ''}
+                onChange={e => setDraft(d => (d ? { ...d, accountNo: e.target.value } : d))}
+                className={inputClass}
+              />
+            </label>
+          </div>
+
+          {markets.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.markets')}</span>
+              <div className="flex flex-wrap gap-1.5">
+                {markets.map(m => {
+                  const on = (draft.markets ?? []).includes(m);
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => toggleMarket(m)}
+                      className={`px-2.5 py-1 text-[12px] font-bold rounded-lg border transition-colors ${on ? 'text-white bg-blue-600 border-blue-600' : 'text-slate-500 bg-white border-slate-300 hover:bg-slate-50'}`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.credentials')}</span>
+            {credentials.map(name => (
+              <label key={name} className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-slate-500 break-all">{name}</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={values[name] ?? ''}
+                  onChange={e => setValues(v => ({ ...v, [name]: e.target.value }))}
+                  placeholder={draft.credentials?.[name] ? t('system_modules.accounts.keep_stored') : ''}
+                  className={inputClass}
+                />
+              </label>
+            ))}
+          </div>
+
+          {error && <p className="text-[12px] font-medium text-rose-600 break-all">{error}</p>}
+
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setDraft(null)}
+              className="px-3 py-1.5 text-[12px] font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              {t('system_modules.accounts.cancel')}
+            </button>
+            <button
+              onClick={() => save(true)}
+              disabled={saving || !draft.id.trim()}
+              className="px-3 py-1.5 text-[12px] font-bold text-blue-600 hover:bg-blue-50 disabled:text-slate-300 rounded-lg transition-colors"
+            >
+              {t('system_modules.accounts.set_primary')}
+            </button>
+            <button
+              onClick={() => save(false)}
+              disabled={saving || !draft.id.trim()}
+              className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : t('system_modules.common.save')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

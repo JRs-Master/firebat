@@ -94,7 +94,7 @@ impl WsApiAdapter {
                     ));
                 };
                 Some(
-                    tp.ensure_fresh(&name, &spec, life, call.mock, force_token)
+                    tp.ensure_fresh(&name, &spec, life, call.mock, force_token, call.account.as_deref())
                         .await
                         .map_err(|e| format!("[{}] token refresh failed: {e}", call.module))?,
                 )

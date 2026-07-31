@@ -61,13 +61,10 @@ impl OAuthTokenProvider {
             .clone()
     }
 
-    /// 캐시 vault 키 — mock 은 별도 슬롯 (real/mock 토큰이 같은 슬롯을 덮어쓰지 않게).
-    fn cache_key(name: &str, mock: bool) -> String {
-        if mock {
-            format!("user:{name}__mock")
-        } else {
-            format!("user:{name}")
-        }
+    /// Cache slot. Real and mock never share one, and neither do two accounts — a broker issues a
+    /// key per account, so each has its own token with its own expiry.
+    fn cache_key(name: &str, account: Option<&str>, mock: bool) -> String {
+        firebat_core::utils::account_secrets::secret_key(name, account, mock)
     }
 
     /// proactive. 캐시가 lifetime 안이면 그대로, 만료/없음/force 면 발급해 영속 후 raw 토큰 반환.
@@ -80,10 +77,13 @@ impl OAuthTokenProvider {
         lifetime_sec: u64,
         mock: bool,
         force: bool,
+        account: Option<&str>,
     ) -> Result<String, String> {
-        let lock = self.lock_for(name);
+        // Lock per slot, not per secret name — two accounts refreshing at once must not serialise
+        // behind each other, and they are not racing for the same cache entry anyway.
+        let key = Self::cache_key(name, account, mock);
+        let lock = self.lock_for(&key);
         let _guard = lock.lock().await;
-        let key = Self::cache_key(name, mock);
 
         if !force {
             if let Some(raw) = self.vault.get_secret(&key) {
@@ -96,7 +96,7 @@ impl OAuthTokenProvider {
             }
         }
 
-        let (token, rotated_refresh) = self.fetch_token(name, spec, mock).await?;
+        let (token, rotated_refresh) = self.fetch_token(name, spec, mock, account).await?;
         let serialized = serde_json::to_string(&TokenCache {
             t: token.clone(),
             iat: now_ms(),
@@ -114,7 +114,7 @@ impl OAuthTokenProvider {
             }
         }
         // 발급 이벤트만 기록 (토큰 값은 절대 X) — proactive/reactive 갱신 가시화 + 검증.
-        tracing::info!(target: "token", secret = %name, mock, force, "OAuth token issued/refreshed and persisted to vault");
+        tracing::info!(target: "token", secret = %name, account, mock, force, "OAuth token issued/refreshed and persisted to vault");
         Ok(token)
     }
 
@@ -156,6 +156,7 @@ impl OAuthTokenProvider {
         name: &str,
         spec: &OAuthSpec,
         mock: bool,
+        account: Option<&str>,
     ) -> Result<(String, Option<String>), String> {
         let base = if mock {
             spec.base_mock
@@ -165,7 +166,7 @@ impl OAuthTokenProvider {
             spec.base.as_str()
         };
         let url = format!("{base}{}", spec.path);
-        let body = self.resolve_body(name, &spec.body);
+        let body = self.resolve_body(name, &spec.body, account);
         let method =
             reqwest::Method::from_bytes(spec.method.as_bytes()).unwrap_or(reqwest::Method::POST);
 
@@ -214,12 +215,13 @@ impl OAuthTokenProvider {
         &self,
         name: &str,
         body: &serde_json::Map<String, serde_json::Value>,
+        account: Option<&str>,
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut out = serde_json::Map::new();
         for (k, v) in body {
             match v.as_str() {
                 Some(s) => {
-                    let sub = self.substitute(name, s);
+                    let sub = self.substitute(name, s, account);
                     // 치환 결과가 빈 값인 파라미터는 생략 (예: kakao client_secret 미설정 시 — 빈 값 전송 회피).
                     if !sub.is_empty() {
                         out.insert(k.clone(), serde_json::Value::String(sub));
@@ -233,13 +235,19 @@ impl OAuthTokenProvider {
         out
     }
 
-    fn substitute(&self, name: &str, s: &str) -> String {
+    fn substitute(&self, name: &str, s: &str, account: Option<&str>) -> String {
         use std::sync::OnceLock;
         static RE: OnceLock<regex::Regex> = OnceLock::new();
         let re = RE.get_or_init(|| regex::Regex::new(r"\$\{([A-Za-z0-9_]+)\}").unwrap());
         re.replace_all(s, |caps: &regex::Captures| {
             let var = &caps[1];
-            match self.vault.get_secret(&format!("user:{var}")) {
+            // The credential that mints this token belongs to the same account as the token does.
+            let scoped = firebat_core::utils::account_secrets::secret_key(var, account, false);
+            match self
+                .vault
+                .get_secret(&scoped)
+                .or_else(|| self.vault.get_secret(&format!("user:{var}")))
+            {
                 Some(val) => val,
                 None => {
                     tracing::warn!(target: "secret", secret = %name, var = %var, "oauth body placeholder unresolved");
@@ -339,14 +347,31 @@ mod tests {
         let mut v = HashMap::new();
         v.insert("user:KIS_APP_KEY".to_string(), "APPKEY123".to_string());
         let p = provider(v);
-        assert_eq!(p.substitute("T", "${KIS_APP_KEY}"), "APPKEY123");
-        assert_eq!(p.substitute("T", "literal"), "literal");
-        assert_eq!(p.substitute("T", "${MISSING}"), ""); // 미해결 → 빈 문자열
+        assert_eq!(p.substitute("T", "${KIS_APP_KEY}", None), "APPKEY123");
+        assert_eq!(p.substitute("T", "literal", None), "literal");
+        assert_eq!(p.substitute("T", "${MISSING}", None), ""); // unresolved -> empty string
     }
 
     #[test]
-    fn cache_key_separates_mock() {
-        assert_eq!(OAuthTokenProvider::cache_key("KIS", false), "user:KIS");
-        assert_eq!(OAuthTokenProvider::cache_key("KIS", true), "user:KIS__mock");
+    fn substitute_prefers_the_account_credential_and_falls_back_to_the_shared_one() {
+        let mut v = HashMap::new();
+        v.insert("user:KIS_APP_KEY".to_string(), "SHARED".to_string());
+        v.insert("user:KIS_APP_KEY@sub".to_string(), "SUBKEY".to_string());
+        v.insert("user:KIS_SECRET".to_string(), "ONLY_SHARED".to_string());
+        let p = provider(v);
+        assert_eq!(p.substitute("T", "${KIS_APP_KEY}", Some("sub")), "SUBKEY");
+        // A credential that account never registered still resolves — an account overrides
+        // only the values it actually holds.
+        assert_eq!(p.substitute("T", "${KIS_SECRET}", Some("sub")), "ONLY_SHARED");
+        assert_eq!(p.substitute("T", "${KIS_APP_KEY}", None), "SHARED");
+    }
+
+    #[test]
+    fn cache_key_separates_mock_and_account() {
+        assert_eq!(OAuthTokenProvider::cache_key("KIS", None, false), "user:KIS");
+        assert_eq!(OAuthTokenProvider::cache_key("KIS", None, true), "user:KIS__mock");
+        // Each account mints and stores its own token — never a shared slot.
+        assert_eq!(OAuthTokenProvider::cache_key("KIS", Some("sub"), false), "user:KIS@sub");
+        assert_eq!(OAuthTokenProvider::cache_key("KIS", Some("sub"), true), "user:KIS@sub");
     }
 }

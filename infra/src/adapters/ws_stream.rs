@@ -553,7 +553,7 @@ async fn run_session(
         let (Some(tp), Some((name, oauth, life))) = (token_provider, token_spec) else {
             return SessionEnd::Dropped("token provider/spec not wired".to_string());
         };
-        match tp.ensure_fresh(name, oauth, *life, spec.mock, force_token).await {
+        match tp.ensure_fresh(name, oauth, *life, spec.mock, force_token, spec.account.as_deref()).await {
             Ok(t) => Some(t),
             Err(e) => return SessionEnd::Dropped(format!("token refresh failed: {e}")),
         }

@@ -7,6 +7,11 @@
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
+  "accounts": {
+    "modes": ["real", "mock"],
+    "markets": ["kr", "us"],
+    "listAction": "ka00001"
+  },
   "secrets": [
     {
       "name": "KIWOOM_APP_KEY",

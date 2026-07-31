@@ -13,7 +13,9 @@ use crate::managers::ai::dynamic_tools::DynamicToolRegistry;
 use crate::managers::module::{ModuleManager, SystemEntry};
 use crate::ports::{ModuleOutput, PackageStatus, PackageStatusKind};
 use crate::proto::{
-    module_service_server::ModuleService, ModuleEntryPb, ModuleGetCmsSettingsRequest,
+    module_service_server::ModuleService, ModuleDeleteAccountRequest,
+    ModuleDeleteAccountResponse, ModuleEntryPb, ModuleGetAccountsRequest,
+    ModuleGetAccountsResponse, ModuleGetCmsSettingsRequest,
     ModuleGetCmsSettingsResponse, ModuleGetConfigRequest, ModuleGetConfigResponse,
     ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetLangRequest,
     ModuleGetLangResponse, ModuleGetPackageStatusRequest, ModuleGetPackageStatusResponse,
@@ -21,7 +23,8 @@ use crate::proto::{
     ModuleGetSettingsResponse, ModuleInstallPackagesRequest, ModuleInstallPackagesResponse,
     ModuleIsEnabledRequest, ModuleIsEnabledResponse, ModuleListSystemRequest,
     ModuleListSystemResponse, ModuleListUserRequest, ModuleListUserResponse, ModuleOutputPb,
-    ModuleRunRequest, ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
+    ModuleRunRequest, ModuleSaveAccountRequest, ModuleSaveAccountResponse,
+    ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
     ModuleSetSettingsResponse, PackageStatusPb,
 };
 
@@ -241,6 +244,54 @@ impl ModuleService for ModuleServiceImpl {
                 &[],
             )))
         }
+    }
+
+    async fn get_accounts(
+        &self,
+        req: Request<ModuleGetAccountsRequest>,
+    ) -> Result<Response<ModuleGetAccountsResponse>, TonicStatus> {
+        let module = req.into_inner().module;
+        let overview = self.manager.account_overview(&module).await;
+        Ok(Response::new(ModuleGetAccountsResponse {
+            raw_json: to_raw_json(&overview),
+        }))
+    }
+
+    async fn save_account(
+        &self,
+        req: Request<ModuleSaveAccountRequest>,
+    ) -> Result<Response<ModuleSaveAccountResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let entry: crate::utils::account_secrets::AccountEntry = serde_json::from_str(&args.account_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("account_json: {e}")))?;
+        let credentials: serde_json::Map<String, serde_json::Value> =
+            if args.credentials_json.trim().is_empty() {
+                serde_json::Map::new()
+            } else {
+                serde_json::from_str(&args.credentials_json)
+                    .map_err(|e| TonicStatus::invalid_argument(format!("credentials_json: {e}")))?
+            };
+        self.manager
+            .save_account(&args.module, entry, &credentials, args.make_primary)
+            .await
+            .map_err(TonicStatus::invalid_argument)?;
+        // A new account changes what `account` may be — the discovery surfaces read it live, but
+        // the tool cache holds descriptions built from the same configs.
+        self.invalidate_tools_cache().await;
+        Ok(Response::new(ModuleSaveAccountResponse {}))
+    }
+
+    async fn delete_account(
+        &self,
+        req: Request<ModuleDeleteAccountRequest>,
+    ) -> Result<Response<ModuleDeleteAccountResponse>, TonicStatus> {
+        let args = req.into_inner();
+        self.manager
+            .delete_account(&args.module, &args.id)
+            .await
+            .map_err(TonicStatus::invalid_argument)?;
+        self.invalidate_tools_cache().await;
+        Ok(Response::new(ModuleDeleteAccountResponse {}))
     }
 
     async fn is_enabled(

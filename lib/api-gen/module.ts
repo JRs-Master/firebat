@@ -5,7 +5,9 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  ModuleDeleteAccountRequestSchema,
   ModuleEntryPb,
+  ModuleGetAccountsRequestSchema,
   ModuleGetConfigRequestSchema,
   ModuleGetLangRequestSchema,
   ModuleGetPackageStatusRequestSchema,
@@ -15,6 +17,7 @@ import {
   ModuleIsEnabledRequestSchema,
   ModuleOutputPb,
   ModuleRunRequestSchema,
+  ModuleSaveAccountRequestSchema,
   ModuleService,
   ModuleSetEnabledRequestSchema,
   ModuleSetSettingsRequestSchema,
@@ -149,6 +152,33 @@ export async function getPackageStatus(args: MessageInitShape<typeof ModuleGetPa
   try {
       const response = await moduleClient.getPackageStatus(args ?? {});
       return { ok: true, data: unBigInt(response.packages) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function getAccounts(args: MessageInitShape<typeof ModuleGetAccountsRequestSchema>): Promise<RpcResult<unknown>> {
+  try {
+      const response = await moduleClient.getAccounts(args ?? {});
+      return { ok: true, data: JSON.parse(response.rawJson) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function saveAccount(args: MessageInitShape<typeof ModuleSaveAccountRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await moduleClient.saveAccount(args ?? {});
+      return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function deleteAccount(args: MessageInitShape<typeof ModuleDeleteAccountRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await moduleClient.deleteAccount(args ?? {});
+      return { ok: true, data: undefined };
   } catch (err) {
     return toRpcError(err);
   }

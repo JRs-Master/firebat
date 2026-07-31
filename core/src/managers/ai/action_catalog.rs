@@ -736,6 +736,9 @@ pub(crate) fn sysmod_tool_name(module: &str) -> String {
 
 pub struct ModuleActionCatalog {
     catalog: RefreshingCatalog,
+    /// Kept for read-time detail the index must not freeze — registered accounts change with a
+    /// vault write, while the catalog rebuilds on a TTL.
+    module: Arc<ModuleManager>,
 }
 
 impl ModuleActionCatalog {
@@ -749,9 +752,12 @@ impl ModuleActionCatalog {
                 "module-actions",
                 embedder,
                 cache_port,
-                Arc::new(ModuleActionSource { module }),
+                Arc::new(ModuleActionSource {
+                    module: module.clone(),
+                }),
                 REBUILD_TTL,
             ),
+            module,
         }
     }
 
@@ -914,6 +920,17 @@ impl ModuleActionCatalog {
                  name any missing field."
                     .to_string(),
             );
+        }
+        // Registered accounts belong with the params the model is reading right now — they are
+        // what "조회는 주계좌, 주문은 이 계좌" turns into on the wire, and they change without a
+        // catalog rebuild, so they are resolved per call rather than indexed.
+        if let Some(doc) = self.module.account_param_doc(module).await {
+            match out.get_mut("params").and_then(|p| p.as_object_mut()) {
+                Some(p) => {
+                    p.insert("account".to_string(), serde_json::Value::String(doc));
+                }
+                None => out["params"] = serde_json::json!({ "account": doc }),
+            }
         }
         Some(out)
     }

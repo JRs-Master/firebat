@@ -881,7 +881,17 @@ impl ProcessSandboxAdapter {
     /// 2. 각 키마다 Vault `user:KEY` 조회 → env 저장
     /// 3. 모듈 settings (`system:module:<name>:settings`) 의 모든 필드 → `MODULE_<KEY>` env 주입
     /// 4. tokenCache.secretName 으로 vault 조회 → env 주입 (옛 OAuth token cache 로드)
-    fn load_secrets_env(&self, module_dir: &Path, mock: bool) -> HashMap<String, String> {
+    /// Secrets for this call as env vars.
+    ///
+    /// `account` selects WHICH credential set goes into the names the module already reads — the
+    /// module never learns an account exists (see `core::utils::account_secrets`). None keeps the
+    /// pre-account behaviour byte for byte.
+    fn load_secrets_env(
+        &self,
+        module_dir: &Path,
+        mock: bool,
+        account: Option<&str>,
+    ) -> HashMap<String, String> {
         let mut env: HashMap<String, String> = HashMap::new();
         let Some(vault) = &self.vault else {
             return env;
@@ -905,12 +915,20 @@ impl ProcessSandboxAdapter {
                 && meta.oauth.is_some()
                 && self.token_provider.is_some();
             let value = if infra_managed {
-                let key = if mock {
-                    format!("user:{}__mock", meta.name)
-                } else {
-                    format!("user:{}", meta.name)
-                };
-                vault.get_secret(&key).map(|raw| {
+                let key =
+                    firebat_core::utils::account_secrets::secret_key(&meta.name, account, mock);
+                // An account whose token has not been minted yet falls back to the shared slot
+                // rather than running with no token at all.
+                vault
+                    .get_secret(&key)
+                    .or_else(|| {
+                        account.and_then(|_| {
+                            vault.get_secret(&firebat_core::utils::account_secrets::secret_key(
+                                &meta.name, None, mock,
+                            ))
+                        })
+                    })
+                    .map(|raw| {
                     // `{t,iat}` JSON → raw .t. non-JSON(옛 raw 형식) → 그대로.
                     serde_json::from_str::<serde_json::Value>(&raw)
                         .ok()
@@ -921,7 +939,13 @@ impl ProcessSandboxAdapter {
                 // 선언형 vaultKey — 이미 등록된 시스템 공급자 키 재사용(모듈마다 재입력 0).
                 vault.get_secret(vk)
             } else {
-                vault.get_secret(&format!("user:{}", meta.name))
+                // Account-scoped first, then the shared value — so a module that has never had
+                // accounts registered keeps working untouched.
+                vault
+                    .get_secret(&firebat_core::utils::account_secrets::secret_key(
+                        &meta.name, account, false,
+                    ))
+                    .or_else(|| vault.get_secret(&format!("user:{}", meta.name)))
             };
             if let Some(value) = value {
                 env.insert(meta.name, value);
@@ -1545,10 +1569,11 @@ impl ISandboxPort for ProcessSandboxAdapter {
         // OAuth 토큰 — proactive 선제 갱신 (호출 전). config token secret 의 oauth 스펙 기반.
         // 실패는 pass-through (유효 캐시가 있으면 그걸로 진행 — 블로킹 금지).
         let mock = input_data.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+        let account = input_data.get("account").and_then(|v| v.as_str());
         let token_secrets = Self::oauth_token_secrets(&module_dir);
         if let Some(tp) = &self.token_provider {
             for (name, spec, life) in &token_secrets {
-                if let Err(e) = tp.ensure_fresh(name, spec, *life, mock, false).await {
+                if let Err(e) = tp.ensure_fresh(name, spec, *life, mock, false, account).await {
                     tracing::warn!(target: "sandbox", secret = %name, error = %e, "proactive token refresh failed — proceeding with cached token");
                 }
             }
@@ -1570,7 +1595,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                 let mut refreshed = false;
                 for (name, spec, life) in &token_secrets {
                     if tp.is_invalid(spec, &result.data) {
-                        match tp.ensure_fresh(name, spec, *life, mock, true).await {
+                        match tp.ensure_fresh(name, spec, *life, mock, true, account).await {
                             Ok(_) => refreshed = true,
                             Err(e) => tracing::warn!(target: "sandbox", secret = %name, error = %e, "reactive token reissue failed"),
                         }
@@ -1707,7 +1732,9 @@ impl ProcessSandboxAdapter {
 
         // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1). 인프라 관리 토큰은 mock 별 슬롯 raw 주입.
         let mock = input_data.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
-        for (k, v) in self.load_secrets_env(module_dir, mock) {
+        // Which registered account this call runs as. Absent = the module's shared credentials.
+        let account = input_data.get("account").and_then(|v| v.as_str());
+        for (k, v) in self.load_secrets_env(module_dir, mock, account) {
             cmd.env(k, v);
         }
         // 명시 env 가 secrets 위에 (사용자 명시 우선)
@@ -2105,7 +2132,7 @@ mod tests {
 
         let sandbox =
             ProcessSandboxAdapter::new(tmp.path().to_path_buf()).with_vault(vault);
-        let env = sandbox.load_secrets_env(&module_dir, false);
+        let env = sandbox.load_secrets_env(&module_dir, false, None);
         // secrets 배열에 설정된 키만 주입
         assert_eq!(env.get("KIWOOM_APP_KEY").map(|s| s.as_str()), Some("test-app-key"));
         assert_eq!(
@@ -2130,7 +2157,7 @@ mod tests {
 
         // Vault 미설정 → empty env (회귀 안전)
         let sandbox = ProcessSandboxAdapter::new(tmp.path().to_path_buf());
-        let env = sandbox.load_secrets_env(&module_dir, false);
+        let env = sandbox.load_secrets_env(&module_dir, false, None);
         assert!(env.is_empty());
     }
 
@@ -2163,7 +2190,7 @@ mod tests {
 
         let sandbox =
             ProcessSandboxAdapter::new(tmp.path().to_path_buf()).with_vault(vault);
-        let env = sandbox.load_secrets_env(&module_dir, false);
+        let env = sandbox.load_secrets_env(&module_dir, false, None);
         // 정상 settings 는 MODULE_<UPPER> 형태로 주입
         assert_eq!(
             env.get("MODULE_ENDPOINT").map(|s| s.as_str()),

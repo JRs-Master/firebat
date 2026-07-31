@@ -101,6 +101,10 @@
       ]
     }
   },
+  "accounts": {
+    "modes": ["real", "mock"],
+    "markets": ["kr", "us"]
+  },
   "secrets": [
     {
       "name": "KIS_APP_KEY",
