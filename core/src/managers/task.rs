@@ -105,7 +105,10 @@ pub enum PipelineStep {
     /// anything variable-length has to be pushed inside a module, which is where per-case code
     /// starts piling up: each module grows its own way of calling other modules and the framework
     /// stops being the thing that mediates. So the loop belongs here, next to the wiring it uses.
-    #[serde(rename_all = "camelCase")]
+    // The variant name would serialise as FOR_EACH under the enum's SCREAMING_SNAKE rule, but
+    // every description, prompt and doc says FOREACH — and that is the spelling people write.
+    // Pin the wire name and keep the derived one as an alias.
+    #[serde(rename = "FOREACH", alias = "FOR_EACH", rename_all = "camelCase")]
     ForEach {
         /// A list: `"$step2.orders"`, `"$prev.rows"`, or a literal array.
         items: Value,
@@ -1003,6 +1006,23 @@ mod tests {
             }
             other => panic!("wrong variant: {}", other.step_type()),
         }
+    }
+
+    #[test]
+    fn foreach_is_spelled_the_way_the_docs_spell_it() {
+        for name in ["FOREACH", "FOR_EACH"] {
+            let step: PipelineStep = serde_json::from_value(json!({
+                "type": name, "items": [], "steps": [{"type": "TOOL_CALL", "tool": "x"}]
+            }))
+            .unwrap_or_else(|e| panic!("{name} should parse: {e}"));
+            assert_eq!(step.step_type(), "FOREACH");
+        }
+        // And it round-trips as the documented spelling, so a stored pipeline reads back.
+        let step = PipelineStep::ForEach {
+            items: json!([]), steps: vec![], max_items: None, continue_on_error: None,
+        };
+        let wire = serde_json::to_value(&step).expect("serialize");
+        assert_eq!(wire["type"], "FOREACH");
     }
 
     #[test]
