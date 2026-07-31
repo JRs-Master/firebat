@@ -51,6 +51,9 @@ pub struct ModuleManager {
     ws_stream: Option<Arc<dyn IWsStreamPort>>,
     /// Active watches meta — persisted to the vault so watches survive restarts.
     stream_watches: Mutex<HashMap<String, StreamWatchMeta>>,
+    /// Result cache — lets a declared array parameter arrive as a `<param>CacheKey` instead of the
+    /// rows themselves. None = not wired (tests); a key then errors rather than silently vanishing.
+    sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
 }
 
 /// One registered realtime watch (user intent) — the transport status lives in the port.
@@ -86,11 +89,21 @@ impl ModuleManager {
             ws_api: None,
             ws_stream: None,
             stream_watches: Mutex::new(HashMap::new()),
+            sysmod_cache: None,
         }
     }
 
     /// WS API transport — modules whose config.json declares `ws.actions` route those
     /// actions here instead of the sandbox (WebSocket-only APIs like 조건검색).
+    /// Wire the result cache so `<param>CacheKey` inputs can be expanded (see `utils::cache_inputs`).
+    pub fn with_sysmod_cache(
+        mut self,
+        cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
+    ) -> Self {
+        self.sysmod_cache = Some(cache);
+        self
+    }
+
     pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
         self.ws_api = Some(ws_api);
         self
@@ -292,6 +305,19 @@ impl ModuleManager {
             );
         }
         let input_data: &serde_json::Value = unstrung.as_ref().unwrap_or(input_data);
+
+        // A declared array parameter may arrive as a cache key — expand it BEFORE validation, so
+        // `required` still means what it says and the module receives real rows either way.
+        let expanded = match &config {
+            Some(cfg) => crate::utils::cache_inputs::expand(
+                module_name,
+                cfg,
+                input_data,
+                self.sysmod_cache.as_ref(),
+            )?,
+            None => None,
+        };
+        let input_data: &serde_json::Value = expanded.as_ref().unwrap_or(input_data);
 
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now

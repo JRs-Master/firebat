@@ -94,7 +94,11 @@
       },
       "bars": {
         "type": "array",
-        "description": "OHLCV 배열 (오래된 → 최신). 각 항목 {date, open, high, low, close, volume} — **키 대소문자 무관**(yfinance 계열의 Close 도 수용), 튜플 [date,open,high,low,close,volume] 도 수용. 시세 도구 결과의 records 배열을 그대로 넣습니다(캐시로 왔으면 cache_read 로 먼저 펼치세요). **이 배열의 기간이 곧 분석 기간**입니다 — 엘리엇 표준 절차는 큰 시간틀에서 카운트를 세우고 작은 시간틀로 내려오며 맞추는 톱다운이므로, 중요한 판단이면 기간을 달리해 두 번 부르세요."
+        "description": "OHLCV 배열 (오래된 → 최신). 각 항목 {date, open, high, low, close, volume} — **키 대소문자 무관**(yfinance 계열의 Close 도 수용), 튜플 [date,open,high,low,close,volume] 도 수용. 시세 도구 결과의 records 배열. **응답이 `_cacheKey` 로 왔으면 `cache_read` 로 펼치지 말고 그 키를 `barsCacheKey` 로 넘기세요** — 서버가 펼쳐 넣습니다. **이 배열의 기간이 곧 분석 기간**입니다 — 엘리엇 표준 절차는 큰 시간틀에서 카운트를 세우고 작은 시간틀로 내려오며 맞추는 톱다운이므로, 중요한 판단이면 기간을 달리해 두 번 부르세요."
+      },
+      "barsCacheKey": {
+        "type": "string",
+        "description": "`bars` 대신 시세 도구 응답의 `_cacheKey` 를 그대로 넘기면 서버가 그 캐시를 펼쳐 넣습니다. 600행을 인자로 다시 실어 보낼 필요가 없으니 **긴 시리즈는 이쪽이 정석**입니다. 둘 중 하나만 주면 됩니다(`bars` 를 직접 주면 그게 우선)."
       },
       "threshold": {
         "type": "number",
@@ -290,5 +294,8 @@
     "actions": {
       "signals": {}
     }
-  }
+  },
+  "cacheInputs": [
+    "bars"
+  ]
 }

@@ -439,6 +439,9 @@ async fn main() -> Result<()> {
     ));
     let module_manager = Arc::new(
         ModuleManager::new(sandbox.clone(), storage.clone(), vault.clone())
+            // Same cache the sandbox writes into — so a module can take `<param>CacheKey` instead
+            // of the rows, and calling it stops costing more than doing the work by hand.
+            .with_sysmod_cache(cache_adapter.clone())
             .with_ws_api(ws_api.clone())
             .with_ws_stream(ws_stream_adapter.clone()),
     );

@@ -40,3 +40,4 @@ pub(crate) fn shared_test_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|e| e.into_inner())
 }
 pub mod module_tags;
+pub mod cache_inputs;
