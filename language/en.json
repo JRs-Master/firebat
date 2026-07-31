@@ -473,7 +473,8 @@
       "mcp_stdio_hint": "Connects directly to the server via SSH.",
       "mcp_stdio_ssh_required_title": "SSH key required",
       "mcp_stdio_ssh_required_body": "stdio mode requires an SSH key registered on the server. Ask your server administrator to register your SSH public key.",
-      "mcp_stdio_ssh_required_note": "Replace SSH_KEY_PATH, USER, SERVER_IP, and the firebat path with actual values."
+      "mcp_stdio_ssh_required_note": "Replace SSH_KEY_PATH, USER, SERVER_IP, and the firebat path with actual values.",
+      "unregistered": "Not registered"
     },
     "accounts": {
       "title": "Accounts",

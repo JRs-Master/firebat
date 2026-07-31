@@ -33,7 +33,18 @@ const LEGACY_KEYS: Partial<Record<ProviderField, string[]>> = {
 };
 
 // 프로바이더 키 현황 조회 (OpenAI / Gemini / Anthropic / Upstage / Vertex)
-export const GET = withAuth(async () => {
+// `?key=system:...` = 임의의 시스템 키 하나가 등록돼 있는지만(값 없이). 모듈이 `vaultKey` 로
+// 공급자 키를 재사용한다고 선언하면 그 모듈 설정 화면이 "어디 키를 쓰는지 + 등록됐는지"를
+// 보여줘야 하는데, 사용자 시크릿 목록에는 그 키가 없어 늘 미등록으로 보였다.
+export const GET = withAuth(async (req: NextRequest) => {
+  const single = req.nextUrl.searchParams.get('key');
+  if (single) {
+    if (!single.startsWith('system:')) {
+      return NextResponse.json({ success: false, error: 'system: 키만 조회할 수 있습니다.' }, { status: 400 });
+    }
+    const v = await getGeminiKey({ key: single });
+    return NextResponse.json({ success: true, key: single, hasKey: !!(v.ok && v.data) });
+  }
   const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
   const entries = Object.entries(PROVIDER_KEYS) as Array<[ProviderField, string]>;
   const values = await Promise.all(entries.map(([, vaultKey]) => getGeminiKey({ key: vaultKey })));

@@ -878,16 +878,33 @@ impl ModuleManager {
         } else {
             Vec::new()
         };
+        // Which account this socket authenticates as. Resolved at launch rather than at
+        // registration, so a watch registered before any account existed — or before the primary
+        // changed — picks up the right credentials the next time it connects instead of hunting
+        // for a module-wide key that is no longer there.
+        let (account, mock) = if config.get("accounts").is_some() {
+            let reg = self.account_registry(&meta.module);
+            let requested = meta.args.get("account").and_then(|v| v.as_str());
+            let entry = reg.resolve(requested)?.ok_or_else(|| {
+                format!(
+                    "[{}] no account to run this stream as — register one in the module settings.",
+                    meta.module
+                )
+            })?;
+            // Same rule as a call: the account is real or mock, so it picks the endpoint too.
+            (Some(entry.id.clone()), entry.is_mock())
+        } else {
+            (
+                meta.args
+                    .get("account")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                meta.mock,
+            )
+        };
         let spec = WsStreamSpec {
             watch_id: meta.watch_id.clone(),
-            // Account rides in `args` like every other caller-supplied value, so a per-account
-            // watch (체결·잔고) is just a different arg set — and the idempotency key separates
-            // two accounts watching the same stream on its own.
-            account: meta
-                .args
-                .get("account")
-                .and_then(|v| v.as_str())
-                .map(String::from),
+            account,
             topic: meta.topic.clone(),
             module: meta.module.clone(),
             stream: meta.stream.clone(),
@@ -895,8 +912,8 @@ impl ModuleManager {
             // Per-stream endpoint override (decl.endpoint/endpointMock) → module-level fallback.
             // 같은 provider 가 스트림별로 다른 WS 경로를 쓸 때(예: 키움 국내 /api/dostk/websocket vs
             // 미국주식 /api/us/websocket, 같은 호스트 다른 path). 선언 없으면 기존 module-level.
-            endpoint: ws_endpoint(decl, meta.mock)
-                .or_else(|| ws_endpoint(ws, meta.mock))
+            endpoint: ws_endpoint(decl, mock)
+                .or_else(|| ws_endpoint(ws, mock))
                 .ok_or_else(|| format!("[{}] ws.endpoint missing", meta.module))?,
             match_field: ws_match_field(ws),
             echo_values: ws_echo_values(ws),
@@ -1008,7 +1025,7 @@ impl ModuleManager {
                 .and_then(|v| v.as_str())
                 .map(|k| ws_str_list(args_view.get(k)))
                 .unwrap_or_default(),
-            mock: meta.mock,
+            mock,
         };
         port.start(spec).await?;
         self.stream_watches

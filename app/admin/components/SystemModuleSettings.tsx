@@ -16,7 +16,7 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
@@ -30,6 +30,7 @@ interface SettingField {
   oauthUrl?: string;        // oauth 타입 전용: 인증 시작 URL
   oauthSecrets?: string[];  // oauth 타입 전용: 연동 상태 확인용 시크릿 키
   secretName?: string;      // secret 타입 전용: Vault에 저장할 시크릿 키 이름
+  vaultKey?: string;        // shared-secret 전용: 값이 사는 시스템 키 (`system:...`)
   options?: SelectOption[]; // select 타입 전용: dropdown 옵션
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
 }
@@ -163,11 +164,13 @@ const MODULE_NAME_ALIASES: Record<string, string> = {
  * config.json `secrets` 항목 — string (옛) | object (MODULE_BIBLE 제4장 일반화).
  * object 형태: { name, type?: 'key'|'token', lifetimeSec?, refreshFrom? }
  */
-type SecretEntry = string | { name: string; type?: 'key' | 'token'; lifetimeSec?: number; refreshFrom?: string };
+type SecretEntry = string | { name: string; type?: 'key' | 'token'; lifetimeSec?: number; refreshFrom?: string; vaultKey?: string };
 
 interface ParsedSecret {
   name: string;
   kind: 'key' | 'token';
+  /** Declared `vaultKey` — the module reuses a provider key that lives elsewhere. */
+  vaultKey?: string;
 }
 
 function parseSecretEntries(secrets: SecretEntry[] | undefined): ParsedSecret[] {
@@ -177,7 +180,7 @@ function parseSecretEntries(secrets: SecretEntry[] | undefined): ParsedSecret[] 
     if (typeof entry === 'string') {
       out.push({ name: entry, kind: 'key' });
     } else if (entry && typeof entry === 'object' && typeof entry.name === 'string') {
-      out.push({ name: entry.name, kind: entry.type === 'token' ? 'token' : 'key' });
+      out.push({ name: entry.name, kind: entry.type === 'token' ? 'token' : 'key', vaultKey: entry.vaultKey });
     }
   }
   return out;
@@ -362,9 +365,23 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [secretSaved, setSecretSaved] = useState<Record<string, boolean>>({});
   const [secretSaving, setSecretSaving] = useState<Record<string, boolean>>({});
+  const [sharedKeyStatus, setSharedKeyStatus] = useState<Record<string, boolean>>({});
 
   const loadSecretsAndOauth = useCallback(async () => {
     if (!schema) return;
+    // A shared key lives outside the user-secret list, so ask about it by name.
+    const shared = schema.fields.filter(f => f.type === 'shared-secret' && f.vaultKey);
+    if (shared.length > 0) {
+      Promise.all(shared.map(async f => {
+        try {
+          const r = await apiGet<{ success: boolean; hasKey?: boolean }>(
+            `/api/vault?key=${encodeURIComponent(f.vaultKey!)}`,
+            { category: 'system-module' },
+          );
+          return [f.key, !!r.hasKey] as const;
+        } catch { return [f.key, false] as const; }
+      })).then(pairs => setSharedKeyStatus(Object.fromEntries(pairs)));
+    }
     const hasSecretOrOauth = schema.fields.some(f => f.type === 'oauth' || f.type === 'secret');
     if (!hasSecretOrOauth) return;
     try {
@@ -889,6 +906,22 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{localize(t, field.description)}</p>
                     )}
                   </div>
+                ) : field.type === 'shared-secret' ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
+                    <div className="flex items-center gap-2">
+                      {sharedKeyStatus[field.key] ? (
+                        <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
+                          <CheckCircle2 size={15} /> {t('system_modules.common.registered')}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-slate-400 text-[13px] font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg flex-1">
+                          <AlertCircle size={14} /> {t('system_modules.common.unregistered')}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] sm:text-xs text-slate-400 font-medium break-all">{field.vaultKey}</p>
+                  </div>
                 ) : field.type === 'oauth' ? (
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
@@ -1017,7 +1050,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 
         {/* 하단 버튼 */}
         {(() => {
-          const hasNonSecretFields = schema?.fields.some(f => f.type !== 'secret' && f.type !== 'oauth');
+          const hasNonSecretFields = schema?.fields.some(f => f.type !== 'secret' && f.type !== 'oauth' && f.type !== 'shared-secret');
           return (
             <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end shrink-0">
               <div className="flex gap-2 sm:gap-3">
