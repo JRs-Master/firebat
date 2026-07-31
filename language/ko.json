@@ -495,7 +495,7 @@
       "cancel": "취소",
       "market_both": "둘 다",
       "alias_no_at": "별칭에 @ 는 넣을 수 없습니다.",
-      "alias_too_long": "별칭은 60자까지 입력하실 수 있습니다."
+      "alias_too_long": "별칭은 20자까지 입력하실 수 있습니다."
     }
   },
   "calendar": {

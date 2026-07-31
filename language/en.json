@@ -495,7 +495,7 @@
       "cancel": "Cancel",
       "market_both": "Both",
       "alias_no_at": "The alias cannot contain '@'.",
-      "alias_too_long": "The alias can be at most 60 characters."
+      "alias_too_long": "The alias can be at most 20 characters."
     }
   },
   "calendar": {

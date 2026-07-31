@@ -56,6 +56,10 @@ pub struct ModuleManager {
     sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
 }
 
+/// Alias length cap. The alias is the account's name everywhere it appears — settings rows,
+/// order tickets, autotrade tables — so it has to fit a column, not just a vault key.
+const ALIAS_MAX_CHARS: usize = 20;
+
 /// One registered realtime watch (user intent) — the transport status lives in the port.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1261,11 +1265,13 @@ impl ModuleManager {
         // Korean, spaces, punctuation. It only has to survive being part of a vault key (`@`
         // separates it) and being quoted back in an error, so those two are the whole rule.
         if id.is_empty()
-            || id.chars().count() > 60
+            || id.chars().count() > ALIAS_MAX_CHARS
             || id.contains('@')
             || id.chars().any(char::is_control)
         {
-            return Err("account alias must be non-empty, at most 60 characters, and contain no '@'".to_string());
+            return Err(format!(
+                "account alias must be non-empty, at most {ALIAS_MAX_CHARS} characters, and contain no '@'"
+            ));
         }
         let config = self
             .module_config(module)

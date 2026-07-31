@@ -1055,6 +1055,8 @@ interface AccountRow {
   credentials?: Record<string, boolean>;
 }
 const BOTH_MARKETS = '__both__';
+// Mirrors the core cap — the alias is a column heading in the order screens, not just a key.
+const ALIAS_MAX_CHARS = 20;
 
 interface AccountsData {
   declared?: { modes?: string[]; markets?: string[] };
@@ -1155,7 +1157,7 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
     ? null
     : draft.id.includes('@')
       ? t('system_modules.accounts.alias_no_at')
-      : draft.id.length > 60
+      : draft.id.length > ALIAS_MAX_CHARS
         ? t('system_modules.accounts.alias_too_long')
         : null;
 
@@ -1220,7 +1222,7 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
       {draft && (
         <div className="flex flex-col gap-2 p-3 bg-white border border-blue-200 rounded-lg">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1 relative">
               <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.alias')}</span>
               <input
                 value={draft.id}
@@ -1228,7 +1230,16 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
                 className={aliasError ? `${inputClass} border-rose-300 focus:ring-rose-500 focus:border-rose-500` : inputClass}
                 aria-invalid={!!aliasError}
               />
-              {aliasError && <span className="text-[11px] font-medium text-rose-600">{aliasError}</span>}
+              {/* Floats over the field — a line under it would push the whole form down on every
+                  keystroke that breaks the rule. */}
+              {aliasError && (
+                <span
+                  role="alert"
+                  className="absolute left-0 bottom-full mb-1 z-10 px-2 py-1 rounded-md bg-rose-600 text-white text-[11px] font-medium shadow-lg whitespace-nowrap"
+                >
+                  {aliasError}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.mode')}</span>
