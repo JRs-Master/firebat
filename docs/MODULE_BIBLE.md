@@ -261,9 +261,20 @@ node scripts/gen.mjs             # _apis.json → config + index
   2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
   3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
 - `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). `envelope` = 호출 봉투 형태(flat vs `params` 중첩 — 모듈 방언). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
-- **`tags`** (선택, string 배열) = 모듈 선택 신호. 도구 설명에 append 되어 모델이 L1(모듈 선택)에서 고른다.
+- **`tags`** (선택, **string 배열**) = 모듈 선택 신호. 도구 설명에 append 되어 모델이 L1(모듈 선택)에서 고른다.
+  - **배열이어야 한다** — 문자열로 적으면 `core/utils/module_tags.rs` 가 WARN 을 남기고 무시한다(도구는 살아 있되 태그 없이 노출). `upstage-ie` 가 공백 구분 문자열로 선언해 태그가 통째로 사라진 채 오래 돌았다(2026-07-31).
+  - **모듈이 하는 일을 다 적어야 한다** — `technical-analysis` 는 태그 32개가 전부 파동·피보나치라 "백테스트"라는 낱말이 config 어디에도 없었고, 골든크로스 백테스트 요청이 그 모듈을 못 찾아 모델이 손계산으로 답했다(비용 모델 누락). **설명·태그가 곧 발견 표면**이다.
 - **description = 트리거만** ("인덱스 = 트리거"): 검색 결과에 파라미터 나열 금지(모델이 get 건너뛰고 추측). 무엇 한 줄 + 태그. 행동 재료(정확 파라미터·제약)는 `params`/`example` = get 계층.
 - **usermod authoring**: input 스키마에 `action` enum + 각 액션 설명을 넣으면 → 등록 즉시 search_module_actions 로 발견(파생). per-action 정밀 params 를 원하면 `actionCatalog` + `actions.json` 선언. 둘 다 없어도 단일 엔트리로 발견은 된다.
+
+#### `cacheInputs` — 캐시 키를 모듈 입력으로 (호출 비용 제거, 2026-07-31)
+```json
+{ "cacheInputs": ["bars"] }
+```
+- 선언한 **배열 파라미터**를 `<param>CacheKey` 로도 받는다. 호출자가 `barsCacheKey: "<_cacheKey>"` 를 보내면 **스키마 검증 전에** 서버가 캐시를 펼쳐 `bars` 에 넣는다 → `required` 의 뜻이 그대로 살고 모듈 코드는 무변.
+- 키 이름은 규약(`bars` → `barsCacheKey`) — 선언을 둘로 나누지 않는다. 인라인 배열을 직접 주면 그쪽이 우선. 만료·판독 불가 키는 **필드명을 담은 에러**(조용히 건너뛰면 "bars is required" 로 되돌아와 진짜 원인이 숨는다).
+- **왜**: 큰 결과는 캐시되고 호출자는 키만 받는데, 그 rows 를 먹는 모듈이 키를 못 받으면 600행을 인자로 되돌려 보내야 한다. 그러면 모델은 도구를 부르는 대신 직접 계산한다(수수료·세금·슬리피지 없이) — **도구가 안 쓰는 것보다 비싸면 안 쓴다**(2026-07-31 골든크로스 실측). 렌더 쪽 `dataCacheKey` 의 입력측 대응물.
+- 구현 = `core/utils/cache_inputs.rs`, `ModuleManager::with_sysmod_cache`.
 
 #### `pageBinding` — 페이지↔모듈 바인딩 (발행 bake · 방문 SSR · rebake 크론 · shortcode, 2026-07-18)
 ```json
@@ -315,6 +326,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
 | `tags` | 모듈 선택 신호 (얇은 도구 설명에 append) | 도구 등록 (dynamic_tools/mcp_server) |
+| `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
 

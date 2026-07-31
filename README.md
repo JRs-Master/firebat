@@ -235,12 +235,14 @@ Recall + retrieval system — **dialogue ends, facts persist**. Continuous use a
 
 | Store | Role | Implementation |
 |---|---|---|
-| **history** | Past conversation messages | ConversationManager — embeddings search (`search_history`) |
+| **history** | Past conversation messages | ConversationManager — a three-step ladder: `search_history` (semantic; a hit is ONE message, returning its convId/msgIdx) → `read_conversation` (widen to the surrounding range) → `list_conversations` (sessions, narrowed by time). Search alone could not reconstruct a long exchange: short replies carry no vector signal and a hit had nothing to widen into |
 | **recall** | Structured knowledge: entities (tracked subjects) + facts (their point-in-time state) + events (things that happened) | `entities` + `entity_facts` + `events`/`event_entities` m2m. Semantic search + alias matching + staging/confidence promotion + supersede value history |
 | **library** | Uploaded document RAG | Hybrid dense(E5) + sparse(BM25) + RRF, on-demand `search_library` |
 | **memory** | Operational rules & lessons ("how to work") | `data/memory` .md files — index always injected, body on demand |
 
 **Retrieval** merges history + recall + library into `<RETRIEVED_CONTEXT>` per turn; `<TRACKED_ENTITIES>` (the user's own recall graph) self-steers extraction — no hardcoded examples.
+
+**`<DATA_ON_HAND>`** — every turn is also shown the cache keys its own earlier turns produced that are still readable, so a follow-up drills into data already fetched instead of running the whole discovery ladder again (the index only; the records stay in the cache).
 
 **Auto-accumulation, zero manual work**:
 - Core hooks fire `saveEvent` on every `savePage` / `handleCronTrigger` / `generateImage`.
