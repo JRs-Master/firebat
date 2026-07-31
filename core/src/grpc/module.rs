@@ -278,6 +278,8 @@ impl ModuleService for ModuleServiceImpl {
         // A new account changes what `account` may be — the discovery surfaces read it live, but
         // the tool cache holds descriptions built from the same configs.
         self.invalidate_tools_cache().await;
+        // Realtime watches that could not authenticate before now can.
+        self.manager.relaunch_missing_streams(&args.module).await;
         Ok(Response::new(ModuleSaveAccountResponse {}))
     }
 

@@ -1105,6 +1105,10 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [makePrimary, setMakePrimary] = useState(false);
+  // Stored credentials show as 등록됨 with [변경] like every other module; this is which ones
+  // the user chose to replace.
+  const [editingCred, setEditingCred] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
@@ -1126,10 +1130,13 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
   const startEdit = (row?: AccountRow) => {
     setError(null);
     setValues({});
+    setEditingCred({});
+    // The first account is the primary whether or not anyone says so, so the chip reflects that.
+    setMakePrimary(row ? data.primary === row.id : rows.length === 0);
     setDraft(row ? { ...row } : { id: '', mode: modes[0] ?? 'real', markets: [], accountNo: '' });
   };
 
-  const save = async (makePrimary: boolean) => {
+  const save = async () => {
     if (!draft) return;
     setSaving(true);
     setError(null);
@@ -1193,6 +1200,17 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
       : draft.id.length > ALIAS_MAX_CHARS
         ? t('system_modules.accounts.alias_too_long')
         : null;
+
+  // A credential slot counts as filled when it is already stored or being typed now. Saving a
+  // half-registered account would fail at the broker instead of here.
+  const credFilled = (name: string) =>
+    (!!draft?.credentials?.[name] && !editingCred[name]) || !!values[name]?.trim();
+  const canSave =
+    !!draft &&
+    !!draft.id.trim() &&
+    !aliasError &&
+    (markets.length === 0 || (draft.markets ?? []).length > 0) &&
+    credentials.every(credFilled);
 
   const inputClass =
     'px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
@@ -1298,6 +1316,19 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
             </label>
           </div>
 
+          <div className="flex flex-col gap-1">
+            <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.primary')}</span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setMakePrimary(v => !v)}
+                disabled={data.primary === draft.id || rows.length === 0}
+                className={`px-2.5 py-1 text-[12px] font-bold rounded-lg border transition-colors disabled:opacity-60 ${makePrimary ? 'text-white bg-blue-600 border-blue-600' : 'text-slate-500 bg-white border-slate-300 hover:bg-slate-50'}`}
+              >
+                {t('system_modules.accounts.primary')}
+              </button>
+            </div>
+          </div>
+
           {markets.length > 0 && (
             <div className="flex flex-col gap-1">
               <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.markets')}</span>
@@ -1320,19 +1351,35 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.credentials')}</span>
-            {credentials.map(name => (
-              <label key={name} className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-slate-500 break-all">{name}</span>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={values[name] ?? ''}
-                  onChange={e => setValues(v => ({ ...v, [name]: e.target.value }))}
-                  placeholder={draft.credentials?.[name] ? t('system_modules.accounts.keep_stored') : ''}
-                  className={inputClass}
-                />
-              </label>
-            ))}
+            {credentials.map(name => {
+              const stored = !!draft.credentials?.[name] && !editingCred[name];
+              return (
+                <label key={name} className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-500 break-all">{name}</span>
+                  {stored ? (
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
+                        <CheckCircle2 size={15} /> {t('system_modules.common.registered')}
+                      </span>
+                      <button
+                        onClick={() => setEditingCred(c => ({ ...c, [name]: true }))}
+                        className="px-3 py-2 text-[12px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                      >
+                        {t('system_modules.common.change')}
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={values[name] ?? ''}
+                      onChange={e => setValues(v => ({ ...v, [name]: e.target.value }))}
+                      className={inputClass}
+                    />
+                  )}
+                </label>
+              );
+            })}
           </div>
 
           {error && <p className="text-[12px] font-medium text-rose-600 break-all">{error}</p>}
@@ -1345,15 +1392,8 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
               {t('system_modules.accounts.cancel')}
             </button>
             <button
-              onClick={() => save(true)}
-              disabled={saving || !draft.id.trim() || !!aliasError}
-              className="px-3 py-1.5 text-[12px] font-bold text-blue-600 hover:bg-blue-50 disabled:text-slate-300 rounded-lg transition-colors"
-            >
-              {t('system_modules.accounts.set_primary')}
-            </button>
-            <button
-              onClick={() => save(false)}
-              disabled={saving || !draft.id.trim() || !!aliasError}
+              onClick={() => save()}
+              disabled={saving || !canSave}
               className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : t('system_modules.common.save')}

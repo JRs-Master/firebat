@@ -797,6 +797,44 @@ impl ModuleManager {
         ok
     }
 
+    /// Relaunches this module's persisted watches that are not currently live.
+    ///
+    /// A watch whose restore failed is only logged, so the boot order decides whether realtime
+    /// runs: credentials are registered *after* the server is up the first time, and both watches
+    /// were dropped at 05:09 for want of an account that arrived at 05:15. Registering credentials
+    /// is exactly the moment the missing thing appears, so that is when the retry belongs — no
+    /// polling, and no restart to pick up a key the process already has.
+    pub async fn relaunch_missing_streams(&self, module: &str) -> usize {
+        let Some(raw) = self.vault.get_secret(VK_SYSTEM_WS_WATCHES) else {
+            return 0;
+        };
+        let metas: Vec<StreamWatchMeta> = serde_json::from_str(&raw).unwrap_or_default();
+        let live: std::collections::HashSet<String> = self
+            .stream_watches
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .keys()
+            .cloned()
+            .collect();
+        let mut ok = 0usize;
+        for meta in metas
+            .into_iter()
+            .filter(|m| m.module == module && !live.contains(&m.watch_id))
+        {
+            let id = meta.watch_id.clone();
+            match self.launch_stream(meta).await {
+                Ok(()) => {
+                    ok += 1;
+                    tracing::info!(target: "ws_stream", watch_id = %id, "watch relaunched after credentials were registered");
+                }
+                Err(e) => {
+                    tracing::warn!(target: "ws_stream", watch_id = %id, error = %e, "watch relaunch failed");
+                }
+            }
+        }
+        ok
+    }
+
     /// Build the spec from config and hand it to the transport; register the meta.
     async fn launch_stream(&self, meta: StreamWatchMeta) -> InfraResult<()> {
         let Some(port) = &self.ws_stream else {
