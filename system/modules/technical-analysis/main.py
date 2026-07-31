@@ -1082,7 +1082,7 @@ def main():
         }}, ensure_ascii=False))
         return
 
-    if action == "signals":
+    if action in ("signals", "backtest"):
         # 데이 트레이딩 뷰 — 마지막 거래일 봉만. 시계·타임존에 의존하지 않고 **데이터의 최신
         # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
         # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
@@ -1371,6 +1371,22 @@ def main():
         # this window alone, so they change whenever the window does. Whoever holds the accumulated
         # record should present them; the records below are the material for it.
         blocks.append({"type": "paper_trades", "props": {"records": trades}})
+        if action == "backtest":
+            # Same computation, different question. `signals` is asked "what fired, and where do
+            # I draw it"; `backtest` is asked "would this rule have made money" — so the numbers
+            # come first and the chart coordinates are dropped. Keeping it an alias rather than a
+            # separate path means the rule that gets measured is exactly the rule that trades.
+            print(json.dumps({"success": True, "data": {
+                "backtest": backtest,
+                "barRange": bar_range,
+                "counts": {"buy": len(buy), "sell": len(sell)},
+                "trades": trades,
+                "note": (
+                    "체결 수가 적으면 승률·수익률은 우연과 구분되지 않습니다. 고른 구간에서만 "
+                    "좋은 규칙을 피하려면 `barRange` 로 한 구간에서 고르고 다른 구간에서 채점하세요."
+                ),
+            }}, ensure_ascii=False))
+            return
         print(json.dumps({"success": True, "data": {
             "barRange": bar_range,
             "blocks": blocks,

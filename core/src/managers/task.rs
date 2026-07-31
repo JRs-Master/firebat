@@ -151,13 +151,33 @@ impl PipelineStep {
 ///   (`tool`→TOOL_CALL, `path`→EXECUTE, `url`→NETWORK_REQUEST, `server`→MCP_CALL,
 ///    `instruction`→LLM_TRANSFORM — unambiguous keys only, never guesses otherwise)
 /// - a lowercase/mixed-case `type` string is canonicalized to UPPER_SNAKE
-/// Never overwrites a present, already-uppercase type.
+/// Never overwrites a present, already-uppercase type. Applies to FOREACH bodies too — whatever
+/// wrote the outer steps wrote the inner ones the same way.
 pub fn normalize_pipeline_dialect(args: &mut serde_json::Map<String, serde_json::Value>) {
     let Some(serde_json::Value::Array(steps)) = args.get_mut("pipeline") else {
         return;
     };
+    normalize_steps(steps);
+}
+
+fn normalize_steps(steps: &mut Vec<serde_json::Value>) {
     for step in steps {
+        // A step that arrived as a JSON *string* — the model serialised each element instead of
+        // the array (2026-08-01: every step of a sweep pipeline came through quoted, and the
+        // deserializer's "expected internally tagged enum" told the model nothing it could act
+        // on). Same class as the stringified-field absorber in ModuleManager: the intent is
+        // unambiguous, so parse it rather than teach it.
+        if let serde_json::Value::String(raw) = &*step {
+            if let Ok(parsed @ serde_json::Value::Object(_)) =
+                serde_json::from_str::<serde_json::Value>(raw.trim())
+            {
+                *step = parsed;
+            }
+        }
         let Some(o) = step.as_object_mut() else { continue };
+        if let Some(serde_json::Value::Array(inner)) = o.get_mut("steps") {
+            normalize_steps(inner);
+        }
         if let Some(serde_json::Value::String(t)) = o.get_mut("type") {
             let up = t.to_uppercase();
             if up != *t {
@@ -983,6 +1003,27 @@ mod tests {
             }
             other => panic!("wrong variant: {}", other.step_type()),
         }
+    }
+
+    #[test]
+    fn stringified_steps_are_absorbed_including_inside_a_loop() {
+        // What actually arrived: every element serialised as a string, FOREACH body included.
+        let mut args = serde_json::Map::new();
+        args.insert("pipeline".into(), json!([
+            r#"{"type":"TOOL_CALL","tool":"sysmod_yfinance","inputData":{"action":"history"}}"#,
+            {
+                "type": "foreach",
+                "items": "$step1.runs",
+                "steps": [r#"{"type":"tool_call","tool":"sysmod_technical_analysis"}"#]
+            }
+        ]));
+        normalize_pipeline_dialect(&mut args);
+        let steps: Vec<PipelineStep> =
+            serde_json::from_value(args["pipeline"].clone()).expect("should deserialize");
+        assert_eq!(steps[0].step_type(), "TOOL_CALL");
+        assert_eq!(steps[1].step_type(), "FOREACH");
+        let PipelineStep::ForEach { steps: inner, .. } = &steps[1] else { panic!() };
+        assert_eq!(inner[0].step_type(), "TOOL_CALL");
     }
 
     #[test]
