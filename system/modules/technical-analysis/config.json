@@ -220,6 +220,10 @@
       "trailingStopPct": {
         "type": "number",
         "description": "[signals] 트레일링 손절 — 진입 후 최고가 대비 %. 1분봉처럼 잔진동이 큰 주기에서는 즉시 털려 성과가 나빠질 수 있습니다(실측 확인)."
+      },
+      "barRange": {
+        "type": "object",
+        "description": "[signals] Analyse only a slice of `bars`: {from, to}. Values <= 1 are fractions of the series ({from:0, to:0.7} = oldest 70%, {from:0.7} = newest 30%), otherwise bar indices; negatives count from the end. Use it to fit a rule on one window and score it on another — a rule measured on the same bars it was chosen from tells you nothing about the next ones. `barRange` applies before `lastSessionOnly`."
       }
     }
   },

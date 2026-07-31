@@ -102,6 +102,50 @@ def _bars(data):
     return out
 
 
+def _apply_bar_range(bars, bar_range, spec):
+    """Restrict the analysis to a slice of the bars.
+
+    A rule tuned on the same bars it is measured on will look excellent and mean nothing, so the
+    honest way to compare candidates is to fit on one window and score on another. Slicing has to
+    happen here because only this module holds the rows — a pipeline can wire values between steps
+    but cannot cut an array, and shipping two copies of six hundred candles to say "first 70%"
+    would cost more than the analysis.
+
+    `{from, to}` are fractions when <= 1 (`{from: 0, to: 0.7}` = the oldest 70%) and bar indices
+    otherwise. Negative values count from the end, as elsewhere in this codebase.
+    """
+    if not isinstance(spec, dict) or not bars:
+        return bars, bar_range
+    n = len(bars)
+
+    def edge(v, default):
+        if v is None:
+            return default
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return default
+        if -1.0 <= f <= 1.0 and not float(f).is_integer():
+            idx = int(round(f * n)) if f >= 0 else n + int(round(f * n))
+        else:
+            idx = int(f) if f >= 0 else n + int(f)
+        return max(0, min(n, idx))
+
+    start = edge(spec.get("from"), 0)
+    end = edge(spec.get("to"), n)
+    if end <= start:
+        return bars, bar_range
+    sliced = bars[start:end]
+    if not sliced:
+        return bars, bar_range
+    return sliced, {
+        "count": len(sliced),
+        "from": sliced[0].get("date", ""),
+        "to": sliced[-1].get("date", ""),
+        "slicedFrom": bar_range.get("count", n),
+    }
+
+
 def _bars_error(data):
     """빈 결과의 **이유를 말하는** 에러. 옛 메시지("bars 가 비어 있거나 close 를 읽을 수
     없습니다")는 둘 중 무엇인지도, 무엇을 봤는지도 안 알려줘서 호출자가 고칠 수가 없었다
@@ -1043,6 +1087,7 @@ def main():
         # 날짜**로 자른다(장 시작 전엔 전일이 마지막 세션이라 그대로 맞다). 지표는 잘린 구간만
         # 보고 계산하므로 warmup 이 부족할 수 있다 — 그 사실을 응답에 밝힌다.
         prev_close = _prev_session_close(bars)
+        bars, bar_range = _apply_bar_range(bars, bar_range, inp.get("barRange"))
         bars, bar_range = _last_session(bars, bar_range) if inp.get("lastSessionOnly") else (bars, bar_range)
         # **규칙은 데이터로 받는다.** 전략을 모듈 코드에 넣으면 그 순간 프레임워크가 투자 의견을
         # 갖게 되고, 사용자가 바꾸려면 배포를 해야 한다. 여기가 하는 일은 딱 두 가지 —

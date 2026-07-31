@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import at_engine as eng          # noqa: E402
 import at_store as store         # noqa: E402
+import at_sweep as sweep         # noqa: E402
 
 
 def read_input():
@@ -440,6 +441,39 @@ def action_selftest():
                    "got": drift, "ok": drift == []})
     conn.close()
 
+    plan = sweep.plan_sweep({"space": {"families": ["ma-cross"], "fast": [5], "slow": [20, 60]}})
+    checks.append({"name": "a sweep plans two windows per candidate", "want": [2, 4],
+                   "got": [len(plan["candidates"]), plan["runCount"]],
+                   "ok": len(plan["candidates"]) == 2 and plan["runCount"] == 4})
+    windows = sorted({r["window"] for r in plan["runs"]})
+    checks.append({"name": "fitted on one window, scored on another", "want": ["holdout", "train"],
+                   "got": windows, "ok": windows == ["holdout", "train"]})
+
+    def bt(ret, trades, mdd=0.0):
+        return {"success": True, "data": {"backtest": {
+            "totalReturnPct": ret, "tradeCount": trades, "maxDrawdownPct": mdd, "winRate": 50}}}
+
+    runs = [
+        {"candidateId": "thin", "window": "train"}, {"candidateId": "thin", "window": "holdout"},
+        {"candidateId": "solid", "window": "train"}, {"candidateId": "solid", "window": "holdout"},
+    ]
+    ranked = sweep.rank_sweep({
+        "runs": runs,
+        "results": [bt(90, 2), bt(80, 2), bt(20, 40), bt(18, 40)],
+    })
+    # The thin candidate posts a far bigger number and must still lose: two trades is not a result.
+    top = ranked["ranked"][0]["candidateId"]
+    checks.append({"name": "a huge return on two trades does not win", "want": "solid",
+                   "got": top, "ok": top == "solid"})
+    fitted = sweep.rank_sweep({
+        "runs": [{"candidateId": "curve", "window": "train"},
+                 {"candidateId": "curve", "window": "holdout"}],
+        "results": [bt(60, 30), bt(1, 30)],
+    })["ranked"][0]
+    checks.append({"name": "in-sample only is called out", "want": True,
+                   "got": fitted["flags"],
+                   "ok": any("out of sample" in f for f in fitted["flags"])})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -459,6 +493,10 @@ def main():
     try:
         if action == "selftest":
             return out(action_selftest())
+        if action == "plan_sweep":
+            return out({"success": True, "data": sweep.plan_sweep(inp)})
+        if action == "rank_sweep":
+            return out({"success": True, "data": sweep.rank_sweep(inp)})
         if action == "cycle":
             return out(action_cycle(inp, settings))
         if action == "reconcile":
