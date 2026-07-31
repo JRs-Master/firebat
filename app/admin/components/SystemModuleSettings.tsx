@@ -721,8 +721,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     );
   }
 
-  // 로딩 중이거나 설정 필드가 없는 모듈
-  if (!loading && schema && schema.fields.length === 0) {
+  // 로딩 중이거나 설정 필드가 없는 모듈 — 계좌 등록 모듈은 필드 0 이어도 계좌 편집기가 본문이다
+  // (앱키 입력칸이 계좌 안으로 들어가면서 필드가 비었을 뿐, 설정할 게 없는 게 아니다).
+  if (!loading && schema && schema.fields.length === 0 && !declaresAccounts) {
     return (
       <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
         <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
