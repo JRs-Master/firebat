@@ -23,8 +23,11 @@ things that a plain "sort by return" does not:
 import itertools
 
 # A sweep is a multiplier: three lists of four values is 64 runs, each a module spawn. The cap is
-# a hard stop rather than a suggestion, and what it dropped gets reported.
-MAX_CANDIDATES = 60
+# a hard stop rather than a suggestion, and what it dropped gets reported. It is half the
+# pipeline's FOREACH limit (100) on purpose — each candidate is two runs, so a higher number here
+# would have the tail measured on one window only, which is the comparison this whole layer exists
+# to avoid.
+MAX_CANDIDATES = 50
 # Below this a win rate is a coin flip with extra steps.
 MIN_TRADES = 8
 
@@ -217,6 +220,14 @@ def rank_sweep(inp):
     """Turn the sweep's results into a ranking, with the caveats attached to the rows themselves."""
     results = inp.get("results") or []
     runs = inp.get("runs") or []
+    # Results are matched to runs by position, so a length mismatch silently mislabels every row
+    # after the gap — a loop that stopped early or a truncated list must be said out loud.
+    mismatch = (
+        f"{len(results)} results for {len(runs)} planned runs — the loop did not finish, "
+        "so rows below may be matched to the wrong candidate"
+        if runs and len(results) != len(runs)
+        else None
+    )
     by_candidate = {}
 
     for i, res in enumerate(results):
@@ -306,6 +317,7 @@ def rank_sweep(inp):
         "ranked": ranked,
         "winner": winner,
         "blocks": blocks,
+        "warning": mismatch,
         "note": (
             "Ranked on the holdout window, not the one the rules were picked from. A backtest "
             "measures what a rule would have done, which is not what it will do — treat a flagged "

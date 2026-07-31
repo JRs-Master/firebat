@@ -200,7 +200,7 @@ impl RealTaskExecutor {
                 .module
                 .as_ref()
                 .expect("resolve_sysmod_module returned Some without module manager");
-            let result = mm.run(&module_name, args).await?;
+            let result = mm.run_for_pipeline(&module_name, args).await?;
             return Ok(serde_json::to_value(&result).unwrap_or(serde_json::Value::Null));
         }
         let name = self.tools.canonical_name(tool);
@@ -252,7 +252,11 @@ impl TaskExecutor for RealTaskExecutor {
         self.unattended_module_gate(path, input, false).await?;
         let result = self
             .sandbox
-            .execute(path, input, &SandboxExecuteOpts::default())
+            .execute(
+                path,
+                input,
+                &SandboxExecuteOpts { keep_full_rows: true, ..Default::default() },
+            )
             .await;
 
         // 성공 → 그대로 반환
@@ -282,7 +286,11 @@ impl TaskExecutor for RealTaskExecutor {
                     ));
                     match self
                         .sandbox
-                        .execute(&alt_path, input, &SandboxExecuteOpts::default())
+                        .execute(
+                            &alt_path,
+                            input,
+                            &SandboxExecuteOpts { keep_full_rows: true, ..Default::default() },
+                        )
                         .await
                     {
                         Ok(out) if out.success => {

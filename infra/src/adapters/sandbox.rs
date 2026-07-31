@@ -574,6 +574,16 @@ impl ProcessSandboxAdapter {
         module_name: &str,
         input_action: &str,
     ) -> serde_json::Value {
+        Self::apply_auto_cache_opts(data, cache, module_name, input_action, false)
+    }
+
+    pub(crate) fn apply_auto_cache_opts(
+        data: serde_json::Value,
+        cache: &SysmodCacheAdapter,
+        module_name: &str,
+        input_action: &str,
+        keep_full_rows: bool,
+    ) -> serde_json::Value {
         const AUTO_CACHE_THRESHOLD: usize = 30;
         const AUTO_CACHE_PREVIEW: usize = 5;
         const TEXT_CACHE_THRESHOLD: usize = 8000;
@@ -613,7 +623,7 @@ impl ProcessSandboxAdapter {
                 None,
             ) {
                 Ok(key) => {
-                    let truncated = total_count >= AUTO_CACHE_THRESHOLD;
+                    let truncated = total_count >= AUTO_CACHE_THRESHOLD && !keep_full_rows;
                     if truncated {
                         if let Some(arr) = Self::value_at_path_mut(&mut obj, &field_path)
                             .and_then(|v| v.as_array_mut())
@@ -2031,7 +2041,13 @@ impl ProcessSandboxAdapter {
             if opts.skip_auto_cache {
                 data
             } else {
-                Self::apply_auto_cache(data, cache, module_name, input_action)
+                Self::apply_auto_cache_opts(
+                    data,
+                    cache,
+                    module_name,
+                    input_action,
+                    opts.keep_full_rows,
+                )
             }
         } else {
             data
@@ -2377,6 +2393,23 @@ mod tests {
 
     fn make_cache(dir: &std::path::Path) -> Arc<SysmodCacheAdapter> {
         Arc::new(SysmodCacheAdapter::new(dir.join("cache")).unwrap())
+    }
+
+    #[test]
+    fn keep_full_rows_caches_without_cutting() {
+        // The pipeline case: the next step needs every row, and still wants the key so it can
+        // pass that on instead.
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        let items: Vec<serde_json::Value> = (0..40).map(|i| serde_json::json!({"i": i})).collect();
+        let data = serde_json::json!({"items": items});
+        let out = ProcessSandboxAdapter::apply_auto_cache_opts(
+            data, cache.as_ref(), "autotrade", "plan_sweep", true,
+        );
+        assert_eq!(out["items"].as_array().unwrap().len(), 40);
+        assert!(out["_cacheKey"].is_string());
+        assert_eq!(out["_cacheMeta"]["truncated"], false);
+        assert_eq!(out["_cacheMeta"]["totalCount"], 40);
     }
 
     #[test]

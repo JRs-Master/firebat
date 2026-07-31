@@ -861,6 +861,15 @@ pub struct SandboxExecuteOpts {
     /// pipeline) keep the default `false`.
     #[serde(default)]
     pub skip_auto_cache: bool,
+    /// Attach the cache key but leave the rows inline.
+    ///
+    /// Truncation protects the MODEL's context. A pipeline step's output is read by the next
+    /// step, so cutting it to five rows is data loss with no upside — and silent, because the
+    /// step still succeeds (2026-08-01: a sweep planned 120 runs, the next step saw 5, and the
+    /// result looked like a small sweep rather than a broken one). The key is still attached,
+    /// since a later step may want to pass it on rather than the rows.
+    #[serde(default)]
+    pub keep_full_rows: bool,
 }
 
 /// Declarative timeseries-store spec — all data, zero provider knowledge (TokenProvider /

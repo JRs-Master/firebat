@@ -169,11 +169,36 @@ impl ModuleManager {
         self.run_impl(module_name, input_data, true).await
     }
 
+    /// Pipeline run — cache attached, rows kept whole.
+    ///
+    /// A step's output is read by the next step, not by a model, so the five-row preview that
+    /// protects context is pure data loss here and a silent one: the step succeeds and the next
+    /// step quietly works on a fraction (2026-08-01: 120 planned sweep runs became 5). The key is
+    /// still attached, because a later step may prefer to pass it on.
+    pub async fn run_for_pipeline(
+        &self,
+        module_name: &str,
+        input_data: &serde_json::Value,
+    ) -> InfraResult<ModuleOutput> {
+        self.run_impl_opts(module_name, input_data, false, true).await
+    }
+
     async fn run_impl(
         &self,
         module_name: &str,
         input_data: &serde_json::Value,
         skip_auto_cache: bool,
+    ) -> InfraResult<ModuleOutput> {
+        self.run_impl_opts(module_name, input_data, skip_auto_cache, false)
+            .await
+    }
+
+    async fn run_impl_opts(
+        &self,
+        module_name: &str,
+        input_data: &serde_json::Value,
+        skip_auto_cache: bool,
+        keep_full_rows: bool,
     ) -> InfraResult<ModuleOutput> {
         if !is_safe_name(module_name) {
             return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
@@ -500,6 +525,7 @@ impl ModuleManager {
                 // 비명시·limit 호출 = None (기존 30분 ephemeral 경로 그대로).
                 let mut exec_opts = SandboxExecuteOpts {
                     skip_auto_cache,
+                    keep_full_rows,
                     ..SandboxExecuteOpts::default()
                 };
                 // Per-call timeout — a module that composes others holds its process open while
