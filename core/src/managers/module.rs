@@ -1257,15 +1257,15 @@ impl ModuleManager {
         make_primary: bool,
     ) -> Result<(), String> {
         let id = entry.id.trim().to_string();
-        // The alias IS the account's name, so it may be Korean — it only has to survive being part
-        // of a vault key and a tool argument. `@` separates the key, whitespace and control
-        // characters make the alias unquotable in an error message.
+        // The alias IS the account's name, so it takes whatever the user calls the account —
+        // Korean, spaces, punctuation. It only has to survive being part of a vault key (`@`
+        // separates it) and being quoted back in an error, so those two are the whole rule.
         if id.is_empty()
-            || id.len() > 60
+            || id.chars().count() > 60
             || id.contains('@')
-            || id.chars().any(|c| c.is_whitespace() || c.is_control())
+            || id.chars().any(char::is_control)
         {
-            return Err("account alias must be non-empty, under 60 bytes, and contain no '@' or whitespace".to_string());
+            return Err("account alias must be non-empty, at most 60 characters, and contain no '@'".to_string());
         }
         let config = self
             .module_config(module)

@@ -493,7 +493,9 @@
       "delete_confirm": "This deletes the account and the app keys stored under it.",
       "empty": "No accounts registered yet.",
       "cancel": "Cancel",
-      "market_both": "Both"
+      "market_both": "Both",
+      "alias_no_at": "The alias cannot contain '@'.",
+      "alias_too_long": "The alias can be at most 60 characters."
     }
   },
   "calendar": {

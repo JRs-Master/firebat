@@ -256,6 +256,17 @@ mod tests {
     }
 
     #[test]
+    fn an_alias_is_a_name_so_it_may_hold_spaces() {
+        // Only `@` is structural. A vault key is an opaque string, so "모의 국내" is a key like
+        // any other — refusing spaces would only make the user rename their own account.
+        assert_eq!(
+            secret_key("KIS_APP_KEY", Some("모의 국내"), false),
+            "user:KIS_APP_KEY@모의 국내"
+        );
+        assert_eq!(account_of("user:KIS_APP_KEY@모의 국내"), Some("모의 국내"));
+    }
+
+    #[test]
     fn blank_account_falls_back_to_the_unscoped_key() {
         assert_eq!(secret_key("K", Some(""), false), "user:K");
         assert_eq!(secret_key("K", Some("   "), false), "user:K");

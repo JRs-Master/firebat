@@ -493,7 +493,9 @@
       "delete_confirm": "이 계좌와 저장된 앱키를 함께 삭제합니다.",
       "empty": "등록된 계좌가 없습니다.",
       "cancel": "취소",
-      "market_both": "둘 다"
+      "market_both": "둘 다",
+      "alias_no_at": "별칭에 @ 는 넣을 수 없습니다.",
+      "alias_too_long": "별칭은 60자까지 입력하실 수 있습니다."
     }
   },
   "calendar": {

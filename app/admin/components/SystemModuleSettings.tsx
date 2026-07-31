@@ -1149,6 +1149,16 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
     setDraft(d => (d ? { ...d, markets: choice === BOTH_MARKETS ? [...markets] : [choice] } : d));
   };
 
+  // The alias becomes part of a vault key, so `@` cannot be in it — said at the input rather than
+  // after a save round trip, since the user cannot guess the rule from a rejected form.
+  const aliasError = !draft
+    ? null
+    : draft.id.includes('@')
+      ? t('system_modules.accounts.alias_no_at')
+      : draft.id.length > 60
+        ? t('system_modules.accounts.alias_too_long')
+        : null;
+
   const inputClass =
     'px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
@@ -1215,8 +1225,10 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
               <input
                 value={draft.id}
                 onChange={e => setDraft(d => (d ? { ...d, id: e.target.value } : d))}
-                className={inputClass}
+                className={aliasError ? `${inputClass} border-rose-300 focus:ring-rose-500 focus:border-rose-500` : inputClass}
+                aria-invalid={!!aliasError}
               />
+              {aliasError && <span className="text-[11px] font-medium text-rose-600">{aliasError}</span>}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-bold text-slate-600">{t('system_modules.accounts.mode')}</span>
@@ -1290,14 +1302,14 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
             </button>
             <button
               onClick={() => save(true)}
-              disabled={saving || !draft.id.trim()}
+              disabled={saving || !draft.id.trim() || !!aliasError}
               className="px-3 py-1.5 text-[12px] font-bold text-blue-600 hover:bg-blue-50 disabled:text-slate-300 rounded-lg transition-colors"
             >
               {t('system_modules.accounts.set_primary')}
             </button>
             <button
               onClick={() => save(false)}
-              disabled={saving || !draft.id.trim()}
+              disabled={saving || !draft.id.trim() || !!aliasError}
               className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : t('system_modules.common.save')}
