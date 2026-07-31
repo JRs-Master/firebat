@@ -13,6 +13,7 @@ import { Loader2, RefreshCw, Filter, Play, Pause } from 'lucide-react';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { logger } from '../../../lib/util/logger';
+import { FeedbackBadge } from './FeedbackBadge';
 import { useTranslations } from '../../../lib/i18n';
 
 interface LogEntry {
@@ -81,7 +82,12 @@ export function LogPanel() {
     parts.push(...Object.entries(overrides).map(([m, lv]) => `${m}=${lv}`));
     return parts.join(',');
   }, [baseLevel, overrides]);
-  const [filterMsg, setFilterMsg] = useState<string | null>(null);
+  // Same transient badge every other settings action uses, rather than a line of text that stays
+  // on screen until something else replaces it.
+  const [applyState, setApplyState] = useState<'ok' | 'err' | 'loading' | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const applyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (applyTimer.current) clearTimeout(applyTimer.current); }, []);
   // Tail cursor — the newest ts seen, so each poll asks only for what is after it. A ref rather
   // than state so consecutive ticks cannot race.
   const lastTsRef = useRef(0);
@@ -201,19 +207,27 @@ export function LogPanel() {
   useEffect(() => { void loadState(); }, [loadState]);
 
   const applyFilter = useCallback(async () => {
-    setFilterMsg(null);
+    if (applyTimer.current) clearTimeout(applyTimer.current);
+    setApplyError(null);
+    setApplyState('loading');
     try {
       const data = await apiPost<{ success?: boolean; error?: string }>(
         '/api/logs',
         { filter: filterStr.trim() || 'info' },
         { category: 'logs' },
       );
-      setFilterMsg(data?.success ? t('common.log_applied') : (data?.error || t('common.log_apply_failed')));
+      const ok = Boolean(data?.success);
+      setApplyState(ok ? 'ok' : 'err');
+      // A rejected directive says WHY, and that message has to stay long enough to read — the badge
+      // alone would clear it in a second and leave the filter silently unapplied.
+      if (!ok) setApplyError(data?.error ?? null);
+      applyTimer.current = setTimeout(() => setApplyState(null), ok ? 1500 : 4000);
     } catch (e) {
-      setFilterMsg(t('common.log_apply_failed'));
+      setApplyState('err');
+      applyTimer.current = setTimeout(() => setApplyState(null), 4000);
       logger.error('logs', 'log filter apply failed', e);
     }
-  }, [filterStr, t]);
+  }, [filterStr]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -301,8 +315,15 @@ export function LogPanel() {
           >
             <Filter size={13} /> {t('common.log_apply')}
           </button>
+          <FeedbackBadge
+            state={applyState}
+            okLabel={t('common.log_applied')}
+            errLabel={t('common.log_apply_failed')}
+          />
         </div>
-        {filterMsg && <span className="text-[11px] text-slate-500">{filterMsg}</span>}
+        {applyState === 'err' && applyError && (
+          <span className="text-[11px] text-red-600">{applyError}</span>
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
