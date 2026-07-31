@@ -246,6 +246,7 @@ def rank_sweep(inp):
         if primary is None:
             continue
         trades = int(primary.get("tradeCount") or 0)
+        bench = primary.get("buyHoldPct")
         row = {
             "candidateId": cid,
             "score": _score(primary),
@@ -254,8 +255,18 @@ def rank_sweep(inp):
             "maxDrawdownPct": round(float(primary.get("maxDrawdownPct") or 0.0), 2),
             "winRate": round(float(primary.get("winRate") or 0.0), 1),
             "trades": trades,
+            "buyHoldPct": round(float(bench), 2) if bench is not None else None,
             "flags": [],
         }
+        # A rule that trails the thing it trades has not earned a place, however large its number
+        # looks — in a year the stock tripled, "+138%" was underperformance.
+        if bench is not None:
+            ret = float(primary.get("totalReturnPct") or 0.0)
+            row["vsBuyHoldPct"] = round(ret - float(bench), 2)
+            if ret < float(bench):
+                row["flags"].append(
+                    f"buy & hold made {float(bench):.1f}% over the same bars — this rule lost to doing nothing"
+                )
         if trades < MIN_TRADES:
             noun = "trade" if trades == 1 else "trades"
             row["flags"].append(f"only {trades} {noun} — not enough to tell skill from luck")
@@ -280,10 +291,11 @@ def rank_sweep(inp):
         "type": "table",
         "props": {
             "title": "백테스트 성적",
-            "columns": ["전략", "점수", "검증 수익률", "학습 수익률", "최대낙폭", "승률", "체결", "경고"],
+            "columns": ["전략", "점수", "검증 수익률", "보유 대비", "학습 수익률",
+                        "최대낙폭", "승률", "체결", "경고"],
             "rows": [[
                 r["candidateId"], r["score"],
-                r["holdoutReturnPct"], r["trainReturnPct"],
+                r["holdoutReturnPct"], r.get("vsBuyHoldPct"), r["trainReturnPct"],
                 r["maxDrawdownPct"], r["winRate"], r["trades"],
                 "; ".join(r["flags"]) or "—",
             ] for r in ranked[:20]],

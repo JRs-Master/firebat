@@ -1294,6 +1294,12 @@ def main():
             "bestPct": max((t["returnPct"] for t in trades), default=None),
             "worstPct": min((t["returnPct"] for t in trades), default=None),
             "maxDrawdownPct": round(mdd * 100, 4) if trades else None,
+            # What holding the thing would have done over the same bars. A return without this is
+            # not a result: a rule that made 138% in a window where the stock made 189% lost money
+            # against doing nothing, and the raw number reads like a triumph (measured 2026-08-01,
+            # 삼성전자 1년). Always the same window the rules were evaluated on.
+            "buyHoldPct": round((bars[-1]["close"] / bars[0]["close"] - 1) * 100, 4)
+                          if len(bars) > 1 and bars[0].get("close") else None,
             "feeRate": fee, "taxRate": tax, "slippageRate": slip,
             "stopLossPct": stop_pct * 100, "takeProfitPct": take_pct * 100,
             "trailingStopPct": trail_pct * 100,
