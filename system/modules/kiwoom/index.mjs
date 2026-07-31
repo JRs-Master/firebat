@@ -709,6 +709,11 @@ const CANDLE_FIELD_MAP = [
   ['open_pric', 'open'], ['high_pric', 'high'], ['low_pric', 'low'],
   ['cur_prc', 'close'], ['trde_qty', 'volume'],
 ];
+// Signed change against the previous session's close — `pred_pre` keeps its sign, unlike prices.
+function kiwoomSigned(v) {
+  const n = Number(String(v ?? '').replace(/^\+/, ''));
+  return Number.isFinite(n) ? n : null;
+}
 function normalizeCandleRows(obj, depth = 0) {
   if (!obj || typeof obj !== 'object' || depth > 2) return;
   for (const v of Object.values(obj)) {
@@ -716,6 +721,19 @@ function normalizeCandleRows(obj, depth = 0) {
       for (const row of v) {
         if (!row || typeof row !== 'object') continue;
         if (!(('dt' in row || 'cntr_tm' in row) && 'open_pric' in row)) continue;
+        // The previous session's official close, before the price keys are renamed.
+        //
+        // Every consumer wants this number and none of them can derive it: reading "the last bar of
+        // the previous calendar day" out of a minute series gives an AFTER-HOURS print, because
+        // `_AL` (SOR) covers NXT and NXT trades until 20:00. That is how SK Hynix came to show
+        // +23.11% against 1,359,000 when the close was 1,322,000 (2026-07-31). The broker states it
+        // on every candle as `pred_pre`; the module that knows that vocabulary converts it, so no
+        // consumer has to guess at session hours.
+        const chg = kiwoomSigned(row.pred_pre);
+        const cur = Number(String(row.cur_prc ?? '').replace(/^[+\-]/, ''));
+        if (chg !== null && Number.isFinite(cur)) {
+          row.prevClose = cur - chg;
+        }
         for (const [src, dst] of CANDLE_FIELD_MAP) {
           if (src in row) {
             row[dst] = dst === 'date' ? kiwoomDate(row[src]) : kiwoomNum(row[src]);

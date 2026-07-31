@@ -82,6 +82,14 @@ def _bars(data):
                 row["volume"] = float(v)
             except (TypeError, ValueError):
                 pass
+        # A source that STATES the previous session's close (brokers do) is kept — deriving it from
+        # the series is guesswork once the series spans an extended session.
+        pc = _pick(b, "prevClose", "prev_close")
+        if pc is not None:
+            try:
+                row["prevClose"] = float(pc)
+            except (TypeError, ValueError):
+                pass
         out.append(row)
     # **시간 오름차순 강제.** 브로커마다 순서가 다르다 — kiwoom 분봉(ka10080)은 최신순으로 준다.
     # 순서를 믿고 계산하면 EMA·RSI·MACD 가 통째로 거꾸로 나오고, 신호 페어링도 뒤집혀
@@ -964,14 +972,23 @@ def _tail(xs, n):
 
 
 def _prev_session_close(bars):
-    """Close of the trading day before the newest one, or None when the data holds a single day.
+    """The previous session's official close — stated by the source when it says so, inferred otherwise.
 
     The live scoreboard needs a fixed baseline: a client that only carries today's bars cannot know
-    yesterday's close, and frames only carry change/changeRate while the market is open, so after
-    the close the figure would simply vanish. This comes from REST and never moves.
+    yesterday's close, and realtime frames carry change only while the market is open, so after the
+    close the figure would simply vanish.
+
+    Prefer a stated value. Inferring it as "the last bar of the previous calendar day" is wrong the
+    moment the series covers an extended session: on SOR (KRX+NXT) the last bar of yesterday is an
+    after-hours print at 18:57, not the 15:30 close, which showed SK Hynix at +23.11% against
+    1,359,000 when the real close was 1,322,000 (2026-07-31). Cutting by clock time instead would
+    put one market's trading hours into a module that must not know any.
     """
     if not bars:
         return None
+    stated = bars[-1].get("prevClose")
+    if isinstance(stated, (int, float)) and stated > 0:
+        return float(stated)
     day = bars[-1]["date"][:10]
     for b in reversed(bars):
         if b["date"][:10] != day:
