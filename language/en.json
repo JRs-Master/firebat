@@ -293,8 +293,6 @@
     "log_module_none": "none",
     "log_module_remove": "Remove",
     "log_apply": "Apply",
-    "log_applied": "Applied",
-    "log_apply_failed": "Failed",
     "log_level_filter": "Level",
     "log_level_all": "All · incl. trace",
     "log_level_at_least": "{{level}} and above",

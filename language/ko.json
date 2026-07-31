@@ -293,8 +293,6 @@
     "log_module_none": "없음",
     "log_module_remove": "해제",
     "log_apply": "적용",
-    "log_applied": "적용됨",
-    "log_apply_failed": "실패",
     "log_level_filter": "레벨 필터",
     "log_level_all": "전체 · trace 포함",
     "log_level_at_least": "{{level}} 이상",

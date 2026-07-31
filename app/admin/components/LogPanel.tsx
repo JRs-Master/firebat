@@ -9,11 +9,11 @@
  * server-side. Scope is query / filter / search / tail only — no dashboards, graphs or alerts.
  */
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Loader2, RefreshCw, Filter, Play, Pause } from 'lucide-react';
+import { Loader2, RefreshCw, Play, Pause } from 'lucide-react';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { logger } from '../../../lib/util/logger';
-import { FeedbackBadge } from './FeedbackBadge';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useTranslations } from '../../../lib/i18n';
 
 interface LogEntry {
@@ -82,9 +82,9 @@ export function LogPanel() {
     parts.push(...Object.entries(overrides).map(([m, lv]) => `${m}=${lv}`));
     return parts.join(',');
   }, [baseLevel, overrides]);
-  // Same transient badge every other settings action uses, rather than a line of text that stays
-  // on screen until something else replaces it.
-  const [applyState, setApplyState] = useState<'ok' | 'err' | 'loading' | null>(null);
+  // The button carries its own result, like every other action button in settings — no separate
+  // element to notice, and it returns to idle on its own instead of leaving text on screen.
+  const [applyState, setApplyState] = useState<SaveButtonState>('idle');
   const [applyError, setApplyError] = useState<string | null>(null);
   const applyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (applyTimer.current) clearTimeout(applyTimer.current); }, []);
@@ -209,7 +209,7 @@ export function LogPanel() {
   const applyFilter = useCallback(async () => {
     if (applyTimer.current) clearTimeout(applyTimer.current);
     setApplyError(null);
-    setApplyState('loading');
+    setApplyState('saving');
     try {
       const data = await apiPost<{ success?: boolean; error?: string }>(
         '/api/logs',
@@ -217,14 +217,14 @@ export function LogPanel() {
         { category: 'logs' },
       );
       const ok = Boolean(data?.success);
-      setApplyState(ok ? 'ok' : 'err');
-      // A rejected directive says WHY, and that message has to stay long enough to read — the badge
-      // alone would clear it in a second and leave the filter silently unapplied.
+      setApplyState(ok ? 'saved' : 'error');
+      // A rejected directive says WHY, and that message has to stay long enough to read — the button
+      // alone would return to idle and leave the filter silently unapplied.
       if (!ok) setApplyError(data?.error ?? null);
-      applyTimer.current = setTimeout(() => setApplyState(null), ok ? 1500 : 4000);
+      applyTimer.current = setTimeout(() => setApplyState('idle'), ok ? 1500 : 4000);
     } catch (e) {
-      setApplyState('err');
-      applyTimer.current = setTimeout(() => setApplyState(null), 4000);
+      setApplyState('error');
+      applyTimer.current = setTimeout(() => setApplyState('idle'), 4000);
       logger.error('logs', 'log filter apply failed', e);
     }
   }, [filterStr]);
@@ -308,20 +308,14 @@ export function LogPanel() {
           <code className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] font-mono text-slate-600 overflow-x-auto whitespace-nowrap">
             {filterStr}
           </code>
-          <button
-            type="button"
-            onClick={applyFilter}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-bold rounded-lg flex items-center gap-1.5"
-          >
-            <Filter size={13} /> {t('common.log_apply')}
-          </button>
-          <FeedbackBadge
+          <SaveButton
+            size="md"
             state={applyState}
-            okLabel={t('common.log_applied')}
-            errLabel={t('common.log_apply_failed')}
+            label={t('common.log_apply')}
+            onClick={applyFilter}
           />
         </div>
-        {applyState === 'err' && applyError && (
+        {applyState === 'error' && applyError && (
           <span className="text-[11px] text-red-600">{applyError}</span>
         )}
       </div>
