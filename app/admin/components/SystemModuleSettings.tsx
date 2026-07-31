@@ -194,11 +194,15 @@ function parseSecretEntries(secrets: SecretEntry[] | undefined): ParsedSecret[] 
 function secretsToFields(secrets: SecretEntry[], hiddenNames: Set<string>): SettingField[] {
   return parseSecretEntries(secrets)
     .filter(s => s.kind !== 'token' && !hiddenNames.has(s.name))
-    .map(({ name }) => ({
+    .map(({ name, vaultKey }) => ({
     key: `_secret_${name}`,
     label: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-    type: 'secret' as FieldType,
+    // A declared `vaultKey` means the value lives with the provider that owns it (설정 > AI). An
+    // input here would write `user:<NAME>`, which the sandbox never reads — so show where the key
+    // comes from instead of offering a box that does nothing.
+    type: (vaultKey ? 'shared-secret' : 'secret') as FieldType,
     secretName: name,
+    vaultKey,
     placeholder: name,
   }));
 }
