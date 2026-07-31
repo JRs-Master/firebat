@@ -799,11 +799,12 @@ impl ModuleManager {
 
     /// Relaunches this module's persisted watches that are not currently live.
     ///
-    /// A watch whose restore failed is only logged, so the boot order decides whether realtime
-    /// runs: credentials are registered *after* the server is up the first time, and both watches
-    /// were dropped at 05:09 for want of an account that arrived at 05:15. Registering credentials
-    /// is exactly the moment the missing thing appears, so that is when the retry belongs — no
-    /// polling, and no restart to pick up a key the process already has.
+    /// A watch whose restore failed is only logged, and nothing retries it — so a watch outlives
+    /// the credentials it was created with. Keys get rotated, revoked, re-registered, or migrated
+    /// (2026-07-31: moving kiwoom onto per-account keys dropped both quote watches at boot for
+    /// want of an account that was registered six minutes later). Recovery used to mean restarting
+    /// after the key was back. Registering credentials is the moment the missing thing appears, so
+    /// that is where the retry belongs — no polling, and no restart to use a key the process holds.
     pub async fn relaunch_missing_streams(&self, module: &str) -> usize {
         let Some(raw) = self.vault.get_secret(VK_SYSTEM_WS_WATCHES) else {
             return 0;
