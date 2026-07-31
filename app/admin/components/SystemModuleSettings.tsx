@@ -924,7 +924,6 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] sm:text-xs text-slate-400 font-medium break-all">{field.vaultKey}</p>
                   </div>
                 ) : field.type === 'oauth' ? (
                   <div className="flex flex-col gap-1.5">
