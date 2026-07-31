@@ -7,17 +7,40 @@
   "runtime": "node",
   "capability": "document-extraction",
   "secrets": [
-    { "name": "UPSTAGE_API_KEY", "vaultKey": "system:upstage:api-key" }
+    {
+      "name": "UPSTAGE_API_KEY",
+      "vaultKey": "system:upstage:api-key"
+    }
   ],
-  "tags": "영수증 receipt 가계부 명함 business-card 청구서 invoice 계약서 문서추출 구조화 JSON 스키마 information extraction",
+  "tags": [
+    "영수증",
+    "receipt",
+    "가계부",
+    "명함",
+    "business-card",
+    "청구서",
+    "invoice",
+    "계약서",
+    "문서추출",
+    "구조화",
+    "JSON",
+    "스키마",
+    "information",
+    "extraction"
+  ],
   "input": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["extract", "generate-schema"],
+        "enum": [
+          "extract",
+          "generate-schema"
+        ],
         "description": "extract = 문서를 스키마대로 구조화 JSON 추출 (schema 미지정 시 자동 생성 후 추출). generate-schema = 문서를 보고 추출 스키마만 자동 생성(반복 문서의 스키마를 한 번 만들어 재사용할 때)."
       },
       "params": {

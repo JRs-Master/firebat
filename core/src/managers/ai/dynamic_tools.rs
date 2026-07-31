@@ -120,14 +120,11 @@ impl DynamicToolRegistry {
             });
             let tool_name = format!("sysmod_{}", entry.name);
             // Description = what the module is (module selection = step 1) + declared `tags`.
-            let mut description = entry.description.clone();
-            if let Some(tag_list) = config.get("tags").and_then(|t| t.as_array()) {
-                let tags: Vec<String> =
-                    tag_list.iter().filter_map(|t| t.as_str().map(String::from)).collect();
-                if !tags.is_empty() {
-                    description = format!("{} · Tags: {}", description.trim(), tags.join(", "));
-                }
-            }
+            let description = crate::utils::module_tags::append_tags(
+                entry.description.clone(),
+                &entry.name,
+                &config,
+            );
             // L1 grounding — config 의 `grounding` 선언을 이 도구에 매핑 (있을 때만). MCP 등록 패턴과 대칭.
             let g = parse_grounding(&config);
             if let Some(ra) = config.get("requiresApproval") {

@@ -936,14 +936,9 @@ fn thin_sysmod_input_schema() -> Value {
 }
 
 /// Append declared config `tags` to a tool description (module selection = step 1 of the procedure).
-fn append_tags(desc: String, config: &Value) -> String {
-    if let Some(list) = config.get("tags").and_then(|t| t.as_array()) {
-        let tags: Vec<String> = list.iter().filter_map(|t| t.as_str().map(String::from)).collect();
-        if !tags.is_empty() {
-            return format!("{} · Tags: {}", desc.trim(), tags.join(", "));
-        }
-    }
-    desc
+/// Shares the core reader so a mis-typed declaration is reported, not dropped, on both transports.
+fn append_tags(desc: String, module: &str, config: &Value) -> String {
+    firebat_core::utils::module_tags::append_tags(desc, module, config)
 }
 
 /// Scan system/modules config.json → register ONE thin `sysmod_<name>` tool per module.
@@ -970,7 +965,8 @@ pub async fn register_sysmod_tools(
         // FC path (dynamic_tools.rs = one sysmod_<name> per module) so `search_module_actions` →
         // call resolves to a single, predictable tool name on both paths.
         let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
-        let description = append_tags(build_sysmod_description(&entry.name, &config), &config);
+        let description =
+            append_tags(build_sysmod_description(&entry.name, &config), &entry.name, &config);
         let input_schema = thin_sysmod_input_schema();
         let tool = McpTool {
             name: tool_name.clone(),
