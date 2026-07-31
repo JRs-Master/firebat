@@ -70,9 +70,17 @@ pub struct StreamWatchMeta {
     pub stream: String,
     #[serde(default)]
     pub args: serde_json::Value,
-    /// Notification channel on realtime events — currently "telegram" or absent (SSE only).
+    /// Where realtime frames go besides the event bus: `"telegram"` for a chat message, or
+    /// `"module:<name>"` to run a module on them. Absent = SSE only.
     #[serde(default)]
     pub notify: Option<String>,
+    /// Action name for a `module:` sink (default `on_stream_event`).
+    #[serde(default)]
+    pub notify_action: Option<String>,
+    /// Floor between two sink runs for this watch. Ticks arrive faster than a process can start,
+    /// so frames in between are coalesced into the next run rather than spawning per frame.
+    #[serde(default)]
+    pub notify_min_interval_ms: Option<u64>,
     #[serde(default)]
     pub label: Option<String>,
     #[serde(default)]
@@ -494,6 +502,66 @@ impl ModuleManager {
                     skip_auto_cache,
                     ..SandboxExecuteOpts::default()
                 };
+                // Per-call timeout — a module that composes others holds its process open while
+                // each callee runs, so the 60s default is the caller's whole budget rather than
+                // one API round trip.
+                if let Some(ms) = config
+                    .as_ref()
+                    .and_then(|c| c.get("timeoutMs"))
+                    .and_then(|v| v.as_u64())
+                {
+                    exec_opts.timeout_ms = Some(ms.clamp(1_000, 600_000));
+                }
+                // A module that declared `dependencies` gets a token scoped to exactly that
+                // declaration, alive only while this process runs. Everything else gets nothing —
+                // the absence of the env var is how a module knows the path is unavailable.
+                let _call_guard = config
+                    .as_ref()
+                    .and_then(crate::utils::module_call::parse_dependencies)
+                    .map(|deps| {
+                        let parent = crate::utils::module_call::active();
+                        let depth = parent.as_ref().map(|p| p.depth + 1).unwrap_or(0);
+                        let mut chain = parent
+                            .as_ref()
+                            .map(|p| p.chain.clone())
+                            .unwrap_or_default();
+                        chain.push(module_name.to_string());
+                        // Approval is inherited, never granted here: a scheduled run carries it,
+                        // an interactive one does not, and a nested call carries whatever its
+                        // parent had.
+                        let approved = crate::utils::cron_context::is_cron_context_active()
+                            || parent.map(|p| p.approved).unwrap_or(false);
+                        let lifetime = exec_opts.timeout_ms.unwrap_or(60_000) as i64;
+                        let (guard, token) = crate::utils::module_call::ModuleCallGuard::enter(
+                            module_name.to_string(),
+                            chain,
+                            depth,
+                            deps,
+                            approved,
+                            lifetime,
+                        );
+                        exec_opts
+                            .env
+                            .insert("FIREBAT_RPC_URL".to_string(), module_rpc_url());
+                        exec_opts
+                            .env
+                            .insert("FIREBAT_RPC_TOKEN".to_string(), token);
+                        exec_opts
+                            .env
+                            .insert("FIREBAT_MODULE_NAME".to_string(), module_name.to_string());
+                        exec_opts.env.insert(
+                            "FIREBAT_UNATTENDED".to_string(),
+                            if approved { "1" } else { "0" }.to_string(),
+                        );
+                        tracing::debug!(
+                            target: "module_call",
+                            module = %module_name,
+                            depth,
+                            approved,
+                            "module-call token issued"
+                        );
+                        guard
+                    });
                 if let Some(ts_cfg) = config.as_ref().and_then(|c| c.get("timeseries")) {
                     let action = input_data
                         .get("action")
@@ -509,6 +577,33 @@ impl ModuleManager {
                 self.sandbox.execute(&target, input_data, &exec_opts).await?
             }
         };
+
+        // Approval-gated actions get their response logged in full, once, here.
+        //
+        // Order acknowledgement schemas are not documented anywhere we can trust, and the two
+        // places a response would otherwise survive both lose it: the sandbox log keeps a 156-char
+        // preview, and the result cache expires in thirty minutes. Without this line, "collect the
+        // shapes from the logs later" is not a plan — there is nothing in the log to collect. The
+        // volume is self-limiting: these are orders, not queries.
+        if let Some(cfg) = &config {
+            let action = input_data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            if !action.is_empty()
+                && crate::utils::pending_tools::requires_approval_value(
+                    cfg.get("requiresApproval").unwrap_or(&serde_json::Value::Null),
+                    action,
+                )
+            {
+                tracing::info!(
+                    target: "module_order",
+                    module = %module_name,
+                    action = %action,
+                    success = result.success,
+                    request = %serde_json::to_string(input_data).unwrap_or_default(),
+                    response = %serde_json::to_string(&result.data).unwrap_or_default(),
+                    "approval-gated action response"
+                );
+            }
+        }
 
         // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택).
         // success:false 응답 (outErr 호출 경로) = envelope `{success:false, errorKey, errorParams}`
@@ -666,6 +761,8 @@ impl ModuleManager {
         stream_key: &str,
         args: &serde_json::Value,
         notify: Option<String>,
+        notify_action: Option<String>,
+        notify_min_interval_ms: Option<u64>,
         label: Option<String>,
         mock: bool,
     ) -> InfraResult<serde_json::Value> {
@@ -708,6 +805,8 @@ impl ModuleManager {
             stream: stream_key.to_string(),
             args: args.clone(),
             notify,
+            notify_action,
+            notify_min_interval_ms,
             label,
             mock,
             created_ms: chrono::Utc::now().timestamp_millis(),
@@ -1192,6 +1291,15 @@ impl ModuleManager {
         }
     }
 
+    /// The module's declared `capability` — the gate resolves a capability allowlist through this.
+    pub async fn capability_of(&self, module: &str) -> Option<String> {
+        self.module_config(module)
+            .await?
+            .get("capability")?
+            .as_str()
+            .map(String::from)
+    }
+
     /// Accounts registered for this module (the index, never the credentials).
     pub fn account_registry(&self, module: &str) -> crate::utils::account_secrets::AccountRegistry {
         crate::utils::account_secrets::AccountRegistry::load(self.vault.as_ref(), module)
@@ -1626,6 +1734,18 @@ impl ModuleManager {
 // 시니어 audit 결과 설정된 module I/O contract 강제. config.json 의 input/output schema
 // 형태가 JSON Schema 와 호환 (type/properties/required/enum/etc) 이므로 jsonschema
 // crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
+
+/// Where a module reaches the framework back. Always loopback: `FIREBAT_MCP_LISTEN` may bind
+/// `0.0.0.0` for external MCP clients, but a child process on this host has no business leaving it.
+fn module_rpc_url() -> String {
+    let listen = std::env::var("FIREBAT_MCP_LISTEN").unwrap_or_default();
+    let port = listen
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.trim().parse::<u16>().ok())
+        .unwrap_or(50052);
+    format!("http://127.0.0.1:{port}/mcp")
+}
 
 /// hub 프레임워크가 도구 호출 args 에 자동 주입하는 예약 메타 키 (owner/hubOwner/_hubScope/project).
 /// 모듈 본체는 이 키들(특히 `_hubScope` = 데이터 디렉토리 hub-scope 분기)을 받아 쓰지만, config.json 의

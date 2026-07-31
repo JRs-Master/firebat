@@ -697,7 +697,9 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     "module": {"type": "string", "description": "module name (e.g. kiwoom)"},
                     "stream": {"type": "string", "description": "stream key declared under the module's ws.streams"},
                     "args": {"type": "object", "description": "stream template params (e.g. {seq})"},
-                    "notify": {"type": "string", "enum": ["telegram", "none"], "description": "notification channel on realtime events (default none = event bus only)"},
+                    "notify": {"type": "string", "description": "Where frames go besides the event bus. 'telegram' sends a chat message; 'module:<name>' runs that module on the frames (it must be enabled). Omit or 'none' = event bus only."},
+                    "notifyAction": {"type": "string", "description": "Action to call for a module: sink (default on_stream_event)."},
+                    "notifyMinIntervalMs": {"type": "integer", "description": "Floor between two sink runs for this watch. Frames arriving inside the window are coalesced into the next run instead of starting a process each — set this for tick streams (e.g. 3000)."},
                     "label": {"type": "string", "description": "human-readable label used in notifications"},
                     "mock": {"type": "boolean"}
                 },
@@ -724,9 +726,22 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty() && *s != "none")
                     .map(String::from);
+                let notify_action = args
+                    .get("notifyAction")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let notify_min_interval_ms = args
+                    .get("notifyMinIntervalMs")
+                    .and_then(|v| v.as_u64());
                 let label = args.get("label").and_then(|v| v.as_str()).map(String::from);
                 let mock = args.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
-                match module.start_stream(&m, &stream, &wargs, notify, label, mock).await {
+                match module
+                    .start_stream(
+                        &m, &stream, &wargs, notify, notify_action, notify_min_interval_ms, label, mock,
+                    )
+                    .await
+                {
                     Ok(v) => Ok(serde_json::json!({"success": true, "watch": v})),
                     Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
                 }

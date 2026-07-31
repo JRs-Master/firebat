@@ -10,7 +10,8 @@
   "accounts": {
     "modes": ["real", "mock"],
     "markets": ["kr", "us"],
-    "listAction": "ka00001"
+    "listAction": "ka00001",
+    "accountNoPath": "acctNo"
   },
   "secrets": [
     {

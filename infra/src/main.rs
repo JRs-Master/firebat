@@ -450,12 +450,93 @@ async fn main() -> Result<()> {
     {
         let event_manager = event_manager.clone();
         let mm = module_manager.clone();
+        // Per-watch coalescing state for `module:` sinks.
+        #[derive(Default)]
+        struct SinkSlot {
+            running: bool,
+            pending: Vec<serde_json::Value>,
+            last_run_ms: i64,
+        }
+        let stream_sinks: std::sync::Arc<
+            std::sync::Mutex<std::collections::HashMap<String, SinkSlot>>,
+        > = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
         ws_stream_adapter.set_sink(std::sync::Arc::new(move |spec, frame| {
             event_manager.emit(firebat_core::managers::event::FirebatEvent {
                 event_type: spec.topic.clone(),
                 data: frame.clone(),
             });
             if let Some(meta) = mm.stream_watch_meta(&spec.watch_id) {
+                if let Some(module) = meta
+                    .notify
+                    .as_deref()
+                    .and_then(|n| n.strip_prefix("module:"))
+                    .filter(|m| !m.is_empty())
+                {
+                    // Frames arrive faster than a process starts, so this coalesces instead of
+                    // spawning per frame: one run in flight per watch, everything that arrives
+                    // meanwhile buffered and handed to the next run as `frames[]`. Without it a
+                    // busy tick stream turns into a process storm — the module would be the last
+                    // thing to notice, since each spawn looks fine on its own.
+                    let action = meta
+                        .notify_action
+                        .clone()
+                        .unwrap_or_else(|| "on_stream_event".to_string());
+                    let min_interval = meta.notify_min_interval_ms.unwrap_or(0) as i64;
+                    let watch_id = spec.watch_id.clone();
+                    let module = module.to_string();
+                    let mm = mm.clone();
+                    let sinks = stream_sinks.clone();
+                    let mut guard = sinks.lock().unwrap_or_else(|p| p.into_inner());
+                    let slot = guard.entry(watch_id.clone()).or_default();
+                    slot.pending.push(frame.clone());
+                    if slot.running {
+                        return;
+                    }
+                    slot.running = true;
+                    drop(guard);
+                    tokio::spawn(async move {
+                        loop {
+                            let (batch, last_run) = {
+                                let mut g = sinks.lock().unwrap_or_else(|p| p.into_inner());
+                                let slot = g.entry(watch_id.clone()).or_default();
+                                if slot.pending.is_empty() {
+                                    slot.running = false;
+                                    return;
+                                }
+                                (std::mem::take(&mut slot.pending), slot.last_run_ms)
+                            };
+                            let wait = min_interval
+                                - (firebat_core::utils::time::now_ms() - last_run);
+                            if wait > 0 {
+                                tokio::time::sleep(std::time::Duration::from_millis(wait as u64))
+                                    .await;
+                            }
+                            let count = batch.len();
+                            let input = serde_json::json!({
+                                "action": action,
+                                "watchId": watch_id,
+                                "frames": batch,
+                            });
+                            if let Err(e) = mm.run(&module, &input).await {
+                                tracing::warn!(
+                                    target: "ws_stream",
+                                    watch_id = %watch_id, module = %module, error = %e,
+                                    "watch module sink failed"
+                                );
+                            } else {
+                                tracing::debug!(
+                                    target: "ws_stream",
+                                    watch_id = %watch_id, module = %module, frames = count,
+                                    "watch module sink ran"
+                                );
+                            }
+                            let mut g = sinks.lock().unwrap_or_else(|p| p.into_inner());
+                            let slot = g.entry(watch_id.clone()).or_default();
+                            slot.last_run_ms = firebat_core::utils::time::now_ms();
+                        }
+                    });
+                    return;
+                }
                 if meta.notify.as_deref() == Some("telegram") {
                     let mm = mm.clone();
                     let label = meta

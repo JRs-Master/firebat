@@ -578,6 +578,10 @@ impl ScheduleManager {
                 let input = info.input_data.clone().unwrap_or_else(|| {
                     serde_json::json!({"trigger": format!("{:?}", info.trigger), "jobId": info.job_id})
                 });
+                // Same standing as the agent and pipeline modes: approving the schedule approved
+                // what the job does. This mode was the one without the guard, so a module that
+                // needed an approval-gated action here got a card nobody was present to answer.
+                let _cron = crate::utils::cron_context::CronContextGuard::enter();
                 match h
                     .sandbox
                     .execute(&info.target_path, &input, &SandboxExecuteOpts::default())

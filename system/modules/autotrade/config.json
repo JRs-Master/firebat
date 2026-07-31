@@ -141,5 +141,6 @@
     "action": "report",
     "actions": { "ledger": {}, "positions": {} }
   },
-  "cacheInputs": ["bars"]
+  "cacheInputs": ["bars"],
+  "timeoutMs": 120000
 }
