@@ -130,20 +130,8 @@
   },
   "output": {
     "type": "object",
-    "required": [
-      "success"
-    ],
-    "properties": {
-      "success": {
-        "type": "boolean"
-      },
-      "data": {
-        "type": "object"
-      },
-      "error": {
-        "type": "string"
-      }
-    }
+    "description": "Shape depends on the action. cycle -> {mode, ran, price, firedSides, placed[], dropped[], transfers[], positions[]}; reconcile -> {reconcile, ledgerDrift}; report/positions/orders/ledger -> the requested rows (report also returns `blocks` for a page); selftest -> {checks[], passed, failed}.",
+    "additionalProperties": true
   },
   "settings_fields": [
     {
