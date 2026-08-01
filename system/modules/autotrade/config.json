@@ -166,6 +166,14 @@
       "barCount": {
         "type": "integer",
         "description": "[plan_sweep] how many bars the fetch returned — in a pipeline take it from the candle step's `_cacheMeta.totalCount`. With it, candidates whose indicator needs more warm-up than the holdout window can hold are refused up front (they would score zero trades whatever their merit) and listed under `unmeasurable`. Without it that check cannot run and a long moving average will look worthless rather than unmeasured."
+      },
+      "role": {
+        "type": "string",
+        "enum": [
+          "select",
+          "confirm"
+        ],
+        "description": "[merge_sweeps] which set this symbol belongs to. 'select' (default) is where rules are chosen; 'confirm' is symbols kept out of that choice. rank_across ranks on the selection set and refuses to crown anything that did not also hold up on the confirmation set — choosing on a symbol set and scoring on the same one is the same error as choosing on a window and scoring on it."
       }
     }
   },

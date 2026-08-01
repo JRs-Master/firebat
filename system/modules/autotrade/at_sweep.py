@@ -240,20 +240,32 @@ def merge_sweeps(inp):
     if "running" in running and "byCandidate" not in running:
         running = running.get("running") or {}
     symbol = inp.get("symbol") or "?"
+    # Which set this symbol belongs to. Choosing a rule on a set of symbols and then reading its
+    # score on that same set is the bar-level mistake one level up — measured 2026-08-01: a rule
+    # that beat buy & hold on 3 of the 3 symbols it was chosen from, worst case +5.6%p, managed
+    # 2 of 5 with a median of -45.7%p on symbols it had never seen.
+    role = "confirm" if str(inp.get("role") or "select").lower() == "confirm" else "select"
     ranked = inp.get("ranked") or []
     acc = dict(running.get("byCandidate") or {})
     symbols = list(running.get("symbols") or [])
-    if symbol not in symbols:
-        symbols.append(symbol)
+    confirm_symbols = list(running.get("confirmSymbols") or [])
+    bucket = confirm_symbols if role == "confirm" else symbols
+    if symbol not in bucket:
+        bucket.append(symbol)
 
     for row in ranked:
         cid = row.get("candidateId")
         if not cid:
             continue
         entry = acc.setdefault(cid, {"vsBuyHold": [], "holdout": [], "trades": 0,
-                                     "cleanIn": 0, "flaggedIn": 0, "symbols": []})
-        if row.get("vsBuyHoldPct") is not None:
-            entry["vsBuyHold"].append(float(row["vsBuyHoldPct"]))
+                                     "cleanIn": 0, "flaggedIn": 0, "symbols": [],
+                                     "confirmVsBuyHold": []})
+        vs = row.get("vsBuyHoldPct")
+        if vs is not None:
+            key = "confirmVsBuyHold" if role == "confirm" else "vsBuyHold"
+            entry.setdefault(key, []).append(float(vs))
+        if role == "confirm":
+            continue
         if row.get("holdoutReturnPct") is not None:
             entry["holdout"].append(float(row["holdoutReturnPct"]))
         entry["trades"] += int(row.get("trades") or 0)
@@ -267,7 +279,9 @@ def merge_sweeps(inp):
     # `running` and whose output is the bare payload forces every caller to remember a rename —
     # and a pipeline written the obvious way (`running: "$step4.running"`) fails on a path that
     # ought to exist (2026-08-01).
-    return {"running": {"byCandidate": acc, "symbols": symbols, "symbolCount": len(symbols)}}
+    return {"running": {"byCandidate": acc, "symbols": symbols,
+                        "confirmSymbols": confirm_symbols,
+                        "symbolCount": len(symbols)}}
 
 
 def _median(xs):
@@ -288,6 +302,9 @@ def rank_across(inp):
     acc = running.get("byCandidate") or {}
     total_symbols = int(running.get("symbolCount") or 0) or 1
     min_symbols = int(inp.get("minSymbols") or max(2, (total_symbols + 1) // 2))
+    # When a confirmation set exists, every candidate has to face it — a rule that was only ever
+    # measured where it was chosen is not a survivor, it is an untested one.
+    confirm_expected = bool(running.get("confirmSymbols"))
 
     rows = []
     for cid, e in acc.items():
@@ -312,6 +329,19 @@ def rank_across(inp):
             )
         if row["trades"] < MIN_TRADES:
             row["flags"].append(f"{row['trades']} trades in total — too thin to read")
+        cvs = e.get("confirmVsBuyHold") or []
+        if cvs:
+            cbeat = [v for v in cvs if v > 0]
+            row["confirmSymbols"] = len(cvs)
+            row["confirmBeatIn"] = len(cbeat)
+            row["confirmMedianVsBuyHoldPct"] = round(_median(cvs), 2)
+            if len(cbeat) <= len(cvs) // 2:
+                row["flags"].append(
+                    f"did not hold up on symbols it was not chosen from "
+                    f"({len(cbeat)} of {len(cvs)}, median {_median(cvs):.1f}%p)"
+                )
+        elif confirm_expected:
+            row["flags"].append("never measured on symbols outside the selection set")
         rows.append(row)
 
     # Consistency is the ranking: how often it beat holding, then the median edge. Sorting by the
@@ -324,6 +354,7 @@ def rank_across(inp):
         "survivors": survivors,
         "winner": survivors[0] if survivors else None,
         "symbols": running.get("symbols") or [],
+        "confirmSymbols": running.get("confirmSymbols") or [],
         "blocks": [{
             "type": "table",
             "props": {
@@ -336,8 +367,8 @@ def rank_across(inp):
             },
         }],
         "note": (
-            "종목 과반에서 보유를 이긴 규칙만 승자 후보입니다. 한 종목에서만 크게 이긴 규칙은 "
-            "그 종목에 맞춘 것이지 규칙이 좋은 게 아닙니다."
+            "종목 과반에서 보유를 이기고, **고를 때 쓰지 않은 종목에서도** 버틴 규칙만 승자 "
+            "후보입니다. 고른 종목에서만 좋은 규칙은 그 종목에 맞춘 것이지 규칙이 좋은 게 아닙니다."
             if survivors else
             "어느 규칙도 종목 과반에서 보유를 이기지 못했습니다 — 이 검색공간·이 종목군에서는 "
             "규칙 매매보다 보유가 낫다는 뜻이고, 그것도 결과입니다."

@@ -493,6 +493,29 @@ def action_selftest():
     # The accumulator comes back under the same key it goes in as, so chaining is literal.
     assert "running" in running, "merge_sweeps must return its accumulator as `running`"
     across = sweep.rank_across({"running": running})
+    # The real 2026-08-01 shape: 3/3 where it was chosen, 2/5 where it was not.
+    confirmed = sweep.merge_sweeps({
+        "running": running, "symbol": "D", "role": "confirm",
+        "ranked": [{"candidateId": "steady", "vsBuyHoldPct": -45, "trades": 40, "flags": []},
+                   {"candidateId": "lucky", "vsBuyHoldPct": -20, "trades": 40, "flags": []}]})
+    confirmed = sweep.merge_sweeps({
+        "running": confirmed, "symbol": "E", "role": "confirm",
+        "ranked": [{"candidateId": "steady", "vsBuyHoldPct": -30, "trades": 40, "flags": []},
+                   {"candidateId": "lucky", "vsBuyHoldPct": -25, "trades": 40, "flags": []}]})
+    after = sweep.rank_across({"running": confirmed})
+    checks.append({"name": "a rule that fails on unseen symbols is not crowned", "want": None,
+                   "got": (after["winner"] or {}).get("candidateId"),
+                   "ok": after["winner"] is None})
+    steady_after = next(r for r in after["ranked"] if r["candidateId"] == "steady")
+    checks.append({"name": "the confirmation set is reported, not just used", "want": "0/2",
+                   "got": f"{steady_after.get('confirmBeatIn')}/{steady_after.get('confirmSymbols')}",
+                   "ok": steady_after.get("confirmBeatIn") == 0
+                         and steady_after.get("confirmSymbols") == 2
+                         and any("not chosen from" in f for f in steady_after["flags"])})
+    # Selection-set ranking is unchanged by the presence of a confirmation set.
+    checks.append({"name": "selection ranking still puts the consistent rule first",
+                   "want": "steady", "got": after["ranked"][0]["candidateId"],
+                   "ok": after["ranked"][0]["candidateId"] == "steady"})
     top = across["ranked"][0]["candidateId"]
     checks.append({"name": "consistency beats one lucky symbol", "want": "steady",
                    "got": top, "ok": top == "steady"})
