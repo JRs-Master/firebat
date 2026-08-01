@@ -1,0 +1,154 @@
+{
+  "title": "autotrade — discovery on upbit minute bars (24h market)",
+  "_why": [
+    "Crypto trades around the clock, so this runs today rather than waiting for an open — which is",
+    "the whole reason to test here first. Public candles need no key at all.",
+    "Costs are the venue's, not the default. Upbit charges 0.05% each way and there is no",
+    "transaction tax; the stock defaults would have charged 0.18% tax per sell and buried every",
+    "candidate. The opposite mistake is worse and was measured live on this data: the same five",
+    "5-minute BTC trades were 60% winners and +0.11% at zero cost, and 0% winners and -0.59% once",
+    "the exchange's own fee was applied. Adoption refuses a costless measurement for that reason.",
+    "Two things do not exist here that exist at a stock broker: there is no mock account, so the",
+    "ladder has no middle rung and a rule goes from paper straight to real money; and there is no",
+    "screening condition, so symbols are the declared list."
+  ],
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "review"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "strategies",
+        "limit": 30
+      }
+    },
+    {
+      "type": "LLM_TRANSFORM",
+      "instruction": "You are choosing where to search for a scalping rule on 5-minute crypto bars — a position held minutes to hours. Answer with a JSON object only, no prose.\n\nShape:\n{\"families\":[...],\"fast\":[...],\"slow\":[...],\"low\":[...],\"high\":[...],\"stopLossPct\":[...],\"takeProfitPct\":[...],\"feeRate\":0.0005,\"taxRate\":0,\"slippageRate\":0.0002,\"holdout\":0.3}\n\nfamilies is any of: ma-cross, ema-cross, rsi, bollinger, macd. Keep feeRate, taxRate and slippageRate exactly as shown — they are this venue's real costs, 0.05% each way with no transaction tax, and a search that leaves them out measures a market where trading is free.\n\nA round trip therefore costs about 0.14%. A take-profit under that cannot make money however often it hits, so do not propose one. Periods are counted in 5-minute bars. Read the history of refusals: a combination refused for too few trades will be refused again at the same parameters, and faster periods trade more. Keep the space under about 150 combinations.",
+      "inputMap": {
+        "review": "$step0",
+        "history": "$step1"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": [
+        "KRW-BTC",
+        "KRW-ETH",
+        "KRW-SOL",
+        "KRW-XRP",
+        "KRW-DOGE"
+      ],
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_upbit",
+          "inputData": {
+            "action": "get_candles",
+            "interval": "5m",
+            "count": 200
+          },
+          "inputMap": {
+            "symbol": "$prev"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "plan_multi",
+        "barCount": 200
+      },
+      "inputMap": {
+        "space": "$step2",
+        "fetched": "$step3"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "rank_multi"
+      },
+      "inputMap": {
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "adopt",
+        "template": {
+          "money": {
+            "perOrderKrw": 20000
+          },
+          "limits": {
+            "maxPositionKrw": 60000
+          },
+          "orders": {
+            "type": "limit"
+          }
+        }
+      },
+      "inputMap": {
+        "ranked": "$step6",
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    }
+  ],
+  "_settings": {
+    "tradingEnabled": true,
+    "mode": "dryrun",
+    "trades": [
+      {
+        "id": "btc-5m",
+        "symbol": "KRW-BTC",
+        "interval": "5m",
+        "broker": "upbit",
+        "account": ""
+      }
+    ],
+    "universe": [
+      "KRW-BTC",
+      "KRW-ETH",
+      "KRW-SOL",
+      "KRW-XRP",
+      "KRW-DOGE"
+    ],
+    "confirmUniverse": [
+      "KRW-XRP",
+      "KRW-DOGE"
+    ],
+    "maxOrdersPerCycle": 2,
+    "dailyLossLimitKrw": 20000,
+    "_note": [
+      "dryrun, and it should stay there. Upbit has no paper account: mock and real are the",
+      "same money, so the rung that catches a rule between backtest and live does not exist.",
+      "200 bars at 5 minutes is under a day of history — enough to prove the wiring, not",
+      "enough to believe a win rate. Raise `count` before believing anything."
+    ]
+  }
+}

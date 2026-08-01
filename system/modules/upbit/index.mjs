@@ -369,7 +369,80 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
 }
 
 // ─── 메인 ───
+
+// ── Candles, by interval ─────────────────────────────────────────────────────────────────────
+// The neutral shape every broker in this system answers: {symbol, interval}. Upbit splits
+// timeframes across endpoints (minutes carry the unit in the path, days/weeks/months are their
+// own), and the caller should no more know that here than it should know a Kiwoom API id. A
+// strategy changing from 5-minute to hourly is a settings edit, not a code edit.
+const UPBIT_MINUTE_UNITS = { '1m': '1', '3m': '3', '5m': '5', '10m': '10', '15m': '15',
+                             '30m': '30', '60m': '60', '1h': '60', '240m': '240', '4h': '240' };
+const UPBIT_PERIODS = { '1d': 'candle-days', '1w': 'candle-weeks',
+                        '1M': 'candle-months', '1y': 'candle-years' };
+
+/** `get_candles` → the concrete action and inputs the dispatcher below already understands. */
+function normalizeCandleRequest(input) {
+  const symbol = String(input.symbol ?? input.market ?? '').trim();
+  if (!symbol) throw new Error('get_candles: symbol 이 필요합니다 (예: KRW-BTC).');
+  const interval = String(input.interval ?? '1d').trim();
+  const out = { ...input, market: symbol };
+  const seconds = /^(\d+)s$/i.exec(interval);
+  if (seconds) {
+    return { ...out, action: 'candle-seconds', unit: seconds[1] };
+  }
+  const unit = UPBIT_MINUTE_UNITS[interval];
+  if (unit) {
+    return { ...out, action: 'candle-minutes', unit };
+  }
+  const period = UPBIT_PERIODS[interval];
+  if (!period) {
+    throw new Error(
+      `get_candles: interval='${interval}' 은 지원하지 않습니다 — ` +
+      `${[...Object.keys(UPBIT_MINUTE_UNITS), ...Object.keys(UPBIT_PERIODS)].join(', ')} 중 하나.`);
+  }
+  return { ...out, action: period };
+}
+
+
+// Upbit names OHLCV its own way and answers newest-first. Everything downstream — the analyser,
+// the backtest, the chart — reads one shape, so the translation belongs to the module that speaks
+// the dialect, exactly as it does for the stock brokers. Without it every bar is silently dropped:
+// the analyser looks for `close`, finds `trade_price`, and reports a series of length zero.
+const UPBIT_CANDLE_MAP = [
+  ['candle_date_time_kst', 'date'], ['opening_price', 'open'], ['high_price', 'high'],
+  ['low_price', 'low'], ['trade_price', 'close'], ['candle_acc_trade_volume', 'volume'],
+];
+
+function normalizeUpbitCandles(rows) {
+  if (!Array.isArray(rows)) return rows;
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || !('trade_price' in row)) continue;
+    const bar = { ...row };
+    for (const [from, to] of UPBIT_CANDLE_MAP) {
+      if (from in bar) {
+        bar[to] = to === 'date' ? String(bar[from]).replace('T', ' ') : Number(bar[from]);
+        delete bar[from];
+      }
+    }
+    out.push(bar);
+  }
+  // Oldest first. A series handed over backwards makes every crossing fire the wrong way round,
+  // and nothing downstream can tell that from a strategy that simply loses.
+  out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return out;
+}
+
 async function main(input) {
+  const wantsCandles = Boolean(input && input.action === 'get_candles');
+  if (wantsCandles) {
+    try {
+      input = normalizeCandleRequest(input);
+    } catch (e) {
+      console.log(JSON.stringify({ success: false, error: e.message }));
+      return;
+    }
+  }
   const { action, endpoint: directEndpoint, method: directMethod } = input;
   const accessKey = process.env.UPBIT_ACCESS_KEY;
   const secretKey = process.env.UPBIT_SECRET_KEY;
@@ -404,14 +477,17 @@ async function main(input) {
     }
 
     const params = directEndpoint ? (input.params || {}) : buildParams(action, input);
-    const data = await callApi(method, endpoint, params, accessKey, secretKey, needAuth);
+    let data = await callApi(method, endpoint, params, accessKey, secretKey, needAuth);
+    // Only the neutral request is translated. The raw candle-* actions keep answering exactly what
+    // the exchange said, because something is already reading them that way.
+    if (wantsCandles) data = normalizeUpbitCandles(data);
 
     console.log(JSON.stringify({
       success: true,
       data: {
         action: action || 'direct',
         endpoint,
-        ...( Array.isArray(data) ? { items: data, count: data.length } : data ),
+        ...( Array.isArray(data) ? { records: data, count: data.length } : data ),
       },
     }));
   } catch (err) {

@@ -170,6 +170,21 @@ def spec_from_args(args, template=None):
     return spec
 
 
+def costs_of(args):
+    """What the measurement charged per trade — fee both ways, tax on the sell, slippage.
+
+    The analyser treats an absent cost as zero, which is not a neutral default: it is the most
+    flattering one. Measured live on 5-minute BTC bars, the same five trades were 60% winners and
+    +0.11% at zero cost, and 0% winners and -0.59% once Upbit's own 0.05% each way was applied.
+    A rule can only look good enough to trade because nobody charged it.
+    """
+    fee = _num((args or {}).get("feeRate"))
+    tax = _num((args or {}).get("taxRate"))
+    slip = _num((args or {}).get("slippageRate"))
+    return {"feeRate": fee, "taxRate": tax, "slippageRate": slip,
+            "roundTripPct": round((fee * 2 + tax + slip * 2) * 100, 4)}
+
+
 def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
           min_confirm=MIN_CONFIRM_SYMBOLS):
     """Take the sweep's winner into the store — at `paper`, or not at all.
@@ -187,6 +202,13 @@ def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
                 "why": [f"candidate '{cid}' won but its rules are not in `runs` — "
                         "pass the same planned runs the ranking was built from"]}
     why = judge(row, min_trades=min_trades, min_confirm=min_confirm)
+    # A costless backtest is not a cheaper backtest, it is a different one. At scalping frequency
+    # the round trip is most of the result, so a rule measured without it has not been measured.
+    costs = costs_of(args)
+    if costs["roundTripPct"] <= 0:
+        why = why + ["measured with no commission, tax or slippage — at this frequency the round "
+                     "trip is most of the result, so declare feeRate/taxRate/slippageRate for the "
+                     "venue and measure again"]
     sid = target.get("id") or f"ai-{target.get('symbol')}-{cid}"
     if why:
         # Recorded, not discarded: tomorrow's search should know this ground was covered.
@@ -197,7 +219,7 @@ def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
     # What the backtest promised, kept alongside the ranking so the ladder has something to check
     # the live record against later. Absent when the pipeline did not pass the run results — the
     # ladder then refuses to let this strategy reach real money at all.
-    row = {**row, "expected": expected_from(runs, results, cid)}
+    row = {**row, "expected": expected_from(runs, results, cid), "costs": costs}
     now = store.now_ms()
     existing = conn.execute("SELECT stage, created_ms FROM ai_strategy WHERE id=?", (sid,)).fetchone()
     # A revision restarts the ladder. The rules changed, so the live record that earned the old

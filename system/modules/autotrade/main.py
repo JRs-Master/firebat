@@ -1293,7 +1293,8 @@ def action_selftest():
     at_dir = tempfile.mkdtemp()
     store.DATA_DIR = at_dir
     sconn = strat.connect()
-    runs = [{"candidateId": "c1", "args": {"action": "signals", "stopLossPct": 3,
+    costs = {"feeRate": 0.00015, "taxRate": 0.0018, "slippageRate": 0.0005}
+    runs = [{"candidateId": "c1", "args": {"action": "signals", "stopLossPct": 3, **costs,
                                            "rules": [{"side": "buy", "when": [
                                                {"a": "ma5", "op": "crossUp", "b": "ma20"}]}]}}]
     target = {"symbol": "005930", "broker": "kiwoom", "account": "모의국내"}
@@ -1339,7 +1340,7 @@ def action_selftest():
     # review that reads them back. Nothing here asserts on a number the review was handed.
     with_results = [{"backtest": {"winRate": 60.0, "avgReturnPct": 1.2}}]
     ladder_runs = [{"candidateId": "c1", "window": "holdout",
-                    "args": {"rules": [{"side": "buy", "when": [
+                    "args": {**costs, "rules": [{"side": "buy", "when": [
                         {"a": "ma5", "op": "crossUp", "b": "ma20"}]}]}}]
     lconn = strat.connect()
     lres = strat.adopt(lconn, {"winner": good}, ladder_runs,
@@ -1658,6 +1659,34 @@ def action_selftest():
     checks.append({"name": "the target closes it without any signal at all", "want": "take",
                    "got": [(x["side"], x.get("reason")) for x in exited],
                    "ok": len(exited) == 1 and exited[0]["reason"] == "take"})
+
+    # --- a costless backtest is not a measurement ------------------------------------------
+    # Live on 5-minute BTC bars: the same five trades were 60% winners and +0.11% with no costs,
+    # and 0% winners and -0.59% once the exchange's own 0.05% each way was charged. The analyser
+    # treats an absent cost as zero, so the gate has to ask.
+    ccon = strat.connect()
+    free_runs = [{"candidateId": "c1", "args": {"rules": [{"side": "buy", "when": []}]}}]
+    free = strat.adopt(ccon, {"winner": good}, free_runs,
+                       {"id": "costfree", "symbol": "KRW-BTC", "broker": "upbit", "account": "a"})
+    checks.append({"name": "a rule measured without costs is not adopted", "want": None,
+                   "got": free.get("adopted"), "ok": free.get("adopted") is None})
+    checks.append({"name": "and it is told which costs are missing", "want": True,
+                   "got": free.get("why"),
+                   "ok": any("slippage" in w for w in (free.get("why") or []))})
+
+    paid_runs = [{"candidateId": "c1", "args": {"rules": [{"side": "buy", "when": []}],
+                                                "feeRate": 0.0005, "taxRate": 0.0,
+                                                "slippageRate": 0.0002}}]
+    paid = strat.adopt(ccon, {"winner": good}, paid_runs,
+                       {"id": "costed", "symbol": "KRW-BTC", "broker": "upbit", "account": "a"})
+    checks.append({"name": "a venue with no transaction tax still counts as measured",
+                   "want": "costed", "got": paid.get("adopted"),
+                   "ok": paid.get("adopted") == "costed"})
+    checks.append({"name": "the round trip charged is recorded with the rule", "want": 0.14,
+                   "got": (paid.get("measured") or {}).get("costs", {}).get("roundTripPct"),
+                   "ok": abs(((paid.get("measured") or {}).get("costs", {})
+                              .get("roundTripPct") or 0) - 0.14) < 1e-9})
+    ccon.close()
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
