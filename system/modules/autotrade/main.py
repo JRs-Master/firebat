@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import at_engine as eng          # noqa: E402
 import at_store as store         # noqa: E402
+import at_orders as orders       # noqa: E402
 import at_sweep as sweep         # noqa: E402
 
 
@@ -212,7 +213,7 @@ def action_cycle(inp, settings):
             symbol=ref.get("symbol") or symbol or "", qty=t["qty"], price=t["price"],
             fee_in_cost=settings.get("feeInCost", True))
 
-    placed, dropped_all = [], []
+    placed, dropped_all, calls = [], [], []
     for s in strategies:
         ctx = ctxs.get(s["id"])
         if ctx is None:
@@ -240,7 +241,8 @@ def action_cycle(inp, settings):
             if not store.insert_order(conn, order):
                 continue
             if ctx["mode"] == "dryrun":
-                # Paper fill at the intent price — the order path itself lands with the mock slice.
+                # Paper fill at the intent price. Optimistic on purpose and labelled as such: a
+                # real limit order may not fill at all, which is what the mock account is for.
                 store.update_order(conn, key, state="filled", filled_qty=intent["qty"],
                                    filled_avg=intent["price"], sent_ms=store.now_ms())
                 store.apply_fill(conn, strategy_id=s["id"], broker=intent["broker"],
@@ -248,6 +250,12 @@ def action_cycle(inp, settings):
                                  side=intent["side"], qty=intent["qty"], price=intent["price"],
                                  source="dryrun", ref_order_key=key,
                                  fee_in_cost=settings.get("feeInCost", True))
+            else:
+                # The row exists before the call does. A crash between here and the broker leaves
+                # something the next cycle can resolve rather than an order nobody remembers.
+                store.update_order(conn, key, state="sent", sent_ms=store.now_ms())
+                calls.append({**orders.broker_call({**order, "order_key": key}, s),
+                              "orderKey": key})
             placed.append({"strategyId": s["id"], "side": intent["side"], "qty": intent["qty"],
                            "price": intent["price"], "mode": ctx["mode"],
                            "reason": intent.get("reason"), "orderKey": key})
@@ -259,6 +267,62 @@ def action_cycle(inp, settings):
         "ran": len(strategies), "price": price, "firedSides": sorted(sides),
         "placed": placed, "dropped": dropped_all, "transfers": transfers,
         "results": results, "positions": positions,
+        # Empty in dry run. Otherwise the pipeline runs these with FOREACH and returns what came
+        # back to record_orders — the module never calls a broker itself.
+        "calls": calls,
+        "next": ("FOREACH over `calls` (inputData: \"$prev.input\", tool: sysmod_<$prev.module>), "
+                 "then autotrade record_orders with `calls` and the loop's `results`."
+                 if calls else None),
+    }}
+
+
+def action_record_orders(inp, settings):
+    """Record what the broker said, without letting it decide what happened.
+
+    An acknowledgement moves a row from `sent` to `acked` and may add the broker's order number.
+    It never creates a fill: "accepted" and "filled" are different events, and treating one as the
+    other books trades that did not happen. A rejection is terminal and says so; anything
+    unreadable leaves the row `unknown` for reconciliation to settle rather than guessing.
+    """
+    calls = inp.get("calls") or []
+    results = inp.get("results") or []
+    if len(results) != len(calls):
+        return {"success": False,
+                "error": f"{len(results)} responses for {len(calls)} calls — the order loop did "
+                         "not finish; leave the rows alone and run reconcile"}
+    conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+    recorded = []
+    for call, ack in zip(calls, results):
+        key = call.get("orderKey")
+        if not key:
+            continue
+        read = orders.read_ack(ack)
+        # Kept verbatim, every time: this is the only place the acknowledgement schema can be
+        # learned from, and it is not documented for any of these brokers.
+        store.log_api(conn, call.get("module"), "place_order", read["accepted"], 0,
+                      call.get("input"), ack)
+        if read["accepted"]:
+            state = "acked"
+        elif read["error"]:
+            state = "rejected"
+        else:
+            state = "unknown"
+        store.update_order(conn, key, state=state,
+                           broker_order_no=read["brokerOrderNo"],
+                           ack_raw=json.dumps(ack, ensure_ascii=False)[:4000],
+                           error=read["error"],
+                           last_checked_ms=store.now_ms())
+        if state == "rejected":
+            store.log_event(conn, "order_rejected", {"orderKey": key, "why": read["error"]})
+        recorded.append({"orderKey": key, "state": state,
+                         "brokerOrderNo": read["brokerOrderNo"], "error": read["error"]})
+    open_now = store.open_orders(conn)
+    conn.close()
+    return {"success": True, "data": {
+        "recorded": recorded,
+        "openOrders": len(open_now),
+        "note": ("접수 응답은 체결이 아닙니다 — 수량·평단은 reconcile 이 미체결·잔고 조회로 "
+                 "확정합니다."),
     }}
 
 
@@ -479,6 +543,27 @@ def action_selftest():
     top = ranked["ranked"][0]["candidateId"]
     checks.append({"name": "a huge return on two trades does not win", "want": "solid",
                    "got": top, "ok": top == "solid"})
+    # An acknowledgement is not a fill. Every broker names its order number differently and none
+    # of them document the response, so the number is found by name and everything else ignored.
+    for label, ack, want_no in (
+        ("kiwoom", {"success": True, "data": {"return_code": 0, "ord_no": "0001234"}}, "0001234"),
+        ("kis", {"success": True, "data": {"output": {"ODNO": "77"}}}, "77"),
+        ("toss", {"success": True, "data": {"result": {"orderId": "tx-9"}}}, "tx-9"),
+    ):
+        read = orders.read_ack(ack)
+        checks.append({"name": f"the order number is found in a {label} ack", "want": want_no,
+                       "got": read["brokerOrderNo"],
+                       "ok": read["brokerOrderNo"] == want_no and read["accepted"]})
+    rejected = orders.read_ack({"success": False, "error": "주문가능금액 부족"})
+    checks.append({"name": "a rejection is not accepted and keeps its reason", "want": False,
+                   "got": rejected, "ok": not rejected["accepted"] and rejected["error"]})
+    checks.append({"name": "an unreadable response is not treated as success", "want": False,
+                   "got": orders.read_ack(None), "ok": not orders.read_ack(None)["accepted"]})
+    # Nothing in an ack may carry a filled quantity through — that only comes from reconcile.
+    checks.append({"name": "an ack cannot report a fill", "want": ["accepted", "brokerOrderNo", "clientOrderId", "error"],
+                   "got": sorted(orders.read_ack({"success": True, "data": {"cntr_qty": 5}})),
+                   "ok": "filled" not in " ".join(orders.read_ack({"success": True, "data": {"cntr_qty": 5}}))})
+
     # The two-call form plans every symbol at once and splits the flat results back out, so a
     # pipeline stays four steps whatever the symbol count.
     fetched = [{"_cacheMeta": {"totalCount": 1200}, "records": []},
@@ -601,6 +686,8 @@ def main():
             return out(action_cycle(inp, settings))
         if action == "reconcile":
             return out(action_reconcile(inp, settings))
+        if action == "record_orders":
+            return out(action_record_orders(inp, settings))
         if action in ("report", "positions", "orders", "ledger"):
             return out(action_read(inp, settings, action))
         if action == "halt":
