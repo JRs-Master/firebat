@@ -865,6 +865,11 @@ def fit_symbols(inp):
             "symbol": sym,
             "measured": len(rows),
             "cleared": len(cleared),
+            # Every cell that cleared, not only the one chosen. The choice optimises for
+            # robustness, and a caller asking a different question — the most frequent rule that
+            # still passes, the least drawdown, the shortest hold — needs to see the frontier
+            # rather than one point on it.
+            "clearedRows": (cleared if inp.get("includeCleared") else None),
             # How much of the grid worked, not just whether the best cell did: a symbol where two
             # cells out of fifty cleared is a different kind of result from one where forty did.
             "clearedShare": round(len(cleared) / len(rows), 2) if rows else None,
