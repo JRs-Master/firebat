@@ -24,6 +24,19 @@ use crate::managers::task::PipelineStep;
 use crate::ports::{CronNotify, CronRetry, CronRunWhen};
 
 const PENDING_EXPIRE: Duration = Duration::from_secs(30 * 24 * 60 * 60); // 30일 (만들어두고 한참 뒤 승인하는 패턴 — 검토 중·자리 비움 후 만료 방지. plan_store 와 통일)
+
+/// Approval-gated module actions (orders) expire in minutes, not days.
+///
+/// The 30-day window above exists so a file or page edit can wait while someone is away — the same
+/// edit applied three days later does the same thing. An order does not: it was composed against a
+/// price that has since moved, so approving it later executes something nobody actually decided.
+/// The danger is not a malicious click but an absent-minded one on a card that has been sitting
+/// around, which is exactly what a long window invites.
+///
+/// Short is affordable here because the card is only for orders a person is watching right now —
+/// scheduled trading runs under the cron context, which bypasses cards entirely. If it lapses, the
+/// cost is asking again.
+const MODULE_ACTION_EXPIRE: Duration = Duration::from_secs(5 * 60);
 const MAX_SIZE: usize = 100;
 
 // ── PendingActionArgs — 6 destructive 도구의 typed oneof ─────────────
@@ -170,6 +183,14 @@ impl PendingActionArgs {
         }
     }
 
+    /// How long this kind of approval may wait — see `MODULE_ACTION_EXPIRE`.
+    pub fn expire_ms(&self) -> u64 {
+        match self {
+            PendingActionArgs::RunModule(_) => MODULE_ACTION_EXPIRE.as_millis() as u64,
+            _ => PENDING_EXPIRE.as_millis() as u64,
+        }
+    }
+
     /// LLM 이 보낸 raw `name` + `arguments` 를 typed 으로 parse.
     /// 실패 시 caller 가 LLM 한테 schema 에러 반환 + retry 유도.
     pub fn from_call(name: &str, args: &serde_json::Value) -> Result<Self, String> {
@@ -254,6 +275,12 @@ pub struct PendingTool {
     /// epoch ms — 영속 시 JS 의 `Date.now()` 와 동일 단위.
     #[serde(rename = "createdAt")]
     pub created_at: u64,
+    /// epoch ms — when this card stops being approvable. Carried on the record rather than derived
+    /// at read time so a card can state its own deadline (a five-minute order card that says so is
+    /// a different thing to click than one that looks permanent), and so entries written before
+    /// per-kind expiry keep the window they were created under.
+    #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
     /// Hub visitor scope (`inst:sid`) when this pending was created inside a hub context, else None
     /// (admin). At hub approval time this is used to (1) verify the approving visitor owns this
     /// pending (cross-tenant guard) and (2) re-establish the owner scope for execution.
@@ -265,6 +292,18 @@ impl PendingTool {
     /// 도구 이름 — args.name() 의 wrapper. 로그 / 영속화 용 편의.
     pub fn name(&self) -> &'static str {
         self.args.name()
+    }
+
+    /// The deadline this card is judged against. Records written before per-kind expiry carry no
+    /// deadline; they get the one their kind would have now, so an order card left over from the
+    /// old thirty-day window does not keep it.
+    pub fn deadline_ms(&self) -> u64 {
+        self.expires_at
+            .unwrap_or_else(|| self.created_at.saturating_add(self.args.expire_ms()))
+    }
+
+    pub fn is_expired(&self, now: u64) -> bool {
+        now > self.deadline_ms()
     }
 }
 
@@ -286,8 +325,7 @@ fn store_lock() -> &'static Mutex<HashMap<String, PendingTool>> {
             if let Ok(arr) = serde_json::from_str::<Vec<PendingTool>>(&raw) {
                 let now = now_ms();
                 for p in arr {
-                    if !p.plan_id.is_empty() && now.saturating_sub(p.created_at) <= PENDING_EXPIRE.as_millis() as u64
-                    {
+                    if !p.plan_id.is_empty() && !p.is_expired(now) {
                         map.insert(p.plan_id.clone(), p);
                     }
                 }
@@ -311,10 +349,9 @@ fn flush(map: &HashMap<String, PendingTool>) {
 fn cleanup_expired(map: &mut HashMap<String, PendingTool>) -> bool {
     let now = now_ms();
     let mut changed = false;
-    let expired_ms = PENDING_EXPIRE.as_millis() as u64;
     let to_remove: Vec<String> = map
         .iter()
-        .filter(|(_, p)| now.saturating_sub(p.created_at) > expired_ms)
+        .filter(|(_, p)| p.is_expired(now))
         .map(|(k, _)| k.clone())
         .collect();
     for k in to_remove {
@@ -364,6 +401,7 @@ pub fn create_pending_scoped(args: PendingActionArgs, summary: &str, hub_scope: 
     // base36(now) 흉내 — Rust std 에 base36 없어 `format!("{:x}", now)` (16진) 사용.
     // planId 자체는 unique 만 되면 되므로 base36 vs base16 차이 무관 (옛 TS planId 와 호환 X 는 의도적).
     let plan_id = format!("plan-{:x}-{}", now, rand4());
+    let expires_at = now.saturating_add(args.expire_ms());
     map.insert(
         plan_id.clone(),
         PendingTool {
@@ -371,6 +409,7 @@ pub fn create_pending_scoped(args: PendingActionArgs, summary: &str, hub_scope: 
             args,
             summary: summary.to_string(),
             created_at: now,
+            expires_at: Some(expires_at),
             hub_scope,
         },
     );
@@ -390,11 +429,10 @@ pub fn get_pending(plan_id: &str) -> Option<PendingTool> {
     let raw = std::fs::read_to_string(store_file_path()).ok()?;
     let arr: Vec<PendingTool> = serde_json::from_str(&raw).ok()?;
     let now = now_ms();
-    let expired_ms = PENDING_EXPIRE.as_millis() as u64;
     let mut found = None;
     let mut map = store_lock().lock().ok()?;
     for p in arr {
-        if p.plan_id.is_empty() || now.saturating_sub(p.created_at) > expired_ms {
+        if p.plan_id.is_empty() || p.is_expired(now) {
             continue;
         }
         let is_target = p.plan_id == plan_id;
@@ -551,6 +589,97 @@ mod tests {
         let p = get_pending(&id);
         assert!(p.is_some());
         assert_eq!(p.unwrap().name(), "write_file");
+    }
+
+    fn run_module_args() -> PendingActionArgs {
+        PendingActionArgs::RunModule(RunModuleArgs {
+            module: "kiwoom".to_string(),
+            input: serde_json::json!({"action": "place_order", "side": "buy"}),
+        })
+    }
+
+    #[test]
+    fn an_order_card_expires_in_minutes_not_days() {
+        let order = run_module_args().expire_ms();
+        let file = write_args("a.txt").expire_ms();
+        assert_eq!(order, 5 * 60 * 1000);
+        assert!(order < file / 100, "order {order} should be far shorter than file {file}");
+    }
+
+    #[test]
+    fn a_lapsed_order_card_cannot_be_approved() {
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        let id = create_pending(run_module_args(), "buy 1");
+        assert!(get_pending(&id).is_some());
+
+        // Age it past its own deadline — the file is the store, so rewriting it is how time passes.
+        {
+            let mut map = store_lock().lock().unwrap();
+            let p = map.get_mut(&id).unwrap();
+            p.created_at -= 6 * 60 * 1000;
+            p.expires_at = Some(p.created_at + p.args.expire_ms());
+            flush(&map);
+        }
+        clear_pending_in_memory();
+        assert!(get_pending(&id).is_none(), "an order card past its window must not be approvable");
+        assert!(consume_pending(&id).is_none());
+    }
+
+    #[test]
+    fn a_file_card_of_the_same_age_is_still_approvable() {
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        let id = create_pending(write_args("a.txt"), "write");
+        {
+            let mut map = store_lock().lock().unwrap();
+            let p = map.get_mut(&id).unwrap();
+            p.created_at -= 6 * 60 * 1000;
+            p.expires_at = Some(p.created_at + p.args.expire_ms());
+            flush(&map);
+        }
+        clear_pending_in_memory();
+        assert!(get_pending(&id).is_some(), "six minutes is nothing for a file edit");
+    }
+
+    #[test]
+    fn an_order_written_before_per_kind_expiry_loses_the_old_window() {
+        // Entries persisted under the single thirty-day constant carry no deadline. Reading one
+        // back must not grant an order card the window it was written with.
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        let legacy = PendingTool {
+            plan_id: "plan-legacy".to_string(),
+            args: run_module_args(),
+            summary: "old order".to_string(),
+            created_at: now_ms() - 24 * 60 * 60 * 1000, // yesterday
+            expires_at: None,
+            hub_scope: None,
+        };
+        std::fs::write(dir.path().join("pending-tools.json"),
+                       serde_json::to_string(&vec![&legacy]).unwrap()).unwrap();
+        clear_pending_in_memory();
+        assert!(get_pending("plan-legacy").is_none());
+    }
+
+    #[test]
+    fn a_card_states_its_own_deadline() {
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        let id = create_pending(run_module_args(), "buy 1");
+        let p = get_pending(&id).unwrap();
+        let left = p.deadline_ms() - p.created_at;
+        assert_eq!(left, 5 * 60 * 1000);
+        let json = serde_json::to_string(&p).unwrap();
+        assert!(json.contains("expiresAt"), "the deadline must reach whoever renders the card");
     }
 
     #[test]
