@@ -365,6 +365,10 @@
       "minTurnover": {
         "type": "number",
         "description": "[screen] 24시간 거래대금 하한 (원). 얇은 종목 제외."
+      },
+      "includeFlagged": {
+        "type": "boolean",
+        "description": "[screen] 유의·주의 종목도 포함할지 (기본 false). 거래량 급등 경보가 있어서, 거래대금 순 정렬은 경보 종목을 가장 먼저 집습니다."
       }
     },
     "additionalProperties": false

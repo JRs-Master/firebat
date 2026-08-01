@@ -474,15 +474,36 @@ function normalizeUpbitCandles(rows) {
 // call answers every pair in a market with its 24-hour turnover — and "the most traded names
 // right now" is a screen. Ranking is done here rather than by the caller for the same reason the
 // order dialect is: a model that picks the names can pick names that do not exist.
+/** Pairs the exchange has flagged. Ranking by turnover finds these first, by construction.
+ *
+ * One of the caution flags is literally "trading volume soaring", so a screen that sorts on
+ * 24-hour turnover surfaces a pair under investigation ahead of everything healthy. The exchange
+ * publishes the flags; not reading them would mean the screen actively prefers them.
+ */
+function flaggedPairs(rows) {
+  const out = new Set();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const ev = r && r.market_event;
+    if (!ev) continue;
+    const caution = ev.caution && typeof ev.caution === 'object'
+      ? Object.values(ev.caution).some(Boolean) : false;
+    if (ev.warning === true || caution) out.add(r.market);
+  }
+  return out;
+}
+
 function screenTickers(rows, opts) {
   const top = Math.max(1, Math.min(Number(opts.top) || 10, 50));
   const minTurnover = Number(opts.minTurnover) || 0;
+  const flagged = opts.flagged instanceof Set ? opts.flagged : new Set();
   const ranked = (Array.isArray(rows) ? rows : [])
     .filter(r => r && typeof r === 'object' && Number.isFinite(Number(r.acc_trade_price_24h)))
     .filter(r => Number(r.acc_trade_price_24h) >= minTurnover)
+    .filter(r => !flagged.has(r.market))
     .sort((a, b) => Number(b.acc_trade_price_24h) - Number(a.acc_trade_price_24h))
     .slice(0, top);
   return {
+    excluded: [...flagged],
     symbols: ranked.map(r => r.market),
     rows: ranked.map(r => ({
       symbol: r.market,
@@ -615,6 +636,7 @@ async function main(input) {
   const wantsScreen = Boolean(input && input.action === 'screen');
   const screenTop = wantsScreen ? input.top : undefined;
   const screenMin = wantsScreen ? input.minTurnover : undefined;
+  const screenIncludeFlagged = wantsScreen ? input.includeFlagged : undefined;
   if (wantsScreen) {
     input = { ...input, action: 'ticker-all',
               quote_currencies: String(input.quote ?? 'KRW').toUpperCase() };
@@ -693,11 +715,26 @@ async function main(input) {
     // the exchange said, because something is already reading them that way.
     if (wantsCandles) data = normalizeUpbitCandles(data);
     if (wantsScreen) {
-      const picked = screenTickers(data, { top: screenTop, minTurnover: screenMin });
+      // A second call, deliberately: the flags live on the pair list, not on the ticker, and a
+      // screen that cannot see them would rank a flagged pair first.
+      let flagged = new Set();
+      if (screenIncludeFlagged !== true) {
+        try {
+          flagged = flaggedPairs(await callApi('GET', '/v1/market/all',
+            { is_details: 'true' }, accessKey, secretKey, false));
+        } catch {
+          // Better to screen without the filter than to return nothing; the caller is told.
+          flagged = new Set();
+        }
+      }
+      const picked = screenTickers(data, { top: screenTop, minTurnover: screenMin, flagged });
       console.log(JSON.stringify({ success: true, data: {
         action: 'screen', endpoint,
         symbols: picked.symbols, records: picked.rows, count: picked.symbols.length,
+        excludedFlagged: picked.excluded.length,
         note: ('24시간 누적 거래대금 상위입니다 — 이 목록이 곧 화면입니다. '
+               + '거래소가 유의·주의로 표시한 종목은 제외했습니다(거래량 급등 경보가 있어, '
+               + '거래대금 순 정렬은 그런 종목을 먼저 집습니다). '
                + '조회 결과가 비면 목록을 비우지 말고 직전 것을 유지하세요.'),
       } }));
       return;
