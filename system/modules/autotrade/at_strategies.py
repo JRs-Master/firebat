@@ -170,7 +170,8 @@ def spec_from_args(args, template=None):
     return spec
 
 
-def adopt(conn, ranked, runs, target, min_trades=MIN_TRADES, min_confirm=MIN_CONFIRM_SYMBOLS):
+def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
+          min_confirm=MIN_CONFIRM_SYMBOLS):
     """Take the sweep's winner into the store — at `paper`, or not at all.
 
     `ranked` and `runs` are the earlier steps' output passed through the pipeline, which is the
@@ -193,6 +194,10 @@ def adopt(conn, ranked, runs, target, min_trades=MIN_TRADES, min_confirm=MIN_CON
         return {"adopted": None, "candidateId": cid, "why": why}
 
     spec = spec_from_args(args, target.get("template"))
+    # What the backtest promised, kept alongside the ranking so the ladder has something to check
+    # the live record against later. Absent when the pipeline did not pass the run results — the
+    # ladder then refuses to let this strategy reach real money at all.
+    row = {**row, "expected": expected_from(runs, results, cid)}
     now = store.now_ms()
     existing = conn.execute("SELECT stage, created_ms FROM ai_strategy WHERE id=?", (sid,)).fetchone()
     # A revision restarts the ladder. The rules changed, so the live record that earned the old
@@ -273,3 +278,157 @@ def read_events(conn, sid=None, limit=50):
     return [{"id": r["id"], "tsMs": r["ts_ms"], "event": r["event"],
              "detail": json.loads(r["detail_json"] or "{}")}
             for r in conn.execute(*q)]
+
+
+# ── the ladder ───────────────────────────────────────────────────────────────────────────────
+# Out-of-sample measurement catches a rule fitted to one window. It does not catch slippage, a
+# fill that never came, or an edge that existed only because the sample happened to be liquid.
+# Only trading it forward catches those, so a strategy climbs by its own record and nothing else.
+LADDER = ("paper", "mock", "real")
+MIN_LIVE_TRADES = 10        # closed round-trips at a stage before it may move either way
+WIN_RATE_SLACK = 20.0       # points below the measured win rate that still counts as tracking
+RETIRE_AFTER_DEMOTIONS = 2  # a rule demoted off the bottom rung is not worth more sessions
+
+
+def live_record(conn, strategy_id, since_ms=0):
+    """The strategy's own realised round-trips — the same two numbers a backtest reports.
+
+    Win rate and average return per trade are comparable to the backtest directly, which a won
+    figure is not: comparing realised P&L against a percentage would need the benchmark over the
+    same live window, and inventing one is how a comparison starts lying.
+    """
+    rows = conn.execute(
+        "SELECT qty, price, realized FROM ledger WHERE strategy_id=? AND ts_ms>=?"
+        " AND side IN ('sell','transfer_out')", (strategy_id, int(since_ms or 0))).fetchall()
+    returns, realized_total = [], 0.0
+    for r in rows:
+        realized = float(r["realized"] or 0.0)
+        realized_total += realized
+        # Cost is what the row itself implies: proceeds minus what was made on them.
+        cost = float(r["price"]) * float(r["qty"]) - realized
+        if cost > 1e-6:
+            returns.append(realized / cost * 100.0)
+    wins = [x for x in returns if x > 0]
+    return {
+        "trades": len(returns),
+        "winRatePct": round(len(wins) / len(returns) * 100, 2) if returns else None,
+        "avgReturnPct": round(sum(returns) / len(returns), 4) if returns else None,
+        "realized": round(realized_total, 2),
+    }
+
+
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    mid = len(xs) // 2
+    return xs[mid] if len(xs) % 2 else (xs[mid - 1] + xs[mid]) / 2
+
+
+def expected_from(runs, results, candidate_id):
+    """What the winning candidate's backtest promised — median across the runs that measured it.
+
+    Holdout runs are preferred when the sweep marked them: the in-sample half is the half the rule
+    was fitted on, so promising numbers there are not a promise about anything.
+    """
+    picked = []
+    for i, run in enumerate(runs or []):
+        if not isinstance(run, dict) or i >= len(results or []):
+            continue
+        cid = run.get("candidateId") or (run.get("args") or {}).get("candidateId")
+        if cid != candidate_id:
+            continue
+        res = results[i]
+        bt = (res or {}).get("backtest") if isinstance(res, dict) else None
+        if isinstance(bt, dict):
+            picked.append((run.get("window"), bt))
+    holdout = [bt for w, bt in picked if str(w or "").lower() == "holdout"]
+    use = holdout or [bt for _, bt in picked]
+    if not use:
+        return None
+    return {
+        "winRatePct": _median([b.get("winRate") for b in use]),
+        "avgReturnPct": _median([b.get("avgReturnPct") for b in use]),
+        "window": "holdout" if holdout else "all",
+        "runs": len(use),
+    }
+
+
+def verdict(expected, live, stage="paper", min_trades=MIN_LIVE_TRADES, slack=WIN_RATE_SLACK):
+    """`promote` / `hold` / `demote`, and why — decided only from numbers we produced ourselves."""
+    trades = int(live.get("trades") or 0)
+    if trades < min_trades:
+        return "hold", f"{trades} closed trades at this stage, needs {min_trades}"
+    realized = float(live.get("realized") or 0.0)
+    if realized < 0:
+        return "demote", f"realised {realized:,.0f} at this stage"
+    want = (expected or {}).get("winRatePct")
+    got = live.get("winRatePct")
+    if want is None or got is None:
+        # No backtest to track against. A positive record still earns the paper-to-mock step, but
+        # not the one into real money: that step is the reward for keeping a promise, and there is
+        # no promise here to have kept. Profit alone can be a short lucky run.
+        if stage != "paper":
+            return "hold", ("no measured win rate to compare against — real money needs a "
+                            "backtest this record can be checked against")
+        return "promote", f"realised {realized:,.0f} over {trades} trades (nothing to compare to)"
+    if got + slack < want:
+        return "demote", f"win rate {got}% against {want}% measured — the backtest did not survive"
+    return "promote", f"win rate {got}% against {want}% measured, realised {realized:,.0f}"
+
+
+def next_stage(stage, direction, demotions=0):
+    i = LADDER.index(stage) if stage in LADDER else 0
+    if direction == "promote":
+        return LADDER[min(i + 1, len(LADDER) - 1)]
+    if i == 0:
+        return "retired" if demotions + 1 >= RETIRE_AFTER_DEMOTIONS else "paper"
+    return LADDER[i - 1]
+
+
+def demotion_count(conn, sid):
+    rows = conn.execute(
+        "SELECT detail_json FROM ai_strategy_event WHERE id=? AND event='stage'", (sid,)).fetchall()
+    n = 0
+    for r in rows:
+        try:
+            d = json.loads(r["detail_json"] or "{}")
+        except (ValueError, TypeError):
+            continue
+        a, b = d.get("from"), d.get("to")
+        if a in LADDER and b in LADDER and LADDER.index(b) < LADDER.index(a):
+            n += 1
+        elif b == "paper" and a == "paper":
+            n += 1
+    return n
+
+
+def review(conn, ledger_for, min_trades=MIN_LIVE_TRADES, slack=WIN_RATE_SLACK):
+    """Walk every adopted strategy up or down by what its own ledger says.
+
+    `ledger_for(stage)` hands back the open ledger a strategy at that stage trades in — paper and
+    live are separate files, and reading the wrong one would grade a strategy on someone else's
+    fills. Only the record since the current stage began counts: the point is whether this rule
+    works here, now, and a stage it already left is a different question.
+    """
+    out = []
+    for r in conn.execute("SELECT * FROM ai_strategy WHERE stage != 'retired'").fetchall():
+        sid, stage = r["id"], r["stage"]
+        try:
+            measured = json.loads(r["measured_json"] or "{}")
+        except (ValueError, TypeError):
+            measured = {}
+        expected = measured.get("expected") if isinstance(measured, dict) else None
+        led = ledger_for(STAGE_MODE.get(stage, "dryrun"))
+        live = live_record(led, sid, r["stage_since_ms"])
+        move, why = verdict(expected, live, stage=stage, min_trades=min_trades, slack=slack)
+        row = {"id": sid, "stage": stage, "live": live, "expected": expected,
+               "verdict": move, "why": why}
+        if move != "hold":
+            to = next_stage(stage, move, demotion_count(conn, sid))
+            if to != stage:
+                set_stage(conn, sid, to, why)
+                row["stage"] = to
+                row["moved"] = f"{stage} → {to}"
+        out.append(row)
+    return out

@@ -203,12 +203,44 @@ def action_adopt(inp, settings):
     conn = strat.connect()
     try:
         result = strat.adopt(conn, ranked, runs, target,
+                             results=inp.get("results"),
                              min_trades=int(inp.get("minTrades") or strat.MIN_TRADES),
                              min_confirm=int(inp.get("minConfirmSymbols")
                                              or strat.MIN_CONFIRM_SYMBOLS))
     finally:
         conn.close()
     return {"success": True, "data": result}
+
+
+def action_review(inp, settings):
+    """Move every adopted strategy up or down by its own live record. No LLM in the decision.
+
+    Called after the close. Each stage reads its own ledger — paper fills and live fills are
+    different files on purpose — and the comparison is win rate against the backtest's, which is
+    the one number that means the same thing on both sides.
+    """
+    conns = {}
+
+    def ledger_for(mode):
+        if mode not in conns:
+            conns[mode] = store.connect(mode)
+        return conns[mode]
+
+    conn = strat.connect()
+    try:
+        rows = strat.review(conn, ledger_for,
+                            min_trades=int(inp.get("minLiveTrades") or strat.MIN_LIVE_TRADES),
+                            slack=float(inp.get("winRateSlack") or strat.WIN_RATE_SLACK))
+    finally:
+        conn.close()
+        for c in conns.values():
+            c.close()
+    moved = [r for r in rows if r.get("moved")]
+    return {"success": True, "data": {
+        "reviewed": rows, "moved": moved,
+        "note": ("단계는 실적으로만 움직입니다 — 백테스트가 약속한 승률을 실전이 따라오면 올라가고, "
+                 "벌어지면 내려옵니다. 비교할 백테스트가 없으면 모의까지만 올라갑니다."),
+    }}
 
 
 def action_strategies(inp, settings):
@@ -1054,6 +1086,83 @@ def action_selftest():
                    "got": again.get("stage"), "ok": again.get("stage") == "paper"})
     sconn.close()
 
+    # --- the ladder ----------------------------------------------------------------------
+    # A stage is earned by trading, so the test trades: real fills into the paper ledger, then the
+    # review that reads them back. Nothing here asserts on a number the review was handed.
+    with_results = [{"backtest": {"winRate": 60.0, "avgReturnPct": 1.2}}]
+    ladder_runs = [{"candidateId": "c1", "window": "holdout",
+                    "args": {"rules": [{"side": "buy", "when": [
+                        {"a": "ma5", "op": "crossUp", "b": "ma20"}]}]}}]
+    lconn = strat.connect()
+    lres = strat.adopt(lconn, {"winner": good}, ladder_runs,
+                       {"id": "ladder", "symbol": "L", "broker": "b", "account": "a"},
+                       results=with_results)
+    stored = json.loads(lconn.execute(
+        "SELECT measured_json FROM ai_strategy WHERE id='ladder'").fetchone()[0])
+    checks.append({"name": "what the backtest promised is kept for later", "want": 60.0,
+                   "got": (stored.get("expected") or {}).get("winRatePct"),
+                   "ok": (stored.get("expected") or {}).get("winRatePct") == 60.0})
+
+    paper = store.connect("dryrun")
+    ledger_for = lambda mode: paper
+
+    def round_trip(sid, buy_price, sell_price, n=1):
+        for _ in range(n):
+            store.apply_fill(paper, strategy_id=sid, broker="b", account="a", symbol="L",
+                             side="buy", qty=1, price=buy_price, source="test")
+            store.apply_fill(paper, strategy_id=sid, broker="b", account="a", symbol="L",
+                             side="sell", qty=1, price=sell_price, source="test")
+
+    # review walks every strategy, so pick this one out by name — the store already holds others.
+    def reviewed(sid):
+        return [r for r in strat.review(lconn, ledger_for) if r["id"] == sid][0]
+
+    held = reviewed("ladder")
+    checks.append({"name": "a strategy with no record does not move", "want": "hold",
+                   "got": held["verdict"], "ok": held["verdict"] == "hold"})
+
+    round_trip("ladder", 1000, 1100, n=7)   # seven wins
+    round_trip("ladder", 1000, 950, n=3)    # three losses -> 70% win rate, profitable
+    up = reviewed("ladder")
+    checks.append({"name": "a record that keeps the promise climbs", "want": "paper → mock",
+                   "got": up.get("moved"), "ok": up.get("moved") == "paper → mock"})
+    checks.append({"name": "the live win rate is read from our own fills", "want": 70.0,
+                   "got": up["live"]["winRatePct"], "ok": up["live"]["winRatePct"] == 70.0})
+
+    # Losing money at the new stage sends it back down, whatever the win rate looks like.
+    round_trip("ladder", 1000, 400, n=10)
+    down = reviewed("ladder")
+    checks.append({"name": "a losing record at a stage sends it back down", "want": "mock → paper",
+                   "got": down.get("moved"), "ok": down.get("moved") == "mock → paper"})
+
+    # A rule whose live win rate falls far under what was measured is demoted even while profitable.
+    strat.set_stage(lconn, "ladder", "mock", "test")
+    round_trip("drifter", 1000, 1001, n=3)
+    lconn.execute("INSERT INTO ai_strategy(id,symbol,broker,account,spec_json,stage,"
+                  "stage_since_ms,measured_json,created_ms,updated_ms) VALUES"
+                  "('drifter','L','b','a','{}','mock',0,?,0,0)",
+                  (json.dumps({"expected": {"winRatePct": 90.0}}),))
+    lconn.commit()
+    round_trip("drifter", 1000, 1002, n=4)
+    round_trip("drifter", 1000, 999, n=6)   # 40% win rate against 90% promised, still in profit
+    drift = reviewed("drifter")
+    checks.append({"name": "profitable but nothing like the backtest is still a demotion",
+                   "want": "demote", "got": [drift["verdict"], drift["live"]["winRatePct"]],
+                   "ok": drift["verdict"] == "demote"})
+
+    # Without a promise to check, the climb stops at mock — real money is not reached blind.
+    lconn.execute("INSERT INTO ai_strategy(id,symbol,broker,account,spec_json,stage,"
+                  "stage_since_ms,measured_json,created_ms,updated_ms) VALUES"
+                  "('blind','L','b','a','{}','mock',0,'{}',0,0)")
+    lconn.commit()
+    round_trip("blind", 1000, 1200, n=12)
+    blind = reviewed("blind")
+    checks.append({"name": "an unmeasured strategy cannot climb into real money",
+                   "want": "hold", "got": [blind["verdict"], blind["stage"]],
+                   "ok": blind["verdict"] == "hold" and blind["stage"] == "mock"})
+    paper.close()
+    lconn.close()
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1089,6 +1198,8 @@ def main():
             return out(action_cycle(inp, settings))
         if action == "adopt":
             return out(action_adopt(inp, settings))
+        if action == "review":
+            return out(action_review(inp, settings))
         if action == "strategies":
             return out(action_strategies(inp, settings))
         if action == "retire":
