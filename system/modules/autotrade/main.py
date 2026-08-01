@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import at_engine as eng          # noqa: E402
 import at_store as store         # noqa: E402
 import at_orders as orders       # noqa: E402
+import at_strategies as strat    # noqa: E402
 import at_sweep as sweep         # noqa: E402
 
 
@@ -129,8 +130,23 @@ def day_start_ms():
 
 
 def pick_strategies(settings, symbol=None, strategy_id=None):
+    """Everything eligible to run: what a person declared, plus what the model has adopted.
+
+    A person's entry is taken as written — they typed it, they meant it. A stored one carries the
+    stage it earned as its own mode cap, so it cannot outrun the ladder no matter what the module
+    is set to. A person's entry wins a name collision: the settings are the surface they control.
+    """
+    declared = list(settings.get("strategies") or [])
+    names = {s.get("id") for s in declared if isinstance(s, dict)}
+    try:
+        conn = strat.connect()
+        adopted = [a for a in strat.rows_to_strategies(conn) if a["id"] not in names]
+        conn.close()
+    except Exception:
+        # A strategy store that cannot be opened must not take the declared ones down with it.
+        adopted = []
     picked = []
-    for s in settings.get("strategies") or []:
+    for s in declared + adopted:
         if not isinstance(s, dict) or not s.get("id"):
             continue
         if strategy_id and s["id"] != strategy_id:
@@ -165,6 +181,61 @@ def last_close(bars):
 
 
 # ── actions ──────────────────────────────────────────────────────────────────────────────────
+def action_adopt(inp, settings):
+    """Take the sweep's winner into the strategy store, if the measurement earned it.
+
+    `ranked` and `runs` are handed straight through from the earlier pipeline steps. That is the
+    guard: the model declared the search space, and the evidence it is judged on never passed
+    through the model on its way here.
+    """
+    ranked, runs = inp.get("ranked"), inp.get("runs")
+    if not isinstance(ranked, dict) or not isinstance(runs, list):
+        return {"success": False,
+                "error": "adopt 는 `ranked`(rank_multi/rank_across 결과)와 `runs`(그 랭킹을 만든 "
+                         "계획된 실행 목록)를 그대로 받습니다 — 성적을 손으로 적어 넣을 수 없습니다."}
+    target = {"symbol": inp.get("symbol"), "broker": inp.get("broker"),
+              "account": inp.get("account"), "id": inp.get("strategyId"),
+              "template": inp.get("template")}
+    if not target["symbol"] or not target["broker"] or not target["account"]:
+        return {"success": False,
+                "error": "adopt 에는 symbol·broker·account 가 필요합니다 — 어느 계좌에서 돌지가 "
+                         "규칙의 일부입니다."}
+    conn = strat.connect()
+    try:
+        result = strat.adopt(conn, ranked, runs, target,
+                             min_trades=int(inp.get("minTrades") or strat.MIN_TRADES),
+                             min_confirm=int(inp.get("minConfirmSymbols")
+                                             or strat.MIN_CONFIRM_SYMBOLS))
+    finally:
+        conn.close()
+    return {"success": True, "data": result}
+
+
+def action_strategies(inp, settings):
+    conn = strat.connect()
+    try:
+        data = {"strategies": strat.read_all(conn, int(inp.get("limit") or 100)),
+                "events": strat.read_events(conn, inp.get("strategyId"),
+                                            int(inp.get("limit") or 50))}
+    finally:
+        conn.close()
+    return {"success": True, "data": data}
+
+
+def action_retire(inp, settings):
+    """Stop an adopted strategy. One direction only — promotion is earned, never asked for."""
+    sid = inp.get("strategyId")
+    if not sid:
+        return {"success": False, "error": "retire 에는 strategyId 가 필요합니다."}
+    conn = strat.connect()
+    try:
+        ok = strat.set_stage(conn, sid, "retired", inp.get("reason") or "retired on request")
+    finally:
+        conn.close()
+    return {"success": ok, "data": {"strategyId": sid, "stage": "retired"}} if ok else {
+        "success": False, "error": f"'{sid}' 은 전략 store 에 없습니다."}
+
+
 def action_gate(inp, settings):
     """Does the cycle run at all? The first step of the trading pipeline, and the only human gate.
 
@@ -912,6 +983,77 @@ def action_selftest():
                    "got": gate(mode="real")["unattended"],
                    "ok": gate(mode="real")["unattended"] is False})
 
+    # --- what the model may adopt --------------------------------------------------------
+    # The gate is only worth anything if it refuses, so every refusal is measured, not just the
+    # pass. A candidate that clears one bar and fails another must still be refused.
+    good = {"candidateId": "c1", "symbols": 5, "beatBuyHoldIn": 4, "confirmSymbols": 2,
+            "confirmBeatIn": 2, "trades": 40, "medianVsBuyHoldPct": 8.0, "flags": []}
+    checks.append({"name": "a measured winner is allowed", "want": [],
+                   "got": strat.judge(good), "ok": strat.judge(good) == []})
+
+    for name, patch, expect in [
+        ("one symbol is an anecdote", {"symbols": 1, "beatBuyHoldIn": 1}, "anecdote"),
+        ("winning on a minority is not winning", {"beatBuyHoldIn": 2}, "not a majority"),
+        ("never confirmed is not proven", {"confirmSymbols": 0, "confirmBeatIn": 0}, "untested"),
+        ("losing the confirmation set", {"confirmBeatIn": 0}, "confirmation set"),
+        ("too few trades is luck", {"trades": 3}, "luck"),
+        ("a negative median is not an edge", {"medianVsBuyHoldPct": -2.0}, "median"),
+        ("the sweep's own overfit flag is a refusal",
+         {"flags": ["only worked in sample — out of sample it lost"]}, "out of sample"),
+    ]:
+        why = strat.judge({**good, **patch})
+        checks.append({"name": name, "want": expect, "got": why,
+                       "ok": any(expect in w for w in why)})
+
+    # A missing field must read as "never measured", never as "nothing to check".
+    bare = strat.judge({"candidateId": "c2"})
+    checks.append({"name": "an empty measurement is refused, not waved through",
+                   "want": True, "got": bare, "ok": len(bare) >= 3})
+
+    at_dir = tempfile.mkdtemp()
+    store.DATA_DIR = at_dir
+    sconn = strat.connect()
+    runs = [{"candidateId": "c1", "args": {"action": "signals", "stopLossPct": 3,
+                                           "rules": [{"side": "buy", "when": [
+                                               {"a": "ma5", "op": "crossUp", "b": "ma20"}]}]}}]
+    target = {"symbol": "005930", "broker": "kiwoom", "account": "모의국내"}
+    ok_res = strat.adopt(sconn, {"winner": good, "ranked": [good]}, runs, target)
+    checks.append({"name": "an adopted strategy starts on paper, never at real",
+                   "want": "paper", "got": ok_res.get("stage"),
+                   "ok": ok_res.get("stage") == "paper"})
+    live = strat.rows_to_strategies(sconn)
+    checks.append({"name": "the stage becomes the strategy's own mode ceiling",
+                   "want": "dryrun", "got": (live[0]["mode"] if live else None),
+                   "ok": bool(live) and live[0]["mode"] == "dryrun"})
+    checks.append({"name": "the measured rules travel with it", "want": 1,
+                   "got": len(live[0]["rules"]) if live else 0,
+                   "ok": bool(live) and len(live[0]["rules"]) == 1})
+    checks.append({"name": "the exit that was measured travels with it", "want": 3,
+                   "got": (live[0].get("exits") or {}).get("stopLossPct") if live else None,
+                   "ok": bool(live) and (live[0]["exits"] or {}).get("stopLossPct") == 3})
+
+    bad_res = strat.adopt(sconn, {"winner": {**good, "candidateId": "c1", "trades": 2}},
+                          runs, target)
+    checks.append({"name": "a refused candidate is not stored", "want": None,
+                   "got": bad_res.get("adopted"), "ok": bad_res.get("adopted") is None})
+    events = strat.read_events(sconn)
+    checks.append({"name": "the refusal is written down for the next search",
+                   "want": "refused", "got": [e["event"] for e in events][:2],
+                   "ok": any(e["event"] == "refused" for e in events)})
+
+    # Rules the ranking never saw cannot be smuggled in by naming a candidate that is not there.
+    ghost = strat.adopt(sconn, {"winner": {**good, "candidateId": "nope"}}, runs, target)
+    checks.append({"name": "a winner whose rules are not in the runs is refused",
+                   "want": None, "got": ghost.get("adopted"),
+                   "ok": ghost.get("adopted") is None})
+
+    # A revision is a different strategy wearing the same name — it starts over.
+    strat.set_stage(sconn, ok_res["adopted"], "real", "test")
+    again = strat.adopt(sconn, {"winner": good}, runs, target)
+    checks.append({"name": "a revised rule restarts the ladder", "want": "paper",
+                   "got": again.get("stage"), "ok": again.get("stage") == "paper"})
+    sconn.close()
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -945,6 +1087,12 @@ def main():
             return out({"success": True, "data": sweep.rank_multi(inp)})
         if action == "cycle":
             return out(action_cycle(inp, settings))
+        if action == "adopt":
+            return out(action_adopt(inp, settings))
+        if action == "strategies":
+            return out(action_strategies(inp, settings))
+        if action == "retire":
+            return out(action_retire(inp, settings))
         if action == "gate":
             return out(action_gate(inp, settings))
         if action == "reconcile":
