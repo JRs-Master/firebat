@@ -92,7 +92,7 @@
       },
       "position": {
         "type": "object",
-        "description": "[reconcile] the broker's holding for this symbol: {qty, avgPrice}. The final arbiter of how many shares exist — the difference against what the strategies claim goes to the unassigned bucket or degrades them."
+        "description": "[reconcile] this symbol's holding, already read: {qty, avgPrice}. The final arbiter of how many shares exist — the difference against what the strategies claim goes to the unassigned bucket or degrades them. Prefer `balanceRows` when relaying a broker response."
       },
       "frames": {
         "type": "array",
@@ -219,6 +219,13 @@
           "type": "object"
         },
         "description": "[reconcile] the broker's unfilled-order rows, verbatim. An order of ours that is no longer listed and never filled is closed as canceled."
+      },
+      "balanceRows": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "[reconcile] the broker's balance rows, verbatim (one per symbol). This symbol's holding is read out of them here, so the caller does not need to know which field holds the quantity. A row that is ours but unreadable is returned under `unreadablePosition` and the balance step is skipped rather than treated as zero. Use this instead of `position` when passing a query result straight through."
       }
     }
   },

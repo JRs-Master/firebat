@@ -829,6 +829,86 @@ function standardOrder(action, data) {
   return { apiId: side === 'buy' ? 'kt10000' : 'kt10001', params: orderParams(data) };
 }
 
+
+// ── Standard account queries ─────────────────────────────────────────────────────────────────
+// The read half of the neutral contract. Placing an order through `place_order` and then reading
+// it back through `ka10075 {all_stk_tp:'0', trde_tp:'0', stex_tp:'0'}` would put the dialect right
+// back in the caller — and this broker uses two different exchange vocabularies depending on the
+// action (`stex_tp` 0/1/2 for order queries, `dmst_stex_tp` KRX/NXT for the balance). Whoever
+// reconciles should not have to know that.
+//
+// Side coding is inverted from the obvious reading — 1 is sell, 2 is buy — which is exactly the
+// kind of thing that silently returns the wrong half of the account. It is written down once here.
+const QUERY_SIDE = { sell: '1', buy: '2' };
+const STEX_TP = { SOR: '0', KRX: '1', NXT: '2' };
+const DMST_STEX = { SOR: 'KRX', KRX: 'KRX', NXT: 'NXT' };
+
+function sideCode(data) {
+  const side = String(data.side ?? '').toLowerCase();
+  if (!side) return '0'; // no side given = both, which is what reconciling an account wants
+  const code = QUERY_SIDE[side];
+  if (!code) throw new Error("side 는 'buy' 또는 'sell' 이어야 합니다 (생략하면 매수·매도 전체).");
+  return code;
+}
+
+function exchangeOf(data, table, name) {
+  const ex = String(data.exchange ?? 'SOR').toUpperCase();
+  const code = table[ex];
+  if (!code) throw new Error(`${name}: exchange='${ex}' 는 지원하지 않습니다 — KRX, NXT, SOR 중 하나.`);
+  return code;
+}
+
+/** Neutral query → { apiId, params }. */
+function standardQuery(action, data) {
+  const symbol = String(data.symbol ?? '').trim();
+  if (action === 'list_open_orders') {
+    const params = {
+      all_stk_tp: symbol ? '1' : '0',
+      trde_tp: sideCode(data),
+      stex_tp: exchangeOf(data, STEX_TP, 'list_open_orders'),
+    };
+    if (symbol) params.stk_cd = symbol;
+    return { apiId: 'ka10075', params };
+  }
+  if (action === 'list_fills') {
+    const params = {
+      qry_tp: symbol ? '1' : '0',
+      sell_tp: sideCode(data),
+      stex_tp: exchangeOf(data, STEX_TP, 'list_fills'),
+    };
+    if (symbol) params.stk_cd = symbol;
+    // Paging runs backwards here: the broker returns executions OLDER than this order number.
+    // Calling it `since` would read as "newer than", and a caller chasing new fills with it would
+    // quietly get none of them.
+    if (data.beforeOrderNo) params.ord_no = String(data.beforeOrderNo).trim();
+    return { apiId: 'ka10076', params };
+  }
+  // Per-symbol rows, always: a summed balance cannot be compared against a per-symbol ledger.
+  return {
+    apiId: 'kt00018',
+    params: { qry_tp: '2', dmst_stex_tp: exchangeOf(data, DMST_STEX, 'get_balance') },
+  };
+}
+
+const STANDARD_QUERIES = ['list_open_orders', 'list_fills', 'get_balance'];
+
+/** The one list in an account response, named by the response rather than by us.
+ *
+ * These endpoints answer with scalars plus a single row array, but the array's field name is not
+ * documented and differs per endpoint. Taking the sole list needs no such name; when there is more
+ * than one candidate nothing is picked and the names are reported, because a caller reconciling an
+ * account would rather see "which of these two" than silently settle the wrong list.
+ */
+function pickRows(payload) {
+  const arrays = Object.entries(payload).filter(([, v]) =>
+    Array.isArray(v) && v.every(row => row && typeof row === 'object' && !Array.isArray(row)));
+  if (!arrays.length) return null;
+  const filled = arrays.filter(([, v]) => v.length > 0);
+  const pick = filled.length === 1 ? filled[0] : (arrays.length === 1 ? arrays[0] : null);
+  if (!pick) return { candidates: arrays.map(([k]) => k) };
+  return { field: pick[0], rows: pick[1] };
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -861,6 +941,10 @@ process.stdin.on('end', async () => {
       const mapped = standardOrder(action, data);
       apiId = mapped.apiId;
       params = mapped.params;
+    } else if (STANDARD_QUERIES.includes(action)) {
+      const mapped = standardQuery(action, data);
+      apiId = mapped.apiId;
+      params = mapped.params;
     }
     if (URL_CATEGORY[apiId] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
     const result = await callApi(base, token, apiId, params);
@@ -874,6 +958,18 @@ process.stdin.on('end', async () => {
     // the response schema is read off the second later, since it is not documented anywhere.
     if (action === 'place_order' || action === 'cancel_order') {
       output.data.clientOrderId = data.clientOrderId ?? null;
+      output.data.sentParams = params;
+    }
+    if (STANDARD_QUERIES.includes(action) && ok) {
+      // `rows` so the caller does not need the undocumented field name, `rowsField` so the name
+      // becomes visible the first time a real response arrives.
+      const picked = pickRows(result);
+      if (picked?.field) {
+        output.data.rows = picked.rows;
+        output.data.rowsField = picked.field;
+      } else if (picked?.candidates) {
+        output.data.rowsCandidates = picked.candidates;
+      }
       output.data.sentParams = params;
     }
     if (!ok) output.error = result?.return_msg || `키움 API 오류 (return_code=${rc})`;

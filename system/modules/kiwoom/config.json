@@ -759,9 +759,12 @@
           "ust31302",
           "ust31490",
           "place_order",
-          "cancel_order"
+          "cancel_order",
+          "list_open_orders",
+          "list_fills",
+          "get_balance"
         ],
-        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다."
+        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다. list_open_orders / list_fills / get_balance = 조회 쪽 중립 계약 — {symbol?, side?, exchange?} 만 받아 이 모듈이 ka10075/ka10076/kt00018 로 옮깁니다(거래소 인자가 액션마다 다른 어휘라 부르는 쪽이 외울 필요가 없습니다). 응답은 원문 그대로 두고, 행 배열만 `rows` 로 함께 냅니다. 조회라 승인 대상이 아닙니다."
       },
       "params": {
         "type": "object",
@@ -777,11 +780,11 @@
           "buy",
           "sell"
         ],
-        "description": "place_order 매수/매도."
+        "description": "place_order 매수/매도. 조회(list_open_orders·list_fills)에서는 필터이며, 생략하면 매수·매도 전체입니다."
       },
       "symbol": {
         "type": "string",
-        "description": "종목코드 6자리 (예: 005930)."
+        "description": "종목코드 6자리 (예: 005930). 조회에서는 생략하면 계좌 전체입니다."
       },
       "qty": {
         "type": "number",
@@ -822,6 +825,10 @@
       "clientOrderId": {
         "type": "string",
         "description": "호출자의 주문 식별자. 그대로 되돌려주므로 원장이 재전송과 중복 체결을 구분할 수 있습니다."
+      },
+      "beforeOrderNo": {
+        "type": "string",
+        "description": "list_fills 페이징 — 이 주문번호보다 **과거** 체결을 돌려줍니다(뒤로 넘깁니다)."
       }
     },
     "additionalProperties": false

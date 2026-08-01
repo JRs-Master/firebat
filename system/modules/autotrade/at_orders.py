@@ -150,3 +150,47 @@ def read_fills(rows):
             "raw": row,
         })
     return out, unreadable
+
+
+# The balance answers with one row per symbol, and names the two numbers that matter differently
+# per broker. Same discipline as the execution rows: read by name, and when the holding for this
+# symbol cannot be read, say so instead of reporting zero — "no row" and "zero shares" are opposite
+# instructions to a reconciler, and guessing between them either invents a sale or hides one.
+POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "symbol", "code", "isin")
+POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "cur_qty", "HLDG_QTY", "quantity", "qty", "balance")
+POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "avgPrice", "avg_price",
+                "purchasePrice")
+
+
+def _same_symbol(value, symbol):
+    """A symbol matches its 6-digit core, whatever the broker hangs off it.
+
+    The same holding comes back as `005930`, `005930_AL`, `A005930` or `AAPL.US` depending on the
+    endpoint, and a strict comparison would read every one of those as "no position" — which
+    reconciliation would then settle as a sale that never happened. Letters are kept: stripping to
+    digits would leave every US ticker empty and make the whole account look sold.
+    """
+    a = "".join(ch for ch in str(value or "") if ch.isalnum()).upper()
+    b = "".join(ch for ch in str(symbol or "") if ch.isalnum()).upper()
+    if not a or not b:
+        return False
+    # The decoration hangs off the front or the back of the code we asked for, never replaces it.
+    return a.startswith(b) or a.endswith(b)
+
+
+def read_position(rows, symbol):
+    """Balance rows → ({qty, avgPrice}, matchedRow) for this symbol, or (None, None).
+
+    None means "could not be read" and never zero. A caller that treats it as zero would compare a
+    real ledger against an imagined empty account.
+    """
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if not _same_symbol(_first(row, POS_SYMBOL_KEYS) or row.get("stk_cd"), symbol):
+            continue
+        qty = _num(_first(row, POS_QTY_KEYS))
+        if qty is None:
+            return None, row  # the row is ours but unreadable — report it, do not call it empty
+        return {"qty": qty, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0}, row
+    return None, None

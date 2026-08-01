@@ -401,11 +401,25 @@ def action_reconcile(inp, settings):
 
     # 4. The balance is the arbiter of how many shares exist.
     verdict = None
+    unread_pos = None
     pos = inp.get("position") or {}
-    if symbol and "qty" in pos:
+    if symbol and "qty" not in pos:
+        # Given the balance rows verbatim, read this symbol out of them here rather than making
+        # the caller know which field holds the quantity — the same reason fills are read here.
+        found, row = orders.read_position(inp.get("balanceRows"), symbol)
+        if found:
+            pos = found
+        elif row is not None:
+            unread_pos = row
+        elif isinstance(inp.get("balanceRows"), list):
+            # The broker listed the account and this symbol was not in it: a real, readable zero.
+            pos = {"qty": 0.0, "avgPrice": 0.0}
+    if symbol and "qty" in pos and unread_pos is None:
         verdict = store.reconcile_symbol(conn, broker, account, symbol,
                                          float(pos.get("qty") or 0),
                                          float(pos.get("avgPrice") or pos.get("avg_price") or 0))
+    elif unread_pos is not None:
+        store.log_api(conn, broker, "balance:unreadable", False, 0, {"symbol": symbol}, unread_pos)
 
     drift = store.replay_positions(conn)
     if drift:
@@ -417,9 +431,10 @@ def action_reconcile(inp, settings):
         "reconcile": verdict, "ledgerDrift": drift,
         "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
         "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
+        "unreadablePosition": unread_pos,
         "note": ("접수 응답이 아니라 체결·잔고 조회가 원장을 확정합니다. 읽지 못한 체결 행은 "
                  "버리지 않고 그대로 돌려주므로, 실제 응답을 보고 필드명을 늘리면 됩니다."
-                 if report["unreadable"] else None),
+                 if report["unreadable"] or unread_pos else None),
     }}
 
 
@@ -738,6 +753,51 @@ def action_selftest():
     checks.append({"name": "in-sample only is called out", "want": True,
                    "got": fitted["flags"],
                    "ok": any("out of sample" in f for f in fitted["flags"])})
+
+    # --- reading the balance -------------------------------------------------------------
+    # The suffixed code is what the order endpoints actually echo back; a strict compare would
+    # read this holding as absent and settle it as a sale.
+    held, _ = orders.read_position([{"stk_cd": "005930_AL", "rmnd_qty": "7", "pur_pric": "70,500"}],
+                                   "005930")
+    checks.append({"name": "a suffixed symbol is still the same holding",
+                   "want": {"qty": 7.0, "avgPrice": 70500.0}, "got": held,
+                   "ok": held == {"qty": 7.0, "avgPrice": 70500.0}})
+
+    us, _ = orders.read_position([{"symbol": "AAPL.US", "qty": "3", "avgPrice": "210.5"}], "AAPL")
+    checks.append({"name": "a lettered ticker is matched too", "want": {"qty": 3.0,
+                                                                       "avgPrice": 210.5},
+                   "got": us, "ok": us == {"qty": 3.0, "avgPrice": 210.5}})
+
+    missing, row = orders.read_position([{"stk_cd": "000660", "rmnd_qty": "3"}], "005930")
+    checks.append({"name": "another symbol's row is not this symbol's position",
+                   "want": [None, None], "got": [missing, row],
+                   "ok": missing is None and row is None})
+
+    unread, bad_row = orders.read_position([{"stk_cd": "005930", "holding": "9"}], "005930")
+    checks.append({"name": "an unreadable holding is reported, not read as zero",
+                   "want": [None, True], "got": [unread, bad_row is not None],
+                   "ok": unread is None and bad_row is not None})
+
+    # A listed account without this symbol is a readable zero, and reconcile must act on it.
+    conn2 = store.connect("dryrun")
+    store.apply_fill(conn2, strategy_id="bal", broker="b", account="a", symbol="Z",
+                     side="buy", qty=5, price=100, source="test")
+    settings_bal = {"mode": "dryrun", "strategies": [
+        {"id": "bal", "symbol": "Z", "broker": "b", "account": "a"}]}
+    conn2.close()
+    sold_out = action_reconcile({"symbol": "Z", "balanceRows": [{"stk_cd": "999999",
+                                                                "rmnd_qty": "1"}]},
+                                settings_bal)["data"]["reconcile"]
+    checks.append({"name": "a symbol absent from the balance is zero, not unknown",
+                   "want": 0.0, "got": (sold_out or {}).get("brokerQty"),
+                   "ok": (sold_out or {}).get("brokerQty") == 0.0})
+
+    skipped = action_reconcile({"symbol": "Z", "balanceRows": [{"stk_cd": "Z", "holding": "5"}]},
+                               settings_bal)["data"]
+    checks.append({"name": "an unreadable balance row skips the comparison entirely",
+                   "want": [None, True],
+                   "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
+                   "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
