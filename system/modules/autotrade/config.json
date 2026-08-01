@@ -162,6 +162,10 @@
       "minSymbols": {
         "type": "integer",
         "description": "[rank_across] how many symbols a rule must have been measured on to count (default: half of those swept)."
+      },
+      "barCount": {
+        "type": "integer",
+        "description": "[plan_sweep] how many bars the fetch returned — in a pipeline take it from the candle step's `_cacheMeta.totalCount`. With it, candidates whose indicator needs more warm-up than the holdout window can hold are refused up front (they would score zero trades whatever their merit) and listed under `unmeasurable`. Without it that check cannot run and a long moving average will look worthless rather than unmeasured."
       }
     }
   },

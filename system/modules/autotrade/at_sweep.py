@@ -30,6 +30,8 @@ import itertools
 MAX_CANDIDATES = 50
 # Below this a win rate is a coin flip with extra steps.
 MIN_TRADES = 8
+# Bars a rule needs beyond its warm-up before the window can say anything about it.
+MIN_USABLE_BARS = 20
 
 
 def _as_list(v, default=None):
@@ -73,31 +75,37 @@ def _macd_rules():
     ]
 
 
+# A rule cannot fire before its longest indicator has enough bars. Measuring ma60 in a 73-bar
+# window leaves 13 usable bars, and the result — zero trades — reads as "the rule is bad" when it
+# means "the question could not be asked" (2026-08-01: a whole cross-symbol sweep came back at
+# 0 trades and looked like a verdict). Each family therefore reports its warmup, and a window that
+# cannot hold it is refused up front instead of measured.
 FAMILIES = {
     "ma-cross": lambda sp: [
-        (f"ma{f}x{s}", _ma_rules(f, s), {})
+        (f"ma{f}x{s}", _ma_rules(f, s), {}, s)
         for f in _as_list(sp.get("fast"), [5, 10, 20])
         for s in _as_list(sp.get("slow"), [20, 60, 120])
         if f < s
     ],
     "ema-cross": lambda sp: [
-        (f"ema{f}x{s}", _ma_rules(f, s, use_ema=True), {})
+        (f"ema{f}x{s}", _ma_rules(f, s, use_ema=True), {}, s)
         for f in _as_list(sp.get("fast"), [12, 20])
         for s in _as_list(sp.get("slow"), [26, 60])
         if f < s
     ],
     "rsi": lambda sp: [
-        (f"rsi{lo}/{hi}", _rsi_rules(lo, hi), {"rsiPeriod": p})
+        (f"rsi{lo}/{hi}", _rsi_rules(lo, hi), {"rsiPeriod": p}, p)
         for lo in _as_list(sp.get("low"), [25, 30, 35])
         for hi in _as_list(sp.get("high"), [65, 70, 75])
         for p in _as_list(sp.get("rsiPeriod"), [14])
     ],
     "bollinger": lambda sp: [
-        (f"bb{p}x{m}", _bollinger_rules(), {"bbPeriod": p, "bbMult": m})
+        (f"bb{p}x{m}", _bollinger_rules(), {"bbPeriod": p, "bbMult": m}, p)
         for p in _as_list(sp.get("bbPeriod"), [20])
         for m in _as_list(sp.get("bbMult"), [2, 2.5])
     ],
-    "macd": lambda sp: [("macd", _macd_rules(), {})],
+    # MACD needs the slow EMA plus the signal EMA before it says anything.
+    "macd": lambda sp: [("macd", _macd_rules(), {}, 26 + 9)],
 }
 
 
@@ -134,7 +142,7 @@ def plan_sweep(inp):
         # declared sweep silently ran the defaults.
         fam_space = {**{k: v for k, v in space.items() if not isinstance(v, dict)},
                      **(space.get(fam) if isinstance(space.get(fam), dict) else {})}
-        for cid, rules, params in FAMILIES[fam](fam_space):
+        for cid, rules, params, warmup in FAMILIES[fam](fam_space):
             for stop, take in itertools.product(stops, takes):
                 exits = {}
                 if stop:
@@ -151,7 +159,34 @@ def plan_sweep(inp):
                     # One object the pipeline can splat straight into the ta call.
                     "taArgs": {**params, **costs, **exits},
                     "exits": exits,
+                    "warmupBars": warmup,
                 })
+    # Refuse what cannot be measured, and say why. `barCount` is the series the pipeline fetched;
+    # the holdout is the smaller of the two windows, so it decides what is answerable.
+    try:
+        bar_count = int(inp.get("barCount") or (inp.get("space") or {}).get("barCount") or 0)
+    except (TypeError, ValueError):
+        bar_count = 0
+    unmeasurable = []
+    if bar_count > 0:
+        holdout_bars = int(bar_count * holdout)
+        usable = holdout_bars - MIN_USABLE_BARS
+        keep = []
+        for r in rows:
+            if r["warmupBars"] > usable:
+                unmeasurable.append({
+                    "id": r["id"],
+                    "warmupBars": r["warmupBars"],
+                    "holdoutBars": holdout_bars,
+                    "why": (
+                        f"needs {r['warmupBars']} bars of warm-up but the holdout window is only "
+                        f"{holdout_bars} — it would score zero trades regardless of merit"
+                    ),
+                })
+            else:
+                keep.append(r)
+        rows = keep
+
     dropped = max(0, len(rows) - MAX_CANDIDATES)
     rows = rows[:MAX_CANDIDATES]
 
@@ -174,9 +209,15 @@ def plan_sweep(inp):
         "runCount": len(runs),
         "dropped": dropped,
         "split": split,
+        "unmeasurable": unmeasurable,
+        "barCount": bar_count or None,
         "note": (
             f"{len(rows)} candidates × 2 windows = {len(runs)} ta calls. "
             + (f"{dropped} candidates were dropped at the {MAX_CANDIDATES} cap. " if dropped else "")
+            + (f"{len(unmeasurable)} candidates were refused because the holdout window is too "
+               f"short for their warm-up — see `unmeasurable`. " if unmeasurable else "")
+            + ("Pass `barCount` (the number of bars fetched) to have that check run at all. "
+               if not bar_count else "")
             + "Pass each run's `args` to technical-analysis with the same barsCacheKey, then send "
               "the results to rank_sweep."
         ),

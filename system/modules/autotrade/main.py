@@ -445,6 +445,20 @@ def action_selftest():
     checks.append({"name": "a sweep plans two windows per candidate", "want": [2, 4],
                    "got": [len(plan["candidates"]), plan["runCount"]],
                    "ok": len(plan["candidates"]) == 2 and plan["runCount"] == 4})
+    # A window that cannot hold the indicator's warm-up is refused, not measured: "zero trades"
+    # would otherwise read as a verdict on the rule.
+    short = sweep.plan_sweep({"space": {"families": ["ma-cross"], "fast": [5], "slow": [20, 60]},
+                              "barCount": 243})
+    refused = [u["id"] for u in short["unmeasurable"]]
+    checks.append({"name": "a rule the window cannot measure is refused up front",
+                   "want": ["ma-cross:ma5x60"], "got": refused,
+                   "ok": refused == ["ma-cross:ma5x60"] and len(short["candidates"]) == 1})
+    long = sweep.plan_sweep({"space": {"families": ["ma-cross"], "fast": [5], "slow": [20, 60]},
+                             "barCount": 1200})
+    checks.append({"name": "a long enough series measures both", "want": 2,
+                   "got": len(long["candidates"]),
+                   "ok": len(long["candidates"]) == 2 and not long["unmeasurable"]})
+
     windows = sorted({r["window"] for r in plan["runs"]})
     checks.append({"name": "fitted on one window, scored on another", "want": ["holdout", "train"],
                    "got": windows, "ok": windows == ["holdout", "train"]})
