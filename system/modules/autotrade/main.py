@@ -476,6 +476,8 @@ def action_selftest():
                {"candidateId": "steady", "vsBuyHoldPct": 5, "holdoutReturnPct": 11, "trades": 20, "flags": []}]),
     ):
         running = sweep.merge_sweeps({"running": running, "symbol": sym, "ranked": rows})
+    # The accumulator comes back under the same key it goes in as, so chaining is literal.
+    assert "running" in running, "merge_sweeps must return its accumulator as `running`"
     across = sweep.rank_across({"running": running})
     top = across["ranked"][0]["candidateId"]
     checks.append({"name": "consistency beats one lucky symbol", "want": "steady",

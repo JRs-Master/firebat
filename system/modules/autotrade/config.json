@@ -150,7 +150,7 @@
       },
       "running": {
         "type": "object",
-        "description": "[merge_sweeps/rank_across] the accumulator merge_sweeps returned for the previous symbol; omit on the first."
+        "description": "[merge_sweeps/rank_across] the accumulator, passed back exactly as merge_sweeps returned it — $stepN.running. Omit on the first symbol."
       },
       "ranked": {
         "type": "array",

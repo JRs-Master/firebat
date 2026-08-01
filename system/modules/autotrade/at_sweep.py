@@ -196,6 +196,8 @@ def merge_sweeps(inp):
     should not carry a rule that lost everywhere else.
     """
     running = inp.get("running") or {}
+    if "running" in running and "byCandidate" not in running:
+        running = running.get("running") or {}
     symbol = inp.get("symbol") or "?"
     ranked = inp.get("ranked") or []
     acc = dict(running.get("byCandidate") or {})
@@ -220,7 +222,11 @@ def merge_sweeps(inp):
             entry["cleanIn"] += 1
         entry["symbols"].append(symbol)
 
-    return {"byCandidate": acc, "symbols": symbols, "symbolCount": len(symbols)}
+    # Returned under the same name it is passed in as. An accumulator whose input parameter is
+    # `running` and whose output is the bare payload forces every caller to remember a rename —
+    # and a pipeline written the obvious way (`running: "$step4.running"`) fails on a path that
+    # ought to exist (2026-08-01).
+    return {"running": {"byCandidate": acc, "symbols": symbols, "symbolCount": len(symbols)}}
 
 
 def _median(xs):
@@ -234,6 +240,10 @@ def _median(xs):
 def rank_across(inp):
     """Final ranking over every symbol swept — consistency first, size second."""
     running = inp.get("running") or {}
+    # Accept both the accumulator and the envelope it now comes wrapped in, so a pipeline can pass
+    # `$stepN` or `$stepN.running` and neither is wrong.
+    if "running" in running and "byCandidate" not in running:
+        running = running.get("running") or {}
     acc = running.get("byCandidate") or {}
     total_symbols = int(running.get("symbolCount") or 0) or 1
     min_symbols = int(inp.get("minSymbols") or max(2, (total_symbols + 1) // 2))
