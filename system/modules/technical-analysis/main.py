@@ -1198,8 +1198,13 @@ def main():
             bucket = buy if side == "buy" else sell
             for i, b in enumerate(bars):
                 if all(holds(c, i) for c in when):
-                    bucket.append({"date": b["date"], "price": round(b["close"], 6), "label": label,
-                                   "note": r.get("note") or None})
+                    # `side` travels with the point. buyPoints/sellPoints keep it separate, but
+                    # `firedOnLastClosedBar` merges both lists, and a caller reading that one had
+                    # no way back to the rule — it had to guess the direction from the label text.
+                    # A rule that declared side "buy" and labelled itself "ma5 crossUp ma20" then
+                    # traded nothing, and looked exactly like a quiet day.
+                    bucket.append({"date": b["date"], "price": round(b["close"], 6), "side": side,
+                                   "label": label, "note": r.get("note") or None})
         last_i = len(bars) - 1
         fired_now = [p for p in buy + sell if p["date"] == bars[last_i]["date"]]
         # **마지막 봉은 아직 안 닫혔을 수 있다.** 형성 중인 봉으로 판정한 신호는 그 분이

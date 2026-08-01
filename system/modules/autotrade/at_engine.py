@@ -74,11 +74,20 @@ def fired_sides(signal, use="firedOnLastClosedBar"):
     fired = (signal or {}).get(use) or []
     sides = set()
     for f in fired:
-        side = (f or {}).get("side") or (f or {}).get("label")
-        if isinstance(side, str):
-            if "buy" in side.lower():
+        declared = (f or {}).get("side")
+        if isinstance(declared, str) and declared.lower() in ("buy", "sell"):
+            sides.add(declared.lower())
+            continue
+        # Fallback for responses from before the side travelled with the point. Reading the
+        # direction out of prose is not something to rely on — the default labels are 매수/매도,
+        # which contain neither word, so a strategy whose analyser predates this simply never
+        # traded. Kept only so an old cached response degrades instead of misfiring.
+        label = (f or {}).get("label")
+        if isinstance(label, str):
+            low = label.lower()
+            if "buy" in low or "매수" in label:
                 sides.add("buy")
-            elif "sell" in side.lower():
+            elif "sell" in low or "매도" in label:
                 sides.add("sell")
     return sides
 

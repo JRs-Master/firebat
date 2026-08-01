@@ -1,0 +1,104 @@
+{
+  "title": "autotrade — 005930 1m cycle",
+  "cronTime": "30 * 0-6 * * 1-5",
+  "executionMode": "pipeline",
+  "_why": [
+    "One cycle, wired the only way the layers allow: this module never calls a broker, the",
+    "pipeline does. Steps are 0-based, so $step0 is the candle fetch.",
+    "Runs at :30 of every minute during KST 09:00-15:59 (the server is UTC), which puts the",
+    "decision after the bar has closed rather than on top of the close.",
+    "Scheduled runs carry the cron context, so the order step needs no approval card — that is",
+    "the whole reason trading lives here and not in chat.",
+    "The three queries at the end are reads and are not approval-gated; reconcile settles from",
+    "them in the order fills -> open orders -> balance."
+  ],
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "ka10080",
+        "account": "모의국내",
+        "params": { "stk_cd": "005930_AL", "tic_scope": "1", "upd_stkpc_tp": "1" }
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_technical-analysis",
+      "inputData": {
+        "action": "signals",
+        "rules": [
+          { "side": "buy", "label": "ma5 crossUp ma20", "when": [{ "a": "ma5", "op": "crossUp", "b": "ma20" }] },
+          { "side": "sell", "label": "ma5 crossDown ma20", "when": [{ "a": "ma5", "op": "crossDown", "b": "ma20" }] }
+        ]
+      },
+      "inputMap": { "barsCacheKey": "$step0._cacheKey" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "cycle", "symbol": "005930" },
+      "inputMap": { "signal": "$step1", "barsCacheKey": "$step0._cacheKey" }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step2.calls",
+      "steps": [
+        { "type": "TOOL_CALL", "tool": "sysmod_kiwoom", "inputData": "$prev.input" }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "record_orders" },
+      "inputMap": { "calls": "$step2.calls", "results": "$step3" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": { "action": "list_fills", "account": "모의국내", "symbol": "005930" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": { "action": "list_open_orders", "account": "모의국내", "symbol": "005930" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": { "action": "get_balance", "account": "모의국내" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "reconcile", "symbol": "005930" },
+      "inputMap": {
+        "fills": "$step5.rows",
+        "openOrders": "$step6.rows",
+        "balanceRows": "$step7.rows"
+      }
+    }
+  ],
+  "_strategySettingsExample": {
+    "_note": [
+      "The pipeline does nothing until a strategy is declared in the module settings —",
+      "`cycle` answers 'no enabled strategy matched'. Paste one entry like this into the",
+      "`strategies` field (전략 탭). `account` is the broker module's account alias, and that",
+      "alias is what decides mock vs real — mode=dryrun still places no orders at all."
+    ],
+    "strategies": [
+      {
+        "id": "sam-1m-ma",
+        "enabled": true,
+        "kind": "rules",
+        "symbol": "005930",
+        "broker": "kiwoom",
+        "account": "모의국내",
+        "money": { "qty": 1 },
+        "limits": { "maxPositionKrw": 300000 },
+        "exits": { "stopLossPct": 2, "takeProfitPct": 3 },
+        "orders": { "type": "limit", "exchange": "SOR" }
+      }
+    ]
+  }
+}
