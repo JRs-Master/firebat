@@ -465,6 +465,29 @@ def action_selftest():
     top = ranked["ranked"][0]["candidateId"]
     checks.append({"name": "a huge return on two trades does not win", "want": "solid",
                    "got": top, "ok": top == "solid"})
+    # Cross-symbol: a rule that wins big on one series and loses on two is not a strategy.
+    running = None
+    for sym, rows in (
+        ("A", [{"candidateId": "lucky", "vsBuyHoldPct": 90, "holdoutReturnPct": 95, "trades": 20, "flags": []},
+               {"candidateId": "steady", "vsBuyHoldPct": 4, "holdoutReturnPct": 12, "trades": 20, "flags": []}]),
+        ("B", [{"candidateId": "lucky", "vsBuyHoldPct": -30, "holdoutReturnPct": -20, "trades": 20, "flags": []},
+               {"candidateId": "steady", "vsBuyHoldPct": 3, "holdoutReturnPct": 9, "trades": 20, "flags": []}]),
+        ("C", [{"candidateId": "lucky", "vsBuyHoldPct": -25, "holdoutReturnPct": -15, "trades": 20, "flags": []},
+               {"candidateId": "steady", "vsBuyHoldPct": 5, "holdoutReturnPct": 11, "trades": 20, "flags": []}]),
+    ):
+        running = sweep.merge_sweeps({"running": running, "symbol": sym, "ranked": rows})
+    across = sweep.rank_across({"running": running})
+    top = across["ranked"][0]["candidateId"]
+    checks.append({"name": "consistency beats one lucky symbol", "want": "steady",
+                   "got": top, "ok": top == "steady"})
+    lucky = next(r for r in across["ranked"] if r["candidateId"] == "lucky")
+    checks.append({"name": "a rule that lost on most symbols is flagged", "want": True,
+                   "got": lucky["flags"],
+                   "ok": any("not a majority" in f for f in lucky["flags"])})
+    checks.append({"name": "the survivor is the one that held up everywhere", "want": "steady",
+                   "got": (across["winner"] or {}).get("candidateId"),
+                   "ok": (across["winner"] or {}).get("candidateId") == "steady"})
+
     fitted = sweep.rank_sweep({
         "runs": [{"candidateId": "curve", "window": "train"},
                  {"candidateId": "curve", "window": "holdout"}],
@@ -497,6 +520,10 @@ def main():
             return out({"success": True, "data": sweep.plan_sweep(inp)})
         if action == "rank_sweep":
             return out({"success": True, "data": sweep.rank_sweep(inp)})
+        if action == "merge_sweeps":
+            return out({"success": True, "data": sweep.merge_sweeps(inp)})
+        if action == "rank_across":
+            return out({"success": True, "data": sweep.rank_across(inp)})
         if action == "cycle":
             return out(action_cycle(inp, settings))
         if action == "reconcile":

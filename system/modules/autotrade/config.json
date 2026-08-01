@@ -48,6 +48,8 @@
           "on_stream_event",
           "plan_sweep",
           "rank_sweep",
+          "rank_across",
+          "merge_sweeps",
           "reconcile",
           "report",
           "positions",
@@ -60,7 +62,7 @@
           "resolve_unassigned",
           "import_position"
         ],
-        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample."
+        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result."
       },
       "strategyId": {
         "type": "string",
@@ -145,6 +147,21 @@
         "items": {
           "type": "object"
         }
+      },
+      "running": {
+        "type": "object",
+        "description": "[merge_sweeps/rank_across] the accumulator merge_sweeps returned for the previous symbol; omit on the first."
+      },
+      "ranked": {
+        "type": "array",
+        "description": "[merge_sweeps] the `ranked` array rank_sweep returned for this symbol.",
+        "items": {
+          "type": "object"
+        }
+      },
+      "minSymbols": {
+        "type": "integer",
+        "description": "[rank_across] how many symbols a rule must have been measured on to count (default: half of those swept)."
       }
     }
   },

@@ -1,7 +1,7 @@
 ---
 name: scheduling
 kind: procedure
-description: 스케줄(cron) 등록 매뉴얼 — 태그: 예약, 스케줄, 반복 실행, cron, 매일, 알림 주기, executionMode, runWhen, retry, notify. 등록 전 반드시 get_skill 로 본문을 읽을 것 (모드 선택·표준 옵션에 함정 다수). 쓰지 말 것 — 지금 한 번 실행하는 요청(그냥 수행), 파이프라인 스텝 내용 작성(pipeline-authoring), 캘린더 일정 등록(calendar sysmod).
+description: 스케줄(cron) 등록 매뉴얼 — 태그: 예약, 스케줄, 반복 실행, cron, 매일, 알림 주기, executionMode, runWhen, retry, notify. 등록 전 반드시 get_skill 로 본문을 읽을 것 (모드 선택·표준 옵션에 함정 다수). 쓰지 말 것 — 지금 한 번 실행하는 요청(그냥 수행), 파이프라인 스텝 내용 작성(schedule_task 의 pipeline 파라미터 설명), 캘린더 일정 등록(calendar sysmod).
 ---
 
 # Scheduling — job registration manual (schedule_task)
@@ -49,4 +49,4 @@ notify: {
 
 **Agent-mode discipline (unattended runs)**: a side-effecting action (send / order / publish) runs **once, last, after verification** — never re-send an "improved version" after a success.
 
-For pipeline step authoring details (step types, the EXECUTE inputData envelope, $prev references), read `get_skill("pipeline-authoring")`.
+Pipeline step details (step types, the `inputData` envelope, `$prev`/`$stepN` references) live in the `pipeline` parameter's own description — read that rather than a copy of it.

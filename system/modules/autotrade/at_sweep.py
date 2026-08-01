@@ -183,6 +183,117 @@ def plan_sweep(inp):
     }
 
 
+def merge_sweeps(inp):
+    """Combine one symbol's ranking into a running total across symbols.
+
+    One symbol over one year is not a sample. A rule that survives 삼성전자 2025-26 has told you
+    about 삼성전자 2025-26 — the sweep can only say "this did not fail here", and the way to turn
+    that into something worth trading is to ask the same question of several series and keep what
+    holds up in most of them.
+
+    Called once per symbol with the previous total, so a pipeline can loop symbols the same way it
+    loops candidates. Keeping the median rather than the mean is deliberate: one runaway symbol
+    should not carry a rule that lost everywhere else.
+    """
+    running = inp.get("running") or {}
+    symbol = inp.get("symbol") or "?"
+    ranked = inp.get("ranked") or []
+    acc = dict(running.get("byCandidate") or {})
+    symbols = list(running.get("symbols") or [])
+    if symbol not in symbols:
+        symbols.append(symbol)
+
+    for row in ranked:
+        cid = row.get("candidateId")
+        if not cid:
+            continue
+        entry = acc.setdefault(cid, {"vsBuyHold": [], "holdout": [], "trades": 0,
+                                     "cleanIn": 0, "flaggedIn": 0, "symbols": []})
+        if row.get("vsBuyHoldPct") is not None:
+            entry["vsBuyHold"].append(float(row["vsBuyHoldPct"]))
+        if row.get("holdoutReturnPct") is not None:
+            entry["holdout"].append(float(row["holdoutReturnPct"]))
+        entry["trades"] += int(row.get("trades") or 0)
+        if row.get("flags"):
+            entry["flaggedIn"] += 1
+        else:
+            entry["cleanIn"] += 1
+        entry["symbols"].append(symbol)
+
+    return {"byCandidate": acc, "symbols": symbols, "symbolCount": len(symbols)}
+
+
+def _median(xs):
+    if not xs:
+        return None
+    ys = sorted(xs)
+    mid = len(ys) // 2
+    return ys[mid] if len(ys) % 2 else (ys[mid - 1] + ys[mid]) / 2
+
+
+def rank_across(inp):
+    """Final ranking over every symbol swept — consistency first, size second."""
+    running = inp.get("running") or {}
+    acc = running.get("byCandidate") or {}
+    total_symbols = int(running.get("symbolCount") or 0) or 1
+    min_symbols = int(inp.get("minSymbols") or max(2, (total_symbols + 1) // 2))
+
+    rows = []
+    for cid, e in acc.items():
+        vs = e.get("vsBuyHold") or []
+        beat = [v for v in vs if v > 0]
+        row = {
+            "candidateId": cid,
+            "symbols": len(e.get("symbols") or []),
+            "beatBuyHoldIn": len(beat),
+            "medianVsBuyHoldPct": round(_median(vs), 2) if vs else None,
+            "worstVsBuyHoldPct": round(min(vs), 2) if vs else None,
+            "medianHoldoutPct": round(_median(e.get("holdout") or []), 2) if e.get("holdout") else None,
+            "trades": e.get("trades", 0),
+            "cleanIn": e.get("cleanIn", 0),
+            "flags": [],
+        }
+        if row["symbols"] < min_symbols:
+            row["flags"].append(f"only measured on {row['symbols']} symbol(s)")
+        if row["beatBuyHoldIn"] <= len(vs) // 2:
+            row["flags"].append(
+                f"beat buy & hold on {row['beatBuyHoldIn']} of {len(vs)} symbols — not a majority"
+            )
+        if row["trades"] < MIN_TRADES:
+            row["flags"].append(f"{row['trades']} trades in total — too thin to read")
+        rows.append(row)
+
+    # Consistency is the ranking: how often it beat holding, then the median edge. Sorting by the
+    # best number instead would hand the top spot to whichever rule got lucky on one series.
+    rows.sort(key=lambda r: (r["beatBuyHoldIn"], r["medianVsBuyHoldPct"] or -999), reverse=True)
+    survivors = [r for r in rows if not r["flags"]]
+
+    return {
+        "ranked": rows,
+        "survivors": survivors,
+        "winner": survivors[0] if survivors else None,
+        "symbols": running.get("symbols") or [],
+        "blocks": [{
+            "type": "table",
+            "props": {
+                "title": f"{total_symbols}개 종목 종합",
+                "columns": ["전략", "이긴 종목", "보유 대비(중앙)", "최악", "검증(중앙)", "체결", "경고"],
+                "rows": [[r["candidateId"], f"{r['beatBuyHoldIn']}/{r['symbols']}",
+                          r["medianVsBuyHoldPct"], r["worstVsBuyHoldPct"],
+                          r["medianHoldoutPct"], r["trades"],
+                          "; ".join(r["flags"]) or "—"] for r in rows[:20]],
+            },
+        }],
+        "note": (
+            "종목 과반에서 보유를 이긴 규칙만 승자 후보입니다. 한 종목에서만 크게 이긴 규칙은 "
+            "그 종목에 맞춘 것이지 규칙이 좋은 게 아닙니다."
+            if survivors else
+            "어느 규칙도 종목 과반에서 보유를 이기지 못했습니다 — 이 검색공간·이 종목군에서는 "
+            "규칙 매매보다 보유가 낫다는 뜻이고, 그것도 결과입니다."
+        ),
+    }
+
+
 def _backtest_of(result):
     """Find the backtest object in whatever the pipeline handed back.
 

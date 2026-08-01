@@ -1,7 +1,7 @@
 ---
 name: skill-authoring
 kind: procedure
-description: 스킬을 새로 만들거나 고치는 매뉴얼 — 태그: 스킬 만들기, 스킬 작성, skill, 매뉴얼 추가, 케이스 매뉴얼, save_skill, 자유도. 사용자가 자기 케이스 절차를 스킬로 남기려 할 때 get_skill 로 본문을 읽고 그대로 따를 것. 쓰지 말 것 — 이미 있는 스킬의 *내용*을 실행할 때(그건 그 스킬을 직접 get_skill), 일회성 요청(스킬이 아니라 그냥 수행), 모듈·파이프라인 제작(module-authoring / pipeline-authoring).
+description: 스킬을 새로 만들거나 고치는 매뉴얼 — 태그: 스킬 만들기, 스킬 작성, skill, 매뉴얼 추가, 케이스 매뉴얼, save_skill, 자유도. 사용자가 자기 케이스 절차를 스킬로 남기려 할 때 get_skill 로 본문을 읽고 그대로 따를 것. 쓰지 말 것 — 이미 있는 스킬의 *내용*을 실행할 때(그건 그 스킬을 직접 get_skill), 일회성 요청(스킬이 아니라 그냥 수행), 모듈 제작(module-authoring).
 ---
 
 # 스킬 작성 매뉴얼

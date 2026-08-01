@@ -1,7 +1,7 @@
 ---
 name: module-authoring
 kind: procedure
-description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, secrets, entry, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·격리 규칙 위반 = 실행 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(pipeline-authoring), 스킬 작성(skill-authoring).
+description: 사용자 모듈 제작 매뉴얼 — 태그: 모듈 만들기, user module, config.json, secrets, entry, 재사용 5규칙. 모듈을 새로 만들거나 고치기 전 반드시 get_skill 로 본문을 읽을 것 (I/O 계약·격리 규칙 위반 = 실행 실패). 쓰지 말 것 — 이미 있는 sysmod 를 호출만 할 때(search_module_actions → get_action_schema), 파이프라인 스텝 작성(schedule_task 의 pipeline 파라미터 설명), 스킬 작성(skill-authoring).
 ---
 
 # Module authoring — user module contract
