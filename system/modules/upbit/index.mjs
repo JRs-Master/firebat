@@ -416,7 +416,10 @@ function normalizeCandleRequest(input) {
   const symbol = String(input.symbol ?? input.market ?? '').trim();
   if (!symbol) throw new Error('get_candles: symbol 이 필요합니다 (예: KRW-BTC).');
   const interval = String(input.interval ?? '1d').trim();
-  const out = { ...input, market: symbol };
+  // The exchange defaults `count` to 1. A caller that forgets it gets a single bar, and the
+  // analyser then reports no signals — which reads as a quiet market rather than a missing
+  // argument. 200 is the documented maximum and what a series is for.
+  const out = { ...input, market: symbol, count: Number(input.count) > 0 ? input.count : 200 };
   const seconds = /^(\d+)s$/i.exec(interval);
   if (seconds) {
     return { ...out, action: 'candle-seconds', unit: seconds[1] };
