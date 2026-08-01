@@ -1283,6 +1283,47 @@ impl ModuleManager {
         None
     }
 
+    /// The schedule files this module declares — `"schedules": ["cron.upbit.json", ...]`.
+    ///
+    /// A module that runs on a timer should say so itself. Before this, the declarations shipped
+    /// in the repo and nothing read them: installing the module and restarting produced no jobs,
+    /// and the only route to a running schedule was for a person to retype the pipeline into the
+    /// scheduler by hand.
+    pub async fn declared_schedules(&self, name: &str) -> Vec<String> {
+        self.module_config(name)
+            .await
+            .and_then(|c| c.get("schedules").cloned())
+            .and_then(|v| v.as_array().cloned())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .filter(|f| f.ends_with(".json") && !f.contains("..") && !f.contains('/'))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Which of this module's declared schedules have already been registered once.
+    ///
+    /// Kept so a job the owner deleted on purpose is not resurrected by the next restart, while a
+    /// schedule added in a later version of the module still gets picked up.
+    pub fn registered_schedules(&self, name: &str) -> Vec<String> {
+        self.get_settings(name)
+            .get("_registeredSchedules")
+            .and_then(|v| v.as_array().cloned())
+            .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn set_registered_schedules(&self, name: &str, files: &[String]) -> bool {
+        let mut settings = self.get_settings(name);
+        if !settings.is_object() {
+            settings = serde_json::json!({});
+        }
+        settings["_registeredSchedules"] = serde_json::json!(files);
+        self.set_settings(name, &settings)
+    }
+
     /// Config from whichever scope holds the module — for read paths that only know the name.
     pub async fn module_config(&self, name: &str) -> Option<serde_json::Value> {
         match self.get_module_config("system", name).await {

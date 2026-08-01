@@ -996,6 +996,13 @@ async fn main() -> Result<()> {
         page_manager.clone(),
         module_manager.clone(),
     ));
+    // Register whatever schedules the installed modules declare. Idempotent: a job already
+    // registered once is skipped, so a schedule the owner deleted on purpose stays deleted.
+    {
+        let core_boot = core.clone();
+        tokio::spawn(async move { core_boot.sync_all_module_schedules().await });
+    }
+
     let core_cb = core.clone();
 
     let schedule_arc = schedule_manager_with_hooks.clone();
@@ -1243,7 +1250,8 @@ async fn main() -> Result<()> {
     let project_service =
         grpc::project::ProjectServiceImpl::new(project_manager, page_manager.clone());
     let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone())
-        .with_dynamic_tools(dynamic_tools_registry.clone());
+        .with_dynamic_tools(dynamic_tools_registry.clone())
+        .with_core(core.clone());
     // modules = module 블록 publish-bake (pending 승인 commit·hub·admin 라우트 전부 이 Save 경유).
     let page_service =
         grpc::page::PageServiceImpl::new(

@@ -49,6 +49,114 @@ impl Core {
         Self { ai, task, schedule, page, module }
     }
 
+    /// Register (or withdraw) the schedules a module declares. Returns `(added, removed)`.
+    ///
+    /// A module that needs a timer ships the cron declaration in its own folder and names it in
+    /// `config.json`. Enabling the module registers those jobs; disabling withdraws them. The
+    /// alternative — which is what existed — was that the declarations sat in the repo unread and
+    /// somebody retyped a twelve-step pipeline into the scheduler by hand.
+    ///
+    /// Registration is one-way idempotent. A file already registered once is skipped forever
+    /// after, so a job the owner deleted deliberately does not come back on the next restart,
+    /// while a schedule added in a later version of the module is still picked up. Turning the
+    /// module off clears that record, so turning it back on starts clean.
+    ///
+    /// This sits in Core rather than in either manager because it crosses two of them, and a
+    /// module manager that reached into the scheduler would be the exact coupling the mediator
+    /// exists to prevent.
+    pub async fn sync_module_schedules(&self, name: &str) -> (Vec<String>, Vec<String>) {
+        let declared = self.module.declared_schedules(name).await;
+        if declared.is_empty() {
+            return (vec![], vec![]);
+        }
+        let job_id = |file: &str| format!("module:{}:{}", name, file.trim_end_matches(".json"));
+
+        if !self.module.is_enabled(name) {
+            let mut removed = vec![];
+            for file in &declared {
+                if self.schedule.cancel(&job_id(file)).await.unwrap_or(false) {
+                    removed.push(file.clone());
+                }
+            }
+            if !removed.is_empty() {
+                self.module.set_registered_schedules(name, &[]);
+                tracing::info!(target: "module_schedule", module = %name,
+                    removed = removed.len(), "module disabled — its schedules were withdrawn");
+            }
+            return (vec![], removed);
+        }
+
+        let mut already = self.module.registered_schedules(name);
+        let live: std::collections::HashSet<String> =
+            self.schedule.list().into_iter().map(|j| j.job_id).collect();
+        let mut added = vec![];
+        for file in &declared {
+            let id = job_id(file);
+            if already.contains(file) || live.contains(&id) {
+                continue;
+            }
+            // The reader is scope-aware and its own whitelist accepts only
+            // `<alphanumeric-dash-underscore>.json`, so a declaration named otherwise reads as
+            // missing rather than as refused.
+            let raw = match self.module.read_module_file("system", name, file).await {
+                Some(r) => Some(r),
+                None => self.module.read_module_file("user", name, file).await,
+            };
+            let Some(raw) = raw else {
+                tracing::warn!(target: "module_schedule", module = %name, file = %file,
+                    "declared schedule file is missing");
+                continue;
+            };
+            // The file is the job: same shape the scheduler already takes, so what a person reads
+            // in the module folder is exactly what runs.
+            let opts: crate::ports::CronScheduleOptions = match serde_json::from_str(&raw) {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!(target: "module_schedule", module = %name, file = %file,
+                        error = %e, "declared schedule could not be read");
+                    continue;
+                }
+            };
+            let label = opts.title.clone().unwrap_or_else(|| id.clone());
+            match self.schedule.schedule(&id, &label, opts).await {
+                Ok(()) => {
+                    already.push(file.clone());
+                    added.push(file.clone());
+                    tracing::info!(target: "module_schedule", module = %name, job = %id,
+                        "registered a schedule the module declares");
+                }
+                Err(e) => tracing::warn!(target: "module_schedule", module = %name, job = %id,
+                    error = %e, "declared schedule was refused by the scheduler"),
+            }
+        }
+        if !added.is_empty() {
+            self.module.set_registered_schedules(name, &already);
+        }
+        (added, vec![])
+    }
+
+    /// Every module's declared schedules, reconciled at boot.
+    pub async fn sync_all_module_schedules(&self) {
+        let mut names: Vec<String> = self
+            .module
+            .list_system()
+            .await
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        names.extend(self.module.list_user_modules().await.into_iter().map(|e| e.name));
+        let (mut added, mut removed) = (0usize, 0usize);
+        for name in names {
+            let (a, r) = self.sync_module_schedules(&name).await;
+            added += a.len();
+            removed += r.len();
+        }
+        if added > 0 || removed > 0 {
+            tracing::info!(target: "module_schedule", added, removed,
+                "module-declared schedules reconciled");
+        }
+    }
+
     /// Cron `agent` mode — mediates the cron→Ai cross-orchestrator call so ScheduleManager no
     /// longer holds AiManager directly. ScheduleManager keeps the request/result orchestration
     /// (prompt build, cron context, result mapping); Core just routes the agent run.
@@ -122,3 +230,65 @@ impl Core {
         }))
     }
 }
+
+#[cfg(test)]
+mod module_schedule_tests {
+    use crate::ports::CronScheduleOptions;
+
+    /// The declaration a module ships has to be the thing the scheduler takes, with no step in
+    /// between reshaping it — otherwise "it is in the repo" and "it runs" are different claims.
+    fn parse(raw: &str) -> CronScheduleOptions {
+        serde_json::from_str(raw).expect("declared schedule must deserialise as it ships")
+    }
+
+    #[test]
+    fn the_crypto_declaration_is_a_schedule() {
+        let job = parse(include_str!("../../system/modules/autotrade/cron-upbit.json"));
+        assert!(job.cron_time.is_some(), "a schedule needs a trigger");
+        assert_eq!(job.execution_mode.as_deref(), Some("pipeline"));
+        let steps = job.pipeline.expect("pipeline mode carries its steps");
+        // The gate first, so a switched-off day ends before any broker call.
+        assert!(steps.len() > 5, "got {} steps", steps.len());
+    }
+
+    #[test]
+    fn the_stock_declaration_is_a_schedule() {
+        let job = parse(include_str!("../../system/modules/autotrade/cron-kiwoom.json"));
+        assert!(job.cron_time.is_some());
+        assert!(job.pipeline.is_some());
+    }
+
+    #[test]
+    fn the_revision_declaration_is_a_schedule() {
+        let job = parse(include_str!("../../system/modules/autotrade/cron-revise.json"));
+        assert!(job.cron_time.is_some());
+        assert!(job.pipeline.is_some());
+    }
+
+    /// Every file the module names must exist and parse. A declaration pointing at a missing or
+    /// unreadable file registers nothing, and the only symptom is an empty schedule list.
+    #[test]
+    fn every_declared_file_is_shipped_and_readable() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../system/modules/autotrade/config.json"))
+                .expect("config.json parses");
+        let declared: Vec<String> = config["schedules"]
+            .as_array()
+            .expect("the module declares its schedules")
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert!(!declared.is_empty());
+        for file in &declared {
+            // The reader's whitelist: `<alphanumeric-dash-underscore>.json`, nothing else.
+            let stem = file.strip_suffix(".json").expect("declared as .json");
+            assert!(
+                !stem.is_empty()
+                    && stem.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+                "'{}' cannot be read by read_module_file, so it would silently register nothing",
+                file
+            );
+        }
+    }
+}
+

@@ -32,14 +32,22 @@ pub struct ModuleServiceImpl {
     manager: Arc<ModuleManager>,
     /// 옵션 — 토글 / settings 변경 시 AI 도구 cache 즉시 무효화. None 시 60초 TTL 자연 만료 대기.
     dynamic_tools: Option<Arc<DynamicToolRegistry>>,
+    /// 옵션 — 토글 시 모듈이 선언한 스케줄 등록/철회. 스케줄러는 Core 를 통해서만 닿는다.
+    core: Option<Arc<crate::core_facade::Core>>,
 }
 
 impl ModuleServiceImpl {
     pub fn new(manager: Arc<ModuleManager>) -> Self {
-        Self { manager, dynamic_tools: None }
+        Self { manager, dynamic_tools: None, core: None }
     }
 
     /// 토글 / settings 변경 직후 AI 가 즉시 갱신된 도구 목록 인식하도록 cache invalidate 연결.
+    /// Wire the mediator so enabling a module registers the schedules it declares.
+    pub fn with_core(mut self, core: Arc<crate::core_facade::Core>) -> Self {
+        self.core = Some(core);
+        self
+    }
+
     pub fn with_dynamic_tools(mut self, registry: Arc<DynamicToolRegistry>) -> Self {
         self.dynamic_tools = Some(registry);
         self
@@ -314,6 +322,11 @@ impl ModuleService for ModuleServiceImpl {
         if self.manager.set_enabled(&args.name, args.enabled) {
             // 토글 직후 AI 가 즉시 갱신 도구 목록 인식 — 60초 TTL 자연 만료 대기 안 함.
             self.invalidate_tools_cache().await;
+            // A module that declares schedules gets them registered here rather than by hand.
+            // Turning it off withdraws them, so "off" means off rather than off-but-still-firing.
+            if let Some(core) = self.core.as_ref() {
+                core.sync_module_schedules(&args.name).await;
+            }
             Ok(Response::new(ModuleSetEnabledResponse {}))
         } else {
             Err(TonicStatus::internal(crate::i18n::t(

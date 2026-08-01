@@ -34,6 +34,15 @@
     "resolve_unassigned",
     "import_position"
   ],
+  "_schedules": [
+    "크론 선언은 모듈 폴더 안에 있고, 켜질 때 등록되고 꺼질 때 내려갑니다.",
+    "cron-kiwoom.json 은 주식용이라 기본 목록에서 빠져 있습니다 — 국내 장 시간에 매분 돌고",
+    "브로커 자격증명을 요구하므로, 주식을 굴릴 때 이 배열에 넣으십시오."
+  ],
+  "schedules": [
+    "cron-upbit.json",
+    "cron-revise.json"
+  ],
   "input": {
     "type": "object",
     "required": [
