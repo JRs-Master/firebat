@@ -398,6 +398,8 @@
     "order-cancel-open",
     "withdraw-coin",
     "withdraw-krw",
-    "withdraw-cancel"
+    "withdraw-cancel",
+    "deposit-krw",
+    "deposit-create-address"
   ]
 }
