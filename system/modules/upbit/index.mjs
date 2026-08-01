@@ -468,6 +468,33 @@ function normalizeUpbitCandles(rows) {
 }
 
 
+
+// ── The screen ───────────────────────────────────────────────────────────────────────────────
+// There is no saved condition to run here the way a stock broker has one, but a single public
+// call answers every pair in a market with its 24-hour turnover — and "the most traded names
+// right now" is a screen. Ranking is done here rather than by the caller for the same reason the
+// order dialect is: a model that picks the names can pick names that do not exist.
+function screenTickers(rows, opts) {
+  const top = Math.max(1, Math.min(Number(opts.top) || 10, 50));
+  const minTurnover = Number(opts.minTurnover) || 0;
+  const ranked = (Array.isArray(rows) ? rows : [])
+    .filter(r => r && typeof r === 'object' && Number.isFinite(Number(r.acc_trade_price_24h)))
+    .filter(r => Number(r.acc_trade_price_24h) >= minTurnover)
+    .sort((a, b) => Number(b.acc_trade_price_24h) - Number(a.acc_trade_price_24h))
+    .slice(0, top);
+  return {
+    symbols: ranked.map(r => r.market),
+    rows: ranked.map(r => ({
+      symbol: r.market,
+      turnover24h: Number(r.acc_trade_price_24h),
+      price: Number(r.trade_price),
+      // Signed, so a caller can tell a name that is up from one that is down. `change_rate` is
+      // the absolute value and would read as a rise on the way down.
+      changeRate: Number(r.signed_change_rate),
+    })),
+  };
+}
+
 // ── Standard order contract ──────────────────────────────────────────────────────────────────
 // The same neutral shape the stock brokers answer, so one pipeline places orders at either.
 //
@@ -486,7 +513,12 @@ function upbitFeeRate(market) {
 }
 
 
-/** The price step a market accepts. An order priced off the step is rejected outright.
+/** The price step a market accepts, computed from the published ladder.
+ *
+ * The exchange also states it outright — `orderbook/instruments` returns `tick_size` per market —
+ * and that is the authority when the two disagree. This exists so placing an order costs one call
+ * instead of two; `get_tick_size` asks the exchange when it matters.
+ *
  *
  * Nobody calling `place_order` should have to know the ladder, and a strategy that computed
  * "3% below the bid" will land off it almost every time — so the price is floored to the step
@@ -569,6 +601,18 @@ const UPBIT_STANDARD = ['place_order', 'cancel_order', 'list_open_orders', 'list
 
 async function main(input) {
   const wantsCandles = Boolean(input && input.action === 'get_candles');
+  // The exchange's own answer for the price step, for when the computed ladder is not enough.
+  if (input && input.action === 'get_tick_size') {
+    input = { ...input, action: 'orderbook-instruments',
+              markets: String(input.symbol ?? input.markets ?? '').trim() };
+  }
+  const wantsScreen = Boolean(input && input.action === 'screen');
+  const screenTop = wantsScreen ? input.top : undefined;
+  const screenMin = wantsScreen ? input.minTurnover : undefined;
+  if (wantsScreen) {
+    input = { ...input, action: 'ticker-all',
+              quote_currencies: String(input.quote ?? 'KRW').toUpperCase() };
+  }
   const neutral = input && UPBIT_STANDARD.includes(input.action) ? input.action : null;
   if (neutral) {
     try {
@@ -642,6 +686,16 @@ async function main(input) {
     // Only the neutral request is translated. The raw candle-* actions keep answering exactly what
     // the exchange said, because something is already reading them that way.
     if (wantsCandles) data = normalizeUpbitCandles(data);
+    if (wantsScreen) {
+      const picked = screenTickers(data, { top: screenTop, minTurnover: screenMin });
+      console.log(JSON.stringify({ success: true, data: {
+        action: 'screen', endpoint,
+        symbols: picked.symbols, records: picked.rows, count: picked.symbols.length,
+        note: ('24시간 누적 거래대금 상위입니다 — 이 목록이 곧 화면입니다. '
+               + '조회 결과가 비면 목록을 비우지 말고 직전 것을 유지하세요.'),
+      } }));
+      return;
+    }
 
     console.log(JSON.stringify({
       success: true,

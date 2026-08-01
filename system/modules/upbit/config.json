@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "업비트 Open API. 암호화폐 시세(캔들/체결/호가/Ticker), 주문(매수/매도/취소/정정), 계좌 잔고, 입출금 관리 등 전체 API 지원. 편의 액션 또는 직접 endpoint 호출 가능.",
+  "description": "업비트 Open API. 암호화폐 시세(캔들/체결/호가/Ticker), 주문(매수/매도/취소/정정), 계좌 잔고, 입출금 관리 등 전체 API 지원. 편의 액션 또는 직접 endpoint 호출 가능. ⚠️ 운영 권고: 자동매매용 키는 **서브포켓**에서 발급하세요. 서브포켓은 외부 입출금이 제한되고 요청 한도도 독립이라, 키가 통째로 새어도 돈이 밖으로 나갈 수 없습니다 — 승인 게이트보다 강한 안전장치입니다. 권한은 자산조회·주문조회·주문하기만 주고 출금하기는 빼십시오.",
   "runtime": "node",
   "capability": "crypto-trading",
   "providerType": "api",
@@ -36,6 +36,8 @@
       "action": {
         "type": "string",
         "enum": [
+          "screen",
+          "get_tick_size",
           "get_candles",
           "accounts",
           "order-chance",
@@ -78,7 +80,7 @@
           "wallet-status",
           "api-keys"
         ],
-        "description": "get_candles = 봉 조회 중립 계약 — {symbol, interval} 만 받습니다. interval = 1m·3m·5m·10m·15m·30m·60m(=1h)·240m(=4h)·1d·1w·1M·1y, `<N>s`(초봉). 업비트는 주기별로 엔드포인트가 갈리는데 부르는 쪽이 그걸 알 필요가 없어야 전략의 봉 주기를 바꿀 때 호출부를 안 고칩니다. 24시간 시장이라 장 시간과 무관하게 조회됩니다. 편의 액션명. accounts=잔고, ticker=현재가, candle-minutes=분봉, order-create=주문, trades=체결내역 등. 또는 endpoint+method로 직접 호출. ⚠️ 주문·취소·출금은 승인 카드를 거칩니다(예약 실행은 크론 컨텍스트에서만 우회). 업비트에는 모의계좌가 없습니다 — 여기서 낸 주문은 전부 실주문입니다."
+        "description": "get_tick_size = 거래소가 직접 말해 주는 호가 단위(`tick_size`). place_order 는 계산된 사다리로 내림 처리하므로 보통 부를 일이 없고, 둘이 어긋날 때 이쪽이 정답입니다. screen = 종목 화면 — 한 마켓의 전 페어를 **24시간 누적 거래대금** 순으로 정렬해 상위 N개를 돌려줍니다(공개 API, 키 불요). 증권사의 조건검색에 해당하는 자리이고, 종목 코드를 고르는 일이 모델이 아니라 여기서 일어납니다. get_candles = 봉 조회 중립 계약 — {symbol, interval} 만 받습니다. interval = 1m·3m·5m·10m·15m·30m·60m(=1h)·240m(=4h)·1d·1w·1M·1y, `<N>s`(초봉). 업비트는 주기별로 엔드포인트가 갈리는데 부르는 쪽이 그걸 알 필요가 없어야 전략의 봉 주기를 바꿀 때 호출부를 안 고칩니다. 24시간 시장이라 장 시간과 무관하게 조회됩니다. 편의 액션명. accounts=잔고, ticker=현재가, candle-minutes=분봉, order-create=주문, trades=체결내역 등. 또는 endpoint+method로 직접 호출. ⚠️ 주문·취소·출금은 승인 카드를 거칩니다(예약 실행은 크론 컨텍스트에서만 우회). 업비트에는 모의계좌가 없습니다 — 여기서 낸 주문은 전부 실주문입니다."
       },
       "market": {
         "type": "string",
@@ -351,6 +353,18 @@
       "interval": {
         "type": "string",
         "description": "봉 주기: 1m·3m·5m·10m·15m·30m·60m(=1h)·240m(=4h)·1d·1w·1M·1y·`<N>s`."
+      },
+      "quote": {
+        "type": "string",
+        "description": "[screen] 기준 통화 (KRW·BTC·USDT, 기본 KRW)."
+      },
+      "top": {
+        "type": "number",
+        "description": "[screen] 상위 몇 개 (1~50, 기본 10)."
+      },
+      "minTurnover": {
+        "type": "number",
+        "description": "[screen] 24시간 거래대금 하한 (원). 얇은 종목 제외."
       }
     },
     "additionalProperties": false
