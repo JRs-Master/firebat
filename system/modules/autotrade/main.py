@@ -268,6 +268,33 @@ def action_retire(inp, settings):
         "success": False, "error": f"'{sid}' 은 전략 store 에 없습니다."}
 
 
+def as_object(value, field):
+    """Accept an object that arrived as a JSON string.
+
+    A pipeline's LLM_TRANSFORM step returns text, so a search space composed by the model reaches
+    the next step as a string however well-formed it is. Parsing it here is the difference between
+    a nightly run that works and one that fails on a quoting detail nobody can see in the log.
+    Anything that is neither an object nor a string parsing to one is refused rather than coerced.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        # Models fence JSON out of habit; the fence is not part of the value.
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        try:
+            parsed = json.loads(text)
+        except ValueError as e:
+            raise ValueError(f"{field} 가 JSON 으로 읽히지 않습니다: {e}") from None
+        if isinstance(parsed, dict):
+            return parsed
+        raise ValueError(f"{field} 는 객체여야 합니다 — 받은 것: {type(parsed).__name__}")
+    if value in (None, ""):
+        return {}
+    raise ValueError(f"{field} 는 객체여야 합니다 — 받은 것: {type(value).__name__}")
+
+
 def action_gate(inp, settings):
     """Does the cycle run at all? The first step of the trading pipeline, and the only human gate.
 
@@ -1163,6 +1190,26 @@ def action_selftest():
     paper.close()
     lconn.close()
 
+    # --- a search space that arrived as text ----------------------------------------------
+    # The nightly pipeline composes it in an LLM_TRANSFORM step, which returns a string however
+    # well-formed the JSON is. Failing on that would be a quoting detail nobody can see in a log.
+    want_space = {"families": ["ma-cross"], "fast": [5]}
+    checks.append({"name": "an object passes through", "want": want_space,
+                   "got": as_object(want_space, "space"), "ok": as_object(want_space, "space") == want_space})
+    as_text = json.dumps(want_space)
+    checks.append({"name": "a JSON string is read as the object it is", "want": want_space,
+                   "got": as_object(as_text, "space"), "ok": as_object(as_text, "space") == want_space})
+    fenced = "```json" + chr(10) + as_text + chr(10) + "```"
+    checks.append({"name": "a fenced block is unwrapped", "want": want_space,
+                   "got": as_object(fenced, "space"), "ok": as_object(fenced, "space") == want_space})
+    for name, bad_value in (("prose is refused, not coerced", "let us try moving averages"),
+                            ("a list is refused", "[1,2]")):
+        try:
+            as_object(bad_value, "space")
+            checks.append({"name": name, "want": "refused", "got": "accepted", "ok": False})
+        except ValueError as e:
+            checks.append({"name": name, "want": "refused", "got": str(e)[:60], "ok": True})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1178,6 +1225,14 @@ def main():
     if not action:
         return fail("action 이 필요합니다.")
     settings = load_settings()
+
+    # One place, so the two sweep planners cannot disagree about what a space is. A pipeline's
+    # LLM_TRANSFORM step returns text, so a model-composed search space arrives as a string.
+    if "space" in inp:
+        try:
+            inp["space"] = as_object(inp.get("space"), "space")
+        except ValueError as e:
+            return fail(str(e))
 
     try:
         if action == "selftest":

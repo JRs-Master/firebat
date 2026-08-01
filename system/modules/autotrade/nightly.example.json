@@ -1,0 +1,108 @@
+{
+  "title": "autotrade — after the close: review, re-measure, adopt",
+  "cronTime": "0 30 10 * * 1-5",
+  "executionMode": "pipeline",
+  "_why": [
+    "The only place a model touches trading, and it touches one thing: where to look.",
+    "The sequence is fixed here rather than left to an agent turn, because a run that",
+    "re-authors its own steps every night is a run whose steps can be wrong every night.",
+    "Step 0 walks the ladder from the ledger — no model involved, and it happens first so a",
+    "strategy that stopped working is demoted before anything new is considered.",
+    "Step 2 is the model's whole contribution: a search space. It reads what has already been",
+    "refused so it does not spend the night re-measuring ground that was covered.",
+    "Steps 3-6 measure. Step 7 adopts, and it receives the ranking, the planned runs and their",
+    "results as they came out of those steps — so the evidence never passes through the model.",
+    "19:30 KST on weekdays (the server is UTC), well after the close and after any late fills",
+    "have been reconciled by the intraday run."
+  ],
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "review" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "strategies", "limit": 30 }
+    },
+    {
+      "type": "LLM_TRANSFORM",
+      "instruction": "You are given today's strategy review and the history of what has already been adopted or refused. Answer with a JSON object only — no prose, no explanation — describing where to search next for a trading rule.\n\nShape:\n{\"families\":[...],\"fast\":[...],\"slow\":[...],\"low\":[...],\"high\":[...],\"stopLossPct\":[...],\"takeProfitPct\":[...],\"holdout\":0.3}\n\nfamilies is any of: ma-cross, ema-cross, rsi, bollinger, macd. The numeric fields are lists of parameter values to try; null is allowed in stopLossPct and takeProfitPct to mean \"no stop\". holdout is the fraction of history kept back for scoring.\n\nRead the refusals in the history. A combination that was refused for too few trades will be refused again at the same parameters, so move somewhere else: slower parameters trade less, faster ones trade more. Keep the space under about 200 combinations — a wider search finds a better-looking result without finding a better rule.",
+      "inputMap": { "review": "$step0", "history": "$step1" }
+    },
+    {
+      "type": "FOREACH",
+      "items": ["005930.KS", "000660.KS", "035420.KS", "005380.KS", "051910.KS"],
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_yfinance",
+          "inputData": { "action": "history", "period": "5y", "interval": "1d" },
+          "inputMap": { "symbol": "$prev" }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "plan_multi",
+        "symbols": ["005930.KS", "000660.KS", "035420.KS", "005380.KS", "051910.KS"],
+        "confirmSymbols": ["005380.KS", "051910.KS"],
+        "barCount": 600
+      },
+      "inputMap": { "space": "$step2", "fetched": "$step3" }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": { "action": "rank_multi" },
+      "inputMap": { "runs": "$step4.runs", "results": "$step5" }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "adopt",
+        "symbol": "005930",
+        "broker": "kiwoom",
+        "account": "모의국내",
+        "template": {
+          "money": { "qty": 1 },
+          "limits": { "maxPositionKrw": 300000 },
+          "orders": { "type": "limit", "exchange": "SOR" }
+        }
+      },
+      "inputMap": { "ranked": "$step6", "runs": "$step4.runs", "results": "$step5" }
+    }
+  ],
+  "_notes": {
+    "confirmSymbols": [
+      "Held out of the selection entirely. A rule is chosen on the other three and then measured",
+      "here; adoption refuses anything that was never put in front of these. This is the check",
+      "that caught a candidate winning on all three of its own symbols and then going 2/5 and",
+      "-45.7 points against buy & hold on symbols it had not seen."
+    ],
+    "symbol": [
+      "What the adopted strategy actually trades. The sweep spans several symbols to show the",
+      "rule is not an artefact of one; the strategy then runs on the one we hold an account for."
+    ],
+    "whatTheModelCannotDo": [
+      "Turn trading on, set the mode, arm real money, raise a limit, or write a result.",
+      "It proposes a region of parameter space. Everything that decides whether that region",
+      "produced something tradable is machine output flowing between steps."
+    ]
+  }
+}
