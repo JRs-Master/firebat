@@ -22,6 +22,8 @@ things that a plain "sort by return" does not:
 """
 import itertools
 
+import at_strategies as strat
+
 # A sweep is a multiplier: three lists of four values is 64 runs, each a module spawn. The cap is
 # a hard stop rather than a suggestion, and what it dropped gets reported. It is half the
 # pipeline's FOREACH limit (100) on purpose — each candidate is two runs, so a higher number here
@@ -117,35 +119,38 @@ def _align_rules(fast, mid, slow, min_slope, pullback=None, extend=None):
 # cannot hold it is refused up front instead of measured.
 FAMILIES = {
     "ma-cross": lambda sp: [
-        (f"ma{f}x{s}", _ma_rules(f, s), {}, s)
+        (f"ma{f}x{s}", _ma_rules(f, s), {}, s, {"fast": f, "slow": s})
         for f in _as_list(sp.get("fast"), [5, 10, 20])
         for s in _as_list(sp.get("slow"), [20, 60, 120])
         if f < s
     ],
     "ema-cross": lambda sp: [
-        (f"ema{f}x{s}", _ma_rules(f, s, use_ema=True), {}, s)
+        (f"ema{f}x{s}", _ma_rules(f, s, use_ema=True), {}, s, {"fast": f, "slow": s})
         for f in _as_list(sp.get("fast"), [12, 20])
         for s in _as_list(sp.get("slow"), [26, 60])
         if f < s
     ],
     "rsi": lambda sp: [
-        (f"rsi{lo}/{hi}", _rsi_rules(lo, hi), {"rsiPeriod": p}, p)
+        (f"rsi{lo}/{hi}", _rsi_rules(lo, hi), {"rsiPeriod": p}, p,
+         {"low": lo, "high": hi, "rsiPeriod": p})
         for lo in _as_list(sp.get("low"), [25, 30, 35])
         for hi in _as_list(sp.get("high"), [65, 70, 75])
         for p in _as_list(sp.get("rsiPeriod"), [14])
     ],
     "bollinger": lambda sp: [
-        (f"bb{p}x{m}", _bollinger_rules(), {"bbPeriod": p, "bbMult": m}, p)
+        (f"bb{p}x{m}", _bollinger_rules(), {"bbPeriod": p, "bbMult": m}, p,
+         {"bbPeriod": p, "bbMult": m})
         for p in _as_list(sp.get("bbPeriod"), [20])
         for m in _as_list(sp.get("bbMult"), [2, 2.5])
     ],
     # MACD needs the slow EMA plus the signal EMA before it says anything.
-    "macd": lambda sp: [("macd", _macd_rules(), {}, 26 + 9)],
+    "macd": lambda sp: [("macd", _macd_rules(), {}, 26 + 9, {})],
     # Alignment + slope + disparity. `pullback`/`extend` are disparity readings where 100 means
     # price sits exactly on the average, so 100.3 is three tenths of a percent above it.
     "aligned-pullback": lambda sp: [
         (f"al{f}/{m}/{s}-sl{sl}-pb{pb}-ex{ex}",
-         _align_rules(f, m, s, sl, pb, ex), {}, s)
+         _align_rules(f, m, s, sl, pb, ex), {}, s,
+         {"fast": f, "mid": m, "slow": s, "minSlope": sl, "pullback": pb, "extend": ex})
         for f in _as_list(sp.get("fast"), [5])
         for m in _as_list(sp.get("mid"), [20])
         for s in _as_list(sp.get("slow"), [60])
@@ -157,7 +162,8 @@ FAMILIES = {
     # The same trend test with the timing removed — it says whether the disparity gate is what
     # earns, or whether alignment and slope were carrying the result on their own.
     "aligned-trend": lambda sp: [
-        (f"al{f}/{m}/{s}-sl{sl}", _align_rules(f, m, s, sl), {}, s)
+        (f"al{f}/{m}/{s}-sl{sl}", _align_rules(f, m, s, sl), {}, s,
+         {"fast": f, "mid": m, "slow": s, "minSlope": sl})
         for f in _as_list(sp.get("fast"), [5])
         for m in _as_list(sp.get("mid"), [20])
         for s in _as_list(sp.get("slow"), [60])
@@ -200,7 +206,7 @@ def plan_sweep(inp):
         # declared sweep silently ran the defaults.
         fam_space = {**{k: v for k, v in space.items() if not isinstance(v, dict)},
                      **(space.get(fam) if isinstance(space.get(fam), dict) else {})}
-        for cid, rules, params, warmup in FAMILIES[fam](fam_space):
+        for cid, rules, params, warmup, knobs in FAMILIES[fam](fam_space):
             for stop, take in itertools.product(stops, takes):
                 exits = {}
                 if stop:
@@ -218,6 +224,11 @@ def plan_sweep(inp):
                     "taArgs": {**params, **costs, **exits},
                     "exits": exits,
                     "warmupBars": warmup,
+                    # The grid position, in values rather than in the name. `fit_symbols` reads
+                    # these to ask whether a winning cell's neighbours also won.
+                    "knobs": {**knobs,
+                              **({"stopLossPct": stop} if stop else {}),
+                              **({"takeProfitPct": take} if take else {})},
                 })
     # Refuse what cannot be measured, and say why. `barCount` is the series the pipeline fetched;
     # the holdout is the smaller of the two windows, so it decides what is answerable.
@@ -466,6 +477,7 @@ def plan_multi(inp):
     """
     symbols = [str(x) for x in (inp.get("symbols") or []) if str(x).strip()]
     fetched = inp.get("fetched") or []
+    last_plan = None
     if not symbols:
         raise ValueError("plan_multi needs `symbols`")
     if len(fetched) != len(symbols):
@@ -481,6 +493,7 @@ def plan_multi(inp):
         bar_count, cache_key = _fetch_facts(got)
         plan = plan_sweep({"space": space, "barCount": bar_count})
         role = "confirm" if symbol in confirm else "select"
+        last_plan = plan
         for r in plan["runs"]:
             args = dict(r["args"])
             if cache_key:
@@ -497,6 +510,11 @@ def plan_multi(inp):
     return {
         "runs": runs,
         "runCount": len(runs),
+        # The grid itself, once — the same candidates were planned for every symbol. `fit_symbols`
+        # needs the knob values to ask whether a winning cell has winning neighbours, and parsing
+        # them back out of the candidate id would make the naming convention load-bearing.
+        "candidates": [{"id": c["id"], "family": c["family"], "knobs": c.get("knobs") or {}}
+                       for c in (last_plan or {}).get("candidates", [])],
         "perSymbol": per_symbol,
         "symbols": symbols,
         "confirmSymbols": sorted(confirm),
@@ -689,5 +707,146 @@ def rank_sweep(inp):
             if ranked else
             "No candidate produced a readable backtest — check that each run passed `bars`/"
             "`barsCacheKey` and that the results are in the same order as `runs`."
+        ),
+    }
+
+
+def _grid_axes(candidates):
+    """Every value each knob takes, per family, sorted — the axes of the search grid."""
+    axes = {}
+    for c in candidates or []:
+        fam = c.get("family")
+        for k, v in (c.get("knobs") or {}).items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                axes.setdefault((fam, k), set()).add(float(v))
+    return {k: sorted(v) for k, v in axes.items()}
+
+
+def _are_neighbours(a, b, axes):
+    """Two cells are neighbours when exactly one knob differs, by exactly one step of its axis."""
+    if a.get("family") != b.get("family"):
+        return False
+    ka, kb = a.get("knobs") or {}, b.get("knobs") or {}
+    if set(ka) != set(kb):
+        return False
+    differing = [k for k in ka if ka[k] != kb[k]]
+    if len(differing) != 1:
+        return False
+    k = differing[0]
+    axis = axes.get((a.get("family"), k))
+    if not axis:
+        return False
+    try:
+        ia, ib = axis.index(float(ka[k])), axis.index(float(kb[k]))
+    except (ValueError, TypeError):
+        return False
+    return abs(ia - ib) == 1
+
+
+def fit_symbols(inp):
+    """Which rule suits which symbol — judged one symbol at a time.
+
+    `rank_multi` answers "is there one rule that works everywhere", and the honest answer on real
+    data has been no. This asks the question the design actually needs: for each symbol, is there
+    a rule that earns out of sample on *that* symbol, and does the surrounding parameter grid
+    agree that the result is not a fluke.
+
+    The output is a list of (symbol, rule) pairs, each already judged. A symbol with no surviving
+    rule is reported with its best attempt and the reasons it was refused, because "nothing fit
+    this coin" is a result worth reading rather than an empty row.
+    """
+    runs = inp.get("runs") or []
+    results = inp.get("results") or []
+    candidates = inp.get("candidates") or []
+    by_id = {c.get("id"): c for c in candidates if c.get("id")}
+    axes = _grid_axes(candidates)
+
+    mismatch = (f"{len(results)} results for {len(runs)} planned runs — rows below may be matched "
+                "to the wrong candidate") if runs and len(results) != len(runs) else None
+
+    cells = {}
+    for i, res in enumerate(results):
+        run = runs[i] if i < len(runs) else {}
+        cid = run.get("candidateId") or (res or {}).get("candidateId")
+        sym = run.get("symbol") or (res or {}).get("symbol")
+        window = run.get("window") or "train"
+        bt = _backtest_of(res)
+        if not cid or not sym or bt is None:
+            continue
+        cells.setdefault(sym, {}).setdefault(cid, {})[window] = bt
+
+    out, fits = [], []
+    for sym in sorted(cells):
+        rows = []
+        for cid, windows in cells[sym].items():
+            hold = windows.get("holdout")
+            if not hold:
+                continue
+            ret = hold.get("totalReturnPct")
+            bench = hold.get("buyHoldPct")
+            train = (windows.get("train") or {}).get("totalReturnPct")
+            rows.append({
+                "candidateId": cid,
+                "holdoutReturnPct": None if ret is None else round(float(ret), 2),
+                "holdoutVsBuyHoldPct": (None if ret is None or bench is None
+                                        else round(float(ret) - float(bench), 2)),
+                "buyHoldPct": None if bench is None else round(float(bench), 2),
+                "holdoutTrades": int(hold.get("tradeCount") or 0),
+                "holdoutWinRate": hold.get("winRate"),
+                "trainReturnPct": None if train is None else round(float(train), 2),
+                "maxDrawdownPct": hold.get("maxDrawdownPct"),
+            })
+
+        # Neighbour support is computed over the same symbol's grid, since a cell's neighbours
+        # only say something about noise if they were measured on the same series.
+        won = {r["candidateId"]: (r["holdoutReturnPct"] or 0) > 0 for r in rows}
+        for r in rows:
+            me = by_id.get(r["candidateId"])
+            if not me:
+                r["neighbours"], r["neighbourSupport"] = 0, None
+                continue
+            near = [cid for cid in won
+                    if cid != r["candidateId"] and by_id.get(cid)
+                    and _are_neighbours(me, by_id[cid], axes)]
+            r["neighbours"] = len(near)
+            r["neighbourSupport"] = (round(sum(1 for c in near if won[c]) / len(near), 2)
+                                     if near else None)
+            r["why"] = strat.judge_symbol(r)
+
+        rows.sort(key=lambda r: (not r.get("why"), r.get("holdoutReturnPct") or -9e9), reverse=True)
+        cleared = [r for r in rows if not r.get("why")]
+        # One rule per symbol, and not the highest-returning one. The best cell of a plateau is
+        # its peak, which is the single most fitted point on it; the cell whose neighbours agree
+        # most is nearer the middle, where being slightly wrong about a parameter still works.
+        # Return only breaks the tie.
+        if cleared:
+            pick = max(cleared, key=lambda r: (r.get("neighbourSupport") or 0,
+                                               r.get("holdoutReturnPct") or -9e9))
+            fits.append({"symbol": sym, "clearedCells": len(cleared),
+                         "measuredCells": len(rows), **pick})
+        out.append({
+            "symbol": sym,
+            "measured": len(rows),
+            "cleared": len(cleared),
+            # How much of the grid worked, not just whether the best cell did: a symbol where two
+            # cells out of fifty cleared is a different kind of result from one where forty did.
+            "clearedShare": round(len(cleared) / len(rows), 2) if rows else None,
+            "chosen": fits[-1]["candidateId"] if cleared else None,
+            "best": rows[0] if rows else None,
+        })
+
+    return {
+        "fits": fits,
+        "perSymbol": out,
+        "fitCount": len(fits),
+        "symbolsWithAFit": len({f["symbol"] for f in fits}),
+        "warning": mismatch,
+        "note": (
+            f"{len(fits)} of {len(out)} symbol(s) got a rule — one each, chosen from the cells "
+            "that cleared by how much their neighbours agree rather than by the highest return. "
+            "`clearedCells` says how wide that agreement was. A symbol with no fit keeps its best "
+            "attempt in `perSymbol[].best.why` — that is the reason it was refused, not an error, "
+            "and a rule failing on a coin it does not suit is the expected outcome, not a fault. "
+            "Adopt with adopt_fits."
         ),
     }

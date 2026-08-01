@@ -89,6 +89,11 @@
       "label": "Hand-written strategies",
       "description": "Strategies a person declares. Leave empty to run only what the model adopted.",
       "group": "Declared by hand"
+    },
+    "minClosedTrips": {
+      "label": "Revision trigger — completed trades",
+      "description": "A rule is revised once this many entry-to-exit cycles have finished since it was last written. There is no closing bell in a 24-hour market, so this count is the clock. Setting it to 1 rewrites the rule after every trade, and a rewritten rule restarts the promotion ladder.",
+      "group": "Confirmation"
     }
   }
 }

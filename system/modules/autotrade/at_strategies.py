@@ -86,6 +86,58 @@ def _num(v, default=0.0):
         return default
 
 
+# A rule is adopted for one symbol, so the evidence has to be about that symbol. Twelve closed
+# round trips in the held-out window is the floor: below that a win rate is a coin count.
+MIN_SYMBOL_TRADES = 12
+# A winning cell whose neighbours in the grid all lose is the luckiest cell of a few hundred, not
+# an edge. Half the neighbours must also be profitable, and there must be at least two to ask.
+MIN_NEIGHBOURS = 2
+MIN_NEIGHBOUR_SUPPORT = 0.5
+
+
+def judge_symbol(row, min_trades=MIN_SYMBOL_TRADES,
+                 min_neighbours=MIN_NEIGHBOURS, min_support=MIN_NEIGHBOUR_SUPPORT):
+    """Why this rule may not trade *this symbol* — empty list means it may.
+
+    The cross-symbol gate (`judge`) asks whether a rule wins on symbols it was never chosen from.
+    That is the right question when one rule is meant to cover everything, and the wrong one when
+    the design is to pair a rule with the symbols that suit it: a trend rule *should* lose on a
+    range-bound pair, and calling that overfitting throws away the whole approach.
+
+    What still has to be defended is the multiple-comparisons problem, which per-symbol adoption
+    makes worse rather than better — fourteen symbols times a few hundred cells is a few thousand
+    chances to find a fluke. Two things replace the cross-symbol check:
+
+      * **A held-out window on this symbol.** The rule must earn in bars the selection never saw.
+        Both in absolute terms and against buy & hold — absolute because "beat buy & hold" carries
+        the regime with it (in a rising market anything holding cash loses to it; in a falling one
+        anything wins), and relative because a profit smaller than holding is not a reason to trade.
+      * **Neighbouring cells in the grid.** If ma5/20/30 wins and ma5/20/60, a steeper slope and a
+        wider stop all lose, the win is grid noise. A real effect is a plateau, not a spike.
+    """
+    why = []
+    hold = row.get("holdoutReturnPct")
+    vs = row.get("holdoutVsBuyHoldPct")
+    trades = int(_num(row.get("holdoutTrades")))
+    neighbours = int(_num(row.get("neighbours")))
+    support = row.get("neighbourSupport")
+
+    if hold is None or _num(hold) <= 0:
+        why.append(f"out of sample it returned {hold} — before any benchmark, it has to make money")
+    if vs is None or _num(vs) <= 0:
+        why.append(f"out of sample it was {vs} against simply holding the coin")
+    if trades < min_trades:
+        why.append(f"{trades} round trips out of sample — below {min_trades} the win rate is "
+                   "a coin count, not a rate")
+    if neighbours < min_neighbours:
+        why.append(f"only {neighbours} neighbouring parameter cell(s) to compare against, "
+                   f"needs {min_neighbours} — a cell measured alone cannot be told from noise")
+    elif support is None or _num(support) < min_support:
+        why.append(f"neighbouring cells agree {support} of the time — a winning cell surrounded "
+                   "by losing ones is the grid's luckiest cell, not an edge")
+    return why
+
+
 def judge(row, min_trades=MIN_TRADES, min_confirm=MIN_CONFIRM_SYMBOLS):
     """Why this ranked candidate may not trade — empty list means it may.
 
@@ -215,6 +267,11 @@ def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
         log_event(conn, sid, "refused", {"candidateId": cid, "why": why, "measured": row})
         return {"adopted": None, "candidateId": cid, "why": why}
 
+    return _store_adopted(conn, sid, cid, args, row, target, runs, results, costs)
+
+
+def _store_adopted(conn, sid, cid, args, row, target, runs, results, costs):
+    """Write one judged candidate into the store at `paper`. The only path that adopts anything."""
     spec = spec_from_args(args, target.get("template"))
     # What the backtest promised, kept alongside the ranking so the ladder has something to check
     # the live record against later. Absent when the pipeline did not pass the run results — the
@@ -474,7 +531,30 @@ def traded_symbols(conn, strategy_id, since_ms=0, cap=MAX_MEASURE_SYMBOLS):
     return [r["symbol"] for r in rows]
 
 
-def next_revision(conn, ledger_for, limit_events=8):
+# How many completed round trips a strategy owes before its rule is revised again.
+#
+# "After the close" is not a trigger in a market that never closes, and the unit that actually
+# carries information is the round trip, not the day. But one closed trade is a sample of one:
+# revising on it would chase noise, and — because a changed rule restarts the promotion ladder —
+# a strategy revised every trade would never leave paper. So the clock ticks on trades, and this
+# is how many have to have ticked.
+MIN_CLOSED_TRIPS = 8
+
+
+def closed_round_trips(led, strategy_id, since_ms=0):
+    """Completed entry→exit cycles since a moment — a sell that took the position flat.
+
+    Partial exits are not cycles. A rule that scales out of one entry three times has run one
+    round trip, and counting the sells would revise it three times as often as it earned.
+    """
+    row = led.execute(
+        "SELECT COUNT(*) AS n FROM ledger WHERE strategy_id=? AND ts_ms>=?"
+        " AND side IN ('sell','transfer_out') AND qty_after IS NOT NULL"
+        " AND ABS(qty_after) < 1e-9", (strategy_id, int(since_ms or 0))).fetchone()
+    return int(row["n"] if row else 0)
+
+
+def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_TRIPS):
     """Which strategy tonight's revision run should work on, and everything it needs to do it.
 
     One per night, on purpose. A revision searches the neighbourhood of a rule that is already
@@ -488,15 +568,28 @@ def next_revision(conn, ledger_for, limit_events=8):
     rows = conn.execute("SELECT * FROM ai_strategy WHERE stage != 'retired'").fetchall()
     if not rows:
         return None
-    scored = []
+    scored, waiting = [], []
     for r in rows:
-        live = live_record(ledger_for(STAGE_MODE.get(r["stage"], "dryrun")), r["id"],
-                           r["stage_since_ms"])
+        led_r = ledger_for(STAGE_MODE.get(r["stage"], "dryrun"))
+        live = live_record(led_r, r["id"], r["stage_since_ms"])
         demotions = demotion_count(conn, r["id"])
+        # Since the rule was last written, not since the stage began: a revision is what resets
+        # the question, so the evidence for the next one starts there.
+        trips = closed_round_trips(led_r, r["id"], r["updated_ms"])
+        # A demotion is already a verdict reached on completed trades, so it does not wait.
+        if not demotions and trips < min_closed_trips:
+            waiting.append({"strategyId": r["id"], "closedRoundTrips": trips,
+                            "needs": min_closed_trips})
+            continue
         # Lower sorts first: demoted before healthy, then least recently revised.
-        scored.append(((0 if demotions else 1), r["updated_ms"], r, live))
+        scored.append(((0 if demotions else 1), r["updated_ms"], r, live, trips))
+    if not scored:
+        return {"strategyId": None, "waiting": waiting,
+                "note": ("아직 수정할 전략이 없습니다 — 규칙을 고친 뒤로 완결된 매매가 "
+                         f"{min_closed_trips} 회는 쌓여야 합니다. 24시간 시장에서는 장 마감이 "
+                         "아니라 이 횟수가 시계입니다.")}
     scored.sort(key=lambda x: (x[0], x[1]))
-    _, _, r, live = scored[0]
+    _, _, r, live, trips = scored[0]
     # The scoring loop's handle belonged to whichever row came last, not to the one picked.
     led = ledger_for(STAGE_MODE.get(r["stage"], "dryrun"))
     try:
@@ -512,6 +605,8 @@ def next_revision(conn, ledger_for, limit_events=8):
         "currentExits": spec.get("exits") or {},
         "measured": measured,
         "live": live,
+        "closedRoundTrips": trips,
+        "waiting": waiting,
         # What to re-measure on. A rule that trades a screen is scored on the names it actually
         # traded, not on a list someone declared once — and the ledger is the only place that
         # knows which those were.
@@ -519,4 +614,56 @@ def next_revision(conn, ledger_for, limit_events=8):
         "history": events,
         "note": ("이 전략의 규칙 주변을 탐색하세요 — 새 전략을 만드는 자리가 아닙니다. "
                  "채택되면 같은 전략이 갱신되고 사다리는 처음부터 다시 시작합니다."),
+    }
+
+
+def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRADES):
+    """Adopt one rule per symbol, from `fit_symbols` output passed straight through.
+
+    The rows are re-judged here rather than trusted. `fit_symbols` already attached a verdict, but
+    a verdict that arrives as data is a verdict that can be edited on the way — and the whole
+    reason the evidence never passes through the model is that nothing between the measurement and
+    the store should be able to rewrite it.
+
+    A symbol whose rule is refused is recorded, not dropped: tomorrow's search should know this
+    coin was tried and why it did not take.
+    """
+    if not isinstance(fits, list):
+        return {"adopted": [], "why": ["adopt_fits 는 fit_symbols 의 `fits` 목록을 그대로 받습니다"]}
+    adopted, refused = [], []
+    for fit in fits:
+        if not isinstance(fit, dict):
+            continue
+        cid, symbol = fit.get("candidateId"), fit.get("symbol")
+        if not cid or not symbol:
+            refused.append({"symbol": symbol, "candidateId": cid,
+                            "why": ["a fit needs both a symbol and a candidate"]})
+            continue
+        args = _args_for(runs, cid)
+        if args is None:
+            refused.append({"symbol": symbol, "candidateId": cid,
+                            "why": [f"candidate '{cid}' is not in `runs` — pass the same planned "
+                                    "runs the measurement was built from"]})
+            continue
+        why = judge_symbol(fit, min_trades=min_trades)
+        costs = costs_of(args)
+        if costs["roundTripPct"] <= 0:
+            why = why + ["measured with no commission, tax or slippage — at this frequency the "
+                         "round trip is most of the result, so declare feeRate/taxRate/"
+                         "slippageRate for the venue and measure again"]
+        sid = f"ai-{symbol}-{cid}"
+        if why:
+            log_event(conn, sid, "refused", {"candidateId": cid, "symbol": symbol,
+                                             "why": why, "measured": fit})
+            refused.append({"symbol": symbol, "candidateId": cid, "why": why})
+            continue
+        one = dict(target)
+        one["symbol"] = symbol
+        adopted.append(_store_adopted(conn, sid, cid, args, dict(fit), one, runs, results, costs))
+    return {
+        "adopted": adopted,
+        "refused": refused,
+        "adoptedCount": len(adopted),
+        "note": (f"{len(adopted)} 개 종목에 규칙이 붙었습니다 — 전부 종이거래부터 시작합니다. "
+                 f"{len(refused)} 개는 거부됐고 사유는 `refused` 에 있습니다."),
     }

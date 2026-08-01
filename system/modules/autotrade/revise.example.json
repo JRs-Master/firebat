@@ -1,20 +1,23 @@
 {
-  "title": "autotrade — after the close: review the ladder, then revise one rule",
-  "cronTime": "0 30 10 * * 1-5",
+  "title": "autotrade — when trades have accumulated: review the ladder, then revise one rule",
+  "cronTime": "0 20 * * * *",
   "executionMode": "pipeline",
   "_why": [
     "Revision, not discovery. Step 0 walks the ladder from the ledger with no model involved, so a",
     "strategy that stopped working is demoted before anything else happens. Step 1 picks the one",
-    "rule to work on tonight — worst first, then least recently revised — and hands over its current",
+    "rule to work on — worst first, then least recently revised — and hands over its current",
     "parameters, its live record and what has already been refused for it.",
-    "One per night because a loop cannot carry six chained steps per item: inside a FOREACH the",
+    "One per run because a loop cannot carry six chained steps per item: inside a FOREACH the",
     "steps chain through $prev only, so a per-strategy body could not reach back to its own runs.",
     "Rotating one at a time is honest about that rather than pretending the loop would work.",
     "Step 2 is the model's only move, and it is bounded to the neighbourhood of a rule that already",
     "runs. If the revision clears the bar the same strategy is updated and its ladder restarts —",
     "the record that earned the old stage was earned by a different rule.",
-    "19:30 KST on weekdays (the server is UTC), after the close and after the intraday run has",
-    "reconciled any late fills."
+    "Hourly, because the trigger is not the clock. Crypto never closes, so 'after the close' is",
+    "not a moment; what carries new information is a completed entry-to-exit cycle. next_revision",
+    "offers nothing until `minClosedTrips` of them have finished since the rule was last written,",
+    "so most runs stop at step 2's CONDITION and cost nothing. On a market that does close, the",
+    "same declaration still works — the trades simply only accumulate during session hours."
   ],
   "pipeline": [
     {

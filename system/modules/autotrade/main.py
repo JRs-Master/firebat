@@ -264,6 +264,37 @@ def action_adopt(inp, settings):
     return {"success": True, "data": result}
 
 
+def action_adopt_fits(inp, settings):
+    """Adopt the (symbol, rule) pairs `fit_symbols` cleared — one strategy per symbol.
+
+    The counterpart to `adopt`, which crowns a single rule for every symbol. Which one to use is
+    a question about the design rather than the data: a rule paired with the coins that suit it is
+    judged per symbol, and a rule meant to cover the whole market is judged across symbols.
+    """
+    fits, runs = inp.get("fits"), inp.get("runs")
+    if isinstance(fits, dict):
+        # Accept the whole fit_symbols envelope as well as its `fits` list, so a pipeline can pass
+        # `$stepN` or `$stepN.fits` and neither is wrong.
+        fits = fits.get("fits")
+    if not isinstance(fits, list) or not isinstance(runs, list):
+        return {"success": False,
+                "error": "adopt_fits 는 `fits`(fit_symbols 결과)와 `runs`(그 측정을 만든 계획된 "
+                         "실행 목록)를 그대로 받습니다 — 성적을 손으로 적어 넣을 수 없습니다."}
+    if not inp.get("broker"):
+        return {"success": False,
+                "error": "adopt_fits 에는 broker 가 필요합니다 — 종목은 각 fit 이 들고 옵니다."}
+    target = {"broker": inp.get("broker"), "account": inp.get("account") or "",
+              "template": inp.get("template")}
+    conn = strat.connect()
+    try:
+        result = strat.adopt_fits(conn, fits, runs, target, results=inp.get("results"),
+                                  min_trades=int(inp.get("minTrades")
+                                                 or strat.MIN_SYMBOL_TRADES))
+    finally:
+        conn.close()
+    return {"success": True, "data": result}
+
+
 def action_next_revision(inp, settings):
     """The one strategy tonight's revision run should work on — or nothing to revise.
 
@@ -280,7 +311,7 @@ def action_next_revision(inp, settings):
 
     conn = strat.connect()
     try:
-        target = strat.next_revision(conn, ledger_for)
+        target = strat.next_revision(conn, ledger_for, min_closed_trips=int(inp.get("minClosedTrips") or settings.get("minClosedTrips") or strat.MIN_CLOSED_TRIPS))
     finally:
         conn.close()
         for c in conns.values():
@@ -1446,6 +1477,7 @@ def action_selftest():
                    "got": strat.next_revision(rconn, rledger),
                    "ok": strat.next_revision(rconn, rledger) is None})
 
+
     for sid, updated in (("healthy", 200), ("stale", 100)):
         rconn.execute("INSERT INTO ai_strategy(id,symbol,broker,account,spec_json,stage,"
                       "stage_since_ms,measured_json,created_ms,updated_ms) VALUES"
@@ -1453,10 +1485,45 @@ def action_selftest():
                       (sid, json.dumps({"rules": [{"side": "buy", "when": []}],
                                         "exits": {"stopLossPct": 3}}), updated))
     rconn.commit()
+
+    # The clock is the round trip, not the calendar. A healthy strategy that has not completed a
+    # cycle since its rule was last written has produced nothing new to revise on, and offering it
+    # anyway would mean rewriting a rule on the evidence that already wrote it.
+    idle = strat.next_revision(rconn, rledger)
+    checks.append({"name": "a rule with no completed cycle since it was written is not offered",
+                   "want": None, "got": idle.get("strategyId"),
+                   "ok": idle.get("strategyId") is None and len(idle.get("waiting") or []) == 2})
+
+    def _round_trips(sid, n, first_ts):
+        """n completed cycles: each a buy, then a sell that takes the position flat."""
+        for k in range(n):
+            for side, after in (("buy", 1.0), ("sell", 0.0)):
+                rpaper.execute(
+                    "INSERT INTO ledger(ts_ms,strategy_id,broker,account,symbol,side,qty,price,"
+                    "fee,tax,source,qty_after,avg_after,realized) "
+                    "VALUES(?,?,'b','a','L',?,1,100,0,0,'test',?,100,?)",
+                    (first_ts + k, sid, side, after, 1.0 if side == "sell" else 0.0))
+        rpaper.commit()
+
+    # A partial exit is not a cycle — only the sell that flattens counts.
+    rpaper.execute("INSERT INTO ledger(ts_ms,strategy_id,broker,account,symbol,side,qty,price,"
+                   "fee,tax,source,qty_after,avg_after,realized) "
+                   "VALUES(9999,'stale','b','a','L','sell',1,100,0,0,'test',0.5,100,1)")
+    rpaper.commit()
+    part = strat.next_revision(rconn, rledger)
+    checks.append({"name": "scaling out of one entry is still one position, not one cycle",
+                   "want": None, "got": part.get("strategyId"),
+                   "ok": part.get("strategyId") is None})
+
+    _round_trips("stale", 8, 1000)
+    _round_trips("healthy", 8, 1000)
     picked = strat.next_revision(rconn, rledger)
     checks.append({"name": "the least recently revised is picked when all are healthy",
                    "want": "stale", "got": picked["strategyId"],
                    "ok": picked["strategyId"] == "stale"})
+    checks.append({"name": "how many cycles earned the revision travels with it", "want": 8,
+                   "got": picked.get("closedRoundTrips"),
+                   "ok": picked.get("closedRoundTrips") == 8})
     checks.append({"name": "the current rule travels to the revision step", "want": 1,
                    "got": len(picked["currentRules"]),
                    "ok": len(picked["currentRules"]) == 1 and
@@ -1691,6 +1758,87 @@ def action_selftest():
                               .get("roundTripPct") or 0) - 0.14) < 1e-9})
     ccon.close()
 
+    # --- fitting a rule to a symbol rather than to the market ----------------------------
+    # The cross-symbol gate above asks "does this work everywhere". This one asks "does this work
+    # here", which is the question when a rule is deliberately paired with the coins that suit it.
+    # Both refusals it adds over the cross-symbol bar are measured, since a gate is only worth
+    # what it turns away.
+    fit_ok = {"candidateId": "c1", "holdoutReturnPct": 9.0, "holdoutVsBuyHoldPct": 4.0,
+              "holdoutTrades": 20, "neighbours": 4, "neighbourSupport": 0.75}
+    checks.append({"name": "a rule that earned out of sample on this symbol is allowed",
+                   "want": [], "got": strat.judge_symbol(fit_ok),
+                   "ok": strat.judge_symbol(fit_ok) == []})
+    for name, patch, expect in [
+        # A rising market makes buy & hold the thing to beat; a falling one makes it trivial.
+        # Requiring absolute profit is what keeps the bar from moving with the regime.
+        ("beating a falling benchmark is not making money",
+         {"holdoutReturnPct": -6.0, "holdoutVsBuyHoldPct": 9.0}, "make money"),
+        ("making less than simply holding is not a reason to trade",
+         {"holdoutVsBuyHoldPct": -3.0}, "against simply holding"),
+        ("a handful of round trips is a coin count", {"holdoutTrades": 5}, "coin count"),
+        ("a cell with nothing to compare against", {"neighbours": 1}, "cannot be told from noise"),
+        ("a winning cell among losing ones is the grid's luckiest cell",
+         {"neighbourSupport": 0.25}, "luckiest cell"),
+    ]:
+        why = strat.judge_symbol({**fit_ok, **patch})
+        checks.append({"name": name, "want": expect, "got": why,
+                       "ok": any(expect in w for w in why)})
+
+    # Neighbourhood is read off the knobs, not off the candidate's name.
+    cands = [{"id": f"f:s{sl}-t{tp}", "family": "f", "knobs": {"sl": sl, "tp": tp}}
+             for sl in (1, 2, 3) for tp in (4, 5)]
+    fruns, fres = [], []
+    # A plateau: every cell with sl>=2 earns. Plus one isolated winner at the far corner.
+    for c in cands:
+        for window in ("train", "holdout"):
+            fruns.append({"candidateId": c["id"], "symbol": "KRW-AAA", "window": window})
+            good_cell = c["knobs"]["sl"] >= 2
+            ret = 10.0 if good_cell else -5.0
+            fres.append({"backtest": {"totalReturnPct": ret, "buyHoldPct": 1.0,
+                                      "tradeCount": 30, "maxDrawdownPct": 3.0}})
+    fitted = sweep.fit_symbols({"runs": fruns, "results": fres, "candidates": cands})
+    chosen = fitted["fits"][0] if fitted["fits"] else {}
+    checks.append({"name": "one rule per symbol, taken from the plateau and not from outside it",
+                   "want": 1, "got": (len(fitted["fits"]), chosen.get("candidateId")),
+                   "ok": len(fitted["fits"]) == 1 and "s1-" not in str(chosen.get("candidateId"))})
+    checks.append({"name": "how wide the agreement was travels with the choice", "want": 4,
+                   "got": chosen.get("clearedCells"), "ok": chosen.get("clearedCells") == 4})
+    # The peak of a plateau is its most fitted point; the choice is the cell its neighbours back.
+    checks.append({"name": "the cell its neighbours back is preferred to the highest return",
+                   "want": 1.0, "got": chosen.get("neighbourSupport"),
+                   "ok": chosen.get("neighbourSupport") == 1.0})
+    checks.append({"name": "each fit says which symbol it is for", "want": ["KRW-AAA"],
+                   "got": sorted({f["symbol"] for f in fitted["fits"]}),
+                   "ok": sorted({f["symbol"] for f in fitted["fits"]}) == ["KRW-AAA"]})
+    worst = next(r for r in [fitted["perSymbol"][0]["best"]] if r)
+    checks.append({"name": "a symbol's best attempt is reported even when it cleared",
+                   "want": True, "got": worst.get("candidateId") is not None,
+                   "ok": worst.get("candidateId") is not None})
+
+    # adopt_fits re-judges rather than believing the verdict handed to it.
+    fcon = strat.connect()
+    fit_runs = [{"candidateId": "c1", "window": "train",
+                 "args": {"action": "signals", "rules": [{"side": "buy", "when": []}],
+                          "feeRate": 0.0005, "taxRate": 0.0, "slippageRate": 0.0002}}]
+    lying = {"symbol": "KRW-AAA", "candidateId": "c1", "holdoutReturnPct": -9.0,
+             "holdoutVsBuyHoldPct": -9.0, "holdoutTrades": 2, "neighbours": 4,
+             "neighbourSupport": 0.0, "why": []}
+    out_fits = strat.adopt_fits(fcon, [lying], fit_runs, {"broker": "upbit", "account": ""})
+    checks.append({"name": "a fit that arrives pre-approved is judged anyway", "want": 0,
+                   "got": out_fits["adoptedCount"],
+                   "ok": out_fits["adoptedCount"] == 0 and bool(out_fits["refused"])})
+    honest = {**lying, "holdoutReturnPct": 9.0, "holdoutVsBuyHoldPct": 4.0,
+              "holdoutTrades": 20, "neighbourSupport": 0.75}
+    out2 = strat.adopt_fits(fcon, [honest], fit_runs, {"broker": "upbit", "account": ""})
+    checks.append({"name": "a per-symbol adoption starts on paper like any other",
+                   "want": "paper", "got": (out2["adopted"] or [{}])[0].get("stage"),
+                   "ok": (out2["adopted"] or [{}])[0].get("stage") == "paper"})
+    checks.append({"name": "the strategy is named for the symbol it was fitted to",
+                   "want": True,
+                   "got": (out2["adopted"] or [{}])[0].get("adopted"),
+                   "ok": "KRW-AAA" in str((out2["adopted"] or [{}])[0].get("adopted"))})
+    fcon.close()
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1747,6 +1895,10 @@ def main():
             return out({"success": True, "data": sweep.plan_multi(inp)})
         if action == "rank_multi":
             return out({"success": True, "data": sweep.rank_multi(inp)})
+        if action == "fit_symbols":
+            return out({"success": True, "data": sweep.fit_symbols(inp)})
+        if action == "adopt_fits":
+            return out(action_adopt_fits(inp, settings))
         if action == "cycle":
             return out(action_cycle(inp, settings))
         if action == "adopt":

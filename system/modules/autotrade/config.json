@@ -66,6 +66,8 @@
           "resolve_unassigned",
           "import_position",
           "adopt",
+          "adopt_fits",
+          "fit_symbols",
           "strategies",
           "retire",
           "review",
@@ -386,6 +388,11 @@
       "defaultValue": 4,
       "tab": "실행",
       "group": "한도"
+    },
+    {
+      "key": "minClosedTrips",
+      "type": "number",
+      "default": 8
     },
     {
       "key": "confirmTimeoutSec",
