@@ -61,6 +61,22 @@ pub struct ModuleManager {
 const ALIAS_MAX_CHARS: usize = 20;
 
 /// One registered realtime watch (user intent) — the transport status lives in the port.
+/// Where a watch's frames go once they are off the wire.
+///
+/// One value rather than four adjacent parameters: three of them are `Option<String>`, so a caller
+/// could swap two and the compiler would agree.
+#[derive(Debug, Clone, Default)]
+pub struct StreamNotify {
+    /// `"telegram"` for a chat message, `"module:<name>"` to run a module. None = SSE only.
+    pub to: Option<String>,
+    /// Action name for a `module:` sink (default `on_stream_event`).
+    pub action: Option<String>,
+    /// Floor between two sink runs for this watch.
+    pub min_interval_ms: Option<u64>,
+    /// Cron job fired right after the sink runs — how an event reaches the order path.
+    pub job: Option<String>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamWatchMeta {
@@ -81,6 +97,15 @@ pub struct StreamWatchMeta {
     /// so frames in between are coalesced into the next run rather than spawning per frame.
     #[serde(default)]
     pub notify_min_interval_ms: Option<u64>,
+    /// A cron job to fire the moment the sink has finished with a batch of frames.
+    ///
+    /// The sink can start a module but has nowhere to send what it returns, so a module can
+    /// record a frame and not act on it. Waking a registered job closes that without building a
+    /// second order path: the pipeline that already places orders runs immediately instead of at
+    /// its next scheduled minute. It runs under the cron context like any scheduled fire, which
+    /// is what a trade started by an event should be.
+    #[serde(default)]
+    pub notify_job: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
     #[serde(default)]
@@ -736,9 +761,7 @@ impl ModuleManager {
         module_name: &str,
         stream_key: &str,
         args: &serde_json::Value,
-        notify: Option<String>,
-        notify_action: Option<String>,
-        notify_min_interval_ms: Option<u64>,
+        notify: StreamNotify,
         label: Option<String>,
         mock: bool,
     ) -> InfraResult<serde_json::Value> {
@@ -780,9 +803,10 @@ impl ModuleManager {
             module: module_name.to_string(),
             stream: stream_key.to_string(),
             args: args.clone(),
-            notify,
-            notify_action,
-            notify_min_interval_ms,
+            notify: notify.to,
+            notify_action: notify.action,
+            notify_min_interval_ms: notify.min_interval_ms,
+            notify_job: notify.job,
             label,
             mock,
             created_ms: chrono::Utc::now().timestamp_millis(),

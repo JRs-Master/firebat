@@ -700,6 +700,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     "notify": {"type": "string", "description": "Where frames go besides the event bus. 'telegram' sends a chat message; 'module:<name>' runs that module on the frames (it must be enabled). Omit or 'none' = event bus only."},
                     "notifyAction": {"type": "string", "description": "Action to call for a module: sink (default on_stream_event)."},
                     "notifyMinIntervalMs": {"type": "integer", "description": "Floor between two sink runs for this watch. Frames arriving inside the window are coalesced into the next run instead of starting a process each — set this for tick streams (e.g. 3000)."},
+                    "notifyJob": {"type": "string", "description": "A scheduled job to run the instant a batch of frames has been handled, instead of waiting for its next scheduled time. Use it when an event has to reach something the sink cannot do itself — placing an order, for instance: the sink can run a module but cannot use what the module returns, so the work belongs in a pipeline that is already registered. Fires after the module sink, so the job reads what it just recorded, and runs under the cron context like any scheduled fire."},
                     "label": {"type": "string", "description": "human-readable label used in notifications"},
                     "mock": {"type": "boolean"}
                 },
@@ -734,11 +735,26 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let notify_min_interval_ms = args
                     .get("notifyMinIntervalMs")
                     .and_then(|v| v.as_u64());
+                let notify_job = args
+                    .get("notifyJob")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
                 let label = args.get("label").and_then(|v| v.as_str()).map(String::from);
                 let mock = args.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
                 match module
                     .start_stream(
-                        &m, &stream, &wargs, notify, notify_action, notify_min_interval_ms, label, mock,
+                        &m,
+                        &stream,
+                        &wargs,
+                        crate::managers::module::StreamNotify {
+                            to: notify,
+                            action: notify_action,
+                            min_interval_ms: notify_min_interval_ms,
+                            job: notify_job,
+                        },
+                        label,
+                        mock,
                     )
                     .await
                 {

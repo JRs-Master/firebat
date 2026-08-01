@@ -445,6 +445,9 @@ async fn main() -> Result<()> {
             .with_ws_api(ws_api.clone())
             .with_ws_stream(ws_stream_adapter.clone()),
     );
+    // The cron port is created above, so an event-driven watch can wake a registered pipeline
+    // rather than waiting for its next scheduled minute.
+    let cron_for_sink = cron_adapter.clone();
     // Stream sink — realtime frames → event bus(SSE /api/events) + per-watch notify.
     // (adapter 생성 뒤에 배선하는 이유 = closure 가 module_manager 를 잡아야 notify 라우팅 가능.)
     {
@@ -485,6 +488,8 @@ async fn main() -> Result<()> {
                     let watch_id = spec.watch_id.clone();
                     let module = module.to_string();
                     let mm = mm.clone();
+                    let notify_job = meta.notify_job.clone();
+                    let cron_for_sink = cron_for_sink.clone();
                     let sinks = stream_sinks.clone();
                     let mut guard = sinks.lock().unwrap_or_else(|p| p.into_inner());
                     let slot = guard.entry(watch_id.clone()).or_default();
@@ -529,6 +534,21 @@ async fn main() -> Result<()> {
                                     watch_id = %watch_id, module = %module, frames = count,
                                     "watch module sink ran"
                                 );
+                                // The sink has nowhere to put what a module returns, so a module
+                                // can record a frame and not act on it. Waking a registered job
+                                // closes that without a second order path: the pipeline that
+                                // already places orders runs now instead of at its next minute.
+                                // After the sink, never before — the job reads what the module
+                                // just wrote down.
+                                if let Some(job) = notify_job.as_deref() {
+                                    if let Err(e) = cron_for_sink.trigger_now(job).await {
+                                        tracing::warn!(
+                                            target: "ws_stream",
+                                            watch_id = %watch_id, job = %job, error = %e,
+                                            "watch job trigger failed"
+                                        );
+                                    }
+                                }
                             }
                             let mut g = sinks.lock().unwrap_or_else(|p| p.into_inner());
                             let slot = g.entry(watch_id.clone()).or_default();
