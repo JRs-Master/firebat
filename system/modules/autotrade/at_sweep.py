@@ -75,6 +75,41 @@ def _macd_rules():
     ]
 
 
+def _align_rules(fast, mid, slow, min_slope, pullback=None, extend=None):
+    """Alignment + slope for the trend, disparity for the timing.
+
+    A crossover fires at the moment two averages meet, which on a fast chart is where price has
+    already travelled — the entry is bought at the top of the move it is trying to catch, and the
+    round trip has to beat the costs from there. This asks a different question in three parts:
+
+      * **Alignment** (`ma5 > ma20 > ma60`) — the trend exists in the structure of the averages,
+        not in one crossing that may unwind on the next bar.
+      * **Slope** — the middle average is *rising*. Alignment alone survives a long flat drift,
+        where every entry pays the spread for a move that never comes.
+      * **Disparity** — price has come *back toward* its short average rather than stretched away
+        from it. This is the entry timing the crossover cannot express: buy the pullback inside an
+        established trend, not the extension.
+
+    The exit is the same idea inverted — leave when price has stretched far enough above the
+    average to be worth taking (`extend`), or when the alignment that justified the position
+    breaks. A stop and a target still apply underneath; these are the conditions, not the walls.
+    """
+    entry = [
+        {"a": f"ma{fast}", "op": ">", "b": f"ma{mid}"},
+        {"a": f"ma{mid}", "op": ">", "b": f"ma{slow}"},
+        {"a": f"slope{mid}", "op": ">", "b": min_slope},
+    ]
+    if pullback is not None:
+        entry.append({"a": f"disp{fast}", "op": "<=", "b": pullback})
+    rules = [{"side": "buy", "label": f"aligned {fast}/{mid}/{slow}", "when": entry}]
+    if extend is not None:
+        rules.append({"side": "sell", "label": f"stretched {extend}",
+                      "when": [{"a": f"disp{fast}", "op": ">=", "b": extend}]})
+    rules.append({"side": "sell", "label": "alignment broke",
+                  "when": [{"a": f"ma{fast}", "op": "crossDown", "b": f"ma{mid}"}]})
+    return rules
+
+
 # A rule cannot fire before its longest indicator has enough bars. Measuring ma60 in a 73-bar
 # window leaves 13 usable bars, and the result — zero trades — reads as "the rule is bad" when it
 # means "the question could not be asked" (2026-08-01: a whole cross-symbol sweep came back at
@@ -106,6 +141,29 @@ FAMILIES = {
     ],
     # MACD needs the slow EMA plus the signal EMA before it says anything.
     "macd": lambda sp: [("macd", _macd_rules(), {}, 26 + 9)],
+    # Alignment + slope + disparity. `pullback`/`extend` are disparity readings where 100 means
+    # price sits exactly on the average, so 100.3 is three tenths of a percent above it.
+    "aligned-pullback": lambda sp: [
+        (f"al{f}/{m}/{s}-sl{sl}-pb{pb}-ex{ex}",
+         _align_rules(f, m, s, sl, pb, ex), {}, s)
+        for f in _as_list(sp.get("fast"), [5])
+        for m in _as_list(sp.get("mid"), [20])
+        for s in _as_list(sp.get("slow"), [60])
+        for sl in _as_list(sp.get("minSlope"), [0.0, 0.02])
+        for pb in _as_list(sp.get("pullback"), [100.1, 100.4])
+        for ex in _as_list(sp.get("extend"), [100.8, 101.5])
+        if f < m < s
+    ],
+    # The same trend test with the timing removed — it says whether the disparity gate is what
+    # earns, or whether alignment and slope were carrying the result on their own.
+    "aligned-trend": lambda sp: [
+        (f"al{f}/{m}/{s}-sl{sl}", _align_rules(f, m, s, sl), {}, s)
+        for f in _as_list(sp.get("fast"), [5])
+        for m in _as_list(sp.get("mid"), [20])
+        for s in _as_list(sp.get("slow"), [60])
+        for sl in _as_list(sp.get("minSlope"), [0.0, 0.02])
+        if f < m < s
+    ],
 }
 
 

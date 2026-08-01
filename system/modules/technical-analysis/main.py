@@ -885,6 +885,17 @@ def chart_annotation_set(cand, structure_label=None):
 # `ma50` / `ema20` — a rule references a moving average by naming its period, so no period list is
 # declared anywhere and both conventions (5/20/60/120 and 50/200) work.
 _MA_REF = re.compile(r"^(ma|ema)(\d+)$")
+# Two things every trend rule is actually made of, and neither could be written before.
+#
+# `slope20` — how fast the line is moving, in percent per bar. "Price above the average" says
+# nothing about whether the average is rising; a rule that cannot ask ends up buying into decline.
+# `disp20` — where price sits against the average, as a percentage (100 = on it). The gap itself
+# is the signal in a mean-reversion rule, and comparing `close > ma20` only gives its sign.
+#
+# Both are derived from the same average the name asks for, so no period list is declared here
+# either: `slopeEma50` and `disp5` bring their own.
+_SLOPE_REF = re.compile(r"^slope(?:_?(ema))?(\d+)$", re.IGNORECASE)
+_DISP_REF = re.compile(r"^disp(?:arity)?(?:_?(ema))?(\d+)$", re.IGNORECASE)
 
 
 def _ema(xs, n):
@@ -1131,11 +1142,11 @@ def main():
         # there is could not be written at all: `ma50 crossUp ma200` was rejected as an unknown path
         # (2026-07-31, a golden-cross request). Periods are read off the rules instead of declared,
         # so 5/20/60/120 and 50/200 all work without this module choosing a convention.
-        ma_refs = sorted({
-            str(c.get(side)) for r in rules for c in (r.get("when") or [])
-            for side in ("a", "b")
-            if isinstance(c.get(side), str) and _MA_REF.match(str(c.get(side)))
-        })
+        every_ref = [str(c.get(side)) for r in rules for c in (r.get("when") or [])
+                     for side in ("a", "b") if isinstance(c.get(side), str)]
+        ma_refs = sorted({r for r in every_ref if _MA_REF.match(r)})
+        derived = sorted({r for r in every_ref
+                          if _SLOPE_REF.match(r) or _DISP_REF.match(r)})
         ma_used = []
         too_long = []
         for ref in ma_refs:
@@ -1148,6 +1159,29 @@ def main():
                 continue
             series[ref] = _ema(closes, n) if kind == "ema" else _sma(closes, n)
             ma_used.append((kind, n))
+        for ref in derived:
+            m = _SLOPE_REF.match(ref)
+            kind = "slope" if m else "disp"
+            if not m:
+                m = _DISP_REF.match(ref)
+            ema_flag, period = m.groups()
+            n = int(period)
+            if n < 1 or n > len(closes):
+                too_long.append((ref, n))
+                continue
+            base = _ema(closes, n) if ema_flag else _sma(closes, n)
+            if kind == "disp":
+                # 100 = price sits exactly on the average.
+                series[ref] = [None if (b is None or not b) else c / b * 100.0
+                               for c, b in zip(closes, base)]
+            else:
+                # Percent per bar, so the number means the same thing on a 90-million-won coin
+                # and a 400-won one.
+                series[ref] = [None if (i == 0 or base[i] is None or not base[i - 1])
+                               else (base[i] - base[i - 1]) / base[i - 1] * 100.0
+                               for i in range(len(base))]
+            ma_used.append((kind, n))
+
         if too_long:
             print(json.dumps({"success": False, "error":
                 "이동평균 기간이 봉 수(%d)보다 깁니다: %s — 그만큼의 과거 봉을 더 실어 주십시오"
