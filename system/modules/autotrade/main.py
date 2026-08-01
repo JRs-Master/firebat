@@ -72,8 +72,10 @@ def declared_default(key, fallback):
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
             with open(path, encoding="utf-8") as fh:
                 for f in (json.load(fh).get("settings_fields") or []):
-                    if isinstance(f, dict) and "default" in f and f.get("key"):
-                        _DECLARED[f["key"]] = f["default"]
+                    # `defaultValue` is the name the settings screen reads; matching it here is
+                    # what keeps the shipped value and the rendered value the same thing.
+                    if isinstance(f, dict) and f.get("key") and "defaultValue" in f:
+                        _DECLARED[f["key"]] = f["defaultValue"]
         except (OSError, ValueError):
             pass
     return _DECLARED.get(key, fallback)

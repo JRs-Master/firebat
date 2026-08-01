@@ -308,8 +308,7 @@
       "type": "toggle",
       "defaultValue": false,
       "tab": "실행",
-      "group": "스위치",
-      "default": false
+      "group": "스위치"
     },
     {
       "key": "activeFrom",
@@ -346,8 +345,7 @@
           "value": "real",
           "label": "real"
         }
-      ],
-      "default": "dryrun"
+      ]
     },
     {
       "key": "realArmed",
@@ -394,7 +392,7 @@
     {
       "key": "minClosedTrips",
       "type": "number",
-      "default": 8
+      "defaultValue": 8
     },
     {
       "key": "confirmTimeoutSec",
@@ -420,38 +418,34 @@
     {
       "key": "trades",
       "type": "textarea",
-      "defaultValue": "[]",
+      "defaultValue": "[\n  {\n    \"id\": \"eth-1h\",\n    \"symbol\": \"KRW-ETH\",\n    \"broker\": \"upbit\",\n    \"account\": \"\",\n    \"interval\": \"1h\"\n  }\n]",
       "tab": "전략",
       "group": "매매",
-      "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom\",\"account\":\"모의국내\"}]",
-      "default": "[\n  {\n    \"id\": \"eth-1h\",\n    \"symbol\": \"KRW-ETH\",\n    \"broker\": \"upbit\",\n    \"account\": \"\",\n    \"interval\": \"1h\"\n  }\n]"
+      "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom\",\"account\":\"모의국내\"}]"
     },
     {
       "key": "universe",
       "type": "textarea",
-      "defaultValue": "[]",
+      "defaultValue": "[\n  \"KRW-BTC\",\n  \"KRW-ETH\",\n  \"KRW-XRP\",\n  \"KRW-DOGE\",\n  \"KRW-SOL\",\n  \"KRW-ADA\"\n]",
       "tab": "전략",
       "group": "측정 대상",
-      "placeholder": "[\"005930.KS\",\"000660.KS\",\"035420.KS\",\"005380.KS\",\"051910.KS\"]",
-      "default": "[\n  \"KRW-BTC\",\n  \"KRW-ETH\",\n  \"KRW-XRP\",\n  \"KRW-DOGE\",\n  \"KRW-SOL\",\n  \"KRW-ADA\"\n]"
+      "placeholder": "[\"005930.KS\",\"000660.KS\",\"035420.KS\",\"005380.KS\",\"051910.KS\"]"
     },
     {
       "key": "confirmUniverse",
       "type": "textarea",
-      "defaultValue": "[]",
+      "defaultValue": "[\n  \"KRW-LINK\",\n  \"KRW-AVAX\"\n]",
       "tab": "전략",
       "group": "측정 대상",
-      "placeholder": "[\"005380.KS\",\"051910.KS\"]",
-      "default": "[\n  \"KRW-LINK\",\n  \"KRW-AVAX\"\n]"
+      "placeholder": "[\"005380.KS\",\"051910.KS\"]"
     },
     {
       "key": "strategies",
       "type": "textarea",
-      "defaultValue": "[]",
+      "defaultValue": "[\n  {\n    \"id\": \"eth-1h\",\n    \"enabled\": true,\n    \"kind\": \"rules\",\n    \"symbol\": \"KRW-ETH\",\n    \"broker\": \"upbit\",\n    \"account\": \"\",\n    \"money\": {\n      \"perOrderKrw\": 6000,\n      \"lotSize\": 1e-08\n    },\n    \"limits\": {\n      \"maxPositionKrw\": 10000\n    },\n    \"exits\": {\n      \"stopLossPct\": 3.0,\n      \"takeProfitPct\": 6.0\n    },\n    \"orders\": {\n      \"type\": \"limit\"\n    }\n  }\n]",
       "tab": "전략",
       "group": "직접 선언",
-      "placeholder": "[]",
-      "default": "[\n  {\n    \"id\": \"eth-1h\",\n    \"enabled\": true,\n    \"kind\": \"rules\",\n    \"symbol\": \"KRW-ETH\",\n    \"broker\": \"upbit\",\n    \"account\": \"\",\n    \"money\": {\n      \"perOrderKrw\": 6000,\n      \"lotSize\": 1e-08\n    },\n    \"limits\": {\n      \"maxPositionKrw\": 10000\n    },\n    \"exits\": {\n      \"stopLossPct\": 3.0,\n      \"takeProfitPct\": 6.0\n    },\n    \"orders\": {\n      \"type\": \"limit\"\n    }\n  }\n]"
+      "placeholder": "[]"
     }
   ],
   "pageBinding": {
