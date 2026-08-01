@@ -369,6 +369,10 @@
       "includeFlagged": {
         "type": "boolean",
         "description": "[screen] 유의·주의 종목도 포함할지 (기본 false). 거래량 급등 경보가 있어서, 거래대금 순 정렬은 경보 종목을 가장 먼저 집습니다."
+      },
+      "bars": {
+        "type": "number",
+        "description": "[get_candles] 원하는 총 봉 개수. 200을 넘으면 `to` 커서로 과거 방향 페이징합니다(상한 20000). 5분봉 200개는 16시간뿐이라 스캘핑 규칙 측정에는 모자랍니다."
       }
     },
     "additionalProperties": false

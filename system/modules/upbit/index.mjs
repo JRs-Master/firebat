@@ -406,6 +406,9 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
 // timeframes across endpoints (minutes carry the unit in the path, days/weeks/months are their
 // own), and the caller should no more know that here than it should know a Kiwoom API id. A
 // strategy changing from 5-minute to hourly is a settings edit, not a code edit.
+// A hard stop on paging: 20,000 bars is a hundred calls, which is already generous
+// against a ten-per-second limit shared with everything else asking for candles.
+const MAX_PAGED_BARS = 20000;
 const UPBIT_MINUTE_UNITS = { '1m': '1', '3m': '3', '5m': '5', '10m': '10', '15m': '15',
                              '30m': '30', '60m': '60', '1h': '60', '240m': '240', '4h': '240' };
 const UPBIT_PERIODS = { '1d': 'candle-days', '1w': 'candle-weeks',
@@ -713,7 +716,39 @@ async function main(input) {
     let data = await callApi(method, endpoint, params, accessKey, secretKey, needAuth);
     // Only the neutral request is translated. The raw candle-* actions keep answering exactly what
     // the exchange said, because something is already reading them that way.
-    if (wantsCandles) data = normalizeUpbitCandles(data);
+    if (wantsCandles) {
+      // One call answers 200 bars. A scalping rule measured on 200 five-minute bars is measured
+      // on sixteen hours, which is not a measurement — so `bars` pages backwards until it has
+      // what was asked for. The exchange's own `to` cursor does the paging; nothing about this
+      // needs a library, and adding one to a sandboxed module to get a loop would be a poor
+      // trade. Capped, and it stops early when history runs out rather than looping forever.
+      const want = Math.min(Math.max(Number(input.bars) || 0, 0), MAX_PAGED_BARS);
+      data = normalizeUpbitCandles(data);
+      if (want > data.length) {
+        let cursor = data.length ? data[0].date : null;
+        let pages = 0;
+        while (cursor && data.length < want) {
+          // The candle group allows ten calls a second across every caller on this IP, and this
+          // loop is not the only one asking. Pacing it costs a few seconds on a long history and
+          // avoids a 429 that would drop the whole series — found by tripping it.
+          if (pages++) await new Promise(r => setTimeout(r, 120));
+          const page = await callApi(method, endpoint,
+            { ...params, to: `${String(cursor).replace(' ', 'T')}+09:00` },
+            accessKey, secretKey, needAuth);
+          const rows = normalizeUpbitCandles(page);
+          // History ran out, or the exchange refused. Either way, return what was gathered —
+          // a short series the caller can see is better than an error that loses all of it.
+          if (!rows.length) break;
+          const before = data.length;
+          // Merge on the timestamp: the cursor bar comes back on the next page too.
+          const seen = new Set(data.map(r => r.date));
+          data = [...rows.filter(r => !seen.has(r.date)), ...data];
+          if (data.length === before) break;   // no progress — stop rather than spin
+          cursor = rows[0].date;
+        }
+        data = data.slice(-want);
+      }
+    }
     if (wantsScreen) {
       // A second call, deliberately: the flags live on the pair list, not on the ticker, and a
       // screen that cannot see them would rank a flagged pair first.

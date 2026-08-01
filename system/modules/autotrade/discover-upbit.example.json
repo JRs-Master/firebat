@@ -3,14 +3,17 @@
   "_why": [
     "Crypto trades around the clock, so this runs today rather than waiting for an open — which is",
     "the whole reason to test here first. Public candles need no key at all.",
+    "5,000 five-minute bars is about seventeen days, gathered in a few seconds by paging the",
+    "exchange's own cursor. Two hundred bars — one call — would be sixteen hours, which is not a",
+    "measurement of anything.",
     "Costs are the venue's, not the default. Upbit charges 0.05% each way and there is no",
     "transaction tax; the stock defaults would have charged 0.18% tax per sell and buried every",
     "candidate. The opposite mistake is worse and was measured live on this data: the same five",
     "5-minute BTC trades were 60% winners and +0.11% at zero cost, and 0% winners and -0.59% once",
     "the exchange's own fee was applied. Adoption refuses a costless measurement for that reason.",
     "Two things do not exist here that exist at a stock broker: there is no mock account, so the",
-    "ladder has no middle rung and a rule goes from paper straight to real money; and there is no",
-    "screening condition, so symbols are the declared list."
+    "ladder's middle rung is the exchange's order validator rather than a paper account; and there",
+    "is no saved screening condition, though `screen` ranks by 24-hour turnover in its place."
   ],
   "executionMode": "pipeline",
   "pipeline": [
@@ -53,7 +56,7 @@
           "inputData": {
             "action": "get_candles",
             "interval": "5m",
-            "count": 200
+            "bars": 5000
           },
           "inputMap": {
             "symbol": "$prev"
@@ -66,7 +69,7 @@
       "tool": "sysmod_autotrade",
       "inputData": {
         "action": "plan_multi",
-        "barCount": 200
+        "barCount": 4000
       },
       "inputMap": {
         "space": "$step2",
@@ -145,10 +148,10 @@
     "maxOrdersPerCycle": 2,
     "dailyLossLimitKrw": 20000,
     "_note": [
-      "dryrun, and it should stay there. Upbit has no paper account: mock and real are the",
-      "same money, so the rung that catches a rule between backtest and live does not exist.",
-      "200 bars at 5 minutes is under a day of history — enough to prove the wiring, not",
-      "enough to believe a win rate. Raise `count` before believing anything."
+      "dryrun, and it should stay there until a record exists. Upbit has no paper account: mock",
+      "sends the order to the validator, and real is real money.",
+      "The screen excludes pairs the exchange has flagged — a turnover ranking finds those first,",
+      "since one of the caution flags is trading volume soaring."
     ]
   }
 }
