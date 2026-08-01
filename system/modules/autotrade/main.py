@@ -245,10 +245,13 @@ def action_adopt(inp, settings):
     target = {"symbol": inp.get("symbol"), "broker": inp.get("broker"),
               "account": inp.get("account"), "id": inp.get("strategyId"),
               "template": inp.get("template")}
-    if not target["symbol"] or not target["broker"] or not target["account"]:
+    if not target["symbol"] or not target["broker"]:
         return {"success": False,
-                "error": "adopt 에는 symbol·broker·account 가 필요합니다 — 어느 계좌에서 돌지가 "
+                "error": "adopt 에는 symbol 과 broker 가 필요합니다 — 무엇을 어디서 굴릴지가 "
                          "규칙의 일부입니다."}
+    # An empty account is legitimate: an exchange whose key IS the account has nothing to name,
+    # and demanding one there blocked the gate before it could judge anything.
+    target["account"] = target.get("account") or ""
     conn = strat.connect()
     try:
         result = strat.adopt(conn, ranked, runs, target,
