@@ -77,7 +77,8 @@ def _macd_rules():
     ]
 
 
-def _align_rules(fast, mid, slow, min_slope, pullback=None, extend=None):
+def _align_rules(fast, mid, slow, min_slope, pullback=None, extend=None, exit_mode="stretch",
+                 fade_at=None):
     """Alignment + slope for the trend, disparity for the timing.
 
     A crossover fires at the moment two averages meet, which on a fast chart is where price has
@@ -104,9 +105,25 @@ def _align_rules(fast, mid, slow, min_slope, pullback=None, extend=None):
     if pullback is not None:
         entry.append({"a": f"disp{fast}", "op": "<=", "b": pullback})
     rules = [{"side": "buy", "label": f"aligned {fast}/{mid}/{slow}", "when": entry}]
-    if extend is not None:
+    if extend is not None and exit_mode in ("stretch", "either"):
         rules.append({"side": "sell", "label": f"stretched {extend}",
                       "when": [{"a": f"disp{fast}", "op": ">=", "b": extend}]})
+    if exit_mode in ("decel", "either"):
+        # Still rising, but by less than last bar. Measured 2026-08-02 and it loses badly on its
+        # own: an hourly average's slope wobbles every bar, so this fires on noise — 123 round
+        # trips against 27 for the overextension exit, and 5% of cells profitable against 60%.
+        # Kept as the control that shows why the threshold below is needed.
+        rules.append({"side": "sell", "label": "rising, but slowing",
+                      "when": [{"a": f"slope{mid}", "op": ">", "b": 0},
+                               {"a": f"accel{mid}", "op": "<", "b": 0}]})
+    if exit_mode == "fade" and fade_at is not None:
+        # Ahead, and losing pace. Waiting for full overextension gives the move back; leaving on
+        # any wobble pays the spread for nothing. This asks for both at once: price is already
+        # above its average by `fade_at`, and the rise is smaller than it was.
+        rules.append({"side": "sell", "label": f"ahead {fade_at} and fading",
+                      "when": [{"a": f"disp{fast}", "op": ">=", "b": fade_at},
+                               {"a": f"slope{mid}", "op": ">", "b": 0},
+                               {"a": f"accel{mid}", "op": "<", "b": 0}]})
     rules.append({"side": "sell", "label": "alignment broke",
                   "when": [{"a": f"ma{fast}", "op": "crossDown", "b": f"ma{mid}"}]})
     return rules
@@ -148,15 +165,20 @@ FAMILIES = {
     # Alignment + slope + disparity. `pullback`/`extend` are disparity readings where 100 means
     # price sits exactly on the average, so 100.3 is three tenths of a percent above it.
     "aligned-pullback": lambda sp: [
-        (f"al{f}/{m}/{s}-sl{sl}-pb{pb}-ex{ex}",
-         _align_rules(f, m, s, sl, pb, ex), {}, s,
-         {"fast": f, "mid": m, "slow": s, "minSlope": sl, "pullback": pb, "extend": ex})
+        (f"al{f}/{m}/{s}-sl{sl}-pb{pb}-ex{ex}-{xm}{'' if fa is None else f'@{fa}'}",
+         _align_rules(f, m, s, sl, pb, ex, xm, fa), {}, s,
+         {"fast": f, "mid": m, "slow": s, "minSlope": sl, "pullback": pb, "extend": ex,
+          "exitMode": xm, "fadeAt": fa if fa is not None else 0})
         for f in _as_list(sp.get("fast"), [5])
         for m in _as_list(sp.get("mid"), [20])
         for s in _as_list(sp.get("slow"), [60])
         for sl in _as_list(sp.get("minSlope"), [0.0, 0.02])
         for pb in _as_list(sp.get("pullback"), [100.1, 100.4])
         for ex in _as_list(sp.get("extend"), [100.8, 101.5])
+        # How the position is left, as a searchable choice rather than a decision made once in
+        # code: overextension only, deceleration only, or either — measured side by side.
+        for xm in _as_list(sp.get("exitMode"), ["stretch"])
+        for fa in (_as_list(sp.get("fadeAt"), [100.3]) if xm == "fade" else [None])
         if f < m < s
     ],
     # The same trend test with the timing removed — it says whether the disparity gate is what
@@ -722,15 +744,30 @@ def _grid_axes(candidates):
     return {k: sorted(v) for k, v in axes.items()}
 
 
+def _is_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def _are_neighbours(a, b, axes):
-    """Two cells are neighbours when exactly one knob differs, by exactly one step of its axis."""
+    """Two cells are neighbours when exactly one knob differs, by exactly one step of its axis.
+
+    Only numbers have neighbours. A knob whose values are choices rather than quantities — which
+    exit to use, which kind of average — has to match exactly: "the cell next door" means a
+    slightly different number, not a different design. Mixing them lets a losing variant drag down
+    the support score of a winning one and makes the comparison say the opposite of the truth
+    (measured 2026-08-02: cleared cells fell from 50 to 2 the moment a third exit style entered
+    the grid, and every style's neighbourhood was two-thirds someone else's).
+    """
     if a.get("family") != b.get("family"):
         return False
     ka, kb = a.get("knobs") or {}, b.get("knobs") or {}
     if set(ka) != set(kb):
         return False
+    for k, v in ka.items():
+        if not _is_num(v) and v != kb.get(k):
+            return False
     differing = [k for k in ka if ka[k] != kb[k]]
-    if len(differing) != 1:
+    if len(differing) != 1 or not _is_num(ka[differing[0]]):
         return False
     k = differing[0]
     axis = axes.get((a.get("family"), k))

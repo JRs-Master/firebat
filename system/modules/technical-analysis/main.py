@@ -896,6 +896,15 @@ _MA_REF = re.compile(r"^(ma|ema)(\d+)$")
 # either: `slopeEma50` and `disp5` bring their own.
 _SLOPE_REF = re.compile(r"^slope(?:_?(ema))?(\d+)$", re.IGNORECASE)
 _DISP_REF = re.compile(r"^disp(?:arity)?(?:_?(ema))?(\d+)$", re.IGNORECASE)
+# `accel20` — the change in slope, in percentage points per bar. Slope says the line is rising;
+# this says whether it is rising by less than it was.
+#
+# It exists because a crossover exit is late by construction: by the time a fast average crosses
+# back under a slow one, the move it is reporting already happened. What a person watching the
+# chart reacts to first is not the turn but the loss of pace — still up, but less each bar. A rule
+# had no way to ask that: `slope20 > 0` and `slope20 < 0` are the only two questions available,
+# and the interesting moment is between them.
+_ACCEL_REF = re.compile(r"^accel(?:eration)?(?:_?(ema))?(\d+)$", re.IGNORECASE)
 
 
 def _ema(xs, n):
@@ -1146,7 +1155,8 @@ def main():
                      for side in ("a", "b") if isinstance(c.get(side), str)]
         ma_refs = sorted({r for r in every_ref if _MA_REF.match(r)})
         derived = sorted({r for r in every_ref
-                          if _SLOPE_REF.match(r) or _DISP_REF.match(r)})
+                          if _SLOPE_REF.match(r) or _DISP_REF.match(r)
+                          or _ACCEL_REF.match(r)})
         ma_used = []
         too_long = []
         for ref in ma_refs:
@@ -1160,10 +1170,14 @@ def main():
             series[ref] = _ema(closes, n) if kind == "ema" else _sma(closes, n)
             ma_used.append((kind, n))
         for ref in derived:
-            m = _SLOPE_REF.match(ref)
-            kind = "slope" if m else "disp"
+            m = _ACCEL_REF.match(ref)
+            kind = "accel"
+            if not m:
+                m = _SLOPE_REF.match(ref)
+                kind = "slope"
             if not m:
                 m = _DISP_REF.match(ref)
+                kind = "disp"
             ema_flag, period = m.groups()
             n = int(period)
             if n < 1 or n > len(closes):
@@ -1177,9 +1191,17 @@ def main():
             else:
                 # Percent per bar, so the number means the same thing on a 90-million-won coin
                 # and a 400-won one.
-                series[ref] = [None if (i == 0 or base[i] is None or not base[i - 1])
-                               else (base[i] - base[i - 1]) / base[i - 1] * 100.0
-                               for i in range(len(base))]
+                sl = [None if (i == 0 or base[i] is None or not base[i - 1])
+                      else (base[i] - base[i - 1]) / base[i - 1] * 100.0
+                      for i in range(len(base))]
+                if kind == "slope":
+                    series[ref] = sl
+                else:
+                    # The change in that, so "still rising but by less" is a question a rule can
+                    # ask: `slope20 > 0` and `accel20 < 0` together.
+                    series[ref] = [None if (i == 0 or sl[i] is None or sl[i - 1] is None)
+                                   else sl[i] - sl[i - 1]
+                                   for i in range(len(sl))]
             ma_used.append((kind, n))
 
         if too_long:
