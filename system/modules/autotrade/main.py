@@ -327,26 +327,100 @@ def action_record_orders(inp, settings):
 
 
 def action_reconcile(inp, settings):
+    """Settle against the broker's own record: fills first, then open orders, then the balance.
+
+    Order matters. Fills are what actually happened, so they land in the ledger before anything is
+    compared; open orders say which of our rows are still live; the balance is the final arbiter of
+    how many shares exist. Doing it the other way round would compare a position to a ledger that
+    had not caught up yet and call the difference a discrepancy.
+    """
     conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
-    pos = inp.get("position") or {}
     symbol = inp.get("symbol")
-    if not symbol or "qty" not in pos:
-        conn.close()
-        return {"success": False,
-                "error": "reconcile needs `symbol` and `position:{qty, avgPrice}` from the broker"}
     strategies = pick_strategies(settings, symbol=symbol, strategy_id=inp.get("strategyId"))
     broker = (strategies[0].get("broker") if strategies else None) or "unknown"
     account = (strategies[0].get("account") if strategies else None) or ""
-    verdict = store.reconcile_symbol(conn, broker, account, symbol,
-                                     float(pos.get("qty") or 0),
-                                     float(pos.get("avgPrice") or pos.get("avg_price") or 0))
+    report = {"applied": [], "unattributed": [], "unreadable": [], "aged": []}
+
+    # 1. Fills → ledger, attributed through the order row that produced them.
+    fills, unreadable = orders.read_fills(inp.get("fills"))
+    report["unreadable"] = unreadable
+    if unreadable:
+        store.log_api(conn, broker, "fills:unreadable", False, 0, {"symbol": symbol}, unreadable[:5])
+    by_no = {o["broker_order_no"]: o for o in store.open_orders(conn) if o.get("broker_order_no")}
+    for f in fills:
+        order = by_no.get(f["brokerOrderNo"])
+        if order is None:
+            # Someone traded this account outside the system, or the order number never came back.
+            # Either way it is not ours to attribute — the balance step will absorb it.
+            report["unattributed"].append(f["raw"])
+            continue
+        if not store.record_fill(conn, order_key_=order["order_key"], qty=f["qty"],
+                                 price=f["price"], broker_exec_id=f["execId"], raw=f["raw"]):
+            continue  # already booked on an earlier pass
+        store.apply_fill(conn, strategy_id=order["strategy_id"], broker=order["broker"],
+                         account=order["account"], symbol=order["symbol"], side=order["side"],
+                         qty=f["qty"], price=f["price"], source="order",
+                         ref_order_key=order["order_key"],
+                         fee_in_cost=settings.get("feeInCost", True))
+        filled = float(order.get("filled_qty") or 0) + f["qty"]
+        store.update_order(conn, order["order_key"],
+                           filled_qty=filled,
+                           filled_avg=f["price"],
+                           state="filled" if filled >= float(order["req_qty"]) - 1e-9 else "partial",
+                           last_checked_ms=store.now_ms())
+        report["applied"].append({"orderKey": order["order_key"], "qty": f["qty"],
+                                  "price": f["price"]})
+
+    # 2. Open orders — a row the broker no longer lists, with nothing filled, is finished.
+    open_list = inp.get("openOrders")
+    if isinstance(open_list, list):
+        still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list
+                      if isinstance(r, dict)}
+        for o in store.open_orders(conn):
+            no = o.get("broker_order_no")
+            if no and no not in still_open and float(o.get("filled_qty") or 0) <= 0:
+                store.update_order(conn, o["order_key"], state="canceled",
+                                   last_checked_ms=store.now_ms())
+
+    # 3. Anything still unconfirmed past the timeout stops the strategy rather than being assumed.
+    # `or 120` would turn a configured 0 back into the default — "wait no time at all" is a real
+    # setting, and the same falsy-zero slip has cost us twice today.
+    timeout_sec = settings.get("unknownTimeoutSec")
+    limit_ms = float(120 if timeout_sec is None else timeout_sec) * 1000
+    now = store.now_ms()
+    for o in store.open_orders(conn):
+        if o["state"] in ("sent", "acked") and now - int(o.get("sent_ms") or now) > limit_ms:
+            store.update_order(conn, o["order_key"], state="unknown",
+                               last_checked_ms=now,
+                               error="not confirmed by the broker within the timeout")
+            store.set_position_state(conn, o["strategy_id"], o["broker"], o["account"],
+                                     o["symbol"], "degraded")
+            store.log_event(conn, "order_unknown", {"orderKey": o["order_key"]},
+                            strategy_id=o["strategy_id"], symbol=o["symbol"])
+            report["aged"].append(o["order_key"])
+
+    # 4. The balance is the arbiter of how many shares exist.
+    verdict = None
+    pos = inp.get("position") or {}
+    if symbol and "qty" in pos:
+        verdict = store.reconcile_symbol(conn, broker, account, symbol,
+                                         float(pos.get("qty") or 0),
+                                         float(pos.get("avgPrice") or pos.get("avg_price") or 0))
+
     drift = store.replay_positions(conn)
     if drift:
         store.kv_set(conn, "tripped", "1")
         store.log_event(conn, "halt", {"reason": "ledger replay disagrees with positions",
                                        "diffs": drift})
     conn.close()
-    return {"success": True, "data": {"reconcile": verdict, "ledgerDrift": drift}}
+    return {"success": True, "data": {
+        "reconcile": verdict, "ledgerDrift": drift,
+        "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
+        "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
+        "note": ("접수 응답이 아니라 체결·잔고 조회가 원장을 확정합니다. 읽지 못한 체결 행은 "
+                 "버리지 않고 그대로 돌려주므로, 실제 응답을 보고 필드명을 늘리면 됩니다."
+                 if report["unreadable"] else None),
+    }}
 
 
 def action_read(inp, settings, which):
@@ -543,6 +617,20 @@ def action_selftest():
     top = ranked["ranked"][0]["candidateId"]
     checks.append({"name": "a huge return on two trades does not win", "want": "solid",
                    "got": top, "ok": top == "solid"})
+    # Reading executions: the numbers are found by name, and a row that does not give both a
+    # quantity and a price is handed back rather than guessed at or skipped.
+    got, bad = orders.read_fills([
+        {"ord_no": "1", "cntr_qty": "3", "cntr_uv": "70,500", "cntr_no": "E9"},
+        {"ODNO": "2", "CCLD_QTY": "1", "CCLD_PRVS": "500"},
+        {"ord_no": "3", "mystery": "1"},
+    ])
+    checks.append({"name": "executions are read across broker vocabularies", "want": [2, 1],
+                   "got": [len(got), len(bad)],
+                   "ok": len(got) == 2 and len(bad) == 1
+                        and got[0]["qty"] == 3 and got[0]["price"] == 70500})
+    checks.append({"name": "an execution without an id still gets one", "want": True,
+                   "got": got[1]["execId"], "ok": bool(got[1]["execId"])})
+
     # An acknowledgement is not a fill. Every broker names its order number differently and none
     # of them document the response, so the number is found by name and everything else ignored.
     for label, ack, want_no in (

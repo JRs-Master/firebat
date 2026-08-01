@@ -94,3 +94,59 @@ def read_ack(ack):
         "brokerOrderNo": _dig(payload, *ORDER_NO_KEYS),
         "clientOrderId": payload.get("clientOrderId"),
     }
+
+
+# Execution rows are as undocumented as acknowledgements, and every broker names the same three
+# numbers differently. Read by name, keep what could not be read, and never infer a quantity that
+# was not stated — a fill invented here becomes a position that does not exist.
+FILL_QTY_KEYS = ("cntr_qty", "ccld_qty", "CCLD_QTY", "filledQuantity", "executedQuantity",
+                 "fill_qty", "qty")
+FILL_PRICE_KEYS = ("cntr_uv", "cntr_pric", "ccld_prvs", "CCLD_PRVS", "avgPrice", "filledPrice",
+                   "executedPrice", "price")
+EXEC_ID_KEYS = ("cntr_no", "execId", "executionId", "CCLD_NO", "exec_no")
+SIDE_KEYS = ("sell_tp", "io_tp_nm", "SLL_BUY_DVSN_CD", "side", "trde_tp_nm")
+
+
+def _num(v):
+    try:
+        f = float(str(v).replace(",", "").lstrip("+"))
+        return abs(f)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first(row, names):
+    for k in names:
+        if k in row and str(row[k]).strip() not in ("", "0"):
+            return row[k]
+    return None
+
+
+def read_fills(rows):
+    """Broker execution rows → {brokerOrderNo, qty, price, execId, raw}, plus what was unreadable.
+
+    A row missing a quantity or a price is not guessed at: it goes to `unreadable` so the field
+    names can be added once a real response shows what they are. Silently skipping it would leave
+    the ledger short and the reconciliation would then blame the strategy.
+    """
+    out, unreadable = [], []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        qty = _num(_first(row, FILL_QTY_KEYS))
+        price = _num(_first(row, FILL_PRICE_KEYS))
+        order_no = _dig(row, *ORDER_NO_KEYS)
+        if not qty or not price:
+            unreadable.append(row)
+            continue
+        out.append({
+            "brokerOrderNo": order_no,
+            "qty": qty,
+            "price": price,
+            # Without an execution id the same fill cannot be recognised twice, so one is made from
+            # what identifies it — reconcile runs every cycle and must not double-book.
+            "execId": str(_first(row, EXEC_ID_KEYS) or f"{order_no}:{qty}:{price}"),
+            "sideHint": str(_first(row, SIDE_KEYS) or ""),
+            "raw": row,
+        })
+    return out, unreadable
