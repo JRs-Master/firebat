@@ -68,9 +68,10 @@
           "adopt",
           "strategies",
           "retire",
-          "review"
+          "review",
+          "next_revision"
         ],
-        "description": "gate = 이 사이클을 돌려도 되는지 한 줄로 답합니다(`active` + `why`) — 매매 파이프라인의 첫 스텝이고, 사람이 켜 둔 스위치와 기간·킬스위치를 여기서 봅니다. 뒤에 `CONDITION active == true` 를 붙이면 꺼져 있을 때 브로커 호출 0으로 조용히 끝납니다. cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result. plan_multi / rank_multi = the whole multi-symbol sweep in two calls, so the pipeline is four steps whatever the symbol count: FOREACH symbols -> candles, plan_multi, FOREACH runs -> technical-analysis, rank_multi. Each planned run already carries its own barsCacheKey, so the execution loop needs no outside reference. Prefer these over plan_sweep/rank_sweep/merge_sweeps/rank_across, which are the single-symbol primitives. record_orders = after the order loop, hand back `calls` and its `results`; acknowledgements move rows to acked/rejected and are stored verbatim, but never create a fill — only reconcile does that, from the broker's own record. reconcile takes `fills`, `openOrders` and `position` — all optional, each doing its part in that order — and is the only action that writes fills into the ledger. adopt = 스윕의 승자를 전략 store 에 들입니다 — `ranked` 와 `runs` 를 **앞 스텝 결과 그대로** 넘겨야 하며(성적을 손으로 적을 수 없습니다), 통과해도 **종이거래 단계에서 시작**합니다. 측정이 모자라면 거부하고 사유를 남깁니다(다음 탐색이 같은 자리를 다시 파지 않도록). strategies = 채택된 전략과 그 이력. retire = 중지(한 방향 — 승격은 요청이 아니라 실적으로). review = 장 마감 후 사다리 — 채택된 전략을 **자기 원장 실적으로만** 올리거나 내립니다(승률을 백테스트와 대조, 종이·실전 원장은 각각 자기 것을 읽습니다). LLM 판단 없음."
+        "description": "gate = 이 사이클을 돌려도 되는지 한 줄로 답합니다(`active` + `why`) — 매매 파이프라인의 첫 스텝이고, 사람이 켜 둔 스위치와 기간·킬스위치를 여기서 봅니다. 뒤에 `CONDITION active == true` 를 붙이면 꺼져 있을 때 브로커 호출 0으로 조용히 끝납니다. cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result. plan_multi / rank_multi = the whole multi-symbol sweep in two calls, so the pipeline is four steps whatever the symbol count: FOREACH symbols -> candles, plan_multi, FOREACH runs -> technical-analysis, rank_multi. Each planned run already carries its own barsCacheKey, so the execution loop needs no outside reference. Prefer these over plan_sweep/rank_sweep/merge_sweeps/rank_across, which are the single-symbol primitives. record_orders = after the order loop, hand back `calls` and its `results`; acknowledgements move rows to acked/rejected and are stored verbatim, but never create a fill — only reconcile does that, from the broker's own record. reconcile takes `fills`, `openOrders` and `position` — all optional, each doing its part in that order — and is the only action that writes fills into the ledger. adopt = 스윕의 승자를 전략 store 에 들입니다 — `ranked` 와 `runs` 를 **앞 스텝 결과 그대로** 넘겨야 하며(성적을 손으로 적을 수 없습니다), 통과해도 **종이거래 단계에서 시작**합니다. 측정이 모자라면 거부하고 사유를 남깁니다(다음 탐색이 같은 자리를 다시 파지 않도록). strategies = 채택된 전략과 그 이력. retire = 중지(한 방향 — 승격은 요청이 아니라 실적으로). review = 장 마감 후 사다리 — 채택된 전략을 **자기 원장 실적으로만** 올리거나 내립니다(승률을 백테스트와 대조, 종이·실전 원장은 각각 자기 것을 읽습니다). LLM 판단 없음. next_revision = 오늘 밤 고칠 전략 하나와 그 재료(현재 규칙·실전 기록·거부 이력). **수정과 발굴은 다른 일입니다** — 수정은 돌아가는 규칙 주변을 뒤지는 것이고, 발굴은 새 매매를 시작할 때 넓게 뒤지는 별도 실행입니다."
       },
       "strategyId": {
         "type": "string",
@@ -374,6 +375,34 @@
       "defaultValue": "[]",
       "tab": "전략",
       "group": "전략 목록"
+    },
+    {
+      "key": "universe",
+      "type": "textarea",
+      "defaultValue": "[]",
+      "tab": "전략",
+      "group": "대상"
+    },
+    {
+      "key": "confirmUniverse",
+      "type": "textarea",
+      "defaultValue": "[]",
+      "tab": "전략",
+      "group": "대상"
+    },
+    {
+      "key": "tradeBroker",
+      "type": "text",
+      "defaultValue": "",
+      "tab": "전략",
+      "group": "대상"
+    },
+    {
+      "key": "tradeAccount",
+      "type": "text",
+      "defaultValue": "",
+      "tab": "전략",
+      "group": "대상"
     }
   ],
   "pageBinding": {

@@ -1,0 +1,134 @@
+{
+  "title": "autotrade — discovery: find a strategy for a new trade",
+  "executionMode": "pipeline",
+  "_why": [
+    "Run this when starting a new trade, not on a schedule. Discovery searches broadly for a rule",
+    "that does not exist yet; revising one that already runs is a different job with a different",
+    "search space, and doing both every night produces a new stranger each morning while the",
+    "running rules never improve. revise.example.json is the nightly one.",
+    "The sequence is fixed rather than left to an agent turn, because a run that re-authors its own",
+    "steps is a run whose steps can be wrong every time, and this one writes what will trade.",
+    "Step 2 is the model's whole contribution: where in parameter space to look. Steps 3-6 measure.",
+    "Step 7 adopts, receiving the ranking, the planned runs and their results as they came out of",
+    "those steps — so the evidence never passes through the model."
+  ],
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "review"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "strategies",
+        "limit": 30
+      }
+    },
+    {
+      "type": "LLM_TRANSFORM",
+      "instruction": "You are given today's strategy review and the history of what has already been adopted or refused. Answer with a JSON object only — no prose, no explanation — describing where to search next for a trading rule.\n\nShape:\n{\"families\":[...],\"fast\":[...],\"slow\":[...],\"low\":[...],\"high\":[...],\"stopLossPct\":[...],\"takeProfitPct\":[...],\"holdout\":0.3}\n\nfamilies is any of: ma-cross, ema-cross, rsi, bollinger, macd. The numeric fields are lists of parameter values to try; null is allowed in stopLossPct and takeProfitPct to mean \"no stop\". holdout is the fraction of history kept back for scoring.\n\nRead the refusals in the history. A combination that was refused for too few trades will be refused again at the same parameters, so move somewhere else: slower parameters trade less, faster ones trade more. Keep the space under about 200 combinations — a wider search finds a better-looking result without finding a better rule.",
+      "inputMap": {
+        "review": "$step0",
+        "history": "$step1"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": [
+        "005930.KS",
+        "000660.KS",
+        "035420.KS",
+        "005380.KS",
+        "051910.KS"
+      ],
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_yfinance",
+          "inputData": {
+            "action": "history",
+            "period": "5y",
+            "interval": "1d"
+          },
+          "inputMap": {
+            "symbol": "$prev"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "plan_multi",
+        "barCount": 600
+      },
+      "inputMap": {
+        "space": "$step2",
+        "fetched": "$step3"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "rank_multi"
+      },
+      "inputMap": {
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "adopt",
+        "template": {
+          "money": {
+            "qty": 1
+          },
+          "limits": {
+            "maxPositionKrw": 300000
+          },
+          "orders": {
+            "type": "limit",
+            "exchange": "SOR"
+          }
+        }
+      },
+      "inputMap": {
+        "ranked": "$step6",
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    }
+  ],
+  "_notes": {
+    "whatTheModelCannotDo": [
+      "Turn trading on, set the mode, arm real money, raise a limit, or write a result.",
+      "It proposes a region of parameter space. Everything that decides whether that region",
+      "produced something tradable is machine output flowing between steps."
+    ],
+    "universe": [
+      "The symbols, the confirmation set, the broker and the account come from the module settings —",
+      "they are the owner's walls, not part of a schedule. Only the candle loop still names them here,",
+      "because a FOREACH needs its list up front; keep it in step with the `universe` setting."
+    ]
+  }
+}

@@ -95,6 +95,14 @@ def load_settings():
         "confirmTimeoutSec": env_num("MODULE_CONFIRMTIMEOUTSEC", 20),
         "unknownTimeoutSec": env_num("MODULE_UNKNOWNTIMEOUTSEC", 120),
         "brokers": env_json("MODULE_BROKERS", []),
+        # What the model is allowed to trade, and where. This is a wall, not a strategy: which
+        # stocks and whose account is the owner's call, how to trade them is the model's. Keeping
+        # it here rather than in the cron declaration means changing it is a settings edit, not a
+        # schedule edit.
+        "universe": env_json("MODULE_UNIVERSE", []),
+        "confirmUniverse": env_json("MODULE_CONFIRMUNIVERSE", []),
+        "tradeBroker": os.environ.get("MODULE_TRADEBROKER") or "",
+        "tradeAccount": os.environ.get("MODULE_TRADEACCOUNT") or "",
         "strategies": env_json("MODULE_STRATEGIES", []),
     }
 
@@ -210,6 +218,33 @@ def action_adopt(inp, settings):
     finally:
         conn.close()
     return {"success": True, "data": result}
+
+
+def action_next_revision(inp, settings):
+    """The one strategy tonight's revision run should work on — or nothing to revise.
+
+    Separate from discovery on purpose. Revising means searching around a rule that is already
+    running; finding a new one is a different job with a different search space, and doing both
+    every night produces a new stranger each morning while the running rules never improve.
+    """
+    conns = {}
+
+    def ledger_for(mode):
+        if mode not in conns:
+            conns[mode] = store.connect(mode)
+        return conns[mode]
+
+    conn = strat.connect()
+    try:
+        target = strat.next_revision(conn, ledger_for)
+    finally:
+        conn.close()
+        for c in conns.values():
+            c.close()
+    return {"success": True, "data": target or {
+        "strategyId": None,
+        "note": "고칠 전략이 없습니다 — 신규 발굴은 별도 실행입니다(새 매매를 시작할 때).",
+    }}
 
 
 def action_review(inp, settings):
@@ -1210,6 +1245,44 @@ def action_selftest():
         except ValueError as e:
             checks.append({"name": name, "want": "refused", "got": str(e)[:60], "ok": True})
 
+    # --- revision picks one, worst first ---------------------------------------------------
+    # The ladder block closed its ledger; this one needs its own open handle.
+    rpaper = store.connect("dryrun")
+    rledger = lambda mode: rpaper
+    rconn = strat.connect()
+    rconn.execute("DELETE FROM ai_strategy")
+    rconn.commit()
+    checks.append({"name": "nothing adopted means nothing to revise", "want": None,
+                   "got": strat.next_revision(rconn, rledger),
+                   "ok": strat.next_revision(rconn, rledger) is None})
+
+    for sid, updated in (("healthy", 200), ("stale", 100)):
+        rconn.execute("INSERT INTO ai_strategy(id,symbol,broker,account,spec_json,stage,"
+                      "stage_since_ms,measured_json,created_ms,updated_ms) VALUES"
+                      "(?,'L','b','a',?,'paper',0,'{}',0,?)",
+                      (sid, json.dumps({"rules": [{"side": "buy", "when": []}],
+                                        "exits": {"stopLossPct": 3}}), updated))
+    rconn.commit()
+    picked = strat.next_revision(rconn, rledger)
+    checks.append({"name": "the least recently revised is picked when all are healthy",
+                   "want": "stale", "got": picked["strategyId"],
+                   "ok": picked["strategyId"] == "stale"})
+    checks.append({"name": "the current rule travels to the revision step", "want": 1,
+                   "got": len(picked["currentRules"]),
+                   "ok": len(picked["currentRules"]) == 1 and
+                         picked["currentExits"].get("stopLossPct") == 3})
+
+    # A strategy that just lost a stage is the one whose rule stopped describing the market.
+    strat.set_stage(rconn, "healthy", "paper", "demoted in a test")
+    rconn.execute("UPDATE ai_strategy SET updated_ms=999 WHERE id='healthy'")
+    rconn.commit()
+    demoted_first = strat.next_revision(rconn, rledger)
+    checks.append({"name": "a demoted rule jumps the queue even if just revised",
+                   "want": "healthy", "got": demoted_first["strategyId"],
+                   "ok": demoted_first["strategyId"] == "healthy"})
+    rconn.close()
+    rpaper.close()
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1228,6 +1301,21 @@ def main():
 
     # One place, so the two sweep planners cannot disagree about what a space is. A pipeline's
     # LLM_TRANSFORM step returns text, so a model-composed search space arrives as a string.
+    # A pipeline step cannot read settings, so the declared universe is filled in here — that is
+    # what keeps "which stocks, whose account" out of the cron declaration and in the one place
+    # the owner controls.
+    if action in ("plan_multi", "plan_sweep") and not inp.get("symbols"):
+        if settings.get("universe"):
+            inp["symbols"] = list(settings["universe"])
+        if not inp.get("confirmSymbols") and settings.get("confirmUniverse"):
+            inp["confirmSymbols"] = list(settings["confirmUniverse"])
+    if action == "adopt":
+        inp.setdefault("broker", settings.get("tradeBroker") or "")
+        inp.setdefault("account", settings.get("tradeAccount") or "")
+        if not inp.get("symbol") and settings.get("universe"):
+            # The rule is measured across the universe; it trades the first name in it unless the
+            # caller says otherwise. Silently picking a different one would be worse than this.
+            inp["symbol"] = str(settings["universe"][0]).split(".")[0]
     if "space" in inp:
         try:
             inp["space"] = as_object(inp.get("space"), "space")
@@ -1253,6 +1341,8 @@ def main():
             return out(action_cycle(inp, settings))
         if action == "adopt":
             return out(action_adopt(inp, settings))
+        if action == "next_revision":
+            return out(action_next_revision(inp, settings))
         if action == "review":
             return out(action_review(inp, settings))
         if action == "strategies":

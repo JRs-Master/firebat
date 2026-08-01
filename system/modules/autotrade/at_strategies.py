@@ -432,3 +432,45 @@ def review(conn, ledger_for, min_trades=MIN_LIVE_TRADES, slack=WIN_RATE_SLACK):
                 row["moved"] = f"{stage} → {to}"
         out.append(row)
     return out
+
+
+def next_revision(conn, ledger_for, limit_events=8):
+    """Which strategy tonight's revision run should work on, and everything it needs to do it.
+
+    One per night, on purpose. A revision searches the neighbourhood of a rule that is already
+    running, so it needs that rule, its live record and what has already been refused for it — and
+    a pipeline cannot carry six chained steps per item inside a loop. Picking one and rotating is
+    honest about that instead of pretending a loop would work.
+
+    Worst first: a strategy that just lost a stage is the one whose rule stopped describing the
+    market. After that, whichever has gone longest without a revision.
+    """
+    rows = conn.execute("SELECT * FROM ai_strategy WHERE stage != 'retired'").fetchall()
+    if not rows:
+        return None
+    scored = []
+    for r in rows:
+        live = live_record(ledger_for(STAGE_MODE.get(r["stage"], "dryrun")), r["id"],
+                           r["stage_since_ms"])
+        demotions = demotion_count(conn, r["id"])
+        # Lower sorts first: demoted before healthy, then least recently revised.
+        scored.append(((0 if demotions else 1), r["updated_ms"], r, live))
+    scored.sort(key=lambda x: (x[0], x[1]))
+    _, _, r, live = scored[0]
+    try:
+        spec = json.loads(r["spec_json"])
+        measured = json.loads(r["measured_json"] or "{}")
+    except (ValueError, TypeError):
+        spec, measured = {}, {}
+    events = [e for e in read_events(conn, r["id"], limit_events)]
+    return {
+        "strategyId": r["id"], "symbol": r["symbol"], "broker": r["broker"],
+        "account": r["account"], "stage": r["stage"],
+        "currentRules": spec.get("rules") or [],
+        "currentExits": spec.get("exits") or {},
+        "measured": measured,
+        "live": live,
+        "history": events,
+        "note": ("이 전략의 규칙 주변을 탐색하세요 — 새 전략을 만드는 자리가 아닙니다. "
+                 "채택되면 같은 전략이 갱신되고 사다리는 처음부터 다시 시작합니다."),
+    }

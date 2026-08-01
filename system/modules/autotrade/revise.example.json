@@ -1,0 +1,143 @@
+{
+  "title": "autotrade — after the close: review the ladder, then revise one rule",
+  "cronTime": "0 30 10 * * 1-5",
+  "executionMode": "pipeline",
+  "_why": [
+    "Revision, not discovery. Step 0 walks the ladder from the ledger with no model involved, so a",
+    "strategy that stopped working is demoted before anything else happens. Step 1 picks the one",
+    "rule to work on tonight — worst first, then least recently revised — and hands over its current",
+    "parameters, its live record and what has already been refused for it.",
+    "One per night because a loop cannot carry six chained steps per item: inside a FOREACH the",
+    "steps chain through $prev only, so a per-strategy body could not reach back to its own runs.",
+    "Rotating one at a time is honest about that rather than pretending the loop would work.",
+    "Step 2 is the model's only move, and it is bounded to the neighbourhood of a rule that already",
+    "runs. If the revision clears the bar the same strategy is updated and its ladder restarts —",
+    "the record that earned the old stage was earned by a different rule.",
+    "19:30 KST on weekdays (the server is UTC), after the close and after the intraday run has",
+    "reconciled any late fills."
+  ],
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "review"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "next_revision"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "strategyId",
+      "op": "!=",
+      "value": null
+    },
+    {
+      "type": "LLM_TRANSFORM",
+      "instruction": "You are given one trading rule that is currently running, its live record, what its backtest promised, and the history of what has already been refused for it. Answer with a JSON object only — no prose — describing where to search for a better version of THIS rule.\n\nShape:\n{\"families\":[...],\"fast\":[...],\"slow\":[...],\"low\":[...],\"high\":[...],\"stopLossPct\":[...],\"takeProfitPct\":[...],\"holdout\":0.3}\n\nfamilies is any of: ma-cross, ema-cross, rsi, bollinger, macd. Stay in the neighbourhood of the current parameters — this is a revision, not a fresh search, so keep the same family unless the record shows it stopped working entirely, and vary the periods around what is running now. null is allowed in stopLossPct and takeProfitPct to mean no stop.\n\nRead the refusals. A combination refused for too few trades will be refused again at the same parameters: slower parameters trade less, faster ones trade more. Keep the space under about 120 combinations — a wider search finds a better-looking result without finding a better rule.",
+      "inputMap": {
+        "target": "$step1"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": [
+        "005930.KS",
+        "000660.KS",
+        "035420.KS",
+        "005380.KS",
+        "051910.KS"
+      ],
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_yfinance",
+          "inputData": {
+            "action": "history",
+            "period": "5y",
+            "interval": "1d"
+          },
+          "inputMap": {
+            "symbol": "$prev"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "plan_multi",
+        "barCount": 600
+      },
+      "inputMap": {
+        "space": "$step3",
+        "fetched": "$step4"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step5.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "rank_multi"
+      },
+      "inputMap": {
+        "runs": "$step5.runs",
+        "results": "$step6"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "adopt",
+        "template": {
+          "money": {
+            "qty": 1
+          },
+          "limits": {
+            "maxPositionKrw": 300000
+          },
+          "orders": {
+            "type": "limit",
+            "exchange": "SOR"
+          }
+        }
+      },
+      "inputMap": {
+        "ranked": "$step7",
+        "runs": "$step5.runs",
+        "results": "$step6",
+        "strategyId": "$step1.strategyId",
+        "symbol": "$step1.symbol"
+      }
+    }
+  ],
+  "_notes": {
+    "nothingToRevise": [
+      "With no adopted strategy the CONDITION ends the run at step 2 — cleanly, as an early exit.",
+      "That is the state on day one: run discover.example.json once to create the first rule."
+    ],
+    "universe": [
+      "Symbols, confirmation set, broker and account come from the module settings. Only the candle",
+      "loop names them here, because a FOREACH needs its list up front; keep it in step with the",
+      "`universe` setting."
+    ]
+  }
+}
