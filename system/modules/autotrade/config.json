@@ -44,6 +44,7 @@
       "action": {
         "type": "string",
         "enum": [
+          "gate",
           "cycle",
           "on_stream_event",
           "plan_multi",
@@ -65,7 +66,7 @@
           "resolve_unassigned",
           "import_position"
         ],
-        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result. plan_multi / rank_multi = the whole multi-symbol sweep in two calls, so the pipeline is four steps whatever the symbol count: FOREACH symbols -> candles, plan_multi, FOREACH runs -> technical-analysis, rank_multi. Each planned run already carries its own barsCacheKey, so the execution loop needs no outside reference. Prefer these over plan_sweep/rank_sweep/merge_sweeps/rank_across, which are the single-symbol primitives. record_orders = after the order loop, hand back `calls` and its `results`; acknowledgements move rows to acked/rejected and are stored verbatim, but never create a fill — only reconcile does that, from the broker's own record. reconcile takes `fills`, `openOrders` and `position` — all optional, each doing its part in that order — and is the only action that writes fills into the ledger."
+        "description": "gate = 이 사이클을 돌려도 되는지 한 줄로 답합니다(`active` + `why`) — 매매 파이프라인의 첫 스텝이고, 사람이 켜 둔 스위치와 기간·킬스위치를 여기서 봅니다. 뒤에 `CONDITION active == true` 를 붙이면 꺼져 있을 때 브로커 호출 0으로 조용히 끝납니다. cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result. plan_multi / rank_multi = the whole multi-symbol sweep in two calls, so the pipeline is four steps whatever the symbol count: FOREACH symbols -> candles, plan_multi, FOREACH runs -> technical-analysis, rank_multi. Each planned run already carries its own barsCacheKey, so the execution loop needs no outside reference. Prefer these over plan_sweep/rank_sweep/merge_sweeps/rank_across, which are the single-symbol primitives. record_orders = after the order loop, hand back `calls` and its `results`; acknowledgements move rows to acked/rejected and are stored verbatim, but never create a fill — only reconcile does that, from the broker's own record. reconcile takes `fills`, `openOrders` and `position` — all optional, each doing its part in that order — and is the only action that writes fills into the ledger."
       },
       "strategyId": {
         "type": "string",
@@ -246,6 +247,27 @@
       "defaultValue": "dryrun",
       "tab": "실행",
       "group": "모드"
+    },
+    {
+      "key": "tradingEnabled",
+      "type": "toggle",
+      "defaultValue": false,
+      "tab": "실행",
+      "group": "모드"
+    },
+    {
+      "key": "activeFrom",
+      "type": "text",
+      "defaultValue": "",
+      "tab": "실행",
+      "group": "기간"
+    },
+    {
+      "key": "activeUntil",
+      "type": "text",
+      "defaultValue": "",
+      "tab": "실행",
+      "group": "기간"
     },
     {
       "key": "killSwitch",

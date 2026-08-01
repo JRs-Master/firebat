@@ -79,6 +79,12 @@ def load_settings():
     return {
         "mode": os.environ.get("MODULE_MODE") or "dryrun",
         "killSwitch": env_bool("MODULE_KILLSWITCH"),
+        # The human switch. Separate from the module's own enabled flag: that one blocks every
+        # path including reading the ledger, and would make the scheduled pipeline fail once a
+        # minute rather than skip.
+        "tradingEnabled": env_bool("MODULE_TRADINGENABLED"),
+        "activeFrom": os.environ.get("MODULE_ACTIVEFROM") or "",
+        "activeUntil": os.environ.get("MODULE_ACTIVEUNTIL") or "",
         "realArmed": env_bool("MODULE_REALARMED"),
         "realMaxNotionalKrw": env_num("MODULE_REALMAXNOTIONALKRW", 100000),
         "dailyLossLimitKrw": env_num("MODULE_DAILYLOSSLIMITKRW", 50000),
@@ -99,6 +105,22 @@ def unattended():
     and an interactive call is never allowed to trade live — see `effective_mode`.
     """
     return os.environ.get("FIREBAT_UNATTENDED") == "1"
+
+
+def day_epoch(text):
+    """Local midnight of a YYYY-MM-DD date, or None when it cannot be read.
+
+    None is not "no limit". A mistyped end date that fell through as no-limit would quietly delete
+    the day the person meant to stop on and keep trading past it, so the caller holds instead and
+    says which field it could not read.
+    """
+    try:
+        parts = [int(p) for p in str(text).strip().replace("/", "-").split("-")[:3]]
+        if len(parts) != 3:
+            return None
+        return time.mktime((parts[0], parts[1], parts[2], 0, 0, 0, 0, 1, -1))
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def day_start_ms():
@@ -143,6 +165,58 @@ def last_close(bars):
 
 
 # ── actions ──────────────────────────────────────────────────────────────────────────────────
+def action_gate(inp, settings):
+    """Does the cycle run at all? The first step of the trading pipeline, and the only human gate.
+
+    The switch is a setting, not an action, so nothing the model can call turns trading on — and it
+    is a setting of its own rather than the module's enabled flag, because turning the module off
+    blocks every path including reading the ledger, and the scheduled pipeline would then fail once
+    a minute instead of skipping. A CONDITION step on `active` ends the run cleanly here, before a
+    single broker call is made.
+
+    The window is judged here rather than written into the cron expression: "until the fifth" is a
+    date a person types once, not a schedule anyone should have to translate.
+    """
+    now = time.time()
+    reasons = []
+    if not settings.get("tradingEnabled"):
+        reasons.append("trading is switched off in the module settings")
+    start, end = settings.get("activeFrom"), settings.get("activeUntil")
+    start_ms, end_ms = day_epoch(start), day_epoch(end)
+    if start and start_ms is None:
+        reasons.append(f"activeFrom '{start}' 은 날짜로 읽히지 않습니다 — YYYY-MM-DD 로 고쳐 주세요")
+    elif start_ms is not None and now < start_ms:
+        reasons.append(f"the active period starts {start}")
+    if end and end_ms is None:
+        reasons.append(f"activeUntil '{end}' 은 날짜로 읽히지 않습니다 — YYYY-MM-DD 로 고쳐 주세요")
+    # Inclusive of the end date: someone writing 2026-08-05 means through that day, not up to
+    # its midnight — the opposite reading silently loses a trading session.
+    elif end_ms is not None and now >= end_ms + 86400:
+        reasons.append(f"the active period ended {end}")
+    conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+    if store.kv_get(conn, "tripped") == "1":
+        reasons.append("the kill switch is tripped — clear it in the settings")
+    if settings.get("killSwitch"):
+        reasons.append("killSwitch is on")
+    strategies = pick_strategies(settings)
+    conn.close()
+    if not strategies and not reasons:
+        reasons.append("no enabled strategy is declared")
+    return {"success": True, "data": {
+        "active": not reasons,
+        "why": reasons or None,
+        # The declared mode, not a per-strategy verdict — that needs the account and is decided
+        # in `cycle`. `unattended` is reported alongside because an interactive call is demoted to
+        # paper regardless of the setting, and a gate that hid that would read as live when it
+        # is not.
+        "mode": settings.get("mode", "dryrun"),
+        "unattended": unattended(),
+        "strategies": len(strategies),
+        "activeFrom": start or None,
+        "activeUntil": end or None,
+    }}
+
+
 def action_cycle(inp, settings):
     symbol = inp.get("symbol")
     strategies = pick_strategies(settings, symbol=symbol, strategy_id=inp.get("strategyId"))
@@ -799,6 +873,45 @@ def action_selftest():
                    "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
                    "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
 
+    # --- the human switch ----------------------------------------------------------------
+    gate_strats = [{"id": "g", "enabled": True, "symbol": "X", "broker": "b", "account": "a"}]
+
+    def gate(**over):
+        base = {"mode": "dryrun", "tradingEnabled": True, "strategies": gate_strats}
+        return action_gate({}, {**base, **over})["data"]
+
+    checks.append({"name": "switched off means no cycle", "want": False,
+                   "got": gate(tradingEnabled=False)["active"],
+                   "ok": gate(tradingEnabled=False)["active"] is False})
+    checks.append({"name": "switched on with a strategy runs", "want": True,
+                   "got": gate()["active"], "ok": gate()["active"] is True})
+    checks.append({"name": "no strategy is not a run", "want": False,
+                   "got": gate(strategies=[])["active"],
+                   "ok": gate(strategies=[])["active"] is False})
+    # The end date is inclusive — reading it as exclusive silently drops a whole session.
+    today = time.strftime("%Y-%m-%d")
+    checks.append({"name": "the last day of the window still trades", "want": True,
+                   "got": gate(activeUntil=today)["active"],
+                   "ok": gate(activeUntil=today)["active"] is True})
+    checks.append({"name": "a window that has ended stops trading", "want": False,
+                   "got": gate(activeUntil="2020-01-01")["active"],
+                   "ok": gate(activeUntil="2020-01-01")["active"] is False})
+    checks.append({"name": "a window not yet open stops trading", "want": False,
+                   "got": gate(activeFrom="2099-01-01")["active"],
+                   "ok": gate(activeFrom="2099-01-01")["active"] is False})
+    # A typo must not read as "no deadline" — that would keep trading past the day meant.
+    typo = gate(activeUntil="8월5일")
+    checks.append({"name": "an unreadable end date holds instead of removing the deadline",
+                   "want": False, "got": typo["why"],
+                   "ok": typo["active"] is False and "activeUntil" in str(typo["why"])})
+    checks.append({"name": "the kill switch is a reason of its own", "want": False,
+                   "got": gate(killSwitch=True)["active"],
+                   "ok": gate(killSwitch=True)["active"] is False})
+    # An interactive call is paper whatever the setting says, and the gate must not hide it.
+    checks.append({"name": "the gate reports whether anyone is watching", "want": False,
+                   "got": gate(mode="real")["unattended"],
+                   "ok": gate(mode="real")["unattended"] is False})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -832,6 +945,8 @@ def main():
             return out({"success": True, "data": sweep.rank_multi(inp)})
         if action == "cycle":
             return out(action_cycle(inp, settings))
+        if action == "gate":
+            return out(action_gate(inp, settings))
         if action == "reconcile":
             return out(action_reconcile(inp, settings))
         if action == "record_orders":

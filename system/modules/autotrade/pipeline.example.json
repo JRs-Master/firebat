@@ -4,7 +4,10 @@
   "executionMode": "pipeline",
   "_why": [
     "One cycle, wired the only way the layers allow: this module never calls a broker, the",
-    "pipeline does. Steps are 0-based, so $step0 is the candle fetch.",
+    "pipeline does. Steps are 0-based, so $step0 is the gate and $step2 is the candle fetch.",
+    "The gate comes first so that a switched-off day ends here, before any broker call — the",
+    "CONDITION exits the run cleanly rather than failing it, which is what keeps the cron log",
+    "readable when trading is off for a week.",
     "Runs at :30 of every minute during KST 09:00-15:59 (the server is UTC), which puts the",
     "decision after the bar has closed rather than on top of the close.",
     "Scheduled runs carry the cron context, so the order step needs no approval card — that is",
@@ -15,11 +18,28 @@
   "pipeline": [
     {
       "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
       "inputData": {
         "action": "ka10080",
         "account": "모의국내",
-        "params": { "stk_cd": "005930_AL", "tic_scope": "1", "upd_stkpc_tp": "1" }
+        "params": {
+          "stk_cd": "005930_AL",
+          "tic_scope": "1",
+          "upd_stkpc_tp": "1"
+        }
       }
     },
     {
@@ -28,54 +48,105 @@
       "inputData": {
         "action": "signals",
         "rules": [
-          { "side": "buy", "label": "ma5 crossUp ma20", "when": [{ "a": "ma5", "op": "crossUp", "b": "ma20" }] },
-          { "side": "sell", "label": "ma5 crossDown ma20", "when": [{ "a": "ma5", "op": "crossDown", "b": "ma20" }] }
+          {
+            "side": "buy",
+            "label": "ma5 crossUp ma20",
+            "when": [
+              {
+                "a": "ma5",
+                "op": "crossUp",
+                "b": "ma20"
+              }
+            ]
+          },
+          {
+            "side": "sell",
+            "label": "ma5 crossDown ma20",
+            "when": [
+              {
+                "a": "ma5",
+                "op": "crossDown",
+                "b": "ma20"
+              }
+            ]
+          }
         ]
       },
-      "inputMap": { "barsCacheKey": "$step0._cacheKey" }
+      "inputMap": {
+        "barsCacheKey": "$step2._cacheKey"
+      }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
-      "inputData": { "action": "cycle", "symbol": "005930" },
-      "inputMap": { "signal": "$step1", "barsCacheKey": "$step0._cacheKey" }
+      "inputData": {
+        "action": "cycle",
+        "symbol": "005930"
+      },
+      "inputMap": {
+        "signal": "$step3",
+        "barsCacheKey": "$step2._cacheKey"
+      }
     },
     {
       "type": "FOREACH",
-      "items": "$step2.calls",
+      "items": "$step4.calls",
       "steps": [
-        { "type": "TOOL_CALL", "tool": "sysmod_kiwoom", "inputData": "$prev.input" }
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_kiwoom",
+          "inputData": "$prev.input"
+        }
       ]
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
-      "inputData": { "action": "record_orders" },
-      "inputMap": { "calls": "$step2.calls", "results": "$step3" }
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step4.calls",
+        "results": "$step5"
+      }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
-      "inputData": { "action": "list_fills", "account": "모의국내", "symbol": "005930" }
+      "inputData": {
+        "action": "list_fills",
+        "account": "모의국내",
+        "symbol": "005930"
+      }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
-      "inputData": { "action": "list_open_orders", "account": "모의국내", "symbol": "005930" }
+      "inputData": {
+        "action": "list_open_orders",
+        "account": "모의국내",
+        "symbol": "005930"
+      }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
-      "inputData": { "action": "get_balance", "account": "모의국내" }
+      "inputData": {
+        "action": "get_balance",
+        "account": "모의국내"
+      }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
-      "inputData": { "action": "reconcile", "symbol": "005930" },
+      "inputData": {
+        "action": "reconcile",
+        "symbol": "005930"
+      },
       "inputMap": {
-        "fills": "$step5.rows",
-        "openOrders": "$step6.rows",
-        "balanceRows": "$step7.rows"
+        "fills": "$step7.rows",
+        "openOrders": "$step8.rows",
+        "balanceRows": "$step9.rows"
       }
     }
   ],
@@ -94,10 +165,20 @@
         "symbol": "005930",
         "broker": "kiwoom",
         "account": "모의국내",
-        "money": { "qty": 1 },
-        "limits": { "maxPositionKrw": 300000 },
-        "exits": { "stopLossPct": 2, "takeProfitPct": 3 },
-        "orders": { "type": "limit", "exchange": "SOR" }
+        "money": {
+          "qty": 1
+        },
+        "limits": {
+          "maxPositionKrw": 300000
+        },
+        "exits": {
+          "stopLossPct": 2,
+          "takeProfitPct": 3
+        },
+        "orders": {
+          "type": "limit",
+          "exchange": "SOR"
+        }
       }
     ]
   }
