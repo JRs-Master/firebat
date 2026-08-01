@@ -1254,6 +1254,34 @@ def main():
                     "returnPct": round(net * 100, 4),
                     "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)}
 
+        # Where a signal is assumed to fill.
+        #
+        # The signal is computed FROM the close, so the close is the one price you could not have
+        # traded at: you learn the rule fired at the instant the bar ends. Filling at the next
+        # bar's open is what actually happens, and at scalping frequency the gap between the two
+        # is routinely larger than any slippage assumption. `close` remains available for
+        # comparison, but it flatters every rule and is not the default.
+        fill_at = str(inp.get("fillAt") or "nextOpen")
+        if fill_at not in ("nextOpen", "close"):
+            print(json.dumps({"success": False,
+                              "error": f"fillAt='{fill_at}' 은 nextOpen 또는 close 입니다."},
+                             ensure_ascii=False))
+            return
+        next_open = {}
+        if fill_at == "nextOpen":
+            for i in range(len(bars) - 1):
+                nxt = bars[i + 1]
+                try:
+                    px = float(nxt.get("open", nxt.get("Open", nxt.get("close"))))
+                except (TypeError, ValueError):
+                    continue
+                if px > 0:
+                    next_open[bars[i]["date"]] = px
+
+        def fill_price(date, signalled):
+            # A signal on the final bar has no next bar to fill in — the trade never happened.
+            return next_open.get(date) if fill_at == "nextOpen" else signalled
+
         trades, pos = [], None
         for b in bars:
             date = b["date"]
@@ -1273,12 +1301,16 @@ def main():
                     pos = None
                 elif date in sell_at:
                     m = sell_at[date]
-                    trades.append(_close_trade(pos, date, m["price"], m["label"], "rule"))
-                    pos = None
+                    px = fill_price(date, m["price"])
+                    if px is not None:
+                        trades.append(_close_trade(pos, date, px, m["label"], "rule"))
+                        pos = None
             if pos is None and date in buy_at:
                 m = buy_at[date]
-                pos = {"entryDate": date, "entryPrice": m["price"] * (1 + slip) + tick_slip,
-                       "entryLabel": m["label"], "peak": m["price"]}
+                px = fill_price(date, m["price"])
+                if px is not None:
+                    pos = {"entryDate": date, "entryPrice": px * (1 + slip) + tick_slip,
+                           "entryLabel": m["label"], "peak": px}
         wins = [t for t in trades if t["returnPct"] > 0]
         equity = 1.0
         for t in trades:
@@ -1305,7 +1337,7 @@ def main():
             # 삼성전자 1년). Always the same window the rules were evaluated on.
             "buyHoldPct": round((bars[-1]["close"] / bars[0]["close"] - 1) * 100, 4)
                           if len(bars) > 1 and bars[0].get("close") else None,
-            "feeRate": fee, "taxRate": tax, "slippageRate": slip,
+            "feeRate": fee, "taxRate": tax, "slippageRate": slip, "fillAt": fill_at,
             "stopLossPct": stop_pct * 100, "takeProfitPct": take_pct * 100,
             "trailingStopPct": trail_pct * 100,
             "tickSize": tick_size, "slippageTicks": slip_ticks,
