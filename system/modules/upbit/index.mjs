@@ -553,11 +553,17 @@ function upbitOrderParams(data) {
   const price = Number(data.price);
   const amount = Number(data.amount);
 
+  // The caller's own id, carried to the exchange. It is unique per account and can never be
+  // reused, which is exactly what makes a resend safe: the second attempt is refused by the
+  // exchange rather than becoming a second position. Our order key is already that value.
+  const identifier = String(data.clientOrderId ?? data.identifier ?? '').trim().slice(0, 64);
+  const withId = (o) => (identifier ? { ...o, identifier } : o);
+
   if (type === 'limit') {
     if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: 지정가에는 qty 가 필요합니다.');
     if (!Number.isFinite(price) || price <= 0) throw new Error('place_order: 지정가에는 price 가 필요합니다.');
-    return { market, side, ord_type: 'limit', volume: String(qty),
-             price: String(upbitRoundPrice(price)) };
+    return withId({ market, side, ord_type: 'limit', volume: String(qty),
+                    price: String(upbitRoundPrice(price)) });
   }
   if (type !== 'market') {
     throw new Error(`place_order: orderType='${type}' 은 지원하지 않습니다 — limit, market.`);
@@ -572,12 +578,12 @@ function upbitOrderParams(data) {
       throw new Error('place_order: 시장가 매수에는 `amount`(총 금액)가 필요합니다 — 업비트의 '
         + '시장가 매수는 수량이 아니라 쓸 금액으로 냅니다.');
     }
-    return { market, side, ord_type: 'price', price: String(Math.floor(total)) };
+    return withId({ market, side, ord_type: 'price', price: String(Math.floor(total)) });
   }
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new Error('place_order: 시장가 매도에는 qty 가 필요합니다.');
   }
-  return { market, side, ord_type: 'market', volume: String(qty) };
+  return withId({ market, side, ord_type: 'market', volume: String(qty) });
 }
 
 function upbitQueryParams(action, data) {
