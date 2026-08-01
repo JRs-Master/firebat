@@ -1,8 +1,11 @@
 {
-  "title": "autotrade — 005930 1m cycle",
+  "title": "autotrade (주식/키움) — 005930 1m cycle",
   "cronTime": "30 * 0-6 * * 1-5",
   "executionMode": "pipeline",
   "_why": [
+    "The stock side. Crypto has its own file (pipeline.upbit.example.json) because almost",
+    "everything differs: the broker, the hours, the timeframe and the fee. Sharing one file",
+    "meant a coin ran on a weekday-daytime cron against a broker with no crypto.",
     "One cycle, wired the only way the layers allow: this module never calls a broker, the",
     "pipeline does. Steps are 0-based, so $step0 is the gate and $step2 is the candle fetch.",
     "The gate comes first so that a switched-off day ends here, before any broker call — the",

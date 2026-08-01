@@ -42,6 +42,23 @@ def effective_mode(settings, strategy, account_is_mock, unattended):
     return MODE_NAME[m]
 
 
+def signal_payload(signal):
+    """The analyser's result, whether it arrived bare or inside its envelope.
+
+    A pipeline step hands on what the tool returned — `{success, data:{...}}` — and every declared
+    pipeline maps `signal: $stepN`, the whole thing. Reading only the bare shape meant the fired
+    points were never found, `firedSides` came back empty on every cycle, and no rule declared
+    this way could ever have placed an order. The same tolerance `_backtest_of` has in the sweep:
+    accept both rather than making the caller reshape it.
+    """
+    if not isinstance(signal, dict):
+        return {}
+    if any(k in signal for k in ("firedOnLastClosedBar", "firedOnLastBar", "counts")):
+        return signal
+    inner = signal.get("data")
+    return inner if isinstance(inner, dict) else signal
+
+
 def cycle_id_for(strategy, signal, now_ms, explicit=None):
     """The idempotency window: one order per strategy per window.
 
@@ -60,7 +77,10 @@ def cycle_id_for(strategy, signal, now_ms, explicit=None):
     if trigger.get("type") == "tick":
         window = max(1000, int(trigger.get("debounceMs") or 3000))
         return f"tick:{now_ms // window}"
-    bar = (signal or {}).get("lastClosedBarDate")
+    # Through the envelope, like every other read of the signal. Missing it here did not fail
+    # loudly: the key fell through to a per-minute window, so a five-minute cron would re-order
+    # the same closed bar on every run instead of once.
+    bar = signal_payload(signal).get("lastClosedBarDate")
     if bar:
         return f"bar:{bar}"
     return f"time:{now_ms // 60000}"
@@ -76,7 +96,7 @@ def _num(v, default=0.0):
 
 def fired_sides(signal, use="firedOnLastClosedBar"):
     """Which sides fired on the bar we are allowed to act on."""
-    fired = (signal or {}).get(use) or []
+    fired = signal_payload(signal).get(use) or []
     sides = set()
     for f in fired:
         declared = (f or {}).get("side")
@@ -98,7 +118,7 @@ def fired_sides(signal, use="firedOnLastClosedBar"):
 
 
 def signal_price(signal, use="firedOnLastClosedBar", fallback=0.0):
-    fired = (signal or {}).get(use) or []
+    fired = signal_payload(signal).get(use) or []
     for f in fired:
         p = _num((f or {}).get("price"), 0.0)
         if p > 0:
@@ -107,18 +127,42 @@ def signal_price(signal, use="firedOnLastClosedBar", fallback=0.0):
 
 
 # ── strategies (built-in code; analysis stays in ta) ─────────────────────────────────────────
+def floor_to_lot(qty, lot):
+    """Round a quantity down to something the venue will accept.
+
+    `lot` is the smallest tradeable increment: 1 for a share, 0.00000001 for a coin. Whole lots
+    come back as ints so a broker that puts the quantity in a string sends "3" and not "3.0".
+    """
+    lot = _num(lot, 1.0)
+    if lot <= 0:
+        lot = 1.0
+    steps = math.floor(_num(qty) / lot + 1e-9)
+    if lot >= 1:
+        return int(steps * lot)
+    # Binary floats cannot hold 0.1 exactly, and a quantity one ulp over what the budget buys is
+    # rejected for insufficient funds. Round at the lot's own precision.
+    return round(steps * lot, max(0, -int(math.floor(math.log10(lot)))))
+
+
 def _size_from_money(money, price):
-    """Shares to trade for one leg. `qty` wins when declared; otherwise a won budget per order."""
+    """How much to trade for one leg. `qty` wins when declared; otherwise a won budget per order.
+
+    Quantities used to be truncated to whole units, which is right for a share and wrong for
+    everything else: at 6,000 won per order a coin priced above that came out at zero, so BTC and
+    ETH could never be bought at all. `lotSize` says what the venue's increment is and defaults
+    to 1, so stocks behave exactly as before and a coin declares 0.00000001.
+    """
     if price <= 0:
         return 0
+    lot = money.get("lotSize", 1)
     if money.get("qty"):
-        return int(_num(money["qty"]))
+        return floor_to_lot(_num(money["qty"]), lot)
     per_order = _num(money.get("perOrderKrw"))
     if per_order <= 0:
         budget = _num(money.get("budgetKrw"))
         splits = max(1, int(_num(money.get("splitCount"), 1)))
         per_order = budget / splits
-    return int(per_order // price)
+    return floor_to_lot(per_order / price, lot)
 
 
 def strategy_rules(strategy, ctx):
@@ -148,12 +192,23 @@ def strategy_rules(strategy, ctx):
         intents.append({"side": "sell", "qty": qty_held, "price": price, "reason": "rule"})
     elif "buy" in sides:
         want = _size_from_money(money, price)
+        lot = money.get("lotSize", 1)
         cap = _num((strategy.get("limits") or {}).get("maxPositionKrw"))
         if cap > 0:
             room = max(0.0, cap - qty_held * price)
-            want = min(want, int(room // price) if price > 0 else 0)
+            want = min(want, floor_to_lot(room / price, lot) if price > 0 else 0)
         if want > 0:
             intents.append({"side": "buy", "qty": want, "price": price, "reason": "rule"})
+        else:
+            # A zero that vanishes reads as "the rule did not fire". It did fire; the money did
+            # not reach one tradeable unit, which is a settings problem and has to say so.
+            intents.append({"side": "buy", "qty": 0, "price": price, "reason": "rule",
+                            "skip": ("1회 주문금액이 최소 거래단위 1개 값에 못 미칩니다 — "
+                                     f"단가 {price:,.0f} · lotSize "
+                                     f"{money.get('lotSize', 1)} · perOrderKrw "
+                                     f"{money.get('perOrderKrw') or money.get('budgetKrw')}"
+                                     + (" · 한도(maxPositionKrw)에 이미 닿았을 수도 있습니다"
+                                        if cap > 0 else ""))})
     return intents
 
 
@@ -186,7 +241,7 @@ def strategy_infinite_buy(strategy, ctx):
     if price <= 0 or per_order <= 0:
         return []
     room = budget - invested if budget > 0 else per_order
-    qty = int(min(per_order, room) // price)
+    qty = floor_to_lot(min(per_order, room) / price, money.get("lotSize", 1))
     if qty <= 0:
         return []
     return [{"side": "buy", "qty": qty, "price": price, "reason": "split"}]
@@ -207,7 +262,11 @@ def decide(strategy, ctx):
         )
     out = []
     for i, intent in enumerate(fn(strategy, ctx) or []):
-        if _num(intent.get("qty")) <= 0:
+        # A zero-quantity intent carrying a reason travels on to the gates, which put it in
+        # `dropped` where every other refusal is. Dropping it here made "the money could not buy
+        # one unit" indistinguishable from "the rule did not fire" — the exact ambiguity the
+        # gates were written to remove.
+        if _num(intent.get("qty")) <= 0 and not intent.get("skip"):
             continue
         out.append({**intent, "strategyId": strategy["id"], "seq": i})
     return out
@@ -299,6 +358,16 @@ def risk_gates(intents, ctx):
     limits = strategy.get("limits") or {}
     allowed, dropped = [], []
 
+    # An intent the sizing could not fill. It is carried this far rather than discarded upstream
+    # so it lands in `dropped` with its reason, next to every other refusal.
+    unsized = [i for i in intents if i.get("skip") or _num(i.get("qty")) <= 0]
+    if unsized:
+        dropped.extend({**i, "dropReason": i.get("skip") or "quantity came out at zero"}
+                       for i in unsized)
+        intents = [i for i in intents if i not in unsized]
+        if not intents:
+            return [], dropped
+
     if settings.get("killSwitch"):
         return [], [{**i, "dropReason": "kill switch is on"} for i in intents]
     if settings.get("_tripped"):
@@ -330,9 +399,13 @@ def risk_gates(intents, ctx):
                 dropped.append({**intent, "dropReason": "nothing held to sell"})
                 continue
         notional = qty * price
+        # Every cap below trims the quantity, and each has to trim to something the venue will
+        # accept. Whole units here meant a coin priced above the cap became zero rather than a
+        # fraction, which reads as "the cap refused it" when the cap had room.
+        lot = (strategy.get("money") or {}).get("lotSize", 1)
         max_order = _num(limits.get("maxOrderKrw"))
         if max_order > 0 and notional > max_order:
-            qty = int(max_order // price) if price > 0 else 0
+            qty = floor_to_lot(max_order / price, lot) if price > 0 else 0
             if qty <= 0:
                 dropped.append({**intent, "dropReason": "below the minimum tradable size"})
                 continue
@@ -343,7 +416,7 @@ def risk_gates(intents, ctx):
                 held_value = _num(ctx["position"].get("qty")) * _num(ctx["position"].get("avg_price"))
                 if held_value + notional > cap:
                     room = max(0.0, cap - held_value)
-                    qty = int(room // price) if price > 0 else 0
+                    qty = floor_to_lot(room / price, lot) if price > 0 else 0
                     if qty <= 0:
                         dropped.append({**intent, "dropReason": "position cap reached"})
                         continue
@@ -355,7 +428,7 @@ def risk_gates(intents, ctx):
             if ctx["mode"] == "real":
                 real_cap = _num(settings.get("realMaxNotionalKrw"))
                 if real_cap > 0 and notional > real_cap:
-                    qty = int(real_cap // price) if price > 0 else 0
+                    qty = floor_to_lot(real_cap / price, lot) if price > 0 else 0
                     if qty <= 0:
                         dropped.append({**intent, "dropReason": "live order cap reached"})
                         continue

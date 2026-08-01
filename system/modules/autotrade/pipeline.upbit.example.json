@@ -1,0 +1,204 @@
+{
+  "title": "autotrade (가상화폐/업비트) — KRW-ETH 1h cycle",
+  "cronTime": "0 */5 * * * *",
+  "executionMode": "pipeline",
+  "_why": [
+    "The crypto side, split from the stock one because almost nothing carries over: a different",
+    "broker, no trading hours, an hourly bar instead of a minute bar, and a fee five times the",
+    "stock side's on non-KRW pairs.",
+    "Every five minutes rather than once an hour, and the two reasons are different. Entries fire",
+    "only on a closed bar — technical-analysis reports firedOnLastClosedBar, so the unclosed hour",
+    "cannot open a position, and the cycle's window guard means the same closed bar cannot order",
+    "twice however often it is seen. Exits are the reason for the frequency: a stop and a target",
+    "are evaluated against the price on every cycle, and checking them hourly on a 3% stop means",
+    "watching the position gap through it.",
+    "The rule is written here because this pipeline runs one strategy on one coin. That is the",
+    "current shape, not the design: a strategy is fitted per symbol, so several coins each with",
+    "their own parameters need the rules to travel from the store instead of from this file.",
+    "Until that lands, one file per coin, and the rule below must match the one in settings.",
+    "Scheduled runs carry the cron context, so the order step needs no approval card. The three",
+    "queries at the end are reads and are never approval-gated; reconcile settles from them in",
+    "the order fills -> open orders -> balance."
+  ],
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "get_candles",
+        "bars": 300
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol",
+        "interval": "$step0.trade.interval"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_technical-analysis",
+      "inputData": {
+        "action": "signals",
+        "feeRate": 0.0005,
+        "taxRate": 0,
+        "slippageRate": 0.0002,
+        "rules": [
+          {
+            "side": "buy",
+            "label": "aligned 5/20/60, rising, pulled back",
+            "when": [
+              { "a": "ma5", "op": ">", "b": "ma20" },
+              { "a": "ma20", "op": ">", "b": "ma60" },
+              { "a": "slope20", "op": ">", "b": 0.02 },
+              { "a": "disp5", "op": "<=", "b": 99.9 }
+            ]
+          },
+          {
+            "side": "sell",
+            "label": "stretched 101.5",
+            "when": [
+              { "a": "disp5", "op": ">=", "b": 101.5 }
+            ]
+          },
+          {
+            "side": "sell",
+            "label": "alignment broke",
+            "when": [
+              { "a": "ma5", "op": "crossDown", "b": "ma20" }
+            ]
+          }
+        ]
+      },
+      "inputMap": {
+        "barsCacheKey": "$step2._cacheKey"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "cycle"
+      },
+      "inputMap": {
+        "signal": "$step3",
+        "barsCacheKey": "$step2._cacheKey",
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.calls",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_upbit",
+          "inputData": "$prev.input"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step4.calls",
+        "results": "$step5"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "get_balance"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "fills": "$step7.rows",
+        "openOrders": "$step8.rows",
+        "balanceRows": "$step9.rows",
+        "symbol": "$step0.trade.symbol"
+      }
+    }
+  ],
+  "_settingsToPaste": {
+    "_note": [
+      "The pipeline does nothing until the module settings say what to run and where. Two fields,",
+      "both human-only — the model has no tool that writes either of them.",
+      "`trades` is the wiring: which coin, which broker, which timeframe. The interval belongs",
+      "here rather than in the cron because the rule was measured on hourly bars, and trading it",
+      "on another timeframe would be trading something that was never measured.",
+      "`strategies` is the rule. It has to match the rules block above — this pipeline hands one",
+      "signal to the cycle, so a mismatch would mean sizing one rule from another rule's signal.",
+      "`lotSize` is the venue's smallest tradeable increment and it matters more than it looks:",
+      "quantities are floored to it, so leaving it at the default of 1 whole unit means a 6,000",
+      "won order on a four-million won coin comes out at zero. Upbit is eight decimal places.",
+      "Upbit also refuses an order under 5,000 won, which is why perOrderKrw is above it.",
+      "The parameters are the ones KRW-ETH cleared on 2026 hourly data, all fifty grid cells,",
+      "+18.9% out of sample. Start with mode=dryrun: no order is placed and the ledger still",
+      "fills, which is what makes the first week readable."
+    ],
+    "trades": [
+      {
+        "id": "eth-1h",
+        "symbol": "KRW-ETH",
+        "broker": "upbit",
+        "account": "",
+        "interval": "1h"
+      }
+    ],
+    "strategies": [
+      {
+        "id": "eth-1h",
+        "enabled": true,
+        "kind": "rules",
+        "symbol": "KRW-ETH",
+        "broker": "upbit",
+        "account": "",
+        "money": { "perOrderKrw": 6000, "lotSize": 0.00000001 },
+        "limits": { "maxPositionKrw": 10000 },
+        "exits": { "stopLossPct": 3.0, "takeProfitPct": 6.0 },
+        "orders": { "type": "limit" }
+      }
+    ]
+  }
+}

@@ -1839,6 +1839,60 @@ def action_selftest():
                    "ok": "KRW-AAA" in str((out2["adopted"] or [{}])[0].get("adopted"))})
     fcon.close()
 
+    # --- the signal arrives inside its envelope -------------------------------------------
+    # Every declared pipeline maps `signal: $stepN`, which is what the tool returned rather than
+    # what is inside it. Reading only the inner shape meant no rule declared this way ever fired.
+    env_sig = {"success": True, "data": {
+        "firedOnLastClosedBar": [{"side": "buy", "price": 100.0}],
+        "lastClosedBarDate": "2026-08-02 03:00:00"}}
+    bare_sig = env_sig["data"]
+    for name, sig in (("as the pipeline passes it", env_sig), ("already unwrapped", bare_sig)):
+        checks.append({"name": f"the fired side is read {name}", "want": ["buy"],
+                       "got": sorted(eng.fired_sides(sig)),
+                       "ok": sorted(eng.fired_sides(sig)) == ["buy"]})
+        checks.append({"name": f"the price is read {name}", "want": 100.0,
+                       "got": eng.signal_price(sig), "ok": eng.signal_price(sig) == 100.0})
+        # Falling through to a per-minute key would re-order the same closed bar on every run of
+        # a five-minute cron instead of once.
+        cid = eng.cycle_id_for({}, sig, 1754100000000)
+        checks.append({"name": f"the window is the bar, {name}", "want": "bar:...",
+                       "got": cid, "ok": cid == "bar:2026-08-02 03:00:00"})
+
+    # --- a quantity is whatever the venue's increment is -----------------------------------
+    # Whole units are a stock assumption. A coin priced above the per-order budget came out at
+    # zero, so BTC and ETH could not be bought at all, and the zero was silent.
+    coin = {"id": "c", "kind": "rules", "symbol": "KRW-ETH", "broker": "upbit", "account": "",
+            "money": {"perOrderKrw": 6000, "lotSize": 0.00000001},
+            "limits": {"maxPositionKrw": 10000}, "exits": {}}
+    def coin_ctx(**over):
+        base = {"position": {"qty": 0, "avg_price": 0, "state": "active"}, "price": 4200000.0,
+                "sides": {"buy"}, "signal": {}, "quote": {}, "settings": {}, "strategy": coin,
+                "mode": "dryrun", "account_exposure": 0.0, "vi_halted": False}
+        base.update(over)
+        return base
+    got = eng.decide(coin, coin_ctx())
+    checks.append({"name": "a coin is bought in fractions of one", "want": 0.00142857,
+                   "got": got[0]["qty"] if got else None,
+                   "ok": bool(got) and abs(got[0]["qty"] - 0.00142857) < 1e-9})
+    allowed, _ = eng.risk_gates(got, coin_ctx())
+    checks.append({"name": "the position cap trims to a fraction too, not to zero",
+                   "want": 0.00142857, "got": allowed[0]["qty"] if allowed else None,
+                   "ok": bool(allowed) and abs(allowed[0]["qty"] - 0.00142857) < 1e-9})
+    # Unchanged for shares: no lotSize declared means whole units, as before.
+    share = {**coin, "money": {"perOrderKrw": 300000}, "symbol": "005930",
+             "limits": {"maxPositionKrw": 1000000}}
+    sh = eng.decide(share, coin_ctx(price=70000.0, strategy=share))
+    checks.append({"name": "a share is still whole units", "want": 4,
+                   "got": sh[0]["qty"] if sh else None,
+                   "ok": bool(sh) and sh[0]["qty"] == 4 and isinstance(sh[0]["qty"], int)})
+    # And a budget too small to buy one unit says so instead of disappearing.
+    poor = {**share, "money": {"perOrderKrw": 6000}}
+    pd = eng.decide(poor, coin_ctx(strategy=poor))
+    _, why = eng.risk_gates(pd, coin_ctx(strategy=poor))
+    checks.append({"name": "a budget below one unit is refused out loud, not silently",
+                   "want": "최소 거래단위", "got": (why[0].get("dropReason") if why else None),
+                   "ok": bool(why) and "최소 거래단위" in str(why[0].get("dropReason"))})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
