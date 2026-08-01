@@ -52,6 +52,11 @@ def cycle_id_for(strategy, signal, now_ms, explicit=None):
     if explicit:
         return str(explicit)
     trigger = strategy.get("trigger") or {}
+    if trigger.get("type") == "screen-entry" and strategy.get("_enteredMs"):
+        # The entry is the event, so it is also the window. Draining the screen twice, restarting
+        # mid-drain, or two crons overlapping all collapse onto the same key — the symbol is
+        # bought once for the arrival that caused it, not once per drain.
+        return f"entry:{strategy.get('symbol')}:{strategy['_enteredMs']}"
     if trigger.get("type") == "tick":
         window = max(1000, int(trigger.get("debounceMs") or 3000))
         return f"tick:{now_ms // window}"

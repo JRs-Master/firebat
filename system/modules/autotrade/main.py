@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import at_engine as eng          # noqa: E402
 import at_store as store         # noqa: E402
+import at_universe as uni        # noqa: E402
 import at_orders as orders       # noqa: E402
 import at_strategies as strat    # noqa: E402
 import at_sweep as sweep         # noqa: E402
@@ -154,8 +155,47 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
     except Exception:
         # A strategy store that cannot be opened must not take the declared ones down with it.
         adopted = []
-    picked = []
+    # A trade driven by a screen runs its rule over whatever the screen currently holds. The codes
+    # come from the broker's own frames and are assembled here — never written out by the model,
+    # which is the difference between a symbol that exists and one that reads like it should.
+    expanded = []
     for s in declared + adopted:
+        if not isinstance(s, dict):
+            continue
+        trade = trade_of(settings, s.get("id"))
+        if trade:
+            # Where a trade runs lives on the trade, not on the rule — a rule reused elsewhere
+            # would otherwise carry the first account with it and place orders in the wrong one.
+            s = {**s, "broker": s.get("broker") or trade.get("broker"),
+                 "account": s.get("account") or trade.get("account")}
+        if s.get("symbol") or not (trade and trade.get("conditionName")):
+            expanded.append(s)
+            continue
+        try:
+            ucon = uni.connect()
+            screened = uni.symbols_of(ucon, trade["id"])
+            ucon.close()
+        except Exception:
+            screened = []
+        trigger = (s.get("trigger") or {})
+        if str(trigger.get("type") or "") == "screen-entry":
+            # Act on arrival, not on the bar. The window is generous because the drain is a short
+            # cron rather than the frame itself — the sink discards a module's return today, so
+            # nothing can order straight from a frame yet.
+            within = float(trigger.get("entryWindowSec") or 300) * 1000
+            try:
+                ucon = uni.connect()
+                fresh = uni.recent_entries(ucon, trade["id"], within)
+                ucon.close()
+            except Exception:
+                fresh = []
+            for e in fresh:
+                expanded.append({**s, "symbol": e["symbol"], "_enteredMs": e["enteredMs"]})
+            continue
+        for code in screened:
+            expanded.append({**s, "symbol": code})
+    picked = []
+    for s in expanded:
         if not isinstance(s, dict) or not s.get("id"):
             continue
         if strategy_id and s["id"] != strategy_id:
@@ -316,12 +356,14 @@ def declared_trades(settings):
         if not isinstance(t, dict):
             continue
         symbol = str(t.get("symbol") or "").strip()
+        condition = str(t.get("conditionName") or "").strip()
         broker = str(t.get("broker") or "").strip()
         account = str(t.get("account") or "").strip()
-        if not symbol or not broker:
+        if not broker or not (symbol or condition):
             continue
-        out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol}").strip(),
-                    "symbol": symbol, "broker": broker, "account": account,
+        out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol or condition}").strip(),
+                    "symbol": symbol, "conditionName": condition,
+                    "broker": broker, "account": account,
                     "template": t.get("template") if isinstance(t.get("template"), dict) else None})
     return out
 
@@ -366,6 +408,74 @@ def as_object(value, field):
     raise ValueError(f"{field} 는 객체여야 합니다 — 받은 것: {type(value).__name__}")
 
 
+def action_request_condition(inp, settings):
+    """Ask for a screening condition the model cannot create itself.
+
+    Kiwoom lists conditions and runs them; it has no call that accepts one. So the formula is
+    written out for a person to type into HTS once, and after that the stream closes the loop.
+    """
+    trade = trade_of(settings, inp.get("tradeId"))
+    if not trade:
+        return {"success": False,
+                "error": "매매가 선언돼 있지 않습니다 — 설정의 `trades` 에 먼저 추가해 주세요."}
+    name = str(inp.get("name") or "").strip()
+    criteria = str(inp.get("criteria") or "").strip()
+    if not name or not criteria:
+        return {"success": False,
+                "error": "name 과 criteria 가 필요합니다 — criteria 는 사람이 HTS 에 그대로 옮겨 "
+                         "적을 수 있는 조건이어야 합니다."}
+    conn = uni.connect()
+    try:
+        data = uni.request_condition(conn, trade["id"], name, criteria, inp.get("rationale"))
+    finally:
+        conn.close()
+    return {"success": True, "data": {**data, "tradeId": trade["id"]}}
+
+
+def action_bind_condition(inp, settings):
+    """Record the sequence number the registered condition came back as."""
+    rid, seq = inp.get("requestId"), inp.get("seq")
+    if not rid or seq in (None, ""):
+        return {"success": False, "error": "requestId 와 seq 가 필요합니다."}
+    conn = uni.connect()
+    try:
+        ok = uni.bind_seq(conn, rid, seq)
+    finally:
+        conn.close()
+    return {"success": ok, "data": {"requestId": rid, "seq": str(seq)}} if ok else {
+        "success": False, "error": f"'{rid}' 요청이 없습니다."}
+
+
+def action_match_conditions(inp, settings):
+    """Bind the requests to what a person actually created, matching on the name they typed."""
+    rows = inp.get("rows")
+    if rows is None and isinstance(inp.get("conditions"), list):
+        rows = inp["conditions"]
+    if not isinstance(rows, list):
+        return {"success": False,
+                "error": "조건검색 목록(`rows`)이 필요합니다 — 브로커의 목록조회 결과를 그대로 "
+                         "넘기세요."}
+    conn = uni.connect()
+    try:
+        data = uni.match_conditions(conn, rows)
+        if inp.get("watchId") and data["bound"]:
+            uni.bind_watch(conn, data["bound"][0]["requestId"], str(inp["watchId"]))
+    finally:
+        conn.close()
+    return {"success": True, "data": data}
+
+
+def action_universe(inp, settings):
+    """The screening requests and what each trade is currently watching."""
+    conn = uni.connect()
+    try:
+        lists = {t["id"]: uni.symbols_of(conn, t["id"]) for t in declared_trades(settings)}
+        data = {"requests": uni.read_requests(conn), "watchlists": lists}
+    finally:
+        conn.close()
+    return {"success": True, "data": data}
+
+
 def action_gate(inp, settings):
     """Does the cycle run at all? The first step of the trading pipeline, and the only human gate.
 
@@ -401,8 +511,15 @@ def action_gate(inp, settings):
         reasons.append("killSwitch is on")
     strategies = pick_strategies(settings)
     conn.close()
+    screened = [t for t in declared_trades(settings) if t.get("conditionName")]
     if not strategies and not reasons:
-        reasons.append("no enabled strategy is declared")
+        if screened:
+            # Not a misconfiguration. The rule exists and the screen is simply empty right now,
+            # which is what a quiet market looks like — saying "no strategy" would send someone
+            # to the settings to fix something that is not broken.
+            reasons.append("the screen is empty — nothing currently qualifies")
+        else:
+            reasons.append("no enabled strategy is declared")
     return {"success": True, "data": {
         "active": not reasons,
         "why": reasons or None,
@@ -429,8 +546,20 @@ def action_cycle(inp, settings):
     signal = inp.get("signal") or {}
     price = eng.signal_price(signal, fallback=last_close(bars))
     if price <= 0:
+        # A screen-driven entry arrives with no bars and no signal — the quote is the only price
+        # there is, and refusing it would make the whole scalping path unreachable.
+        quote = inp.get("quote") or {}
+        for k in ("price", "last", "close", "cur_prc", "currentPrice"):
+            try:
+                price = abs(float(str(quote.get(k)).replace(",", "").lstrip("+")))
+            except (TypeError, ValueError):
+                continue
+            if price > 0:
+                break
+    if price <= 0:
         return {"success": False,
-                "error": "no price to work from — pass `bars` (or barsCacheKey) and/or `signal`"}
+                "error": "no price to work from — pass `bars` (or barsCacheKey), `signal`, "
+                         "or a `quote` with the current price"}
 
     mode_hint = settings.get("mode", "dryrun")
     conn = store.connect("dryrun" if mode_hint == "dryrun" else "live")
@@ -453,14 +582,26 @@ def action_cycle(inp, settings):
         account = s.get("account") or ""
         sym = s.get("symbol") or symbol or ""
         cycle_id = eng.cycle_id_for(s, signal, now, inp.get("cycleId"))
-        if store.cycle_already_ran(conn, s["id"], cycle_id, broker, account):
+        pos = store.position_of(conn, s["id"], broker, account, sym)
+        # The window guard stops a second entry, not a second look. While a position is open its
+        # stop and target have to be evaluated on every pass — keying the cycle on the entry that
+        # opened it would otherwise make the exit unreachable for as long as the trade lasts.
+        # A repeated exit is still impossible: the order key carries the side.
+        if float(pos.get("qty") or 0) <= 0 and store.cycle_already_ran(
+                conn, s["id"], cycle_id, broker, account, sym):
             results.append({"strategyId": s["id"], "cycleId": cycle_id, "skipped": "already ran"})
             continue
-        pos = store.position_of(conn, s["id"], broker, account, sym)
         account_is_mock = bool(inp.get("mock")) or str(s.get("mode")) == "mock"
         mode = eng.effective_mode(settings, s, account_is_mock, unattended())
+        # A scalping rule reacts to the arrival itself: the screen said this symbol qualifies now,
+        # and that is the entry. Waiting for a separate indicator to agree would mean the condition
+        # was written for nothing. Exits still come from the rule's stop and target, which
+        # strategy_rules checks before any signal.
+        s_sides = sides
+        if str((s.get("trigger") or {}).get("type") or "") == "screen-entry":
+            s_sides = set(sides) | ({"buy"} if float(pos.get("qty") or 0) <= 0 else set())
         ctx = {
-            "position": pos, "price": price, "sides": sides, "signal": signal,
+            "position": pos, "price": price, "sides": s_sides, "signal": signal,
             "quote": inp.get("quote") or {}, "settings": settings, "strategy": s,
             "mode": mode, "account_exposure": 0.0,
             "vi_halted": store.kv_get(conn, f"vi:{sym}") == "1",
@@ -1363,6 +1504,154 @@ def action_selftest():
     checks.append({"name": "a named trade keeps its name", "want": "t2",
                    "got": wired[1]["id"], "ok": wired[1]["id"] == "t2"})
 
+    # --- where symbols come from -----------------------------------------------------------
+    ucon = uni.connect()
+    frames_in = [{"9001": "005930", "843": "I"}, {"9001": "000660", "843": "I"}]
+    r1 = uni.apply_frames(ucon, "t1", frames_in)
+    checks.append({"name": "entering the screen adds to the list", "want": ["005930", "000660"],
+                   "got": sorted(uni.symbols_of(ucon, "t1")),
+                   "ok": sorted(uni.symbols_of(ucon, "t1")) == ["000660", "005930"]})
+
+    # The accident this whole file is shaped around: a stream that says nothing must not be read
+    # as a screen that emptied, because an empty list is indistinguishable from "sell everything".
+    uni.apply_frames(ucon, "t1", [])
+    checks.append({"name": "silence does not empty the list", "want": 2,
+                   "got": len(uni.symbols_of(ucon, "t1")),
+                   "ok": len(uni.symbols_of(ucon, "t1")) == 2})
+
+    uni.apply_frames(ucon, "t1", [{"9001": "005930", "843": "D"}])
+    checks.append({"name": "only a departure frame removes", "want": ["000660"],
+                   "got": uni.symbols_of(ucon, "t1"),
+                   "ok": uni.symbols_of(ucon, "t1") == ["000660"]})
+
+    # A first subscription reports the set as it stands, with no direction on the frames.
+    fresh = uni.apply_frames(ucon, "t2", [{"jmcode": "035420"}])
+    checks.append({"name": "a frame with no direction is an entry", "want": ["035420"],
+                   "got": uni.symbols_of(ucon, "t2"),
+                   "ok": uni.symbols_of(ucon, "t2") == ["035420"]})
+
+    unreadable = uni.apply_frames(ucon, "t2", [{"mystery": 1}, {"9001": "051910", "843": "?"}])
+    checks.append({"name": "a frame that cannot be read is reported, not dropped", "want": 2,
+                   "got": len(unreadable["unreadableFrames"]),
+                   "ok": len(unreadable["unreadableFrames"]) == 2})
+    checks.append({"name": "an unreadable frame does not change the list", "want": ["035420"],
+                   "got": uni.symbols_of(ucon, "t2"),
+                   "ok": uni.symbols_of(ucon, "t2") == ["035420"]})
+
+    # A declared field name wins over the guesses, once a real frame has shown what it is.
+    mapped = uni.apply_frames(ucon, "t3", [{"weird_code": "068270", "flag": "I"}],
+                              {"symbol": "weird_code", "action": "flag"})
+    checks.append({"name": "a declared frame map is used over the candidates", "want": ["068270"],
+                   "got": uni.symbols_of(ucon, "t3"),
+                   "ok": uni.symbols_of(ucon, "t3") == ["068270"]})
+
+    # --- matching a request to what a person actually created ------------------------------
+    uni.request_condition(ucon, "t1", "급등 초입", "거래량 3배 이상 and 5일선 상향돌파")
+    uni.request_condition(ucon, "t2", "없는 조건", "아직 안 만든 것")
+    matched = uni.match_conditions(ucon, [{"seq": "7", "name": "급등 초입"},
+                                          {"seq": "8", "name": "남의 조건"},
+                                          {"broken": True}])
+    checks.append({"name": "a request binds to the condition of the same name", "want": "7",
+                   "got": [b["seq"] for b in matched["bound"]],
+                   "ok": [b["seq"] for b in matched["bound"]] == ["7"]})
+    checks.append({"name": "a request nobody has created yet is still waiting", "want": 1,
+                   "got": matched["awaitingRegistration"],
+                   "ok": len(matched["awaitingRegistration"]) == 1})
+    checks.append({"name": "an unreadable list row is reported", "want": 1,
+                   "got": len(matched["unreadableRows"]),
+                   "ok": len(matched["unreadableRows"]) == 1})
+    positional = uni.match_conditions(ucon, [["8", "없는 조건"]])
+    checks.append({"name": "a positional list row is read too", "want": "8",
+                   "got": [b["seq"] for b in positional["bound"]],
+                   "ok": [b["seq"] for b in positional["bound"]] == ["8"]})
+
+    # Frames route by the watch they arrived on, so two screens cannot pour into one list.
+    uni.bind_watch(ucon, "t1:급등 초입", "ws-kiwoom-condition-aaa")
+    checks.append({"name": "a frame is routed by the watch it came in on", "want": "t1",
+                   "got": uni.trade_for_watch(ucon, "ws-kiwoom-condition-aaa"),
+                   "ok": uni.trade_for_watch(ucon, "ws-kiwoom-condition-aaa") == "t1"})
+    checks.append({"name": "an unknown watch routes nowhere rather than to the first trade",
+                   "want": None, "got": uni.trade_for_watch(ucon, "ws-someone-else"),
+                   "ok": uni.trade_for_watch(ucon, "ws-someone-else") is None})
+    ucon.close()
+
+    # --- a screened trade assembles its own symbols ----------------------------------------
+    # The codes come out of the broker's frames and into the order path without anyone writing
+    # them down. A model that types a symbol is a model that can invent one.
+    econ = uni.connect()
+    uni.apply_frames(econ, "screened", [{"9001": "005930", "843": "I"},
+                                        {"9001": "000660", "843": "I"}])
+    econ.close()
+    screened_settings = {
+        "trades": [{"id": "screened", "conditionName": "급등 초입",
+                    "broker": "kiwoom", "account": "모의국내"}],
+        "strategies": [{"id": "screened", "enabled": True, "money": {"qty": 1}}],
+    }
+    # The store still holds strategies from the blocks above; this asserts on this trade only.
+    runnable = [x for x in pick_strategies(screened_settings) if x["id"] == "screened"]
+    checks.append({"name": "one rule over a screen becomes one run per screened symbol",
+                   "want": ["000660", "005930"],
+                   "got": sorted(x["symbol"] for x in runnable),
+                   "ok": sorted(x["symbol"] for x in runnable) == ["000660", "005930"]})
+    checks.append({"name": "a screened trade needs no symbol declared", "want": 1,
+                   "got": len(declared_trades(screened_settings)),
+                   "ok": len(declared_trades(screened_settings)) == 1})
+
+    # Same rule, same window, two symbols — the guard must not read the first as the whole cycle.
+    gconn = store.connect("dryrun")
+    win = "bar:2026-08-02T10:00"
+    gconn.execute("INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,"
+                  "side,req_qty,req_price,ord_type,mode,state) VALUES"
+                  "('k1',0,?,'screened','kiwoom','모의국내','005930','buy',1,70000,'limit',"
+                  "'dryrun','sent')", (win,))
+    gconn.commit()
+    first = store.cycle_already_ran(gconn, "screened", win, "kiwoom", "모의국내", "005930")
+    second = store.cycle_already_ran(gconn, "screened", win, "kiwoom", "모의국내", "000660")
+    checks.append({"name": "the symbol already ordered this window is held", "want": True,
+                   "got": first, "ok": first is True})
+    checks.append({"name": "the next screened symbol is not silenced by it", "want": False,
+                   "got": second, "ok": second is False})
+    gconn.close()
+
+    # --- a scalping entry must not lock its own exit out -----------------------------------
+    # Keying the window on the arrival is what makes draining the screen twice harmless, but the
+    # same key would then cover the exit: the position opened in this window could never be closed
+    # while the window lasted. The guard applies to opening, never to looking.
+    scalp_conn = store.connect("dryrun")
+    win = "entry:005930:1700000000000"
+    scalp_conn.execute(
+        "INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,side,"
+        "req_qty,req_price,ord_type,mode,state) VALUES"
+        "('e1',0,?,'scalp','kiwoom','a','005930','buy',1,70000,'limit','dryrun','filled')", (win,))
+    scalp_conn.commit()
+    checks.append({"name": "the entry window blocks a second entry", "want": True,
+                   "got": store.cycle_already_ran(scalp_conn, "scalp", win, "kiwoom", "a", "005930"),
+                   "ok": store.cycle_already_ran(scalp_conn, "scalp", win, "kiwoom", "a",
+                                                 "005930") is True})
+    # Two exits in one window collapse on the key rather than on the guard — the side is in it.
+    buy_key = store.order_key("scalp", "005930", "buy", win, 0, broker="kiwoom", account="a")
+    sell_key = store.order_key("scalp", "005930", "sell", win, 0, broker="kiwoom", account="a")
+    checks.append({"name": "an exit in the entry's window is a different order", "want": True,
+                   "got": buy_key != sell_key, "ok": buy_key != sell_key})
+    scalp_conn.close()
+
+    # The arrival is the signal: a screen-driven rule needs no indicator to agree before entering.
+    entry_ctx = {"position": {"qty": 0, "avg_price": 0}, "price": 70000, "sides": {"buy"},
+                 "signal": {}, "quote": {}, "settings": {}, "mode": "mock",
+                 "strategy": {}, "account_exposure": 0.0, "vi_halted": False}
+    entered = eng.decide({"id": "scalp", "kind": "rules", "money": {"qty": 1},
+                          "trigger": {"type": "screen-entry"}}, entry_ctx)
+    checks.append({"name": "arriving on the screen is enough to enter", "want": 1,
+                   "got": len(entered), "ok": len(entered) == 1 and entered[0]["side"] == "buy"})
+    held_ctx = {**entry_ctx, "position": {"qty": 1, "avg_price": 70000}, "price": 71100,
+                "sides": set()}
+    exited = eng.decide({"id": "scalp", "kind": "rules", "money": {"qty": 1},
+                         "exits": {"takeProfitPct": 1.5},
+                         "trigger": {"type": "screen-entry"}}, held_ctx)
+    checks.append({"name": "the target closes it without any signal at all", "want": "take",
+                   "got": [(x["side"], x.get("reason")) for x in exited],
+                   "ok": len(exited) == 1 and exited[0]["reason"] == "take"})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1431,6 +1720,14 @@ def main():
             return out(action_strategies(inp, settings))
         if action == "retire":
             return out(action_retire(inp, settings))
+        if action == "request_condition":
+            return out(action_request_condition(inp, settings))
+        if action == "bind_condition":
+            return out(action_bind_condition(inp, settings))
+        if action == "match_conditions":
+            return out(action_match_conditions(inp, settings))
+        if action == "universe":
+            return out(action_universe(inp, settings))
         if action == "gate":
             return out(action_gate(inp, settings))
         if action == "reconcile":
@@ -1449,7 +1746,24 @@ def main():
             store.log_api(conn, "stream", inp.get("watchId") or "", True, 0,
                           {"watchId": inp.get("watchId")}, frames[:20])
             conn.close()
-            return out({"success": True, "data": {"recorded": len(frames)}})
+            folded = None
+            ucon0 = uni.connect()
+            try:
+                routed = uni.trade_for_watch(ucon0, str(inp.get("watchId") or ""))
+            finally:
+                ucon0.close()
+            trade = trade_of(settings, routed or inp.get("tradeId"))
+            if trade and inp.get("topic") != "quotes":
+                # Condition frames say which symbols entered and left the screen. Absence never
+                # removes: a dropped socket or a broker in maintenance must not empty the list,
+                # because an empty list reads as "sell everything".
+                ucon = uni.connect()
+                try:
+                    folded = uni.apply_frames(ucon, trade["id"], frames,
+                                              (settings.get("conditionFrameMap") or None))
+                finally:
+                    ucon.close()
+            return out({"success": True, "data": {"recorded": len(frames), "watchlist": folded}})
         if action in ("liquidate_all", "cancel_all", "resolve_unassigned", "import_position"):
             return fail(f"{action} 은 주문 경로가 들어온 뒤 동작합니다(현재 슬라이스는 판단·원장까지).")
         return fail(f"알 수 없는 action: {action}")

@@ -25,7 +25,10 @@ import os
 import sqlite3
 import time
 
-DATA_DIR = os.path.join(os.getcwd(), "data", "autotrade")
+# The framework runs modules from the workspace root, so `data/` is the right place. The env var
+# is what the framework itself uses to move the data directory, and honouring it keeps a test run
+# out of the live ledger — without it every local run wrote into the real one.
+DATA_DIR = os.path.join(os.environ.get("FIREBAT_DATA_DIR") or os.getcwd(), "autotrade")     if os.environ.get("FIREBAT_DATA_DIR") else os.path.join(os.getcwd(), "data", "autotrade")
 
 # Quantities are whole shares, so equality is exact; prices are derived and compared with a
 # tolerance. 1e-6 of a won is far below anything a broker reports.
@@ -337,7 +340,7 @@ def update_order(conn, key, **fields):
     conn.commit()
 
 
-def cycle_already_ran(conn, strategy_id, cycle_id, broker="", account=""):
+def cycle_already_ran(conn, strategy_id, cycle_id, broker="", account="", symbol=""):
     """Has this trade already acted in this window?
 
     A trade is the strategy *and* where it runs — the position table has always been keyed that
@@ -345,12 +348,14 @@ def cycle_already_ran(conn, strategy_id, cycle_id, broker="", account=""):
     the first and skipped, reporting "already ran": an order that never left, wearing the log line
     of correct idempotency.
     """
-    row = conn.execute(
-        "SELECT 1 FROM orders WHERE strategy_id=? AND cycle_id=? AND broker=? AND account=?"
-        " LIMIT 1",
-        (strategy_id, cycle_id, broker or "", account or ""),
-    ).fetchone()
-    return row is not None
+    q = ("SELECT 1 FROM orders WHERE strategy_id=? AND cycle_id=? AND broker=? AND account=?")
+    args = [strategy_id, cycle_id, broker or "", account or ""]
+    if symbol:
+        # A rule running over a screened list places one order per symbol in the same window.
+        # Without this the first symbol would look like the whole cycle and silence the rest.
+        q += " AND symbol=?"
+        args.append(symbol)
+    return conn.execute(q + " LIMIT 1", args).fetchone() is not None
 
 
 def open_orders(conn, account=None):
