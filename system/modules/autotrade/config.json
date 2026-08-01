@@ -267,47 +267,58 @@
   },
   "settings_fields": [
     {
-      "key": "mode",
-      "type": "select",
-      "options": [
-        "dryrun",
-        "mock",
-        "real"
-      ],
-      "defaultValue": "dryrun",
-      "tab": "실행",
-      "group": "모드"
-    },
-    {
       "key": "tradingEnabled",
       "type": "toggle",
       "defaultValue": false,
       "tab": "실행",
-      "group": "모드"
+      "group": "스위치"
     },
     {
       "key": "activeFrom",
       "type": "text",
       "defaultValue": "",
       "tab": "실행",
-      "group": "기간"
+      "group": "스위치",
+      "placeholder": "2026-08-04"
     },
     {
       "key": "activeUntil",
       "type": "text",
       "defaultValue": "",
       "tab": "실행",
-      "group": "기간"
+      "group": "스위치",
+      "placeholder": "2026-08-29"
     },
     {
-      "key": "killSwitch",
+      "key": "mode",
+      "type": "select",
+      "defaultValue": "dryrun",
+      "tab": "실행",
+      "group": "모드",
+      "options": [
+        {
+          "value": "dryrun",
+          "label": "dryrun"
+        },
+        {
+          "value": "mock",
+          "label": "mock"
+        },
+        {
+          "value": "real",
+          "label": "real"
+        }
+      ]
+    },
+    {
+      "key": "realArmed",
       "type": "toggle",
       "defaultValue": false,
       "tab": "실행",
       "group": "모드"
     },
     {
-      "key": "realArmed",
+      "key": "killSwitch",
       "type": "toggle",
       "defaultValue": false,
       "tab": "실행",
@@ -342,13 +353,6 @@
       "group": "한도"
     },
     {
-      "key": "feeInCost",
-      "type": "toggle",
-      "defaultValue": true,
-      "tab": "원장",
-      "group": "평단"
-    },
-    {
       "key": "confirmTimeoutSec",
       "type": "number",
       "defaultValue": 20,
@@ -363,46 +367,43 @@
       "group": "확인"
     },
     {
-      "key": "brokers",
-      "type": "textarea",
-      "defaultValue": "[]",
-      "tab": "전략",
-      "group": "증권사"
+      "key": "feeInCost",
+      "type": "toggle",
+      "defaultValue": true,
+      "tab": "원장",
+      "group": "평단"
     },
     {
-      "key": "strategies",
+      "key": "trades",
       "type": "textarea",
       "defaultValue": "[]",
       "tab": "전략",
-      "group": "전략 목록"
+      "group": "매매",
+      "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom\",\"account\":\"모의국내\"}]"
     },
     {
       "key": "universe",
       "type": "textarea",
       "defaultValue": "[]",
       "tab": "전략",
-      "group": "대상"
+      "group": "측정 대상",
+      "placeholder": "[\"005930.KS\",\"000660.KS\",\"035420.KS\",\"005380.KS\",\"051910.KS\"]"
     },
     {
       "key": "confirmUniverse",
       "type": "textarea",
       "defaultValue": "[]",
       "tab": "전략",
-      "group": "대상"
+      "group": "측정 대상",
+      "placeholder": "[\"005380.KS\",\"051910.KS\"]"
     },
     {
-      "key": "tradeBroker",
-      "type": "text",
-      "defaultValue": "",
+      "key": "strategies",
+      "type": "textarea",
+      "defaultValue": "[]",
       "tab": "전략",
-      "group": "대상"
-    },
-    {
-      "key": "tradeAccount",
-      "type": "text",
-      "defaultValue": "",
-      "tab": "전략",
-      "group": "대상"
+      "group": "직접 선언",
+      "placeholder": "[]"
     }
   ],
   "pageBinding": {

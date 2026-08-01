@@ -94,15 +94,16 @@ def load_settings():
         "feeInCost": env_bool("MODULE_FEEINCOST", True),
         "confirmTimeoutSec": env_num("MODULE_CONFIRMTIMEOUTSEC", 20),
         "unknownTimeoutSec": env_num("MODULE_UNKNOWNTIMEOUTSEC", 120),
-        "brokers": env_json("MODULE_BROKERS", []),
         # What the model is allowed to trade, and where. This is a wall, not a strategy: which
         # stocks and whose account is the owner's call, how to trade them is the model's. Keeping
         # it here rather than in the cron declaration means changing it is a settings edit, not a
         # schedule edit.
+        # The wiring: one entry per trade — a symbol, an account, and the broker that owns it.
+        # `매매1 = 증권사1·계좌1`, `매매3 = 증권사2·계좌1` are two entries, and the model fills each
+        # with a rule of its own. Which rule that is, is not written here; where it runs is.
+        "trades": env_json("MODULE_TRADES", []),
         "universe": env_json("MODULE_UNIVERSE", []),
         "confirmUniverse": env_json("MODULE_CONFIRMUNIVERSE", []),
-        "tradeBroker": os.environ.get("MODULE_TRADEBROKER") or "",
-        "tradeAccount": os.environ.get("MODULE_TRADEACCOUNT") or "",
         "strategies": env_json("MODULE_STRATEGIES", []),
     }
 
@@ -303,6 +304,41 @@ def action_retire(inp, settings):
         "success": False, "error": f"'{sid}' 은 전략 store 에 없습니다."}
 
 
+def declared_trades(settings):
+    """The owner's wiring, normalised. One entry per trade: where a rule will run.
+
+    A trade is identified by the account it runs in as much as by the rule in it — the same rule
+    in two accounts is two trades, two positions and two sets of orders. That is why the id
+    defaults to the placement rather than to the rule.
+    """
+    out = []
+    for t in settings.get("trades") or []:
+        if not isinstance(t, dict):
+            continue
+        symbol = str(t.get("symbol") or "").strip()
+        broker = str(t.get("broker") or "").strip()
+        account = str(t.get("account") or "").strip()
+        if not symbol or not broker:
+            continue
+        out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol}").strip(),
+                    "symbol": symbol, "broker": broker, "account": account,
+                    "template": t.get("template") if isinstance(t.get("template"), dict) else None})
+    return out
+
+
+def trade_of(settings, trade_id=None):
+    """One declared trade — the named one, or the first if none was named."""
+    trades = declared_trades(settings)
+    if not trades:
+        return None
+    if trade_id:
+        for t in trades:
+            if t["id"] == trade_id:
+                return t
+        return None
+    return trades[0]
+
+
 def as_object(value, field):
     """Accept an object that arrived as a JSON string.
 
@@ -417,7 +453,7 @@ def action_cycle(inp, settings):
         account = s.get("account") or ""
         sym = s.get("symbol") or symbol or ""
         cycle_id = eng.cycle_id_for(s, signal, now, inp.get("cycleId"))
-        if store.cycle_already_ran(conn, s["id"], cycle_id):
+        if store.cycle_already_ran(conn, s["id"], cycle_id, broker, account):
             results.append({"strategyId": s["id"], "cycleId": cycle_id, "skipped": "already ran"})
             continue
         pos = store.position_of(conn, s["id"], broker, account, sym)
@@ -468,7 +504,9 @@ def action_cycle(inp, settings):
                             strategy_id=s["id"], symbol=d.get("symbol"))
         for intent in allowed:
             key = store.order_key(s["id"], intent["symbol"], intent["side"],
-                                  intent["cycleId"], intent.get("seq", 0))
+                                  intent["cycleId"], intent.get("seq", 0),
+                                  broker=intent.get("broker") or "",
+                                  account=intent.get("account") or "")
             order = {
                 "order_key": key, "cycle_id": intent["cycleId"], "strategy_id": s["id"],
                 "broker": intent["broker"], "account": intent["account"],
@@ -1283,6 +1321,48 @@ def action_selftest():
     rconn.close()
     rpaper.close()
 
+    # --- the same rule in two accounts is two trades ---------------------------------------
+    # 매매1 = 증권사1·계좌1, 매매3 = 증권사2·계좌1 with the same rule. The position table always
+    # keyed on where a trade runs; the cycle check and the order key did not, so the second one
+    # was read as a repeat of the first and skipped — an order that never left, wearing the log
+    # line of correct idempotency.
+    tconn = store.connect("dryrun")
+    bar = "bar:2026-08-02T09:00"
+    keys = {store.order_key("rule1", "005930", "buy", bar, 0, broker=b, account=a)
+            for b, a in (("kiwoom", "실전"), ("kiwoom", "모의국내"), ("korea-invest", "실전"))}
+    checks.append({"name": "one rule in three places is three order keys", "want": 3,
+                   "got": len(keys), "ok": len(keys) == 3})
+
+    store.insert_order(tconn, {"order_key": store.order_key("rule1", "005930", "buy", bar, 0,
+                                                            broker="kiwoom", account="실전"),
+                               "cycle_id": bar, "strategy_id": "rule1", "broker": "kiwoom",
+                               "account": "실전", "symbol": "005930", "side": "buy",
+                               "req_qty": 1, "req_price": 70000, "ord_type": "limit",
+                               "mode": "dryrun", "state": "sent", "reason": "test"})
+    checks.append({"name": "the account that already traded this window is held",
+                   "want": True,
+                   "got": store.cycle_already_ran(tconn, "rule1", bar, "kiwoom", "실전"),
+                   "ok": store.cycle_already_ran(tconn, "rule1", bar, "kiwoom", "실전") is True})
+    checks.append({"name": "the other account is not held by it", "want": False,
+                   "got": store.cycle_already_ran(tconn, "rule1", bar, "korea-invest", "실전"),
+                   "ok": store.cycle_already_ran(tconn, "rule1", bar, "korea-invest", "실전") is False})
+    tconn.close()
+
+    # --- the wiring the owner declares -----------------------------------------------------
+    wired = declared_trades({"trades": [
+        {"symbol": "005930", "broker": "kiwoom", "account": "실전"},
+        {"id": "t2", "symbol": "005930", "broker": "kiwoom", "account": "모의국내"},
+        {"symbol": "", "broker": "kiwoom"},          # no symbol — not a trade
+        {"symbol": "000660", "account": "실전"},      # no broker — nowhere to send it
+    ]})
+    checks.append({"name": "a trade needs a symbol and a broker", "want": 2,
+                   "got": len(wired), "ok": len(wired) == 2})
+    checks.append({"name": "an unnamed trade is identified by where it runs",
+                   "want": "kiwoom-실전-005930", "got": wired[0]["id"],
+                   "ok": wired[0]["id"] == "kiwoom-실전-005930"})
+    checks.append({"name": "a named trade keeps its name", "want": "t2",
+                   "got": wired[1]["id"], "ok": wired[1]["id"] == "t2"})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -1310,12 +1390,14 @@ def main():
         if not inp.get("confirmSymbols") and settings.get("confirmUniverse"):
             inp["confirmSymbols"] = list(settings["confirmUniverse"])
     if action == "adopt":
-        inp.setdefault("broker", settings.get("tradeBroker") or "")
-        inp.setdefault("account", settings.get("tradeAccount") or "")
-        if not inp.get("symbol") and settings.get("universe"):
-            # The rule is measured across the universe; it trades the first name in it unless the
-            # caller says otherwise. Silently picking a different one would be worse than this.
-            inp["symbol"] = str(settings["universe"][0]).split(".")[0]
+        # A trade names where it runs; the model supplies the rule that goes in it. Falling back
+        # to the first declared trade keeps the pipeline free of placement details.
+        target = trade_of(settings, inp.get("strategyId"))
+        if target:
+            inp.setdefault("strategyId", target.get("id"))
+            inp.setdefault("symbol", target.get("symbol"))
+            inp.setdefault("broker", target.get("broker"))
+            inp.setdefault("account", target.get("account"))
     if "space" in inp:
         try:
             inp["space"] = as_object(inp.get("space"), "space")

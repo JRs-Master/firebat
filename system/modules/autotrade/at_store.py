@@ -300,13 +300,15 @@ def replay_positions(conn):
 
 
 # ── orders ───────────────────────────────────────────────────────────────────────────────────
-def order_key(strategy_id, symbol, side, cycle_id, seq=0):
-    """One order per strategy, symbol, side and window.
+def order_key(strategy_id, symbol, side, cycle_id, seq=0, broker="", account=""):
+    """One order per trade, symbol, side and window — a trade being a strategy in one account.
 
     The key is the primary key, so a duplicate cycle — a re-run, an overlapping cron, a restart
-    mid-flight — collides at INSERT instead of reaching the broker twice.
+    mid-flight — collides at INSERT instead of reaching the broker twice. Where it runs belongs in
+    the key for the same reason it belongs in the position key: the same rule in two accounts is
+    two positions and two orders, not one placed twice.
     """
-    raw = f"{strategy_id}|{symbol}|{side}|{cycle_id}|{seq}"
+    raw = f"{strategy_id}|{broker}|{account}|{symbol}|{side}|{cycle_id}|{seq}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
 
 
@@ -335,10 +337,18 @@ def update_order(conn, key, **fields):
     conn.commit()
 
 
-def cycle_already_ran(conn, strategy_id, cycle_id):
+def cycle_already_ran(conn, strategy_id, cycle_id, broker="", account=""):
+    """Has this trade already acted in this window?
+
+    A trade is the strategy *and* where it runs — the position table has always been keyed that
+    way. This check was not, so the same rule running in a second account was read as a repeat of
+    the first and skipped, reporting "already ran": an order that never left, wearing the log line
+    of correct idempotency.
+    """
     row = conn.execute(
-        "SELECT 1 FROM orders WHERE strategy_id=? AND cycle_id=? LIMIT 1",
-        (strategy_id, cycle_id),
+        "SELECT 1 FROM orders WHERE strategy_id=? AND cycle_id=? AND broker=? AND account=?"
+        " LIMIT 1",
+        (strategy_id, cycle_id, broker or "", account or ""),
     ).fetchone()
     return row is not None
 

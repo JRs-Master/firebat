@@ -1,0 +1,94 @@
+{
+  "settings": {
+    "tradingEnabled": {
+      "label": "Enable trading",
+      "description": "Trading runs only while this is on. Only a person can change it — the model has no way to.",
+      "group": "Switch"
+    },
+    "activeFrom": {
+      "label": "Start date",
+      "description": "Empty starts immediately. YYYY-MM-DD.",
+      "group": "Switch"
+    },
+    "activeUntil": {
+      "label": "End date",
+      "description": "Inclusive of this day. Empty runs indefinitely. An unreadable date halts trading rather than removing the deadline.",
+      "group": "Switch"
+    },
+    "mode": {
+      "label": "Mode",
+      "description": "dryrun = ledger only, no orders · mock = real orders on a mock account · real = live. An interactive call is demoted to dryrun whatever this says.",
+      "group": "Mode",
+      "options": [
+        "Paper (dryrun)",
+        "Mock account",
+        "Live account"
+      ]
+    },
+    "realArmed": {
+      "label": "Arm real money",
+      "description": "Even in real mode, orders stop at mock while this is off. The last lock.",
+      "group": "Mode"
+    },
+    "killSwitch": {
+      "label": "Emergency stop",
+      "description": "Halts all new orders. Trips by itself when the daily loss limit is reached.",
+      "group": "Mode"
+    },
+    "realMaxNotionalKrw": {
+      "label": "Max notional per live order (KRW)",
+      "description": "Cap on a single live order.",
+      "group": "Limits"
+    },
+    "dailyLossLimitKrw": {
+      "label": "Daily loss limit (KRW)",
+      "description": "Realised loss reaching this trips the emergency stop.",
+      "group": "Limits"
+    },
+    "accountMaxNotionalKrw": {
+      "label": "Max position per account (KRW)",
+      "description": "Cap on what one account may hold.",
+      "group": "Limits"
+    },
+    "maxOrdersPerCycle": {
+      "label": "Max orders per cycle",
+      "description": "How many orders one decision pass may place.",
+      "group": "Limits"
+    },
+    "confirmTimeoutSec": {
+      "label": "Acknowledgement timeout (s)",
+      "description": "How long to wait for the broker to accept an order.",
+      "group": "Confirmation"
+    },
+    "unknownTimeoutSec": {
+      "label": "Unknown-order timeout (s)",
+      "description": "An order unconfirmed past this is marked unknown, and that strategy stops buying.",
+      "group": "Confirmation"
+    },
+    "feeInCost": {
+      "label": "Fees in cost basis",
+      "description": "Include the buy commission in the average price.",
+      "group": "Cost basis"
+    },
+    "trades": {
+      "label": "Trades",
+      "description": "What runs where. One entry per trade — the same symbol in two accounts is two trades with separate ledgers. Rules do not go here; the model fills those in.",
+      "group": "Trades"
+    },
+    "universe": {
+      "label": "Measurement symbols",
+      "description": "Symbols a rule is measured across, to show it is not an artefact of one. Separate from what is actually traded.",
+      "group": "Measurement"
+    },
+    "confirmUniverse": {
+      "label": "Confirmation symbols",
+      "description": "Held out of the selection and used only for scoring. A rule that loses here is not adopted.",
+      "group": "Measurement"
+    },
+    "strategies": {
+      "label": "Hand-written strategies",
+      "description": "Strategies a person declares. Leave empty to run only what the model adopted.",
+      "group": "Declared by hand"
+    }
+  }
+}
