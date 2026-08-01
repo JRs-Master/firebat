@@ -61,19 +61,21 @@ impl Core {
     /// while a schedule added in a later version of the module is still picked up. Turning the
     /// module off clears that record, so turning it back on starts clean.
     ///
-    /// This sits in Core rather than in either manager because it crosses two of them, and a
-    /// module manager that reached into the scheduler would be the exact coupling the mediator
-    /// exists to prevent.
+    /// Core only routes here. Reading the files and understanding what they declare belongs to
+    /// the module domain and happens in `ModuleManager`; putting the jobs on the clock belongs to
+    /// `ScheduleManager`. This sits between them because it crosses both, and a module manager
+    /// that reached into the scheduler would be the exact coupling the mediator exists to
+    /// prevent — but crossing two managers is the only thing it does.
     pub async fn sync_module_schedules(&self, name: &str) -> (Vec<String>, Vec<String>) {
-        let declared = self.module.declared_schedules(name).await;
-        if declared.is_empty() {
+        let jobs = self.module.declared_schedule_jobs(name).await;
+        if jobs.is_empty() {
             return (vec![], vec![]);
         }
         let job_id = |file: &str| format!("module:{}:{}", name, file.trim_end_matches(".json"));
 
         if !self.module.is_enabled(name) {
             let mut removed = vec![];
-            for file in &declared {
+            for (file, _) in &jobs {
                 if self.schedule.cancel(&job_id(file)).await.unwrap_or(false) {
                     removed.push(file.clone());
                 }
@@ -90,38 +92,16 @@ impl Core {
         let live: std::collections::HashSet<String> =
             self.schedule.list().into_iter().map(|j| j.job_id).collect();
         let mut added = vec![];
-        for file in &declared {
-            let id = job_id(file);
-            if already.contains(file) || live.contains(&id) {
+        for (file, job) in jobs {
+            let id = job_id(&file);
+            if already.contains(&file) || live.contains(&id) {
                 continue;
             }
-            // The reader is scope-aware and its own whitelist accepts only
-            // `<alphanumeric-dash-underscore>.json`, so a declaration named otherwise reads as
-            // missing rather than as refused.
-            let raw = match self.module.read_module_file("system", name, file).await {
-                Some(r) => Some(r),
-                None => self.module.read_module_file("user", name, file).await,
-            };
-            let Some(raw) = raw else {
-                tracing::warn!(target: "module_schedule", module = %name, file = %file,
-                    "declared schedule file is missing");
-                continue;
-            };
-            // The file is the job: same shape the scheduler already takes, so what a person reads
-            // in the module folder is exactly what runs.
-            let opts: crate::ports::CronScheduleOptions = match serde_json::from_str(&raw) {
-                Ok(o) => o,
-                Err(e) => {
-                    tracing::warn!(target: "module_schedule", module = %name, file = %file,
-                        error = %e, "declared schedule could not be read");
-                    continue;
-                }
-            };
-            let label = opts.title.clone().unwrap_or_else(|| id.clone());
-            match self.schedule.schedule(&id, &label, opts).await {
+            let label = job.title.clone().unwrap_or_else(|| id.clone());
+            match self.schedule.schedule(&id, &label, job).await {
                 Ok(()) => {
                     already.push(file.clone());
-                    added.push(file.clone());
+                    added.push(file);
                     tracing::info!(target: "module_schedule", module = %name, job = %id,
                         "registered a schedule the module declares");
                 }

@@ -1303,6 +1303,40 @@ impl ModuleManager {
             .unwrap_or_default()
     }
 
+    /// The module's declared schedules, read and understood — `(file, job)` per entry.
+    ///
+    /// Interpreting a module's own declaration is module-domain work, so it happens here rather
+    /// than in whoever needs the result. Core coordinates the two managers; it does not learn
+    /// what a module's config means on the way through.
+    ///
+    /// A file that is missing or unreadable is skipped with a warning rather than failing the
+    /// batch — one bad declaration should not cost a module its other schedules.
+    pub async fn declared_schedule_jobs(
+        &self,
+        name: &str,
+    ) -> Vec<(String, crate::ports::CronScheduleOptions)> {
+        let mut out = vec![];
+        for file in self.declared_schedules(name).await {
+            let raw = match self.read_module_file("system", name, &file).await {
+                Some(r) => Some(r),
+                None => self.read_module_file("user", name, &file).await,
+            };
+            let Some(raw) = raw else {
+                tracing::warn!(target: "module_schedule", module = %name, file = %file,
+                    "declared schedule file is missing");
+                continue;
+            };
+            match serde_json::from_str::<crate::ports::CronScheduleOptions>(&raw) {
+                // The file is the job: the same shape the scheduler already takes, so what
+                // someone reads in the module folder is exactly what runs.
+                Ok(job) => out.push((file, job)),
+                Err(e) => tracing::warn!(target: "module_schedule", module = %name, file = %file,
+                    error = %e, "declared schedule could not be read"),
+            }
+        }
+        out
+    }
+
     /// Which of this module's declared schedules have already been registered once.
     ///
     /// Kept so a job the owner deleted on purpose is not resurrected by the next restart, while a
