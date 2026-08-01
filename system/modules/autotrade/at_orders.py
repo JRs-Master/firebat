@@ -71,7 +71,8 @@ def _dig(node, *names):
     return None
 
 
-ORDER_NO_KEYS = ("ord_no", "odno", "ODNO", "orderId", "order_id", "orderNo", "brokerOrderNo")
+ORDER_NO_KEYS = ("ord_no", "odno", "ODNO", "orderId", "order_id", "orderNo", "brokerOrderNo",
+                 "uuid")  # upbit identifies an order by uuid
 
 
 def read_ack(ack):
@@ -100,10 +101,11 @@ def read_ack(ack):
 # numbers differently. Read by name, keep what could not be read, and never infer a quantity that
 # was not stated — a fill invented here becomes a position that does not exist.
 FILL_QTY_KEYS = ("cntr_qty", "ccld_qty", "CCLD_QTY", "filledQuantity", "executedQuantity",
-                 "fill_qty", "qty")
+                 "executed_volume", "fill_qty", "volume", "qty")
 FILL_PRICE_KEYS = ("cntr_uv", "cntr_pric", "ccld_prvs", "CCLD_PRVS", "avgPrice", "filledPrice",
                    "executedPrice", "price")
-EXEC_ID_KEYS = ("cntr_no", "execId", "executionId", "CCLD_NO", "exec_no")
+EXEC_ID_KEYS = ("cntr_no", "execId", "executionId", "CCLD_NO", "exec_no", "uuid")
+# upbit says `bid`/`ask`; the reader below only needs to find *a* side, not decode it.
 SIDE_KEYS = ("sell_tp", "io_tp_nm", "SLL_BUY_DVSN_CD", "side", "trde_tp_nm")
 
 
@@ -156,10 +158,10 @@ def read_fills(rows):
 # per broker. Same discipline as the execution rows: read by name, and when the holding for this
 # symbol cannot be read, say so instead of reporting zero — "no row" and "zero shares" are opposite
 # instructions to a reconciler, and guessing between them either invents a sale or hides one.
-POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "symbol", "code", "isin")
+POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "symbol", "code", "isin", "currency", "market")
 POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "cur_qty", "HLDG_QTY", "quantity", "qty", "balance")
 POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "avgPrice", "avg_price",
-                "purchasePrice")
+                "avg_buy_price", "purchasePrice")
 
 
 def _same_symbol(value, symbol):

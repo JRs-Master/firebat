@@ -296,36 +296,53 @@ function createToken(accessKey, secretKey, queryParams) {
     nonce: crypto.randomUUID(),
   };
 
-  // 파라미터가 있으면 query_hash 추가
+  // 파라미터가 있으면 query_hash 추가 — 인코딩되지 않은 문자열 기준(문서 명시).
   if (queryParams && Object.keys(queryParams).length > 0) {
-    const queryString = buildQueryString(queryParams);
+    const queryString = buildQueryStrings(queryParams).raw;
     const hash = crypto.createHash('sha512').update(queryString, 'utf-8').digest('hex');
     payload.query_hash = hash;
     payload.query_hash_alg = 'SHA512';
   }
 
-  // JWT HS256 수동 생성 (jsonwebtoken 의존성 없이)
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  // HS512, which is what the exchange documents — the signature algorithm, not the query hash.
+  // This was HS256 while `query_hash_alg` already said SHA512, a mismatch nothing here could have
+  // caught: no key has ever been registered, so an authenticated call has never been made.
+  const header = Buffer.from(JSON.stringify({ alg: 'HS512', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto.createHmac('sha256', secretKey).update(`${header}.${body}`).digest('base64url');
+  const signature = crypto.createHmac('sha512', secretKey)
+    .update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
 // ─── 쿼리스트링 빌드 (배열 파라미터 지원) ───
-function buildQueryString(params) {
-  const parts = [];
+/** The query string, in the two forms the exchange asks for.
+ *
+ * The signature covers the UNENCODED string while the URL carries the ENCODED one — the docs are
+ * explicit about both, and using one string for both jobs only works while every value happens to
+ * encode to itself. It stops working the moment a timestamp appears: `+09:00` becomes `%2B09%3A00`
+ * in the URL, and a hash taken over that does not match what the server computes. The failure is
+ * a 401 on exactly the endpoints worth calling.
+ *
+ * Brackets stay literal in both: `uuids[]=a&uuids[]=b` is the documented shape and the docs
+ * exclude `[` and `]` from encoding.
+ */
+function buildQueryStrings(params) {
+  const raw = [];
+  const encoded = [];
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
-    if (Array.isArray(value)) {
-      // uuids[]=xxx&uuids[]=yyy 형식
-      for (const v of value) {
-        parts.push(`${encodeURIComponent(key)}[]=${encodeURIComponent(v)}`);
-      }
-    } else {
-      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    const list = Array.isArray(value) ? value : [value];
+    const suffix = Array.isArray(value) ? '[]' : '';
+    for (const v of list) {
+      raw.push(`${key}${suffix}=${v}`);
+      encoded.push(`${encodeURIComponent(key)}${suffix}=${encodeURIComponent(v)}`);
     }
   }
-  return parts.join('&');
+  return { raw: raw.join('&'), encoded: encoded.join('&') };
+}
+
+function buildQueryString(params) {
+  return buildQueryStrings(params).encoded;
 }
 
 // ─── API 호출 ───
@@ -336,7 +353,10 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
     if (!accessKey || !secretKey) {
       throw new I18nError('error.api_key_missing', {});
     }
-    const token = createToken(accessKey, secretKey, method === 'GET' || method === 'DELETE' ? params : params);
+    // The hash covers the same parameters whatever the verb: for a body request the exchange
+    // turns the JSON into a query string and hashes that. The branch that used to be here chose
+    // between two identical values.
+    const token = createToken(accessKey, secretKey, params);
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -360,9 +380,20 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
     data = text;
   }
 
+  // The exchange states the remaining budget on every response, per API group. Passing it on is
+  // the difference between a caller that can slow down and one that finds out by being blocked.
+  const remaining = res.headers.get('remaining-req');
+
   if (!res.ok) {
     const errMsg = data?.error?.message || data?.error?.name || text;
-    throw new I18nError('error.api_status', { status: String(res.status), message: String(errMsg) });
+    // These three say what to do about them; a bare status code does not.
+    const hint =
+      res.status === 429 ? ' — 요청 한도를 넘었습니다. 잔여 한도: ' + (remaining || '알 수 없음')
+      : res.status === 418 ? ' — 한도 초과로 일시 차단된 상태입니다. 잠시 후 다시 시도하세요.'
+      : res.status === 401 ? ' — 인증 실패입니다. API Key 와 허용 IP 를 확인하세요.'
+      : '';
+    throw new I18nError('error.api_status',
+      { status: String(res.status), message: String(errMsg) + hint });
   }
 
   return data;
@@ -433,8 +464,135 @@ function normalizeUpbitCandles(rows) {
   return out;
 }
 
+
+// ── Standard order contract ──────────────────────────────────────────────────────────────────
+// The same neutral shape the stock brokers answer, so one pipeline places orders at either.
+//
+// Three things here invert silently and are written down once:
+//   * `bid` is buy and `ask` is sell — nothing in the words says which.
+//   * A market BUY is `ord_type=price` and its `price` is the TOTAL to spend, not a unit price.
+//     A market SELL is `ord_type=market` and carries `volume` instead. The same field name means
+//     two different quantities depending on the side.
+//   * Fees differ by the market's quote currency: 0.05% on KRW pairs, 0.25% on BTC and USDT.
+//     A backtest costed at the KRW rate is wrong by five times on a BTC pair.
+const UPBIT_SIDE = { buy: 'bid', sell: 'ask' };
+const UPBIT_FEE_RATE = { KRW: 0.0005, BTC: 0.0025, USDT: 0.0025 };
+
+function upbitFeeRate(market) {
+  return UPBIT_FEE_RATE[String(market ?? '').split('-')[0].toUpperCase()] ?? 0.0025;
+}
+
+
+/** The price step a market accepts. An order priced off the step is rejected outright.
+ *
+ * Nobody calling `place_order` should have to know the ladder, and a strategy that computed
+ * "3% below the bid" will land off it almost every time — so the price is floored to the step
+ * here. Floored, never rounded up: rounding up a buy spends more than the caller asked for.
+ */
+function upbitTickSize(price) {
+  if (!(price > 0)) throw new Error('place_order: price 는 0보다 커야 합니다.');
+  if (price < 0.00001) return 1e-8;
+  const decade = Math.floor(Math.log10(price));
+  if (decade < 3) return Math.pow(10, decade - 2);
+  if (decade >= 6) return 1000;
+  const base = Math.pow(10, decade - 3);
+  const leading = price / Math.pow(10, decade);
+  return Math.min(base * (leading >= 5 ? 5 : 1), 1000);
+}
+
+function upbitRoundPrice(price) {
+  const tick = upbitTickSize(price);
+  // Integer arithmetic where the tick is whole, so 159399000 does not come back as 159398999.99.
+  if (tick >= 1) return Math.floor(price / tick) * tick;
+  const scale = Math.round(1 / tick);
+  return Math.floor(price * scale) / scale;
+}
+
+function upbitOrderParams(data) {
+  const market = String(data.symbol ?? data.market ?? '').trim();
+  if (!market) throw new Error('place_order: symbol 이 필요합니다 (예: KRW-BTC).');
+  const side = UPBIT_SIDE[String(data.side ?? '').toLowerCase()];
+  if (!side) throw new Error("place_order: side 는 'buy' 또는 'sell' 이어야 합니다.");
+  const type = String(data.orderType ?? 'limit').toLowerCase();
+  const qty = Number(data.qty);
+  const price = Number(data.price);
+  const amount = Number(data.amount);
+
+  if (type === 'limit') {
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: 지정가에는 qty 가 필요합니다.');
+    if (!Number.isFinite(price) || price <= 0) throw new Error('place_order: 지정가에는 price 가 필요합니다.');
+    return { market, side, ord_type: 'limit', volume: String(qty),
+             price: String(upbitRoundPrice(price)) };
+  }
+  if (type !== 'market') {
+    throw new Error(`place_order: orderType='${type}' 은 지원하지 않습니다 — limit, market.`);
+  }
+  if (side === 'bid') {
+    // Total to spend. `qty * price` is accepted as a convenience, but one of them must be there:
+    // a market buy with a unit price and no total is the mistake this branch exists to refuse.
+    const total = Number.isFinite(amount) && amount > 0
+      ? amount
+      : (Number.isFinite(qty) && Number.isFinite(price) ? qty * price : NaN);
+    if (!Number.isFinite(total) || total <= 0) {
+      throw new Error('place_order: 시장가 매수에는 `amount`(총 금액)가 필요합니다 — 업비트의 '
+        + '시장가 매수는 수량이 아니라 쓸 금액으로 냅니다.');
+    }
+    return { market, side, ord_type: 'price', price: String(Math.floor(total)) };
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new Error('place_order: 시장가 매도에는 qty 가 필요합니다.');
+  }
+  return { market, side, ord_type: 'market', volume: String(qty) };
+}
+
+function upbitQueryParams(action, data) {
+  const market = String(data.symbol ?? data.market ?? '').trim();
+  if (action === 'list_open_orders') {
+    const p = { states: ['wait', 'watch'] };
+    if (market) p.market = market;
+    return { action: 'order-list-open', params: p };
+  }
+  if (action === 'list_fills') {
+    const p = { states: ['done', 'cancel'] };
+    if (market) p.market = market;
+    if (data.limit) p.limit = data.limit;
+    return { action: 'order-list-closed', params: p };
+  }
+  return { action: 'accounts', params: {} };
+}
+
+const UPBIT_STANDARD = ['place_order', 'cancel_order', 'list_open_orders', 'list_fills',
+                        'get_balance'];
+
 async function main(input) {
   const wantsCandles = Boolean(input && input.action === 'get_candles');
+  const neutral = input && UPBIT_STANDARD.includes(input.action) ? input.action : null;
+  if (neutral) {
+    try {
+      if (neutral === 'place_order') {
+        const params = upbitOrderParams(input);
+        // No paper account exists here, but the exchange will validate an order without placing
+        // it. That is the rung between a backtest and real money — `mock` sends the same order to
+        // the validator, so the shape is proven by the exchange rather than by us.
+        const action = input.mock === true ? 'order-test' : 'order-create';
+        input = { ...input, ...params, action, _feeRate: upbitFeeRate(params.market) };
+      } else if (neutral === 'cancel_order') {
+        const uuid = String(input.brokerOrderNo ?? input.uuid ?? '').trim();
+        const identifier = String(input.clientOrderId ?? '').trim();
+        if (!uuid && !identifier) {
+          throw new Error('cancel_order: brokerOrderNo(uuid) 또는 clientOrderId 가 필요합니다.');
+        }
+        input = { ...input, action: 'order-cancel',
+                  ...(uuid ? { uuid } : { identifier }) };
+      } else {
+        const mapped = upbitQueryParams(neutral, input);
+        input = { ...input, ...mapped.params, action: mapped.action };
+      }
+    } catch (e) {
+      console.log(JSON.stringify({ success: false, error: e.message }));
+      return;
+    }
+  }
   if (wantsCandles) {
     try {
       input = normalizeCandleRequest(input);
@@ -485,8 +643,13 @@ async function main(input) {
     console.log(JSON.stringify({
       success: true,
       data: {
-        action: action || 'direct',
+        action: neutral || action || 'direct',
+        apiAction: action || 'direct',
         endpoint,
+        ...(neutral === 'place_order'
+          ? { clientOrderId: input.clientOrderId ?? null, sentParams: params,
+              feeRate: input._feeRate, validatedOnly: input.action === 'order-test' }
+          : {}),
         ...( Array.isArray(data) ? { records: data, count: data.length } : data ),
       },
     }));
