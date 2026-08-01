@@ -7,9 +7,11 @@
     "pipeline does. Steps are 0-based, so $step0 is the gate and $step2 is the candle fetch.",
     "The gate comes first so that a switched-off day ends here, before any broker call — the",
     "CONDITION exits the run cleanly rather than failing it, which is what keeps the cron log",
-    "readable when trading is off for a week.",
-    "Runs at :30 of every minute during KST 09:00-15:59 (the server is UTC), which puts the",
-    "decision after the bar has closed rather than on top of the close.",
+    "readable when trading is off for a week. It also reports the trade, so this file names no",
+    "symbol, account or timeframe of its own: changing any of them is a settings edit.",
+    "The candle call asks for an interval rather than an API id — minute bars, daily, weekly and",
+    "monthly are four different endpoints at this broker, and a strategy that changes timeframe",
+    "must not require editing the call.",
     "Scheduled runs carry the cron context, so the order step needs no approval card — that is",
     "the whole reason trading lives here and not in chat.",
     "The three queries at the end are reads and are not approval-gated; reconcile settles from",
@@ -33,13 +35,12 @@
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
       "inputData": {
-        "action": "ka10080",
-        "account": "모의국내",
-        "params": {
-          "stk_cd": "005930_AL",
-          "tic_scope": "1",
-          "upd_stkpc_tp": "1"
-        }
+        "action": "get_candles"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol",
+        "interval": "$step0.trade.interval",
+        "account": "$step0.trade.account"
       }
     },
     {
@@ -80,12 +81,12 @@
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
       "inputData": {
-        "action": "cycle",
-        "symbol": "005930"
+        "action": "cycle"
       },
       "inputMap": {
         "signal": "$step3",
-        "barsCacheKey": "$step2._cacheKey"
+        "barsCacheKey": "$step2._cacheKey",
+        "symbol": "$step0.trade.symbol"
       }
     },
     {
@@ -114,39 +115,45 @@
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
       "inputData": {
-        "action": "list_fills",
-        "account": "모의국내",
-        "symbol": "005930"
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol",
+        "account": "$step0.trade.account"
       }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
       "inputData": {
-        "action": "list_open_orders",
-        "account": "모의국내",
-        "symbol": "005930"
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol",
+        "account": "$step0.trade.account"
       }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_kiwoom",
       "inputData": {
-        "action": "get_balance",
-        "account": "모의국내"
+        "action": "get_balance"
+      },
+      "inputMap": {
+        "account": "$step0.trade.account"
       }
     },
     {
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
       "inputData": {
-        "action": "reconcile",
-        "symbol": "005930"
+        "action": "reconcile"
       },
       "inputMap": {
         "fills": "$step7.rows",
         "openOrders": "$step8.rows",
-        "balanceRows": "$step9.rows"
+        "balanceRows": "$step9.rows",
+        "symbol": "$step0.trade.symbol"
       }
     }
   ],

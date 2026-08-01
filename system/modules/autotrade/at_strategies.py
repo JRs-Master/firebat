@@ -434,6 +434,24 @@ def review(conn, ledger_for, min_trades=MIN_LIVE_TRADES, slack=WIN_RATE_SLACK):
     return out
 
 
+MAX_MEASURE_SYMBOLS = 8
+
+
+def traded_symbols(conn, strategy_id, since_ms=0, cap=MAX_MEASURE_SYMBOLS):
+    """The names this strategy actually traded, busiest first.
+
+    A screened rule does not trade a fixed list — it trades whatever came up that day, which can
+    be dozens of names. Measuring it against a universe declared months ago would score it on a
+    population it never touched. Capped because the nightly run has to finish: the busiest names
+    are the ones its record is mostly made of.
+    """
+    rows = conn.execute(
+        "SELECT symbol, COUNT(*) n FROM ledger WHERE strategy_id=? AND ts_ms>=?"
+        " GROUP BY symbol ORDER BY n DESC LIMIT ?", (strategy_id, int(since_ms or 0), cap)
+    ).fetchall()
+    return [r["symbol"] for r in rows]
+
+
 def next_revision(conn, ledger_for, limit_events=8):
     """Which strategy tonight's revision run should work on, and everything it needs to do it.
 
@@ -457,6 +475,8 @@ def next_revision(conn, ledger_for, limit_events=8):
         scored.append(((0 if demotions else 1), r["updated_ms"], r, live))
     scored.sort(key=lambda x: (x[0], x[1]))
     _, _, r, live = scored[0]
+    # The scoring loop's handle belonged to whichever row came last, not to the one picked.
+    led = ledger_for(STAGE_MODE.get(r["stage"], "dryrun"))
     try:
         spec = json.loads(r["spec_json"])
         measured = json.loads(r["measured_json"] or "{}")
@@ -470,6 +490,10 @@ def next_revision(conn, ledger_for, limit_events=8):
         "currentExits": spec.get("exits") or {},
         "measured": measured,
         "live": live,
+        # What to re-measure on. A rule that trades a screen is scored on the names it actually
+        # traded, not on a list someone declared once — and the ledger is the only place that
+        # knows which those were.
+        "tradedSymbols": traded_symbols(led, r["id"], r["stage_since_ms"]),
         "history": events,
         "note": ("이 전략의 규칙 주변을 탐색하세요 — 새 전략을 만드는 자리가 아닙니다. "
                  "채택되면 같은 전략이 갱신되고 사다리는 처음부터 다시 시작합니다."),

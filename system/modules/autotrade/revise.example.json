@@ -46,13 +46,7 @@
     },
     {
       "type": "FOREACH",
-      "items": [
-        "005930.KS",
-        "000660.KS",
-        "035420.KS",
-        "005380.KS",
-        "051910.KS"
-      ],
+      "items": "$step1.tradedSymbols",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -134,10 +128,13 @@
       "With no adopted strategy the CONDITION ends the run at step 2 — cleanly, as an early exit.",
       "That is the state on day one: run discover.example.json once to create the first rule."
     ],
-    "universe": [
-      "Symbols, confirmation set, broker and account come from the module settings. Only the candle",
-      "loop names them here, because a FOREACH needs its list up front; keep it in step with the",
-      "`universe` setting."
+    "whatIsMeasured": [
+      "The candle loop runs over the symbols this rule actually traded since its stage began, which",
+      "the ledger knows and a declared universe does not. A screened rule trades whatever came up",
+      "that day; scoring it on a list written months ago would score it on names it never touched.",
+      "Capped at eight, busiest first, so a day with forty names still finishes.",
+      "A rule that traded nothing yields an empty list and the run ends there — there is nothing to",
+      "re-measure until it has a record."
     ]
   }
 }

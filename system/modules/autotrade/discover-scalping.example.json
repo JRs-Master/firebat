@@ -1,0 +1,159 @@
+{
+  "title": "autotrade — discovery on minute bars (scalping)",
+  "_why": [
+    "Run once to create the first scalping rule, then let revise improve it nightly.",
+    "Minute bars, not daily: a rule measured on daily bars and traded on one-minute bars was",
+    "measured on a different thing. yfinance gives 7 days of 1m — around 2,700 bars per symbol,",
+    "enough trades for a win rate to mean something at this frequency.",
+    "Costs are on by default and they dominate here. A round trip pays commission both ways plus",
+    "0.18% transaction tax on the sell, so a scalping rule has to clear roughly 0.2% before it has",
+    "made anything. Most candidates will be refused for that, and that refusal is the point.",
+    "The confirmation symbols are held out of the selection entirely — a rule is chosen on the",
+    "first three and scored on the last two."
+  ],
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "review"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "strategies",
+        "limit": 30
+      }
+    },
+    {
+      "type": "LLM_TRANSFORM",
+      "instruction": "You are choosing where to search for a SCALPING rule on one-minute bars — a position held minutes, not days. Answer with a JSON object only, no prose.\n\nShape:\n{\"families\":[...],\"fast\":[...],\"slow\":[...],\"low\":[...],\"high\":[...],\"stopLossPct\":[...],\"takeProfitPct\":[...],\"holdout\":0.3}\n\nfamilies is any of: ma-cross, ema-cross, rsi, bollinger, macd. Periods are counted in one-minute bars, so what would be 5 and 20 on daily bars is far too slow here — think in the range of a few minutes to an hour. Stops and targets must be small and real: a round trip costs about 0.2% in commission and tax, so a target under that cannot make money no matter how often it hits.\n\nRead the history of refusals. A combination refused for too few trades will be refused again at the same parameters; faster periods trade more. Keep the space under about 150 combinations.",
+      "inputMap": {
+        "review": "$step0",
+        "history": "$step1"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": [
+        "005930.KS",
+        "000660.KS",
+        "035420.KS",
+        "005380.KS",
+        "051910.KS"
+      ],
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_yfinance",
+          "inputData": {
+            "action": "history",
+            "period": "7d",
+            "interval": "1m"
+          },
+          "inputMap": {
+            "symbol": "$prev"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "plan_multi",
+        "barCount": 2000
+      },
+      "inputMap": {
+        "space": "$step2",
+        "fetched": "$step3"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "rank_multi"
+      },
+      "inputMap": {
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "adopt",
+        "template": {
+          "money": {
+            "qty": 1
+          },
+          "limits": {
+            "maxPositionKrw": 300000
+          },
+          "orders": {
+            "type": "limit",
+            "exchange": "SOR"
+          },
+          "trigger": {
+            "type": "bar"
+          }
+        }
+      },
+      "inputMap": {
+        "ranked": "$step6",
+        "runs": "$step4.runs",
+        "results": "$step5"
+      }
+    }
+  ],
+  "_mvp": {
+    "settings": {
+      "tradingEnabled": true,
+      "mode": "mock",
+      "trades": [
+        {
+          "id": "scalp-samsung",
+          "symbol": "005930",
+          "broker": "kiwoom",
+          "account": "모의국내"
+        }
+      ],
+      "universe": [
+        "005930.KS",
+        "000660.KS",
+        "035420.KS",
+        "005380.KS",
+        "051910.KS"
+      ],
+      "confirmUniverse": [
+        "005380.KS",
+        "051910.KS"
+      ],
+      "maxOrdersPerCycle": 2,
+      "dailyLossLimitKrw": 50000
+    },
+    "_note": [
+      "Symbols are typed by hand for the MVP — no screening condition, so nothing has to be",
+      "created in HTS first. The intraday pipeline (pipeline.example.json) fetches one symbol's",
+      "minute bars, so keep its stk_cd and the trade's symbol the same until the loop can carry",
+      "its item through several steps.",
+      "mock, not real: the account decides, and a paper-stage rule cannot reach live money anyway."
+    ]
+  }
+}

@@ -363,6 +363,10 @@ def declared_trades(settings):
             continue
         out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol or condition}").strip(),
                     "symbol": symbol, "conditionName": condition,
+                    # The timeframe is part of the trade, not of the schedule. A rule measured on
+                    # daily bars and traded on one-minute bars was measured on something else, so
+                    # the same value has to reach the candle fetch and the nightly re-measurement.
+                    "interval": str(t.get("interval") or "1d").strip(),
                     "broker": broker, "account": account,
                     "template": t.get("template") if isinstance(t.get("template"), dict) else None})
     return out
@@ -532,6 +536,9 @@ def action_gate(inp, settings):
         "strategies": len(strategies),
         "activeFrom": start or None,
         "activeUntil": end or None,
+        # What the pipeline needs so the declaration holds no symbol or timeframe of its own.
+        "trade": (lambda t: {k: t[k] for k in ("id", "symbol", "interval", "broker", "account")}
+                  if t else None)(trade_of(settings)) if trade_of(settings) else None,
     }}
 
 

@@ -762,9 +762,10 @@
           "cancel_order",
           "list_open_orders",
           "list_fills",
-          "get_balance"
+          "get_balance",
+          "get_candles"
         ],
-        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다. list_open_orders / list_fills / get_balance = 조회 쪽 중립 계약 — {symbol?, side?, exchange?} 만 받아 이 모듈이 ka10075/ka10076/kt00018 로 옮깁니다(거래소 인자가 액션마다 다른 어휘라 부르는 쪽이 외울 필요가 없습니다). 응답은 원문 그대로 두고, 행 배열만 `rows` 로 함께 냅니다. 조회라 승인 대상이 아닙니다."
+        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다. list_open_orders / list_fills / get_balance = 조회 쪽 중립 계약 — {symbol?, side?, exchange?} 만 받아 이 모듈이 ka10075/ka10076/kt00018 로 옮깁니다(거래소 인자가 액션마다 다른 어휘라 부르는 쪽이 외울 필요가 없습니다). 응답은 원문 그대로 두고, 행 배열만 `rows` 로 함께 냅니다. 조회라 승인 대상이 아닙니다. get_candles = 봉 조회 중립 계약 — {symbol, interval} 만 받습니다. interval = 1m·3m·5m·10m·15m·30m·45m·60m(=1h)·1d·1w·1M·1y·`<N>t`(틱). 주기마다 API 가 다른데(분 ka10080·일 ka10081·주 ka10082·월 ka10083, 미국은 별도 계열) 부르는 쪽이 그걸 알 필요가 없어야 전략의 봉 주기를 바꿀 때 호출부를 안 고칩니다."
       },
       "params": {
         "type": "object",
@@ -829,6 +830,30 @@
       "beforeOrderNo": {
         "type": "string",
         "description": "list_fills 페이징 — 이 주문번호보다 **과거** 체결을 돌려줍니다(뒤로 넘깁니다)."
+      },
+      "interval": {
+        "type": "string",
+        "description": "봉 주기: 1m·3m·5m·10m·15m·30m·45m·60m(=1h)·1d·1w·1M·1y, 또는 `100t` 같은 틱 단위. 기본 1d."
+      },
+      "market": {
+        "type": "string",
+        "enum": [
+          "kr",
+          "us"
+        ],
+        "description": "get_candles 대상 시장 (기본 kr)."
+      },
+      "baseDate": {
+        "type": "string",
+        "description": "get_candles 기준일 YYYY-MM-DD (이 날짜부터 과거로)."
+      },
+      "adjusted": {
+        "type": "boolean",
+        "description": "수정주가 적용 (기본 true)."
+      },
+      "stexTp": {
+        "type": "string",
+        "description": "미국 거래소 구분 (NA/ND/NY, 기본 ND)."
       }
     },
     "additionalProperties": false

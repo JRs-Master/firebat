@@ -909,6 +909,46 @@ function pickRows(payload) {
   return { field: pick[0], rows: pick[1] };
 }
 
+
+// ── Candles, by interval ─────────────────────────────────────────────────────────────────────
+// Every timeframe is its own API here — minute bars are ka10080 with a tic_scope, daily is
+// ka10081, weekly ka10082, monthly ka10083 — and the US chart set is a different family again.
+// A caller that has to know which is which cannot switch a strategy from 5-minute to hourly
+// without editing the call, and a strategy measured on one timeframe and traded on another is
+// measuring something else entirely. So the interval is the argument and the dialect stays here.
+const MINUTE_SCOPES = { '1m': '1', '3m': '3', '5m': '5', '10m': '10', '15m': '15',
+                        '30m': '30', '45m': '45', '60m': '60', '1h': '60' };
+const PERIOD_APIS = { '1d': 'ka10081', '1w': 'ka10082', '1M': 'ka10083', '1y': 'ka10094' };
+const US_PERIOD_APIS = { '1d': 'usa06012', '1w': 'usa06013', '1M': 'usa06014', '1y': 'usa06015' };
+
+function candleParams(action, data) {
+  const symbol = String(data.symbol ?? '').trim();
+  if (!symbol) throw new Error('get_candles: symbol 이 필요합니다.');
+  const interval = String(data.interval ?? '1d').trim();
+  const us = String(data.market ?? '').toLowerCase() === 'us' || Boolean(data.stexTp);
+  const params = { stk_cd: symbol, upd_stkpc_tp: String(data.adjusted === false ? '0' : '1') };
+  if (us) params.stex_tp = String(data.stexTp ?? 'ND');
+  // A tick chart counts trades, not time — `100t` is a hundred-trade bar.
+  const tick = /^(\d+)t$/i.exec(interval);
+  if (tick) {
+    params.tic_scope = tick[1];
+    return { apiId: us ? 'usa06010' : 'ka10079', params };
+  }
+  const scope = MINUTE_SCOPES[interval];
+  if (scope) {
+    params.tic_scope = scope;
+    return { apiId: us ? 'usa06011' : 'ka10080', params };
+  }
+  const apiId = (us ? US_PERIOD_APIS : PERIOD_APIS)[interval];
+  if (!apiId) {
+    throw new Error(
+      `get_candles: interval='${interval}' 은 지원하지 않습니다 — ` +
+      `${[...Object.keys(MINUTE_SCOPES), ...Object.keys(PERIOD_APIS), '100t'].join(', ')} 중 하나.`);
+  }
+  if (data.baseDate) params.base_dt = String(data.baseDate).replace(/-/g, '');
+  return { apiId, params };
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -939,6 +979,10 @@ process.stdin.on('end', async () => {
     let params = data.params || {};
     if (action === 'place_order' || action === 'cancel_order') {
       const mapped = standardOrder(action, data);
+      apiId = mapped.apiId;
+      params = mapped.params;
+    } else if (action === 'get_candles') {
+      const mapped = candleParams(action, data);
       apiId = mapped.apiId;
       params = mapped.params;
     } else if (STANDARD_QUERIES.includes(action)) {
