@@ -46,6 +46,8 @@
         "enum": [
           "cycle",
           "on_stream_event",
+          "plan_multi",
+          "rank_multi",
           "plan_sweep",
           "rank_sweep",
           "rank_across",
@@ -62,7 +64,7 @@
           "resolve_unassigned",
           "import_position"
         ],
-        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result."
+        "description": "cycle = run one decision pass for a strategy (called by the bar-close cron or a tick sink). on_stream_event = realtime frames arriving from a stream watch. reconcile = balance/open-order reconciliation only. report/positions/orders/ledger = read the ledger this module owns. halt = trip the kill switch (one direction only; clearing it is a settings change). selftest = golden fixtures, touches no network. liquidate_all/cancel_all/resolve_unassigned/import_position = one-off human actions, approval-gated. plan_sweep = expand a declared search space into candidate runs for a pipeline to execute (each run is one technical-analysis call, fitted on one window and scored on another). rank_sweep = read those results back and rank them on the holdout window, flagging thin samples and rules that only worked in-sample. merge_sweeps = fold one symbol's ranking into a running total across symbols (call once per symbol, passing the previous `running`). rank_across = final ranking over every symbol swept, ordered by how consistently a rule beat buy & hold rather than by its best single result. plan_multi / rank_multi = the whole multi-symbol sweep in two calls, so the pipeline is four steps whatever the symbol count: FOREACH symbols -> candles, plan_multi, FOREACH runs -> technical-analysis, rank_multi. Each planned run already carries its own barsCacheKey, so the execution loop needs no outside reference. Prefer these over plan_sweep/rank_sweep/merge_sweeps/rank_across, which are the single-symbol primitives."
       },
       "strategyId": {
         "type": "string",
@@ -174,6 +176,27 @@
           "confirm"
         ],
         "description": "[merge_sweeps] which set this symbol belongs to. 'select' (default) is where rules are chosen; 'confirm' is symbols kept out of that choice. rank_across ranks on the selection set and refuses to crown anything that did not also hold up on the confirmation set — choosing on a symbol set and scoring on the same one is the same error as choosing on a window and scoring on it."
+      },
+      "symbols": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "[plan_multi] symbols to sweep, in the same order as `fetched`."
+      },
+      "fetched": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "[plan_multi] the candle loop's `results` — each entry is one symbol's fetch, read for its `_cacheKey` and `_cacheMeta.totalCount`."
+      },
+      "confirmSymbols": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "[plan_multi] symbols held out of the choice. A rule is ranked on the rest and refused if it does not also beat buy & hold here — choosing on a symbol set and scoring on that same set is the same error as choosing on a window and scoring on it."
       }
     }
   },

@@ -376,6 +376,119 @@ def rank_across(inp):
     }
 
 
+def _fetch_facts(fetched):
+    """Pull the bar count and cache key out of whatever the candle step returned."""
+    if not isinstance(fetched, dict):
+        return 0, None
+    meta = fetched.get("_cacheMeta") or {}
+    count = meta.get("totalCount")
+    if not count:
+        for v in fetched.values():
+            if isinstance(v, list):
+                count = len(v)
+                break
+    return int(count or 0), fetched.get("_cacheKey")
+
+
+def plan_multi(inp):
+    """Plan a sweep across several symbols at once, with each run already pointing at its bars.
+
+    Driving a sweep used to mean hand-writing five steps per symbol — sixteen for three, twenty-six
+    for five — and every pipeline failure today came from assembling that by hand: stringified
+    steps, an off-by-one index, an accumulator renamed on the way out. The work is identical every
+    time, so it belongs in the tool rather than in whoever is holding the pipeline.
+
+    Because each run carries its own `barsCacheKey`, the loop that executes them needs no reference
+    to anything outside itself, and the pipeline is four steps whatever the symbol count:
+
+        FOREACH symbols -> candles
+        plan_multi
+        FOREACH $step1.runs -> technical-analysis
+        rank_multi
+    """
+    symbols = [str(x) for x in (inp.get("symbols") or []) if str(x).strip()]
+    fetched = inp.get("fetched") or []
+    if not symbols:
+        raise ValueError("plan_multi needs `symbols`")
+    if len(fetched) != len(symbols):
+        raise ValueError(
+            f"{len(fetched)} candle results for {len(symbols)} symbols — pass the fetch loop's "
+            "`results` and the same symbol list, in the same order"
+        )
+    confirm = {str(x) for x in (inp.get("confirmSymbols") or [])}
+    space = inp.get("space") or {}
+
+    runs, per_symbol = [], []
+    for symbol, got in zip(symbols, fetched):
+        bar_count, cache_key = _fetch_facts(got)
+        plan = plan_sweep({"space": space, "barCount": bar_count})
+        role = "confirm" if symbol in confirm else "select"
+        for r in plan["runs"]:
+            args = dict(r["args"])
+            if cache_key:
+                args["barsCacheKey"] = cache_key
+            runs.append({**r, "symbol": symbol, "role": role, "args": args})
+        per_symbol.append({
+            "symbol": symbol, "role": role, "barCount": bar_count,
+            "candidates": len(plan["candidates"]),
+            "unmeasurable": plan["unmeasurable"],
+            "hasBars": bool(cache_key),
+        })
+
+    missing = [p["symbol"] for p in per_symbol if not p["hasBars"]]
+    return {
+        "runs": runs,
+        "runCount": len(runs),
+        "perSymbol": per_symbol,
+        "symbols": symbols,
+        "confirmSymbols": sorted(confirm),
+        "warning": (f"no cache key for {', '.join(missing)} — those runs carry no bars"
+                    if missing else None),
+        "note": (
+            f"{len(runs)} technical-analysis calls across {len(symbols)} symbols"
+            + (f", {len(confirm)} of them held out for confirmation" if confirm else
+               " — none held out for confirmation, so nothing can be checked against symbols it "
+               "was not chosen from")
+            + ". Run them with FOREACH (inputData: \"$prev.args\", nothing else needed) and send "
+              "the results to rank_multi."
+        ),
+    }
+
+
+def rank_multi(inp):
+    """Rank one multi-symbol sweep: per symbol, then merged, then across — in one call.
+
+    Splits the flat result list back out by symbol using the `runs` it was planned with, so the
+    caller never has to keep those two aligned by hand.
+    """
+    runs = inp.get("runs") or []
+    results = inp.get("results") or []
+    if len(results) != len(runs):
+        return {
+            "error": f"{len(results)} results for {len(runs)} runs — the loop did not finish",
+            "ranked": [], "survivors": [], "winner": None,
+        }
+
+    by_symbol = {}
+    for run, res in zip(runs, results):
+        sym = run.get("symbol") or "?"
+        slot = by_symbol.setdefault(sym, {"runs": [], "results": [], "role": run.get("role")})
+        slot["runs"].append(run)
+        slot["results"].append(res)
+
+    running, per_symbol = None, []
+    for sym, slot in by_symbol.items():
+        ranked = rank_sweep({"runs": slot["runs"], "results": slot["results"]})
+        per_symbol.append({"symbol": sym, "role": slot["role"],
+                           "top": (ranked["ranked"] or [{}])[0].get("candidateId"),
+                           "counted": len(ranked["ranked"])})
+        running = merge_sweeps({"running": running, "symbol": sym,
+                                "role": slot["role"], "ranked": ranked["ranked"]})
+    across = rank_across({"running": running, "minSymbols": inp.get("minSymbols")})
+    across["perSymbol"] = per_symbol
+    return across
+
+
 def _backtest_of(result):
     """Find the backtest object in whatever the pipeline handed back.
 

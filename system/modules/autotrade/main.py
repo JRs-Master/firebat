@@ -479,6 +479,36 @@ def action_selftest():
     top = ranked["ranked"][0]["candidateId"]
     checks.append({"name": "a huge return on two trades does not win", "want": "solid",
                    "got": top, "ok": top == "solid"})
+    # The two-call form plans every symbol at once and splits the flat results back out, so a
+    # pipeline stays four steps whatever the symbol count.
+    fetched = [{"_cacheMeta": {"totalCount": 1200}, "records": []},
+               {"_cacheMeta": {"totalCount": 1200}, "records": []}]
+    multi = sweep.plan_multi({
+        "symbols": ["AAA", "BBB"], "confirmSymbols": ["BBB"],
+        "space": {"families": ["ma-cross"], "fast": [5], "slow": [20]},
+        "fetched": fetched})
+    roles = {p["symbol"]: p["role"] for p in multi["perSymbol"]}
+    checks.append({"name": "planning tags each symbol's role", "want": {"AAA": "select", "BBB": "confirm"},
+                   "got": roles, "ok": roles == {"AAA": "select", "BBB": "confirm"}})
+    checks.append({"name": "every planned run carries its own bars reference", "want": 4,
+                   "got": len(multi["runs"]),
+                   "ok": len(multi["runs"]) == 4 and all(r.get("symbol") for r in multi["runs"])})
+    mismatch = sweep.plan_multi.__doc__ is not None
+    try:
+        sweep.plan_multi({"symbols": ["AAA", "BBB"], "fetched": fetched[:1]})
+        mismatch = False
+    except ValueError:
+        pass
+    checks.append({"name": "a fetch list that does not line up is refused", "want": True,
+                   "got": mismatch, "ok": mismatch})
+    bt_rows = [{"success": True, "data": {"backtest": {
+        "totalReturnPct": 30 if r["symbol"] == "AAA" else -10, "tradeCount": 25,
+        "maxDrawdownPct": -5, "winRate": 55, "buyHoldPct": 10}}} for r in multi["runs"]]
+    rolled = sweep.rank_multi({"runs": multi["runs"], "results": bt_rows})
+    checks.append({"name": "ranking splits the flat results back out by symbol", "want": 2,
+                   "got": len(rolled.get("perSymbol") or []),
+                   "ok": len(rolled.get("perSymbol") or []) == 2})
+
     # Cross-symbol: a rule that wins big on one series and loses on two is not a strategy.
     running = None
     for sym, rows in (
@@ -563,6 +593,10 @@ def main():
             return out({"success": True, "data": sweep.merge_sweeps(inp)})
         if action == "rank_across":
             return out({"success": True, "data": sweep.rank_across(inp)})
+        if action == "plan_multi":
+            return out({"success": True, "data": sweep.plan_multi(inp)})
+        if action == "rank_multi":
+            return out({"success": True, "data": sweep.rank_multi(inp)})
         if action == "cycle":
             return out(action_cycle(inp, settings))
         if action == "reconcile":
