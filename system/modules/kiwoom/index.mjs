@@ -685,7 +685,15 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
     } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(`키움 API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
-  return await resp.json();
+  // A 200 that is not JSON is usually the wrong host or an interstitial page, and
+  // "Unexpected token '<'" says none of that. Report what came back instead.
+  const text = await resp.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const head = text.trim().slice(0, 120).replace(/\s+/g, ' ');
+    throw new Error(`키움 API ${apiId}: 응답이 JSON 이 아닙니다 (HTTP ${resp.status}, ${url}) — ${head}`);
+  }
 }
 
 // Standard OHLCV normalization — rename Kiwoom candle vocabulary (dt/cntr_tm/open_pric/high_pric/
@@ -756,6 +764,71 @@ function kstToday() {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
+
+// ── Standard order contract ──────────────────────────────────────────────────────────────────
+// One neutral shape every broker accepts, translated here into this broker's own vocabulary.
+//
+// The alternative is the caller knowing that a buy is kt10000, that the exchange goes in
+// `dmst_stex_tp`, and that a market order is trde_tp "3" — at which point adding a broker stops
+// being a declaration and becomes an edit to whoever places orders. The dialect belongs to the
+// module that speaks it.
+//
+// A client id rides along so a retry cannot become a second order: Kiwoom has no idempotency key
+// of its own, so the caller's ledger is the only thing that can tell "sent twice" from "filled
+// twice", and it needs the same id back to do it.
+const ORDER_TRADE_TYPE = { limit: '0', market: '3', conditional: '5', best: '6', priority: '7' };
+
+function orderParams(data) {
+  const symbol = String(data.symbol ?? '').trim();
+  const qty = Number(data.qty);
+  if (!symbol) throw new Error('place_order: symbol 이 필요합니다 (예: "005930").');
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: qty 는 1 이상이어야 합니다.');
+  const type = String(data.orderType ?? 'limit').toLowerCase();
+  const trde_tp = ORDER_TRADE_TYPE[type];
+  if (!trde_tp) {
+    throw new Error(`place_order: orderType='${type}' 은 지원하지 않습니다 — ${Object.keys(ORDER_TRADE_TYPE).join(', ')} 중 하나.`);
+  }
+  const price = Number(data.price);
+  if (type === 'limit' && (!Number.isFinite(price) || price <= 0)) {
+    throw new Error('place_order: 지정가 주문에는 price 가 필요합니다.');
+  }
+  const params = {
+    // KRX / NXT / SOR — SOR routes across both, which is what a plain "buy this" means.
+    dmst_stex_tp: String(data.exchange ?? 'SOR').toUpperCase(),
+    stk_cd: symbol,
+    ord_qty: String(Math.trunc(qty)),
+    trde_tp,
+  };
+  // A market order carries no unit price; sending one is rejected.
+  if (type !== 'market' && Number.isFinite(price) && price > 0) params.ord_uv = String(Math.trunc(price));
+  if (data.conditionPrice) params.cond_uv = String(Math.trunc(Number(data.conditionPrice)));
+  return params;
+}
+
+function cancelParams(data) {
+  const orderNo = String(data.brokerOrderNo ?? '').trim();
+  if (!orderNo) throw new Error('cancel_order: brokerOrderNo 가 필요합니다 (주문 접수 응답의 주문번호).');
+  const symbol = String(data.symbol ?? '').trim();
+  if (!symbol) throw new Error('cancel_order: symbol 이 필요합니다.');
+  return {
+    dmst_stex_tp: String(data.exchange ?? 'SOR').toUpperCase(),
+    orig_ord_no: orderNo,
+    stk_cd: symbol,
+    // "0" = whatever is left unfilled, which is what cancelling an order means.
+    cncl_qty: data.qty ? String(Math.trunc(Number(data.qty))) : '0',
+  };
+}
+
+/** Neutral action → { apiId, params }. Unknown side/action is refused rather than guessed. */
+function standardOrder(action, data) {
+  if (action === 'cancel_order') return { apiId: 'kt10003', params: cancelParams(data) };
+  const side = String(data.side ?? '').toLowerCase();
+  if (side !== 'buy' && side !== 'sell') {
+    throw new Error("place_order: side 는 'buy' 또는 'sell' 이어야 합니다.");
+  }
+  return { apiId: side === 'buy' ? 'kt10000' : 'kt10001', params: orderParams(data) };
+}
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -782,15 +855,27 @@ process.stdin.on('end', async () => {
     }
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    const params = data.params || {};
-    if (URL_CATEGORY[action] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
-    const result = await callApi(base, token, action, params);
+    let apiId = action;
+    let params = data.params || {};
+    if (action === 'place_order' || action === 'cancel_order') {
+      const mapped = standardOrder(action, data);
+      apiId = mapped.apiId;
+      params = mapped.params;
+    }
+    if (URL_CATEGORY[apiId] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
+    const result = await callApi(base, token, apiId, params);
     normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
     const rc = result?.return_code;
     const ok = rc === undefined || rc === null || rc === 0;
-    const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
+    const output = { success: ok, data: { apiId, name: API_NAMES[apiId], ...result } };
+    // Echo the caller's id and the request that went out — the ledger matches on the first and
+    // the response schema is read off the second later, since it is not documented anywhere.
+    if (action === 'place_order' || action === 'cancel_order') {
+      output.data.clientOrderId = data.clientOrderId ?? null;
+      output.data.sentParams = params;
+    }
     if (!ok) output.error = result?.return_msg || `키움 API 오류 (return_code=${rc})`;
     console.log(JSON.stringify(output));
   } catch (e) {

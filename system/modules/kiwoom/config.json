@@ -8,8 +8,14 @@
   "capability": "stock-trading",
   "providerType": "api",
   "accounts": {
-    "modes": ["real", "mock"],
-    "markets": ["kr", "us"],
+    "modes": [
+      "real",
+      "mock"
+    ],
+    "markets": [
+      "kr",
+      "us"
+    ],
     "listAction": "ka00001",
     "accountNoPath": "acctNo"
   },
@@ -751,9 +757,11 @@
           "ust31300",
           "ust31301",
           "ust31302",
-          "ust31490"
+          "ust31490",
+          "place_order",
+          "cancel_order"
         ],
-        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시."
+        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다."
       },
       "params": {
         "type": "object",
@@ -762,6 +770,58 @@
       "mock": {
         "type": "boolean",
         "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."
+      },
+      "side": {
+        "type": "string",
+        "enum": [
+          "buy",
+          "sell"
+        ],
+        "description": "place_order 매수/매도."
+      },
+      "symbol": {
+        "type": "string",
+        "description": "종목코드 6자리 (예: 005930)."
+      },
+      "qty": {
+        "type": "number",
+        "description": "주문 수량 (1 이상 정수)."
+      },
+      "price": {
+        "type": "number",
+        "description": "지정가 주문 단가. 시장가면 생략."
+      },
+      "orderType": {
+        "type": "string",
+        "enum": [
+          "limit",
+          "market",
+          "conditional",
+          "best",
+          "priority"
+        ],
+        "description": "주문 유형 (기본 limit). 지정가에는 price 필수."
+      },
+      "exchange": {
+        "type": "string",
+        "enum": [
+          "KRX",
+          "NXT",
+          "SOR"
+        ],
+        "description": "거래소 구분 (기본 SOR = 통합)."
+      },
+      "conditionPrice": {
+        "type": "number",
+        "description": "orderType=conditional 의 조건 단가."
+      },
+      "brokerOrderNo": {
+        "type": "string",
+        "description": "cancel_order 대상 원주문번호."
+      },
+      "clientOrderId": {
+        "type": "string",
+        "description": "호출자의 주문 식별자. 그대로 되돌려주므로 원장이 재전송과 중복 체결을 구분할 수 있습니다."
       }
     },
     "additionalProperties": false
@@ -797,7 +857,9 @@
     "ust20000",
     "ust20001",
     "ust20002",
-    "ust20003"
+    "ust20003",
+    "place_order",
+    "cancel_order"
   ],
   "ws": {
     "argsField": "params",
