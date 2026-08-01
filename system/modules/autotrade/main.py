@@ -1752,8 +1752,14 @@ def main():
                 routed = uni.trade_for_watch(ucon0, str(inp.get("watchId") or ""))
             finally:
                 ucon0.close()
-            trade = trade_of(settings, routed or inp.get("tradeId"))
-            if trade and inp.get("topic") != "quotes":
+            # Only a watch bound to a screening condition folds into a list. The sink tells us the
+            # watch and nothing else — not which stream it is — so an unbound watch must mean "not
+            # a screen", never "the first trade". Quote frames would otherwise be read as
+            # condition frames and pile up as unreadable, once a minute, forever.
+            trade = trade_of(settings, routed) if routed else None
+            if trade is None and inp.get("tradeId"):
+                trade = trade_of(settings, inp.get("tradeId"))
+            if trade:
                 # Condition frames say which symbols entered and left the screen. Absence never
                 # removes: a dropped socket or a broker in maintenance must not empty the list,
                 # because an empty list reads as "sell everything".
