@@ -607,7 +607,22 @@ def action_gate(inp, settings):
         # What the pipeline needs so the declaration holds no symbol or timeframe of its own.
         "trade": (lambda t: {k: t[k] for k in ("id", "symbol", "interval", "broker", "account")}
                   if t else None)(trade_of(settings)) if trade_of(settings) else None,
+        # And the rule, for the same reason. A rule written into the cron file means changing
+        # strategy means editing the schedule, and the analyser being handed one rule while the
+        # sizing uses another is a mismatch nothing would report. The strategy owns its rules;
+        # the pipeline passes them to the analyser and reads the answer back.
+        "strategy": _pipeline_strategy(strategies),
     }}
+
+
+def _pipeline_strategy(strategies):
+    """The rule the pipeline should ask the analyser about — id, rules and exits, or None."""
+    for s in strategies:
+        rules = s.get("rules") or ((s.get("spec") or {}).get("rules"))
+        if rules:
+            return {"id": s.get("id"), "symbol": s.get("symbol"), "rules": rules,
+                    "exits": s.get("exits") or {}}
+    return None
 
 
 def action_cycle(inp, settings):
@@ -1950,6 +1965,32 @@ def action_selftest():
                            pick_strategies(fresh)[0].get("symbol")),
                    "ok": declared_trades(fresh)[0]["symbol"]
                          == pick_strategies(fresh)[0].get("symbol")})
+
+    # --- the rule travels with the strategy, not with the schedule --------------------------
+    # A rule written into the cron file means the analyser and the sizing can be handed two
+    # different rules with nothing to report the mismatch, and changing strategy means editing a
+    # schedule. The gate reports the matched strategy's rule; the pipeline passes it through.
+    shake_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "shakedown.upbit.json")
+    shaken = None
+    if os.path.exists(shake_path):
+        with open(shake_path, encoding="utf-8") as fh:
+            shaken = json.load(fh)
+    gate_out = action_gate({}, load_settings())["data"]
+    st = gate_out.get("strategy") or {}
+    checks.append({"name": "the gate hands the pipeline the rule to analyse", "want": 3,
+                   "got": len(st.get("rules") or []),
+                   "ok": len(st.get("rules") or []) == 3})
+    checks.append({"name": "and it is the rule of the strategy that matched",
+                   "want": gate_out.get("trade", {}).get("symbol"), "got": st.get("symbol"),
+                   "ok": st.get("symbol") == (gate_out.get("trade") or {}).get("symbol")})
+    if shaken:
+        # The shakedown is a settings edit, not a schedule edit — same pipeline, other rule.
+        sset = {"trades": shaken["trades"], "strategies": shaken["strategies"]}
+        sg = action_gate({}, {**load_settings(), **sset})["data"]
+        checks.append({"name": "another strategy needs no change to the schedule",
+                       "want": "KRW-XRP", "got": (sg.get("strategy") or {}).get("symbol"),
+                       "ok": (sg.get("strategy") or {}).get("symbol") == "KRW-XRP"})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
