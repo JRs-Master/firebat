@@ -51,11 +51,43 @@ def fail(message):
     out({"success": False, "error": message})
 
 
-def env_json(name, default):
+_DECLARED = None
+
+
+def declared_default(key, fallback):
+    """The `default` this setting declares in config.json, or the fallback.
+
+    Settings reach the sandbox as `MODULE_<KEY>` env vars, which exist only once someone has
+    pressed save. Before that the module saw nothing at all, so a freshly installed module was an
+    empty shell: the settings screen showed the declared example and the module reported "no
+    enabled strategy", which is the same thing said two different ways.
+
+    Read from config.json rather than repeated here, because a default written in both places is
+    a default that will disagree with itself the first time one of them is edited.
+    """
+    global _DECLARED
+    if _DECLARED is None:
+        _DECLARED = {}
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+            with open(path, encoding="utf-8") as fh:
+                for f in (json.load(fh).get("settings_fields") or []):
+                    if isinstance(f, dict) and "default" in f and f.get("key"):
+                        _DECLARED[f["key"]] = f["default"]
+        except (OSError, ValueError):
+            pass
+    return _DECLARED.get(key, fallback)
+
+
+def env_json(name, default, key=None):
     """Settings arrive as `MODULE_<KEY>` env vars — JSON values come through as strings."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
-        return default
+        raw = declared_default(key, None) if key else None
+        if raw is None:
+            return default
+    if not isinstance(raw, str):
+        return raw
     try:
         return json.loads(raw)
     except (ValueError, TypeError):
@@ -102,10 +134,10 @@ def load_settings():
         # The wiring: one entry per trade — a symbol, an account, and the broker that owns it.
         # `매매1 = 증권사1·계좌1`, `매매3 = 증권사2·계좌1` are two entries, and the model fills each
         # with a rule of its own. Which rule that is, is not written here; where it runs is.
-        "trades": env_json("MODULE_TRADES", []),
-        "universe": env_json("MODULE_UNIVERSE", []),
-        "confirmUniverse": env_json("MODULE_CONFIRMUNIVERSE", []),
-        "strategies": env_json("MODULE_STRATEGIES", []),
+        "trades": env_json("MODULE_TRADES", [], "trades"),
+        "universe": env_json("MODULE_UNIVERSE", [], "universe"),
+        "confirmUniverse": env_json("MODULE_CONFIRMUNIVERSE", [], "confirmUniverse"),
+        "strategies": env_json("MODULE_STRATEGIES", [], "strategies"),
     }
 
 
@@ -1892,6 +1924,30 @@ def action_selftest():
     checks.append({"name": "a budget below one unit is refused out loud, not silently",
                    "want": "최소 거래단위", "got": (why[0].get("dropReason") if why else None),
                    "ok": bool(why) and "최소 거래단위" in str(why[0].get("dropReason"))})
+
+    # --- a freshly installed module is not an empty shell ----------------------------------
+    # Settings only reach the sandbox once someone has pressed save, so before that the module
+    # saw nothing and reported "no enabled strategy" while the settings screen displayed an
+    # example. The declared defaults are read at runtime from the same config.json the screen
+    # renders, so the two cannot drift apart.
+    fresh = {"trades": env_json("MODULE_TRADES", [], "trades"),
+             "strategies": env_json("MODULE_STRATEGIES", [], "strategies")}
+    checks.append({"name": "a module nobody has configured still has a trade and a rule",
+                   "want": (1, 1),
+                   "got": (len(declared_trades(fresh)), len(pick_strategies(fresh))),
+                   "ok": len(declared_trades(fresh)) >= 1 and len(pick_strategies(fresh)) >= 1})
+    # And it is inert: the only thing standing between it and a live order is the human switch.
+    checks.append({"name": "and it is switched off until a person says otherwise",
+                   "want": "trading is switched off",
+                   "got": (action_gate({}, load_settings())["data"].get("why") or [None])[0],
+                   "ok": "switched off" in str(
+                       (action_gate({}, load_settings())["data"].get("why") or [""])[0])})
+    checks.append({"name": "the shipped trade and the shipped rule name the same coin",
+                   "want": True,
+                   "got": (declared_trades(fresh)[0]["symbol"],
+                           pick_strategies(fresh)[0].get("symbol")),
+                   "ok": declared_trades(fresh)[0]["symbol"]
+                         == pick_strategies(fresh)[0].get("symbol")})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,

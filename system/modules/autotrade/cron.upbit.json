@@ -1,0 +1,169 @@
+{
+  "title": "autotrade (가상화폐/업비트) — KRW-ETH 1h cycle",
+  "cronTime": "0 */5 * * * *",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "get_candles",
+        "bars": 300
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol",
+        "interval": "$step0.trade.interval"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_technical-analysis",
+      "inputData": {
+        "action": "signals",
+        "feeRate": 0.0005,
+        "taxRate": 0,
+        "slippageRate": 0.0002,
+        "rules": [
+          {
+            "side": "buy",
+            "label": "aligned 5/20/60, rising, pulled back",
+            "when": [
+              {
+                "a": "ma5",
+                "op": ">",
+                "b": "ma20"
+              },
+              {
+                "a": "ma20",
+                "op": ">",
+                "b": "ma60"
+              },
+              {
+                "a": "slope20",
+                "op": ">",
+                "b": 0.02
+              },
+              {
+                "a": "disp5",
+                "op": "<=",
+                "b": 99.9
+              }
+            ]
+          },
+          {
+            "side": "sell",
+            "label": "stretched 101.5",
+            "when": [
+              {
+                "a": "disp5",
+                "op": ">=",
+                "b": 101.5
+              }
+            ]
+          },
+          {
+            "side": "sell",
+            "label": "alignment broke",
+            "when": [
+              {
+                "a": "ma5",
+                "op": "crossDown",
+                "b": "ma20"
+              }
+            ]
+          }
+        ]
+      },
+      "inputMap": {
+        "barsCacheKey": "$step2._cacheKey"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "cycle"
+      },
+      "inputMap": {
+        "signal": "$step3",
+        "barsCacheKey": "$step2._cacheKey",
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.calls",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_upbit",
+          "inputData": "$prev.input"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step4.calls",
+        "results": "$step5"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "symbol": "$step0.trade.symbol"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "get_balance"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "fills": "$step7.rows",
+        "openOrders": "$step8.rows",
+        "balanceRows": "$step9.rows",
+        "symbol": "$step0.trade.symbol"
+      }
+    }
+  ]
+}
