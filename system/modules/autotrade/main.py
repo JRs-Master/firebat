@@ -710,6 +710,28 @@ def _pipeline_strategy(strategies):
 
 
 
+def _plan_runs(plan):
+    """The runs a plan carries, wrapped or not."""
+    runs = (plan or {}).get("runs") if isinstance(plan, dict) else None
+    if runs is None and isinstance(plan, dict):
+        runs = (plan.get("data") or {}).get("runs")
+    return runs if isinstance(runs, list) else []
+
+
+def _planned_strategy_ids(plan):
+    """Exactly which strategies this cycle is about.
+
+    The signal lookup is keyed by symbol too, because a trade may name either — but that is a
+    lookup, and using it as the membership test lets the same symbol at a *different* broker in.
+    Eight planned strategies ran as sixteen, half of them pricing another account's position off
+    these candles. Membership is by strategy id, and only falls back to symbols when the plan
+    carried no ids at all.
+    """
+    runs = _plan_runs(plan)
+    ids = {r.get("strategyId") for r in runs if r.get("strategyId")}
+    return ids or {r.get("symbol") for r in runs if r.get("symbol")}
+
+
 def _signals_by_strategy(plan, signals):
     """Match each analyser result to the strategy whose rule produced it.
 
@@ -1014,10 +1036,11 @@ def action_cycle(inp, settings):
     # broker that was merely wrong; with a schedule per broker it sends an order for a coin to a
     # stock exchange. Nothing outside the plan runs, and what was left out is named.
     outside = []
-    if per_strategy:
+    planned = _planned_strategy_ids(inp.get("plan"))
+    if planned:
         keep = []
         for s in strategies:
-            if s.get("id") in per_strategy or (s.get("symbol") or "") in per_strategy:
+            if s.get("id") in planned or (s.get("symbol") or "") in planned:
                 keep.append(s)
             else:
                 outside.append(s.get("id"))
@@ -2761,6 +2784,20 @@ def action_selftest():
                           "args": {}}]}
     scoped = action_cycle({"plan": one_plan, "signals": [{"success": True, "data": {
         "counts": {"buy": 0, "sell": 0}, "firedOnLastClosedBar": []}}]}, only)["data"]
+    # Two brokers holding the same symbol is the ordinary case, and the symbol is what the signal
+    # lookup is keyed by. Membership must not use it, or the other account's rule rides in on this
+    # account's candles — measured 2026-08-03: eight planned strategies ran as sixteen.
+    twin = {**only, "strategies": only["strategies"] + [
+        {"id": "s1-other", "enabled": True, "kind": "rules", "symbol": "S1", "broker": "z",
+         "account": "", "money": {"perOrder": 1000}, "limits": {},
+         "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}]}
+    twinned = action_cycle({"plan": one_plan, "signals": [{"success": True, "data": {
+        "counts": {"buy": 0, "sell": 0}, "firedOnLastClosedBar": []}}]}, twin)["data"]
+    checks.append({"name": "and not the same symbol at another broker", "want": 1,
+                   "got": [twinned["ran"], twinned.get("outsidePlan")],
+                   "ok": twinned["ran"] == 1
+                         and "s1-other" in (twinned.get("outsidePlan") or [])})
+
     left_out = scoped.get("outsidePlan") or []
     checks.append({"name": "a cycle runs only what its plan named", "want": [1, "s2 left out"],
                    "got": [scoped["ran"], left_out],
