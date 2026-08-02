@@ -475,6 +475,18 @@ impl ModuleManager {
                         {
                             out.insert("mock".to_string(), serde_json::json!(e.is_mock()));
                         }
+                        // The number, for brokers whose request body carries it. Kiwoom does not
+                        // need it — the credential IS the account there — but Korea Investment
+                        // splits the same digits into CANO + ACNT_PRDT_CD on every order and
+                        // balance call, and the registry is the only place it is written down.
+                        // Same rule as `mock`: injected only where the schema says the module
+                        // reads it, so nothing learns a field it never declared.
+                        if cfg.pointer("/input/properties/accountNo").is_some() {
+                            let digits = e.digits();
+                            if !digits.is_empty() {
+                                out.insert("accountNo".to_string(), serde_json::json!(digits));
+                            }
+                        }
                         tracing::info!(
                             target: "module",
                             module = %module_name,
