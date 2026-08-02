@@ -2720,6 +2720,24 @@ def action_selftest():
     checks.append({"name": "and each is addressable on its own", "want": 2,
                    "got": len({t["tradeId"] for t in tg["trades"]}),
                    "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    # A dollar-priced share sized against a won-named field is the same number read as the wrong
+    # currency, and nothing downstream can tell — it just orders thirteen hundred times too much.
+    usd = {"id": "u", "enabled": True, "kind": "rules", "symbol": "AAPL", "broker": "kiwoom",
+           "account": "a", "money": {"perOrder": 2000}, "limits": {"maxPosition": 4000},
+           "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}
+    sized = eng.decide(usd, {"position": {"qty": 0, "avg_price": 0}, "price": 230.0,
+                                "sides": {"buy"}})
+    checks.append({"name": "money is read in the price's own currency", "want": 8,
+                   "got": (sized or [{}])[0].get("qty"),
+                   "ok": (sized or [{}])[0].get("qty") == 8})
+    legacy = {**usd, "money": {"perOrderKrw": 300000}, "symbol": "005930",
+              "limits": {"maxPositionKrw": 600000}}
+    old = eng.decide(legacy, {"position": {"qty": 0, "avg_price": 0}, "price": 70000.0,
+                                 "sides": {"buy"}})
+    checks.append({"name": "and the old field names still size", "want": 4,
+                   "got": (old or [{}])[0].get("qty"),
+                   "ok": (old or [{}])[0].get("qty") == 4})
+
     # One schedule per broker: the pipeline that follows calls exactly one broker's tool, so a
     # cycle handed another broker's symbols sends a coin ticker to a stock exchange.
     mixed = {**two, "trades": [

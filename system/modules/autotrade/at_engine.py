@@ -144,6 +144,18 @@ def floor_to_lot(qty, lot):
     return round(steps * lot, max(0, -int(math.floor(math.log10(lot)))))
 
 
+# Money is stated in whatever currency the price is quoted in, and the original field names claim
+# otherwise. A US share priced at 230 dollars sized against "perOrderKrw: 1000000" comes out at
+# four thousand shares — the name is not cosmetic, it is a thirteen-hundred-fold order. The
+# currency-neutral names are the ones to use; the old ones keep working so nothing declared
+# before this stops sizing.
+def money_of(money, *names):
+    for n in names:
+        if money.get(n) is not None:
+            return _num(money.get(n))
+    return 0.0
+
+
 def _size_from_money(money, price):
     """How much to trade for one leg. `qty` wins when declared; otherwise a won budget per order.
 
@@ -157,9 +169,9 @@ def _size_from_money(money, price):
     lot = money.get("lotSize", 1)
     if money.get("qty"):
         return floor_to_lot(_num(money["qty"]), lot)
-    per_order = _num(money.get("perOrderKrw"))
+    per_order = money_of(money, "perOrder", "perOrderKrw")
     if per_order <= 0:
-        budget = _num(money.get("budgetKrw"))
+        budget = money_of(money, "budget", "budgetKrw")
         splits = max(1, int(_num(money.get("splitCount"), 1)))
         per_order = budget / splits
     return floor_to_lot(per_order / price, lot)
@@ -193,7 +205,7 @@ def strategy_rules(strategy, ctx):
     elif "buy" in sides:
         want = _size_from_money(money, price)
         lot = money.get("lotSize", 1)
-        cap = _num((strategy.get("limits") or {}).get("maxPositionKrw"))
+        cap = money_of(strategy.get("limits") or {}, "maxPosition", "maxPositionKrw")
         if cap > 0:
             room = max(0.0, cap - qty_held * price)
             want = min(want, floor_to_lot(room / price, lot) if price > 0 else 0)
@@ -205,9 +217,9 @@ def strategy_rules(strategy, ctx):
             intents.append({"side": "buy", "qty": 0, "price": price, "reason": "rule",
                             "skip": ("1회 주문금액이 최소 거래단위 1개 값에 못 미칩니다 — "
                                      f"단가 {price:,.0f} · lotSize "
-                                     f"{money.get('lotSize', 1)} · perOrderKrw "
-                                     f"{money.get('perOrderKrw') or money.get('budgetKrw')}"
-                                     + (" · 한도(maxPositionKrw)에 이미 닿았을 수도 있습니다"
+                                     f"{money.get('lotSize', 1)} · 1회 주문금액 "
+                                     f"{money_of(money, 'perOrder', 'perOrderKrw') or money_of(money, 'budget', 'budgetKrw')}"
+                                     + (" · 한도(maxPosition)에 이미 닿았을 수도 있습니다"
                                         if cap > 0 else ""))})
     return intents
 
@@ -223,9 +235,9 @@ def strategy_infinite_buy(strategy, ctx):
     money = strategy.get("money") or {}
     qty_held = _num(pos.get("qty"))
     avg = _num(pos.get("avg_price"))
-    budget = _num(money.get("budgetKrw"))
+    budget = money_of(money, "budget", "budgetKrw")
     splits = max(1, int(_num(money.get("splitCount"), 1)))
-    per_order = _num(money.get("perOrderKrw")) or (budget / splits if budget > 0 else 0.0)
+    per_order = money_of(money, "perOrder", "perOrderKrw") or (budget / splits if budget > 0 else 0.0)
     target_pct = _num((strategy.get("exits") or {}).get("takeProfitPct"), 10.0)
 
     if qty_held > 0 and avg > 0 and price > 0:
@@ -411,7 +423,7 @@ def risk_gates(intents, ctx):
                 continue
             notional = qty * price
         if intent["side"] == "buy":
-            cap = _num(limits.get("maxPositionKrw"))
+            cap = money_of(limits, "maxPosition", "maxPositionKrw")
             if cap > 0:
                 held_value = _num(ctx["position"].get("qty")) * _num(ctx["position"].get("avg_price"))
                 if held_value + notional > cap:
