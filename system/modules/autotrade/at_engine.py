@@ -344,7 +344,10 @@ def decide(strategy, ctx):
         # gates were written to remove.
         if _num(intent.get("qty")) <= 0 and not intent.get("skip"):
             continue
-        out.append({**intent, "strategyId": strategy["id"], "seq": i})
+        # The position in the list is a sequence number only when the strategy did not give one.
+        # A ladder names its rung, and that is the number the order key has to carry: two rungs
+        # reaching their targets in the same bar are two orders, not one placed twice.
+        out.append({**intent, "strategyId": strategy["id"], "seq": intent.get("seq", i)})
     return out
 
 
