@@ -28,6 +28,7 @@ import sqlite3
 import time
 
 import at_store as store
+import at_sweep as sweep
 
 # What a measurement has to show before a rule is allowed to trade at all. These are the same
 # things the sweep already flags — restated here as refusals rather than warnings, because a flag
@@ -689,6 +690,11 @@ def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_
         # knows which those were.
         "tradedSymbols": traded_symbols(led, r["id"], r["stage_since_ms"]),
         "history": events,
+        # The vocabulary, from the code that consumes it. A model can only propose what it is
+        # told exists, and a list typed into the schedule file goes stale the moment a family or
+        # an exit shape is added — which is how the alignment families and the exit ladders came
+        # to be unreachable from the one loop that is supposed to find them.
+        "searchSpace": sweep.space_vocabulary(),
         "note": ("이 전략의 규칙 주변을 탐색하세요 — 새 전략을 만드는 자리가 아닙니다. "
                  "채택되면 같은 전략이 갱신되고 사다리는 처음부터 다시 시작합니다."),
     }

@@ -2856,6 +2856,28 @@ def action_selftest():
                    "ok": len(paired) == 2
                          and all(t["strategyId"] == t["tradeId"] for t in paired)})
 
+    # 야간 수정 루프는 모델에게 "어디를 뒤질지" 를 묻는데, 고를 수 있는 목록을 스케줄 파일에
+    # 적어 두면 가족이 늘어난 날 조용히 뒤처진다 — 실제로 정배열 가족이 크립토 측정 1등을 하고도
+    # 그 루프에선 이름을 댈 수 없었다. 목록은 스윕 코드에서 나와야 한다.
+    vocab = sweep.space_vocabulary()
+    checks.append({"name": "the nightly search is offered every family the sweep can run",
+                   "want": sorted(sweep.FAMILIES), "got": vocab["families"],
+                   "ok": vocab["families"] == sorted(sweep.FAMILIES)})
+    checks.append({"name": "and every exit shape, ladders included",
+                   "want": ["scaleIn", "scaleOut"],
+                   "got": sorted(vocab["exitAxes"]),
+                   "ok": {"scaleIn", "scaleOut", "stopLossPct", "takeProfitPct"}
+                         <= set(vocab["exitAxes"])})
+    _revise_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "cron-revise.json")
+    with open(_revise_path, encoding="utf-8") as _fh:
+        _revise = json.load(_fh)
+    _instr = _revise["pipeline"][3].get("instruction", "")
+    checks.append({"name": "and the schedule points at that list instead of carrying its own",
+                   "want": "searchSpace", "got": "searchSpace" in _instr,
+                   "ok": "searchSpace" in _instr
+                         and not any(f in _instr for f in ("ma-cross,", "ema-cross,"))})
+
     # ── 분할청산 사다리 ──────────────────────────────────────────────────────────────────
     # 익절 목표가 하나뿐이면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는다. 사다리는
     # 그 타협을 없애는 대신, 어디까지 팔았는지를 틀리면 두 번 팔거나 영영 안 판다.

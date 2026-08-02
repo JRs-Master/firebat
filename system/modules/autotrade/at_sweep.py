@@ -234,6 +234,51 @@ def _parse_ladders(spec):
     return out
 
 
+# What each family's knobs are called, beside the family itself. Hand-written because the
+# generators build their grids inside comprehensions and there is nothing to introspect — but
+# kept next to them, so a family added without an entry here shows up in the vocabulary with no
+# axes and is obviously incomplete rather than silently unreachable.
+FAMILY_AXES = {
+    "ma-cross": ["fast", "slow"],
+    "ema-cross": ["fast", "slow"],
+    "rsi": ["low", "high", "rsiPeriod"],
+    "bollinger": ["bbPeriod", "bbMult"],
+    "macd": [],
+    "aligned-pullback": ["fast", "mid", "slow", "minSlope", "pullback", "extend", "exitMode",
+                         "fadeAt"],
+    "aligned-trend": ["fast", "mid", "slow", "minSlope"],
+}
+
+EXIT_AXES = {
+    "stopLossPct": "손절 폭(%). null 이면 손절 없음.",
+    "takeProfitPct": "익절 목표(%) — 한 번에 전량. scaleOut 과 같이 쓰지 않습니다.",
+    "scaleOut": ("분할청산 사다리. [[gainPct, sellPct], ...] 를 여러 개 담은 배열이고, "
+                 "sellPct 는 담은 수량 대비 **누적**(마지막 칸 100 = 전량). "
+                 "목표 하나는 넓히면 승률이, 좁히면 추세가 깎이는데 사다리가 그 타협을 없앱니다."),
+    "scaleIn": ("분할진입 사다리. [[dropPct, buyPct], ...] 를 여러 개. dropPct 는 "
+                "**첫 진입가 대비** 하락률, buyPct 는 계획 규모 대비 누적."),
+    "holdout": "뒤쪽 몇 할을 채점용으로 뗄지(기본 0.3).",
+}
+
+
+def space_vocabulary():
+    """Everything a search space may declare — read off the code that consumes it.
+
+    The nightly revision hands a model a shape to fill in, and that shape used to be typed out in
+    the schedule file. It went stale the moment a family was added: the alignment families won a
+    measurement and the loop could not name them, so night after night it searched a strict
+    subset of what the sweep could do while looking like it had searched everything.
+    """
+    return {
+        "families": sorted(FAMILIES),
+        "familyAxes": {f: FAMILY_AXES.get(f, []) for f in sorted(FAMILIES)},
+        "exitAxes": EXIT_AXES,
+        "note": ("각 축은 값 배열입니다(예: \"fast\": [5, 10]). 여기 없는 키는 무시되고, "
+                 "families 는 이 목록 안에서만 고르십시오 — 지어내면 그 가족은 통째로 "
+                 "탐색에서 빠집니다."),
+    }
+
+
 def plan_sweep(inp):
     """Expand a declared search space into candidate runs for the pipeline to execute.
 
