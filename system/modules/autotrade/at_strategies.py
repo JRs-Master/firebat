@@ -237,8 +237,70 @@ def costs_of(args):
             "roundTripPct": round((fee * 2 + tax + slip * 2) * 100, 4)}
 
 
+
+def _coverage(runs):
+    """Which values were actually tried, read off the planned runs.
+
+    "This was refused" names one cell; "fast was 3, 5 or 8 and slow was 20, 30 or 60, and the best
+    of the ninety was this" names the ground. Only the second stops the same grid being run again
+    next week, which is the whole reason a refusal is written down.
+    """
+    if not isinstance(runs, list):
+        return None
+    knobs, cids = {}, set()
+    for r in runs:
+        if not isinstance(r, dict):
+            continue
+        if r.get("candidateId"):
+            cids.add(r["candidateId"])
+        args = r.get("args") if isinstance(r.get("args"), dict) else {}
+        for k, v in args.items():
+            if k in ("action", "rules", "bars", "barsCacheKey", "barRange"):
+                continue
+            if isinstance(v, (int, float, str)) and not isinstance(v, bool):
+                knobs.setdefault(k, set()).add(v)
+    return {"candidates": len(cids),
+            "values": {k: sorted(v, key=str)[:12] for k, v in sorted(knobs.items())}}
+
+
+def _outcome(ranked):
+    """How the field did, not just its winner — a whole grid of near-misses reads differently
+    from one outlier, and the next search should be able to tell them apart."""
+    rows = (ranked or {}).get("ranked") if isinstance(ranked, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return None
+    def num(r, k):
+        v = r.get(k)
+        return float(v) if isinstance(v, (int, float)) else None
+    rets = [x for x in (num(r, "medianVsBuyHoldPct") for r in rows) if x is not None]
+    flags = {}
+    for r in rows:
+        for f in (r.get("flags") or []):
+            key = str(f).split(" — ")[0][:60]
+            flags[key] = flags.get(key, 0) + 1
+    return {"measured": len(rows),
+            "bestVsBuyHoldPct": max(rets) if rets else None,
+            "medianVsBuyHoldPct": (sorted(rets)[len(rets) // 2] if rets else None),
+            "positive": sum(1 for x in rets if x > 0),
+            # The reasons the field failed, counted. One rule refused for too few trades is a
+            # parameter; ninety refused for it is a timeframe that does not trade.
+            "flagCounts": dict(sorted(flags.items(), key=lambda kv: -kv[1])[:5])}
+
+
+def _log_proposal(conn, sid, proposal):
+    """The model's own words, verbatim, before anything is judged.
+
+    A refusal that records only the numbers loses the reasoning behind the attempt, and the
+    reasoning is what tells the next revision whether this ground was covered thoughtfully or by
+    accident. Written before the verdict so it survives an early refusal.
+    """
+    if proposal in (None, "", {}, []):
+        return
+    log_event(conn, sid, "proposal", {"proposal": proposal})
+
+
 def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
-          min_confirm=MIN_CONFIRM_SYMBOLS):
+          min_confirm=MIN_CONFIRM_SYMBOLS, proposal=None):
     """Take the sweep's winner into the store — at `paper`, or not at all.
 
     `ranked` and `runs` are the earlier steps' output passed through the pipeline, which is the
@@ -262,9 +324,15 @@ def adopt(conn, ranked, runs, target, results=None, min_trades=MIN_TRADES,
                      "trip is most of the result, so declare feeRate/taxRate/slippageRate for the "
                      "venue and measure again"]
     sid = target.get("id") or f"ai-{target.get('symbol')}-{cid}"
+    _log_proposal(conn, sid, proposal)
     if why:
-        # Recorded, not discarded: tomorrow's search should know this ground was covered.
-        log_event(conn, sid, "refused", {"candidateId": cid, "why": why, "measured": row})
+        # Recorded, not discarded: tomorrow's search should know this ground was covered. The
+        # winner's refusal alone does not say that — it names one cell. What stops the same grid
+        # being run again is knowing which values were tried and how the whole field did, so the
+        # coverage and a summary of the results go in beside the verdict.
+        log_event(conn, sid, "refused", {
+            "candidateId": cid, "why": why, "measured": row,
+            "searched": _coverage(runs), "outcome": _outcome(ranked)})
         return {"adopted": None, "candidateId": cid, "why": why}
 
     return _store_adopted(conn, sid, cid, args, row, target, runs, results, costs)
@@ -598,6 +666,15 @@ def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_
     except (ValueError, TypeError):
         spec, measured = {}, {}
     events = [e for e in read_events(conn, r["id"], limit_events)]
+    # What the model was shown, kept with the strategy. Without it a later reader sees a revision
+    # and its verdict but not the evidence it was made on, and cannot tell a good call from a
+    # lucky one — the ledger records what happened, this records what was known at the time.
+    log_event(conn, r["id"], "revision_brief", {
+        "stage": r["stage"], "live": live, "measured": measured,
+        "closedRoundTrips": trips, "currentRules": spec.get("rules") or [],
+        "currentExits": spec.get("exits") or {},
+        "refusedBefore": [e for e in events if e.get("kind") == "refused"][:3],
+    })
     return {
         "strategyId": r["id"], "symbol": r["symbol"], "broker": r["broker"],
         "account": r["account"], "stage": r["stage"],
@@ -617,7 +694,8 @@ def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_
     }
 
 
-def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRADES):
+def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRADES,
+               proposal=None):
     """Adopt one rule per symbol, from `fit_symbols` output passed straight through.
 
     The rows are re-judged here rather than trusted. `fit_symbols` already attached a verdict, but
@@ -652,6 +730,7 @@ def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRA
                          "round trip is most of the result, so declare feeRate/taxRate/"
                          "slippageRate for the venue and measure again"]
         sid = f"ai-{symbol}-{cid}"
+        _log_proposal(conn, sid, proposal)
         if why:
             log_event(conn, sid, "refused", {"candidateId": cid, "symbol": symbol,
                                              "why": why, "measured": fit})

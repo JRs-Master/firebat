@@ -292,7 +292,8 @@ def action_adopt(inp, settings):
                              results=inp.get("results"),
                              min_trades=int(inp.get("minTrades") or strat.MIN_TRADES),
                              min_confirm=int(inp.get("minConfirmSymbols")
-                                             or strat.MIN_CONFIRM_SYMBOLS))
+                                             or strat.MIN_CONFIRM_SYMBOLS),
+                             proposal=inp.get("proposal"))
     finally:
         conn.close()
     return {"success": True, "data": result}
@@ -323,7 +324,8 @@ def action_adopt_fits(inp, settings):
     try:
         result = strat.adopt_fits(conn, fits, runs, target, results=inp.get("results"),
                                   min_trades=int(inp.get("minTrades")
-                                                 or strat.MIN_SYMBOL_TRADES))
+                                                 or strat.MIN_SYMBOL_TRADES),
+                                  proposal=inp.get("proposal"))
     finally:
         conn.close()
     return {"success": True, "data": result}

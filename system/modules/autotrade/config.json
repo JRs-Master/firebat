@@ -350,6 +350,13 @@
       "minClosedTrips": {
         "type": "number",
         "description": "[next_revision] 규칙을 고친 뒤로 이만큼 완결 매매가 쌓여야 다시 수정합니다."
+      },
+      "proposal": {
+        "type": [
+          "object",
+          "string"
+        ],
+        "description": "[adopt] 모델이 낸 탐색 공간을 그대로. 채택되든 거부되든 이벤트에 남습니다 — 판정만 남기면 왜 그렇게 시도했는지가 사라집니다."
       }
     }
   },
