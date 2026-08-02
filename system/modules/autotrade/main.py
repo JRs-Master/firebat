@@ -2903,6 +2903,20 @@ def action_selftest():
                    "got": [i["qty"] for i in _lad_at(lad_broken, 10, 10, 112.0)],
                    "ok": not _lad_at(lad_broken, 10, 10, 112.0)})
 
+    # 나눠 파는 중에 또 사면 도달규모가 갱신되면서 이미 판 몫이 "안 판 것"으로 되살아난다 —
+    # 사고 팔고 사고 팔고, 수수료만 내는 고리. 청산이 시작된 포지션은 줄기만 한다.
+    lad_mid = eng.decide(lad_two, {"position": {"qty": 15, "avg_price": 100.0, "peak_qty": 30},
+                                   "price": 103.0, "sides": {"buy"}})
+    checks.append({"name": "a position being distributed does not accumulate", "want": 0,
+                   "got": [(i["side"], i["qty"], bool(i.get("skip"))) for i in lad_mid],
+                   "ok": all(i["qty"] == 0 and i.get("skip") for i in lad_mid
+                             if i["side"] == "buy")})
+    lad_flat = eng.decide(lad_two, {"position": {"qty": 0, "avg_price": 0, "peak_qty": 0},
+                                    "price": 100.0, "sides": {"buy"}})
+    checks.append({"name": "and buys again once it is flat", "want": ">0",
+                   "got": [i["qty"] for i in lad_flat],
+                   "ok": bool(lad_flat) and lad_flat[0]["qty"] > 0})
+
     # 같은 봉 안에서 두 칸이 차례로 나가야 할 때 — 주문키가 (전략,종목,side,창,순번) 이라
     # 순번이 없으면 두 번째 칸이 첫 번째와 부딪혀 조용히 사라진다.
     lad_seq = [i.get("seq") for i in _lad_at(lad_two, 10, 10, 103.5)]

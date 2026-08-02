@@ -177,6 +177,18 @@ def _size_from_money(money, price):
     return floor_to_lot(per_order / price, lot)
 
 
+def _ladder_started(strategy, pos):
+    """Has the exit ladder already sold part of this position?
+
+    Derived, like the ladder itself, from how large the position got — there is no flag to keep
+    in step with the ledger.
+    """
+    if not exit_ladder(strategy.get("exits") or {}):
+        return False
+    held, peak = _num(pos.get("qty")), _num(pos.get("peak_qty"))
+    return peak > 0 and held > 0 and held < peak - 1e-9
+
+
 def exit_ladder(exits):
     """The profit ladder, normalised — a single take-profit target is its one-rung case.
 
@@ -266,6 +278,15 @@ def strategy_rules(strategy, ctx):
     sides = ctx["sides"]
     if "sell" in sides and qty_held > 0:
         intents.append({"side": "sell", "qty": qty_held, "price": price, "reason": "rule"})
+    elif "buy" in sides and _ladder_started(strategy, pos):
+        # Distributing and accumulating at the same time is not a strategy, it is two of them
+        # arguing. And it does not merely look odd: the ladder measures its rungs against the
+        # size the position reached, so a later buy re-bases it, the first rung reads as unfired,
+        # and the same shares are sold again — buy, sell half, buy, sell half, paying costs each
+        # way forever. Once the ladder has taken anything, the position only shrinks.
+        intents.append({"side": "buy", "qty": 0, "price": price, "reason": "rule",
+                        "skip": "분할청산이 이미 시작된 포지션에는 추가 매수하지 않습니다 — "
+                                "전량 청산 후 새로 진입합니다."})
     elif "buy" in sides:
         want = _size_from_money(money, price)
         lot = money.get("lotSize", 1)
