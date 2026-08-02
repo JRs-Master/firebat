@@ -1,5 +1,5 @@
 {
-  "title": "autotrade (가상화폐/업비트) — KRW-ETH 1h cycle",
+  "title": "autotrade (가상화폐/업비트) — 전 종목 사이클",
   "cronTime": "0 */5 * * * *",
   "executionMode": "pipeline",
   "pipeline": [
@@ -17,30 +17,47 @@
       "value": true
     },
     {
-      "type": "TOOL_CALL",
-      "tool": "sysmod_upbit",
-      "inputData": {
-        "action": "get_candles",
-        "bars": 300
-      },
-      "inputMap": {
-        "symbol": "$step0.trade.symbol",
-        "interval": "$step0.trade.interval"
-      }
+      "type": "FOREACH",
+      "items": "$step0.trades",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_upbit",
+          "inputData": {
+            "action": "get_candles",
+            "bars": 300
+          },
+          "inputMap": {
+            "symbol": "$prev.symbol",
+            "interval": "$prev.interval"
+          }
+        }
+      ]
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_technical-analysis",
+      "tool": "sysmod_autotrade",
       "inputData": {
-        "action": "signals",
+        "action": "bind_bars",
         "feeRate": 0.0005,
         "taxRate": 0,
         "slippageRate": 0.0002
       },
       "inputMap": {
-        "rules": "$step0.strategy.rules",
-        "barsCacheKey": "$step2._cacheKey"
+        "trades": "$step0.trades",
+        "fetched": "$step2"
       }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step3.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
     },
     {
       "type": "TOOL_CALL",
@@ -49,14 +66,13 @@
         "action": "cycle"
       },
       "inputMap": {
-        "signal": "$step3",
-        "barsCacheKey": "$step2._cacheKey",
-        "symbol": "$step0.trade.symbol"
+        "plan": "$step3",
+        "signals": "$step4"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step4.calls",
+      "items": "$step5.calls",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -72,8 +88,8 @@
         "action": "record_orders"
       },
       "inputMap": {
-        "calls": "$step4.calls",
-        "results": "$step5"
+        "calls": "$step5.calls",
+        "results": "$step6"
       }
     },
     {
@@ -81,9 +97,6 @@
       "tool": "sysmod_upbit",
       "inputData": {
         "action": "list_fills"
-      },
-      "inputMap": {
-        "symbol": "$step0.trade.symbol"
       }
     },
     {
@@ -91,9 +104,6 @@
       "tool": "sysmod_upbit",
       "inputData": {
         "action": "list_open_orders"
-      },
-      "inputMap": {
-        "symbol": "$step0.trade.symbol"
       }
     },
     {
@@ -110,10 +120,9 @@
         "action": "reconcile"
       },
       "inputMap": {
-        "fills": "$step7.rows",
-        "openOrders": "$step8.rows",
-        "balanceRows": "$step9.rows",
-        "symbol": "$step0.trade.symbol"
+        "fills": "$step8.rows",
+        "openOrders": "$step9.rows",
+        "balanceRows": "$step10.rows"
       }
     }
   ]

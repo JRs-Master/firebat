@@ -612,7 +612,31 @@ def action_gate(inp, settings):
         # sizing uses another is a mismatch nothing would report. The strategy owns its rules;
         # the pipeline passes them to the analyser and reads the answer back.
         "strategy": _pipeline_strategy(strategies),
+        # Every trade, each with the rule that runs on it. One cycle can carry several: a rule is
+        # fitted per symbol, so two coins are two rules on two timeframes, and a pipeline that can
+        # only express one of them makes the fitting pointless.
+        "trades": _pipeline_trades(settings, strategies),
     }}
+
+
+def _pipeline_trades(settings, strategies):
+    """Each declared trade paired with the rule that runs on it, for the loop to fetch and ask."""
+    by_id = {}
+    for st in strategies:
+        for key in (st.get("id"), st.get("symbol")):
+            if key and key not in by_id:
+                by_id[key] = st
+    out = []
+    for t in declared_trades(settings):
+        st = by_id.get(t["id"]) or by_id.get(t.get("symbol")) or {}
+        rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
+        if not rules:
+            continue
+        out.append({"tradeId": t["id"], "strategyId": st.get("id"), "symbol": t.get("symbol"),
+                    "interval": t.get("interval"), "broker": t.get("broker"),
+                    "account": t.get("account"), "rules": rules,
+                    "exits": st.get("exits") or {}})
+    return out
 
 
 def _pipeline_strategy(strategies):
@@ -623,6 +647,78 @@ def _pipeline_strategy(strategies):
             return {"id": s.get("id"), "symbol": s.get("symbol"), "rules": rules,
                     "exits": s.get("exits") or {}}
     return None
+
+
+
+def _signals_by_strategy(plan, signals):
+    """Match each analyser result to the strategy whose rule produced it.
+
+    Positional: the analyser calls were built from `plan.runs` and run in that order, so result i
+    belongs to run i. Keyed by both strategy id and symbol, because a trade may name either.
+    """
+    runs = (plan or {}).get("runs") if isinstance(plan, dict) else None
+    if runs is None and isinstance(plan, dict):
+        runs = ((plan.get("data") or {}).get("runs"))
+    if not isinstance(runs, list) or not isinstance(signals, list):
+        return {}
+    out = {}
+    for i, run in enumerate(runs):
+        if i >= len(signals):
+            break
+        entry = {"signal": signals[i], "lastClose": run.get("lastClose")}
+        for key in (run.get("strategyId"), run.get("tradeId"), run.get("symbol")):
+            if key:
+                out.setdefault(key, entry)
+    return out
+
+
+def action_bind_bars(inp, settings):
+    """Pair each trade with the candles just fetched for it, and emit the analyser calls.
+
+    The loop that fetches cannot also analyse: a FOREACH body chains through `$prev`, so by the
+    second inner step the item that started it is gone. Two loops with this between them is the
+    shape the sweep already uses — fetch everything, bind, then run one call per bound pair — and
+    it is why each analyser call can carry its own rule and its own bars without the pipeline
+    holding either.
+    """
+    trades = inp.get("trades") or []
+    if isinstance(trades, dict):
+        trades = trades.get("trades") or []
+    fetched = inp.get("fetched") or []
+    if len(fetched) != len(trades):
+        return {"success": False,
+                "error": f"{len(fetched)} 개 봉 결과 / {len(trades)} 개 매매 — 같은 순서로 같은 "
+                         "개수를 넘겨야 합니다(FOREACH 결과와 gate 의 trades)."}
+    costs = {k: v for k, v in {
+        "feeRate": inp.get("feeRate"), "taxRate": inp.get("taxRate"),
+        "slippageRate": inp.get("slippageRate")}.items() if v is not None}
+    runs, missing = [], []
+    for t, f in zip(trades, fetched):
+        payload = (f or {}).get("data") if isinstance(f, dict) and "data" in f else f
+        payload = payload if isinstance(payload, dict) else {}
+        key = payload.get("_cacheKey")
+        rows = normalize_bars(payload.get("records") or payload.get("rows"))
+        if not key and not rows:
+            missing.append(t.get("symbol"))
+            continue
+        args = {"action": "signals", "rules": t.get("rules"), **costs}
+        if key:
+            args["barsCacheKey"] = key
+        else:
+            args["bars"] = rows
+        runs.append({"tradeId": t.get("tradeId"), "strategyId": t.get("strategyId"),
+                     "symbol": t.get("symbol"),
+                     # The last close, so the cycle has a price for this symbol even when the
+                     # analyser fires nothing — a stop is checked against the market, not against
+                     # a signal that did not happen.
+                     "lastClose": (rows[-1].get("close") if rows else None),
+                     "args": args})
+    return {"success": True, "data": {
+        "runs": runs, "runCount": len(runs),
+        "missing": missing or None,
+        "note": ("각 항목의 `args` 를 technical-analysis 에 FOREACH 로 넘기고, 그 결과 전체를 "
+                 "cycle 의 `signals` 로, 이 응답을 `plan` 으로 넘기십시오."),
+    }}
 
 
 def action_cycle(inp, settings):
@@ -646,7 +742,7 @@ def action_cycle(inp, settings):
                 continue
             if price > 0:
                 break
-    if price <= 0:
+    if price <= 0 and not (inp.get("plan") or inp.get("signals")):
         return {"success": False,
                 "error": "no price to work from — pass `bars` (or barsCacheKey), `signal`, "
                          "or a `quote` with the current price"}
@@ -665,13 +761,26 @@ def action_cycle(inp, settings):
 
     now = store.now_ms()
     sides = eng.fired_sides(signal)
+    # One cycle can carry several symbols, each analysed on its own bars against its own rule.
+    # `plan` is bind_bars' output and `signals` the analyser results in the same order, so the
+    # answer that belongs to a strategy is found rather than assumed — a single shared signal
+    # would silently apply one coin's verdict to another's position.
+    per_strategy = _signals_by_strategy(inp.get("plan"), inp.get("signals"))
     results, all_intents, ctxs = [], [], {}
 
     for s in strategies:
         broker = s.get("broker") or "unknown"
         account = s.get("account") or ""
         sym = s.get("symbol") or symbol or ""
-        cycle_id = eng.cycle_id_for(s, signal, now, inp.get("cycleId"))
+        own = per_strategy.get(s.get("id")) or per_strategy.get(sym)
+        sig = own["signal"] if own else signal
+        s_price = eng.signal_price(sig, fallback=(own or {}).get("lastClose") or 0.0) or price
+        if s_price <= 0:
+            results.append({"strategyId": s["id"], "symbol": sym,
+                            "error": "no price for this symbol — its candles did not arrive"})
+            continue
+        sides = eng.fired_sides(sig)
+        cycle_id = eng.cycle_id_for(s, sig, now, inp.get("cycleId"))
         pos = store.position_of(conn, s["id"], broker, account, sym)
         # The window guard stops a second entry, not a second look. While a position is open its
         # stop and target have to be evaluated on every pass — keying the cycle on the entry that
@@ -691,7 +800,7 @@ def action_cycle(inp, settings):
         if str((s.get("trigger") or {}).get("type") or "") == "screen-entry":
             s_sides = set(sides) | ({"buy"} if float(pos.get("qty") or 0) <= 0 else set())
         ctx = {
-            "position": pos, "price": price, "sides": s_sides, "signal": signal,
+            "position": pos, "price": s_price, "sides": s_sides, "signal": sig,
             "quote": inp.get("quote") or {}, "settings": settings, "strategy": s,
             "mode": mode, "account_exposure": 0.0,
             "vi_halted": store.kv_get(conn, f"vi:{sym}") == "1",
@@ -1992,6 +2101,66 @@ def action_selftest():
                        "want": "KRW-XRP", "got": (sg.get("strategy") or {}).get("symbol"),
                        "ok": (sg.get("strategy") or {}).get("symbol") == "KRW-XRP"})
 
+    # --- several coins in one cycle, each on its own bars and its own rule ------------------
+    # A rule is fitted per symbol, so a pipeline that can only carry one makes the fitting
+    # pointless. The danger in carrying several is subtler than not carrying them: one shared
+    # signal applied to every position would act on one coin's verdict in another coin's market.
+    def mrule(tag):
+        return [{"side": "buy", "label": tag, "when": [{"a": "ma5", "op": ">", "b": "ma20"}]}]
+    mset = {
+        "trades": [{"id": "a", "symbol": "AAA", "broker": "b", "account": "", "interval": "1h"},
+                   {"id": "z", "symbol": "ZZZ", "broker": "b", "account": "", "interval": "5m"}],
+        "strategies": [
+            {"id": "a", "enabled": True, "kind": "rules", "symbol": "AAA", "broker": "b",
+             "account": "", "money": {"perOrderKrw": 6000}, "limits": {}, "rules": mrule("a")},
+            {"id": "z", "enabled": True, "kind": "rules", "symbol": "ZZZ", "broker": "b",
+             "account": "", "money": {"perOrderKrw": 6000}, "limits": {}, "rules": mrule("z")}],
+        "tradingEnabled": True, "mode": "dryrun"}
+    mg = action_gate({}, mset)["data"]
+    checks.append({"name": "the gate carries every trade, each with its own timeframe",
+                   "want": [("AAA", "1h"), ("ZZZ", "5m")],
+                   "got": [(t["symbol"], t["interval"]) for t in mg["trades"]],
+                   "ok": [(t["symbol"], t["interval"]) for t in mg["trades"]]
+                         == [("AAA", "1h"), ("ZZZ", "5m")]})
+
+    def mcandles(px):
+        return {"success": True, "data": {"records": [
+            {"date": f"d{i}", "open": px, "high": px, "low": px, "close": px, "volume": 1}
+            for i in range(4)]}}
+    bound = action_bind_bars({"trades": mg["trades"],
+                              "fetched": [mcandles(1000), mcandles(50)]}, mset)["data"]
+    checks.append({"name": "each analyser call carries its own bars and its own rule",
+                   "want": [1000, 50], "got": [r["lastClose"] for r in bound["runs"]],
+                   "ok": [r["lastClose"] for r in bound["runs"]] == [1000, 50]
+                         and all(r["args"].get("rules") for r in bound["runs"])})
+    checks.append({"name": "a fetch list that does not line up is refused, not zipped short",
+                   "want": True,
+                   "got": action_bind_bars({"trades": mg["trades"],
+                                            "fetched": [mcandles(1)]}, mset).get("success"),
+                   "ok": action_bind_bars({"trades": mg["trades"],
+                                           "fetched": [mcandles(1)]}, mset).get("success") is False})
+
+    def msig(side, px):
+        return {"success": True, "data": {
+            "firedOnLastClosedBar": ([{"side": side, "price": px, "date": "d3"}] if side else []),
+            "firedOnLastBar": [], "lastClosedBarDate": "d3"}}
+    mc = action_cycle({"plan": bound, "signals": [msig("buy", 1000), msig(None, 0)]},
+                      mset)["data"]
+    checks.append({"name": "only the coin whose rule fired is traded", "want": ["a"],
+                   "got": [p["strategyId"] for p in mc["placed"]],
+                   "ok": [p["strategyId"] for p in mc["placed"]] == ["a"]})
+    checks.append({"name": "and it is priced from its own bars, not the other coin's",
+                   "want": 1000.0, "got": (mc["placed"] or [{}])[0].get("price"),
+                   "ok": (mc["placed"] or [{}])[0].get("price") == 1000.0})
+    mc2 = action_cycle({"plan": bound, "signals": [msig(None, 0), msig("buy", 50)]},
+                       mset)["data"]
+    checks.append({"name": "the other coin trades on its own signal at its own price",
+                   "want": ("z", 50.0),
+                   "got": ((mc2["placed"] or [{}])[0].get("strategyId"),
+                           (mc2["placed"] or [{}])[0].get("price")),
+                   "ok": (mc2["placed"] or [{}])[0].get("strategyId") == "z"
+                         and (mc2["placed"] or [{}])[0].get("price") == 50.0})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
@@ -2052,6 +2221,8 @@ def main():
             return out({"success": True, "data": sweep.fit_symbols(inp)})
         if action == "adopt_fits":
             return out(action_adopt_fits(inp, settings))
+        if action == "bind_bars":
+            return out(action_bind_bars(inp, settings))
         if action == "cycle":
             return out(action_cycle(inp, settings))
         if action == "adopt":

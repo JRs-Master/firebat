@@ -278,8 +278,32 @@ def plan_sweep(inp):
                 keep.append(r)
         rows = keep
 
+    # Thin every family evenly rather than keeping the first ones written. Candidates are built
+    # family by family, so a plain head-slice hands the whole cap to whichever family happens to
+    # be listed first and silently measures nothing else — 2026-08-02: a six-family sweep reported
+    # "no family beats the round trip on fast bars" having measured exactly one, because 1,462 of
+    # 1,512 candidates were cut and every survivor came from the family at the top of the list.
     dropped = max(0, len(rows) - MAX_CANDIDATES)
-    rows = rows[:MAX_CANDIDATES]
+    dropped_by_family = {}
+    if dropped:
+        buckets = {}
+        for r in rows:
+            buckets.setdefault(r["family"], []).append(r)
+        kept, i = [], 0
+        while len(kept) < MAX_CANDIDATES:
+            took = False
+            for fam in list(buckets):
+                if i < len(buckets[fam]) and len(kept) < MAX_CANDIDATES:
+                    kept.append(buckets[fam][i])
+                    took = True
+            if not took:
+                break
+            i += 1
+        for fam, all_rows in buckets.items():
+            missing = len(all_rows) - sum(1 for k in kept if k["family"] == fam)
+            if missing:
+                dropped_by_family[fam] = missing
+        rows = kept
 
     runs = []
     for r in rows:
@@ -299,12 +323,15 @@ def plan_sweep(inp):
         "runs": runs,
         "runCount": len(runs),
         "dropped": dropped,
+        "droppedByFamily": dropped_by_family or None,
         "split": split,
         "unmeasurable": unmeasurable,
         "barCount": bar_count or None,
         "note": (
             f"{len(rows)} candidates × 2 windows = {len(runs)} ta calls. "
-            + (f"{dropped} candidates were dropped at the {MAX_CANDIDATES} cap. " if dropped else "")
+            + (f"{dropped} candidates were dropped at the {MAX_CANDIDATES} cap, thinned evenly "
+               f"across families ({', '.join(f'{k}: -{v}' for k, v in dropped_by_family.items())})"
+               ". Narrow the space if a family needs measuring in full. " if dropped else "")
             + (f"{len(unmeasurable)} candidates were refused because the holdout window is too "
                f"short for their warm-up — see `unmeasurable`. " if unmeasurable else "")
             + ("Pass `barCount` (the number of bars fetched) to have that check run at all. "
