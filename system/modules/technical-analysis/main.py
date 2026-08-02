@@ -1020,6 +1020,13 @@ def _range_pos(bars, n):
 # grammar is one comparison of two values, so the past has to be nameable as a value.
 _LAG_REF = re.compile(r"^(.+)\[(\d+)\]$")
 _POS_REF = re.compile(r"^pos(?:ition)?(\d+)$", re.IGNORECASE)
+# Periods the rule chooses, like the moving averages — so no period list is declared anywhere.
+_VMA_REF = re.compile(r"^v(?:ol(?:ume)?)?ma(\d+)$", re.IGNORECASE)
+_VRATIO_REF = re.compile(r"^vol(?:ume)?Ratio(\d+)$", re.IGNORECASE)
+_VWAP_REF = re.compile(r"^vwap(\d+)$", re.IGNORECASE)
+_ROC_REF = re.compile(r"^roc(\d+)$", re.IGNORECASE)
+_MOM_REF = re.compile(r"^mom(?:entum)?(\d+)$", re.IGNORECASE)
+_HV_REF = re.compile(r"^hv(?:ol)?(\d+)$", re.IGNORECASE)
 
 
 def _lag(values, n):
@@ -1041,6 +1048,18 @@ def _base_series(bars, inp):
                     int(inp.get("stochSmooth") or 3))
     ic = ichimoku(bars, int(inp.get("tenkan") or 9), int(inp.get("kijun") or 26),
                   int(inp.get("senkouB") or 52))
+    ad = adx(bars, int(inp.get("adxPeriod") or 14))
+    sr = stoch_rsi(closes, int(inp.get("stochRsiPeriod") or 14),
+                   int(inp.get("stochRsiK") or 3), int(inp.get("stochRsiD") or 3))
+    ev = envelopes(closes, int(inp.get("envPeriod") or 20), float(inp.get("envPct") or 3.0))
+    ar = aroon(bars, int(inp.get("aroonPeriod") or 25))
+    stt = supertrend(bars, int(inp.get("supertrendPeriod") or 10),
+                     float(inp.get("supertrendMult") or 3.0))
+    kc = keltner(bars, int(inp.get("keltnerPeriod") or 20),
+                 float(inp.get("keltnerMult") or 2.0))
+    dc = donchian(bars, int(inp.get("donchianPeriod") or 20))
+    pp = pivot_points(bars)
+    vols = [b.get("volume", 0) or 0 for b in bars]
     return {
         # 정규화된 봉이 open 을 안 실을 수 있다 — 없으면 종가로 대체(경로는 유지해 규칙이 안 깨지게).
         "close": closes, "open": [b.get("open", b["close"]) for b in bars],
@@ -1053,6 +1072,40 @@ def _base_series(bars, inp):
         "stochastic.k": st["k"], "stochastic.d": st["d"],
         "ichimoku.tenkan": ic["tenkan"], "ichimoku.kijun": ic["kijun"],
         "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
+        "atr": atr(bars, int(inp.get("atrPeriod") or 14)),
+        # ATR as a percentage of price, because a stop written in won means different things on
+        # a ninety-million-won coin and a four-hundred-won one.
+        "atrPct": [None if (a is None or not c) else a / c * 100.0
+                   for a, c in zip(atr(bars, int(inp.get("atrPeriod") or 14)), closes)],
+        "adx": ad["adx"], "adx.plusDI": ad["plusDI"], "adx.minusDI": ad["minusDI"],
+        "cci": cci(bars, int(inp.get("cciPeriod") or 20)),
+        "obv": obv(bars),
+        "mfi": mfi(bars, int(inp.get("mfiPeriod") or 14)),
+        "williamsR": williams_r(bars, int(inp.get("williamsPeriod") or 14)),
+        "stochRsi.k": sr["k"], "stochRsi.d": sr["d"],
+        "envelope.mid": ev["mid"], "envelope.upper": ev["upper"], "envelope.lower": ev["lower"],
+        # volume
+        "ad": ad_line(bars), "cmf": cmf(bars, int(inp.get("cmfPeriod") or 20)),
+        "forceIndex": force_index(bars, int(inp.get("forcePeriod") or 13)),
+        # 거래대금 — 코인·국내주식은 주수보다 이 금액으로 활발함을 본다.
+        "turnover": [closes[i] * vols[i] for i in range(len(bars))],
+        # trend
+        "aroon.up": ar["up"], "aroon.down": ar["down"], "aroon.osc": ar["osc"],
+        "psar": psar(bars, float(inp.get("psarStep") or 0.02),
+                     float(inp.get("psarMax") or 0.2)),
+        "supertrend": stt["line"], "supertrend.dir": stt["dir"],
+        "trix": trix(closes, int(inp.get("trixPeriod") or 15)),
+        # volatility
+        "keltner.mid": kc["mid"], "keltner.upper": kc["upper"], "keltner.lower": kc["lower"],
+        "donchian.mid": dc["mid"], "donchian.upper": dc["upper"], "donchian.lower": dc["lower"],
+        # momentum
+        "ultOsc": ultimate_osc(bars), "tsi": tsi(closes),
+        # price levels
+        "typical": [(b["high"] + b["low"] + b["close"]) / 3 for b in bars],
+        "median": [(b["high"] + b["low"]) / 2 for b in bars],
+        "weightedClose": [(b["high"] + b["low"] + 2 * b["close"]) / 4 for b in bars],
+        "pivot.p": pp["p"], "pivot.r1": pp["r1"], "pivot.s1": pp["s1"],
+        "pivot.r2": pp["r2"], "pivot.s2": pp["s2"],
         **_candle_series(bars),
     }
 
@@ -1064,6 +1117,59 @@ def _add_derived(series, closes, refs, bars=None):
     """
     too_long = []
     for ref in refs:
+        # Series that need the bars rather than only the closes.
+        mb = None
+        for rx, kind in ((_VMA_REF, "vma"), (_VRATIO_REF, "vratio"), (_VWAP_REF, "vwap"),
+                         (_HV_REF, "hv")):
+            mb = rx.match(ref)
+            if mb:
+                break
+        if mb and bars is not None:
+            n = int(mb.group(1))
+            if n < 1 or n > len(bars):
+                too_long.append((ref, n))
+                continue
+            vols = [b.get("volume", 0) or 0 for b in bars]
+            if kind == "vma":
+                series[ref] = _sma(vols, n)
+            elif kind == "vratio":
+                # 평소의 몇 배 — 절대 거래량은 종목마다 단위가 달라 비교가 안 된다.
+                base = _sma(vols, n)
+                series[ref] = [None if not base[i] else vols[i] / base[i]
+                               for i in range(len(bars))]
+            elif kind == "vwap":
+                tp = [(b["high"] + b["low"] + b["close"]) / 3 for b in bars]
+                out = [None] * len(bars)
+                for i in range(n - 1, len(bars)):
+                    v = sum(vols[i - n + 1:i + 1])
+                    out[i] = (None if not v else
+                              sum(tp[j] * vols[j] for j in range(i - n + 1, i + 1)) / v)
+                series[ref] = out
+            else:                                   # historical volatility, % per bar
+                cl = [b["close"] for b in bars]
+                rets = [None] + [None if not cl[i - 1] else (cl[i] / cl[i - 1] - 1)
+                                 for i in range(1, len(cl))]
+                out = [None] * len(bars)
+                for i in range(n, len(bars)):
+                    w = [r for r in rets[i - n + 1:i + 1] if r is not None]
+                    if len(w) < 2:
+                        continue
+                    mean = sum(w) / len(w)
+                    out[i] = (sum((x - mean) ** 2 for x in w) / (len(w) - 1)) ** 0.5 * 100.0
+                series[ref] = out
+            continue
+        mc = _ROC_REF.match(ref) or _MOM_REF.match(ref)
+        if mc:
+            n = int(mc.group(1))
+            if n < 1 or n >= len(closes):
+                too_long.append((ref, n))
+                continue
+            is_roc = bool(_ROC_REF.match(ref))
+            series[ref] = [None if i < n or (is_roc and not closes[i - n])
+                           else ((closes[i] / closes[i - n] - 1) * 100.0 if is_roc
+                                 else closes[i] - closes[i - n])
+                           for i in range(len(closes))]
+            continue
         mp = _POS_REF.match(ref)
         if mp and bars is not None:
             n = int(mp.group(1))
@@ -1171,6 +1277,330 @@ def _stdev(xs, n):
         m = sum(w) / n
         out[i] = (sum((x - m) ** 2 for x in w) / n) ** 0.5
     return out
+
+
+
+def _wilder(xs, n):
+    """Wilder 평활 — RSI·ATR·ADX 가 공유하는 그 평균. 단순이동평균과 값이 다르고,
+    표준 정의를 따라야 다른 차트와 숫자가 맞는다."""
+    out = [None] * len(xs)
+    vals = [x for x in xs if x is not None]
+    if len(vals) < n:
+        return out
+    start = next(i for i in range(len(xs)) if xs[i] is not None)
+    if start + n > len(xs):
+        return out
+    acc = sum(xs[start:start + n]) / n
+    out[start + n - 1] = acc
+    for i in range(start + n, len(xs)):
+        acc = (acc * (n - 1) + (xs[i] or 0.0)) / n
+        out[i] = acc
+    return out
+
+
+def true_range(bars):
+    """오늘 고저폭과 전일 종가까지의 거리 중 큰 쪽 — 갭을 변동성으로 센다."""
+    out = []
+    for i, b in enumerate(bars):
+        if i == 0:
+            out.append(b["high"] - b["low"])
+            continue
+        pc = bars[i - 1]["close"]
+        out.append(max(b["high"] - b["low"], abs(b["high"] - pc), abs(b["low"] - pc)))
+    return out
+
+
+def atr(bars, n=14):
+    """평균 진폭. 방향이 아니라 크기라서, 손절 폭을 종목마다 고르는 데 쓰인다 —
+    같은 3% 가 어떤 코인엔 잡음이고 어떤 코인엔 추세다."""
+    return _wilder(true_range(bars), n)
+
+
+def adx(bars, n=14):
+    """추세의 세기. 방향은 말하지 않는다 — 오르든 내리든 강하면 높다.
+    횡보에서 교차 규칙이 난도질당하는 걸 거르는 자리."""
+    length = len(bars)
+    plus_dm, minus_dm = [0.0] * length, [0.0] * length
+    for i in range(1, length):
+        up = bars[i]["high"] - bars[i - 1]["high"]
+        down = bars[i - 1]["low"] - bars[i]["low"]
+        plus_dm[i] = up if (up > down and up > 0) else 0.0
+        minus_dm[i] = down if (down > up and down > 0) else 0.0
+    tr_s = _wilder(true_range(bars), n)
+    p_s, m_s = _wilder(plus_dm, n), _wilder(minus_dm, n)
+    plus_di = [None if not tr_s[i] else 100.0 * (p_s[i] or 0) / tr_s[i] for i in range(length)]
+    minus_di = [None if not tr_s[i] else 100.0 * (m_s[i] or 0) / tr_s[i] for i in range(length)]
+    dx = []
+    for i in range(length):
+        if plus_di[i] is None or minus_di[i] is None:
+            dx.append(None)
+            continue
+        tot = plus_di[i] + minus_di[i]
+        dx.append(None if not tot else 100.0 * abs(plus_di[i] - minus_di[i]) / tot)
+    return {"adx": _wilder(dx, n), "plusDI": plus_di, "minusDI": minus_di}
+
+
+def cci(bars, n=20):
+    """전형가가 자기 평균에서 얼마나 떨어졌나 — 평균편차로 나눠 무차원."""
+    tp = [(b["high"] + b["low"] + b["close"]) / 3 for b in bars]
+    out = [None] * len(bars)
+    for i in range(n - 1, len(bars)):
+        window = tp[i - n + 1:i + 1]
+        mean = sum(window) / n
+        dev = sum(abs(x - mean) for x in window) / n
+        out[i] = None if not dev else (tp[i] - mean) / (0.015 * dev)
+    return out
+
+
+def obv(bars):
+    """거래량을 방향에 따라 누적. 값 자체보다 기울기가 뜻을 갖는다 — `slope` 를 붙여 쓰라고
+    시리즈로 둔다."""
+    out = [0.0]
+    for i in range(1, len(bars)):
+        v = bars[i].get("volume") or 0
+        c, pc = bars[i]["close"], bars[i - 1]["close"]
+        out.append(out[-1] + (v if c > pc else -v if c < pc else 0.0))
+    return out
+
+
+def mfi(bars, n=14):
+    """거래량을 실은 RSI — 오른 날 돈이 얼마나 들어왔나."""
+    tp = [(b["high"] + b["low"] + b["close"]) / 3 for b in bars]
+    flow = [tp[i] * (bars[i].get("volume") or 0) for i in range(len(bars))]
+    out = [None] * len(bars)
+    for i in range(n, len(bars)):
+        pos = sum(flow[j] for j in range(i - n + 1, i + 1) if tp[j] > tp[j - 1])
+        neg = sum(flow[j] for j in range(i - n + 1, i + 1) if tp[j] < tp[j - 1])
+        out[i] = 100.0 if neg == 0 else 100 - 100 / (1 + pos / neg)
+    return out
+
+
+def williams_r(bars, n=14):
+    """고점 대비 현재 위치, −100(바닥) ~ 0(천장). 스토캐스틱 %K 를 뒤집은 눈금."""
+    out = [None] * len(bars)
+    for i in range(n - 1, len(bars)):
+        hi = max(b["high"] for b in bars[i - n + 1:i + 1])
+        lo = min(b["low"] for b in bars[i - n + 1:i + 1])
+        out[i] = None if hi == lo else -100.0 * (hi - bars[i]["close"]) / (hi - lo)
+    return out
+
+
+def stoch_rsi(closes, n=14, k=3, d=3):
+    """RSI 에 스토캐스틱을 다시 씌운 것 — RSI 자신의 범위 안에서 지금 어디쯤인가.
+    RSI 가 40~60 만 오가는 구간에서도 과매수·과매도를 가른다."""
+    r = rsi(closes, n)
+    raw = [None] * len(closes)
+    for i in range(len(closes)):
+        window = [x for x in r[max(0, i - n + 1):i + 1] if x is not None]
+        if len(window) < n or r[i] is None:
+            continue
+        hi, lo = max(window), min(window)
+        raw[i] = None if hi == lo else (r[i] - lo) / (hi - lo) * 100.0
+    kk = _sma([x if x is not None else 0.0 for x in raw], k)
+    kk = [None if raw[i] is None else kk[i] for i in range(len(raw))]
+    dd = _sma([x if x is not None else 0.0 for x in kk], d)
+    dd = [None if kk[i] is None else dd[i] for i in range(len(kk))]
+    return {"k": kk, "d": dd}
+
+
+def envelopes(closes, n=20, pct=3.0):
+    """이동평균 ± 고정 비율. 볼린저가 변동성으로 넓어지는 반면 이건 폭이 일정해서,
+    "평균에서 3% 벗어남"이 언제나 같은 뜻이다."""
+    mid = _sma(closes, n)
+    f = pct / 100.0
+    return {"mid": mid,
+            "upper": [None if m is None else m * (1 + f) for m in mid],
+            "lower": [None if m is None else m * (1 - f) for m in mid]}
+
+
+
+# ── volume ──────────────────────────────────────────────────────────────────────────────────
+
+def _ema_of(xs, n):
+    """EMA over a series that starts with blanks.
+
+    Stacked averages — TRIX is three, TSI is four — feed one EMA's output into the next, and that
+    output begins with `None` until its own warm-up is over. `_ema` sums its first window
+    directly, so the second layer would add a number to nothing. Skip to where the data starts and
+    pad the front back on, so a stacked indicator lines up with the bars it came from.
+    """
+    first = next((i for i, x in enumerate(xs) if x is not None), None)
+    if first is None:
+        return [None] * len(xs)
+    tail = _ema([x for x in xs[first:] if x is not None], n)
+    return [None] * first + tail + [None] * (len(xs) - first - len(tail))
+
+
+def ad_line(bars):
+    """누적/분산 — 봉 안에서 종가가 어디에 닫혔나로 거래량을 배분해 누적.
+    OBV 가 방향만 보는 반면 이건 봉 안의 위치를 본다(꼬리 긴 봉을 덜 센다)."""
+    out, acc = [], 0.0
+    for b in bars:
+        rng = b["high"] - b["low"]
+        mult = 0.0 if not rng else ((b["close"] - b["low"]) - (b["high"] - b["close"])) / rng
+        acc += mult * (b.get("volume") or 0)
+        out.append(acc)
+    return out
+
+
+def cmf(bars, n=20):
+    """차이킨 자금흐름 — A/D 를 기간 거래량으로 정규화해 −1~+1. 누적값과 달리 비교 가능하다."""
+    out = [None] * len(bars)
+    mfv = []
+    for b in bars:
+        rng = b["high"] - b["low"]
+        mult = 0.0 if not rng else ((b["close"] - b["low"]) - (b["high"] - b["close"])) / rng
+        mfv.append(mult * (b.get("volume") or 0))
+    for i in range(n - 1, len(bars)):
+        vol = sum((bars[j].get("volume") or 0) for j in range(i - n + 1, i + 1))
+        out[i] = None if not vol else sum(mfv[i - n + 1:i + 1]) / vol
+    return out
+
+
+def force_index(bars, n=13):
+    """가격 변화 × 거래량 — 움직임이 거래를 동반했는지. 거래 없는 급등을 걸러낸다."""
+    raw = [0.0] + [(bars[i]["close"] - bars[i - 1]["close"]) * (bars[i].get("volume") or 0)
+                   for i in range(1, len(bars))]
+    return _ema_of(raw, n)
+
+
+# ── trend ───────────────────────────────────────────────────────────────────────────────────
+def aroon(bars, n=25):
+    """마지막 고점·저점이 얼마나 최근인가 — 추세의 나이. ADX 가 세기를 재는 자리에서
+    이건 신선도를 잰다."""
+    up, down = [None] * len(bars), [None] * len(bars)
+    for i in range(n, len(bars)):
+        window = bars[i - n:i + 1]
+        hi = max(range(len(window)), key=lambda j: window[j]["high"])
+        lo = min(range(len(window)), key=lambda j: window[j]["low"])
+        up[i] = 100.0 * hi / n
+        down[i] = 100.0 * lo / n
+    return {"up": up, "down": down,
+            "osc": [None if up[i] is None else up[i] - down[i] for i in range(len(bars))]}
+
+
+def psar(bars, step=0.02, cap=0.2):
+    """포물선 SAR — 추세를 따라 올라오는 손절선. 값 자체가 청산 가격이라 규칙이 바로 쓴다."""
+    n = len(bars)
+    out = [None] * n
+    if n < 2:
+        return out
+    rising = bars[1]["close"] >= bars[0]["close"]
+    sar = bars[0]["low"] if rising else bars[0]["high"]
+    ep = bars[0]["high"] if rising else bars[0]["low"]
+    af = step
+    for i in range(1, n):
+        sar = sar + af * (ep - sar)
+        if rising:
+            sar = min(sar, bars[i - 1]["low"], bars[max(0, i - 2)]["low"])
+            if bars[i]["low"] < sar:
+                rising, sar, ep, af = False, ep, bars[i]["low"], step
+            elif bars[i]["high"] > ep:
+                ep, af = bars[i]["high"], min(af + step, cap)
+        else:
+            sar = max(sar, bars[i - 1]["high"], bars[max(0, i - 2)]["high"])
+            if bars[i]["high"] > sar:
+                rising, sar, ep, af = True, ep, bars[i]["high"], step
+            elif bars[i]["low"] < ep:
+                ep, af = bars[i]["low"], min(af + step, cap)
+        out[i] = sar
+    return out
+
+
+def supertrend(bars, n=10, mult=3.0):
+    """ATR 폭의 추세선. 값은 지지·저항선이고 `dir` 은 +1/−1 — 방향을 숫자로 물을 수 있다."""
+    a = atr(bars, n)
+    line, direction = [None] * len(bars), [None] * len(bars)
+    prev_up = prev_dn = None
+    up_trend = True
+    for i, b in enumerate(bars):
+        if a[i] is None:
+            continue
+        mid = (b["high"] + b["low"]) / 2
+        up, dn = mid - mult * a[i], mid + mult * a[i]
+        if prev_up is not None:
+            up = max(up, prev_up) if bars[i - 1]["close"] > prev_up else up
+            dn = min(dn, prev_dn) if bars[i - 1]["close"] < prev_dn else dn
+            up_trend = True if b["close"] > prev_dn else False if b["close"] < prev_up else up_trend
+        line[i] = up if up_trend else dn
+        direction[i] = 1.0 if up_trend else -1.0
+        prev_up, prev_dn = up, dn
+    return {"line": line, "dir": direction}
+
+
+def trix(closes, n=15):
+    """삼중 지수평활의 변화율 — 잡음을 세 번 걷어낸 모멘텀."""
+    e = _ema_of(_ema_of(_ema(closes, n), n), n)
+    return [None if (i == 0 or e[i] is None or not e[i - 1]) else (e[i] - e[i - 1]) / e[i - 1] * 100.0
+            for i in range(len(e))]
+
+
+# ── volatility ──────────────────────────────────────────────────────────────────────────────
+def keltner(bars, n=20, mult=2.0, atr_n=10):
+    """EMA ± ATR 배수. 볼린저가 표준편차를 쓰는 자리에 진폭을 쓴다 — 갭을 반영한다."""
+    closes = [b["close"] for b in bars]
+    mid = _ema(closes, n)
+    a = atr(bars, atr_n)
+    return {"mid": mid,
+            "upper": [None if (mid[i] is None or a[i] is None) else mid[i] + mult * a[i]
+                      for i in range(len(bars))],
+            "lower": [None if (mid[i] is None or a[i] is None) else mid[i] - mult * a[i]
+                      for i in range(len(bars))]}
+
+
+def donchian(bars, n=20):
+    """n기간 최고·최저. 돌파 전략이 묻는 바로 그 선."""
+    up, lo = [None] * len(bars), [None] * len(bars)
+    for i in range(n - 1, len(bars)):
+        up[i] = max(b["high"] for b in bars[i - n + 1:i + 1])
+        lo[i] = min(b["low"] for b in bars[i - n + 1:i + 1])
+    return {"upper": up, "lower": lo,
+            "mid": [None if up[i] is None else (up[i] + lo[i]) / 2 for i in range(len(bars))]}
+
+
+# ── momentum ────────────────────────────────────────────────────────────────────────────────
+def ultimate_osc(bars, s=7, m=14, l=28):
+    """세 기간을 가중 합산 — 한 기간만 보는 오실레이터의 기간 의존성을 줄인다."""
+    bp, tr = [], []
+    for i, b in enumerate(bars):
+        pc = bars[i - 1]["close"] if i else b["close"]
+        bp.append(b["close"] - min(b["low"], pc))
+        tr.append(max(b["high"], pc) - min(b["low"], pc))
+    out = [None] * len(bars)
+    for i in range(l, len(bars)):
+        def avg(k):
+            t = sum(tr[i - k + 1:i + 1])
+            return None if not t else sum(bp[i - k + 1:i + 1]) / t
+        a1, a2, a3 = avg(s), avg(m), avg(l)
+        if None in (a1, a2, a3):
+            continue
+        out[i] = 100.0 * (4 * a1 + 2 * a2 + a3) / 7
+    return out
+
+
+def tsi(closes, long_n=25, short_n=13):
+    """진짜 강도 지수 — 가격 변화를 두 번 평활해 부호까지 안정시킨다."""
+    diff = [0.0] + [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+    d1 = _ema_of(_ema(diff, long_n), short_n)
+    a1 = _ema_of(_ema([abs(x) for x in diff], long_n), short_n)
+    return [None if (d1[i] is None or not a1[i]) else 100.0 * d1[i] / a1[i]
+            for i in range(len(closes))]
+
+
+def pivot_points(bars):
+    """전일 고저종으로 낸 고전 피벗 — 오늘의 지지·저항. 값이 가격이라 규칙이 바로 비교한다."""
+    p = [None] * len(bars)
+    r1 = [None] * len(bars); s1 = [None] * len(bars)
+    r2 = [None] * len(bars); s2 = [None] * len(bars)
+    for i in range(1, len(bars)):
+        h, l, c = bars[i - 1]["high"], bars[i - 1]["low"], bars[i - 1]["close"]
+        pv = (h + l + c) / 3
+        p[i] = pv
+        r1[i] = 2 * pv - l
+        s1[i] = 2 * pv - h
+        r2[i] = pv + (h - l)
+        s2[i] = pv - (h - l)
+    return {"p": p, "r1": r1, "s1": s1, "r2": r2, "s2": s2}
 
 
 def macd(closes, fast=12, slow=26, signal=9):
@@ -1410,7 +1840,9 @@ def main():
         ma_refs = sorted({r for r in every_ref if _MA_REF.match(r)})
         derived = sorted({r for r in every_ref
                           if _SLOPE_REF.match(r) or _DISP_REF.match(r)
-                          or _ACCEL_REF.match(r) or _POS_REF.match(r)})
+                          or _ACCEL_REF.match(r) or _POS_REF.match(r)
+                          or _VMA_REF.match(r) or _VRATIO_REF.match(r) or _VWAP_REF.match(r)
+                          or _ROC_REF.match(r) or _MOM_REF.match(r) or _HV_REF.match(r)})
         # One implementation, used here and for every higher timeframe.
         ma_used = [(_MA_REF.match(r).groups()[0], int(_MA_REF.match(r).groups()[1]))
                    for r in ma_refs if _MA_REF.match(r)]
