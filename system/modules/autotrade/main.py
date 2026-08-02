@@ -623,22 +623,38 @@ def action_gate(inp, settings):
 
 
 def _pipeline_trades(settings, strategies):
-    """Each declared trade paired with the rule that runs on it, for the loop to fetch and ask."""
-    by_id = {}
-    for st in strategies:
-        for key in (st.get("id"), st.get("symbol")):
-            if key and key not in by_id:
-                by_id[key] = st
+    """Every (trade, strategy) pair, so nothing declared is left out.
+
+    One entry per pair rather than per trade. Two strategies on the same coin is the ordinary
+    case, not an exotic one — a swing rule and a scalping rule hold different positions in the
+    same symbol, the ledger has keyed positions per strategy since it was written, and internal
+    transfer exists precisely for the moment one sells what the other is buying.
+
+    Before this, the first match won and the second strategy was dropped without a word: it sat
+    enabled in the settings, appeared in the strategy count, and never traded. A declared thing
+    that silently does nothing is the failure mode this module keeps having to be rescued from.
+    """
+    trades = declared_trades(settings)
     out = []
-    for t in declared_trades(settings):
-        st = by_id.get(t["id"]) or by_id.get(t.get("symbol")) or {}
-        rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
-        if not rules:
-            continue
-        out.append({"tradeId": t["id"], "strategyId": st.get("id"), "symbol": t.get("symbol"),
-                    "interval": t.get("interval"), "broker": t.get("broker"),
-                    "account": t.get("account"), "rules": rules,
-                    "exits": st.get("exits") or {}})
+    for t in trades:
+        for st in strategies:
+            # A strategy belongs to a trade when it names it, or names its symbol, or names
+            # nothing at all — the last being a rule written for whatever the trade points at.
+            named = st.get("id") == t["id"] or st.get("symbol") == t.get("symbol")
+            unbound = not st.get("symbol") and st.get("id") not in {x["id"] for x in trades}
+            if not (named or unbound):
+                continue
+            rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
+            if not rules:
+                continue
+            out.append({
+                # Unique per pair: the analyser results come back positionally and the cycle
+                # matches them by this, so two rules on one coin must not share an id.
+                "tradeId": t["id"] if st.get("id") == t["id"] else f"{t['id']}:{st.get('id')}",
+                "strategyId": st.get("id"), "symbol": t.get("symbol"),
+                "interval": t.get("interval"), "broker": t.get("broker"),
+                "account": t.get("account"), "rules": rules,
+                "exits": st.get("exits") or {}})
     return out
 
 
@@ -2647,6 +2663,48 @@ def action_selftest():
     checks.append({"name": "and so does a price below one won", "want": (3, 0.5),
                    "got": (bc2["qty"], bc2["price"]),
                    "ok": bc2["qty"] == 3 and abs(bc2["price"] - 0.5) < 1e-12})
+
+    # --- two strategies on one coin ---------------------------------------------------------
+    # A swing rule and a scalping rule hold different positions in the same symbol; the ledger has
+    # keyed positions per strategy since it was written. Pairing by trade meant the first match
+    # won and the second sat enabled, counted, and never traded.
+    two = {"trades": [{"id": "p", "symbol": "PPP", "broker": "b", "account": "",
+                       "interval": "1h"}],
+           "strategies": [
+               {"id": "p-slow", "enabled": True, "kind": "rules", "symbol": "PPP", "broker": "b",
+                "account": "", "money": {"perOrderKrw": 6000}, "limits": {},
+                "rules": [{"side": "buy", "when": [{"a": "ma5", "op": ">", "b": "ma20"}]}]},
+               {"id": "p-fast", "enabled": True, "kind": "rules", "symbol": "PPP", "broker": "b",
+                "account": "", "money": {"perOrderKrw": 6000}, "limits": {},
+                "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}],
+           "tradingEnabled": True, "mode": "dryrun"}
+    tg = action_gate({}, two)["data"]
+    checks.append({"name": "both rules on one coin reach the pipeline", "want":
+                   ["p-fast", "p-slow"],
+                   "got": sorted(t["strategyId"] for t in tg["trades"]),
+                   "ok": sorted(t["strategyId"] for t in tg["trades"]) == ["p-fast", "p-slow"]})
+    checks.append({"name": "and each is addressable on its own", "want": 2,
+                   "got": len({t["tradeId"] for t in tg["trades"]}),
+                   "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    tbars = {"success": True, "data": {"records": [
+        {"date": "d%02d" % i, "open": 10, "high": 10, "low": 10, "close": 10, "volume": 1}
+        for i in range(5)]}}
+    tb = action_bind_bars({"trades": tg["trades"], "fetched": [tbars, tbars]}, two)["data"]
+    checks.append({"name": "each gets its own analyser call with its own rule", "want": 2,
+                   "got": tb["runCount"],
+                   "ok": tb["runCount"] == 2
+                         and tb["runs"][0]["args"]["rules"] != tb["runs"][1]["args"]["rules"]})
+    def tsig(fire):
+        return {"success": True, "data": {
+            "firedOnLastClosedBar": ([{"side": "buy", "price": 10.0, "date": "d4"}]
+                                     if fire else []),
+            "firedOnLastBar": [], "lastClosedBarDate": "d4"}}
+    order = [r["strategyId"] for r in tb["runs"]]
+    fired = [tsig(sid == "p-fast") for sid in order]
+    tc = action_cycle({"plan": tb, "signals": fired}, two)["data"]
+    checks.append({"name": "only the rule that fired trades, on the shared coin",
+                   "want": ["p-fast"], "got": [x["strategyId"] for x in tc["placed"]],
+                   "ok": [x["strategyId"] for x in tc["placed"]] == ["p-fast"]})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
