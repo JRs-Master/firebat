@@ -278,6 +278,31 @@ def last_close(bars):
 
 
 # ── actions ──────────────────────────────────────────────────────────────────────────────────
+def _remember_verdicts(result, target):
+    """The `remember` block for an adoption run — one fact per verdict.
+
+    The framework writes these into this module's own recall scope, and hands them back on the
+    next revision. The strategy store already has the detail; what it does not have is a way for
+    the search that picks tomorrow's grid to see today's answer without opening a file only this
+    module can open.
+    """
+    facts = []
+    single = result.get("candidateId")
+    if single:
+        facts.append(strat.verdict_fact(target.get("symbol"), single, result.get("why"),
+                                        result.get("measured") or result.get("row"),
+                                        bool(result.get("adopted"))))
+    for row in (result.get("adopted") or []) if isinstance(result.get("adopted"), list) else []:
+        if isinstance(row, dict):
+            facts.append(strat.verdict_fact(row.get("symbol"), row.get("candidateId"), None,
+                                            row.get("measured"), True))
+    for row in result.get("refused") or []:
+        if isinstance(row, dict):
+            facts.append(strat.verdict_fact(row.get("symbol"), row.get("candidateId"),
+                                            row.get("why"), row.get("measured"), False))
+    return {"facts": facts} if facts else None
+
+
 def action_adopt(inp, settings):
     """Take the sweep's winner into the strategy store, if the measurement earned it.
 
@@ -310,7 +335,7 @@ def action_adopt(inp, settings):
                              proposal=inp.get("proposal"))
     finally:
         conn.close()
-    return {"success": True, "data": result}
+    return {"success": True, "data": result, "remember": _remember_verdicts(result, target)}
 
 
 def action_adopt_fits(inp, settings):
@@ -342,7 +367,31 @@ def action_adopt_fits(inp, settings):
                                   proposal=inp.get("proposal"))
     finally:
         conn.close()
-    return {"success": True, "data": result}
+    return {"success": True, "data": result, "remember": _remember_verdicts(result, target)}
+
+
+def _past_verdicts(inp, limit=12):
+    """What earlier nights already decided, as the framework handed it back.
+
+    A module cannot read the recall store any more than it can write to it — the framework
+    injects `_recall` for the actions that declared they want it. Passing it into the brief is
+    what closes the loop: without it the search proposes the same grid every night, learns the
+    same refusal, and writes it down again.
+    """
+    block = inp.get("_recall")
+    if not isinstance(block, dict):
+        return None
+    facts = [f for f in (block.get("facts") or []) if isinstance(f, dict)]
+    lessons = [l for l in (block.get("lessons") or []) if isinstance(l, dict)]
+    if not facts and not lessons:
+        return None
+    return {
+        "verdicts": [f.get("content") for f in facts[:limit] if f.get("content")],
+        "lessons": [{"name": l.get("name"), "content": l.get("content")}
+                    for l in lessons[:5] if l.get("content")],
+        "note": ("이미 내려진 판정입니다 — 같은 격자를 다시 뒤지지 마세요. 여기 적힌 방향이 "
+                 "왜 안 됐는지가 다음 탐색의 출발점입니다."),
+    }
 
 
 def action_next_revision(inp, settings):
@@ -366,10 +415,16 @@ def action_next_revision(inp, settings):
         conn.close()
         for c in conns.values():
             c.close()
-    return {"success": True, "data": target or {
+    data = target or {
         "strategyId": None,
         "note": "고칠 전략이 없습니다 — 신규 발굴은 별도 실행입니다(새 매매를 시작할 때).",
-    }}
+    }
+    # 이미 내려진 판정을 브리핑에 싣는다 — 없으면 매일 밤 같은 격자를 제안하고, 같은 거부를
+    # 배우고, 또 적는다.
+    past = _past_verdicts(inp)
+    if past:
+        data = {**data, "alreadyDecided": past}
+    return {"success": True, "data": data}
 
 
 def action_review(inp, settings):
@@ -2855,6 +2910,23 @@ def action_selftest():
                    "got": [(t["tradeId"], t["broker"]) for t in paired],
                    "ok": len(paired) == 2
                          and all(t["strategyId"] == t["tradeId"] for t in paired)})
+
+    # 판정이 recall 로 나가고, 다음 밤에 브리핑으로 돌아온다 — 그 왕복이 안 되면 매일 밤 같은
+    # 격자를 뒤진다.
+    vf = strat.verdict_fact("KRW-BTC", "rsi30/70-sl8", ["과반 아님"],
+                            {"beatBuyHoldIn": 2, "symbols": 8, "medianVsBuyHoldPct": -61.8},
+                            False)
+    checks.append({"name": "a verdict leaves as numbers, not as an adjective",
+                   "want": "2/8", "got": vf["content"],
+                   "ok": "2/8" in vf["content"] and "-61.8" in vf["content"]
+                         and vf["entity"] == "KRW-BTC"})
+    back = _past_verdicts({"_recall": {"facts": [{"content": vf["content"]}],
+                                       "lessons": []}})
+    checks.append({"name": "and comes back in the next brief", "want": [vf["content"]],
+                   "got": (back or {}).get("verdicts"),
+                   "ok": bool(back) and back["verdicts"] == [vf["content"]]})
+    checks.append({"name": "a module handed no record briefs nothing extra", "want": None,
+                   "got": _past_verdicts({}), "ok": _past_verdicts({}) is None})
 
     # 야간 수정 루프는 모델에게 "어디를 뒤질지" 를 묻는데, 고를 수 있는 목록을 스케줄 파일에
     # 적어 두면 가족이 늘어난 날 조용히 뒤처진다 — 실제로 정배열 가족이 크립토 측정 1등을 하고도

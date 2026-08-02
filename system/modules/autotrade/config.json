@@ -552,5 +552,11 @@
   "cacheInputs": [
     "bars"
   ],
-  "timeoutMs": 120000
+  "timeoutMs": 120000,
+  "recall": {
+    "actions": [
+      "next_revision"
+    ],
+    "limit": 40
+  }
 }

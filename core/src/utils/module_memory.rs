@@ -151,6 +151,52 @@ pub fn parse(envelope: &serde_json::Value) -> Declared {
     out
 }
 
+/// Which of a module's actions are handed its own record back, and how much of it.
+///
+/// Per action, not per module. A trading module runs thirteen steps every five minutes and
+/// exactly one of them — the nightly revision — has any use for what was learned before; loading
+/// it into the other twelve would be paying for it three hundred times a day to be ignored.
+///
+/// ```json
+/// "recall": { "actions": ["next_revision"], "limit": 30 }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecallSpec {
+    pub actions: Vec<String>,
+    pub limit: usize,
+}
+
+pub const DEFAULT_RECALL_LIMIT: usize = 30;
+pub const MAX_RECALL_LIMIT: usize = 200;
+
+/// Read the `recall` declaration off a module's config.
+pub fn parse_recall_spec(config: &serde_json::Value) -> Option<RecallSpec> {
+    let block = config.get("recall")?.as_object()?;
+    let actions: Vec<String> = block
+        .get("actions")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if actions.is_empty() {
+        return None;
+    }
+    let limit = block
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|n| (n as usize).clamp(1, MAX_RECALL_LIMIT))
+        .unwrap_or(DEFAULT_RECALL_LIMIT);
+    Some(RecallSpec { actions, limit })
+}
+
+impl RecallSpec {
+    pub fn covers(&self, action: &str) -> bool {
+        self.actions.iter().any(|a| a == action)
+    }
+}
+
 /// The entity a declared fact hangs off, in the module's own scope.
 pub fn entity_input(fact: &DeclaredFact, owner: &str) -> SaveEntityInput {
     SaveEntityInput {
@@ -188,6 +234,37 @@ pub fn fact_input(fact: &DeclaredFact, entity_id: i64, owner: &str) -> SaveFactI
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn recall_is_declared_per_action_not_per_module() {
+        // Thirteen steps every five minutes, one of which has any use for the record.
+        let spec = parse_recall_spec(&json!({
+            "recall": {"actions": ["next_revision"], "limit": 40}
+        }))
+        .expect("declared");
+        assert!(spec.covers("next_revision"));
+        assert!(!spec.covers("cycle"));
+        assert_eq!(spec.limit, 40);
+    }
+
+    #[test]
+    fn an_empty_or_absent_declaration_injects_nothing() {
+        assert!(parse_recall_spec(&json!({})).is_none());
+        assert!(parse_recall_spec(&json!({"recall": {}})).is_none());
+        assert!(parse_recall_spec(&json!({"recall": {"actions": []}})).is_none());
+        assert!(parse_recall_spec(&json!({"recall": {"actions": ["  "]}})).is_none());
+    }
+
+    #[test]
+    fn the_limit_is_bounded_whatever_was_declared() {
+        let huge = parse_recall_spec(&json!({
+            "recall": {"actions": ["x"], "limit": 100000}
+        }))
+        .unwrap();
+        assert_eq!(huge.limit, MAX_RECALL_LIMIT);
+        let unset = parse_recall_spec(&json!({"recall": {"actions": ["x"]}})).unwrap();
+        assert_eq!(unset.limit, DEFAULT_RECALL_LIMIT);
+    }
 
     #[test]
     fn a_module_with_nothing_to_say_says_nothing() {

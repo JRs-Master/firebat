@@ -555,6 +555,15 @@ impl ModuleManager {
             }
         }
 
+        // What this module learned before, handed back to the actions that asked for it.
+        //
+        // Injected *after* validation and under a framework-owned key, so a module does not have
+        // to declare a property it never sends and an `additionalProperties: false` schema does
+        // not reject the framework's own addition. A module cannot read the store any more than
+        // it can write to it; this is the read half of the same arrangement.
+        let with_recall = self.inject_recall(module_name, config.as_ref(), input_data).await;
+        let input_data: &serde_json::Value = with_recall.as_ref().unwrap_or(input_data);
+
         // WS-only actions (config.json `ws` declarative) — route to the WS transport instead of
         // the sandbox. Common infra + per-module config data = no per-provider WS code in modules
         // (TokenProvider pattern). Undeclared actions fall through to the sandbox as before.
@@ -671,6 +680,59 @@ impl ModuleManager {
         }
 
         Ok(result)
+    }
+
+    /// The module's own record, for an action its config named in `recall.actions`.
+    ///
+    /// Returns None when nothing is declared, nothing is stored, or the store is not wired — in
+    /// each case the module runs exactly as it did before, which is what makes this safe to add
+    /// to a module that has never heard of it.
+    async fn inject_recall(
+        &self,
+        module_name: &str,
+        config: Option<&serde_json::Value>,
+        input_data: &serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        let spec = crate::utils::module_memory::parse_recall_spec(config?)?;
+        let action = input_data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        if !spec.covers(action) {
+            return None;
+        }
+        let recall = self.recall.as_ref()?;
+        let owner = crate::utils::owner::for_module(None, module_name);
+        let facts = recall.recent_facts(Some(&owner), spec.limit).await.ok()?;
+        let lessons = crate::managers::memory_file::MemoryFileManager::new(self.storage.clone())
+            .list(Some(&owner))
+            .await
+            .unwrap_or_default();
+        if facts.is_empty() && lessons.is_empty() {
+            return None;
+        }
+        let obj = input_data.as_object()?.clone();
+        let mut obj = obj;
+        obj.insert(
+            "_recall".to_string(),
+            serde_json::json!({
+                "owner": owner,
+                "facts": facts.iter().map(|f| serde_json::json!({
+                    "content": f.content,
+                    "factType": f.fact_type,
+                    "createdAt": f.created_at,
+                })).collect::<Vec<_>>(),
+                "lessons": lessons.iter().map(|l| serde_json::json!({
+                    "name": l.name,
+                    "description": l.description,
+                    "content": l.content,
+                    "confidence": l.confidence,
+                })).collect::<Vec<_>>(),
+            }),
+        );
+        tracing::info!(
+            target: "module_memory", module = %module_name, action = %action, owner = %owner,
+            facts = facts.len(), lessons = lessons.len(),
+            "recall: handed the module its own record"
+        );
+        Some(serde_json::Value::Object(obj))
     }
 
     /// Write a module's `remember` block into recall, scoped to that module.

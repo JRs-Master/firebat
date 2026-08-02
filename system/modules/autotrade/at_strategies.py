@@ -700,6 +700,35 @@ def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_
     }
 
 
+def verdict_fact(symbol, candidate_id, why, row, adopted):
+    """One night's verdict, in a sentence the next night can read.
+
+    The strategy store already holds all of this, in more detail — but only this module can read
+    that store, and only by opening the file. A fact goes into recall, which the framework hands
+    back on the next revision without anyone asking. The point is not to store it twice; it is
+    that the search which decides what to try next can see what was already tried.
+
+    Numbers, not adjectives. "Refused" tells the next round nothing; "refused, beat holding on 2
+    of 8 symbols, median -61.8%p" tells it which direction is already known to be wrong.
+    """
+    detail = []
+    if isinstance(row, dict):
+        for key, label in (("beatBuyHoldIn", "이긴 종목"), ("symbols", "/"),
+                           ("medianVsBuyHoldPct", "보유 대비 중앙"), ("trades", "왕복")):
+            v = row.get(key)
+            if v is not None:
+                detail.append(f"{label} {v}" if label != "/" else f"/{v}")
+    head = "채택" if adopted else "거부"
+    reason = "" if adopted else " — " + "; ".join(str(w) for w in (why or [])[:2])
+    body = " · ".join(x for x in [" ".join(detail).replace(" /", "/")] if x)
+    return {
+        "entity": str(symbol or "?"),
+        "entityType": "symbol",
+        "factType": "strategy-verdict",
+        "content": f"{candidate_id}: {head}{reason}" + (f" ({body})" if body else ""),
+    }
+
+
 def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRADES,
                proposal=None):
     """Adopt one rule per symbol, from `fit_symbols` output passed straight through.

@@ -3179,6 +3179,13 @@ pub trait IMemoryFacadePort: Send + Sync {
     async fn list_entities(&self, _owner: Option<&str>, _limit: usize) -> InfraResult<Vec<EntityRecord>> {
         Ok(Vec::new())
     }
+
+    /// Facts in one scope, most recent first — what a module is handed back of its own record.
+    /// Default = empty (test stubs).
+    async fn recent_facts(&self, _owner: Option<&str>, _limit: usize)
+        -> InfraResult<Vec<EntityFactRecord>> {
+        Ok(Vec::new())
+    }
     fn list_fact_types(&self, _owner: Option<&str>) -> InfraResult<Vec<String>> {
         Ok(Vec::new())
     }

@@ -47,6 +47,20 @@ impl IMemoryFacadePort for MemoryFacade {
             .await
     }
 
+    async fn recent_facts(&self, owner: Option<&str>, limit: usize)
+        -> InfraResult<Vec<crate::ports::EntityFactRecord>> {
+        self.entity
+            .search_facts(crate::ports::FactSearchOpts {
+                // Empty query = recency order and no embedding cost. A module reading its own
+                // record wants the last thing it learned, not the most similar thing.
+                query: String::new(),
+                limit: Some(limit),
+                owner: owner.map(String::from),
+                ..Default::default()
+            })
+            .await
+    }
+
     fn list_fact_types(&self, owner: Option<&str>) -> InfraResult<Vec<String>> {
         self.entity.list_fact_types(owner)
     }
