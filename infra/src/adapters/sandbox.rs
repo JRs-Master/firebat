@@ -966,6 +966,19 @@ impl ProcessSandboxAdapter {
             });
         let settings_key = firebat_core::vault_keys::vk_module_settings(&module_name);
         if let Some(settings_raw) = vault.get_secret(&settings_key) {
+            // A settings row that exists but cannot be read used to vanish in silence: the module
+            // received no MODULE_* at all and fell back to its declared defaults, so the only
+            // symptom was a screen that looked unconfigured. Measured 2026-08-02 — a value stored
+            // as a blob rather than text read as absent and took every setting with it, switches
+            // included. Say it out loud instead.
+            match serde_json::from_str::<serde_json::Value>(&settings_raw) {
+                Ok(v) if v.is_object() => {}
+                Ok(_) => tracing::warn!(target: "module_settings", module = %module_name,
+                    "settings are stored as something other than an object — ignored, so the                      module is running on its declared defaults"),
+                Err(e) => tracing::warn!(target: "module_settings", module = %module_name,
+                    error = %e,
+                    "settings could not be parsed — ignored, so the module is running on its                      declared defaults"),
+            }
             if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&settings_raw) {
                 if let Some(map) = settings.as_object() {
                     for (k, v) in map {

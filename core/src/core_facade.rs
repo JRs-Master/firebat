@@ -102,11 +102,24 @@ impl Core {
         let mut added = vec![];
         for (file, job) in jobs {
             let id = job_id(&file);
-            // A job registered before the target convention existed is repaired in place rather
-            // than left mislabelled: same id, same trigger, corrected target.
+            // A job registered before the target convention existed is repaired rather than left
+            // mislabelled. Re-registering under the same id is refused — the scheduler rejects a
+            // duplicate rather than replacing it — so the old one is withdrawn first. Same id,
+            // same trigger, corrected target.
             let stale = live.get(&id).is_some_and(|t| t != &target);
             if !stale && (already.contains(&file) || live.contains_key(&id)) {
                 continue;
+            }
+            if stale {
+                match self.schedule.cancel(&id).await {
+                    Ok(_) => tracing::info!(target: "module_schedule", module = %name, job = %id,
+                        "withdrawing a schedule registered under the old target"),
+                    Err(e) => {
+                        tracing::warn!(target: "module_schedule", module = %name, job = %id,
+                            error = %e, "could not withdraw the stale schedule — leaving it");
+                        continue;
+                    }
+                }
             }
             match self.schedule.schedule(&id, &target, job).await {
                 Ok(()) => {
