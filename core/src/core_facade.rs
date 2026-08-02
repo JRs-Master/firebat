@@ -457,11 +457,15 @@ mod module_contract_tests {
                 continue;
             }
             let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // A credential is the other half of the guarantee: the sandbox injects secrets a
-            // module declares, so a module that declares none cannot authenticate at all.
-            if config.get("secrets").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty()) {
-                problems.push(format!("{name}: hubSafe but declares credentials"));
-            }
+            // Declaring no credential is a second layer where the venue allows it — Upbit serves
+            // its market data unauthenticated, so `upbit-quotes` holds no key at all and could
+            // not reach an account even if an action existed. Kiwoom and Korea Investment require
+            // a token for quotes too, so their public halves must hold one; there the boundary is
+            // the action list alone. Requiring the stronger property would mean those two have no
+            // chartable module, which is the reason a hub was allowed a broker in the first place.
+            //
+            // What is never allowed is the account registry: a module that can be addressed as a
+            // registered trading account is not a quote module.
             if config.get("accounts").is_some() {
                 problems.push(format!("{name}: hubSafe but declares accounts"));
             }

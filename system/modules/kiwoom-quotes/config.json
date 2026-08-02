@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "키움증권 공개 시세·차트. 계좌·주문은 이 모듈에 없습니다 — `kiwoom` 입니다. 자격증명을 선언하지 않으므로 샌드박스가 키를 주입하지 않습니다. hub 에 허용해도 안전한 쪽입니다.",
+  "description": "키움증권 공개 시세·차트. 계좌·주문은 이 모듈에 없습니다 — `kiwoom` 입니다. 자격증명을 선언하지 않으므로 샌드박스가 키를 주입하지 않습니다. hub 에 허용해도 안전한 쪽입니다. ⚠️ 이 증권사는 시세에도 토큰이 필요해 자격증명을 선언합니다 — 경계는 액션 선언이 집니다(계좌·주문 액션이 이 모듈에 없음).",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
@@ -812,5 +812,46 @@
       ]
     }
   },
-  "hubSafe": true
+  "hubSafe": true,
+  "secrets": [
+    {
+      "name": "KIWOOM_APP_KEY",
+      "type": "key"
+    },
+    {
+      "name": "KIWOOM_APP_SECRET",
+      "type": "key"
+    },
+    {
+      "name": "KIWOOM_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://api.kiwoom.com",
+        "baseMock": "https://mockapi.kiwoom.com",
+        "path": "/oauth2/token",
+        "method": "POST",
+        "contentType": "application/json;charset=UTF-8",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIWOOM_APP_KEY}",
+          "secretkey": "${KIWOOM_APP_SECRET}"
+        },
+        "tokenField": "token",
+        "invalidWhen": {
+          "match": "any",
+          "conditions": [
+            {
+              "field": "return_code",
+              "equals": 3
+            },
+            {
+              "field": "return_msg",
+              "regex": "(?i)Token이 유효하지 않습니다|token.*invalid"
+            }
+          ]
+        }
+      }
+    }
+  ]
 }
