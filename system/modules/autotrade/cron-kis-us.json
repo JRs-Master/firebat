@@ -25,7 +25,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_korea-invest",
+          "tool": "sysmod_korea-invest-quotes",
           "inputData": {
             "action": "get_candles",
             "bars": 120

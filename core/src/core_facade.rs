@@ -343,11 +343,48 @@ mod module_contract_tests {
                 continue;
             };
             let declared: Vec<&str> = declared.iter().filter_map(|v| v.as_str()).collect();
-            let code = ["index.mjs", "main.py"]
+            // The entry point may be a wrapper over a dialect shared with the module's public
+            // half — reading only the directory would make this check pass on twenty lines that
+            // implement nothing, which is worse than not having it.
+            let mut code = ["index.mjs", "main.py"]
                 .iter()
                 .find_map(|f| std::fs::read_to_string(dir.join(f)).ok())
                 .unwrap_or_default();
+            if let Some(lib) = code
+                .split("'../_runtime/")
+                .nth(1)
+                .and_then(|rest| rest.split(0x27 as char).next())
+            {
+                if let Ok(shared) = std::fs::read_to_string(root.join("_runtime").join(lib)) {
+                    code.push_str(&shared);
+                }
+            }
+            // A broker that has been split declares the contract across the pair: the money half
+            // holds the orders and the account, the public half holds the candles.
+            let mut declared = declared;
+            let quotes = dir.with_file_name(format!(
+                "{}-quotes",
+                dir.file_name().unwrap_or_default().to_string_lossy()
+            ));
+            let quotes_raw = std::fs::read_to_string(quotes.join("config.json")).unwrap_or_default();
+            let quotes_cfg: serde_json::Value =
+                serde_json::from_str(&quotes_raw).unwrap_or(serde_json::Value::Null);
+            let quotes_actions: Vec<String> = quotes_cfg["input"]["properties"]["action"]["enum"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_string)
+                .collect();
+            declared.extend(quotes_actions.iter().map(String::as_str));
             let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            // The public half of a split broker shares the dialect and declares none of the money
+            // calls — there, "implemented but not declared" is the guarantee, not a defect. The
+            // opposite assertion is made about it by `a_hub_safe_module_cannot_reach_an_account`.
+            if name.ends_with("-quotes") {
+                continue;
+            }
             let mentions = |a: &str| {
                 code.contains(&format!("'{a}'")) || code.contains(&format!("\"{a}\""))
             };

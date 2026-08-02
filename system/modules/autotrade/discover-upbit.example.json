@@ -52,7 +52,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_upbit_quotes",
+          "tool": "sysmod_upbit-quotes",
           "inputData": {
             "action": "get_candles",
             "interval": "5m",
