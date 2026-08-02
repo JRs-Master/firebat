@@ -27,6 +27,7 @@ import at_universe as uni        # noqa: E402
 import at_orders as orders       # noqa: E402
 import at_strategies as strat    # noqa: E402
 import at_sweep as sweep         # noqa: E402
+import at_context as ctxstore  # noqa: E402
 
 
 def read_input():
@@ -825,6 +826,37 @@ def action_bind_bars(inp, settings):
     costs = {k: v for k, v in {
         "feeRate": inp.get("feeRate"), "taxRate": inp.get("taxRate"),
         "slippageRate": inp.get("slippageRate")}.items() if v is not None}
+    # The slow series, read off disk once for the whole batch. A rule that names `w.slope10` gets
+    # weekly bars here rather than a broker call — that is the point of keeping them.
+    want_tf = set()
+    for t in trades:
+        for rule in (t.get("rules") or []):
+            for c in (rule.get("when") or []):
+                for side in ("a", "b"):
+                    v = c.get(side)
+                    if isinstance(v, str) and "." in v:
+                        head = v.split(".", 1)[0]
+                        if head in ("M", "w", "d", "h") or (
+                                head[:-1].isdigit() and head[-1] in "mhdwM"):
+                            want_tf.add({"M": "1M", "w": "1w", "d": "1d",
+                                         "h": "1h"}.get(head, head))
+    context, stale = {}, []
+    if want_tf:
+        cconn = ctxstore.connect()
+        try:
+            for t in trades:
+                per = {}
+                for tf in sorted(want_tf):
+                    rows = ctxstore.read(cconn, t.get("symbol"), tf)
+                    if rows:
+                        per[tf] = rows
+                    else:
+                        stale.append(f"{t.get('symbol')} {tf}")
+                if per:
+                    context[t.get("tradeId")] = per
+        finally:
+            cconn.close()
+
     runs, missing = [], []
     for t, f in zip(trades, fetched):
         payload = (f or {}).get("data") if isinstance(f, dict) and "data" in f else f
@@ -835,6 +867,9 @@ def action_bind_bars(inp, settings):
             missing.append(t.get("symbol"))
             continue
         args = {"action": "signals", "rules": t.get("rules"), **costs}
+        higher = context.get(t.get("tradeId"))
+        if higher:
+            args["higher"] = higher
         if key:
             args["barsCacheKey"] = key
         else:
@@ -849,6 +884,10 @@ def action_bind_bars(inp, settings):
     return {"success": True, "data": {
         "runs": runs, "runCount": len(runs),
         "missing": missing or None,
+        # A rule reaching for a timeframe nobody has fetched yet is worth saying out loud: the
+        # analyser refuses it, and without this the refusal reads as a broken rule rather than a
+        # context fetch that has not run.
+        "contextMissing": sorted(set(stale)) or None,
         "note": ("각 항목의 `args` 를 technical-analysis 에 FOREACH 로 넘기고, 그 결과 전체를 "
                  "cycle 의 `signals` 로, 이 응답을 `plan` 으로 넘기십시오."),
     }}
@@ -2496,6 +2535,40 @@ def action_selftest():
     checks.append({"name": "a demoted strategy's fill goes to the paper ledger, not the live one",
                    "want": (True, 0), "got": (in_paper > 0, in_live),
                    "ok": in_paper > 0 and in_live == 0})
+
+    # --- the slow timeframes ---------------------------------------------------------------
+    cplan = action_context_plan({"symbols": ["ZZZ"]}, {"trades": [], "contextIntervals":
+                                [{"interval": "1w", "bars": 50}]})["data"]
+    checks.append({"name": "the slow fetch asks once per symbol per timeframe", "want": 1,
+                   "got": cplan["runCount"], "ok": cplan["runCount"] == 1})
+    weeks = [{"date": "2026-0%d-01" % m, "open": 50, "high": 60, "low": 40,
+              "close": 50 + m, "volume": 1} for m in range(1, 8)]
+    res = [{"success": True, "data": {"records": weeks}}]
+    action_store_context({"plan": cplan, "results": res}, {})
+    cc = ctxstore.connect()
+    held = ctxstore.read(cc, "ZZZ", "1w", drop_last=False)
+    shown = ctxstore.read(cc, "ZZZ", "1w")
+    checks.append({"name": "the newest higher bar is never handed to a rule",
+                   "want": (7, 6), "got": (len(held), len(shown)),
+                   "ok": len(held) == 7 and len(shown) == 6})
+    # A fetch that comes back empty must not erase what is held — otherwise a rate limit reads as
+    # "this symbol has no history" and every rule that uses it silently stops firing.
+    action_store_context({"plan": cplan, "results": [{"success": True, "data": {"records": []}}]},
+                         {})
+    after = ctxstore.read(cc, "ZZZ", "1w", drop_last=False)
+    cc.close()
+    checks.append({"name": "an empty fetch leaves the history alone", "want": 7,
+                   "got": len(after), "ok": len(after) == 7})
+    # Only the timeframes a rule actually names travel with the call.
+    ctrades = [{"tradeId": "z", "strategyId": "z", "symbol": "ZZZ", "interval": "1h",
+                "rules": [{"side": "buy", "when": [{"a": "w.slope3", "op": ">", "b": 0}]}]}]
+    cbars = {"success": True, "data": {"records": [
+        {"date": "2026-07-%02d" % (i + 1), "open": 100, "high": 101, "low": 99,
+         "close": 100 + i, "volume": 1} for i in range(20)]}}
+    cb = action_bind_bars({"trades": ctrades, "fetched": [cbars]}, {})["data"]
+    carried = sorted((cb["runs"][0]["args"].get("higher") or {}))
+    checks.append({"name": "only the timeframes the rule names are carried", "want": ["1w"],
+                   "got": carried, "ok": carried == ["1w"]})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,

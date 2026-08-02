@@ -884,6 +884,156 @@ def chart_annotation_set(cand, structure_label=None):
 
 # `ma50` / `ema20` — a rule references a moving average by naming its period, so no period list is
 # declared anywhere and both conventions (5/20/60/120 and 50/200) work.
+
+
+# A timeframe in front of any operand: `w.slope10`, `d.rsi`, `M.ma12`, `4h.close`.
+#
+# Deliberately not a resample of the bars in hand. Folding three hundred hourly bars into weekly
+# ones yields two, and two exact bars say nothing about a trend — the history is the point, so the
+# higher series is fetched at its own length and handed in.
+#
+# `macd.hist` and `bollinger.mid` also contain a dot, so a prefix only counts when it looks like a
+# timeframe *and* a series of that name was actually supplied.
+_TF_PREFIX = re.compile(r"^(M|w|d|h|\d+[mhdwM])\.(.+)$")
+_TF_ALIAS = {"M": "1M", "w": "1w", "d": "1d", "h": "1h"}
+
+
+def _tf_key(prefix):
+    return _TF_ALIAS.get(prefix, prefix)
+
+
+def _bar_time(row):
+    """A date comparable across formats — 'YYYY-MM-DD' and 'YYYY-MM-DD HH:MM:SS' sort together."""
+    d = str((row or {}).get("date") or "")
+    return (d + " 00:00:00")[:19] if len(d) <= 10 else d[:19]
+
+
+def _align_to(native_bars, higher_bars, values):
+    """Carry a higher-timeframe series onto the native bars, one closed bar behind.
+
+    At any moment inside this week, the weekly bar that has *finished* is last week's. Taking the
+    bar that contains the current moment would read a value still being written — it changes every
+    day until the period ends, so a rule answers differently each run and a backtest sees a close
+    that had not happened yet. Stepping back one bar is what "the last closed weekly bar" means.
+    """
+    if not higher_bars or not values:
+        return [None] * len(native_bars)
+    hi_times = [_bar_time(b) for b in higher_bars]
+    out, j = [], 0
+    for b in native_bars:
+        t = _bar_time(b)
+        while j + 1 < len(hi_times) and hi_times[j + 1] <= t:
+            j += 1
+        # `j` is the bar containing this moment; the one before it is the last that closed.
+        k = j - 1 if hi_times[j] <= t else j - 1
+        out.append(values[k] if 0 <= k < len(values) else None)
+    return out
+
+
+def _higher_series(higher_input, inp, refs_by_tf, native_bars):
+    """Every prefixed operand, resolved on its own timeframe and aligned to the native bars.
+
+    Returns `(series, missing)` — missing names the timeframes a rule asked for and nobody
+    supplied, because "the condition was never true" and "the series was never fetched" look
+    identical in a signal count and are not the same problem.
+    """
+    out, missing, unknown = {}, [], []
+    for tf, refs in sorted(refs_by_tf.items()):
+        raw = (higher_input or {}).get(tf)
+        rows = _bars(raw) if isinstance(raw, list) else []
+        if not rows:
+            missing.append(tf)
+            continue
+        base = _base_series(rows, inp)
+        _add_derived(base, [b["close"] for b in rows], sorted({r for _, r in refs}))
+        for full, sub in refs:
+            if sub not in base:
+                unknown.append(full)
+                continue
+            out[full] = _align_to(native_bars, rows, base[sub])
+    return out, missing, unknown
+
+
+def _base_series(bars, inp):
+    """Every fixed indicator, over whatever bars it is handed.
+
+    Pulled out of the action so the same set can be computed on a higher timeframe: a rule saying
+    `w.rsi` wants the identical calculation over weekly bars, and a second implementation of it
+    would be a second thing to keep correct.
+    """
+    closes = [b["close"] for b in bars]
+    m = macd(closes, int(inp.get("macdFast") or 12), int(inp.get("macdSlow") or 26),
+             int(inp.get("macdSignal") or 9))
+    bb = bollinger(closes, int(inp.get("bbPeriod") or 20), float(inp.get("bbMult") or 2.0))
+    st = stochastic(bars, int(inp.get("stochK") or 14), int(inp.get("stochD") or 3),
+                    int(inp.get("stochSmooth") or 3))
+    ic = ichimoku(bars, int(inp.get("tenkan") or 9), int(inp.get("kijun") or 26),
+                  int(inp.get("senkouB") or 52))
+    return {
+        # 정규화된 봉이 open 을 안 실을 수 있다 — 없으면 종가로 대체(경로는 유지해 규칙이 안 깨지게).
+        "close": closes, "open": [b.get("open", b["close"]) for b in bars],
+        "high": [b["high"] for b in bars], "low": [b["low"] for b in bars],
+        "volume": [b.get("volume", 0) or 0 for b in bars],
+        "rsi": rsi(closes, int(inp.get("rsiPeriod") or 14)),
+        "macd.macd": m["macd"], "macd.signal": m["signal"], "macd.hist": m["hist"],
+        "bollinger.mid": bb["mid"], "bollinger.upper": bb["upper"], "bollinger.lower": bb["lower"],
+        "bollinger.percentB": bb["percentB"], "bollinger.bandwidth": bb["bandwidth"],
+        "stochastic.k": st["k"], "stochastic.d": st["d"],
+        "ichimoku.tenkan": ic["tenkan"], "ichimoku.kijun": ic["kijun"],
+        "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
+    }
+
+
+def _add_derived(series, closes, refs):
+    """Moving averages and the things read off them, at whatever periods the rules name.
+
+    Returns the refs it could not measure — a period longer than the series it was given.
+    """
+    too_long = []
+    for ref in refs:
+        m = _ACCEL_REF.match(ref)
+        kind = "accel"
+        if not m:
+            m = _SLOPE_REF.match(ref)
+            kind = "slope"
+        if not m:
+            m = _DISP_REF.match(ref)
+            kind = "disp"
+        if not m:
+            m = _MA_REF.match(ref)
+            kind = None
+        if not m:
+            continue
+        if kind is None:
+            ma_kind, period = m.groups()
+            n = int(period)
+            if n < 1 or n > len(closes):
+                too_long.append((ref, n))
+                continue
+            series[ref] = _ema(closes, n) if ma_kind == "ema" else _sma(closes, n)
+            continue
+        ema_flag, period = m.groups()
+        n = int(period)
+        if n < 1 or n > len(closes):
+            too_long.append((ref, n))
+            continue
+        base = _ema(closes, n) if ema_flag else _sma(closes, n)
+        if kind == "disp":
+            series[ref] = [None if (b is None or not b) else c / b * 100.0
+                           for c, b in zip(closes, base)]
+            continue
+        sl = [None if (i == 0 or base[i] is None or not base[i - 1])
+              else (base[i] - base[i - 1]) / base[i - 1] * 100.0
+              for i in range(len(base))]
+        if kind == "slope":
+            series[ref] = sl
+        else:
+            series[ref] = [None if (i == 0 or sl[i] is None or sl[i - 1] is None)
+                           else sl[i] - sl[i - 1]
+                           for i in range(len(sl))]
+    return too_long
+
+
 _MA_REF = re.compile(r"^(ma|ema)(\d+)$")
 # Two things every trend rule is actually made of, and neither could be written before.
 #
@@ -1126,23 +1276,7 @@ def main():
                 "ichimoku.tenkan|kijun|senkouA|senkouB"}, ensure_ascii=False))
             return
         closes = [b["close"] for b in bars]
-        m = macd(closes, int(inp.get("macdFast") or 12), int(inp.get("macdSlow") or 26), int(inp.get("macdSignal") or 9))
-        bb = bollinger(closes, int(inp.get("bbPeriod") or 20), float(inp.get("bbMult") or 2.0))
-        st = stochastic(bars, int(inp.get("stochK") or 14), int(inp.get("stochD") or 3), int(inp.get("stochSmooth") or 3))
-        ic = ichimoku(bars, int(inp.get("tenkan") or 9), int(inp.get("kijun") or 26), int(inp.get("senkouB") or 52))
-        series = {
-            # 정규화된 봉이 open 을 안 실을 수 있다 — 없으면 종가로 대체(경로는 유지해 규칙이 안 깨지게).
-            "close": closes, "open": [b.get("open", b["close"]) for b in bars],
-            "high": [b["high"] for b in bars], "low": [b["low"] for b in bars],
-            "volume": [b.get("volume", 0) or 0 for b in bars],
-            "rsi": rsi(closes, int(inp.get("rsiPeriod") or 14)),
-            "macd.macd": m["macd"], "macd.signal": m["signal"], "macd.hist": m["hist"],
-            "bollinger.mid": bb["mid"], "bollinger.upper": bb["upper"], "bollinger.lower": bb["lower"],
-            "bollinger.percentB": bb["percentB"], "bollinger.bandwidth": bb["bandwidth"],
-            "stochastic.k": st["k"], "stochastic.d": st["d"],
-            "ichimoku.tenkan": ic["tenkan"], "ichimoku.kijun": ic["kijun"],
-            "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
-        }
+        series = _base_series(bars, inp)
 
         # Moving averages, at whatever periods the rules actually name.
         #
@@ -1153,6 +1287,33 @@ def main():
         # so 5/20/60/120 and 50/200 all work without this module choosing a convention.
         every_ref = [str(c.get(side)) for r in rules for c in (r.get("when") or [])
                      for side in ("a", "b") if isinstance(c.get(side), str)]
+
+        # Operands carrying a timeframe, grouped so each higher series is computed once.
+        higher_in = inp.get("higher") if isinstance(inp.get("higher"), dict) else {}
+        refs_by_tf = {}
+        for ref in set(every_ref):
+            mm = _TF_PREFIX.match(ref)
+            if not mm:
+                continue
+            key = _tf_key(mm.group(1))
+            if key not in higher_in and mm.group(1) not in higher_in:
+                refs_by_tf.setdefault(key, set())
+                continue
+            refs_by_tf.setdefault(key if key in higher_in else mm.group(1),
+                                  set()).add((ref, mm.group(2)))
+        hi_series, hi_missing, hi_unknown = _higher_series(higher_in, inp, refs_by_tf, bars)
+        series.update(hi_series)
+        if hi_unknown:
+            print(json.dumps({"success": False, "error":
+                "상위 주기에 없는 경로: %s — 접두사 뒤는 평소 쓰는 이름 그대로입니다"
+                % ", ".join(sorted(hi_unknown))}, ensure_ascii=False))
+            return
+        if hi_missing:
+            print(json.dumps({"success": False, "error":
+                "규칙이 %s 주기를 쓰는데 `higher` 에 그 봉이 없습니다 — 조건이 거짓인 것과 "
+                "봉을 안 받은 것은 다른 문제라 조용히 넘어가지 않습니다."
+                % ", ".join(sorted(hi_missing))}, ensure_ascii=False))
+            return
         ma_refs = sorted({r for r in every_ref if _MA_REF.match(r)})
         derived = sorted({r for r in every_ref
                           if _SLOPE_REF.match(r) or _DISP_REF.match(r)

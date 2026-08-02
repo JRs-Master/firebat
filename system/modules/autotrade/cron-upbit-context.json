@@ -1,0 +1,42 @@
+{
+  "title": "autotrade — 상위 주기 컨텍스트 (하루 한 번)",
+  "cronTime": "0 10 0 * * *",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "context_plan"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "runCount",
+      "op": ">",
+      "value": 0
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step0.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_upbit",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "store_context"
+      },
+      "inputMap": {
+        "plan": "$step0",
+        "results": "$step2.results"
+      }
+    }
+  ]
+}

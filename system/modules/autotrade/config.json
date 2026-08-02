@@ -41,6 +41,7 @@
   ],
   "schedules": [
     "cron-upbit.json",
+    "cron-upbit-context.json",
     "cron-revise.json"
   ],
   "input": {
