@@ -228,7 +228,7 @@
       },
       "scaleOut": {
         "type": "array",
-        "description": "분할청산 사다리 — [{gainPct, sellPct}]. gainPct = 진입가 대비 상승률, sellPct = **원래 수량 기준 누적** 매도 비율(마지막 칸 100 = 전량). 익절 목표(takeProfitPct)는 이 사다리의 한 칸짜리 경우입니다. 손절·트레일링·룰 매도는 남은 전부를 정리합니다. 목표가 하나면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는데, 사다리가 그 타협을 없앱니다.",
+        "description": "분할청산 사다리 — [{gainPct, afterDays, sellPct}]. **칸 하나가 가격·시간을 둘 다 조건으로 가질 수 있고, 둘 다 적으면 둘 다 충족해야 발동합니다**(afterDays 만 적으면 순수 시간 분할). sellPct = **실제로 담은 수량 기준 누적**(마지막 칸 100 = 전량). 익절 목표(takeProfitPct)는 이 사다리의 한 칸짜리 경우입니다. 손절·트레일링·룰 매도는 남은 전부를 정리합니다.",
         "items": {
           "type": "object",
           "properties": {
@@ -236,6 +236,27 @@
               "type": "number"
             },
             "sellPct": {
+              "type": "number"
+            },
+            "afterDays": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "scaleIn": {
+        "type": "array",
+        "description": "분할진입 사다리 — [{dropPct, afterDays, buyPct}]. dropPct 는 **첫 진입가 대비** 하락률입니다(평단은 담을수록 내려가므로 평단 기준이면 칸이 스스로를 쫓아 내려가 끝나지 않습니다). buyPct = 계획 규모 대비 누적. 선언하지 않으면 신호에 전량 진입(기존 동작).",
+        "items": {
+          "type": "object",
+          "properties": {
+            "dropPct": {
+              "type": "number"
+            },
+            "afterDays": {
+              "type": "number"
+            },
+            "buyPct": {
               "type": "number"
             }
           }

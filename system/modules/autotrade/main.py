@@ -1079,10 +1079,13 @@ def action_cycle(inp, settings):
         sconn = store_for(mode)
         pos = store.position_of(sconn, s["id"], broker, account, sym)
         if float(pos.get("qty") or 0) > 0:
-            # The ladder's rungs are cumulative against the size this position reached, and after
-            # the first rung sells the remaining quantity no longer says what that was.
-            pos = {**pos, "peak_qty": store.peak_qty_since_flat(
-                sconn, s["id"], broker, account, sym)}
+            # What the ladders measure against: the size this position reached (the exit rungs are
+            # cumulative on it), the price it opened at (the entry rungs measure the dip from
+            # there, not from the moving average), and when it opened (a rung can be timed).
+            a = store.position_anchor(sconn, s["id"], broker, account, sym)
+            pos = {**pos, "peak_qty": a["peakQty"], "anchor_price": a["firstPrice"],
+                   "age_days": ((now - a["firstMs"]) / 86400000.0
+                                if a["firstMs"] else None)}
         # The window guard stops a second entry, not a second look. While a position is open its
         # stop and target have to be evaluated on every pass — keying the cycle on the entry that
         # opened it would otherwise make the exit unreachable for as long as the trade lasts.

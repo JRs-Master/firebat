@@ -263,6 +263,9 @@ def plan_sweep(inp):
     # Declared as `[[gainPct, sellPct], ...]` per rung, cumulative. `null` in the list means "no
     # ladder", so the single-target cells stay in the same sweep and can be compared against it.
     ladders = _parse_ladders(space.get("scaleOut"))
+    # Entry ladders are the same shape on the other side: `[[dropPct, buyPct], ...]`, cumulative,
+    # with `null` meaning "all at the signal" so the undivided entry stays in the comparison.
+    entries = _parse_ladders(space.get("scaleIn"))
     holdout = float(space.get("holdout") or 0.3)
     holdout = min(0.6, max(0.1, holdout))
     split = round(1.0 - holdout, 4)
@@ -281,7 +284,8 @@ def plan_sweep(inp):
             # and crossing the axes would leave only that unmeasurable pairing when a target is
             # always declared. The stop still applies to both: a stop is not profit-taking.
             profit_shapes = [(t, None) for t in takes] + [(None, l) for l in ladders if l]
-            for stop, (take, ladder) in itertools.product(stops, profit_shapes):
+            for stop, (take, ladder), entry in itertools.product(stops, profit_shapes,
+                                                                  entries):
                 exits = {}
                 if stop:
                     exits["stopLossPct"] = stop
@@ -289,10 +293,13 @@ def plan_sweep(inp):
                     exits["takeProfitPct"] = take
                 if ladder:
                     exits["scaleOut"] = [{"gainPct": g, "sellPct": p} for g, p in ladder]
+                if entry:
+                    exits["scaleIn"] = [{"dropPct": d, "buyPct": p} for d, p in entry]
                 suffix = "".join([
                     f"-sl{stop}" if stop else "",
                     f"-tp{take}" if take else "",
                     "-" + _ladder_name(ladder) if ladder else "",
+                    "-in" + _ladder_name(entry)[2:] if entry else "",
                 ])
                 rows.append({
                     "id": f"{fam}:{cid}{suffix}",
@@ -309,7 +316,8 @@ def plan_sweep(inp):
                     "knobs": {**knobs,
                               **({"stopLossPct": stop} if stop else {}),
                               **({"takeProfitPct": take} if take else {}),
-                              **({"scaleOut": _ladder_name(ladder)} if ladder else {})},
+                              **({"scaleOut": _ladder_name(ladder)} if ladder else {}),
+                              **({"scaleIn": _ladder_name(entry)} if entry else {})},
                 })
     # Refuse what cannot be measured, and say why. `barCount` is the series the pipeline fetched;
     # the holdout is the smaller of the two windows, so it decides what is answerable.

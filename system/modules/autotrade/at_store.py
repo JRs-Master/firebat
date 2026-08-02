@@ -201,24 +201,42 @@ def position_of(conn, strategy_id, broker, account, symbol):
     }
 
 
-def peak_qty_since_flat(conn, strategy_id, broker, account, symbol):
-    """How large this position grew since it was last empty.
+def position_anchor(conn, strategy_id, broker, account, symbol):
+    """What the ladders measure themselves against, folded out of the ledger.
 
-    A scale-out ladder says "be half out by +5%", and half of *what* is the size the position
-    reached — not the size left after the first rung already sold some. Storing that as a column
-    would be a second source of truth that can drift from the ledger; folding it out of the
-    ledger cannot, because the ledger is append-only and is where the quantity came from.
+    Three facts about the position as it stands, all of them about the *current* run of it:
+
+    - `peakQty` — how large it grew. A scale-out rung says "be half out by +5%", and half of
+      *what* is the size it reached, not what is left after an earlier rung already sold some.
+    - `firstPrice` — what the first share cost. A scale-in rung says "add if it drops 3%", and
+      below *what*: the average moves every time you add, so anchoring on it makes the rungs
+      chase themselves down.
+    - `firstMs` — when the position opened, so a rung can be timed as well as priced.
+
+    Derived rather than stored. A column holding any of these is a second source of truth that
+    can drift from the append-only rows the quantities came from.
     """
     peak = running = 0.0
+    first_price, first_ms = None, None
     for row in conn.execute(
-            "SELECT side, qty FROM ledger WHERE strategy_id=? AND broker=? AND account=? "
-            "AND symbol=? ORDER BY id", (strategy_id, broker, account, symbol)):
-        running += float(row["qty"] or 0) * (1 if row["side"] == "buy" else -1)
+            "SELECT side, qty, price, ts_ms FROM ledger WHERE strategy_id=? AND broker=? "
+            "AND account=? AND symbol=? ORDER BY id", (strategy_id, broker, account, symbol)):
+        buying = row["side"] == "buy"
+        if running <= 1e-12 and buying:
+            first_price, first_ms = float(row["price"] or 0), int(row["ts_ms"] or 0)
+        running += float(row["qty"] or 0) * (1 if buying else -1)
         if running <= 1e-12:
-            running, peak = 0.0, 0.0        # flat — the next buy starts a new ladder
+            # Flat — the next buy starts a new position, and a new ladder with it.
+            running, peak = 0.0, 0.0
+            first_price, first_ms = None, None
         else:
             peak = max(peak, running)
-    return peak
+    return {"peakQty": peak, "firstPrice": first_price, "firstMs": first_ms}
+
+
+def peak_qty_since_flat(conn, strategy_id, broker, account, symbol):
+    """How large this position grew since it was last empty."""
+    return position_anchor(conn, strategy_id, broker, account, symbol)["peakQty"]
 
 
 def set_position_state(conn, strategy_id, broker, account, symbol, state):

@@ -102,40 +102,108 @@ def _bars(data):
     return out
 
 
-def _parse_scale_out(spec, take_pct):
-    """The exit ladder, normalised — or the reason it cannot be read.
+def _parse_rungs(spec, move_key, size_key):
+    """A ladder of `{<move_key>, afterDays, <size_key>}` rungs, or the reason it cannot be read.
 
-    Returns rungs of `{gain, sold}` where `gain` is the fraction above entry that triggers it and
-    `sold` is the cumulative fraction of the original position that should be gone by then. A
-    single take-profit target is the one-rung case, so the loop below has one shape rather than
-    two.
+    A rung can name a price move, an elapsed time, or both — and naming both means both must
+    hold. A pure time split falls out of the same shape rather than needing its own mechanism.
+    `<size_key>` is cumulative against the position's full size, so the last rung is 100.
     """
-    if not spec:
-        return ([{"gain": take_pct / 100.0, "sold": 1.0}] if take_pct > 0 else []), None
-    if not isinstance(spec, list):
-        return [], "scaleOut 은 [{gainPct, sellPct}] 배열입니다."
-    rungs, last_gain, last_sold = [], None, 0.0
+    rungs, last_move, last_filled = [], None, 0.0
     for i, r in enumerate(spec):
         if not isinstance(r, dict):
-            return [], f"scaleOut[{i}] 이 객체가 아닙니다."
+            return None, f"{size_key} 사다리의 [{i}] 이 객체가 아닙니다."
         try:
-            gain = float(r.get("gainPct"))
-            sold = float(r.get("sellPct"))
+            filled = float(r.get(size_key))
         except (TypeError, ValueError):
-            return [], f"scaleOut[{i}] 의 gainPct·sellPct 를 숫자로 읽지 못했습니다."
-        if gain <= 0:
-            return [], f"scaleOut[{i}].gainPct 는 0보다 커야 합니다."
-        if not 0 < sold <= 100:
-            return [], f"scaleOut[{i}].sellPct 는 0 초과 100 이하(원래 수량 기준 누적)입니다."
-        if last_gain is not None and gain <= last_gain:
-            return [], (f"scaleOut 은 목표가 오름차순이어야 합니다 — "
-                        f"[{i}] {gain}% 가 앞 칸 {last_gain}% 보다 크지 않습니다.")
-        if sold <= last_sold:
-            return [], (f"scaleOut.sellPct 는 누적이라 늘기만 합니다 — "
-                        f"[{i}] {sold}% 가 앞 칸 {last_sold}% 보다 크지 않습니다.")
-        rungs.append({"gain": gain / 100.0, "sold": sold / 100.0})
-        last_gain, last_sold = gain, sold
+            return None, f"[{i}].{size_key} 를 숫자로 읽지 못했습니다."
+        if not 0 < filled <= 100:
+            return None, f"[{i}].{size_key} 는 0 초과 100 이하(전체 대비 누적)입니다."
+        if filled <= last_filled:
+            return None, (f"{size_key} 는 누적이라 늘기만 합니다 — [{i}] {filled} 가 앞 칸 "
+                          f"{last_filled} 보다 크지 않습니다.")
+        rung = {"filled": filled / 100.0}
+        if r.get(move_key) is not None:
+            try:
+                move = float(r.get(move_key))
+            except (TypeError, ValueError):
+                return None, f"[{i}].{move_key} 를 숫자로 읽지 못했습니다."
+            if move <= 0:
+                return None, f"[{i}].{move_key} 는 0보다 커야 합니다."
+            if last_move is not None and move <= last_move:
+                return None, (f"{move_key} 는 오름차순이어야 합니다 — [{i}] {move} 가 앞 칸 "
+                              f"{last_move} 보다 크지 않습니다.")
+            rung["move"], last_move = move, move
+        if r.get("afterDays") is not None:
+            try:
+                days = float(r.get("afterDays"))
+            except (TypeError, ValueError):
+                return None, f"[{i}].afterDays 를 숫자로 읽지 못했습니다."
+            if days < 0:
+                return None, f"[{i}].afterDays 는 0 이상입니다."
+            rung["afterDays"] = days
+        if "move" not in rung and "afterDays" not in rung:
+            return None, f"[{i}] 에 조건이 없습니다 — {move_key} 나 afterDays 중 하나는 있어야 합니다."
+        rungs.append(rung)
+        last_filled = filled
     return rungs, None
+
+
+def _parse_scale_out(spec, take_pct):
+    """The exit ladder. A single take-profit target is the one-rung case, so the loop that uses
+    it has one shape rather than two."""
+    if not spec:
+        return ([{"move": take_pct, "filled": 1.0}] if take_pct > 0 else []), None
+    if not isinstance(spec, list):
+        return [], "scaleOut 은 [{gainPct, sellPct}] 배열입니다."
+    rungs, err = _parse_rungs(spec, "gainPct", "sellPct")
+    return (rungs or []), (f"scaleOut: {err}" if err else None)
+
+
+def _parse_scale_in(spec):
+    """The entry ladder — `[{dropPct, afterDays, buyPct}]`. Absent means the whole position at
+    the signal, which is what every measurement did before this existed."""
+    if not spec:
+        return [{"move": None, "filled": 1.0, "immediate": True}], None
+    if not isinstance(spec, list):
+        return [], "scaleIn 은 [{dropPct, buyPct}] 배열입니다."
+    rungs, err = _parse_rungs(spec, "dropPct", "buyPct")
+    return (rungs or []), (f"scaleIn: {err}" if err else None)
+
+
+def _rung_due(rung, move_pct, age_days):
+    if rung.get("immediate"):
+        return True
+    want_move, want_days = rung.get("move"), rung.get("afterDays")
+    if want_move is not None and move_pct < want_move - 1e-9:
+        return False
+    if want_days is not None and age_days < want_days - 1e-9:
+        return False
+    return want_move is not None or want_days is not None
+
+
+def _highest_due(rungs, move_pct, age_days, done):
+    """The furthest rung whose condition is met and which is beyond where we already are."""
+    target, idx = 0.0, None
+    for i, rung in enumerate(rungs):
+        if _rung_due(rung, move_pct, age_days) and rung["filled"] > target:
+            target, idx = rung["filled"], i
+    return (None, 0.0) if idx is None or target <= done + 1e-9 else (idx, target - done)
+
+
+def _days_between(a, b):
+    """Calendar days from date string `a` to `b`. Unparseable dates mean no elapsed time, which
+    keeps a time-gated rung shut rather than opening it on a guess."""
+    try:
+        ya, ma, da = int(a[0:4]), int(a[5:7]), int(a[8:10])
+        yb, mb, db = int(b[0:4]), int(b[5:7]), int(b[8:10])
+    except (ValueError, IndexError, TypeError):
+        return 0.0
+    import datetime
+    try:
+        return (datetime.date(yb, mb, db) - datetime.date(ya, ma, da)).days
+    except ValueError:
+        return 0.0
 
 
 def _apply_bar_range(bars, bar_range, spec):
@@ -1988,11 +2056,17 @@ def main():
         # 곧 100 이고, 칸이 겹치거나 총합이 넘는 선언은 여기서 거부한다.
         # 목표 하나짜리는 사다리 한 칸으로 흡수한다 — 청산 경로가 둘로 갈리지 않게.
         ladder, ladder_err = _parse_scale_out(inp.get("scaleOut"), take_pct * 100)
-        if ladder_err:
-            print(json.dumps({"success": False, "error": ladder_err}, ensure_ascii=False))
+        # 진입 사다리 — 신호 한 번에 전량이 아니라 "일부 지금, 더 빠지면 더". 실거래 엔진과 같은
+        # 어휘를 여기서도 써야 측정한 것과 거래하는 것이 같아진다.
+        entry_rungs, entry_err = _parse_scale_in(inp.get("scaleIn"))
+        if ladder_err or entry_err:
+            print(json.dumps({"success": False, "error": ladder_err or entry_err},
+                             ensure_ascii=False))
             return
         buy_at = {p["date"]: p for p in buy}
         sell_at = {p["date"]: p for p in sell}
+
+        _HIDE = ("peak", "held", "sold", "acquired", "anchorPrice")
 
         def _close_trade(pos, date, raw_px, label, reason, portion=None):
             exit_px = max(raw_px * (1 - slip) - tick_slip, 0.0)
@@ -2001,10 +2075,11 @@ def main():
             proceeds = exit_px * (1 - fee - tax)
             net = proceeds / cost - 1 if cost else 0.0
             part = pos["held"] if portion is None else portion
-            return {**{k: v for k, v in pos.items() if k not in ("peak", "held", "sold")},
+            return {**{k: v for k, v in pos.items() if k not in _HIDE},
                     "exitDate": date, "exitPrice": round(exit_px, 6),
                     "exitLabel": label, "exitReason": reason,
-                    # 이 체결이 원래 수량의 얼마였나. 사다리를 안 쓰면 항상 1.
+                    # 이 체결이 **전체 계획 규모**의 얼마였나. 사다리를 안 쓰면 항상 1이고, 진입을
+                    # 나눠 담았으면 그만큼 자본이 덜 들어가 있었다는 뜻이라 자본 반영도 그 몫만큼.
                     "portion": round(part, 6),
                     "closesPosition": (pos["held"] - part) <= 1e-9,
                     "returnPct": round(net * 100, 4),
@@ -2055,15 +2130,39 @@ def main():
                                                "트레일링", "trailing"))
                     pos = None
                 else:
-                    # 사다리 — 이 봉의 고가가 닿은 칸을 낮은 것부터. 한 봉이 두 칸을 뛰어넘을 수
-                    # 있고, 그때 두 번 파는 게 맞다(칸마다 가격이 다르다).
+                    age = _days_between(pos["entryDate"], date)
+                    # 진입 사다리 — 아직 다 담지 않았고, 이 봉의 **저가**가 다음 칸까지 내려왔다면
+                    # 거기서 더 담는다. 기준은 첫 진입가다(평단은 담을 때마다 내려가므로 평단을
+                    # 기준으로 하면 칸이 스스로를 쫓아 내려가 끝나지 않는다).
+                    if pos["acquired"] < 1.0 - 1e-9:
+                        drop = (pos["anchorPrice"] - b["low"]) / pos["anchorPrice"] * 100.0
+                        idx, add = _highest_due(entry_rungs, drop, age, pos["acquired"])
+                        if idx is not None and add > 1e-9:
+                            rung = entry_rungs[idx]
+                            at_px = (pos["anchorPrice"] * (1 - rung["move"] / 100.0)
+                                     if rung.get("move") is not None else b["open"])
+                            add_px = at_px * (1 + slip) + tick_slip
+                            total = pos["acquired"] + add
+                            pos["entryPrice"] = (pos["entryPrice"] * pos["acquired"]
+                                                 + add_px * add) / total
+                            pos["acquired"], pos["held"] = total, pos["held"] + add
+                            entry = pos["entryPrice"]
+                    # 청산 사다리 — 이 봉의 고가가 닿은 칸을 낮은 것부터. 한 봉이 두 칸을 뛰어넘을
+                    # 수 있고, 그때 두 번 파는 게 맞다(칸마다 가격이 다르다). 누적 비율의 기준은
+                    # **실제로 담은 만큼**이라, 마지막 칸 100% 는 언제나 전량 청산이다.
                     for k, rung in enumerate(ladder):
-                        if pos is None or rung["sold"] <= pos["sold"] + 1e-9:
-                            continue
-                        target = entry * (1 + rung["gain"])
-                        if b["high"] < target:
+                        if pos is None:
                             break
-                        part = min(rung["sold"] - pos["sold"], pos["held"])
+                        sold_frac = 1.0 - pos["held"] / pos["acquired"] if pos["acquired"] else 1.0
+                        if rung["filled"] <= sold_frac + 1e-9:
+                            continue
+                        if not _rung_due(rung, (b["high"] / entry - 1) * 100.0, age):
+                            # `continue`, not `break`: a later rung may be timed rather than
+                            # priced, and a price this bar did not reach says nothing about it.
+                            continue
+                        target = (entry * (1 + rung["move"] / 100.0)
+                                  if rung.get("move") is not None else b["open"])
+                        part = min((rung["filled"] - sold_frac) * pos["acquired"], pos["held"])
                         if part <= 1e-9:
                             continue
                         label = "익절" if len(ladder) == 1 else "분할익절 %d/%d" % (k + 1, len(ladder))
@@ -2082,8 +2181,11 @@ def main():
                 m = buy_at[date]
                 px = fill_price(date, m["price"])
                 if px is not None:
-                    pos = {"entryDate": date, "entryPrice": px * (1 + slip) + tick_slip,
-                           "entryLabel": m["label"], "peak": px, "held": 1.0, "sold": 0.0}
+                    opened = px * (1 + slip) + tick_slip
+                    first = entry_rungs[0]["filled"] if entry_rungs else 1.0
+                    pos = {"entryDate": date, "entryPrice": opened, "anchorPrice": opened,
+                           "entryLabel": m["label"], "peak": px,
+                           "acquired": first, "held": first, "sold": 0.0}
         wins = [t for t in trades if t["returnPct"] > 0]
         # 각 체결이 원래 수량의 일부일 수 있으므로 **그 몫만큼만** 자본에 반영한다. 사다리를 안
         # 쓰면 portion 이 1 이라 옛 계산과 같은 값이 나온다.
@@ -2115,8 +2217,15 @@ def main():
                           if len(bars) > 1 and bars[0].get("close") else None,
             "feeRate": fee, "taxRate": tax, "slippageRate": slip, "fillAt": fill_at,
             "stopLossPct": stop_pct * 100, "takeProfitPct": take_pct * 100,
-            "scaleOut": ([{"gainPct": round(r["gain"] * 100, 4),
-                           "sellPct": round(r["sold"] * 100, 4)} for r in ladder] or None),
+            "scaleOut": ([{k: v for k, v in (("gainPct", r.get("move")),
+                                             ("afterDays", r.get("afterDays")),
+                                             ("sellPct", round(r["filled"] * 100, 4)))
+                            if v is not None} for r in ladder] or None),
+            "scaleIn": ([{k: v for k, v in (("dropPct", r.get("move")),
+                                            ("afterDays", r.get("afterDays")),
+                                            ("buyPct", round(r["filled"] * 100, 4)))
+                          if v is not None} for r in entry_rungs]
+                        if inp.get("scaleIn") else None),
             # 왕복 횟수 — 사다리를 쓰면 체결 수가 왕복 수보다 많다. 둘을 섞으면 "체결 20건 이상"
             # 같은 바가 실제보다 쉽게 통과한다.
             "roundTrips": sum(1 for t in trades if t.get("closesPosition")),

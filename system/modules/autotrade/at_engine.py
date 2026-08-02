@@ -177,6 +177,140 @@ def _size_from_money(money, price):
     return floor_to_lot(per_order / price, lot)
 
 
+DAY_MS = 86400 * 1000
+
+
+def _rung_due(rung, move_pct, age_days):
+    """Is this rung's condition met?
+
+    A rung can name a price move, an elapsed time, or both — and when it names both, both have to
+    hold. That is what makes "add on a three percent dip, but not twice in the same week" one
+    declaration instead of two mechanisms, and it makes a pure time split (`afterDays` alone) fall
+    out of the same shape rather than needing its own.
+    """
+    want_move = rung.get("move")
+    want_days = rung.get("afterDays")
+    if want_move is not None and move_pct < want_move - 1e-9:
+        return False
+    if want_days is not None and (age_days is None or age_days < want_days - 1e-9):
+        return False
+    return want_move is not None or want_days is not None
+
+
+def _parse_rungs(spec, move_key, size_key):
+    """A ladder of `{<move_key>, afterDays, <size_key>}` rungs → `{move, afterDays, filled}`.
+
+    `filled` is cumulative against the position's full size, so the last rung is 100. Rungs run in
+    declared order and each must ask for more than the one before it; anything else is refused
+    rather than guessed at, because a ladder that is read differently from how it was written
+    trades an amount nobody asked for.
+    """
+    if not isinstance(spec, list) or not spec:
+        return []
+    rungs, last_filled = [], 0.0
+    for r in spec:
+        if not isinstance(r, dict):
+            return []
+        filled = _num(r.get(size_key))
+        if not 0 < filled <= 100 or filled <= last_filled:
+            return []
+        move = r.get(move_key)
+        days = r.get("afterDays")
+        rung = {"filled": filled / 100.0}
+        if move is not None:
+            m = _num(move)
+            if m <= 0:
+                return []
+            rung["move"] = m
+        if days is not None:
+            d = _num(days)
+            if d < 0:
+                return []
+            rung["afterDays"] = d
+        if "move" not in rung and "afterDays" not in rung:
+            return []          # a rung with no condition would fire immediately, every time
+        rungs.append(rung)
+        last_filled = filled
+    # Ascending moves keep the "highest rung reached" reading honest; a ladder that goes 8% then
+    # 3% cannot be climbed in order.
+    moves = [r["move"] for r in rungs if "move" in r]
+    if any(b <= a for a, b in zip(moves, moves[1:])):
+        return []
+    return rungs
+
+
+def entry_ladder(money):
+    """The accumulation ladder — `scaleIn: [{dropPct, afterDays, buyPct}]`.
+
+    `dropPct` is measured from the price the position opened at, not from the moving average: the
+    average falls every time you add, so anchoring there makes each rung chase the last one down
+    and the ladder never finishes.
+    """
+    return _parse_rungs((money or {}).get("scaleIn"), "dropPct", "buyPct")
+
+
+def ladder_step(rungs, move_pct, age_days, done, full):
+    """How much of `full` to trade now — one step to the highest rung whose condition is met.
+
+    Rung by rung at the same price would be several orders for one decision, and they would
+    collide on the order key besides. The highest reached is the answer.
+    """
+    target, idx = 0.0, None
+    for i, rung in enumerate(rungs):
+        if _rung_due(rung, move_pct, age_days) and rung["filled"] > target:
+            target, idx = rung["filled"], i
+    if idx is None or target <= done + 1e-9:
+        return 0.0, None
+    return (target - done) * full, idx
+
+
+def _full_size(money, limits, price):
+    """The position this ladder is a fraction of, in shares at `price`.
+
+    A rung says "be two thirds in", and two thirds of *what* has to be declared — `budget` if
+    there is one, otherwise the position cap. Neither declared means the ladder cannot size
+    itself, and it says nothing rather than inventing a whole.
+    """
+    full_money = money_of(money, "budget", "budgetKrw") or money_of(
+        limits or {}, "maxPosition", "maxPositionKrw")
+    if full_money <= 0 or price <= 0:
+        return 0.0
+    return full_money / price
+
+
+def _first_rung_size(money, price):
+    """The opening purchase when an entry ladder is declared — its first rung, not `perOrder`."""
+    rungs = entry_ladder(money)
+    full = _full_size(money, None, price)
+    if not rungs or full <= 0:
+        return 0.0
+    return floor_to_lot(rungs[0]["filled"] * full, money.get("lotSize", 1))
+
+
+def _scale_in_step(strategy, pos, price, anchor, age_days):
+    """The next entry rung, if one is due."""
+    money = strategy.get("money") or {}
+    rungs = entry_ladder(money)
+    if not rungs or anchor <= 0 or price <= 0:
+        return None
+    if _ladder_started(strategy, pos):
+        return None
+    full = _full_size(money, strategy.get("limits"), anchor)
+    if full <= 0:
+        return None
+    held = _num(pos.get("qty"))
+    done = min(1.0, held / full) if full > 0 else 1.0
+    # The move is how far below the opening price we are — a rung asking for a three percent dip
+    # is asking for this to reach three.
+    drop_pct = (anchor - price) / anchor * 100.0
+    want, idx = ladder_step(rungs, drop_pct, age_days, done, full)
+    qty = floor_to_lot(want, money.get("lotSize", 1))
+    if qty <= 0:
+        return None
+    return {"side": "buy", "qty": qty, "price": price, "reason": "add",
+            "seq": 100 + idx, "rung": idx + 1, "rungs": len(rungs), "partial": True}
+
+
 def _ladder_started(strategy, pos):
     """Has the exit ladder already sold part of this position?
 
@@ -203,41 +337,21 @@ def exit_ladder(exits):
     spec = (exits or {}).get("scaleOut")
     if not isinstance(spec, list) or not spec:
         take = _num((exits or {}).get("takeProfitPct"))
-        return [{"gain": take / 100.0, "sold": 1.0}] if take > 0 else []
-    rungs, last_gain, last_sold = [], None, 0.0
-    for r in spec:
-        if not isinstance(r, dict):
-            return []
-        gain, sold = _num(r.get("gainPct")), _num(r.get("sellPct"))
-        if gain <= 0 or not 0 < sold <= 100:
-            return []
-        if (last_gain is not None and gain <= last_gain) or sold <= last_sold:
-            return []
-        rungs.append({"gain": gain / 100.0, "sold": sold / 100.0})
-        last_gain, last_sold = gain, sold
-    return rungs
+        return [{"move": take, "filled": 1.0}] if take > 0 else []
+    return _parse_rungs(spec, "gainPct", "sellPct")
 
 
-def ladder_sell_qty(ladder, change_pct, qty_held, peak_qty, lot):
-    """How much to sell right now, given how far the ladder has already been climbed.
-
-    Live there is one price, not a bar, so several rungs can be satisfied at once — and then the
-    right order is one order down to the highest rung reached, not one order per rung. Selling
-    rung by rung at the same price would also collide on the order key, which carries the side and
-    the window and is what stops a cycle placing the same order twice.
-    """
+def ladder_sell_qty(ladder, change_pct, qty_held, peak_qty, lot, age_days=None):
+    """How much to sell right now, given how far the ladder has already been climbed."""
     if not ladder or qty_held <= 0 or peak_qty <= 0:
         return 0.0, None
     already = max(0.0, 1.0 - qty_held / peak_qty)
-    target, idx = 0.0, None
-    for i, rung in enumerate(ladder):
-        if change_pct >= rung["gain"] * 100.0 and rung["sold"] > target:
-            target, idx = rung["sold"], i
-    if idx is None or target <= already + 1e-9:
+    want, idx = ladder_step(ladder, change_pct, age_days, already, peak_qty)
+    if idx is None:
         return 0.0, None
-    want = min((target - already) * peak_qty, qty_held)
+    want = min(want, qty_held)
     # The last rung means "all of it", and a lot-rounded fraction can leave a sliver behind.
-    if target >= 1.0 - 1e-9:
+    if ladder[idx]["filled"] >= 1.0 - 1e-9:
         return qty_held, idx
     return floor_to_lot(want, lot), idx
 
@@ -255,6 +369,9 @@ def strategy_rules(strategy, ctx):
     avg = _num(pos.get("avg_price"))
     intents = []
 
+    age_days = _num(pos.get("age_days")) or None
+    anchor = _num(pos.get("anchor_price")) or avg
+
     if qty_held > 0 and avg > 0 and price > 0:
         change_pct = (price - avg) / avg * 100.0
         stop = _num(exits.get("stopLossPct"))
@@ -265,7 +382,7 @@ def strategy_rules(strategy, ctx):
         ladder = exit_ladder(exits)
         part, rung = ladder_sell_qty(ladder, change_pct, qty_held,
                                      _num(pos.get("peak_qty")) or qty_held,
-                                     money.get("lotSize", 1))
+                                     money.get("lotSize", 1), age_days)
         if part > 0:
             whole = part >= qty_held - 1e-12
             # The rung is the order's sequence within the window. Without it the second rung to
@@ -274,6 +391,13 @@ def strategy_rules(strategy, ctx):
             return [{"side": "sell", "qty": part, "price": price, "reason": "take",
                      "seq": (rung or 0) + 1, "rung": (rung or 0) + 1, "rungs": len(ladder),
                      "partial": not whole}]
+        # Adding on the way down, if the strategy declared a ladder for it. This does not wait
+        # for the rule to fire again: the rung *is* the trigger, which is the whole point of
+        # writing "another third if it drops three percent" instead of hoping the signal repeats.
+        # A position already being distributed is excluded above, where the guard lives.
+        step = _scale_in_step(strategy, pos, price, anchor, age_days)
+        if step:
+            return [step]
 
     sides = ctx["sides"]
     if "sell" in sides and qty_held > 0:
@@ -288,7 +412,8 @@ def strategy_rules(strategy, ctx):
                         "skip": "분할청산이 이미 시작된 포지션에는 추가 매수하지 않습니다 — "
                                 "전량 청산 후 새로 진입합니다."})
     elif "buy" in sides:
-        want = _size_from_money(money, price)
+        want = _first_rung_size(money, price) if entry_ladder(money) \
+            else _size_from_money(money, price)
         lot = money.get("lotSize", 1)
         cap = money_of(strategy.get("limits") or {}, "maxPosition", "maxPositionKrw")
         if cap > 0:
