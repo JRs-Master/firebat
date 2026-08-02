@@ -909,12 +909,20 @@ def action_cycle(inp, settings):
                            "price": intent["price"], "mode": ctx["mode"],
                            "reason": intent.get("reason"), "orderKey": key})
 
+    # A limit order that never fills is the ordinary case, not an error: the price is the signal
+    # bar's close and the market has moved on. Left alone it holds the money and blocks the next
+    # entry, so it is withdrawn once it has had long enough, and the next cycle is free to enter
+    # again at a price that exists. Cancelling is all this does — re-entering is the rule's job,
+    # and deciding here would place an order no signal asked for.
+    abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls)
+
     positions = store.read_positions(conn)
     conn.close()
     return {"success": True, "data": {
         "mode": mode_hint, "unattended": unattended(), "tripped": tripped,
         "ran": len(strategies), "price": price, "firedSides": sorted(sides),
         "placed": placed, "dropped": dropped_all, "transfers": transfers,
+        "abandoned": abandoned,
         "results": results, "positions": positions,
         # Empty in dry run. Otherwise the pipeline runs these with FOREACH and returns what came
         # back to record_orders — the module never calls a broker itself.
@@ -923,6 +931,53 @@ def action_cycle(inp, settings):
                  "then autotrade record_orders with `calls` and the loop's `results`."
                  if calls else None),
     }}
+
+
+
+# How long a resting limit order is given before it is withdrawn. Two cycles of a five-minute
+# schedule: long enough that a fill still arriving is not thrown away, short enough that the money
+# is not held all day for a price the market has left behind.
+DEFAULT_UNFILLED_AFTER_SEC = 600
+
+
+def _abandon_stale_orders(conn, settings, strategies, open_rows, calls):
+    """Withdraw our own resting orders that have had long enough. Returns what was given up on.
+
+    Only orders the broker still lists are candidates: one it no longer lists is finished, and
+    reconcile settles that. Nothing is re-placed here — the next cycle enters again if the rule
+    still says so, and inventing a replacement would be trading on a signal nobody gave.
+    """
+    if not isinstance(open_rows, list):
+        return []
+    still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_rows
+                  if isinstance(r, dict)}
+    by_strategy = {s.get("id"): s for s in strategies}
+    now = store.now_ms()
+    gone = []
+    for o in store.open_orders(conn):
+        no = o.get("broker_order_no")
+        if not no or no not in still_open:
+            continue
+        if float(o.get("filled_qty") or 0) > 0:
+            # Partly filled — leaving it is the safer read; the rest may still come.
+            continue
+        strategy = by_strategy.get(o["strategy_id"]) or {}
+        after = (strategy.get("orders") or {}).get("unfilledAfterSec")
+        if after is None:
+            after = settings.get("unfilledAfterSec")
+        after = float(DEFAULT_UNFILLED_AFTER_SEC if after is None else after)
+        if after <= 0:
+            continue                      # 0 = leave them, a real choice
+        if now - int(o.get("sent_ms") or now) < after * 1000:
+            continue
+        calls.append({**orders.cancel_call(o), "orderKey": o["order_key"]})
+        store.update_order(conn, o["order_key"], state="canceling", last_checked_ms=now)
+        store.log_event(conn, "order_abandoned",
+                        {"orderKey": o["order_key"], "afterSec": after},
+                        strategy_id=o["strategy_id"], symbol=o.get("symbol"))
+        gone.append({"orderKey": o["order_key"], "symbol": o.get("symbol"),
+                     "waitedSec": round((now - int(o.get("sent_ms") or now)) / 1000)})
+    return gone
 
 
 def action_record_orders(inp, settings):
@@ -1042,7 +1097,15 @@ def action_reconcile(inp, settings):
     timeout_sec = settings.get("unknownTimeoutSec")
     limit_ms = float(120 if timeout_sec is None else timeout_sec) * 1000
     now = store.now_ms()
+    # Only orders the broker does not list. A limit order resting on the book is `acked` and
+    # perfectly healthy; ageing it into `unknown` degraded the position and blocked new entries
+    # for a rule that was working exactly as written.
+    listed = set()
+    if isinstance(open_list, list):
+        listed = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list if isinstance(r, dict)}
     for o in store.open_orders(conn):
+        if o.get("broker_order_no") and o["broker_order_no"] in listed:
+            continue
         if o["state"] in ("sent", "acked") and now - int(o.get("sent_ms") or now) > limit_ms:
             store.update_order(conn, o["order_key"], state="unknown",
                                last_checked_ms=now,
@@ -2227,6 +2290,55 @@ def action_selftest():
     _missing_in = sorted(_read - _declared)
     checks.append({"name": "every input the module reads is declared in its schema",
                    "want": [], "got": _missing_in, "ok": not _missing_in})
+
+    # --- a limit order that will not fill -------------------------------------------------
+    # The ordinary case, not an error: the price is the signal bar's close and the market moved.
+    # Left alone it holds the money and blocks the next entry; aged wrongly it degrades a position
+    # that is perfectly healthy. Both halves are measured here.
+    ucon = store.connect("dryrun")
+    ucon.execute("DELETE FROM orders")
+    ucon.commit()
+    now_ms = store.now_ms()
+
+    def put_order(key, sent_ago_sec, no, filled=0.0):
+        store.insert_order(ucon, {
+            "order_key": key, "cycle_id": "c", "strategy_id": "u", "broker": "b",
+            "account": "", "symbol": "AAA", "side": "buy", "req_qty": 1.0, "req_price": 10.0,
+            "ord_type": "limit", "mode": "real", "state": "acked"})
+        store.update_order(ucon, key, broker_order_no=no, state="acked",
+                           sent_ms=now_ms - int(sent_ago_sec * 1000), filled_qty=filled)
+
+    ustrat = [{"id": "u", "broker": "b", "account": "", "symbol": "AAA", "orders": {}}]
+    listed = [{"ord_no": "N1"}, {"ord_no": "N2"}, {"ord_no": "N3"}]
+    put_order("old", 900, "N1")           # resting past the window
+    put_order("fresh", 60, "N2")          # resting, but not long enough
+    put_order("partial", 900, "N3", 0.4)  # part of it filled — leave the rest a chance
+    ucalls = []
+    gone = _abandon_stale_orders(ucon, {}, ustrat, listed, ucalls)
+    checks.append({"name": "a resting order is withdrawn once it has had long enough",
+                   "want": ["old"], "got": [g["orderKey"] for g in gone],
+                   "ok": [g["orderKey"] for g in gone] == ["old"]})
+    checks.append({"name": "and the withdrawal is a broker call, not a local edit",
+                   "want": "cancel_order",
+                   "got": (ucalls[0]["input"]["action"] if ucalls else None),
+                   "ok": bool(ucalls) and ucalls[0]["input"]["action"] == "cancel_order"})
+    checks.append({"name": "a partly filled order keeps its chance", "want": True,
+                   "got": "partial" not in [g["orderKey"] for g in gone],
+                   "ok": "partial" not in [g["orderKey"] for g in gone]})
+    # Nothing is re-placed: entering again is the rule's decision, and inventing a replacement
+    # would trade on a signal nobody gave.
+    checks.append({"name": "withdrawing does not place anything in its stead", "want": 1,
+                   "got": len(ucalls), "ok": len(ucalls) == 1})
+    zero = _abandon_stale_orders(ucon, {"unfilledAfterSec": 0}, ustrat, listed, [])
+    checks.append({"name": "zero means leave them, and is not read as no setting",
+                   "want": [], "got": zero, "ok": zero == []})
+    # An order the broker still lists is working. Ageing it into `unknown` degraded the position
+    # and blocked new entries for a rule doing exactly what it was written to do.
+    aged = action_reconcile({"openOrders": listed, "symbol": "AAA"},
+                            {"mode": "dryrun", "unknownTimeoutSec": 1})["data"]
+    checks.append({"name": "an order the broker still lists is not called unconfirmed",
+                   "want": [], "got": aged.get("aged"), "ok": not aged.get("aged")})
+    ucon.close()
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,

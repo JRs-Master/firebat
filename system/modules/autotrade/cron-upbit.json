@@ -61,18 +61,26 @@
     },
     {
       "type": "TOOL_CALL",
+      "tool": "sysmod_upbit",
+      "inputData": {
+        "action": "list_open_orders"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
       "inputData": {
         "action": "cycle"
       },
       "inputMap": {
         "plan": "$step3",
-        "signals": "$step4.results"
+        "signals": "$step4.results",
+        "openOrders": "$step5.rows"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step5.calls",
+      "items": "$step6.calls",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -88,8 +96,8 @@
         "action": "record_orders"
       },
       "inputMap": {
-        "calls": "$step5.calls",
-        "results": "$step6.results"
+        "calls": "$step6.calls",
+        "results": "$step7.results"
       }
     },
     {
@@ -120,9 +128,9 @@
         "action": "reconcile"
       },
       "inputMap": {
-        "fills": "$step8.rows",
-        "openOrders": "$step9.rows",
-        "balanceRows": "$step10.rows"
+        "fills": "$step9.rows",
+        "openOrders": "$step10.rows",
+        "balanceRows": "$step11.rows"
       }
     }
   ]

@@ -237,7 +237,7 @@
         "items": {
           "type": "object"
         },
-        "description": "[reconcile] the broker's unfilled-order rows, verbatim. An order of ours that is no longer listed and never filled is closed as canceled."
+        "description": "[reconcile] the broker's unfilled-order rows, verbatim. An order of ours that is no longer listed and never filled is closed as canceled. [cycle] 도 같은 목록을 받습니다 — 오래 안 채워진 우리 주문을 거두기 위해서입니다."
       },
       "balanceRows": {
         "type": "array",
@@ -461,6 +461,13 @@
       "key": "unknownTimeoutSec",
       "type": "number",
       "defaultValue": 120,
+      "tab": "실행",
+      "group": "확인"
+    },
+    {
+      "key": "unfilledAfterSec",
+      "type": "number",
+      "defaultValue": 600,
       "tab": "실행",
       "group": "확인"
     },

@@ -94,6 +94,11 @@
       "label": "Revision trigger — completed trades",
       "description": "A rule is revised once this many entry-to-exit cycles have finished since it was last written. There is no closing bell in a 24-hour market, so this count is the clock. Setting it to 1 rewrites the rule after every trade, and a rewritten rule restarts the promotion ladder.",
       "group": "Confirmation"
+    },
+    "unfilledAfterSec": {
+      "label": "Give up on an unfilled order (sec)",
+      "description": "Withdraw a limit order that has rested this long. The price is the signal bar's close, so in a moving market it often will not fill, and leaving it holds the money and blocks the next entry. Whether to try again is the rule's decision — this only withdraws. 0 leaves them.",
+      "group": "Confirmation"
     }
   }
 }
