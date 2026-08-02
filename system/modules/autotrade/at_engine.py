@@ -177,6 +177,59 @@ def _size_from_money(money, price):
     return floor_to_lot(per_order / price, lot)
 
 
+def exit_ladder(exits):
+    """The profit ladder, normalised — a single take-profit target is its one-rung case.
+
+    `sellPct` is cumulative against the size the position reached, so "12% -> 100" reads as "be
+    fully out by twelve percent". Same vocabulary the analyser measures with: a ladder that is
+    backtested one way and traded another is not the same strategy.
+
+    A declaration that cannot be read yields no ladder rather than a guess — the caller sees the
+    position simply not taking profit, which is visible, instead of selling an amount nobody asked
+    for.
+    """
+    spec = (exits or {}).get("scaleOut")
+    if not isinstance(spec, list) or not spec:
+        take = _num((exits or {}).get("takeProfitPct"))
+        return [{"gain": take / 100.0, "sold": 1.0}] if take > 0 else []
+    rungs, last_gain, last_sold = [], None, 0.0
+    for r in spec:
+        if not isinstance(r, dict):
+            return []
+        gain, sold = _num(r.get("gainPct")), _num(r.get("sellPct"))
+        if gain <= 0 or not 0 < sold <= 100:
+            return []
+        if (last_gain is not None and gain <= last_gain) or sold <= last_sold:
+            return []
+        rungs.append({"gain": gain / 100.0, "sold": sold / 100.0})
+        last_gain, last_sold = gain, sold
+    return rungs
+
+
+def ladder_sell_qty(ladder, change_pct, qty_held, peak_qty, lot):
+    """How much to sell right now, given how far the ladder has already been climbed.
+
+    Live there is one price, not a bar, so several rungs can be satisfied at once — and then the
+    right order is one order down to the highest rung reached, not one order per rung. Selling
+    rung by rung at the same price would also collide on the order key, which carries the side and
+    the window and is what stops a cycle placing the same order twice.
+    """
+    if not ladder or qty_held <= 0 or peak_qty <= 0:
+        return 0.0, None
+    already = max(0.0, 1.0 - qty_held / peak_qty)
+    target, idx = 0.0, None
+    for i, rung in enumerate(ladder):
+        if change_pct >= rung["gain"] * 100.0 and rung["sold"] > target:
+            target, idx = rung["sold"], i
+    if idx is None or target <= already + 1e-9:
+        return 0.0, None
+    want = min((target - already) * peak_qty, qty_held)
+    # The last rung means "all of it", and a lot-rounded fraction can leave a sliver behind.
+    if target >= 1.0 - 1e-9:
+        return qty_held, idx
+    return floor_to_lot(want, lot), idx
+
+
 def strategy_rules(strategy, ctx):
     """Straight rule following: ta says buy, we buy; ta says sell, we sell what this strategy holds.
 
@@ -193,11 +246,18 @@ def strategy_rules(strategy, ctx):
     if qty_held > 0 and avg > 0 and price > 0:
         change_pct = (price - avg) / avg * 100.0
         stop = _num(exits.get("stopLossPct"))
-        take = _num(exits.get("takeProfitPct"))
         if stop > 0 and change_pct <= -stop:
+            # A stop takes all of it. The ladder is for collecting a gain in pieces, not for
+            # holding on to part of a loss.
             return [{"side": "sell", "qty": qty_held, "price": price, "reason": "stop"}]
-        if take > 0 and change_pct >= take:
-            return [{"side": "sell", "qty": qty_held, "price": price, "reason": "take"}]
+        ladder = exit_ladder(exits)
+        part, rung = ladder_sell_qty(ladder, change_pct, qty_held,
+                                     _num(pos.get("peak_qty")) or qty_held,
+                                     money.get("lotSize", 1))
+        if part > 0:
+            whole = part >= qty_held - 1e-12
+            return [{"side": "sell", "qty": part, "price": price, "reason": "take",
+                     "rung": (rung or 0) + 1, "rungs": len(ladder), "partial": not whole}]
 
     sides = ctx["sides"]
     if "sell" in sides and qty_held > 0:

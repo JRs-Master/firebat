@@ -1078,6 +1078,11 @@ def action_cycle(inp, settings):
         # strategy's rows belong to.
         sconn = store_for(mode)
         pos = store.position_of(sconn, s["id"], broker, account, sym)
+        if float(pos.get("qty") or 0) > 0:
+            # The ladder's rungs are cumulative against the size this position reached, and after
+            # the first rung sells the remaining quantity no longer says what that was.
+            pos = {**pos, "peak_qty": store.peak_qty_since_flat(
+                sconn, s["id"], broker, account, sym)}
         # The window guard stops a second entry, not a second look. While a position is open its
         # stop and target have to be evaluated on every pass — keying the cycle on the entry that
         # opened it would otherwise make the exit unreachable for as long as the trade lasts.
@@ -2840,6 +2845,70 @@ def action_selftest():
                    "got": [(t["tradeId"], t["broker"]) for t in paired],
                    "ok": len(paired) == 2
                          and all(t["strategyId"] == t["tradeId"] for t in paired)})
+
+    # ── 분할청산 사다리 ──────────────────────────────────────────────────────────────────
+    # 익절 목표가 하나뿐이면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는다. 사다리는
+    # 그 타협을 없애는 대신, 어디까지 팔았는지를 틀리면 두 번 팔거나 영영 안 판다.
+    def _lad_strategy(scale_out):
+        return {"id": "L", "enabled": True, "kind": "rules", "symbol": "X", "broker": "b",
+                "account": "a", "money": {"perOrder": 1000, "lotSize": 1},
+                "limits": {}, "exits": {"stopLossPct": 5.0, **scale_out},
+                "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}
+
+    def _lad_at(strategy, qty, lad_peak, price, avg=100.0):
+        return eng.decide(strategy, {"position": {"qty": qty, "avg_price": avg, "peak_qty": lad_peak},
+                                     "price": price, "sides": set()})
+
+    lad_two = _lad_strategy({"scaleOut": [{"gainPct": 3, "sellPct": 50},
+                                         {"gainPct": 8, "sellPct": 100}]})
+    lad_first = _lad_at(lad_two, 10, 10, 103.5)
+    checks.append({"name": "the lad_first rung sells its share, not the position", "want": 5,
+                   "got": [(i["qty"], i.get("partial")) for i in lad_first],
+                   "ok": len(lad_first) == 1 and lad_first[0]["qty"] == 5 and lad_first[0]["partial"] is True})
+    lad_again = _lad_at(lad_two, 5, 10, 103.5)
+    checks.append({"name": "and does not sell lad_again at the same price", "want": [],
+                   "got": [i["qty"] for i in lad_again], "ok": not lad_again})
+    lad_second = _lad_at(lad_two, 5, 10, 109.0)
+    checks.append({"name": "the last rung takes what is left", "want": 5,
+                   "got": [(i["qty"], i.get("partial")) for i in lad_second],
+                   "ok": len(lad_second) == 1 and lad_second[0]["qty"] == 5
+                         and lad_second[0]["partial"] is False})
+    lad_jumped = _lad_at(lad_two, 10, 10, 109.0)
+    checks.append({"name": "a price past both rungs sells down to the last lad_one in lad_one order",
+                   "want": 10, "got": [i["qty"] for i in lad_jumped],
+                   "ok": len(lad_jumped) == 1 and lad_jumped[0]["qty"] == 10})
+    lad_stopped = _lad_at(lad_two, 5, 10, 94.0)
+    checks.append({"name": "a stop still takes all of it, ladder or not", "want": [5, "stop"],
+                   "got": [(i["qty"], i["reason"]) for i in lad_stopped],
+                   "ok": len(lad_stopped) == 1 and lad_stopped[0]["qty"] == 5
+                         and lad_stopped[0]["reason"] == "stop"})
+
+    lad_one = _lad_strategy({"takeProfitPct": 6.0})
+    lad_whole = _lad_at(lad_one, 10, 10, 107.0)
+    checks.append({"name": "a single target is the lad_one-rung case and exits lad_whole", "want": 10,
+                   "got": [(i["qty"], i.get("partial")) for i in lad_whole],
+                   "ok": len(lad_whole) == 1 and lad_whole[0]["qty"] == 10
+                         and lad_whole[0]["partial"] is False})
+    # 읽을 수 없는 선언은 추측하지 않는다 — 아무도 시키지 않은 수량을 파느니 안 파는 게 낫다.
+    lad_broken = _lad_strategy({"scaleOut": [{"gainPct": 8, "sellPct": 50},
+                                            {"gainPct": 3, "sellPct": 100}]})
+    checks.append({"name": "an unreadable ladder sells nothing rather than guessing", "want": [],
+                   "got": [i["qty"] for i in _lad_at(lad_broken, 10, 10, 112.0)],
+                   "ok": not _lad_at(lad_broken, 10, 10, 112.0)})
+
+    # 사다리 진행도는 원장에서 접는다 — 컬럼으로 두면 원장과 갈라질 수 있다. 원장은 append-only
+    # 라 지울 수도 없으므로, 이 검사는 실제 장부가 아니라 같은 스키마의 임시 DB 에서 돈다.
+    import sqlite3 as _sq
+    lad_conn = _sq.connect(":memory:")
+    lad_conn.row_factory = _sq.Row
+    store.ensure_schema(lad_conn)
+    for side, qty in (("buy", 4), ("buy", 6), ("sell", 5), ("sell", 5), ("buy", 3)):
+        store.apply_fill(lad_conn, strategy_id="lad_peak", broker="b", account="a", symbol="X",
+                         side=side, qty=qty, price=100.0, source="test")
+    lad_peak = store.peak_qty_since_flat(lad_conn, "lad_peak", "b", "a", "X")
+    checks.append({"name": "the ladder's base resets when the position goes flat", "want": 3.0,
+                   "got": lad_peak, "ok": abs(lad_peak - 3.0) < 1e-9})
+    lad_conn.close()
 
     # A dollar-priced share sized against a won-named field is the same number read as the wrong
     # currency, and nothing downstream can tell — it just orders thirteen hundred times too much.

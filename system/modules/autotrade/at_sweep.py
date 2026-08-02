@@ -195,6 +195,45 @@ FAMILIES = {
 }
 
 
+def _ladder_name(ladder):
+    """A short, stable name for an exit ladder — `so3x50_8x100`."""
+    return "so" + "_".join(f"{_trim(g)}x{_trim(p)}" for g, p in ladder)
+
+
+def _trim(v):
+    f = float(v)
+    return str(int(f)) if f == int(f) else str(f)
+
+
+def _parse_ladders(spec):
+    """The ladders to sweep, always including the no-ladder case so it can be compared against.
+
+    A rung is `[gainPct, sellPct]` with `sellPct` cumulative against the entry size, matching what
+    the analyser measures and the engine trades. A malformed ladder is dropped rather than guessed
+    at — a sweep silently running a different ladder from the one written is the failure this
+    whole module keeps having to be rescued from.
+    """
+    out = [None]
+    for entry in (spec or []):
+        if entry is None:
+            continue
+        rungs, last_g, last_p = [], None, 0.0
+        for rung in (entry if isinstance(entry, list) else []):
+            try:
+                g, pc = float(rung[0]), float(rung[1])
+            except (TypeError, ValueError, IndexError, KeyError):
+                rungs = None
+                break
+            if g <= 0 or not 0 < pc <= 100 or (last_g is not None and g <= last_g) or pc <= last_p:
+                rungs = None
+                break
+            rungs.append((g, pc))
+            last_g, last_p = g, pc
+        if rungs:
+            out.append(rungs)
+    return out
+
+
 def plan_sweep(inp):
     """Expand a declared search space into candidate runs for the pipeline to execute.
 
@@ -216,6 +255,14 @@ def plan_sweep(inp):
     }.items() if v is not None}
     stops = _as_list(space.get("stopLossPct"), [None])
     takes = _as_list(space.get("takeProfitPct"), [None])
+    # Exit ladders, as an axis. A single target has to choose between banking early (high win
+    # rate, small winners) and running (the opposite), and every sweep so far has been picking a
+    # compromise between the two. A ladder does both — which matters most where the measurement
+    # kept failing, against buy-and-hold: what beats holding is letting part of the position run.
+    #
+    # Declared as `[[gainPct, sellPct], ...]` per rung, cumulative. `null` in the list means "no
+    # ladder", so the single-target cells stay in the same sweep and can be compared against it.
+    ladders = _parse_ladders(space.get("scaleOut"))
     holdout = float(space.get("holdout") or 0.3)
     holdout = min(0.6, max(0.1, holdout))
     split = round(1.0 - holdout, 4)
@@ -229,15 +276,24 @@ def plan_sweep(inp):
         fam_space = {**{k: v for k, v in space.items() if not isinstance(v, dict)},
                      **(space.get(fam) if isinstance(space.get(fam), dict) else {})}
         for cid, rules, params, warmup, knobs in FAMILIES[fam](fam_space):
-            for stop, take in itertools.product(stops, takes):
+            # A ladder governs profit-taking on its own, so it replaces the target rather than
+            # multiplying with it — pairing the two would measure a cell nobody could describe,
+            # and crossing the axes would leave only that unmeasurable pairing when a target is
+            # always declared. The stop still applies to both: a stop is not profit-taking.
+            profit_shapes = [(t, None) for t in takes] + [(None, l) for l in ladders if l]
+            for stop, (take, ladder) in itertools.product(stops, profit_shapes):
                 exits = {}
                 if stop:
                     exits["stopLossPct"] = stop
                 if take:
                     exits["takeProfitPct"] = take
-                suffix = "".join(
-                    [f"-sl{stop}" if stop else "", f"-tp{take}" if take else ""]
-                )
+                if ladder:
+                    exits["scaleOut"] = [{"gainPct": g, "sellPct": p} for g, p in ladder]
+                suffix = "".join([
+                    f"-sl{stop}" if stop else "",
+                    f"-tp{take}" if take else "",
+                    "-" + _ladder_name(ladder) if ladder else "",
+                ])
                 rows.append({
                     "id": f"{fam}:{cid}{suffix}",
                     "family": fam,
@@ -247,10 +303,13 @@ def plan_sweep(inp):
                     "exits": exits,
                     "warmupBars": warmup,
                     # The grid position, in values rather than in the name. `fit_symbols` reads
-                    # these to ask whether a winning cell's neighbours also won.
+                    # these to ask whether a winning cell's neighbours also won. The ladder goes
+                    # in by name, not by number: two different ladders are not neighbours, and a
+                    # categorical knob has to match exactly for cells to be compared.
                     "knobs": {**knobs,
                               **({"stopLossPct": stop} if stop else {}),
-                              **({"takeProfitPct": take} if take else {})},
+                              **({"takeProfitPct": take} if take else {}),
+                              **({"scaleOut": _ladder_name(ladder)} if ladder else {})},
                 })
     # Refuse what cannot be measured, and say why. `barCount` is the series the pipeline fetched;
     # the holdout is the smaller of the two windows, so it decides what is answerable.
@@ -633,6 +692,18 @@ def _backtest_of(result):
     return None
 
 
+def _trip_count(bt):
+    """Completed round trips, not fills.
+
+    A three-rung ladder books three sells per position, so counting fills lets a rule clear a
+    "at least eight trades" bar on fewer than three actual positions — the sample looks three
+    times larger than it is. The analyser reports both; older results carry only the fill count,
+    and for those the two are the same number.
+    """
+    trips = bt.get("roundTrips")
+    return int(trips if trips is not None else (bt.get("tradeCount") or 0))
+
+
 def _score(bt):
     """One number to sort by, penalising the two ways a backtest lies.
 
@@ -642,7 +713,7 @@ def _score(bt):
     """
     ret = float(bt.get("totalReturnPct") or 0.0)
     mdd = abs(float(bt.get("maxDrawdownPct") or 0.0))
-    trades = int(bt.get("tradeCount") or 0)
+    trades = _trip_count(bt)
     confidence = min(1.0, trades / 30.0)
     return round((ret - mdd * 0.5) * confidence, 4)
 
@@ -687,7 +758,7 @@ def rank_sweep(inp):
         primary = hold or train
         if primary is None:
             continue
-        trades = int(primary.get("tradeCount") or 0)
+        trades = _trip_count(primary)
         bench = primary.get("buyHoldPct")
         row = {
             "candidateId": cid,
@@ -855,7 +926,7 @@ def fit_symbols(inp):
                 "holdoutVsBuyHoldPct": (None if ret is None or bench is None
                                         else round(float(ret) - float(bench), 2)),
                 "buyHoldPct": None if bench is None else round(float(bench), 2),
-                "holdoutTrades": int(hold.get("tradeCount") or 0),
+                "holdoutTrades": _trip_count(hold),
                 "holdoutWinRate": hold.get("winRate"),
                 "trainReturnPct": None if train is None else round(float(train), 2),
                 "maxDrawdownPct": hold.get("maxDrawdownPct"),

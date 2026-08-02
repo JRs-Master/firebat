@@ -201,6 +201,26 @@ def position_of(conn, strategy_id, broker, account, symbol):
     }
 
 
+def peak_qty_since_flat(conn, strategy_id, broker, account, symbol):
+    """How large this position grew since it was last empty.
+
+    A scale-out ladder says "be half out by +5%", and half of *what* is the size the position
+    reached — not the size left after the first rung already sold some. Storing that as a column
+    would be a second source of truth that can drift from the ledger; folding it out of the
+    ledger cannot, because the ledger is append-only and is where the quantity came from.
+    """
+    peak = running = 0.0
+    for row in conn.execute(
+            "SELECT side, qty FROM ledger WHERE strategy_id=? AND broker=? AND account=? "
+            "AND symbol=? ORDER BY id", (strategy_id, broker, account, symbol)):
+        running += float(row["qty"] or 0) * (1 if row["side"] == "buy" else -1)
+        if running <= 1e-12:
+            running, peak = 0.0, 0.0        # flat — the next buy starts a new ladder
+        else:
+            peak = max(peak, running)
+    return peak
+
+
 def set_position_state(conn, strategy_id, broker, account, symbol, state):
     pos = position_of(conn, strategy_id, broker, account, symbol)
     _write_position(conn, {**pos, "state": state})

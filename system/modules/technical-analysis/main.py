@@ -102,6 +102,42 @@ def _bars(data):
     return out
 
 
+def _parse_scale_out(spec, take_pct):
+    """The exit ladder, normalised — or the reason it cannot be read.
+
+    Returns rungs of `{gain, sold}` where `gain` is the fraction above entry that triggers it and
+    `sold` is the cumulative fraction of the original position that should be gone by then. A
+    single take-profit target is the one-rung case, so the loop below has one shape rather than
+    two.
+    """
+    if not spec:
+        return ([{"gain": take_pct / 100.0, "sold": 1.0}] if take_pct > 0 else []), None
+    if not isinstance(spec, list):
+        return [], "scaleOut 은 [{gainPct, sellPct}] 배열입니다."
+    rungs, last_gain, last_sold = [], None, 0.0
+    for i, r in enumerate(spec):
+        if not isinstance(r, dict):
+            return [], f"scaleOut[{i}] 이 객체가 아닙니다."
+        try:
+            gain = float(r.get("gainPct"))
+            sold = float(r.get("sellPct"))
+        except (TypeError, ValueError):
+            return [], f"scaleOut[{i}] 의 gainPct·sellPct 를 숫자로 읽지 못했습니다."
+        if gain <= 0:
+            return [], f"scaleOut[{i}].gainPct 는 0보다 커야 합니다."
+        if not 0 < sold <= 100:
+            return [], f"scaleOut[{i}].sellPct 는 0 초과 100 이하(원래 수량 기준 누적)입니다."
+        if last_gain is not None and gain <= last_gain:
+            return [], (f"scaleOut 은 목표가 오름차순이어야 합니다 — "
+                        f"[{i}] {gain}% 가 앞 칸 {last_gain}% 보다 크지 않습니다.")
+        if sold <= last_sold:
+            return [], (f"scaleOut.sellPct 는 누적이라 늘기만 합니다 — "
+                        f"[{i}] {sold}% 가 앞 칸 {last_sold}% 보다 크지 않습니다.")
+        rungs.append({"gain": gain / 100.0, "sold": sold / 100.0})
+        last_gain, last_sold = gain, sold
+    return rungs, None
+
+
 def _apply_bar_range(bars, bar_range, spec):
     """Restrict the analysis to a slice of the bars.
 
@@ -1945,18 +1981,32 @@ def main():
         stop_pct = float(inp.get("stopLossPct") or 0.0) / 100.0
         take_pct = float(inp.get("takeProfitPct") or 0.0) / 100.0
         trail_pct = float(inp.get("trailingStopPct") or 0.0) / 100.0
+        # ── 분할청산 사다리 ──
+        # 익절 목표가 하나뿐이면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는다 —
+        # 격자 탐색이 그 둘 사이에서 타협하고 있었다. 사다리는 그 타협을 없앤다: 일부는 일찍
+        # 확정하고 나머지는 끌고 간다. `sellPct` 는 **원래 수량 기준 누적**이라 "12%에서 전량"이
+        # 곧 100 이고, 칸이 겹치거나 총합이 넘는 선언은 여기서 거부한다.
+        # 목표 하나짜리는 사다리 한 칸으로 흡수한다 — 청산 경로가 둘로 갈리지 않게.
+        ladder, ladder_err = _parse_scale_out(inp.get("scaleOut"), take_pct * 100)
+        if ladder_err:
+            print(json.dumps({"success": False, "error": ladder_err}, ensure_ascii=False))
+            return
         buy_at = {p["date"]: p for p in buy}
         sell_at = {p["date"]: p for p in sell}
 
-        def _close_trade(pos, date, raw_px, label, reason):
+        def _close_trade(pos, date, raw_px, label, reason, portion=None):
             exit_px = max(raw_px * (1 - slip) - tick_slip, 0.0)
             # 곱셈으로 — 매입원가 = 체결가×(1+수수료), 매도수취 = 체결가×(1-수수료-세금).
             cost = pos["entryPrice"] * (1 + fee)
             proceeds = exit_px * (1 - fee - tax)
             net = proceeds / cost - 1 if cost else 0.0
-            return {**{k: v for k, v in pos.items() if k != "peak"},
+            part = pos["held"] if portion is None else portion
+            return {**{k: v for k, v in pos.items() if k not in ("peak", "held", "sold")},
                     "exitDate": date, "exitPrice": round(exit_px, 6),
                     "exitLabel": label, "exitReason": reason,
+                    # 이 체결이 원래 수량의 얼마였나. 사다리를 안 쓰면 항상 1.
+                    "portion": round(part, 6),
+                    "closesPosition": (pos["held"] - part) <= 1e-9,
                     "returnPct": round(net * 100, 4),
                     "grossPct": round((exit_px / pos["entryPrice"] - 1) * 100, 4)}
 
@@ -1995,41 +2045,61 @@ def main():
                 entry = pos["entryPrice"]
                 pos["peak"] = max(pos.get("peak", entry), b["high"])
                 # 같은 봉에서 손절·익절이 다 닿을 수 있다 — 봉 안 순서는 알 수 없으므로
-                # **손절이 먼저 닿았다고 본다**(낙관 금지).
+                # **손절이 먼저 닿았다고 본다**(낙관 금지). 손절·트레일링·룰매도는 남은 전부를
+                # 정리한다: 사다리는 이익을 나눠 걷는 장치이지 손실을 나눠 무는 장치가 아니다.
                 if stop_pct > 0 and b["low"] <= entry * (1 - stop_pct):
                     trades.append(_close_trade(pos, date, entry * (1 - stop_pct), "손절", "stop"))
                     pos = None
                 elif trail_pct > 0 and b["low"] <= pos["peak"] * (1 - trail_pct):
-                    trades.append(_close_trade(pos, date, pos["peak"] * (1 - trail_pct), "트레일링", "trailing"))
+                    trades.append(_close_trade(pos, date, pos["peak"] * (1 - trail_pct),
+                                               "트레일링", "trailing"))
                     pos = None
-                elif take_pct > 0 and b["high"] >= entry * (1 + take_pct):
-                    trades.append(_close_trade(pos, date, entry * (1 + take_pct), "익절", "take"))
-                    pos = None
-                elif date in sell_at:
-                    m = sell_at[date]
-                    px = fill_price(date, m["price"])
-                    if px is not None:
-                        trades.append(_close_trade(pos, date, px, m["label"], "rule"))
-                        pos = None
+                else:
+                    # 사다리 — 이 봉의 고가가 닿은 칸을 낮은 것부터. 한 봉이 두 칸을 뛰어넘을 수
+                    # 있고, 그때 두 번 파는 게 맞다(칸마다 가격이 다르다).
+                    for k, rung in enumerate(ladder):
+                        if pos is None or rung["sold"] <= pos["sold"] + 1e-9:
+                            continue
+                        target = entry * (1 + rung["gain"])
+                        if b["high"] < target:
+                            break
+                        part = min(rung["sold"] - pos["sold"], pos["held"])
+                        if part <= 1e-9:
+                            continue
+                        label = "익절" if len(ladder) == 1 else "분할익절 %d/%d" % (k + 1, len(ladder))
+                        trades.append(_close_trade(pos, date, target, label, "take", part))
+                        pos["sold"] += part
+                        pos["held"] -= part
+                        if pos["held"] <= 1e-9:
+                            pos = None
+                    if pos is not None and date in sell_at:
+                        m = sell_at[date]
+                        px = fill_price(date, m["price"])
+                        if px is not None:
+                            trades.append(_close_trade(pos, date, px, m["label"], "rule"))
+                            pos = None
             if pos is None and date in buy_at:
                 m = buy_at[date]
                 px = fill_price(date, m["price"])
                 if px is not None:
                     pos = {"entryDate": date, "entryPrice": px * (1 + slip) + tick_slip,
-                           "entryLabel": m["label"], "peak": px}
+                           "entryLabel": m["label"], "peak": px, "held": 1.0, "sold": 0.0}
         wins = [t for t in trades if t["returnPct"] > 0]
+        # 각 체결이 원래 수량의 일부일 수 있으므로 **그 몫만큼만** 자본에 반영한다. 사다리를 안
+        # 쓰면 portion 이 1 이라 옛 계산과 같은 값이 나온다.
         equity = 1.0
         for t in trades:
-            equity *= 1 + t["returnPct"] / 100
+            equity *= 1 + t["returnPct"] / 100 * t["portion"]
         peak = run = 1.0
         mdd = 0.0
         for t in trades:
-            run *= 1 + t["returnPct"] / 100
+            run *= 1 + t["returnPct"] / 100 * t["portion"]
             peak = max(peak, run)
             mdd = min(mdd, run / peak - 1)
         backtest = {
             "trades": trades,
-            "openPosition": {k: v for k, v in pos.items() if k != "peak"} if pos else None,
+            "openPosition": ({k: v for k, v in pos.items() if k != "peak"}
+                             if pos else None),
             "tradeCount": len(trades),
             "winRate": round(len(wins) / len(trades) * 100, 2) if trades else None,
             "totalReturnPct": round((equity - 1) * 100, 4) if trades else None,
@@ -2045,6 +2115,11 @@ def main():
                           if len(bars) > 1 and bars[0].get("close") else None,
             "feeRate": fee, "taxRate": tax, "slippageRate": slip, "fillAt": fill_at,
             "stopLossPct": stop_pct * 100, "takeProfitPct": take_pct * 100,
+            "scaleOut": ([{"gainPct": round(r["gain"] * 100, 4),
+                           "sellPct": round(r["sold"] * 100, 4)} for r in ladder] or None),
+            # 왕복 횟수 — 사다리를 쓰면 체결 수가 왕복 수보다 많다. 둘을 섞으면 "체결 20건 이상"
+            # 같은 바가 실제보다 쉽게 통과한다.
+            "roundTrips": sum(1 for t in trades if t.get("closesPosition")),
             "trailingStopPct": trail_pct * 100,
             "tickSize": tick_size, "slippageTicks": slip_ticks,
             "assumptions": ("롱 전용·1포지션·전량, 신호 봉 종가 체결 가정. 비용은 부과 시점이 달라 "

@@ -225,6 +225,21 @@
       "barRange": {
         "type": "object",
         "description": "[signals] Analyse only a slice of `bars`: {from, to}. Values <= 1 are fractions of the series ({from:0, to:0.7} = oldest 70%, {from:0.7} = newest 30%), otherwise bar indices; negatives count from the end. Use it to fit a rule on one window and score it on another — a rule measured on the same bars it was chosen from tells you nothing about the next ones. `barRange` applies before `lastSessionOnly`."
+      },
+      "scaleOut": {
+        "type": "array",
+        "description": "분할청산 사다리 — [{gainPct, sellPct}]. gainPct = 진입가 대비 상승률, sellPct = **원래 수량 기준 누적** 매도 비율(마지막 칸 100 = 전량). 익절 목표(takeProfitPct)는 이 사다리의 한 칸짜리 경우입니다. 손절·트레일링·룰 매도는 남은 전부를 정리합니다. 목표가 하나면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는데, 사다리가 그 타협을 없앱니다.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "gainPct": {
+              "type": "number"
+            },
+            "sellPct": {
+              "type": "number"
+            }
+          }
+        }
       }
     }
   },
