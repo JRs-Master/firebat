@@ -274,19 +274,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "prompt.tool_system moved to prompt_store; this test outlived its feature — settle it or delete it"]
-    fn prompt_full_text() {
-        let dir = tempdir().unwrap();
-        let workspace = dir.path();
-        let prompt_dir = workspace.join("system/prompts/tool_system/lang");
-        std::fs::create_dir_all(&prompt_dir).unwrap();
-        std::fs::write(prompt_dir.join("ko.md"), "# 한국어 prompt\n본문").unwrap();
-        let store = build_store(workspace);
-        let text = lookup_in_store(&store, "prompt.tool_system", Some("ko"), &[]);
-        assert!(text.contains("한국어 prompt"));
-    }
-
-    #[test]
     fn fallback_to_default_lang() {
         let dir = tempdir().unwrap();
         let workspace = dir.path();

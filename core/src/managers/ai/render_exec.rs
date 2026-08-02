@@ -1016,7 +1016,7 @@ mod tests {
     // 회귀 대상: 모델이 자기 내장 이미지 도구를 써서 URL 이 없으면 사진이 답변에서 사라졌다.
 
     #[test]
-    #[ignore = "the image is not appended to the last fence — same investigation as fence_absorbs_render_tool_output_shape"]
+    #[ignore = "one of the two blocks is dropped by sanitisation, and it is not the schema: \n               image allows nulls on alt/width/height and requires all four, which the \n               appended block provides. Needs the `failed` group printed to see which \n               block and why — not yet done, and guessing would be worse"]
     fn append_image_blocks_extends_last_fence() {
         let text = "설명
 
