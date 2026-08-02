@@ -22,7 +22,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_upbit",
+          "tool": "sysmod_upbit_quotes",
           "inputData": {
             "action": "get_candles",
             "bars": 300

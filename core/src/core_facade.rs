@@ -377,6 +377,79 @@ mod module_contract_tests {
         );
     }
 
+    /// A module a hub visitor may be allowed must not be able to touch the account.
+    ///
+    /// The hub allowlist is per module, and a broker tool deliberately hides its parameters to
+    /// force discovery — so it accepts any action string, and allowing a broker for its charts
+    /// allowed it for `get_balance`. Blocking those by name does not work: the one list that
+    /// exists is `requiresApproval`, and account *reads* are deliberately not on it because the
+    /// trading cron calls them every cycle. Adding a second list of forbidden names would be one
+    /// more list to keep correct.
+    ///
+    /// So the boundary is the module. A module marked `hubSafe` must declare no credential and
+    /// no action that reads or moves money. Marked unsafe, it must never appear in a hub
+    /// allowlist — which is a setting, checked at runtime, not here.
+    #[test]
+    fn a_hub_safe_module_cannot_reach_an_account() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return; // not a checkout with modules beside it
+        };
+        // A backstop, not the boundary — the boundary is the split enum and the absent
+        // credential. These are the words the venues themselves use for endpoints that read or
+        // move money, so a new action naming one lands on the wrong side loudly.
+        const MONEY: [&str; 14] = [
+            "order", "account", "balance", "deposit", "withdraw", "transfer", "wallet",
+            "api_key", "api-key", "주문", "계좌", "잔고", "환전", "이체",
+        ];
+        // An order book is the public queue of bids and offers, not an order — every venue calls
+        // it that, and matching it on "order" would make the check cry wolf on the most ordinary
+        // public endpoint there is. Correcting the vocabulary rather than granting exemptions:
+        // an exemption list is the thing this test exists to avoid needing.
+        const PUBLIC_WORDS: [&str; 3] = ["orderbook", "order-book", "호가"];
+        let mut problems: Vec<String> = vec![];
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else {
+                continue;
+            };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                continue;
+            };
+            if config.get("hubSafe").and_then(|v| v.as_bool()) != Some(true) {
+                continue;
+            }
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            // A credential is the other half of the guarantee: the sandbox injects secrets a
+            // module declares, so a module that declares none cannot authenticate at all.
+            if config.get("secrets").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty()) {
+                problems.push(format!("{name}: hubSafe but declares credentials"));
+            }
+            if config.get("accounts").is_some() {
+                problems.push(format!("{name}: hubSafe but declares accounts"));
+            }
+            for action in config["input"]["properties"]["action"]["enum"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|v| v.as_str())
+            {
+                let mut lower = action.to_lowercase();
+                for w in PUBLIC_WORDS {
+                    lower = lower.replace(w, "");
+                }
+                if let Some(hit) = MONEY.iter().find(|m| lower.contains(*m)) {
+                    problems.push(format!("{name}: hubSafe but declares '{action}' ({hit})"));
+                }
+            }
+        }
+        assert!(
+            problems.is_empty(),
+            "these modules may be exposed to a hub visitor and can reach an account: {problems:?}"
+        );
+    }
+
     /// A websocket stream is pure declaration — nothing in it is checked until someone starts a
     /// watch, and the failure then is a string at runtime on a socket nobody is watching. These
     /// are the four ways a stream declaration is dead on arrival.
