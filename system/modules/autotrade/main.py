@@ -708,6 +708,105 @@ def _loop_items(value, key=None):
     return value if isinstance(value, list) else []
 
 
+# The slow timeframes a rule may reach for. Two hundred weekly bars is four years — enough for a
+# trend and for a position in a range — and fetching them is a once-a-day job, not a once-a-cycle
+# one. Declared as a setting so a person can widen or drop it without touching a rule.
+DEFAULT_CONTEXT = [{"interval": "1d", "bars": 400},
+                   {"interval": "1w", "bars": 200},
+                   {"interval": "1M", "bars": 60}]
+
+
+def context_spec(settings):
+    spec = settings.get("contextIntervals")
+    if isinstance(spec, str):
+        try:
+            spec = json.loads(spec)
+        except (ValueError, TypeError):
+            spec = None
+    if not isinstance(spec, list) or not spec:
+        return list(DEFAULT_CONTEXT)
+    out = []
+    for row in spec:
+        if isinstance(row, str):
+            out.append({"interval": row, "bars": 200})
+        elif isinstance(row, dict) and row.get("interval"):
+            out.append({"interval": str(row["interval"]),
+                        "bars": int(row.get("bars") or 200)})
+    return out or list(DEFAULT_CONTEXT)
+
+
+def action_context_plan(inp, settings):
+    """What the slow fetch should ask for — one call per declared symbol per context timeframe."""
+    symbols, seen = [], set()
+    for t in declared_trades(settings):
+        sym = t.get("symbol")
+        if sym and sym not in seen:
+            seen.add(sym)
+            symbols.append(sym)
+    for extra in (inp.get("symbols") or []):
+        if isinstance(extra, str) and extra not in seen:
+            seen.add(extra)
+            symbols.append(extra)
+    spec = context_spec(settings)
+    runs = [{"symbol": sym, "interval": c["interval"],
+             "args": {"action": "get_candles", "symbol": sym,
+                      "interval": c["interval"], "bars": c["bars"]}}
+            for sym in symbols for c in spec]
+    return {"success": True, "data": {
+        "runs": runs, "runCount": len(runs), "symbols": symbols,
+        "intervals": [c["interval"] for c in spec],
+        "note": ("각 `args` 를 브로커에 FOREACH 로 넘기고, 이 응답을 `plan`, 루프 결과를 "
+                 "`results` 로 store_context 에 주십시오."),
+    }}
+
+
+def action_store_context(inp, settings):
+    """Keep what the slow fetch brought back, so the trading cycle reads disk instead of a broker."""
+    plan = inp.get("plan")
+    runs = (plan or {}).get("runs") if isinstance(plan, dict) else None
+    if runs is None and isinstance(plan, dict):
+        runs = ((plan.get("data") or {}).get("runs"))
+    results = _loop_items(inp.get("results"))
+    if not isinstance(runs, list):
+        return {"success": False,
+                "error": "store_context 는 context_plan 결과를 `plan` 으로 받습니다."}
+    if len(results) != len(runs):
+        return {"success": False,
+                "error": f"{len(results)} 개 결과 / {len(runs)} 개 요청 — 루프가 끝나지 않았습니다. "
+                         "받은 것을 저장하지 않고 다음 실행에 맡깁니다."}
+    conn = ctxstore.connect()
+    saved, empty = [], []
+    try:
+        for run, res in zip(runs, results):
+            payload = (res or {}).get("data") if isinstance(res, dict) and "data" in res else res
+            rows = normalize_bars((payload or {}).get("records")
+                                  or (payload or {}).get("rows"))
+            if not rows:
+                empty.append(f"{run.get('symbol')} {run.get('interval')}")
+                continue
+            r = ctxstore.save(conn, run["symbol"], run["interval"], rows)
+            saved.append({"symbol": run["symbol"], "interval": run["interval"], **r})
+    finally:
+        conn.close()
+    return {"success": True, "data": {
+        "saved": saved, "empty": empty or None,
+        # A fetch that came back empty leaves what was already held. Replacing a series with
+        # nothing would turn a rate limit into "this coin has no history".
+        "note": ("빈 응답은 기존 이력을 그대로 둡니다 — 비우지 않습니다."
+                 if empty else None),
+    }}
+
+
+def action_context(inp, settings):
+    """What is held and how old — an empty rule condition versus a fetch that never ran."""
+    conn = ctxstore.connect()
+    try:
+        rows = ctxstore.status(conn, inp.get("symbols"))
+    finally:
+        conn.close()
+    return {"success": True, "data": {"held": rows, "count": len(rows)}}
+
+
 def action_bind_bars(inp, settings):
     """Pair each trade with the candles just fetched for it, and emit the analyser calls.
 
@@ -2458,6 +2557,12 @@ def main():
             return out({"success": True, "data": sweep.fit_symbols(inp)})
         if action == "adopt_fits":
             return out(action_adopt_fits(inp, settings))
+        if action == "context_plan":
+            return out(action_context_plan(inp, settings))
+        if action == "store_context":
+            return out(action_store_context(inp, settings))
+        if action == "context":
+            return out(action_context(inp, settings))
         if action == "bind_bars":
             return out(action_bind_bars(inp, settings))
         if action == "cycle":

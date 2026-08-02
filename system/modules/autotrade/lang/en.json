@@ -99,6 +99,11 @@
       "label": "Give up on an unfilled order (sec)",
       "description": "Withdraw a limit order that has rested this long. The price is the signal bar's close, so in a moving market it often will not fill, and leaving it holds the money and blocks the next entry. Whether to try again is the rule's decision — this only withdraws. 0 leaves them.",
       "group": "Confirmation"
+    },
+    "contextIntervals": {
+      "label": "Higher-timeframe context",
+      "description": "Series that change slowly — weekly, monthly — fetched ahead of time so the trading cycle reads them off disk instead of calling a broker. Fetched directly rather than folded up from the cycle's own bars, because the history is the point: three hundred hourly bars make two weekly ones, and two exact bars say nothing about a trend. Rules reach them by prefix — `w.slope10`, `d.disp20`.",
+      "group": "Measurement"
     }
   }
 }
