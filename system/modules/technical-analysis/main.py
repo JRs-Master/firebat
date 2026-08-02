@@ -945,13 +945,85 @@ def _higher_series(higher_input, inp, refs_by_tf, native_bars):
             missing.append(tf)
             continue
         base = _base_series(rows, inp)
-        _add_derived(base, [b["close"] for b in rows], sorted({r for _, r in refs}))
+        _add_derived(base, [b["close"] for b in rows], sorted({r for _, r in refs}), rows)
         for full, sub in refs:
             if sub not in base:
                 unknown.append(full)
                 continue
             out[full] = _align_to(native_bars, rows, base[sub])
     return out, missing, unknown
+
+
+
+def _candle_series(bars):
+    """What a bar looks like, as numbers a rule can compare.
+
+    Named patterns are deliberately absent. "Hammer" means a lower wick twice the body to one
+    writer and two and a half to another, and a constant chosen here is a definition the search
+    cannot question — the same reason slope and disparity are operands rather than a built-in
+    "pullback" signal. Given the parts, a rule writes the pattern and a sweep tries the ratio:
+
+        hammer          lowerWick > body * 2   AND upperWick < body
+        engulfing       close > open[1]        AND open < close[1] AND body > body[1]
+        morning star    close[2] < open[2]     AND bodyPct[1] < 30 AND close > bodyMid[2]
+
+    `bodyPct` is the body as a percentage of the whole range, so "small body" survives a change
+    of price scale — a 3,000 won body is large on a 10,000 won coin and nothing on Bitcoin.
+    """
+    o = [b.get("open", b["close"]) for b in bars]
+    h = [b["high"] for b in bars]
+    lo = [b["low"] for b in bars]
+    c = [b["close"] for b in bars]
+    rng = [h[i] - lo[i] for i in range(len(bars))]
+    body = [abs(c[i] - o[i]) for i in range(len(bars))]
+    top = [max(o[i], c[i]) for i in range(len(bars))]
+    bot = [min(o[i], c[i]) for i in range(len(bars))]
+    return {
+        "range": rng,
+        "body": [c[i] - o[i] for i in range(len(bars))],      # signed: up bar positive
+        "bodyAbs": body,
+        "bodyPct": [None if not rng[i] else body[i] / rng[i] * 100.0 for i in range(len(bars))],
+        "upperWick": [h[i] - top[i] for i in range(len(bars))],
+        "lowerWick": [bot[i] - lo[i] for i in range(len(bars))],
+        "bodyTop": top, "bodyBottom": bot,
+        "bodyMid": [(top[i] + bot[i]) / 2 for i in range(len(bars))],
+        # Distance from the previous close to this open — a gap, signed, zero on the first bar.
+        "gap": [0.0 if i == 0 else o[i] - c[i - 1] for i in range(len(bars))],
+        # Where price sits inside the whole bar, 0 at the low and 100 at the high.
+        "closePos": [None if not rng[i] else (c[i] - lo[i]) / rng[i] * 100.0
+                     for i in range(len(bars))],
+    }
+
+
+def _range_pos(bars, n):
+    """Where the close sits in the last n bars' range — 0 at the low, 100 at the high.
+
+    "Monthly position" and "weekly position" are this with a timeframe in front. A number rather
+    than a verdict: whether 80 is overextended or strong is what the rule and the sweep decide.
+    """
+    highs = [b["high"] for b in bars]
+    lows = [b["low"] for b in bars]
+    closes = [b["close"] for b in bars]
+    out = []
+    for i in range(len(bars)):
+        if i + 1 < n:
+            out.append(None)
+            continue
+        hi = max(highs[i - n + 1:i + 1])
+        lo = min(lows[i - n + 1:i + 1])
+        out.append(None if hi == lo else (closes[i] - lo) / (hi - lo) * 100.0)
+    return out
+
+
+# `close[1]` — the same operand, one bar back. A pattern made of several bars cannot be written
+# without it: engulfing and morning star are statements about what the previous bars did, and the
+# grammar is one comparison of two values, so the past has to be nameable as a value.
+_LAG_REF = re.compile(r"^(.+)\[(\d+)\]$")
+_POS_REF = re.compile(r"^pos(?:ition)?(\d+)$", re.IGNORECASE)
+
+
+def _lag(values, n):
+    return [None] * min(n, len(values)) + list(values[:max(0, len(values) - n)])
 
 
 def _base_series(bars, inp):
@@ -981,16 +1053,25 @@ def _base_series(bars, inp):
         "stochastic.k": st["k"], "stochastic.d": st["d"],
         "ichimoku.tenkan": ic["tenkan"], "ichimoku.kijun": ic["kijun"],
         "ichimoku.senkouA": ic["senkouA"], "ichimoku.senkouB": ic["senkouB"],
+        **_candle_series(bars),
     }
 
 
-def _add_derived(series, closes, refs):
+def _add_derived(series, closes, refs, bars=None):
     """Moving averages and the things read off them, at whatever periods the rules name.
 
     Returns the refs it could not measure — a period longer than the series it was given.
     """
     too_long = []
     for ref in refs:
+        mp = _POS_REF.match(ref)
+        if mp and bars is not None:
+            n = int(mp.group(1))
+            if n < 1 or n > len(bars):
+                too_long.append((ref, n))
+            else:
+                series[ref] = _range_pos(bars, n)
+            continue
         m = _ACCEL_REF.match(ref)
         kind = "accel"
         if not m:
@@ -1285,8 +1366,20 @@ def main():
         # there is could not be written at all: `ma50 crossUp ma200` was rejected as an unknown path
         # (2026-07-31, a golden-cross request). Periods are read off the rules instead of declared,
         # so 5/20/60/120 and 50/200 all work without this module choosing a convention.
-        every_ref = [str(c.get(side)) for r in rules for c in (r.get("when") or [])
-                     for side in ("a", "b") if isinstance(c.get(side), str)]
+        written_refs = [str(c.get(side)) for r in rules for c in (r.get("when") or [])
+                        for side in ("a", "b") if isinstance(c.get(side), str)]
+        # `close[1]` is `close`, shifted. Resolve the name first and shift afterwards, so the lag
+        # composes with everything — a moving average, a higher timeframe, a candle part — instead
+        # of being a third list of things that support it.
+        lagged = {}
+        every_ref = []
+        for ref in written_refs:
+            ml = _LAG_REF.match(ref)
+            if ml:
+                lagged[ref] = (ml.group(1), int(ml.group(2)))
+                every_ref.append(ml.group(1))
+            else:
+                every_ref.append(ref)
 
         # Operands carrying a timeframe, grouped so each higher series is computed once.
         higher_in = inp.get("higher") if isinstance(inp.get("higher"), dict) else {}
@@ -1317,53 +1410,11 @@ def main():
         ma_refs = sorted({r for r in every_ref if _MA_REF.match(r)})
         derived = sorted({r for r in every_ref
                           if _SLOPE_REF.match(r) or _DISP_REF.match(r)
-                          or _ACCEL_REF.match(r)})
-        ma_used = []
-        too_long = []
-        for ref in ma_refs:
-            kind, period = _MA_REF.match(ref).groups()
-            n = int(period)
-            if n < 1 or n > len(closes):
-                # A known kind over too short a window. Reporting it as "unknown path" would send the
-                # caller looking for a spelling mistake instead of loading more bars.
-                too_long.append((ref, n))
-                continue
-            series[ref] = _ema(closes, n) if kind == "ema" else _sma(closes, n)
-            ma_used.append((kind, n))
-        for ref in derived:
-            m = _ACCEL_REF.match(ref)
-            kind = "accel"
-            if not m:
-                m = _SLOPE_REF.match(ref)
-                kind = "slope"
-            if not m:
-                m = _DISP_REF.match(ref)
-                kind = "disp"
-            ema_flag, period = m.groups()
-            n = int(period)
-            if n < 1 or n > len(closes):
-                too_long.append((ref, n))
-                continue
-            base = _ema(closes, n) if ema_flag else _sma(closes, n)
-            if kind == "disp":
-                # 100 = price sits exactly on the average.
-                series[ref] = [None if (b is None or not b) else c / b * 100.0
-                               for c, b in zip(closes, base)]
-            else:
-                # Percent per bar, so the number means the same thing on a 90-million-won coin
-                # and a 400-won one.
-                sl = [None if (i == 0 or base[i] is None or not base[i - 1])
-                      else (base[i] - base[i - 1]) / base[i - 1] * 100.0
-                      for i in range(len(base))]
-                if kind == "slope":
-                    series[ref] = sl
-                else:
-                    # The change in that, so "still rising but by less" is a question a rule can
-                    # ask: `slope20 > 0` and `accel20 < 0` together.
-                    series[ref] = [None if (i == 0 or sl[i] is None or sl[i - 1] is None)
-                                   else sl[i] - sl[i - 1]
-                                   for i in range(len(sl))]
-            ma_used.append((kind, n))
+                          or _ACCEL_REF.match(r) or _POS_REF.match(r)})
+        # One implementation, used here and for every higher timeframe.
+        ma_used = [(_MA_REF.match(r).groups()[0], int(_MA_REF.match(r).groups()[1]))
+                   for r in ma_refs if _MA_REF.match(r)]
+        too_long = _add_derived(series, closes, list(ma_refs) + list(derived), bars)
 
         if too_long:
             print(json.dumps({"success": False, "error":
@@ -1380,6 +1431,12 @@ def main():
                 return None
             v = sq[i]
             return None if v is None else float(v)
+
+        # The shift, applied last, so `close[1]`, `ma20[2]` and `w.body[1]` all work without any
+        # of them knowing about the others.
+        for ref, (inner, n) in lagged.items():
+            if inner in series:
+                series[ref] = _lag(series[inner], n)
 
         unknown = sorted({str(c.get(side)) for r in rules for c in (r.get("when") or [])
                           for side in ("a", "b")
