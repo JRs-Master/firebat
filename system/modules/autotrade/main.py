@@ -1008,6 +1008,20 @@ def action_cycle(inp, settings):
     # answer that belongs to a strategy is found rather than assumed — a single shared signal
     # would silently apply one coin's verdict to another's position.
     per_strategy = _signals_by_strategy(inp.get("plan"), _loop_items(inp.get("signals")))
+    # A plan is a statement of what this cycle covers, so it is also the limit. Without this the
+    # cycle ran every enabled strategy — including ones whose candles were never fetched, which
+    # then fell back to *another* symbol's price and evaluated their stops against it. With one
+    # broker that was merely wrong; with a schedule per broker it sends an order for a coin to a
+    # stock exchange. Nothing outside the plan runs, and what was left out is named.
+    outside = []
+    if per_strategy:
+        keep = []
+        for s in strategies:
+            if s.get("id") in per_strategy or (s.get("symbol") or "") in per_strategy:
+                keep.append(s)
+            else:
+                outside.append(s.get("id"))
+        strategies = keep
     results, all_intents, ctxs = [], [], {}
 
     for s in strategies:
@@ -1138,6 +1152,9 @@ def action_cycle(inp, settings):
     return {"success": True, "data": {
         "mode": mode_hint, "unattended": unattended(), "tripped": tripped,
         "ran": len(strategies), "price": price, "firedSides": sorted(sides),
+        # Named rather than dropped quietly: a strategy that sat out because this cycle was not
+        # about it is normal, and a strategy that sat out because its candles never arrived is not.
+        "outsidePlan": outside or None,
         "placed": placed, "dropped": dropped_all, "transfers": transfers,
         "abandoned": abandoned,
         "results": results, "positions": positions,
@@ -2727,6 +2744,28 @@ def action_selftest():
     checks.append({"name": "and each is addressable on its own", "want": 2,
                    "got": len({t["tradeId"] for t in tg["trades"]}),
                    "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    # A cycle carrying a plan must not touch strategies the plan left out. They have no candles,
+    # so they would price their stops off whatever symbol the shared signal came from — and with
+    # one schedule per broker, that means an order for one venue sent to another.
+    only = {"tradingEnabled": True, "mode": "dryrun",
+            "trades": [{"id": "s1", "symbol": "S1", "broker": "a", "account": ""},
+                       {"id": "s2", "symbol": "S2", "broker": "b", "account": ""}],
+            "strategies": [
+                {"id": "s1", "enabled": True, "kind": "rules", "symbol": "S1", "broker": "a",
+                 "account": "", "money": {"perOrder": 1000}, "limits": {},
+                 "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]},
+                {"id": "s2", "enabled": True, "kind": "rules", "symbol": "S2", "broker": "b",
+                 "account": "", "money": {"perOrder": 1000}, "limits": {},
+                 "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}]}
+    one_plan = {"runs": [{"tradeId": "s1", "strategyId": "s1", "symbol": "S1", "lastClose": 100.0,
+                          "args": {}}]}
+    scoped = action_cycle({"plan": one_plan, "signals": [{"success": True, "data": {
+        "counts": {"buy": 0, "sell": 0}, "firedOnLastClosedBar": []}}]}, only)["data"]
+    left_out = scoped.get("outsidePlan") or []
+    checks.append({"name": "a cycle runs only what its plan named", "want": [1, "s2 left out"],
+                   "got": [scoped["ran"], left_out],
+                   "ok": scoped["ran"] == 1 and "s2" in left_out and "s1" not in left_out})
+
     # The same rule declared once per broker used to pair with every broker's trade in that
     # symbol — one signal, four orders, two of them in an account the rule never named.
     placed = {"tradingEnabled": True, "mode": "dryrun",

@@ -7,6 +7,9 @@
  * 단일 모듈로 라우팅 — action 으로 API ID 직접 호출, tr_id 자동 분기 (실전/모의).
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
 
@@ -1983,14 +1986,40 @@ const API_TABLE = {
 const RATE_LIMIT_REAL = 5;
 const RATE_LIMIT_MOCK = 2;
 const WINDOW_MS = 1000;
-const _reqTimes = [];
 let _rateLimit = RATE_LIMIT_REAL;
-async function acquireSlot() {
-  while (true) {
+
+// The limit belongs to the credential, not to this process — and every step of a scheduled cycle
+// is its own process. An in-memory window therefore counted to two while eight siblings were
+// calling at the same time, and the practice account refused half of them. The window lives in a
+// file beside the data, one line per call: appends of a few bytes do not interleave, so no lock
+// is needed to keep the count honest.
+function slotFile(isMock) {
+  const dir = path.join(process.env['FIREBAT_DATA_DIR'] || 'data', 'ratelimit');
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, `kis-${isMock ? 'mock' : 'real'}.log`);
+}
+
+async function acquireSlot(isMock) {
+  const file = slotFile(isMock);
+  for (let attempt = 0; ; attempt += 1) {
     const now = Date.now();
-    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < _rateLimit) { _reqTimes.push(now); return; }
-    await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
+    let recent = [];
+    try {
+      recent = fs.readFileSync(file, 'utf-8').split('\n')
+        .map(Number).filter(t => t > 0 && now - t < WINDOW_MS);
+    } catch { /* first call of the day — no file yet */ }
+    if (recent.length < _rateLimit) {
+      fs.appendFileSync(file, now + '\n');
+      // Keep it from growing without bound; the tail is all anyone reads.
+      if (Math.random() < 0.02) {
+        try { fs.writeFileSync(file, recent.concat(now).join('\n') + '\n'); } catch { /* fine */ }
+      }
+      return;
+    }
+    // Jittered, so eight siblings woken by the same window do not all fire on the same tick.
+    const wait = WINDOW_MS - (now - Math.min(...recent)) + 20 + Math.floor(Math.random() * 120);
+    await new Promise(r => setTimeout(r, Math.min(wait, WINDOW_MS + 200)));
+    if (attempt > 40) return;   // never wedge a cycle on the limiter
   }
 }
 
@@ -2015,7 +2044,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     'custtype': 'P',
   };
   _rateLimit = isMock ? RATE_LIMIT_MOCK : RATE_LIMIT_REAL;
-  await acquireSlot();
+  await acquireSlot(isMock);
   const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
   if (meta.method !== 'GET' && Object.keys(body).length > 0) init.body = JSON.stringify(body);
   const resp = await fetch(url, init);
