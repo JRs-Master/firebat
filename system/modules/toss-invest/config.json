@@ -466,5 +466,6 @@
         "tokenField": "access_token"
       }
     }
-  ]
+  ],
+  "credentialScope": "toss-invest-trade"
 }

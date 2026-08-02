@@ -1146,6 +1146,5 @@
       ]
     }
   },
-  "hubSafe": false,
-  "credentialScope": "kiwoom"
+  "hubSafe": false
 }

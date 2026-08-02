@@ -865,5 +865,6 @@
     ],
     "listAction": "ka00001",
     "accountNoPath": "acctNo"
-  }
+  },
+  "credentialScope": "kiwoom-trade"
 }

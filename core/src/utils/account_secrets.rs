@@ -149,12 +149,12 @@ impl AccountRegistry {
             .unwrap_or_default()
     }
 
-    /// This module's accounts, plus the primary it inherits from its sibling.
+    /// This module's accounts, plus whatever it borrows from the sibling it names.
     ///
-    /// The base module holds the broker relationship — one primary, used for quotes and for any
-    /// call that names no account. The trading half registers the accounts orders go to. Merging
-    /// rather than choosing means neither half has to know about the other's list, and an alias
-    /// registered here always wins over an inherited one of the same name.
+    /// A broker's accounts are registered on its trading module — that is where an order goes and
+    /// where they belong. The quote half declares `credentialScope` pointing at it and borrows
+    /// the list, because these venues want a token even for a chart. An alias registered here
+    /// wins over a borrowed one of the same name.
     pub fn load_with_base(
         vault: &dyn crate::ports::IVaultPort,
         module: &str,
@@ -165,14 +165,17 @@ impl AccountRegistry {
             return own;
         };
         let inherited = Self::load(vault, base);
-        let Some(primary) = inherited.primary_entry().cloned() else {
-            return own;
-        };
-        if !own.accounts.iter().any(|a| a.id == primary.id) {
-            own.accounts.push(primary.clone());
+        // Everything, not only the primary. The accounts belong to the trading module — that is
+        // where they are registered and where the order goes — and the quote half borrows a
+        // credential from them. Which one it borrows is the caller's business: a venue that rate
+        // limits per key is a reason to be able to name a spare, not a reason to hide the list.
+        for entry in inherited.accounts {
+            if !own.accounts.iter().any(|a| a.id == entry.id) {
+                own.accounts.push(entry);
+            }
         }
         if own.primary.is_none() {
-            own.primary = Some(primary.id);
+            own.primary = inherited.primary;
         }
         own
     }

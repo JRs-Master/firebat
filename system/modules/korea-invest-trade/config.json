@@ -3302,6 +3302,5 @@
     "실시간 스트림",
     "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · 통합(UN) · SOR — FID_COND_MRKT_DIV_CODE(J:KRX, NX:NXT, UN:통합, SO:SOR). 실시간은 거래소별 전용 TR(H0STCNT0=KRX / H0NXCNT0=NXT / H0UNCNT0=통합)"
   ],
-  "hubSafe": false,
-  "credentialScope": "korea-invest"
+  "hubSafe": false
 }

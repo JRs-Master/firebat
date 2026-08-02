@@ -468,6 +468,5 @@
     "계좌",
     "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · US — market 파라미터"
   ],
-  "hubSafe": false,
-  "credentialScope": "toss-invest"
+  "hubSafe": false
 }
