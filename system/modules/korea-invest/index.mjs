@@ -1976,14 +1976,20 @@ const API_TABLE = {
 // 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
 // sysmod 는 env 로 주입된 raw 토큰(KIS_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
 
-const RATE_LIMIT = 20;
+// The two domains do not allow the same rate, and the tighter one is the rung of the ladder every
+// strategy has to pass through: paper trading on the practice account hit "초당 거래건수를
+// 초과하였습니다" on the second call of a cycle, which reads as a broken cycle rather than as a
+// speed limit. Measured 2026-08-02 — a candle fetch that pages twice is already over it.
+const RATE_LIMIT_REAL = 20;
+const RATE_LIMIT_MOCK = 2;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
+let _rateLimit = RATE_LIMIT_REAL;
 async function acquireSlot() {
   while (true) {
     const now = Date.now();
     while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < RATE_LIMIT) { _reqTimes.push(now); return; }
+    if (_reqTimes.length < _rateLimit) { _reqTimes.push(now); return; }
     await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
   }
 }
@@ -2008,6 +2014,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     'tr_id': trId,
     'custtype': 'P',
   };
+  _rateLimit = isMock ? RATE_LIMIT_MOCK : RATE_LIMIT_REAL;
   await acquireSlot();
   const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
   if (meta.method !== 'GET' && Object.keys(body).length > 0) init.body = JSON.stringify(body);
@@ -2026,7 +2033,15 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(`KIS API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
-  return await resp.json();
+  const payload = await resp.json();
+  // The venue also refuses on rate with HTTP 200 and an error body. Returning it as-is makes a
+  // throttled call look like an account with nothing in it, which is the worst possible lie to
+  // tell something that reconciles positions.
+  if (retry > 0 && String(payload?.msg1 || '').includes('초당 거래건수')) {
+    await new Promise(r => setTimeout(r, WINDOW_MS + 100));
+    return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1, trIdOverride);
+  }
+  return payload;
 }
 
 // Standard OHLCV normalization — rename KIS candle vocabulary to the cross-broker standard
