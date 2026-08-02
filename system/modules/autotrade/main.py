@@ -673,6 +673,17 @@ def _signals_by_strategy(plan, signals):
 
 
 
+
+def _shape(v, depth=0):
+    """A short fingerprint of a value — enough to tell which step it came from."""
+    if isinstance(v, list):
+        return f"list[{len(v)}]" + (f" of {_shape(v[0], depth + 1)}" if v and depth < 1 else "")
+    if isinstance(v, dict):
+        keys = sorted(v)[:6]
+        return "{" + ", ".join(keys) + ("…" if len(v) > 6 else "") + "}"
+    return type(v).__name__
+
+
 def _loop_items(value, key=None):
     """A list, however the pipeline handed it over.
 
@@ -682,7 +693,10 @@ def _loop_items(value, key=None):
     step-to-step hand-off in this module already has.
     """
     if isinstance(value, dict):
-        for k in ("results", key or "results", "rows", "records"):
+        # The asked-for key first. A step's output can carry several lists — a cycle answers with
+        # both `calls` and `results` — and preferring the loop's own name would quietly hand back
+        # the wrong one, which is worse than not unwrapping at all.
+        for k in ([key] if key else []) + ["results", "rows", "records"]:
             if k and isinstance(value.get(k), list):
                 return value[k]
         inner = value.get("data")
@@ -919,12 +933,17 @@ def action_record_orders(inp, settings):
     other books trades that did not happen. A rejection is terminal and says so; anything
     unreadable leaves the row `unknown` for reconciliation to settle rather than guessing.
     """
-    calls = inp.get("calls") or []
-    results = inp.get("results") or []
+    calls = _loop_items(inp.get("calls"), "calls")
+    results = _loop_items(inp.get("results"))
     if len(results) != len(calls):
+        # Counts alone do not say where a wrong list came from, and a pipeline hands these over by
+        # reference — `$step6.results` and `$step5.calls` are easy to point one step off. Show a
+        # fingerprint of each so the declaration can be checked against what actually arrived.
         return {"success": False,
                 "error": f"{len(results)} responses for {len(calls)} calls — the order loop did "
-                         "not finish; leave the rows alone and run reconcile"}
+                         "not finish; leave the rows alone and run reconcile. "
+                         f"받은 results = {_shape(inp.get('results'))}, "
+                         f"calls = {_shape(inp.get('calls'))}"}
     conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
     recorded = []
     for call, ack in zip(calls, results):
