@@ -2356,6 +2356,7 @@ async function fetchCandles(ctx, data) {
   const trId = pickTrId(meta, ctx.isMock, '');
   const span = Math.ceil(CANDLE_PAGE * 1.7) * (PERIOD_DAYS[period] || 1);
   const byDate = new Map();
+  let stopped = null;
   let cursor = String(data.baseDate ?? '').replace(/-/g, '') || kstDate(0);
   for (let page = 0; page < MAX_CANDLE_PAGES && byDate.size < want; page += 1) {
     const query = kr
@@ -2368,8 +2369,11 @@ async function fetchCandles(ctx, data) {
           GUBN: period, BYMD: cursor, MODP: data.adjusted === false ? '0' : '1' };
     const result = await ctx.call(apiId, trId, query, {});
     if (result?.rt_cd !== undefined && result.rt_cd !== '0') {
-      // Page one failing is the call failing; a later page failing still has bars to hand back.
+      // Page one failing is the call failing; a later page failing still has bars to hand back —
+      // but it has to say so. A silently short history is a rule fitted on whatever survived the
+      // throttle, and nothing downstream can tell that from a young listing.
       if (page === 0) throw new Error(result.msg1 || `한투 API 오류 (rt_cd=${result.rt_cd})`);
+      stopped = result.msg1 || `rt_cd=${result.rt_cd}`;
       break;
     }
     const rows = candleRows(result);
@@ -2389,7 +2393,9 @@ async function fetchCandles(ctx, data) {
   const all = [...byDate.values()]
     .filter(r => Number(r.close) > 0)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  return { rows: all.slice(-want), apiId, interval, market: kr ? 'kr' : 'us' };
+  const out = all.slice(-want);
+  return { rows: out, apiId, interval, market: kr ? 'kr' : 'us',
+           short: out.length < want ? { asked: want, got: out.length, stopped } : null };
 }
 
 /** The one row list, by this broker's own naming: output1 is the detail, output2 the summary. */
