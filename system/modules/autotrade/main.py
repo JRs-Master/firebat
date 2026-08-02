@@ -2164,6 +2164,22 @@ def action_selftest():
                    "ok": (mc2["placed"] or [{}])[0].get("strategyId") == "z"
                          and (mc2["placed"] or [{}])[0].get("price") == 50.0})
 
+    # --- what the dispatcher answers and what the schema allows must be the same list -------
+    # Validation happens before the sandbox runs, against the declared enum. An action added to
+    # the dispatcher but not to the declaration is refused at the door with "not one of […]",
+    # which reads as a caller mistake rather than a missing declaration — measured 2026-08-02,
+    # a live pipeline died at step 4 on exactly that.
+    import re as _re
+    _src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    _tail = _src[_src.index('if action == "gate"'):] if 'if action == "gate"' in _src else ""
+    _dispatched = set(_re.findall(r'action == "([a-z_]+)"', _tail))
+    _cfgp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    with open(_cfgp, encoding="utf-8") as _fh:
+        _enum = set(json.load(_fh)["input"]["properties"]["action"]["enum"])
+    _undeclared = sorted(_dispatched - _enum)
+    checks.append({"name": "every action the module answers is declared in its schema",
+                   "want": [], "got": _undeclared, "ok": not _undeclared})
+
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
             "data": {"checks": checks, "passed": len(checks) - len(failed), "failed": len(failed)},
