@@ -678,6 +678,13 @@ def _pipeline_trades(settings, strategies):
             unbound = not st.get("symbol") and st.get("id") not in {x["id"] for x in trades}
             if not (named or unbound):
                 continue
+            # Matching on the symbol alone crosses placements: the same rule declared once per
+            # broker paired with every broker's trade in that symbol, so one signal became four
+            # orders in two accounts. A strategy that names where it runs runs only there.
+            placed = [(k, st.get(k), t.get(k)) for k in ("broker", "account")
+                      if st.get(k) and st.get(k) != t.get(k)]
+            if placed:
+                continue
             rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
             if not rules:
                 continue
@@ -2720,6 +2727,24 @@ def action_selftest():
     checks.append({"name": "and each is addressable on its own", "want": 2,
                    "got": len({t["tradeId"] for t in tg["trades"]}),
                    "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    # The same rule declared once per broker used to pair with every broker's trade in that
+    # symbol — one signal, four orders, two of them in an account the rule never named.
+    placed = {"tradingEnabled": True, "mode": "dryrun",
+              "trades": [{"id": "a-X", "symbol": "X", "broker": "a", "account": "m1"},
+                         {"id": "b-X", "symbol": "X", "broker": "b", "account": "m2"}],
+              "strategies": [
+                  {"id": "a-X", "enabled": True, "kind": "rules", "symbol": "X", "broker": "a",
+                   "account": "m1", "money": {"perOrder": 1000}, "limits": {},
+                   "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]},
+                  {"id": "b-X", "enabled": True, "kind": "rules", "symbol": "X", "broker": "b",
+                   "account": "m2", "money": {"perOrder": 1000}, "limits": {},
+                   "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}]}
+    paired = action_gate({}, placed)["data"]["trades"]
+    checks.append({"name": "a rule that names its account runs only there", "want": 2,
+                   "got": [(t["tradeId"], t["broker"]) for t in paired],
+                   "ok": len(paired) == 2
+                         and all(t["strategyId"] == t["tradeId"] for t in paired)})
+
     # A dollar-priced share sized against a won-named field is the same number read as the wrong
     # currency, and nothing downstream can tell — it just orders thirteen hundred times too much.
     usd = {"id": "u", "enabled": True, "kind": "rules", "symbol": "AAPL", "broker": "kiwoom",
