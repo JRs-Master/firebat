@@ -28,7 +28,7 @@
           "tool": "sysmod_korea-invest",
           "inputData": {
             "action": "get_candles",
-            "bars": 300
+            "bars": 120
           },
           "inputMap": {
             "symbol": "$prev.symbol",

@@ -1984,7 +1984,7 @@ const API_TABLE = {
 // 초과하였습니다" on the second call of a cycle, which reads as a broken cycle rather than as a
 // speed limit. Measured 2026-08-02 — a candle fetch that pages twice is already over it.
 const RATE_LIMIT_REAL = 5;
-const RATE_LIMIT_MOCK = 2;
+const RATE_LIMIT_MOCK = 1;
 const WINDOW_MS = 1000;
 let _rateLimit = RATE_LIMIT_REAL;
 
