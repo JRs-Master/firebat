@@ -245,6 +245,16 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
 
 
 def normalize_bars(bars):
+    """Rows with a close, oldest first.
+
+    Order is not a given: the analyser already forces it because one broker answers newest-first,
+    and this module was trusting whatever arrived. Everything here that reads "the last bar" —
+    the price a stop is checked against, above all — was then reading the *oldest* one, which for
+    a daily series is a price from two years ago (measured 2026-08-03, kiwoom daily bars).
+
+    Dates are zero-padded, so lexical order is chronological order. Rows without a date keep
+    their place rather than being sorted to the front.
+    """
     rows = []
     for b in bars or []:
         if not isinstance(b, dict):
@@ -253,6 +263,8 @@ def normalize_bars(bars):
         if close is None:
             continue
         rows.append(b)
+    if any(str(r.get("date") or "") for r in rows):
+        rows.sort(key=lambda r: str(r.get("date") or ""))
     return rows
 
 
@@ -2767,6 +2779,14 @@ def action_selftest():
     checks.append({"name": "and each is addressable on its own", "want": 2,
                    "got": len({t["tradeId"] for t in tg["trades"]}),
                    "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    # One broker answers newest-first. Trusting the order made "the last bar" the oldest one, so
+    # a stop was checked against a price from two years ago.
+    backwards = [{"date": "2026-08-01", "close": 300}, {"date": "2026-07-31", "close": 200},
+                 {"date": "2026-07-30", "close": 100}]
+    checks.append({"name": "bars are put in time order before anything reads the last one",
+                   "want": 300.0, "got": last_close(normalize_bars(backwards)),
+                   "ok": last_close(normalize_bars(backwards)) == 300.0})
+
     # A cycle carrying a plan must not touch strategies the plan left out. They have no candles,
     # so they would price their stops off whatever symbol the shared signal came from — and with
     # one schedule per broker, that means an order for one venue sent to another.
