@@ -628,6 +628,8 @@ function upbitQueryParams(action, data) {
 
 const UPBIT_STANDARD = ['place_order', 'cancel_order', 'list_open_orders', 'list_fills',
                         'get_balance'];
+/** The read half of the contract — these answer with a list, and every broker names it `rows`. */
+const NEUTRAL_QUERIES = ['list_open_orders', 'list_fills', 'get_balance'];
 
 async function main(input) {
   const wantsCandles = Boolean(input && input.action === 'get_candles');
@@ -786,6 +788,12 @@ async function main(input) {
               feeRate: input._feeRate, validatedOnly: input.action === 'order-test' }
           : {}),
         ...( Array.isArray(data) ? { records: data, count: data.length } : data ),
+        // The neutral queries answer under the neutral name. `records` is this module's own
+        // convention for a list and stays, but a caller written against the contract must not
+        // have to know that one broker says `rows` and another says `records` — that knowledge
+        // is exactly what the contract exists to remove, and a pipeline reading `.rows` worked
+        // on kiwoom and resolved to nothing here.
+        ...( NEUTRAL_QUERIES.includes(neutral) && Array.isArray(data) ? { rows: data } : {} ),
       },
     }));
   } catch (err) {
