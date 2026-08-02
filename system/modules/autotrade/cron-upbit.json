@@ -45,7 +45,7 @@
       },
       "inputMap": {
         "trades": "$step0.trades",
-        "fetched": "$step2"
+        "fetched": "$step2.results"
       }
     },
     {
@@ -67,7 +67,7 @@
       },
       "inputMap": {
         "plan": "$step3",
-        "signals": "$step4"
+        "signals": "$step4.results"
       }
     },
     {
@@ -89,7 +89,7 @@
       },
       "inputMap": {
         "calls": "$step5.calls",
-        "results": "$step6"
+        "results": "$step6.results"
       }
     },
     {

@@ -160,11 +160,11 @@
         "description": "[plan_sweep] Search space: {families:[ma-cross|ema-cross|rsi|bollinger|macd], fast:[], slow:[], low:[], high:[], bbPeriod:[], bbMult:[], stopLossPct:[], takeProfitPct:[], feeRate, taxRate, slippageRate, holdout}. Omit anything to take the defaults."
       },
       "results": {
-        "type": "array",
-        "description": "[rank_sweep] technical-analysis responses, in the same order as `runs`.",
-        "items": {
-          "type": "object"
-        }
+        "type": [
+          "array",
+          "object"
+        ],
+        "description": "[rank_sweep] technical-analysis responses, in the same order as `runs`. 루프 결과 봉투(`{count, results}`)도 그대로 받습니다 — 실행 결과들."
       },
       "runs": {
         "type": "array",
@@ -205,11 +205,11 @@
         "description": "[plan_multi] symbols to sweep, in the same order as `fetched`."
       },
       "fetched": {
-        "type": "array",
-        "items": {
-          "type": "object"
-        },
-        "description": "[plan_multi] the candle loop's `results` — each entry is one symbol's fetch, read for its `_cacheKey` and `_cacheMeta.totalCount`."
+        "type": [
+          "array",
+          "object"
+        ],
+        "description": "[plan_multi] the candle loop's `results` — each entry is one symbol's fetch, read for its `_cacheKey` and `_cacheMeta.totalCount`. 루프 결과 봉투(`{count, results}`)도 그대로 받습니다 — 봉 수집 루프의 결과."
       },
       "confirmSymbols": {
         "type": "array",
@@ -219,11 +219,11 @@
         "description": "[plan_multi] symbols held out of the choice. A rule is ranked on the rest and refused if it does not also beat buy & hold here — choosing on a symbol set and scoring on that same set is the same error as choosing on a window and scoring on it."
       },
       "calls": {
-        "type": "array",
-        "items": {
-          "type": "object"
-        },
-        "description": "[record_orders] the `calls` array cycle returned, unchanged."
+        "type": [
+          "array",
+          "object"
+        ],
+        "description": "[record_orders] the `calls` array cycle returned, unchanged. 루프 결과 봉투(`{count, results}`)도 그대로 받습니다 — 주문 호출들."
       },
       "fills": {
         "type": "array",
@@ -317,8 +317,11 @@
         "description": "[cycle] bind_bars 결과 전체. 어느 신호가 어느 전략 것인지 여기서 맞춥니다."
       },
       "signals": {
-        "type": "array",
-        "description": "[cycle] plan.runs 와 같은 순서의 technical-analysis 응답들."
+        "type": [
+          "array",
+          "object"
+        ],
+        "description": "[cycle] plan.runs 와 같은 순서의 technical-analysis 응답들. 루프 결과 봉투(`{count, results}`)도 그대로 받습니다 — 분석 결과들."
       },
       "feeRate": {
         "type": "number",
