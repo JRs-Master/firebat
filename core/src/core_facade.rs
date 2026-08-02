@@ -295,3 +295,70 @@ mod module_schedule_tests {
     }
 }
 
+#[cfg(test)]
+mod module_contract_tests {
+    //! A module's schema is checked before its code runs, so an action or an input the module
+    //! handles but does not declare is refused at the door — and the refusal reads as a caller
+    //! mistake ("not one of […], do not guess") rather than as a missing declaration. Measured
+    //! 2026-08-02: a live pipeline died on this four times in a row, in two different modules,
+    //! each time one step further along.
+    //!
+    //! The broker contract is the part worth pinning here. It is the same five calls on every
+    //! broker by design — that is what lets the caller stay ignorant of the dialect — so a broker
+    //! that implements them and forgets to declare them breaks the promise silently.
+    use std::path::Path;
+
+    const NEUTRAL: [&str; 6] = [
+        "place_order", "cancel_order", "list_open_orders", "list_fills", "get_balance",
+        "get_candles",
+    ];
+
+    #[test]
+    fn a_broker_declares_the_neutral_calls_it_implements() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return; // not a checkout with modules beside it
+        };
+        let mut problems: Vec<String> = vec![];
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let Ok(config_raw) = std::fs::read_to_string(dir.join("config.json")) else {
+                continue;
+            };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_raw) else {
+                continue;
+            };
+            let Some(declared) = config["input"]["properties"]["action"]["enum"].as_array() else {
+                continue;
+            };
+            let declared: Vec<&str> = declared.iter().filter_map(|v| v.as_str()).collect();
+            let code = ["index.mjs", "main.py"]
+                .iter()
+                .find_map(|f| std::fs::read_to_string(dir.join(f)).ok())
+                .unwrap_or_default();
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let mentions = |a: &str| {
+                code.contains(&format!("'{a}'")) || code.contains(&format!("\"{a}\""))
+            };
+            // A module that names one of these is not necessarily a broker — the strategy module
+            // builds a `place_order` call without implementing one. Speaking the contract means
+            // answering most of it, so three is the line between using the vocabulary and being
+            // the thing it addresses.
+            if NEUTRAL.iter().filter(|a| mentions(a)).count() < 3 {
+                continue;
+            }
+            for action in NEUTRAL {
+                // Implemented if the code compares against the name; declared if the schema lists
+                // it. Anything implemented and undeclared is unreachable.
+                if mentions(action) && !declared.contains(&action) {
+                    problems.push(format!("{name}: {action}"));
+                }
+            }
+        }
+        assert!(
+            problems.is_empty(),
+            "these broker calls are implemented but not declared, so validation refuses them              before the module runs: {problems:?}"
+        );
+    }
+}
+
