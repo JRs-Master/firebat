@@ -304,6 +304,49 @@
           "type": "object"
         },
         "description": "[match_conditions] 조건검색 목록 응답 행 그대로."
+      },
+      "trades": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        },
+        "description": "[bind_bars] gate 가 돌려준 `trades` 를 그대로. 각 항목이 종목·주기·규칙을 들고 있습니다."
+      },
+      "plan": {
+        "type": "object",
+        "description": "[cycle] bind_bars 결과 전체. 어느 신호가 어느 전략 것인지 여기서 맞춥니다."
+      },
+      "signals": {
+        "type": "array",
+        "description": "[cycle] plan.runs 와 같은 순서의 technical-analysis 응답들."
+      },
+      "feeRate": {
+        "type": "number",
+        "description": "[bind_bars/측정] 매매 수수료율 (0.0005 = 0.05%). 거래소가 정합니다."
+      },
+      "taxRate": {
+        "type": "number",
+        "description": "[bind_bars/측정] 거래세율. 코인은 0, 국내주식 매도는 0.0018."
+      },
+      "slippageRate": {
+        "type": "number",
+        "description": "[bind_bars/측정] 체결 미끄러짐 가정치. 빠진 채로 잰 백테스트는 채택되지 않습니다."
+      },
+      "fits": {
+        "type": "array",
+        "description": "[adopt_fits] fit_symbols 가 통과시킨 (종목, 규칙) 쌍들을 그대로."
+      },
+      "conditions": {
+        "type": "array",
+        "description": "[match_conditions] 브로커가 돌려준 조건검색 목록 행들."
+      },
+      "requestId": {
+        "type": "string",
+        "description": "[bind_condition] 사람이 HTS 에 만들어 준 조건식과 이을 요청 id."
+      },
+      "minClosedTrips": {
+        "type": "number",
+        "description": "[next_revision] 규칙을 고친 뒤로 이만큼 완결 매매가 쌓여야 다시 수정합니다."
       }
     }
   },

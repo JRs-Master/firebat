@@ -672,6 +672,26 @@ def _signals_by_strategy(plan, signals):
     return out
 
 
+
+def _loop_items(value, key=None):
+    """A list, however the pipeline handed it over.
+
+    A FOREACH step does not return its items — it returns `{count, dropped, failed, results}`,
+    and a declaration that maps `$stepN` passes that envelope on. Unwrapping it here means the
+    caller can write either and neither is wrong, which is the same tolerance every other
+    step-to-step hand-off in this module already has.
+    """
+    if isinstance(value, dict):
+        for k in ("results", key or "results", "rows", "records"):
+            if k and isinstance(value.get(k), list):
+                return value[k]
+        inner = value.get("data")
+        if isinstance(inner, dict):
+            return _loop_items(inner, key)
+        return []
+    return value if isinstance(value, list) else []
+
+
 def action_bind_bars(inp, settings):
     """Pair each trade with the candles just fetched for it, and emit the analyser calls.
 
@@ -681,10 +701,8 @@ def action_bind_bars(inp, settings):
     it is why each analyser call can carry its own rule and its own bars without the pipeline
     holding either.
     """
-    trades = inp.get("trades") or []
-    if isinstance(trades, dict):
-        trades = trades.get("trades") or []
-    fetched = inp.get("fetched") or []
+    trades = _loop_items(inp.get("trades"), "trades")
+    fetched = _loop_items(inp.get("fetched"))
     if len(fetched) != len(trades):
         return {"success": False,
                 "error": f"{len(fetched)} 개 봉 결과 / {len(trades)} 개 매매 — 같은 순서로 같은 "
@@ -765,7 +783,7 @@ def action_cycle(inp, settings):
     # `plan` is bind_bars' output and `signals` the analyser results in the same order, so the
     # answer that belongs to a strategy is found rather than assumed — a single shared signal
     # would silently apply one coin's verdict to another's position.
-    per_strategy = _signals_by_strategy(inp.get("plan"), inp.get("signals"))
+    per_strategy = _signals_by_strategy(inp.get("plan"), _loop_items(inp.get("signals")))
     results, all_intents, ctxs = [], [], {}
 
     for s in strategies:
@@ -2179,6 +2197,17 @@ def action_selftest():
     _undeclared = sorted(_dispatched - _enum)
     checks.append({"name": "every action the module answers is declared in its schema",
                    "want": [], "got": _undeclared, "ok": not _undeclared})
+    # Same class, other half. `additionalProperties` is false, so an input the module reads but
+    # the schema does not list is refused before the sandbox runs — and the message shows the
+    # offending value rather than the missing declaration, so it reads as bad data. Measured
+    # 2026-08-02: `trades`, `plan` and `signals` were all undeclared and the live pipeline died
+    # on them one after another.
+    with open(_cfgp, encoding="utf-8") as _fh:
+        _declared = set(json.load(_fh)["input"]["properties"])
+    _read = set(_re.findall(r'inp\.get\("([a-zA-Z][a-zA-Z0-9_]*)"', _src))
+    _missing_in = sorted(_read - _declared)
+    checks.append({"name": "every input the module reads is declared in its schema",
+                   "want": [], "got": _missing_in, "ok": not _missing_in})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
