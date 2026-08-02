@@ -2087,9 +2087,12 @@ def action_selftest():
             shaken = json.load(fh)
     gate_out = action_gate({}, load_settings())["data"]
     st = gate_out.get("strategy") or {}
-    checks.append({"name": "the gate hands the pipeline the rule to analyse", "want": 3,
+    # How many conditions the shipped rule happens to have is a property of that rule, not of the
+    # mechanism — asserting the count made a measurement result into a test fixture.
+    checks.append({"name": "the gate hands the pipeline the rule to analyse", "want": ">0",
                    "got": len(st.get("rules") or []),
-                   "ok": len(st.get("rules") or []) == 3})
+                   "ok": len(st.get("rules") or []) > 0
+                         and all(r.get("when") for r in st["rules"])})
     checks.append({"name": "and it is the rule of the strategy that matched",
                    "want": gate_out.get("trade", {}).get("symbol"), "got": st.get("symbol"),
                    "ok": st.get("symbol") == (gate_out.get("trade") or {}).get("symbol")})
