@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo, useRef, useId } from 'react';
+import { compareName } from '../../../lib/util/sort-name';
 import { useLiveTopic, useInViewport, canLiveHere } from '../../../lib/hooks/use-live-topic';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -2789,15 +2790,6 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
     const parts = s.split(/[^0-9]+/).filter(Boolean);
     return parts.map(p => (p.length === 1 ? '0' + p : p)).join('');
   };
-  // 크로스 스크립트 정렬 순서 — Windows 탐색기 관행: 숫자(0) → 영문(1) → 한글(2) → 기타(3).
-  // (localeCompare('ko') 만 쓰면 한글이 영문보다 앞 = Windows 와 반대라 버킷으로 명시.)
-  const scriptRank = (s: string): number => {
-    const ch = s.trim()[0] ?? '';
-    if (/[0-9]/.test(ch)) return 0;
-    if (/[A-Za-z]/.test(ch)) return 1;
-    if (/[가-힣ㄱ-ㆎ]/.test(ch)) return 2;
-    return 3;
-  };
   const sortedRows = sortCol === null ? shownRows : [...shownRows].sort((a, b) => {
     const av = String(a.row[sortCol] ?? '').trim(), bv = String(b.row[sortCol] ?? '').trim();
     const ad = parseSortDate(av), bd = parseSortDate(bv);
@@ -2808,9 +2800,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
     } else if (an !== null && bn !== null) {
       cmp = an - bn; // 둘 다 수치(현재가·PER 등) = 수치 비교
     } else {
-      const ra = scriptRank(av), rb = scriptRank(bv);
-      // 버킷 다르면 숫자→영문→한글→기타 순, 같으면 버킷 내 localeCompare(영문 A-Z / 한글 가나다).
-      cmp = ra !== rb ? ra - rb : av.localeCompare(bv, 'ko', { numeric: true });
+      // 숫자→영문→한글→기타, 버킷 안은 가나다 — 앱 전체가 쓰는 그 순서.
+      cmp = compareName(av, bv);
     }
     return sortDir === 'asc' ? cmp : -cmp;
   });

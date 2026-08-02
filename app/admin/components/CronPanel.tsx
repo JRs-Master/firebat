@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useId, useMemo } from 'react';
+import { compareName } from '../../../lib/util/sort-name';
 import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -313,7 +314,7 @@ export function CronPanel({
           {[...jobs]
             .sort((a, b) => {
               const d = jobOrigin(a).rank - jobOrigin(b).rank;
-              return d !== 0 ? d : (a.title || a.jobId).localeCompare(b.title || b.jobId);
+              return d !== 0 ? d : compareName(a.title || a.jobId, b.title || b.jobId);
             })
             .map(job => {
             const jobSelected = selectedJobId === job.jobId;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
+import { sortByName } from '../../../lib/util/sort-name';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Server, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText, Volume2 } from 'lucide-react';
 import { McpServer } from '../types';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
@@ -391,7 +392,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         '/api/fs/system-modules',
         { category: 'settings' },
       );
-      if (data.success) setSysModules(data.modules ?? []);
+      if (data.success) setSysModules(sortByName(data.modules ?? [], m => m.name));
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
   // 모듈별 패키지 업그레이드 가용 여부 — 리스트에 뱃지 표시용. sysModules 로드 후 병렬 fetch.
@@ -2411,7 +2412,9 @@ function CapabilityTabContent() {
 
   useEffect(() => {
     apiGet<any>('/api/capabilities', { category: 'capabilities' })
-      .then(data => { if (data.success) setCaps(data.capabilities ?? []); })
+      // Labelled in the UI, so ordered by the label rather than by the id behind it.
+      .then(data => { if (data.success) setCaps(sortByName<CapInfo>(data.capabilities ?? [],
+        c => c.label || c.id)); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

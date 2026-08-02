@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
+import { compareName } from '../../../lib/util/sort-name';
 import { useQueryClient } from '@tanstack/react-query';
 import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
 import { FileEditor } from './FileEditor';
@@ -671,8 +672,8 @@ export function Sidebar({
     for (const pg of orphanPages) {
       result.push({ name: pg.slug, paths: [], pages: [pg] });
     }
-    // ABC 정렬 (생성·수정 시 순서 변경 방지). 대소문자 무시 + 한/영 locale-aware.
-    result.sort((a, b) => a.name.localeCompare(b.name, 'ko', { sensitivity: 'base' }));
+    // ABC 정렬 (생성·수정 시 순서 변경 방지) — 앱 전체가 쓰는 같은 순서.
+    result.sort((a, b) => compareName(a.name, b.name));
     return result;
   })();
 
