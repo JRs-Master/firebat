@@ -28,7 +28,9 @@
     "v1_국내선물-001",
     "v1_국내선물-002",
     "v1_해외선물-001",
-    "v1_해외선물-002, 003"
+    "v1_해외선물-002, 003",
+    "place_order",
+    "cancel_order"
   ],
   "grounding": {
     "FID_INPUT_ISCD": {
@@ -59,7 +61,11 @@
           "symbol": "{FID_INPUT_ISCD}",
           "title": "{title}",
           "data": "$.records",
-          "indicators": ["MA5", "MA20", "MA60"]
+          "indicators": [
+            "MA5",
+            "MA20",
+            "MA60"
+          ]
         }
       },
       {
@@ -68,7 +74,11 @@
           "symbol": "{FID_INPUT_ISCD}",
           "title": "{title}",
           "data": "$.output2",
-          "indicators": ["MA5", "MA20", "MA60"]
+          "indicators": [
+            "MA5",
+            "MA20",
+            "MA60"
+          ]
         }
       }
     ],
@@ -88,7 +98,10 @@
               "symbol": "{FID_INPUT_ISCD}",
               "title": "{title}",
               "data": "$.output2",
-              "indicators": ["MA5", "MA20"]
+              "indicators": [
+                "MA5",
+                "MA20"
+              ]
             }
           }
         ]
@@ -112,8 +125,14 @@
     }
   },
   "accounts": {
-    "modes": ["real", "mock"],
-    "markets": ["kr", "us"]
+    "modes": [
+      "real",
+      "mock"
+    ],
+    "markets": [
+      "kr",
+      "us"
+    ]
   },
   "secrets": [
     {
@@ -3064,6 +3083,12 @@
       "action": {
         "type": "string",
         "enum": [
+          "get_candles",
+          "get_balance",
+          "list_fills",
+          "list_open_orders",
+          "cancel_order",
+          "place_order",
           "ETF 현재가 호가",
           "v1_국내선물-001",
           "v1_국내선물-002",
@@ -3342,7 +3367,7 @@
           "해외주식-070",
           "해외주식-071"
         ],
-        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 도메인별 LLM 도구로 분리 노출."
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 도메인별 LLM 도구로 분리 노출. | 중립 계약(브로커 공통): place_order · cancel_order · list_open_orders · list_fills · get_balance · get_candles — 한투 TR ID 를 몰라도 되는 표준 호출. 국내·해외는 `market`(kr/us)로 갈리며 생략하면 종목코드 모양으로 판단합니다(6자리 숫자 = 국내)."
       },
       "query": {
         "type": "object",
@@ -3355,6 +3380,103 @@
       "mock": {
         "type": "boolean",
         "description": "true 면 모의투자 도메인 호출. 기본 false (실전)."
+      },
+      "accountNo": {
+        "type": "string",
+        "description": "[중립] 계좌번호(숫자만). 등록 계좌로 호출하면 인프라가 채웁니다 — 직접 넣지 마세요."
+      },
+      "account": {
+        "type": "string",
+        "description": "[중립] 등록 계좌 별칭. 실전/모의와 계좌번호는 이 계좌가 정합니다."
+      },
+      "market": {
+        "type": "string",
+        "enum": [
+          "kr",
+          "us"
+        ],
+        "description": "[중립] 국내(kr)/해외(us). 생략하면 종목코드가 6자리 숫자인지로 판단합니다."
+      },
+      "symbol": {
+        "type": "string",
+        "description": "[중립] 종목코드 — 국내는 6자리(005930), 해외는 티커(AAPL)."
+      },
+      "side": {
+        "type": "string",
+        "enum": [
+          "buy",
+          "sell"
+        ],
+        "description": "[중립] 매수/매도."
+      },
+      "qty": {
+        "type": "number",
+        "description": "[중립] 주문 수량(주)."
+      },
+      "price": {
+        "type": "number",
+        "description": "[중립] 지정가. 국내 시장가에는 불필요하고, 해외는 시장가 주문이 없어 항상 필요합니다."
+      },
+      "orderType": {
+        "type": "string",
+        "enum": [
+          "limit",
+          "market"
+        ],
+        "description": "[중립] 지정가(limit) 기본. 해외의 market 은 price 를 marketableLimitPct 만큼 넘긴 지정가로 나갑니다 — 이 거래소에 일반 시장가가 없습니다."
+      },
+      "marketableLimitPct": {
+        "type": "number",
+        "description": "[중립] 해외 시장가를 흉내 낼 때 호가를 넘길 폭(%). 기본 2."
+      },
+      "exchange": {
+        "type": "string",
+        "enum": [
+          "NASD",
+          "NYSE",
+          "AMEX"
+        ],
+        "description": "[중립] 해외 거래소. 기본 NASD."
+      },
+      "currency": {
+        "type": "string",
+        "description": "[중립] 해외 잔고 통화. 기본 USD."
+      },
+      "clientOrderId": {
+        "type": "string",
+        "description": "[중립] 부르는 쪽의 주문 키. 응답에 그대로 돌려주므로 재전송과 중복 체결을 가릅니다."
+      },
+      "brokerOrderNo": {
+        "type": "string",
+        "description": "[중립] 취소할 원주문번호."
+      },
+      "orderBranch": {
+        "type": "string",
+        "description": "[중립] 국내 취소의 주문점(KRX_FWDG_ORD_ORGNO). 미체결 조회 행의 값."
+      },
+      "interval": {
+        "type": "string",
+        "description": "[중립] 봉 간격 — 국내 1d/1w/1M/1y, 해외 1d/1w/1M. 분봉은 기간별시세에 없습니다."
+      },
+      "bars": {
+        "type": "number",
+        "description": "[중립] 가져올 봉 개수. 한 번에 100개라 그보다 크면 날짜를 되짚어 이어 붙입니다(최대 1200)."
+      },
+      "baseDate": {
+        "type": "string",
+        "description": "[중립] 이 날짜 이전까지의 봉. 기본 오늘(KST)."
+      },
+      "adjusted": {
+        "type": "boolean",
+        "description": "[중립] 수정주가. 기본 true."
+      },
+      "from": {
+        "type": "string",
+        "description": "[중립] 체결·미체결 조회 시작일(YYYYMMDD). 기본 7일 전."
+      },
+      "to": {
+        "type": "string",
+        "description": "[중립] 체결·미체결 조회 종료일. 기본 오늘."
       }
     },
     "additionalProperties": false

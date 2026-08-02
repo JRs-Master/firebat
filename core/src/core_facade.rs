@@ -341,10 +341,15 @@ mod module_contract_tests {
                 code.contains(&format!("'{a}'")) || code.contains(&format!("\"{a}\""))
             };
             // A module that names one of these is not necessarily a broker — the strategy module
-            // builds a `place_order` call without implementing one. Speaking the contract means
-            // answering most of it, so three is the line between using the vocabulary and being
-            // the thing it addresses.
-            if NEUTRAL.iter().filter(|a| mentions(a)).count() < 3 {
+            // builds a `place_order` call without implementing one, and counting mentions cannot
+            // tell the two apart (it grew past any threshold as the caller got better).
+            //
+            // What separates them is standing, not vocabulary: a broker is the thing that holds
+            // accounts, or one that already answers part of the contract. The caller holds
+            // neither, by design — the account belongs to the broker module.
+            let is_broker = config.get("accounts").is_some()
+                || NEUTRAL.iter().any(|a| declared.contains(a));
+            if !is_broker {
                 continue;
             }
             for action in NEUTRAL {

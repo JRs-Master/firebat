@@ -1988,10 +1988,12 @@ async function acquireSlot() {
   }
 }
 
-async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
+async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2, trIdOverride = '') {
   const meta = API_TABLE[action];
   if (!meta) throw new Error(`알 수 없는 API ID: ${action} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('korea-invest', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
-  const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
+  // Some sheet entries hold a sentence covering several ids (buy and sell on one line) rather
+  // than a single id. Whoever knows which side this call is resolves it and passes it in.
+  const trId = trIdOverride || (isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal);
   if (isMock && !meta.trIdMock) throw new Error(`${action} (${meta.name}) 은 모의투자 미지원입니다.`);
   let url = `${base}${meta.path}`;
   if (meta.method === 'GET' && Object.keys(query).length > 0) {
@@ -2012,7 +2014,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   const resp = await fetch(url, init);
   if (resp.status === 429 && retry > 0) {
     await new Promise(r => setTimeout(r, 1100));
-    return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1);
+    return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1, trIdOverride);
   }
   if (!resp.ok) {
     // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
@@ -2116,6 +2118,275 @@ function normalizeCandles(obj, depth = 0) {
   }
 }
 
+// ── Standard broker contract ─────────────────────────────────────────────────────────────────
+// The same six calls every broker answers, translated here into this one's vocabulary. The point
+// is that whoever places an order does not learn that a domestic buy is TTTC0012U, that the same
+// call overseas is TTTT1002U, that the account number splits into two body fields, or that the
+// exchange is spelled NASD when ordering and NAS when asking for a chart. Swapping brokers should
+// be a declaration, not an edit to the caller.
+const NEUTRAL = new Set(['place_order', 'cancel_order', 'list_open_orders', 'list_fills',
+                         'get_balance', 'get_candles']);
+
+/** The transaction id for this call, chosen from the spec sheet's own labelling.
+ *
+ * These entries do not hold one id. `v1_국내주식-001` carries "(매도) TTTC0011U (매수) TTTC0012U"
+ * — one line covering both sides — and sending that sentence as the `tr_id` header is what this
+ * module did until now, which is why an order through this broker has never once been accepted.
+ * Reading the label rather than hardcoding the id means a regenerated table stays correct.
+ */
+function pickTrId(meta, isMock, hint) {
+  const raw = String((isMock ? meta.trIdMock : meta.trIdReal) || '').trim();
+  if (!raw) {
+    throw new Error(isMock
+      ? `${meta.name} 은 모의투자를 지원하지 않습니다 — 실전 계좌로 호출하세요.`
+      : `${meta.name} 의 tr_id 가 비어 있습니다.`);
+  }
+  const pairs = [...raw.matchAll(/\(([^)]*)\)\s*([A-Z]{4,}\d{3,}[A-Z]?)/g)]
+    .map(m => ({ label: m[1].replace(/\s/g, ''), id: m[2] }));
+  if (!pairs.length) return raw;                       // a single bare id
+  const hit = hint ? pairs.find(p => p.label.includes(hint)) : null;
+  if (hit) return hit.id;
+  throw new Error(
+    `${meta.name}: '${hint}' 에 해당하는 tr_id 를 찾지 못했습니다 — 후보 ` +
+    pairs.map(p => `${p.label}=${p.id}`).join(', '));
+}
+
+/** CANO + ACNT_PRDT_CD from the registered account number. */
+function accountParts(data) {
+  const digits = String(data.accountNo ?? '').replace(/\D/g, '');
+  if (digits.length < 8) {
+    throw new Error('계좌번호가 없습니다 — 설정 > 시스템 모듈 > korea-invest 에서 계좌를 등록하고 '
+                    + '그 별칭으로 호출하세요.');
+  }
+  // The product code is the last two of a ten-digit number; an eight-digit one is the account
+  // without it, and 01 is the ordinary cash account every retail login has.
+  return { CANO: digits.slice(0, 8), ACNT_PRDT_CD: digits.length >= 10 ? digits.slice(8, 10) : '01' };
+}
+
+/** kr or us — declared, or read off the symbol shape (six digits is a KRX code). */
+function marketOf(data) {
+  const m = String(data.market ?? '').toLowerCase();
+  if (m === 'kr' || m === 'us') return m;
+  return /^\d{6}$/.test(String(data.symbol ?? '').trim()) ? 'kr' : 'us';
+}
+
+// Ordering and asking for a chart use different spellings of the same exchange.
+const US_ORDER_EXCG = { NASD: 'NASD', NAS: 'NASD', NASDAQ: 'NASD', NYSE: 'NYSE', NYS: 'NYSE',
+                        AMEX: 'AMEX', AMS: 'AMEX' };
+const US_QUOTE_EXCD = { NASD: 'NAS', NYSE: 'NYS', AMEX: 'AMS' };
+
+function usExchange(data) {
+  const raw = String(data.exchange ?? 'NASD').toUpperCase();
+  const code = US_ORDER_EXCG[raw];
+  if (!code) {
+    throw new Error(`exchange='${raw}' 는 지원하지 않습니다 — NASD, NYSE, AMEX 중 하나.`);
+  }
+  return code;
+}
+
+function kstDate(offsetDays = 0) {
+  const d = new Date(Date.now() + 9 * 3600 * 1000 + offsetDays * 86400 * 1000);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function requireQty(data) {
+  const qty = Number(data.qty);
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('qty 는 1 이상이어야 합니다.');
+  return String(Math.trunc(qty));
+}
+
+function sideHint(data, kr) {
+  const side = String(data.side ?? '').toLowerCase();
+  if (side !== 'buy' && side !== 'sell') {
+    throw new Error('side 는 buy 또는 sell 이어야 합니다.');
+  }
+  // The sheet labels the domestic pair 매수/매도 and the overseas one 미국매수/미국매도.
+  return (kr ? '' : '미국') + (side === 'buy' ? '매수' : '매도');
+}
+
+/** A neutral call → what this broker's HTTP layer needs. */
+function standardCall(action, data) {
+  const kr = marketOf(data) === 'kr';
+  const symbol = String(data.symbol ?? '').trim();
+  const type = String(data.orderType ?? 'limit').toLowerCase();
+  const price = Number(data.price);
+
+  if (action === 'place_order') {
+    if (!symbol) throw new Error('place_order: symbol 이 필요합니다.');
+    const acct = accountParts(data);
+    const qty = requireQty(data);
+    if (kr) {
+      // 00 지정가 · 01 시장가. A market order carries no unit price; sending one is refused.
+      const market = type === 'market';
+      if (!market && !(price > 0)) throw new Error('place_order: 지정가 주문에는 price 가 필요합니다.');
+      return { apiId: 'v1_국내주식-001', hint: sideHint(data, true), body: {
+        ...acct, PDNO: symbol, ORD_DVSN: market ? '01' : '00',
+        ORD_QTY: qty, ORD_UNPR: market ? '0' : String(Math.trunc(price)),
+      }};
+    }
+    // The US side has no plain market order here — only limit and the open/close variants. So a
+    // market intent becomes a limit priced through the spread, which is what a market order is
+    // for (getting out now), with the slip bounded and stated rather than unlimited.
+    if (!(price > 0)) throw new Error('place_order: 해외 주문에는 price 가 필요합니다.');
+    const slip = Number(data.marketableLimitPct ?? 2) / 100;
+    const buying = String(data.side ?? '').toLowerCase() === 'buy';
+    const px = type === 'market' ? price * (buying ? 1 + slip : 1 - slip) : price;
+    return { apiId: 'v1_해외주식-001', hint: sideHint(data, false), body: {
+      ...acct, OVRS_EXCG_CD: usExchange(data), PDNO: symbol, ORD_QTY: qty,
+      OVRS_ORD_UNPR: px.toFixed(2), ORD_SVR_DVSN_CD: '0', ORD_DVSN: '00',
+    }};
+  }
+
+  if (action === 'cancel_order') {
+    const orderNo = String(data.brokerOrderNo ?? '').trim();
+    if (!orderNo) throw new Error('cancel_order: brokerOrderNo 가 필요합니다.');
+    const acct = accountParts(data);
+    if (kr) {
+      return { apiId: 'v1_국내주식-003', hint: '', body: {
+        ...acct, KRX_FWDG_ORD_ORGNO: String(data.orderBranch ?? ''), ORGN_ODNO: orderNo,
+        ORD_DVSN: '00', RVSE_CNCL_DVSN_CD: '02',
+        // Cancelling means whatever is left, so the whole-order flag carries it and the quantity
+        // is ignored — passing a stale one would cancel the wrong amount.
+        ORD_QTY: '0', ORD_UNPR: '0', QTY_ALL_ORD_YN: 'Y',
+      }};
+    }
+    return { apiId: 'v1_해외주식-003', hint: '정정·취소', body: {
+      ...acct, OVRS_EXCG_CD: usExchange(data), PDNO: symbol, ORGN_ODNO: orderNo,
+      RVSE_CNCL_DVSN_CD: '02', ORD_QTY: String(Math.trunc(Number(data.qty) || 0)),
+      OVRS_ORD_UNPR: '0', ORD_SVR_DVSN_CD: '0',
+    }};
+  }
+
+  if (action === 'get_balance') {
+    const acct = accountParts(data);
+    if (kr) {
+      return { apiId: 'v1_국내주식-006', hint: '', query: {
+        ...acct, AFHR_FLPR_YN: 'N', OFL_YN: '', INQR_DVSN: '02', UNPR_DVSN: '01',
+        FUND_STTL_ICLD_YN: 'N', FNCG_AMT_AUTO_RDPT_YN: 'N', PRCS_DVSN: '00',
+        CTX_AREA_FK100: '', CTX_AREA_NK100: '',
+      }};
+    }
+    return { apiId: 'v1_해외주식-006', hint: '', query: {
+      ...acct, OVRS_EXCG_CD: usExchange(data), TR_CRCY_CD: String(data.currency ?? 'USD'),
+      CTX_AREA_FK200: '', CTX_AREA_NK200: '',
+    }};
+  }
+
+  if (action === 'list_open_orders' || action === 'list_fills') {
+    const acct = accountParts(data);
+    const open = action === 'list_open_orders';
+    const from = String(data.from ?? '').replace(/-/g, '') || kstDate(-7);
+    const to = String(data.to ?? '').replace(/-/g, '') || kstDate(0);
+    if (kr) {
+      // One endpoint answers both — 01 filled, 02 resting. Two neutral calls, one dialect.
+      return { apiId: 'v1_국내주식-005', hint: '3개월이내', query: {
+        ...acct, INQR_STRT_DT: from, INQR_END_DT: to, SLL_BUY_DVSN_CD: '00',
+        INQR_DVSN: '00', PDNO: symbol, CCLD_DVSN: open ? '02' : '01',
+        ORD_GNO_BRNO: '', ODNO: '', INQR_DVSN_3: '00', INQR_DVSN_1: '',
+        CTX_AREA_FK100: '', CTX_AREA_NK100: '',
+      }};
+    }
+    // Overseas: the dedicated unfilled endpoint has no mock id at all, and 주문체결내역 splits
+    // the same way (01/02) while working in both. Using it for both keeps the mock rung of the
+    // ladder usable, which is the whole point of having one.
+    return { apiId: 'v1_해외주식-007', hint: '', query: {
+      ...acct, PDNO: symbol, ORD_STRT_DT: from, ORD_END_DT: to,
+      SLL_BUY_DVSN: '00', CCLD_NCCS_DVSN: open ? '02' : '01',
+      OVRS_EXCG_CD: usExchange(data), SORT_SQN: 'DS', ORD_DT: '', ORD_GNO_BRNO: '', ODNO: '',
+      CTX_AREA_NK200: '', CTX_AREA_FK200: '',
+    }};
+  }
+
+  throw new Error(`standardCall: ${action} 은 중립 계약에 없습니다.`);
+}
+
+// ── Candles ──────────────────────────────────────────────────────────────────────────────────
+// Both endpoints answer at most a hundred bars, and a rule with a 60-period average says nothing
+// at all until it has more than that. So the interval is the argument, the paging lives here, and
+// the caller asks for a bar count exactly as it does of every other broker.
+const KR_PERIOD = { '1d': 'D', '1w': 'W', '1M': 'M', '1y': 'Y' };
+const US_PERIOD = { '1d': '0', '1w': '1', '1M': '2' };
+const PERIOD_DAYS = { D: 1, W: 7, M: 31, Y: 366 };
+const CANDLE_PAGE = 100;
+const MAX_CANDLE_PAGES = 12;
+
+function candleRows(result) {
+  for (const k of ['output2', 'output1', 'output']) {
+    if (Array.isArray(result?.[k])) return result[k];
+  }
+  return [];
+}
+
+function shiftDate8(d8, days) {
+  const t = new Date(Date.UTC(Number(d8.slice(0, 4)), Number(d8.slice(4, 6)) - 1,
+                              Number(d8.slice(6, 8)) + days));
+  return `${t.getUTCFullYear()}${String(t.getUTCMonth() + 1).padStart(2, '0')}${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+async function fetchCandles(ctx, data) {
+  const symbol = String(data.symbol ?? '').trim();
+  if (!symbol) throw new Error('get_candles: symbol 이 필요합니다.');
+  const interval = String(data.interval ?? '1d').trim();
+  const kr = marketOf(data) === 'kr';
+  const want = Math.max(1, Math.min(Number(data.bars) || 200, CANDLE_PAGE * MAX_CANDLE_PAGES));
+  const period = (kr ? KR_PERIOD : US_PERIOD)[interval];
+  if (!period) {
+    throw new Error(
+      `get_candles: interval='${interval}' 은 지원하지 않습니다 — ` +
+      `${Object.keys(kr ? KR_PERIOD : US_PERIOD).join(', ')} 중 하나. ` +
+      '분봉은 이 브로커의 기간별시세 엔드포인트에 없습니다.');
+  }
+  const apiId = kr ? 'v1_국내주식-016' : 'v1_해외주식-010';
+  const meta = API_TABLE[apiId];
+  const trId = pickTrId(meta, ctx.isMock, '');
+  const span = Math.ceil(CANDLE_PAGE * 1.7) * (PERIOD_DAYS[period] || 1);
+  const byDate = new Map();
+  let cursor = String(data.baseDate ?? '').replace(/-/g, '') || kstDate(0);
+  for (let page = 0; page < MAX_CANDLE_PAGES && byDate.size < want; page += 1) {
+    const query = kr
+      ? { FID_COND_MRKT_DIV_CODE: 'J', FID_INPUT_ISCD: symbol,
+          // A page reaches back far enough to fill itself whatever the period is; the response is
+          // capped at a hundred rows and the cursor then moves by what actually came back.
+          FID_INPUT_DATE_1: shiftDate8(cursor, -span), FID_INPUT_DATE_2: cursor,
+          FID_PERIOD_DIV_CODE: period, FID_ORG_ADJ_PRC: data.adjusted === false ? '1' : '0' }
+      : { AUTH: '', EXCD: US_QUOTE_EXCD[usExchange(data)], SYMB: symbol,
+          GUBN: period, BYMD: cursor, MODP: data.adjusted === false ? '0' : '1' };
+    const result = await ctx.call(apiId, trId, query, {});
+    if (result?.rt_cd !== undefined && result.rt_cd !== '0') {
+      // Page one failing is the call failing; a later page failing still has bars to hand back.
+      if (page === 0) throw new Error(result.msg1 || `한투 API 오류 (rt_cd=${result.rt_cd})`);
+      break;
+    }
+    const rows = candleRows(result);
+    if (!rows.length) break;
+    let oldest = null;
+    for (const row of rows) {
+      normalizeCandleRow(row);
+      const date = String(row.date ?? '');
+      if (!date) continue;
+      if (!byDate.has(date)) byDate.set(date, row);
+      const d8 = date.replace(/-/g, '');
+      if (!oldest || d8 < oldest) oldest = d8;
+    }
+    if (!oldest || oldest >= cursor) break;   // no progress — stop rather than loop
+    cursor = shiftDate8(oldest, -1);
+  }
+  const all = [...byDate.values()]
+    .filter(r => Number(r.close) > 0)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return { rows: all.slice(-want), apiId, interval, market: kr ? 'kr' : 'us' };
+}
+
+/** The one row list, by this broker's own naming: output1 is the detail, output2 the summary. */
+function neutralRows(result) {
+  for (const k of ['output1', 'output']) {
+    if (Array.isArray(result?.[k])) return { field: k, rows: result[k] };
+  }
+  const arrays = Object.entries(result || {}).filter(([, v]) => Array.isArray(v));
+  return arrays.length === 1 ? { field: arrays[0][0], rows: arrays[0][1] } : { field: null, rows: [] };
+}
+
+
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -2142,6 +2413,40 @@ process.stdin.on('end', async () => {
     }
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
+
+    // ── Neutral contract ──────────────────────────────────────────────────────────────────
+    if (NEUTRAL.has(action)) {
+      const ctx = {
+        isMock,
+        call: (apiId, trId, q, b) =>
+          callApi(base, token, appKey, appSecret, apiId, q, b, isMock, 2, trId),
+      };
+      if (action === 'get_candles') {
+        const out = await fetchCandles(ctx, data);
+        console.log(JSON.stringify({ success: true, data: { action, ...out, count: out.rows.length } }));
+        return;
+      }
+      const mapped = standardCall(action, data);
+      const meta = API_TABLE[mapped.apiId];
+      const trId = pickTrId(meta, isMock, mapped.hint);
+      const result = await ctx.call(mapped.apiId, trId, mapped.query || {}, mapped.body || {});
+      const ok = result?.rt_cd === undefined || result.rt_cd === null || result.rt_cd === '0';
+      const out = { success: ok, data: { action, apiId: mapped.apiId, trId, ...result } };
+      if (!ok) out.error = result?.msg1 || `한투 API 오류 (rt_cd=${result?.rt_cd})`;
+      if (action === 'place_order' || action === 'cancel_order') {
+        // The ledger matches on the caller's id, and the response schema is read off the request
+        // later — it is documented nowhere, so the request that produced it is kept beside it.
+        out.data.clientOrderId = data.clientOrderId ?? null;
+        out.data.sentBody = mapped.body;
+      } else if (ok) {
+        const picked = neutralRows(result);
+        out.data.rows = picked.rows;
+        out.data.rowsField = picked.field;
+      }
+      console.log(JSON.stringify(out));
+      return;
+    }
+
     const query = data.query || {};
     const body = data.body || {};
     applyLatestDefaults(action, query);

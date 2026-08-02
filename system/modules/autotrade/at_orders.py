@@ -121,10 +121,11 @@ def read_ack(ack):
 # Execution rows are as undocumented as acknowledgements, and every broker names the same three
 # numbers differently. Read by name, keep what could not be read, and never infer a quantity that
 # was not stated — a fill invented here becomes a position that does not exist.
-FILL_QTY_KEYS = ("cntr_qty", "ccld_qty", "CCLD_QTY", "filledQuantity", "executedQuantity",
-                 "executed_volume", "fill_qty", "volume", "qty")
-FILL_PRICE_KEYS = ("cntr_uv", "cntr_pric", "ccld_prvs", "CCLD_PRVS", "avgPrice", "filledPrice",
-                   "executedPrice", "price")
+FILL_QTY_KEYS = ("cntr_qty", "tot_ccld_qty", "ft_ccld_qty", "ccld_qty", "CCLD_QTY",
+                 "filledQuantity", "executedQuantity", "executed_volume", "fill_qty",
+                 "volume", "qty")
+FILL_PRICE_KEYS = ("cntr_uv", "cntr_pric", "avg_prvs", "ft_ccld_unpr3", "ccld_prvs", "CCLD_PRVS",
+                   "avgPrice", "filledPrice", "executedPrice", "price")
 EXEC_ID_KEYS = ("cntr_no", "execId", "executionId", "CCLD_NO", "exec_no", "uuid")
 # upbit says `bid`/`ask`; the reader below only needs to find *a* side, not decode it.
 SIDE_KEYS = ("sell_tp", "io_tp_nm", "SLL_BUY_DVSN_CD", "side", "trde_tp_nm")

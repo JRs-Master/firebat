@@ -157,7 +157,7 @@
       },
       "account": {
         "type": "string",
-        "description": "Reserved by the framework. Accounts are named per strategy, not per call."
+        "description": "[gate] 계좌 별칭으로도 한정합니다(증권사가 시장별로 계좌를 나눠 발급하는 경우). [adopt] 주문 계좌."
       },
       "space": {
         "type": "object",
@@ -256,7 +256,7 @@
       },
       "broker": {
         "type": "string",
-        "description": "[adopt] 주문을 낼 브로커 모듈 이름 (예: kiwoom)."
+        "description": "[gate] 이 사이클이 도는 증권사로 매매를 한정합니다 — 파이프라인은 증권사 하나의 도구만 부르므로 섞이면 안 됩니다. [adopt] 주문을 낼 증권사 이름."
       },
       "minTrades": {
         "type": "number",

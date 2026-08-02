@@ -439,6 +439,10 @@ def declared_trades(settings):
                     # the same value has to reach the candle fetch and the nightly re-measurement.
                     "interval": str(t.get("interval") or "1d").strip(),
                     "broker": broker, "account": account,
+                    # Which market this symbol trades in. Some brokers front both and need telling
+                    # (one broker's domestic order call is a different endpoint from its overseas
+                    # one); the rest ignore it. Left unset it is the broker's own inference.
+                    "market": str(t.get("market") or "").strip().lower() or None,
                     "template": t.get("template") if isinstance(t.get("template"), dict) else None})
     return out
 
@@ -565,6 +569,13 @@ def action_gate(inp, settings):
     """
     now = time.time()
     reasons = []
+    # Which placement this run is for. One schedule per broker (and per account, where a broker
+    # issues one credential per market) is the only way a cycle stays honest: the pipeline that
+    # follows calls exactly one broker's tool, so handing it another broker's symbols means
+    # sending a coin ticker to a stock exchange. Absent, everything declared runs — the single
+    # broker case, unchanged.
+    only_broker = str(inp.get("broker") or "").strip()
+    only_account = str(inp.get("account") or "").strip()
     if not settings.get("tradingEnabled"):
         reasons.append("trading is switched off in the module settings")
     start, end = settings.get("activeFrom"), settings.get("activeUntil")
@@ -595,6 +606,17 @@ def action_gate(inp, settings):
             reasons.append("the screen is empty — nothing currently qualifies")
         else:
             reasons.append("no enabled strategy is declared")
+    pipeline_trades = _pipeline_trades(settings, strategies)
+    if only_broker:
+        pipeline_trades = [t for t in pipeline_trades if t.get("broker") == only_broker]
+    if only_account:
+        pipeline_trades = [t for t in pipeline_trades if t.get("account") == only_account]
+    if (only_broker or only_account) and not pipeline_trades and not reasons:
+        # Not a fault: the other broker's schedule is running its own trades right now. Saying so
+        # by name keeps it from reading as "nothing is configured".
+        where = " / ".join(x for x in (only_broker, only_account) if x)
+        reasons.append(f"no declared trade runs at {where}")
+
     return {"success": True, "data": {
         "active": not reasons,
         "why": reasons or None,
@@ -618,7 +640,9 @@ def action_gate(inp, settings):
         # Every trade, each with the rule that runs on it. One cycle can carry several: a rule is
         # fitted per symbol, so two coins are two rules on two timeframes, and a pipeline that can
         # only express one of them makes the fitting pointless.
-        "trades": _pipeline_trades(settings, strategies),
+        "trades": pipeline_trades,
+        "scopedTo": {"broker": only_broker or None, "account": only_account or None}
+                    if (only_broker or only_account) else None,
     }}
 
 
@@ -653,7 +677,7 @@ def _pipeline_trades(settings, strategies):
                 "tradeId": t["id"] if st.get("id") == t["id"] else f"{t['id']}:{st.get('id')}",
                 "strategyId": st.get("id"), "symbol": t.get("symbol"),
                 "interval": t.get("interval"), "broker": t.get("broker"),
-                "account": t.get("account"), "rules": rules,
+                "account": t.get("account"), "market": t.get("market"), "rules": rules,
                 "exits": st.get("exits") or {}})
     return out
 
@@ -2686,6 +2710,32 @@ def action_selftest():
     checks.append({"name": "and each is addressable on its own", "want": 2,
                    "got": len({t["tradeId"] for t in tg["trades"]}),
                    "ok": len({t["tradeId"] for t in tg["trades"]}) == 2})
+    # One schedule per broker: the pipeline that follows calls exactly one broker's tool, so a
+    # cycle handed another broker's symbols sends a coin ticker to a stock exchange.
+    mixed = {**two, "trades": [
+        {"id": "kr", "symbol": "005930", "broker": "kiwoom", "account": "모의국내", "market": "kr"},
+        {"id": "coin", "symbol": "KRW-BTC", "broker": "upbit", "account": ""}],
+        "strategies": [{"id": "kr", "enabled": True, "kind": "rules", "money": {"perOrderKrw": 10000},
+                        "limits": {}, "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]},
+                       {"id": "coin", "enabled": True, "kind": "rules", "money": {"perOrderKrw": 10000},
+                        "limits": {}, "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}]}
+    scoped = action_gate({"broker": "kiwoom"}, mixed)["data"]
+    checks.append({"name": "a scoped cycle sees only its own broker", "want": ["005930"],
+                   "got": [t["symbol"] for t in scoped["trades"]],
+                   "ok": [t["symbol"] for t in scoped["trades"]] == ["005930"]})
+    checks.append({"name": "and the market the trade declared travels with it", "want": "kr",
+                   "got": (scoped["trades"] or [{}])[0].get("market"),
+                   "ok": (scoped["trades"] or [{}])[0].get("market") == "kr"})
+    empty = action_gate({"broker": "korea-invest"}, mixed)["data"]
+    checks.append({"name": "a broker with nothing declared ends the run by name",
+                   "want": False, "got": [empty["active"], empty["why"]],
+                   "ok": empty["active"] is False
+                         and any("korea-invest" in w for w in (empty["why"] or []))})
+    both = {t["symbol"] for t in action_gate({}, mixed)["data"]["trades"]}
+    checks.append({"name": "and no scope still runs everything",
+                   "want": ["005930", "KRW-BTC"], "got": sorted(both),
+                   "ok": {"005930", "KRW-BTC"} <= both})
+
     tbars = {"success": True, "data": {"records": [
         {"date": "d%02d" % i, "open": 10, "high": 10, "low": 10, "close": 10, "volume": 1}
         for i in range(5)]}}
