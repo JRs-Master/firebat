@@ -3,63 +3,10 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "키움증권 OPEN API 통합 sysmod — 국내(계좌·주문·시세·차트·순위·투자자·ETF/ELW·조건검색) + 미국주식(시세·주문·계좌·환전). action 으로 API ID 직접 호출, search_module_actions → get_action_schema 로 발견.",
+  "description": "키움증권 공개 시세·차트. 계좌·주문은 이 모듈에 없습니다 — `kiwoom` 입니다. 자격증명을 선언하지 않으므로 샌드박스가 키를 주입하지 않습니다. hub 에 허용해도 안전한 쪽입니다. ⚠️ 이 증권사는 시세에도 토큰이 필요해 자격증명을 선언합니다 — 경계는 액션 선언이 집니다(계좌·주문 액션이 이 모듈에 없음).",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
-  "accounts": {
-    "modes": [
-      "real",
-      "mock"
-    ],
-    "markets": [
-      "kr",
-      "us"
-    ],
-    "listAction": "ka00001",
-    "accountNoPath": "acctNo"
-  },
-  "secrets": [
-    {
-      "name": "KIWOOM_APP_KEY",
-      "type": "key"
-    },
-    {
-      "name": "KIWOOM_APP_SECRET",
-      "type": "key"
-    },
-    {
-      "name": "KIWOOM_ACCESS_TOKEN",
-      "type": "token",
-      "lifetimeSec": 85800,
-      "oauth": {
-        "base": "https://api.kiwoom.com",
-        "baseMock": "https://mockapi.kiwoom.com",
-        "path": "/oauth2/token",
-        "method": "POST",
-        "contentType": "application/json;charset=UTF-8",
-        "body": {
-          "grant_type": "client_credentials",
-          "appkey": "${KIWOOM_APP_KEY}",
-          "secretkey": "${KIWOOM_APP_SECRET}"
-        },
-        "tokenField": "token",
-        "invalidWhen": {
-          "match": "any",
-          "conditions": [
-            {
-              "field": "return_code",
-              "equals": 3
-            },
-            {
-              "field": "return_msg",
-              "regex": "(?i)Token이 유효하지 않습니다|token.*invalid"
-            }
-          ]
-        }
-      }
-    }
-  ],
   "domains": [
     {
       "name": "account",
@@ -445,94 +392,241 @@
       "action": {
         "type": "string",
         "enum": [
-          "ka00001",
-          "ka01690",
-          "ka10072",
-          "ka10073",
-          "ka10074",
-          "ka10075",
-          "ka10076",
-          "ka10077",
-          "ka10085",
-          "ka10088",
-          "ka10170",
-          "kt00001",
-          "kt00002",
-          "kt00003",
-          "kt00004",
-          "kt00005",
-          "kt00007",
-          "kt00008",
-          "kt00009",
-          "kt00010",
-          "kt00011",
-          "kt00012",
-          "kt00013",
-          "kt00015",
-          "kt00016",
-          "kt00017",
-          "kt00018",
-          "kt10000",
-          "kt10001",
-          "kt10002",
-          "kt10003",
-          "kt10006",
-          "kt10007",
-          "kt10008",
-          "kt10009",
-          "kt50000",
-          "kt50001",
-          "kt50002",
-          "kt50003",
-          "kt50020",
-          "kt50021",
-          "kt50030",
-          "kt50031",
-          "kt50032",
-          "kt50075",
-          "usa21670",
-          "usa21680",
-          "usa21690",
-          "usa21730",
-          "usa21731",
-          "usa21732",
-          "ust20000",
-          "ust20001",
-          "ust20002",
-          "ust20003",
-          "ust21050",
-          "ust21070",
-          "ust21100",
-          "ust21110",
-          "ust21111",
-          "ust21120",
-          "ust21121",
-          "ust21131",
-          "ust21132",
-          "ust21150",
-          "ust21160",
-          "ust21170",
-          "ust21180",
-          "ust21510",
-          "ust21530",
-          "ust21610",
-          "ust21620",
-          "ust21630",
-          "ust21640",
-          "ust21650",
-          "ust21660",
-          "ust21661",
-          "ust31300",
-          "ust31301",
-          "ust31302",
-          "ust31490",
-          "place_order",
-          "cancel_order",
-          "list_open_orders",
-          "list_fills",
-          "get_balance"
+          "ka00198",
+          "ka01300",
+          "ka01301",
+          "ka10001",
+          "ka10002",
+          "ka10003",
+          "ka10004",
+          "ka10005",
+          "ka10006",
+          "ka10007",
+          "ka10008",
+          "ka10009",
+          "ka10010",
+          "ka10011",
+          "ka10013",
+          "ka10014",
+          "ka10015",
+          "ka10016",
+          "ka10017",
+          "ka10018",
+          "ka10019",
+          "ka10020",
+          "ka10021",
+          "ka10022",
+          "ka10023",
+          "ka10024",
+          "ka10025",
+          "ka10026",
+          "ka10027",
+          "ka10028",
+          "ka10029",
+          "ka10030",
+          "ka10031",
+          "ka10032",
+          "ka10033",
+          "ka10034",
+          "ka10035",
+          "ka10036",
+          "ka10037",
+          "ka10038",
+          "ka10039",
+          "ka10040",
+          "ka10042",
+          "ka10043",
+          "ka10044",
+          "ka10045",
+          "ka10046",
+          "ka10047",
+          "ka10048",
+          "ka10050",
+          "ka10051",
+          "ka10052",
+          "ka10053",
+          "ka10054",
+          "ka10055",
+          "ka10058",
+          "ka10059",
+          "ka10060",
+          "ka10061",
+          "ka10062",
+          "ka10063",
+          "ka10064",
+          "ka10065",
+          "ka10066",
+          "ka10068",
+          "ka10069",
+          "ka10078",
+          "ka10079",
+          "ka10080",
+          "ka10081",
+          "ka10082",
+          "ka10083",
+          "ka10084",
+          "ka10086",
+          "ka10087",
+          "ka10094",
+          "ka10095",
+          "ka10098",
+          "ka10099",
+          "ka10100",
+          "ka10101",
+          "ka10102",
+          "ka10131",
+          "ka10171",
+          "ka10172",
+          "ka10173",
+          "ka10174",
+          "ka20001",
+          "ka20002",
+          "ka20003",
+          "ka20004",
+          "ka20005",
+          "ka20006",
+          "ka20007",
+          "ka20008",
+          "ka20009",
+          "ka20019",
+          "ka20068",
+          "ka30001",
+          "ka30002",
+          "ka30003",
+          "ka30004",
+          "ka30005",
+          "ka30009",
+          "ka30010",
+          "ka30011",
+          "ka30012",
+          "ka40001",
+          "ka40002",
+          "ka40003",
+          "ka40004",
+          "ka40006",
+          "ka40007",
+          "ka40008",
+          "ka40009",
+          "ka40010",
+          "ka50010",
+          "ka50012",
+          "ka50079",
+          "ka50080",
+          "ka50081",
+          "ka50082",
+          "ka50083",
+          "ka50087",
+          "ka50091",
+          "ka50092",
+          "ka50100",
+          "ka50101",
+          "ka52301",
+          "ka90001",
+          "ka90002",
+          "ka90003",
+          "ka90004",
+          "ka90005",
+          "ka90006",
+          "ka90007",
+          "ka90008",
+          "ka90009",
+          "ka90010",
+          "ka90012",
+          "ka90013",
+          "kt20016",
+          "kt20017",
+          "usa01980",
+          "usa01990",
+          "usa06010",
+          "usa06011",
+          "usa06012",
+          "usa06013",
+          "usa06014",
+          "usa06015",
+          "usa06016",
+          "usa10098",
+          "usa10099",
+          "usa10100",
+          "usa10101",
+          "usa10102",
+          "usa10104",
+          "usa10105",
+          "usa20100",
+          "usa20101",
+          "usa20150",
+          "usa20151",
+          "usa20200",
+          "usa20201",
+          "usa20280",
+          "usa20281",
+          "usa20290",
+          "usa20291",
+          "usa20510",
+          "usa20511",
+          "usa20512",
+          "usa20520",
+          "usa20521",
+          "usa20530",
+          "usa20531",
+          "usa20540",
+          "usa20541",
+          "usa20550",
+          "usa20551",
+          "usa20570",
+          "usa20571",
+          "usa20590",
+          "usa20880",
+          "usa20881",
+          "usa20910",
+          "usa20911",
+          "usa20920",
+          "usa20921",
+          "usa20922",
+          "usa20930",
+          "usa20931",
+          "usa20932",
+          "usa20940",
+          "usa20941",
+          "usa20960",
+          "usa20961",
+          "usa20970",
+          "usa20971",
+          "usa20972",
+          "usa23000",
+          "usa23100",
+          "usa23400",
+          "usa23401",
+          "usa23402",
+          "usa24100",
+          "usa24101",
+          "usa24110",
+          "usa24111",
+          "usa24120",
+          "usa24121",
+          "usa24140",
+          "usa24141",
+          "usa24150",
+          "usa24151",
+          "usa24160",
+          "usa24161",
+          "usa24162",
+          "usa24200",
+          "usa24201",
+          "usa24210",
+          "usa24211",
+          "usa24220",
+          "usa24221",
+          "usa24290",
+          "usa24291",
+          "usa24300",
+          "usa26410",
+          "usa26411",
+          "usa26412",
+          "usa26413",
+          "usa26414",
+          "get_candles"
         ],
-        "description": "키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시. place_order / cancel_order = 증권사 중립 주문 계약 — {side, symbol, qty, price?, orderType?, exchange?, clientOrderId?} 를 받아 이 모듈이 자기 방언(kt10000/kt10001/kt10003)으로 옮깁니다. 주문 API ID 를 직접 부르는 대신 이쪽을 쓰면 증권사가 바뀌어도 호출부가 그대로입니다. list_open_orders / list_fills / get_balance = 조회 쪽 중립 계약 — {symbol?, side?, exchange?} 만 받아 이 모듈이 ka10075/ka10076/kt00018 로 옮깁니다(거래소 인자가 액션마다 다른 어휘라 부르는 쪽이 외울 필요가 없습니다). 응답은 원문 그대로 두고, 행 배열만 `rows` 로 함께 냅니다. 조회라 승인 대상이 아닙니다. get_candles = 봉 조회 중립 계약 — {symbol, interval} 만 받습니다. interval = 1m·3m·5m·10m·15m·30m·45m·60m(=1h)·1d·1w·1M·1y·`<N>t`(틱). 주기마다 API 가 다른데(분 ka10080·일 ka10081·주 ka10082·월 ka10083, 미국은 별도 계열) 부르는 쪽이 그걸 알 필요가 없어야 전략의 봉 주기를 바꿀 때 호출부를 안 고칩니다."
+        "description": "키움증권 공개 시세 액션. 계좌·주문·환전은 이 모듈에 없습니다 — `kiwoom` 모듈입니다."
       },
       "params": {
         "type": "object",
@@ -640,434 +734,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"params\": { <params from actions.json> } }"
   },
-  "requiresApproval": [
-    "kt10000",
-    "kt10001",
-    "kt10002",
-    "kt10003",
-    "kt10006",
-    "kt10007",
-    "kt10008",
-    "kt10009",
-    "kt50000",
-    "kt50001",
-    "kt50002",
-    "kt50003",
-    "ust20000",
-    "ust20001",
-    "ust20002",
-    "ust20003",
-    "place_order",
-    "cancel_order"
-  ],
-  "ws": {
-    "argsField": "params",
-    "endpoint": "wss://api.kiwoom.com:10000/api/dostk/websocket",
-    "endpointMock": "wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
-    "matchField": "trnm",
-    "echoValues": [
-      "PING"
-    ],
-    "errorMsgField": "return_msg",
-    "login": {
-      "frame": {
-        "trnm": "LOGIN",
-        "token": "{TOKEN}"
-      },
-      "match": "LOGIN",
-      "successWhen": {
-        "field": "return_code",
-        "equals": 0
-      },
-      "tokenSecret": "KIWOOM_ACCESS_TOKEN"
-    },
-    "actions": {
-      "ka10171": {
-        "frame": {
-          "trnm": "CNSRLST"
-        },
-        "match": "CNSRLST",
-        "successWhen": {
-          "field": "return_code",
-          "equals": 0
-        }
-      },
-      "ka10172": {
-        "preFrames": [
-          {
-            "frame": {
-              "trnm": "CNSRLST"
-            },
-            "match": "CNSRLST",
-            "successWhen": {
-              "field": "return_code",
-              "equals": 0
-            }
-          }
-        ],
-        "frame": {
-          "trnm": "CNSRREQ",
-          "seq": "{seq}",
-          "search_type": "{search_type:0}",
-          "stex_tp": "{stex_tp:K}",
-          "cont_yn": "{cont_yn:N}",
-          "next_key": "{next_key:}"
-        },
-        "match": "CNSRREQ",
-        "successWhen": {
-          "field": "return_code",
-          "equals": 0
-        }
-      }
-    },
-    "streams": {
-      "quotes": {
-        "subscribe": {
-          "frame": {
-            "trnm": "REG",
-            "grp_no": "{grpNo}",
-            "refresh": "1",
-            "data": [
-              {
-                "item": [
-                  "{item?}"
-                ],
-                "type": [
-                  "{type:0B}"
-                ]
-              }
-            ]
-          },
-          "match": "REG",
-          "successWhen": {
-            "field": "return_code",
-            "equals": 0
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "trnm": "REMOVE",
-            "grp_no": "{grpNo}",
-            "refresh": "1",
-            "data": [
-              {
-                "item": [
-                  "{item?}"
-                ],
-                "type": [
-                  "{type:0B}"
-                ]
-              }
-            ]
-          }
-        },
-        "realtimeMatch": "REAL",
-        "typeCodes": {
-          "0B": "주식체결",
-          "0D": "주식호가잔량",
-          "0C": "주식우선호가",
-          "0H": "주식예상체결",
-          "0A": "주식기세",
-          "0E": "주식시간외호가",
-          "0F": "주식당일거래원",
-          "0G": "ETF NAV",
-          "0J": "업종지수",
-          "0U": "업종등락",
-          "0g": "주식종목정보",
-          "0w": "종목프로그램매매",
-          "1h": "VI발동/해제",
-          "00": "주문체결",
-          "04": "잔고",
-          "0I": "국제금환산가격",
-          "0m": "ELW 이론가",
-          "0s": "장시작시간",
-          "0u": "ELW 지표"
-        },
-        "fieldLabels": {
-          "10": "현재가",
-          "11": "전일대비",
-          "12": "등락율",
-          "13": "누적거래량",
-          "14": "누적거래대금",
-          "15": "체결량",
-          "16": "시가",
-          "17": "고가",
-          "18": "저가",
-          "19": "전일종가",
-          "20": "체결시간",
-          "21": "호가시간",
-          "23": "예상체결가",
-          "24": "예상체결수량",
-          "25": "전일대비기호",
-          "26": "전일거래량대비",
-          "27": "(최우선)매도호가",
-          "28": "(최우선)매수호가",
-          "29": "거래대금증감",
-          "30": "전일거래량대비율",
-          "31": "거래회전율",
-          "32": "거래비용",
-          "121": "매도호가총잔량",
-          "125": "매수호가총잔량",
-          "128": "순매수잔량",
-          "129": "매수비율",
-          "138": "순매도잔량",
-          "139": "매도비율",
-          "202": "매도수량",
-          "204": "매도금액",
-          "206": "매수수량",
-          "208": "매수금액",
-          "210": "순매수수량",
-          "211": "순매수수량증감",
-          "212": "순매수금액",
-          "213": "순매수금액증감",
-          "214": "장시작예상잔여시간",
-          "215": "장운영구분",
-          "228": "체결강도",
-          "290": "장구분",
-          "297": "임의연장",
-          "302": "종목명",
-          "305": "상한가",
-          "306": "하한가",
-          "307": "기준가",
-          "311": "시가총액(억)",
-          "370": "종목정보",
-          "567": "상한가발생시간",
-          "568": "하한가발생시간",
-          "689": "조기종료ELW발생",
-          "900": "주문수량",
-          "901": "주문가격",
-          "902": "미체결수량",
-          "903": "체결누계금액",
-          "904": "원주문번호",
-          "905": "주문구분",
-          "906": "매매구분",
-          "907": "매도수구분",
-          "908": "주문체결시간",
-          "909": "체결번호",
-          "910": "체결가",
-          "911": "체결량",
-          "912": "주문업무분류",
-          "913": "주문상태",
-          "914": "단위체결가",
-          "915": "단위체결량",
-          "916": "대출일",
-          "917": "신용구분",
-          "919": "거부사유",
-          "930": "보유수량",
-          "931": "매입단가",
-          "932": "총매입가",
-          "933": "주문가능수량",
-          "938": "당일매매수수료",
-          "939": "당일매매세금",
-          "945": "당일순매수량",
-          "946": "매도매수구분",
-          "950": "당일총매도손익",
-          "959": "담보대출수량",
-          "990": "당일실현손익",
-          "991": "당일실현손익율",
-          "1221": "VI발동가격",
-          "1223": "매매체결처리시각",
-          "1224": "VI해제시각",
-          "1225": "VI적용구분",
-          "1489": "VI발동가등락율",
-          "1490": "VI발동횟수",
-          "2134": "거래소구분",
-          "2135": "거래소구분명",
-          "2136": "SOR여부",
-          "8019": "손익률",
-          "9001": "종목코드",
-          "9068": "VI발동구분",
-          "9201": "계좌번호",
-          "9203": "주문번호"
-        },
-        "chartField": "10",
-        "chartAbs": true,
-        "desc": "국내주식 실시간 시세 구독 (체결·호가 등 실시간 타입)",
-        "keyDesc": "item = 거래소별 종목코드입니다. KRX 는 6자리 코드 그대로(예: 005930), NXT 는 `_NX`, SOR(통합)은 `_AL` 접미사를 붙입니다(예: 005930_NX, 005930_AL). **세 형태 모두 실제로 데이터가 옵니다**(2026-07-30 09:23 동시 실측: 약 5초에 KRX 81건 / NXT 70건 / SOR 125건). `_AL`(SOR·통합)이 KRX+NXT 를 합쳐 주므로 **라이브 차트에는 `_AL` 이 기본으로 적합**하고, NXT 연장세션도 이것으로 덮입니다. ⚠️ `KRX:005930` 처럼 접두사를 붙이면 REG 는 return_code=0 으로 정상 응답한 뒤 데이터를 하나도 보내지 않습니다 — 공식 문서의 `KRX:` 는 값의 일부가 아니라 \"KRX 면 이 값\" 이라는 라벨입니다(2026-07-29 장중 실측: `005930` → 5초에 REAL 34건 / `KRX:005930` → 0건). type = 실시간 항목(기본 0B=체결). **`00`(주문체결)·`04`(잔고)는 토큰 계좌 기준이라 item 이 필요 없습니다** — 생략하면 등록 요소 없이 구독합니다(넣어도 무시됩니다). `0s`(장운영구분)·`1h`(VI발동/해제)는 종목을 지정해도 전 종목이 수신되므로 받는 쪽에서 `종목코드`(9001)로 걸러야 합니다. 여러 종목을 한 번에 구독하려면 item 에 배열을 넘기세요. 라이브 차트 = live_stock_chart 에 topic 만 넘기면 됩니다 — 프레임에 현재가가 top-level `value` 로 디코드되어 기본 valueField 그대로 그려집니다(valueField 지정 불필요). **세션 한도**: 키움은 토큰당 WS 세션 1개, 세션당 실시간 시세 200종목, 조건검색 10건입니다. watch 를 여러 개 띄워도 서버가 소켓 하나를 공유하므로 종목마다 watch 를 따로 두면 됩니다.",
-        "chartSessionField": "290",
-        "chartSessionRegular": [
-          "2"
-        ],
-        "chartVolumeField": "15",
-        "chartChangeField": "11",
-        "chartChangeRateField": "12",
-        "routeItemPath": "item",
-        "routeTypePath": "type",
-        "routeItemArg": "item",
-        "routeTypeArg": "type",
-        "chartTimeField": "20",
-        "chartDayVolumeField": "13"
-      },
-      "us-quotes": {
-        "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
-        "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
-        "subscribe": {
-          "frame": {
-            "trnm": "REG",
-            "grp_no": "{grpNo}",
-            "refresh": "1",
-            "data": [
-              {
-                "item": [
-                  {
-                    "jmcode": "{item}",
-                    "stex_tp": "{stexTp:ND}"
-                  }
-                ],
-                "type": [
-                  "{type:FE}"
-                ]
-              }
-            ]
-          },
-          "match": "REG",
-          "successWhen": {
-            "field": "return_code",
-            "equals": 0
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "trnm": "REMOVE",
-            "grp_no": "{grpNo}",
-            "refresh": "1",
-            "data": [
-              {
-                "item": [
-                  {
-                    "jmcode": "{item}",
-                    "stex_tp": "{stexTp:ND}"
-                  }
-                ],
-                "type": [
-                  "{type:FE}"
-                ]
-              }
-            ]
-          }
-        },
-        "realtimeMatch": "REAL",
-        "typeCodes": {
-          "F4": "미국주식 실시간 주문 확인",
-          "F5": "미국주식 실시간 체결",
-          "FE": "미국주식 실시간 체결가",
-          "FT": "미국주식 10호가"
-        },
-        "desc": "미국주식 실시간 시세 구독",
-        "keyDesc": "item = 미국 종목 티커(예: NVDA). stexTp = 거래소 코드(기본 ND=나스닥) — 프레임의 등록 요소는 `{jmcode, stex_tp}` 객체라 모듈이 두 값을 합쳐 만듭니다. type = 실시간 항목(기본 FE=체결가). ⚠️ 공식 문서에는 접근토큰을 `authorization` 헤더로 넘기라는 표가 있지만 **실제로는 국내와 같은 LOGIN 프레임 방식**입니다(2026-07-30 실측: 헤더 방식 = `R10004` 접속허용요청 없음으로 종료 / LOGIN 프레임 = return_code 0 후 정상 수신). 그 표는 REST 문서 템플릿이 재사용된 것으로 보입니다. 필드 번호는 국내 0B 와 같아(10 현재가·11 전일대비·12 등락율·13 누적거래량·15 체결량) 라이브 차트가 국내와 동일하게 동작합니다. 세션 한도는 **엔드포인트별**이라 국내 소켓과 미국 소켓을 같은 토큰으로 동시에 열 수 있습니다(같은 실측). 장구분(290)은 국내와 코드 체계가 달라(국내 1/2/3, 미국은 4 관측) 정규장 판정에 쓰지 않습니다.",
-        "routeItemPath": "item",
-        "routeTypePath": "type",
-        "routeItemArg": "item",
-        "routeTypeArg": "type",
-        "chartField": "10",
-        "chartAbs": true,
-        "chartVolumeField": "15",
-        "chartChangeField": "11",
-        "chartChangeRateField": "12",
-        "fieldLabels": {
-          "10": "현재가",
-          "11": "전일대비",
-          "12": "등락율",
-          "13": "누적거래량",
-          "14": "누적거래대금",
-          "15": "체결량",
-          "16": "시가",
-          "17": "고가",
-          "18": "저가",
-          "20": "시간",
-          "22": "체결일자",
-          "228": "체결강도",
-          "290": "장구분",
-          "51020": "현지 체결시간"
-        },
-        "chartTimeField": "20",
-        "chartDateField": "22",
-        "chartDayVolumeField": "13"
-      },
-      "condition": {
-        "preFrames": [
-          {
-            "frame": {
-              "trnm": "CNSRLST"
-            },
-            "match": "CNSRLST",
-            "successWhen": {
-              "field": "return_code",
-              "equals": 0
-            }
-          }
-        ],
-        "subscribe": {
-          "frame": {
-            "trnm": "CNSRREQ",
-            "seq": "{seq}",
-            "search_type": "1",
-            "stex_tp": "{stex_tp:K}"
-          },
-          "match": "CNSRREQ",
-          "successWhen": {
-            "field": "return_code",
-            "equals": 0
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "trnm": "CNSRCLR",
-            "seq": "{seq}"
-          }
-        },
-        "realtimeMatch": "REAL",
-        "desc": "국내 조건검색 실시간 감시 (편입/이탈 push)",
-        "keyDesc": "seq = 조건식 일련번호 (먼저 ka10171 로 조건식 목록 조회). stex_tp = 거래소(K:KRX, N:NXT, A:통합)."
-      },
-      "us-condition": {
-        "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
-        "endpointMock": "wss://mockapi.kiwoom.com:10000/api/us/websocket",
-        "preFrames": [
-          {
-            "frame": {
-              "trnm": "GCNSRLST"
-            },
-            "match": "GCNSRLST",
-            "successWhen": {
-              "field": "return_code",
-              "equals": 0
-            }
-          }
-        ],
-        "subscribe": {
-          "frame": {
-            "trnm": "GCNSRREQ",
-            "seq": "{seq}",
-            "search_type": "1"
-          },
-          "match": "GCNSRREQ",
-          "successWhen": {
-            "field": "return_code",
-            "equals": 0
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "trnm": "GCNSRCLR",
-            "seq": "{seq}"
-          }
-        },
-        "realtimeMatch": "REAL",
-        "desc": "미국주식 조건검색 실시간 감시 (편입/이탈 push)",
-        "keyDesc": "seq = 조건식 일련번호 (먼저 미국 조건검색 목록 조회)."
-      }
-    },
-    "unsupportedActions": [
-      "ka10173",
-      "ka10174",
-      "usa20280",
-      "usa20281",
-      "usa20290",
-      "usa20291"
-    ],
-    "shareConnection": true
-  },
   "grounding": {
     "stk_cd": {
       "resolveHint": "A stock code (stk_cd) must come from a lookup, never from memory. To resolve a company name to its code, call the stock-lookup tool directly NOW: sysmod_stock-lookup {\"query\":\"<company name>\"} (underscore form sysmod_stock_lookup also works). One arg, one call — this is a direct tool call, NOT something to find with search_module_actions (never search for \"lookup\"). It returns the official corp_name + stock_code (e.g. LG에너지솔루션 → 373220); if several companies match it returns candidates — ask the user with a suggest picker when unsure. Alternatively ka10100 can confirm a code you were given. Use the returned stock_code as-is, and don't re-guess the name if a lookup already returned a code.",
@@ -1146,5 +812,58 @@
       ]
     }
   },
-  "hubSafe": false
+  "hubSafe": true,
+  "secrets": [
+    {
+      "name": "KIWOOM_APP_KEY",
+      "type": "key"
+    },
+    {
+      "name": "KIWOOM_APP_SECRET",
+      "type": "key"
+    },
+    {
+      "name": "KIWOOM_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://api.kiwoom.com",
+        "baseMock": "https://mockapi.kiwoom.com",
+        "path": "/oauth2/token",
+        "method": "POST",
+        "contentType": "application/json;charset=UTF-8",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIWOOM_APP_KEY}",
+          "secretkey": "${KIWOOM_APP_SECRET}"
+        },
+        "tokenField": "token",
+        "invalidWhen": {
+          "match": "any",
+          "conditions": [
+            {
+              "field": "return_code",
+              "equals": 3
+            },
+            {
+              "field": "return_msg",
+              "regex": "(?i)Token이 유효하지 않습니다|token.*invalid"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "accounts": {
+    "modes": [
+      "real",
+      "mock"
+    ],
+    "markets": [
+      "kr",
+      "us"
+    ],
+    "listAction": "ka00001",
+    "accountNoPath": "acctNo"
+  }
 }

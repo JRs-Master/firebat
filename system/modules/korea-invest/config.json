@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "한국투자증권 OPEN API 통합 sysmod — 278 REST API + 9 도메인 (국내주식: 계좌/시세/순위/시세분석/ELW + 선물옵션·채권·해외주식·해외선물옵션). 도메인별 별도 LLM 도구로 노출.",
+  "description": "한국투자증권 공개 시세·차트. 계좌·주문은 이 모듈에 없습니다 — `korea-invest` 입니다. 자격증명을 선언하지 않으므로 샌드박스가 키를 주입하지 않습니다. hub 에 허용해도 안전한 쪽입니다. ⚠️ 이 증권사는 시세에도 토큰이 필요해 자격증명을 선언합니다 — 경계는 액션 선언이 집니다(계좌·주문 액션이 이 모듈에 없음).",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
@@ -11,27 +11,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", \"query\": { <query.* params> }, \"body\": { <body.* params> } } — param key prefix query./body. marks the location"
   },
-  "requiresApproval": [
-    "v1_국내주식-001",
-    "v1_국내주식-002",
-    "v1_국내주식-003",
-    "v1_국내주식-017",
-    "v1_국내주식-018,019",
-    "국내주식-123",
-    "국내주식-124",
-    "국내주식-125",
-    "v1_해외주식-001",
-    "v1_해외주식-002",
-    "v1_해외주식-003",
-    "v1_해외주식-004",
-    "v1_해외주식-026",
-    "v1_국내선물-001",
-    "v1_국내선물-002",
-    "v1_해외선물-001",
-    "v1_해외선물-002, 003",
-    "place_order",
-    "cancel_order"
-  ],
   "grounding": {
     "FID_INPUT_ISCD": {
       "pattern": "^Q?[0-9]{6}$",
@@ -122,2616 +101,6 @@
         "output2",
         "records"
       ]
-    }
-  },
-  "accounts": {
-    "modes": [
-      "real",
-      "mock"
-    ],
-    "markets": [
-      "kr",
-      "us"
-    ]
-  },
-  "secrets": [
-    {
-      "name": "KIS_APP_KEY",
-      "type": "key"
-    },
-    {
-      "name": "KIS_APP_SECRET",
-      "type": "key"
-    },
-    {
-      "name": "KIS_ACCESS_TOKEN",
-      "type": "token",
-      "lifetimeSec": 85800,
-      "oauth": {
-        "base": "https://openapi.koreainvestment.com:9443",
-        "baseMock": "https://openapivts.koreainvestment.com:29443",
-        "path": "/oauth2/tokenP",
-        "method": "POST",
-        "contentType": "application/json",
-        "body": {
-          "grant_type": "client_credentials",
-          "appkey": "${KIS_APP_KEY}",
-          "appsecret": "${KIS_APP_SECRET}"
-        },
-        "tokenField": "access_token",
-        "invalidWhen": {
-          "match": "all",
-          "conditions": [
-            {
-              "field": "rt_cd",
-              "equals": "1"
-            },
-            {
-              "field": "msg1",
-              "regex": "token|토큰"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "KIS_WS_APPROVAL_KEY",
-      "type": "token",
-      "lifetimeSec": 84600,
-      "oauth": {
-        "base": "https://openapi.koreainvestment.com:9443",
-        "baseMock": "https://openapivts.koreainvestment.com:29443",
-        "path": "/oauth2/Approval",
-        "method": "POST",
-        "contentType": "application/json",
-        "body": {
-          "grant_type": "client_credentials",
-          "appkey": "${KIS_APP_KEY}",
-          "secretkey": "${KIS_APP_SECRET}"
-        },
-        "tokenField": "approval_key"
-      }
-    }
-  ],
-  "ws": {
-    "endpoint": "ws://ops.koreainvestment.com:21000",
-    "endpointMock": "ws://ops.koreainvestment.com:31000",
-    "frameFormat": "kis-pipe",
-    "matchField": "header.tr_id",
-    "echoValues": [
-      "PINGPONG"
-    ],
-    "tokenSecret": "KIS_WS_APPROVAL_KEY",
-    "errorMsgField": "body.msg1",
-    "_note": "한투 실시간 — approval_key(구독 헤더) + positional(^) 프레임. 시세=평문(flag0)/체결통보=AES256(flag1, 구독 응답 iv·key). field 순서는 _ws_apis.json responseBody(trId 매칭).",
-    "streams": {
-      "index-expected": {
-        "trId": "H0UPANC0",
-        "realtimeMatch": "H0UPANC0",
-        "desc": "국내지수 실시간예상체결",
-        "keyDesc": "업종구분코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UPANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "member-nxt": {
-        "trId": "H0NXMBC0",
-        "realtimeMatch": "H0NXMBC0",
-        "desc": "국내주식 실시간회원사 (NXT)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0NXMBC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "exec-notify": {
-        "trId": "H0STCNI0",
-        "trIdMock": "H0STCNI9",
-        "realtimeMatch": "H0STCNI0",
-        "desc": "국내주식 실시간체결통보",
-        "keyDesc": "HTS ID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STCNI0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "afterhours-expected-krx": {
-        "trId": "H0STOAC0",
-        "realtimeMatch": "H0STOAC0",
-        "desc": "국내주식 시간외 실시간예상체결 (KRX)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOAC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STOAC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOAC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "afterhours-orderbook-krx": {
-        "trId": "H0STOAA0",
-        "realtimeMatch": "H0STOAA0",
-        "desc": "국내주식 시간외 실시간호가 (KRX)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOAA0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STOAA0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOAA0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "program-unified": {
-        "trId": "H0UNPGM0",
-        "realtimeMatch": "H0UNPGM0",
-        "desc": "국내주식 실시간프로그램매매 (통합)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UNPGM0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "orderbook-unified": {
-        "trId": "H0UNASP0",
-        "realtimeMatch": "H0UNASP0",
-        "desc": "국내주식 실시간호가 (통합)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UNASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "program-krx": {
-        "trId": "H0STPGM0",
-        "realtimeMatch": "H0STPGM0",
-        "desc": "국내주식 실시간프로그램매매 (KRX)",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STPGM0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "market-op-krx": {
-        "trId": "H0STMKO0",
-        "realtimeMatch": "H0STMKO0",
-        "desc": "국내주식 장운영정보 (KRX)",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STMKO0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STMKO0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STMKO0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "trade-krx": {
-        "trId": "H0STCNT0",
-        "trIdMock": "H0STCNT0",
-        "realtimeMatch": "H0STCNT0",
-        "desc": "국내주식 실시간체결가 (KRX)",
-        "keyDesc": "종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-program": {
-        "trId": "H0UPPGM0",
-        "realtimeMatch": "H0UPPGM0",
-        "desc": "국내지수 실시간프로그램매매",
-        "keyDesc": "업종구분코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UPPGM0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "member-unified": {
-        "trId": "H0UNMBC0",
-        "realtimeMatch": "H0UNMBC0",
-        "desc": "국내주식 실시간회원사 (통합)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UNMBC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-trade": {
-        "trId": "H0UPCNT0",
-        "realtimeMatch": "H0UPCNT0",
-        "desc": "국내지수 실시간체결",
-        "keyDesc": "업종구분코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UPCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UPCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "expected-krx": {
-        "trId": "H0STANC0",
-        "realtimeMatch": "H0STANC0",
-        "desc": "국내주식 실시간예상체결 (KRX)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "elw-orderbook": {
-        "trId": "H0EWASP0",
-        "realtimeMatch": "H0EWASP0",
-        "desc": "ELW 실시간호가",
-        "keyDesc": "ELW 종목코드(ex. 57LA24)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EWASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "orderbook-krx": {
-        "trId": "H0STASP0",
-        "trIdMock": "H0STASP0",
-        "realtimeMatch": "H0STASP0",
-        "desc": "국내주식 실시간호가 (KRX)",
-        "keyDesc": "종목번호 (6자리) ETN의 경우, Q로 시작 (EX. Q500001)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "trade-unified": {
-        "trId": "H0UNCNT0",
-        "realtimeMatch": "H0UNCNT0",
-        "desc": "국내주식 실시간체결가 (통합)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UNCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "orderbook-nxt": {
-        "trId": "H0NXASP0",
-        "realtimeMatch": "H0NXASP0",
-        "desc": "국내주식 실시간호가 (NXT)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0NXASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "program-nxt": {
-        "trId": "H0NXPGM0",
-        "realtimeMatch": "H0NXPGM0",
-        "desc": "국내주식 실시간프로그램매매 (NXT)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0NXPGM0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXPGM0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "trade-nxt": {
-        "trId": "H0NXCNT0",
-        "realtimeMatch": "H0NXCNT0",
-        "desc": "국내주식 실시간체결가 (NXT)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0NXCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "elw-trade": {
-        "trId": "H0EWCNT0",
-        "realtimeMatch": "H0EWCNT0",
-        "desc": "ELW 실시간체결가",
-        "keyDesc": "ELW 종목코드(ex. 57LA24)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EWCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "elw-expected": {
-        "trId": "H0EWANC0",
-        "realtimeMatch": "H0EWANC0",
-        "desc": "ELW 실시간예상체결",
-        "keyDesc": "ELW 종목코드(ex. 57LA24)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EWANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EWANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "expected-nxt": {
-        "trId": "H0NXANC0",
-        "realtimeMatch": "H0NXANC0",
-        "desc": "국내주식 실시간예상체결 (NXT)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0NXANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0NXANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "member-krx": {
-        "trId": "H0STMBC0",
-        "realtimeMatch": "H0STMBC0",
-        "desc": "국내주식 실시간회원사 (KRX)",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STMBC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STMBC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "expected-unified": {
-        "trId": "H0UNANC0",
-        "realtimeMatch": "H0UNANC0",
-        "desc": "국내주식 실시간예상체결 (통합)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0UNANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0UNANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "etf-nav": {
-        "trId": "H0STNAV0",
-        "realtimeMatch": "H0STNAV0",
-        "desc": "국내ETF NAV추이",
-        "keyDesc": "종목코드 (ex. 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STNAV0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STNAV0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STNAV0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "afterhours-trade-krx": {
-        "trId": "H0STOUP0",
-        "realtimeMatch": "H0STOUP0",
-        "desc": "국내주식 시간외 실시간체결가 (KRX)",
-        "keyDesc": "종목코드 (ex 005930 삼성전자)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOUP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0STOUP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0STOUP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-options-orderbook": {
-        "trId": "H0ZOASP0",
-        "realtimeMatch": "H0ZOASP0",
-        "desc": "주식옵션 실시간호가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZOASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "futures-options-exec-notify": {
-        "trId": "H0IFCNI0",
-        "trIdMock": "H0IFCNI9",
-        "realtimeMatch": "H0IFCNI0",
-        "desc": "선물옵션 실시간체결통보",
-        "keyDesc": "예:101S12",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0IFCNI0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "night-futures-trade": {
-        "trId": "H0MFCNT0",
-        "realtimeMatch": "H0MFCNT0",
-        "desc": "KRX야간선물 실시간종목체결",
-        "keyDesc": "야간선물 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0MFCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "night-futures-orderbook": {
-        "trId": "H0MFASP0",
-        "realtimeMatch": "H0MFASP0",
-        "desc": "KRX야간선물 실시간호가",
-        "keyDesc": "야간선물 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0MFASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "night-options-trade": {
-        "trId": "H0EUCNT0",
-        "realtimeMatch": "H0EUCNT0",
-        "desc": "KRX야간옵션 실시간체결가",
-        "keyDesc": "야간옵션 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EUCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "night-options-expected": {
-        "trId": "H0EUANC0",
-        "realtimeMatch": "H0EUANC0",
-        "desc": "KRX야간옵션실시간예상체결",
-        "keyDesc": "야간옵션 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EUANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-futures-trade": {
-        "trId": "H0IFCNT0",
-        "realtimeMatch": "H0IFCNT0",
-        "desc": "지수선물 실시간체결가",
-        "keyDesc": "예:101S12",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0IFCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-futures-expected": {
-        "trId": "H0ZFANC0",
-        "realtimeMatch": "H0ZFANC0",
-        "desc": "주식선물 실시간예상체결",
-        "keyDesc": "주식선물 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZFANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "night-options-exec-notify": {
-        "trId": "H0EUCNI0",
-        "realtimeMatch": "H0EUCNI0",
-        "desc": "KRX야간옵션실시간체결통보",
-        "keyDesc": "HTS ID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EUCNI0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "night-futures-exec-notify": {
-        "trId": "H0MFCNI0",
-        "realtimeMatch": "H0MFCNI0",
-        "desc": "KRX야간선물 실시간체결통보",
-        "keyDesc": "HTS ID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0MFCNI0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0MFCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "commodity-futures-trade": {
-        "trId": "H0CFCNT0",
-        "realtimeMatch": "H0CFCNT0",
-        "desc": "상품선물 실시간체결가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0CFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0CFCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0CFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-futures-orderbook": {
-        "trId": "H0IFASP0",
-        "realtimeMatch": "H0IFASP0",
-        "desc": "지수선물 실시간호가",
-        "keyDesc": "예:101S12",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0IFASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-options-trade": {
-        "trId": "H0IOCNT0",
-        "realtimeMatch": "H0IOCNT0",
-        "desc": "지수옵션  실시간체결가",
-        "keyDesc": "예:201S11305",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IOCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0IOCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IOCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "night-options-orderbook": {
-        "trId": "H0EUASP0",
-        "realtimeMatch": "H0EUASP0",
-        "desc": "KRX야간옵션 실시간호가",
-        "keyDesc": "야간옵션 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0EUASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0EUASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "commodity-futures-orderbook": {
-        "trId": "H0CFASP0",
-        "realtimeMatch": "H0CFASP0",
-        "desc": "상품선물 실시간호가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0CFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0CFASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0CFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-options-expected": {
-        "trId": "H0ZOANC0",
-        "realtimeMatch": "H0ZOANC0",
-        "desc": "주식옵션 실시간예상체결",
-        "keyDesc": "주식옵션 종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOANC0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZOANC0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOANC0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-futures-orderbook": {
-        "trId": "H0ZFASP0",
-        "realtimeMatch": "H0ZFASP0",
-        "desc": "주식선물 실시간호가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZFASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-options-trade": {
-        "trId": "H0ZOCNT0",
-        "realtimeMatch": "H0ZOCNT0",
-        "desc": "주식옵션 실시간체결가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZOCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZOCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "index-options-orderbook": {
-        "trId": "H0IOASP0",
-        "realtimeMatch": "H0IOASP0",
-        "desc": "지수옵션 실시간호가",
-        "keyDesc": "예:201S11305",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IOASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0IOASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0IOASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "stock-futures-trade": {
-        "trId": "H0ZFCNT0",
-        "realtimeMatch": "H0ZFCNT0",
-        "desc": "주식선물 실시간체결가",
-        "keyDesc": "종목코드",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0ZFCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0ZFCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-orderbook": {
-        "trId": "HDFSASP0",
-        "realtimeMatch": "HDFSASP0",
-        "desc": "해외주식 실시간호가",
-        "keyDesc": "<미국 야간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스  <미국 주간거래> R+시장구분(3자리)+종목코드 예) RBAQAAPL : R+BAQ(나스닥)+AAPL(애플) [시장구분] BAY : 뉴욕(주간), BAQ : 나스닥(주간). BAA : 아멕스(주간)  <아시아국가 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFSASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-delayed-orderbook": {
-        "trId": "HDFSASP1",
-        "realtimeMatch": "HDFSASP1",
-        "desc": "해외주식 지연호가(아시아)",
-        "keyDesc": "<아시아국가 - 무료시세> D+시장구분(3자리)+종목코드 예) DHKS00003 : D+HKS(홍콩)+00003(홍콩중화가스) [시장구분] TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSASP1",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFSASP1",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSASP1",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-delayed-trade": {
-        "trId": "HDFSCNT0",
-        "realtimeMatch": "HDFSCNT0",
-        "desc": "해외주식 실시간지연체결가",
-        "keyDesc": "<미국 야간거래/아시아 주간거래 - 무료시세> D+시장구분(3자리)+종목코드 예) DNASAAPL : D+NAS(나스닥)+AAPL(애플) [시장구분] NYS : 뉴욕, NAS : 나스닥, AMS : 아멕스 , TSE : 도쿄, HKS : 홍콩, SHS : 상해, SZS : 심천 HSX : 호치민, HNX : 하노이  <미국 야간거래/아시아 주간거래 - 유료시세> ※ 유료시세 신청시에만 유료시세 수신가능 \"포럼 > FAQ > 해외주식 유료시세 신청방법\" 참고 R+시장구분(3자리)+종목코드 예) RNASAAPL",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFSCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFSCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-exec-notify": {
-        "trId": "H0GSCNI0",
-        "trIdMock": "H0GSCNI9",
-        "realtimeMatch": "H0GSCNI0",
-        "desc": "해외주식 실시간체결통보",
-        "keyDesc": "HTSID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0GSCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0GSCNI0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0GSCNI0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "overseas-fo-trade": {
-        "trId": "HDFFF020",
-        "realtimeMatch": "HDFFF020",
-        "desc": "해외선물옵션 실시간체결가",
-        "keyDesc": "종목코드  ※ CME, SGX 실시간시세 유료시세 신청 필수  \"포럼 > FAQ > 해외선물옵션 API 유료시세 신청방법(CME, SGX 거래소)\"",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF020",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFFF020",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF020",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-fo-orderbook": {
-        "trId": "HDFFF010",
-        "realtimeMatch": "HDFFF010",
-        "desc": "해외선물옵션 실시간호가",
-        "keyDesc": "종목코드  ※ CME, SGX 실시간시세 유료시세 신청 필수  \"포럼 > FAQ > 해외선물옵션 API 유료시세 신청방법(CME, SGX 거래소)\"",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF010",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFFF010",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF010",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "overseas-fo-order-notify": {
-        "trId": "HDFFF1C0",
-        "realtimeMatch": "HDFFF1C0",
-        "desc": "해외선물옵션 실시간주문내역통보",
-        "keyDesc": "HTSID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF1C0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFFF1C0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF1C0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "overseas-fo-exec-notify": {
-        "trId": "HDFFF2C0",
-        "realtimeMatch": "HDFFF2C0",
-        "desc": "해외선물옵션 실시간체결내역통보",
-        "keyDesc": "HTSID",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF2C0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "HDFFF2C0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "HDFFF2C0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        },
-        "decrypt": {
-          "ivField": "body.output.iv",
-          "keyField": "body.output.key"
-        }
-      },
-      "bond-trade": {
-        "trId": "H0BJCNT0",
-        "realtimeMatch": "H0BJCNT0",
-        "desc": "일반채권 실시간체결가",
-        "keyDesc": "채권 종목코드 (ex. KR103502GA34)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BJCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0BJCNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BJCNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "bond-orderbook": {
-        "trId": "H0BJASP0",
-        "realtimeMatch": "H0BJASP0",
-        "desc": "일반채권 실시간호가",
-        "keyDesc": "채권 종목코드 (ex. KR103502GA34)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BJASP0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0BJASP0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BJASP0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      },
-      "bond-index-trade": {
-        "trId": "H0BICNT0",
-        "realtimeMatch": "H0BICNT0",
-        "desc": "채권지수 실시간체결가",
-        "keyDesc": "채권 종목코드 (ex. KR103502GA34)",
-        "subscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "1",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BICNT0",
-                "tr_key": "{key}"
-              }
-            }
-          },
-          "match": "H0BICNT0",
-          "successWhen": {
-            "field": "body.rt_cd",
-            "equals": "0"
-          }
-        },
-        "unsubscribe": {
-          "frame": {
-            "header": {
-              "approval_key": "{TOKEN}",
-              "custtype": "P",
-              "tr_type": "2",
-              "content-type": "utf-8"
-            },
-            "body": {
-              "input": {
-                "tr_id": "H0BICNT0",
-                "tr_key": "{key}"
-              }
-            }
-          }
-        }
-      }
     }
   },
   "domains": [
@@ -3083,86 +452,213 @@
       "action": {
         "type": "string",
         "enum": [
-          "get_balance",
-          "list_fills",
-          "list_open_orders",
-          "cancel_order",
-          "place_order",
-          "v1_국내선물-001",
-          "v1_국내선물-002",
-          "v1_국내선물-003",
-          "v1_국내선물-004",
-          "v1_국내선물-005",
-          "v1_국내선물-013",
-          "v1_국내선물-014",
-          "v1_국내선물-015",
-          "v1_국내선물-016",
-          "v1_국내선물-017",
-          "v1_국내주식-001",
-          "v1_국내주식-002",
-          "v1_국내주식-003",
-          "v1_국내주식-004",
-          "v1_국내주식-005",
-          "v1_국내주식-006",
-          "v1_국내주식-007",
-          "v1_국내주식-017",
-          "v1_국내주식-018,019",
-          "v1_국내주식-020",
-          "v1_국내주식-032",
-          "v1_국내주식-033",
-          "v1_국내주식-034",
-          "v1_국내주식-035",
-          "v1_국내주식-036",
-          "v1_국내주식-041",
-          "v1_국내주식-042",
-          "v1_국내주식-048",
-          "v1_국내주식-052",
-          "v1_국내주식-060",
-          "v1_해외선물-001",
-          "v1_해외선물-002, 003",
-          "v1_해외선물-004",
-          "v1_해외선물-005",
-          "v1_해외선물-006",
-          "v1_해외주식-001",
-          "v1_해외주식-002",
-          "v1_해외주식-003",
-          "v1_해외주식-004",
-          "v1_해외주식-005",
-          "v1_해외주식-006",
-          "v1_해외주식-007",
-          "v1_해외주식-008",
-          "v1_해외주식-013",
-          "v1_해외주식-014",
-          "v1_해외주식-026",
-          "v1_해외주식-027",
-          "v1_해외주식-032",
-          "국내선물-009",
-          "국내선물-010",
-          "국내선물-011",
-          "국내선물-024",
-          "국내주식-123",
-          "국내주식-124",
-          "국내주식-125",
-          "국내주식-126",
-          "국내주식-127",
-          "국내주식-165",
-          "국내주식-191",
-          "국내주식-198",
-          "국내주식-199",
-          "국내주식-211",
-          "해외선물-010",
-          "해외선물-011",
-          "해외선물-012",
-          "해외선물-013",
-          "해외선물-014",
-          "해외선물-032",
-          "해외주식-035",
-          "해외주식-063",
-          "해외주식-064",
-          "해외주식-070",
-          "해외주식-071"
+          "get_candles",
+          "ETF 현재가 호가",
+          "v1_국내선물-006",
+          "v1_국내선물-007",
+          "v1_국내선물-008",
+          "v1_국내선물-012",
+          "v1_국내주식-008",
+          "v1_국내주식-009",
+          "v1_국내주식-010",
+          "v1_국내주식-011",
+          "v1_국내주식-012",
+          "v1_국내주식-013",
+          "v1_국내주식-014",
+          "v1_국내주식-016",
+          "v1_국내주식-021",
+          "v1_국내주식-022",
+          "v1_국내주식-023",
+          "v1_국내주식-025",
+          "v1_국내주식-026",
+          "v1_국내주식-029",
+          "v1_국내주식-044",
+          "v1_국내주식-045",
+          "v1_국내주식-046",
+          "v1_국내주식-047",
+          "v1_국내주식-054",
+          "v1_국내주식-055",
+          "v1_국내주식-056",
+          "v1_국내주식-063",
+          "v1_국내주식-065",
+          "v1_국내주식-066",
+          "v1_국내주식-067",
+          "v1_국내주식-068",
+          "v1_국내주식-069",
+          "v1_국내주식-070",
+          "v1_국내주식-071",
+          "v1_국내주식-074",
+          "v1_국내주식-078",
+          "v1_국내주식-079",
+          "v1_국내주식-080",
+          "v1_국내주식-081",
+          "v1_국내주식-082",
+          "v1_국내주식-083",
+          "v1_국내주식-085",
+          "v1_국내주식-088",
+          "v1_국내주식-090",
+          "v1_국내주식-091",
+          "v1_국내주식-092",
+          "v1_국내주식-093",
+          "v1_국내주식-094",
+          "v1_국내주식-095",
+          "v1_국내주식-096",
+          "v1_국내주식-101",
+          "v1_국내주식-102",
+          "v1_국내주식-103",
+          "v1_국내주식-104",
+          "v1_국내주식-105",
+          "v1_해외선물-008",
+          "v1_해외선물-009",
+          "v1_해외주식-009",
+          "v1_해외주식-010",
+          "v1_해외주식-012",
+          "v1_해외주식-015",
+          "v1_해외주식-029",
+          "v1_해외주식-030",
+          "v1_해외주식-031",
+          "v1_해외주식-034",
+          "국내선물-018",
+          "국내선물-020",
+          "국내선물-021",
+          "국내선물-022",
+          "국내선물-023",
+          "국내주식 장운영정보 (NXT)",
+          "국내주식 장운영정보 (통합)",
+          "국내주식-037",
+          "국내주식-038",
+          "국내주식-039",
+          "국내주식-040",
+          "국내주식-064",
+          "국내주식-073",
+          "국내주식-075",
+          "국내주식-076",
+          "국내주식-077",
+          "국내주식-089",
+          "국내주식-106",
+          "국내주식-107",
+          "국내주식-109",
+          "국내주식-110",
+          "국내주식-111",
+          "국내주식-113",
+          "국내주식-114",
+          "국내주식-115",
+          "국내주식-116",
+          "국내주식-118",
+          "국내주식-119",
+          "국내주식-120",
+          "국내주식-121",
+          "국내주식-122",
+          "국내주식-129",
+          "국내주식-132",
+          "국내주식-133",
+          "국내주식-134",
+          "국내주식-135",
+          "국내주식-138",
+          "국내주식-139",
+          "국내주식-140",
+          "국내주식-141",
+          "국내주식-143",
+          "국내주식-144",
+          "국내주식-145",
+          "국내주식-146",
+          "국내주식-147",
+          "국내주식-148",
+          "국내주식-149",
+          "국내주식-150",
+          "국내주식-151",
+          "국내주식-152",
+          "국내주식-153",
+          "국내주식-154",
+          "국내주식-155",
+          "국내주식-156",
+          "국내주식-158",
+          "국내주식-159",
+          "국내주식-160",
+          "국내주식-161",
+          "국내주식-163",
+          "국내주식-164",
+          "국내주식-166",
+          "국내주식-167",
+          "국내주식-168",
+          "국내주식-169",
+          "국내주식-170",
+          "국내주식-171",
+          "국내주식-172",
+          "국내주식-173",
+          "국내주식-174",
+          "국내주식-175",
+          "국내주식-176",
+          "국내주식-177",
+          "국내주식-178",
+          "국내주식-179",
+          "국내주식-180",
+          "국내주식-181",
+          "국내주식-182",
+          "국내주식-183",
+          "국내주식-184",
+          "국내주식-185",
+          "국내주식-186",
+          "국내주식-187",
+          "국내주식-188",
+          "국내주식-189",
+          "국내주식-190",
+          "국내주식-192",
+          "국내주식-193",
+          "국내주식-195",
+          "국내주식-196",
+          "국내주식-197",
+          "국내주식-200",
+          "국내주식-201",
+          "국내주식-202",
+          "국내주식-203",
+          "국내주식-204",
+          "국내주식-205",
+          "국내주식-213",
+          "국내주식-214",
+          "선물옵션 증거금률",
+          "종목별 투자자매매동향(일별)",
+          "해외선물-016",
+          "해외선물-017",
+          "해외선물-018",
+          "해외선물-019",
+          "해외선물-020",
+          "해외선물-023",
+          "해외선물-029",
+          "해외선물-030",
+          "해외선물-031",
+          "해외선물-033",
+          "해외선물-034",
+          "해외선물-035",
+          "해외선물-036",
+          "해외선물-037",
+          "해외선물-038",
+          "해외선물-039",
+          "해외선물-040",
+          "해외선물-041",
+          "해외주식 복수종목 시세조회",
+          "해외주식-017",
+          "해외주식-033",
+          "해외주식-037",
+          "해외주식-038",
+          "해외주식-039",
+          "해외주식-040",
+          "해외주식-041",
+          "해외주식-042",
+          "해외주식-043",
+          "해외주식-044",
+          "해외주식-045",
+          "해외주식-046",
+          "해외주식-047",
+          "해외주식-048",
+          "해외주식-049",
+          "해외주식-050",
+          "해외주식-051",
+          "해외주식-052",
+          "해외주식-053",
+          "해외주식-055"
         ],
-        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 도메인별 LLM 도구로 분리 노출. | 중립 계약(브로커 공통): place_order · cancel_order · list_open_orders · list_fills · get_balance · get_candles — 한투 TR ID 를 몰라도 되는 표준 호출. 국내·해외는 `market`(kr/us)로 갈리며 생략하면 종목코드 모양으로 판단합니다(6자리 숫자 = 국내)."
+        "description": "한국투자증권 공개 시세 액션. 계좌·주문·환전은 이 모듈에 없습니다 — `korea-invest` 모듈입니다."
       },
       "query": {
         "type": "object",
@@ -3302,5 +798,74 @@
     "실시간 스트림",
     "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · 통합(UN) · SOR — FID_COND_MRKT_DIV_CODE(J:KRX, NX:NXT, UN:통합, SO:SOR). 실시간은 거래소별 전용 TR(H0STCNT0=KRX / H0NXCNT0=NXT / H0UNCNT0=통합)"
   ],
-  "hubSafe": false
+  "hubSafe": true,
+  "secrets": [
+    {
+      "name": "KIS_APP_KEY",
+      "type": "key"
+    },
+    {
+      "name": "KIS_APP_SECRET",
+      "type": "key"
+    },
+    {
+      "name": "KIS_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://openapi.koreainvestment.com:9443",
+        "baseMock": "https://openapivts.koreainvestment.com:29443",
+        "path": "/oauth2/tokenP",
+        "method": "POST",
+        "contentType": "application/json",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIS_APP_KEY}",
+          "appsecret": "${KIS_APP_SECRET}"
+        },
+        "tokenField": "access_token",
+        "invalidWhen": {
+          "match": "all",
+          "conditions": [
+            {
+              "field": "rt_cd",
+              "equals": "1"
+            },
+            {
+              "field": "msg1",
+              "regex": "token|토큰"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "KIS_WS_APPROVAL_KEY",
+      "type": "token",
+      "lifetimeSec": 84600,
+      "oauth": {
+        "base": "https://openapi.koreainvestment.com:9443",
+        "baseMock": "https://openapivts.koreainvestment.com:29443",
+        "path": "/oauth2/Approval",
+        "method": "POST",
+        "contentType": "application/json",
+        "body": {
+          "grant_type": "client_credentials",
+          "appkey": "${KIS_APP_KEY}",
+          "secretkey": "${KIS_APP_SECRET}"
+        },
+        "tokenField": "approval_key"
+      }
+    }
+  ],
+  "accounts": {
+    "modes": [
+      "real",
+      "mock"
+    ],
+    "markets": [
+      "kr",
+      "us"
+    ]
+  }
 }

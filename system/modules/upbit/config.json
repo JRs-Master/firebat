@@ -3,14 +3,10 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "업비트 계좌·주문·입출금 — 개인 키가 필요한 절반입니다. 시세·차트는 `upbit-quotes` 에 있고, hub 인스턴스에는 이 모듈을 허용하지 마십시오.",
+  "description": "업비트 공개 시세 — 캔들·체결·호가·티커·마켓. **자격증명을 선언하지 않습니다**: 업비트는 시세가 공개 엔드포인트라 키가 필요 없고, 그래서 이 모듈은 키를 받지도 못합니다. 계좌·주문·입출금은 `upbit-trade`.",
   "runtime": "node",
   "capability": "crypto-trading",
   "providerType": "api",
-  "secrets": [
-    "UPBIT_ACCESS_KEY",
-    "UPBIT_SECRET_KEY"
-  ],
   "timeseries": {
     "candle-days": {
       "fetchMode": "cursor",
@@ -36,41 +32,23 @@
       "action": {
         "type": "string",
         "enum": [
-          "accounts",
-          "order-chance",
-          "order-detail",
-          "order-create",
-          "order-cancel",
-          "order-cancel-and-new",
-          "order-cancel-uuids",
-          "order-cancel-open",
-          "order-list-uuids",
-          "order-list-closed",
-          "order-list-open",
-          "order-test",
-          "withdraw-detail",
-          "withdraw-list",
-          "withdraw-cancel",
-          "withdraw-coin",
-          "withdraw-krw",
-          "withdraw-addresses",
-          "withdraw-chance",
-          "deposit-detail",
-          "deposit-list",
-          "deposit-create-address",
-          "deposit-krw",
-          "deposit-addresses",
-          "deposit-address",
-          "deposit-chance",
-          "wallet-status",
-          "api-keys",
-          "place_order",
-          "cancel_order",
-          "list_open_orders",
-          "list_fills",
-          "get_balance"
+          "screen",
+          "get_tick_size",
+          "get_candles",
+          "candle-seconds",
+          "candle-minutes",
+          "candle-days",
+          "candle-weeks",
+          "candle-months",
+          "candle-years",
+          "trades",
+          "ticker",
+          "ticker-all",
+          "orderbook",
+          "orderbook-instruments",
+          "markets"
         ],
-        "description": "get_tick_size = 거래소가 직접 말해 주는 호가 단위(`tick_size`). place_order 는 계산된 사다리로 내림 처리하므로 보통 부를 일이 없고, 둘이 어긋날 때 이쪽이 정답입니다. screen = 종목 화면 — 한 마켓의 전 페어를 **24시간 누적 거래대금** 순으로 정렬해 상위 N개를 돌려줍니다(공개 API, 키 불요). 증권사의 조건검색에 해당하는 자리이고, 종목 코드를 고르는 일이 모델이 아니라 여기서 일어납니다. get_candles = 봉 조회 중립 계약 — {symbol, interval} 만 받습니다. interval = 1m·3m·5m·10m·15m·30m·60m(=1h)·240m(=4h)·1d·1w·1M·1y, `<N>s`(초봉). 업비트는 주기별로 엔드포인트가 갈리는데 부르는 쪽이 그걸 알 필요가 없어야 전략의 봉 주기를 바꿀 때 호출부를 안 고칩니다. 24시간 시장이라 장 시간과 무관하게 조회됩니다. 편의 액션명. accounts=잔고, ticker=현재가, candle-minutes=분봉, order-create=주문, trades=체결내역 등. 또는 endpoint+method로 직접 호출. ⚠️ 주문·취소·출금은 승인 카드를 거칩니다(예약 실행은 크론 컨텍스트에서만 우회). 업비트에는 모의계좌가 없습니다 — 여기서 낸 주문은 전부 실주문입니다."
+        "description": "업비트 공개 시세 액션. 계좌·주문·입출금은 이 모듈에 없습니다 — `upbit` 모듈입니다."
       },
       "market": {
         "type": "string",
@@ -400,74 +378,5 @@
     },
     "additionalProperties": true
   },
-  "requiresApproval": [
-    "order-create",
-    "order-cancel",
-    "order-cancel-and-new",
-    "order-cancel-uuids",
-    "order-cancel-open",
-    "withdraw-coin",
-    "withdraw-krw",
-    "withdraw-cancel",
-    "deposit-krw",
-    "deposit-create-address"
-  ],
-  "ws": {
-    "endpoint": "wss://api.upbit.com/websocket/v1/private",
-    "matchField": "type",
-    "keepalive": "PING",
-    "login": {
-      "headers": {
-        "Authorization": "Bearer {JWT}"
-      },
-      "jwt": {
-        "algorithm": "HS512",
-        "accessKeySecret": "UPBIT_ACCESS_KEY",
-        "secretKeySecret": "UPBIT_SECRET_KEY",
-        "accessClaim": "access_key",
-        "nonceClaim": "nonce"
-      }
-    },
-    "streams": {
-      "myOrder": {
-        "description": "My order and fill events. Fires the moment the exchange books a fill, instead of the next poll.",
-        "subscribe": {
-          "frame": [
-            {
-              "ticket": "firebat-myorder"
-            },
-            {
-              "type": "myOrder",
-              "codes": [
-                "{codes?}"
-              ]
-            },
-            {
-              "format": "DEFAULT"
-            }
-          ]
-        },
-        "realtimeMatch": "myOrder",
-        "routeItemPath": "code"
-      },
-      "myAsset": {
-        "description": "My balance changes. Whole account — the frame carries every asset that moved.",
-        "subscribe": {
-          "frame": [
-            {
-              "ticket": "firebat-myasset"
-            },
-            {
-              "type": "myAsset"
-            },
-            {
-              "format": "DEFAULT"
-            }
-          ]
-        },
-        "realtimeMatch": "myAsset"
-      }
-    }
-  },
-  "hubSafe": false
+  "hubSafe": true
 }

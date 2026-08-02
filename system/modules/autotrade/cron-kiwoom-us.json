@@ -25,7 +25,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_kiwoom-quotes",
+          "tool": "sysmod_kiwoom",
           "inputData": {
             "action": "get_candles",
             "bars": 300
@@ -66,7 +66,7 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_kiwoom",
+      "tool": "sysmod_kiwoom-trade",
       "inputData": {
         "action": "list_open_orders"
       },
@@ -93,7 +93,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_kiwoom",
+          "tool": "sysmod_kiwoom-trade",
           "inputData": "$prev.input"
         }
       ]
@@ -111,7 +111,7 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_kiwoom",
+      "tool": "sysmod_kiwoom-trade",
       "inputData": {
         "action": "list_fills"
       },
@@ -122,7 +122,7 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_kiwoom",
+      "tool": "sysmod_kiwoom-trade",
       "inputData": {
         "action": "list_open_orders"
       },
@@ -133,7 +133,7 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_kiwoom",
+      "tool": "sysmod_kiwoom-trade",
       "inputData": {
         "action": "get_balance"
       },

@@ -1,9 +1,8 @@
 /**
- * Firebat System Module: upbit-quotes (시세·차트)
+ * Firebat System Module: upbit (계좌·주문·입출금)
  *
- * 업비트 Open API 중 **공개 엔드포인트만** — 캔들·체결·호가·티커·마켓 목록.
- * 계좌를 못 읽고 주문을 못 냅니다: 그 액션이 선언에 없고, 이 모듈은 API 키를 선언하지 않아
- * 샌드박스가 키를 주입하지 않습니다.
+ * 업비트 Open API 중 **개인 키가 필요한 절반** — 계좌·잔고·주문·입출금·환전.
+ * 시세·차트는 `upbit` 에 있습니다. hub 인스턴스에는 이 모듈을 허용하지 마십시오.
  *
  * The dialect itself is in `_runtime/upbit-api.mjs`, shared with the other half. What separates
  * the two modules is `config.json`: which actions it declares, and whether it declares the API

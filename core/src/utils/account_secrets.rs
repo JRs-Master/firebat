@@ -43,6 +43,25 @@ pub fn registry_key(module: &str) -> String {
     format!("module-accounts:{module}")
 }
 
+/// The sibling a module inherits its primary account from.
+///
+/// A broker split into a quote half and a trading half is one relationship. Both halves need a
+/// credential — these venues want a token even for a chart — and the account that answers "who
+/// are we, at this broker" is the same one. So the primary is registered once, on the base
+/// module, and the trading half inherits it; the accounts you actually place orders in are
+/// registered on the trading half, where they belong and where nothing else can see them.
+///
+/// Nothing widens. What a caller may *do* is the action list, and the quote half has no order or
+/// account action in it.
+pub fn credential_scope(config: &serde_json::Value) -> Option<String> {
+    config
+        .get("credentialScope")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 /// One registered account. The credentials live in the vault under [`secret_key`]; this is the
 /// index — what the account is called, whether it is real or mock, and which markets it may trade.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -128,6 +147,34 @@ impl AccountRegistry {
             .get_secret(&registry_key(module))
             .map(|raw| Self::parse(&raw))
             .unwrap_or_default()
+    }
+
+    /// This module's accounts, plus the primary it inherits from its sibling.
+    ///
+    /// The base module holds the broker relationship — one primary, used for quotes and for any
+    /// call that names no account. The trading half registers the accounts orders go to. Merging
+    /// rather than choosing means neither half has to know about the other's list, and an alias
+    /// registered here always wins over an inherited one of the same name.
+    pub fn load_with_base(
+        vault: &dyn crate::ports::IVaultPort,
+        module: &str,
+        base: Option<&str>,
+    ) -> Self {
+        let mut own = Self::load(vault, module);
+        let Some(base) = base.filter(|b| !b.is_empty() && *b != module) else {
+            return own;
+        };
+        let inherited = Self::load(vault, base);
+        let Some(primary) = inherited.primary_entry().cloned() else {
+            return own;
+        };
+        if !own.accounts.iter().any(|a| a.id == primary.id) {
+            own.accounts.push(primary.clone());
+        }
+        if own.primary.is_none() {
+            own.primary = Some(primary.id);
+        }
+        own
     }
 
     pub fn is_empty(&self) -> bool {

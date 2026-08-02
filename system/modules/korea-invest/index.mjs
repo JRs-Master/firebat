@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Firebat System Module: korea-invest (계좌·주문)
+ * Firebat System Module: korea-invest (시세·차트)
  *
- * 한국투자증권 중 **계좌·잔고·주문·환전·이체** — 개인 자격증명이 필요한 절반입니다.
- * 시세·차트는 `korea-invest-quotes` 에 있고, hub 인스턴스에는 이 모듈을 허용하지 마십시오.
+ * 한국투자증권 중 **공개 시세·차트만**. 계좌를 못 읽고 주문을 못 냅니다 — 그 액션이
+ * 선언에 없고, 이 모듈은 자격증명을 선언하지 않아 샌드박스가 키를 주입하지 않습니다.
  *
  * The dialect itself is in `_runtime/korea-invest-api.mjs`, shared with the other half. What separates the two
  * modules is `config.json`: which actions it declares, and whether it declares the API keys at

@@ -404,9 +404,13 @@ impl ModuleManager {
             .filter(|c| c.get("accounts").is_some())
         {
             Some(cfg) => {
-                let reg = crate::utils::account_secrets::AccountRegistry::load(
+                // Its own accounts, plus the primary inherited from the base module a split
+                // broker declares — the relationship is registered once and the trading half
+                // adds the accounts orders go to.
+                let reg = crate::utils::account_secrets::AccountRegistry::load_with_base(
                     self.vault.as_ref(),
                     module_name,
+                    crate::utils::account_secrets::credential_scope(cfg).as_deref(),
                 );
                 let requested = input_data.get("account").and_then(|v| v.as_str());
                 let entry = reg
@@ -1213,7 +1217,7 @@ impl ModuleManager {
         // changed — picks up the right credentials the next time it connects instead of hunting
         // for a module-wide key that is no longer there.
         let (account, mock) = if config.get("accounts").is_some() {
-            let reg = self.account_registry(&meta.module);
+            let reg = self.account_registry_effective(&meta.module).await;
             let requested = meta.args.get("account").and_then(|v| v.as_str());
             let entry = reg.resolve(requested)?.ok_or_else(|| {
                 format!(
@@ -1576,6 +1580,22 @@ impl ModuleManager {
     /// Accounts registered for this module (the index, never the credentials).
     pub fn account_registry(&self, module: &str) -> crate::utils::account_secrets::AccountRegistry {
         crate::utils::account_secrets::AccountRegistry::load(self.vault.as_ref(), module)
+    }
+
+    /// The registry a call runs against — own accounts plus the base module's primary.
+    pub async fn account_registry_effective(
+        &self,
+        module: &str,
+    ) -> crate::utils::account_secrets::AccountRegistry {
+        let base = self
+            .module_config(module)
+            .await
+            .and_then(|c| crate::utils::account_secrets::credential_scope(&c));
+        crate::utils::account_secrets::AccountRegistry::load_with_base(
+            self.vault.as_ref(),
+            module,
+            base.as_deref(),
+        )
     }
 
     pub fn save_account_registry(

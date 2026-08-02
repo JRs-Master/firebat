@@ -22,7 +22,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_upbit-quotes",
+          "tool": "sysmod_upbit",
           "inputData": "$prev.args"
         }
       ]

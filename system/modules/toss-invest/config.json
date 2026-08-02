@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "토스증권 Open API (openapi.tossinvest.com) — 국내(KRX/NXT)·미국 주식 통합. OAuth2 client_credentials (액세스 토큰 24h, 인프라가 자동 발급·갱신, 토큰 코드 0). 토스 태그 그대로 도메인별 별도 LLM 도구로 분리 노출.\n\n**사용 분담** (한투/키움/yfinance/dart 와 보완):\n- toss 강점: **국내 + 미국 주식을 단일 토큰**으로 시세·캔들·계좌·주문까지. 가벼운 OAuth(서버 인증, 사용자 로그인 없음). 미국 소수점·금액 주문 지원.\n- 한투/키움 우선: 한국 특유 수급·다양한 TR·선물옵션.\n- dart 우선: 공시·재무제표 / yfinance 우선: 글로벌 백테스트.\n\n**계좌 컨텍스트**: holdings·orders·order-info·주문 도구는 `accountSeq` 필수 — 먼저 account 도구의 `accounts` 로 계좌 목록을 받아 accountSeq 를 얻은 뒤 그 값을 전달한다(인프라가 X-Tossinvest-Account 헤더로 변환).\n\n**심볼**: 국내=6자리 종목코드(예 005930), 미국=티커(예 AAPL). prices/stocks 는 콤마로 최대 200건.\n\n**주문 주의**: 주문·조건주문의 생성·정정(수정)·취소는 **즉시 실제 체결 시스템에 전송**된다(한투/키움 주문과 동일, 별도 확인 단계 없음). clientOrderId 로 멱등성 보장(10분 유효). 가격·수량은 모두 문자열.\n\n**조건주문**: 브로커 서버가 가격을 감시해 조건 충족 시 자동 매매 — cron 없이 서버사이드 예약 매매(SINGLE/OCO/OTO). 수정은 취소+재생성이라 새 conditionalOrderId 로 교체된다.",
+  "description": "토스증권 공개 시세·차트. 계좌·주문은 이 모듈에 없습니다 — `toss-invest` 입니다. 자격증명을 선언하지 않으므로 샌드박스가 키를 주입하지 않습니다. hub 에 허용해도 안전한 쪽입니다. ⚠️ 이 증권사는 시세에도 토큰이 필요해 자격증명을 선언합니다 — 경계는 액션 선언이 집니다(계좌·주문 액션이 이 모듈에 없음).",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
@@ -11,14 +11,6 @@
     "file": "actions.json",
     "envelope": "{ \"action\": \"<id>\", <params flat at top level — no params wrapper> }"
   },
-  "requiresApproval": [
-    "create-order",
-    "modify-order",
-    "cancel-order",
-    "create-conditional-order",
-    "modify-conditional-order",
-    "cancel-conditional-order"
-  ],
   "timeseries": {
     "candles": {
       "fetchMode": "cursor",
@@ -36,33 +28,6 @@
       ]
     }
   },
-  "secrets": [
-    {
-      "name": "TOSS_API_KEY",
-      "type": "key"
-    },
-    {
-      "name": "TOSS_SECRET_KEY",
-      "type": "key"
-    },
-    {
-      "name": "TOSS_ACCESS_TOKEN",
-      "type": "token",
-      "lifetimeSec": 85800,
-      "oauth": {
-        "base": "https://openapi.tossinvest.com",
-        "path": "/oauth2/token",
-        "method": "POST",
-        "contentType": "application/x-www-form-urlencoded",
-        "body": {
-          "grant_type": "client_credentials",
-          "client_id": "${TOSS_API_KEY}",
-          "client_secret": "${TOSS_SECRET_KEY}"
-        },
-        "tokenField": "access_token"
-      }
-    }
-  ],
   "domains": [
     {
       "name": "market-data",
@@ -187,19 +152,25 @@
       "action": {
         "type": "string",
         "enum": [
-          "accounts",
-          "list-orders",
-          "order-detail",
-          "create-order",
-          "modify-order",
-          "cancel-order",
-          "create-conditional-order",
-          "modify-conditional-order",
-          "cancel-conditional-order",
-          "list-conditional-orders",
-          "conditional-order-detail"
+          "orderbook",
+          "prices",
+          "trades",
+          "price-limits",
+          "candles",
+          "stocks",
+          "stock-warnings",
+          "exchange-rate",
+          "market-calendar",
+          "holdings",
+          "buying-power",
+          "sellable-quantity",
+          "commissions",
+          "rankings",
+          "market-indicator-prices",
+          "market-indicator-candles",
+          "investor-trading"
         ],
-        "description": "호출할 토스증권 API. 도메인별 도구에서 해당 도메인 action 만 노출됨."
+        "description": "토스증권 공개 시세 액션. 계좌·주문·환전은 이 모듈에 없습니다 — `toss-invest` 모듈입니다."
       },
       "accountSeq": {
         "type": "integer",
@@ -468,5 +439,32 @@
     "계좌",
     "거래소 구분: KRX · NXT(넥스트레이드 대체거래소) · US — market 파라미터"
   ],
-  "hubSafe": false
+  "hubSafe": true,
+  "secrets": [
+    {
+      "name": "TOSS_API_KEY",
+      "type": "key"
+    },
+    {
+      "name": "TOSS_SECRET_KEY",
+      "type": "key"
+    },
+    {
+      "name": "TOSS_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 85800,
+      "oauth": {
+        "base": "https://openapi.tossinvest.com",
+        "path": "/oauth2/token",
+        "method": "POST",
+        "contentType": "application/x-www-form-urlencoded",
+        "body": {
+          "grant_type": "client_credentials",
+          "client_id": "${TOSS_API_KEY}",
+          "client_secret": "${TOSS_SECRET_KEY}"
+        },
+        "tokenField": "access_token"
+      }
+    }
+  ]
 }

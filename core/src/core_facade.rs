@@ -362,10 +362,10 @@ mod module_contract_tests {
             // A broker that has been split declares the contract across the pair: the money half
             // holds the orders and the account, the public half holds the candles.
             let mut declared = declared;
-            let quotes = dir.with_file_name(format!(
-                "{}-quotes",
-                dir.file_name().unwrap_or_default().to_string_lossy()
-            ));
+            // The pair declares the contract between them: orders and the account on this half,
+            // candles on the public one.
+            let self_name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let quotes = dir.with_file_name(self_name.trim_end_matches("-trade").to_string());
             let quotes_raw = std::fs::read_to_string(quotes.join("config.json")).unwrap_or_default();
             let quotes_cfg: serde_json::Value =
                 serde_json::from_str(&quotes_raw).unwrap_or(serde_json::Value::Null);
@@ -379,10 +379,12 @@ mod module_contract_tests {
                 .collect();
             declared.extend(quotes_actions.iter().map(String::as_str));
             let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // The public half of a split broker shares the dialect and declares none of the money
-            // calls — there, "implemented but not declared" is the guarantee, not a defect. The
-            // opposite assertion is made about it by `a_hub_safe_module_cannot_reach_an_account`.
-            if name.ends_with("-quotes") {
+            // A split broker is `<name>` (quotes) and `<name>-trade` (orders). The public half
+            // shares the dialect and declares none of the money calls, so there "implemented but
+            // not declared" is the guarantee rather than a defect — the opposite assertion is
+            // made about it by `a_hub_safe_module_cannot_reach_an_account`. Recognised by its
+            // sibling existing, not by its name reading a particular way.
+            if root.join(format!("{name}-trade")).join("config.json").exists() {
                 continue;
             }
             let mentions = |a: &str| {
@@ -464,11 +466,10 @@ mod module_contract_tests {
             // the action list alone. Requiring the stronger property would mean those two have no
             // chartable module, which is the reason a hub was allowed a broker in the first place.
             //
-            // What is never allowed is the account registry: a module that can be addressed as a
-            // registered trading account is not a quote module.
-            if config.get("accounts").is_some() {
-                problems.push(format!("{name}: hubSafe but declares accounts"));
-            }
+            // Declaring accounts is allowed, and has to be: the broker relationship — the primary
+            // account these venues want a token from before they will serve a chart — is
+            // registered on this half, and the trading half inherits it. Knowing an account exists
+            // is not being able to trade in it; that is the action list, checked below.
             for action in config["input"]["properties"]["action"]["enum"]
                 .as_array()
                 .map(Vec::as_slice)

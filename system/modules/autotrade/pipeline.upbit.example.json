@@ -40,7 +40,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_upbit-quotes",
+          "tool": "sysmod_upbit",
           "inputData": {
             "action": "get_candles",
             "bars": 300
@@ -79,7 +79,7 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_upbit",
+      "tool": "sysmod_upbit-trade",
       "inputData": {
         "action": "list_open_orders"
       }
@@ -102,7 +102,7 @@
       "steps": [
         {
           "type": "TOOL_CALL",
-          "tool": "sysmod_upbit",
+          "tool": "sysmod_upbit-trade",
           "inputData": "$prev.input"
         }
       ]
@@ -120,21 +120,21 @@
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_upbit",
+      "tool": "sysmod_upbit-trade",
       "inputData": {
         "action": "list_fills"
       }
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_upbit",
+      "tool": "sysmod_upbit-trade",
       "inputData": {
         "action": "list_open_orders"
       }
     },
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_upbit",
+      "tool": "sysmod_upbit-trade",
       "inputData": {
         "action": "get_balance"
       }
