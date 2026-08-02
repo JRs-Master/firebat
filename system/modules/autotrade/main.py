@@ -1158,6 +1158,13 @@ def action_cycle(inp, settings):
                 "mode": ctx["mode"], "state": "intent", "reason": intent.get("reason"),
             }
             if not store.insert_order(wconn, order):
+                # This window already produced this order. Usually that is the guard working — a
+                # re-run, an overlapping cron, a restart mid-flight — and saying so is how a
+                # dropped intent stays distinguishable from a rule that never fired.
+                results.append({"strategyId": s["id"], "symbol": intent["symbol"],
+                                "side": intent["side"], "qty": intent["qty"],
+                                "skipped": "already placed in this window",
+                                "cycleId": intent["cycleId"], "seq": intent.get("seq", 0)})
                 continue
             if ctx["mode"] == "dryrun":
                 # Paper fill at the intent price. Optimistic on purpose and labelled as such: a
@@ -2895,6 +2902,14 @@ def action_selftest():
     checks.append({"name": "an unreadable ladder sells nothing rather than guessing", "want": [],
                    "got": [i["qty"] for i in _lad_at(lad_broken, 10, 10, 112.0)],
                    "ok": not _lad_at(lad_broken, 10, 10, 112.0)})
+
+    # 같은 봉 안에서 두 칸이 차례로 나가야 할 때 — 주문키가 (전략,종목,side,창,순번) 이라
+    # 순번이 없으면 두 번째 칸이 첫 번째와 부딪혀 조용히 사라진다.
+    lad_seq = [i.get("seq") for i in _lad_at(lad_two, 10, 10, 103.5)]
+    lad_seq2 = [i.get("seq") for i in _lad_at(lad_two, 5, 10, 109.0)]
+    checks.append({"name": "each rung carries its own place in the window",
+                   "want": [[1], [2]], "got": [lad_seq, lad_seq2],
+                   "ok": lad_seq == [1] and lad_seq2 == [2]})
 
     # 사다리 진행도는 원장에서 접는다 — 컬럼으로 두면 원장과 갈라질 수 있다. 원장은 append-only
     # 라 지울 수도 없으므로, 이 검사는 실제 장부가 아니라 같은 스키마의 임시 DB 에서 돈다.

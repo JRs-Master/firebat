@@ -256,8 +256,12 @@ def strategy_rules(strategy, ctx):
                                      money.get("lotSize", 1))
         if part > 0:
             whole = part >= qty_held - 1e-12
+            # The rung is the order's sequence within the window. Without it the second rung to
+            # fire in the same bar collides with the first on the order key and is dropped —
+            # safe, but it would look like the ladder simply stopped.
             return [{"side": "sell", "qty": part, "price": price, "reason": "take",
-                     "rung": (rung or 0) + 1, "rungs": len(ladder), "partial": not whole}]
+                     "seq": (rung or 0) + 1, "rung": (rung or 0) + 1, "rungs": len(ladder),
+                     "partial": not whole}]
 
     sides = ctx["sides"]
     if "sell" in sides and qty_held > 0:
