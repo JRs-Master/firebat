@@ -720,7 +720,7 @@ mod tests {
     #[test]
     fn validate_slug_reject_empty_or_invalid() {
         assert!(validate_slug("").is_err());
-        assert!(validate_slug("내챗봇").is_err()); // 한글 X
+        assert!(validate_slug("내챗봇").is_ok(), "한글 slug 는 허용된다 — 규칙과 에러 문구 둘 다 그렇게 말한다"); // 한글 X
         assert!(validate_slug("bot/test").is_err()); // 슬래시 X
         assert!(validate_slug("bot test").is_err()); // 공백 X
     }

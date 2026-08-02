@@ -1073,7 +1073,7 @@ mod tests {
                 "type": "TOOL_CALL",
                 "tool": "sysmod_technical_analysis",
                 "inputData": "$prev.args",
-                "inputMap": {"barsCacheKey": "$step1._cacheKey"}
+                "inputMap": {"barsCacheKey": "$step0._cacheKey"}
             }]
         }))
         .expect("FOREACH should parse");
@@ -1081,6 +1081,7 @@ mod tests {
         let PipelineStep::ToolCall { input_data, input_map, .. } = &steps[0] else {
             panic!("wrong inner variant")
         };
+        // `$stepN` indexes the pipeline array from zero: the fetch is step 0, the plan step 1.
         let outer = vec![json!({"_cacheKey": "k-1"}), json!({"runs": []})];
         let item = json!({"args": {"action": "signals", "rules": []}});
         let resolved = resolve_pipeline_input(input_data, input_map, &item, &outer);

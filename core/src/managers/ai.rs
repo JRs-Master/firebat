@@ -1942,7 +1942,21 @@ impl AiManager {
                 // Widget = anonymous embed → apply the single permission gate (same hub_context::permits_tool as
                 // the hosted mcp_server path, no drift): core sysmods + allowed_sysmods + read-only + render_* +
                 // owner-scoped writes. Owner-scoping of allowed writes is per-tool (confine_hub_path / project-match).
-                if !ctx.full_tools {
+                if ctx.full_tools {
+                    // Tenant = a full workspace, so the widget gate does not apply to its
+                    // builtin tools. Its *sysmods* are a different question: until per-tenant
+                    // secrets land it runs on the operator's vault, so every module it reaches
+                    // spends the operator's keys. What it may reach is what the operator listed,
+                    // plus the core sidebar pair. When a tenant holds its own keys this whole
+                    // branch goes away — deliberately, once.
+                    tools_built.retain(|t| {
+                        !t.name.starts_with("sysmod_")
+                            || crate::utils::hub_context::permits_tool(
+                                &t.name,
+                                &ctx.allowed_sysmods,
+                            )
+                    });
+                } else {
                     tools_built
                         .retain(|t| crate::utils::hub_context::permits_tool(&t.name, &ctx.allowed_sysmods));
                 }

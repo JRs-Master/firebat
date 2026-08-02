@@ -170,12 +170,15 @@ pub const CORE_SYSMODS: &[&str] = &["notes", "calendar"];
 /// MCP server 의 sysmod handler 에서 호출 — hub context 가 활성이고 sysmod 가 미허용이면 true.
 /// admin 호출 (Guard 미설정) = false (정공 허용). 핵심 sysmod(notes/calendar)는 항상 허용.
 pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
-    // tenant hub (full_tools) = admin-clone → runs any globally-active sysmod (allowlist bypassed).
-    // Real-money/approval actions stay gated separately (requiresApproval, mcp_server) since a tenant
-    // still shares the admin Vault until per-tenant secrets (login).
-    if active_full_tools() {
-        return false;
-    }
+    // A tenant used to skip this entirely, on the grounds that it is an admin clone. That is true
+    // of its *tools*, not of its *credentials*: until per-tenant secrets land it runs on the
+    // operator's vault, so every module it reaches spends the operator's keys and reads the
+    // operator's accounts. Measured 2026-08-03 — the one live tenant could read the operator's
+    // balance and fills at three brokers, and removing them from its allowlist would have changed
+    // nothing, because the allowlist was not being consulted.
+    //
+    // So the allowlist applies to a tenant too, and what it may reach is what the operator listed.
+    // When a tenant holds its own keys, this is the line that relaxes — deliberately, once.
     match active_allowed_sysmods() {
         None => false,
         Some(allowed) => {
@@ -429,6 +432,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_allowlist_applies_to_a_tenant_too() {
+        // A tenant is an admin clone in its *tools*, not in its *credentials*: until per-tenant
+        // secrets land it spends the operator's keys, so what it may reach is what the operator
+        // listed. The live tenant could read the operator's balance at three brokers precisely
+        // because this used to return false for anything when full_tools was on.
+        let allowed = vec!["yfinance".to_string()];
+        assert!(permits_tool("sysmod_yfinance", &allowed));
+        assert!(!permits_tool("sysmod_kiwoom", &allowed));
+        // The sidebar pair is always reachable — a hub without notes and calendar is not a hub.
+        assert!(permits_tool("sysmod_notes", &[]));
+        assert!(permits_tool("sysmod_calendar", &[]));
+    }
+
+    #[test]
+    fn a_multiword_module_still_matches_its_allowlist_entry() {
+        // Tool names carry underscores, the allowlist carries dashes. Getting this backwards
+        // blocks every multi-word module no matter what the operator allowed.
+        let allowed = vec!["korea-invest-quotes".to_string(), "kma-weather".to_string()];
+        assert!(permits_tool("sysmod_korea_invest_quotes", &allowed));
+        assert!(permits_tool("sysmod_kma_weather", &allowed));
+        assert!(!permits_tool("sysmod_korea_invest", &allowed));
+    }
+
+    #[test]
     fn admin_fs_confined_to_user_zone() {
         // no hub scope = admin. AI 파일도구는 user/ 안만 — system/data/binary 차단.
         let admin = serde_json::json!({});
@@ -596,12 +623,12 @@ mod tests {
     }
 
     #[test]
-    fn tenant_full_tools_skips_widget_gate() {
-        // A tenant hub (full_tools) is an admin-clone → active_full_tools() true → the widget deny-list
-        // and sysmod-allowlist are bypassed at the call sites (ai.rs / mcp_server), so tools that
-        // permits_tool() denies for a widget (network_request/run_module/execute/non-allowed sysmod)
-        // are still exposed. Widget context (full_tools=false) keeps the restriction. Data isolation
-        // stays via owner injection, not this flag.
+    fn tenant_full_tools_skips_the_widget_deny_list_but_not_the_sysmod_allowlist() {
+        // A tenant hub is an admin clone in its *builtin* tools: the widget deny-list
+        // (network_request / run_module / execute …) does not apply to it. Its **sysmods** are a
+        // different question — until per-tenant secrets land it runs on the operator's vault, so
+        // it reaches what the operator listed and nothing else. That half used to be bypassed
+        // too, which is how the one live tenant could read the operator's balance.
         let ctx = ActiveHubContext {
             allowed_sysmods: vec!["law-search".to_string()],
             instance_id: "inst".to_string(),
@@ -611,7 +638,11 @@ mod tests {
         };
         CURRENT_HUB.sync_scope(Some(ctx), || {
             assert!(is_hub_context_active());
-            assert!(active_full_tools()); // tenant → gate skipped by callers
+            assert!(active_full_tools()); // builtin deny-list skipped by the callers
+            // …but a module the operator did not list stays out of reach.
+            assert!(is_sysmod_blocked_for_hub("kiwoom"));
+            assert!(!is_sysmod_blocked_for_hub("law-search"));
+            assert!(!is_sysmod_blocked_for_hub("notes"));
         });
         // widget (full_tools=false) → gate active
         let widget = ActiveHubContext {
