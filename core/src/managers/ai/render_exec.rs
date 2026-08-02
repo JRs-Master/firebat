@@ -1054,7 +1054,6 @@ mod tests {
     /// 회귀 대상: tool_mode 거부 후 모델이 손에 있던 결과 payload 를 그대로 fence 에 넣어
     /// 답변 전체가 텍스트로 떨어졌다(2026-07-28 태풍/서울 날씨 실측).
     #[test]
-    #[ignore = "render_blocks errors on the {name, type: component} shape the render tool emits, so the fence is dropped whole — may be live breakage, not a stale test"]
     fn fence_absorbs_render_tool_output_shape() {
         let text = "설명
 

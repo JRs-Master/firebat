@@ -55,7 +55,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Free disk space (remove preinstalled SDKs)
         # 러너 기본 디스크(~14GB free)가 거대 deps 테스트 바이너리로 부족(os error 28). 안 쓰는
@@ -100,7 +100,7 @@ jobs:
     needs: [rust]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Free disk space (remove preinstalled SDKs)
         run: |
@@ -133,7 +133,7 @@ jobs:
           cp target/release/firebat-core artifact/
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: firebat-core-linux-x86_64
           # zip 안 내용 = firebat-core 단일 파일. unzip 즉시 FTP 업로드 가능.

@@ -45,7 +45,14 @@ pub fn components() -> &'static Vec<ComponentDef> {
 
 /// `name` 으로 컴포넌트 lookup. 옛 TS `COMPONENTS.find(c => c.name === name)` 1:1.
 pub fn find_component(name: &str) -> Option<&'static ComponentDef> {
-    components().iter().find(|c| c.name == name)
+    components()
+        .iter()
+        .find(|c| c.name == name)
+        // …or by the React type the render tool puts in its own output. The registry key is
+        // `header` and the tool emits `Header`, so feeding the tool's output back through the
+        // fence — which is exactly what a model does when told "emit these as a fence" — found
+        // nothing and dropped the block. Accepting both closes the round trip.
+        .or_else(|| components().iter().find(|c| c.component_type == name))
 }
 
 /// 모든 컴포넌트 이름 목록. 디버깅·logging 용.
