@@ -202,7 +202,8 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             # Where a trade runs lives on the trade, not on the rule — a rule reused elsewhere
             # would otherwise carry the first account with it and place orders in the wrong one.
             s = {**s, "broker": s.get("broker") or trade.get("broker"),
-                 "account": s.get("account") or trade.get("account")}
+                 "account": s.get("account") or trade.get("account"),
+                 "market": s.get("market") or trade.get("market")}
         if s.get("symbol") or not (trade and trade.get("conditionName")):
             expanded.append(s)
             continue
@@ -576,6 +577,10 @@ def action_gate(inp, settings):
     # broker case, unchanged.
     only_broker = str(inp.get("broker") or "").strip()
     only_account = str(inp.get("account") or "").strip()
+    # And the market, because one credential can cover both: Korea Investment's practice account
+    # trades Seoul and New York, on different endpoints and at different hours, so the two are two
+    # schedules sharing one account.
+    only_market = str(inp.get("market") or "").strip().lower()
     if not settings.get("tradingEnabled"):
         reasons.append("trading is switched off in the module settings")
     start, end = settings.get("activeFrom"), settings.get("activeUntil")
@@ -611,10 +616,12 @@ def action_gate(inp, settings):
         pipeline_trades = [t for t in pipeline_trades if t.get("broker") == only_broker]
     if only_account:
         pipeline_trades = [t for t in pipeline_trades if t.get("account") == only_account]
-    if (only_broker or only_account) and not pipeline_trades and not reasons:
+    if only_market:
+        pipeline_trades = [t for t in pipeline_trades if t.get("market") == only_market]
+    if (only_broker or only_account or only_market) and not pipeline_trades and not reasons:
         # Not a fault: the other broker's schedule is running its own trades right now. Saying so
         # by name keeps it from reading as "nothing is configured".
-        where = " / ".join(x for x in (only_broker, only_account) if x)
+        where = " / ".join(x for x in (only_broker, only_account, only_market) if x)
         reasons.append(f"no declared trade runs at {where}")
 
     return {"success": True, "data": {
@@ -641,8 +648,11 @@ def action_gate(inp, settings):
         # fitted per symbol, so two coins are two rules on two timeframes, and a pipeline that can
         # only express one of them makes the fitting pointless.
         "trades": pipeline_trades,
-        "scopedTo": {"broker": only_broker or None, "account": only_account or None}
-                    if (only_broker or only_account) else None,
+        # Echoed so the steps behind this one need the alias written down once, here, instead of
+        # in every query step of the schedule.
+        "scopedTo": {"broker": only_broker or None, "account": only_account or None,
+                     "market": only_market or None}
+                    if (only_broker or only_account or only_market) else None,
     }}
 
 

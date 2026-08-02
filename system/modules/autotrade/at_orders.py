@@ -43,14 +43,22 @@ def broker_call(order, strategy):
         "orderType": order.get("ord_type") or "limit",
         "clientOrderId": order["order_key"],
     }
+    # The price goes out even on a market order. Kiwoom drops it — a market order there carries no
+    # unit price and sending one is refused — while Korea Investment's overseas endpoint has no
+    # plain market order at all and prices a marketable limit off it. Stating what we know and
+    # letting the dialect decide is the only version where a stop is executable at both.
     price = order.get("req_price")
-    if call["orderType"] != "market" and price:
+    if price:
         call["price"] = _plain(price)
     exchange = (strategy.get("orders") or {}).get("exchange")
     if exchange:
         call["exchange"] = exchange
     if order.get("account"):
         call["account"] = order["account"]
+    # Which market, when the trade said so. A broker fronting both routes on it; one that fronts
+    # a single market ignores it.
+    if strategy.get("market"):
+        call["market"] = strategy["market"]
     # Mock is decided by the account the strategy names, and the framework resolves that — passing
     # it here too would be a second source of truth for the same thing.
     return {"module": order["broker"], "input": call}

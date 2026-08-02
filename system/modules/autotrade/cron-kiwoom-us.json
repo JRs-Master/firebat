@@ -1,0 +1,158 @@
+{
+  "title": "autotrade (해외주식/키움) — 전 종목 사이클",
+  "cronTime": "0 */5 13-20 * * 1-5",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate",
+        "broker": "kiwoom",
+        "account": "모의해외",
+        "market": "us"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step0.trades",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_kiwoom",
+          "inputData": {
+            "action": "get_candles",
+            "bars": 300
+          },
+          "inputMap": {
+            "symbol": "$prev.symbol",
+            "interval": "$prev.interval",
+            "account": "$prev.account",
+            "market": "$prev.market"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "bind_bars",
+        "feeRate": 0.0025,
+        "taxRate": 0.0,
+        "slippageRate": 0.0005
+      },
+      "inputMap": {
+        "trades": "$step0.trades",
+        "fetched": "$step2.results"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step3.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "cycle"
+      },
+      "inputMap": {
+        "plan": "$step3",
+        "signals": "$step4.results",
+        "openOrders": "$step5.rows"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step6.calls",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_kiwoom",
+          "inputData": "$prev.input"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step6.calls",
+        "results": "$step7.results"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "get_balance"
+      },
+      "inputMap": {
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "fills": "$step9.rows",
+        "openOrders": "$step10.rows",
+        "balanceRows": "$step11.rows"
+      }
+    }
+  ]
+}

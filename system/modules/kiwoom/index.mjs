@@ -777,6 +777,27 @@ function kstToday() {
 // of its own, so the caller's ledger is the only thing that can tell "sent twice" from "filled
 // twice", and it needs the same id back to do it.
 const ORDER_TRADE_TYPE = { limit: '0', market: '3', conditional: '5', best: '6', priority: '7' };
+// The US side is a different family of endpoints with its own vocabulary: two-digit trade types,
+// an exchange code rather than a domestic-exchange flag, and a separate account ledger. Same six
+// neutral calls though — a strategy written for Seoul runs in New York by naming the market.
+const US_TRADE_TYPE = { limit: '00', market: '03', loc: '30', moc: '33' };
+const US_EXCHANGE = { NASD: 'ND', NASDAQ: 'ND', ND: 'ND', NYSE: 'NY', NY: 'NY',
+                      AMEX: 'NA', NA: 'NA' };
+
+function isUs(data) {
+  const m = String(data.market ?? '').toLowerCase();
+  if (m === 'us') return true;
+  if (m === 'kr') return false;
+  // Unstated: a six-digit code is a KRX listing and a ticker is not.
+  return !/^\d{6}$/.test(String(data.symbol ?? '').trim());
+}
+
+function usStex(data, name) {
+  const raw = String(data.stexTp ?? data.exchange ?? 'ND').toUpperCase();
+  const code = US_EXCHANGE[raw];
+  if (!code) throw new Error(`${name}: 미국 거래소 '${raw}' 는 지원하지 않습니다 — NASD, NYSE, AMEX.`);
+  return code;
+}
 
 function orderParams(data) {
   const symbol = String(data.symbol ?? '').trim();
@@ -821,12 +842,41 @@ function cancelParams(data) {
 
 /** Neutral action → { apiId, params }. Unknown side/action is refused rather than guessed. */
 function standardOrder(action, data) {
-  if (action === 'cancel_order') return { apiId: 'kt10003', params: cancelParams(data) };
+  const us = isUs(data);
+  if (action === 'cancel_order') {
+    if (!us) return { apiId: 'kt10003', params: cancelParams(data) };
+    const orderNo = String(data.brokerOrderNo ?? '').trim();
+    const symbol = String(data.symbol ?? '').trim();
+    if (!orderNo) throw new Error('cancel_order: brokerOrderNo 가 필요합니다.');
+    if (!symbol) throw new Error('cancel_order: symbol 이 필요합니다.');
+    return { apiId: 'ust20003', params: {
+      orig_ord_no: orderNo, stex_tp: usStex(data, 'cancel_order'), stk_cd: symbol } };
+  }
   const side = String(data.side ?? '').toLowerCase();
   if (side !== 'buy' && side !== 'sell') {
     throw new Error("place_order: side 는 'buy' 또는 'sell' 이어야 합니다.");
   }
-  return { apiId: side === 'buy' ? 'kt10000' : 'kt10001', params: orderParams(data) };
+  if (!us) return { apiId: side === 'buy' ? 'kt10000' : 'kt10001', params: orderParams(data) };
+  const symbol = String(data.symbol ?? '').trim();
+  const qty = Number(data.qty);
+  if (!symbol) throw new Error('place_order: symbol 이 필요합니다.');
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: qty 는 1 이상이어야 합니다.');
+  const type = String(data.orderType ?? 'limit').toLowerCase();
+  const trde_tp = US_TRADE_TYPE[type];
+  if (!trde_tp) {
+    throw new Error(`place_order: orderType='${type}' 은 미국 주문에 없습니다 — ${Object.keys(US_TRADE_TYPE).join(', ')}.`);
+  }
+  const price = Number(data.price);
+  if (type === 'limit' && !(price > 0)) {
+    throw new Error('place_order: 지정가 주문에는 price 가 필요합니다.');
+  }
+  const params = {
+    stk_cd: symbol, stex_tp: usStex(data, 'place_order'),
+    ord_qty: String(Math.trunc(qty)), trde_tp,
+  };
+  // A market order there takes an empty unit price, not a zero and not the last trade.
+  params.ord_uv = type === 'market' ? '' : String(price);
+  return { apiId: side === 'buy' ? 'ust20000' : 'ust20001', params };
 }
 
 
@@ -861,6 +911,21 @@ function exchangeOf(data, table, name) {
 /** Neutral query → { apiId, params }. */
 function standardQuery(action, data) {
   const symbol = String(data.symbol ?? '').trim();
+  if (isUs(data)) {
+    // The US ledger is its own set of endpoints; `stex_tp` may be left out to mean every exchange,
+    // which is what reconciling an account wants when it is not asking about one symbol.
+    const params = {};
+    if (symbol) {
+      params.stk_cd = symbol;
+      params.stex_tp = usStex(data, action);
+    }
+    if (action === 'get_balance') {
+      return { apiId: 'ust21070', params };
+    }
+    // 0 = both sides, which is what a reconciliation reads.
+    params.slby_tp = { sell: '1', buy: '2' }[String(data.side ?? '').toLowerCase()] || '0';
+    return { apiId: action === 'list_open_orders' ? 'ust21050' : 'ust21510', params };
+  }
   if (action === 'list_open_orders') {
     const params = {
       all_stk_tp: symbol ? '1' : '0',

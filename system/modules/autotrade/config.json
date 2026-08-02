@@ -42,7 +42,11 @@
   "schedules": [
     "cron-upbit.json",
     "cron-upbit-context.json",
-    "cron-revise.json"
+    "cron-revise.json",
+    "cron-kiwoom-kr.json",
+    "cron-kiwoom-us.json",
+    "cron-kis-kr.json",
+    "cron-kis-us.json"
   ],
   "input": {
     "type": "object",
@@ -361,6 +365,14 @@
           "string"
         ],
         "description": "[adopt] 모델이 낸 탐색 공간을 그대로. 채택되든 거부되든 이벤트에 남습니다 — 판정만 남기면 왜 그렇게 시도했는지가 사라집니다."
+      },
+      "market": {
+        "type": "string",
+        "enum": [
+          "kr",
+          "us"
+        ],
+        "description": "[gate] 시장으로도 한정합니다 — 한 계좌가 국내·해외를 다 트는 경우 둘은 서로 다른 스케줄입니다."
       }
     }
   },
