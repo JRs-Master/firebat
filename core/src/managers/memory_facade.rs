@@ -81,8 +81,9 @@ impl IMemoryFacadePort for MemoryFacade {
         self.episodic.cleanup_expired()
     }
 
-    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>> {
-        self.entity.find_entity_by_name(name)
+    fn find_entity_by_name(&self, name: &str, owner: Option<&str>)
+        -> InfraResult<Option<EntityRecord>> {
+        self.entity.find_entity_by_name(name, owner)
     }
     async fn save_entity(&self, input: SaveEntityInput) -> InfraResult<(i64, bool)> {
         self.entity.save_entity(input).await

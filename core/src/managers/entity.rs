@@ -35,8 +35,9 @@ impl EntityManager {
         self.port.get_entity(id)
     }
 
-    pub fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>> {
-        self.port.find_entity_by_name(name)
+    pub fn find_entity_by_name(&self, name: &str, owner: Option<&str>)
+        -> InfraResult<Option<EntityRecord>> {
+        self.port.find_entity_by_name(name, owner)
     }
 
     pub async fn search_entities(

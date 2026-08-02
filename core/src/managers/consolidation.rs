@@ -565,7 +565,7 @@ impl ConsolidationManager {
             }
             let entity_id = match entity_id_by_name.get(&f.entity_name).copied() {
                 Some(id) => Some(id),
-                None => match self.memory.find_entity_by_name(&f.entity_name) {
+                None => match self.memory.find_entity_by_name(&f.entity_name, owner) {
                     Ok(Some(rec)) => {
                         entity_id_by_name.insert(f.entity_name.clone(), rec.id);
                         Some(rec.id)
@@ -647,7 +647,7 @@ impl ConsolidationManager {
                 }
                 if let Some(id) = entity_id_by_name.get(name).copied() {
                     entity_ids.push(id);
-                } else if let Ok(Some(rec)) = self.memory.find_entity_by_name(name) {
+                } else if let Ok(Some(rec)) = self.memory.find_entity_by_name(name, owner) {
                     entity_id_by_name.insert(name.clone(), rec.id);
                     entity_ids.push(rec.id);
                 } else if let Ok((id, _)) = self

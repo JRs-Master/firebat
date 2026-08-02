@@ -34,13 +34,13 @@ impl EntityServiceImpl {
         Self { manager }
     }
 
-    /// hub owner scoping — owner 지정 시 entity 의 owner 와 일치할 때만 통과. admin(None/빈값)은 무검사.
-    /// 불일치·부재 = PermissionDenied (존재 여부 노출 방지). 프론트 가드 대신 core 가 강제하는 단일 지점.
+    /// Owner scoping for an id-addressed entity. Absent means the operator, **not** unchecked:
+    /// treating it as unchecked is how an operator addressing a row by id read across every
+    /// visitor's data, and every store underneath was already filtering correctly.
+    /// Mismatch or absence = PermissionDenied, so existence is not leaked either.
     fn ensure_entity_owner(&self, id: i64, owner: Option<&str>) -> Result<(), TonicStatus> {
-        let owner = match owner {
-            Some(o) if !o.is_empty() => o,
-            _ => return Ok(()),
-        };
+        let owner = crate::utils::owner::resolve(owner);
+        let owner = owner.as_str();
         match self.manager.get_entity(id) {
             Ok(Some(r)) if r.owner == owner => Ok(()),
             Ok(_) => Err(TonicStatus::permission_denied(
@@ -134,11 +134,10 @@ impl EntityService for EntityServiceImpl {
         let args = req.into_inner();
         match self.manager.get_entity(args.id) {
             Ok(rec) => {
-                // owner 지정 시 일치하는 것만 노출 (hub visitor 격리). admin 은 그대로.
-                let rec = match args.owner.as_deref().filter(|s| !s.is_empty()) {
-                    Some(o) => rec.filter(|r| r.owner == o),
-                    None => rec,
-                };
+                // Always scoped. The operator sees the operator's rows, a visitor sees theirs,
+                // and a module sees its own — one rule, no caller exempt from it.
+                let owner = crate::utils::owner::resolve(args.owner.as_deref());
+                let rec = rec.filter(|r| r.owner == owner);
                 Ok(Response::new(EntityGetResponse {
                     raw_json: raw_json_string(&rec),
                 }))
@@ -152,7 +151,9 @@ impl EntityService for EntityServiceImpl {
         req: Request<EntityFindByNameRequest>,
     ) -> Result<Response<EntityFindByNameResponse>, TonicStatus> {
         let name = req.into_inner().name;
-        match self.manager.find_entity_by_name(&name) {
+        // No owner on this request, and the one caller is the operator's own panel — which is
+        // exactly what the hardcoded scope used to mean. Stated rather than assumed.
+        match self.manager.find_entity_by_name(&name, None) {
             Ok(rec) => Ok(Response::new(EntityFindByNameResponse {
                 raw_json: raw_json_string(&rec),
             })),

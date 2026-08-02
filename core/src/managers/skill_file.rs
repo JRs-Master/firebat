@@ -312,31 +312,22 @@ impl SkillFileManager {
 /// Resolve the dir for an owner. None/"admin" => base; "hub:<inst>:<sid>" => base/hub/<inst>/<sid>.
 /// Free fn so path logic is unit-testable without a storage mock. (base = system or user root.)
 fn owner_dir(base: &Path, owner: Option<&str>) -> InfraResult<PathBuf> {
-    match owner {
-        None | Some("") | Some("admin") => Ok(base.to_path_buf()),
-        Some(o) => {
-            let rest = o
-                .strip_prefix("hub:")
-                .ok_or_else(|| format!("invalid skill owner: {o}"))?;
-            // user/skills + hub/<inst>/<sid> -> user/hub/<inst>/<sid>/skills (mirror nesting under
-            // the user root, not skills/hub, so it sits with the rest of a hub session's data).
-            let mut dir = base
-                .parent()
-                .map(|p| p.join("hub"))
-                .unwrap_or_else(|| PathBuf::from("hub"));
-            for part in rest.split(':') {
-                if part.is_empty()
-                    || part.contains("..")
-                    || part.contains('/')
-                    || part.contains('\\')
-                {
-                    return Err(format!("invalid skill owner segment: {o}"));
-                }
-                dir = dir.join(part);
-            }
-            Ok(dir.join("skills"))
-        }
+    // Same grammar as every other owned store — see `core::utils::owner`. The nesting differs:
+    // a non-admin owner sits with the rest of that owner's data (`user/hub/<inst>/<sid>/skills`)
+    // rather than under the skills root, so one owner's things stay in one place.
+    let segments = crate::utils::owner::path_segments(owner)?;
+    if segments.is_empty() {
+        return Ok(base.to_path_buf());
     }
+    let leaf = base
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "skills".to_string());
+    let mut dir = base.parent().map(Path::to_path_buf).unwrap_or_default();
+    for part in segments {
+        dir = dir.join(part);
+    }
+    Ok(dir.join(leaf))
 }
 
 /// Sanitized `<slug>.md` path under a dir. Blocks path traversal.

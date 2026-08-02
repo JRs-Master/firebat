@@ -142,26 +142,13 @@ impl MemoryFileManager {
 /// Resolve the directory for an owner. None/"admin" => base; "hub:<inst>:<sid>" => nested.
 /// Free fn (no `&self`) so path logic is unit-testable without a storage mock.
 fn owner_dir(base: &Path, owner: Option<&str>) -> InfraResult<PathBuf> {
-    match owner {
-        None | Some("") | Some("admin") => Ok(base.to_path_buf()),
-        Some(o) => {
-            let rest = o
-                .strip_prefix("hub:")
-                .ok_or_else(|| format!("invalid memory owner: {o}"))?;
-            let mut dir = base.join("hub");
-            for part in rest.split(':') {
-                if part.is_empty()
-                    || part.contains("..")
-                    || part.contains('/')
-                    || part.contains('\\')
-                {
-                    return Err(format!("invalid memory owner segment: {o}"));
-                }
-                dir = dir.join(part);
-            }
-            Ok(dir)
-        }
+    // The grammar lives in one place now — `core::utils::owner` — because four stores read it and
+    // each of them used to have its own idea of what "no owner" meant.
+    let mut dir = base.to_path_buf();
+    for part in crate::utils::owner::path_segments(owner)? {
+        dir.push(part);
     }
+    Ok(dir)
 }
 
 /// Sanitized `<name>.md` path under the owner dir. Blocks path traversal.

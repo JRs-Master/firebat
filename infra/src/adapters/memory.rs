@@ -674,16 +674,19 @@ impl IEntityPort for SqliteMemoryAdapter {
         }
     }
 
-    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>> {
+    fn find_entity_by_name(&self, name: &str, owner: Option<&str>)
+        -> InfraResult<Option<EntityRecord>> {
         let conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
-        // canonical name 또는 alias 매칭 — alias 는 JSON LIKE. owner 영역 = admin scope 만
-        // (find_entity_by_name 은 owner 인자 없으므로 admin default — hub-aware lookup 은 search_entities 통해).
+        // Canonical name or alias — the alias list is JSON, hence LIKE. The owner used to be the
+        // literal 'admin' regardless of who asked, which resolved a visitor's name against the
+        // operator's graph; absent now means the operator rather than always meaning it.
+        let owner = firebat_core::utils::owner::resolve(owner);
         let row = conn.query_row(
             r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner
                FROM entities
-               WHERE (name = ?1 OR aliases LIKE ?2) AND owner = 'admin'
+               WHERE (name = ?1 OR aliases LIKE ?2) AND owner = ?3
                ORDER BY updated_at DESC LIMIT 1"#,
-            params![name, format!("%\"{}\"%", name)],
+            params![name, format!("%\"{}\"%", name), owner],
             |row| Self::entity_from_row(row, 0),
         );
         let entity = match row {
@@ -1954,7 +1957,7 @@ mod tests {
         assert_eq!(got.aliases.len(), 2);
         assert_eq!(got.metadata.unwrap()["sector"], "tech");
 
-        let found = a.find_entity_by_name("Samsung").unwrap();
+        let found = a.find_entity_by_name("Samsung", None).unwrap();
         assert!(found.is_some());
 
         let search = a

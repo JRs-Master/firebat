@@ -254,11 +254,22 @@ mod module_schedule_tests {
         assert!(steps.len() > 5, "got {} steps", steps.len());
     }
 
+    /// Four of them: one per broker and market, because the pipeline behind each calls exactly
+    /// one broker's tool and one market's endpoints. `include_str!` is deliberate — a file
+    /// deleted or renamed fails the build here rather than registering nothing at runtime.
     #[test]
-    fn the_stock_declaration_is_a_schedule() {
-        let job = parse(include_str!("../../system/modules/autotrade/cron-kiwoom.json"));
-        assert!(job.cron_time.is_some());
-        assert!(job.pipeline.is_some());
+    fn the_stock_declarations_are_schedules() {
+        for raw in [
+            include_str!("../../system/modules/autotrade/cron-kiwoom-kr.json"),
+            include_str!("../../system/modules/autotrade/cron-kiwoom-us.json"),
+            include_str!("../../system/modules/autotrade/cron-kis-kr.json"),
+            include_str!("../../system/modules/autotrade/cron-kis-us.json"),
+        ] {
+            let job = parse(raw);
+            assert!(job.cron_time.is_some());
+            let steps = job.pipeline.expect("pipeline mode carries its steps");
+            assert!(steps.len() > 5, "got {} steps", steps.len());
+        }
     }
 
     #[test]

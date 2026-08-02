@@ -2322,7 +2322,8 @@ pub trait IEntityPort: Send + Sync {
     fn update_entity(&self, id: i64, patch: &UpdateEntityPatch) -> InfraResult<()>;
     fn remove_entity(&self, id: i64) -> InfraResult<()>;
     fn get_entity(&self, id: i64) -> InfraResult<Option<EntityRecord>>;
-    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;
+    fn find_entity_by_name(&self, name: &str, owner: Option<&str>)
+        -> InfraResult<Option<EntityRecord>>;
     async fn search_entities(&self, opts: &EntitySearchOpts) -> InfraResult<Vec<EntityRecord>>;
 
     async fn save_fact(&self, input: &SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
@@ -3185,7 +3186,8 @@ pub trait IMemoryFacadePort: Send + Sync {
     }
 
     // Mutation — ConsolidationManager 의 save_extracted 가 사용 (LLM 추출 결과 일괄 저장).
-    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;
+    fn find_entity_by_name(&self, name: &str, owner: Option<&str>)
+        -> InfraResult<Option<EntityRecord>>;
     async fn save_entity(&self, input: SaveEntityInput) -> InfraResult<(i64, bool)>;
     async fn save_fact(&self, input: SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
     async fn save_event(&self, input: SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
