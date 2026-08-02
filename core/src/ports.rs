@@ -642,10 +642,37 @@ pub struct WsFieldEq {
 /// adapter fills with the token from `token_secret` (OAuthTokenProvider, proactive refresh).
 #[derive(Debug, Clone)]
 pub struct WsLoginSpec {
-    pub frame: serde_json::Value,
+    /// The frame exchanged after connecting. Absent when the venue authenticates the handshake
+    /// itself — Upbit reads an `Authorization` header and never sends a login frame, so a spec
+    /// that could only express "send this and wait" could not reach its private streams at all.
+    pub frame: Option<serde_json::Value>,
     pub response_match: String,
     pub success_when: Option<WsFieldEq>,
     pub token_secret: Option<String>,
+    /// Headers put on the WebSocket handshake. `{TOKEN}` takes the fetched OAuth token, `{JWT}`
+    /// the one signed below — so which mechanism a venue uses stays a declaration.
+    pub headers: Option<std::collections::BTreeMap<String, String>>,
+    /// Sign a JWT here rather than fetching one. Two different things wear the word "token": an
+    /// OAuth token is issued by the venue and has to be requested and refreshed, and this one is
+    /// computed from keys we already hold and is valid the moment it is made. The provider that
+    /// fetches cannot make one, which is why this is its own declaration.
+    pub jwt: Option<WsJwtSpec>,
+}
+
+/// A locally signed JWT — the venue never issues it, we compute it from an API key pair.
+#[derive(Debug, Clone)]
+pub struct WsJwtSpec {
+    /// HS256 / HS384 / HS512. Upbit documents HS512, and the wrong one fails every call rather
+    /// than some of them, so it is declared instead of assumed.
+    pub algorithm: String,
+    /// Vault secret holding the public half of the key pair — goes in the payload.
+    pub access_key_secret: String,
+    /// Vault secret holding the signing key — never leaves this process.
+    pub secret_key_secret: String,
+    /// Claim name for the access key (`access_key` at Upbit).
+    pub access_claim: String,
+    /// A once-only value so two identical requests are still distinct.
+    pub nonce_claim: String,
 }
 
 /// A prerequisite frame exchanged on the same session before the main request — some
@@ -732,6 +759,11 @@ pub struct WsStreamSpec {
     pub endpoint: String,
     pub match_field: String,
     pub echo_values: Vec<String>,
+    /// Frame sent on an idle socket to keep it open. A private stream is silent by nature — no
+    /// order, no frame — and a venue that closes idle sockets (Upbit: ~120s) would drop exactly
+    /// the connection that has nothing to say yet. A JSON string is sent as raw text (`"PING"`),
+    /// anything else as JSON.
+    pub keepalive: Option<serde_json::Value>,
     pub login: Option<WsLoginSpec>,
     pub error_msg_field: Option<String>,
     /// Exchanged in order after login, before subscribe (same-session prerequisites).

@@ -427,7 +427,9 @@ async fn main() -> Result<()> {
     // WS stream transport — persistent realtime subscriptions (config `ws.streams`).
     // Sink(event bus + notify)는 module_manager 생성 뒤 배선 (아래).
     let ws_stream_adapter = Arc::new(
-        WsStreamAdapter::new(workspace_root.clone()).with_token_provider(token_provider.clone()),
+        WsStreamAdapter::new(workspace_root.clone())
+            .with_token_provider(token_provider.clone())
+            .with_vault(vault.clone()),
     );
 
     let tool_manager = Arc::new(ToolManager::new());

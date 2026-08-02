@@ -426,5 +426,62 @@
     "withdraw-cancel",
     "deposit-krw",
     "deposit-create-address"
-  ]
+  ],
+  "ws": {
+    "endpoint": "wss://api.upbit.com/websocket/v1/private",
+    "matchField": "type",
+    "keepalive": "PING",
+    "login": {
+      "headers": {
+        "Authorization": "Bearer {JWT}"
+      },
+      "jwt": {
+        "algorithm": "HS512",
+        "accessKeySecret": "UPBIT_ACCESS_KEY",
+        "secretKeySecret": "UPBIT_SECRET_KEY",
+        "accessClaim": "access_key",
+        "nonceClaim": "nonce"
+      }
+    },
+    "streams": {
+      "myOrder": {
+        "description": "My order and fill events. Fires the moment the exchange books a fill, instead of the next poll.",
+        "subscribe": {
+          "frame": [
+            {
+              "ticket": "firebat-myorder"
+            },
+            {
+              "type": "myOrder",
+              "codes": [
+                "{codes?}"
+              ]
+            },
+            {
+              "format": "DEFAULT"
+            }
+          ]
+        },
+        "realtimeMatch": "myOrder",
+        "routeItemPath": "code"
+      },
+      "myAsset": {
+        "description": "My balance changes. Whole account — the frame carries every asset that moved.",
+        "subscribe": {
+          "frame": [
+            {
+              "ticket": "firebat-myasset"
+            },
+            {
+              "type": "myAsset"
+            },
+            {
+              "format": "DEFAULT"
+            }
+          ]
+        },
+        "realtimeMatch": "myAsset"
+      }
+    }
+  }
 }

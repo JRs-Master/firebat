@@ -360,5 +360,55 @@ mod module_contract_tests {
             "these broker calls are implemented but not declared, so validation refuses them              before the module runs: {problems:?}"
         );
     }
+
+    /// A websocket stream is pure declaration — nothing in it is checked until someone starts a
+    /// watch, and the failure then is a string at runtime on a socket nobody is watching. These
+    /// are the four ways a stream declaration is dead on arrival.
+    #[test]
+    fn a_declared_ws_stream_is_startable() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return; // not a checkout with modules beside it
+        };
+        let mut problems: Vec<String> = vec![];
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else {
+                continue;
+            };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                continue;
+            };
+            let ws = &config["ws"];
+            let Some(streams) = ws["streams"].as_object() else {
+                continue;
+            };
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let login = &ws["login"];
+            if !login.is_null() {
+                let has_frame = !login["frame"].is_null();
+                let has_headers = login["headers"].as_object().is_some_and(|h| !h.is_empty());
+                // One or the other has to carry the credential. Neither means the socket opens
+                // anonymously and the venue closes it.
+                if !has_frame && !has_headers {
+                    problems.push(format!("{name}: login declares neither a frame nor headers"));
+                }
+                // A signature nothing sends is arithmetic thrown away.
+                if !login["jwt"].is_null() && !has_headers {
+                    problems.push(format!("{name}: jwt signed but no header carries it"));
+                }
+            }
+            for (stream, decl) in streams {
+                if decl["subscribe"]["frame"].is_null() {
+                    problems.push(format!("{name}.{stream}: subscribe.frame missing"));
+                }
+                // Without it every frame on the socket is unrecognised and silently dropped.
+                if decl["realtimeMatch"].as_str().unwrap_or_default().is_empty() {
+                    problems.push(format!("{name}.{stream}: realtimeMatch missing"));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "ws stream declarations that cannot start: {problems:?}");
+    }
 }
 

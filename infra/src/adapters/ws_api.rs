@@ -114,8 +114,14 @@ impl WsApiAdapter {
         .map_err(|e| format!("[{}] ws connect failed: {e}", call.module))?;
 
         // Login handshake (when declared).
-        if let Some(login) = &call.login {
-            let frame = fill_token(&login.frame, token.as_deref());
+        // A venue that authenticates the handshake declares no frame, so there is nothing to
+        // exchange — skip the step rather than the request.
+        if let Some((login, login_frame)) = call
+            .login
+            .as_ref()
+            .and_then(|l| l.frame.as_ref().map(|f| (l, f)))
+        {
+            let frame = fill_token(login_frame, token.as_deref());
             send_json(&mut ws, &frame, call).await?;
             let resp = await_frame(&mut ws, call, &login.response_match, deadline).await?;
             if let Some(rule) = &login.success_when {

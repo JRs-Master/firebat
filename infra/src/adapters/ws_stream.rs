@@ -26,6 +26,8 @@ use firebat_core::utils::secret_schema::OAuthSpec;
 
 use crate::adapters::sandbox::ProcessSandboxAdapter;
 use crate::adapters::token_provider::OAuthTokenProvider;
+use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::adapters::ws_api::{coerce, field_eq, fill_token, frame_get};
 
 /// Per-handshake-step budget (connect / login / pre-frame / subscribe ack).
@@ -60,6 +62,9 @@ struct WatchTask {
 pub struct WsStreamAdapter {
     workspace_root: PathBuf,
     token_provider: Option<Arc<OAuthTokenProvider>>,
+    /// Read directly for locally signed JWTs. The token provider fetches and refreshes; a signed
+    /// token is computed from keys we already hold, so it never goes near that machinery.
+    vault: Option<Arc<dyn firebat_core::ports::IVaultPort>>,
     /// Shared holder — set after construction (main wires event bus + notify) and read
     /// lazily by watch tasks, so boot-restored watches see the sink once it's wired.
     sink: Arc<Mutex<Option<WsStreamSink>>>,
@@ -81,11 +86,17 @@ impl WsStreamAdapter {
         Self {
             workspace_root,
             token_provider: None,
+            vault: None,
             sink: Arc::new(Mutex::new(None)),
             tasks: Mutex::new(HashMap::new()),
             conns: Mutex::new(HashMap::new()),
             watch_conn: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn with_vault(mut self, vault: Arc<dyn firebat_core::ports::IVaultPort>) -> Self {
+        self.vault = Some(vault);
+        self
     }
 
     /// Shared with sandbox/ws_api — one instance keeps per-secret locks effective.
@@ -157,6 +168,7 @@ impl IWsStreamPort for WsStreamAdapter {
             .insert(spec.watch_id.clone(), task);
 
         let token_provider = self.token_provider.clone();
+        let vault = self.vault.clone();
         let token_spec = self.token_spec(&spec);
         // Lazy sink read via the shared holder (not a snapshot) — the sink may be wired
         // after start() during boot restore, and capturing the holder avoids an Arc cycle.
@@ -185,6 +197,7 @@ impl IWsStreamPort for WsStreamAdapter {
                     Some(cmd_rx),
                     conn_cancel_rx,
                     token_provider.clone(),
+                    vault.clone(),
                     None,
                     sink_getter.clone(),
                 ));
@@ -215,6 +228,7 @@ impl IWsStreamPort for WsStreamAdapter {
                 None,
                 cancel_rx,
                 token_provider,
+                vault,
                 token_spec,
                 sink_getter,
             ));
@@ -363,11 +377,54 @@ fn route_frame(frame: &serde_json::Value, spec: &WsStreamSpec) -> Option<serde_j
     Some(out)
 }
 
+/// A JWT signed here and now, from a key pair in the vault.
+///
+/// Not the same thing as the OAuth token beside it, though both are called tokens: that one is
+/// issued by the venue and has to be asked for and refreshed, this one is arithmetic over keys we
+/// already hold and is valid the moment it exists. Upbit authenticates its private streams with
+/// it on the handshake, so without this the fill and balance streams are unreachable — the only
+/// route left is polling, which is how a stop ends up five minutes late.
+fn sign_ws_jwt(
+    spec: &firebat_core::ports::WsJwtSpec,
+    vault: &dyn firebat_core::ports::IVaultPort,
+) -> Result<String, String> {
+    let read = |name: &str| -> Result<String, String> {
+        vault
+            .get_secret(&format!("user:{name}"))
+            .or_else(|| vault.get_secret(name))
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| format!("vault 에 {name} 이 없습니다"))
+    };
+    let access = read(&spec.access_key_secret)?;
+    let secret = read(&spec.secret_key_secret)?;
+    let alg = match spec.algorithm.to_uppercase().as_str() {
+        "HS256" => jsonwebtoken::Algorithm::HS256,
+        "HS384" => jsonwebtoken::Algorithm::HS384,
+        "HS512" => jsonwebtoken::Algorithm::HS512,
+        other => return Err(format!("지원하지 않는 서명 알고리즘: {other}")),
+    };
+    let mut claims = serde_json::Map::new();
+    claims.insert(spec.access_claim.clone(), serde_json::Value::String(access));
+    claims.insert(
+        spec.nonce_claim.clone(),
+        serde_json::Value::String(uuid::Uuid::new_v4().to_string()),
+    );
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(alg),
+        &serde_json::Value::Object(claims),
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| format!("JWT 서명 실패: {e}"))
+}
+
+
 async fn conn_loop(
     mut members: Vec<Member>,
     mut cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<ConnCmd>>,
     mut cancel_rx: tokio::sync::watch::Receiver<bool>,
     token_provider: Option<Arc<OAuthTokenProvider>>,
+    vault: Option<Arc<dyn firebat_core::ports::IVaultPort>>,
     mut token_spec: Option<(String, OAuthSpec, u64)>,
     sink_getter: Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
 ) {
@@ -412,6 +469,7 @@ async fn conn_loop(
             &mut cmd_rx,
             &mut cancel_rx,
             &token_provider,
+            &vault,
             &mut token_spec,
             &sink_getter,
             std::mem::take(&mut force_token),
@@ -532,6 +590,7 @@ async fn run_session(
     cmd_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<ConnCmd>>,
     cancel_rx: &mut tokio::sync::watch::Receiver<bool>,
     token_provider: &Option<Arc<OAuthTokenProvider>>,
+    vault: &Option<Arc<dyn firebat_core::ports::IVaultPort>>,
     token_spec_slot: &mut Option<(String, OAuthSpec, u64)>,
     sink_getter: &Arc<dyn Fn() -> Option<WsStreamSink> + Send + Sync>,
     force_token: bool,
@@ -561,9 +620,43 @@ async fn run_session(
         None
     };
 
+    // Handshake headers, when the venue authenticates there rather than with a frame. Built
+    // before connecting because a signed token is one of them: Upbit reads `Authorization` on the
+    // upgrade request and closes the socket without it.
+    let mut request = match spec.endpoint.clone().into_client_request() {
+        Ok(r) => r,
+        Err(e) => return SessionEnd::Dropped(format!("endpoint is not a websocket url: {e}")),
+    };
+    if let Some(headers) = spec.login.as_ref().and_then(|l| l.headers.as_ref()) {
+        let jwt = match spec.login.as_ref().and_then(|l| l.jwt.as_ref()) {
+            Some(js) => {
+                let Some(v) = vault.as_ref() else {
+                    return SessionEnd::Dropped("vault not wired for signed handshake".to_string());
+                };
+                match sign_ws_jwt(js, v.as_ref()) {
+                    Ok(t) => Some(t),
+                    Err(e) => return SessionEnd::Dropped(format!("handshake auth: {e}")),
+                }
+            }
+            None => None,
+        };
+        for (name, template) in headers {
+            let value = template
+                .replace("{TOKEN}", token.as_deref().unwrap_or(""))
+                .replace("{JWT}", jwt.as_deref().unwrap_or(""));
+            let (Ok(hn), Ok(hv)) = (
+                tungstenite::http::header::HeaderName::try_from(name.as_str()),
+                tungstenite::http::HeaderValue::from_str(&value),
+            ) else {
+                return SessionEnd::Dropped(format!("handshake header '{name}' is not valid"));
+            };
+            request.headers_mut().insert(hn, hv);
+        }
+    }
+
     let connect = tokio::time::timeout(
         STEP_TIMEOUT,
-        tokio_tungstenite::connect_async(&spec.endpoint),
+        tokio_tungstenite::connect_async(request),
     )
     .await;
     let mut ws = match connect {
@@ -573,8 +666,12 @@ async fn run_session(
     };
 
     // Login → preFrames → subscribe (each with a step budget).
-    if let Some(login) = &spec.login {
-        let frame = fill_token(&login.frame, token.as_deref());
+    if let Some((login, login_frame)) = spec
+        .login
+        .as_ref()
+        .and_then(|l| l.frame.as_ref().map(|f| (l, f)))
+    {
+        let frame = fill_token(login_frame, token.as_deref());
         if let Err(e) = send(&mut ws, &frame).await {
             return SessionEnd::Dropped(e);
         }

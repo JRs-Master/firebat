@@ -1068,6 +1068,12 @@ impl ModuleManager {
                 .ok_or_else(|| format!("[{}] ws.endpoint missing", meta.module))?,
             match_field: ws_match_field(ws),
             echo_values: ws_echo_values(ws),
+            // Per-stream override first: what keeps a socket open is a property of the endpoint,
+            // and a module can front more than one.
+            keepalive: decl
+                .get("keepalive")
+                .or_else(|| ws.get("keepalive"))
+                .cloned(),
             login: parse_ws_login(ws),
             error_msg_field: ws
                 .get("errorMsgField")
@@ -1856,7 +1862,9 @@ fn ws_echo_values(ws: &serde_json::Value) -> Vec<String> {
 
 fn parse_ws_login(ws: &serde_json::Value) -> Option<WsLoginSpec> {
     ws.get("login").map(|l| WsLoginSpec {
-        frame: l.get("frame").cloned().unwrap_or(serde_json::Value::Null),
+        // A venue that authenticates the handshake sends no login frame at all, so its absence
+        // is a shape rather than an omission.
+        frame: l.get("frame").cloned().filter(|v| !v.is_null()),
         response_match: l
             .get("match")
             .and_then(|v| v.as_str())
@@ -1867,6 +1875,25 @@ fn parse_ws_login(ws: &serde_json::Value) -> Option<WsLoginSpec> {
             .get("tokenSecret")
             .and_then(|v| v.as_str())
             .map(String::from),
+        headers: l.get("headers").and_then(|h| h.as_object()).map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        }),
+        jwt: l.get("jwt").and_then(parse_ws_jwt),
+    })
+}
+
+fn parse_ws_jwt(j: &serde_json::Value) -> Option<crate::ports::WsJwtSpec> {
+    let text = |k: &str| j.get(k).and_then(|v| v.as_str()).map(String::from);
+    // Both key names are required: signing with a key we do not have produces a token the venue
+    // rejects, and a declaration missing half of it should fail here rather than at the socket.
+    Some(crate::ports::WsJwtSpec {
+        algorithm: text("algorithm").unwrap_or_else(|| "HS512".to_string()),
+        access_key_secret: text("accessKeySecret")?,
+        secret_key_secret: text("secretKeySecret")?,
+        access_claim: text("accessClaim").unwrap_or_else(|| "access_key".to_string()),
+        nonce_claim: text("nonceClaim").unwrap_or_else(|| "nonce".to_string()),
     })
 }
 
@@ -2421,7 +2448,7 @@ mod coercion_tests {
 
 #[cfg(test)]
 mod ws_frame_tests {
-    use super::{substitute_ws_frame, ws_group_no, ws_str_list};
+    use super::{parse_ws_jwt, parse_ws_login, substitute_ws_frame, ws_group_no, ws_str_list};
     use serde_json::json;
 
     #[test]
@@ -2469,6 +2496,46 @@ mod ws_frame_tests {
         // Supplied as usual when a value is given.
         let out = substitute_ws_frame(&tpl, &json!({"item": "005930"})).unwrap();
         assert_eq!(out["data"][0]["item"][0], "005930");
+    }
+
+    #[test]
+    fn a_handshake_authenticated_venue_declares_no_login_frame() {
+        // Upbit signs the upgrade request; there is no frame to send and nothing to wait for.
+        // The absence has to survive parsing as a shape, or the transport waits for an ack that
+        // the venue is never going to send.
+        let login = parse_ws_login(&json!({
+            "login": {
+                "headers": {"Authorization": "Bearer {JWT}"},
+                "jwt": {
+                    "algorithm": "HS512",
+                    "accessKeySecret": "UPBIT_ACCESS_KEY",
+                    "secretKeySecret": "UPBIT_SECRET_KEY"
+                }
+            }
+        }))
+        .expect("login declared");
+        assert!(login.frame.is_none());
+        assert_eq!(
+            login
+                .headers
+                .as_ref()
+                .and_then(|h| h.get("Authorization"))
+                .map(|v| v.as_str()),
+            Some("Bearer {JWT}")
+        );
+        let jwt = login.jwt.expect("jwt declared");
+        assert_eq!(jwt.algorithm, "HS512");
+        assert_eq!(jwt.access_claim, "access_key");
+        assert_eq!(jwt.nonce_claim, "nonce");
+    }
+
+    #[test]
+    fn a_half_declared_jwt_is_not_a_jwt() {
+        // Signing with a key we do not hold produces a token the venue rejects — and it would be
+        // rejected at the socket, minutes later, looking like a credential problem.
+        assert!(parse_ws_jwt(&json!({"accessKeySecret": "A"})).is_none());
+        assert!(parse_ws_jwt(&json!({"secretKeySecret": "B"})).is_none());
+        assert!(parse_ws_jwt(&json!({"accessKeySecret": "A", "secretKeySecret": "B"})).is_some());
     }
 
     #[test]
