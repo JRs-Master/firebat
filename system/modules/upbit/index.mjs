@@ -567,6 +567,24 @@ function upbitRoundPrice(price) {
   return Math.floor(price * scale) / scale;
 }
 
+/** A number written out in full.
+ *
+ * `String(0.00000001)` is "1e-8", and no exchange parses that — it is the smallest lot Upbit
+ * accepts, so the one quantity most likely to be written in exponent form is also a legal order.
+ * Trailing zeros go, because "0.00142857000" is uglier than it needs to be and some venues count
+ * the decimals.
+ */
+function plainNum(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  const s = String(n);
+  // `String` already gives the shortest text that round-trips, so use it whenever it is not in
+  // exponent form. Reaching for toFixed unconditionally re-introduces the binary noise it is
+  // supposed to avoid — 256410.25641 comes back as 256410.256410000002.
+  if (!/e/i.test(s)) return s;
+  return n.toFixed(12).replace(/0+$/, '').replace(/\.$/, '');
+}
+
 function upbitOrderParams(data) {
   const market = String(data.symbol ?? data.market ?? '').trim();
   if (!market) throw new Error('place_order: symbol 이 필요합니다 (예: KRW-BTC).');
@@ -586,8 +604,8 @@ function upbitOrderParams(data) {
   if (type === 'limit') {
     if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: 지정가에는 qty 가 필요합니다.');
     if (!Number.isFinite(price) || price <= 0) throw new Error('place_order: 지정가에는 price 가 필요합니다.');
-    return withId({ market, side, ord_type: 'limit', volume: String(qty),
-                    price: String(upbitRoundPrice(price)) });
+    return withId({ market, side, ord_type: 'limit', volume: plainNum(qty),
+                    price: plainNum(upbitRoundPrice(price)) });
   }
   if (type !== 'market') {
     throw new Error(`place_order: orderType='${type}' 은 지원하지 않습니다 — limit, market.`);
@@ -602,12 +620,12 @@ function upbitOrderParams(data) {
       throw new Error('place_order: 시장가 매수에는 `amount`(총 금액)가 필요합니다 — 업비트의 '
         + '시장가 매수는 수량이 아니라 쓸 금액으로 냅니다.');
     }
-    return withId({ market, side, ord_type: 'price', price: String(Math.floor(total)) });
+    return withId({ market, side, ord_type: 'price', price: plainNum(Math.floor(total)) });
   }
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new Error('place_order: 시장가 매도에는 qty 가 필요합니다.');
   }
-  return withId({ market, side, ord_type: 'market', volume: String(qty) });
+  return withId({ market, side, ord_type: 'market', volume: plainNum(qty) });
 }
 
 function upbitQueryParams(action, data) {

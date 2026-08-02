@@ -12,19 +12,40 @@ order nobody remembers placing.
 """
 
 
+
+def _plain(v):
+    """A number the broker will accept, whole or fractional.
+
+    `int()` was here, and on a share it is invisible: one share is one. On a coin it is the order.
+    0.00142857 ETH truncates to zero, and so does a limit price of 0.5 won — the sizing was fixed
+    for fractions weeks before this call site was, and the dry-run path never reached here to show
+    it (2026-08-02, found before the first real order rather than by it).
+
+    Whole numbers stay whole so a broker that puts the quantity in a string sends "3" and not
+    "3.0", and a fraction is written out in full rather than as 1e-08, which no exchange parses.
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return v
+    if f == int(f) and abs(f) < 1e15:
+        return int(f)
+    return float(("%.10f" % f).rstrip("0"))
+
+
 def broker_call(order, strategy):
     """One order row → the neutral order contract every broker module accepts."""
     call = {
         "action": "place_order",
         "side": order["side"],
         "symbol": order["symbol"],
-        "qty": int(order["req_qty"]),
+        "qty": _plain(order["req_qty"]),
         "orderType": order.get("ord_type") or "limit",
         "clientOrderId": order["order_key"],
     }
     price = order.get("req_price")
     if call["orderType"] != "market" and price:
-        call["price"] = int(price)
+        call["price"] = _plain(price)
     exchange = (strategy.get("orders") or {}).get("exchange")
     if exchange:
         call["exchange"] = exchange

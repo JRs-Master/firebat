@@ -1041,8 +1041,9 @@ def action_cycle(inp, settings):
                 "order_key": key, "cycle_id": intent["cycleId"], "strategy_id": s["id"],
                 "broker": intent["broker"], "account": intent["account"],
                 "symbol": intent["symbol"], "side": intent["side"],
-                "req_qty": intent["qty"], "req_price": intent.get("price"),
-                "ord_type": intent.get("ordType") or (s.get("orders") or {}).get("type") or "limit",
+                "req_qty": intent["qty"],
+                "req_price": _limit_price(s, intent, float(intent.get("price") or 0)),
+                "ord_type": _order_type(s, intent),
                 "mode": ctx["mode"], "state": "intent", "reason": intent.get("reason"),
             }
             if not store.insert_order(wconn, order):
@@ -1097,6 +1098,47 @@ def action_cycle(inp, settings):
 # schedule: long enough that a fill still arriving is not thrown away, short enough that the money
 # is not held all day for a price the market has left behind.
 DEFAULT_UNFILLED_AFTER_SEC = 600
+
+
+def _order_type(strategy, intent):
+    """Limit or market, decided by why the order exists.
+
+    Not filling and filling badly are different costs, and which one is worse depends entirely on
+    the reason. Missing an entry costs nothing — the rule fires again tomorrow — so an entry is a
+    limit and a price that has run away is a trade not worth having. A stop is the opposite: a
+    stop that does not fill is not a stop, it is a position still losing money while an order sits
+    on the book at a price the market has left. Paying the spread is the cheaper mistake there.
+
+    `marketWhen` lists the reasons that go to market, defaulting to the stop. The reasons an
+    intent can carry are `rule`, `stop`, `take` and `split`, so a strategy that wants its targets
+    taken immediately writes `["stop", "take"]` and one that never wants to cross the spread
+    writes `[]`.
+    """
+    explicit = intent.get("ordType")
+    if explicit:
+        return explicit
+    orders_cfg = strategy.get("orders") or {}
+    base = orders_cfg.get("type") or "limit"
+    market_when = orders_cfg.get("marketWhen")
+    if market_when is None:
+        market_when = ["stop"]
+    if not isinstance(market_when, list):
+        market_when = [str(market_when)]
+    return "market" if intent.get("reason") in market_when else base
+
+
+def _limit_price(strategy, intent, price):
+    """Where to put a limit so it can actually fill.
+
+    A limit at the signal bar's close is a limit at a price that has already gone: the bar closed,
+    the market moved, and the order rests until it is withdrawn. `limitOffsetPct` reaches across
+    the spread by a declared amount — up for a buy, down for a sell — which is still a bounded
+    price, unlike a market order that accepts whatever the book holds.
+    """
+    off = float((strategy.get("orders") or {}).get("limitOffsetPct") or 0)
+    if not off or price <= 0:
+        return price
+    return price * (1 + off / 100.0) if intent["side"] == "buy" else price * (1 - off / 100.0)
 
 
 def _abandon_stale_orders(conn, settings, strategies, open_rows, calls):
@@ -2569,6 +2611,42 @@ def action_selftest():
     carried = sorted((cb["runs"][0]["args"].get("higher") or {}))
     checks.append({"name": "only the timeframes the rule names are carried", "want": ["1w"],
                    "got": carried, "ok": carried == ["1w"]})
+
+    # --- limit or market, decided by why the order exists -----------------------------------
+    # Not filling and filling badly are different costs and the reason decides which is worse.
+    ot = lambda cfg, reason: _order_type({"orders": cfg}, {"reason": reason, "side": "sell"})
+    checks.append({"name": "a stop crosses the spread — one that does not fill is not a stop",
+                   "want": "market", "got": ot({"type": "limit"}, "stop"),
+                   "ok": ot({"type": "limit"}, "stop") == "market"})
+    checks.append({"name": "an entry does not — missing it costs nothing", "want": "limit",
+                   "got": ot({"type": "limit"}, "rule"),
+                   "ok": ot({"type": "limit"}, "rule") == "limit"})
+    checks.append({"name": "and the list is the strategy's to write", "want": ("market", "limit"),
+                   "got": (ot({"type": "limit", "marketWhen": ["take"]}, "take"),
+                           ot({"type": "limit", "marketWhen": []}, "stop")),
+                   "ok": ot({"type": "limit", "marketWhen": ["take"]}, "take") == "market"
+                         and ot({"type": "limit", "marketWhen": []}, "stop") == "limit"})
+    # A limit priced at the signal bar's close is a limit at a price that has already gone.
+    buy = _limit_price({"orders": {"limitOffsetPct": 0.2}}, {"side": "buy"}, 1000.0)
+    sell = _limit_price({"orders": {"limitOffsetPct": 0.2}}, {"side": "sell"}, 1000.0)
+    checks.append({"name": "the offset reaches across the spread, and the right way per side",
+                   "want": (1002.0, 998.0), "got": (buy, sell),
+                   "ok": abs(buy - 1002.0) < 1e-9 and abs(sell - 998.0) < 1e-9})
+    checks.append({"name": "no offset declared leaves the price alone", "want": 1000.0,
+                   "got": _limit_price({"orders": {}}, {"side": "buy"}, 1000.0),
+                   "ok": _limit_price({"orders": {}}, {"side": "buy"}, 1000.0) == 1000.0})
+    # The broker call carried `int()` — invisible on a share, fatal on a coin.
+    bc = orders.broker_call({"side": "buy", "symbol": "KRW-ETH", "req_qty": 0.00142857,
+                             "req_price": 4200000, "ord_type": "limit", "order_key": "k",
+                             "broker": "upbit", "account": ""}, {})["input"]
+    checks.append({"name": "a fractional quantity survives the broker call", "want": 0.00142857,
+                   "got": bc["qty"], "ok": abs(bc["qty"] - 0.00142857) < 1e-12})
+    bc2 = orders.broker_call({"side": "buy", "symbol": "X", "req_qty": 3, "req_price": 0.5,
+                              "ord_type": "limit", "order_key": "k2", "broker": "b",
+                              "account": ""}, {})["input"]
+    checks.append({"name": "and so does a price below one won", "want": (3, 0.5),
+                   "got": (bc2["qty"], bc2["price"]),
+                   "ok": bc2["qty"] == 3 and abs(bc2["price"] - 0.5) < 1e-12})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,
