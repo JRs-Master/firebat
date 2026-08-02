@@ -436,9 +436,20 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Persist what differs from the declaration, not the whole form. Saved values beat
+      // defaults, so writing back an untouched field freezes it at whatever the default happened
+      // to be that day — press save once on a fresh module and its shipped values can never
+      // appear again, not even when a later version changes them.
+      const toSave: Record<string, any> = {};
+      const defaults = new Map((schema?.fields ?? []).map(f => [f.key, f.defaultValue]));
+      for (const [key, val] of Object.entries(settings)) {
+        const def = defaults.get(key);
+        if (def !== undefined && JSON.stringify(def) === JSON.stringify(val)) continue;
+        toSave[key] = val;
+      }
       const data = await apiPatch<{ success: boolean }>(
         '/api/settings/modules',
-        { name: resolvedName, settings },
+        { name: resolvedName, settings: toSave },
         { category: 'system-module' },
       );
       if (data.success) setSaved(true);

@@ -277,6 +277,9 @@ export function CronPanel({
   const jobKind = (job: CronJob) => {
     const t = job.targetPath || '';
     if (t.startsWith('builtin:')) return `시스템 · ${t.slice(8)}`;
+    // Declared by a module and registered when it was switched on — not something a person made,
+    // and deleting it here is undone only by switching the module off and on again.
+    if (t.startsWith('module:')) return `모듈 · ${t.slice(7)}`;
     if (t.startsWith('rebake:')) return `페이지 갱신 · ${t.slice(7)}`;
     if (t.startsWith('/')) return `페이지 방문 · ${t}`;
     if (job.executionMode === 'agent' || job.agentPrompt) return 'AI 에이전트';

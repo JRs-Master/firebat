@@ -89,16 +89,26 @@ impl Core {
         }
 
         let mut already = self.module.registered_schedules(name);
-        let live: std::collections::HashSet<String> =
-            self.schedule.list().into_iter().map(|j| j.job_id).collect();
+        // The panel reads what a job is off its target's prefix — `builtin:`, `rebake:`, a path.
+        // A module-declared job had none of those and fell through to "an ordinary pipeline
+        // somebody made", which is exactly what it is not.
+        let target = format!("module:{}", name);
+        let live: std::collections::HashMap<String, String> = self
+            .schedule
+            .list()
+            .into_iter()
+            .map(|j| (j.job_id, j.target_path))
+            .collect();
         let mut added = vec![];
         for (file, job) in jobs {
             let id = job_id(&file);
-            if already.contains(&file) || live.contains(&id) {
+            // A job registered before the target convention existed is repaired in place rather
+            // than left mislabelled: same id, same trigger, corrected target.
+            let stale = live.get(&id).is_some_and(|t| t != &target);
+            if !stale && (already.contains(&file) || live.contains_key(&id)) {
                 continue;
             }
-            let label = job.title.clone().unwrap_or_else(|| id.clone());
-            match self.schedule.schedule(&id, &label, job).await {
+            match self.schedule.schedule(&id, &target, job).await {
                 Ok(()) => {
                     already.push(file.clone());
                     added.push(file);
