@@ -1,0 +1,352 @@
+{
+  "_why": [
+    "2026년 업비트 시간봉 실측으로 고른 종목별 규칙입니다. 다섯 가족(정배열눌림목·MA교차·EMA교차·",
+    "RSI·볼린저)을 각각 자기 격자로 돌려, 종목마다 그 종목에서 가장 널리 통과한 가족을 골랐습니다.",
+    "수익이 아니라 근거가 우선입니다 — 열 칸이 통과한 가족은 고원을 찾은 것이고 한 칸은 칸 하나를",
+    "찾은 것이라, 수익이 25% 이상 높지 않으면 칸 수가 이깁니다.",
+    "1회 6,000원 · 종목당 보유 상한 6,000원. 계좌가 만원이라 두 종목이 동시에 신호를 내면 두 번째",
+    "주문은 잔고 부족으로 거부됩니다 — 그 거부도 겪어 봐야 할 경로입니다.",
+    "돌리는 법: 아래 두 배열을 설정의 매매 목록·직접 선언한 전략에 넣으십시오. 규칙은 전략이 들고",
+    "있으므로 크론(cron-upbit.json, 다종목)은 그대로 둡니다."
+  ],
+  "trades": [
+    {
+      "id": "enso",
+      "symbol": "KRW-ENSO",
+      "broker": "upbit",
+      "account": "",
+      "interval": "1h"
+    },
+    {
+      "id": "shib",
+      "symbol": "KRW-SHIB",
+      "broker": "upbit",
+      "account": "",
+      "interval": "1h"
+    },
+    {
+      "id": "doge",
+      "symbol": "KRW-DOGE",
+      "broker": "upbit",
+      "account": "",
+      "interval": "1h"
+    },
+    {
+      "id": "ondo",
+      "symbol": "KRW-ONDO",
+      "broker": "upbit",
+      "account": "",
+      "interval": "1h"
+    },
+    {
+      "id": "btc",
+      "symbol": "KRW-BTC",
+      "broker": "upbit",
+      "account": "",
+      "interval": "1h"
+    }
+  ],
+  "strategies": [
+    {
+      "id": "enso",
+      "enabled": true,
+      "kind": "rules",
+      "symbol": "KRW-ENSO",
+      "broker": "upbit",
+      "account": "",
+      "money": {
+        "perOrderKrw": 6000,
+        "lotSize": 1e-08
+      },
+      "limits": {
+        "maxPositionKrw": 6000
+      },
+      "exits": {
+        "stopLossPct": 3.0,
+        "takeProfitPct": 4.0
+      },
+      "orders": {
+        "type": "limit"
+      },
+      "rules": [
+        {
+          "side": "buy",
+          "label": "ema3>ema60",
+          "when": [
+            {
+              "a": "ema3",
+              "op": "crossUp",
+              "b": "ema60"
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "ema3<ema60",
+          "when": [
+            {
+              "a": "ema3",
+              "op": "crossDown",
+              "b": "ema60"
+            }
+          ]
+        }
+      ],
+      "_measured": {
+        "family": "ema-cross",
+        "cell": "ema3x60-sl3.0-tp4.0",
+        "holdoutReturnPct": 28.53,
+        "vsBuyHoldPct": 4.32,
+        "trades": 39,
+        "clearedCells": 2,
+        "neighbourSupport": 1.0
+      }
+    },
+    {
+      "id": "shib",
+      "enabled": true,
+      "kind": "rules",
+      "symbol": "KRW-SHIB",
+      "broker": "upbit",
+      "account": "",
+      "money": {
+        "perOrderKrw": 6000,
+        "lotSize": 1e-08
+      },
+      "limits": {
+        "maxPositionKrw": 6000
+      },
+      "exits": {
+        "stopLossPct": 3.0,
+        "takeProfitPct": 1.0
+      },
+      "orders": {
+        "type": "limit"
+      },
+      "rules": [
+        {
+          "side": "buy",
+          "label": "rsi<30",
+          "when": [
+            {
+              "a": "rsi",
+              "op": "<",
+              "b": 30
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "rsi>70",
+          "when": [
+            {
+              "a": "rsi",
+              "op": ">",
+              "b": 70
+            }
+          ]
+        }
+      ],
+      "_measured": {
+        "family": "rsi",
+        "cell": "rsi30/70-sl3.0-tp1.0",
+        "holdoutReturnPct": 10.84,
+        "vsBuyHoldPct": 25.01,
+        "trades": 21,
+        "clearedCells": 10,
+        "neighbourSupport": 1.0
+      }
+    },
+    {
+      "id": "doge",
+      "enabled": true,
+      "kind": "rules",
+      "symbol": "KRW-DOGE",
+      "broker": "upbit",
+      "account": "",
+      "money": {
+        "perOrderKrw": 6000,
+        "lotSize": 1e-08
+      },
+      "limits": {
+        "maxPositionKrw": 6000
+      },
+      "exits": {
+        "stopLossPct": 3.0,
+        "takeProfitPct": 1.0
+      },
+      "orders": {
+        "type": "limit"
+      },
+      "rules": [
+        {
+          "side": "buy",
+          "label": "rsi<30",
+          "when": [
+            {
+              "a": "rsi",
+              "op": "<",
+              "b": 30
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "rsi>70",
+          "when": [
+            {
+              "a": "rsi",
+              "op": ">",
+              "b": 70
+            }
+          ]
+        }
+      ],
+      "_measured": {
+        "family": "rsi",
+        "cell": "rsi30/70-sl3.0-tp1.0",
+        "holdoutReturnPct": 10.47,
+        "vsBuyHoldPct": 43.04,
+        "trades": 16,
+        "clearedCells": 2,
+        "neighbourSupport": 0.75
+      }
+    },
+    {
+      "id": "ondo",
+      "enabled": true,
+      "kind": "rules",
+      "symbol": "KRW-ONDO",
+      "broker": "upbit",
+      "account": "",
+      "money": {
+        "perOrderKrw": 6000,
+        "lotSize": 1e-08
+      },
+      "limits": {
+        "maxPositionKrw": 6000
+      },
+      "exits": {
+        "stopLossPct": 3.0,
+        "takeProfitPct": 4.0
+      },
+      "orders": {
+        "type": "limit"
+      },
+      "rules": [
+        {
+          "side": "buy",
+          "label": "aligned 3/20/30",
+          "when": [
+            {
+              "a": "ma3",
+              "op": ">",
+              "b": "ma20"
+            },
+            {
+              "a": "ma20",
+              "op": ">",
+              "b": "ma30"
+            },
+            {
+              "a": "slope20",
+              "op": ">",
+              "b": 0.0
+            },
+            {
+              "a": "disp3",
+              "op": "<=",
+              "b": 100.1
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "stretched 100.8",
+          "when": [
+            {
+              "a": "disp3",
+              "op": ">=",
+              "b": 100.8
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "alignment broke",
+          "when": [
+            {
+              "a": "ma3",
+              "op": "crossDown",
+              "b": "ma20"
+            }
+          ]
+        }
+      ],
+      "_measured": {
+        "family": "aligned-pullback",
+        "cell": "al3/20/30-sl0.0-pb100.1-ex100.8-stretch-sl3.0-tp4.0",
+        "holdoutReturnPct": 8.92,
+        "vsBuyHoldPct": 6.3,
+        "trades": 65,
+        "clearedCells": 10,
+        "neighbourSupport": 1.0
+      }
+    },
+    {
+      "id": "btc",
+      "enabled": true,
+      "kind": "rules",
+      "symbol": "KRW-BTC",
+      "broker": "upbit",
+      "account": "",
+      "money": {
+        "perOrderKrw": 6000,
+        "lotSize": 1e-08
+      },
+      "limits": {
+        "maxPositionKrw": 6000
+      },
+      "exits": {
+        "stopLossPct": 1.5,
+        "takeProfitPct": 1.0
+      },
+      "orders": {
+        "type": "limit"
+      },
+      "rules": [
+        {
+          "side": "buy",
+          "label": "ma5>ma60",
+          "when": [
+            {
+              "a": "ma5",
+              "op": "crossUp",
+              "b": "ma60"
+            }
+          ]
+        },
+        {
+          "side": "sell",
+          "label": "ma5<ma60",
+          "when": [
+            {
+              "a": "ma5",
+              "op": "crossDown",
+              "b": "ma60"
+            }
+          ]
+        }
+      ],
+      "_measured": {
+        "family": "ma-cross",
+        "cell": "ma5x60-sl1.5-tp1.0",
+        "holdoutReturnPct": 5.51,
+        "vsBuyHoldPct": 22.43,
+        "trades": 19,
+        "clearedCells": 4,
+        "neighbourSupport": 0.75
+      }
+    }
+  ]
+}
