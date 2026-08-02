@@ -1497,6 +1497,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     error_params: None,
                     stderr: None,
                     exit_code: Some(0),
+                    remember: None,
                 });
             }
             // 갭 bounding box 1회 fetch — 여러 갭 = min..max (중복 일부 허용, upsert 라 무해.
@@ -1573,6 +1574,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                         error_params: None,
                         stderr: None,
                         exit_code: Some(0),
+                        remember: None,
                     });
                 }
             }
@@ -1895,6 +1897,9 @@ impl ProcessSandboxAdapter {
                         error_params: parsed.get("errorParams").cloned(),
                         stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
                         exit_code,
+                        // A real envelope, so the key is read here as anywhere else. Whether it
+                        // is acted on is the manager's call, and it does not act on a failure.
+                        remember: parsed.get("remember").filter(|v| v.is_object()).cloned(),
                     });
                 }
             }
@@ -1913,6 +1918,7 @@ impl ProcessSandboxAdapter {
                 error_params: None,
                 stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
                 exit_code,
+                remember: None,   // no envelope at all — the module printed nothing readable
             });
         }
 
@@ -1928,6 +1934,13 @@ impl ProcessSandboxAdapter {
         // errorKey / errorParams = i18n 영역 (SysmodToolHandler 의 lookup 변환 입력).
         // __updateSecrets = OAuth token cache save — sysmod 가 새 token 발급한 결과를 vault 에
         // 업데이트. 한투 / 키움 같은 OAuth sysmod 가 매 호출마다 발급 호출을 하지 않도록 (rate limit 차단).
+        // What the run asked to be remembered, if anything — an envelope key like the others,
+        // read here and written by the module manager under that module's own scope.
+        let remember = parsed
+            .as_object()
+            .and_then(|o| o.get("remember"))
+            .filter(|v| v.is_object())
+            .cloned();
         let (success, data, error, error_key, error_params) = if let Some(obj) = parsed.as_object() {
             let has_success = obj.contains_key("success");
             let has_envelope_field = has_success
@@ -2075,6 +2088,7 @@ impl ProcessSandboxAdapter {
             error_params,
             stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
             exit_code,
+            remember,
         })
     }
 }

@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::ports::{
-    ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, IWsStreamPort, InfraResult, ModuleOutput,
+    IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort, IWsApiPort, IWsStreamPort,
+    InfraResult, ModuleOutput,
     PackageStatus, SandboxExecuteOpts, WsApiCall, WsDecryptSpec, WsFieldEq, WsFrameFormat,
     WsLoginSpec, WsPreFrame, WsStreamSpec,
 };
@@ -54,6 +55,10 @@ pub struct ModuleManager {
     /// Result cache — lets a declared array parameter arrive as a `<param>CacheKey` instead of the
     /// rows themselves. None = not wired (tests); a key then errors rather than silently vanishing.
     sysmod_cache: Option<Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>>,
+    /// Where a module's `remember` block lands. A port rather than a manager handle — the same
+    /// shape consolidation uses to reach recall without one leaf calling another. None = not
+    /// wired (tests), and a declaration then reports that it went nowhere instead of vanishing.
+    recall: Option<Arc<dyn IMemoryFacadePort>>,
 }
 
 /// Alias length cap. The alias is the account's name everywhere it appears — settings rows,
@@ -127,6 +132,7 @@ impl ModuleManager {
             ws_stream: None,
             stream_watches: Mutex::new(HashMap::new()),
             sysmod_cache: None,
+            recall: None,
         }
     }
 
@@ -138,6 +144,12 @@ impl ModuleManager {
         cache: Arc<crate::utils::sysmod_cache::SysmodCacheAdapter>,
     ) -> Self {
         self.sysmod_cache = Some(cache);
+        self
+    }
+
+    /// Wire the store a module's `remember` block writes to.
+    pub fn with_recall(mut self, recall: Arc<dyn IMemoryFacadePort>) -> Self {
+        self.recall = Some(recall);
         self
     }
 
@@ -651,7 +663,100 @@ impl ModuleManager {
             }
         }
 
+        // Anything the module asked to be remembered, written under the module's own scope.
+        // After the output check, because a module whose data failed validation has not earned
+        // the right to teach anybody anything.
+        if result.success {
+            self.remember_declared(module_name, &result).await;
+        }
+
         Ok(result)
+    }
+
+    /// Write a module's `remember` block into recall, scoped to that module.
+    ///
+    /// The module names what it learned; the framework decides where it goes and who it belongs
+    /// to. A sandboxed process cannot reach the store and should not be able to claim someone
+    /// else's scope, so the owner is derived here from the module that just ran.
+    ///
+    /// Measurements go in as explicit facts and lessons go in staged — the reasoning for the
+    /// split is in `utils::module_memory`.
+    async fn remember_declared(&self, module_name: &str, result: &ModuleOutput) {
+        let Some(block) = result.remember.as_ref() else {
+            return;
+        };
+        let declared =
+            crate::utils::module_memory::parse(&serde_json::json!({ "remember": block }));
+        if !declared.rejected.is_empty() {
+            // Unreadable entries are named. A declaration that quietly goes nowhere is the same
+            // failure as a config tag typed as a string — it looks like it works for weeks.
+            tracing::warn!(
+                target: "module_memory", module = %module_name,
+                rejected = %declared.rejected.join("; "),
+                "remember: entries could not be read and were not stored"
+            );
+        }
+        if declared.is_empty() {
+            return;
+        }
+        let owner = crate::utils::owner::for_module(None, module_name);
+        let Some(recall) = self.recall.as_ref() else {
+            tracing::warn!(
+                target: "module_memory", module = %module_name,
+                facts = declared.facts.len(), lessons = declared.lessons.len(),
+                "remember: recall is not wired, so nothing was stored"
+            );
+            return;
+        };
+
+        let (mut facts, mut failed) = (0usize, 0usize);
+        for fact in &declared.facts {
+            let entity_id = match recall.find_entity_by_name(&fact.entity, Some(&owner)) {
+                Ok(Some(rec)) => Some(rec.id),
+                _ => recall
+                    .save_entity(crate::utils::module_memory::entity_input(fact, &owner))
+                    .await
+                    .ok()
+                    .map(|(id, _)| id),
+            };
+            let Some(entity_id) = entity_id else {
+                failed += 1;
+                continue;
+            };
+            match recall
+                .save_fact(crate::utils::module_memory::fact_input(fact, entity_id, &owner))
+                .await
+            {
+                Ok(_) => facts += 1,
+                Err(_) => failed += 1,
+            }
+        }
+
+        let mut lessons = 0usize;
+        if !declared.lessons.is_empty() {
+            // The lesson store is a thin layer over the storage port this manager already holds,
+            // so it is built from that port rather than borrowed as another manager's handle.
+            let files = crate::managers::memory_file::MemoryFileManager::new(self.storage.clone());
+            for lesson in &declared.lessons {
+                let entry = crate::managers::memory_file::MemoryEntry {
+                    name: lesson.name.clone(),
+                    category: lesson.category.clone(),
+                    description: lesson.description.clone(),
+                    content: lesson.content.clone(),
+                    confidence: crate::utils::module_memory::LESSON_CONFIDENCE,
+                };
+                match files.save(Some(&owner), &entry).await {
+                    Ok(()) => lessons += 1,
+                    Err(_) => failed += 1,
+                }
+            }
+        }
+
+        tracing::info!(
+            target: "module_memory", module = %module_name, owner = %owner,
+            facts, lessons, failed,
+            "remember: stored what the module declared"
+        );
     }
 
     /// config.json `ws` declaration → build a WsApiCall for this action, or None when the

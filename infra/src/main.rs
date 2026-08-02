@@ -263,6 +263,15 @@ async fn main() -> Result<()> {
     );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
+    let entity_manager = Arc::new(EntityManager::new(entity_port.clone()));
+    let episodic_manager = Arc::new(EpisodicManager::new(episodic_port.clone()));
+    // Recall facade — one handle onto the entity and episodic leaves, so a consumer reaches the
+    // store through a port instead of holding two managers. Built here rather than beside its
+    // first consumer, because the module manager (further down) needs it too.
+    let memory_facade: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(
+        entity_manager.clone(),
+        episodic_manager.clone(),
+    ));
     // Timezone single source — vault (SetupWizard 에서 설정한 값) 우선, env fallback, default Asia/Seoul.
     // 2026-05-14: 옛 systemd unit 의 FIREBAT_TIMEZONE env 패턴 폐기 가능 → vault single source.
     // child sysmod 가 process.env.FIREBAT_TZ / TZ 자동 inherit (sandbox spawn 시 부모 env 전달).
@@ -441,6 +450,10 @@ async fn main() -> Result<()> {
     ));
     let module_manager = Arc::new(
         ModuleManager::new(sandbox.clone(), storage.clone(), vault.clone())
+            // Where a module's `remember` block lands — its own recall scope, never the
+            // operator's. A port, so this stays one leaf reaching a store rather than two
+            // managers reaching each other.
+            .with_recall(memory_facade.clone())
             // Same cache the sandbox writes into — so a module can take `<param>CacheKey` instead
             // of the rows, and calling it stops costing more than doing the work by hand.
             .with_sysmod_cache(cache_adapter.clone())
@@ -598,15 +611,7 @@ async fn main() -> Result<()> {
             ))),
     );
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
-    let entity_manager = Arc::new(EntityManager::new(entity_port));
-    let episodic_manager = Arc::new(EpisodicManager::new(episodic_port));
-    // Recall facade — ConsolidationManager 가 EntityManager + EpisodicManager 를 직접
-    // 의존하던 BIBLE 위반 (매니저 간 직접 호출) 정정 (2026-05-06).
-    let memory_facade: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(
-        entity_manager.clone(),
-        episodic_manager.clone(),
-    ));
-    let consolidation_manager = Arc::new(ConsolidationManager::new(memory_facade));
+    let consolidation_manager = Arc::new(ConsolidationManager::new(memory_facade.clone()));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     // MediaManager — Step 2d 설정. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
     // Step 2 마무리 audit — cross-call hooks (cost/status/event/episodic) 등록 (옛 TS Core facade 1:1):

@@ -599,6 +599,12 @@ pub struct ModuleOutput {
     pub stderr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
+    /// What this run learned and wants kept — `{facts, lessons}`, written by the framework into
+    /// the module's own recall scope. Part of the envelope rather than of `data`, because it is
+    /// addressed to the framework and not to whoever called the action: a caller's output schema
+    /// should not have to know about it. See `utils::module_memory`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remember: Option<serde_json::Value>,
 }
 
 fn default_protocol_version() -> String {
@@ -620,6 +626,7 @@ impl Default for ModuleOutput {
             error_params: None,
             stderr: None,
             exit_code: None,
+            remember: None,
         }
     }
 }
