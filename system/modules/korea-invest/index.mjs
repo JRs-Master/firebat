@@ -1980,7 +1980,7 @@ const API_TABLE = {
 // strategy has to pass through: paper trading on the practice account hit "초당 거래건수를
 // 초과하였습니다" on the second call of a cycle, which reads as a broken cycle rather than as a
 // speed limit. Measured 2026-08-02 — a candle fetch that pages twice is already over it.
-const RATE_LIMIT_REAL = 20;
+const RATE_LIMIT_REAL = 5;
 const RATE_LIMIT_MOCK = 2;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
@@ -1994,7 +1994,7 @@ async function acquireSlot() {
   }
 }
 
-async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2, trIdOverride = '') {
+async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 3, trIdOverride = '') {
   const meta = API_TABLE[action];
   if (!meta) throw new Error(`알 수 없는 API ID: ${action} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('korea-invest', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
   // Some sheet entries hold a sentence covering several ids (buy and sell on one line) rather
@@ -2038,7 +2038,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   // throttled call look like an account with nothing in it, which is the worst possible lie to
   // tell something that reconciles positions.
   if (retry > 0 && String(payload?.msg1 || '').includes('초당 거래건수')) {
-    await new Promise(r => setTimeout(r, WINDOW_MS + 100));
+    await new Promise(r => setTimeout(r, WINDOW_MS * (3 - retry) + 200));
     return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1, trIdOverride);
   }
   return payload;
