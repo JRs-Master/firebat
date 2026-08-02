@@ -1069,6 +1069,20 @@ process.stdin.on('end', async () => {
       output.data.clientOrderId = data.clientOrderId ?? null;
       output.data.sentParams = params;
     }
+    if (action === 'get_candles' && ok) {
+      // The neutral contract should answer in a neutral shape. Without this the bars were only
+      // reachable through the framework's auto-cache key, so anything calling the module directly
+      // — a hand-run of the cycle before the exchange opens, most of all — saw an empty answer
+      // and could not tell it from a symbol with no history.
+      const picked = pickRows(result);
+      if (picked?.field) {
+        output.data.rows = picked.rows;
+        output.data.rowsField = picked.field;
+        output.data.count = picked.rows.length;
+      } else if (picked?.candidates) {
+        output.data.rowsCandidates = picked.candidates;
+      }
+    }
     if (STANDARD_QUERIES.includes(action) && ok) {
       // `rows` so the caller does not need the undocumented field name, `rowsField` so the name
       // becomes visible the first time a real response arrives.
