@@ -782,7 +782,20 @@ def action_cycle(inp, settings):
                          "or a `quote` with the current price"}
 
     mode_hint = settings.get("mode", "dryrun")
-    conn = store.connect("dryrun" if mode_hint == "dryrun" else "live")
+    # The ledger a row belongs to is decided by the mode that row was traded in, not by the mode
+    # the module is set to. A strategy demoted to paper — by the ladder, by an interactive call,
+    # by a missing arming switch — books a fill nobody placed, and writing that into the live
+    # ledger is exactly the contamination the two files exist to prevent. Measured 2026-08-02:
+    # two paper fills sat in live.db while the exchange had no record of an order.
+    conns = {}
+
+    def store_for(m):
+        key = "dryrun" if m == "dryrun" else "live"
+        if key not in conns:
+            conns[key] = store.connect(key)
+        return conns[key]
+
+    conn = store_for(mode_hint)
     tripped = store.kv_get(conn, "tripped") == "1"
     settings = {**settings, "_tripped": tripped}
 
@@ -815,17 +828,20 @@ def action_cycle(inp, settings):
             continue
         sides = eng.fired_sides(sig)
         cycle_id = eng.cycle_id_for(s, sig, now, inp.get("cycleId"))
-        pos = store.position_of(conn, s["id"], broker, account, sym)
+        account_is_mock = bool(inp.get("mock")) or str(s.get("mode")) == "mock"
+        mode = eng.effective_mode(settings, s, account_is_mock, unattended())
+        # Resolved before anything is read or written, because it decides which ledger this
+        # strategy's rows belong to.
+        sconn = store_for(mode)
+        pos = store.position_of(sconn, s["id"], broker, account, sym)
         # The window guard stops a second entry, not a second look. While a position is open its
         # stop and target have to be evaluated on every pass — keying the cycle on the entry that
         # opened it would otherwise make the exit unreachable for as long as the trade lasts.
         # A repeated exit is still impossible: the order key carries the side.
         if float(pos.get("qty") or 0) <= 0 and store.cycle_already_ran(
-                conn, s["id"], cycle_id, broker, account, sym):
+                sconn, s["id"], cycle_id, broker, account, sym):
             results.append({"strategyId": s["id"], "cycleId": cycle_id, "skipped": "already ran"})
             continue
-        account_is_mock = bool(inp.get("mock")) or str(s.get("mode")) == "mock"
-        mode = eng.effective_mode(settings, s, account_is_mock, unattended())
         # A scalping rule reacts to the arrival itself: the screen said this symbol qualifies now,
         # and that is the entry. Waiting for a separate indicator to agree would mean the condition
         # was written for nothing. Exits still come from the rule's stop and target, which
@@ -849,6 +865,7 @@ def action_cycle(inp, settings):
             i.update({"broker": broker, "account": account, "symbol": sym,
                       "cycleId": cycle_id, "mode": mode})
         ctxs[s["id"]] = ctx
+        ctx["_conn"] = sconn
         all_intents.extend(intents)
 
     # Offsetting pairs are settled in the ledger before anything reaches an order.
@@ -870,6 +887,7 @@ def action_cycle(inp, settings):
         mine = [i for i in remaining if i["strategyId"] == s["id"]]
         if not mine:
             continue
+        wconn = ctx.get("_conn") or conn
         allowed, dropped = eng.risk_gates(mine, ctx)
         dropped_all.extend(dropped)
         for d in dropped:
@@ -889,14 +907,14 @@ def action_cycle(inp, settings):
                 "ord_type": intent.get("ordType") or (s.get("orders") or {}).get("type") or "limit",
                 "mode": ctx["mode"], "state": "intent", "reason": intent.get("reason"),
             }
-            if not store.insert_order(conn, order):
+            if not store.insert_order(wconn, order):
                 continue
             if ctx["mode"] == "dryrun":
                 # Paper fill at the intent price. Optimistic on purpose and labelled as such: a
                 # real limit order may not fill at all, which is what the mock account is for.
-                store.update_order(conn, key, state="filled", filled_qty=intent["qty"],
+                store.update_order(wconn, key, state="filled", filled_qty=intent["qty"],
                                    filled_avg=intent["price"], sent_ms=store.now_ms())
-                store.apply_fill(conn, strategy_id=s["id"], broker=intent["broker"],
+                store.apply_fill(wconn, strategy_id=s["id"], broker=intent["broker"],
                                  account=intent["account"], symbol=intent["symbol"],
                                  side=intent["side"], qty=intent["qty"], price=intent["price"],
                                  source="dryrun", ref_order_key=key,
@@ -904,7 +922,7 @@ def action_cycle(inp, settings):
             else:
                 # The row exists before the call does. A crash between here and the broker leaves
                 # something the next cycle can resolve rather than an order nobody remembers.
-                store.update_order(conn, key, state="sent", sent_ms=store.now_ms())
+                store.update_order(wconn, key, state="sent", sent_ms=store.now_ms())
                 calls.append({**orders.broker_call({**order, "order_key": key}, s),
                               "orderKey": key})
             placed.append({"strategyId": s["id"], "side": intent["side"], "qty": intent["qty"],
@@ -918,8 +936,9 @@ def action_cycle(inp, settings):
     # and deciding here would place an order no signal asked for.
     abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls)
 
-    positions = store.read_positions(conn)
-    conn.close()
+    positions = [r for c in conns.values() for r in store.read_positions(c)]
+    for c in conns.values():
+        c.close()
     return {"success": True, "data": {
         "mode": mode_hint, "unattended": unattended(), "tripped": tripped,
         "ran": len(strategies), "price": price, "firedSides": sorted(sides),
@@ -2341,6 +2360,43 @@ def action_selftest():
     checks.append({"name": "an order the broker still lists is not called unconfirmed",
                    "want": [], "got": aged.get("aged"), "ok": not aged.get("aged")})
     ucon.close()
+
+    # --- a paper fill never lands in the live ledger ---------------------------------------
+    # The ledger a row belongs to is decided by the mode it was traded in, not the mode the
+    # module is set to. Measured 2026-08-02: the module read `real`, every strategy was demoted
+    # to paper because nothing set the unattended flag, and two invented fills sat in live.db
+    # while the exchange had no record of an order.
+    checks.append({"name": "an interactive call is paper however the module is set", "want":
+                   "dryrun",
+                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False, False),
+                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False,
+                                            False) == "dryrun"})
+    checks.append({"name": "and unattended with arming is the only way to real", "want": "real",
+                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False, True),
+                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False,
+                                            True) == "real"})
+    # The routing itself: a strategy demoted to paper writes to the paper file even when the
+    # module is set to real.
+    routed = []
+    real_settings = {"mode": "real", "realArmed": True, "tradingEnabled": True,
+                     "strategies": [{"id": "r", "enabled": True, "kind": "rules", "symbol": "AAA",
+                                     "broker": "b", "account": "",
+                                     "money": {"perOrderKrw": 6000}, "limits": {}, "rules": []}]}
+    rc = action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "buy", "price": 10.0}],
+                                  "lastClosedBarDate": "d1"},
+                       "symbol": "AAA",
+                       "bars": [{"date": "d1", "open": 10, "high": 10, "low": 10, "close": 10,
+                                 "volume": 1}]}, real_settings)["data"]
+    routed.append(rc.get("mode"))
+    paper = store.connect("dryrun")
+    live = store.connect("live")
+    in_paper = paper.execute("SELECT COUNT(*) c FROM ledger WHERE symbol='AAA'").fetchone()["c"]
+    in_live = live.execute("SELECT COUNT(*) c FROM ledger WHERE symbol='AAA'").fetchone()["c"]
+    paper.close()
+    live.close()
+    checks.append({"name": "a demoted strategy's fill goes to the paper ledger, not the live one",
+                   "want": (True, 0), "got": (in_paper > 0, in_live),
+                   "ok": in_paper > 0 and in_live == 0})
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed,

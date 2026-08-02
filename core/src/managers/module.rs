@@ -553,6 +553,19 @@ impl ModuleManager {
                     keep_full_rows,
                     ..SandboxExecuteOpts::default()
                 };
+                // Whether a person is waiting on the other end. A module that can spend money
+                // needs to know: a scheduled run was authorised when it was scheduled, a chat
+                // message was not, and the same call must not mean the same thing in both.
+                //
+                // The autotrade module has read this since it was written and nothing ever set
+                // it, so every scheduled cycle looked interactive, demoted itself to paper, and
+                // booked fills nobody placed — the exchange had no record of a single order
+                // while the ledger showed two (2026-08-02).
+                if crate::utils::cron_context::is_cron_context_active() {
+                    exec_opts
+                        .env
+                        .insert("FIREBAT_UNATTENDED".to_string(), "1".to_string());
+                }
                 // Per-call timeout — a module that composes others holds its process open while
                 // each callee runs, so the 60s default is the caller's whole budget rather than
                 // one API round trip.
