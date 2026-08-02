@@ -503,7 +503,10 @@ mod tests {
     #[test]
     fn component_names_returns_all() {
         let names = component_names();
-        assert_eq!(names.len(), 39);
+        // Not a fixed number: adding a component is routine and should not fail a test, while a
+        // component quietly disappearing should. So it is checked against the registry itself.
+        assert_eq!(names.len(), components().len());
+        assert!(names.len() >= 39, "레지스트리가 줄었다 — 컴포넌트가 사라졌는지 확인");
         assert!(names.contains(&"stock_chart"));
         assert!(names.contains(&"table"));
         assert!(names.contains(&"network"));

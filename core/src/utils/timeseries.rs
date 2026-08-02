@@ -419,8 +419,11 @@ mod tests {
         let spec = parse_ts_spec(&cfg, "korea-invest", "daily", &input).unwrap();
         assert_eq!(spec.start, 20260101000000);
         assert_eq!(spec.end, 20260701000000);
-        assert!(spec.key.contains("query.fid_input_iscd=005930"));
-        assert!(spec.key.contains("query.fid_period_div_code=d"));
+        // The key keeps the parameter name exactly as declared and lowercases only the value.
+        // Not cosmetic: coverage rows already stored on the server hang off this string, so
+        // normalising the name to satisfy a test would orphan every series we have.
+        assert!(spec.key.contains("query.FID_INPUT_ISCD=005930"), "got {}", spec.key);
+        assert!(spec.key.contains("query.FID_PERIOD_DIV_CODE=d"), "got {}", spec.key);
     }
 
     #[test]

@@ -447,6 +447,9 @@ mod tests {
             .unwrap();
         let result = c.read(&key, 0, 10);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("만료"));
+        // The message is an i18n key now, and asserting on the Korean text would break whenever
+        // the wording changed — or, as here, whenever the translation file is not loadable.
+        let err = result.unwrap_err();
+        assert!(err.contains("cache.expired_or_missing") || err.contains("만료"), "got {err}");
     }
 }
