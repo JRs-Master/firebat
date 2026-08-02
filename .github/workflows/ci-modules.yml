@@ -1,0 +1,80 @@
+# System modules — the half of the codebase CI never looked at.
+#
+# Modules deploy by `git pull` on the server, so nothing stands between a commit and a live
+# trading cycle. Nothing checked them either: not a syntax check, not the 200-odd self-test
+# assertions the trading module already carries and only ran when somebody remembered to ask.
+# A shebang in the wrong place would have shipped, and the Rust workflow would have stayed green
+# because its path filter never mentions `system/`.
+#
+# Cheap on purpose — no network, no credentials, seconds to run. A module that needs a key to be
+# tested is tested against the venue by hand; this catches the class that does not need one.
+name: CI Modules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'system/**'
+      - '.github/workflows/ci-modules.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'system/**'
+      - '.github/workflows/ci-modules.yml'
+
+jobs:
+  modules:
+    name: Modules (syntax + selftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Every entry point parses. `node --check` and `compileall` are not deep, but they are the
+      # difference between "the module is broken" and "the module is broken in production".
+      - name: JavaScript syntax
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            node --check "$f" || { echo "::error file=$f::syntax"; fail=1; }
+          done < <(find system -name '*.mjs' -o -name '*.cjs' -o -name '*.js')
+          exit $fail
+
+      - name: Python syntax
+        run: python -m compileall -q system
+
+      # A module whose config.json does not parse registers nothing, and the only symptom is that
+      # it silently is not there.
+      - name: config.json parses
+        run: |
+          fail=0
+          for f in system/modules/*/config.json; do
+            python -c "import json,sys;json.load(open(sys.argv[1],encoding='utf-8'))" "$f" \
+              || { echo "::error file=$f::not valid JSON"; fail=1; }
+          done
+          exit $fail
+
+      # The trading module carries its own assertions — ledger invariants, the exit ladder, order
+      # keys, the gate. They caught three real defects the night they were written and then went
+      # back to running only when asked.
+      - name: autotrade selftest
+        run: |
+          cd system/modules/autotrade
+          echo '{"data":{"action":"selftest"}}' | python main.py > /tmp/selftest.json
+          python - <<'EOF'
+          import json
+          d = json.load(open('/tmp/selftest.json', encoding='utf-8'))
+          data = d.get('data') or {}
+          bad = [c for c in data.get('checks', []) if not c.get('ok')]
+          for c in bad:
+              print(f"::error::{c['name']} — want {c.get('want')!r}, got {c.get('got')!r}")
+          print(f"{data.get('passed')} passed, {len(bad)} failed")
+          raise SystemExit(1 if (bad or not d.get('success')) else 0)
+          EOF

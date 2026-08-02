@@ -83,6 +83,12 @@ jobs:
       - name: cargo check
         run: cargo check -p firebat-core -p firebat-infra --all-targets
 
+      # Core's tests had never run anywhere. The job was called "cargo test" and tested infra;
+      # `cargo test -p firebat-core` appears nowhere in this file's history. Eight assertions had
+      # gone stale unnoticed, and every test written for core — including the ones guarding the
+      # hub boundary and the owner grammar — was decoration.
+      - name: cargo test (core)
+        run: cargo test -p firebat-core --lib
       - name: cargo test (infra)
         run: cargo test -p firebat-infra --tests
 
