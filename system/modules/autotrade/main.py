@@ -730,8 +730,13 @@ def action_gate(inp, settings):
         "trades": pipeline_trades,
         # Echoed so the steps behind this one need the alias written down once, here, instead of
         # in every query step of the schedule.
+        # Whether the account this cycle runs as is a practice one. The framework resolves it
+        # from the broker's registry (config `accountFrom`) and injects `mock`; this module cannot
+        # read another module's accounts and must not guess. Carried here because the steps behind
+        # the gate never see the alias, and booking a practice fill as live would feed the
+        # promotion ladder the one kind of evidence it exists to reject.
         "scopedTo": {"broker": only_broker or None, "account": only_account or None,
-                     "market": only_market or None}
+                     "market": only_market or None, "mock": inp.get("mock")}
                     if (only_broker or only_account or only_market) else None,
     }}
 
@@ -1082,6 +1087,14 @@ def action_cycle(inp, settings):
                 "error": "no price to work from — pass `bars` (or barsCacheKey), `signal`, "
                          "or a `quote` with the current price"}
 
+    # What the gate resolved about the account this cycle runs as. The cycle step is handed the
+    # gate's whole output as `plan`, so this is where the alias's nature arrives — the step itself
+    # names no account and cannot ask.
+    _plan = inp.get("plan")
+    if isinstance(_plan, dict):
+        _plan = _plan.get("data") if isinstance(_plan.get("data"), dict) else _plan
+    scoped_mock = ((_plan or {}).get("scopedTo") or {}).get("mock") if isinstance(_plan, dict) else None
+
     mode_hint = settings.get("mode", "dryrun")
     # The ledger a row belongs to is decided by the mode that row was traded in, not by the mode
     # the module is set to. A strategy demoted to paper — by the ladder, by an interactive call,
@@ -1144,7 +1157,11 @@ def action_cycle(inp, settings):
             continue
         sides = eng.fired_sides(sig)
         cycle_id = eng.cycle_id_for(s, sig, now, inp.get("cycleId"))
-        account_is_mock = bool(inp.get("mock")) or str(s.get("mode")) == "mock"
+        # The account decides, not the strategy: a practice account's keys only work on the
+        # practice host, so the two must never be able to contradict each other. `mock` arrives
+        # injected on a scoped call, and through the gate's `scopedTo` on the steps behind it.
+        account_is_mock = (bool(inp.get("mock")) or bool(scoped_mock)
+                           or str(s.get("mode")) == "mock")
         mode = eng.effective_mode(settings, s, account_is_mock, unattended())
         # Resolved before anything is read or written, because it decides which ledger this
         # strategy's rows belong to.
@@ -2751,6 +2768,28 @@ def action_selftest():
                    "got": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False, True),
                    "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False,
                                             True) == "real"})
+    # A practice account outranks every setting above it. Its keys only work on the practice host,
+    # so a run booked as live would be recording fills the live venue never saw — and the promotion
+    # ladder reads that ledger. Measured 2026-08-03: seventeen live-cap refusals on a cycle scoped
+    # to a practice account, because nothing told this module what the alias was.
+    armed = {"mode": "real", "realArmed": True}
+    checks.append({"name": "a practice account is paper whatever the strategy claims",
+                   "want": "mock",
+                   "got": eng.effective_mode(armed, {"mode": "real"}, True, True),
+                   "ok": eng.effective_mode(armed, {"mode": "real"}, True, True) == "mock"})
+    # And the wiring that carries it: the gate echoes what the framework injected, because the
+    # steps behind the gate are never handed the alias.
+    gated = action_gate({"action": "gate", "broker": "kis-trade", "account": "practice",
+                         "mock": True},
+                        {"tradingEnabled": True, "mode": "real", "realArmed": True,
+                         "trades": [{"id": "t", "symbol": "X", "broker": "kis-trade",
+                                     "account": "practice"}],
+                         "strategies": [{"id": "t", "enabled": True, "kind": "rules",
+                                         "symbol": "X", "broker": "kis-trade",
+                                         "account": "practice", "rules": []}]})
+    scoped = ((gated.get("data") or {}).get("scopedTo") or {})
+    checks.append({"name": "the gate carries the account's nature to the steps behind it",
+                   "want": True, "got": scoped.get("mock"), "ok": scoped.get("mock") is True})
     # The routing itself: a strategy demoted to paper writes to the paper file even when the
     # module is set to real.
     routed = []

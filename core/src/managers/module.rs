@@ -399,6 +399,56 @@ impl ModuleManager {
         // authentication error from the broker. `mock` follows the account rather than the caller:
         // a mock app key is rejected outright on the live domain (kiwoom 8030), so the two must
         // not be able to contradict each other.
+        // A module can also run *as* an account it does not own. The trading module names the
+        // broker and the alias per trade — the registry belongs to the broker — so nothing was
+        // resolving them and `mock` never arrived. The fallback then read the strategy's own mode
+        // instead of the account's, which meant a practice account was booked as live: caps for
+        // real money applied to it, and the promotion ladder would have counted practice results
+        // as evidence, which is the one thing the ladder exists to prevent (measured 2026-08-03).
+        //
+        // `accountFrom` names the input field holding the owning module. Only the same two fields
+        // are injected, and only when the schema declares them, so this hands over the account's
+        // *nature* and never its credentials — those are env, from `secrets`, unchanged.
+        let borrowed_owner = config
+            .as_ref()
+            .filter(|c| c.get("accounts").is_none())
+            .and_then(|c| c.get("accountFrom").and_then(|v| v.as_str()))
+            .and_then(|field| input_data.get(field).and_then(|v| v.as_str()))
+            .map(str::trim)
+            .filter(|owner| !owner.is_empty() && is_safe_name(owner))
+            .map(str::to_string);
+        let borrowed: Option<serde_json::Value> = match (
+            &borrowed_owner,
+            config.as_ref(),
+            input_data.as_object(),
+        ) {
+            (Some(owner), Some(cfg), Some(obj)) => {
+                let reg = self.account_registry_effective(owner).await;
+                let requested = input_data.get("account").and_then(|v| v.as_str());
+                // A miss is not fatal here: this module is not the one about to authenticate, and
+                // the broker call that follows raises the specific error. Saying nothing leaves
+                // `mock` absent, which the module reads as "unknown" rather than as "real".
+                match reg.resolve(requested) {
+                    Ok(Some(entry)) => {
+                        let mut out = obj.clone();
+                        if cfg.pointer("/input/properties/mock").is_some() {
+                            out.insert("mock".to_string(), serde_json::json!(entry.is_mock()));
+                        }
+                        if cfg.pointer("/input/properties/accountNo").is_some() {
+                            let digits = entry.digits();
+                            if !digits.is_empty() {
+                                out.insert("accountNo".to_string(), serde_json::json!(digits));
+                            }
+                        }
+                        Some(serde_json::Value::Object(out))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let input_data: &serde_json::Value = borrowed.as_ref().unwrap_or(input_data);
+
         let account_scoped: Option<serde_json::Value> = match config
             .as_ref()
             .filter(|c| c.get("accounts").is_some())
