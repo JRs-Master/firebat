@@ -1,6 +1,6 @@
 {
   "title": "autotrade (국내주식/한투) — 전 종목 사이클",
-  "cronTime": "0 */5 0-6 * * 1-5",
+  "cronTime": "0 */5 9-15 * * 1-5",
   "executionMode": "pipeline",
   "pipeline": [
     {

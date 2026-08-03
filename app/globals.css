@@ -39,15 +39,20 @@ html {
    바보다 원장 표의 가로 바가 진해 보인 것이 이 차이다). 그래서 선택이 아니라 기본으로 둔다.
 
    1px — webkit 계열이 렌더하는 최소값. Firefox 는 `scrollbar-width` 가 thin/auto/none 셋뿐이라
-   px 를 못 받고 그 브라우저의 thin 이 하한이다. 그만큼 얇으면 잘 안 보이므로 thumb 색은 조금
-   진하게 — 두께로 잃은 존재감을 대비로 돌려준다.
+   px 를 못 받고 그 브라우저의 thin 이 하한이다.
 
    `.scrollbar-none`(클래스 선택자) 이 명시 숨김을 계속 이긴다 — 여기는 `*` 라 특이도가 낮다. */
+/* 색은 토큰 하나. 규칙을 합쳐 놓고 색을 여기저기 적으면 두께만 같고 톤이 갈린다 — 표 안 바가
+   전역 바와 달라 보인 것이 그 자리였다. hover 를 따로 두지 않는 것도 같은 이유다: 마우스가 있는
+   기기에서만 진해지면 "PC 가 더 진하다" 가 된다. */
+:root {
+  --scrollbar-thumb: rgba(0, 0, 0, 0.25);
+}
 *,
 html,
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 *::-webkit-scrollbar,
 html::-webkit-scrollbar,
@@ -63,13 +68,8 @@ html::-webkit-scrollbar-track,
 *::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb,
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--scrollbar-thumb);
   border-radius: 1px;
-}
-*::-webkit-scrollbar-thumb:hover,
-html::-webkit-scrollbar-thumb:hover,
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.45);
 }
 /* 모바일에서만 스크롤바 숨김 — 터치 스크롤이라 시각 노이즈 제거(깔쌈). scrollbar-thin 과 같이 쓰면
    PC 는 얇은 바 유지(스크롤 affordance), 모바일은 hidden. */
@@ -244,7 +244,7 @@ html::-webkit-scrollbar-thumb:hover,
   /* 커스텀 스크롤바 텍스트 영역 */
   .scrolltext {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-gray-300) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
   /* 스크롤바 숨김 (탭 바 등) */
@@ -398,16 +398,10 @@ html::-webkit-scrollbar-thumb:hover,
   color: var(--cms-text);
 }
 
-/* CMS scope scrollbar — overflow 컨테이너만 (Table 가로 스크롤 등). 글로벌 viewport scrollbar 는 기존 유지. */
-.firebat-cms-content *::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-.firebat-cms-content *::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
-}
+/* CMS scope 도 같은 토큰. 발행 페이지만 다른 톤일 이유가 없고, 다르면 그 차이를 설명할 사람이
+   없다. */
 .firebat-cms-content {
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* ── CMS Typography Tokens (P2 디자인 깊이) ──

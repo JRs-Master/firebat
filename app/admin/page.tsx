@@ -2500,8 +2500,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative"
         onMouseDown={() => window.dispatchEvent(new Event('firebat-collapse-sidebar'))}>
-        {/* PC 상단 그라디언트 */}
-        <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
+        {/* PC 상단 그라디언트 — 스크롤바 폭만 비켜 간다. `w-full` 이면 바 위까지 덮어서, 바의
+            위아래 끝이 배경으로 흐려지고 스크롤바 자체가 그라데이션인 것처럼 보인다. */}
+        <div className="hidden md:block absolute top-0 left-0 right-[3px] h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
         <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 md:px-12 pt-4 md:pt-16 scrolltext">
@@ -2633,7 +2634,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         {/* 입력창 */}
         {/* z-30 — 채팅 내용이 이 오버레이 밑으로 스크롤되는 구조라, 테이블 sticky 헤더/코너셀(z-20)이
             입력창 위로 떠 보이던 문제. 입력 오버레이를 테이블 sticky 위로 올려 가린다. */}
-        <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-30">
+        <div className="absolute bottom-0 left-0 right-[3px] bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-30">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto relative pointer-events-auto flex flex-col">
             {!composerCollapsed && (
             <div className="flex w-full gap-4">
