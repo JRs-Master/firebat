@@ -8,23 +8,17 @@
 
 import { URL_CATEGORY, API_NAMES } from './kiwoom-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
+import { acquireSlot } from './rate-window.mjs';
 const BASE_REAL = 'https://api.kiwoom.com';
 const BASE_MOCK = 'https://mockapi.kiwoom.com';
 
 // 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
 // sysmod 는 env 로 주입된 raw 토큰(KIWOOM_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
 
+// Kiwoom counts five calls a second against the app key. The window lives in a file because each
+// step of a cycle is its own process — the array that used to hold it was empty on every call, so
+// nothing was limited and a cycle's candle fetches went out all at once.
 const RATE_LIMIT = 5;
-const WINDOW_MS = 1000;
-const _reqTimes = [];
-async function acquireSlot() {
-  while (true) {
-    const now = Date.now();
-    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < RATE_LIMIT) { _reqTimes.push(now); return; }
-    await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
-  }
-}
 
 // The continuation cursor the last response carried. Kiwoom paginates chart calls through the
 // `cont-yn` / `next-key` header pair, and the body alone cannot say whether more exists — so the
@@ -35,7 +29,7 @@ async function callApi(base, token, apiId, params = {}, retry = 2, cont = null) 
   const category = URL_CATEGORY[apiId];
   if (!category) throw new Error(`알 수 없는 API ID: ${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
   const url = `${base}/api/${category}`;
-  await acquireSlot();
+  await acquireSlot(`kiwoom-${base.includes('mock') ? 'mock' : 'real'}`, RATE_LIMIT);
   const resp = await fetch(url, {
     method: 'POST',
     headers: {

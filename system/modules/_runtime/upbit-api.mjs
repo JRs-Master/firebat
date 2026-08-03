@@ -12,6 +12,7 @@
  * skips it.
  */
 import crypto from 'crypto';
+import { acquireSlot as acquireShared } from './rate-window.mjs';
 
 const BASE = 'https://api.upbit.com';
 
@@ -349,6 +350,10 @@ function buildQueryString(params) {
 
 // ─── API 호출 ───
 async function callApi(method, endpoint, params, accessKey, secretKey, needAuth) {
+  // Upbit counts per group and per IP — ten a second on candles, eight on orders — and the whole
+  // allowance is shared with every other process asking at the same moment. The paging loop spaced
+  // its own calls and nothing spaced the cycle's five symbols against each other.
+  await acquireShared(needAuth ? 'upbit-private' : 'upbit-public', needAuth ? 8 : 10);
   const headers = { 'Content-Type': 'application/json' };
 
   if (needAuth) {

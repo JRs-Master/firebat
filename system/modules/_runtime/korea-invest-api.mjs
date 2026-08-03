@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { API_TABLE } from './korea-invest-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
+import { acquireSlot as acquireShared } from './rate-window.mjs';
 
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
@@ -25,40 +26,9 @@ const RATE_LIMIT_MOCK = 1;
 const WINDOW_MS = 1000;
 let _rateLimit = RATE_LIMIT_REAL;
 
-// The limit belongs to the credential, not to this process — and every step of a scheduled cycle
-// is its own process. An in-memory window therefore counted to two while eight siblings were
-// calling at the same time, and the practice account refused half of them. The window lives in a
-// file beside the data, one line per call: appends of a few bytes do not interleave, so no lock
-// is needed to keep the count honest.
-function slotFile(isMock) {
-  const dir = path.join(process.env['FIREBAT_DATA_DIR'] || 'data', 'ratelimit');
-  fs.mkdirSync(dir, { recursive: true });
-  return path.join(dir, `kis-${isMock ? 'mock' : 'real'}.log`);
-}
-
-async function acquireSlot(isMock) {
-  const file = slotFile(isMock);
-  for (let attempt = 0; ; attempt += 1) {
-    const now = Date.now();
-    let recent = [];
-    try {
-      recent = fs.readFileSync(file, 'utf-8').split('\n')
-        .map(Number).filter(t => t > 0 && now - t < WINDOW_MS);
-    } catch { /* first call of the day — no file yet */ }
-    if (recent.length < _rateLimit) {
-      fs.appendFileSync(file, now + '\n');
-      // Keep it from growing without bound; the tail is all anyone reads.
-      if (Math.random() < 0.02) {
-        try { fs.writeFileSync(file, recent.concat(now).join('\n') + '\n'); } catch { /* fine */ }
-      }
-      return;
-    }
-    // Jittered, so eight siblings woken by the same window do not all fire on the same tick.
-    const wait = WINDOW_MS - (now - Math.min(...recent)) + 20 + Math.floor(Math.random() * 120);
-    await new Promise(r => setTimeout(r, Math.min(wait, WINDOW_MS + 200)));
-    if (attempt > 40) return;   // never wedge a cycle on the limiter
-  }
-}
+// The window itself is in `_runtime/rate-window.mjs`, shared with the other dialects — it was
+// written here first and Kiwoom never got it, which is how that one ended up with no limiter.
+const acquireSlot = (isMock) => acquireShared(`kis-${isMock ? 'mock' : 'real'}`, _rateLimit, WINDOW_MS);
 
 async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 3, trIdOverride = '') {
   const meta = API_TABLE[action];

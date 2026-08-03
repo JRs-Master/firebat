@@ -1,4 +1,5 @@
 /**
+import { acquireSlot as acquireShared } from './rate-window.mjs';
  * 토스증권 dialect — shared by the two modules that speak it.
  *
  * The split is not about code. It is about which actions a caller can reach and which credentials
@@ -53,19 +54,13 @@ const API_TABLE = {
   'conditional-order-detail': { method: 'GET', path: '/api/v1/conditional-orders/{conditionalOrderId}', pathParams: ['conditionalOrderId'], needsAccount: true, name: '조건주문 상세' },
 };
 
-// 공유 rate limiter — 토스 rate limit group 별 한도는 응답 헤더로 관리되나, 보수적 공통 throttle +
-// 429 재시도(Retry-After 존중)로 충분. (그룹별 정밀 제어는 한도 마찰 실측 시.)
+// Toss counts per rate-limit group and reports the allowance in response headers; a conservative
+// shared throttle plus 429 retry (honouring Retry-After) covers it until a group actually bites.
+// The window is the shared one, in a file: the array that used to be here was per process, and a
+// scheduled cycle is a dozen of them.
 const RATE_LIMIT = 10;
 const WINDOW_MS = 1000;
-const _reqTimes = [];
-async function acquireSlot() {
-  while (true) {
-    const now = Date.now();
-    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < RATE_LIMIT) { _reqTimes.push(now); return; }
-    await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
-  }
-}
+const acquireSlot = () => acquireShared('toss', RATE_LIMIT, WINDOW_MS);
 
 async function callApi(token, action, data, retry = 2) {
   const meta = API_TABLE[action];
