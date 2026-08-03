@@ -2233,8 +2233,8 @@
  {
   "id": "선물옵션 증거금률",
   "name": "선물옵션 증거금률",
-  "description": "선물옵션 증거금률",
-  "domain": "[국내선물옵션] 주문/계좌",
+  "description": "선물옵션 증거금률 — 상품별 증거금 비율표(거래소 공개 기준). 문서 목록 시트가 이 API 를 \"주문/계좌\" 로 묶었으나 경로는 /quotations/ 이고 계좌를 읽지 않는다 — urlPath 가 신뢰 소스.",
+  "domain": "[국내선물옵션] 시세",
   "method": "GET",
   "path": "/uapi/domestic-futureoption/v1/quotations/margin-rate",
   "trId": "TTTO6032R",

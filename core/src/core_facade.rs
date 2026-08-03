@@ -520,6 +520,30 @@ mod module_contract_tests {
         // public endpoint there is. Correcting the vocabulary rather than granting exemptions:
         // an exemption list is the thing this test exists to avoid needing.
         const PUBLIC_WORDS: [&str; 3] = ["orderbook", "order-book", "호가"];
+        // The domains the venues themselves use for the account side of their own catalogues.
+        const MONEY_DOMAINS: [&str; 13] = [
+            "계좌", "자산", "잔고", "주문", "주문조회", "주문정보", "조건주문", "조건주문조회",
+            "신용주문", "환전", "이체", "입출금", "예수금",
+        ];
+        // A module's action catalog, or an empty list when it has none.
+        fn catalog_of(dir: &Path) -> Vec<serde_json::Value> {
+            let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else {
+                return vec![];
+            };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                return vec![];
+            };
+            let entries = match &config["actionCatalog"] {
+                v if v["file"].is_string() => std::fs::read_to_string(dir.join(v["file"].as_str().unwrap_or_default()))
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                serde_json::Value::Array(a) => Some(serde_json::Value::Array(a.clone())),
+                _ => None,
+            };
+            entries
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default()
+        }
         let mut problems: Vec<String> = vec![];
         for entry in entries.flatten() {
             let dir = entry.path();
@@ -557,6 +581,30 @@ mod module_contract_tests {
                 }
                 if let Some(hit) = MONEY.iter().find(|m| lower.contains(*m)) {
                     problems.push(format!("{name}: hubSafe but declares '{action}' ({hit})"));
+                }
+            }
+            // The stronger check, where the venue supplies one. Action ids are arbitrary strings
+            // and reading them is guesswork — which is how `holdings`, `buying-power` and
+            // `sellable-quantity` got through: none of them names an account or an order, and all
+            // three were already labelled 자산 / 주문정보 in the sheet sitting next to them. A
+            // domain is a small vendor-authored set and a new action inherits it, so this catches
+            // the next one without anybody widening a word list.
+            for entry in catalog_of(&dir).iter() {
+                let Some(domain) = entry["domain"].as_str() else {
+                    continue;
+                };
+                // Any segment, not just the last: the venues write compound domains
+                // ("[국내선물옵션] 주문/계좌", "OAuth 인증/접근토큰발급") and which end is
+                // meaningful varies. Reading only one side makes the check depend on formatting.
+                if let Some(hit) = domain
+                    .split(['/', ']'])
+                    .map(str::trim)
+                    .find(|seg| MONEY_DOMAINS.contains(seg))
+                {
+                    let id = entry["id"].as_str().unwrap_or("?");
+                    problems.push(format!(
+                        "{name}: hubSafe but its catalog files '{id}' under the venue's own '{hit}' domain"
+                    ));
                 }
             }
         }
