@@ -1,0 +1,47 @@
+{
+  "title": "autotrade (국내주식/키움) — 종목관리: 거래대금 상위를 매매 목록으로",
+  "cronTime": "0 * 9-15 * * 1-5",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "ka10032",
+        "params": {
+          "mrkt_tp": "000",
+          "mang_stk_incls": "1",
+          "stex_tp": "3"
+        }
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "screen_rank",
+        "trade": "kw-screen-limit",
+        "top": 15,
+        "source": "ka10032 거래대금상위"
+      },
+      "inputMap": {
+        "rows": "$step0.trde_prica_upper",
+        "rowsCacheKey": "$step0._cacheKey"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "screen_rank",
+        "trade": "kw-screen-market",
+        "top": 15,
+        "source": "ka10032 거래대금상위"
+      },
+      "inputMap": {
+        "rows": "$step0.trde_prica_upper",
+        "rowsCacheKey": "$step0._cacheKey"
+      }
+    }
+  ]
+}

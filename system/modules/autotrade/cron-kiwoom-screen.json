@@ -5,46 +5,6 @@
   "pipeline": [
     {
       "type": "TOOL_CALL",
-      "tool": "sysmod_kiwoom",
-      "inputData": {
-        "action": "ka10032",
-        "params": {
-          "mrkt_tp": "000",
-          "mang_stk_incls": "1",
-          "stex_tp": "3"
-        }
-      }
-    },
-    {
-      "type": "TOOL_CALL",
-      "tool": "sysmod_autotrade",
-      "inputData": {
-        "action": "screen_rank",
-        "trade": "kw-screen-limit",
-        "top": 15,
-        "source": "ka10032 거래대금상위"
-      },
-      "inputMap": {
-        "rows": "$step0.trde_prica_upper",
-        "rowsCacheKey": "$step0._cacheKey"
-      }
-    },
-    {
-      "type": "TOOL_CALL",
-      "tool": "sysmod_autotrade",
-      "inputData": {
-        "action": "screen_rank",
-        "trade": "kw-screen-market",
-        "top": 15,
-        "source": "ka10032 거래대금상위"
-      },
-      "inputMap": {
-        "rows": "$step0.trde_prica_upper",
-        "rowsCacheKey": "$step0._cacheKey"
-      }
-    },
-    {
-      "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
       "inputData": {
         "action": "gate",
@@ -61,7 +21,7 @@
     },
     {
       "type": "FOREACH",
-      "items": "$step4.trades",
+      "items": "$step1.trades",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -89,13 +49,13 @@
         "slippageRate": 0.0005
       },
       "inputMap": {
-        "trades": "$step4.trades",
-        "fetched": "$step6.results"
+        "trades": "$step1.trades",
+        "fetched": "$step3.results"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step7.runs",
+      "items": "$step4.runs",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -111,8 +71,8 @@
         "action": "list_open_orders"
       },
       "inputMap": {
-        "account": "$step4.scopedTo.account",
-        "market": "$step4.scopedTo.market"
+        "account": "$step1.scopedTo.account",
+        "market": "$step1.scopedTo.market"
       }
     },
     {
@@ -122,14 +82,14 @@
         "action": "cycle"
       },
       "inputMap": {
-        "plan": "$step7",
-        "signals": "$step8.results",
-        "openOrders": "$step9.rows"
+        "plan": "$step4",
+        "signals": "$step5.results",
+        "openOrders": "$step6.rows"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step10.calls",
+      "items": "$step7.calls",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -145,8 +105,8 @@
         "action": "record_orders"
       },
       "inputMap": {
-        "calls": "$step10.calls",
-        "results": "$step11.results"
+        "calls": "$step7.calls",
+        "results": "$step8.results"
       }
     },
     {
@@ -156,8 +116,8 @@
         "action": "list_fills"
       },
       "inputMap": {
-        "account": "$step4.scopedTo.account",
-        "market": "$step4.scopedTo.market"
+        "account": "$step1.scopedTo.account",
+        "market": "$step1.scopedTo.market"
       }
     },
     {
@@ -167,8 +127,8 @@
         "action": "list_open_orders"
       },
       "inputMap": {
-        "account": "$step4.scopedTo.account",
-        "market": "$step4.scopedTo.market"
+        "account": "$step1.scopedTo.account",
+        "market": "$step1.scopedTo.market"
       }
     },
     {
@@ -178,8 +138,8 @@
         "action": "get_balance"
       },
       "inputMap": {
-        "account": "$step4.scopedTo.account",
-        "market": "$step4.scopedTo.market"
+        "account": "$step1.scopedTo.account",
+        "market": "$step1.scopedTo.market"
       }
     },
     {
@@ -189,9 +149,9 @@
         "action": "reconcile"
       },
       "inputMap": {
-        "fills": "$step13.rows",
-        "openOrders": "$step14.rows",
-        "balanceRows": "$step15.rows"
+        "fills": "$step10.rows",
+        "openOrders": "$step11.rows",
+        "balanceRows": "$step12.rows"
       }
     }
   ]
