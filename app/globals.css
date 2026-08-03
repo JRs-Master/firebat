@@ -34,22 +34,21 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* 얇은 scrollbar — **전역 기본**. 클래스를 붙인 곳만 얇던 탓에 나머지는 브라우저 기본 바가
-   그려졌고, 나란히 놓이면 그쪽이 눈에 띄게 두껍고 진했다(2026-08-03 모바일 실측: 설정의 세로
-   바보다 원장 표의 가로 바가 진해 보인 것이 이 차이다). 그래서 선택이 아니라 기본으로 둔다.
-
-   1px — webkit 계열이 렌더하는 최소값. Firefox 는 `scrollbar-width` 가 thin/auto/none 셋뿐이라
-   px 를 못 받고 그 브라우저의 thin 이 하한이다.
-
-   `.scrollbar-none`(클래스 선택자) 이 명시 숨김을 계속 이긴다 — 여기는 `*` 라 특이도가 낮다. */
-/* 색은 토큰 하나, 그리고 **불투명**. 규칙을 합쳐 놓고 색을 여기저기 적으면 두께만 같고 톤이
-   갈린다 — 표 안 바가 전역 바와 달라 보인 첫 번째 이유가 그거였다. 값을 하나로 만든 뒤에도
-   달라 보인 두 번째 이유는 알파다: 반투명 thumb 은 뒤 배경을 비추므로 흰 표 위와 slate-50 채팅
-   위에서 서로 다른 색으로 합성된다. 같은 선언이 같은 색으로 보이려면 알파가 없어야 한다.
-   hover 를 두지 않는 것도 같은 종류의 이유 — 마우스가 있는 기기에서만 진해지면 "PC 가 더
-   진하다" 가 된다. */
+/* Scrollbars — one mechanism, one colour, everywhere.
+ *
+ * The standard properties are the mechanism. Chromium honours `scrollbar-width` from 121 and, once
+ * it is set, ignores `::-webkit-scrollbar` sizing entirely — so a rule that asks for 1px there and
+ * `thin` here renders 1px on one engine and the browser's thin on another. That split is what made
+ * the same page show two different bars, and no px value fixes it while both mechanisms are live.
+ *
+ * The webkit block stays only for engines with no `scrollbar-width` (Safari before 18.2), sized to
+ * match what the standard `thin` renders rather than fighting it.
+ *
+ * Opaque, because alpha composites against whatever is behind the bar — the identical declaration
+ * came out one grey on a white table and another on the slate-50 chat.
+ */
 :root {
-  --scrollbar-thumb: #c3c8d0;
+  --scrollbar-thumb: #dfe3e8;
 }
 *,
 html,
@@ -60,8 +59,8 @@ html,
 *::-webkit-scrollbar,
 html::-webkit-scrollbar,
 .scrollbar-thin::-webkit-scrollbar {
-  width: 1px;
-  height: 1px;
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-track,
 html::-webkit-scrollbar-track,
@@ -72,7 +71,7 @@ html::-webkit-scrollbar-track,
 html::-webkit-scrollbar-thumb,
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 1px;
+  border-radius: 4px;
 }
 /* 모바일에서만 스크롤바 숨김 — 터치 스크롤이라 시각 노이즈 제거(깔쌈). scrollbar-thin 과 같이 쓰면
    PC 는 얇은 바 유지(스크롤 affordance), 모바일은 hidden. */

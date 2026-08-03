@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { API_TABLE } from './korea-invest-apis.generated.mjs';
+import { roundToKrxTick } from './krx-tick.mjs';
 
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
@@ -301,7 +302,9 @@ function standardCall(action, data) {
       if (!market && !(price > 0)) throw new Error('place_order: 지정가 주문에는 price 가 필요합니다.');
       return { apiId: 'v1_국내주식-001', hint: sideHint(data, true), body: {
         ...acct, PDNO: symbol, ORD_DVSN: market ? '01' : '00',
-        ORD_QTY: qty, ORD_UNPR: market ? '0' : String(Math.trunc(price)),
+        // Not `trunc`: an integer is still off-grid in a hundred-won band, which is what the
+        // venue refused with 호가단위 오류.
+        ORD_QTY: qty, ORD_UNPR: market ? '0' : String(roundToKrxTick(price, data.side)),
       }};
     }
     // The US side has no plain market order here — only limit and the open/close variants. So a

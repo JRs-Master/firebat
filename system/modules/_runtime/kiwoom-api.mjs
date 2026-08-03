@@ -7,6 +7,7 @@
  */
 
 import { URL_CATEGORY, API_NAMES } from './kiwoom-apis.generated.mjs';
+import { roundToKrxTick } from './krx-tick.mjs';
 const BASE_REAL = 'https://api.kiwoom.com';
 const BASE_MOCK = 'https://mockapi.kiwoom.com';
 
@@ -25,7 +26,12 @@ async function acquireSlot() {
   }
 }
 
-async function callApi(base, token, apiId, params = {}, retry = 2) {
+// The continuation cursor the last response carried. Kiwoom paginates chart calls through the
+// `cont-yn` / `next-key` header pair, and the body alone cannot say whether more exists — so the
+// headers are kept here rather than discarded, and `fetchCandles` below is the only reader.
+let LAST_CONT = { contYn: 'N', nextKey: '' };
+
+async function callApi(base, token, apiId, params = {}, retry = 2, cont = null) {
   const category = URL_CATEGORY[apiId];
   if (!category) throw new Error(`알 수 없는 API ID: ${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.`);
   const url = `${base}/api/${category}`;
@@ -36,16 +42,20 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
       'Content-Type': 'application/json;charset=UTF-8',
       'authorization': `Bearer ${token}`,
       'api-id': apiId,
-      'cont-yn': 'N',
-      'next-key': '',
+      'cont-yn': cont?.contYn === 'Y' ? 'Y' : 'N',
+      'next-key': cont?.nextKey || '',
     },
     body: JSON.stringify(params),
     signal: AbortSignal.timeout(15000),
   });
   if (resp.status === 429 && retry > 0) {
     await new Promise(r => setTimeout(r, 1100));
-    return callApi(base, token, apiId, params, retry - 1);
+    return callApi(base, token, apiId, params, retry - 1, cont);
   }
+  LAST_CONT = {
+    contYn: resp.headers.get('cont-yn') || 'N',
+    nextKey: resp.headers.get('next-key') || '',
+  };
   if (!resp.ok) {
     // 키움은 토큰 만료 등 일부 오류를 HTTP 4xx/5xx + JSON 바디(return_code/return_msg)로 준다.
     // 바디가 키움 에러 envelope 면 throw 말고 반환 → 상위 return_code 검사(인프라 reactive)가 토큰 무효를 감지.
@@ -191,9 +201,14 @@ function orderParams(data) {
     ord_qty: String(Math.trunc(qty)),
     trde_tp,
   };
-  // A market order carries no unit price; sending one is rejected.
-  if (type !== 'market' && Number.isFinite(price) && price > 0) params.ord_uv = String(Math.trunc(price));
-  if (data.conditionPrice) params.cond_uv = String(Math.trunc(Number(data.conditionPrice)));
+  // A market order carries no unit price; sending one is rejected. A limit one has to sit on the
+  // exchange's grid — truncating to an integer is not enough, and off-grid is refused outright.
+  if (type !== 'market' && Number.isFinite(price) && price > 0) {
+    params.ord_uv = String(roundToKrxTick(price, side));
+  }
+  if (data.conditionPrice) {
+    params.cond_uv = String(roundToKrxTick(Number(data.conditionPrice), side));
+  }
   return params;
 }
 
@@ -346,6 +361,37 @@ function pickRows(payload) {
 }
 
 
+// How many pages a single candle request may walk. One page is a few hundred bars, so this is
+// thousands — far past any rule's window, and a stop in case the venue never says it is done.
+const MAX_CANDLE_PAGES = 20;
+
+/** One call, or as many as it takes to reach `want` bars. Returns the venue's own envelope. */
+async function fetchCandles(base, token, apiId, params, want) {
+  const first = await callApi(base, token, apiId, params);
+  const target = Math.floor(Number(want) || 0);
+  const picked = pickRows(first);
+  if (target <= 0 || !picked?.field) return first;
+
+  const field = picked.field;
+  let rows = picked.rows;
+  let cont = LAST_CONT;
+  let pages = 1;
+  // Kiwoom answers newest-first, so a later page is older bars: append, and the analyser sorts.
+  while (rows.length < target && cont.contYn === 'Y' && cont.nextKey && pages < MAX_CANDLE_PAGES) {
+    pages += 1;
+    const next = await callApi(base, token, apiId, params, 2, cont);
+    cont = LAST_CONT;
+    const more = pickRows(next);
+    if (!more?.field || !more.rows.length) break;
+    rows = rows.concat(more.rows);
+  }
+  // Trimmed to what was asked for. Handing back more is not free — every row travels through the
+  // cache, the analyser and the backtest — and handing back a page boundary's worth of extra bars
+  // makes two runs of the same rule disagree about how much history it saw.
+  return { ...first, [field]: rows.slice(0, target), _pages: pages };
+}
+
+
 // ── Candles, by interval ─────────────────────────────────────────────────────────────────────
 // Every timeframe is its own API here — minute bars are ka10080 with a tic_scope, daily is
 // ka10081, weekly ka10082, monthly ka10083 — and the US chart set is a different family again.
@@ -423,7 +469,9 @@ async function main(data) {
       params = mapped.params;
     }
     if (URL_CATEGORY[apiId] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
-    const result = await callApi(base, token, apiId, params);
+    const result = action === 'get_candles'
+      ? await fetchCandles(base, token, apiId, params, data.bars)
+      : await callApi(base, token, apiId, params);
     normalizeCandleRows(result);
     // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
     // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.

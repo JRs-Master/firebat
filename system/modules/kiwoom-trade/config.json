@@ -226,6 +226,10 @@
         "type": "string",
         "description": "봉 주기: 1m·3m·5m·10m·15m·30m·45m·60m(=1h)·1d·1w·1M·1y, 또는 `100t` 같은 틱 단위. 기본 1d."
       },
+      "bars": {
+        "type": "integer",
+        "description": "get_candles: how many bars to return, newest first. The venue answers one page at a time and this pages through its continuation cursor until the count is met (capped at 20 pages). Omit to take a single page as the venue returns it."
+      },
       "market": {
         "type": "string",
         "enum": [
