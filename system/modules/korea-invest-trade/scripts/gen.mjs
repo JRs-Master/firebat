@@ -2,62 +2,21 @@
 /**
  * 한투 sysmod codegen — `_apis.json` 입력 → `config.json` + `index.mjs` 생성.
  *
- * 출력: `system/modules/korea-invest/{config.json, index.mjs}` — 278 APIs, 9 domains.
+ * 출력: `system/modules/{korea-invest,korea-invest-trade}/config.json` — 액션 enum 만
  *
  * 사용:
  *   cd system/modules/korea-invest && node scripts/gen.mjs
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MODULE_DIR = resolve(__dirname, '..');
 
-const DOMAIN_MAP = {
-  '[국내주식] 주문/계좌': 'stock-account',
-  '[국내주식] 기본시세': 'stock-quote',
-  '[국내주식] 종목정보': 'stock-quote',
-  '[국내주식] 업종/기타': 'stock-quote',
-  '[국내주식] 순위분석': 'stock-ranking',
-  '[국내주식] 시세분석': 'stock-analysis',
-  '[국내주식] ELW 시세': 'stock-elw',
-  '[국내주식] 실시간시세': 'stock-realtime',
-  '[국내선물옵션] 기본시세': 'futures',
-  '[국내선물옵션] 주문/계좌': 'futures',
-  '[장내채권] 기본시세': 'bond',
-  '[장내채권] 주문/계좌': 'bond',
-  '[해외주식] 기본시세': 'overseas-stock',
-  '[해외주식] 시세분석': 'overseas-stock',
-  '[해외주식] 주문/계좌': 'overseas-stock',
-  '[해외선물옵션] 기본시세': 'overseas-futures',
-  '[해외선물옵션] 주문/계좌': 'overseas-futures',
-};
 
-const DOMAIN_DESC = {
-  'stock-account': '한국투자증권 국내주식 주문/계좌 (잔고·매수가능·정정취소·예약주문·수익현황)',
-  'stock-quote': '한국투자증권 국내주식 기본시세 + 종목정보 + 업종/기타 (현재가·호가·체결·일자별·종목정보)',
-  'stock-ranking': '한국투자증권 국내주식 순위분석 (거래량·등락률·시가총액·수익자산지표 등)',
-  'stock-analysis': '한국투자증권 국내주식 시세분석 (투자자·프로그램매매·신용잔고·체결강도·매물대 등). 주의: 종목별 투자자매매동향(일별)(FHPTJ04160001) 은 당일분이 장 마감 집계(~15:40) 후에만 제공 — 장중 당일 날짜로 호출하면 OPSQ2001 (TIME LIMIT 00:00 ~ 15:40) 오류. 장중 당일 종목 수급은 kiwoom 을 쓰고, 이 TR 은 과거 영업일 또는 15:40 이후에만 호출.',
-  'stock-elw': '한국투자증권 국내주식 ELW 시세 (현재가·민감도·변동성·기초자산·조건검색)',
-  'futures': '한국투자증권 국내선물옵션 (시세 + 주문/계좌) — 야간 포함',
-  'bond': '한국투자증권 장내채권 (시세 + 주문/계좌)',
-  'overseas-stock': '한국투자증권 해외주식 (시세 + 시세분석 + 주문/계좌) — 미국·아시아 포함',
-  'overseas-futures': '한국투자증권 해외선물옵션 (시세 + 주문/계좌)',
-};
 
-const DOMAIN_CAPABILITY = {
-  'stock-account': 'stock-trading',
-  'stock-quote': 'stock-quote',
-  'stock-ranking': 'stock-quote',
-  'stock-analysis': 'stock-quote',
-  'stock-elw': 'stock-quote',
-  'futures': 'stock-trading',
-  'bond': 'stock-trading',
-  'overseas-stock': 'stock-trading',
-  'overseas-futures': 'stock-trading',
-};
 
 function build(apis) {
   const apiTable = {};
@@ -71,36 +30,6 @@ function build(apis) {
     };
   }
 
-  const byDomain = {};
-  for (const api of apis) {
-    if (api.menu === 'OAuth인증') continue;
-    const domain = DOMAIN_MAP[api.menu];
-    if (!domain || domain === 'stock-realtime') continue;
-    (byDomain[domain] ||= []).push(api);
-  }
-
-  const domains = Object.entries(byDomain)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, apis]) => ({
-      name,
-      description: DOMAIN_DESC[name] || `한투 ${name}`,
-      capability: DOMAIN_CAPABILITY[name] || 'stock-quote',
-      actions: apis.map((a) => a.id).sort(),
-      actionsCount: apis.length,
-      actionsDetail: apis
-        .map((a) => {
-          // 필수 query+body 파라미터(+값 가이드 60자) 동봉 — AI 가 호출 전 필수 인자를 알게 (실패 prevention).
-          const reqParams = [...(a.request?.query || []), ...(a.request?.body || [])]
-            .filter((f) => f.required)
-            .map((f) => {
-              const d = (f.desc || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-              return d ? `${f.name}(${d})` : f.name;
-            });
-          const reqStr = reqParams.length ? ` [필수: ${reqParams.join(', ')}]` : '';
-          return `  ${a.id} (TR_ID: ${a.trIdReal || 'N/A'}) — ${a.name}${reqStr}`;
-        })
-        .join('\n'),
-    }));
 
   const allActions = apis
     .filter((a) => a.menu !== 'OAuth인증')
@@ -136,12 +65,6 @@ function build(apis) {
         },
       },
     ],
-    domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
-      name,
-      description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
-      capability,
-      actions,
-    })),
     input: {
       type: 'object',
       required: ['action'],
@@ -177,7 +100,7 @@ function build(apis) {
  * Firebat System Module: korea-invest — codegen 자동 생성 (scripts/gen.mjs).
  * 한국투자증권 OPEN API 통합 (278 REST API).
  *
- * LLM 시점: config.json 의 domains[] 가 9개 별도 도구로 분리 등록.
+ * LLM 시점: 모듈당 도구 하나 — 액션 선택은 search_module_actions 가 한다.
  * 단일 모듈로 라우팅 — action 으로 API ID 직접 호출, tr_id 자동 분기 (실전/모의).
  */
 
@@ -353,24 +276,64 @@ const { config, index } = build(apis);
 // moment a new declarative block is added (실측: `ws` 58 스트림·`tags`·`timeseries` 는 whitelist 에
 // 없어 regen 이 통째로 날릴 뻔했다) — so the rule is inverted: generated keys are enumerated, the
 // rest is preserved by default.
-const GENERATED_KEYS = ['domains', 'input', 'output'];
-const configPath = resolve(MODULE_DIR, 'config.json');
-let merged = config;
-try {
-  const existing = JSON.parse(readFileSync(configPath, 'utf8'));
-  merged = { ...existing };
-  for (const k of GENERATED_KEYS) merged[k] = config[k];
-  const preserved = Object.keys(existing).filter((k) => !GENERATED_KEYS.includes(k));
-  console.log(`  (reconcile) 생성: ${GENERATED_KEYS.join(', ')} | 보존: ${preserved.join(', ')}`);
-} catch {
-  console.log('  (bootstrap) 기존 config.json 없음 — 전체 생성');
+// Generated keys are enumerated and everything else is preserved; `writeHalves` below applies the
+// rule to each half. Reading it here as well would report on a single config that no longer exists.
+const GENERATED_KEYS = ['input', 'output'];
+
+// ── Reconcile ────────────────────────────────────────────────────────────────────────────────
+// Which half an action belongs to is the venue's own classification, read out of the sheet — the
+// same signal the split was made with. Ids the sheet does not carry (the neutral broker contract,
+// hand written in the dialect) stay wherever they are already declared: a generator that deletes
+// what it cannot see is not a reconciler.
+function writeHalves(sheetIds, isAccount) {
+  const base = basename(MODULE_DIR).replace(/-trade$/, '');
+  for (const [dir, wantAccount] of [[resolve(MODULE_DIR, '..', base), false], [MODULE_DIR, true]]) {
+    const path = resolve(dir, 'config.json');
+    let existing;
+    try {
+      existing = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      console.log(`  (skip) ${basename(dir)} — no config.json`);
+      continue;
+    }
+    const declared = existing.input?.properties?.action?.enum ?? [];
+    const mine = sheetIds.filter((id) => isAccount(id) === wantAccount);
+    const unknownToSheet = declared.filter((id) => !sheetIds.includes(id));
+    const merged = { ...existing };
+    // `input`/`output` are the generated pair, but only the enum inside `input` comes from the
+    // sheet — the rest of the schema is authored here and the surrounding declaration is the
+    // module's own.
+    merged.input = {
+      ...(existing.input ?? config.input),
+      properties: {
+        ...(existing.input?.properties ?? config.input.properties),
+        action: {
+          ...(existing.input?.properties?.action ?? config.input.properties.action),
+          enum: [...mine, ...unknownToSheet],
+        },
+      },
+    };
+    merged.output = config.output;
+    delete merged.domains;   // nothing reads it; it duplicated the action catalog and, on the
+                             // public half, spelled out the account APIs it must not offer
+    writeFileSync(path, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+    console.log(`  ${basename(dir)}: ${mine.length} from the sheet + ${unknownToSheet.length} declared elsewhere`);
+  }
 }
 
-writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
-writeFileSync(resolve(MODULE_DIR, 'index.mjs'), index, 'utf8');
+// Korea Investment routes by URL: /trading/ is the account, everything else is data.
+const PATH_BY_ID = Object.fromEntries(apis.map((a) => [a.id, a.path || '']));
+const isAccountAction = (id) => {
+  const p = PATH_BY_ID[id] || '';
+  return p.includes('/trading/') || p.includes('/oauth');
+};
 
-const allCount = config.input.properties.action.enum.length;
-console.log(`✓ korea-invest — ${allCount} actions / ${config.domains.length} domains`);
-for (const d of config.domains) {
-  console.log(`  ${d.name}: ${d.actions.length} actions (${d.capability})`);
-}
+// OAuth is the infrastructure's, not the module's: the token provider issues, refreshes and
+// revokes, and the hash key is signing plumbing. The vendor groups all three under one menu, so
+// that is the filter — the same signal the Kiwoom script uses for the same reason.
+writeHalves(
+  apis.filter((a) => a.menu !== 'OAuth인증').map((a) => a.id).sort(),
+  isAccountAction,
+);
+console.log(`✓ korea-invest — the dialect in _runtime/ is hand-maintained and was left untouched;`
+  + ` re-extract its tables with scripts/extract-apis.mjs if the sheet changed.`);

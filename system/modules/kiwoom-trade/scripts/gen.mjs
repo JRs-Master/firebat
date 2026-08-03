@@ -3,10 +3,10 @@
  * 키움 sysmod codegen — `_apis.json` 입력 → `config.json` + `index.mjs` 생성.
  *
  * 입력: `system/modules/kiwoom/_apis.json` (extract-apis.mjs 가 생성)
- * 출력: `system/modules/kiwoom/{config.json, index.mjs}` — 208 APIs, 8 domains
+ * 출력: `system/modules/{kiwoom,kiwoom-trade}/config.json` — 액션 enum 만
  *
  * 도메인별 별도 LLM 도구 노출 (sysmod_kiwoom_account / sysmod_kiwoom_chart 등) —
- * MCP register_sysmod_tools 안 domains[] 분기. action = API ID 직접 호출.
+ * action = API ID 직접 호출. 방언은 `_runtime/` 이 소유하고 이 스크립트는 손대지 않는다.
  *
  * 사용:
  *   cd system/modules/kiwoom && node scripts/gen.mjs
@@ -16,62 +16,22 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MODULE_DIR = resolve(__dirname, '..');
 
-const DOMAIN_MAP = {
-  '계좌': 'account',
-  '주문': 'order',
-  '신용주문': 'order',
-  '시세': 'quote',
-  '종목정보': 'quote',
-  '업종': 'quote',
-  '차트': 'chart',
-  '순위정보': 'ranking',
-  '기관/외국인': 'investor',
-  '대차거래': 'investor',
-  '공매도': 'investor',
-  'ETF': 'etf-elw',
-  'ELW': 'etf-elw',
-  '조건검색': 'condition-theme',
-  '테마': 'condition-theme',
-  '실시간시세': 'realtime',
-};
 
-const DOMAIN_DESC = {
-  'account': '키움증권 계좌 (잔고·예수금·자산·수익률·체결·미체결·매매일지)',
-  'order': '키움증권 주문 (현금/신용/금현물 매수·매도·정정·취소)',
-  'quote': '키움증권 시세 + 종목정보 + 업종 (현재가·호가·체결·일별주가·종목기본정보)',
-  'chart': '키움증권 차트 (틱/분봉/일봉/주봉/월봉/년봉 — 주식·업종·금현물)',
-  'ranking': '키움증권 실시간 순위정보 (등락률·거래량·호가잔량·외인·신용비율 등)',
-  'investor': '키움증권 투자자 동향 (기관/외국인·대차거래·공매도)',
-  'etf-elw': '키움증권 ETF + ELW (수익률·민감도·괴리율·조건검색)',
-  'condition-theme': '키움증권 조건검색 + 테마 (사용자 정의 조건·테마 그룹별 종목)',
-  'us-stock': '키움증권 미국주식 (시세·종목·주문·계좌·환전 — /api/us/*). 실시간·조건검색(WS)은 미지원(2단계).',
-};
 
-const DOMAIN_CAPABILITY = {
-  'account': 'stock-trading',
-  'order': 'stock-trading',
-  'quote': 'stock-quote',
-  'chart': 'stock-quote',
-  'ranking': 'stock-quote',
-  'investor': 'stock-quote',
-  'etf-elw': 'stock-quote',
-  'condition-theme': 'stock-quote',
-  'us-stock': 'stock-trading',
-};
 
-// config.json 자체가 모듈 소스. gen 은 reconciler: `_apis.json` 파생분(domains·input·output —
+// config.json 자체가 모듈 소스. gen 은 reconciler: `_apis.json` 파생분(액션 enum —
 // action enum 과 URL_CATEGORY 포함)만 갱신하고 **나머지 키는 전부 보존**한다.
 //
 // ⚠️ 옛 방식(보존할 키를 whitelist)은 새 선언형 블록이 추가될 때마다 썩는다 — 실측으로 `tags`
 // 가 whitelist 에 없어 regen 이 통째로 날릴 뻔했다(korea-invest 쪽은 `ws` 58 스트림과
 // `timeseries` 까지). 규칙을 뒤집는다: **생성 키만 열거하고 나머지는 기본 보존.**
-const GENERATED_KEYS = ['domains', 'input', 'output'];
+const GENERATED_KEYS = ['input', 'output'];
 
 function build(apis) {
   let preserved = {};
@@ -94,39 +54,6 @@ function build(apis) {
     apiNames[api.id] = api.name;
   }
 
-  const byDomain = {};
-  for (const api of apis) {
-    if (api.category === 'OAuth 인증') continue;
-    // 미국주식(ust*/usa*)은 별도 도메인 — 국내 subCategory 키(주문·계좌 등)와 겹쳐 섞이지 않게.
-    if (api.category && api.category.startsWith('미국주식')) { (byDomain['us-stock'] ||= []).push(api); continue; }
-    const domain = DOMAIN_MAP[api.subCategory];
-    if (!domain || domain === 'realtime') continue;
-    (byDomain[domain] ||= []).push(api);
-  }
-
-  const domains = Object.entries(byDomain)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, apis]) => ({
-      name,
-      description: DOMAIN_DESC[name] || `키움 ${name}`,
-      capability: DOMAIN_CAPABILITY[name] || 'stock-quote',
-      actions: apis.map((a) => a.id).sort(),
-      actionsCount: apis.length,
-      // 액션 줄에 필수 body 파라미터(+값 가이드) 동봉 — AI 가 호출 전 필수 인자를 알게 (호출 실패 prevention).
-      // 값 desc 는 60자 truncate (토큰 절약). 도메인 도구별로만 노출되므로 per-tool 부담 작음.
-      actionsDetail: apis
-        .map((a) => {
-          const reqParams = (a.request?.body || [])
-            .filter((f) => f.required)
-            .map((f) => {
-              const d = (f.desc || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-              return d ? `${f.name}(${d})` : f.name;
-            });
-          const reqStr = reqParams.length ? ` [필수: ${reqParams.join(', ')}]` : '';
-          return `  ${a.id} — ${a.name}${reqStr}`;
-        })
-        .join('\n'),
-    }));
 
   const allActions = apis
     .filter((a) => a.category !== 'OAuth 인증')
@@ -162,12 +89,6 @@ function build(apis) {
         },
       },
     ],
-    domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
-      name,
-      description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
-      capability,
-      actions,
-    })),
     input: {
       type: 'object',
       required: ['action'],
@@ -365,11 +286,52 @@ const apisPath = resolve(MODULE_DIR, '_apis.json');
 const apis = JSON.parse(readFileSync(apisPath, 'utf8'));
 const { config, index } = build(apis);
 
-writeFileSync(resolve(MODULE_DIR, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
-writeFileSync(resolve(MODULE_DIR, 'index.mjs'), index, 'utf8');
-
-const allCount = config.input.properties.action.enum.length;
-console.log(`✓ kiwoom — ${allCount} actions / ${config.domains.length} domains`);
-for (const d of config.domains) {
-  console.log(`  ${d.name}: ${d.actions.length} actions (${d.capability})`);
+// ── Reconcile ────────────────────────────────────────────────────────────────────────────────
+// Which half an action belongs to is the venue's own classification, read out of the sheet — the
+// same signal the split was made with. Ids the sheet does not carry (the neutral broker contract,
+// hand written in the dialect) stay wherever they are already declared: a generator that deletes
+// what it cannot see is not a reconciler.
+function writeHalves(sheetIds, isAccount) {
+  const base = basename(MODULE_DIR).replace(/-trade$/, '');
+  for (const [dir, wantAccount] of [[resolve(MODULE_DIR, '..', base), false], [MODULE_DIR, true]]) {
+    const path = resolve(dir, 'config.json');
+    let existing;
+    try {
+      existing = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+      console.log(`  (skip) ${basename(dir)} — no config.json`);
+      continue;
+    }
+    const declared = existing.input?.properties?.action?.enum ?? [];
+    const mine = sheetIds.filter((id) => isAccount(id) === wantAccount);
+    const unknownToSheet = declared.filter((id) => !sheetIds.includes(id));
+    const merged = { ...existing };
+    // `input`/`output` are the generated pair, but only the enum inside `input` comes from the
+    // sheet — the rest of the schema is authored here and the surrounding declaration is the
+    // module's own.
+    merged.input = {
+      ...(existing.input ?? config.input),
+      properties: {
+        ...(existing.input?.properties ?? config.input.properties),
+        action: {
+          ...(existing.input?.properties?.action ?? config.input.properties.action),
+          enum: [...mine, ...unknownToSheet],
+        },
+      },
+    };
+    merged.output = config.output;
+    delete merged.domains;   // nothing reads it; it duplicated the action catalog and, on the
+                             // public half, spelled out the account APIs it must not offer
+    writeFileSync(path, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+    console.log(`  ${basename(dir)}: ${mine.length} from the sheet + ${unknownToSheet.length} declared elsewhere`);
+  }
 }
+
+// Kiwoom labels every API with a subCategory; four of those touch money.
+const KIWOOM_MONEY = new Set(['계좌', '주문', '신용주문', '환전']);
+const SUB_BY_ID = Object.fromEntries(apis.map((a) => [a.id, a.subCategory]));
+const isAccountAction = (id) => KIWOOM_MONEY.has(SUB_BY_ID[id]);
+
+writeHalves(apis.filter((a) => a.category !== 'OAuth 인증').map((a) => a.id).sort(), isAccountAction);
+console.log(`✓ kiwoom — the dialect in _runtime/ is hand-maintained and was left untouched;`
+  + ` re-extract its tables with scripts/extract-apis.mjs if the sheet changed.`);
