@@ -1221,6 +1221,30 @@ def action_cycle(inp, settings):
             fee_in_cost=settings.get("feeInCost", True))
 
     placed, dropped_all, calls = [], [], []
+
+    # An exit signal says "do not be long", and a resting buy is a long that has not arrived yet.
+    # In a fast market the order is entry → exit → the entry fills, and the sell that should have
+    # answered it was dropped for having nothing to sell: the position lands after the strategy
+    # has already decided against it, and nothing remembers. Withdrawing the entry the moment the
+    # exit fires closes that window at its only real seam. What has already filled is an ordinary
+    # position and its stop and targets measure from the average it actually got.
+    _exiting = {i["strategyId"] for i in remaining if i.get("side") == "sell"}
+    if _exiting:
+        _resting = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in (inp.get("openOrders") or [])
+                    if isinstance(r, dict)}
+        for o in store.open_orders(conn):
+            if o.get("side") != "buy" or o["strategy_id"] not in _exiting:
+                continue
+            if not o.get("broker_order_no") or o["broker_order_no"] not in _resting:
+                continue  # the broker no longer lists it — reconcile settles what became of it
+            calls.append({**orders.cancel_call(o), "orderKey": o["order_key"]})
+            store.update_order(conn, o["order_key"], state="canceling",
+                               last_checked_ms=store.now_ms())
+            store.log_event(conn, "entry_withdrawn",
+                            {"orderKey": o["order_key"], "why": "the rule turned to sell while "
+                                                                "this entry was still resting"},
+                            strategy_id=o["strategy_id"], symbol=o.get("symbol"))
+
     for s in strategies:
         ctx = ctxs.get(s["id"])
         if ctx is None:
@@ -2957,6 +2981,43 @@ def action_selftest():
     checks.append({"name": "a demoted strategy's fill goes to the paper ledger, not the live one",
                    "want": (True, 0), "got": (in_paper > 0, in_live),
                    "ok": in_paper > 0 and in_live == 0})
+
+    # --- an exit signal withdraws the entry that has not arrived yet ------------------------
+    # Fast markets run entry → exit → the entry fills. The sell was dropped for having nothing to
+    # sell, and the position landed after the strategy had already decided against it. A resting
+    # buy is a long that has not arrived, so an exit takes it too.
+    econ = store.connect("dryrun")
+    econ.execute("DELETE FROM orders")
+    econ.execute("DELETE FROM strategy_position")
+    econ.commit()
+    store.insert_order(econ, {
+        "order_key": "resting", "cycle_id": "c0", "strategy_id": "x", "broker": "b",
+        "account": "", "symbol": "AAA", "side": "buy", "req_qty": 1.0, "req_price": 10.0,
+        "ord_type": "limit", "mode": "dryrun", "state": "acked"})
+    store.update_order(econ, "resting", broker_order_no="N9", state="acked",
+                       sent_ms=store.now_ms())
+    # It has to be holding something, or the sell is dropped before any of this is reached.
+    store.apply_fill(econ, strategy_id="x", broker="b", account="", symbol="AAA",
+                     side="buy", qty=1.0, price=10.0, source="test")
+    econ.close()
+    exit_settings = {"mode": "dryrun", "tradingEnabled": True,
+                     "strategies": [{"id": "x", "enabled": True, "kind": "rules", "symbol": "AAA",
+                                     "broker": "b", "account": "",
+                                     "money": {"perOrderKrw": 6000}, "limits": {}, "rules": []}]}
+    ex = action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "sell", "price": 9.0}],
+                                  "lastClosedBarDate": "d9"},
+                       "symbol": "AAA", "openOrders": [{"ord_no": "N9"}],
+                       "bars": [{"date": "d9", "open": 9, "high": 9, "low": 9, "close": 9,
+                                 "volume": 1}]}, exit_settings)["data"]
+    cancels = [c for c in (ex.get("calls") or [])
+               if (c.get("input") or {}).get("action") == "cancel_order"]
+    checks.append({"name": "a sell signal withdraws the buy that is still resting",
+                   "want": 1, "got": len(cancels), "ok": len(cancels) == 1})
+    echk = store.connect("dryrun")
+    st = echk.execute("SELECT state FROM orders WHERE order_key='resting'").fetchone()["state"]
+    echk.close()
+    checks.append({"name": "and the withdrawal is recorded, not only requested",
+                   "want": "canceling", "got": st, "ok": st == "canceling"})
 
     # --- the slow timeframes ---------------------------------------------------------------
     cplan = action_context_plan({"symbols": ["ZZZ"]}, {"trades": [], "contextIntervals":
