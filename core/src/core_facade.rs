@@ -93,11 +93,11 @@ impl Core {
         // A module-declared job had none of those and fell through to "an ordinary pipeline
         // somebody made", which is exactly what it is not.
         let target = format!("module:{}", name);
-        let live: std::collections::HashMap<String, String> = self
+        let live: std::collections::HashMap<String, crate::ports::CronJobInfo> = self
             .schedule
             .list()
             .into_iter()
-            .map(|j| (j.job_id, j.target_path))
+            .map(|j| (j.job_id.clone(), j))
             .collect();
         let mut added = vec![];
         for (file, job) in jobs {
@@ -106,8 +106,17 @@ impl Core {
             // mislabelled. Re-registering under the same id is refused — the scheduler rejects a
             // duplicate rather than replacing it — so the old one is withdrawn first. Same id,
             // same trigger, corrected target.
-            let stale = live.get(&id).is_some_and(|t| t != &target);
-            if !stale && (already.contains(&file) || live.contains_key(&id)) {
+            //
+            // The same repair covers a declaration that has since changed. Idempotence is there so
+            // a job the owner deleted stays deleted; a job still on the clock is not that case, and
+            // leaving it on a superseded pipeline meant editing the declaration did nothing until
+            // somebody knew to toggle the module off and on (2026-08-03: six schedules kept calling
+            // a broker by its pre-split name for an hour after the fix shipped).
+            let current = live.get(&id);
+            let stale = current.is_some_and(|j| {
+                j.target_path != target || !declaration_is_live(&job, &j.options)
+            });
+            if !stale && (already.contains(&file) || current.is_some()) {
                 continue;
             }
             if stale {
@@ -123,7 +132,11 @@ impl Core {
             }
             match self.schedule.schedule(&id, &target, job).await {
                 Ok(()) => {
-                    already.push(file.clone());
+                    // A re-registration is already in the record — pushing again would grow the
+                    // list by one every time a declaration changes.
+                    if !already.contains(&file) {
+                        already.push(file.clone());
+                    }
                     added.push(file);
                     tracing::info!(target: "module_schedule", module = %name, job = %id,
                         "registered a schedule the module declares");
@@ -138,7 +151,9 @@ impl Core {
         (added, vec![])
     }
 
-    /// Every module's declared schedules, reconciled at boot.
+    /// Every module's declared schedules, reconciled at boot. Because a changed declaration now
+    /// re-registers, this is also what carries a module update onto the clock — a `git pull` plus
+    /// a restart is enough, where before it took knowing which switch to toggle.
     pub async fn sync_all_module_schedules(&self) {
         let mut names: Vec<String> = self
             .module
@@ -234,8 +249,31 @@ impl Core {
     }
 }
 
+/// Is what the module declares still what is on the clock?
+///
+/// Only the keys the declaration actually sets are compared. The registered copy also carries
+/// fields the scheduler owns — owner, the system flag, whatever a later version adds — and
+/// counting those as a difference would re-register every job on every boot.
+fn declaration_is_live(
+    declared: &crate::ports::CronScheduleOptions,
+    registered: &crate::ports::CronScheduleOptions,
+) -> bool {
+    let (Ok(want), Ok(have)) =
+        (serde_json::to_value(declared), serde_json::to_value(registered))
+    else {
+        // Cannot tell. Leave the registration alone: churning a working schedule is worse than
+        // missing an edit, and the edit is visible the moment anyone looks at the panel.
+        return true;
+    };
+    let Some(want) = want.as_object() else {
+        return true;
+    };
+    want.iter().all(|(key, value)| have.get(key) == Some(value))
+}
+
 #[cfg(test)]
 mod module_schedule_tests {
+    use super::declaration_is_live;
     use crate::ports::CronScheduleOptions;
 
     /// The declaration a module ships has to be the thing the scheduler takes, with no step in
@@ -270,6 +308,36 @@ mod module_schedule_tests {
             let steps = job.pipeline.expect("pipeline mode carries its steps");
             assert!(steps.len() > 5, "got {} steps", steps.len());
         }
+    }
+
+    /// Idempotence keeps a deliberately deleted job deleted; it must not also keep a *changed*
+    /// declaration off the clock. Editing a pipeline and seeing the old one keep firing is the
+    /// failure this guards — it cost an hour of coin cycles calling a broker by its former name.
+    #[test]
+    fn an_edited_declaration_counts_as_stale() {
+        let declared = parse(include_str!("../../system/modules/autotrade/cron-upbit.json"));
+
+        let unchanged = declared.clone();
+        assert!(declaration_is_live(&declared, &unchanged));
+
+        // What the scheduler adds on its own is not a difference.
+        let mut annotated = declared.clone();
+        annotated.owner = Some("admin".to_string());
+        annotated.system = Some(false);
+        assert!(
+            declaration_is_live(&declared, &annotated),
+            "fields the scheduler owns must not force a re-registration"
+        );
+
+        // A changed step is.
+        let mut edited = declared.clone();
+        edited.pipeline.as_mut().expect("pipeline mode carries its steps").truncate(1);
+        assert!(!declaration_is_live(&declared, &edited));
+
+        // So is a changed trigger.
+        let mut retimed = declared.clone();
+        retimed.cron_time = Some("0 0 * * * *".to_string());
+        assert!(!declaration_is_live(&declared, &retimed));
     }
 
     #[test]
@@ -496,6 +564,74 @@ mod module_contract_tests {
             problems.is_empty(),
             "these modules may be exposed to a hub visitor and can reach an account: {problems:?}"
         );
+    }
+
+    /// The action catalog is how the model finds an action, so it decides which module gets
+    /// called. An entry filed under a module that cannot run it is worse than a missing entry:
+    /// the model is told exactly where to go and the call is refused there.
+    ///
+    /// 2026-08-03: the broker split divided the action enums and left one `actions.json` behind on
+    /// the trading half, so every chart action was indexed under the module that holds orders.
+    /// `search_module_actions` answered "일봉차트 is in kiwoom-trade", the model obeyed, and the
+    /// hub boundary refused it — a routing failure that reads exactly like a permissions bug.
+    #[test]
+    fn an_action_catalog_lists_only_actions_its_module_can_run() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return; // not a checkout with modules beside it
+        };
+        let mut problems: Vec<String> = vec![];
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else {
+                continue;
+            };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                continue;
+            };
+            let Some(file) = config["actionCatalog"]["file"].as_str() else {
+                continue; // inline or absent — nothing to locate
+            };
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let Ok(catalog_raw) = std::fs::read_to_string(dir.join(file)) else {
+                // Declared and missing: the loader falls back to enum-derived stubs, so the module
+                // still answers — with none of the names and parameters the catalog carries.
+                problems.push(format!("{name}: declares actionCatalog '{file}' but it is not there"));
+                continue;
+            };
+            let Ok(catalog) = serde_json::from_str::<serde_json::Value>(&catalog_raw) else {
+                problems.push(format!("{name}/{file}: does not parse"));
+                continue;
+            };
+            let enumerated: Vec<&str> = config["input"]["properties"]["action"]["enum"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect();
+            let ids: Vec<&str> = catalog
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|e| e["id"].as_str())
+                .collect();
+            let strays: Vec<&&str> =
+                ids.iter().filter(|id| !enumerated.contains(id)).take(4).collect();
+            if !strays.is_empty() {
+                problems.push(format!(
+                    "{name}/{file}: lists {} action(s) the module cannot run, e.g. {strays:?}",
+                    ids.iter().filter(|id| !enumerated.contains(id)).count()
+                ));
+            }
+            // A catalog covering none of its own actions is the same failure seen from the other
+            // side — the half that was left without its share of the sheet.
+            if !ids.is_empty() && !ids.iter().any(|id| enumerated.contains(id)) {
+                problems.push(format!("{name}/{file}: covers none of the module's own actions"));
+            }
+        }
+        assert!(problems.is_empty(), "action catalogs that misroute: {problems:?}");
     }
 
     /// A websocket stream is pure declaration — nothing in it is checked until someone starts a

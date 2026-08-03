@@ -1,0 +1,163 @@
+[
+ {
+  "id": "orderbook",
+  "name": "호가·잔량 조회",
+  "description": "실시간 호가창 — 매수/매도 호가와 잔량. 국내(KRX/NXT)·미국 공통",
+  "domain": "시세",
+  "method": "GET",
+  "path": "/orderbook",
+  "params": {
+   "symbol": "종목 심볼 (필수) — 국내=6자리 종목코드(예 005930), 미국=티커(예 AAPL)"
+  }
+ },
+ {
+  "id": "prices",
+  "name": "현재가 조회",
+  "description": "현재가·등락률 — 콤마 구분으로 최대 200종목 일괄 조회. 국내·미국 공통",
+  "domain": "시세",
+  "method": "GET",
+  "path": "/prices",
+  "params": {
+   "symbols": "종목 심볼 목록 (필수) — 콤마 구분 최대 200건 (예 '005930,000660' 또는 'AAPL,MSFT')"
+  }
+ },
+ {
+  "id": "trades",
+  "name": "최근 체결 조회",
+  "description": "당일 최근 체결 내역 (최대 50건)",
+  "domain": "시세",
+  "method": "GET",
+  "path": "/trades",
+  "params": {
+   "symbol": "종목 심볼 (필수)",
+   "count": "조회 건수 — 최대 50 (기본 50)"
+  }
+ },
+ {
+  "id": "price-limits",
+  "name": "상·하한가 조회",
+  "description": "당일 상한가/하한가 (미국 종목은 null)",
+  "domain": "시세",
+  "method": "GET",
+  "path": "/price-limits",
+  "params": {
+   "symbol": "종목 심볼 (필수)"
+  }
+ },
+ {
+  "id": "candles",
+  "name": "캔들 차트 조회",
+  "description": "캔들 OHLCV — 1분봉/일봉, 최대 200봉. 일봉 차트·차트 데이터. 국내·미국 공통",
+  "domain": "시세",
+  "method": "GET",
+  "path": "/candles",
+  "params": {
+   "symbol": "종목 심볼 (필수)",
+   "interval": "봉 단위 (필수) — 1m=1분봉 / 1d=일봉",
+   "count": "봉 개수 — 최대 200 (기본 100), 최신부터 과거로",
+   "before": "페이지네이션 전용 (ISO 8601, inclusive) — 첫 호출엔 생략(미지정=최신 봉부터), 다음 페이지에만 이전 응답의 nextBefore 전달",
+   "adjusted": "수정주가 적용 여부 (기본 true)"
+  }
+ },
+ {
+  "id": "stocks",
+  "name": "종목 기본정보 조회",
+  "description": "종목명·시장·통화·상장상태·발행주식수 — 콤마 구분 최대 200건. 영업일 단위 갱신",
+  "domain": "종목정보",
+  "method": "GET",
+  "path": "/stocks",
+  "params": {
+   "symbols": "종목 심볼 목록 (필수) — 콤마 구분 최대 200건"
+  }
+ },
+ {
+  "id": "stock-warnings",
+  "name": "매수 유의사항 조회",
+  "description": "정리매매·단기과열·투자경고/위험·VI·신주인수권 등 매수 유의 플래그",
+  "domain": "종목정보",
+  "method": "GET",
+  "path": "/stocks/{symbol}/warnings",
+  "params": {
+   "symbol": "종목 심볼 (필수)"
+  }
+ },
+ {
+  "id": "exchange-rate",
+  "name": "환율 조회",
+  "description": "KRW↔USD 환율 (1분 갱신, 참고용)",
+  "domain": "시장정보",
+  "method": "GET",
+  "path": "/exchange-rate",
+  "params": {
+   "baseCurrency": "기준 통화 (필수) — KRW 또는 USD",
+   "quoteCurrency": "표시 통화 (필수) — 기준과 달라야 함",
+   "dateTime": "조회 시각 (ISO 8601) — 미지정 시 현재 유효 환율"
+  }
+ },
+ {
+  "id": "market-calendar",
+  "name": "장 운영 캘린더 조회",
+  "description": "휴장일·개장시간·세션 시간 (전일/당일/익일). 미국장 개장 시각 확인",
+  "domain": "시장정보",
+  "method": "GET",
+  "path": "/market-calendar/{market}",
+  "params": {
+   "market": "시장 (필수) — KR(KRX+NXT) 또는 US",
+   "date": "조회 기준일 (YYYY-MM-DD) — 미지정 시 오늘"
+  }
+ },
+ {
+  "id": "rankings",
+  "name": "주식 랭킹 조회",
+  "description": "거래대금·거래량 상위 / 급상승·급하락 / 토스증권 체결 기준 상위 — 국내·미국, 기간별(실시간~1년), 상위 100위",
+  "domain": "랭킹",
+  "method": "GET",
+  "path": "/rankings",
+  "params": {
+   "type": "랭킹 종류 (필수) — MARKET_TRADING_AMOUNT(시장 거래대금)/MARKET_TRADING_VOLUME(시장 거래량)/TOP_GAINERS(급상승)/TOP_LOSERS(급하락)/TOSS_SECURITIES_TRADING_AMOUNT(토스 체결 거래대금)/TOSS_SECURITIES_TRADING_VOLUME(토스 체결 거래량)",
+   "marketCountry": "시장 (필수) — KR 또는 US",
+   "duration": "산정 기간 (필수, 거래일 기준) — realtime/1d/1w/1mo/3mo/6mo/1y. TOP_GAINERS·TOP_LOSERS 는 realtime 미지원",
+   "excludeInvestmentCaution": "투자 유의 종목 제외 (boolean, 기본 false)",
+   "count": "조회 수 — 최대 100 (기본 100)"
+  }
+ },
+ {
+  "id": "market-indicator-prices",
+  "name": "시장 지표 현재가 조회",
+  "description": "코스피·코스닥 지수와 한국 국채 금리 현재가 — 심볼 8종 고정 (개별 종목 시세는 prices 사용)",
+  "domain": "시장지표",
+  "method": "GET",
+  "path": "/market-indicators/prices",
+  "params": {
+   "symbols": "지표 심볼 (필수, 콤마 다건) — KOSPI, KOSDAQ, KR_BOND_2Y/3Y/5Y/10Y/20Y/30Y 만 지원. 국채는 수익률(%)"
+  }
+ },
+ {
+  "id": "market-indicator-candles",
+  "name": "시장 지표 캔들 조회",
+  "description": "코스피·코스닥·국채 금리 캔들 OHLCV — 1분봉/일봉, 최대 200봉 (개별 종목 캔들은 candles 사용)",
+  "domain": "시장지표",
+  "method": "GET",
+  "path": "/market-indicators/{symbol}/candles",
+  "params": {
+   "symbol": "지표 심볼 (필수) — KOSPI, KOSDAQ, KR_BOND_2Y~30Y",
+   "interval": "봉 단위 (필수) — 1m=1분봉 / 1d=일봉",
+   "count": "봉 개수 — 최대 200 (기본 100)",
+   "before": "페이지네이션 전용 (ISO 8601, inclusive) — 첫 호출엔 생략(미지정=최신 봉부터), 다음 페이지에만 이전 응답의 nextBefore 전달"
+  }
+ },
+ {
+  "id": "investor-trading",
+  "name": "투자자별 매매대금 조회",
+  "description": "KRX 투자자별 매매대금 — 개인/외국인/기관(세부 7분류)/기타법인 매수·매도 (KRW 정수), 코스피·코스닥만, 일/주/월/연 집계",
+  "domain": "시장지표",
+  "method": "GET",
+  "path": "/market-indicators/{symbol}/investor-trading",
+  "params": {
+   "symbol": "지표 심볼 (필수) — KOSPI 또는 KOSDAQ 만",
+   "interval": "집계 단위 (필수) — 1d(일별)/1w(주별)/1mo(월별)/1y(연도별)",
+   "count": "조회 수 — 최대 100 (기본 10)",
+   "until": "페이지네이션 전용 (YYYY-MM-DD, inclusive) — 첫 호출엔 생략(미지정=최신부터), 다음 페이지에만 이전 응답의 nextUntil 전달. 날짜를 추측해 채우지 말 것"
+  }
+ }
+]

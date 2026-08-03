@@ -155,13 +155,26 @@ pub fn tool_cache_size() -> usize {
 mod tests {
     use super::*;
 
-    fn fresh_state() {
+    /// The cache is one process-global map and `cargo test` runs these in parallel threads, so a
+    /// neighbour's `clear_tool_cache()` — or the 201 inserts the eviction test makes — lands
+    /// between another test's set and its get. Holding this for the length of each test makes the
+    /// module's tests sequential among themselves without touching the cache itself.
+    ///
+    /// Found in CI, not locally: the failure needs a particular interleaving, so a green run says
+    /// nothing about whether the race is there (2026-08-03, `implicit_success_cached`).
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[must_use = "the returned guard keeps the other tests out — binding it to `_` drops it \
+                  immediately and the race comes back"]
+    fn fresh_state() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         clear_tool_cache();
+        guard
     }
 
     #[test]
     fn key_stable_for_same_args() {
-        fresh_state();
+        let _guard = fresh_state();
         let k1 = tool_cache_key("image_gen", &serde_json::json!({"prompt": "cat"}));
         let k2 = tool_cache_key("image_gen", &serde_json::json!({"prompt": "cat"}));
         assert_eq!(k1, k2);
@@ -169,7 +182,7 @@ mod tests {
 
     #[test]
     fn key_stable_regardless_of_obj_order() {
-        fresh_state();
+        let _guard = fresh_state();
         // serde_json 의 Map 은 입력 순서 유지하지만 stable_stringify 가 key 정렬
         let k1 = tool_cache_key(
             "image_gen",
@@ -184,7 +197,7 @@ mod tests {
 
     #[test]
     fn key_differs_for_different_args() {
-        fresh_state();
+        let _guard = fresh_state();
         let k1 = tool_cache_key("image_gen", &serde_json::json!({"prompt": "cat"}));
         let k2 = tool_cache_key("image_gen", &serde_json::json!({"prompt": "dog"}));
         assert_ne!(k1, k2);
@@ -192,7 +205,7 @@ mod tests {
 
     #[test]
     fn key_differs_for_different_tool_names() {
-        fresh_state();
+        let _guard = fresh_state();
         let args = serde_json::json!({"q": "x"});
         let k1 = tool_cache_key("search_history", &args);
         let k2 = tool_cache_key("search_media", &args);
@@ -201,7 +214,7 @@ mod tests {
 
     #[test]
     fn key_handles_null_args() {
-        fresh_state();
+        let _guard = fresh_state();
         let k1 = tool_cache_key("ping", &serde_json::Value::Null);
         let k2 = tool_cache_key("ping", &serde_json::json!({}));
         // null → {} 로 정규화 — 두 호출은 cache 동일 hit
@@ -210,14 +223,14 @@ mod tests {
 
     #[test]
     fn miss_returns_none() {
-        fresh_state();
+        let _guard = fresh_state();
         let out = get_cached_tool_result("nonexistent:0123456789abcdef");
         assert!(out.is_none());
     }
 
     #[test]
     fn set_then_get_returns_result() {
-        fresh_state();
+        let _guard = fresh_state();
         let key = tool_cache_key("search_history", &serde_json::json!({"q": "test"}));
         let result = serde_json::json!({"success": true, "data": [1, 2, 3]});
         set_cached_tool_result(&key, &result);
@@ -227,7 +240,7 @@ mod tests {
 
     #[test]
     fn failures_not_cached() {
-        fresh_state();
+        let _guard = fresh_state();
         let key = tool_cache_key("flaky", &serde_json::json!({}));
         let failure = serde_json::json!({"success": false, "error": "timeout"});
         set_cached_tool_result(&key, &failure);
@@ -237,7 +250,7 @@ mod tests {
     #[test]
     fn implicit_success_cached() {
         // success 필드 미설정 결과도 cache (옛 TS 동작과 일치)
-        fresh_state();
+        let _guard = fresh_state();
         let key = tool_cache_key("read", &serde_json::json!({}));
         let result = serde_json::json!({"data": "abc"});
         set_cached_tool_result(&key, &result);
@@ -247,7 +260,7 @@ mod tests {
 
     #[test]
     fn size_grows_with_unique_keys() {
-        fresh_state();
+        let _guard = fresh_state();
         let r = serde_json::json!({"success": true});
         for i in 0..5 {
             let k = tool_cache_key("t", &serde_json::json!({"i": i}));
@@ -258,7 +271,7 @@ mod tests {
 
     #[test]
     fn lru_evicts_oldest_when_full() {
-        fresh_state();
+        let _guard = fresh_state();
         let r = serde_json::json!({"success": true});
         // 200 개 채움 + 추가 1개 → 가장 오래된 1개 제거되어 size <= 200 유지
         for i in 0..MAX_CACHE_SIZE + 1 {

@@ -4,7 +4,7 @@
 // safe to re-run any time the API list changes). Entry shape consumed by
 // core/src/managers/ai/action_catalog.rs: { id, name, description, domain, params:{name:desc} }.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -59,5 +59,24 @@ const actions = apis
     return entry;
   });
 
-writeFileSync(resolve(MODULE_DIR, 'actions.json'), JSON.stringify(actions, null, 1), 'utf8');
-console.log(`kiwoom actions.json — ${actions.length} actions`);
+// One sheet, two catalogs. The account/quotes split is expressed by each module's action enum, so
+// that is what decides where an entry goes — a catalog listing an action its module cannot run
+// sends the model to the wrong half and the call is refused (2026-08-03: every chart action was
+// indexed under the trading module, so `search_module_actions` routed 일봉차트 to it).
+writeSplit(MODULE_DIR, actions, 'kiwoom');
+
+function writeSplit(dir, entries, label) {
+  const halves = [dir, resolve(dir, '..', basename(dir).replace(/-trade$/, ''))];
+  for (const half of halves) {
+    let allowed;
+    try {
+      const cfg = JSON.parse(readFileSync(resolve(half, 'config.json'), 'utf8'));
+      allowed = new Set(cfg.input.properties.action.enum);
+    } catch {
+      continue; // no such half — a broker that was never split
+    }
+    const mine = entries.filter((a) => allowed.has(a.id));
+    writeFileSync(resolve(half, 'actions.json'), JSON.stringify(mine, null, 1), 'utf8');
+    console.log(`${label} ${basename(half)}/actions.json — ${mine.length} actions`);
+  }
+}
