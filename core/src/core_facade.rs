@@ -377,6 +377,50 @@ mod module_schedule_tests {
         assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 
+    /// A loop that keeps going must hand on its envelope, not just its survivors.
+    ///
+    /// `continueOnError` makes a FOREACH return only the items that worked, so `results` stops
+    /// meaning "one per input". `failed[].index` is the sole record of which ones dropped, and it
+    /// lives on the envelope — a later step reading `$stepN.results` gets a shortened list with no
+    /// way to realign it, which downstream is one symbol's bars paired with another symbol's trade.
+    ///
+    /// The two edits are separate and a file can end up with one of them. It happened here: the
+    /// envelope pass ran while one cron's references were still off by one, matched nothing there,
+    /// and the later renumbering produced the right index with the old shape (2026-08-04, found by
+    /// checking the deploy rather than by any test). Hence this.
+    #[test]
+    fn a_continuing_loop_hands_on_its_envelope() {
+        let mut problems = Vec::new();
+        for (name, raw) in DECLARED {
+            let job = parse(raw);
+            let Some(steps) = job.pipeline else { continue };
+            let continuing: Vec<usize> = steps
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| {
+                    matches!(s, crate::managers::task::PipelineStep::ForEach {
+                        continue_on_error: Some(true), .. })
+                    .then_some(i)
+                })
+                .collect();
+            if continuing.is_empty() {
+                continue;
+            }
+            let whole = serde_json::to_value(&steps).expect("steps serialise");
+            let text = whole.to_string();
+            for i in continuing {
+                let bare = format!("$step{i}.results");
+                if text.contains(&bare) {
+                    problems.push(format!(
+                        "{name}: step {i} keeps going on error, but something reads `{bare}` — \
+                         pass `$step{i}` so the holes can be put back"
+                    ));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
     /// Idempotence keeps a deliberately deleted job deleted; it must not also keep a *changed*
     /// declaration off the clock. Editing a pipeline and seeing the old one keep firing is the
     /// failure this guards — it cost an hour of coin cycles calling a broker by its former name.
