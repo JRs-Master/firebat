@@ -1618,11 +1618,18 @@ def action_reconcile(inp, settings):
                 continue
             if o.get("broker_order_no") and o["broker_order_no"] in listed:
                 continue
-            # Only for the symbol this reconcile actually read a balance for — a cycle that never
-            # asked about this symbol has no standing to declare its order void.
-            if o.get("symbol") != symbol or "qty" not in pos:
+            # The balance has to have been read for *this order's* symbol. Scoping it to the
+            # cycle's single `symbol` looked right and fired for nothing: a cycle covering five
+            # coins names no one symbol, which is every cycle that matters here. The rows are
+            # per-symbol, so ask them per symbol — and an unreadable row is not a zero.
+            held, unread_row = orders.read_position(inp.get("balanceRows"), o.get("symbol"))
+            if unread_row is not None:
                 continue
-            if o.get("side") == "buy" and float(pos.get("qty") or 0) > 0:
+            if held is None:
+                if not isinstance(inp.get("balanceRows"), list):
+                    continue          # no balance at all — nothing to corroborate with
+                held = {"qty": 0.0}   # the broker listed the account and this symbol was not in it
+            if o.get("side") == "buy" and float(held.get("qty") or 0) > 0:
                 continue  # something was bought; this order may be why
             store.update_order(conn, o["order_key"], state="void", last_checked_ms=now,
                                error="the broker has no record of this order and the balance "
@@ -2855,6 +2862,41 @@ def action_selftest():
                             {"mode": "dryrun", "unknownTimeoutSec": 1})["data"]
     checks.append({"name": "an order the broker still lists is not called unconfirmed",
                    "want": [], "got": aged.get("aged"), "ok": not aged.get("aged")})
+
+    # --- the way out of `unknown` -----------------------------------------------------------
+    # An order the venue never accepted used to sit in `unknown` for good, degrading the position
+    # and blocking every later entry. It is released only when all three agree. The first version
+    # of this check scoped the balance lookup to the cycle's single `symbol` and therefore fired
+    # for nothing on the multi-symbol cycles that are the whole point — an untested guard that
+    # never runs looks exactly like one with nothing to do.
+    ucon.execute("DELETE FROM orders")
+    ucon.execute("DELETE FROM strategy_position")
+    ucon.commit()
+    put_order("ghost", 7200, "")          # sent two hours ago, never acknowledged
+    store.update_order(ucon, "ghost", state="unknown")
+    store.set_position_state(ucon, "u", "b", "", "AAA", "degraded")
+    # The account was read and holds nothing of it: the buy cannot have happened.
+    empty_book = {"openOrders": [], "balanceRows": [{"symbol": "ZZZ", "qty": 3}]}
+    out = action_reconcile(empty_book, {"mode": "dryrun", "voidAfterSec": 3600})["data"]
+    checks.append({"name": "an order the venue never took is released, not held forever",
+                   "want": ["ghost"], "got": out.get("voided"),
+                   "ok": out.get("voided") == ["ghost"]})
+    checks.append({"name": "and the position it was blocking goes back to work", "want": "ok",
+                   "got": store.position_of(ucon, "u", "b", "", "AAA").get("state"),
+                   "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == "ok"})
+    # A holding that could have come from the order is enough to keep it. So is a balance nobody
+    # read — silence is not a zero.
+    ucon.execute("DELETE FROM orders")
+    ucon.commit()
+    put_order("maybe", 7200, "")
+    store.update_order(ucon, "maybe", state="unknown")
+    held = action_reconcile({"openOrders": [], "balanceRows": [{"symbol": "AAA", "qty": 1}]},
+                            {"mode": "dryrun", "voidAfterSec": 3600})["data"]
+    checks.append({"name": "but not one the balance could account for", "want": [],
+                   "got": held.get("voided"), "ok": not held.get("voided")})
+    blind = action_reconcile({"openOrders": []}, {"mode": "dryrun", "voidAfterSec": 3600})["data"]
+    checks.append({"name": "and never on a cycle that read no balance at all", "want": [],
+                   "got": blind.get("voided"), "ok": not blind.get("voided")})
     ucon.close()
 
     # --- a paper fill never lands in the live ledger ---------------------------------------
