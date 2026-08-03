@@ -4228,6 +4228,7 @@ impl AiManager {
                     error,
                     input: Some(tc.arguments.clone()),
                     cache_key: crate::ports::extract_cache_key(&action.result),
+                        rows: crate::ports::extract_result_rows(&action.result),
                 });
             }
 
@@ -4535,6 +4536,7 @@ impl AiManager {
                 error: None,
                 input: Some(serde_json::json!({ "blocks": blocks })),
                 cache_key: None,
+                rows: None,
             });
         }
         // 검증 실패 fence 블록 — 옛엔 silent skip(로그 warn 만)이라 사용자가 "왜 빠졌나" 몰랐음.
@@ -4562,6 +4564,7 @@ impl AiManager {
                 error: Some(errs.join(" / ")),
                 input: Some(serde_json::json!({ "failed": failed })),
                 cache_key: None,
+                rows: None,
             });
         }
 

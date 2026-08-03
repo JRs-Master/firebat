@@ -494,6 +494,7 @@ impl GeminiCliHandler {
                         error: error_msg,
                         input: Some(pending.parameters.clone()),
                         cache_key: firebat_core::ports::extract_cache_key(&payload),
+                        rows: firebat_core::ports::extract_result_rows(&payload),
                     });
                 }
                 if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {

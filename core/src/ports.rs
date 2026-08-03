@@ -1775,6 +1775,19 @@ pub struct ToolResultSummary {
     /// previous turn had already fetched anything and re-ran the whole discovery ladder.
     #[serde(default, rename = "cacheKey", skip_serializing_if = "Option::is_none")]
     pub cache_key: Option<String>,
+    /// How many rows the call came back with, when it came back with rows at all.
+    ///
+    /// The turn ledger recorded what was CALLED and never what came back, so a wrong answer could
+    /// not be traced afterwards to whether retrieval had failed or the model had ignored it — the
+    /// payloads live in a 30-minute cache and are gone by the time anyone asks. Measured
+    /// 2026-08-04: telling those two apart meant re-running the calls by hand a day later.
+    ///
+    /// A count, not the payload: enough to separate "found nothing" from "found something", cheap
+    /// to keep forever. `None` means the result was not row-shaped (a balance, an ack) rather than
+    /// unknown — and `Some(0)` is the case worth having, an empty search that got presented as a
+    /// check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rows: Option<usize>,
 }
 
 /// Did this tool payload fail, and if so why?
@@ -1841,6 +1854,98 @@ pub fn extract_cache_key(payload: &serde_json::Value) -> Option<String> {
         }
     }
     None
+}
+
+/// How many rows a tool payload carried, if it was row-shaped.
+///
+/// Sibling of `extract_cache_key`, and it looks in the same two scopes for the same reason: a
+/// module answers under `data`, a core tool answers bare.
+///
+/// The auto-cache has already counted the principal array whenever it cached one, so that count is
+/// preferred — it is the true total even when the inline rows were truncated to a preview, and
+/// reading the truncated array instead would record five rows for a five-thousand-row fetch.
+/// Failing that, the longest array under the scope, since that is the payload's principal list by
+/// the same rule the auto-cache uses to pick one.
+pub fn extract_result_rows(payload: &serde_json::Value) -> Option<usize> {
+    for path in [Some("data"), None] {
+        let Some(scope) = (match path {
+            Some(p) => payload.get(p),
+            None => Some(payload),
+        }) else {
+            continue;
+        };
+        if let Some(total) = scope
+            .get("_cacheMeta")
+            .and_then(|m| m.get("totalCount"))
+            .and_then(|v| v.as_u64())
+        {
+            return Some(total as usize);
+        }
+        // An explicit zero-result envelope counts as rows=0 even with no array to measure.
+        if let Some(n) = scope
+            .get("totalCnt")
+            .or_else(|| scope.get("total"))
+            .and_then(|v| v.as_u64())
+        {
+            return Some(n as usize);
+        }
+        if let Some(obj) = scope.as_object() {
+            let longest = obj
+                .values()
+                .filter_map(|v| v.as_array().map(Vec::len))
+                .max();
+            if let Some(n) = longest {
+                return Some(n);
+            }
+        }
+        if let Some(arr) = scope.as_array() {
+            return Some(arr.len());
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod result_rows_tests {
+    use super::extract_result_rows;
+
+    /// The two payloads from 2026-08-04, which the ledger could not tell apart afterwards.
+    #[test]
+    fn an_empty_search_and_a_single_hit_are_distinguishable() {
+        // naver-search answered this, twice, and the answer was written as if precedents had
+        // been checked.
+        let empty = serde_json::json!({"success": true,
+            "data": {"total": 0, "start": 1, "display": 0, "items": []}});
+        assert_eq!(extract_result_rows(&empty), Some(0));
+
+        // law-search answered this — one row, about a different case entirely.
+        let one = serde_json::json!({"success": true,
+            "data": {"totalCnt": 1, "page": 1, "items": [{"사건번호": "2023고합159"}]}});
+        assert_eq!(extract_result_rows(&one), Some(1));
+    }
+
+    /// A truncated preview must not be recorded as the whole fetch.
+    #[test]
+    fn the_cached_total_beats_the_inline_preview() {
+        let truncated = serde_json::json!({"data": {
+            "records": [1, 2, 3, 4, 5],
+            "_cacheKey": "k",
+            "_cacheMeta": {"totalCount": 5000, "truncated": true},
+        }});
+        assert_eq!(extract_result_rows(&truncated), Some(5000));
+    }
+
+    #[test]
+    fn a_result_that_is_not_rows_says_so_rather_than_guessing() {
+        // A balance, an acknowledgement: nothing to count, and 0 would be a lie.
+        let balance = serde_json::json!({"success": true, "data": {"cash": 1000, "currency": "KRW"}});
+        assert_eq!(extract_result_rows(&balance), None);
+        // A bare core-tool result answers without the `data` envelope.
+        let bare = serde_json::json!({"actions": [{"a": 1}, {"a": 2}], "count": 2});
+        assert_eq!(extract_result_rows(&bare), Some(2));
+        // And a bare array.
+        assert_eq!(extract_result_rows(&serde_json::json!([1, 2, 3])), Some(3));
+    }
 }
 
 /// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.
