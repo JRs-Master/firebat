@@ -496,6 +496,22 @@
       "group": "확인"
     },
     {
+      "key": "unfilledDriftPct",
+      "type": "number",
+      "defaultValue": 1.0,
+      "tab": "실행",
+      "group": "확인",
+      "description": "미체결 지정가를 거둘 가격 이탈 폭(%). 시장이 주문을 지나쳐 간 방향으로만 잽니다 — 매수는 값이 오른 만큼, 매도는 내린 만큼. `unfilledAfterSec` 와 둘 중 하나라도 걸리면 취소하고, 0 = 이 조건 끔. 스캘핑처럼 시간이 신호의 일부면 시간 쪽을, 스윙이면 가격 쪽만 쓰는 식으로 전략별(`orders`)로 덮어쓸 수 있습니다."
+    },
+    {
+      "key": "voidAfterSec",
+      "type": "number",
+      "defaultValue": 3600,
+      "tab": "실행",
+      "group": "확인",
+      "description": "미확인 주문을 \"없던 일\"로 확정하기까지 기다리는 초. 브로커 목록에도 없고 체결도 없고 잔고에도 흔적이 없을 때만 적용됩니다. 0 = 확정하지 않음(수동 정리)."
+    },
+    {
       "key": "feeInCost",
       "type": "toggle",
       "defaultValue": true,

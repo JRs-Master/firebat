@@ -1280,10 +1280,22 @@ def action_cycle(inp, settings):
 
     # A limit order that never fills is the ordinary case, not an error: the price is the signal
     # bar's close and the market has moved on. Left alone it holds the money and blocks the next
-    # entry, so it is withdrawn once it has had long enough, and the next cycle is free to enter
-    # again at a price that exists. Cancelling is all this does — re-entering is the rule's job,
-    # and deciding here would place an order no signal asked for.
-    abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls)
+    # entry, so it is withdrawn once the market has left it behind, and the next cycle is free to
+    # enter again at a price that exists. Cancelling is all this does — re-entering is the rule's
+    # job, and deciding here would place an order no signal asked for.
+    #
+    # The last price we know per symbol, read from the same signals the cycle just used, so the
+    # withdrawal can ask how far the market has moved rather than only how long it has been.
+    marks = {}
+    for _sid, _own in (per_strategy or {}).items():
+        _m = eng._num((_own or {}).get("lastClose"), 0.0)
+        if _m > 0:
+            _sym = (_own or {}).get("symbol") or _sid
+            marks[_sym] = _m
+    if symbol and price > 0:
+        marks.setdefault(symbol, price)
+    abandoned = _abandon_stale_orders(conn, settings, strategies, inp.get("openOrders"), calls,
+                                      marks)
 
     positions = [r for c in conns.values() for r in store.read_positions(c)]
     for c in conns.values():
@@ -1311,6 +1323,12 @@ def action_cycle(inp, settings):
 # schedule: long enough that a fill still arriving is not thrown away, short enough that the money
 # is not held all day for a price the market has left behind.
 DEFAULT_UNFILLED_AFTER_SEC = 600
+
+# How far the market may walk away from a resting limit before the order stops being the trade the
+# signal asked for. Percent of the limit price, measured only in the direction that leaves the
+# order behind. This is the truer of the two triggers — at a close the venue withdraws the order
+# anyway — but it needs a price, so the clock stays as the one that always works.
+DEFAULT_UNFILLED_DRIFT_PCT = 1.0
 
 
 def _order_type(strategy, intent):
@@ -1354,7 +1372,7 @@ def _limit_price(strategy, intent, price):
     return price * (1 + off / 100.0) if intent["side"] == "buy" else price * (1 - off / 100.0)
 
 
-def _abandon_stale_orders(conn, settings, strategies, open_rows, calls):
+def _abandon_stale_orders(conn, settings, strategies, open_rows, calls, marks=None):
     """Withdraw our own resting orders that have had long enough. Returns what was given up on.
 
     Only orders the broker still lists are candidates: one it no longer lists is finished, and
@@ -1372,25 +1390,55 @@ def _abandon_stale_orders(conn, settings, strategies, open_rows, calls):
         no = o.get("broker_order_no")
         if not no or no not in still_open:
             continue
-        if float(o.get("filled_qty") or 0) > 0:
-            # Partly filled — leaving it is the safer read; the rest may still come.
-            continue
+        # A partly filled order gets the same clock. "The rest may still come" is true for a
+        # while and false forever, and exempting it outright meant one early fill kept the money
+        # committed at a price the market had left, with no way out but a person. Cancelling does
+        # not undo a fill — the venue keeps the executed volume and releases only the remainder,
+        # which is the whole point of taking what filled and giving up the rest.
+        partial = float(o.get("filled_qty") or 0) > 0
         strategy = by_strategy.get(o["strategy_id"]) or {}
-        after = (strategy.get("orders") or {}).get("unfilledAfterSec")
-        if after is None:
-            after = settings.get("unfilledAfterSec")
-        after = float(DEFAULT_UNFILLED_AFTER_SEC if after is None else after)
-        if after <= 0:
-            continue                      # 0 = leave them, a real choice
-        if now - int(o.get("sent_ms") or now) < after * 1000:
+        opts = strategy.get("orders") or {}
+
+        def knob(name, fallback):
+            v = opts.get(name)
+            if v is None:
+                v = settings.get(name)
+            return float(fallback if v is None else v)
+
+        waited_sec = (now - int(o.get("sent_ms") or now)) / 1000.0
+        # Two reasons to give up, and a rule needs whichever fits it. Price is the truer one: an
+        # order the market has walked away from is no longer the trade the signal asked for, and
+        # at a close the venue cancels it anyway. But time is part of the signal for anything
+        # intraday — a scalp that has not filled in two minutes has already been answered — and
+        # there is no close in crypto to fall back on. Either fires; 0 turns one off.
+        drift_pct = knob("unfilledDriftPct", DEFAULT_UNFILLED_DRIFT_PCT)
+        after = knob("unfilledAfterSec", DEFAULT_UNFILLED_AFTER_SEC)
+        limit_price = eng._num(o.get("req_price"), 0.0)
+        mark = eng._num((marks or {}).get(o.get("symbol")), 0.0)
+        drift = 0.0
+        if drift_pct > 0 and limit_price > 0 and mark > 0:
+            # Only the direction that leaves the order behind. A resting buy sits under the market
+            # and is passed by when the price rises; a resting sell sits above it. The other way
+            # is the order about to fill, which is not a reason to pull it.
+            moved = (mark - limit_price) if o.get("side") == "buy" else (limit_price - mark)
+            drift = max(0.0, moved) / limit_price * 100.0
+        why = None
+        if drift_pct > 0 and drift >= drift_pct:
+            why = "price"
+        elif after > 0 and waited_sec >= after:
+            why = "time"
+        if why is None:
             continue
         calls.append({**orders.cancel_call(o), "orderKey": o["order_key"]})
         store.update_order(conn, o["order_key"], state="canceling", last_checked_ms=now)
-        store.log_event(conn, "order_abandoned",
-                        {"orderKey": o["order_key"], "afterSec": after},
+        detail = {"orderKey": o["order_key"], "why": why, "waitedSec": round(waited_sec),
+                  "driftPct": round(drift, 3), "limit": limit_price, "mark": mark,
+                  "partial": partial}
+        store.log_event(conn, "order_abandoned", detail,
                         strategy_id=o["strategy_id"], symbol=o.get("symbol"))
-        gone.append({"orderKey": o["order_key"], "symbol": o.get("symbol"),
-                     "waitedSec": round((now - int(o.get("sent_ms") or now)) / 1000)})
+        gone.append({"orderKey": o["order_key"], "symbol": o.get("symbol"), "why": why,
+                     "waitedSec": round(waited_sec), "driftPct": round(drift, 3),
+                     "partial": partial})
     return gone
 
 
@@ -1552,6 +1600,39 @@ def action_reconcile(inp, settings):
     elif unread_pos is not None:
         store.log_api(conn, broker, "balance:unreadable", False, 0, {"symbol": symbol}, unread_pos)
 
+    # 5. The way out of `unknown`. Ageing an unconfirmed order stops the strategy, which is right,
+    # but nothing ever released it: one order the broker never accepted degraded a position for
+    # good and blocked every later entry. An order is declared void only when the venue agrees on
+    # all three counts — it is not on the open list, we have applied no fill against it, and the
+    # balance we just read shows nothing it could have bought. The balance is what makes this safe:
+    # "the broker is slow" and "the order does not exist" look identical until the holding is
+    # checked. Its own, longer window, because being wrong here invents or forgets a position.
+    void_sec = settings.get("voidAfterSec")
+    void_ms = float(3600 if void_sec is None else void_sec) * 1000
+    voided = []
+    if void_ms > 0:
+        for o in store.read_orders(conn, 200):
+            if o.get("state") != "unknown" or float(o.get("filled_qty") or 0) > 0:
+                continue
+            if now - int(o.get("sent_ms") or o.get("ts_ms") or now) <= void_ms:
+                continue
+            if o.get("broker_order_no") and o["broker_order_no"] in listed:
+                continue
+            # Only for the symbol this reconcile actually read a balance for — a cycle that never
+            # asked about this symbol has no standing to declare its order void.
+            if o.get("symbol") != symbol or "qty" not in pos:
+                continue
+            if o.get("side") == "buy" and float(pos.get("qty") or 0) > 0:
+                continue  # something was bought; this order may be why
+            store.update_order(conn, o["order_key"], state="void", last_checked_ms=now,
+                               error="the broker has no record of this order and the balance "
+                                     "shows nothing it could have bought")
+            store.set_position_state(conn, o["strategy_id"], o["broker"], o["account"],
+                                     o["symbol"], "ok")
+            store.log_event(conn, "order_void", {"orderKey": o["order_key"]},
+                            strategy_id=o["strategy_id"], symbol=o["symbol"])
+            voided.append(o["order_key"])
+
     drift = store.replay_positions(conn)
     if drift:
         store.kv_set(conn, "tripped", "1")
@@ -1562,6 +1643,7 @@ def action_reconcile(inp, settings):
         "reconcile": verdict, "ledgerDrift": drift,
         "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
         "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
+        "voided": voided,
         "unreadablePosition": unread_pos,
         "note": ("접수 응답이 아니라 체결·잔고 조회가 원장을 확정합니다. 읽지 못한 체결 행은 "
                  "버리지 않고 그대로 돌려주므로, 실제 응답을 보고 필드명을 늘리면 됩니다."
@@ -2726,26 +2808,47 @@ def action_selftest():
     listed = [{"ord_no": "N1"}, {"ord_no": "N2"}, {"ord_no": "N3"}]
     put_order("old", 900, "N1")           # resting past the window
     put_order("fresh", 60, "N2")          # resting, but not long enough
-    put_order("partial", 900, "N3", 0.4)  # part of it filled — leave the rest a chance
+    put_order("partial", 900, "N3", 0.4)  # part filled — the remainder is still resting
     ucalls = []
+    # No mark, so only the clock can fire here — the price rule is measured on its own below.
     gone = _abandon_stale_orders(ucon, {}, ustrat, listed, ucalls)
     checks.append({"name": "a resting order is withdrawn once it has had long enough",
-                   "want": ["old"], "got": [g["orderKey"] for g in gone],
-                   "ok": [g["orderKey"] for g in gone] == ["old"]})
+                   "want": ["old", "partial"], "got": [g["orderKey"] for g in gone],
+                   "ok": [g["orderKey"] for g in gone] == ["old", "partial"]})
     checks.append({"name": "and the withdrawal is a broker call, not a local edit",
                    "want": "cancel_order",
                    "got": (ucalls[0]["input"]["action"] if ucalls else None),
                    "ok": bool(ucalls) and ucalls[0]["input"]["action"] == "cancel_order"})
-    checks.append({"name": "a partly filled order keeps its chance", "want": True,
-                   "got": "partial" not in [g["orderKey"] for g in gone],
-                   "ok": "partial" not in [g["orderKey"] for g in gone]})
+    # A partly filled order gets the same clock. Cancelling keeps the executed volume and
+    # releases only the remainder, so exempting it just held the money at a price the market had
+    # left, with no way out but a person.
+    checks.append({"name": "a partly filled order gives up its remainder too", "want": True,
+                   "got": "partial" in [g["orderKey"] for g in gone],
+                   "ok": "partial" in [g["orderKey"] for g in gone]})
     # Nothing is re-placed: entering again is the rule's decision, and inventing a replacement
     # would trade on a signal nobody gave.
-    checks.append({"name": "withdrawing does not place anything in its stead", "want": 1,
-                   "got": len(ucalls), "ok": len(ucalls) == 1})
-    zero = _abandon_stale_orders(ucon, {"unfilledAfterSec": 0}, ustrat, listed, [])
+    checks.append({"name": "withdrawing does not place anything in its stead", "want": 2,
+                   "got": len(ucalls), "ok": len(ucalls) == 2})
+    both_off = {"unfilledAfterSec": 0, "unfilledDriftPct": 0}
+    zero = _abandon_stale_orders(ucon, both_off, ustrat, listed, [])
     checks.append({"name": "zero means leave them, and is not read as no setting",
                    "want": [], "got": zero, "ok": zero == []})
+    # The price rule on its own: a fresh order the market has walked past is withdrawn even though
+    # the clock says it is young, and one the market has come toward is not — that is the order
+    # about to fill.
+    drift_only = {"unfilledAfterSec": 0, "unfilledDriftPct": 1.0}
+    # `fresh` is the only one still resting — the other two are already withdrawing from the call
+    # above — and it is the one that matters: too young for the clock, withdrawn on price alone.
+    passed_by = _abandon_stale_orders(ucon, drift_only, ustrat, listed, [], {"AAA": 10.5})
+    checks.append({"name": "a buy the market rose past is withdrawn however young it is",
+                   "want": ["fresh"], "got": [g["orderKey"] for g in passed_by],
+                   "ok": [g["orderKey"] for g in passed_by] == ["fresh"]})
+    checks.append({"name": "and the reason it gives is the price, not the clock",
+                   "want": "price", "got": (passed_by[0]["why"] if passed_by else None),
+                   "ok": bool(passed_by) and passed_by[0]["why"] == "price"})
+    coming_to = _abandon_stale_orders(ucon, drift_only, ustrat, listed, [], {"AAA": 9.0})
+    checks.append({"name": "and one the market is falling toward is left alone",
+                   "want": [], "got": coming_to, "ok": coming_to == []})
     # An order the broker still lists is working. Ageing it into `unknown` degraded the position
     # and blocked new entries for a rule doing exactly what it was written to do.
     aged = action_reconcile({"openOrders": listed, "symbol": "AAA"},
