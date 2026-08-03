@@ -47,3 +47,6 @@ infra/target/
 # Python 바이트코드 캐시 (py_compile / 모듈 실행 산물)
 __pycache__/
 *.pyc
+
+# Rate-limit windows are runtime state — written wherever a dialect happens to run.
+**/ratelimit/
