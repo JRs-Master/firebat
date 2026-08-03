@@ -921,13 +921,19 @@ def _signals_by_strategy(plan, signals):
     runs = (plan or {}).get("runs") if isinstance(plan, dict) else None
     if runs is None and isinstance(plan, dict):
         runs = ((plan.get("data") or {}).get("runs"))
-    if not isinstance(runs, list) or not isinstance(signals, list):
+    if not isinstance(runs, list):
+        return {}
+    aligned, _ = _loop_aligned(signals, len(runs))
+    if aligned is None:
         return {}
     out = {}
     for i, run in enumerate(runs):
-        if i >= len(signals):
-            break
-        entry = {"signal": signals[i], "lastClose": run.get("lastClose")}
+        if aligned[i] is None:
+            # This run's analyser call failed. Leaving the strategy out of the map means it makes
+            # no decision this cycle — which is right: a stop still gets checked against
+            # `lastClose`, but nothing enters on a signal that was never computed.
+            continue
+        entry = {"signal": aligned[i], "lastClose": run.get("lastClose")}
         for key in (run.get("strategyId"), run.get("tradeId"), run.get("symbol")):
             if key:
                 out.setdefault(key, entry)
@@ -966,6 +972,86 @@ def _loop_items(value, key=None):
             return _loop_items(inner, key)
         return []
     return value if isinstance(value, list) else []
+
+
+def _sweep_results(inp):
+    """Hand the ranker a plain list of measurements, and refuse a sweep that lost any.
+
+    The ranking code takes `results` as it arrives and only checks the length, so a declaration
+    that passes the loop envelope (`$stepN`) gave it a dict — four keys against N runs — and it
+    answered "the loop did not finish" for a loop that had. The nightly revise cron is written
+    that way and stops at its CONDITION most nights, so nothing ever walked it.
+
+    Unwrapping is the fix, but not into tolerance: a sweep that dropped a measurement must stop.
+    The adoption bar counts symbols and round trips, so ranking a thinner grid does not fail — it
+    quietly lowers the bar and adopts on less evidence than the rule demands.
+    """
+    if not isinstance(inp, dict) or not isinstance(inp.get("results"), dict):
+        return inp
+    env = inp["results"]
+    if isinstance(env.get("data"), dict) and not isinstance(env.get("results"), list):
+        env = env["data"]
+    failed, dropped = (env.get("failed") or []), int(env.get("dropped") or 0)
+    if failed or dropped:
+        return {**inp, "results": [], "_sweepIncomplete": {
+            "failed": len(failed), "dropped": dropped,
+            "why": "측정이 빠진 스윕은 더 적은 후보로 순위를 매겨 채택 바를 낮춥니다."}}
+    return {**inp, "results": _loop_items(env)}
+
+
+def _loop_aligned(value, expected):
+    """A loop's results put back where they started, with a hole for each item that failed.
+
+    A FOREACH that keeps going returns only the survivors in `results`, so position i of that list
+    stops meaning item i — and everything downstream here pairs by position (bars to trade, signal
+    to run). Getting that wrong is not a missing row, it is one symbol's price used for another's
+    stop, which is the shape of the worst bug this module has had.
+
+    The envelope carries what is needed to undo it: `failed[].index` is the index in the *original*
+    list, and items past the cap were never attempted and sit at the tail. So the holes are known
+    exactly and no guessing is involved.
+
+    Returns `(aligned, errors)` — `aligned` is `expected` long with `None` where an item dropped,
+    `errors` maps that position to why. A plain list (no envelope, or a loop that stopped on the
+    first failure) aligns one-to-one, which is the old behaviour.
+    """
+    results = _loop_items(value)
+    holes = {}
+    env = value if isinstance(value, dict) else None
+    if env is not None and not isinstance(env.get("failed"), list) \
+            and isinstance(env.get("data"), dict):
+        env = env["data"]
+    if env is not None and isinstance(env.get("failed"), list):
+        for row in (env.get("failed") or []):
+            if not isinstance(row, dict):
+                continue
+            try:
+                holes[int(row.get("index"))] = str(row.get("error") or "실패")
+            except (TypeError, ValueError):
+                # An index we cannot read means we cannot say which item is missing, and pairing
+                # the rest by position would be a guess. Refuse the whole alignment instead.
+                return None, {}
+    attempted = len(results) + len(holes)
+    if attempted > expected:
+        return None, {}
+    if env is None and attempted != expected:
+        # A bare list says nothing about what is missing. Short could be a truncation, or it could
+        # be that the caller passed a different list entirely — and pairing the two by position
+        # would be a guess with a position's stop riding on it. Only an envelope earns the holes.
+        return None, {}
+    aligned, errors, feed = [], {}, iter(results)
+    for i in range(expected):
+        if i in holes:
+            aligned.append(None)
+            errors[i] = holes[i]
+        elif i < attempted:
+            aligned.append(next(feed))
+        else:
+            # Past the cap: the loop never ran these. `dropped` already says how many, and this
+            # says which.
+            aligned.append(None)
+            errors[i] = "FOREACH 상한에 잘려 실행되지 않았습니다."
+    return aligned, errors
 
 
 # The slow timeframes a rule may reach for. Two hundred weekly bars is four years — enough for a
@@ -1081,11 +1167,14 @@ def action_bind_bars(inp, settings):
     holding either.
     """
     trades = _loop_items(inp.get("trades"), "trades")
-    fetched = _loop_items(inp.get("fetched"))
-    if len(fetched) != len(trades):
+    fetched, fetch_errors = _loop_aligned(inp.get("fetched"), len(trades))
+    if fetched is None:
+        got = len(_loop_items(inp.get("fetched")))
         return {"success": False,
-                "error": f"{len(fetched)} 개 봉 결과 / {len(trades)} 개 매매 — 같은 순서로 같은 "
-                         "개수를 넘겨야 합니다(FOREACH 결과와 gate 의 trades)."}
+                "error": f"{got} 개 봉 결과 / {len(trades)} 개 매매 — 같은 순서로 같은 "
+                         "개수를 넘겨야 합니다(FOREACH 결과와 gate 의 trades). 캔들 루프에 "
+                         "`continueOnError` 를 켰다면 `$stepN.results` 가 아니라 `$stepN` 을 "
+                         "통째로 넘기십시오 — 어느 항목이 빠졌는지는 봉투에만 있습니다."}
     costs = {k: v for k, v in {
         "feeRate": inp.get("feeRate"), "taxRate": inp.get("taxRate"),
         "slippageRate": inp.get("slippageRate")}.items() if v is not None}
@@ -1120,8 +1209,15 @@ def action_bind_bars(inp, settings):
         finally:
             cconn.close()
 
-    runs, missing = [], []
-    for t, f in zip(trades, fetched):
+    runs, missing, skipped = [], [], []
+    for idx, (t, f) in enumerate(zip(trades, fetched)):
+        if f is None:
+            # One symbol's fetch failed. Everything else in this cycle is still tradable, and
+            # stopping here would also skip the exits of positions we already hold — so the
+            # symbol drops out and says why. Silent would be the unacceptable half.
+            skipped.append({"symbol": t.get("symbol"), "tradeId": t.get("tradeId"),
+                            "error": fetch_errors.get(idx, "봉 조회 실패")})
+            continue
         payload = (f or {}).get("data") if isinstance(f, dict) and "data" in f else f
         payload = payload if isinstance(payload, dict) else {}
         key = payload.get("_cacheKey")
@@ -1147,6 +1243,9 @@ def action_bind_bars(inp, settings):
     return {"success": True, "data": {
         "runs": runs, "runCount": len(runs),
         "missing": missing or None,
+        # Distinct from `missing`: that is a broker answering with no bars, this is the call itself
+        # not completing. Same outcome for the symbol, different thing to go and fix.
+        "skipped": skipped or None,
         # A rule reaching for a timeframe nobody has fetched yet is worth saying out loud: the
         # analyser refuses it, and without this the refusal reads as a broken rule rather than a
         # context fetch that has not run.
@@ -1221,7 +1320,9 @@ def action_cycle(inp, settings):
     # `plan` is bind_bars' output and `signals` the analyser results in the same order, so the
     # answer that belongs to a strategy is found rather than assumed — a single shared signal
     # would silently apply one coin's verdict to another's position.
-    per_strategy = _signals_by_strategy(inp.get("plan"), _loop_items(inp.get("signals")))
+    # Raw, not unwrapped: the loop envelope is where `failed` lives, and unwrapping to `results`
+    # first would hand over a shorter list with no way to tell which run each entry belongs to.
+    per_strategy = _signals_by_strategy(inp.get("plan"), inp.get("signals"))
     # A plan is a statement of what this cycle covers, so it is also the limit. Without this the
     # cycle ran every enabled strategy — including ones whose candles were never fetched, which
     # then fell back to *another* symbol's price and evaluated their stops against it. With one
@@ -2052,6 +2153,20 @@ def action_selftest():
     checks.append({"name": "ranking splits the flat results back out by symbol", "want": 2,
                    "got": len(rolled.get("perSymbol") or []),
                    "ok": len(rolled.get("perSymbol") or []) == 2})
+    # The revise cron passes the loop envelope, and the ranker only ever length-checked it — a dict
+    # of four keys against N runs reads as "the loop did not finish" for a loop that did.
+    enveloped = sweep.rank_multi(_sweep_results(
+        {"runs": multi["runs"], "results": {"count": len(bt_rows), "results": bt_rows,
+                                            "failed": [], "dropped": 0}}))
+    checks.append({"name": "the ranker accepts a loop envelope, not only a bare list", "want": 2,
+                   "got": len(enveloped.get("perSymbol") or []),
+                   "ok": len(enveloped.get("perSymbol") or []) == 2})
+    holed = sweep.rank_multi(_sweep_results(
+        {"runs": multi["runs"], "results": {"count": len(bt_rows) - 1, "results": bt_rows[1:],
+                                            "failed": [{"index": 0, "error": "x"}], "dropped": 0}}))
+    checks.append({"name": "a sweep that lost a measurement is refused, not ranked thinner",
+                   "want": True, "got": bool(holed.get("error")),
+                   "ok": bool(holed.get("error")) and not holed.get("winner")})
 
     # Cross-symbol: a rule that wins big on one series and loses on two is not a strategy.
     running = None
@@ -2882,10 +2997,52 @@ def action_selftest():
                    "ok": action_bind_bars({"trades": mg["trades"],
                                            "fetched": [mcandles(1)]}, mset).get("success") is False})
 
+    # A candle loop running with `continueOnError` drops the symbol that failed and keeps the rest.
+    # The envelope's `failed[].index` is what puts the survivors back where they started — without
+    # it the second trade would be analysed on the first trade's bars, which is one symbol's price
+    # deciding another symbol's stop.
+    partial = action_bind_bars(
+        {"trades": mg["trades"],
+         "fetched": {"count": 1, "results": [mcandles(50)],
+                     "failed": [{"index": 0, "error": "rate limited"}], "dropped": 0}}, mset)
+    pdata = partial.get("data") or {}
+    checks.append({"name": "a failed candle drops its own symbol, not the next one's bars",
+                   "want": {"runs": ["ZZZ"], "skipped": ["AAA"], "close": [50]},
+                   "got": {"runs": [r["symbol"] for r in pdata.get("runs", [])],
+                           "skipped": [s["symbol"] for s in (pdata.get("skipped") or [])],
+                           "close": [r["lastClose"] for r in pdata.get("runs", [])]},
+                   "ok": partial.get("success") is True
+                         and [r["symbol"] for r in pdata.get("runs", [])] == ["ZZZ"]
+                         and [r["lastClose"] for r in pdata.get("runs", [])] == [50]
+                         and [s["symbol"] for s in (pdata.get("skipped") or [])] == ["AAA"]})
+    tail_cut = action_bind_bars(
+        {"trades": mg["trades"],
+         "fetched": {"count": 1, "results": [mcandles(1000)], "failed": [], "dropped": 1}}, mset)
+    checks.append({"name": "an item the loop cap never ran is reported, not silently missing",
+                   "want": ["ZZZ"],
+                   "got": [s["symbol"] for s in ((tail_cut.get("data") or {}).get("skipped") or [])],
+                   "ok": [s["symbol"] for s in
+                          ((tail_cut.get("data") or {}).get("skipped") or [])] == ["ZZZ"]})
+
     def msig(side, px):
         return {"success": True, "data": {
             "firedOnLastClosedBar": ([{"side": side, "price": px, "date": "d3"}] if side else []),
             "firedOnLastBar": [], "lastClosedBarDate": "d3"}}
+    # Same alignment on the analyser side, tested on the matcher rather than through a cycle — a
+    # cycle writes to the ledger, and a throwaway one here would leave an idempotency key behind
+    # that silences the checks after it (which is exactly what happened when it was written that
+    # way). The buy belongs to the second run; read positionally it would land on the first.
+    sig_map = _signals_by_strategy(
+        bound, {"count": 1, "results": [msig("buy", 50)],
+                "failed": [{"index": 0, "error": "boom"}], "dropped": 0})
+    checks.append({"name": "a failed analyser call silences its own strategy, not its neighbour",
+                   "want": ["ZZZ"], "got": sorted({k for k in sig_map if k in ("AAA", "ZZZ")}),
+                   "ok": "AAA" not in sig_map and "ZZZ" in sig_map
+                         and sig_map["ZZZ"]["lastClose"] == 50})
+    checks.append({"name": "a bare short list is still refused — only an envelope earns the holes",
+                   "want": {}, "got": _signals_by_strategy(bound, [msig("buy", 50)]),
+                   "ok": _signals_by_strategy(bound, [msig("buy", 50)]) == {}})
+
     mc = action_cycle({"plan": bound, "signals": [msig("buy", 1000), msig(None, 0)]},
                       mset)["data"]
     checks.append({"name": "only the coin whose rule fired is traded", "want": ["a"],
@@ -3539,7 +3696,7 @@ def main():
         if action == "plan_sweep":
             return out({"success": True, "data": sweep.plan_sweep(inp)})
         if action == "rank_sweep":
-            return out({"success": True, "data": sweep.rank_sweep(inp)})
+            return out({"success": True, "data": sweep.rank_sweep(_sweep_results(inp))})
         if action == "merge_sweeps":
             return out({"success": True, "data": sweep.merge_sweeps(inp)})
         if action == "rank_across":
@@ -3547,7 +3704,7 @@ def main():
         if action == "plan_multi":
             return out({"success": True, "data": sweep.plan_multi(inp)})
         if action == "rank_multi":
-            return out({"success": True, "data": sweep.rank_multi(inp)})
+            return out({"success": True, "data": sweep.rank_multi(_sweep_results(inp))})
         if action == "fit_symbols":
             return out({"success": True, "data": sweep.fit_symbols(inp)})
         if action == "adopt_fits":

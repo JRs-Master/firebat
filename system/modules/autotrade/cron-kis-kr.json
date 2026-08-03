@@ -37,7 +37,8 @@
             "market": "$prev.market"
           }
         }
-      ]
+      ],
+      "continueOnError": true
     },
     {
       "type": "TOOL_CALL",
@@ -50,7 +51,7 @@
       },
       "inputMap": {
         "trades": "$step0.trades",
-        "fetched": "$step2.results"
+        "fetched": "$step2"
       }
     },
     {
@@ -62,7 +63,8 @@
           "tool": "sysmod_technical-analysis",
           "inputData": "$prev.args"
         }
-      ]
+      ],
+      "continueOnError": true
     },
     {
       "type": "TOOL_CALL",
@@ -83,7 +85,7 @@
       },
       "inputMap": {
         "plan": "$step3",
-        "signals": "$step4.results",
+        "signals": "$step4",
         "openOrders": "$step5.rows"
       }
     },

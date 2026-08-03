@@ -310,6 +310,73 @@ mod module_schedule_tests {
         }
     }
 
+    /// Every declared schedule, so the reference check below covers all of them. A file deleted or
+    /// renamed fails the build here rather than registering nothing at runtime.
+    const DECLARED: &[(&str, &str)] = &[
+        ("cron-upbit", include_str!("../../system/modules/autotrade/cron-upbit.json")),
+        ("cron-upbit-context",
+         include_str!("../../system/modules/autotrade/cron-upbit-context.json")),
+        ("cron-revise", include_str!("../../system/modules/autotrade/cron-revise.json")),
+        ("cron-kiwoom-kr", include_str!("../../system/modules/autotrade/cron-kiwoom-kr.json")),
+        ("cron-kiwoom-us", include_str!("../../system/modules/autotrade/cron-kiwoom-us.json")),
+        ("cron-kis-kr", include_str!("../../system/modules/autotrade/cron-kis-kr.json")),
+        ("cron-kis-us", include_str!("../../system/modules/autotrade/cron-kis-us.json")),
+        ("cron-kiwoom-universe",
+         include_str!("../../system/modules/autotrade/cron-kiwoom-universe.json")),
+        ("cron-kiwoom-screen",
+         include_str!("../../system/modules/autotrade/cron-kiwoom-screen.json")),
+    ];
+
+    /// A `$stepN` may only name a step that has already run.
+    ///
+    /// Nothing enforces this at runtime: an out-of-range index resolves to null and the step fails
+    /// on the missing path, which reads as a broken tool rather than a broken declaration. A
+    /// scalping pipeline shipped with every reference off by one — `fetched: "$step3.results"`
+    /// where step 3 was the reader itself — and it never once got past its second step. The
+    /// numbers are written by hand and renumber themselves whenever a step is inserted, so the
+    /// only thing that catches this is counting.
+    #[test]
+    fn a_step_reference_points_backwards_at_a_step_that_exists() {
+        fn scan(value: &serde_json::Value, limit: usize, job: &str, out: &mut Vec<String>) {
+            match value {
+                serde_json::Value::String(s) => {
+                    let mut rest = s.as_str();
+                    while let Some(at) = rest.find("$step") {
+                        rest = &rest[at + 5..];
+                        let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+                        if let Ok(idx) = rest[..end].parse::<usize>() {
+                            if idx >= limit {
+                                out.push(format!(
+                                    "{job}: step {limit} reads $step{idx} — \
+                                     itself or a step that has not run yet ({s})"
+                                ));
+                            }
+                        }
+                        rest = &rest[end..];
+                    }
+                }
+                serde_json::Value::Array(a) => a.iter().for_each(|v| scan(v, limit, job, out)),
+                serde_json::Value::Object(o) => {
+                    o.values().for_each(|v| scan(v, limit, job, out))
+                }
+                _ => {}
+            }
+        }
+
+        let mut bad = Vec::new();
+        for (name, raw) in DECLARED {
+            let job = parse(raw);
+            let Some(steps) = job.pipeline else { continue };
+            for (i, step) in steps.iter().enumerate() {
+                let as_json = serde_json::to_value(step).expect("a step serialises");
+                // `i` is the limit: a FOREACH body still addresses the OUTER steps, so a reference
+                // to the loop's own index is a self-reference wherever it is written.
+                scan(&as_json, i, name, &mut bad);
+            }
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
     /// Idempotence keeps a deliberately deleted job deleted; it must not also keep a *changed*
     /// declaration off the clock. Editing a pipeline and seeing the old one keep firing is the
     /// failure this guards — it cost an hour of coin cycles calling a broker by its former name.

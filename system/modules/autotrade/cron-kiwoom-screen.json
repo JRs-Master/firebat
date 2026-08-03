@@ -21,7 +21,7 @@
     },
     {
       "type": "FOREACH",
-      "items": "$step1.trades",
+      "items": "$step0.trades",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -37,7 +37,8 @@
             "market": "$prev.market"
           }
         }
-      ]
+      ],
+      "continueOnError": true
     },
     {
       "type": "TOOL_CALL",
@@ -49,20 +50,21 @@
         "slippageRate": 0.0005
       },
       "inputMap": {
-        "trades": "$step1.trades",
-        "fetched": "$step3.results"
+        "trades": "$step0.trades",
+        "fetched": "$step2.results"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step4.runs",
+      "items": "$step3.runs",
       "steps": [
         {
           "type": "TOOL_CALL",
           "tool": "sysmod_technical-analysis",
           "inputData": "$prev.args"
         }
-      ]
+      ],
+      "continueOnError": true
     },
     {
       "type": "TOOL_CALL",
@@ -71,8 +73,8 @@
         "action": "list_open_orders"
       },
       "inputMap": {
-        "account": "$step1.scopedTo.account",
-        "market": "$step1.scopedTo.market"
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
       }
     },
     {
@@ -82,14 +84,14 @@
         "action": "cycle"
       },
       "inputMap": {
-        "plan": "$step4",
-        "signals": "$step5.results",
-        "openOrders": "$step6.rows"
+        "plan": "$step3",
+        "signals": "$step4.results",
+        "openOrders": "$step5.rows"
       }
     },
     {
       "type": "FOREACH",
-      "items": "$step7.calls",
+      "items": "$step6.calls",
       "steps": [
         {
           "type": "TOOL_CALL",
@@ -105,8 +107,8 @@
         "action": "record_orders"
       },
       "inputMap": {
-        "calls": "$step7.calls",
-        "results": "$step8.results"
+        "calls": "$step6.calls",
+        "results": "$step7.results"
       }
     },
     {
@@ -116,8 +118,8 @@
         "action": "list_fills"
       },
       "inputMap": {
-        "account": "$step1.scopedTo.account",
-        "market": "$step1.scopedTo.market"
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
       }
     },
     {
@@ -127,8 +129,8 @@
         "action": "list_open_orders"
       },
       "inputMap": {
-        "account": "$step1.scopedTo.account",
-        "market": "$step1.scopedTo.market"
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
       }
     },
     {
@@ -138,8 +140,8 @@
         "action": "get_balance"
       },
       "inputMap": {
-        "account": "$step1.scopedTo.account",
-        "market": "$step1.scopedTo.market"
+        "account": "$step0.scopedTo.account",
+        "market": "$step0.scopedTo.market"
       }
     },
     {
@@ -149,9 +151,9 @@
         "action": "reconcile"
       },
       "inputMap": {
-        "fills": "$step10.rows",
-        "openOrders": "$step11.rows",
-        "balanceRows": "$step12.rows"
+        "fills": "$step9.rows",
+        "openOrders": "$step10.rows",
+        "balanceRows": "$step11.rows"
       }
     }
   ]
