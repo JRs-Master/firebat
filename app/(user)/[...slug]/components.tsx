@@ -3217,11 +3217,11 @@ ${cdnTags}
      미디어는 부모 너비로 자동 축소(canvas 는 비율 유지). 일반 div 레이아웃엔 영향 0. */
   img, canvas, svg, video, table, pre { max-width: 100% !important; }
   canvas, img, svg, video { height: auto; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.25) transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: #c3c8d0 transparent; }
   /* globals.css 와 같은 값. 별 문서라 변수가 못 넘어와 숫자를 적지만, 두 곳이 달라지면 iframe 안팎에서 바가 달라 보인다. */
   ::-webkit-scrollbar { width: 1px; height: 1px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.25); border-radius: 1px; }
+  ::-webkit-scrollbar-thumb { background: #c3c8d0; border-radius: 1px; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;
