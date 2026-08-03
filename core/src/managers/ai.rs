@@ -947,36 +947,10 @@ impl AiManager {
         mut self,
         catalog: Arc<crate::managers::ai::action_catalog::ModuleActionCatalog>,
     ) -> Self {
-        /// Widget scoping for the discovery tools (search_module_actions / get_action_schema):
-        /// which modules a hub-WIDGET visitor may see in results. Reuses the SINGLE shared policy
-        /// (hub_context::permits_tool — the same one the FC tool filter and the MCP dispatch gate
-        /// use), so this is not a new parallel rule. hub-TENANT (full_tools = admin-clone) and admin
-        /// see everything. Context = injected args (_hubScope/_allowedSysmods/_fullTools — present
-        /// on both FC and MCP, same injection as the other discovery tools) with a task-local
-        /// fallback for the MCP path.
-        fn hub_module_allowed(args: &serde_json::Value, module: &str) -> bool {
-            let is_hub = args
-                .get("_hubScope")
-                .and_then(|v| v.as_str())
-                .map(|s| !s.is_empty())
-                .unwrap_or(false)
-                || crate::utils::hub_context::is_hub_context_active();
-            if !is_hub {
-                return true; // admin (root) — unrestricted
-            }
-            if args.get("_fullTools").and_then(|v| v.as_bool()).unwrap_or(false)
-                || crate::utils::hub_context::active_full_tools()
-            {
-                return true; // hub-tenant = admin-clone, sees all
-            }
-            let allowed: Vec<String> = args
-                .get("_allowedSysmods")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
-                .or_else(crate::utils::hub_context::active_allowed_sysmods)
-                .unwrap_or_default();
-            crate::utils::hub_context::permits_tool(&format!("sysmod_{module}"), &allowed)
-        }
+        // Which modules a hub caller may see in discovery results is decided by one shared
+        // policy — `hub_context::module_permitted_for_args` — so it cannot drift from the tool
+        // filter and the dispatch gate again. It did: discovery kept exempting a tenant after the
+        // other two stopped, listing order actions the same turn would refuse to call.
         // Intent Agent S0 — 같은 카탈로그를 shadow TurnBrief 계산에도 공유 (행동 0, 측정 전용).
         self.intent_actions = Some(catalog.clone());
         let cat = catalog.clone();
@@ -993,7 +967,7 @@ impl AiManager {
                     .cataloged_modules()
                     .await
                     .into_iter()
-                    .filter(|m| hub_module_allowed(&args, m))
+                    .filter(|m| crate::utils::hub_context::module_permitted_for_args(&args, m))
                     .collect();
                 // Module filter dialect absorb: strip sysmod_ prefix + underscore↔hyphen
                 // ("sysmod_toss_invest" ≡ "toss-invest" — models see underscore tool names).
@@ -1093,7 +1067,7 @@ impl AiManager {
                 rows.retain(|r| {
                     r.get("module")
                         .and_then(|v| v.as_str())
-                        .map(|m| hub_module_allowed(&args, m))
+                        .map(|m| crate::utils::hub_context::module_permitted_for_args(&args, m))
                         .unwrap_or(true)
                 });
                 // In SEARCH mode `module` ranks, it does not exclude.
@@ -1120,7 +1094,7 @@ impl AiManager {
                             let other_module = r
                                 .get("module")
                                 .and_then(|v| v.as_str())
-                                .is_some_and(|m| m != scoped && hub_module_allowed(&args, m));
+                                .is_some_and(|m| m != scoped && crate::utils::hub_context::module_permitted_for_args(&args, m));
                             let already = r
                                 .get("id")
                                 .and_then(|v| v.as_str())
@@ -1198,7 +1172,7 @@ impl AiManager {
                 };
                 // Widget scoping — do not reveal a module's action schema to a hub-widget visitor
                 // whose allowlist excludes it (same shared policy as the search filter).
-                if !hub_module_allowed(&args, &module) {
+                if !crate::utils::hub_context::module_permitted_for_args(&args, &module) {
                     return Ok(serde_json::json!({
                         "success": false,
                         "error": format!("module '{module}' is not available in this workspace."),

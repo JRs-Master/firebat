@@ -214,6 +214,35 @@ pub fn permits_tool(name: &str, allowed_sysmods: &[String]) -> bool {
         || name == "save_page"
 }
 
+/// Same gate, asked about a *module* and answered from a tool call's own arguments.
+///
+/// The discovery tools (`search_module_actions` / `get_action_schema`) need to know which modules a
+/// hub caller may see, and they get their context from injected args (`_hubScope` /
+/// `_allowedSysmods`, present on both FC and MCP) with the task-local as a fallback. That made it a
+/// third copy of the policy, and it drifted: it kept exempting a tenant after the tool filter and
+/// the dispatch gate stopped doing so, so discovery listed order actions the same turn would be
+/// refused for calling. One function now, so the next change lands on all three.
+///
+/// A tenant is *not* exempt. Until it holds its own vault it spends the operator's credentials, so
+/// what it may reach is what the operator listed — the same reasoning as `permits_tool`'s callers.
+pub fn module_permitted_for_args(args: &serde_json::Value, module: &str) -> bool {
+    let is_hub = args
+        .get("_hubScope")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        || is_hub_context_active();
+    if !is_hub {
+        return true; // admin (root) — unrestricted
+    }
+    let allowed: Vec<String> = args
+        .get("_allowedSysmods")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .or_else(active_allowed_sysmods)
+        .unwrap_or_default();
+    permits_tool(&format!("sysmod_{module}"), &allowed)
+}
+
 /// hub 에서 **명시 차단**할 도구 — readonly 접두어(list_/get_)에 잡히는 admin 조회까지 포함해 우선 차단.
 /// (a) ③deny: request_secret/network_request(Vault·SSRF) (b) 임의 실행/우회: run_module/execute
 /// (c) 배경 실행(남용 — QueueManager 전까지 보류): schedule_task/run_task/run_cron_job
@@ -443,6 +472,31 @@ mod tests {
         // The sidebar pair is always reachable — a hub without notes and calendar is not a hub.
         assert!(permits_tool("sysmod_notes", &[]));
         assert!(permits_tool("sysmod_calendar", &[]));
+    }
+
+    /// Discovery answers from the same allowlist the call is judged by. Seeing an action and being
+    /// refused it is the drift this pins: the model spends a turn reading how to place an order it
+    /// was never going to be allowed to place, and the refusal reads as a bug rather than a rule.
+    #[test]
+    fn discovery_hides_what_the_caller_would_be_refused() {
+        let hub = |allowed: &[&str]| {
+            serde_json::json!({
+                "_hubScope": "hub:demo:sess-1",
+                // Set on a tenant turn. It must not buy an exemption here.
+                "_fullTools": true,
+                "_allowedSysmods": allowed.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            })
+        };
+        let args = hub(&["kiwoom", "upbit"]);
+        assert!(module_permitted_for_args(&args, "kiwoom"));
+        assert!(module_permitted_for_args(&args, "upbit"));
+        assert!(!module_permitted_for_args(&args, "kiwoom-trade"));
+        assert!(!module_permitted_for_args(&args, "upbit-trade"));
+        assert!(!module_permitted_for_args(&args, "autotrade"));
+        // The sidebar pair is reachable without being listed, as everywhere else.
+        assert!(module_permitted_for_args(&hub(&[]), "notes"));
+        // No hub scope at all = the operator's own turn.
+        assert!(module_permitted_for_args(&serde_json::json!({}), "kiwoom-trade"));
     }
 
     #[test]
