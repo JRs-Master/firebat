@@ -374,6 +374,14 @@
           "us"
         ],
         "description": "[gate] 시장으로도 한정합니다 — 한 계좌가 국내·해외를 다 트는 경우 둘은 서로 다른 스케줄입니다."
+      },
+      "store": {
+        "type": "string",
+        "enum": [
+          "live",
+          "dryrun"
+        ],
+        "description": "읽을 원장 — live(모의·실계좌) / dryrun(종이). 생략하면 현재 mode 를 따릅니다. positions·orders·ledger·report 에만 씁니다."
       }
     }
   },

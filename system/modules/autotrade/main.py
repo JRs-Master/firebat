@@ -1683,9 +1683,15 @@ def action_reconcile(inp, settings):
 
 
 def action_read(inp, settings, which):
-    conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+    # Which ledger to read. The two are separate files on purpose — a paper fill in the live book
+    # poisons the reconciliation invariant — so a reader has to be able to name one. Defaults to
+    # the one this module is currently trading in.
+    which_store = str(inp.get("store") or "").strip().lower()
+    if which_store not in ("live", "dryrun"):
+        which_store = "dryrun" if settings.get("mode") == "dryrun" else "live"
+    conn = store.connect(which_store)
     limit = int(inp.get("limit") or 50)
-    data = {"mode": settings.get("mode")}
+    data = {"mode": settings.get("mode"), "store": which_store}
     if which in ("positions", "report"):
         data["positions"] = store.read_positions(conn)
     if which in ("orders", "report"):

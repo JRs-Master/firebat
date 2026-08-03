@@ -5,6 +5,7 @@ import { X, Blocks, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Ch
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
+import { TradingLedgerSection } from './TradingLedgerSection';
 import { HubPanel } from './HubPanel';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
@@ -1051,11 +1052,19 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         rows={4}
                         className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono resize-y" name={field.key} autoComplete="off" id={`${fieldIdBase}-${field.key}`}
                       />
+                    ) : field.type === 'number' ? (
+                      <NumberInput
+                        value={settings[field.key]}
+                        onChange={v => handleChange(field.key, v)}
+                        placeholder={field.placeholder}
+                        name={field.key}
+                        id={`${fieldIdBase}-${field.key}`}
+                      />
                     ) : (
                       <input
-                        type={field.type === 'number' ? 'number' : 'text'}
+                        type="text"
                         value={settings[field.key] ?? ''}
-                        onChange={e => handleChange(field.key, field.type === 'number' ? Number(e.target.value) : e.target.value)}
+                        onChange={e => handleChange(field.key, e.target.value)}
                         placeholder={field.placeholder}
                         className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name={field.key} autoComplete="off" id={`${fieldIdBase}-${field.key}`}
                       />
@@ -1071,6 +1080,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             })}
             {declaresAccounts && <AccountsSection moduleName={resolvedName} />}
             {resolvedName === 'telegram' && <TelegramWebhookSection />}
+            {/* The ledger tab held one toggle while the only way to read the book was to open the
+                sqlite on the server. The book belongs beside the setting that governs it. */}
+            {resolvedName === 'autotrade' && activeTab === '원장' && (
+              <TradingLedgerSection moduleName={resolvedName} />
+            )}
             </>
           )}
         </div>
@@ -1123,6 +1137,56 @@ interface AccountsData {
   credentials?: string[];
   primary?: string | null;
   accounts?: AccountRow[];
+}
+
+/**
+ * A numeric field whose text is the text you typed.
+ *
+ * The plain controlled `type="number"` desynchronises: typing a `0` in front of 20000000 gives the
+ * DOM "020000000" while `Number()` returns the value already in state, so React re-renders nothing
+ * and the stray zero stays on screen (2026-08-03, the three limit fields). Anything that reads the
+ * same number keeps the same failure — a trailing dot, `1e6`, a second minus sign.
+ *
+ * So the text is held here and the number is what leaves. On blur the text is rewritten from the
+ * number, which is where "020000000" becomes "20000000" and an unparseable draft is put back to
+ * what the setting actually holds.
+ */
+function NumberInput({ value, onChange, placeholder, name, id }: {
+  value: any;
+  onChange: (v: number | '') => void;
+  placeholder?: string;
+  name?: string;
+  id?: string;
+}) {
+  const asText = value === undefined || value === null || value === '' ? '' : String(value);
+  const [text, setText] = useState(asText);
+  const [editing, setEditing] = useState(false);
+  // While the field is not being edited it mirrors the setting — a reload or a reset shows through.
+  useEffect(() => { if (!editing) setText(asText); }, [asText, editing]);
+  return (
+    <input
+      type="number"
+      value={text}
+      onFocus={() => setEditing(true)}
+      onChange={e => {
+        setText(e.target.value);
+        const raw = e.target.value.trim();
+        if (raw === '') return onChange('');
+        const n = Number(raw);
+        if (Number.isFinite(n)) onChange(n);
+      }}
+      onBlur={() => {
+        setEditing(false);
+        const n = Number(text.trim());
+        setText(text.trim() === '' ? '' : Number.isFinite(n) ? String(n) : asText);
+      }}
+      placeholder={placeholder}
+      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      name={name}
+      autoComplete="off"
+      id={id}
+    />
+  );
 }
 
 function AccountsSection({ moduleName }: { moduleName: string }) {
