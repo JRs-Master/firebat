@@ -447,12 +447,17 @@ function normalizeCandleRequest(input) {
 // the backtest, the chart — reads one shape, so the translation belongs to the module that speaks
 // the dialect, exactly as it does for the stock brokers. Without it every bar is silently dropped:
 // the analyser looks for `close`, finds `trade_price`, and reports a series of length zero.
+const CANDLE_ACTIONS = new Set([
+  'candle-seconds', 'candle-minutes', 'candle-days', 'candle-weeks', 'candle-months',
+  'candle-years',
+]);
+
 const UPBIT_CANDLE_MAP = [
   ['candle_date_time_kst', 'date'], ['opening_price', 'open'], ['high_price', 'high'],
   ['low_price', 'low'], ['trade_price', 'close'], ['candle_acc_trade_volume', 'volume'],
 ];
 
-function normalizeUpbitCandles(rows) {
+function normalizeUpbitCandles(rows, { keepRaw = false } = {}) {
   if (!Array.isArray(rows)) return rows;
   const out = [];
   for (const row of rows) {
@@ -461,11 +466,12 @@ function normalizeUpbitCandles(rows) {
     for (const [from, to] of UPBIT_CANDLE_MAP) {
       if (from in bar) {
         bar[to] = to === 'date' ? String(bar[from]).replace('T', ' ') : Number(bar[from]);
-        delete bar[from];
+        if (!keepRaw) delete bar[from];
       }
     }
     out.push(bar);
   }
+  if (keepRaw) return out;   // venue order preserved — see the raw-action note below
   // Oldest first. A series handed over backwards makes every crossing fire the wrong way round,
   // and nothing downstream can tell that from a strategy that simply loses.
   out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -736,8 +742,15 @@ async function main(input) {
 
     const params = directEndpoint ? (input.params || {}) : buildParams(action, input);
     let data = await callApi(method, endpoint, params, accessKey, secretKey, needAuth);
-    // Only the neutral request is translated. The raw candle-* actions keep answering exactly what
-    // the exchange said, because something is already reading them that way.
+    // The raw candle-* actions answer everything the exchange said *plus* the standard OHLCV keys.
+    // MODULE_BIBLE requires candle rows to carry `{date, open, high, low, close, volume}`, and a
+    // row without them is not merely unusual — the analyser looks for `close`, finds
+    // `trade_price`, and reports a series of length zero, which reads as a quiet market rather
+    // than as a mismatch. Adding rather than replacing keeps whatever already reads the venue's
+    // own names working, and the venue's ordering is left alone because the analyser sorts.
+    if (!wantsCandles && CANDLE_ACTIONS.has(action)) {
+      data = normalizeUpbitCandles(data, { keepRaw: true });
+    }
     if (wantsCandles) {
       // One call answers 200 bars. A scalping rule measured on 200 five-minute bars is measured
       // on sixteen hours, which is not a measurement — so `bars` pages backwards until it has
