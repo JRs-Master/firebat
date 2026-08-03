@@ -232,6 +232,19 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // The confirmation is a flash, as it is at every other save site (SaveButton documents the
+  // 2s reset in its own header). This panel only cleared it when a field changed, so on a module
+  // you save and then leave alone the button read 저장완료 indefinitely — and "did that take?"
+  // is exactly the question the button exists to answer.
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashSaved = useCallback(() => {
+    setSaved(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 2000);
+  }, []);
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
   const [activeTab, setActiveTab] = useState<string>('');
 
   // 탭 목록 계산
@@ -452,7 +465,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
         { name: resolvedName, settings: toSave },
         { category: 'system-module' },
       );
-      if (data.success) setSaved(true);
+      if (data.success) flashSaved();
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSaving(false); }
   };
