@@ -246,12 +246,19 @@ fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogE
         .map(|(key, decl)| {
             let desc = decl.get("desc").and_then(|v| v.as_str()).unwrap_or("");
             let key_desc = decl.get("keyDesc").and_then(|v| v.as_str()).unwrap_or("");
-            // Realtime vocabulary is baked into the semantic text so "실시간 체결 차트" / "live
-            // quotes" rank these above the snapshot REST actions they would otherwise lose to.
-            // English trade/tick vocab included — an English query ("trade") was ranking US-stock
-            // REST actions above the streams (07-11 실측: usa* 도배 위로 quotes 가 안 올라옴).
+            // Transport vocabulary is baked in so "실시간 …" / "live …" rank a stream above the
+            // snapshot REST action it would otherwise lose to, in either language. That much is
+            // true of every stream there can be.
+            //
+            // What a stream carries is NOT baked in. `체결 틱 호가 시세 tick trade execution quote
+            // orderbook` used to be appended here, to every stream of every module — so a weather
+            // alert subscription advertised itself with trading words, and every stream's document
+            // read alike, which is the homogenizing that `derive_entries_from_input` warns about a
+            // few hundred lines down. The domain belongs to the declaration: each stream's `desc`
+            // already names what it pushes. (Removing it surfaced two streams that had no `desc` at
+            // all and were findable only through these borrowed words.)
             let sem = format!(
-                "{key} {desc} {key_desc} 실시간 라이브 스트림 구독 체결 틱 호가 시세 realtime live stream subscribe push tick trade execution quote orderbook"
+                "{key} {desc} {key_desc} 실시간 라이브 스트림 구독 realtime live stream subscribe push"
             );
             let mut extra = serde_json::json!({
                 "module": name,

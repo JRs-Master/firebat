@@ -694,7 +694,7 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "module": {"type": "string", "description": "module name (e.g. kiwoom)"},
+                    "module": {"type": "string", "description": "module name, exactly as the module index gives it"},
                     "stream": {"type": "string", "description": "stream key declared under the module's ws.streams"},
                     "args": {"type": "object", "description": "stream template params (e.g. {seq})"},
                     "notify": {"type": "string", "description": "Where frames go besides the event bus. 'telegram' sends a chat message; 'module:<name>' runs that module on the frames (it must be enabled). Omit or 'none' = event bus only."},

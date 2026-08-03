@@ -1040,26 +1040,52 @@ impl AiManager {
                     // Zero-signal query (every token is a subject name / OOV for the catalog) —
                     // returning junk top-K here fed the death spiral (junk looks like results →
                     // the model re-searches variations until the cap, 2026-07-11/12 실측 3턴).
+                    //
+                    // When the caller named a module, the answer to "does this capability exist"
+                    // is already in hand, so it is served rather than described. Telling the model
+                    // to go and list the module costs a round for something this call could
+                    // include, and a listed action is a next move while advice is only advice.
+                    let listed = match module.as_deref() {
+                        Some(m) => cat.list_module_actions(m, None).await,
+                        None => Vec::new(),
+                    };
+                    // No domain examples here. This message is reached from every domain — a legal
+                    // query was answered with stock examples (2026-08-04), which is steering
+                    // toward whatever the examples happen to name and squarely against
+                    // `feedback_no_hardcoding_prompts`. Say the shape, not a subject.
+                    let mut error = format!(
+                        "No action matched: these words appear in no action's description, so too \
+                         little of the query survived to search with — {:?}. An action is found by \
+                         WHAT IT DOES, so search with a short phrase for the capability itself; a \
+                         subject's name, or wording taken from the question, matches nothing.",
+                        dropped.join(" ")
+                    );
+                    if listed.is_empty() {
+                        error.push_str(
+                            " Next: re-search with a capability description, resolving any \
+                             subject's code via a lookup/list action first. If you suspect the \
+                             capability may not exist at all, call search_module_actions with only \
+                             {\"module\": \"<name>\"} to LIST that module's actions and see for \
+                             yourself — never invent an action.",
+                        );
+                    } else {
+                        error.push_str(
+                            " `actions` below is that module's COMPLETE list, so it is also the \
+                             answer to whether the capability exists: pick one and call \
+                             get_action_schema(module, action), or conclude it is absent. Do not \
+                             re-word the query against this module, and never invent an action.",
+                        );
+                    }
                     return Ok(serde_json::json!({
-                        "actions": [],
-                        "count": 0,
+                        "actions": listed,
+                        "count": listed.len(),
                         // A verdict, not just an empty list — the model needs to know this is
                         // "no such capability", otherwise it re-words the query forever or
-                        // invents an action. Paired with the two next moves below.
+                        // invents an action.
                         "matchStatus": "none",
+                        "mode": if listed.is_empty() { "none" } else { "list" },
                         "droppedTokens": dropped.clone(),
-                        "error": format!(
-                            "No action matched: these words appear in no action's description, so \
-                             too little of the query survived to search with — {:?}. Actions are \
-                             searched by WHAT they do (일봉 차트 / 잔고 조회 / 실시간 체결), never \
-                             by a subject's name, and never by wording for a capability that may \
-                             not exist. Next: (a) re-search with a capability description, \
-                             resolving any subject's code via a lookup/list action, or (b) if you \
-                             suspect the capability may not exist at all, call \
-                             search_module_actions with only {{\"module\": \"<name>\"}} to LIST that \
-                             module's actions and see for yourself — never invent an action.",
-                            dropped.join(" ")
-                        ),
+                        "error": error,
                     }));
                 }
                 // Widget scoping — a hub-widget visitor only sees modules in its allowlist
@@ -1144,8 +1170,8 @@ impl AiManager {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "SEARCH mode: what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — e.g. \"일봉 일별 차트 캔들 daily candle\" — one rich query beats several terse retries. Never put a subject name (company/stock/region) in it. Omit to BROWSE a module instead." },
-                    "module": { "type": "string", "description": "module name (e.g. kiwoom, korea-invest). Scopes SEARCH, or selects the module to BROWSE when `query` is omitted." },
+                    "query": { "type": "string", "description": "SEARCH mode: what you need, in natural language. Pack synonyms (Korean + English) of the capability into ONE query — the noun for the thing and the verb for the doing, both languages — since one rich query beats several terse retries. Never put a subject name in it (a company, an instrument, a place, a person, or wording lifted from the question): a name matches nothing, and every word of it dilutes the ones that would. Omit to BROWSE a module instead." },
+                    "module": { "type": "string", "description": "module name, exactly as the module index gives it. Scopes SEARCH, or selects the module to BROWSE when `query` is omitted." },
                     "domain": { "type": "string", "description": "BROWSE mode: drill into one domain returned by a previous browse of a large module." },
                     "limit": { "type": "integer", "description": "SEARCH mode: max results (default 5)" }
                 },
@@ -1232,8 +1258,8 @@ impl AiManager {
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "module": { "type": "string", "description": "module name (e.g. kiwoom, korea-invest)" },
-                    "action": { "type": "string", "description": "action id from search_module_actions (e.g. ka10081)" }
+                    "module": { "type": "string", "description": "module name, exactly as the module index gives it" },
+                    "action": { "type": "string", "description": "action id, copied verbatim from a search_module_actions result — never composed by hand" }
                 },
                 "required": ["module", "action"],
             }),

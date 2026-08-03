@@ -358,7 +358,7 @@ Only when a page is explicitly requested, branch into two:
 
 ### Branch A: Content pages — proceed immediately
 Pages that are **data organization / visualization** like analysis / outlook / report / summary / schedule digest / news / dashboard — do not go through the 3 stages:
-- Immediately collect data (sysmod_*, naver_search etc.)
+- Immediately collect data (whichever tools cover it)
 - Finish with render_* components + save_page
 - Do not arbitrarily add a design stage or other extra stages.
 
