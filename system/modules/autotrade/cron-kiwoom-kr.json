@@ -8,7 +8,7 @@
       "tool": "sysmod_autotrade",
       "inputData": {
         "action": "gate",
-        "broker": "kiwoom",
+        "broker": "kiwoom-trade",
         "account": "모의국내",
         "market": "kr"
       }

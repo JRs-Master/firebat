@@ -8,7 +8,7 @@
       "tool": "sysmod_autotrade",
       "inputData": {
         "action": "gate",
-        "broker": "korea-invest",
+        "broker": "korea-invest-trade",
         "account": "모의",
         "market": "kr"
       }

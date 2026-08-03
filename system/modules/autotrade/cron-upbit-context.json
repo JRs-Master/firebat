@@ -7,7 +7,8 @@
       "type": "TOOL_CALL",
       "tool": "sysmod_autotrade",
       "inputData": {
-        "action": "context_plan"
+        "action": "context_plan",
+        "broker": "upbit-trade"
       }
     },
     {

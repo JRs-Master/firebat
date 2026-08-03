@@ -437,9 +437,15 @@ mod module_contract_tests {
         // A backstop, not the boundary — the boundary is the split enum and the absent
         // credential. These are the words the venues themselves use for endpoints that read or
         // move money, so a new action naming one lands on the wrong side loudly.
-        const MONEY: [&str; 14] = [
+        // 2026-08-03: the first list was written from the order/deposit vocabulary and missed the
+        // way a venue words *reading* a position — `holdings`, `buying-power`, `sellable-quantity`
+        // named no account and no order, so three of them sat on a hub-exposed module while this
+        // test stayed green. The list has to cover reading a balance, not only moving money.
+        const MONEY: [&str; 25] = [
             "order", "account", "balance", "deposit", "withdraw", "transfer", "wallet",
-            "api_key", "api-key", "주문", "계좌", "잔고", "환전", "이체",
+            "api_key", "api-key", "holding", "buying", "sellable", "position", "asset", "cash",
+            "commission", "주문", "계좌", "잔고", "환전", "이체", "보유", "예수금", "매수가능",
+            "매도가능",
         ];
         // An order book is the public queue of bids and offers, not an order — every venue calls
         // it that, and matching it on "order" would make the check cry wolf on the most ordinary
@@ -466,10 +472,10 @@ mod module_contract_tests {
             // the action list alone. Requiring the stronger property would mean those two have no
             // chartable module, which is the reason a hub was allowed a broker in the first place.
             //
-            // Declaring accounts is allowed, and has to be: the broker relationship — the primary
-            // account these venues want a token from before they will serve a chart — is
-            // registered on this half, and the trading half inherits it. Knowing an account exists
-            // is not being able to trade in it; that is the action list, checked below.
+            // The account registry lives on the trading half; a public half that needs a token
+            // borrows the whole list through `credentialScope`. Holding a token that happens to be
+            // issued for an account is not being able to trade in it — that is the action list,
+            // checked below.
             for action in config["input"]["properties"]["action"]["enum"]
                 .as_array()
                 .map(Vec::as_slice)
@@ -536,6 +542,31 @@ mod module_contract_tests {
                 // Without it every frame on the socket is unrecognised and silently dropped.
                 if decl["realtimeMatch"].as_str().unwrap_or_default().is_empty() {
                     problems.push(format!("{name}.{stream}: realtimeMatch missing"));
+                }
+            }
+            // A websocket-served action is reached through the module's own action enum. Declared
+            // in one module and enumerated in another it is simply unreachable, which is what the
+            // broker split did to Kiwoom's two screening actions — the declaration went to the
+            // trading half and the enum entries stayed on the public one.
+            let enumerated: Vec<&str> = config["input"]["properties"]["action"]["enum"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect();
+            for key in ["actions", "unsupportedActions"] {
+                let declared: Vec<String> = match &ws[key] {
+                    serde_json::Value::Object(m) => m.keys().cloned().collect(),
+                    serde_json::Value::Array(a) => {
+                        a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
+                    }
+                    _ => vec![],
+                };
+                for action in declared {
+                    if !enumerated.contains(&action.as_str()) {
+                        problems.push(format!("{name}: ws.{key} declares '{action}' but the module's action enum does not"));
+                    }
                 }
             }
         }

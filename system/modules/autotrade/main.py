@@ -515,6 +515,26 @@ def declared_trades(settings):
     return out
 
 
+def scope_trades(trades, inp):
+    """Narrow a trade list to the placement this run is for.
+
+    A pipeline step calls exactly one broker's tool, so it must be handed exactly that broker's
+    trades — otherwise a stock ticker reaches a coin exchange and comes back 404. The gate learned
+    this; every other step that fans out over trades needs the same filter, which is why it lives
+    here instead of inside the gate. Absent keys mean "everything", the single-broker case.
+    """
+    only_broker = str(inp.get("broker") or "").strip()
+    only_account = str(inp.get("account") or "").strip()
+    only_market = str(inp.get("market") or "").strip().lower()
+    if only_broker:
+        trades = [t for t in trades if t.get("broker") == only_broker]
+    if only_account:
+        trades = [t for t in trades if t.get("account") == only_account]
+    if only_market:
+        trades = [t for t in trades if t.get("market") == only_market]
+    return trades, [x for x in (only_broker, only_account, only_market) if x]
+
+
 def trade_of(settings, trade_id=None):
     """One declared trade — the named one, or the first if none was named."""
     trades = declared_trades(settings)
@@ -678,18 +698,11 @@ def action_gate(inp, settings):
             reasons.append("the screen is empty — nothing currently qualifies")
         else:
             reasons.append("no enabled strategy is declared")
-    pipeline_trades = _pipeline_trades(settings, strategies)
-    if only_broker:
-        pipeline_trades = [t for t in pipeline_trades if t.get("broker") == only_broker]
-    if only_account:
-        pipeline_trades = [t for t in pipeline_trades if t.get("account") == only_account]
-    if only_market:
-        pipeline_trades = [t for t in pipeline_trades if t.get("market") == only_market]
-    if (only_broker or only_account or only_market) and not pipeline_trades and not reasons:
+    pipeline_trades, scope = scope_trades(_pipeline_trades(settings, strategies), inp)
+    if scope and not pipeline_trades and not reasons:
         # Not a fault: the other broker's schedule is running its own trades right now. Saying so
         # by name keeps it from reading as "nothing is configured".
-        where = " / ".join(x for x in (only_broker, only_account, only_market) if x)
-        reasons.append(f"no declared trade runs at {where}")
+        reasons.append(f"no declared trade runs at {' / '.join(scope)}")
 
     return {"success": True, "data": {
         "active": not reasons,
@@ -883,9 +896,13 @@ def context_spec(settings):
 
 
 def action_context_plan(inp, settings):
-    """What the slow fetch should ask for — one call per declared symbol per context timeframe."""
+    """What the slow fetch should ask for — one call per declared symbol per context timeframe.
+
+    Scoped by broker like the gate is: the FOREACH that consumes these runs calls one broker's
+    candle tool, so an unscoped plan hands it the other broker's tickers.
+    """
     symbols, seen = [], set()
-    for t in declared_trades(settings):
+    for t in scope_trades(declared_trades(settings), inp)[0]:
         sym = t.get("symbol")
         if sym and sym not in seen:
             seen.add(sym)
