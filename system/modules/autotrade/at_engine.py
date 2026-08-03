@@ -628,11 +628,32 @@ def risk_gates(intents, ctx):
         # accept. Whole units here meant a coin priced above the cap became zero rather than a
         # fraction, which reads as "the cap refused it" when the cap had room.
         lot = (strategy.get("money") or {}).get("lotSize", 1)
+
+        def refuse(reason, cap, room=None):
+            """Say the arithmetic, not just the verdict.
+
+            A cap that cannot afford one unit refuses the same order every cycle forever, and
+            `{"why": "live order cap reached"}` leaves the reader to go and look up the cap, the
+            price and the lot size before they can tell a temporary squeeze from a setting that
+            can never work (2026-08-03: seventeen identical refusals over ninety minutes, because
+            one share cost more than the whole per-order cap).
+            """
+            unaffordable = price > 0 and (room if room is not None else cap) < price * lot
+            return {
+                **intent,
+                "dropReason": (f"{reason} — {'a single unit costs more than the limit allows'}"
+                               if unaffordable else reason),
+                "limit": round(cap, 2),
+                "available": round(room, 2) if room is not None else round(cap, 2),
+                "unitCost": round(price * lot, 2),
+                "lot": lot,
+            }
+
         max_order = _num(limits.get("maxOrderKrw"))
         if max_order > 0 and notional > max_order:
             qty = floor_to_lot(max_order / price, lot) if price > 0 else 0
             if qty <= 0:
-                dropped.append({**intent, "dropReason": "below the minimum tradable size"})
+                dropped.append(refuse("below the minimum tradable size", max_order))
                 continue
             notional = qty * price
         if intent["side"] == "buy":
@@ -643,19 +664,20 @@ def risk_gates(intents, ctx):
                     room = max(0.0, cap - held_value)
                     qty = floor_to_lot(room / price, lot) if price > 0 else 0
                     if qty <= 0:
-                        dropped.append({**intent, "dropReason": "position cap reached"})
+                        dropped.append(refuse("position cap reached", cap, room))
                         continue
                     notional = qty * price
             acc_cap = _num(settings.get("accountMaxNotionalKrw"))
             if acc_cap > 0 and notional + _num(ctx.get("account_exposure")) > acc_cap:
-                dropped.append({**intent, "dropReason": "account exposure cap reached"})
+                dropped.append(refuse("account exposure cap reached", acc_cap,
+                                      max(0.0, acc_cap - _num(ctx.get("account_exposure")))))
                 continue
             if ctx["mode"] == "real":
                 real_cap = _num(settings.get("realMaxNotionalKrw"))
                 if real_cap > 0 and notional > real_cap:
                     qty = floor_to_lot(real_cap / price, lot) if price > 0 else 0
                     if qty <= 0:
-                        dropped.append({**intent, "dropReason": "live order cap reached"})
+                        dropped.append(refuse("live order cap reached", real_cap))
                         continue
         checked, why = market_guard({**intent, "qty": qty}, strategy, ctx)
         if checked is None:
