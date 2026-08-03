@@ -372,6 +372,7 @@ impl ProcessSandboxAdapter {
         spec: &firebat_core::ports::TsSpec,
         rows: Vec<serde_json::Value>,
         fully_covered: bool,
+        original: &serde_json::Value,
     ) -> serde_json::Value {
         let get_date = |r: &serde_json::Value| -> serde_json::Value {
             let mut cur = r;
@@ -383,13 +384,47 @@ impl ProcessSandboxAdapter {
             }
             cur.clone()
         };
-        serde_json::json!({
+        let mut out = serde_json::json!({
             "records": rows,
             "recordCount": rows.len(),
             "firstDate": rows.first().map(&get_date).unwrap_or(serde_json::Value::Null),
             "lastDate": rows.last().map(&get_date).unwrap_or(serde_json::Value::Null),
             "_tsStore": { "served": true, "fullyCovered": fully_covered },
-        })
+        });
+        Self::ts_carry_siblings(&mut out, original);
+        out
+    }
+
+    /// Keep what the module said alongside its rows.
+    ///
+    /// Serving from the store used to answer with a freshly built object, so everything the module
+    /// put beside the rows — `action`, `endpoint`, a broker's own aliases — vanished the moment the
+    /// store had coverage. The same call answered one shape on a cache miss and another on a hit,
+    /// which is the hardest kind of difference to notice: it depends on history, not on the call.
+    /// Measured 2026-08-03 as an output-schema warning on Upbit, whose declaration requires the
+    /// `action` the store had dropped.
+    ///
+    /// Arrays are not carried: the module's array is the rows it just fetched, and the store's is
+    /// the merged truth. Any other name the module used for that array is re-pointed at the served
+    /// rows instead, so a caller reading a broker's own alias keeps reading rows that exist.
+    fn ts_carry_siblings(out: &mut serde_json::Value, original: &serde_json::Value) {
+        let (Some(src), Some(dst)) = (original.as_object(), out.as_object_mut()) else {
+            return;
+        };
+        let served = dst.get("records").cloned().unwrap_or(serde_json::Value::Null);
+        for (key, value) in src {
+            if dst.contains_key(key) {
+                continue; // the served value wins
+            }
+            match value {
+                serde_json::Value::Array(_) => {
+                    dst.insert(key.clone(), served.clone());
+                }
+                _ => {
+                    dst.insert(key.clone(), value.clone());
+                }
+            }
+        }
     }
 
     /// cursor 모드 serve shape — ts_serve_data(records…) + 다음(과거) 페이지 커서를 nextCursorField
@@ -398,6 +433,7 @@ impl ProcessSandboxAdapter {
         spec: &firebat_core::ports::TsSpec,
         rows: Vec<serde_json::Value>,
         fully_covered: bool,
+        original: &serde_json::Value,
     ) -> serde_json::Value {
         let oldest_date = rows.first().and_then(|r| {
             let mut cur = r;
@@ -406,7 +442,7 @@ impl ProcessSandboxAdapter {
             }
             Some(cur.clone())
         });
-        let mut data = Self::ts_serve_data(spec, rows, fully_covered);
+        let mut data = Self::ts_serve_data(spec, rows, fully_covered, original);
         if !spec.next_cursor_field.is_empty() {
             if let (Some(d), Some(obj)) = (oldest_date, data.as_object_mut()) {
                 obj.insert(spec.next_cursor_field.clone(), d);
@@ -438,8 +474,10 @@ impl ProcessSandboxAdapter {
             };
         let serve_data = |rows: Vec<serde_json::Value>| -> serde_json::Value {
             match spec.mode {
-                firebat_core::ports::TsMode::Cursor => Self::ts_serve_cursor_data(spec, rows, false),
-                _ => Self::ts_serve_data(spec, rows, false),
+                firebat_core::ports::TsMode::Cursor => {
+                    Self::ts_serve_cursor_data(spec, rows, false, &data)
+                }
+                _ => Self::ts_serve_data(spec, rows, false, &data),
             }
         };
         let Some(rows) = ts::extract_rows(&data, &spec.rows_paths) else {
@@ -1481,7 +1519,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let data = Self::ts_serve_data(spec, rows, true);
+                let data = Self::ts_serve_data(spec, rows, true, &serde_json::Value::Null);
                 let data = match &self.cache {
                     Some(cache) if !opts.skip_auto_cache => {
                         Self::apply_auto_cache(data, cache, &module_name, &action)
@@ -1558,7 +1596,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
                         rows = served.len(),
                         "cursor: past page fully covered — served from the store (module spawn 0)"
                     );
-                    let data = Self::ts_serve_cursor_data(spec, served, true);
+                    let data = Self::ts_serve_cursor_data(spec, served, true, &serde_json::Value::Null);
                     let data = match &self.cache {
                         Some(cache) if !opts.skip_auto_cache => {
                             Self::apply_auto_cache(data, cache, &module_name, &action)
@@ -2708,5 +2746,42 @@ mod tests {
             "act",
         );
         assert_eq!(out, data);
+    }
+
+    /// Serving from the store must answer the same shape the module does. It used to answer a
+    /// freshly built object, so every sibling the module put beside its rows disappeared once the
+    /// store had coverage — the same call returning one shape on a miss and another on a hit,
+    /// which depends on history rather than on the call and is correspondingly hard to see.
+    #[test]
+    fn a_stored_series_keeps_what_the_module_said_beside_its_rows() {
+        let original = serde_json::json!({
+            "action": "candle-days",
+            "endpoint": "/v1/candles/days",
+            "count": 3,
+            // The module's own name for the rows it fetched.
+            "rows": [{"date": "2026-08-01"}, {"date": "2026-08-02"}],
+        });
+        let mut out = serde_json::json!({
+            "records": [{"date": "2026-07-30"}, {"date": "2026-07-31"}, {"date": "2026-08-01"}],
+            "recordCount": 3,
+        });
+        ProcessSandboxAdapter::ts_carry_siblings(&mut out, &original);
+
+        assert_eq!(out["action"], "candle-days", "the declaration requires it");
+        assert_eq!(out["endpoint"], "/v1/candles/days");
+        assert_eq!(out["count"], 3);
+        // The served rows win, and the module's alias points at them rather than at the stale
+        // fetch — a caller reading a broker's own name keeps reading rows that exist.
+        assert_eq!(out["records"].as_array().unwrap().len(), 3);
+        assert_eq!(out["rows"], out["records"]);
+        assert_eq!(out["recordCount"], 3);
+    }
+
+    #[test]
+    fn carrying_siblings_is_a_no_op_without_an_original() {
+        let mut out = serde_json::json!({ "records": [], "recordCount": 0 });
+        let before = out.clone();
+        ProcessSandboxAdapter::ts_carry_siblings(&mut out, &serde_json::Value::Null);
+        assert_eq!(out, before);
     }
 }
