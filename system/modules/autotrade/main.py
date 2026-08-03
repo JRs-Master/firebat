@@ -20,6 +20,13 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# `_runtime` is the shared shelf every module borrows from — the tick table, the rate window, and
+# the clock. Time in particular must not be worked out here: a wall clock belongs to the owner's
+# zone, and the framework tells us which in `FIREBAT_TZ`.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runtime"))
+
+import tz as clock              # noqa: E402
 
 import at_engine as eng          # noqa: E402
 import at_store as store         # noqa: E402
@@ -162,24 +169,26 @@ def unattended():
 
 
 def day_epoch(text):
-    """Local midnight of a YYYY-MM-DD date, or None when it cannot be read.
+    """Midnight of a YYYY-MM-DD date in the owner's zone, in **seconds**, or None if unreadable.
 
     None is not "no limit". A mistyped end date that fell through as no-limit would quietly delete
     the day the person meant to stop on and keep trading past it, so the caller holds instead and
     says which field it could not read.
+
+    The zone matters: `activeUntil: 2026-08-05` means midnight where the person is. This used to
+    read the host's zone, so on a UTC host the window ended nine hours late.
     """
-    try:
-        parts = [int(p) for p in str(text).strip().replace("/", "-").split("-")[:3]]
-        if len(parts) != 3:
-            return None
-        return time.mktime((parts[0], parts[1], parts[2], 0, 0, 0, 0, 1, -1))
-    except (ValueError, TypeError, OverflowError):
-        return None
+    ms = clock.parse_day_ms(text)
+    return None if ms is None else ms / 1000.0
 
 
 def day_start_ms():
-    lt = time.localtime()
-    return int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)) * 1000)
+    """Midnight today in the owner's zone, epoch ms.
+
+    Feeds the daily loss limit. On the host's zone this reset at 09:00 in Seoul — the opening bell
+    — so a day's losses were counted from mid-morning to mid-morning instead of over a calendar day.
+    """
+    return clock.day_start_ms()
 
 
 def pick_strategies(settings, symbol=None, strategy_id=None):
@@ -757,16 +766,18 @@ def action_gate(inp, settings):
     if not settings.get("tradingEnabled"):
         reasons.append("trading is switched off in the module settings")
     start, end = settings.get("activeFrom"), settings.get("activeUntil")
-    start_ms, end_ms = day_epoch(start), day_epoch(end)
-    if start and start_ms is None:
+    # Seconds, like `now` — the old names said `_ms` while holding seconds, next to a comparison
+    # that adds 86400.
+    start_s, end_s = day_epoch(start), day_epoch(end)
+    if start and start_s is None:
         reasons.append(f"activeFrom '{start}' 은 날짜로 읽히지 않습니다 — YYYY-MM-DD 로 고쳐 주세요")
-    elif start_ms is not None and now < start_ms:
+    elif start_s is not None and now < start_s:
         reasons.append(f"the active period starts {start}")
-    if end and end_ms is None:
+    if end and end_s is None:
         reasons.append(f"activeUntil '{end}' 은 날짜로 읽히지 않습니다 — YYYY-MM-DD 로 고쳐 주세요")
     # Inclusive of the end date: someone writing 2026-08-05 means through that day, not up to
     # its midnight — the opposite reading silently loses a trading session.
-    elif end_ms is not None and now >= end_ms + 86400:
+    elif end_s is not None and now >= end_s + 86400:
         reasons.append(f"the active period ended {end}")
     conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
     if store.kv_get(conn, "tripped") == "1":
@@ -2285,8 +2296,29 @@ def action_selftest():
     checks.append({"name": "no strategy is not a run", "want": False,
                    "got": gate(strategies=[])["active"],
                    "ok": gate(strategies=[])["active"] is False})
+    # A day boundary belongs to the owner's zone, not to the host's. Nothing asserted this before,
+    # and the daily loss limit rode on it: on a UTC host "today" began at 09:00 in Seoul, so a
+    # day's losses were counted from the opening bell to the next opening bell.
+    _tz_was = os.environ.get("FIREBAT_TZ")
+    try:
+        os.environ["FIREBAT_TZ"] = "Asia/Seoul"
+        seoul_day, seoul_typed = clock.day_start_ms(), clock.parse_day_ms("2026-08-05")
+        os.environ["FIREBAT_TZ"] = "UTC"
+        utc_day, utc_typed = clock.day_start_ms(), clock.parse_day_ms("2026-08-05")
+    finally:
+        if _tz_was is None:
+            os.environ.pop("FIREBAT_TZ", None)
+        else:
+            os.environ["FIREBAT_TZ"] = _tz_was
+    checks.append({"name": "a typed date is midnight in the owner's zone, nine hours apart",
+                   "want": 9 * 3600 * 1000, "got": utc_typed - seoul_typed,
+                   "ok": utc_typed - seoul_typed == 9 * 3600 * 1000})
+    checks.append({"name": "the day boundary follows the declared zone, not the host",
+                   "want": "the two differ", "got": utc_day - seoul_day,
+                   "ok": utc_day != seoul_day and (utc_day - seoul_day) % (3600 * 1000) == 0})
+
     # The end date is inclusive — reading it as exclusive silently drops a whole session.
-    today = time.strftime("%Y-%m-%d")
+    today = clock.today_ymd()
     checks.append({"name": "the last day of the window still trades", "want": True,
                    "got": gate(activeUntil=today)["active"],
                    "ok": gate(activeUntil=today)["active"] is True})

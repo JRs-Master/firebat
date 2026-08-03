@@ -17,6 +17,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import { todayYmd } from '../_runtime/tz.mjs';
 
 /** notes 데이터 디렉토리 — input._hubScope 받으면 hub-scoped path 분기.
  *  - admin: `data/notes/`
@@ -65,10 +66,9 @@ function ensureDir() {
 }
 
 function genSlug() {
-  const d = new Date();
-  const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // The date in a slug is one a person reads back, so it is their calendar day — not the host's.
   const rand = Math.random().toString(36).slice(2, 8);
-  return `${ymd}-${rand}`;
+  return `${todayYmd()}-${rand}`;
 }
 
 function sanitizeSlug(s) {

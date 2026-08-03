@@ -990,6 +990,25 @@ impl ProcessSandboxAdapter {
             }
         }
 
+        // The owner's zone, told to the module rather than left for it to guess.
+        //
+        // A module is a fresh process per step, so the zone it would read from the OS is the host's
+        // and has nothing to do with whose calendar the answer is for. Left to guess, autotrade
+        // took the host's midnight as "today" and reset a daily loss limit at the opening bell in
+        // Seoul; kma-weather picked a forecast slot nine hours off. Both are the same mistake, and
+        // neither module was wrong to want a wall clock — it just is not theirs to determine.
+        //
+        // `TZ` as well as our own name, because every runtime already honours `TZ`: a module that
+        // has not been ported to the helper still gets the right answer from `localtime()`. So the
+        // fix reaches the modules nobody has touched, which is most of the risk.
+        //
+        // The operator's zone here. A caller that runs on behalf of somebody else puts theirs in
+        // `opts.env`, which is applied after this map and wins — so per-owner zones need no change
+        // to this signature, and `resolve_tz` already takes the owner.
+        let tz = firebat_core::utils::timezone::resolve_tz(vault, None);
+        env.insert("FIREBAT_TZ".to_string(), tz.name().to_string());
+        env.insert("TZ".to_string(), tz.name().to_string());
+
         // 2. 모듈 settings → MODULE_<KEY> env 주입 (옛 TS 1:1)
         let module_name = parsed
             .get("name")

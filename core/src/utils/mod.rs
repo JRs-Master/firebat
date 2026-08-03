@@ -16,6 +16,7 @@ pub mod message_merge;
 pub mod tag_utils;
 pub mod http_client;
 pub mod sysmod_cache;
+pub mod clock_discipline;
 pub mod timezone;
 pub mod time;
 pub mod vault_json;

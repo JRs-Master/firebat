@@ -32,6 +32,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { partsIn } from '../_runtime/tz.mjs';
 
 const BASE = 'https://apis.data.go.kr/1360000';
 
@@ -79,66 +80,66 @@ function latLonToGrid(lat, lon) {
 // 시각 헬퍼
 // ─────────────────────────────────────────────────────────────────────────
 function pad(n) { return n < 10 ? `0${n}` : `${n}`; }
-function todayYmd(d = new Date()) {
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
-}
-function ymdHm(d = new Date()) {
-  return `${todayYmd(d)}${pad(d.getHours())}${pad(d.getMinutes())}`;
+
+/**
+ * KMA's clock, which is Seoul's — not the caller's.
+ *
+ * Every base time below is a publication schedule: the agency releases the short forecast at
+ * 02/05/08/11/14/17/20/23 and the nowcast on the hour, all Korea Standard Time. That is a fact
+ * about the agency, so asking for a slot from New York must still ask for the Seoul slot. The old
+ * code read the *host's* wall clock (`new Date().getHours()`), which on a UTC server is nine hours
+ * behind Seoul — enough to request a slot that has not been published and read the answer as "no
+ * data" for the region.
+ *
+ * `partsIn` is the shared primitive for a clock that is not the owner's; the zone is named right
+ * here so nobody has to guess whose clock this is.
+ */
+const KMA_TZ = 'Asia/Seoul';
+function kmaNow(ms = Date.now()) { return partsIn(KMA_TZ, ms); }
+function todayYmd(p = kmaNow()) { return p.ymdCompact; }
+function ymdHm(p = kmaNow()) { return `${p.ymdCompact}${pad(p.hour)}${pad(p.minute)}`; }
+/** The same calendar day shifted, still on KMA's clock. Midday avoids any boundary. */
+function shiftYmd(days, ms = Date.now()) {
+  return kmaNow(ms + days * 86400000).ymdCompact;
 }
 
 /** 단기예보 base_time — 02 05 08 11 14 17 20 23 (그 시각 +10분 후 발표).
  *  현재 시각 직전 발표 시각 자동 선택. */
-function shortBaseTime(d = new Date()) {
+function shortBaseTime(ms = Date.now()) {
   const slots = [2, 5, 8, 11, 14, 17, 20, 23];
-  const h = d.getHours();
-  const m = d.getMinutes();
+  const p = kmaNow(ms);
   // 발표 시각 + 10분 후부터 사용 가능
-  let usable = slots.filter(s => h > s || (h === s && m >= 10));
+  const usable = slots.filter(s => p.hour > s || (p.hour === s && p.minute >= 10));
   if (usable.length === 0) {
     // 자정 직후 — 어제 23시 발표
-    const yesterday = new Date(d);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return { baseDate: todayYmd(yesterday), baseTime: '2300' };
+    return { baseDate: shiftYmd(-1, ms), baseTime: '2300' };
   }
-  return { baseDate: todayYmd(d), baseTime: `${pad(usable[usable.length - 1])}00` };
+  return { baseDate: todayYmd(p), baseTime: `${pad(usable[usable.length - 1])}00` };
 }
 
 /** 초단기실황 base_time — 매시 정각, 매시 40분 후 발표 시작 */
-function ultraNowBaseTime(d = new Date()) {
-  const m = d.getMinutes();
-  let h = d.getHours();
-  if (m < 40) h -= 1;
-  if (h < 0) {
-    const yesterday = new Date(d);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return { baseDate: todayYmd(yesterday), baseTime: '2300' };
-  }
-  return { baseDate: todayYmd(d), baseTime: `${pad(h)}00` };
+function ultraNowBaseTime(ms = Date.now()) {
+  const p = kmaNow(ms);
+  const h = p.minute < 40 ? p.hour - 1 : p.hour;
+  if (h < 0) return { baseDate: shiftYmd(-1, ms), baseTime: '2300' };
+  return { baseDate: todayYmd(p), baseTime: `${pad(h)}00` };
 }
 
 /** 초단기예보 base_time — 매시 30분, 매시 45분 후 발표 시작 */
-function ultraShortBaseTime(d = new Date()) {
-  const m = d.getMinutes();
-  let h = d.getHours();
-  if (m < 45) h -= 1;
-  if (h < 0) {
-    const yesterday = new Date(d);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return { baseDate: todayYmd(yesterday), baseTime: '2330' };
-  }
-  return { baseDate: todayYmd(d), baseTime: `${pad(h)}30` };
+function ultraShortBaseTime(ms = Date.now()) {
+  const p = kmaNow(ms);
+  const h = p.minute < 45 ? p.hour - 1 : p.hour;
+  if (h < 0) return { baseDate: shiftYmd(-1, ms), baseTime: '2330' };
+  return { baseDate: todayYmd(p), baseTime: `${pad(h)}30` };
 }
 
 /** 중기예보 발표 시각 — 매일 06시·18시 발표 (제공 시작 ~10분 후). 현재 시각 직전 발표분 자동 선택.
  *  06:00~06:10 / 18:00~18:10 의 짧은 lag 구간엔 아직 미발표라 직전 발표분 사용 (NO_DATA 회피). */
-function mediumTmFc(d = new Date()) {
-  const h = d.getHours();
-  const m = d.getMinutes();
-  if (h > 18 || (h === 18 && m >= 10)) return `${todayYmd(d)}1800`;
-  if (h > 6 || (h === 6 && m >= 10)) return `${todayYmd(d)}0600`;
-  const yesterday = new Date(d);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return `${todayYmd(yesterday)}1800`;
+function mediumTmFc(ms = Date.now()) {
+  const p = kmaNow(ms);
+  if (p.hour > 18 || (p.hour === 18 && p.minute >= 10)) return `${todayYmd(p)}1800`;
+  if (p.hour > 6 || (p.hour === 6 && p.minute >= 10)) return `${todayYmd(p)}0600`;
+  return `${shiftYmd(-1, ms)}1800`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -356,7 +357,7 @@ async function main() {
     if (WTHR_PATHS[action]) {
       // KMA WthrWrnInfoService caps the range at 6 days back from today (7 → API error 99), so
       // default to 6 days when fromTm is omitted.
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 6 * 86400000));
+      const fromYmd = fromTm || shiftYmd(-6);
       const toYmd = toTm || todayYmd();
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (stnId) params.stnId = stnId;
@@ -376,7 +377,7 @@ async function main() {
     if (action === 'pwn-code') {
       // KMA WthrWrnInfoService caps the range at 6 days back from today (7 → API error 99), so
       // default to 6 days when fromTm is omitted.
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 6 * 86400000));
+      const fromYmd = fromTm || shiftYmd(-6);
       const toYmd = toTm || todayYmd();
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (data.areaCode) params.areaCode = data.areaCode;
@@ -419,7 +420,7 @@ async function main() {
       'tsunami-list': '/EqkInfoService/getTsunamiMsgList',  // 지진해일통보문 목록
     };
     if (EQK_PATHS[action]) {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
+      const fromYmd = fromTm || shiftYmd(-30);
       const toYmd = toTm || todayYmd();
       const r = await callApi(serviceKey, EQK_PATHS[action], {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
@@ -448,7 +449,7 @@ async function main() {
     }
 
     if (action === 'typhoon-info') {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
+      const fromYmd = fromTm || shiftYmd(-30);
       const toYmd = toTm || todayYmd();
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
@@ -472,7 +473,7 @@ async function main() {
         if (Number.isFinite(n)) seq = n > 100 ? n % 100 : n;
       }
       if (!fc) {
-        const days = [todayYmd(), todayYmd(new Date(Date.now() - 86400000))];
+        const days = [todayYmd(), shiftYmd(-1)];
         let cands = [];
         for (const d of days) {
           const lr = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', { numOfRows: 50, pageNo: 1, tmFc: d });

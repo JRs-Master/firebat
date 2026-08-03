@@ -169,10 +169,11 @@ async function main() {
 
     if (action === 'list-upcoming') {
       const days = data.days || 7;
+      // "the next N days" is a span of instants, not a calendar boundary, so it is arithmetic on
+      // the epoch and no zone is involved. Doing it with setDate/getDate would read the host's
+      // clock for an answer that does not depend on it.
       const fromIso = new Date().toISOString();
-      const toDate = new Date();
-      toDate.setDate(toDate.getDate() + days);
-      const toIso = toDate.toISOString();
+      const toIso = new Date(Date.now() + days * 86400000).toISOString();
       const events = loadEvents();
       const items = [];
       for (const ev of events.values()) {
