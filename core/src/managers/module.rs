@@ -1582,6 +1582,24 @@ impl ModuleManager {
         crate::utils::account_secrets::AccountRegistry::load(self.vault.as_ref(), module)
     }
 
+    /// Which module owns the account registry — itself, or the sibling it borrows credentials
+    /// from.
+    ///
+    /// A broker split into a quote half and a trading half is one broker relationship: one set of
+    /// app keys, one primary account. The registry therefore has one home, and `credentialScope`
+    /// names it. Reading already followed that; the settings screen did not, so adding an account
+    /// on the quote half wrote a second registry nothing reads — the list looked empty on one
+    /// screen and complete on the other, and entering the primary on the wrong one did nothing
+    /// (2026-08-03). Both screens are now two views of the same list, which is what a shared
+    /// credential means.
+    pub async fn account_home(&self, module: &str) -> String {
+        self.module_config(module)
+            .await
+            .and_then(|c| crate::utils::account_secrets::credential_scope(&c))
+            .filter(|home| !home.is_empty() && home != module)
+            .unwrap_or_else(|| module.to_string())
+    }
+
     /// The registry a call runs against — own accounts plus the base module's primary.
     pub async fn account_registry_effective(
         &self,
@@ -1675,7 +1693,7 @@ impl ModuleManager {
         let config = self.module_config(module).await?;
         let decl = config.get("accounts")?.clone();
         let (credentials, _tokens) = Self::declared_secret_names(&config);
-        let reg = self.account_registry(module);
+        let reg = self.account_registry_effective(module).await;
         let accounts: Vec<serde_json::Value> = reg
             .accounts
             .iter()
@@ -1750,7 +1768,8 @@ impl ModuleManager {
                 return Err(format!("failed to store {name}"));
             }
         }
-        let mut reg = self.account_registry(module);
+        let home = self.account_home(module).await;
+        let mut reg = self.account_registry(&home);
         let mut entry = entry;
         entry.id = id.clone();
         match reg.accounts.iter_mut().find(|a| a.id == id) {
@@ -1760,7 +1779,7 @@ impl ModuleManager {
         if make_primary || reg.accounts.len() == 1 {
             reg.primary = Some(id);
         }
-        self.save_account_registry(module, &reg)
+        self.save_account_registry(&home, &reg)
     }
 
     /// Removes an account and the credentials stored under it — a deleted account must not leave
@@ -1775,12 +1794,13 @@ impl ModuleManager {
             let key = crate::utils::account_secrets::secret_key(name, Some(id), false);
             self.vault.delete_secret(&key);
         }
-        let mut reg = self.account_registry(module);
+        let home = self.account_home(module).await;
+        let mut reg = self.account_registry(&home);
         reg.accounts.retain(|a| a.id != id);
         if reg.primary.as_deref() == Some(id) {
             reg.primary = None;
         }
-        self.save_account_registry(module, &reg)
+        self.save_account_registry(&home, &reg)
     }
 
     /// 모듈 dir 안 선언 파일 read (config `actionCatalog.file` 등) — 파일명만 허용 (path traversal 차단).

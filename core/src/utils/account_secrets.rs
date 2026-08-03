@@ -43,16 +43,19 @@ pub fn registry_key(module: &str) -> String {
     format!("module-accounts:{module}")
 }
 
-/// The sibling a module inherits its primary account from.
+/// The sibling that owns this module's accounts.
 ///
-/// A broker split into a quote half and a trading half is one relationship. Both halves need a
-/// credential — these venues want a token even for a chart — and the account that answers "who
-/// are we, at this broker" is the same one. So the primary is registered once, on the base
-/// module, and the trading half inherits it; the accounts you actually place orders in are
-/// registered on the trading half, where they belong and where nothing else can see them.
+/// A broker split into a quote half and a trading half is one relationship: one set of app keys,
+/// one account that answers "who are we, at this broker". Both halves need a credential — these
+/// venues want a token even for a chart — so the accounts are registered once, on the trading
+/// half where the orders go, and the quote half borrows the list.
+///
+/// One home, not two lists to keep in step. Registering on either screen writes here, and both
+/// screens read it — a shared credential that shows up on one screen and not the other is the
+/// same credential twice, which is the thing this avoids.
 ///
 /// Nothing widens. What a caller may *do* is the action list, and the quote half has no order or
-/// account action in it.
+/// account action in it. Holding a token issued for an account is not being able to trade in it.
 pub fn credential_scope(config: &serde_json::Value) -> Option<String> {
     config
         .get("credentialScope")
@@ -256,6 +259,36 @@ mod registry_tests {
     #[test]
     fn no_accounts_at_all_resolves_to_the_shared_credentials() {
         assert!(AccountRegistry::default().resolve(None).unwrap().is_none());
+    }
+
+    /// Which half a credential is entered on must not matter — the two halves are one broker
+    /// relationship, and the scope names the single place the list lives. A module that declares
+    /// no scope keeps owning its own, which is every module that was never split.
+    #[test]
+    fn the_scope_names_where_the_accounts_live() {
+        let quotes = serde_json::json!({ "credentialScope": "kiwoom-trade" });
+        assert_eq!(credential_scope(&quotes).as_deref(), Some("kiwoom-trade"));
+
+        for empty in [
+            serde_json::json!({}),
+            serde_json::json!({ "credentialScope": "" }),
+            serde_json::json!({ "credentialScope": "   " }),
+            serde_json::json!({ "credentialScope": 7 }),
+        ] {
+            assert_eq!(credential_scope(&empty), None, "{empty}");
+        }
+    }
+
+    /// The credentials themselves are keyed by alias, not by module, so they were always shared —
+    /// only the index needed a home. This is what makes the registry move a rename of one key
+    /// rather than a migration of every app key.
+    #[test]
+    fn a_credential_key_does_not_mention_the_module() {
+        let quotes_view = secret_key("KIWOOM_APP_KEY", Some("모의국내"), false);
+        let trade_view = secret_key("KIWOOM_APP_KEY", Some("모의국내"), false);
+        assert_eq!(quotes_view, trade_view);
+        assert_eq!(quotes_view, "user:KIWOOM_APP_KEY@모의국내");
+        assert!(!quotes_view.contains("kiwoom-trade"));
     }
 
     #[test]
