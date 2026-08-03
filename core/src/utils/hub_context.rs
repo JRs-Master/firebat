@@ -180,10 +180,8 @@ pub fn is_sysmod_blocked_for_hub(sysmod_name: &str) -> bool {
     // So the allowlist applies to a tenant too, and what it may reach is what the operator listed.
     // When a tenant holds its own keys, this is the line that relaxes — deliberately, once.
     match active_allowed_sysmods() {
-        None => false,
-        Some(allowed) => {
-            !CORE_SYSMODS.contains(&sysmod_name) && !allowed.iter().any(|s| s == sysmod_name)
-        }
+        None => false, // not inside a hub turn at all
+        Some(allowed) => !permits_tool(&format!("sysmod_{sysmod_name}"), &allowed),
     }
 }
 
@@ -497,6 +495,25 @@ mod tests {
         assert!(module_permitted_for_args(&hub(&[]), "notes"));
         // No hub scope at all = the operator's own turn.
         assert!(module_permitted_for_args(&serde_json::json!({}), "kiwoom-trade"));
+    }
+
+    /// The split names one half as a prefix of the other on purpose — `kiwoom` is the common one
+    /// and `kiwoom-trade` the guarded one — so "allowed" must mean the whole module name and never
+    /// a leading piece of it. The MCP tool list used to answer this by walking dash-joined
+    /// prefixes, which handed `sysmod_kiwoom_trade` the permission granted to `kiwoom` and put the
+    /// order tool in a visitor's tool list. Both paths now ask this one function.
+    #[test]
+    fn an_allowed_module_does_not_carry_its_longer_namesake() {
+        let allowed = vec!["kiwoom".to_string(), "upbit".to_string()];
+        assert!(permits_tool("sysmod_kiwoom", &allowed));
+        assert!(permits_tool("sysmod_upbit", &allowed));
+        assert!(!permits_tool("sysmod_kiwoom_trade", &allowed));
+        assert!(!permits_tool("sysmod_kiwoom-trade", &allowed));
+        assert!(!permits_tool("sysmod_upbit_trade", &allowed));
+        // And the reverse: allowing only the guarded half does not open the public one.
+        let trade_only = vec!["kiwoom-trade".to_string()];
+        assert!(permits_tool("sysmod_kiwoom_trade", &trade_only));
+        assert!(!permits_tool("sysmod_kiwoom", &trade_only));
     }
 
     #[test]

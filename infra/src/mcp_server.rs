@@ -207,17 +207,20 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     // 2. hub 활성 시 — sysmod 가 allowed_sysmods ∪ CORE_SYSMODS 에 없으면 hub 도구목록에서도 제외.
     //    옛 버그: 전역 ON 이지만 hub 미허용인 sysmod(telegram 등)가 목록엔 남아 AI 가 호출 → 실행 게이트
     //    (is_sysmod_blocked_for_hub, 373)에 막혀 "허용 안 됨" + 턴 낭비. FC 경로(permits_tool)와 일관되게 목록에서 제외.
-    //    단 tenant hub(full_tools)는 admin-clone 이라 전역 활성 sysmod 전부 노출 — allowlist 제한 skip.
-    if firebat_core::utils::hub_context::active_full_tools() {
-        return true;
-    }
+    //
+    //    tenant 도 예외가 아니다 (2026-08-03). 여기에만 `full_tools → 전부 노출` 이 남아 있어서,
+    //    CLI 모델이 쓰는 이 경로에서는 `sysmod_kiwoom-trade` 가 목록에 그대로 있었다. 모델이 그걸 보고
+    //    부르고 실행 게이트가 거절 — 바로 위 주석이 없애려던 그 낭비를 tenant 에만 되살려 둔 꼴이었고,
+    //    덤으로 운영자가 어떤 매매 도구를 갖고 있는지가 방문자에게 목록으로 새고 있었다.
+    //    tenant 가 자기 볼트를 갖는 날 되돌릴 자리 — 그때는 FC 필터·발견 도구와 **함께** 되돌려야 한다.
+    //
+    //    판정은 `permits_tool` 하나로 한다. 여기 있던 사본은 접두어 루프였는데, 그 루프는 1번(모듈
+    //    활성 확인)에서 "어느 토막이 진짜 모듈명인가"를 풀려고 쓴 것이고 허용 판정에 그대로 쓰면
+    //    **짧은 모듈명이 긴 모듈명에 권한을 물려준다** — `kiwoom` 이 허용목록에 있으면
+    //    `sysmod_kiwoom_trade` 가 접두어 `kiwoom` 으로 통과했다. full_tools 면제와 별개로 열려 있던
+    //    두 번째 구멍이고, 규칙을 한 곳에 두자 같이 닫혔다.
     if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_sysmods() {
-        let hub_ok = (1..=segs.len()).any(|n| {
-            let name = segs[..n].join("-");
-            firebat_core::utils::hub_context::CORE_SYSMODS.contains(&name.as_str())
-                || allowed.iter().any(|a| a == &name)
-        });
-        if !hub_ok {
+        if !firebat_core::utils::hub_context::permits_tool(tool_name, &allowed) {
             return false;
         }
     }
