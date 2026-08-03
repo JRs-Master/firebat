@@ -620,7 +620,7 @@ mod module_contract_tests {
     ///
     /// 2026-08-03: the broker split divided the action enums and left one `actions.json` behind on
     /// the trading half, so every chart action was indexed under the module that holds orders.
-    /// `search_module_actions` answered "일봉차트 is in kiwoom-trade", the model obeyed, and the
+    /// `search_module_actions` answered "the daily chart is in kiwoom-trade", the model obeyed, and the
     /// hub boundary refused it — a routing failure that reads exactly like a permissions bug.
     #[test]
     fn an_action_catalog_lists_only_actions_its_module_can_run() {

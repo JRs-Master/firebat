@@ -45,6 +45,14 @@ def read_input():
 
 
 def out(obj):
+    # The envelope is UTF-8 whatever the locale says. Python picks stdout's encoding from the
+    # environment, so under a non-UTF-8 locale a single non-ASCII character — a venue's Korean
+    # error text, an em dash in a refusal reason — raises on the way out and the caller receives
+    # nothing at all. Losing the whole answer to one character in it is the worst trade available.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     print(json.dumps(obj, ensure_ascii=False, default=str))
 
 

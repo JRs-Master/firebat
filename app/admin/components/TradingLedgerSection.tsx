@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 자동매매 원장 뷰어 — 포지션·주문·체결·이벤트.
+ * Autotrade ledger viewer — positions, orders, fills, universe, events.
  *
  * The module already answers all of this (`report`); until now the only way to read it was to open
  * the sqlite on the server, which is what everyone actually did. The four tables are the four

@@ -2,7 +2,7 @@
 /**
  * 한투 sysmod codegen — `_apis.json` 입력 → `config.json` + `index.mjs` 생성.
  *
- * 출력: `system/modules/{korea-invest,korea-invest-trade}/config.json` — 액션 enum 만
+ * Output: `system/modules/{korea-invest,korea-invest-trade}/config.json` — the action enum only
  *
  * 사용:
  *   cd system/modules/korea-invest && node scripts/gen.mjs
@@ -120,11 +120,12 @@ const GENERATED_KEYS = ['input', 'output'];
 // owned by whoever should own them.
 function writeTables(tables) {
   const banner = `/**
- * 한국투자증권 API 표 — **생성 파일입니다. 손으로 고치지 마십시오.**
+ * Korea Investment API table — **generated. Do not edit by hand.**
  *
- * 출처 = \`korea-invest-trade/_apis.json\` (벤더 문서 시트), 생성 = \`korea-invest-trade/scripts/gen.mjs\`.
- * 방언(\`_runtime/korea-invest-api.mjs\`)은 손으로 키우는 파일이라 이 표가 그 안에 있으면 생성기가 닿지 못한다 —
- * 표를 덮으려면 사람이 쓴 절반까지 덮어야 하기 때문이다. 그래서 이음매를 여기에 둔다.
+ * Source: \`korea-invest-trade/_apis.json\` (the vendor's documentation sheet). Written by
+ * \`korea-invest-trade/scripts/gen.mjs\`. The dialect in \`_runtime/korea-invest-api.mjs\` is hand-maintained, so a table
+ * living inside it is a table the generator cannot reach — overwriting it would mean overwriting
+ * the half a person wrote. The seam goes here instead.
  */
 `;
   const body = Object.entries(tables)

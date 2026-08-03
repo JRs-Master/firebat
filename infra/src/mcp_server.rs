@@ -208,17 +208,19 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     //    옛 버그: 전역 ON 이지만 hub 미허용인 sysmod(telegram 등)가 목록엔 남아 AI 가 호출 → 실행 게이트
     //    (is_sysmod_blocked_for_hub, 373)에 막혀 "허용 안 됨" + 턴 낭비. FC 경로(permits_tool)와 일관되게 목록에서 제외.
     //
-    //    tenant 도 예외가 아니다 (2026-08-03). 여기에만 `full_tools → 전부 노출` 이 남아 있어서,
-    //    CLI 모델이 쓰는 이 경로에서는 `sysmod_kiwoom-trade` 가 목록에 그대로 있었다. 모델이 그걸 보고
-    //    부르고 실행 게이트가 거절 — 바로 위 주석이 없애려던 그 낭비를 tenant 에만 되살려 둔 꼴이었고,
-    //    덤으로 운영자가 어떤 매매 도구를 갖고 있는지가 방문자에게 목록으로 새고 있었다.
-    //    tenant 가 자기 볼트를 갖는 날 되돌릴 자리 — 그때는 FC 필터·발견 도구와 **함께** 되돌려야 한다.
+    //    A tenant is no exception (2026-08-03). This was the last site keeping
+    //    `full_tools → show everything`, and it is the path a CLI model reads its tool list from —
+    //    so `sysmod_kiwoom-trade` sat there in plain view, the model called it, and the dispatch
+    //    gate refused. Exactly the waste the comment above exists to prevent, revived for tenants
+    //    alone, and leaking which trading tools the operator holds while it did so. The day a
+    //    tenant has its own vault this comes back — together with the FC filter and the discovery
+    //    tools, never one of the three on its own.
     //
-    //    판정은 `permits_tool` 하나로 한다. 여기 있던 사본은 접두어 루프였는데, 그 루프는 1번(모듈
-    //    활성 확인)에서 "어느 토막이 진짜 모듈명인가"를 풀려고 쓴 것이고 허용 판정에 그대로 쓰면
-    //    **짧은 모듈명이 긴 모듈명에 권한을 물려준다** — `kiwoom` 이 허용목록에 있으면
-    //    `sysmod_kiwoom_trade` 가 접두어 `kiwoom` 으로 통과했다. full_tools 면제와 별개로 열려 있던
-    //    두 번째 구멍이고, 규칙을 한 곳에 두자 같이 닫혔다.
+    //    One judgement, `permits_tool`. The copy that used to be here walked dash-joined prefixes,
+    //    which is how step 1 above answers "which segment is the real module name" — reused as a
+    //    permission test it hands a short module's grant to every longer one. `kiwoom` on the
+    //    allowlist admitted `sysmod_kiwoom_trade`. A second hole, open independently of the
+    //    full_tools exemption, and closed by putting the rule in one place.
     if let Some(allowed) = firebat_core::utils::hub_context::active_allowed_sysmods() {
         if !firebat_core::utils::hub_context::permits_tool(tool_name, &allowed) {
             return false;

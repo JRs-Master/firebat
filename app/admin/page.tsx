@@ -2500,8 +2500,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative"
         onMouseDown={() => window.dispatchEvent(new Event('firebat-collapse-sidebar'))}>
-        {/* PC 상단 그라디언트 — 스크롤바 폭만 비켜 간다. `w-full` 이면 바 위까지 덮어서, 바의
-            위아래 끝이 배경으로 흐려지고 스크롤바 자체가 그라데이션인 것처럼 보인다. */}
+        {/* Desktop top fade — it stops short of the scrollbar. At `w-full` it covers the bar too,
+            blurring its top and bottom ends into the background so the bar itself reads as a
+            gradient. */}
         <div className="hidden md:block absolute top-0 left-0 right-[3px] h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}

@@ -62,7 +62,7 @@ const actions = apis
 // One sheet, two catalogs. The account/quotes split is expressed by each module's action enum, so
 // that is what decides where an entry goes — a catalog listing an action its module cannot run
 // sends the model to the wrong half and the call is refused (2026-08-03: every chart action was
-// indexed under the trading module, so `search_module_actions` routed 일봉차트 to it).
+// indexed under the trading module, so `search_module_actions` routed the daily chart to it).
 writeSplit(MODULE_DIR, actions, 'kiwoom');
 
 function writeSplit(dir, entries, label) {

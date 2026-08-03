@@ -3,10 +3,11 @@
  * 키움 sysmod codegen — `_apis.json` 입력 → `config.json` + `index.mjs` 생성.
  *
  * 입력: `system/modules/kiwoom/_apis.json` (extract-apis.mjs 가 생성)
- * 출력: `system/modules/{kiwoom,kiwoom-trade}/config.json` — 액션 enum 만
+ * Output: `system/modules/{kiwoom,kiwoom-trade}/config.json` — the action enum, nothing else
  *
  * 도메인별 별도 LLM 도구 노출 (sysmod_kiwoom_account / sysmod_kiwoom_chart 등) —
- * action = API ID 직접 호출. 방언은 `_runtime/` 이 소유하고 이 스크립트는 손대지 않는다.
+ * `action` is the API id, called directly. The dialect belongs to `_runtime/` and this script
+ * does not touch it.
  *
  * 사용:
  *   cd system/modules/kiwoom && node scripts/gen.mjs
@@ -25,7 +26,7 @@ const MODULE_DIR = resolve(__dirname, '..');
 
 
 
-// config.json 자체가 모듈 소스. gen 은 reconciler: `_apis.json` 파생분(액션 enum —
+// config.json is the module source. This is a reconciler: only what `_apis.json` derives (the
 // action enum 과 URL_CATEGORY 포함)만 갱신하고 **나머지 키는 전부 보존**한다.
 //
 // ⚠️ 옛 방식(보존할 키를 whitelist)은 새 선언형 블록이 추가될 때마다 썩는다 — 실측으로 `tags`
@@ -132,11 +133,12 @@ const { config, tables } = build(apis);
 // owned by whoever should own them.
 function writeTables(tables) {
   const banner = `/**
- * 키움증권 API 표 — **생성 파일입니다. 손으로 고치지 마십시오.**
+ * Kiwoom API table — **generated. Do not edit by hand.**
  *
- * 출처 = \`kiwoom-trade/_apis.json\` (벤더 문서 시트), 생성 = \`kiwoom-trade/scripts/gen.mjs\`.
- * 방언(\`_runtime/kiwoom-api.mjs\`)은 손으로 키우는 파일이라 이 표가 그 안에 있으면 생성기가 닿지 못한다 —
- * 표를 덮으려면 사람이 쓴 절반까지 덮어야 하기 때문이다. 그래서 이음매를 여기에 둔다.
+ * Source: \`kiwoom-trade/_apis.json\` (the vendor's documentation sheet). Written by
+ * \`kiwoom-trade/scripts/gen.mjs\`. The dialect in \`_runtime/kiwoom-api.mjs\` is hand-maintained, so a table
+ * living inside it is a table the generator cannot reach — overwriting it would mean overwriting
+ * the half a person wrote. The seam goes here instead.
  */
 `;
   const body = Object.entries(tables)
