@@ -106,6 +106,20 @@ async function apiFetch(url) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  1. search — 목록 검색 (lawSearch.do)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// The id `detail` wants, per target. It is a different field name for each one, which is why the
+// hint below names it instead of saying "the id" — the caller cannot guess it, and guessing gets an
+// empty body that reads like a case with no content.
+const ID_FIELD = {
+  law: '법령일련번호',
+  prec: '판례일련번호',
+  admrul: '행정규칙일련번호',
+  ordin: '자치법규일련번호',
+  detc: '헌재결정례일련번호',
+  expc: '법령해석례일련번호',
+  trty: '조약일련번호',
+  lsHistory: '법령일련번호',
+};
+
 async function handleSearch(OC, data) {
   const target = data.target || 'law';
   const query = data.query;
@@ -192,6 +206,25 @@ async function handleSearch(OC, data) {
   // 빈 배열만 돌려주면 모델이 원인을 몰라 파라미터를 변주하며 재시도한다 → 다음 수를 명시.
   if (searchResult.totalCnt === 0 && searchResult.items.length === 0) {
     searchResult.note = 'no results — this API matches ALL words (AND). Retry with a SHORTER core term (1-2 words, e.g. "폭행치사" instead of "폭행치사 예견가능성"); adding words narrows, never broadens. Legal doctrine keywords are often absent from case titles.';
+  } else {
+    // A hit is a citation, not an answer. These rows carry only 사건번호·법원명·선고일자 — no
+    // holding, no reasoning, no outcome. Measured 2026-08-04: a search matched one case on a body
+    // word, the caller never opened it, and answered as if precedent had been checked. The case was
+    // about something else entirely. So the row count is stated as what it is, and the next call is
+    // named with the field it needs, because the id lives under a different name per target.
+    const idField = ID_FIELD[target] || 'id';
+    const ids = searchResult.items
+      .map((it) => it[idField])
+      .filter(Boolean)
+      .slice(0, 5);
+    searchResult.note =
+      `${searchResult.items.length} MATCH(ES) — a list row, not content. It carries the citation ` +
+      `(사건번호/법원명/선고일자 or 법령명) and NOTHING about the holding, the reasoning or the ` +
+      `outcome. A keyword can match anywhere in the body, so a hit is not yet the case you meant. ` +
+      `To read one: detail({ target: "${target}", id: "<${idField}>" })` +
+      (ids.length ? ` — e.g. id "${ids[0]}"` : '') + '. ' +
+      `Until you have opened it you have not checked anything; if you do not open it, say that in ` +
+      `your answer rather than presenting the search as a check.`;
   }
   out(true, searchResult);
 }
