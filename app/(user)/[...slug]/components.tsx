@@ -3217,11 +3217,15 @@ ${cdnTags}
      미디어는 부모 너비로 자동 축소(canvas 는 비율 유지). 일반 div 레이아웃엔 영향 0. */
   img, canvas, svg, video, table, pre { max-width: 100% !important; }
   canvas, img, svg, video { height: auto; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; scrollbar-width: thin; scrollbar-color: #dfe3e8 transparent; }
-  /* globals.css 와 같은 값. 별 문서라 변수가 못 넘어와 숫자를 적지만, 두 곳이 달라지면 iframe 안팎에서 바가 달라 보인다. */
-  ::-webkit-scrollbar { width: 8px; height: 8px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #dfe3e8; border-radius: 4px; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; }
+  /* Pointer devices only — on touch this swaps the overlay scrollbar for a classic one that takes
+     layout width. Same values as globals.css; a separate document cannot read the variable. */
+  @media (hover: hover) and (pointer: fine) {
+    html, body { scrollbar-width: thin; scrollbar-color: #cbd2da transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd2da; border-radius: 4px; }
+  }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;

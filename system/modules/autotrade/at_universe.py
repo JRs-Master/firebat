@@ -179,6 +179,26 @@ def symbols_of(conn, trade_id):
         "SELECT symbol FROM watchlist WHERE trade_id=? ORDER BY entered_ms", (trade_id,))]
 
 
+def read_watchlists(conn):
+    """Every trade's list with when each symbol arrived — the screen as it stands right now."""
+    out = {}
+    for r in conn.execute(
+            "SELECT trade_id, symbol, entered_ms, last_seen_ms FROM watchlist"
+            " ORDER BY trade_id, entered_ms"):
+        out.setdefault(r["trade_id"], []).append(
+            {"symbol": r["symbol"], "enteredMs": r["entered_ms"], "lastSeenMs": r["last_seen_ms"]})
+    return out
+
+
+def read_events(conn, limit=50):
+    """Arrivals and departures, newest first. Lives in this database rather than the ledger's —
+    a symbol joining the screen is not a trading event, and merging the two would put noise in
+    the book. The reader shows them side by side instead."""
+    return [dict(r) for r in conn.execute(
+        "SELECT ts_ms, trade_id, symbol, event, detail_json FROM watchlist_event"
+        " ORDER BY seq DESC LIMIT ?", (limit,))]
+
+
 def request_condition(conn, trade_id, name, criteria, rationale=None):
     """Record the screening formula the model wants a person to create in HTS.
 

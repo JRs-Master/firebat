@@ -1780,6 +1780,17 @@ def action_read(inp, settings, which):
         data["transfers"] = store.read_transfers(conn, limit)
     if which == "report":
         data["events"] = store.read_events(conn, limit)
+        # The screen, from its own database. Promising these would show up in the ledger's event
+        # list was wrong — they are two stores, and nothing was merging them.
+        try:
+            ucon = uni.connect()
+            try:
+                data["watchlists"] = uni.read_watchlists(ucon)
+                data["screenEvents"] = uni.read_events(ucon, limit)
+            finally:
+                ucon.close()
+        except Exception as e:
+            data["watchlistError"] = str(e)
         data["tripped"] = store.kv_get(conn, "tripped") == "1"
         # A page renders the closed round trips with the existing paper_trades component.
         data["blocks"] = [{"type": "paper_trades", "props": {

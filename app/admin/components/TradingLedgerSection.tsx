@@ -28,6 +28,10 @@ interface Report {
   ledger?: Row[];
   events?: Row[];
   transfers?: Row[];
+  /** The screen, from the universe store — a different database, so it is fetched and shown
+   *  separately rather than merged into the trading events. */
+  watchlists?: Record<string, Row[]>;
+  screenEvents?: Row[];
 }
 
 /** Epoch ms → local wall clock, minutes resolution. Seconds add noise at this density. */
@@ -129,6 +133,10 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   const orders = data?.orders ?? [];
   const ledger = data?.ledger ?? [];
   const events = data?.events ?? [];
+  const watchlists = Object.entries(data?.watchlists ?? {});
+  const screened: Row[] = watchlists.flatMap(([trade, rows]) =>
+    (rows ?? []).map(r => ({ ...r, trade })));
+  const screenEvents = data?.screenEvents ?? [];
 
   return (
     <div className="flex flex-col gap-3">
@@ -219,6 +227,35 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
             num(Number(l.fee ?? 0) + Number(l.tax ?? 0)),
             num(l.realized_pnl),
             String(l.source ?? ''),
+          ])}
+        />
+      </Section>
+
+      <Section title="종목관리" count={screened.length}>
+        <Table
+          maxH="max-h-64"
+          head={['매매', '종목', '편입', '마지막 확인']}
+          empty="화면에 올라온 종목이 없습니다 — 종목관리 스케줄이 아직 안 돌았거나 순위가 비었습니다."
+          rows={screened.map(r => [
+            String(r.trade ?? ''),
+            String(r.symbol ?? ''),
+            when(r.enteredMs),
+            when(r.lastSeenMs),
+          ])}
+        />
+      </Section>
+
+      <Section title="편입·이탈" count={screenEvents.length}>
+        <Table
+          maxH="max-h-52"
+          head={['시각', '매매', '종목', '사건', '출처']}
+          empty="편입·이탈 기록이 없습니다."
+          rows={screenEvents.map(e => [
+            when(e.ts_ms),
+            String(e.trade_id ?? ''),
+            String(e.symbol ?? ''),
+            String(e.event ?? ''),
+            String(e.detail_json ?? '').slice(0, 120),
           ])}
         />
       </Section>

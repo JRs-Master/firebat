@@ -34,44 +34,49 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* Scrollbars — one mechanism, one colour, everywhere.
+/* Scrollbars — styled only where there is a pointer.
  *
- * The standard properties are the mechanism. Chromium honours `scrollbar-width` from 121 and, once
- * it is set, ignores `::-webkit-scrollbar` sizing entirely — so a rule that asks for 1px there and
- * `thin` here renders 1px on one engine and the browser's thin on another. That split is what made
- * the same page show two different bars, and no px value fixes it while both mechanisms are live.
+ * A touch platform draws an overlay scrollbar: it fades in while scrolling and occupies no layout
+ * width. Setting `scrollbar-width` or `scrollbar-color` opts that element out of the overlay and
+ * into a classic, always-visible bar that takes space — so styling everything gave the phone a
+ * permanent bar down the page and shifted the layout under it (2026-08-03). The platform's own
+ * answer is the right one there; nothing to fix.
  *
- * The webkit block stays only for engines with no `scrollbar-width` (Safari before 18.2), sized to
- * match what the standard `thin` renders rather than fighting it.
+ * On pointer devices the standard properties decide. Chromium honours `scrollbar-width` from 121
+ * and then ignores `::-webkit-scrollbar` sizing, so keeping both live is what made the same page
+ * show two different bars; the webkit block is a fallback for engines without the standard
+ * properties (Safari before 18.2), sized to match rather than fight.
  *
  * Opaque, because alpha composites against whatever is behind the bar — the identical declaration
  * came out one grey on a white table and another on the slate-50 chat.
  */
 :root {
-  --scrollbar-thumb: #dfe3e8;
+  --scrollbar-thumb: #cbd2da;
 }
-*,
-html,
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-*::-webkit-scrollbar,
-html::-webkit-scrollbar,
-.scrollbar-thin::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-track,
-html::-webkit-scrollbar-track,
-.scrollbar-thin::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb,
-html::-webkit-scrollbar-thumb,
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
+@media (hover: hover) and (pointer: fine) {
+  *,
+  html,
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+  *::-webkit-scrollbar,
+  html::-webkit-scrollbar,
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track,
+  html::-webkit-scrollbar-track,
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb,
+  html::-webkit-scrollbar-thumb,
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 4px;
+  }
 }
 /* 모바일에서만 스크롤바 숨김 — 터치 스크롤이라 시각 노이즈 제거(깔쌈). scrollbar-thin 과 같이 쓰면
    PC 는 얇은 바 유지(스크롤 affordance), 모바일은 hidden. */
@@ -244,9 +249,13 @@ html::-webkit-scrollbar-thumb,
   }
 
   /* 커스텀 스크롤바 텍스트 영역 */
-  .scrolltext {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) transparent;
+  /* Pointer devices only — see the scrollbar block at the top of this file. On touch this would
+     replace the overlay bar with a classic one that takes layout width. */
+  @media (hover: hover) and (pointer: fine) {
+    .scrolltext {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
   }
 
   /* 스크롤바 숨김 (탭 바 등) */
@@ -402,8 +411,10 @@ html::-webkit-scrollbar-thumb,
 
 /* CMS scope 도 같은 토큰. 발행 페이지만 다른 톤일 이유가 없고, 다르면 그 차이를 설명할 사람이
    없다. */
-.firebat-cms-content {
-  scrollbar-color: var(--scrollbar-thumb) transparent;
+@media (hover: hover) and (pointer: fine) {
+  .firebat-cms-content {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
 }
 
 /* ── CMS Typography Tokens (P2 디자인 깊이) ──
