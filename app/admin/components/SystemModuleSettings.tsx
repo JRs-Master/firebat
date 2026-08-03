@@ -605,7 +605,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           </div>
           )}
 
-          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll flex-1 min-h-0">
+          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll scrollbar-thin flex-1 min-h-0">
             <p className="text-[11px] sm:text-[12px] text-slate-400">{descText}</p>
 
             {/* JSON config view. shrink-0: the scroll container is flex-col, so without it this
@@ -716,7 +716,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         <p className="text-[11px] sm:text-[12px] font-bold text-slate-600">{t('system_modules.common.mcp_web_connector_title')}</p>
                         <p className="text-[10px] sm:text-[11px] text-slate-500 leading-relaxed">{t('system_modules.common.mcp_web_connector_desc')}</p>
                         <div className="flex items-center gap-1.5">
-                          <code className="flex-1 text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">{`${sseUrl}?token=${tokenValue}`}</code>
+                          <code className="flex-1 text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded px-2 py-1 overflow-x-auto scrollbar-thin whitespace-nowrap">{`${sseUrl}?token=${tokenValue}`}</code>
                           <Tooltip label={t('system_modules.common.copy')}>
                             <button onClick={() => copyToClipboard(`${sseUrl}?token=${tokenValue}`, setMcpWebUrlCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
                               {mcpWebUrlCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
@@ -744,7 +744,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         </button>
                       </Tooltip>
                     </div>
-                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
+                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto scrollbar-thin whitespace-pre leading-relaxed">{jsonConfig}</pre>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
                       <p className="font-bold">{t('system_modules.common.mcp_stdio_ssh_required_title')}</p>
                       <p>{t('system_modules.common.mcp_stdio_ssh_required_body')}</p>
@@ -848,7 +848,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
         )}
 
         {/* 설정 필드 */}
-        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll flex-1 min-h-0">
+        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll scrollbar-thin flex-1 min-h-0">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={20} className="animate-spin text-slate-400" />

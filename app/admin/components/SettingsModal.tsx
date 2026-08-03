@@ -949,7 +949,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           </div>
         </div>
 
-        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto min-w-0 flex-1 min-h-0 [scrollbar-gutter:stable_both-edges]">
+        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto scrollbar-thin min-w-0 flex-1 min-h-0 [scrollbar-gutter:stable_both-edges]">
           {settingsTab === 'general' && (
             <>
               {/* 인터페이스 언어 */}
@@ -3077,7 +3077,7 @@ function CostTabContent() {
           {dailyTotals.length > 0 && (
             <div>
               <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">{t('settings_modal.cost_section_daily')}</p>
-              <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
+              <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto scrollbar-thin">
                 <table className="w-full text-[12px]">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>

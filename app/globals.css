@@ -34,30 +34,42 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* 얇은 scrollbar — viewport (html) + inner overflow 컨테이너 (.scrollbar-thin) 통일.
-   가로·세로 모두 4px. Table·페이지 native scrollbar 시각 톤 일관. */
+/* 얇은 scrollbar — **전역 기본**. 클래스를 붙인 곳만 얇던 탓에 나머지는 브라우저 기본 바가
+   그려졌고, 나란히 놓이면 그쪽이 눈에 띄게 두껍고 진했다(2026-08-03 모바일 실측: 설정의 세로
+   바보다 원장 표의 가로 바가 진해 보인 것이 이 차이다). 그래서 선택이 아니라 기본으로 둔다.
+
+   1px — webkit 계열이 렌더하는 최소값. Firefox 는 `scrollbar-width` 가 thin/auto/none 셋뿐이라
+   px 를 못 받고 그 브라우저의 thin 이 하한이다. 그만큼 얇으면 잘 안 보이므로 thumb 색은 조금
+   진하게 — 두께로 잃은 존재감을 대비로 돌려준다.
+
+   `.scrollbar-none`(클래스 선택자) 이 명시 숨김을 계속 이긴다 — 여기는 `*` 라 특이도가 낮다. */
+*,
 html,
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
 }
+*::-webkit-scrollbar,
 html::-webkit-scrollbar,
 .scrollbar-thin::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
+  width: 1px;
+  height: 1px;
 }
+*::-webkit-scrollbar-track,
 html::-webkit-scrollbar-track,
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
+*::-webkit-scrollbar-thumb,
 html::-webkit-scrollbar-thumb,
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 1px;
 }
+*::-webkit-scrollbar-thumb:hover,
 html::-webkit-scrollbar-thumb:hover,
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.45);
 }
 /* 모바일에서만 스크롤바 숨김 — 터치 스크롤이라 시각 노이즈 제거(깔쌈). scrollbar-thin 과 같이 쓰면
    PC 는 얇은 바 유지(스크롤 affordance), 모바일은 hidden. */
@@ -219,24 +231,10 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 @layer utilities {
-  /* 세련된 스크롤바 커스텀 — viewport(html)·thin 컨테이너는 위 unlayered 규칙(2px)이 우선, 그 외 일반
-     overflow 컨테이너 기본값. 톤 일관 위해 4px(옛 6px 에서 축소). */
-  ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400;
-  }
+  /* 스크롤바 규칙은 위 unlayered 블록 하나뿐이다. 여기에 4px 짜리 두 번째 정의가 있었고, 클래스를
+     안 붙인 컨테이너는 전부 그쪽으로 그려졌다 — 같은 화면에서 설정의 세로 바는 얇고 표의 가로 바는
+     두꺼워 보인 것이 그 둘의 차이였다. 규칙이 둘이면 어느 쪽이 보이는지가 마크업에 달리고,
+     그건 눈에 띄기 전까지 아무도 모른다. */
 
   /* 공통 활용 가능한 에스테틱 유틸리티 */
   .glass-panel {

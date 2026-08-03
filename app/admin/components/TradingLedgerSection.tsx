@@ -58,14 +58,25 @@ const STATE_TONE: Record<string, string> = {
   void: 'bg-slate-100 text-slate-400 line-through',
 };
 
-function Table({ head, rows, empty }: { head: string[]; rows: (string | number)[][]; empty: string }) {
+function Table({ head, rows, empty, maxH }: {
+  head: string[];
+  rows: (string | number)[][];
+  empty: string;
+  /** Tall lists scroll in place — a hundred orders should not push the tabs off the screen. */
+  maxH?: string;
+}) {
   if (!rows.length) return <p className="px-1 py-3 text-[11px] text-slate-400 italic">{empty}</p>;
   return (
-    // Wide on a phone: the table scrolls inside its own box rather than the page.
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
+    // Wide on a phone, and long everywhere: the table scrolls inside its own box in both
+    // directions rather than moving the page. `scrollbar-thin` because without it these are the
+    // only bars on the screen drawn by the browser's own chrome, and they read as heavier than
+    // every other scroll in the app.
+    <div
+      className={`overflow-x-auto overflow-y-auto scrollbar-thin rounded-lg border border-slate-200 ${maxH ?? ''}`}
+    >
       <table className="w-full text-[11px] whitespace-nowrap">
         <thead>
-          <tr className="bg-slate-50 text-slate-500">
+          <tr className="bg-slate-50 text-slate-500 sticky top-0 z-10">
             {head.map(h => <th key={h} className="px-2 py-1.5 text-left font-bold">{h}</th>)}
           </tr>
         </thead>
@@ -174,6 +185,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
 
       <Section title="주문" count={orders.length}>
         <Table
+          maxH="max-h-72"
           head={['시각', '전략', '종목', '방향', '수량', '요청가', '체결', '평균', '상태', '사유']}
           empty="주문 기록이 없습니다."
           rows={orders.map(o => [
@@ -194,6 +206,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
 
       <Section title="체결" count={ledger.length}>
         <Table
+          maxH="max-h-72"
           head={['시각', '전략', '종목', '방향', '수량', '가격', '수수료', '실현손익', '출처']}
           empty="체결이 없습니다."
           rows={ledger.map(l => [
@@ -212,6 +225,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
 
       <Section title="이벤트" count={events.length}>
         <Table
+          maxH="max-h-64"
           head={['시각', '종류', '전략', '내용']}
           empty="이벤트가 없습니다."
           rows={events.map(e => [
