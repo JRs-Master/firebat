@@ -204,10 +204,10 @@ function orderParams(data) {
   // A market order carries no unit price; sending one is rejected. A limit one has to sit on the
   // exchange's grid — truncating to an integer is not enough, and off-grid is refused outright.
   if (type !== 'market' && Number.isFinite(price) && price > 0) {
-    params.ord_uv = String(roundToKrxTick(price, side));
+    params.ord_uv = String(roundToKrxTick(price, data.side));
   }
   if (data.conditionPrice) {
-    params.cond_uv = String(roundToKrxTick(Number(data.conditionPrice), side));
+    params.cond_uv = String(roundToKrxTick(Number(data.conditionPrice), data.side));
   }
   return params;
 }

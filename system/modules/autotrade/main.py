@@ -852,11 +852,19 @@ def _pipeline_trades(settings, strategies):
             rules = st.get("rules") or ((st.get("spec") or {}).get("rules"))
             if not rules:
                 continue
+            # The strategy's symbol wins. A screened trade names none — its list is filled at
+            # runtime and the expansion puts the symbol on the strategy — so reading the trade
+            # sent the candle step nothing and it refused with "symbol 이 필요합니다".
+            symbol = st.get("symbol") or t.get("symbol")
+            # …and then fifteen expansions of one rule all carried that trade's id. The analyser
+            # answers positionally and the cycle matches on this, so the symbol has to be in it
+            # whenever the trade did not supply one.
+            pair_id = t["id"] if st.get("id") == t["id"] else f"{t['id']}:{st.get('id')}"
+            if not t.get("symbol") and symbol:
+                pair_id = f"{pair_id}:{symbol}"
             out.append({
-                # Unique per pair: the analyser results come back positionally and the cycle
-                # matches them by this, so two rules on one coin must not share an id.
-                "tradeId": t["id"] if st.get("id") == t["id"] else f"{t['id']}:{st.get('id')}",
-                "strategyId": st.get("id"), "symbol": t.get("symbol"),
+                "tradeId": pair_id,
+                "strategyId": st.get("id"), "symbol": symbol,
                 "interval": t.get("interval"), "broker": t.get("broker"),
                 "account": t.get("account"), "market": t.get("market"), "rules": rules,
                 "exits": st.get("exits") or {}})
@@ -3077,6 +3085,24 @@ def action_selftest():
     checks.append({"name": "a demoted strategy's fill goes to the paper ledger, not the live one",
                    "want": (True, 0), "got": (in_paper > 0, in_live),
                    "ok": in_paper > 0 and in_live == 0})
+
+    # --- a screened trade carries the symbol its expansion found -----------------------------
+    # A screened trade names no symbol; the list is filled at runtime and `pick_strategies` puts
+    # each one on a copy of the rule. Reading the trade instead sent the candle step nothing, and
+    # fifteen expansions of one rule all answered to the same pair id.
+    screen_settings = {
+        "trades": [{"id": "scr", "screen": "rank", "broker": "b", "account": "", "interval": "5m"}],
+        "strategies": [{"id": "scr", "enabled": True, "kind": "rules", "broker": "b",
+                        "account": "", "rules": [{"side": "buy", "when": []}]}],
+    }
+    expanded = [{**screen_settings["strategies"][0], "symbol": sym} for sym in ("AAA", "BBB")]
+    pairs = _pipeline_trades(screen_settings, expanded)
+    checks.append({"name": "a screened trade passes on the symbol its expansion found",
+                   "want": ["AAA", "BBB"], "got": sorted(p.get("symbol") or "" for p in pairs),
+                   "ok": sorted(p.get("symbol") or "" for p in pairs) == ["AAA", "BBB"]})
+    ids = [p["tradeId"] for p in pairs]
+    checks.append({"name": "and each expansion answers to an id of its own",
+                   "want": 2, "got": len(set(ids)), "ok": len(set(ids)) == len(ids) == 2})
 
     # --- an exit signal withdraws the entry that has not arrived yet ------------------------
     # Fast markets run entry → exit → the entry fills. The sell was dropped for having nothing to

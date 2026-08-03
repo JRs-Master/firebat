@@ -21,7 +21,7 @@
       "inputData": {
         "action": "screen_rank",
         "trade": "kw-screen-limit",
-        "top": 15,
+        "top": 8,
         "source": "ka10032 거래대금상위"
       },
       "inputMap": {
@@ -35,7 +35,7 @@
       "inputData": {
         "action": "screen_rank",
         "trade": "kw-screen-market",
-        "top": 15,
+        "top": 8,
         "source": "ka10032 거래대금상위"
       },
       "inputMap": {
