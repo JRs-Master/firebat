@@ -128,6 +128,44 @@ def apply_frames(conn, trade_id, frames, frame_map=None):
     return {"added": added, "removed": removed, "unreadableFrames": unread}
 
 
+def apply_ranking(conn, trade_id, symbols, source=None):
+    """Fold a ranking snapshot into the list. Returns what changed.
+
+    A ranking is a snapshot where a condition stream is a series of events, so the arithmetic is
+    different: whatever the snapshot holds is present, and whatever it does not is gone. The
+    arrivals are written the same way the stream writes them, which is what lets a `screen-entry`
+    rule treat "entered the top of the book" exactly as it treats "entered the condition".
+
+    An empty snapshot changes nothing. A ranking call that failed, was throttled, or came back
+    before the market opened returns no rows, and reading that as "every symbol left" is the same
+    mistake as reading a dropped socket as a liquidation — the list is emptied and the strategy is
+    told to abandon everything it holds.
+    """
+    now = store.now_ms()
+    wanted = [s for s in dict.fromkeys(str(x).strip() for x in (symbols or [])) if s]
+    if not wanted:
+        _log(conn, trade_id, None, "empty-ranking", {"source": source})
+        conn.commit()
+        return {"added": [], "removed": [], "kept": symbols_of(conn, trade_id), "empty": True}
+
+    before = set(symbols_of(conn, trade_id))
+    added = []
+    for sym in wanted:
+        conn.execute(
+            "INSERT INTO watchlist(trade_id, symbol, entered_ms, last_seen_ms)"
+            " VALUES(?,?,?,?) ON CONFLICT(trade_id, symbol) DO UPDATE SET last_seen_ms=?",
+            (trade_id, sym, now, now, now))
+        if sym not in before:
+            added.append(sym)
+            _log(conn, trade_id, sym, "entered", {"source": source or "ranking"})
+    removed = sorted(before - set(wanted))
+    for sym in removed:
+        conn.execute("DELETE FROM watchlist WHERE trade_id=? AND symbol=?", (trade_id, sym))
+        _log(conn, trade_id, sym, "left", {"source": source or "ranking"})
+    conn.commit()
+    return {"added": added, "removed": removed, "kept": wanted, "empty": False}
+
+
 def _log(conn, trade_id, symbol, event, detail):
     conn.execute("INSERT INTO watchlist_event(ts_ms, trade_id, symbol, event, detail_json)"
                  " VALUES(?,?,?,?,?)",

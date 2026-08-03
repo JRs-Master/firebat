@@ -204,7 +204,7 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             s = {**s, "broker": s.get("broker") or trade.get("broker"),
                  "account": s.get("account") or trade.get("account"),
                  "market": s.get("market") or trade.get("market")}
-        if s.get("symbol") or not (trade and trade.get("conditionName")):
+        if s.get("symbol") or not (trade and (trade.get("conditionName") or trade.get("screen"))):
             expanded.append(s)
             continue
         try:
@@ -496,12 +496,15 @@ def declared_trades(settings):
             continue
         symbol = str(t.get("symbol") or "").strip()
         condition = str(t.get("conditionName") or "").strip()
+        # Where the list comes from when no HTS condition backs it: a ranking action fills it
+        # instead. Named rather than implied, so a trade with neither is still a misconfiguration.
+        screen = str(t.get("screen") or "").strip()
         broker = str(t.get("broker") or "").strip()
         account = str(t.get("account") or "").strip()
-        if not broker or not (symbol or condition):
+        if not broker or not (symbol or condition or screen):
             continue
         out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol or condition}").strip(),
-                    "symbol": symbol, "conditionName": condition,
+                    "symbol": symbol, "conditionName": condition, "screen": screen,
                     # The timeframe is part of the trade, not of the schedule. A rule measured on
                     # daily bars and traded on one-minute bars was measured on something else, so
                     # the same value has to reach the candle fetch and the nightly re-measurement.
@@ -643,6 +646,81 @@ def action_universe(inp, settings):
     return {"success": True, "data": data}
 
 
+def _rows_in(payload, depth=0):
+    """The list of rows inside a broker's own response shape.
+
+    A ranking is called by its API id, so what comes back is the venue's envelope and the array
+    sits under whatever the venue calls it — `trde_prica_upper` at one broker, something else at
+    the next. Guessing the key in a declaration would be inventing it; the array is found by being
+    an array of objects instead, and the largest one wins because a ranking response's other lists
+    are headers and paging stubs.
+
+    Nothing is inferred about the row itself — the symbol is still looked up by name, and a row
+    that has none is reported rather than skipped.
+    """
+    if isinstance(payload, list):
+        return [r for r in payload if isinstance(r, dict)]
+    if not isinstance(payload, dict) or depth > 3:
+        return []
+    best = []
+    for key, value in payload.items():
+        if key.startswith("_"):
+            continue          # `_cacheKey` and friends are the framework's, not the venue's
+        found = _rows_in(value, depth + 1)
+        if len(found) > len(best):
+            best = found
+    return best
+
+
+def action_screen_rank(inp, settings):
+    """A broker's ranking becomes this trade's watchlist.
+
+    The condition stream is the real-time way a symbol arrives, and it needs a condition someone
+    built in HTS first. A ranking needs nothing: it is an ordinary REST call, the venue computes
+    it, and the top of the book by turnover is the screen most intraday rules actually want. Both
+    write the same list, so a rule does not know or care which one filled it.
+
+    Ranking rows differ per broker, so the symbol is found the same way a condition frame's is —
+    candidate keys, with a declared `symbolField` winning once a real response has shown the name.
+    """
+    trade_id = str(inp.get("trade") or "").strip()
+    if not trade_id:
+        known = [t["id"] for t in declared_trades(settings)]
+        return {"success": False,
+                "error": "screen_rank 에는 `trade` 가 필요합니다 — 어느 매매의 목록인지. "
+                         f"선언된 매매: {', '.join(known) if known else '없음'}"}
+    rows = _loop_items(inp.get("rows")) or _rows_in(inp.get("payload"))
+    field = str(inp.get("symbolField") or "").strip()
+    top = int(inp.get("top") or 0)
+    symbols, unread = [], []
+    for r in rows:
+        if isinstance(r, str):
+            symbols.append(r)
+            continue
+        if not isinstance(r, dict):
+            continue
+        sym = uni._first(r, [field] if field else uni.SYMBOL_KEYS)
+        if sym:
+            # Verbatim. Kiwoom answers `000660_AL`, and the suffix names the book: `_AL` is the
+            # unified KRX + NXT quote (measured — the two exchanges' volumes add up to it exactly),
+            # bare is KRX alone. Trimming it would rank on both and then trade on one.
+            symbols.append(str(sym).strip())
+        else:
+            unread.append(r)
+    if top > 0:
+        symbols = symbols[:top]
+    conn = uni.connect()
+    try:
+        out = uni.apply_ranking(conn, trade_id, symbols, source=inp.get("source") or "ranking")
+    finally:
+        conn.close()
+    if unread:
+        out["unreadableRows"] = unread[:3]
+        out["note"] = ("행에서 종목코드를 못 찾았습니다 — `symbolField` 로 필드명을 지정하십시오. "
+                       f"첫 행 키: {sorted(unread[0].keys())[:12]}")
+    return {"success": True, "data": out}
+
+
 def action_gate(inp, settings):
     """Does the cycle run at all? The first step of the trading pipeline, and the only human gate.
 
@@ -689,7 +767,8 @@ def action_gate(inp, settings):
         reasons.append("killSwitch is on")
     strategies = pick_strategies(settings)
     conn.close()
-    screened = [t for t in declared_trades(settings) if t.get("conditionName")]
+    screened = [t for t in declared_trades(settings)
+                if t.get("conditionName") or t.get("screen")]
     if not strategies and not reasons:
         if screened:
             # Not a misconfiguration. The rule exists and the screen is simply empty right now,
@@ -3456,6 +3535,8 @@ def main():
             return out(action_match_conditions(inp, settings))
         if action == "universe":
             return out(action_universe(inp, settings))
+        if action == "screen_rank":
+            return out(action_screen_rank(inp, settings))
         if action == "gate":
             return out(action_gate(inp, settings))
         if action == "reconcile":

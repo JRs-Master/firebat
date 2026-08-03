@@ -1,0 +1,198 @@
+{
+  "title": "autotrade (국내주식/키움) — 거래대금 상위 눌림목 (지정가·시장가 쌍)",
+  "cronTime": "0 */5 0-6 * * 1-5",
+  "executionMode": "pipeline",
+  "pipeline": [
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom",
+      "inputData": {
+        "action": "ka10032",
+        "params": {
+          "mrkt_tp": "000",
+          "mang_stk_incls": "1",
+          "stex_tp": "3"
+        }
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "screen_rank",
+        "trade": "kw-screen-limit",
+        "top": 15,
+        "source": "ka10032 거래대금상위"
+      },
+      "inputMap": {
+        "rows": "$step0.trde_prica_upper",
+        "rowsCacheKey": "$step0._cacheKey"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "screen_rank",
+        "trade": "kw-screen-market",
+        "top": 15,
+        "source": "ka10032 거래대금상위"
+      },
+      "inputMap": {
+        "rows": "$step0.trde_prica_upper",
+        "rowsCacheKey": "$step0._cacheKey"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "gate",
+        "broker": "kiwoom-trade",
+        "account": "모의국내",
+        "market": "kr"
+      }
+    },
+    {
+      "type": "CONDITION",
+      "field": "active",
+      "op": "==",
+      "value": true
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step4.trades",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_kiwoom",
+          "inputData": {
+            "action": "get_candles",
+            "bars": 300
+          },
+          "inputMap": {
+            "symbol": "$prev.symbol",
+            "interval": "$prev.interval",
+            "account": "$prev.account",
+            "market": "$prev.market"
+          }
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "bind_bars",
+        "feeRate": 0.00015,
+        "taxRate": 0.0018,
+        "slippageRate": 0.0005
+      },
+      "inputMap": {
+        "trades": "$step4.trades",
+        "fetched": "$step6.results"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step7.runs",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_technical-analysis",
+          "inputData": "$prev.args"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom-trade",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step4.scopedTo.account",
+        "market": "$step4.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "cycle"
+      },
+      "inputMap": {
+        "plan": "$step7",
+        "signals": "$step8.results",
+        "openOrders": "$step9.rows"
+      }
+    },
+    {
+      "type": "FOREACH",
+      "items": "$step10.calls",
+      "steps": [
+        {
+          "type": "TOOL_CALL",
+          "tool": "sysmod_kiwoom-trade",
+          "inputData": "$prev.input"
+        }
+      ]
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "record_orders"
+      },
+      "inputMap": {
+        "calls": "$step10.calls",
+        "results": "$step11.results"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom-trade",
+      "inputData": {
+        "action": "list_fills"
+      },
+      "inputMap": {
+        "account": "$step4.scopedTo.account",
+        "market": "$step4.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom-trade",
+      "inputData": {
+        "action": "list_open_orders"
+      },
+      "inputMap": {
+        "account": "$step4.scopedTo.account",
+        "market": "$step4.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_kiwoom-trade",
+      "inputData": {
+        "action": "get_balance"
+      },
+      "inputMap": {
+        "account": "$step4.scopedTo.account",
+        "market": "$step4.scopedTo.market"
+      }
+    },
+    {
+      "type": "TOOL_CALL",
+      "tool": "sysmod_autotrade",
+      "inputData": {
+        "action": "reconcile"
+      },
+      "inputMap": {
+        "fills": "$step13.rows",
+        "openOrders": "$step14.rows",
+        "balanceRows": "$step15.rows"
+      }
+    }
+  ]
+}
