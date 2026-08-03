@@ -95,179 +95,12 @@ function build(apis) {
     },
   };
 
-  const index = `#!/usr/bin/env node
-/**
- * Firebat System Module: korea-invest — codegen 자동 생성 (scripts/gen.mjs).
- * 한국투자증권 OPEN API 통합 (278 REST API).
- *
- * LLM 시점: 모듈당 도구 하나 — 액션 선택은 search_module_actions 가 한다.
- * 단일 모듈로 라우팅 — action 으로 API ID 직접 호출, tr_id 자동 분기 (실전/모의).
- */
-
-const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
-const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
-
-const API_TABLE = ${JSON.stringify(apiTable, null, 2)};
-
-// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
-// sysmod 는 env 로 주입된 raw 토큰(KIS_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
-
-const RATE_LIMIT = 20;
-const WINDOW_MS = 1000;
-const _reqTimes = [];
-async function acquireSlot() {
-  while (true) {
-    const now = Date.now();
-    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < RATE_LIMIT) { _reqTimes.push(now); return; }
-    await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
-  }
-}
-
-async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
-  const meta = API_TABLE[action];
-  if (!meta) throw new Error(\`알 수 없는 API ID: \${action} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('korea-invest', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.\`);
-  const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
-  if (isMock && !meta.trIdMock) throw new Error(\`\${action} (\${meta.name}) 은 모의투자 미지원입니다.\`);
-  let url = \`\${base}\${meta.path}\`;
-  if (meta.method === 'GET' && Object.keys(query).length > 0) {
-    const qs = new URLSearchParams(query).toString();
-    url += \`?\${qs}\`;
-  }
-  const headers = {
-    'Content-Type': 'application/json; charset=utf-8',
-    'authorization': \`Bearer \${token}\`,
-    'appkey': appKey,
-    'appsecret': appSecret,
-    'tr_id': trId,
-    'custtype': 'P',
-  };
-  await acquireSlot();
-  const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
-  if (meta.method !== 'GET' && Object.keys(body).length > 0) init.body = JSON.stringify(body);
-  const resp = await fetch(url, init);
-  if (resp.status === 429 && retry > 0) {
-    await new Promise(r => setTimeout(r, 1100));
-    return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1);
-  }
-  if (!resp.ok) {
-    // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
-    // 바디가 KIS 에러 envelope 면 throw 말고 반환 → 상위 rt_cd 검사(인프라 reactive)가 토큰 무효를 감지.
-    const errText = await resp.text().catch(() => '');
-    try {
-      const j = JSON.parse(errText);
-      if (j && (j.rt_cd !== undefined || j.msg_cd !== undefined)) return j;
-    } catch { /* JSON 아님 — 아래 throw */ }
-    throw new Error(\`KIS API \${resp.status}: \${resp.statusText} \${errText}\`.trim());
-  }
-  return await resp.json();
-}
-
-// Standard OHLCV normalization — rename KIS candle vocabulary to the cross-broker standard
-// {date, open, high, low, close, volume} so stock_chart dataCacheKey injection, the timeseries
-// store, and cache_grep all speak one vocabulary (yfinance already does). Field-signature
-// detection (no per-action enum): a row is a candle when it carries a date field together with a
-// close-price field. Covers 국내 일/주/월(stck_bsop_date+stck_clpr), 국내 분봉(stck_cntg_hour+
-// stck_prpr), 해외(xymd+clos). Values arrive as strings — Number() them.
-function kisNum(v) {
-  const n = Number(String(v ?? '').replace(/^[+\-]/, ''));
-  return Number.isFinite(n) ? n : v;
-}
-function kisDate8(s) {
-  s = String(s ?? '');
-  return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
-}
-function normalizeCandleRow(row) {
-  // 해외 기간별시세 (HHDFS76240000 류): xymd + clos (+open/high/low/tvol)
-  if ('xymd' in row && 'clos' in row) {
-    row.date = kisDate8(row.xymd); delete row.xymd;
-    row.close = kisNum(row.clos); delete row.clos;
-    if ('open' in row) row.open = kisNum(row.open);
-    if ('high' in row) row.high = kisNum(row.high);
-    if ('low' in row) row.low = kisNum(row.low);
-    if ('tvol' in row) { row.volume = kisNum(row.tvol); delete row.tvol; }
-    return;
-  }
-  // 국내: stck_bsop_date + (stck_clpr 일/주/월 | stck_prpr 분봉)
-  if ('stck_bsop_date' in row && ('stck_clpr' in row || 'stck_prpr' in row)) {
-    const day = kisDate8(row.stck_bsop_date); delete row.stck_bsop_date;
-    if ('stck_cntg_hour' in row) {
-      const t = String(row.stck_cntg_hour).padStart(6, '0');
-      row.date = day + ' ' + t.slice(0, 2) + ':' + t.slice(2, 4);
-      delete row.stck_cntg_hour;
-    } else {
-      row.date = day;
-    }
-    if ('stck_oprc' in row) { row.open = kisNum(row.stck_oprc); delete row.stck_oprc; }
-    if ('stck_hgpr' in row) { row.high = kisNum(row.stck_hgpr); delete row.stck_hgpr; }
-    if ('stck_lwpr' in row) { row.low = kisNum(row.stck_lwpr); delete row.stck_lwpr; }
-    if ('stck_clpr' in row) { row.close = kisNum(row.stck_clpr); delete row.stck_clpr; }
-    else if ('stck_prpr' in row) { row.close = kisNum(row.stck_prpr); delete row.stck_prpr; }
-    if ('acml_vol' in row) { row.volume = kisNum(row.acml_vol); delete row.acml_vol; }
-    else if ('cntg_vol' in row) { row.volume = kisNum(row.cntg_vol); delete row.cntg_vol; }
-  }
-}
-function normalizeCandles(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 2) return;
-  for (const v of Object.values(obj)) {
-    if (Array.isArray(v)) {
-      for (const row of v) { if (row && typeof row === 'object') normalizeCandleRow(row); }
-    } else if (v && typeof v === 'object') {
-      normalizeCandles(v, depth + 1);
-    }
-  }
-}
-
-let raw = '';
-process.stdin.setEncoding('utf-8');
-process.stdin.on('data', chunk => { raw += chunk; });
-process.stdin.on('end', async () => {
-  try {
-    const { data } = JSON.parse(raw);
-    const action = data?.action;
-    if (!action) {
-      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 한투 API ID (v1_국내주식-008 등) 를 지정하세요.' }));
-      return;
-    }
-    const appKey = process.env['KIS_APP_KEY'];
-    const appSecret = process.env['KIS_APP_SECRET'];
-    if (!appKey || !appSecret) {
-      console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
-      return;
-    }
-    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
-    // 응답의 rt_cd/msg1 을 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
-    const token = process.env['KIS_ACCESS_TOKEN'];
-    if (!token) {
-      console.log(JSON.stringify({ success: false, error: 'KIS 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
-      return;
-    }
-    const isMock = data.mock === true;
-    const base = isMock ? BASE_MOCK : BASE_REAL;
-    const query = data.query || {};
-    const body = data.body || {};
-    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
-    normalizeCandles(result);
-    const meta = API_TABLE[action];
-    // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
-    // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
-    const rtCd = result?.rt_cd;
-    const ok = rtCd === undefined || rtCd === null || rtCd === '0';
-    const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
-    if (!ok) output.error = result?.msg1 || \`한투 API 오류 (rt_cd=\${rtCd})\`;
-    console.log(JSON.stringify(output));
-  } catch (e) {
-    console.log(JSON.stringify({ success: false, error: e.message }));
-  }
-});
-`;
-
-  return { config, index };
+  return { config, tables: { API_TABLE: apiTable } };
 }
 
 const apisPath = resolve(MODULE_DIR, '_apis.json');
 const apis = JSON.parse(readFileSync(apisPath, 'utf8'));
-const { config, index } = build(apis);
+const { config, tables } = build(apis);
 
 // Reconciler, not a generator. config.json is the MODULE SOURCE — hand-maintained blocks
 // (actionCatalog / requiresApproval / grounding / timeseries / ws / tags / secrets …) are edited
@@ -279,6 +112,28 @@ const { config, index } = build(apis);
 // Generated keys are enumerated and everything else is preserved; `writeHalves` below applies the
 // rule to each half. Reading it here as well would report on a single config that no longer exists.
 const GENERATED_KEYS = ['input', 'output'];
+
+// ── The API table ────────────────────────────────────────────────────────────────────────────
+// The one part of the dialect the sheet owns. It used to live inside `_runtime/korea-invest-api.mjs`, which
+// people edit, so the generator could not write it without destroying the hand-written half — and
+// so it never wrote it at all and the table froze. Split along that seam, both halves can be
+// owned by whoever should own them.
+function writeTables(tables) {
+  const banner = `/**
+ * 한국투자증권 API 표 — **생성 파일입니다. 손으로 고치지 마십시오.**
+ *
+ * 출처 = \`korea-invest-trade/_apis.json\` (벤더 문서 시트), 생성 = \`korea-invest-trade/scripts/gen.mjs\`.
+ * 방언(\`_runtime/korea-invest-api.mjs\`)은 손으로 키우는 파일이라 이 표가 그 안에 있으면 생성기가 닿지 못한다 —
+ * 표를 덮으려면 사람이 쓴 절반까지 덮어야 하기 때문이다. 그래서 이음매를 여기에 둔다.
+ */
+`;
+  const body = Object.entries(tables)
+    .map(([name, value]) => `export const ${name} = ${JSON.stringify(value, null, 2)};\n`)
+    .join('\n');
+  const out = resolve(MODULE_DIR, '..', '_runtime', 'korea-invest-apis.generated.mjs');
+  writeFileSync(out, banner + '\n' + body, 'utf8');
+  console.log(`  _runtime/korea-invest-apis.generated.mjs: ${Object.keys(tables).join(', ')}`);
+}
 
 // ── Reconcile ────────────────────────────────────────────────────────────────────────────────
 // Which half an action belongs to is the venue's own classification, read out of the sheet — the
@@ -331,9 +186,9 @@ const isAccountAction = (id) => {
 // OAuth is the infrastructure's, not the module's: the token provider issues, refreshes and
 // revokes, and the hash key is signing plumbing. The vendor groups all three under one menu, so
 // that is the filter — the same signal the Kiwoom script uses for the same reason.
+writeTables(tables);
 writeHalves(
   apis.filter((a) => a.menu !== 'OAuth인증').map((a) => a.id).sort(),
   isAccountAction,
 );
-console.log(`✓ korea-invest — the dialect in _runtime/ is hand-maintained and was left untouched;`
-  + ` re-extract its tables with scripts/extract-apis.mjs if the sheet changed.`);
+console.log(`✓ korea-invest — the dialect in _runtime/ is hand-maintained; only its API table is generated.`);

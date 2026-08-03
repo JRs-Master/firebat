@@ -118,173 +118,34 @@ function build(apis) {
     ...preserved,
   };
 
-  const index = `#!/usr/bin/env node
-/**
- * Firebat System Module: kiwoom — codegen 생성 (scripts/gen.mjs, index.mjs 전용).
- * 키움증권 OPEN API 통합 — 국내(/api/dostk/*) + 미국주식(/api/us/*).
- *
- * action 으로 API ID (ka10001 / ust20000 등) 직접 호출. URL_CATEGORY 가 서브경로를 결정
- * (dostk/* 국내, us/* 미국). 발견 = search_module_actions → get_action_schema.
- *
- * OAuth + callApi + throttle (초당 5회) 내장.
- */
-
-const BASE_REAL = 'https://api.kiwoom.com';
-const BASE_MOCK = 'https://mockapi.kiwoom.com';
-
-// API ID → URL 서브경로 (POST /api/{서브경로} + api-id 헤더). dostk/* = 국내, us/* = 미국주식.
-const URL_CATEGORY = ${JSON.stringify(urlCategory, null, 2)};
-// API ID → 한글명 (에러 메시지 + 결과 enrichment)
-const API_NAMES = ${JSON.stringify(apiNames, null, 2)};
-
-// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
-// sysmod 는 env 로 주입된 raw 토큰(KIWOOM_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
-
-const RATE_LIMIT = 5;
-const WINDOW_MS = 1000;
-const _reqTimes = [];
-async function acquireSlot() {
-  while (true) {
-    const now = Date.now();
-    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
-    if (_reqTimes.length < RATE_LIMIT) { _reqTimes.push(now); return; }
-    await new Promise(r => setTimeout(r, WINDOW_MS - (now - _reqTimes[0]) + 5));
-  }
-}
-
-async function callApi(base, token, apiId, params = {}, retry = 2) {
-  const category = URL_CATEGORY[apiId];
-  if (!category) throw new Error(\`알 수 없는 API ID: \${apiId} — 이 값을 지어내지 마세요. search_module_actions(query) 로 맞는 액션을 찾고 get_action_schema('kiwoom', action) 으로 파라미터를 확인하세요. 단순 시세·차트·과거 데이터는 yfinance(action='history')가 더 쉽습니다.\`);
-  const url = \`\${base}/api/\${category}\`;
-  await acquireSlot();
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json;charset=UTF-8',
-      'authorization': \`Bearer \${token}\`,
-      'api-id': apiId,
-      'cont-yn': 'N',
-      'next-key': '',
-    },
-    body: JSON.stringify(params),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (resp.status === 429 && retry > 0) {
-    await new Promise(r => setTimeout(r, 1100));
-    return callApi(base, token, apiId, params, retry - 1);
-  }
-  if (!resp.ok) {
-    // 키움은 토큰 만료 등 일부 오류를 HTTP 4xx/5xx + JSON 바디(return_code/return_msg)로 준다.
-    // 바디가 키움 에러 envelope 면 throw 말고 반환 → 상위 return_code 검사(인프라 reactive)가 토큰 무효를 감지.
-    const errText = await resp.text().catch(() => '');
-    try {
-      const j = JSON.parse(errText);
-      if (j && (j.return_code !== undefined || j.return_msg !== undefined)) return j;
-    } catch { /* JSON 아님 — 아래 throw */ }
-    throw new Error(\`키움 API \${resp.status}: \${resp.statusText} \${errText}\`.trim());
-  }
-  return await resp.json();
-}
-
-// Standard OHLCV normalization — rename Kiwoom candle vocabulary (dt/cntr_tm/open_pric/high_pric/
-// low_pric/cur_prc/trde_qty) to the cross-broker standard {date, open, high, low, close, volume} so
-// stock_chart dataCacheKey injection, the timeseries store, and cache_grep all speak one vocabulary
-// (yfinance already does). Field-signature detection (a row carrying a date field together with
-// open_pric) — no per-action enum, so every chart/daily-price API normalizes uniformly.
-// Values arrive as strings, sometimes signed ("+68000") — strip the sign (prices/volumes are absolute).
-function kiwoomNum(v) {
-  const n = Number(String(v ?? '').replace(/^[+\\-]/, ''));
-  return Number.isFinite(n) ? n : v;
-}
-function kiwoomDate(s) {
-  s = String(s ?? '');
-  if (/^\\d{8}$/.test(s)) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
-  if (/^\\d{12,14}$/.test(s)) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) + ' ' + s.slice(8, 10) + ':' + s.slice(10, 12);
-  return s;
-}
-const CANDLE_FIELD_MAP = [
-  ['dt', 'date'], ['cntr_tm', 'date'],
-  ['open_pric', 'open'], ['high_pric', 'high'], ['low_pric', 'low'],
-  ['cur_prc', 'close'], ['trde_qty', 'volume'],
-];
-function normalizeCandleRows(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 2) return;
-  for (const v of Object.values(obj)) {
-    if (Array.isArray(v)) {
-      for (const row of v) {
-        if (!row || typeof row !== 'object') continue;
-        if (!(('dt' in row || 'cntr_tm' in row) && 'open_pric' in row)) continue;
-        for (const [src, dst] of CANDLE_FIELD_MAP) {
-          if (src in row) {
-            row[dst] = dst === 'date' ? kiwoomDate(row[src]) : kiwoomNum(row[src]);
-            if (src !== dst) delete row[src];
-          }
-        }
-      }
-    } else if (v && typeof v === 'object') {
-      normalizeCandleRows(v, depth + 1);
-    }
-  }
-}
-
-// base_dt (chart endpoint's query end-date anchor) — the API semantics are "latest = today".
-// Static bindings (page bake / scheduled pages) carry no date (a fixed one would go stale), so
-// default an empty base_dt to today (KST) for chart-endpoint calls. Covers bake, rebake, and any
-// model call that omits it — the module owns this "latest" dialect, not the caller.
-function kstToday() {
-  const d = new Date(Date.now() + 9 * 3600 * 1000);
-  return \`\${d.getUTCFullYear()}\${String(d.getUTCMonth() + 1).padStart(2, '0')}\${String(d.getUTCDate()).padStart(2, '0')}\`;
-}
-
-let raw = '';
-process.stdin.setEncoding('utf-8');
-process.stdin.on('data', chunk => { raw += chunk; });
-process.stdin.on('end', async () => {
-  try {
-    const { data } = JSON.parse(raw);
-    const action = data?.action;
-    if (!action) {
-      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 키움 API ID (ka10001 등) 를 지정하세요.' }));
-      return;
-    }
-    const appKey = process.env['KIWOOM_APP_KEY'];
-    const appSecret = process.env['KIWOOM_APP_SECRET'];
-    if (!appKey || !appSecret) {
-      console.log(JSON.stringify({ success: false, error: 'KIWOOM_APP_KEY / KIWOOM_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kiwoom 에서 등록하세요.' }));
-      return;
-    }
-    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
-    // 응답의 return_code/return_msg 를 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
-    const token = process.env['KIWOOM_ACCESS_TOKEN'];
-    if (!token) {
-      console.log(JSON.stringify({ success: false, error: '키움 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
-      return;
-    }
-    const isMock = data.mock === true;
-    const base = isMock ? BASE_MOCK : BASE_REAL;
-    const params = data.params || {};
-    if (URL_CATEGORY[action] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
-    const result = await callApi(base, token, action, params);
-    normalizeCandleRows(result);
-    // 키움 API 자체 오류(return_code≠0)는 HTTP 200 이라 envelope success:true 로 가려졌었음 →
-    // AI 가 실패를 못 알아채고 빈/거짓 데이터로 진행(fabricate). return_code 있으면 0 만 성공.
-    const rc = result?.return_code;
-    const ok = rc === undefined || rc === null || rc === 0;
-    const output = { success: ok, data: { apiId: action, name: API_NAMES[action], ...result } };
-    if (!ok) output.error = result?.return_msg || \`키움 API 오류 (return_code=\${rc})\`;
-    console.log(JSON.stringify(output));
-  } catch (e) {
-    console.log(JSON.stringify({ success: false, error: e.message }));
-  }
-});
-`;
-
-  return { config, index };
+  return { config, tables: { URL_CATEGORY: urlCategory, API_NAMES: apiNames } };
 }
 
 const apisPath = resolve(MODULE_DIR, '_apis.json');
 const apis = JSON.parse(readFileSync(apisPath, 'utf8'));
-const { config, index } = build(apis);
+const { config, tables } = build(apis);
+
+// ── The API table ────────────────────────────────────────────────────────────────────────────
+// The one part of the dialect the sheet owns. It used to live inside `_runtime/kiwoom-api.mjs`, which
+// people edit, so the generator could not write it without destroying the hand-written half — and
+// so it never wrote it at all and the table froze. Split along that seam, both halves can be
+// owned by whoever should own them.
+function writeTables(tables) {
+  const banner = `/**
+ * 키움증권 API 표 — **생성 파일입니다. 손으로 고치지 마십시오.**
+ *
+ * 출처 = \`kiwoom-trade/_apis.json\` (벤더 문서 시트), 생성 = \`kiwoom-trade/scripts/gen.mjs\`.
+ * 방언(\`_runtime/kiwoom-api.mjs\`)은 손으로 키우는 파일이라 이 표가 그 안에 있으면 생성기가 닿지 못한다 —
+ * 표를 덮으려면 사람이 쓴 절반까지 덮어야 하기 때문이다. 그래서 이음매를 여기에 둔다.
+ */
+`;
+  const body = Object.entries(tables)
+    .map(([name, value]) => `export const ${name} = ${JSON.stringify(value, null, 2)};\n`)
+    .join('\n');
+  const out = resolve(MODULE_DIR, '..', '_runtime', 'kiwoom-apis.generated.mjs');
+  writeFileSync(out, banner + '\n' + body, 'utf8');
+  console.log(`  _runtime/kiwoom-apis.generated.mjs: ${Object.keys(tables).join(', ')}`);
+}
 
 // ── Reconcile ────────────────────────────────────────────────────────────────────────────────
 // Which half an action belongs to is the venue's own classification, read out of the sheet — the
@@ -332,6 +193,6 @@ const KIWOOM_MONEY = new Set(['계좌', '주문', '신용주문', '환전']);
 const SUB_BY_ID = Object.fromEntries(apis.map((a) => [a.id, a.subCategory]));
 const isAccountAction = (id) => KIWOOM_MONEY.has(SUB_BY_ID[id]);
 
+writeTables(tables);
 writeHalves(apis.filter((a) => a.category !== 'OAuth 인증').map((a) => a.id).sort(), isAccountAction);
-console.log(`✓ kiwoom — the dialect in _runtime/ is hand-maintained and was left untouched;`
-  + ` re-extract its tables with scripts/extract-apis.mjs if the sheet changed.`);
+console.log(`✓ kiwoom — the dialect in _runtime/ is hand-maintained; only its API table is generated.`);
