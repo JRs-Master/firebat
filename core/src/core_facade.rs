@@ -551,6 +551,59 @@ mod module_contract_tests {
         );
     }
 
+    /// Declaring `place_order` is not enough — the words the caller uses have to get through too.
+    ///
+    /// Measured 2026-08-04: a live signal fired at 03:00 and the order never went out.
+    /// `"buy" is not one of ["bid","ask"]`. Upbit's own vocabulary is bid/ask, the neutral contract
+    /// says buy/sell, and the dialect held the translation — but **validation runs before the
+    /// module**, so the schema refused the call before anything could translate it. Declaration and
+    /// runtime were demanding opposite words, which made the neutral order path unreachable on that
+    /// broker while every test stayed green: the action was declared, so the check above passed.
+    ///
+    /// The contract is only neutral if a caller who knows one vocabulary never has to learn the
+    /// venue's. So a venue may add its own words, and must not subtract the contract's.
+    #[test]
+    fn a_broker_accepts_the_neutral_words_for_an_order() {
+        const REQUIRED: [(&str, [&str; 2]); 2] =
+            [("side", ["buy", "sell"]), ("orderType", ["limit", "market"])];
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("system/modules");
+        let Ok(entries) = std::fs::read_dir(&root) else { return };
+        let mut problems: Vec<String> = vec![];
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            let Ok(raw) = std::fs::read_to_string(dir.join("config.json")) else { continue };
+            let Ok(config) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+            let places_orders = config["input"]["properties"]["action"]["enum"]
+                .as_array()
+                .map(|a| a.iter().any(|v| v.as_str() == Some("place_order")))
+                .unwrap_or(false);
+            if !places_orders {
+                continue;
+            }
+            let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            for (param, words) in REQUIRED {
+                // No enum at all is fine: an open string cannot refuse anything. Only a closed
+                // vocabulary can lock the caller out.
+                let Some(enumerated) = config["input"]["properties"][param]["enum"].as_array()
+                else {
+                    continue;
+                };
+                let allowed: Vec<&str> = enumerated.iter().filter_map(|v| v.as_str()).collect();
+                for word in words {
+                    if !allowed.contains(&word) {
+                        problems.push(format!("{name}.{param} refuses '{word}' (allows {allowed:?})"));
+                    }
+                }
+            }
+        }
+        assert!(
+            problems.is_empty(),
+            "validation runs before the module, so a closed vocabulary that omits the neutral word \
+             makes the order unreachable no matter what the dialect can translate: {problems:?}"
+        );
+    }
+
     /// A module a hub visitor may be allowed must not be able to touch the account.
     ///
     /// The hub allowlist is per module, and a broker tool deliberately hides its parameters to

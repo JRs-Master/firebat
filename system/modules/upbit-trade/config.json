@@ -83,10 +83,12 @@
       "side": {
         "type": "string",
         "enum": [
+          "buy",
+          "sell",
           "bid",
           "ask"
         ],
-        "description": "주문 방향 (bid=매수, ask=매도)"
+        "description": "Order side. The exchange's own words are `bid` (buy) and `ask` (sell); the neutral contract's `buy`/`sell` name the same thing and are accepted, because input validation runs before the module and would otherwise refuse a neutral `place_order` before the dialect could translate it."
       },
       "volume": {
         "type": "string",

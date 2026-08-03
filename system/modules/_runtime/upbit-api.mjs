@@ -542,7 +542,10 @@ function screenTickers(rows, opts) {
 //     two different quantities depending on the side.
 //   * Fees differ by the market's quote currency: 0.05% on KRW pairs, 0.25% on BTC and USDT.
 //     A backtest costed at the KRW rate is wrong by five times on a BTC pair.
-const UPBIT_SIDE = { buy: 'bid', sell: 'ask' };
+// Either vocabulary resolves to the same order. The neutral contract says buy/sell and the
+// exchange says bid/ask, and this module answers both — a caller that knows only one must
+// not have to know which one this venue prefers.
+const UPBIT_SIDE = { buy: 'bid', sell: 'ask', bid: 'bid', ask: 'ask' };
 const UPBIT_FEE_RATE = { KRW: 0.0005, BTC: 0.0025, USDT: 0.0025 };
 
 function upbitFeeRate(market) {
@@ -602,7 +605,8 @@ function upbitOrderParams(data) {
   const market = String(data.symbol ?? data.market ?? '').trim();
   if (!market) throw new Error('place_order: symbol 이 필요합니다 (예: KRW-BTC).');
   const side = UPBIT_SIDE[String(data.side ?? '').toLowerCase()];
-  if (!side) throw new Error("place_order: side 는 'buy' 또는 'sell' 이어야 합니다.");
+  if (!side) throw new Error(
+    "place_order: side 는 'buy'/'sell' (중립 계약) 또는 'bid'/'ask' (거래소 표기) 여야 합니다.");
   const type = String(data.orderType ?? 'limit').toLowerCase();
   const qty = Number(data.qty);
   const price = Number(data.price);
