@@ -227,8 +227,18 @@ def read_fills(rows):
 # per broker. Same discipline as the execution rows: read by name, and when the holding for this
 # symbol cannot be read, say so instead of reporting zero — "no row" and "zero shares" are opposite
 # instructions to a reconciler, and guessing between them either invents a sale or hides one.
-POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "symbol", "code", "isin", "currency", "market")
-POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "cur_qty", "HLDG_QTY", "quantity", "qty", "balance")
+# `ovrs_pdno` / `ovrs_cblc_qty` are Korea Investment's overseas balance, and their absence here did
+# not read as "unreadable" — it read as **not held**. Measured 2026-08-05: the broker answered
+# `{"ovrs_pdno": "AMZN", "ovrs_cblc_qty": "7"}`, the matcher found no symbol it recognised, and
+# reconciliation concluded the account was seven shares short of what the ledger claimed and stopped
+# the strategy. A missing name in a symbol list is worse than a missing name in a quantity list: an
+# unreadable quantity is reported, an unmatched symbol is silence.
+POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "ovrs_pdno", "symbol", "code", "isin",
+                   "currency", "market")
+# `ord_psbl_qty` sits beside it and is the *sellable* quantity, which is not the holding — it is the
+# overseas twin of upbit's `locked` split, and it is deliberately not read as a total.
+POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "ovrs_cblc_qty", "cur_qty", "HLDG_QTY", "quantity",
+                "qty", "balance")
 # Shares the account holds that are committed to a resting order. Upbit moves them out of `balance`
 # into `locked`, so a holding with an order on it reads short by exactly the order size — measured
 # 2026-08-05: 4.47093889 ENSO showed as `balance 1.87093889, locked 2.6` while one sell rested. The

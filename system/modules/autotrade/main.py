@@ -2442,6 +2442,21 @@ def action_selftest():
         {"currency": "ENSO", "balance": "4.47093889", "locked": "0", "avg_buy_price": "1343",
          "unit_currency": "KRW"},
     ]
+    # Korea Investment's overseas balance, verbatim. Its names were missing from the lists, so the
+    # matcher found nothing and the holding read as zero rather than as unreadable — the account was
+    # judged seven shares short of a position it actually held.
+    _ovrs = [{"ovrs_pdno": "AMZN", "prdt_name": "아마존닷컴",
+              "ovrs_cblc_qty": "7", "ord_psbl_qty": "7", "pchs_avg_pric": "278.7200",
+              "ovrs_excg_cd": "NASD"}]
+    _o, _orow = orders.read_position(_ovrs, "AMZN")
+    checks.append({"name": "an overseas balance row is a holding, not silence",
+                   "want": (7.0, 278.72), "got": ((_o or {}).get("qty"), (_o or {}).get("avgPrice")),
+                   "ok": bool(_o) and _o["qty"] == 7.0 and abs(_o["avgPrice"] - 278.72) < 1e-9})
+    # `ord_psbl_qty` is what may be sold, not what is held — reading it as a second holding would
+    # double the position the moment part of it is committed to an order.
+    checks.append({"name": "the sellable quantity is not added to the holding", "want": 7.0,
+                   "got": (_o or {}).get("qty"), "ok": bool(_o) and _o["qty"] == 7.0})
+
     # A resting order moves quantity out of `balance` into `locked`. Measured 2026-08-05 with a real
     # order on the book: 4.47093889 ENSO read as `balance 1.87093889, locked 2.6`. The ledger claims
     # the whole position, so reading `balance` alone reports a shortfall and stops the strategy from
