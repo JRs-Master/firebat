@@ -85,11 +85,13 @@ function curLabel(cur: string): string {
   return cur === '?' ? '통화 미확인' : cur;
 }
 
-/** Green up, red down, grey flat. Never green for a zero — a flat day is not a good day. */
+/** Korean market convention: a gain is red and a loss is blue — the opposite of the western default,
+ *  and the direction every domestic broker screen uses. Grey for a flat number; a zero is not a good
+ *  day. */
 function tone(v: any): string {
   const n = Number(v);
   if (!Number.isFinite(n) || n === 0) return 'text-slate-500';
-  return n > 0 ? 'text-emerald-600' : 'text-rose-600';
+  return n > 0 ? 'text-rose-600' : 'text-blue-600';
 }
 
 const STATE_TONE: Record<string, string> = {
