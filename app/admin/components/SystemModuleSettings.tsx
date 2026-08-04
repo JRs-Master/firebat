@@ -1200,6 +1200,9 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
   // Stored credentials show as 등록됨 with [변경] like every other module; this is which ones
   // the user chose to replace.
   const [editingCred, setEditingCred] = useState<Record<string, boolean>>({});
+  // Which row is being edited, so a rename onto a name already in the list can be told apart from
+  // re-saving that row. Null while adding.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -1222,6 +1225,7 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
     setError(null);
     setValues({});
     setEditingCred({});
+    setEditingId(row?.id ?? null);
     // The first account is the primary whether or not anyone says so, so the chip reflects that.
     setMakePrimary(row ? data.primary === row.id : rows.length === 0);
     setDraft(row ? { ...row } : { id: '', mode: modes[0] ?? 'real', markets: [], accountNo: '' });
@@ -1284,13 +1288,28 @@ function AccountsSection({ moduleName }: { moduleName: string }) {
 
   // The alias becomes part of a vault key, so `@` cannot be in it — said at the input rather than
   // after a save round trip, since the user cannot guess the rule from a rejected form.
+  // And it must be free. The alias is the key an account is stored under, so saving onto one that
+  // exists replaces that account's row — which is what happened on 2026-08-04: renaming an account
+  // to a name already in the list overwrote the other one's number and market, and left its own
+  // credentials behind under the old name. Two accounts cannot share an alias, so the answer is to
+  // refuse it here rather than let the save decide.
+  const aliasTaken =
+    !!draft &&
+    !!draft.id.trim() &&
+    draft.id.trim() !== editingId &&
+    rows.some(r => r.id === draft.id.trim());
+  const aliasRenamed = !!draft && !!editingId && draft.id.trim() !== editingId;
   const aliasError = !draft
     ? null
     : draft.id.includes('@')
       ? t('system_modules.accounts.alias_no_at')
       : draft.id.length > ALIAS_MAX_CHARS
         ? t('system_modules.accounts.alias_too_long')
-        : null;
+        : aliasTaken
+          ? t('system_modules.accounts.alias_taken', { name: draft.id.trim() })
+          : aliasRenamed
+            ? t('system_modules.accounts.alias_rename_unsupported')
+            : null;
 
   // A credential slot counts as filled when it is already stored or being typed now. Saving a
   // half-registered account would fail at the broker instead of here.

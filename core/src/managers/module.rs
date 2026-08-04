@@ -1851,7 +1851,8 @@ impl ModuleManager {
         if config.get("accounts").is_none() {
             return Err(format!("module {module} does not declare accounts"));
         }
-        let (declared, _) = Self::declared_secret_names(&config);
+        let (declared, tokens) = Self::declared_secret_names(&config);
+        let mut credential_written = false;
         for (name, value) in credentials {
             let Some(value) = value.as_str().map(str::trim).filter(|v| !v.is_empty()) else {
                 continue;
@@ -1862,6 +1863,27 @@ impl ModuleManager {
             let key = crate::utils::account_secrets::secret_key(name, Some(&id), false);
             if !self.vault.set_secret(&key, value) {
                 return Err(format!("failed to store {name}"));
+            }
+            credential_written = true;
+        }
+        // A cached access token outlives the app key it was issued for, and both are keyed by the
+        // alias — so putting a different key under an existing alias leaves a token that still
+        // authenticates as the *previous* account. Measured 2026-08-04: after re-registering the
+        // domestic app key under an alias, its stored token still answered as the other account,
+        // which would have reproduced the same wrong-account rejections with the app key now
+        // looking correct. A token is a cache; the moment its issuer changes it is stale.
+        if credential_written {
+            for name in &tokens {
+                let key = crate::utils::account_secrets::secret_key(name, Some(&id), false);
+                if self.vault.get_secret(&key).is_some() && self.vault.delete_secret(&key) {
+                    tracing::info!(
+                        target: "module",
+                        module = %module,
+                        account = %id,
+                        secret = %name,
+                        "credentials changed — dropped the token issued for the previous ones"
+                    );
+                }
             }
         }
         let home = self.account_home(module).await;
