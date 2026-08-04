@@ -430,6 +430,20 @@ impl ModuleManager {
                 // `mock` absent, which the module reads as "unknown" rather than as "real".
                 match reg.resolve(requested) {
                     Ok(Some(entry)) => {
+                        // A market the account was not registered for is not a miss — the alias
+                        // resolved, it is simply for somewhere else. Say so here rather than let
+                        // the cycle run its remaining steps and hand the venue an order it will
+                        // refuse: this is the first step, so refusing costs one call.
+                        if let Some(detail) = crate::utils::account_secrets::market_conflict(
+                            entry,
+                            input_data.get("market").and_then(|v| v.as_str()),
+                        ) {
+                            return Err(crate::i18n::t(
+                                "core.error.module.input_validation_failed",
+                                None,
+                                &[("name", module_name), ("detail", &detail)],
+                            ));
+                        }
                         let mut out = obj.clone();
                         if cfg.pointer("/input/properties/mock").is_some() {
                             out.insert("mock".to_string(), serde_json::json!(entry.is_mock()));
@@ -495,6 +509,20 @@ impl ModuleManager {
                         ));
                     }
                 };
+                // The account and the market are named in two different places — the registry and
+                // the call — and until this they could disagree forever. Checked before the
+                // credential slots so the message names the real problem: an empty slot on an
+                // account that was never the right one reads as a registration you still have to do.
+                if let Some(detail) = crate::utils::account_secrets::market_conflict(
+                    &entry,
+                    input_data.get("market").and_then(|v| v.as_str()),
+                ) {
+                    return Err(crate::i18n::t(
+                        "core.error.module.input_validation_failed",
+                        None,
+                        &[("name", module_name), ("detail", &detail)],
+                    ));
+                }
                 match (Some(entry), input_data.as_object()) {
                     (Some(e), Some(obj)) => {
                         // Credentials do not fall back to the module-wide values: running a mock

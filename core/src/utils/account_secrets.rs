@@ -105,6 +105,21 @@ impl AccountEntry {
             .collect()
     }
 
+    /// Whether this account may be used for `market`.
+    ///
+    /// An entry that lists no markets makes no claim and serves any — that is the shape every
+    /// account had before markets existed, and Korea Investment's one account really does cover
+    /// both. Only a stated list can contradict a caller.
+    pub fn serves(&self, market: &str) -> bool {
+        let want = market.trim();
+        want.is_empty()
+            || self.markets.is_empty()
+            || self
+                .markets
+                .iter()
+                .any(|m| m.trim().eq_ignore_ascii_case(want))
+    }
+
     /// `별칭 (계좌번호, 모의, kr/us)` — the one-line form the settings UI and the model both read.
     pub fn describe(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
@@ -218,6 +233,78 @@ impl AccountRegistry {
             }),
             None => Ok(self.primary_entry()),
         }
+    }
+}
+
+/// The contradiction between the account a call names and the market it names, as the message
+/// the caller should see — `None` when they agree or when neither side made a claim.
+///
+/// Two places decide which account trades: the registry says which markets an alias is for, and
+/// the caller names an alias. Nothing compared them, so they could disagree indefinitely.
+/// Measured 2026-08-04: the domestic schedule named an alias the registry had marked `us`, and
+/// every order came back `RC4091 모의투자 종료된 계좌입니다` — the credential behind that alias was
+/// the other market's. Four hours of orders looked like a broker problem.
+///
+/// Refusing is the point. Resolving it here instead — picking whichever account declares the
+/// market — would silently move an order to an account the caller did not name, which is the
+/// same class of accident in the other direction.
+pub fn market_conflict(entry: &AccountEntry, requested: Option<&str>) -> Option<String> {
+    let market = requested.map(str::trim).filter(|m| !m.is_empty())?;
+    if entry.serves(market) {
+        return None;
+    }
+    Some(format!(
+        "account '{}' is registered for {} — it cannot be used for '{}'. Name an account registered for '{}', or fix that account's markets in the module settings.",
+        entry.id,
+        entry.markets.join("/"),
+        market,
+        market
+    ))
+}
+
+#[cfg(test)]
+mod market_tests {
+    use super::*;
+
+    fn acct(id: &str, markets: &[&str]) -> AccountEntry {
+        AccountEntry {
+            id: id.into(),
+            markets: markets.iter().map(|m| m.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn an_account_that_states_no_markets_serves_any() {
+        let e = acct("main", &[]);
+        assert!(e.serves("kr") && e.serves("us"));
+        assert_eq!(market_conflict(&e, Some("us")), None);
+    }
+
+    #[test]
+    fn a_market_the_account_declares_passes_whatever_its_case() {
+        let e = acct("모의", &["kr", "us"]);
+        assert!(e.serves("kr") && e.serves("US"));
+        assert_eq!(market_conflict(&e, Some("KR")), None);
+    }
+
+    /// The live shape of the 2026-08-04 outage: the alias named 모의국내 had been registered for
+    /// `us`, and the domestic schedule kept naming it.
+    #[test]
+    fn a_market_the_account_does_not_declare_is_refused_naming_both() {
+        let e = acct("모의국내", &["us"]);
+        assert!(!e.serves("kr"));
+        let msg = market_conflict(&e, Some("kr")).expect("mismatch must be reported");
+        assert!(msg.contains("모의국내"), "{msg}");
+        assert!(msg.contains("us"), "{msg}");
+        assert!(msg.contains("'kr'"), "{msg}");
+    }
+
+    #[test]
+    fn a_caller_that_names_no_market_makes_no_claim_to_contradict() {
+        let e = acct("모의국내", &["us"]);
+        assert_eq!(market_conflict(&e, None), None);
+        assert_eq!(market_conflict(&e, Some("   ")), None);
     }
 }
 
