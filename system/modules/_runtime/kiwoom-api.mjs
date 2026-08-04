@@ -199,10 +199,15 @@ function krxSymbol(data) {
   const at = raw.lastIndexOf('_');
   const suffix = at > 0 ? raw.slice(at) : '';
   const fromSuffix = STEX_BY_SUFFIX[suffix.toUpperCase()];
-  return {
-    code: fromSuffix ? raw.slice(0, at) : raw,
-    stex: String(data.exchange ?? fromSuffix ?? 'SOR').toUpperCase(),
-  };
+  // A practice account routes to KRX and nothing else: SOR is refused outright with
+  // `RC9000: 모의투자에서는 해당업무가 제공되지 않습니다` (measured 2026-08-04, the order that got
+  // past the symbol fix). Same shape as its request limit being 2/s where the live one is 5 — the
+  // practice domain is a smaller venue, not the same venue with test money. Forced rather than
+  // defaulted, because an explicit SOR there is a request the account cannot carry out.
+  const stex = data.mock
+    ? 'KRX'
+    : String(data.exchange ?? fromSuffix ?? 'SOR').toUpperCase();
+  return { code: fromSuffix ? raw.slice(0, at) : raw, stex };
 }
 
 function orderParams(data) {
