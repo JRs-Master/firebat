@@ -255,38 +255,43 @@ pub fn declared_markets(config: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The contradiction between the account a call names and the market it names, as the message
-/// the caller should see — `None` when they agree, or when this broker's accounts are not
-/// per-market at all.
+/// Why this account may not serve this call — `None` to proceed.
 ///
-/// Two places decide which account trades: the registry says which markets an alias is for, and
-/// the caller names an alias. Nothing compared them, so they could disagree indefinitely.
-/// Measured 2026-08-04: the domestic schedule named an alias the registry had marked `us`, and
-/// every order came back `RC4091 모의투자 종료된 계좌입니다` — the credential behind that alias was
-/// the other market's. Four hours of orders looked like a broker problem.
+/// `declared` gates everything: a broker that never said its accounts are per-market has nothing
+/// here to check, which is what keeps a `market` argument that means something else (Upbit's is a
+/// ticker) out of it. Under a broker that did declare them, two refusals:
 ///
-/// Refusing is the point. Resolving it here instead — picking whichever account declares the
-/// market — would silently move an order to an account the caller did not name, which is the
-/// same class of accident in the other direction.
+/// 1. **The account has no market recorded** — refused on *every* call, whether or not the call
+///    names a market. Which market an account is for is part of what the account is: it decides
+///    the venue an order reaches and which of a broker's several app keys authenticates. An
+///    account missing it is registered but not usable, like one missing its app key, and the
+///    settings screen will not produce one — so a blank is hand-written vault data. Attaching it
+///    to whatever market happens to be asked for is the one thing that must not happen.
+/// 2. **The call names a market the account is not registered for.** Two places decide which
+///    account trades — the registry says which markets an alias is for, the caller names an alias
+///    — and nothing compared them. Measured 2026-08-04: the domestic schedule named an alias the
+///    registry had marked `us`, and every order came back `RC4091 모의투자 종료된 계좌입니다`,
+///    because the credential behind that alias was the other market's. It read as a broker outage.
 ///
-/// `declared` gates the whole check, and a *blank* entry under a broker that does declare markets
-/// is refused rather than waved through: the settings screen will not save an account without a
-/// market, so a blank one is hand-written vault data. Reading it as "serves everything" would
-/// switch the guard off exactly where the data is least trustworthy.
-pub fn market_conflict(
+/// Refusing rather than resolving: picking whichever account does declare the market would move
+/// an order to an account the caller never named — the same accident in the other direction.
+pub fn market_refusal(
     entry: &AccountEntry,
     declared: &[String],
     requested: Option<&str>,
 ) -> Option<String> {
-    let market = requested.map(str::trim).filter(|m| !m.is_empty())?;
-    if declared.is_empty() || entry.serves(market) {
+    if declared.is_empty() {
         return None;
     }
     if entry.markets.is_empty() {
         return Some(format!(
-            "account '{}' has no market recorded, so it cannot be used for '{}'. Set its market in the module settings.",
-            entry.id, market
+            "account '{}' has no market recorded, so it cannot be used at all — set its market in the module settings. An account's market decides which venue an order reaches, so it is not something to guess from the call.",
+            entry.id
         ));
+    }
+    let market = requested.map(str::trim).filter(|m| !m.is_empty())?;
+    if entry.serves(market) {
+        return None;
     }
     Some(format!(
         "account '{}' is registered for {} — it cannot be used for '{}'. Name an account registered for '{}', or fix that account's markets in the module settings.",
@@ -318,14 +323,15 @@ mod market_tests {
     #[test]
     fn a_broker_whose_accounts_are_not_per_market_is_not_checked() {
         let e = acct("main", &[]);
-        assert_eq!(market_conflict(&e, &[], Some("KRW-BTC")), None);
+        assert_eq!(market_refusal(&e, &[], Some("KRW-BTC")), None);
+        assert_eq!(market_refusal(&e, &[], None), None);
     }
 
     #[test]
     fn a_market_the_account_declares_passes_whatever_its_case() {
         let e = acct("모의", &["kr", "us"]);
         assert!(e.serves("kr") && e.serves("US"));
-        assert_eq!(market_conflict(&e, &both(), Some("KR")), None);
+        assert_eq!(market_refusal(&e, &both(), Some("KR")), None);
     }
 
     /// The live shape of the 2026-08-04 outage: the alias named 모의국내 had been registered for
@@ -334,26 +340,31 @@ mod market_tests {
     fn a_market_the_account_does_not_declare_is_refused_naming_both() {
         let e = acct("모의국내", &["us"]);
         assert!(!e.serves("kr"));
-        let msg = market_conflict(&e, &both(), Some("kr")).expect("mismatch must be reported");
+        let msg = market_refusal(&e, &both(), Some("kr")).expect("mismatch must be reported");
         assert!(msg.contains("모의국내"), "{msg}");
         assert!(msg.contains("us"), "{msg}");
         assert!(msg.contains("'kr'"), "{msg}");
     }
 
     /// The settings screen refuses to save an account without a market, so a blank one under a
-    /// per-market broker is hand-written vault data — the least trustworthy place to fall silent.
+    /// per-market broker is hand-written vault data. It is refused on **every** call — a balance
+    /// read names no market, and attaching such an account to whichever one the call happens to
+    /// mention is exactly what must not happen.
     #[test]
-    fn a_blank_market_under_a_per_market_broker_is_incomplete_not_permissive() {
+    fn an_account_with_no_market_recorded_cannot_be_used_at_all() {
         let e = acct("손으로적음", &[]);
-        let msg = market_conflict(&e, &both(), Some("kr")).expect("blank must be reported");
-        assert!(msg.contains("no market recorded"), "{msg}");
+        for asked in [Some("kr"), Some("us"), None] {
+            let msg = market_refusal(&e, &both(), asked).expect("blank must be refused");
+            assert!(msg.contains("no market recorded"), "{msg}");
+            assert!(msg.contains("손으로적음"), "{msg}");
+        }
     }
 
     #[test]
     fn a_caller_that_names_no_market_makes_no_claim_to_contradict() {
         let e = acct("모의국내", &["us"]);
-        assert_eq!(market_conflict(&e, &both(), None), None);
-        assert_eq!(market_conflict(&e, &both(), Some("   ")), None);
+        assert_eq!(market_refusal(&e, &both(), None), None);
+        assert_eq!(market_refusal(&e, &both(), Some("   ")), None);
     }
 
     #[test]

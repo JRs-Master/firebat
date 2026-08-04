@@ -440,7 +440,7 @@ impl ModuleManager {
                             .await
                             .map(|c| crate::utils::account_secrets::declared_markets(&c))
                             .unwrap_or_default();
-                        if let Some(detail) = crate::utils::account_secrets::market_conflict(
+                        if let Some(detail) = crate::utils::account_secrets::market_refusal(
                             entry,
                             &owner_markets,
                             input_data.get("market").and_then(|v| v.as_str()),
@@ -520,7 +520,7 @@ impl ModuleManager {
                 // the call — and until this they could disagree forever. Checked before the
                 // credential slots so the message names the real problem: an empty slot on an
                 // account that was never the right one reads as a registration you still have to do.
-                if let Some(detail) = crate::utils::account_secrets::market_conflict(
+                if let Some(detail) = crate::utils::account_secrets::market_refusal(
                     &entry,
                     &crate::utils::account_secrets::declared_markets(cfg),
                     input_data.get("market").and_then(|v| v.as_str()),
@@ -1311,6 +1311,16 @@ impl ModuleManager {
                     meta.module
                 )
             })?;
+            // A socket authenticates as the account too, so an incompletely registered one is no
+            // more usable here than on a call. A stream names no market, which is precisely why
+            // this has to refuse on the account rather than on what was asked for.
+            if let Some(detail) = crate::utils::account_secrets::market_refusal(
+                entry,
+                &crate::utils::account_secrets::declared_markets(&config),
+                None,
+            ) {
+                return Err(format!("[{}] {detail}", meta.module));
+            }
             // Same rule as a call: the account is real or mock, so it picks the endpoint too.
             (Some(entry.id.clone()), entry.is_mock())
         } else {
