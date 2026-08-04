@@ -207,6 +207,15 @@ def _parse_rungs(spec, move_key, size_key):
     """
     if not isinstance(spec, list) or not spec:
         return []
+    # ATR 단위는 백테스트(ta)엔 있고 여기엔 아직 없다. 조용히 무시하면 **측정과 거래가 갈린다** —
+    # 같은 선언이 한쪽에선 변동성 폭으로, 다른 쪽에선 사다리 없음으로 읽힌다. 진입 시점 ATR 을
+    # 원장에 기억시키기 전까지는 거부한다.
+    atr_key = (move_key[:-3] if move_key.endswith("Pct") else move_key) + "Atr"
+    for r in spec:
+        if isinstance(r, dict) and r.get(atr_key) is not None:
+            raise ValueError(
+                f"{atr_key} 는 아직 실거래 엔진이 읽지 못합니다 — 백테스트에만 있습니다. "
+                f"{move_key} 로 적어 주세요. (엔진이 진입 시점 ATR 을 원장에 기억하게 된 뒤 열립니다.)")
     rungs, last_filled = [], 0.0
     for r in spec:
         if not isinstance(r, dict):
@@ -237,6 +246,14 @@ def _parse_rungs(spec, move_key, size_key):
     if any(b <= a for a, b in zip(moves, moves[1:])):
         return []
     return rungs
+
+
+def refuse_atr_exits(exits):
+    """폭을 ATR 로 적은 손절·익절도 같은 이유로 거부. 백테스트만 읽을 수 있는 선언이다."""
+    for key in ("stopLossAtr", "takeProfitAtr", "trailingStopAtr"):
+        if (exits or {}).get(key) is not None:
+            raise ValueError(
+                f"{key} 는 아직 실거래 엔진이 읽지 못합니다 — {key.replace('Atr', 'Pct')} 로 적어 주세요.")
 
 
 def entry_ladder(money):

@@ -108,8 +108,14 @@ def _parse_rungs(spec, move_key, size_key):
     A rung can name a price move, an elapsed time, or both — and naming both means both must
     hold. A pure time split falls out of the same shape rather than needing its own mechanism.
     `<size_key>` is cumulative against the position's full size, so the last rung is 100.
+
+    The move can be written in percent (`<move_key>`) or in ATR multiples (`<move_key>Atr`).
+    Percent names different things on different instruments — measured 2026-08-04, 8% is about
+    0.5 ATR on KO and 3 ATR on TSLA, so a grid in percent is really a grid over volatility. A
+    ladder must pick one unit: with both in play the ascending check would be comparing a
+    percentage against a multiple.
     """
-    rungs, last_move, last_filled = [], None, 0.0
+    rungs, last_move, last_filled, unit = [], None, 0.0, None
     for i, r in enumerate(spec):
         if not isinstance(r, dict):
             return None, f"{size_key} 사다리의 [{i}] 이 객체가 아닙니다."
@@ -123,17 +129,26 @@ def _parse_rungs(spec, move_key, size_key):
             return None, (f"{size_key} 는 누적이라 늘기만 합니다 — [{i}] {filled} 가 앞 칸 "
                           f"{last_filled} 보다 크지 않습니다.")
         rung = {"filled": filled / 100.0}
-        if r.get(move_key) is not None:
+        # gainPct -> gainAtr : 단위 이름이 두 번 붙지 않게.
+        atr_key = (move_key[:-3] if move_key.endswith("Pct") else move_key) + "Atr"
+        if r.get(move_key) is not None and r.get(atr_key) is not None:
+            return None, f"[{i}] 은 {move_key} 와 {atr_key} 중 하나만 적습니다."
+        for key, field, want in ((move_key, "move", "pct"), (atr_key, "moveAtr", "atr")):
+            if r.get(key) is None:
+                continue
+            if unit is not None and unit != want:
+                return None, (f"한 사다리는 한 단위로 적습니다 — [{i}] 이 {key} 인데 앞 칸은 "
+                              f"{'퍼센트' if unit == 'pct' else 'ATR 배수'}입니다.")
             try:
-                move = float(r.get(move_key))
+                move = float(r.get(key))
             except (TypeError, ValueError):
-                return None, f"[{i}].{move_key} 를 숫자로 읽지 못했습니다."
+                return None, f"[{i}].{key} 를 숫자로 읽지 못했습니다."
             if move <= 0:
-                return None, f"[{i}].{move_key} 는 0보다 커야 합니다."
+                return None, f"[{i}].{key} 는 0보다 커야 합니다."
             if last_move is not None and move <= last_move:
-                return None, (f"{move_key} 는 오름차순이어야 합니다 — [{i}] {move} 가 앞 칸 "
+                return None, (f"{key} 는 오름차순이어야 합니다 — [{i}] {move} 가 앞 칸 "
                               f"{last_move} 보다 크지 않습니다.")
-            rung["move"], last_move = move, move
+            rung[field], last_move, unit = move, move, want
         if r.get("afterDays") is not None:
             try:
                 days = float(r.get("afterDays"))
@@ -142,8 +157,9 @@ def _parse_rungs(spec, move_key, size_key):
             if days < 0:
                 return None, f"[{i}].afterDays 는 0 이상입니다."
             rung["afterDays"] = days
-        if "move" not in rung and "afterDays" not in rung:
-            return None, f"[{i}] 에 조건이 없습니다 — {move_key} 나 afterDays 중 하나는 있어야 합니다."
+        if "move" not in rung and "moveAtr" not in rung and "afterDays" not in rung:
+            return None, (f"[{i}] 에 조건이 없습니다 — {move_key}, {atr_key}, afterDays 중 "
+                          f"하나는 있어야 합니다.")
         rungs.append(rung)
         last_filled = filled
     return rungs, None
@@ -2063,10 +2079,43 @@ def main():
             print(json.dumps({"success": False, "error": ladder_err or entry_err},
                              ensure_ascii=False))
             return
+        # ── ATR 단위 → 진입 시점에 한 번 % 로 확정 ──
+        # 폭을 %로 적으면 종목마다 다른 것을 같은 이름으로 부르게 된다. **진입 시점의 ATR 로 한 번
+        # 환산해 고정한다** — 매 봉 다시 환산하면 칸이 포지션 밑에서 움직여, 평단을 기준으로 삼은
+        # 진입 사다리가 스스로를 쫓아 내려가던 것과 같은 사고가 난다. 앵커는 움직이지 않는다.
+        atr_series = atr(bars, int(inp.get("atrPeriod") or 14))
+        atr_pct_at = {}
+        for i, b in enumerate(bars):
+            a, c = atr_series[i], b.get("close")
+            atr_pct_at[b["date"]] = None if (a is None or not c) else a / c * 100.0
+        stop_atr = float(inp.get("stopLossAtr") or 0.0)
+        take_atr = float(inp.get("takeProfitAtr") or 0.0)
+        trail_atr = float(inp.get("trailingStopAtr") or 0.0)
+        if take_atr > 0 and not inp.get("scaleOut"):
+            ladder = [{"moveAtr": take_atr, "filled": 1.0}]
+
+        def _resolve(rungs, apct):
+            """ATR 로 적힌 칸을 이 진입의 %로. %로 적힌 칸은 그대로 지나간다."""
+            if not any(r.get("moveAtr") is not None for r in rungs):
+                return rungs
+            out = []
+            for r in rungs:
+                if r.get("moveAtr") is None:
+                    out.append(r)
+                    continue
+                c = dict(r)
+                c["move"] = r["moveAtr"] * apct
+                out.append(c)
+            return out
+
+        def _needs_atr(rungs):
+            return any(r.get("moveAtr") is not None for r in rungs)
+
         buy_at = {p["date"]: p for p in buy}
         sell_at = {p["date"]: p for p in sell}
 
-        _HIDE = ("peak", "held", "sold", "acquired", "anchorPrice")
+        _HIDE = ("peak", "held", "sold", "acquired", "anchorPrice",
+                 "ladder", "entryRungs", "stopPct", "trailPct")
 
         def _close_trade(pos, date, raw_px, label, reason, portion=None):
             exit_px = max(raw_px * (1 - slip) - tick_slip, 0.0)
@@ -2122,11 +2171,13 @@ def main():
                 # 같은 봉에서 손절·익절이 다 닿을 수 있다 — 봉 안 순서는 알 수 없으므로
                 # **손절이 먼저 닿았다고 본다**(낙관 금지). 손절·트레일링·룰매도는 남은 전부를
                 # 정리한다: 사다리는 이익을 나눠 걷는 장치이지 손실을 나눠 무는 장치가 아니다.
-                if stop_pct > 0 and b["low"] <= entry * (1 - stop_pct):
-                    trades.append(_close_trade(pos, date, entry * (1 - stop_pct), "손절", "stop"))
+                # 폭은 이 포지션이 열릴 때 확정된 값이다 — 선언이 ATR 로 쓰였으면 그때의 변동성.
+                p_stop, p_trail = pos["stopPct"], pos["trailPct"]
+                if p_stop > 0 and b["low"] <= entry * (1 - p_stop):
+                    trades.append(_close_trade(pos, date, entry * (1 - p_stop), "손절", "stop"))
                     pos = None
-                elif trail_pct > 0 and b["low"] <= pos["peak"] * (1 - trail_pct):
-                    trades.append(_close_trade(pos, date, pos["peak"] * (1 - trail_pct),
+                elif p_trail > 0 and b["low"] <= pos["peak"] * (1 - p_trail):
+                    trades.append(_close_trade(pos, date, pos["peak"] * (1 - p_trail),
                                                "트레일링", "trailing"))
                     pos = None
                 else:
@@ -2136,9 +2187,9 @@ def main():
                     # 기준으로 하면 칸이 스스로를 쫓아 내려가 끝나지 않는다).
                     if pos["acquired"] < 1.0 - 1e-9:
                         drop = (pos["anchorPrice"] - b["low"]) / pos["anchorPrice"] * 100.0
-                        idx, add = _highest_due(entry_rungs, drop, age, pos["acquired"])
+                        idx, add = _highest_due(pos["entryRungs"], drop, age, pos["acquired"])
                         if idx is not None and add > 1e-9:
-                            rung = entry_rungs[idx]
+                            rung = pos["entryRungs"][idx]
                             at_px = (pos["anchorPrice"] * (1 - rung["move"] / 100.0)
                                      if rung.get("move") is not None else b["open"])
                             add_px = at_px * (1 + slip) + tick_slip
@@ -2150,7 +2201,7 @@ def main():
                     # 청산 사다리 — 이 봉의 고가가 닿은 칸을 낮은 것부터. 한 봉이 두 칸을 뛰어넘을
                     # 수 있고, 그때 두 번 파는 게 맞다(칸마다 가격이 다르다). 누적 비율의 기준은
                     # **실제로 담은 만큼**이라, 마지막 칸 100% 는 언제나 전량 청산이다.
-                    for k, rung in enumerate(ladder):
+                    for k, rung in enumerate(pos["ladder"]):
                         if pos is None:
                             break
                         sold_frac = 1.0 - pos["held"] / pos["acquired"] if pos["acquired"] else 1.0
@@ -2165,7 +2216,8 @@ def main():
                         part = min((rung["filled"] - sold_frac) * pos["acquired"], pos["held"])
                         if part <= 1e-9:
                             continue
-                        label = "익절" if len(ladder) == 1 else "분할익절 %d/%d" % (k + 1, len(ladder))
+                        n_rungs = len(pos["ladder"])
+                        label = "익절" if n_rungs == 1 else "분할익절 %d/%d" % (k + 1, n_rungs)
                         trades.append(_close_trade(pos, date, target, label, "take", part))
                         pos["sold"] += part
                         pos["held"] -= part
@@ -2181,11 +2233,24 @@ def main():
                 m = buy_at[date]
                 px = fill_price(date, m["price"])
                 if px is not None:
+                    apct = atr_pct_at.get(date)
+                    # 변동성을 못 읽으면 칸을 정할 수 없다 — 폭을 추측해서 여는 것보다 안 여는
+                    # 게 낫다. %로만 적힌 선언은 ATR 이 없어도 그대로 돈다.
+                    if apct is None and (_needs_atr(ladder) or _needs_atr(entry_rungs)
+                                         or stop_atr > 0 or trail_atr > 0):
+                        continue
                     opened = px * (1 + slip) + tick_slip
-                    first = entry_rungs[0]["filled"] if entry_rungs else 1.0
+                    pos_ladder = _resolve(ladder, apct)
+                    pos_entry = _resolve(entry_rungs, apct)
+                    first = pos_entry[0]["filled"] if pos_entry else 1.0
                     pos = {"entryDate": date, "entryPrice": opened, "anchorPrice": opened,
                            "entryLabel": m["label"], "peak": px,
-                           "acquired": first, "held": first, "sold": 0.0}
+                           "acquired": first, "held": first, "sold": 0.0,
+                           "ladder": pos_ladder, "entryRungs": pos_entry,
+                           "stopPct": stop_pct if stop_pct > 0 else (stop_atr * apct / 100.0
+                                                                     if stop_atr > 0 else 0.0),
+                           "trailPct": trail_pct if trail_pct > 0 else (trail_atr * apct / 100.0
+                                                                        if trail_atr > 0 else 0.0)}
         wins = [t for t in trades if t["returnPct"] > 0]
         # 각 체결이 원래 수량의 일부일 수 있으므로 **그 몫만큼만** 자본에 반영한다. 사다리를 안
         # 쓰면 portion 이 1 이라 옛 계산과 같은 값이 나온다.
