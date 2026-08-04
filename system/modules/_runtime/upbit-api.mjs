@@ -286,9 +286,15 @@ class I18nError extends Error {
 }
 
 /** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.upbit.{key} 로 변환. */
-function outErr(key, params) {
+function outErr(key, params, extra) {
   const r = { success: false, errorKey: key };
   if (params && Object.keys(params).length > 0) r.errorParams = params;
+  // What was actually sent, when the send is what failed. A refusal that does not say what it
+  // refused is a refusal nobody can act on: three ENSO exits were turned down for a price unit on
+  // 2026-08-04 and the body went nowhere, so the one fact needed to tell a wrong price from a
+  // wrong shape did not exist. `sentParams` is reported on success already — the failure is when
+  // it matters.
+  if (extra && Object.keys(extra).length > 0) Object.assign(r, extra);
   console.log(JSON.stringify(r));
 }
 
@@ -690,7 +696,23 @@ async function main(input) {
         // it. That is the rung between a backtest and real money — `mock` sends the same order to
         // the validator, so the shape is proven by the exchange rather than by us.
         const action = input.mock === true ? 'order-test' : 'order-create';
-        input = { ...input, ...params, action, _feeRate: upbitFeeRate(params.market) };
+        // The dialect's answer is the whole order, not a patch on the caller's words. Spreading it
+        // over the raw input left in place every field the dialect deliberately **omitted**: a
+        // market order carries no price, so the neutral call's `price` survived and the request
+        // builder copied it in — unrounded. Measured on the live endpoint 2026-08-05:
+        //   {"side":"ask","volume":"0.001","price":1268.73,"ord_type":"market"} → 400
+        //   "주문가격 단위를 잘못 입력하셨습니다"
+        // which is exactly what killed three hourly ENSO exits. `1268.73` never went through the
+        // tick rounding because the market branch is the branch that does not price an order.
+        //
+        // Sending a price on a market order is deliberate upstream — Korea Investment's overseas
+        // endpoint has no plain market order and prices a marketable limit off it — so dropping it
+        // is this dialect's job, and "omitted" has to mean omitted.
+        const decided = { ...input };
+        for (const k of ['market', 'side', 'volume', 'price', 'ord_type', 'identifier']) {
+          delete decided[k];
+        }
+        input = { ...decided, ...params, action, _feeRate: upbitFeeRate(params.market) };
       } else if (neutral === 'cancel_order') {
         const uuid = String(input.brokerOrderNo ?? input.uuid ?? '').trim();
         const identifier = String(input.clientOrderId ?? '').trim();
@@ -720,6 +742,9 @@ async function main(input) {
   const accessKey = process.env.UPBIT_ACCESS_KEY;
   const secretKey = process.env.UPBIT_SECRET_KEY;
 
+  // Declared out here so the catch can say what went on the wire. Inside the try it is invisible
+  // exactly when it is needed.
+  let wireParams = null;
   try {
     let method, endpoint, needAuth;
 
@@ -750,6 +775,16 @@ async function main(input) {
     }
 
     const params = directEndpoint ? (input.params || {}) : buildParams(action, input);
+    wireParams = params;
+    // A market order has no price, and this is the seam one used to survive. Enforced rather than
+    // commented: the exchange's answer for the extra field is "주문가격 단위를 잘못 입력하셨습니다",
+    // which points at the price instead of at the fact that there should not be one — it cost three
+    // exits and most of a night to read past. Refusing here says which field and why.
+    if ((action === 'order-create' || action === 'order-test')
+        && String(params.ord_type) === 'market' && params.price !== undefined) {
+      throw new Error('place_order: 시장가 주문에는 price 를 실을 수 없습니다 — 거래소가 가격 단위 '
+        + '오류로 거절합니다. 실린 값: ' + String(params.price));
+    }
     let data = await callApi(method, endpoint, params, accessKey, secretKey, needAuth);
     // The raw candle-* actions answer everything the exchange said *plus* the standard OHLCV keys.
     // MODULE_BIBLE requires candle rows to carry `{date, open, high, low, close, volume}`, and a
@@ -839,8 +874,9 @@ async function main(input) {
       },
     }));
   } catch (err) {
-    if (err instanceof I18nError) outErr(err.errorKey, err.errorParams);
-    else outErr('error.runtime', { message: err.message });
+    const sent = neutral === 'place_order' && wireParams ? { sentParams: wireParams } : null;
+    if (err instanceof I18nError) outErr(err.errorKey, err.errorParams, sent);
+    else outErr('error.runtime', { message: err.message }, sent);
     process.exit(1);
   }
 }
