@@ -1795,7 +1795,11 @@ def action_reconcile(inp, settings):
     report["unreadable"] = unreadable
     if unreadable:
         store.log_api(conn, broker, "fills:unreadable", False, 0, {"symbol": symbol}, unreadable[:5])
-    by_no = {o["broker_order_no"]: o for o in store.open_orders(conn) if o.get("broker_order_no")}
+    # 하루 안에 우리가 닫아 버린 주문까지 대조 대상에 남긴다 — 종결 상태는 **우리가 내린 결론**
+    # 이지 거래소가 보낸 사실이 아니다. 뒤늦은 체결이 그 결론을 뒤집을 수 있어야 한다.
+    by_no = {o["broker_order_no"]: o
+             for o in store.orders_awaiting_fills(conn, store.now_ms() - 86400000)
+             if o.get("broker_order_no")}
     for f in fills:
         order = by_no.get(f["brokerOrderNo"])
         if order is None:

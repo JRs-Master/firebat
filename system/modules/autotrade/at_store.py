@@ -405,6 +405,20 @@ def open_orders(conn, account=None):
     return [dict(r) for r in conn.execute(q + " ORDER BY ts_ms", args)]
 
 
+def orders_awaiting_fills(conn, since_ms):
+    """Rows a late fill may still belong to — the open ones, plus recently closed-out ones.
+
+    A fill can arrive after we have already written the order off. Matching only against open rows
+    means the execution lands in `unattributed` and the trade never reaches the strategy that made
+    it, which is how a real Bitcoin buy ended up as nobody's (2026-08-04). Terminal states are
+    conclusions we drew, not facts the exchange sent, so they stay eligible for a while.
+    """
+    return [dict(r) for r in conn.execute(
+        "SELECT * FROM orders WHERE state IN ('sent','acked','open','partial') "
+        "   OR (state IN ('canceled','void','unknown') AND COALESCE(sent_ms, ts_ms) >= ?) "
+        "ORDER BY ts_ms", (since_ms,))]
+
+
 def record_fill(conn, *, order_key_, qty, price, fee=0.0, tax=0.0, broker_exec_id=None, raw=None):
     """Register a broker-confirmed execution. Returns False if this execution id was already seen."""
     try:
