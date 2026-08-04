@@ -2657,7 +2657,7 @@ def main():
         n_atr = max(2, min(200, int(_num_or(inp.get("atrPeriod"), 20))))
         mults = inp.get("atrMultiples")
         if not isinstance(mults, list) or not mults:
-            mults = [0.5, 1, 2, 3, 5]
+            mults = [1, 2, 3]
         try:
             mults = sorted({round(float(m), 3) for m in mults if float(m) > 0})
         except (TypeError, ValueError):
@@ -2709,17 +2709,20 @@ def main():
             if p >= 30: return "#0891b2", 2
             if p >= 12: return "#6366f1", 1
             return "#94a3b8", 1
-        first_i, last_i = bars[0]["i"], last["i"]
+        # 선은 **지금부터 앞으로만** 긋는다. 차트 전폭에 그으면 과거 캔들 위를 가로질러 다섯 줄이
+        # 지나가고, 값이 안 보이면 그냥 줄무늬가 된다(2026-08-04 사용자: "선만 겁나 생겼노").
+        # 그리고 라벨은 **점에** 달아야 그려진다 — 주석의 label 은 범례용이다.
+        last_i = last["i"]
         ahead = max(3, round(horizon * 0.15))
         ann = []
         for row in levels:
             color, width = _shade(row["probability"])
+            text = "%g ATR · %s · %s%%" % (row["atrMultiple"], _fmt_price(row["price"]),
+                                           row["probability"])
             ann.append({
-                "kind": "path", "color": color, "width": width,
-                "label": "+%g ATR %s · %s%%" % (row["atrMultiple"],
-                                                _fmt_price(row["price"]), row["probability"]),
-                "points": [{"i": first_i, "price": row["price"]},
-                           {"i": last_i + ahead, "price": row["price"]}],
+                "kind": "path", "color": color, "width": width, "label": text,
+                "points": [{"i": last_i, "price": row["price"]},
+                           {"i": last_i + ahead, "price": row["price"], "label": text}],
             })
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart",
