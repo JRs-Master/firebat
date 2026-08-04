@@ -653,6 +653,81 @@ def read_transfers(conn, limit=50):
         "SELECT * FROM transfers ORDER BY id DESC LIMIT ?", (limit,))]
 
 
+def pnl_summary(conn, day_start_ms, marks=None):
+    """What the ledger says was earned — today, all time, and broken down by strategy and symbol.
+
+    Reads nothing but the ledger, so it costs no broker call and cannot disagree with the rows it is
+    summing. Until this existed the only consumer of a realised number was the daily loss limit,
+    which asks whether the day is bad enough to stop: profit was computed nowhere and reported
+    nowhere, and the flat rows carrying it sat in the position table claiming to be positions.
+
+    Market sells and internal transfers are kept apart. A transfer books a gain with no fee and no
+    tax because no order was ever placed, so adding the two produces a number that no broker
+    statement will ever match — the same reason the position row keeps them in two columns.
+
+    Unrealised profit needs a current price, which is a broker call, and a screen reading the ledger
+    should not have to make one. `marks` is where a caller that already holds prices puts them; a
+    symbol with no mark is **named** rather than counted as zero, because an unpriced holding and a
+    worthless one are opposite statements.
+    """
+    def totals(where, args=()):
+        row = conn.execute(
+            "SELECT COALESCE(SUM(realized),0) AS pnl, COALESCE(SUM(fee),0) AS fee, "
+            "COALESCE(SUM(tax),0) AS tax, COUNT(*) AS n FROM ledger WHERE " + where, args).fetchone()
+        return {"pnl": float(row["pnl"]), "fee": float(row["fee"]), "tax": float(row["tax"]),
+                "count": int(row["n"])}
+
+    day = int(day_start_ms or 0)
+    out = {
+        "sold": {"today": totals("side='sell' AND ts_ms >= ?", (day,)),
+                 "total": totals("side='sell'")},
+        "transferred": {"today": totals("side='transfer_out' AND ts_ms >= ?", (day,)),
+                        "total": totals("side='transfer_out'")},
+        "bought": {"today": totals("side='buy' AND ts_ms >= ?", (day,)),
+                   "total": totals("side='buy'")},
+        "dayStartMs": day,
+    }
+    out["byStrategy"] = [dict(r) for r in conn.execute(
+        "SELECT strategy_id, symbol, COUNT(*) AS sells, COALESCE(SUM(realized),0) AS realized, "
+        "COALESCE(SUM(fee),0) AS fee, COALESCE(SUM(tax),0) AS tax, MAX(ts_ms) AS last_ms "
+        "FROM ledger WHERE side='sell' GROUP BY strategy_id, symbol "
+        "ORDER BY realized DESC")]
+    out["bySymbol"] = [dict(r) for r in conn.execute(
+        "SELECT symbol, COUNT(*) AS sells, COALESCE(SUM(realized),0) AS realized, "
+        "MAX(ts_ms) AS last_ms FROM ledger WHERE side='sell' GROUP BY symbol "
+        "ORDER BY realized DESC")]
+
+    held = [dict(r) for r in conn.execute(
+        "SELECT strategy_id, broker, account, symbol, qty, avg_price, state "
+        "FROM strategy_position WHERE qty > ? ORDER BY symbol, strategy_id", (EPS,))]
+    priced, unpriced, unreal = [], [], 0.0
+    for h in held:
+        mark = None
+        if isinstance(marks, dict):
+            for key in (h["symbol"], str(h["symbol"] or "").upper()):
+                if key in marks:
+                    try:
+                        mark = float(marks[key])
+                    except (TypeError, ValueError):
+                        mark = None
+                    break
+        if mark and mark > 0:
+            gain = (mark - float(h["avg_price"])) * float(h["qty"])
+            priced.append({**h, "mark": mark, "unrealized": gain})
+            unreal += gain
+        else:
+            unpriced.append(h["symbol"])
+            priced.append({**h, "mark": None, "unrealized": None})
+    out["held"] = priced
+    out["unrealized"] = {"total": unreal if not unpriced else None,
+                         "priced": len(priced) - len(unpriced), "unpriced": unpriced}
+    # The two numbers a person actually asks for, spelled out so nothing downstream has to add up
+    # the wrong pair. Transfers are excluded: they are a bookkeeping move, not money the account made.
+    out["realizedToday"] = out["sold"]["today"]["pnl"]
+    out["realizedTotal"] = out["sold"]["total"]["pnl"]
+    return out
+
+
 def realized_today(conn, day_start_ms):
     row = conn.execute(
         "SELECT COALESCE(SUM(realized),0) AS s FROM ledger WHERE ts_ms >= ? AND side='sell'",

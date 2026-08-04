@@ -285,14 +285,32 @@ def read_position(rows, symbol):
 
     None means "could not be read" and never zero. A caller that treats it as zero would compare a
     real ledger against an imagined empty account.
+
+    Cash is skipped here and not only where rows are enumerated. `KRW` is a prefix of every KRW
+    market, so the cash line matches `KRW-ENSO` under the decorated-name rule, and this returned the
+    **first** match — measured 2026-08-04: reconciliation read 27,986 won of cash as 27,986 ENSO and
+    filed it as shares nobody claims. BTC had survived the same bug only because its coin row
+    happened to come before the cash row. A guard on the listing is not a guard on the matching.
+
+    An exact match wins over a decorated one for the same reason: with several rows able to match,
+    "first in the response" is not a rule, it is whatever the venue felt like sending.
     """
+    exact, loose = None, None
     for row in rows or []:
-        if not isinstance(row, dict):
+        if not isinstance(row, dict) or is_cash_row(row):
             continue
-        if not _same_symbol(_first(row, POS_SYMBOL_KEYS) or row.get("stk_cd"), symbol):
+        value = _first(row, POS_SYMBOL_KEYS) or row.get("stk_cd")
+        if not _same_symbol(value, symbol):
             continue
-        qty = _num(_first(row, POS_QTY_KEYS))
-        if qty is None:
-            return None, row  # the row is ours but unreadable — report it, do not call it empty
-        return {"qty": qty, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0}, row
-    return None, None
+        if _symbol_core(value) == _symbol_core(symbol):
+            exact = row
+            break
+        if loose is None:
+            loose = row
+    row = exact if exact is not None else loose
+    if row is None:
+        return None, None
+    qty = _num(_first(row, POS_QTY_KEYS))
+    if qty is None:
+        return None, row  # the row is ours but unreadable — report it, do not call it empty
+    return {"qty": qty, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0}, row

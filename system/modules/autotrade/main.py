@@ -2075,6 +2075,14 @@ def action_read(inp, settings, which):
     data = {"mode": settings.get("mode"), "store": which_store}
     if which in ("positions", "report"):
         data["positions"] = store.read_positions(conn)
+    if which in ("pnl", "report"):
+        # Carried inside `report` as well, so the screen gets the numbers in the call it already
+        # makes. `marks` is optional and comes from whoever already has prices — this action does
+        # not fetch any, because a ledger read that phones the broker is a ledger read that fails
+        # when the broker is down.
+        data["pnl"] = store.pnl_summary(conn, day_start_ms(),
+                                        marks=inp.get("marks") if isinstance(inp.get("marks"), dict)
+                                        else None)
     if which in ("orders", "report"):
         data["orders"] = store.read_orders(conn, limit)
     if which in ("ledger", "report"):
@@ -2265,6 +2273,67 @@ def action_selftest():
     checks.append({"name": "a mock account stays mock", "want": "mock",
                    "got": mode3, "ok": mode3 == "mock"})
 
+    # --- profit, as the ledger states it -------------------------------------------------------
+    # Nothing reported profit before this: `realized_today` existed for the daily loss limit only,
+    # so the money earned lived in a flat position row that the screen was calling a position.
+    # Measured as deltas against a baseline, because this store already carries rows from the checks
+    # above — an absolute expectation here would be asserting the order the tests happen to run in.
+    pcon = store.connect("dryrun")
+    _base = store.pnl_summary(pcon, 0)
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL1",
+                     side="buy", qty=10, price=1000, fee=5, source="test")
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL1",
+                     side="sell", qty=10, price=1200, fee=7, tax=3, source="test")
+    summ = store.pnl_summary(pcon, 0)
+    # 10 shares bought at 1,000 with a 5 fee → cost basis 1000.5. Sold at 1,200 less 7 fee and 3 tax.
+    _want = (1200 - 1000.5) * 10 - 7 - 3
+    _got = summ["realizedTotal"] - _base["realizedTotal"]
+    checks.append({"name": "realised profit is the ledger's own number", "want": _want,
+                   "got": _got, "ok": abs(_got - _want) < 1e-6})
+    _cost = ((summ["sold"]["total"]["fee"] + summ["sold"]["total"]["tax"])
+             - (_base["sold"]["total"]["fee"] + _base["sold"]["total"]["tax"]))
+    checks.append({"name": "what it cost to trade is reported beside what it earned",
+                   "want": 10.0, "got": _cost, "ok": abs(_cost - 10.0) < 1e-6})
+    # An internal transfer books a gain with no order behind it, so it is never added to the sold
+    # total — a combined number matches no broker statement.
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL2",
+                     side="buy", qty=4, price=100, source="test")
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL2",
+                     side="transfer_out", qty=4, price=150, source="test")
+    moved = store.pnl_summary(pcon, 0)
+    _sold_d = moved["realizedTotal"] - summ["realizedTotal"]
+    _moved_d = moved["transferred"]["total"]["pnl"] - summ["transferred"]["total"]["pnl"]
+    checks.append({"name": "an internal transfer is not counted as money the account made",
+                   "want": (0.0, 200.0), "got": (_sold_d, _moved_d),
+                   "ok": abs(_sold_d) < 1e-6 and abs(_moved_d - 200.0) < 1e-6})
+    # Unrealised needs a price. A holding with no mark is named, and the total refuses to be a number
+    # until every holding has one — a partial sum reads as the whole and is worse than no number.
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL3",
+                     side="buy", qty=2, price=500, source="test")
+    part = store.pnl_summary(pcon, 0, marks={"PNL3": 600})
+    checks.append({"name": "an unpriced holding is named, not counted as zero",
+                   "want": ("PNL3 priced, others named", None),
+                   "got": (part["unrealized"]["unpriced"], part["unrealized"]["total"]),
+                   "ok": "PNL3" not in part["unrealized"]["unpriced"]
+                        and len(part["unrealized"]["unpriced"]) > 0
+                        and part["unrealized"]["total"] is None})
+    # Price everything it is holding — whatever that is — and the total is the sum of the gains.
+    _marks = {h["symbol"]: float(h["avg_price"]) * 1.1 for h in part["held"]
+              if float(h["avg_price"]) > 0}
+    full = store.pnl_summary(pcon, 0, marks=_marks)
+    _expect = sum(float(h["avg_price"]) * 0.1 * float(h["qty"]) for h in part["held"]
+                  if float(h["avg_price"]) > 0)
+    checks.append({"name": "and totals once every holding has a price", "want": round(_expect, 6),
+                   "got": full["unrealized"]["total"],
+                   "ok": full["unrealized"]["total"] is not None
+                        and abs(full["unrealized"]["total"] - _expect) < 1e-6})
+    # A flat row that earned something is not a position. Both facts come from the same table, so
+    # the screen has to be able to tell them apart without guessing.
+    _flat = [h for h in full["held"] if h["symbol"] == "PNL1"]
+    checks.append({"name": "a closed trade is not listed among the holdings",
+                   "want": [], "got": _flat, "ok": not _flat})
+    pcon.close()
+
     drift = store.replay_positions(conn)
     checks.append({"name": "ledger replay matches the positions", "want": [],
                    "got": drift, "ok": drift == []})
@@ -2319,6 +2388,32 @@ def action_selftest():
                    "got": [len(got), len(bad)],
                    "ok": len(got) == 2 and len(bad) == 1
                         and got[0]["qty"] == 3 and got[0]["price"] == 70500})
+    # The real upbit balance, verbatim, in the order the exchange actually sent it. `KRW` is a prefix
+    # of every KRW market, so the cash line matched `KRW-ENSO` and reconciliation filed 27,986 won as
+    # 27,986 ENSO nobody claims (measured 2026-08-04). BTC had passed the same code only because its
+    # coin row happened to arrive before the cash row.
+    _bal = [
+        {"currency": "KRW", "balance": "27986.0678352", "locked": "0", "avg_buy_price": "0",
+         "unit_currency": "KRW"},
+        {"currency": "ENSO", "balance": "4.47093889", "locked": "0", "avg_buy_price": "1343",
+         "unit_currency": "KRW"},
+    ]
+    _found, _row = orders.read_position(_bal, "KRW-ENSO")
+    checks.append({"name": "cash is never read as a holding of the market it prices",
+                   "want": 4.47093889, "got": (_found or {}).get("qty"),
+                   "ok": bool(_found) and abs(_found["qty"] - 4.47093889) < 1e-9})
+    # Same rows, cash first — and the answer has to be the same. It was not: the first match won.
+    _f2, _ = orders.read_position(list(reversed(_bal)), "KRW-ENSO")
+    checks.append({"name": "and the answer does not depend on the order the venue sent",
+                   "want": (_found or {}).get("qty"), "got": (_f2 or {}).get("qty"),
+                   "ok": bool(_f2) and _f2["qty"] == (_found or {}).get("qty")})
+    # An exact name beats a decorated one when both are present.
+    _f3, _ = orders.read_position(
+        [{"stk_cd": "A114800", "rmnd_qty": "999", "pur_pric": "1"},
+         {"stk_cd": "114800", "rmnd_qty": "520", "pur_pric": "1152"}], "114800")
+    checks.append({"name": "an exact name wins over a decorated one", "want": 520.0,
+                   "got": (_f3 or {}).get("qty"), "ok": bool(_f3) and _f3["qty"] == 520.0})
+
     checks.append({"name": "an execution without an id still gets one", "want": True,
                    "got": got[1]["execId"], "ok": bool(got[1]["execId"])})
     # The real first BTC buy, verbatim: limited at 90,833,000 and filled at 90,743,000. Reading the
@@ -4257,7 +4352,7 @@ def main():
             return out(action_reconcile(inp, settings))
         if action == "record_orders":
             return out(action_record_orders(inp, settings))
-        if action in ("report", "positions", "orders", "ledger"):
+        if action in ("report", "positions", "orders", "ledger", "pnl"):
             return out(action_read(inp, settings, action))
         if action == "halt":
             return out(action_halt(settings))

@@ -32,7 +32,20 @@ interface Report {
    *  separately rather than merged into the trading events. */
   watchlists?: Record<string, Row[]>;
   screenEvents?: Row[];
+  /** Realised profit as the ledger states it. Carried inside `report`, so reading it costs no
+   *  extra call and no broker query. */
+  pnl?: {
+    realizedToday?: number;
+    realizedTotal?: number;
+    sold?: { today?: Leg; total?: Leg };
+    transferred?: { today?: Leg; total?: Leg };
+    byStrategy?: Row[];
+    held?: Row[];
+    unrealized?: { total?: number | null; priced?: number; unpriced?: string[] };
+  };
 }
+
+interface Leg { pnl?: number; fee?: number; tax?: number; count?: number }
 
 /** Epoch ms → local wall clock, minutes resolution. Seconds add noise at this density. */
 function when(ms: any): string {
@@ -49,6 +62,23 @@ function num(v: any, max = 8): string {
   if (!Number.isFinite(n)) return '—';
   if (n !== 0 && Math.abs(n) < 1) return String(Number(n.toPrecision(4)));
   return n.toLocaleString(undefined, { maximumFractionDigits: Math.min(max, 2) });
+}
+
+/** Won, with a sign, because the sign is the whole point. Coins need decimals; won does not. */
+function money(v: any): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  const s = Math.abs(n) < 1 && n !== 0
+    ? String(Number(n.toPrecision(4)))
+    : Math.round(n).toLocaleString();
+  return n > 0 ? `+${s}` : s;
+}
+
+/** Green up, red down, grey flat. Never green for a zero — a flat day is not a good day. */
+function tone(v: any): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n === 0) return 'text-slate-500';
+  return n > 0 ? 'text-emerald-600' : 'text-rose-600';
 }
 
 const STATE_TONE: Record<string, string> = {
@@ -129,7 +159,13 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   }, [moduleName, store]);
   useEffect(() => { load(); }, [load]);
 
-  const positions = (data?.positions ?? []).filter(p => Number(p.qty) !== 0 || Number(p.realized_pnl) !== 0);
+  // Two different questions that happened to share a table. `strategy_position` keeps a row for
+  // anything ever traded, so a sold-out strategy sits there with qty 0 holding the profit it made —
+  // and the section called it a position. What is held and what was earned are separate sections now.
+  const listed = (data?.positions ?? []).filter(p => Number(p.qty) !== 0 || Number(p.realized_pnl) !== 0);
+  const holdings = listed.filter(p => Number(p.qty) !== 0);
+  const closed = listed.filter(p => Number(p.qty) === 0);
+  const pnl = data?.pnl;
   const orders = data?.orders ?? [];
   const ledger = data?.ledger ?? [];
   const events = data?.events ?? [];
@@ -176,17 +212,77 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
         </div>
       )}
 
-      <Section title="포지션" count={positions.length}>
+      {/* The number the whole thing is for. It was computed nowhere and shown nowhere: the ledger
+          had every row needed and the only consumer of a realised total was the daily loss limit,
+          which asks whether to stop. Fees and taxes sit beside the gain rather than inside it —
+          "made 2,080" and "made 2,080 after paying 240" are different sentences. */}
+      {pnl && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {([
+            ['오늘 실현', pnl.realizedToday, pnl.sold?.today],
+            ['누적 실현', pnl.realizedTotal, pnl.sold?.total],
+          ] as const).map(([label, value, leg]) => (
+            <div key={label} className="rounded-lg border border-slate-200 px-2.5 py-2">
+              <div className="text-[10px] font-bold text-slate-400">{label}</div>
+              <div className={`text-sm font-bold ${tone(value)}`}>{money(value)}</div>
+              <div className="text-[10px] text-slate-400">
+                {leg?.count ? `${leg.count}회 · 비용 ${money(-((leg.fee ?? 0) + (leg.tax ?? 0)))}` : '거래 없음'}
+              </div>
+            </div>
+          ))}
+          <div className="rounded-lg border border-slate-200 px-2.5 py-2">
+            <div className="text-[10px] font-bold text-slate-400">평가손익</div>
+            {/* Null on purpose when any holding has no price. A partial sum reads as the whole. */}
+            <div className={`text-sm font-bold ${
+              pnl.unrealized?.total == null ? 'text-slate-400' : tone(pnl.unrealized.total)}`}>
+              {pnl.unrealized?.total == null ? '가격 미조회' : money(pnl.unrealized.total)}
+            </div>
+            <div className="text-[10px] text-slate-400">
+              {pnl.unrealized?.unpriced?.length
+                ? `${pnl.unrealized.unpriced.length}종목 시세 없음`
+                : `${pnl.unrealized?.priced ?? 0}종목`}
+            </div>
+          </div>
+          {/* Shown only when it happened, because a transfer is rare and an always-zero box beside
+              the profit invites adding the two. */}
+          {!!pnl.transferred?.total?.count && (
+            <div className="rounded-lg border border-slate-200 px-2.5 py-2">
+              <div className="text-[10px] font-bold text-slate-400">내부이전</div>
+              <div className={`text-sm font-bold ${tone(pnl.transferred.total.pnl)}`}>
+                {money(pnl.transferred.total.pnl)}
+              </div>
+              <div className="text-[10px] text-slate-400">매도 아님 · 합산 금지</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <Section title="보유" count={holdings.length}>
         <Table
           head={['전략', '종목', '수량', '평단', '실현손익', '상태']}
           empty="보유 중인 포지션이 없습니다."
-          rows={positions.map(p => [
+          rows={holdings.map(p => [
             String(p.strategy_id ?? ''),
             String(p.symbol ?? ''),
             num(p.qty),
             num(p.avg_price),
-            num(p.realized_pnl),
-            <Badge key="s" text={String(p.state ?? 'ok')} /> as any,
+            <span key="r" className={tone(p.realized_pnl)}>{money(p.realized_pnl)}</span> as any,
+            <Badge key="s" text={String(p.state ?? '')} /> as any,
+          ])}
+        />
+      </Section>
+
+      {/* Sold out, and the row stays because it is where that strategy's realised profit lives.
+          It is not a holding, so it is not listed as one. */}
+      <Section title="청산 완료" count={closed.length}>
+        <Table
+          head={['전략', '종목', '실현손익', '상태']}
+          empty="청산된 매매가 없습니다."
+          rows={closed.map(p => [
+            String(p.strategy_id ?? ''),
+            String(p.symbol ?? ''),
+            <span key="r" className={tone(p.realized_pnl)}>{money(p.realized_pnl)}</span> as any,
+            <Badge key="s" text={String(p.state ?? '')} /> as any,
           ])}
         />
       </Section>
