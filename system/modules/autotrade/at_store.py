@@ -261,6 +261,33 @@ def set_position_state(conn, strategy_id, broker, account, symbol, state):
     conn.commit()
 
 
+def lift_hold(conn, strategy_id, broker, account, symbol):
+    """Release a degraded position. True if it was released.
+
+    One place, because a hold ends for two different reasons — the books added up again, or the order
+    that caused it turned out never to have existed — and each reason used to clear it its own way.
+    The void path cleared **unconditionally**, so voiding an unrelated ghost order lifted a genuine
+    shortfall hold and re-opened buying on books that did not add up. Reconciliation put it back the
+    next cycle, which is why it was a window rather than a visible wrong, and why nobody saw it.
+
+    A position with an unresolved order of its own is held for that reason and is not released here:
+    "the broker has not answered about this order yet" and "the books are short" are different holds,
+    and clearing one because the other ended is the class of bug this file keeps finding.
+    """
+    still = conn.execute(
+        "SELECT 1 FROM orders WHERE strategy_id=? AND broker=? AND account=? AND symbol=? "
+        "AND state='unknown' LIMIT 1", (strategy_id, broker, account, symbol)).fetchone()
+    if still:
+        return False
+    cur = conn.execute(
+        "SELECT state FROM strategy_position WHERE strategy_id=? AND broker=? AND account=? "
+        "AND symbol=?", (strategy_id, broker, account, symbol)).fetchone()
+    if not cur or cur["state"] != DEGRADED:
+        return False                      # nothing to lift; do not write a state nobody asked for
+    set_position_state(conn, strategy_id, broker, account, symbol, HEALTHY)
+    return True
+
+
 def _write_position(conn, pos):
     conn.execute(
         "INSERT INTO strategy_position"
@@ -493,10 +520,20 @@ def claimed_symbols(conn, broker, account):
         "SELECT DISTINCT symbol FROM strategy_position WHERE broker=? AND account=? AND qty > 0",
         (broker, account))]
     seen = set(named)
+    # A held position has to be walked even when it holds nothing. `qty > 0` cannot see it, and a
+    # flat hold is the one that never lifts on its own: nothing to sell, and no balance row to be
+    # found under either, so nothing ever comes back to look at it. Measured 2026-08-04 — three
+    # separate queries here and in `reconcile_symbol` all asked "does it have shares" when the
+    # question was "is it held", and the only thing releasing these was the void sweep writing the
+    # state as a side effect. Removing that side effect is what made them visible.
+    held = [r["symbol"] for r in conn.execute(
+        "SELECT DISTINCT symbol FROM strategy_position WHERE broker=? AND account=? AND state=?",
+        (broker, account, DEGRADED)) if r["symbol"] and r["symbol"] not in seen]
+    seen |= set(held)
     extra = [r["symbol"] for r in conn.execute(
         "SELECT symbol FROM unassigned WHERE broker=? AND account=? AND qty > 0",
         (broker, account)) if r["symbol"] and r["symbol"] not in seen]
-    return [s for s in named + extra if s]
+    return [s for s in named + held + extra if s]
 
 
 def accounted_qty(conn, broker, account, symbol):
@@ -554,29 +591,26 @@ def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
             )
         if -delta - take > EPS:
             for r in rows:
-                set_position_state(conn, r["strategy_id"], broker, account, symbol, "degraded")
+                set_position_state(conn, r["strategy_id"], broker, account, symbol, DEGRADED)
             action = "degraded"
             note = "the broker reports fewer shares than the strategies claim"
         else:
             action = "absorbed_from_unassigned"
 
-    elif rows:
-        # 부족분이 사라졌으면 멈춤도 풀린다. 정산이 degraded 를 걸기만 하고 되돌리지 않아서,
-        # 장부가 다시 맞아떨어져도 그 전략은 영영 매수를 못 했다(2026-08-04: 체결이 뒤늦게
-        # 붙어 수량이 일치했는데도 degraded 인 채였다). 다만 아직 미확인 주문이 남아 있으면
-        # 그건 다른 이유의 멈춤이므로 건드리지 않는다.
-        pending = {r["strategy_id"] for r in conn.execute(
-            "SELECT DISTINCT strategy_id FROM orders WHERE broker=? AND account=? AND symbol=? "
-            "AND state='unknown'", (broker, account, symbol))}
-        for r in rows:
-            if r["strategy_id"] in pending:
-                continue
-            cur = conn.execute(
-                "SELECT state FROM strategy_position WHERE strategy_id=? AND broker=? "
-                "AND account=? AND symbol=?",
-                (r["strategy_id"], broker, account, symbol)).fetchone()
-            if cur and cur["state"] == "degraded":
-                set_position_state(conn, r["strategy_id"], broker, account, symbol, HEALTHY)
+    else:
+        # The books add up, so whatever is still held on this symbol can be released. Reconciliation
+        # used to only ever apply a hold, so a strategy stayed stopped for good once the numbers
+        # agreed again (2026-08-04).
+        #
+        # The rows to release cannot be taken from `rows` above: that query counts shares (`qty > 0`)
+        # and so **cannot see a flat position** — which is the most stuck state there is, "selling
+        # only" with nothing to sell. Ask for what is held instead of for what holds shares. The
+        # earlier version leaned on the void sweep clearing the state as a side effect, which hid
+        # this and cleared shortfall holds it had no business clearing.
+        for r in conn.execute(
+                "SELECT strategy_id FROM strategy_position WHERE broker=? AND account=? "
+                "AND symbol=? AND state=?", (broker, account, symbol, DEGRADED)).fetchall():
+            if lift_hold(conn, r["strategy_id"], broker, account, symbol):
                 action, note = "restored", "the books agree again — the hold is lifted"
 
     conn.execute(

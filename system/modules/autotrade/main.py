@@ -2036,8 +2036,11 @@ def action_reconcile(inp, settings):
             store.update_order(conn, o["order_key"], state="void", last_checked_ms=now,
                                error="the broker has no record of this order and the balance "
                                      "shows nothing it could have bought")
-            store.set_position_state(conn, o["strategy_id"], o["broker"], o["account"],
-                                     o["symbol"], store.HEALTHY)
+            # No state write here on purpose. This used to declare the position healthy, which
+            # lifted a *shortfall* hold as well — voiding an unrelated ghost order re-opened buying
+            # on books that did not add up. Resolving the order is this sweep's job; whether the
+            # books add up is reconciliation's, and it owns that answer. Voiding removes the only
+            # part of the hold this sweep knows about, and the next pass lifts the rest if it can.
             store.log_event(conn, "order_void", {"orderKey": o["order_key"]},
                             strategy_id=o["strategy_id"], symbol=o["symbol"])
             voided.append(o["order_key"])
@@ -2216,6 +2219,31 @@ def action_selftest():
     checks.append({"name": "a healthy position has exactly one name for being healthy",
                    "want": {store.HEALTHY}, "got": _states,
                    "ok": _states in ({store.HEALTHY}, set())})
+    # A hold is released only by the reason that put it there. Both callers go through `lift_hold`
+    # because the void path used to clear unconditionally, so voiding a ghost order lifted a
+    # shortfall hold and re-opened buying on books that did not add up.
+    store.apply_fill(conn, strategy_id="held", broker="b", account="a", symbol="H",
+                     side="buy", qty=5, price=100, source="test")
+    def _held():
+        return store.position_of(conn, "held", "b", "a", "H")["state"]
+    store.reconcile_symbol(conn, "b", "a", "H", broker_qty=1)          # short → held
+    checks.append({"name": "a shortfall holds the position", "want": store.DEGRADED,
+                   "got": _held(), "ok": _held() == store.DEGRADED})
+    # An unresolved order of its own is a second, separate hold. The books agreeing does not end it.
+    store.insert_order(conn, {"order_key": "unk-h", "cycle_id": "c", "strategy_id": "held",
+                              "broker": "b", "account": "a", "symbol": "H", "side": "buy",
+                              "req_qty": 1, "req_price": 100, "mode": "dryrun", "state": "unknown"})
+    store.reconcile_symbol(conn, "b", "a", "H", broker_qty=5)          # books agree now
+    checks.append({"name": "an unresolved order keeps its own hold when the books agree",
+                   "want": store.DEGRADED, "got": _held(), "ok": _held() == store.DEGRADED})
+    # Resolving that order is not a statement about the books, so it does not lift anything by
+    # itself — the next reconciliation does, once nothing is left holding.
+    store.update_order(conn, "unk-h", state="void")
+    checks.append({"name": "resolving the order does not declare the books good",
+                   "want": store.DEGRADED, "got": _held(), "ok": _held() == store.DEGRADED})
+    store.reconcile_symbol(conn, "b", "a", "H", broker_qty=5)
+    checks.append({"name": "and the hold lifts once both reasons are gone", "want": store.HEALTHY,
+                   "got": _held(), "ok": _held() == store.HEALTHY})
 
     intents = [
         {"strategyId": "a", "side": "sell", "qty": 3, "price": 1000},
@@ -3530,12 +3558,30 @@ def action_selftest():
     store.update_order(ucon, "ghost", state="unknown")
     store.set_position_state(ucon, "u", "b", "", "AAA", "degraded")
     # The account was read and holds nothing of it: the buy cannot have happened.
-    empty_book = {"openOrders": [], "balanceRows": [{"symbol": "ZZZ", "qty": 3}]}
+    # Scoped the way the schedule scopes it (`$step0.scopedTo`), or the balance sweep runs for
+    # broker "unknown" and never visits this symbol — the hold would then never lift and the test
+    # would be describing an accident rather than the behaviour.
+    empty_book = {"openOrders": [], "balanceRows": [{"symbol": "ZZZ", "qty": 3}],
+                  "broker": "b", "account": ""}
     out = action_reconcile(empty_book, {"mode": "dryrun", "voidAfterSec": 3600})["data"]
     checks.append({"name": "an order the venue never took is released, not held forever",
                    "want": ["ghost"], "got": out.get("voided"),
                    "ok": out.get("voided") == ["ghost"]})
-    checks.append({"name": "and the position it was blocking goes back to work",
+    # Not in this pass: the balance sweep already ran before the order was voided, and voiding is
+    # not a statement about whether the books add up. The next pass reads no unresolved order and
+    # lifts the hold — one cycle late, which is the price of the invariant's owner being the only
+    # thing that declares it satisfied.
+    checks.append({"name": "voiding the order does not itself declare the books good",
+                   "want": store.DEGRADED,
+                   "got": store.position_of(ucon, "u", "b", "", "AAA").get("state"),
+                   "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == store.DEGRADED})
+    # The position is flat and held, and the balance has no row for it — so nothing would come back
+    # to look at it unless "held" is itself a reason to walk it. Three queries used to ask for shares.
+    checks.append({"name": "a flat position that is held is still walked", "want": True,
+                   "got": store.claimed_symbols(ucon, "b", ""),
+                   "ok": "AAA" in store.claimed_symbols(ucon, "b", "")})
+    action_reconcile(empty_book, {"mode": "dryrun", "voidAfterSec": 3600})
+    checks.append({"name": "and the next pass puts the position back to work",
                    "want": store.HEALTHY,
                    "got": store.position_of(ucon, "u", "b", "", "AAA").get("state"),
                    "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == store.HEALTHY})
