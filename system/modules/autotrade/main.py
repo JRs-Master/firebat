@@ -1951,6 +1951,8 @@ def action_reconcile(inp, settings):
         for row in balance_rows:
             if not isinstance(row, dict) or id(row) in consumed:
                 continue
+            if orders.is_cash_row(row):
+                continue          # 현금은 보유가 아니다 — 무주 버킷에 원화가 들어가면 안 된다
             sym = orders.position_symbol(row)
             if not sym:
                 unreadable_positions.append(row)
@@ -2427,6 +2429,17 @@ def action_selftest():
                    "want": [None, True],
                    "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
                    "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
+
+    # 현금 행은 보유가 아니다 — 업비트 잔고엔 원화도 한 줄로 온다.
+    cash = action_reconcile({"broker": "b4", "account": "a4", "openOrders": [], "fills": [],
+                             "balanceRows": [{"currency": "KRW", "balance": "33998",
+                                              "unit_currency": "KRW"},
+                                             {"currency": "BTC", "balance": "0.5",
+                                              "unit_currency": "KRW"}]},
+                            {"mode": "dryrun", "strategies": []})["data"]
+    syms = sorted(v["symbol"] for v in cash["reconciled"])
+    checks.append({"name": "잔고의 현금 행은 무주 보유가 되지 않는다",
+                   "want": ["BTC"], "got": syms, "ok": syms == ["BTC"]})
 
     # --- 사라진 주문이 취소인지 체결인지 -------------------------------------------------
     # 체결된 주문도 미체결 목록에서 사라진다. 잔고에 아무도 장부에 안 올린 수량이 남아 있으면

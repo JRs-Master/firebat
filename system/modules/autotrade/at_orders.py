@@ -234,6 +234,21 @@ def _same_symbol(value, symbol):
     return len(a) >= 3 and (b.startswith(a) or b.endswith(a))
 
 
+def is_cash_row(row):
+    """A balance line that is money rather than a holding.
+
+    Upbit answers `/v1/accounts` with every balance it keeps, and the account's own currency is
+    one of them — `{"currency": "KRW", "balance": "33998", "unit_currency": "KRW"}`. Reconciling
+    that as an instrument would file 33,998 won as shares nobody claims. A line priced in itself
+    is cash: that is what "unit currency" means, and it holds for any venue that says so.
+    """
+    if not isinstance(row, dict):
+        return False
+    unit = str(row.get("unit_currency") or row.get("unitCurrency") or "").strip().upper()
+    name = str(row.get("currency") or "").strip().upper()
+    return bool(unit) and bool(name) and unit == name
+
+
 def position_symbol(row):
     """The instrument a balance row is about, as the broker wrote it — None if unreadable.
 
