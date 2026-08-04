@@ -469,8 +469,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [cps, setCps] = useState(60);                   // seed — 실제 기본 줌은 폭 기반 baseCps. 사용자 줌 시에만 사용.
   const [userZoomed, setUserZoomed] = useState(false);  // true = 휠/핀치로 줌함 → cps 사용. false = 폭 기반 기본 줌.
   const [zoomEndTick, setZoomEndTick] = useState(0);  // 줌 종료 시 +1 → Y축 라이브 재계산 트리거
-  // 데이터 변경 시 기본 줌(폭 기반)·최신 보기로 복원.
-  useEffect(() => { setUserZoomed(false); pinnedRightRef.current = true; }, [fullN]);
+  // 다른 시리즈로 바뀌면 기본 줌(폭 기반)·최신 보기로 복원.
+  //
+  // 옛 조건은 봉 **개수**였는데, 실시간 차트는 주기마다 봉이 하나 늘어난다. 그래서 새 봉이 올
+  // 때마다 사용자가 맞춰 둔 줌이 풀리고 화면이 우측 끝으로 끌려갔다 — 과거 구간을 보고 있으면
+  // 1분마다 튕겨 나가서 아예 볼 수가 없다(2026-08-04 사용자 보고). 시리즈를 다른 시리즈로
+  // 만드는 건 **무엇의·어디서 시작하는** 시리즈냐이지 얼마나 길어졌느냐가 아니다.
+  // 시작 봉도 키가 못 된다 — 라이브 차트는 `maxCandles` 로 앞을 버리는 롤링 윈도우라, 창이 차고
+  // 나면 길이는 고정된 채 **첫 봉이 밀린다**. 그 뒤로 다시 매 봉 리셋이 된다. 남는 건 무엇의
+  // 차트냐뿐이고, 같은 종목의 구간이 늘거나 줄어드는 건 보던 자리를 뺏을 이유가 못 된다.
+  const seriesKey = `${symbol ?? ''}|${title ?? ''}`;
+  useEffect(() => { setUserZoomed(false); pinnedRightRef.current = true; }, [seriesKey]);
   // 줌 앵커 — 휠/핀치 후 커서 아래 캔들이 제자리 유지하도록 scrollLeft 보정 (useLayoutEffect 적용).
   const zoomAnchorRef = useRef<{ idx: number; offsetX: number } | null>(null);
   // 현재 barPx 미러 — native wheel 핸들러(stale closure)가 최신 barPx 를 읽게.
