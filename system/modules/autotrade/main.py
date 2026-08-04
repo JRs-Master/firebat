@@ -2037,7 +2037,7 @@ def action_reconcile(inp, settings):
                                error="the broker has no record of this order and the balance "
                                      "shows nothing it could have bought")
             store.set_position_state(conn, o["strategy_id"], o["broker"], o["account"],
-                                     o["symbol"], "ok")
+                                     o["symbol"], store.HEALTHY)
             store.log_event(conn, "order_void", {"orderKey": o["order_key"]},
                             strategy_id=o["strategy_id"], symbol=o["symbol"])
             voided.append(o["order_key"])
@@ -2207,6 +2207,15 @@ def action_selftest():
     v2 = store.reconcile_symbol(conn, "b", "a", "Y", broker_qty=1)
     checks.append({"name": "a shortfall degrades the position", "want": "degraded",
                    "got": v2["action"], "ok": v2["action"] == "degraded"})
+    # And when the books agree again the hold lifts back to **the same word the row was born with**.
+    # A restore that invented a third value put `ok` next to `active` on the screen for two flat rows
+    # that behaved identically, and the difference was unexplainable by looking at them.
+    store.reconcile_symbol(conn, "b", "a", "Y", broker_qty=4)
+    _states = {r["state"] for r in conn.execute(
+        "SELECT DISTINCT state FROM strategy_position WHERE state <> ?", (store.DEGRADED,))}
+    checks.append({"name": "a healthy position has exactly one name for being healthy",
+                   "want": {store.HEALTHY}, "got": _states,
+                   "ok": _states in ({store.HEALTHY}, set())})
 
     intents = [
         {"strategyId": "a", "side": "sell", "qty": 3, "price": 1000},
@@ -3526,9 +3535,10 @@ def action_selftest():
     checks.append({"name": "an order the venue never took is released, not held forever",
                    "want": ["ghost"], "got": out.get("voided"),
                    "ok": out.get("voided") == ["ghost"]})
-    checks.append({"name": "and the position it was blocking goes back to work", "want": "ok",
+    checks.append({"name": "and the position it was blocking goes back to work",
+                   "want": store.HEALTHY,
                    "got": store.position_of(ucon, "u", "b", "", "AAA").get("state"),
-                   "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == "ok"})
+                   "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == store.HEALTHY})
     # A holding that could have come from the order is enough to keep it. So is a balance nobody
     # read — silence is not a zero.
     ucon.execute("DELETE FROM orders")

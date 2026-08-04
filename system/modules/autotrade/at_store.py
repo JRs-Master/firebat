@@ -58,6 +58,16 @@ def connect(mode):
     return conn
 
 
+# The only two states a position has. `HEALTHY` is spelled once because it is also the column's
+# CREATE TABLE default, and a second word for the same state is a word the screen shows and nobody
+# can explain: 2026-08-04 two flat rows on the same symbol read `ok` and `active` — one had been
+# degraded that day and restored, the other never had. The engine only ever asks whether it is
+# degraded, so they behaved identically. History belongs in `reconcile_log`, which already records
+# the restore with its timestamp, not in a state column with more values than there are states.
+HEALTHY = "active"
+DEGRADED = "degraded"
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS strategy_position(
   strategy_id TEXT NOT NULL, broker TEXT NOT NULL, account TEXT NOT NULL, symbol TEXT NOT NULL,
@@ -149,6 +159,12 @@ CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT, updated_ms INTEGER);
 
 def ensure_schema(conn):
     conn.executescript(SCHEMA)
+    # A row written before the state vocabulary was settled keeps whatever word it was given, and a
+    # position that is flat and healthy never gets rewritten — so without this one installation shows
+    # `ok` beside `active` forever for two rows that mean the same thing. Idempotent and cheap, so it
+    # runs on every connect rather than needing a migration somebody has to remember to apply.
+    conn.execute("UPDATE strategy_position SET state=? WHERE state NOT IN (?, ?)",
+                 (HEALTHY, HEALTHY, DEGRADED))
     conn.commit()
 
 
@@ -560,7 +576,7 @@ def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
                 "AND account=? AND symbol=?",
                 (r["strategy_id"], broker, account, symbol)).fetchone()
             if cur and cur["state"] == "degraded":
-                set_position_state(conn, r["strategy_id"], broker, account, symbol, "ok")
+                set_position_state(conn, r["strategy_id"], broker, account, symbol, HEALTHY)
                 action, note = "restored", "the books agree again — the hold is lifted"
 
     conn.execute(
