@@ -207,6 +207,13 @@ def read_fills(rows):
 # instructions to a reconciler, and guessing between them either invents a sale or hides one.
 POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "symbol", "code", "isin", "currency", "market")
 POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "cur_qty", "HLDG_QTY", "quantity", "qty", "balance")
+# Shares the account holds that are committed to a resting order. Upbit moves them out of `balance`
+# into `locked`, so a holding with an order on it reads short by exactly the order size — measured
+# 2026-08-05: 4.47093889 ENSO showed as `balance 1.87093889, locked 2.6` while one sell rested. The
+# ledger claims the whole position, so reconciliation would call that a shortfall and stop the
+# strategy from buying, for no reason other than that it had an order open. A holding is what the
+# account owns, not what is currently free to sell.
+POS_LOCKED_KEYS = ("locked", "locked_qty", "ord_psbl_qty_sub")
 POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "avgPrice", "avg_price",
                 "avg_buy_price", "purchasePrice")
 
@@ -313,4 +320,12 @@ def read_position(rows, symbol):
     qty = _num(_first(row, POS_QTY_KEYS))
     if qty is None:
         return None, row  # the row is ours but unreadable — report it, do not call it empty
-    return {"qty": qty, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0}, row
+    # `_first` skips a zero, which is right for reading a holding and wrong for adding to one: a
+    # position with nothing locked would then fall through to whatever key came next.
+    locked = 0.0
+    for k in POS_LOCKED_KEYS:
+        if k in row:
+            locked = _num(row[k]) or 0.0
+            break
+    return {"qty": qty + locked, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0,
+            "free": qty, "locked": locked}, row

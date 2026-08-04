@@ -2398,6 +2398,27 @@ def action_selftest():
         {"currency": "ENSO", "balance": "4.47093889", "locked": "0", "avg_buy_price": "1343",
          "unit_currency": "KRW"},
     ]
+    # A resting order moves quantity out of `balance` into `locked`. Measured 2026-08-05 with a real
+    # order on the book: 4.47093889 ENSO read as `balance 1.87093889, locked 2.6`. The ledger claims
+    # the whole position, so reading `balance` alone reports a shortfall and stops the strategy from
+    # buying — punished for having an order open. A holding is what the account owns.
+    _resting = [{"currency": "ENSO", "balance": "1.87093889", "locked": "2.6",
+                 "avg_buy_price": "1343", "unit_currency": "KRW"}]
+    _r, _ = orders.read_position(_resting, "KRW-ENSO")
+    checks.append({"name": "quantity committed to a resting order is still held",
+                   "want": 4.47093889, "got": (_r or {}).get("qty"),
+                   "ok": bool(_r) and abs(_r["qty"] - 4.47093889) < 1e-9})
+    checks.append({"name": "and what is free to sell is reported separately",
+                   "want": (1.87093889, 2.6), "got": ((_r or {}).get("free"), (_r or {}).get("locked")),
+                   "ok": bool(_r) and abs(_r["free"] - 1.87093889) < 1e-9
+                        and abs(_r["locked"] - 2.6) < 1e-9})
+    # Nothing locked must not fall through to another key and invent a quantity.
+    _f, _ = orders.read_position([{"currency": "ENSO", "balance": "4.47093889", "locked": "0",
+                                   "avg_buy_price": "1343", "unit_currency": "KRW"}], "KRW-ENSO")
+    checks.append({"name": "nothing locked adds nothing", "want": 4.47093889,
+                   "got": (_f or {}).get("qty"),
+                   "ok": bool(_f) and abs(_f["qty"] - 4.47093889) < 1e-9})
+
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
     checks.append({"name": "cash is never read as a holding of the market it prices",
                    "want": 4.47093889, "got": (_found or {}).get("qty"),
@@ -2562,13 +2583,14 @@ def action_selftest():
     held, _ = orders.read_position([{"stk_cd": "005930_AL", "rmnd_qty": "7", "pur_pric": "70,500"}],
                                    "005930")
     checks.append({"name": "a suffixed symbol is still the same holding",
-                   "want": {"qty": 7.0, "avgPrice": 70500.0}, "got": held,
-                   "ok": held == {"qty": 7.0, "avgPrice": 70500.0}})
+                   "want": (7.0, 70500.0),
+                   "got": ((held or {}).get("qty"), (held or {}).get("avgPrice")),
+                   "ok": bool(held) and held["qty"] == 7.0 and held["avgPrice"] == 70500.0})
 
     us, _ = orders.read_position([{"symbol": "AAPL.US", "qty": "3", "avgPrice": "210.5"}], "AAPL")
-    checks.append({"name": "a lettered ticker is matched too", "want": {"qty": 3.0,
-                                                                       "avgPrice": 210.5},
-                   "got": us, "ok": us == {"qty": 3.0, "avgPrice": 210.5}})
+    checks.append({"name": "a lettered ticker is matched too", "want": (3.0, 210.5),
+                   "got": ((us or {}).get("qty"), (us or {}).get("avgPrice")),
+                   "ok": bool(us) and us["qty"] == 3.0 and us["avgPrice"] == 210.5})
 
     # 같은 보유를 두 이름으로 세던 자리 — 원장은 `114800_AL`, 잔고는 `A114800`. 한쪽만 장식이
     # 붙었다고 본 대조가 이걸 "판 주식"으로 읽어 포지션을 degraded 로 떨어뜨리면서 동시에 같은
