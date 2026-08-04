@@ -833,7 +833,15 @@ def action_gate(inp, settings):
         # read another module's accounts and must not guess. Carried here because the steps behind
         # the gate never see the alias, and booking a practice fill as live would feed the
         # promotion ladder the one kind of evidence it exists to reject.
-        "scopedTo": {"broker": only_broker or None, "account": only_account or None,
+        # The account is written the way the ledger writes it, and for a broker with no account
+        # concept that is the empty string — the same value every upbit row in `orders` carries.
+        # It was `None` here, and the reconcile step behind the gate declares `account` as a
+        # string, so every upbit cycle died on its last step for a whole day: no fills booked, no
+        # ledger, and a real BTC purchase sitting at the exchange that our books called canceled.
+        # The market stays `None` when unscoped, and the difference is not cosmetic — an account
+        # name is a key the ledger stores, while a market is a routing argument, and an empty
+        # market would read as "the call named a market" to the guard that refuses mismatches.
+        "scopedTo": {"broker": only_broker or None, "account": only_account or "",
                      "market": only_market or None, "mock": inp.get("mock")}
                     if (only_broker or only_account or only_market) else None,
     }}
@@ -1808,11 +1816,12 @@ def action_reconcile(inp, settings):
             report["unattributed"].append(f["raw"])
             continue
         if not store.record_fill(conn, order_key_=order["order_key"], qty=f["qty"],
-                                 price=f["price"], broker_exec_id=f["execId"], raw=f["raw"]):
+                                 price=f["price"], fee=f.get("fee") or 0.0,
+                                 broker_exec_id=f["execId"], raw=f["raw"]):
             continue  # already booked on an earlier pass
         store.apply_fill(conn, strategy_id=order["strategy_id"], broker=order["broker"],
                          account=order["account"], symbol=order["symbol"], side=order["side"],
-                         qty=f["qty"], price=f["price"], source="order",
+                         qty=f["qty"], price=f["price"], fee=f.get("fee") or 0.0, source="order",
                          ref_order_key=order["order_key"],
                          fee_in_cost=settings.get("feeInCost", True))
         filled = float(order.get("filled_qty") or 0) + f["qty"]
@@ -2249,6 +2258,23 @@ def action_selftest():
                         and got[0]["qty"] == 3 and got[0]["price"] == 70500})
     checks.append({"name": "an execution without an id still gets one", "want": True,
                    "got": got[1]["execId"], "ok": bool(got[1]["execId"])})
+    # The real first BTC buy, verbatim: limited at 90,833,000 and filled at 90,743,000. Reading the
+    # limit as the fill price overstates the cost basis for the life of the position, and reading no
+    # fee makes a live result look better than the backtest it is measured against.
+    real, _ = orders.read_fills([{
+        "uuid": "210c37e5", "side": "bid", "ord_type": "limit", "price": "90833000",
+        "state": "done", "market": "KRW-BTC", "volume": "0.00006612", "remaining_volume": "0",
+        "paid_fee": "2.99996358", "executed_volume": "0.00006612", "executed_funds": "5999.92716",
+    }])
+    checks.append({"name": "a limit fill is priced by what was paid, not by the limit",
+                   "want": 90743000.0, "got": real[0]["price"],
+                   "ok": abs(real[0]["price"] - 90743000.0) < 1.0})
+    checks.append({"name": "the fee the venue charged reaches the ledger",
+                   "want": 2.99996358, "got": real[0]["fee"],
+                   "ok": abs(real[0]["fee"] - 2.99996358) < 1e-6})
+    # A broker that states an executed unit price and no total keeps using it.
+    checks.append({"name": "a stated unit price still wins when no total is given",
+                   "want": 70500, "got": got[0]["price"], "ok": got[0]["price"] == 70500})
 
     # An acknowledgement is not a fill. Every broker names its order number differently and none
     # of them document the response, so the number is found by name and everything else ignored.
@@ -3528,6 +3554,38 @@ def action_selftest():
     scoped = ((gated.get("data") or {}).get("scopedTo") or {})
     checks.append({"name": "the gate carries the account's nature to the steps behind it",
                    "want": True, "got": scoped.get("mock"), "ok": scoped.get("mock") is True})
+
+    # `scopedTo` is not a report — every schedule wires it straight back into this module's own
+    # declared inputs, so whatever the gate puts there has to satisfy the declaration for a param
+    # of the same name. It did not: a broker with no account concept produced `account: None`,
+    # `account` is declared a string, and validation runs before the module, so every upbit cycle
+    # for a whole day died on its last step. The pipeline reported "실패" and named neither side.
+    no_acct = action_gate({"action": "gate", "broker": "upbit-trade"},
+                          {"tradingEnabled": True, "mode": "real", "realArmed": True,
+                           "trades": [{"id": "u", "symbol": "KRW-BTC", "broker": "upbit-trade"}],
+                           "strategies": [{"id": "u", "enabled": True, "kind": "rules",
+                                           "symbol": "KRW-BTC", "broker": "upbit-trade",
+                                           "rules": []}]})
+    us = ((no_acct.get("data") or {}).get("scopedTo") or {})
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"),
+              encoding="utf-8") as _fh:
+        declared = ((json.load(_fh).get("input") or {}).get("properties") or {})
+    _JSON_TYPES = {"string": str, "number": (int, float), "integer": int,
+                   "boolean": bool, "array": list, "object": dict}
+    bad_scope = []
+    for key, value in us.items():
+        want = declared.get(key)
+        if not isinstance(want, dict) or value is None:
+            continue  # not a declared input of ours, or deliberately unscoped
+        names = want.get("type")
+        names = [names] if isinstance(names, str) else (names or [])
+        allow = tuple(t for n in names for t in ((_JSON_TYPES.get(n),) if _JSON_TYPES.get(n) else ()))
+        if allow and not isinstance(value, allow):
+            bad_scope.append("%s=%r not %s" % (key, value, names))
+    checks.append({"name": "what the gate scopes to satisfies this module's own input declaration",
+                   "want": [], "got": bad_scope, "ok": not bad_scope})
+    checks.append({"name": "a broker with no account scopes to the name the ledger writes",
+                   "want": "", "got": us.get("account"), "ok": us.get("account") == ""})
     # The routing itself: a strategy demoted to paper writes to the paper file even when the
     # module is set to real.
     routed = []

@@ -135,6 +135,19 @@ FILL_QTY_KEYS = ("cntr_qty", "tot_ccld_qty", "ft_ccld_qty", "ccld_qty", "CCLD_QT
 FILL_PRICE_KEYS = ("cntr_uv", "cntr_pric", "avg_prvs", "ft_ccld_unpr3", "ccld_prvs", "CCLD_PRVS",
                    "avgPrice", "filledPrice", "executedPrice", "price")
 EXEC_ID_KEYS = ("cntr_no", "execId", "executionId", "CCLD_NO", "exec_no", "uuid")
+# A stated total beats a stated unit price. `price` on an upbit order row is the **limit** the order
+# was placed at, and a limit order that fills better than its limit is the normal good case — the
+# first real BTC buy was limited at 90,833,000 and filled at 90,743,000, and reading `price` would
+# have booked the cost basis 0.1% too high and understated the profit for as long as the position
+# lived. The exchange states the truth as a total (`executed_funds`), which divided by the executed
+# quantity is the average the account actually paid — it agrees with the balance's avg_buy_price to
+# the won. Brokers that state an executed unit price (kiwoom `cntr_uv`) need none of this.
+FILL_FUNDS_KEYS = ("executed_funds",)
+# What the venue actually charged, when it says so. Booking a live fill with no fee while the
+# backtest charges one is the asymmetry that makes a strategy look promotable — the same reason
+# `adopt` refuses cost-free measurements. Unknown stays zero rather than estimated from a rate:
+# a guessed fee in the ledger is indistinguishable from a charged one.
+FILL_FEE_KEYS = ("paid_fee",)
 # upbit says `bid`/`ask`; the reader below only needs to find *a* side, not decode it.
 SIDE_KEYS = ("sell_tp", "io_tp_nm", "SLL_BUY_DVSN_CD", "side", "trde_tp_nm")
 
@@ -167,6 +180,9 @@ def read_fills(rows):
             continue
         qty = _num(_first(row, FILL_QTY_KEYS))
         price = _num(_first(row, FILL_PRICE_KEYS))
+        funds = _num(_first(row, FILL_FUNDS_KEYS))
+        if funds and qty:
+            price = funds / qty
         order_no = _dig(row, *ORDER_NO_KEYS)
         if not qty or not price:
             unreadable.append(row)
@@ -175,6 +191,7 @@ def read_fills(rows):
             "brokerOrderNo": order_no,
             "qty": qty,
             "price": price,
+            "fee": _num(_first(row, FILL_FEE_KEYS)) or 0.0,
             # Without an execution id the same fill cannot be recognised twice, so one is made from
             # what identifies it — reconcile runs every cycle and must not double-book.
             "execId": str(_first(row, EXEC_ID_KEYS) or f"{order_no}:{qty}:{price}"),
