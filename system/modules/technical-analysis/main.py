@@ -2740,10 +2740,13 @@ def main():
         ann = []
         for row in levels:
             color, width = _shade(row["probability"])
-            text = "%g ATR · %s · %s%%" % (row["atrMultiple"], _fmt_price(row["price"]),
-                                           row["probability"])
+            # 짧게 — 칸이 셋만 되어도 긴 문장 셋이 캔들 위에 쌓이면 차트가 안 보인다
+            # (2026-08-04 사용자: "보기가 어렵노"). 조건부는 화살표 하나로 줄이고, 무슨 뜻인지는
+            # 표(levels)와 페이지 본문이 말한다.
+            text = "%gATR %s · %s%%" % (row["atrMultiple"], _fmt_price(row["price"]),
+                                        round(row["probability"]))
             if row.get("nextProbability") is not None:
-                text += " (%g 돌파 후 %s%%)" % (row["nextFrom"], row["nextProbability"])
+                text += " → %s%%" % round(row["nextProbability"])
             ann.append({
                 "kind": "path", "color": color, "width": width, "label": text,
                 "points": [{"i": last_i, "price": row["price"]},
