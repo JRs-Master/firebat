@@ -194,6 +194,20 @@ POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "avgPri
                 "avg_buy_price", "purchasePrice")
 
 
+def _symbol_core(text):
+    """The instrument's name with our venue notation and punctuation taken off.
+
+    `005930_AL` and `005930_NX` are the same company at two exchanges — the suffix says which book
+    a quote came from, and an order or a holding has no such thing. Written without `re` because
+    this module deliberately imports nothing.
+    """
+    s = str(text or "").strip()
+    at = s.rfind("_")
+    if 0 < at and s[at + 1:].isalpha() and len(s) - at - 1 <= 4:
+        s = s[:at]
+    return "".join(ch for ch in s if ch.isalnum()).upper()
+
+
 def _same_symbol(value, symbol):
     """A symbol matches its 6-digit core, whatever the broker hangs off it.
 
@@ -202,12 +216,22 @@ def _same_symbol(value, symbol):
     reconciliation would then settle as a sale that never happened. Letters are kept: stripping to
     digits would leave every US ticker empty and make the whole account look sold.
     """
-    a = "".join(ch for ch in str(value or "") if ch.isalnum()).upper()
-    b = "".join(ch for ch in str(symbol or "") if ch.isalnum()).upper()
+    a, b = _symbol_core(value), _symbol_core(symbol)
     if not a or not b:
         return False
-    # The decoration hangs off the front or the back of the code we asked for, never replaces it.
-    return a.startswith(b) or a.endswith(b)
+    if a == b:
+        return True
+    # Decoration hangs off the front or the back, and **either side may be the decorated one** —
+    # measured 2026-08-04: our ledger said `114800_AL` while the balance said `A114800`, and the
+    # one-sided test read that as a holding that had been sold. It degraded the position and put
+    # the same 520 shares in the unassigned bucket at the same time, counting one holding twice
+    # under two names. The venue suffix is stripped first because it is our own notation for where
+    # the quote came from, not part of the instrument's name.
+    if a.startswith(b) or a.endswith(b):
+        return True
+    # The reverse direction is the new half, so it carries the new caution: a one-character name
+    # would otherwise be a prefix of half the market. Real codes are three or more.
+    return len(a) >= 3 and (b.startswith(a) or b.endswith(a))
 
 
 def position_symbol(row):

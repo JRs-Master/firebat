@@ -2355,6 +2355,19 @@ def action_selftest():
                                                                        "avgPrice": 210.5},
                    "got": us, "ok": us == {"qty": 3.0, "avgPrice": 210.5}})
 
+    # 같은 보유를 두 이름으로 세던 자리 — 원장은 `114800_AL`, 잔고는 `A114800`. 한쪽만 장식이
+    # 붙었다고 본 대조가 이걸 "판 주식"으로 읽어 포지션을 degraded 로 떨어뜨리면서 동시에 같은
+    # 수량을 무주 버킷에 넣었다(2026-08-04 실측, 260주가 체결된 직후).
+    both, brow = orders.read_position([{"stk_cd": "A114800", "rmnd_qty": "260"}], "114800_AL")
+    checks.append({"name": "접두사와 접미사가 동시에 붙어도 같은 종목이다",
+                   "want": 260.0, "got": (both or {}).get("qty"),
+                   "ok": (both or {}).get("qty") == 260.0})
+    checks.append({"name": "그래도 다른 종목은 안 붙는다", "want": None,
+                   "got": orders.read_position([{"stk_cd": "A114800", "rmnd_qty": "1"}],
+                                               "005930_AL")[0],
+                   "ok": orders.read_position([{"stk_cd": "A114800", "rmnd_qty": "1"}],
+                                              "005930_AL")[0] is None})
+
     missing, row = orders.read_position([{"stk_cd": "000660", "rmnd_qty": "3"}], "005930")
     checks.append({"name": "another symbol's row is not this symbol's position",
                    "want": [None, None], "got": [missing, row],
