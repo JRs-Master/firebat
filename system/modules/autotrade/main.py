@@ -1931,6 +1931,13 @@ def action_reconcile(inp, settings):
                     continue
                 seen.add(sym)
                 found, row = orders.read_position(balance_rows, sym)
+                if row is not None and id(row) in consumed:
+                    # 같은 잔고 행을 이미 다른 이름으로 정산했다 — 한 보유를 두 이름으로 들고
+                    # 있는 것(브로커가 `A114800`, 원장이 `114800_AL`). 두 번 세면 장부가 실제
+                    # 보유의 두 배가 된다. 이 이름 밑에는 아무것도 없는 게 맞으므로 0으로
+                    # 정산해 무주 잔재가 빠져나가게 한다.
+                    reconciled.append(store.reconcile_symbol(conn, broker, account, sym, 0.0, 0.0))
+                    continue
                 if row is not None:
                     consumed.add(id(row))
                     if found is None:

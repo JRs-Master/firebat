@@ -471,12 +471,16 @@ def claimed_symbols(conn, broker, account):
     what we believe is there, and a holding that vanished from the account only shows up as the
     difference between the two.
     """
-    rows = conn.execute(
-        "SELECT symbol FROM strategy_position WHERE broker=? AND account=? AND qty > 0 "
-        "UNION SELECT symbol FROM unassigned WHERE broker=? AND account=? AND qty > 0",
-        (broker, account, broker, account),
-    ).fetchall()
-    return [r["symbol"] for r in rows if r["symbol"]]
+    # 전략이 claim 하는 이름을 먼저 — 같은 보유가 두 이름으로 적혀 있을 때(브로커가 부르는 이름과
+    # 우리 이름) 어느 쪽으로 정산하느냐가 갈리는데, 전략이 실제로 들고 있다고 말하는 쪽이 진짜다.
+    named = [r["symbol"] for r in conn.execute(
+        "SELECT DISTINCT symbol FROM strategy_position WHERE broker=? AND account=? AND qty > 0",
+        (broker, account))]
+    seen = set(named)
+    extra = [r["symbol"] for r in conn.execute(
+        "SELECT symbol FROM unassigned WHERE broker=? AND account=? AND qty > 0",
+        (broker, account)) if r["symbol"] and r["symbol"] not in seen]
+    return [s for s in named + extra if s]
 
 
 def accounted_qty(conn, broker, account, symbol):
