@@ -2695,10 +2695,14 @@ def main():
                    "gainPct": round((target / px - 1) * 100, 3) if px else None,
                    "probability": round(100.0 * hit / len(samples), 1)}
             levels.append(row)
-            # 누적용 한 줄 — **예측을 기록 시점에 못 박는다**. 나중에 실제로 닿았는지 채점할 수
-            # 있어야 이 화면이 의견이 아니라 기록이 된다.
-            records.append({"at": last["date"], "asOfMs": at_ms, "close": px,
-                            "atr": round(last_atr, 4), **row})
+        # 누적은 **봉당 한 줄** — 칸마다 한 줄이면 같은 시각이 다섯 번이라 키가 겹친다. 그리고
+        # 여기 적히는 값이 **예측을 기록 시점에 못 박는 것**이다. 나중에 실제로 닿았는지 채점할
+        # 수 있어야 이 화면이 의견이 아니라 기록이 된다.
+        records.append({
+            "at": last["date"], "asOfMs": at_ms, "close": px, "atr": round(last_atr, 4),
+            "levels": " · ".join("%gATR %s %s%%" % (r["atrMultiple"], _fmt_price(r["price"]),
+                                                    r["probability"]) for r in levels),
+        })
         # 확률이 낮을수록 옅게 — 선 하나하나가 "여기까지 올 가능성"이라 굵기·색이 곧 값이다.
         def _shade(p):
             if p >= 60: return "#059669", 2
