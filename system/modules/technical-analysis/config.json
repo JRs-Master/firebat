@@ -373,7 +373,8 @@
     "alias": "ta",
     "action": "chart_annotations",
     "actions": {
-      "signals": {}
+      "signals": {},
+      "reach_levels": {}
     }
   },
   "cacheInputs": [
