@@ -152,6 +152,8 @@
         "action": "reconcile"
       },
       "inputMap": {
+        "broker": "$step0.scopedTo.broker",
+        "account": "$step0.scopedTo.account",
         "fills": "$step9.rows",
         "openOrders": "$step10.rows",
         "balanceRows": "$step11.rows"

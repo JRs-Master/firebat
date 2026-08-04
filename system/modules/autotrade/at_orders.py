@@ -210,6 +210,20 @@ def _same_symbol(value, symbol):
     return a.startswith(b) or a.endswith(b)
 
 
+def position_symbol(row):
+    """The instrument a balance row is about, as the broker wrote it — None if unreadable.
+
+    Reconciliation is driven by what the account holds, so it has to be able to name a holding the
+    ledger has never heard of (bought by hand, transferred in). The same key vocabulary the matcher
+    uses, read forwards.
+    """
+    if not isinstance(row, dict):
+        return None
+    value = _first(row, POS_SYMBOL_KEYS) or row.get("stk_cd")
+    text = str(value or "").strip()
+    return text or None
+
+
 def read_position(rows, symbol):
     """Balance rows → ({qty, avgPrice}, matchedRow) for this symbol, or (None, None).
 

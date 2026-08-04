@@ -1779,8 +1779,15 @@ def action_reconcile(inp, settings):
     conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
     symbol = inp.get("symbol")
     strategies = pick_strategies(settings, symbol=symbol, strategy_id=inp.get("strategyId"))
-    broker = (strategies[0].get("broker") if strategies else None) or "unknown"
-    account = (strategies[0].get("account") if strategies else None) or ""
+    # The cycle's scope wins over "whichever strategy happens to be first in the list". That
+    # fallback picks the first *eligible* trade, which in a schedule covering one broker is
+    # routinely a different one — and the account is what the unassigned bucket is keyed by, so
+    # getting it from the wrong place files a holding under a broker that never held it.
+    broker = (inp.get("broker") or (strategies[0].get("broker") if strategies else None)
+              or "unknown")
+    account = inp.get("account")
+    if account is None:
+        account = (strategies[0].get("account") if strategies else None) or ""
     report = {"applied": [], "unattributed": [], "unreadable": [], "aged": []}
 
     # 1. Fills → ledger, attributed through the order row that produced them.
@@ -1871,6 +1878,64 @@ def action_reconcile(inp, settings):
     elif unread_pos is not None:
         store.log_api(conn, broker, "balance:unreadable", False, 0, {"symbol": symbol}, unread_pos)
 
+    # 4b. And every other instrument this account holds or the ledger claims.
+    #
+    # The invariant is about the account, not about whichever symbol a caller happened to name —
+    # and the live schedules name none, so `reconcile_symbol` ran for nothing all day (every cycle
+    # answered `"reconcile": null`). Shares bought by hand were never absorbed into the unassigned
+    # bucket, and shares sold by hand were never missed. A strategy's own ledger stays separate
+    # either way — that is what the two tables are for — but nothing was checking that the two
+    # together still add up to what the broker holds.
+    #
+    # Driven by the balance plus what the ledger claims, never by the caller. Balance rows already
+    # matched by name are not walked again: a row is one holding no matter which spelling of the
+    # code found it, and counting it twice would invent an unassigned position.
+    reconciled = [verdict] if verdict else []
+    unreadable_positions = []
+    balance_rows = inp.get("balanceRows")
+    if isinstance(balance_rows, list):
+        consumed, seen = set(), set()
+        if symbol:
+            seen.add(symbol)
+            _, first_row = orders.read_position(balance_rows, symbol)
+            if first_row is not None:
+                consumed.add(id(first_row))
+        # An empty balance is not proof of an empty account. One short or failed page would
+        # otherwise read as "everything was sold" and degrade every position at once, which is a
+        # far worse mistake than missing a hand-made sale for one cycle.
+        if balance_rows:
+            for sym in store.claimed_symbols(conn, broker, account):
+                if not sym or sym in seen:
+                    continue
+                seen.add(sym)
+                found, row = orders.read_position(balance_rows, sym)
+                if row is not None:
+                    consumed.add(id(row))
+                    if found is None:
+                        unreadable_positions.append(row)
+                        continue
+                # Not listed at all, with rows present: the account really does not hold it.
+                reconciled.append(store.reconcile_symbol(
+                    conn, broker, account, sym,
+                    float((found or {}).get("qty") or 0),
+                    float((found or {}).get("avgPrice") or 0)))
+        for row in balance_rows:
+            if not isinstance(row, dict) or id(row) in consumed:
+                continue
+            sym = orders.position_symbol(row)
+            if not sym:
+                unreadable_positions.append(row)
+                continue
+            found, _ = orders.read_position([row], sym)
+            if found is None:
+                unreadable_positions.append(row)
+                continue
+            if float(found.get("qty") or 0) <= 0:
+                continue  # listed but empty claims nothing
+            reconciled.append(store.reconcile_symbol(
+                conn, broker, account, sym,
+                float(found["qty"]), float(found.get("avgPrice") or 0)))
+
     # 5. The way out of `unknown`. Ageing an unconfirmed order stops the strategy, which is right,
     # but nothing ever released it: one order the broker never accepted degraded a position for
     # good and blocked every later entry. An order is declared void only when the venue agrees on
@@ -1918,11 +1983,11 @@ def action_reconcile(inp, settings):
                                        "diffs": drift})
     conn.close()
     return {"success": True, "data": {
-        "reconcile": verdict, "ledgerDrift": drift,
+        "reconcile": verdict, "reconciled": reconciled, "ledgerDrift": drift,
         "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
         "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
         "voided": voided,
-        "unreadablePosition": unread_pos,
+        "unreadablePosition": unread_pos, "unreadablePositions": unreadable_positions,
         "note": ("접수 응답이 아니라 체결·잔고 조회가 원장을 확정합니다. 읽지 못한 체결 행은 "
                  "버리지 않고 그대로 돌려주므로, 실제 응답을 보고 필드명을 늘리면 됩니다."
                  if report["unreadable"] or unread_pos else None),
@@ -2320,6 +2385,49 @@ def action_selftest():
                    "want": [None, True],
                    "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
                    "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
+
+    # --- a person trading the same account by hand ----------------------------------------
+    # Their shares must never join a strategy's average, and must not go unnoticed either. The
+    # schedules name no symbol, which is exactly the case that used to reconcile nothing at all.
+    conn3 = store.connect("dryrun")
+    store.apply_fill(conn3, strategy_id="mine", broker="b2", account="a2", symbol="TQQQ",
+                     side="buy", qty=10, price=100, source="test")
+    conn3.close()
+    settings_h = {"mode": "dryrun", "strategies": [
+        {"id": "mine", "symbol": "TQQQ", "broker": "b2", "account": "a2"}]}
+    # The broker holds 15: our 10 plus 5 the person bought. No `symbol` in the call.
+    swept = action_reconcile({"broker": "b2", "account": "a2",
+                              "balanceRows": [{"stk_cd": "TQQQ", "rmnd_qty": "15",
+                                               "pur_pric": "120"},
+                                              {"stk_cd": "IONQ", "rmnd_qty": "4",
+                                               "pur_pric": "40"}]},
+                             settings_h)["data"]
+    by_sym = {v["symbol"]: v for v in swept["reconciled"]}
+    checks.append({"name": "a symbol no strategy names is still reconciled",
+                   "want": ["TQQQ", "IONQ"], "got": sorted(by_sym),
+                   "ok": sorted(by_sym) == ["IONQ", "TQQQ"]})
+    checks.append({"name": "the surplus a person bought lands in the unassigned bucket",
+                   "want": 5.0, "got": by_sym.get("TQQQ", {}).get("unassignedQty"),
+                   "ok": abs((by_sym.get("TQQQ", {}).get("unassignedQty") or 0) - 5.0) < 1e-6})
+    conn3 = store.connect("dryrun")
+    held = store.position_of(conn3, "mine", "b2", "a2", "TQQQ")
+    conn3.close()
+    checks.append({"name": "and never joins the strategy's own average",
+                   "want": [10.0, 100.0], "got": [held["qty"], held["avg_price"]],
+                   "ok": abs(held["qty"] - 10.0) < 1e-6 and abs(held["avg_price"] - 100.0) < 1e-6})
+    # A holding the ledger claims that the account no longer shows: the person sold it.
+    gone = action_reconcile({"broker": "b2", "account": "a2",
+                             "balanceRows": [{"stk_cd": "IONQ", "rmnd_qty": "4"}]},
+                            settings_h)["data"]
+    tq = {v["symbol"]: v for v in gone["reconciled"]}.get("TQQQ", {})
+    checks.append({"name": "shares sold by hand are noticed, not assumed",
+                   "want": "degraded", "got": tq.get("action"),
+                   "ok": tq.get("action") == "degraded"})
+    # An empty balance is a failed read, not a liquidation.
+    quiet = action_reconcile({"broker": "b2", "account": "a2", "balanceRows": []},
+                             settings_h)["data"]
+    checks.append({"name": "an empty balance degrades nothing", "want": [],
+                   "got": quiet["reconciled"], "ok": quiet["reconciled"] == []})
 
     # --- the human switch ----------------------------------------------------------------
     gate_strats = [{"id": "g", "enabled": True, "symbol": "X", "broker": "b", "account": "a"}]

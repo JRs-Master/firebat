@@ -449,6 +449,22 @@ def record_transfer(conn, *, cycle_id, from_strategy, to_strategy, broker, accou
 
 
 # ── reconciliation ───────────────────────────────────────────────────────────────────────────
+def claimed_symbols(conn, broker, account):
+    """Every instrument this account's ledger says it is holding — strategies and the unassigned
+    bucket alike.
+
+    The other half of what reconciliation has to walk. The balance says what is there; this says
+    what we believe is there, and a holding that vanished from the account only shows up as the
+    difference between the two.
+    """
+    rows = conn.execute(
+        "SELECT symbol FROM strategy_position WHERE broker=? AND account=? AND qty > 0 "
+        "UNION SELECT symbol FROM unassigned WHERE broker=? AND account=? AND qty > 0",
+        (broker, account, broker, account),
+    ).fetchall()
+    return [r["symbol"] for r in rows if r["symbol"]]
+
+
 def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
     """Compare what the strategies claim against what the broker reports.
 
