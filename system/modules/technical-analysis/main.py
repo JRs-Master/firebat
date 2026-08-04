@@ -2668,12 +2668,16 @@ def main():
         highs = [b["high"] for b in bars]
         # 표본은 겹친다(하루씩 밀며 같은 미래를 본다) — 점추정에는 쓰되 **유효 표본은 지평으로
         # 나눈 값**이라 그 숫자를 같이 내보낸다. 오늘 이 함정으로 +8%p 짜리 결과가 한 번 증발했다.
-        samples = []
+        samples, paths = [], []
         for t in range(len(bars) - horizon - 1):
             a, c = a_ser[t], bars[t]["close"]
             if not a or not c:
                 continue
-            samples.append((max(highs[t + 1:t + 1 + horizon]) - c) / a)
+            # 경로를 ATR 단위로 그대로 들고 간다 — 조건부 확률은 "먼저 닿은 시점 이후"만 봐야 해서
+            # 최고값 하나로는 못 센다. 남은 시간이 줄어든다는 게 그 조건의 핵심이다.
+            walk = [(h - c) / a for h in highs[t + 1:t + 1 + horizon]]
+            samples.append(max(walk))
+            paths.append(walk)
         last, last_atr = bars[-1], a_ser[-1]
         if not samples or not last_atr:
             print(json.dumps({"success": True, "data": {
@@ -2688,13 +2692,32 @@ def main():
         px = last["close"]
         at_ms = int(_num_or(inp.get("asOfMs"), 0)) or None
         levels, records = [], []
+        prev_m = None
         for m in mults:
             hit = sum(1 for v in samples if v >= m)
+            # 돌파 후 다음 칸 — **앞 칸에 닿은 그 시점부터** 남은 봉만 보고 센다. 무조건부 확률의
+            # 비율로 구하면 남은 시간이 줄어든 걸 안 세서 실제보다 후하게 나온다.
+            nxt = None
+            if prev_m is not None:
+                reach = after = 0
+                for walk in paths:
+                    at = next((i for i, v in enumerate(walk) if v >= prev_m), None)
+                    if at is None:
+                        continue
+                    reach += 1
+                    if any(v >= m for v in walk[at + 1:]):
+                        after += 1
+                if reach >= 20:
+                    nxt = round(100.0 * after / reach, 1)
             target = px + m * last_atr
             row = {"atrMultiple": m, "price": round(target, 4),
                    "gainPct": round((target / px - 1) * 100, 3) if px else None,
                    "probability": round(100.0 * hit / len(samples), 1)}
+            if nxt is not None:
+                row["nextProbability"] = nxt
+                row["nextFrom"] = prev_m
             levels.append(row)
+            prev_m = m
         # 누적은 **봉당 한 줄** — 칸마다 한 줄이면 같은 시각이 다섯 번이라 키가 겹친다. 그리고
         # 여기 적히는 값이 **예측을 기록 시점에 못 박는 것**이다. 나중에 실제로 닿았는지 채점할
         # 수 있어야 이 화면이 의견이 아니라 기록이 된다.
@@ -2719,6 +2742,8 @@ def main():
             color, width = _shade(row["probability"])
             text = "%g ATR · %s · %s%%" % (row["atrMultiple"], _fmt_price(row["price"]),
                                            row["probability"])
+            if row.get("nextProbability") is not None:
+                text += " (%g 돌파 후 %s%%)" % (row["nextFrom"], row["nextProbability"])
             ann.append({
                 "kind": "path", "color": color, "width": width, "label": text,
                 "points": [{"i": last_i, "price": row["price"]},
