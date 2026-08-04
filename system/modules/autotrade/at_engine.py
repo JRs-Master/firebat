@@ -238,6 +238,26 @@ def money_of(money, *names):
     return 0.0
 
 
+def daily_loss_limits(settings):
+    """`{currency: limit}` for the daily loss stop, from both the map and the legacy won field.
+
+    Same shape as `money_of`'s two names: the currency-neutral declaration is the one to use and the
+    won-suffixed one keeps working. A person who typed a won limit wins over the map's won entry —
+    settings are the surface they control.
+    """
+    out = {}
+    declared = settings.get("dailyLossLimits")
+    if isinstance(declared, dict):
+        for cur, value in declared.items():
+            amount = _num(value)
+            if amount > 0:
+                out[str(cur).strip().upper()] = amount
+    legacy = _num(settings.get("dailyLossLimitKrw"))
+    if legacy > 0:
+        out["KRW"] = legacy
+    return out
+
+
 def _size_from_money(money, price):
     """How much to trade for one leg. `qty` wins when declared; otherwise a won budget per order.
 

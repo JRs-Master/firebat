@@ -183,8 +183,30 @@ def _num(v):
 
 
 def _first(row, names):
+    """First field present under any of these names, skipping blanks. For text — ids, sides, symbols.
+    A number is read with `_first_num`, which knows the several ways a broker writes zero.
+    """
     for k in names:
         if k in row and str(row[k]).strip() not in ("", "0"):
+            return row[k]
+    return None
+
+
+def _first_num(row, names):
+    """First field that parses to a non-zero number.
+
+    The emptiness test has to be numeric, not textual. A broker writes zero however it likes — `0`,
+    `0.00`, `000000000000` — and a `!= "0"` comparison only catches the first spelling. Measured
+    2026-08-05: kiwoom's overseas balance answers `{"qty": "000000000000", "poss_qty":
+    "000000000006"}`, the padded zero passed the textual test, and six held shares were read as
+    none. A written zero is worse than a missing field here: a missing field reads as "could not be
+    read" and gets reported, while a zero reads as "the account holds nothing" and settles it.
+    """
+    for k in names:
+        if k not in row:
+            continue
+        value = _num(row[k])
+        if value is not None and value != 0.0:
             return row[k]
     return None
 
@@ -200,9 +222,9 @@ def read_fills(rows):
     for row in rows or []:
         if not isinstance(row, dict):
             continue
-        qty = _num(_first(row, FILL_QTY_KEYS))
-        price = _num(_first(row, FILL_PRICE_KEYS))
-        funds = _num(_first(row, FILL_FUNDS_KEYS))
+        qty = _num(_first_num(row, FILL_QTY_KEYS))
+        price = _num(_first_num(row, FILL_PRICE_KEYS))
+        funds = _num(_first_num(row, FILL_FUNDS_KEYS))
         if funds and qty:
             price = funds / qty
         order_no = _dig(row, *ORDER_NO_KEYS)
@@ -213,7 +235,7 @@ def read_fills(rows):
             "brokerOrderNo": order_no,
             "qty": qty,
             "price": price,
-            "fee": _num(_first(row, FILL_FEE_KEYS)) or 0.0,
+            "fee": _num(_first_num(row, FILL_FEE_KEYS)) or 0.0,
             # Without an execution id the same fill cannot be recognised twice, so one is made from
             # what identifies it — reconcile runs every cycle and must not double-book.
             "execId": str(_first(row, EXEC_ID_KEYS) or f"{order_no}:{qty}:{price}"),
@@ -235,10 +257,14 @@ def read_fills(rows):
 # unreadable quantity is reported, an unmatched symbol is silence.
 POS_SYMBOL_KEYS = ("stk_cd", "pdno", "PDNO", "ovrs_pdno", "symbol", "code", "isin",
                    "currency", "market")
-# `ord_psbl_qty` sits beside it and is the *sellable* quantity, which is not the holding — it is the
-# overseas twin of upbit's `locked` split, and it is deliberately not read as a total.
-POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "ovrs_cblc_qty", "cur_qty", "HLDG_QTY", "quantity",
-                "qty", "balance")
+# `ord_psbl_qty` (Korea Investment) and `sell_alowq` (kiwoom) sit beside the holding and are the
+# *sellable* quantity, which is not it — they are the overseas twin of upbit's `locked` split, and
+# are deliberately not read as a total.
+# `poss_qty` is kiwoom's overseas holding. Its `qty` in the same row is not the position: measured
+# 2026-08-05 on shares bought that session, `qty` was zero while `poss_qty` held all six. Both names
+# are listed, and `_first_num` is what makes the order between them not matter.
+POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "ovrs_cblc_qty", "poss_qty", "cur_qty", "HLDG_QTY",
+                "quantity", "qty", "balance")
 # Shares the account holds that are committed to a resting order. Upbit moves them out of `balance`
 # into `locked`, so a holding with an order on it reads short by exactly the order size — measured
 # 2026-08-05: 4.47093889 ENSO showed as `balance 1.87093889, locked 2.6` while one sell rested. The
@@ -246,8 +272,11 @@ POS_QTY_KEYS = ("rmnd_qty", "hldg_qty", "ovrs_cblc_qty", "cur_qty", "HLDG_QTY", 
 # strategy from buying, for no reason other than that it had an order open. A holding is what the
 # account owns, not what is currently free to sell.
 POS_LOCKED_KEYS = ("locked", "locked_qty", "ord_psbl_qty_sub")
-POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "avgPrice", "avg_price",
-                "avg_buy_price", "purchasePrice")
+# `frgn_stk_book_uv` = kiwoom's book unit price in the listing currency (309.6250 against a recorded
+# average of 309.625 — the same number, not a converted one). The won-denominated twin beside it is
+# not interchangeable with it, so only this one is read.
+POS_AVG_KEYS = ("pur_pric", "pchs_avg_pric", "avg_prc", "PCHS_AVG_PRIC", "frgn_stk_book_uv",
+                "avgPrice", "avg_price", "avg_buy_price", "purchasePrice")
 
 
 def _symbol_core(text):
@@ -349,15 +378,15 @@ def read_position(rows, symbol):
     row = exact if exact is not None else loose
     if row is None:
         return None, None
-    qty = _num(_first(row, POS_QTY_KEYS))
+    qty = _num(_first_num(row, POS_QTY_KEYS))
     if qty is None:
         return None, row  # the row is ours but unreadable — report it, do not call it empty
-    # `_first` skips a zero, which is right for reading a holding and wrong for adding to one: a
+    # `_first_num` skips a zero, which is right for reading a holding and wrong for adding to one: a
     # position with nothing locked would then fall through to whatever key came next.
     locked = 0.0
     for k in POS_LOCKED_KEYS:
         if k in row:
             locked = _num(row[k]) or 0.0
             break
-    return {"qty": qty + locked, "avgPrice": _num(_first(row, POS_AVG_KEYS)) or 0.0,
+    return {"qty": qty + locked, "avgPrice": _num(_first_num(row, POS_AVG_KEYS)) or 0.0,
             "free": qty, "locked": locked}, row

@@ -35,13 +35,18 @@ interface Report {
   /** Realised profit as the ledger states it. Carried inside `report`, so reading it costs no
    *  extra call and no broker query. */
   pnl?: {
-    realizedToday?: number;
-    realizedTotal?: number;
-    sold?: { today?: Leg; total?: Leg };
-    transferred?: { today?: Leg; total?: Leg };
+    /** Per currency, and never summed across them — adding won to dollars needs a rate the module
+     *  does not have. `?` is the bucket for rows whose currency could not be told. */
+    currencies?: string[];
+    byCurrency?: Record<string, {
+      realizedToday?: number;
+      realizedTotal?: number;
+      sold?: { today?: Leg; total?: Leg };
+      transferred?: { today?: Leg; total?: Leg };
+    }>;
     byStrategy?: Row[];
     held?: Row[];
-    unrealized?: { total?: number | null; priced?: number; unpriced?: string[] };
+    unrealized?: Record<string, { total?: number | null; priced?: number; unpriced?: string[] }>;
   };
 }
 
@@ -64,14 +69,20 @@ function num(v: any, max = 8): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: Math.min(max, 2) });
 }
 
-/** Won, with a sign, because the sign is the whole point. Coins need decimals; won does not. */
-function money(v: any): string {
+/** Signed, because the sign is the whole point. Won rounds to units; a dollar or a coin does not. */
+function money(v: any, currency?: string): string {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
-  const s = Math.abs(n) < 1 && n !== 0
-    ? String(Number(n.toPrecision(4)))
+  const whole = !currency || currency === 'KRW';
+  const s = (!whole || (Math.abs(n) < 1 && n !== 0))
+    ? String(Number(n.toPrecision(6)))
     : Math.round(n).toLocaleString();
   return n > 0 ? `+${s}` : s;
+}
+
+/** What a currency is called on screen. `?` is the ledger's own name for "could not be told". */
+function curLabel(cur: string): string {
+  return cur === '?' ? '통화 미확인' : cur;
 }
 
 /** Green up, red down, grey flat. Never green for a zero — a flat day is not a good day. */
@@ -216,46 +227,58 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           had every row needed and the only consumer of a realised total was the daily loss limit,
           which asks whether to stop. Fees and taxes sit beside the gain rather than inside it —
           "made 2,080" and "made 2,080 after paying 240" are different sentences. */}
-      {pnl && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {([
-            ['오늘 실현', pnl.realizedToday, pnl.sold?.today],
-            ['누적 실현', pnl.realizedTotal, pnl.sold?.total],
-          ] as const).map(([label, value, leg]) => (
-            <div key={label} className="rounded-lg border border-slate-200 px-2.5 py-2">
-              <div className="text-[10px] font-bold text-slate-400">{label}</div>
-              <div className={`text-sm font-bold ${tone(value)}`}>{money(value)}</div>
-              <div className="text-[10px] text-slate-400">
-                {leg?.count ? `${leg.count}회 · 비용 ${money(-((leg.fee ?? 0) + (leg.tax ?? 0)))}` : '거래 없음'}
+      {/* One line per currency, never a grand total. Won and dollars were being added into a single
+          figure — a US round trip that lost $14 and a domestic one that made 1,300 won came out as
+          1,286 of nothing. */}
+      {pnl && (pnl.currencies ?? []).map(cur => {
+        const slot = pnl.byCurrency?.[cur] ?? {};
+        const un = pnl.unrealized?.[cur];
+        return (
+          <div key={cur} className="space-y-1">
+            <div className="text-[10px] font-bold text-slate-400">{curLabel(cur)}</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {([
+                ['오늘 실현', slot.realizedToday, slot.sold?.today],
+                ['누적 실현', slot.realizedTotal, slot.sold?.total],
+              ] as const).map(([label, value, leg]) => (
+                <div key={label} className="rounded-lg border border-slate-200 px-2.5 py-2">
+                  <div className="text-[10px] font-bold text-slate-400">{label}</div>
+                  <div className={`text-sm font-bold ${tone(value)}`}>{money(value, cur)}</div>
+                  <div className="text-[10px] text-slate-400">
+                    {leg?.count
+                      ? `${leg.count}회 · 비용 ${money(-((leg.fee ?? 0) + (leg.tax ?? 0)), cur)}`
+                      : '거래 없음'}
+                  </div>
+                </div>
+              ))}
+              <div className="rounded-lg border border-slate-200 px-2.5 py-2">
+                <div className="text-[10px] font-bold text-slate-400">평가손익</div>
+                {/* Null on purpose when any holding has no price. A partial sum reads as the whole. */}
+                <div className={`text-sm font-bold ${
+                  un?.total == null ? 'text-slate-400' : tone(un.total)}`}>
+                  {un?.total == null ? '가격 미조회' : money(un.total, cur)}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {un?.unpriced?.length
+                    ? `${un.unpriced.length}종목 시세 없음`
+                    : `${un?.priced ?? 0}종목`}
+                </div>
               </div>
-            </div>
-          ))}
-          <div className="rounded-lg border border-slate-200 px-2.5 py-2">
-            <div className="text-[10px] font-bold text-slate-400">평가손익</div>
-            {/* Null on purpose when any holding has no price. A partial sum reads as the whole. */}
-            <div className={`text-sm font-bold ${
-              pnl.unrealized?.total == null ? 'text-slate-400' : tone(pnl.unrealized.total)}`}>
-              {pnl.unrealized?.total == null ? '가격 미조회' : money(pnl.unrealized.total)}
-            </div>
-            <div className="text-[10px] text-slate-400">
-              {pnl.unrealized?.unpriced?.length
-                ? `${pnl.unrealized.unpriced.length}종목 시세 없음`
-                : `${pnl.unrealized?.priced ?? 0}종목`}
+              {/* Shown only when it happened, because a transfer is rare and an always-zero box
+                  beside the profit invites adding the two. */}
+              {!!slot.transferred?.total?.count && (
+                <div className="rounded-lg border border-slate-200 px-2.5 py-2">
+                  <div className="text-[10px] font-bold text-slate-400">내부이전</div>
+                  <div className={`text-sm font-bold ${tone(slot.transferred.total.pnl)}`}>
+                    {money(slot.transferred.total.pnl, cur)}
+                  </div>
+                  <div className="text-[10px] text-slate-400">매도 아님 · 합산 금지</div>
+                </div>
+              )}
             </div>
           </div>
-          {/* Shown only when it happened, because a transfer is rare and an always-zero box beside
-              the profit invites adding the two. */}
-          {!!pnl.transferred?.total?.count && (
-            <div className="rounded-lg border border-slate-200 px-2.5 py-2">
-              <div className="text-[10px] font-bold text-slate-400">내부이전</div>
-              <div className={`text-sm font-bold ${tone(pnl.transferred.total.pnl)}`}>
-                {money(pnl.transferred.total.pnl)}
-              </div>
-              <div className="text-[10px] text-slate-400">매도 아님 · 합산 금지</div>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })}
 
       <Section title="보유" count={holdings.length}>
         <Table

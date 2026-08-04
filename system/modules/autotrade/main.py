@@ -140,6 +140,10 @@ def load_settings():
         "realArmed": env_bool("MODULE_REALARMED"),
         "realMaxNotionalKrw": env_num("MODULE_REALMAXNOTIONALKRW", 100000),
         "dailyLossLimitKrw": env_num("MODULE_DAILYLOSSLIMITKRW", 50000),
+        # A limit is compared against its own currency. The won field above stays as the won entry,
+        # so anyone who set it keeps being obeyed; this is where the other currencies say their own
+        # number. A currency that trades with no limit declared is reported, not silently ungated.
+        "dailyLossLimits": env_json("MODULE_DAILYLOSSLIMITS", {}, "dailyLossLimits"),
         "accountMaxNotionalKrw": env_num("MODULE_ACCOUNTMAXNOTIONALKRW", 1000000),
         "maxOrdersPerCycle": env_num("MODULE_MAXORDERSPERCYCLE", 4),
         "feeInCost": env_bool("MODULE_FEEINCOST", True),
@@ -264,6 +268,17 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             continue
         picked.append(s)
     return picked
+
+
+def market_map(settings):
+    """`{strategy id: market}` for everything eligible to trade — what tells a ledger row its currency.
+
+    Unfiltered on purpose. The filtered list is what this cycle is about, and labelling money is
+    about every row in the book: with a scoped cycle's list, every other strategy's rows would come
+    out currency-unknown and the loss stop would report itself ungated once a cycle.
+    """
+    return {s.get("id"): s.get("market") for s in pick_strategies(settings)
+            if isinstance(s, dict) and s.get("id")}
 
 
 def normalize_bars(bars):
@@ -1349,12 +1364,24 @@ def action_cycle(inp, settings):
     tripped = store.kv_get(conn, "tripped") == "1"
     settings = {**settings, "_tripped": tripped}
 
-    # Daily loss limit trips before anything is decided, so one bad day cannot keep trading.
-    limit = settings.get("dailyLossLimitKrw") or 0
-    if not tripped and limit > 0 and store.realized_today(conn, day_start_ms()) <= -limit:
-        store.kv_set(conn, "tripped", "1")
-        store.log_event(conn, "halt", {"reason": "daily loss limit reached", "limitKrw": limit})
-        settings["_tripped"] = tripped = True
+    # Daily loss limit trips before anything is decided, so one bad day cannot keep trading. Each
+    # currency is measured against its own limit: the day's realised result is won on one market and
+    # dollars on another, and one summed number made a dollar count for a won.
+    markets = market_map(settings)
+    if not tripped:
+        limits = eng.daily_loss_limits(settings)
+        for cur, pnl in sorted(store.realized_today(conn, day_start_ms(), markets).items()):
+            limit = limits.get(cur)
+            if limit and pnl <= -limit:
+                store.kv_set(conn, "tripped", "1")
+                store.log_event(conn, "halt", {"reason": "daily loss limit reached",
+                                              "currency": cur, "limit": limit, "realized": pnl})
+                settings["_tripped"] = tripped = True
+                break
+            if not limit and pnl < 0:
+                # Losing in a currency nobody set a limit for. Said out loud, because the stop that
+                # is supposed to be watching this money is not watching it.
+                store.log_event(conn, "ungated_loss", {"currency": cur, "realized": pnl})
 
     now = store.now_ms()
     sides = eng.fired_sides(signal)
@@ -2099,7 +2126,8 @@ def action_read(inp, settings, which):
         # when the broker is down.
         data["pnl"] = store.pnl_summary(conn, day_start_ms(),
                                         marks=inp.get("marks") if isinstance(inp.get("marks"), dict)
-                                        else None)
+                                        else None,
+                                        markets=market_map(settings))
     if which in ("orders", "report"):
         data["orders"] = store.read_orders(conn, limit)
     if which in ("ledger", "report"):
@@ -2296,30 +2324,78 @@ def action_selftest():
     # Measured as deltas against a baseline, because this store already carries rows from the checks
     # above — an absolute expectation here would be asserting the order the tests happen to run in.
     pcon = store.connect("dryrun")
-    _base = store.pnl_summary(pcon, 0)
+    # Every figure is per currency, so the tests read through one. `pn` declares the domestic market
+    # and `pnus` the US one, which is what makes their money two numbers instead of one.
+    _mk = {"pn": "kr", "pnus": "us"}
+
+    def _sum(marks=None):
+        return store.pnl_summary(pcon, 0, marks=marks, markets=_mk)
+
+    def _krw(s, *path):
+        node = s["byCurrency"].get("KRW") or {}
+        for p in path:
+            node = (node or {}).get(p)
+        return node
+
+    _base = _sum()
     store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL1",
                      side="buy", qty=10, price=1000, fee=5, source="test")
     store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL1",
                      side="sell", qty=10, price=1200, fee=7, tax=3, source="test")
-    summ = store.pnl_summary(pcon, 0)
+    summ = _sum()
     # 10 shares bought at 1,000 with a 5 fee → cost basis 1000.5. Sold at 1,200 less 7 fee and 3 tax.
     _want = (1200 - 1000.5) * 10 - 7 - 3
-    _got = summ["realizedTotal"] - _base["realizedTotal"]
+    _got = _krw(summ, "realizedTotal") - (_krw(_base, "realizedTotal") or 0.0)
     checks.append({"name": "realised profit is the ledger's own number", "want": _want,
                    "got": _got, "ok": abs(_got - _want) < 1e-6})
-    _cost = ((summ["sold"]["total"]["fee"] + summ["sold"]["total"]["tax"])
-             - (_base["sold"]["total"]["fee"] + _base["sold"]["total"]["tax"]))
+    _cost = ((_krw(summ, "sold", "total", "fee") + _krw(summ, "sold", "total", "tax"))
+             - ((_krw(_base, "sold", "total", "fee") or 0.0)
+                + (_krw(_base, "sold", "total", "tax") or 0.0)))
     checks.append({"name": "what it cost to trade is reported beside what it earned",
                    "want": 10.0, "got": _cost, "ok": abs(_cost - 10.0) < 1e-6})
+    # Dollars do not join won. Adding them needs a rate this module does not have, and the summed
+    # number it used to report was neither: a $14 loss and a 1,300 won gain came out as 1,286 of
+    # nothing, and the won loss limit read that same figure.
+    store.apply_fill(pcon, strategy_id="pnus", broker="b", account="a", symbol="PNLUS",
+                     side="buy", qty=2, price=100, source="test")
+    store.apply_fill(pcon, strategy_id="pnus", broker="b", account="a", symbol="PNLUS",
+                     side="sell", qty=2, price=90, source="test")
+    split = _sum()
+    checks.append({"name": "won and dollars are two numbers, never one",
+                   "want": (_want, -20.0),
+                   "got": (_krw(split, "realizedTotal"),
+                           (split["byCurrency"].get("USD") or {}).get("realizedTotal")),
+                   "ok": abs(_krw(split, "realizedTotal") - _want) < 1e-6
+                        and abs((split["byCurrency"]["USD"]["realizedTotal"]) + 20.0) < 1e-6})
+    # The loss stop reads that split. A dollar loss used to count as a won against a won limit, which
+    # put every US loss under a fifty-thousand-won stop that could never be reached.
+    _today = store.realized_today(pcon, 0, _mk)
+    _lims = eng.daily_loss_limits({"dailyLossLimitKrw": 50000, "dailyLossLimits": {"USD": 15}})
+    checks.append({"name": "a dollar loss is measured against the dollar limit",
+                   "want": ("USD trips at -20 vs 15", "KRW does not"),
+                   "got": (_today.get("USD"), _today.get("KRW"), _lims),
+                   "ok": _today.get("USD", 0) <= -_lims["USD"]
+                        and _today.get("KRW", 0) > -_lims["KRW"]})
+    checks.append({"name": "and a currency with no limit declared is not gated by another's",
+                   "want": None, "got": eng.daily_loss_limits(
+                       {"dailyLossLimitKrw": 50000}).get("USD"),
+                   "ok": eng.daily_loss_limits({"dailyLossLimitKrw": 50000}).get("USD") is None})
+    # A pair states its own quote currency, so a coin needs no market declared to be labelled.
+    store.apply_fill(pcon, strategy_id="unlisted", broker="upbit-trade", account="",
+                     symbol="BTC-ETH", side="buy", qty=1, price=0.03, source="test")
+    checks.append({"name": "a pair says what currency its price is in", "want": "BTC",
+                   "got": sorted(_sum()["byCurrency"].keys()),
+                   "ok": "BTC" in _sum()["byCurrency"]})
     # An internal transfer books a gain with no order behind it, so it is never added to the sold
     # total — a combined number matches no broker statement.
     store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL2",
                      side="buy", qty=4, price=100, source="test")
     store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL2",
                      side="transfer_out", qty=4, price=150, source="test")
-    moved = store.pnl_summary(pcon, 0)
-    _sold_d = moved["realizedTotal"] - summ["realizedTotal"]
-    _moved_d = moved["transferred"]["total"]["pnl"] - summ["transferred"]["total"]["pnl"]
+    moved = _sum()
+    _sold_d = _krw(moved, "realizedTotal") - _krw(split, "realizedTotal")
+    _moved_d = (_krw(moved, "transferred", "total", "pnl")
+                - (_krw(split, "transferred", "total", "pnl") or 0.0))
     checks.append({"name": "an internal transfer is not counted as money the account made",
                    "want": (0.0, 200.0), "got": (_sold_d, _moved_d),
                    "ok": abs(_sold_d) < 1e-6 and abs(_moved_d - 200.0) < 1e-6})
@@ -2327,23 +2403,26 @@ def action_selftest():
     # until every holding has one — a partial sum reads as the whole and is worse than no number.
     store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL3",
                      side="buy", qty=2, price=500, source="test")
-    part = store.pnl_summary(pcon, 0, marks={"PNL3": 600})
+    # A second won holding, deliberately left without a mark — the currency it is missing from is
+    # the currency whose total has to refuse to be a number.
+    store.apply_fill(pcon, strategy_id="pn", broker="b", account="a", symbol="PNL4",
+                     side="buy", qty=1, price=700, source="test")
+    part = _sum(marks={"PNL3": 600})
+    _pk = part["unrealized"]["KRW"]
     checks.append({"name": "an unpriced holding is named, not counted as zero",
                    "want": ("PNL3 priced, others named", None),
-                   "got": (part["unrealized"]["unpriced"], part["unrealized"]["total"]),
-                   "ok": "PNL3" not in part["unrealized"]["unpriced"]
-                        and len(part["unrealized"]["unpriced"]) > 0
-                        and part["unrealized"]["total"] is None})
+                   "got": (_pk["unpriced"], _pk["total"]),
+                   "ok": "PNL3" not in _pk["unpriced"] and len(_pk["unpriced"]) > 0
+                        and _pk["total"] is None})
     # Price everything it is holding — whatever that is — and the total is the sum of the gains.
     _marks = {h["symbol"]: float(h["avg_price"]) * 1.1 for h in part["held"]
               if float(h["avg_price"]) > 0}
-    full = store.pnl_summary(pcon, 0, marks=_marks)
+    full = _sum(marks=_marks)
     _expect = sum(float(h["avg_price"]) * 0.1 * float(h["qty"]) for h in part["held"]
-                  if float(h["avg_price"]) > 0)
+                  if float(h["avg_price"]) > 0 and h.get("currency") == "KRW")
+    _fk = full["unrealized"]["KRW"]["total"]
     checks.append({"name": "and totals once every holding has a price", "want": round(_expect, 6),
-                   "got": full["unrealized"]["total"],
-                   "ok": full["unrealized"]["total"] is not None
-                        and abs(full["unrealized"]["total"] - _expect) < 1e-6})
+                   "got": _fk, "ok": _fk is not None and abs(_fk - _expect) < 1e-6})
     # A flat row that earned something is not a position. Both facts come from the same table, so
     # the screen has to be able to tell them apart without guessing.
     _flat = [h for h in full["held"] if h["symbol"] == "PNL1"]
@@ -2456,6 +2535,25 @@ def action_selftest():
     # double the position the moment part of it is committed to an order.
     checks.append({"name": "the sellable quantity is not added to the holding", "want": 7.0,
                    "got": (_o or {}).get("qty"), "ok": bool(_o) and _o["qty"] == 7.0})
+
+    # Kiwoom's overseas balance, verbatim (2026-08-05, six AAPL bought that session). Two names for a
+    # quantity in one row: `qty` is not the position and `poss_qty` is. The padded zero is the sharp
+    # part — a `!= "0"` test called `"000000000000"` a real number, so `qty` won and six held shares
+    # read as none. Reconciliation then called the account short on every symbol it held, all session.
+    _kwus = [{"stk_cd": "AAPL", "frgn_stk_nm": "애플", "qty": "000000000000",
+              "poss_qty": "000000000006", "sell_alowq": "000000000006",
+              "frgn_stk_book_uv": "309.6250", "crnc_code": "USD"}]
+    _k, _ = orders.read_position(_kwus, "AAPL")
+    checks.append({"name": "a zero written with leading zeros is still zero",
+                   "want": (6.0, 309.625), "got": ((_k or {}).get("qty"), (_k or {}).get("avgPrice")),
+                   "ok": bool(_k) and _k["qty"] == 6.0 and abs(_k["avgPrice"] - 309.625) < 1e-9})
+    # And when every quantity in the row is a written zero, the row is unreadable — not empty. Saying
+    # "you hold nothing" settles the question; saying "could not read this" gets it reported.
+    _allzero = [{"stk_cd": "AAPL", "qty": "000000000000", "poss_qty": "0.00"}]
+    _z, _zrow = orders.read_position(_allzero, "AAPL")
+    checks.append({"name": "a row of written zeros is unreadable, not a flat position",
+                   "want": (None, "the row"), "got": (_z, bool(_zrow)),
+                   "ok": _z is None and _zrow is not None})
 
     # A resting order moves quantity out of `balance` into `locked`. Measured 2026-08-05 with a real
     # order on the book: 4.47093889 ENSO read as `balance 1.87093889, locked 2.6`. The ledger claims

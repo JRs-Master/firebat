@@ -653,7 +653,43 @@ def read_transfers(conn, limit=50):
         "SELECT * FROM transfers ORDER BY id DESC LIMIT ?", (limit,))]
 
 
-def pnl_summary(conn, day_start_ms, marks=None):
+# A ledger row's money is in the price's own currency — the same rule the sizing fields follow
+# (`money_of`, at_engine). Nothing was applying it to the totals: won and dollars were added into one
+# number, so a US round trip that lost $14 and a domestic one that made 1,300 won came out as 1,286
+# of nothing. The daily loss limit read that same number against a won limit, which made a dollar
+# loss count for a won and the limit unreachable from the US side.
+#
+# The rows carry no currency column and do not need one. `broker` and `symbol` are in every row and
+# the currency is a property of the pair they name, not an extra fact about the trade. Deriving beats
+# storing here for a second reason: a new column could not be filled in for rows already written, and
+# the ledger is append-only by trigger.
+UNKNOWN_CURRENCY = "?"
+
+
+def currency_of(broker, symbol, markets=None, strategy_id=None):
+    """The currency this row's `price` is quoted in, or None when it cannot be said.
+
+    A pair states its own quote: upbit writes `KRW-BTC`, `BTC-ETH`, `USDT-XRP`, and the part before
+    the dash *is* the currency the price is in. A stock does not state it, so the market its strategy
+    declared is what answers — `kr` is won, `us` is dollars.
+
+    None rather than a guess. A strategy that has since been undeclared leaves rows nobody can label,
+    and a total whose unit is unknown is not a total: it gets reported on its own instead of joining
+    one of the others.
+    """
+    text = str(symbol or "").strip().upper()
+    head = text.split("-")[0] if "-" in text else ""
+    if head in ("KRW", "BTC", "USDT", "USD"):
+        return head
+    market = str((markets or {}).get(strategy_id) or "").strip().lower()
+    if market in ("kr", "kospi", "kosdaq", "krx"):
+        return "KRW"
+    if market in ("us", "usa", "nasd", "nyse", "amex"):
+        return "USD"
+    return None
+
+
+def pnl_summary(conn, day_start_ms, marks=None, markets=None):
     """What the ledger says was earned — today, all time, and broken down by strategy and symbol.
 
     Reads nothing but the ledger, so it costs no broker call and cannot disagree with the rows it is
@@ -669,39 +705,70 @@ def pnl_summary(conn, day_start_ms, marks=None):
     should not have to make one. `marks` is where a caller that already holds prices puts them; a
     symbol with no mark is **named** rather than counted as zero, because an unpriced holding and a
     worthless one are opposite statements.
-    """
-    def totals(where, args=()):
-        row = conn.execute(
-            "SELECT COALESCE(SUM(realized),0) AS pnl, COALESCE(SUM(fee),0) AS fee, "
-            "COALESCE(SUM(tax),0) AS tax, COUNT(*) AS n FROM ledger WHERE " + where, args).fetchone()
-        return {"pnl": float(row["pnl"]), "fee": float(row["fee"]), "tax": float(row["tax"]),
-                "count": int(row["n"])}
 
+    Every money figure here is per currency, and there is deliberately no grand total across them:
+    adding won to dollars needs a rate this module does not have and must not invent. `markets` maps
+    a strategy id to the market it declared, which is what tells a stock row its currency.
+    """
     day = int(day_start_ms or 0)
-    out = {
-        "sold": {"today": totals("side='sell' AND ts_ms >= ?", (day,)),
-                 "total": totals("side='sell'")},
-        "transferred": {"today": totals("side='transfer_out' AND ts_ms >= ?", (day,)),
-                        "total": totals("side='transfer_out'")},
-        "bought": {"today": totals("side='buy' AND ts_ms >= ?", (day,)),
-                   "total": totals("side='buy'")},
-        "dayStartMs": day,
-    }
-    out["byStrategy"] = [dict(r) for r in conn.execute(
-        "SELECT strategy_id, symbol, COUNT(*) AS sells, COALESCE(SUM(realized),0) AS realized, "
-        "COALESCE(SUM(fee),0) AS fee, COALESCE(SUM(tax),0) AS tax, MAX(ts_ms) AS last_ms "
-        "FROM ledger WHERE side='sell' GROUP BY strategy_id, symbol "
-        "ORDER BY realized DESC")]
-    out["bySymbol"] = [dict(r) for r in conn.execute(
-        "SELECT symbol, COUNT(*) AS sells, COALESCE(SUM(realized),0) AS realized, "
-        "MAX(ts_ms) AS last_ms FROM ledger WHERE side='sell' GROUP BY symbol "
-        "ORDER BY realized DESC")]
+
+    def blank():
+        return {"pnl": 0.0, "fee": 0.0, "tax": 0.0, "count": 0}
+
+    def add(bucket, row):
+        bucket["pnl"] += float(row["realized"] or 0.0)
+        bucket["fee"] += float(row["fee"] or 0.0)
+        bucket["tax"] += float(row["tax"] or 0.0)
+        bucket["count"] += 1
+
+    # Grouping is done here rather than in SQL because the currency is derived, not a column.
+    by_cur, by_strategy, by_symbol = {}, {}, {}
+    for row in conn.execute("SELECT strategy_id, broker, account, symbol, side, fee, tax, realized, "
+                            "ts_ms FROM ledger ORDER BY ts_ms"):
+        cur = currency_of(row["broker"], row["symbol"], markets, row["strategy_id"]) \
+            or UNKNOWN_CURRENCY
+        slot = by_cur.setdefault(cur, {
+            "sold": {"today": blank(), "total": blank()},
+            "transferred": {"today": blank(), "total": blank()},
+            "bought": {"today": blank(), "total": blank()},
+        })
+        leg = {"sell": "sold", "transfer_out": "transferred", "buy": "bought"}.get(row["side"])
+        if leg:
+            add(slot[leg]["total"], row)
+            if int(row["ts_ms"] or 0) >= day:
+                add(slot[leg]["today"], row)
+        if row["side"] == "sell":
+            for group, key in ((by_strategy, (row["strategy_id"], row["symbol"])),
+                               (by_symbol, (row["symbol"],))):
+                agg = group.setdefault(key, {"currency": cur, "sells": 0, "realized": 0.0,
+                                             "fee": 0.0, "tax": 0.0, "last_ms": 0})
+                agg["sells"] += 1
+                agg["realized"] += float(row["realized"] or 0.0)
+                agg["fee"] += float(row["fee"] or 0.0)
+                agg["tax"] += float(row["tax"] or 0.0)
+                agg["last_ms"] = max(agg["last_ms"], int(row["ts_ms"] or 0))
+
+    for cur, slot in by_cur.items():
+        # The two numbers a person actually asks for, spelled out so nothing downstream has to add up
+        # the wrong pair. Transfers are excluded: a bookkeeping move is not money the account made.
+        slot["realizedToday"] = slot["sold"]["today"]["pnl"]
+        slot["realizedTotal"] = slot["sold"]["total"]["pnl"]
+
+    out = {"dayStartMs": day, "byCurrency": by_cur,
+           "currencies": sorted(by_cur.keys()),
+           "byStrategy": sorted(({"strategy_id": k[0], "symbol": k[1], **v}
+                                 for k, v in by_strategy.items()),
+                                key=lambda r: r["realized"], reverse=True),
+           "bySymbol": sorted(({"symbol": k[0], **v} for k, v in by_symbol.items()),
+                              key=lambda r: r["realized"], reverse=True)}
 
     held = [dict(r) for r in conn.execute(
         "SELECT strategy_id, broker, account, symbol, qty, avg_price, state "
         "FROM strategy_position WHERE qty > ? ORDER BY symbol, strategy_id", (EPS,))]
-    priced, unpriced, unreal = [], [], 0.0
+    priced, unreal = [], {}
     for h in held:
+        cur = currency_of(h["broker"], h["symbol"], markets, h["strategy_id"]) or UNKNOWN_CURRENCY
+        seen = unreal.setdefault(cur, {"total": 0.0, "priced": 0, "unpriced": []})
         mark = None
         if isinstance(marks, dict):
             for key in (h["symbol"], str(h["symbol"] or "").upper()):
@@ -713,24 +780,35 @@ def pnl_summary(conn, day_start_ms, marks=None):
                     break
         if mark and mark > 0:
             gain = (mark - float(h["avg_price"])) * float(h["qty"])
-            priced.append({**h, "mark": mark, "unrealized": gain})
-            unreal += gain
+            priced.append({**h, "currency": cur, "mark": mark, "unrealized": gain})
+            seen["total"] += gain
+            seen["priced"] += 1
         else:
-            unpriced.append(h["symbol"])
-            priced.append({**h, "mark": None, "unrealized": None})
+            seen["unpriced"].append(h["symbol"])
+            priced.append({**h, "currency": cur, "mark": None, "unrealized": None})
+    for cur, seen in unreal.items():
+        # A partial sum reads as the whole, so the total refuses to be a number until every holding
+        # in that currency has a mark.
+        if seen["unpriced"]:
+            seen["total"] = None
     out["held"] = priced
-    out["unrealized"] = {"total": unreal if not unpriced else None,
-                         "priced": len(priced) - len(unpriced), "unpriced": unpriced}
-    # The two numbers a person actually asks for, spelled out so nothing downstream has to add up
-    # the wrong pair. Transfers are excluded: they are a bookkeeping move, not money the account made.
-    out["realizedToday"] = out["sold"]["today"]["pnl"]
-    out["realizedTotal"] = out["sold"]["total"]["pnl"]
+    out["unrealized"] = unreal
     return out
 
 
-def realized_today(conn, day_start_ms):
-    row = conn.execute(
-        "SELECT COALESCE(SUM(realized),0) AS s FROM ledger WHERE ts_ms >= ? AND side='sell'",
-        (day_start_ms,),
-    ).fetchone()
-    return float(row["s"])
+def realized_today(conn, day_start_ms, markets=None):
+    """Today's realised result per currency — `{"KRW": -1200.0, "USD": -14.84}`.
+
+    One number across currencies is what the daily loss limit used to read, and it made a dollar
+    count for a won: fourteen dollars lost registered as fourteen won against a fifty-thousand-won
+    limit, so no US loss could ever trip it. A limit is compared against its own currency or not at
+    all.
+    """
+    out = {}
+    for row in conn.execute(
+            "SELECT strategy_id, broker, symbol, realized FROM ledger "
+            "WHERE ts_ms >= ? AND side='sell'", (day_start_ms,)):
+        cur = currency_of(row["broker"], row["symbol"], markets, row["strategy_id"]) \
+            or UNKNOWN_CURRENCY
+        out[cur] = out.get(cur, 0.0) + float(row["realized"] or 0.0)
+    return out
