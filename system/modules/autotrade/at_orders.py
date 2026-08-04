@@ -100,6 +100,28 @@ def _dig(node, *names):
     return None
 
 
+def norm_order_no(value):
+    """A broker order number in the one form two of its own endpoints can be compared in.
+
+    Korea Investment acknowledges an order as `0000047850` and reports the same order as `47850` when
+    asked for it, so a string comparison never matches and every consequence follows: the fill is
+    attributed to nothing, and an order sitting in the open list reads as absent and is written down
+    as cancelled. Measured 2026-08-05 — AMZN filled 7 @ 278.72 while the ledger said cancelled with
+    nothing filled, and two live orders were closed in our books while resting at the venue.
+
+    Digits compare as a number, so the padding stops mattering. Anything else (an upbit uuid, a toss
+    id) compares as itself, lower-cased — those are opaque strings and reformatting them would be
+    inventing a rule the venue never stated. What is *stored* is untouched: the acknowledgement's own
+    text stays verbatim, because it is the only record of what the broker said.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.isdigit():
+        return str(int(text))
+    return text.lower()
+
+
 ORDER_NO_KEYS = ("ord_no", "odno", "ODNO", "orderId", "order_id", "orderNo", "brokerOrderNo",
                  "uuid")  # upbit identifies an order by uuid
 

@@ -1499,12 +1499,13 @@ def action_cycle(inp, settings):
     # position and its stop and targets measure from the average it actually got.
     _exiting = {i["strategyId"] for i in remaining if i.get("side") == "sell"}
     if _exiting:
-        _resting = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in (inp.get("openOrders") or [])
+        _resting = {orders.norm_order_no(orders._dig(r, *orders.ORDER_NO_KEYS))
+                    for r in (inp.get("openOrders") or [])
                     if isinstance(r, dict)}
         for o in store.open_orders(conn):
             if o.get("side") != "buy" or o["strategy_id"] not in _exiting:
                 continue
-            if not o.get("broker_order_no") or o["broker_order_no"] not in _resting:
+            if orders.norm_order_no(o.get("broker_order_no")) not in _resting:
                 continue  # the broker no longer lists it — reconcile settles what became of it
             calls.append({**orders.cancel_call(o), "orderKey": o["order_key"]})
             store.update_order(conn, o["order_key"], state="canceling",
@@ -1674,13 +1675,13 @@ def _abandon_stale_orders(conn, settings, strategies, open_rows, calls, marks=No
     """
     if not isinstance(open_rows, list):
         return []
-    still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_rows
+    still_open = {orders.norm_order_no(orders._dig(r, *orders.ORDER_NO_KEYS)) for r in open_rows
                   if isinstance(r, dict)}
     by_strategy = {s.get("id"): s for s in strategies}
     now = store.now_ms()
     gone = []
     for o in store.open_orders(conn):
-        no = o.get("broker_order_no")
+        no = orders.norm_order_no(o.get("broker_order_no"))
         if not no or no not in still_open:
             continue
         # A partly filled order gets the same clock. "The rest may still come" is true for a
@@ -1831,11 +1832,11 @@ def action_reconcile(inp, settings):
         store.log_api(conn, broker, "fills:unreadable", False, 0, {"symbol": symbol}, unreadable[:5])
     # 하루 안에 우리가 닫아 버린 주문까지 대조 대상에 남긴다 — 종결 상태는 **우리가 내린 결론**
     # 이지 거래소가 보낸 사실이 아니다. 뒤늦은 체결이 그 결론을 뒤집을 수 있어야 한다.
-    by_no = {o["broker_order_no"]: o
+    by_no = {orders.norm_order_no(o["broker_order_no"]): o
              for o in store.orders_awaiting_fills(conn, store.now_ms() - 86400000)
              if o.get("broker_order_no")}
     for f in fills:
-        order = by_no.get(f["brokerOrderNo"])
+        order = by_no.get(orders.norm_order_no(f["brokerOrderNo"]))
         if order is None:
             # Someone traded this account outside the system, or the order number never came back.
             # Either way it is not ours to attribute — the balance step will absorb it.
@@ -1874,11 +1875,11 @@ def action_reconcile(inp, settings):
     if isinstance(open_list, list) and not open_list:
         unsettled = len([o for o in store.open_orders(conn) if o.get("broker_order_no")])
     if isinstance(open_list, list) and open_list:
-        still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list
-                      if isinstance(r, dict)}
+        still_open = {orders.norm_order_no(orders._dig(r, *orders.ORDER_NO_KEYS))
+                      for r in open_list if isinstance(r, dict)}
         rows_now = inp.get("balanceRows")
         for o in store.open_orders(conn):
-            no = o.get("broker_order_no")
+            no = orders.norm_order_no(o.get("broker_order_no"))
             if not (no and no not in still_open and float(o.get("filled_qty") or 0) <= 0):
                 continue
             # Leaving the open list is also what a **filled** order does. The fill query is a
@@ -1911,9 +1912,10 @@ def action_reconcile(inp, settings):
     # for a rule that was working exactly as written.
     listed = set()
     if isinstance(open_list, list):
-        listed = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list if isinstance(r, dict)}
+        listed = {orders.norm_order_no(orders._dig(r, *orders.ORDER_NO_KEYS))
+                  for r in open_list if isinstance(r, dict)}
     for o in store.open_orders(conn):
-        if o.get("broker_order_no") and o["broker_order_no"] in listed:
+        if orders.norm_order_no(o.get("broker_order_no")) in listed:
             continue
         if o["state"] in ("sent", "acked") and now - int(o.get("sent_ms") or now) > limit_ms:
             store.update_order(conn, o["order_key"], state="unknown",
@@ -2030,7 +2032,7 @@ def action_reconcile(inp, settings):
                 continue
             if now - int(o.get("sent_ms") or o.get("ts_ms") or now) <= void_ms:
                 continue
-            if o.get("broker_order_no") and o["broker_order_no"] in listed:
+            if orders.norm_order_no(o.get("broker_order_no")) in listed:
                 continue
             # The balance has to have been read for *this order's* symbol. Scoping it to the
             # cycle's single `symbol` looked right and fired for nothing: a cycle covering five
@@ -2403,6 +2405,33 @@ def action_selftest():
                    "got": [len(got), len(bad)],
                    "ok": len(got) == 2 and len(bad) == 1
                         and got[0]["qty"] == 3 and got[0]["price"] == 70500})
+    # Two of one broker's own endpoints spell the same order number differently: the acknowledgement
+    # said `0000047850`, the query says `47850`. Comparing them as text matches nothing, and both
+    # consequences were measured on 2026-08-05 — a filled AMZN order attributed to nothing, and two
+    # orders resting at the venue written down as cancelled.
+    checks.append({"name": "an order number compares the same however the broker padded it",
+                   "want": True,
+                   "got": (orders.norm_order_no("0000047850"), orders.norm_order_no("47850")),
+                   "ok": orders.norm_order_no("0000047850") == orders.norm_order_no("47850")})
+    checks.append({"name": "an opaque id is left alone rather than reformatted",
+                   "want": "210c37e5-d6a0-4ec5",
+                   "got": orders.norm_order_no(" 210C37E5-D6A0-4EC5 "),
+                   "ok": orders.norm_order_no(" 210C37E5-D6A0-4EC5 ") == "210c37e5-d6a0-4ec5"})
+    checks.append({"name": "and nothing is not something", "want": "",
+                   "got": orders.norm_order_no(None), "ok": orders.norm_order_no(None) == ""})
+    # End to end: the fill row the venue actually returned, against the order key we actually stored.
+    _kis_fill = [{"odno": "47850", "pdno": "AMZN", "ft_ord_qty": "7", "ft_ord_unpr3": "284.87000000",
+                  "ft_ccld_qty": "7", "ft_ccld_unpr3": "278.72000000", "nccs_qty": "0"}]
+    _f, _bad = orders.read_fills(_kis_fill)
+    checks.append({"name": "a KIS fill is read at the price it filled, not the price it asked",
+                   "want": (7.0, 278.72), "got": ((_f or [{}])[0].get("qty"),
+                                                  (_f or [{}])[0].get("price")),
+                   "ok": bool(_f) and _f[0]["qty"] == 7.0 and _f[0]["price"] == 278.72})
+    checks.append({"name": "and its number matches the padded one we stored", "want": True,
+                   "got": orders.norm_order_no(_f[0]["brokerOrderNo"]),
+                   "ok": orders.norm_order_no(_f[0]["brokerOrderNo"])
+                        == orders.norm_order_no("0000047850")})
+
     # The real upbit balance, verbatim, in the order the exchange actually sent it. `KRW` is a prefix
     # of every KRW market, so the cash line matched `KRW-ENSO` and reconciliation filed 27,986 won as
     # 27,986 ENSO nobody claims (measured 2026-08-04). BTC had passed the same code only because its
