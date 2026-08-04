@@ -544,6 +544,25 @@ def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
         else:
             action = "absorbed_from_unassigned"
 
+    elif rows:
+        # 부족분이 사라졌으면 멈춤도 풀린다. 정산이 degraded 를 걸기만 하고 되돌리지 않아서,
+        # 장부가 다시 맞아떨어져도 그 전략은 영영 매수를 못 했다(2026-08-04: 체결이 뒤늦게
+        # 붙어 수량이 일치했는데도 degraded 인 채였다). 다만 아직 미확인 주문이 남아 있으면
+        # 그건 다른 이유의 멈춤이므로 건드리지 않는다.
+        pending = {r["strategy_id"] for r in conn.execute(
+            "SELECT DISTINCT strategy_id FROM orders WHERE broker=? AND account=? AND symbol=? "
+            "AND state='unknown'", (broker, account, symbol))}
+        for r in rows:
+            if r["strategy_id"] in pending:
+                continue
+            cur = conn.execute(
+                "SELECT state FROM strategy_position WHERE strategy_id=? AND broker=? "
+                "AND account=? AND symbol=?",
+                (r["strategy_id"], broker, account, symbol)).fetchone()
+            if cur and cur["state"] == "degraded":
+                set_position_state(conn, r["strategy_id"], broker, account, symbol, "ok")
+                action, note = "restored", "the books agree again — the hold is lifted"
+
     conn.execute(
         "INSERT INTO reconcile_log(ts_ms,broker,account,symbol,sum_strategy_qty,unassigned_qty,"
         "broker_qty,delta,action,note) VALUES(?,?,?,?,?,?,?,?,?,?)",
