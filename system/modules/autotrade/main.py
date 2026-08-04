@@ -153,6 +153,11 @@ def load_settings():
         # `매매1 = 증권사1·계좌1`, `매매3 = 증권사2·계좌1` are two entries, and the model fills each
         # with a rule of its own. Which rule that is, is not written here; where it runs is.
         "trades": env_json("MODULE_TRADES", [], "trades"),
+        # When each market may be ordered into, in the venue's own clock. A human setting for the
+        # same reason the switches are: which hours real money is exposed for is not the model's
+        # call. `{}` would mean "no window declared", and a market that names no window is refused,
+        # so the declared default is what a fresh install runs on.
+        "tradingHours": env_json("MODULE_TRADINGHOURS", {}, "tradingHours"),
         "universe": env_json("MODULE_UNIVERSE", [], "universe"),
         "confirmUniverse": env_json("MODULE_CONFIRMUNIVERSE", [], "confirmUniverse"),
         "strategies": env_json("MODULE_STRATEGIES", [], "strategies"),
@@ -1321,7 +1326,10 @@ def action_cycle(inp, settings):
     _plan = inp.get("plan")
     if isinstance(_plan, dict):
         _plan = _plan.get("data") if isinstance(_plan.get("data"), dict) else _plan
-    scoped_mock = ((_plan or {}).get("scopedTo") or {}).get("mock") if isinstance(_plan, dict) else None
+    _scoped = ((_plan or {}).get("scopedTo") or {}) if isinstance(_plan, dict) else {}
+    scoped_mock = _scoped.get("mock")
+    # The market the gate limited this cycle to, for a strategy that does not name one itself.
+    scoped_market = _scoped.get("market")
 
     mode_hint = settings.get("mode", "dryrun")
     # The ledger a row belongs to is decided by the mode that row was traded in, not by the mode
@@ -1445,6 +1453,24 @@ def action_cycle(inp, settings):
             store.log_event(conn, "error", str(e), strategy_id=s["id"], symbol=sym)
             results.append({"strategyId": s["id"], "error": str(e)})
             continue
+        # The venue's clock, checked here rather than in the schedule: the same job carries the
+        # bookkeeping — reconciling, collecting unfilled orders, checking stops — and that has to
+        # keep running after the close or a closing-auction fill never reaches the ledger. So the
+        # window constrains the *decision* and nothing else, and it is asked only once the rule has
+        # actually decided something, so a quiet after-hours pass stays quiet and the event appears
+        # exactly when the window changed the outcome.
+        if intents:
+            closed = eng.session_refusal(s.get("market") or scoped_market,
+                                         settings.get("tradingHours"),
+                                         mode == "real", now)
+            if closed:
+                for i in intents:
+                    store.log_event(sconn, "dropped",
+                                    {"side": i.get("side"), "qty": i.get("qty"), "why": closed},
+                                    strategy_id=s["id"], symbol=sym)
+                results.append({"strategyId": s["id"], "symbol": sym, "sessionClosed": closed,
+                                "dropped": len(intents)})
+                continue
         for i in intents:
             i.update({"broker": broker, "account": account, "symbol": sym,
                       "cycleId": cycle_id, "mode": mode})
@@ -3541,6 +3567,42 @@ def action_selftest():
                    "want": "mock",
                    "got": eng.effective_mode(armed, {"mode": "real"}, True, True),
                    "ok": eng.effective_mode(armed, {"mode": "real"}, True, True) == "mock"})
+    # The venue's clock. Real money gets the regular session; paper and practice get the extended
+    # window, because exercising the plumbing after hours is what a practice account is for and the
+    # after-hours book is too thin to fit a rule on. 2026-08-04 15:50 KST is the measured case: both
+    # screen twins decided to buy, and only the practice host being KRX-only stopped it.
+    _hours = declared_default("tradingHours", None)
+    _hours = json.loads(_hours) if isinstance(_hours, str) else (_hours or {})
+    def _at(ymd_hm):
+        import datetime as _d
+        y, mo, d, h, mi = ymd_hm
+        return int(_d.datetime(y, mo, d, h, mi, tzinfo=_d.timezone(_d.timedelta(hours=9)))
+                   .timestamp() * 1000)
+    _mid, _after, _night, _sat = (_at((2026, 8, 4, 13, 0)), _at((2026, 8, 4, 15, 50)),
+                                  _at((2026, 8, 4, 21, 0)), _at((2026, 8, 8, 11, 0)))
+    for label, ms, real, want_open in (
+            ("장중 실계좌", _mid, True, True),
+            ("15:50 실계좌", _after, True, False),
+            ("15:50 모의", _after, False, True),
+            ("21:00 모의", _night, False, False),
+            ("토요일", _sat, True, False)):
+        why = eng.session_refusal("kr", _hours, real, ms)
+        checks.append({"name": f"kr {label} — 주문 {'가능' if want_open else '거부'}",
+                       "want": want_open, "got": why or "open", "ok": (why is None) == want_open})
+    checks.append({"name": "a venue with no session calendar is never outside it",
+                   "want": None, "got": eng.session_refusal("", _hours, True, _night),
+                   "ok": eng.session_refusal("", _hours, True, _night) is None})
+    # A market that names itself but has no window is refused, not waved through — the same reason
+    # an account with no market recorded cannot be used at all.
+    _unknown = eng.session_refusal("jp", _hours, True, _mid)
+    checks.append({"name": "a market with no declared window is refused",
+                   "want": "refusal naming jp", "got": _unknown,
+                   "ok": bool(_unknown) and "jp" in _unknown})
+    _noz = eng.session_refusal("kr", {"kr": {"zone": "Mars/Olympus", "open": "09:00",
+                                             "close": "15:30"}}, True, _mid)
+    checks.append({"name": "an unresolvable zone refuses rather than guessing a clock",
+                   "want": "refusal", "got": _noz, "ok": bool(_noz)})
+
     # And the wiring that carries it: the gate echoes what the framework injected, because the
     # steps behind the gate are never handed the alias.
     gated = action_gate({"action": "gate", "broker": "kis-trade", "account": "practice",
@@ -3608,6 +3670,42 @@ def action_selftest():
     checks.append({"name": "a demoted strategy's fill goes to the paper ledger, not the live one",
                    "want": (True, 0), "got": (in_paper > 0, in_live),
                    "ok": in_paper > 0 and in_live == 0})
+
+    # The wiring, not just the rule: an always-shut window drops what the rule decided and says so.
+    # Checked through `action_cycle` because the pure function passing proves nothing about whether
+    # anything calls it — three regressions in one night were new code on a path selftest never
+    # walked. No clock is injected: a zero-width window is shut at every instant.
+    shut = {**real_settings,
+            "tradingHours": {"kr": {"zone": "Asia/Seoul", "open": "00:00", "close": "00:00"}},
+            "strategies": [{**real_settings["strategies"][0], "id": "shut", "symbol": "SHUT",
+                            "market": "kr"}]}
+    sc = action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "buy", "price": 10.0}],
+                                  "lastClosedBarDate": "d1"},
+                       "symbol": "SHUT",
+                       "bars": [{"date": "d1", "open": 10, "high": 10, "low": 10, "close": 10,
+                                 "volume": 1}]}, shut)["data"]
+    _res = (sc.get("results") or [{}])[0]
+    checks.append({"name": "a shut market drops the order and names the window",
+                   "want": (0, True), "got": (len(sc.get("calls") or []), _res.get("sessionClosed")),
+                   "ok": not (sc.get("calls") or []) and bool(_res.get("sessionClosed"))})
+    # And the same strategy with no market declared is not constrained — 24-hour venues keep working.
+    anyt = {**shut, "strategies": [{**shut["strategies"][0], "id": "anyt", "symbol": "ANYT"}]}
+    del anyt["strategies"][0]["market"]
+    action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "buy", "price": 10.0}],
+                             "lastClosedBarDate": "d1"},
+                  "symbol": "ANYT",
+                  "bars": [{"date": "d1", "open": 10, "high": 10, "low": 10, "close": 10,
+                            "volume": 1}]}, anyt)
+    # Read from the ledger rather than from the answer: an interactive call is paper, so it books
+    # the fill instead of returning a broker call, and "no session refusal" on its own would also be
+    # true of a strategy that never reached the decision at all.
+    _p = store.connect("dryrun")
+    _anyt = _p.execute("SELECT COUNT(*) c FROM ledger WHERE symbol='ANYT'").fetchone()["c"]
+    _shut = _p.execute("SELECT COUNT(*) c FROM ledger WHERE symbol='SHUT'").fetchone()["c"]
+    _p.close()
+    checks.append({"name": "a venue with no session calendar trades through the same shut window",
+                   "want": (True, 0), "got": (_anyt > 0, _shut),
+                   "ok": _anyt > 0 and _shut == 0})
 
     # --- a screened trade carries the symbol its expansion found -----------------------------
     # A screened trade names no symbol; the list is filled at runtime and `pick_strategies` puts

@@ -55,6 +55,24 @@ def zone():
         return _dt.timezone.utc
 
 
+def has_zone(name):
+    """Can this zone actually be honoured on this host?
+
+    For a caller that must refuse rather than accept a fallback. `zone()` and `local_in()` answer in
+    UTC with a warning when the database is missing, which is the right default for *rendering* a
+    time — but a venue's schedule compared against the wrong clock is not a cosmetic error: it says
+    an exchange is open when it is shut. Anything deciding on a session asks this first.
+    """
+    if name == _DEFAULT:
+        return True                    # fixed +09:00 is the same answer, not an approximation
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(name)
+        return True
+    except Exception:
+        return False
+
+
 def now_ms():
     """Epoch milliseconds. UTC by definition — no zone involved."""
     return int(_dt.datetime.now(_dt.timezone.utc).timestamp() * 1000)

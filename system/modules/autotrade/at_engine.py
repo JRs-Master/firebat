@@ -14,10 +14,92 @@ Two invariants hold the whole thing together:
     live next to the code that happens to need them are gates that some later path forgets.
 """
 import math
+import os
+import sys
+
+# The shared shelf, found the same way `main.py` finds it — this file is imported by name from the
+# module's own directory and must stand on its own, or a session check depends on whoever imported
+# it having set the path first.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_runtime"))
+
+import tz as clock  # noqa: E402
 
 # Modes are ordered, so combining constraints is a minimum rather than a pile of if-statements.
 MODE_RANK = {"dryrun": 0, "mock": 1, "real": 2}
 MODE_NAME = ["dryrun", "mock", "real"]
+
+
+def _hhmm(text):
+    """`"15:30"` → 930 minutes. None if it is not a time."""
+    try:
+        h, m = str(text).strip().split(":")[:2]
+        h, m = int(h), int(m)
+    except (ValueError, AttributeError, TypeError):
+        return None
+    return h * 60 + m if 0 <= h <= 47 and 0 <= m < 60 else None
+
+
+def session_refusal(market, hours, real, ms=None):
+    """Why this market cannot be traded right now, or None if it can.
+
+    Two windows per market, and which one applies is decided by whether real money is at stake:
+
+    * **real → the regular session only.** Measured 2026-08-04: the schedule's hour range said
+      `9-15`, which includes 15:35 through 15:55, and at 15:50 both screen twins decided to buy
+      Samsung. The signal existed because our quotes come from SOR (`_AL`), which carries the NXT
+      extended book — so a "15:45 bar" is real. The practice host is KRX-only and refused them, and
+      that refusal is the only reason nothing was bought in a session the grid never measured.
+      The book after the close is thin, so what a strategy fitted on regular-session bars actually
+      buys there is the spread.
+    * **paper or practice → the extended window.** Exercising the plumbing after hours is the
+      point of a practice account, and there is no money in it.
+
+    The venue keeps its own clock: the window is stated in exchange-local time with a named zone,
+    so a US session survives daylight saving and a hub user outside Korea still gets Seoul's
+    session. A market whose zone this host cannot resolve is **refused**, not guessed at — the
+    failure being prevented is "the exchange is open" said about the wrong clock.
+
+    A strategy with no market is not constrained: for a 24-hour venue there is no session to be
+    outside of, which is the same fact as upbit declaring no `accounts.markets` (its `market` is a
+    ticker, not a calendar). A market that *is* named but has no window declared is refused —
+    it claims to belong to a session calendar we do not have.
+    """
+    name = str(market or "").strip().lower()
+    if not name:
+        return None
+    spec = (hours or {}).get(name)
+    if not isinstance(spec, dict):
+        return (f"{name} has no trading window declared — add it to `tradingHours` in the module "
+                f"settings (zone, open, close) or clear the strategy's market")
+    zone = str(spec.get("zone") or "").strip()
+    if not zone:
+        return f"{name} declares no zone in `tradingHours` — a window without one is not a time"
+    if not clock.has_zone(zone):
+        return (f"{zone} is not in this host's zone database, so {name}'s session cannot be "
+                f"checked — install tzdata rather than trading against the wrong clock")
+
+    opens = _hhmm(spec.get("open"))
+    shuts = _hhmm(spec.get("close"))
+    if not real:
+        opens = _hhmm(spec.get("extendedOpen")) if spec.get("extendedOpen") else opens
+        shuts = _hhmm(spec.get("extendedClose")) if spec.get("extendedClose") else shuts
+    if opens is None or shuts is None:
+        return f"{name}'s trading window is unreadable — `open` and `close` want \"HH:MM\""
+
+    at = clock.local_in(zone, ms)
+    days = spec.get("days")
+    days = days if isinstance(days, list) and days else [0, 1, 2, 3, 4]
+    window = "정규장" if real else "테스트 창"
+    if at.weekday() not in days:
+        return (f"{name} does not trade on {at.strftime('%a')} "
+                f"({at.strftime('%Y-%m-%d %H:%M')} {zone})")
+    minutes = at.hour * 60 + at.minute
+    if not (opens <= minutes < shuts):
+        return (f"{name} {window} 밖 — {at.strftime('%H:%M')} {zone} "
+                f"(창 {spec.get('open') if real else spec.get('extendedOpen') or spec.get('open')}"
+                f"~{spec.get('close') if real else spec.get('extendedClose') or spec.get('close')})")
+    return None
 
 
 def effective_mode(settings, strategy, account_is_mock, unattended):

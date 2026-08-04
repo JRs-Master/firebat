@@ -543,6 +543,14 @@
       "description": "미확인 주문을 \"없던 일\"로 확정하기까지 기다리는 초. 브로커 목록에도 없고 체결도 없고 잔고에도 흔적이 없을 때만 적용됩니다. 0 = 확정하지 않음(수동 정리)."
     },
     {
+      "key": "tradingHours",
+      "type": "textarea",
+      "defaultValue": "{\n  \"kr\": {\n    \"zone\": \"Asia/Seoul\",\n    \"open\": \"09:00\",\n    \"close\": \"15:30\",\n    \"extendedClose\": \"20:00\"\n  },\n  \"us\": {\n    \"zone\": \"America/New_York\",\n    \"open\": \"09:30\",\n    \"close\": \"16:00\"\n  }\n}",
+      "tab": "실행",
+      "group": "거래 시간",
+      "description": "시장별 주문 가능 시간. 거래소 현지 시각으로 적고 zone 을 함께 적습니다(미국은 서머타임이 자동 반영됩니다). open~close = 실계좌, extendedClose = 종이·모의 계좌에만 허용하는 확장 창(키움 SOR 은 NXT 애프터마켓을 20시까지 덮습니다 — 호가가 얇아 갭이 커지므로 배관 시험용으로만 엽니다). market 을 선언한 전략에만 적용되며, 여기 없는 market 은 주문이 거부됩니다. 조회·정산·미체결 정리는 이 창과 무관하게 계속 돕니다."
+    },
+    {
       "key": "feeInCost",
       "type": "toggle",
       "defaultValue": true,
