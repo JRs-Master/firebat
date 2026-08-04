@@ -559,30 +559,57 @@ function upbitFeeRate(market) {
 }
 
 
-/** The price step a market accepts, computed from the published ladder.
+/** The order-price unit a market accepts, from the published tables.
  *
- * The exchange also states it outright — `orderbook/instruments` returns `tick_size` per market —
- * and that is the authority when the two disagree. This exists so placing an order costs one call
- * instead of two; `get_tick_size` asks the exchange when it matters.
+ * Held as tables, one per quote currency, because the exchange publishes tables. The formula that
+ * used to be here agreed with the KRW ladder at all seventeen bands — verified 2026-08-05 — and was
+ * still wrong, because it took only the price: **BTC and USDT markets have their own units.** The
+ * same formula priced a BTC market in 0.0001 BTC steps where 0.00000001 is allowed, which at
+ * current prices is about nine thousand won of granularity thrown away on every limit. It is never
+ * refused, either — a too-coarse price is a legal multiple, so the order goes through and simply
+ * rests somewhere other than where the strategy aimed. The silent kind.
  *
+ * `get_tick_size` asks the exchange directly (`orderbook/instruments`), and that is the authority
+ * when the two disagree. These exist so placing an order costs one call instead of two.
  *
- * Nobody calling `place_order` should have to know the ladder, and a strategy that computed
- * "3% below the bid" will land off it almost every time — so the price is floored to the step
- * here. Floored, never rounded up: rounding up a buy spends more than the caller asked for.
+ * An unknown quote currency falls back to the KRW table, which is the coarsest of the three at
+ * every price — coarse is accepted and merely imprecise, while finer than allowed is refused.
  */
-function upbitTickSize(price) {
-  if (!(price > 0)) throw new Error('place_order: price 는 0보다 커야 합니다.');
-  if (price < 0.00001) return 1e-8;
-  const decade = Math.floor(Math.log10(price));
-  if (decade < 3) return Math.pow(10, decade - 2);
-  if (decade >= 6) return 1000;
-  const base = Math.pow(10, decade - 3);
-  const leading = price / Math.pow(10, decade);
-  return Math.min(base * (leading >= 5 ? 5 : 1), 1000);
+const TICK_TABLES = {
+  // 가격 구간 하한 → 호가 단위. Descending, so the first match wins.
+  KRW: [[2000000, 1000], [1000000, 1000], [500000, 500], [100000, 100], [50000, 50],
+        [10000, 10], [5000, 5], [1000, 1], [100, 1], [10, 0.1], [1, 0.01],
+        [0.1, 0.001], [0.01, 0.0001], [0.001, 0.00001], [0.0001, 0.000001],
+        [0.00001, 0.0000001], [0, 0.00000001]],
+  // One unit for the whole market, whatever the asset costs.
+  BTC: [[0, 0.00000001]],
+  USDT: [[10, 0.01], [1, 0.001], [0.1, 0.0001], [0.01, 0.00001], [0.001, 0.000001],
+         [0.0001, 0.0000001], [0, 0.00000001]],
+};
+
+/** The smallest order each market takes, in its quote currency.
+ *
+ * Not enforced here: the exchange is the authority and refuses in its own words, which stay correct
+ * when the number changes. Declared because the sizing layer needs it — a scale-out rung that comes
+ * out under the minimum is refused, and a ladder whose last rung cannot be placed stalls holding
+ * the position it meant to close.
+ */
+const MIN_ORDER_TOTAL = { KRW: 5000, BTC: 0.00005, USDT: 0.5 };
+
+function quoteOf(market) {
+  return String(market ?? '').split('-')[0].toUpperCase();
 }
 
-function upbitRoundPrice(price) {
-  const tick = upbitTickSize(price);
+function upbitTickSize(price, market) {
+  if (!(price > 0)) throw new Error('place_order: price 는 0보다 커야 합니다.');
+  const table = TICK_TABLES[quoteOf(market)] ?? TICK_TABLES.KRW;
+  for (const [lo, tick] of table) if (price >= lo) return tick;
+  return table[table.length - 1][1];
+}
+
+/** Floored to the market's unit, never rounded up: rounding a buy up spends more than was asked. */
+function upbitRoundPrice(price, market) {
+  const tick = upbitTickSize(price, market);
   // Integer arithmetic where the tick is whole, so 159399000 does not come back as 159398999.99.
   if (tick >= 1) return Math.floor(price / tick) * tick;
   const scale = Math.round(1 / tick);
@@ -628,7 +655,7 @@ function upbitOrderParams(data) {
     if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: 지정가에는 qty 가 필요합니다.');
     if (!Number.isFinite(price) || price <= 0) throw new Error('place_order: 지정가에는 price 가 필요합니다.');
     return withId({ market, side, ord_type: 'limit', volume: plainNum(qty),
-                    price: plainNum(upbitRoundPrice(price)) });
+                    price: plainNum(upbitRoundPrice(price, market)) });
   }
   if (type !== 'market') {
     throw new Error(`place_order: orderType='${type}' 은 지원하지 않습니다 — limit, market.`);
@@ -643,7 +670,13 @@ function upbitOrderParams(data) {
       throw new Error('place_order: 시장가 매수에는 `amount`(총 금액)가 필요합니다 — 업비트의 '
         + '시장가 매수는 수량이 아니라 쓸 금액으로 냅니다.');
     }
-    return withId({ market, side, ord_type: 'price', price: plainNum(Math.floor(total)) });
+    // Whole units only where the quote currency has no smaller one. `Math.floor` was
+    // unconditional, which on a BTC market turns a 0.0001 BTC budget into zero — the same
+    // price-only assumption as the tick table, in the one branch where it destroys the order
+    // instead of coarsening it.
+    const whole = quoteOf(market) === 'KRW';
+    return withId({ market, side, ord_type: 'price',
+                    price: plainNum(whole ? Math.floor(total) : total) });
   }
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new Error('place_order: 시장가 매도에는 qty 가 필요합니다.');
@@ -712,7 +745,8 @@ async function main(input) {
         for (const k of ['market', 'side', 'volume', 'price', 'ord_type', 'identifier']) {
           delete decided[k];
         }
-        input = { ...decided, ...params, action, _feeRate: upbitFeeRate(params.market) };
+        input = { ...decided, ...params, action, _feeRate: upbitFeeRate(params.market),
+                  _minTotal: MIN_ORDER_TOTAL[quoteOf(params.market)] ?? null };
       } else if (neutral === 'cancel_order') {
         const uuid = String(input.brokerOrderNo ?? input.uuid ?? '').trim();
         const identifier = String(input.clientOrderId ?? '').trim();
@@ -862,7 +896,11 @@ async function main(input) {
         endpoint,
         ...(neutral === 'place_order'
           ? { clientOrderId: input.clientOrderId ?? null, sentParams: params,
-              feeRate: input._feeRate, validatedOnly: input.action === 'order-test' }
+              feeRate: input._feeRate,
+              // Reported rather than enforced. The sizing layer needs the number and the exchange
+              // stays the authority on it.
+              minOrderTotal: input._minTotal,
+              validatedOnly: input.action === 'order-test' }
           : {}),
         ...( Array.isArray(data) ? { records: data, count: data.length } : data ),
         // The neutral queries answer under the neutral name. `records` is this module's own
