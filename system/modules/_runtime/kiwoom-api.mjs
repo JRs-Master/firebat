@@ -182,8 +182,31 @@ function usStex(data, name) {
   return code;
 }
 
+/**
+ * Split a domestic code into the code an order takes and the book it belongs to.
+ *
+ * The exchange is a SUFFIX on quotes — `005930` is KRX alone, `_NX` is NXT, `_AL` is the two
+ * combined — and the screener answers with it, so the suffix is how a symbol arrives. Orders do
+ * not take it: `kt10000` refuses `000660_AL` with `1902: 종목 정보가 없습니다`, which is what four
+ * live orders hit on 2026-08-04. The book it named is not lost though — it is the `dmst_stex_tp`
+ * the same call already carries, so the suffix moves there rather than being dropped.
+ *
+ * An explicit `exchange` wins: the suffix is how a symbol was quoted, not an instruction.
+ */
+const STEX_BY_SUFFIX = { _AL: 'SOR', _NX: 'NXT' };
+function krxSymbol(data) {
+  const raw = String(data.symbol ?? '').trim();
+  const at = raw.lastIndexOf('_');
+  const suffix = at > 0 ? raw.slice(at) : '';
+  const fromSuffix = STEX_BY_SUFFIX[suffix.toUpperCase()];
+  return {
+    code: fromSuffix ? raw.slice(0, at) : raw,
+    stex: String(data.exchange ?? fromSuffix ?? 'SOR').toUpperCase(),
+  };
+}
+
 function orderParams(data) {
-  const symbol = String(data.symbol ?? '').trim();
+  const { code: symbol, stex } = krxSymbol(data);
   const qty = Number(data.qty);
   if (!symbol) throw new Error('place_order: symbol 이 필요합니다 (예: "005930").');
   if (!Number.isFinite(qty) || qty <= 0) throw new Error('place_order: qty 는 1 이상이어야 합니다.');
@@ -198,7 +221,7 @@ function orderParams(data) {
   }
   const params = {
     // KRX / NXT / SOR — SOR routes across both, which is what a plain "buy this" means.
-    dmst_stex_tp: String(data.exchange ?? 'SOR').toUpperCase(),
+    dmst_stex_tp: stex,
     stk_cd: symbol,
     ord_qty: String(Math.trunc(qty)),
     trde_tp,
@@ -217,10 +240,10 @@ function orderParams(data) {
 function cancelParams(data) {
   const orderNo = String(data.brokerOrderNo ?? '').trim();
   if (!orderNo) throw new Error('cancel_order: brokerOrderNo 가 필요합니다 (주문 접수 응답의 주문번호).');
-  const symbol = String(data.symbol ?? '').trim();
+  const { code: symbol, stex } = krxSymbol(data);
   if (!symbol) throw new Error('cancel_order: symbol 이 필요합니다.');
   return {
-    dmst_stex_tp: String(data.exchange ?? 'SOR').toUpperCase(),
+    dmst_stex_tp: stex,
     orig_ord_no: orderNo,
     stk_cd: symbol,
     // "0" = whatever is left unfilled, which is what cancelling an order means.

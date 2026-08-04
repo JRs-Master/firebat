@@ -945,10 +945,25 @@ def _signals_by_strategy(plan, signals):
             # `lastClose`, but nothing enters on a signal that was never computed.
             continue
         entry = {"signal": aligned[i], "lastClose": run.get("lastClose")}
-        for key in (run.get("strategyId"), run.get("tradeId"), run.get("symbol")):
-            if key:
+        sym = run.get("symbol")
+        # A screened trade is ONE strategy id expanded over a watchlist, so the id alone names
+        # several runs. `setdefault` kept the first and handed it to all of them: on 2026-08-04
+        # four symbols were ordered at 243,243 — the last close of whichever came first, which was
+        # the turnover leader. The compound key is what a caller with a symbol should ask for.
+        for key in (run.get("strategyId"), run.get("tradeId")):
+            if key and sym:
+                out.setdefault(f"{key}|{sym}", entry)
+        for key in (run.get("strategyId"), run.get("tradeId"), sym):
+            if not key:
+                continue
+            # An id that names more than one run cannot answer "which price" — so it stops
+            # answering at all, and the caller falls through to "no price for this symbol". A
+            # wrong price is an order; a missing one is a skipped cycle.
+            if key in out and out[key] is not entry:
+                out[key] = None
+            else:
                 out.setdefault(key, entry)
-    return out
+    return {k: v for k, v in out.items() if v is not None}
 
 
 
@@ -1355,9 +1370,22 @@ def action_cycle(inp, settings):
         broker = s.get("broker") or "unknown"
         account = s.get("account") or ""
         sym = s.get("symbol") or symbol or ""
-        own = per_strategy.get(s.get("id")) or per_strategy.get(sym)
+        # Symbol first: one screened strategy id covers many symbols, and the id alone cannot say
+        # which. The bare id is only left in the map when it names exactly one run.
+        own = (per_strategy.get(f"{s.get('id')}|{sym}")
+               or per_strategy.get(s.get("id"))
+               or per_strategy.get(sym))
         sig = own["signal"] if own else signal
-        s_price = eng.signal_price(sig, fallback=(own or {}).get("lastClose") or 0.0) or price
+        # The cycle-level price belongs to the symbol the CALL named, and to no other. Lending it
+        # onwards prices one stock off another's candles: on 2026-08-04 four screened symbols were
+        # all ordered at 243,243 — Samsung's last close plus the limit offset — because a screened
+        # strategy has no run of its own and fell through to it. Kiwoom refused them for an
+        # unrelated reason, which is the only thing that stopped a Hynix buy at a Samsung price.
+        #
+        # A strategy with no price of its own must not trade. The branch that says so is right
+        # below; this used to jump over it.
+        lendable = price if (symbol and str(symbol) == str(sym)) else 0.0
+        s_price = eng.signal_price(sig, fallback=(own or {}).get("lastClose") or 0.0) or lendable
         if s_price <= 0:
             results.append({"strategyId": s["id"], "symbol": sym,
                             "error": "no price for this symbol — its candles did not arrive"})
@@ -3063,6 +3091,29 @@ def action_selftest():
     # Same alignment on the analyser side, tested on the matcher rather than through a cycle — a
     # cycle writes to the ledger, and a throwaway one here would leave an idempotency key behind
     # that silences the checks after it (which is exactly what happened when it was written that
+    # One screened strategy id spread over a watchlist: the id alone cannot say which symbol's
+    # price is which, and answering with the first one is how four symbols were ordered at
+    # 243,243 on 2026-08-04. Ambiguous now means no answer, which the cycle turns into a skip.
+    screen_plan = {"runs": [
+        {"tradeId": "kw-screen", "strategyId": "kw-screen", "symbol": "005930", "lastClose": 243000},
+        {"tradeId": "kw-screen", "strategyId": "kw-screen", "symbol": "000660", "lastClose": 1588000},
+    ]}
+    screen_map = _signals_by_strategy(screen_plan, [msig(None, 0), msig(None, 0)])
+    checks.append({"name": "a screened id spread over symbols answers per symbol, never by the first",
+                   "want": [243000, 1588000, None],
+                   "got": [(screen_map.get("kw-screen|005930") or {}).get("lastClose"),
+                           (screen_map.get("kw-screen|000660") or {}).get("lastClose"),
+                           (screen_map.get("kw-screen") or {}).get("lastClose")
+                           if screen_map.get("kw-screen") else None],
+                   "ok": (screen_map.get("kw-screen|005930", {}).get("lastClose") == 243000
+                          and screen_map.get("kw-screen|000660", {}).get("lastClose") == 1588000
+                          and "kw-screen" not in screen_map)})
+    # A single-run id still answers by its bare name — the old callers depend on it.
+    solo = _signals_by_strategy({"runs": [screen_plan["runs"][0]]}, [msig(None, 0)])
+    checks.append({"name": "an id that names one run still answers by that id",
+                   "want": 243000, "got": (solo.get("kw-screen") or {}).get("lastClose"),
+                   "ok": (solo.get("kw-screen") or {}).get("lastClose") == 243000})
+
     # way). The buy belongs to the second run; read positionally it would land on the first.
     sig_map = _signals_by_strategy(
         bound, {"count": 1, "results": [msig("buy", 50)],
@@ -3822,3 +3873,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+11
