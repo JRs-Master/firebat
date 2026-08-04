@@ -102,6 +102,23 @@ def _bars(data):
     return out
 
 
+def _num_or(value, default):
+    """숫자로 읽히면 그 값, 아니면 기본값. 선언을 못 읽었다고 기능이 사라지지는 않게."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _fmt_price(value):
+    """사람이 읽는 가격 — 천 단위 구분, 원 단위면 소수점 없이."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.4g}"
+
+
 def _parse_rungs(spec, move_key, size_key):
     """A ladder of `{<move_key>, afterDays, <size_key>}` rungs, or the reason it cannot be read.
 
@@ -2626,6 +2643,96 @@ def main():
                 ),
             },
         }, ensure_ascii=False))
+        return
+
+    if action == "reach_levels":
+        # 고점은 못 맞힌다 — 거울선·정배열·가속·칼만 넷을 26종목 58,928 일봉에서 재고 전부
+        # 떨어뜨렸다(2026-08-04). 맞힐 수 있는 건 "여기까지 올 확률"이다. 그래서 이 액션은 점을
+        # 찍지 않고 **가격마다 확률을 붙인다** — 매도가 "지금이 꼭대기인가" 대신 "이 값까지
+        # 얼마나 팔아 놓을까"가 된다.
+        #
+        # 폭의 단위는 퍼센트가 아니라 ATR 이다. 같은 3% 가 어떤 종목에선 숨 한 번, 어떤
+        # 종목에선 며칠치라 퍼센트 눈금은 종목마다 다른 것을 같은 이름으로 부른다.
+        horizon = max(1, min(2000, int(_num_or(inp.get("horizonBars"), 60))))
+        n_atr = max(2, min(200, int(_num_or(inp.get("atrPeriod"), 20))))
+        mults = inp.get("atrMultiples")
+        if not isinstance(mults, list) or not mults:
+            mults = [0.5, 1, 2, 3, 5]
+        try:
+            mults = sorted({round(float(m), 3) for m in mults if float(m) > 0})
+        except (TypeError, ValueError):
+            print(json.dumps({"success": False,
+                              "error": "atrMultiples 는 0 보다 큰 숫자 배열입니다."}, ensure_ascii=False))
+            return
+        a_ser = atr(bars, n_atr)
+        highs = [b["high"] for b in bars]
+        # 표본은 겹친다(하루씩 밀며 같은 미래를 본다) — 점추정에는 쓰되 **유효 표본은 지평으로
+        # 나눈 값**이라 그 숫자를 같이 내보낸다. 오늘 이 함정으로 +8%p 짜리 결과가 한 번 증발했다.
+        samples = []
+        for t in range(len(bars) - horizon - 1):
+            a, c = a_ser[t], bars[t]["close"]
+            if not a or not c:
+                continue
+            samples.append((max(highs[t + 1:t + 1 + horizon]) - c) / a)
+        last, last_atr = bars[-1], a_ser[-1]
+        if not samples or not last_atr:
+            print(json.dumps({"success": True, "data": {
+                "blocks": [{"type": "stock_chart", "props": {"annotations": []}}],
+                "levels": [], "records": [],
+                "summary": {"reason": ("봉이 지평보다 적어 확률을 낼 수 없습니다 — "
+                                       f"봉 {len(bars)}개, 지평 {horizon}봉."),
+                            "horizonBars": horizon, "bars": len(bars)},
+                "barRange": bar_range,
+            }}, ensure_ascii=False))
+            return
+        px = last["close"]
+        at_ms = int(_num_or(inp.get("asOfMs"), 0)) or None
+        levels, records = [], []
+        for m in mults:
+            hit = sum(1 for v in samples if v >= m)
+            target = px + m * last_atr
+            row = {"atrMultiple": m, "price": round(target, 4),
+                   "gainPct": round((target / px - 1) * 100, 3) if px else None,
+                   "probability": round(100.0 * hit / len(samples), 1)}
+            levels.append(row)
+            # 누적용 한 줄 — **예측을 기록 시점에 못 박는다**. 나중에 실제로 닿았는지 채점할 수
+            # 있어야 이 화면이 의견이 아니라 기록이 된다.
+            records.append({"at": last["date"], "asOfMs": at_ms, "close": px,
+                            "atr": round(last_atr, 4), **row})
+        # 확률이 낮을수록 옅게 — 선 하나하나가 "여기까지 올 가능성"이라 굵기·색이 곧 값이다.
+        def _shade(p):
+            if p >= 60: return "#059669", 2
+            if p >= 30: return "#0891b2", 2
+            if p >= 12: return "#6366f1", 1
+            return "#94a3b8", 1
+        first_i, last_i = bars[0]["i"], last["i"]
+        ahead = max(3, round(horizon * 0.15))
+        ann = []
+        for row in levels:
+            color, width = _shade(row["probability"])
+            ann.append({
+                "kind": "path", "color": color, "width": width,
+                "label": "+%g ATR %s · %s%%" % (row["atrMultiple"],
+                                                _fmt_price(row["price"]), row["probability"]),
+                "points": [{"i": first_i, "price": row["price"]},
+                           {"i": last_i + ahead, "price": row["price"]}],
+            })
+        print(json.dumps({"success": True, "data": {
+            "blocks": [{"type": "stock_chart",
+                        "props": {"annotations": ann, "futureSlots": ahead}}],
+            "levels": levels, "records": records,
+            "summary": {
+                "lastClose": px, "atr": round(last_atr, 4),
+                "atrPct": round(last_atr / px * 100, 3) if px else None,
+                "horizonBars": horizon, "atrPeriod": n_atr,
+                "samples": len(samples),
+                # 겹치는 창을 정직하게 고지한다 — 이 숫자가 실제 독립 관측 수다.
+                "independentSamples": max(1, len(samples) // horizon),
+                "note": ("확률은 이 봉들 자신의 과거에서 센 빈도입니다. 표본이 겹치므로 "
+                         "구간추정이 아니라 점추정으로만 읽으십시오."),
+            },
+            "barRange": bar_range,
+        }}, ensure_ascii=False))
         return
 
     if action == "fib_targets":
