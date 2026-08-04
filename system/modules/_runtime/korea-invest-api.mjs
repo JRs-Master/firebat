@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { API_TABLE } from './korea-invest-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
+import { usOrderPrice } from './us-tick.mjs';
 import { acquireSlot as acquireShared } from './rate-window.mjs';
 
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
@@ -286,7 +287,10 @@ function standardCall(action, data) {
     const px = type === 'market' ? price * (buying ? 1 + slip : 1 - slip) : price;
     return { apiId: 'v1_해외주식-001', hint: sideHint(data, false), body: {
       ...acct, OVRS_EXCG_CD: usExchange(data), PDNO: symbol, ORD_QTY: qty,
-      OVRS_ORD_UNPR: px.toFixed(2), ORD_SVR_DVSN_CD: '0', ORD_DVSN: '00',
+      // `toFixed(2)` was legal but rounds in whichever direction is nearer — which can push a buy
+      // further across the spread than asked — and truncates a sub-dollar price to two decimals
+      // where four are allowed. Same helper as kiwoom now: one venue, one rule.
+      OVRS_ORD_UNPR: usOrderPrice(px, data.side), ORD_SVR_DVSN_CD: '0', ORD_DVSN: '00',
     }};
   }
 

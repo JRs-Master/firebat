@@ -8,6 +8,7 @@
 
 import { URL_CATEGORY, API_NAMES } from './kiwoom-apis.generated.mjs';
 import { roundToKrxTick } from './krx-tick.mjs';
+import { usOrderPrice } from './us-tick.mjs';
 import { acquireSlot } from './rate-window.mjs';
 const BASE_REAL = 'https://api.kiwoom.com';
 const BASE_MOCK = 'https://mockapi.kiwoom.com';
@@ -290,8 +291,10 @@ function standardOrder(action, data) {
     stk_cd: symbol, stex_tp: usStex(data, 'place_order'),
     ord_qty: String(Math.trunc(qty)), trde_tp,
   };
-  // A market order there takes an empty unit price, not a zero and not the last trade.
-  params.ord_uv = type === 'market' ? '' : String(price);
+  // A market order there takes an empty unit price, not a zero and not the last trade. A limit one
+  // has to fit the venue's decimals — `String(price)` sent 497.041665 and was refused outright
+  // (1517, 2026-08-05). The KRX path had this from the start; the overseas path never did.
+  params.ord_uv = type === 'market' ? '' : usOrderPrice(price, data.side);
   return { apiId: side === 'buy' ? 'ust20000' : 'ust20001', params };
 }
 

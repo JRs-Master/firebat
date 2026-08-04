@@ -1860,8 +1860,20 @@ def action_reconcile(inp, settings):
                                   "price": f["price"]})
 
     # 2. Open orders — a row the broker no longer lists, with nothing filled, is finished.
+    #
+    # An **empty** list settles nothing. A list with rows in it is an answer that can legitimately
+    # leave ours out; an empty one is indistinguishable from an endpoint that cannot report open
+    # orders for this account at all. Measured 2026-08-05: three Korea Investment orders were
+    # acknowledged with broker numbers 0000047849/50/52 while the US market was open, and the next
+    # pass recorded all three cancelled — orders that were alive at the venue. Believing that frees
+    # the strategy to order the same thing again, which is how one intent becomes two positions.
+    # This is the same rule already written next door for balances ("an empty balance is a failed
+    # query, not a liquidation"); it had not been applied to this list.
     open_list = inp.get("openOrders")
-    if isinstance(open_list, list):
+    unsettled = 0
+    if isinstance(open_list, list) and not open_list:
+        unsettled = len([o for o in store.open_orders(conn) if o.get("broker_order_no")])
+    if isinstance(open_list, list) and open_list:
         still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list
                       if isinstance(r, dict)}
         rows_now = inp.get("balanceRows")
@@ -2056,6 +2068,9 @@ def action_reconcile(inp, settings):
         "fillsApplied": report["applied"], "unattributedFills": report["unattributed"],
         "unreadableFills": report["unreadable"], "agedToUnknown": report["aged"],
         "voided": voided,
+        # Orders left alone because the broker answered with an empty open-order list. Reported
+        # rather than logged: it is normal on a quiet pass and only interesting when it persists.
+        "unsettledOnEmptyList": unsettled,
         "unreadablePosition": unread_pos, "unreadablePositions": unreadable_positions,
         "note": ("접수 응답이 아니라 체결·잔고 조회가 원장을 확정합니다. 읽지 못한 체결 행은 "
                  "버리지 않고 그대로 돌려주므로, 실제 응답을 보고 필드명을 늘리면 됩니다."
@@ -2660,16 +2675,21 @@ def action_selftest():
     conn4.close()
     settings_g = {"mode": "dryrun", "strategies": [
         {"id": "gh", "symbol": "GHOST", "broker": "b3", "account": "a3"}]}
-    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [], "fills": [],
-                      "balanceRows": [{"stk_cd": "GHOST", "rmnd_qty": "10"}]}, settings_g)
+    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [{"ord_no": "OTHER-1"}],
+                      "fills": [], "balanceRows": [{"stk_cd": "GHOST", "rmnd_qty": "10"}]},
+                     settings_g)
     conn4 = store.connect("dryrun")
     ghost = dict(conn4.execute("SELECT state FROM orders WHERE order_key='ghost'").fetchone())
     conn4.close()
     checks.append({"name": "장부에 없는 보유가 남아 있으면 취소로 적지 않는다",
                    "want": "acked", "got": ghost["state"], "ok": ghost["state"] == "acked"})
-    # 반대로 잔고가 깨끗하면 사라진 주문은 취소가 맞다.
-    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [], "fills": [],
-                      "balanceRows": [{"stk_cd": "OTHER", "rmnd_qty": "1"}]}, settings_g)
+    # 반대로 잔고가 깨끗하면 사라진 주문은 취소가 맞다 — 단 **미체결 목록이 답을 했을 때만**이다.
+    # 이 케이스는 원래 빈 목록으로 재고 있었는데, 빈 목록은 "이 주문이 없다"가 아니라 "이 계좌의
+    # 미체결을 못 알려준다"와 구분이 안 된다(2026-08-05 한투 실측). 목록에 남의 주문이 들어 있으면
+    # 그건 진짜 답이고, 그 답에 우리 것이 없으면 끝난 것이다.
+    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [{"ord_no": "OTHER-1"}],
+                      "fills": [], "balanceRows": [{"stk_cd": "OTHER", "rmnd_qty": "1"}]},
+                     settings_g)
     conn4 = store.connect("dryrun")
     ghost2 = dict(conn4.execute("SELECT state FROM orders WHERE order_key='ghost'").fetchone())
     conn4.close()
@@ -3702,6 +3722,34 @@ def action_selftest():
                    "want": store.HEALTHY,
                    "got": store.position_of(ucon, "u", "b", "", "AAA").get("state"),
                    "ok": store.position_of(ucon, "u", "b", "", "AAA").get("state") == store.HEALTHY})
+    # An empty open-order list is not an answer about any particular order. Korea Investment's
+    # practice account answered with one while three of its own orders were live at the venue.
+    ucon2 = store.connect("dryrun")
+    ucon2.execute("DELETE FROM orders WHERE order_key='live-one'")
+    ucon2.commit()
+    store.insert_order(ucon2, {"order_key": "live-one", "cycle_id": "c", "strategy_id": "u",
+                               "broker": "b", "account": "", "symbol": "AAA", "side": "buy",
+                               "req_qty": 1, "req_price": 10, "mode": "dryrun", "state": "acked"})
+    store.update_order(ucon2, "live-one", broker_order_no="0000047849")
+    out_e = action_reconcile({"openOrders": [], "balanceRows": [{"symbol": "ZZZ", "qty": 1}],
+                             "broker": "b", "account": ""},
+                            {"mode": "dryrun", "voidAfterSec": 3600})["data"]
+    _st = ucon2.execute("SELECT state FROM orders WHERE order_key='live-one'").fetchone()["state"]
+    checks.append({"name": "an empty open-order list settles nothing", "want": "acked",
+                   "got": _st, "ok": _st == "acked"})
+    checks.append({"name": "and says how many it left alone", "want": 1,
+                   "got": out_e.get("unsettledOnEmptyList"),
+                   "ok": out_e.get("unsettledOnEmptyList") == 1})
+    # A list with rows in it is a real answer, and one that omits ours closes it.
+    out_f = action_reconcile({"openOrders": [{"ord_no": "9999"}],
+                             "balanceRows": [{"symbol": "ZZZ", "qty": 1}],
+                             "broker": "b", "account": ""},
+                            {"mode": "dryrun", "voidAfterSec": 3600})["data"]
+    _st2 = ucon2.execute("SELECT state FROM orders WHERE order_key='live-one'").fetchone()["state"]
+    checks.append({"name": "a non-empty list that omits ours does close it", "want": "canceled",
+                   "got": _st2, "ok": _st2 == "canceled"})
+    ucon2.close()
+
     # A holding that could have come from the order is enough to keep it. So is a balance nobody
     # read — silence is not a zero.
     ucon.execute("DELETE FROM orders")
