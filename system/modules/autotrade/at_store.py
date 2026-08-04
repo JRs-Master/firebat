@@ -627,10 +627,41 @@ def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
 
 
 # ── reads ────────────────────────────────────────────────────────────────────────────────────
-def read_positions(conn):
-    return [dict(r) for r in conn.execute(
+def read_positions(conn, markets=None):
+    """포지션 행 + `realized_open`(이번 구간 실현) + `currency`.
+
+    `realized_open` = 지금 들고 있는 이 포지션에 들어온 뒤 실현한 것만.
+
+    `realized_pnl` 은 (전략·브로커·계좌·종목) 의 **생애 누적**이라 리셋되지 않는다. 그건 전략의
+    성적으로서 맞는 숫자지만, 보유 행 옆에 있으면 **지금 들고 있는 물건의 손익처럼 읽힌다** — 끝난
+    왕복에서 난 손실이 그 다음에 새로 산 주식에 붙어 보인다(측정 2026-08-05: META 가 3주 왕복으로
+    −3.57 을 내고 끝난 뒤, 35분 뒤 새로 산 3주 옆에 그 −3.57 이 그대로 앉아 있었다).
+
+    그래서 "마지막으로 수량이 0 이 된 뒤부터"를 따로 센다. 사다리 전략은 한 포지션 안에서도 쿼터매도로
+    실현이 생기므로 이 값은 0 이 아닐 수 있고, 그때야말로 필요한 숫자다. 원장에서 파생하므로 저장하지
+    않는다 — `qty_after == 0` 인 행이 곧 그 경계다.
+    """
+    rows = [dict(r) for r in conn.execute(
         "SELECT * FROM strategy_position WHERE qty > 0 OR realized_pnl <> 0 "
         "ORDER BY symbol, strategy_id")]
+    for row in rows:
+        # 통화는 화면이 아니라 여기서 붙인다 — 판정이 두 곳에 있으면 두 곳이 갈린다.
+        row["currency"] = currency_of(row["broker"], row["symbol"], markets, row["strategy_id"]) \
+            or UNKNOWN_CURRENCY
+        if float(row.get("qty") or 0) <= EPS:
+            row["realized_open"] = None          # 보유가 없으면 '이번 구간' 이라는 것이 없다
+            continue
+        flat = conn.execute(
+            "SELECT COALESCE(MAX(id),0) AS id FROM ledger WHERE strategy_id=? AND broker=? "
+            "AND account=? AND symbol=? AND qty_after <= ?",
+            (row["strategy_id"], row["broker"], row["account"], row["symbol"], EPS)).fetchone()
+        got = conn.execute(
+            "SELECT COALESCE(SUM(realized),0) AS s FROM ledger WHERE strategy_id=? AND broker=? "
+            "AND account=? AND symbol=? AND id > ?",
+            (row["strategy_id"], row["broker"], row["account"], row["symbol"],
+             int(flat["id"]))).fetchone()
+        row["realized_open"] = float(got["s"])
+    return rows
 
 
 def read_orders(conn, limit=50):

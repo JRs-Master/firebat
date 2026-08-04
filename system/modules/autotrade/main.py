@@ -2118,7 +2118,7 @@ def action_read(inp, settings, which):
     limit = int(inp.get("limit") or 50)
     data = {"mode": settings.get("mode"), "store": which_store}
     if which in ("positions", "report"):
-        data["positions"] = store.read_positions(conn)
+        data["positions"] = store.read_positions(conn, markets=market_map(settings))
     if which in ("pnl", "report"):
         # Carried inside `report` as well, so the screen gets the numbers in the call it already
         # makes. `marks` is optional and comes from whoever already has prices — this action does

@@ -282,16 +282,25 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
         );
       })}
 
+      {/* 실현손익 두 칸으로 나눈 이유 — `realized_pnl` 은 그 전략·종목의 생애 누적이라 리셋되지
+          않는다. 보유 행에 한 칸만 있으면 **끝난 왕복의 손익이 새로 산 주식에 붙어 보인다**(META 가
+          3주 왕복으로 −3.57 을 내고 끝난 35분 뒤, 새로 산 3주 옆에 그대로 앉아 있었다). 지금 들고
+          있는 것에 대한 답은 '이번 구간' 쪽이다. */}
       <Section title="보유" count={holdings.length}>
         <Table
-          head={['전략', '종목', '수량', '평단', '실현손익', '상태']}
+          head={['전략', '종목', '수량', '평단', '이번 구간', '누적 실현', '상태']}
           empty="보유 중인 포지션이 없습니다."
           rows={holdings.map(p => [
             String(p.strategy_id ?? ''),
             String(p.symbol ?? ''),
             num(p.qty),
             num(p.avg_price),
-            <span key="r" className={tone(p.realized_pnl)}>{money(p.realized_pnl)}</span> as any,
+            <span key="o" className={tone(p.realized_open)}>
+              {p.realized_open == null ? '—' : money(p.realized_open, String(p.currency ?? ''))}
+            </span> as any,
+            <span key="r" className={tone(p.realized_pnl)}>
+              {money(p.realized_pnl, String(p.currency ?? ""))}
+            </span> as any,
             <Badge key="s" text={String(p.state ?? '')} /> as any,
           ])}
         />
@@ -306,7 +315,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           rows={closed.map(p => [
             String(p.strategy_id ?? ''),
             String(p.symbol ?? ''),
-            <span key="r" className={tone(p.realized_pnl)}>{money(p.realized_pnl)}</span> as any,
+            <span key="r" className={tone(p.realized_pnl)}>{money(p.realized_pnl, String(p.currency ?? ""))}</span> as any,
             <Badge key="s" text={String(p.state ?? '')} /> as any,
           ])}
         />
