@@ -433,9 +433,16 @@ impl ModuleManager {
                         // A market the account was not registered for is not a miss — the alias
                         // resolved, it is simply for somewhere else. Say so here rather than let
                         // the cycle run its remaining steps and hand the venue an order it will
-                        // refuse: this is the first step, so refusing costs one call.
+                        // refuse: this is the first step, so refusing costs one call. Whether
+                        // markets mean anything is the *owner's* declaration, not this module's.
+                        let owner_markets = self
+                            .module_config(owner)
+                            .await
+                            .map(|c| crate::utils::account_secrets::declared_markets(&c))
+                            .unwrap_or_default();
                         if let Some(detail) = crate::utils::account_secrets::market_conflict(
                             entry,
+                            &owner_markets,
                             input_data.get("market").and_then(|v| v.as_str()),
                         ) {
                             return Err(crate::i18n::t(
@@ -515,6 +522,7 @@ impl ModuleManager {
                 // account that was never the right one reads as a registration you still have to do.
                 if let Some(detail) = crate::utils::account_secrets::market_conflict(
                     &entry,
+                    &crate::utils::account_secrets::declared_markets(cfg),
                     input_data.get("market").and_then(|v| v.as_str()),
                 ) {
                     return Err(crate::i18n::t(

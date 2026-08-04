@@ -105,15 +105,14 @@ impl AccountEntry {
             .collect()
     }
 
-    /// Whether this account may be used for `market`.
+    /// Whether this account is registered for `market`.
     ///
-    /// An entry that lists no markets makes no claim and serves any — that is the shape every
-    /// account had before markets existed, and Korea Investment's one account really does cover
-    /// both. Only a stated list can contradict a caller.
+    /// An account that covers both says so — Korea Investment's registers as `["kr","us"]`, not as
+    /// a blank. So an empty list is not "any", it is **nothing recorded**, and the caller decides
+    /// what that means ([`market_conflict`] treats it as an incomplete registration).
     pub fn serves(&self, market: &str) -> bool {
         let want = market.trim();
         want.is_empty()
-            || self.markets.is_empty()
             || self
                 .markets
                 .iter()
@@ -236,8 +235,29 @@ impl AccountRegistry {
     }
 }
 
+/// Markets a module says its accounts are scoped by — `accounts.markets` in its config.
+///
+/// This is what makes an account's own `markets` mean anything. A broker that does not declare it
+/// has accounts that are not per-market, and a `market` argument on such a module is about
+/// something else entirely (Upbit's `market` is a ticker).
+pub fn declared_markets(config: &serde_json::Value) -> Vec<String> {
+    config
+        .pointer("/accounts/markets")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The contradiction between the account a call names and the market it names, as the message
-/// the caller should see — `None` when they agree or when neither side made a claim.
+/// the caller should see — `None` when they agree, or when this broker's accounts are not
+/// per-market at all.
 ///
 /// Two places decide which account trades: the registry says which markets an alias is for, and
 /// the caller names an alias. Nothing compared them, so they could disagree indefinitely.
@@ -248,10 +268,25 @@ impl AccountRegistry {
 /// Refusing is the point. Resolving it here instead — picking whichever account declares the
 /// market — would silently move an order to an account the caller did not name, which is the
 /// same class of accident in the other direction.
-pub fn market_conflict(entry: &AccountEntry, requested: Option<&str>) -> Option<String> {
+///
+/// `declared` gates the whole check, and a *blank* entry under a broker that does declare markets
+/// is refused rather than waved through: the settings screen will not save an account without a
+/// market, so a blank one is hand-written vault data. Reading it as "serves everything" would
+/// switch the guard off exactly where the data is least trustworthy.
+pub fn market_conflict(
+    entry: &AccountEntry,
+    declared: &[String],
+    requested: Option<&str>,
+) -> Option<String> {
     let market = requested.map(str::trim).filter(|m| !m.is_empty())?;
-    if entry.serves(market) {
+    if declared.is_empty() || entry.serves(market) {
         return None;
+    }
+    if entry.markets.is_empty() {
+        return Some(format!(
+            "account '{}' has no market recorded, so it cannot be used for '{}'. Set its market in the module settings.",
+            entry.id, market
+        ));
     }
     Some(format!(
         "account '{}' is registered for {} — it cannot be used for '{}'. Name an account registered for '{}', or fix that account's markets in the module settings.",
@@ -274,18 +309,23 @@ mod market_tests {
         }
     }
 
+    fn both() -> Vec<String> {
+        vec!["kr".to_string(), "us".to_string()]
+    }
+
+    /// Upbit's `market` is a ticker, not a venue. A broker that never said its accounts are
+    /// per-market has nothing here to contradict.
     #[test]
-    fn an_account_that_states_no_markets_serves_any() {
+    fn a_broker_whose_accounts_are_not_per_market_is_not_checked() {
         let e = acct("main", &[]);
-        assert!(e.serves("kr") && e.serves("us"));
-        assert_eq!(market_conflict(&e, Some("us")), None);
+        assert_eq!(market_conflict(&e, &[], Some("KRW-BTC")), None);
     }
 
     #[test]
     fn a_market_the_account_declares_passes_whatever_its_case() {
         let e = acct("모의", &["kr", "us"]);
         assert!(e.serves("kr") && e.serves("US"));
-        assert_eq!(market_conflict(&e, Some("KR")), None);
+        assert_eq!(market_conflict(&e, &both(), Some("KR")), None);
     }
 
     /// The live shape of the 2026-08-04 outage: the alias named 모의국내 had been registered for
@@ -294,17 +334,40 @@ mod market_tests {
     fn a_market_the_account_does_not_declare_is_refused_naming_both() {
         let e = acct("모의국내", &["us"]);
         assert!(!e.serves("kr"));
-        let msg = market_conflict(&e, Some("kr")).expect("mismatch must be reported");
+        let msg = market_conflict(&e, &both(), Some("kr")).expect("mismatch must be reported");
         assert!(msg.contains("모의국내"), "{msg}");
         assert!(msg.contains("us"), "{msg}");
         assert!(msg.contains("'kr'"), "{msg}");
     }
 
+    /// The settings screen refuses to save an account without a market, so a blank one under a
+    /// per-market broker is hand-written vault data — the least trustworthy place to fall silent.
+    #[test]
+    fn a_blank_market_under_a_per_market_broker_is_incomplete_not_permissive() {
+        let e = acct("손으로적음", &[]);
+        let msg = market_conflict(&e, &both(), Some("kr")).expect("blank must be reported");
+        assert!(msg.contains("no market recorded"), "{msg}");
+    }
+
     #[test]
     fn a_caller_that_names_no_market_makes_no_claim_to_contradict() {
         let e = acct("모의국내", &["us"]);
-        assert_eq!(market_conflict(&e, None), None);
-        assert_eq!(market_conflict(&e, Some("   ")), None);
+        assert_eq!(market_conflict(&e, &both(), None), None);
+        assert_eq!(market_conflict(&e, &both(), Some("   ")), None);
+    }
+
+    #[test]
+    fn the_declaration_is_read_off_the_accounts_block() {
+        let cfg = serde_json::json!({"accounts": {"modes": ["real"], "markets": ["kr", "us"]}});
+        assert_eq!(declared_markets(&cfg), both());
+        for none in [
+            serde_json::json!({}),
+            serde_json::json!({"accounts": {"modes": ["real"]}}),
+            serde_json::json!({"accounts": {"markets": []}}),
+            serde_json::json!({"accounts": {"markets": "kr"}}),
+        ] {
+            assert!(declared_markets(&none).is_empty(), "{none}");
+        }
     }
 }
 
