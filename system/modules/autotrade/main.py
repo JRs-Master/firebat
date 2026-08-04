@@ -1825,11 +1825,29 @@ def action_reconcile(inp, settings):
     if isinstance(open_list, list):
         still_open = {orders._dig(r, *orders.ORDER_NO_KEYS) for r in open_list
                       if isinstance(r, dict)}
+        rows_now = inp.get("balanceRows")
         for o in store.open_orders(conn):
             no = o.get("broker_order_no")
-            if no and no not in still_open and float(o.get("filled_qty") or 0) <= 0:
-                store.update_order(conn, o["order_key"], state="canceled",
-                                   last_checked_ms=store.now_ms())
+            if not (no and no not in still_open and float(o.get("filled_qty") or 0) <= 0):
+                continue
+            # Leaving the open list is also what a **filled** order does. The fill query is a
+            # different endpoint and can lag by a pass, so "gone and nothing booked" is ambiguous
+            # — and reading it as cancelled writes a trade out of the ledger that the exchange
+            # actually made. Measured 2026-08-04: a Bitcoin buy and one of a twin pair both filled
+            # and both were recorded cancelled; the broker held 520 shares while the ledger
+            # claimed 260. The `void` path next door already refuses to decide without the
+            # balance; this one was deciding on two of the same three facts.
+            if not isinstance(rows_now, list):
+                continue                       # nothing to corroborate with
+            held, unread_row = orders.read_position(rows_now, o["symbol"])
+            if unread_row is not None:
+                continue                       # the row is ours but unreadable — not a zero
+            surplus = (float((held or {}).get("qty") or 0)
+                       - store.accounted_qty(conn, o["broker"], o["account"], o["symbol"]))
+            if o.get("side") == "buy" and surplus > 1e-9:
+                continue                       # shares nobody has booked — this order may be why
+            store.update_order(conn, o["order_key"], state="canceled",
+                               last_checked_ms=store.now_ms())
 
     # 3. Anything still unconfirmed past the timeout stops the strategy rather than being assumed.
     # `or 120` would turn a configured 0 back into the default — "wait no time at all" is a real
@@ -2398,6 +2416,35 @@ def action_selftest():
                    "want": [None, True],
                    "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
                    "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
+
+    # --- 사라진 주문이 취소인지 체결인지 -------------------------------------------------
+    # 체결된 주문도 미체결 목록에서 사라진다. 잔고에 아무도 장부에 안 올린 수량이 남아 있으면
+    # 그 주문이 그것일 수 있으므로 취소로 적지 않는다(2026-08-04 실측: 비트코인 매수와 쌍둥이
+    # 한 짝이 체결됐는데 둘 다 canceled 로 기록됐다).
+    conn4 = store.connect("dryrun")
+    store.insert_order(conn4, {"order_key": "ghost", "cycle_id": "c", "strategy_id": "gh",
+                               "broker": "b3", "account": "a3", "symbol": "GHOST", "side": "buy",
+                               "req_qty": 10, "req_price": 100, "ord_type": "limit",
+                               "mode": "dryrun", "state": "sent", "reason": "rule"})
+    store.update_order(conn4, "ghost", state="acked", broker_order_no="N1")
+    conn4.close()
+    settings_g = {"mode": "dryrun", "strategies": [
+        {"id": "gh", "symbol": "GHOST", "broker": "b3", "account": "a3"}]}
+    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [], "fills": [],
+                      "balanceRows": [{"stk_cd": "GHOST", "rmnd_qty": "10"}]}, settings_g)
+    conn4 = store.connect("dryrun")
+    ghost = dict(conn4.execute("SELECT state FROM orders WHERE order_key='ghost'").fetchone())
+    conn4.close()
+    checks.append({"name": "장부에 없는 보유가 남아 있으면 취소로 적지 않는다",
+                   "want": "acked", "got": ghost["state"], "ok": ghost["state"] == "acked"})
+    # 반대로 잔고가 깨끗하면 사라진 주문은 취소가 맞다.
+    action_reconcile({"broker": "b3", "account": "a3", "openOrders": [], "fills": [],
+                      "balanceRows": [{"stk_cd": "OTHER", "rmnd_qty": "1"}]}, settings_g)
+    conn4 = store.connect("dryrun")
+    ghost2 = dict(conn4.execute("SELECT state FROM orders WHERE order_key='ghost'").fetchone())
+    conn4.close()
+    checks.append({"name": "잔고가 깨끗하면 사라진 주문은 취소가 맞다",
+                   "want": "canceled", "got": ghost2["state"], "ok": ghost2["state"] == "canceled"})
 
     # --- a person trading the same account by hand ----------------------------------------
     # Their shares must never join a strategy's average, and must not go unnoticed either. The

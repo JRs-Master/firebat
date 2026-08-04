@@ -465,6 +465,19 @@ def claimed_symbols(conn, broker, account):
     return [r["symbol"] for r in rows if r["symbol"]]
 
 
+def accounted_qty(conn, broker, account, symbol):
+    """How much of this symbol the ledger already explains — strategies plus the unassigned bucket.
+
+    What a balance has to exceed before a surplus means "something filled that we have not booked".
+    """
+    row = conn.execute(
+        "SELECT (SELECT COALESCE(SUM(qty),0) FROM strategy_position WHERE broker=? AND account=? "
+        "AND symbol=? AND qty>0) + (SELECT COALESCE(SUM(qty),0) FROM unassigned WHERE broker=? "
+        "AND account=? AND symbol=?) AS total",
+        (broker, account, symbol, broker, account, symbol)).fetchone()
+    return float(row["total"] or 0)
+
+
 def reconcile_symbol(conn, broker, account, symbol, broker_qty, broker_avg=0.0):
     """Compare what the strategies claim against what the broker reports.
 
