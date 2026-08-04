@@ -1710,7 +1710,19 @@ def action_record_orders(inp, settings):
     unreadable leaves the row `unknown` for reconciliation to settle rather than guessing.
     """
     calls = _loop_items(inp.get("calls"), "calls")
-    results = _loop_items(inp.get("results"))
+    # The order loop keeps going now, so `results` holds only the calls that completed and the
+    # envelope's `failed[].index` says which dropped out. Measured 2026-08-04: one rejection stopped
+    # the loop, this step never ran, and twenty rows stayed at `unknown` claiming the broker had not
+    # answered — while the broker had answered `RC4091 모의투자 종료된 계좌입니다` immediately. A
+    # rejection has no side effect; refusing to record the ones that DO is the wrong way round.
+    aligned, call_errors = _loop_aligned(inp.get("results"), len(calls))
+    if aligned is not None:
+        for idx, err in (call_errors or {}).items():
+            # A call that never completed is not silence from the broker — say which and why.
+            aligned[idx] = {"success": False, "error": err}
+        results = aligned
+    else:
+        results = _loop_items(inp.get("results"))
     if len(results) != len(calls):
         # Counts alone do not say where a wrong list came from, and a pipeline hands these over by
         # reference — `$step6.results` and `$step5.calls` are easy to point one step off. Show a
@@ -3091,6 +3103,19 @@ def action_selftest():
     # Same alignment on the analyser side, tested on the matcher rather than through a cycle — a
     # cycle writes to the ledger, and a throwaway one here would leave an idempotency key behind
     # that silences the checks after it (which is exactly what happened when it was written that
+    # A rejected order must not stop the rest from being recorded. Measured 2026-08-04: one
+    # rejection killed the loop, record_orders never ran, and rows stayed `unknown` saying the
+    # broker had not answered — while it had answered at once and said exactly why.
+    rec = action_record_orders(
+        {"calls": [{"orderKey": "k1"}, {"orderKey": "k2"}],
+         "results": {"count": 1, "results": [{"success": True, "data": {"ord_no": "A1"}}],
+                     "failed": [{"index": 1, "error": "RC4091 모의투자 종료된 계좌입니다"}],
+                     "dropped": 0}}, mset)
+    checks.append({"name": "a rejected order still lets the others be recorded",
+                   "want": "accepted, not a length error",
+                   "got": rec.get("error") or "recorded",
+                   "ok": rec.get("success") is not False})
+
     # One screened strategy id spread over a watchlist: the id alone cannot say which symbol's
     # price is which, and answering with the first one is how four symbols were ordered at
     # 243,243 on 2026-08-04. Ambiguous now means no answer, which the cycle turns into a skip.

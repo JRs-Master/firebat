@@ -90,7 +90,8 @@
           "tool": "sysmod_upbit-trade",
           "inputData": "$prev.input"
         }
-      ]
+      ],
+      "continueOnError": true
     },
     {
       "type": "TOOL_CALL",
@@ -100,7 +101,7 @@
       },
       "inputMap": {
         "calls": "$step6.calls",
-        "results": "$step7.results"
+        "results": "$step7"
       }
     },
     {
