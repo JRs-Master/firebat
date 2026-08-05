@@ -2796,8 +2796,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                     {/* StatusManager 활성 작업 인디케이터 — 활성·종료 작업 0이면 자동 숨김 */}
                     <ActiveJobsIndicator />
                     {/* 승인 대기 — 채팅 밖(에디터 MCP·CLI)에서 만들어진 카드는 붙을 말풍선이
-                        없어 아무 데도 안 떴다. 대기 0이면 자동 숨김. */}
-                    <PendingApprovals />
+                        없어 아무 데도 안 떴다. 대기 0이면 자동 숨김.
+                        admin 전용: 이 파일은 hub 콘솔이기도 한데 조회 라우트가 admin 인증이라,
+                        hub 방문자한테서는 20초마다 401 이 나고 로그인 화면으로 튕겼다. */}
+                    {!hubContext && <PendingApprovals />}
                   </div>
                   <Tooltip label={loading ? t('chat_input.stop_generation') : t('chat_input.send')}>
                   <button
