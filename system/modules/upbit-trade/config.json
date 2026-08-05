@@ -377,6 +377,14 @@
       "clientOrderId": {
         "type": "string",
         "description": "[중립 계약] 우리 주문키. 업비트 `identifier` 로 전달되어 재전송이 거래소 단에서 거부됩니다."
+      },
+      "brokerOrderNo": {
+        "type": "string",
+        "description": "cancel_order — the broker's own order number, `uuid` here. Part of the neutral contract: the caller holds one identifier whatever the broker calls it."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "Route to the practice endpoint where the broker has one. Upbit does not, so this is accepted and ignored — the neutral contract passes it to every broker."
       }
     },
     "additionalProperties": false

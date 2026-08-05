@@ -136,8 +136,7 @@
         "account": "$step0.scopedTo.account",
         "fills": "$step9.rows",
         "openOrders": "$step10.rows",
-        "balanceRows": "$step11.rows",
-        "market": "$step0.scopedTo.market"
+        "balanceRows": "$step11.rows"
       }
     }
   ]

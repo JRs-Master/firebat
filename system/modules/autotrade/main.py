@@ -2737,6 +2737,40 @@ def action_selftest():
                    "ok": store.broker_qty_of(_c3, "kis", "모의", "NEVER") is None})
     _c3.close()
 
+    # The schedules are wired by hand, so a step can be given a value its source never produces.
+    # Measured 2026-08-05: `market` was added to every reconcile step at once, and upbit — which
+    # has no market, being one exchange — began passing null into an enum of kr|us. Step 13 failed
+    # every five minutes for eight hours: no settlement, and a real ONDO fill left unbooked. The
+    # schema was right to refuse; the wiring was wrong, and nothing here was checking the wiring.
+    import glob as _glob
+    import os as _os
+    _bad = []
+    for _p in sorted(_glob.glob(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                              "cron-*.json"))):
+        try:
+            with open(_p, encoding="utf-8") as _fh:
+                _j = json.load(_fh)
+        except (OSError, ValueError) as e:
+            _bad.append("%s: %s" % (_os.path.basename(_p), e))
+            continue
+        _steps = _j.get("pipeline") or []
+        _gate = next((s for s in _steps if isinstance(s.get("inputData"), dict)
+                      and s["inputData"].get("action") == "gate"), None)
+        for _s in _steps:
+            _im = _s.get("inputMap") or {}
+            for _k, _ref in _im.items():
+                # Only the gate's own scope is checkable here; other references resolve at runtime.
+                if not (isinstance(_ref, str) and _ref.startswith("$step0.scopedTo.")):
+                    continue
+                _field = _ref.split(".")[-1]
+                if _field == "market" and not ((_gate or {}).get("inputData") or {}).get("market"):
+                    _bad.append("%s: %s reads %s but its gate declares no market"
+                                % (_os.path.basename(_p),
+                                   (_s.get("inputData") or {}).get("action") or _s.get("type"),
+                                   _ref))
+    checks.append({"name": "no schedule reads a scope its own gate never sets",
+                   "want": [], "got": _bad, "ok": not _bad})
+
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
     checks.append({"name": "cash is never read as a holding of the market it prices",
                    "want": 4.47093889, "got": (_found or {}).get("qty"),
