@@ -556,6 +556,41 @@ def symbol_in_market(conn, broker, account, symbol, market, market_of):
     return market in declared
 
 
+def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, note=None):
+    """Move shares out of the unassigned bucket and into a strategy's book.
+
+    Reconciliation deliberately never does this by itself: a surplus the ledger cannot explain
+    might be a hand-made trade, another strategy's, or ours with the trail broken, and guessing
+    hands one strategy another's shares. So the bucket holds them, the invariant stays true, and a
+    person says whose they are.
+
+    Append-only, like everything else here — the strategy receives a ledger row at the bucket's own
+    average, and the bucket is decremented by exactly that much. No history is rewritten.
+    """
+    row = conn.execute(
+        "SELECT qty, avg_price FROM unassigned WHERE broker=? AND account=? AND symbol=?",
+        (broker, account, symbol)).fetchone()
+    have = float(row["qty"]) if row else 0.0
+    if have <= EPS:
+        raise ValueError(f"unassigned holds nothing for {symbol} at {broker}/{account}")
+    want = have if qty is None else float(qty)
+    if want <= EPS:
+        raise ValueError("qty must be positive")
+    if want > have + EPS:
+        raise ValueError(f"unassigned holds {have} of {symbol}, cannot assign {want}")
+    price = float(row["avg_price"] or 0.0)
+    conn.execute("UPDATE unassigned SET qty=?, updated_ms=? WHERE broker=? AND account=? "
+                 "AND symbol=?", (have - want, now_ms(), broker, account, symbol))
+    pos = apply_fill(conn, strategy_id=strategy_id, broker=broker, account=account, symbol=symbol,
+                     side="buy", qty=want, price=price, source="resolve_unassigned",
+                     note=note or "assigned from the unassigned bucket")
+    log_event(conn, "unassigned_resolved",
+              {"symbol": symbol, "qty": want, "price": price, "strategyId": strategy_id,
+               "remaining": have - want}, strategy_id=strategy_id, symbol=symbol)
+    return {"symbol": symbol, "qty": want, "price": price, "remaining": have - want,
+            "position": {"qty": pos["qty"], "avgPrice": pos["avg_price"]}}
+
+
 def claimed_symbols(conn, broker, account):
     """Every instrument this account's ledger says it is holding — strategies and the unassigned
     bucket alike.

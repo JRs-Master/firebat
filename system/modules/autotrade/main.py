@@ -2828,6 +2828,36 @@ def action_selftest():
                 .fetchone())
     checks.append({"name": "a cancel the venue took does close the order",
                    "want": "canceled", "got": _row["state"], "ok": _row["state"] == "canceled"})
+
+    # Assigning the bucket: append-only, exact, and it may not take more than is there. Measured
+    # 2026-08-05 — a refused cancel erased an order number, its fill could not be attributed, and
+    # 11.09 ONDO sat unassigned while the strategy that placed it showed 22.37 of a real 33.46.
+    store.reconcile_symbol(_cc, "upbit", "", "KRW-X", 30.0, 500.0)   # nobody claims it → bucket
+    _r1 = store.assign_unassigned(_cc, broker="upbit", account="", symbol="KRW-X",
+                                  strategy_id="sx", qty=11.09)
+    _p1 = store.position_of(_cc, "sx", "upbit", "", "KRW-X")
+    checks.append({"name": "assigning the bucket moves exactly what was asked, at its own average",
+                   "want": (11.09, 500.0, 18.91),
+                   "got": (_r1["qty"], _r1["price"], round(_r1["remaining"], 6)),
+                   "ok": _r1["qty"] == 11.09 and _r1["price"] == 500.0
+                        and abs(_r1["remaining"] - 18.91) < 1e-9})
+    checks.append({"name": "and the strategy holds it afterwards",
+                   "want": 11.09, "got": _p1["qty"], "ok": abs(_p1["qty"] - 11.09) < 1e-9})
+    _over = None
+    try:
+        store.assign_unassigned(_cc, broker="upbit", account="", symbol="KRW-X",
+                                strategy_id="sx", qty=999)
+    except ValueError as e:
+        _over = str(e)
+    checks.append({"name": "and refuses to hand out more than the bucket holds",
+                   "want": "refused", "got": _over or "allowed", "ok": bool(_over)})
+    # The invariant the bucket exists to keep: strategies plus bucket still equals the broker.
+    _sum = float(_cc.execute("SELECT COALESCE(SUM(qty),0) q FROM strategy_position WHERE "
+                             "symbol='KRW-X'").fetchone()["q"])
+    _buk = float(_cc.execute("SELECT COALESCE(SUM(qty),0) q FROM unassigned WHERE "
+                             "symbol='KRW-X'").fetchone()["q"])
+    checks.append({"name": "the invariant survives the move", "want": 30.0,
+                   "got": round(_sum + _buk, 6), "ok": abs(_sum + _buk - 30.0) < 1e-9})
     _cc.close()
 
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
@@ -4854,7 +4884,32 @@ def main():
                 finally:
                     ucon.close()
             return out({"success": True, "data": {"recorded": len(frames), "watchlist": folded}})
-        if action in ("liquidate_all", "cancel_all", "resolve_unassigned", "import_position"):
+        if action == "resolve_unassigned":
+            # Whose shares these are is the one thing reconciliation refuses to guess, so this is
+            # the human's answer to it — and only a human's. A schedule calling it would be the
+            # machine deciding after all, which is the whole reason the bucket exists.
+            if unattended():
+                return fail("resolve_unassigned 은 사람이 부르는 정정입니다 — 스케줄에서는 "
+                            "동작하지 않습니다.")
+            need = [k for k in ("broker", "symbol", "strategyId") if not str(inp.get(k) or "").strip()]
+            if need:
+                return fail("resolve_unassigned 에 %s 가 필요합니다. `positions` 로 무주 목록을 "
+                            "먼저 확인하십시오." % ", ".join(need))
+            conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+            try:
+                out_ = store.assign_unassigned(
+                    conn, broker=str(inp["broker"]), account=str(inp.get("account") or ""),
+                    symbol=str(inp["symbol"]), strategy_id=str(inp["strategyId"]),
+                    qty=inp.get("qty"), note=inp.get("note"))
+            except ValueError as e:
+                return fail(str(e))
+            finally:
+                conn.close()
+            return out({"success": True, "data": {
+                "assigned": out_,
+                "note": ("원장에 append 했습니다 — 무주에서 빼고 전략이 그 평단으로 받았습니다. "
+                         "총량(Σ전략 + 무주 = 브로커)은 그대로입니다.")}})
+        if action in ("liquidate_all", "cancel_all", "import_position"):
             return fail(f"{action} 은 주문 경로가 들어온 뒤 동작합니다(현재 슬라이스는 판단·원장까지).")
         return fail(f"알 수 없는 action: {action}")
     except Exception as e:  # noqa: BLE001 — the sandbox needs one JSON line, never a traceback
