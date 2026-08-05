@@ -37,7 +37,17 @@
     "order_when": "실행 시각",
     "reschedule_apply": "변경",
     "reschedule_cancel": "취소",
-    "order_stale": "⏱ {min}분 전 요청입니다 — 시세가 변했을 수 있습니다."
+    "order_stale": "⏱ {min}분 전 요청입니다 — 시세가 변했을 수 있습니다.",
+    "external_title": "외부 승인 요청",
+    "external_badge": "승인 대기 {count}",
+    "external_tooltip": "승인을 기다리는 작업",
+    "action_save_page": "페이지 저장",
+    "action_write_file": "파일 쓰기",
+    "action_delete_file": "파일 삭제",
+    "action_delete_page": "페이지 삭제",
+    "action_schedule_task": "작업 예약",
+    "action_cancel_cron_job": "예약 취소",
+    "action_run_module": "모듈 실행"
   },
   "suggest": {
     "add_item": "항목 추가",

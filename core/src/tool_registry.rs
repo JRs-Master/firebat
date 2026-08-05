@@ -2782,18 +2782,20 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // question about the wrong one is answered confidently and wrongly.
     tools.register(ToolDefinition {
         name: "list_accounts".to_string(),
-        description: "등록된 증권사 계좌 전체 — 모듈을 가로질러 한 번에. 잔고·예수금·수익률은 \
-                      계좌마다 다르므로 그런 질문에는 먼저 이것으로 계좌를 확인하고 그 별칭을 \
-                      `account` 로 넘기십시오(생략하면 주계좌로 갑니다). `mode`(real|mock) 와 \
-                      `market`(kr|us…) 로 좁힐 수 있고, 아무것도 주지 않으면 전체입니다. \
-                      자격증명은 반환하지 않습니다 — 별칭·모드·시장·계좌번호뿐."
-            .to_string(),
+        description: concat!(
+            "Every registered brokerage account, across all modules at once. Balances, deposits and ",
+            "returns differ per account, so for those questions read this first and pass the alias you ",
+            "want as `account` — omitting it runs as the primary account, which silently answers about ",
+            "a different one. Narrow with `mode` (real|mock) and `market` (kr|us…); with no filter you ",
+            "get all of them. Never returns credentials — alias, mode, markets and account number only.",
+        )
+        .to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
-                "module": {"type": "string", "description": "이 모듈의 계좌만 (예: kiwoom-trade)."},
-                "mode": {"type": "string", "description": "real 또는 mock."},
-                "market": {"type": "string", "description": "그 시장을 취급하는 계좌만 (kr / us …)."}
+                "module": {"type": "string", "description": "Only this module's accounts (e.g. kiwoom-trade)."},
+                "mode": {"type": "string", "description": "real or mock."},
+                "market": {"type": "string", "description": "Only accounts that serve this market (kr / us …)."}
             }
         }),
         source: "core".to_string(),

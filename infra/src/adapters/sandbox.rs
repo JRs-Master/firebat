@@ -593,7 +593,7 @@ impl ProcessSandboxAdapter {
     ///
     /// The TTL was invisible: a multi-round analysis fetched a long series, spent rounds on
     /// discovery and arithmetic, and the cache died in between — the answer came back quietly
-    /// narrowed to a shorter period rather than re-fetched (2026-08-05 실측). Knowing the deadline
+    /// narrowed to a shorter period rather than re-fetched (measured 2026-08-05). Knowing the deadline
     /// changes the order of work: compute first, narrate second.
     fn expiry_fields(cache: &SysmodCacheAdapter, key: &str) -> Option<(i64, i64)> {
         let dl = cache.deadline_ms(key)?;

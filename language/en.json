@@ -37,7 +37,17 @@
     "order_when": "Runs at",
     "reschedule_apply": "Change",
     "reschedule_cancel": "Cancel",
-    "order_stale": "⏱ Requested {min} min ago — market prices may have moved."
+    "order_stale": "⏱ Requested {min} min ago — market prices may have moved.",
+    "external_title": "Approvals from elsewhere",
+    "external_badge": "{count} awaiting approval",
+    "external_tooltip": "Actions waiting for your approval",
+    "action_save_page": "Save page",
+    "action_write_file": "Write file",
+    "action_delete_file": "Delete file",
+    "action_delete_page": "Delete page",
+    "action_schedule_task": "Schedule task",
+    "action_cancel_cron_job": "Cancel schedule",
+    "action_run_module": "Run module"
   },
   "suggest": {
     "add_item": "Add item",

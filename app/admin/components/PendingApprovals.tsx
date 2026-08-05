@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ShieldQuestion, Check, X, Loader2 } from 'lucide-react';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
+import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 
 interface Card {
@@ -35,24 +36,24 @@ function when(ms?: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** What the card would do, in the words of the thing it acts on. */
-function describe(c: Card): string {
+/** What the card would do, in the words of the thing it acts on.
+ *
+ *  Translated, not hardcoded: this is a label a person reads. Falls back to the tool's own name
+ *  when there is no key for it — a new destructive tool should still be describable the day it
+ *  lands, rather than showing nothing until someone remembers the translation. */
+const ACTION_KEYS = new Set(['save_page', 'write_file', 'delete_file', 'delete_page',
+                             'schedule_task', 'cancel_cron_job', 'run_module']);
+
+function describe(c: Card, t: (k: string) => string): string {
   const a = c.args ?? {};
   const name = String(a.name ?? '');
   const target = String(a.slug ?? a.path ?? a.module ?? a.jobId ?? '');
-  const label: Record<string, string> = {
-    save_page: '페이지 저장',
-    write_file: '파일 쓰기',
-    delete_file: '파일 삭제',
-    delete_page: '페이지 삭제',
-    schedule_task: '작업 예약',
-    cancel_cron_job: '예약 취소',
-    run_module: '모듈 실행',
-  };
-  return [label[name] ?? name, target].filter(Boolean).join(' · ');
+  const label = ACTION_KEYS.has(name) ? t(`plan.action_${name}`) : name;
+  return [label, target].filter(Boolean).join(' · ');
 }
 
 export function PendingApprovals() {
+  const t = useTranslations();
   const [cards, setCards] = useState<Card[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -108,10 +109,10 @@ export function PendingApprovals() {
         type="button"
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700 hover:bg-amber-100"
-        title="승인을 기다리는 작업"
+        title={t('plan.external_tooltip')}
       >
         <ShieldQuestion size={13} />
-        승인 대기 {cards.length}
+        {t('plan.external_badge', { count: cards.length })}
       </button>
 
       {open && coords && createPortal(
@@ -122,11 +123,11 @@ export function PendingApprovals() {
             style={{ left: coords.left, bottom: coords.bottom }}
           >
             <p className="px-1.5 pb-1.5 text-[11px] font-bold text-slate-600">
-              외부 승인 요청
+              {t('plan.external_title')}
             </p>
             {cards.map(c => (
               <div key={c.planId} className="rounded-lg border border-slate-200 p-2 mb-1.5 last:mb-0">
-                <div className="text-[11px] font-bold text-slate-700">{describe(c)}</div>
+                <div className="text-[11px] font-bold text-slate-700">{describe(c, t)}</div>
                 {c.summary && (
                   <div className="mt-0.5 text-[11px] text-slate-500 break-all">{c.summary}</div>
                 )}
@@ -141,7 +142,7 @@ export function PendingApprovals() {
                     >
                       {busy === c.planId
                         ? <Loader2 size={11} className="animate-spin" />
-                        : <Check size={11} />} 승인
+                        : <Check size={11} />} {t('plan.approve')}
                     </button>
                     <button
                       type="button"
@@ -149,7 +150,7 @@ export function PendingApprovals() {
                       onClick={() => act(c.planId, false)}
                       className="flex items-center gap-0.5 rounded border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      <X size={11} /> 거절
+                      <X size={11} /> {t('plan.reject')}
                     </button>
                   </span>
                 </div>

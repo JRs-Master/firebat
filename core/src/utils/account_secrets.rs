@@ -506,8 +506,8 @@ mod tests {
 
     #[test]
     fn account_filter_answers_the_six_shapes_people_ask_in() {
-        // 전체/특정 증권사 × 전체/국내/해외 — the cross product, which is why this is a filter and
-        // not a search: the alias is a short opaque label, the market is the thing being chosen.
+        // Every/one broker × every/domestic/overseas — the cross product, which is why this is a
+        // filter and not a search: the alias is a short opaque label, the market is what is chosen.
         let kr = entry("모의국내", "mock", &["kr"]);
         let us = entry("모의해외", "mock", &["us"]);
         let both = entry("키움토스", "real", &["kr", "us"]);
