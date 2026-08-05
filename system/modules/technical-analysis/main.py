@@ -2645,6 +2645,210 @@ def main():
         }, ensure_ascii=False))
         return
 
+    if action == "reach_cone":
+        # `reach_levels` 는 분포의 **한 점**만 낸다 — "60봉 안에 76%". 그런데 ±1ATR 은 한 봉 폭만큼
+        # 떨어진 선이라 60봉이면 닿는 게 거의 당연하고, 숫자 하나로는 그게 기저율인지 정보인지
+        # 구분이 안 된다(2026-08-05 사용자: "봉 아래위에 있는 거라 당연한 얘기 아니냐").
+        #
+        # 정보는 곡선에 있다. 지평을 t=1..H 로 전부 재면 "언제까지 얼마나"가 나오고, 확률 수준을
+        # 고정해 뒤집으면 화면에 그릴 물건이 된다 — 시작점에서 벌어지는 원뿔.
+        #
+        # 실측(2026-08-05, 10년 일봉): 폭은 **c · ATR · √t** 를 아주 잘 따른다. 삼성·AAPL·BTC 셋 다
+        # c(50%)≈0.93 · c(80%)≈0.55 · c(95%)≈0.36 으로 같았고, √t 대비 비율은 0.94(단기)에서
+        # 1.10(60봉)으로 완만히 커진다(초반 회귀·후반 추세). 그래서 c 는 **박아 넣지 않고** 받은
+        # 봉에서 잰다 — 종목·주기·시장이 달라도 자기 것을 쓴다.
+        horizon = max(2, min(2000, int(_num_or(inp.get("horizonBars"), 60))))
+        n_atr = max(2, min(200, int(_num_or(inp.get("atrPeriod"), 14))))
+        probs = inp.get("probs")
+        if not isinstance(probs, list) or not probs:
+            probs = [0.5, 0.8, 0.95]
+        try:
+            probs = sorted({round(float(p), 4) for p in probs if 0.0 < float(p) < 1.0})
+        except (TypeError, ValueError):
+            probs = []
+        if not probs:
+            print(json.dumps({"success": False,
+                              "error": "probs 는 0 과 1 사이 숫자 배열입니다(예: [0.5,0.8,0.95])."},
+                             ensure_ascii=False))
+            return
+        a_ser = atr(bars, n_atr)
+        highs = [b["high"] for b in bars]
+        lows = [b["low"] for b in bars]
+
+        # t 는 로그 간격으로 — 원뿔은 초반이 급하고 뒤로 갈수록 평평해서 등간격이면 앞을 놓친다.
+        grid, t = [], 1
+        while t <= horizon:
+            grid.append(t)
+            t = max(t + 1, int(t * 1.6))
+        if grid[-1] != horizon:
+            grid.append(horizon)
+
+        # 각 t 에서 **양쪽 중 큰 쪽**의 왕복폭을 ATR 단위로 모은다. 방향을 따로 재지 않는 건
+        # 이 화면이 "어디까지"를 묻지 "어느 쪽"을 묻지 않기 때문이다 — 방향은 이 표본 크기로
+        # 재현되지 않는다는 걸 같은 날 확인했다.
+        by_t = {t: [] for t in grid}
+        for i in range(n_atr, len(bars) - 1):
+            a, o = a_ser[i], bars[i]["close"]
+            if not a or not o:
+                continue
+            mh, ml, j = -1e18, 1e18, 0
+            for t in range(1, horizon + 1):
+                if i + t >= len(bars):
+                    break
+                mh = max(mh, highs[i + t])
+                ml = min(ml, lows[i + t])
+                if t in by_t:
+                    by_t[t].append(max(mh - o, o - ml) / a)
+
+        # c = 폭/√t 의 중앙값. t 마다 따로 쓰지 않고 하나로 묶는 이유는 표본이 얇을 때 t 별
+        # 분위수가 출렁이기 때문이다 — √t 를 알고 있으면 모든 t 가 같은 상수의 관측이 된다.
+        MIN_N = 30
+        used = [t for t in grid if len(by_t[t]) >= MIN_N]
+        if not used or not a_ser[-1]:
+            print(json.dumps({"success": True, "data": {
+                "blocks": [{"type": "stock_chart", "props": {"annotations": []}}],
+                "bands": [], "summary": {
+                    "reason": "봉이 모자라 원뿔을 낼 수 없습니다 — 봉 %d개, 지평 %d봉." % (len(bars), horizon),
+                    "horizonBars": horizon, "bars": len(bars)},
+                "barRange": bar_range,
+            }}, ensure_ascii=False))
+            return
+
+        def _quant(seq, p):
+            """표본의 p 비율이 **이 폭 안에서** 끝났다 — 포함 밴드.
+
+            도달 거리가 아니라 포함 거리다. 둘은 뒤집혀 있어서 헷갈리기 쉽다 — "95% 확률로 닿는
+            거리"는 **좁고**(거의 항상 닿으니까) "95% 가 그 안에 머문 거리"는 **넓다**. 화면이
+            답해야 하는 질문이 "오늘이 예상 범위 안인가"라 넓은 쪽이 맞고, 그래야 p 가 커질수록
+            선이 바깥에 그려진다. 닿는 쪽 이야기는 아래 `timing` 이 시간으로 answers 한다.
+            """
+            s = sorted(seq)
+            return s[max(0, min(len(s) - 1, int(p * (len(s) - 1))))]
+
+        coeff, fits = {}, {}
+        for p in probs:
+            ratios = [_quant(by_t[t], p) / (t ** 0.5) for t in used]
+            ratios.sort()
+            coeff[p] = ratios[len(ratios) // 2]
+            # √t 가 맞는지 스스로 말하게 한다 — 비율이 흩어지면 이 모형이 그 종목엔 안 맞는 것이다.
+            fits[p] = round(ratios[-1] / ratios[0], 2) if ratios[0] > 0 else None
+
+        # 칸마다 **보통 몇 봉 걸리나** — 고정 지평의 도달 확률은 정보가 아니다. 실측(2026-08-05,
+        # 10년 일봉): 60봉 안에 ±1ATR 도달이 2,371창 **전부**(100.0%), ±2ATR 99.2%, ±3ATR 95.8%.
+        # 이미 닿은 몫을 빼도 안 줄어든다(20봉 지나도 남은 40봉에 ±2ATR 이 91.9%). 확률이 상수 1 로
+        # 수렴하는 자리에선 숫자가 아무것도 안 말한다. 남는 건 시간이다 — ±1ATR 2봉 · ±2ATR 7봉 ·
+        # ±3ATR 13봉. 확산이면 τ ∝ k² 라 1:4:9 여야 하는데 실측은 1:3.5:6.5 로 **먼 칸일수록 예상보다
+        # 일찍 온다.** 사다리 칸의 대기시간이 이 숫자다.
+        timing = []
+        for k in (1.0, 2.0, 3.0):
+            med = None
+            for t in used:
+                hit = sum(1 for v in by_t[t] if v >= k) / len(by_t[t])
+                if hit >= 0.5:
+                    med = t
+                    break
+            timing.append({
+                "atrMultiple": k,
+                # 표본의 절반이 닿기까지 걸린 봉 수. 지평 안에 절반이 안 닿으면 그 사실을 적는다.
+                "medianBars": med,
+                "reachedByHorizon": round(100.0 * sum(1 for v in by_t[used[-1]] if v >= k)
+                                          / len(by_t[used[-1]]), 1),
+            })
+
+        # 시작점 = 오늘의 시가(일중이면), 아니면 마지막 종가. 시가에 못 박으면 하루 종일 안 움직여서
+        # 선이 촐랑거리지 않고, "오늘이 예상 범위 안인가"가 한눈에 읽힌다.
+        def _day(b):
+            return str(b.get("date") or "")[:10]
+
+        days = [_day(b) for b in bars]
+        intraday = len(set(days)) > 1 and len(bars) > len(set(days)) * 3
+        # 일중이 아니면 원뿔은 **지금**에서 열린다. 앵커를 0 번 봉에 두면 경과가 전 구간이 되어
+        # 폭이 √(전체 봉수) 로 부풀고, 5년 일봉에서 하루치 원뿔이 5년치 폭으로 그려진다.
+        anchor_idx = len(bars) - 1
+        if intraday:
+            for i in range(len(bars) - 1, -1, -1):
+                if days[i] != days[-1]:
+                    anchor_idx = i + 1
+                    break
+        anchor = bars[anchor_idx]["open"] if intraday else bars[-1]["close"]
+        atr_now = a_ser[-1]
+        elapsed = len(bars) - 1 - anchor_idx
+        ahead = max(3, horizon - elapsed) if intraday else horizon
+
+        # 이미 지나간 구간도 같은 곡선으로 그린다 — 오늘 시작부터 이어져야 "여기까지 왔다"가 보인다.
+        step = max(1, (elapsed + ahead) // 30)
+        shade = ["#1B5FA8", "#5C8FC7", "#9BBBDD", "#C3D6EA"]
+        ann, bands = [], []
+        for rank, p in enumerate(probs):
+            c = coeff[p]
+            for sign in (1, -1):
+                pts = []
+                # 폭이 가격을 넘을 수 있다(지평 60 × ATR 이 가격의 10%면 √60 배가 가격을 넘는다).
+                # 음수 가격은 차트가 그릴 수 없는 좌표라 바닥을 둔다 — 값을 속이는 게 아니라 선이
+                # 축을 뚫고 나가지 않게 하는 것이고, 그 아래는 어차피 의미가 없다.
+                def _px(w):
+                    return round(max(anchor + w, anchor * 0.01), 4)
+
+                for t in range(0, elapsed + 1, step):
+                    pts.append({"i": bars[anchor_idx + t]["i"],
+                                "price": _px(sign * c * (max(t, 0.25) ** 0.5) * atr_now)})
+                for t in range(step, ahead + 1, step):
+                    pts.append({"barsAhead": t,
+                                "price": _px(sign * c * ((elapsed + t) ** 0.5) * atr_now)})
+                if len(pts) < 2:
+                    continue
+                if sign > 0:
+                    pts[-1]["label"] = "%d%% 가 이 안" % round(p * 100)
+                ann.append({"kind": "path", "color": shade[min(rank, len(shade) - 1)],
+                            "width": 2 if rank == 0 else 1, "dashed": rank > 0,
+                            "projected": True, "points": pts})
+            end_w = c * ((elapsed + ahead) ** 0.5) * atr_now
+            bands.append({
+                "prob": p, "coeff": round(c, 3), "sqrtFit": fits[p],
+                "widthAtrNow": round(c * (max(elapsed, 1) ** 0.5) * atr_now, 4),
+                "upNow": round(anchor + c * (max(elapsed, 1) ** 0.5) * atr_now, 4),
+                "downNow": round(anchor - c * (max(elapsed, 1) ** 0.5) * atr_now, 4),
+                "upEnd": round(anchor + end_w, 4),
+                "downEnd": round(max(anchor - end_w, anchor * 0.01), 4),
+            })
+        ann.append({"kind": "hline", "color": "#7C8895", "width": 1, "dashed": True,
+                    "points": [{"i": bars[anchor_idx]["i"], "price": round(anchor, 4),
+                                "label": ("시가 %s" if intraday else "종가 %s") % _fmt_price(anchor)}]})
+
+        # 오늘이 지금까지 실제로 얼마나 갔나 — 원뿔 옆에 이게 없으면 "안인지 밖인지"를 눈대중해야 한다.
+        seg = bars[anchor_idx:]
+        travelled = (max(max(b["high"] for b in seg) - anchor, anchor - min(b["low"] for b in seg))
+                     / atr_now) if seg and atr_now else None
+        # **아직 안에 있는 것 중 제일 좁은 밴드.** 넘어선 것 중 제일 좁은 걸 고르면 80% 를 뚫은 날이
+        # "안쪽 50%" 로 읽혀 정반대가 된다. 전부 넘었으면 그 사실을 None 으로 말한다 — 가장 넓은
+        # 밴드 이름을 대면 바깥을 안쪽이라고 부르는 것이다.
+        inside = None
+        if travelled is not None:
+            still_in = [b["prob"] for b in bands
+                        if travelled <= coeff[b["prob"]] * (max(elapsed, 1) ** 0.5)]
+            inside = round(min(still_in) * 100) if still_in else None
+        print(json.dumps({"success": True, "data": {
+            "blocks": [{"type": "stock_chart", "props": {"annotations": ann, "futureSlots": ahead}}],
+            "bands": bands,
+            "summary": {
+                "anchor": round(anchor, 4), "anchorKind": "sessionOpen" if intraday else "lastClose",
+                "atr": round(atr_now, 4), "atrPeriod": n_atr,
+                "barsElapsed": elapsed, "barsAhead": ahead, "horizonBars": horizon,
+                "samples": len(by_t[used[0]]),
+                "independentSamples": max(1, len(by_t[used[0]]) // horizon),
+                "travelledAtr": round(travelled, 2) if travelled is not None else None,
+                "insidePercentile": inside,
+                # 폭이 "어디까지"라면 이건 "언제까지" — 둘이 같이 있어야 사다리 칸을 정할 수 있다.
+                "timing": timing,
+                # √t 가 맞는지 스스로 고지한다. 1.0 에 가까울수록 상수 하나로 전 지평이 설명된다.
+                "sqrtFitSpread": {str(p): fits[p] for p in probs},
+                "note": ("폭 = c · ATR · √t 로 그렸고 c 는 이 봉들에서 쟀습니다. 방향은 재지 않습니다 — "
+                         "위아래 비대칭은 그 기간의 추세일 뿐이라 재현되지 않습니다."),
+            },
+            "barRange": bar_range,
+        }}, ensure_ascii=False))
+        return
+
     if action == "reach_levels":
         # 고점은 못 맞힌다 — 거울선·정배열·가속·칼만 넷을 26종목 58,928 일봉에서 재고 전부
         # 떨어뜨렸다(2026-08-04). 맞힐 수 있는 건 "여기까지 올 확률"이다. 그래서 이 액션은 점을

@@ -87,12 +87,13 @@
           "elliott_candidates",
           "chart_annotations",
           "reach_levels",
+          "reach_cone",
           "fib_targets",
           "indicators",
           "signals",
           "backtest"
         ],
-        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`. / `indicators` = 고전 지표 묶음(이동평균·MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용). **신호 판정은 하지 않습니다.** / `signals` = **`rules` 필수**(전략 선언 없이 부르면 거부됩니다) — 선언한 규칙이 참인 봉을 찾아 `buyPoints`/`sellPoints`(차트에 그대로 넣으면 ↑↓ 화살표)와 **백테스트**(`backtest` — 체결 기록·승률·누적수익·최대낙폭을 수수료·세금·슬리피지·손절·익절까지 반영해 계산)를 반환. 이동평균 교차(골든크로스/데드크로스)·지표 조건 매매의 성과 검증이 이 액션입니다 — 봉을 받아 손으로 계산하지 마세요. 전략은 코드가 아니라 `rules` 인자로 받으므로 모듈이 투자 의견을 갖지 않습니다. 지금 시점 주문 판단에는 `firedOnLastBar` 만 쓰세요. backtest = signals 와 같은 계산이되 질문이 다릅니다 — 무엇이 발동했나가 아니라 그 규칙이 돈을 벌었겠나. 수수료·세금·슬리피지·손절·익절을 반영한 성적만 돌려주고 차트 좌표는 뺍니다(규칙·비용 파라미터는 signals 와 동일). reach_levels = 현재가에서 ATR 배수만큼 떨어진 각 가격에 **그 봉들 자신의 과거로 잰 도달 확률**을 붙여 돌려줍니다(차트 주석 + 표). 고점을 찍는 액션이 아니라 분할청산 칸을 정하기 위한 것입니다."
+        "description": "pivots = 스윙 고·저점 추출 / elliott_candidates = 추진파·조정파 구조 후보 열거(완결 + 진행 중, 급별, 신뢰도 점수) / fib_targets = 되돌림·확장 목표 계산 / `chart_annotations` = 고른 급의 최상위 후보를 **stock_chart 에 바로 넣을 annotations 배열**로 반환(파동 골격 + 채널 두 선 + 예상 경로 + 무효화 수평선). 좌표를 손으로 조립하지 마세요 — 이 액션을 쓰면 채팅과 페이지가 같은 그림을 얻습니다. 반환 = `blocks[0].props`(annotations + futureSlots) + `summary`. / `indicators` = 고전 지표 묶음(이동평균·MACD·RSI·볼린저·스토캐스틱·일목균형표) — `latest`(문장용) + `series`(차트 오버레이용). **신호 판정은 하지 않습니다.** / `signals` = **`rules` 필수**(전략 선언 없이 부르면 거부됩니다) — 선언한 규칙이 참인 봉을 찾아 `buyPoints`/`sellPoints`(차트에 그대로 넣으면 ↑↓ 화살표)와 **백테스트**(`backtest` — 체결 기록·승률·누적수익·최대낙폭을 수수료·세금·슬리피지·손절·익절까지 반영해 계산)를 반환. 이동평균 교차(골든크로스/데드크로스)·지표 조건 매매의 성과 검증이 이 액션입니다 — 봉을 받아 손으로 계산하지 마세요. 전략은 코드가 아니라 `rules` 인자로 받으므로 모듈이 투자 의견을 갖지 않습니다. 지금 시점 주문 판단에는 `firedOnLastBar` 만 쓰세요. backtest = signals 와 같은 계산이되 질문이 다릅니다 — 무엇이 발동했나가 아니라 그 규칙이 돈을 벌었겠나. 수수료·세금·슬리피지·손절·익절을 반영한 성적만 돌려주고 차트 좌표는 뺍니다(규칙·비용 파라미터는 signals 와 동일). reach_levels = 현재가에서 ATR 배수만큼 떨어진 각 가격에 **그 봉들 자신의 과거로 잰 도달 확률**을 붙여 돌려줍니다(차트 주석 + 표). 고점을 찍는 액션이 아니라 분할청산 칸을 정하기 위한 것입니다. reach_cone = the same question asked as a curve instead of a point: how wide the move has been by bar t, for t across the whole horizon, drawn as a cone that opens from today's session open (intraday) or the last close. Width is measured as c·ATR·sqrt(t) with c taken from the bars you pass, and the summary says how well sqrt(t) actually fits them. Use this rather than reach_levels when the horizon is long relative to the bar: a fixed-horizon reach probability converges to 1 and stops carrying information (measured: +/-1 ATR within 60 daily bars is 100% of 2,371 windows). What still carries it is time, so each rung also reports the median bars to first touch."
       },
       "bars": {
         "type": "array",
@@ -301,6 +302,13 @@
       "asOfMs": {
         "type": "integer",
         "description": "reach_levels — 누적 기록에 찍을 계산 시각(ms). 생략 가능."
+      },
+      "probs": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "description": "reach_cone — containment levels, 0-1 (default [0.5,0.8,0.95]). Each becomes one band: that share of past windows stayed inside it."
       }
     }
   },
