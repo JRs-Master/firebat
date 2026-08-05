@@ -98,7 +98,7 @@ use crate::ports::{
     AiRequestOpts, ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, LlmToolResponse,
     ToolCall, ToolDefinition, ToolResult,
 };
-use crate::utils::pending_tools::create_pending_scoped;
+use crate::utils::pending_tools::create_pending_in;
 use crate::utils::render_map::render_tool_map;
 use crate::utils::tool_cache::{
     get_cached_tool_result, set_cached_tool_result, tool_cache_key,
@@ -3273,7 +3273,11 @@ impl AiManager {
                                     format!("{}:{}", c.instance_id, c.session_id)
                                 }
                             });
-                            let plan_id = create_pending_scoped(typed_args, &approval.summary, hub_scope);
+                            // Born inside this chat turn — the card is delivered in this turn's
+                            // message and lives there, so nothing else needs to surface it.
+                            let plan_id = create_pending_in(
+                                typed_args, &approval.summary, hub_scope,
+                                ai_opts.conversation_id.clone().filter(|c| !c.is_empty()));
                             // schedule_task: runAt 이 이미 과거면 처음부터 past-runat 상태로 내려서
                             // 승인 버튼 대신 즉시보내기/시간변경 버튼이 뜨도록 유도 (옛 TS 1:1).
                             let mut pending = serde_json::json!({
@@ -3691,7 +3695,9 @@ impl AiManager {
                             },
                         );
                         let summary = format!("실행 승인: {} · {}", module_name, act);
-                        let plan_id = create_pending_scoped(pargs, &summary, None);
+                        let plan_id = create_pending_in(
+                            pargs, &summary, None,
+                            ai_opts.conversation_id.clone().filter(|c| !c.is_empty()));
                         pending_actions.push(serde_json::json!({
                             "planId": plan_id,
                             "name": effective_call.name,

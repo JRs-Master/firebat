@@ -2098,7 +2098,7 @@ def action_reconcile(inp, settings):
                     # 같은 잔고 행을 이미 다른 이름으로 정산했다 — 한 보유를 두 이름으로 들고
                     # 있는 것(브로커가 `A114800`, 원장이 `114800_AL`). 두 번 세면 장부가 실제
                     # 보유의 두 배가 된다. 이 이름 밑에는 아무것도 없는 게 맞으므로 0으로
-                    # 정산해 무주 잔재가 빠져나가게 한다.
+                    # 정산해 미배정 잔재가 빠져나가게 한다.
                     reconciled.append(store.reconcile_symbol(conn, broker, account, sym, 0.0, 0.0))
                     continue
                 if row is not None:
@@ -2115,7 +2115,7 @@ def action_reconcile(inp, settings):
             if not isinstance(row, dict) or id(row) in consumed:
                 continue
             if orders.is_cash_row(row):
-                continue          # 현금은 보유가 아니다 — 무주 버킷에 원화가 들어가면 안 된다
+                continue          # 현금은 보유가 아니다 — 미배정 버킷에 원화가 들어가면 안 된다
             sym = orders.position_symbol(row)
             if not sym:
                 unreadable_positions.append(row)
@@ -3045,7 +3045,7 @@ def action_selftest():
 
     # 같은 보유를 두 이름으로 세던 자리 — 원장은 `114800_AL`, 잔고는 `A114800`. 한쪽만 장식이
     # 붙었다고 본 대조가 이걸 "판 주식"으로 읽어 포지션을 degraded 로 떨어뜨리면서 동시에 같은
-    # 수량을 무주 버킷에 넣었다(2026-08-04 실측, 260주가 체결된 직후).
+    # 수량을 미배정 버킷에 넣었다(2026-08-04 실측, 260주가 체결된 직후).
     both, brow = orders.read_position([{"stk_cd": "A114800", "rmnd_qty": "260"}], "114800_AL")
     checks.append({"name": "접두사와 접미사가 동시에 붙어도 같은 종목이다",
                    "want": 260.0, "got": (both or {}).get("qty"),
@@ -3095,7 +3095,7 @@ def action_selftest():
                                               "unit_currency": "KRW"}]},
                             {"mode": "dryrun", "strategies": []})["data"]
     syms = sorted(v["symbol"] for v in cash["reconciled"])
-    checks.append({"name": "잔고의 현금 행은 무주 보유가 되지 않는다",
+    checks.append({"name": "잔고의 현금 행은 미배정 보유가 되지 않는다",
                    "want": ["BTC"], "got": syms, "ok": syms == ["BTC"]})
 
     # --- 사라진 주문이 취소인지 체결인지 -------------------------------------------------
@@ -4917,9 +4917,9 @@ def main():
                 if not broker:
                     rows = store.read_unassigned(conn, symbol)
                     if not rows:
-                        return fail("무주에 %s 가 없습니다." % symbol)
+                        return fail("미배정 포지션에 %s 가 없습니다." % symbol)
                     if len(rows) > 1:
-                        return fail("%s 무주가 여러 계좌에 있습니다 — broker 와 account 를 "
+                        return fail("%s 미배정 포지션이 여러 계좌에 있습니다 — broker 와 account 를 "
                                     "지정하십시오: %s" % (symbol, ", ".join(
                                         "%s/%s %g" % (r["broker"], r["account"] or "-", r["qty"])
                                         for r in rows)))
@@ -4934,8 +4934,8 @@ def main():
                 conn.close()
             return out({"success": True, "data": {
                 "assigned": out_,
-                "note": ("원장에 append 했습니다 — 무주에서 빼고 전략이 그 평단으로 받았습니다. "
-                         "총량(Σ전략 + 무주 = 브로커)은 그대로입니다.")}})
+                "note": ("원장에 append 했습니다 — 미배정에서 빼고 전략이 그 평단으로 받았습니다. "
+                         "총량(Σ전략 + 미배정 = 브로커)은 그대로입니다.")}})
         if action in ("liquidate_all", "cancel_all", "import_position"):
             return fail(f"{action} 은 주문 경로가 들어온 뒤 동작합니다(현재 슬라이스는 판단·원장까지).")
         return fail(f"알 수 없는 action: {action}")

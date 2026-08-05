@@ -286,6 +286,16 @@ pub struct PendingTool {
     /// pending (cross-tenant guard) and (2) re-establish the owner scope for execution.
     #[serde(rename = "hubScope", default, skip_serializing_if = "Option::is_none")]
     pub hub_scope: Option<String>,
+    /// The conversation this card was born in, when it was born in one. A card made inside a chat
+    /// turn is delivered in that turn's message and lives there; one made from an editor's MCP
+    /// client, the CLI or a script has no message to live in.
+    ///
+    /// Recorded because only the moment of creation knows it. A screen can see whether a card is
+    /// on it right now, which is a different question and answers it wrongly the moment you are
+    /// looking at another conversation: the card has a home, just not this one. Provenance belongs
+    /// on the record next to `hub_scope`, which is here for the same reason.
+    #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
 }
 
 impl PendingTool {
@@ -380,6 +390,23 @@ pub fn create_pending(args: PendingActionArgs, summary: &str) -> String {
 /// path can cross-tenant-guard + re-establish the owner scope at execution. `None` = admin
 /// (no scope check at approval). Hub pending path (mcp_server `pending_or_passthrough`) passes Some.
 pub fn create_pending_scoped(args: PendingActionArgs, summary: &str, hub_scope: Option<String>) -> String {
+    create_pending_in(args, summary, hub_scope, None)
+}
+
+/// The full form: also records **which conversation the card was born in**, when it was born in
+/// one. A chat turn delivers its own card in its own message; a card from an editor's MCP client,
+/// the CLI or a script has no message to be delivered in and needs somewhere else to be found.
+///
+/// Only creation knows this. The screen can tell whether a card is currently rendered on it, which
+/// is a different question with a different answer as soon as you open another conversation — the
+/// card has a home, you are simply not standing in it. So it goes on the record, beside
+/// `hub_scope`, which is here for the same reason.
+pub fn create_pending_in(
+    args: PendingActionArgs,
+    summary: &str,
+    hub_scope: Option<String>,
+    conversation_id: Option<String>,
+) -> String {
     let mut map = match store_lock().lock() {
         Ok(g) => g,
         Err(_) => return String::new(),
@@ -411,6 +438,7 @@ pub fn create_pending_scoped(args: PendingActionArgs, summary: &str, hub_scope: 
             created_at: now,
             expires_at: Some(expires_at),
             hub_scope,
+            conversation_id,
         },
     );
     flush(&map);
@@ -457,6 +485,12 @@ pub fn get_pending(plan_id: &str) -> Option<PendingTool> {
 /// `hub_scope` filters the same way approval does — a visitor sees their own cards, admin sees the
 /// ones with no scope. Passing `None` for `scope` means admin and returns only unscoped cards, so
 /// this cannot become a way to read across tenants.
+///
+/// **Cards born in a conversation are left out.** They are delivered in that conversation's own
+/// message and are reachable there whenever it is open, so listing them here puts the same
+/// approval on screen twice and calls the near one external. What remains is exactly what has no
+/// message to live in — and because that no longer depends on which conversation is open, those
+/// cards stay visible in every one of them until they are approved or rejected.
 pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
     // Through `get_pending` semantics: the file is the durable copy, memory is a cache. Load it so
     // a process that never created a card still sees the ones another process left.
@@ -478,7 +512,7 @@ pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
     }
     let mut out: Vec<PendingTool> = map
         .values()
-        .filter(|p| p.hub_scope.as_deref() == scope)
+        .filter(|p| p.hub_scope.as_deref() == scope && p.conversation_id.is_none())
         .cloned()
         .collect();
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -701,6 +735,7 @@ mod tests {
             created_at: now_ms() - 24 * 60 * 60 * 1000, // yesterday
             expires_at: None,
             hub_scope: None,
+            conversation_id: None,
         };
         std::fs::write(dir.path().join("pending-tools.json"),
                        serde_json::to_string(&vec![&legacy]).unwrap()).unwrap();
@@ -748,5 +783,30 @@ mod tests {
         let args = serde_json::json!({"path": "a.txt"});
         let err = PendingActionArgs::from_call("write_file", &args).unwrap_err();
         assert!(err.contains("write_file"));
+    }
+
+    #[test]
+    fn list_pending_leaves_out_cards_a_conversation_already_shows() {
+        // A card born in a chat turn is delivered in that turn's message. Listing it here too put
+        // the same approval on screen twice and labelled the near one external (2026-08-05). What
+        // is left has no message to live in — and being independent of which conversation is open,
+        // it stays listed in every one of them until it is approved or rejected.
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        let outside = create_pending_in(run_module_args(), "from an editor", None, None);
+        let inside = create_pending_in(
+            run_module_args(), "from a chat", None, Some("conv-1".to_string()));
+
+        let listed: Vec<String> = list_pending(None).into_iter().map(|p| p.plan_id).collect();
+        assert!(listed.contains(&outside), "a card with nowhere else to appear must be listed");
+        assert!(!listed.contains(&inside), "a card the conversation shows must not be listed");
+
+        // Both remain approvable by id — hiding one from the list is not hiding it from the store.
+        assert!(get_pending(&inside).is_some());
+        assert_eq!(
+            get_pending(&inside).and_then(|p| p.conversation_id),
+            Some("conv-1".to_string()));
     }
 }
