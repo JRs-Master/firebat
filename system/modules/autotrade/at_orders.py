@@ -231,6 +231,7 @@ def read_fills(rows):
         if not qty or not price:
             unreadable.append(row)
             continue
+        exec_id = _first(row, EXEC_ID_KEYS)
         out.append({
             "brokerOrderNo": order_no,
             "qty": qty,
@@ -238,7 +239,16 @@ def read_fills(rows):
             "fee": _num(_first_num(row, FILL_FEE_KEYS)) or 0.0,
             # Without an execution id the same fill cannot be recognised twice, so one is made from
             # what identifies it — reconcile runs every cycle and must not double-book.
-            "execId": str(_first(row, EXEC_ID_KEYS) or f"{order_no}:{qty}:{price}"),
+            "execId": str(exec_id or f"{order_no}:{qty}:{price}"),
+            # A row that carries its own execution id **is** one execution. A row without one is the
+            # order restating itself, and its quantity is the running total, not a new fill.
+            #
+            # Measured 2026-08-05 (kiwoom ka10076, 000270): a 3-share sell reported `cntr_qty` 1 on
+            # one pass and 3 on the next. Read as two executions that is 4 shares sold out of 3, and
+            # the synthesised id carries the quantity so the second restatement never looked like a
+            # duplicate. The caller turns this into an increment against what the ledger already
+            # holds; without the flag it cannot tell the two shapes apart.
+            "cumulative": not exec_id,
             "sideHint": str(_first(row, SIDE_KEYS) or ""),
             "raw": row,
         })

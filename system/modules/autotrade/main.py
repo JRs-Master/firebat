@@ -1869,22 +1869,52 @@ def action_reconcile(inp, settings):
             # Either way it is not ours to attribute — the balance step will absorb it.
             report["unattributed"].append(f["raw"])
             continue
-        if not store.record_fill(conn, order_key_=order["order_key"], qty=f["qty"],
-                                 price=f["price"], fee=f.get("fee") or 0.0,
-                                 broker_exec_id=f["execId"], raw=f["raw"]):
-            continue  # already booked on an earlier pass
-        store.apply_fill(conn, strategy_id=order["strategy_id"], broker=order["broker"],
-                         account=order["account"], symbol=order["symbol"], side=order["side"],
-                         qty=f["qty"], price=f["price"], fee=f.get("fee") or 0.0, source="order",
-                         ref_order_key=order["order_key"],
-                         fee_in_cost=settings.get("feeInCost", True))
-        filled = float(order.get("filled_qty") or 0) + f["qty"]
+        # What this row adds. A row with its own execution id is one execution; a row without one
+        # is the order restating its running total, so the increment is measured against what the
+        # **ledger** already absorbed. Basing it on the ledger also recovers anything a previous
+        # pass booked into `fills` and then failed to apply — the restatement simply reads as
+        # still-outstanding and lands this time.
+        booked = store.booked_qty(conn, order["order_key"])
+        if f.get("cumulative"):
+            inc = f["qty"] - booked
+            # A broker cannot fill more than was ordered; if it says so, believe the order.
+            inc = min(inc, float(order["req_qty"]) - booked)
+            if inc <= 1e-9:
+                continue  # nothing new in this restatement
+        else:
+            inc = f["qty"]
+        try:
+            fresh = store.record_fill(conn, order_key_=order["order_key"], qty=inc,
+                                      price=f["price"], fee=f.get("fee") or 0.0,
+                                      broker_exec_id=f["execId"], raw=f["raw"])
+            # For a per-execution row the id is the only guard against double-booking. For a
+            # restatement the ledger is, and its audit row may well already be there.
+            if not fresh and not f.get("cumulative"):
+                conn.rollback()
+                continue
+            store.apply_fill(conn, strategy_id=order["strategy_id"], broker=order["broker"],
+                             account=order["account"], symbol=order["symbol"], side=order["side"],
+                             qty=inc, price=f["price"], fee=f.get("fee") or 0.0, source="order",
+                             ref_order_key=order["order_key"],
+                             fee_in_cost=settings.get("feeInCost", True))
+        except Exception as e:  # noqa: BLE001 — one unbookable fill must not stop settlement
+            # Rolling back drops the `fills` row with it, so the next pass sees the execution as
+            # still outstanding rather than as a duplicate of its own orphan.
+            conn.rollback()
+            report.setdefault("unbooked", []).append(
+                {"orderKey": order["order_key"], "symbol": order["symbol"],
+                 "qty": inc, "error": f"{type(e).__name__}: {e}"})
+            store.log_event(conn, "fill_unbooked", symbol=order["symbol"],
+                            detail={"orderKey": order["order_key"], "qty": inc,
+                                    "error": str(e)})
+            continue
+        filled = booked + inc
         store.update_order(conn, order["order_key"],
                            filled_qty=filled,
                            filled_avg=f["price"],
                            state="filled" if filled >= float(order["req_qty"]) - 1e-9 else "partial",
                            last_checked_ms=store.now_ms())
-        report["applied"].append({"orderKey": order["order_key"], "qty": f["qty"],
+        report["applied"].append({"orderKey": order["order_key"], "qty": inc,
                                   "price": f["price"]})
 
     # 2. Open orders — a row the broker no longer lists, with nothing filled, is finished.
@@ -2510,6 +2540,60 @@ def action_selftest():
                    "got": orders.norm_order_no(_f[0]["brokerOrderNo"]),
                    "ok": orders.norm_order_no(_f[0]["brokerOrderNo"])
                         == orders.norm_order_no("0000047850")})
+    # A row carrying its own execution id is one execution; a row without one is the order restating
+    # its running total. Measured 2026-08-05 (kiwoom ka10076, 000270): a 3-share sell reported
+    # `cntr_qty` 1 and then 3, which read as two executions is 4 shares out of 3.
+    _cum, _ = orders.read_fills([{"ord_no": "78702", "cntr_qty": "3", "cntr_uv": "133100"}])
+    _exe, _ = orders.read_fills([{"ord_no": "78702", "cntr_qty": "3", "cntr_uv": "133100",
+                                  "cntr_no": "E1"}])
+    checks.append({"name": "a row without an execution id is a running total, not a new fill",
+                   "want": [True, False],
+                   "got": [_cum[0]["cumulative"], _exe[0]["cumulative"]],
+                   "ok": _cum[0]["cumulative"] is True and _exe[0]["cumulative"] is False})
+
+    # The whole 000270 sequence, against a real ledger: a partial restatement then the full one.
+    _c2 = store.connect("dryrun2")
+    _a2 = dict(strategy_id="s9", broker="b", account="a", symbol="000270")
+    store.apply_fill(_c2, **_a2, side="buy", qty=3, price=132500, source="test")
+    _c2.execute("INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,"
+                "side,req_qty,req_price,ord_type,mode,state) "
+                "VALUES('K1',0,'c','s9','b','a','000270','sell',3,0,'market','dryrun','sent')")
+    _c2.commit()
+
+    def _book(qty_reported):
+        """One settlement pass over a restatement — the same arithmetic the cycle uses."""
+        booked = store.booked_qty(_c2, "K1")
+        inc = min(qty_reported - booked, 3.0 - booked)
+        if inc <= 1e-9:
+            return 0.0
+        store.record_fill(_c2, order_key_="K1", qty=inc, price=133100,
+                          broker_exec_id="78702:%s:133100" % qty_reported)
+        store.apply_fill(_c2, **_a2, side="sell", qty=inc, price=133100, source="order",
+                         ref_order_key="K1")
+        return inc
+
+    _first_pass = _book(1.0)
+    _second = _book(3.0)
+    _again = _book(3.0)
+    _p2 = store.position_of(_c2, "s9", "b", "a", "000270")
+    checks.append({"name": "a restatement books only what the ledger has not absorbed",
+                   "want": [1.0, 2.0, 0.0], "got": [_first_pass, _second, _again],
+                   "ok": (_first_pass, _second, _again) == (1.0, 2.0, 0.0)})
+    checks.append({"name": "and the position ends flat, not short of the sale",
+                   "want": 0.0, "got": _p2["qty"], "ok": abs(_p2["qty"]) < 1e-9})
+
+    # The orphan this bug used to leave: a fill committed with no ledger row behind it. The next
+    # pass has to read the execution as still outstanding, not as a duplicate of its own orphan.
+    _c2.execute("INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,"
+                "side,req_qty,req_price,ord_type,mode,state) "
+                "VALUES('K2',0,'c','s9','b','a','ORPH','buy',5,0,'market','dryrun','sent')")
+    _c2.execute("INSERT INTO fills(order_key,ts_ms,qty,price,broker_exec_id) "
+                "VALUES('K2',0,5,100,'orphan')")
+    _c2.commit()
+    checks.append({"name": "an unapplied fill leaves the order still owed, not settled",
+                   "want": 0.0, "got": store.booked_qty(_c2, "K2"),
+                   "ok": store.booked_qty(_c2, "K2") == 0.0})
+    _c2.close()
 
     # The real upbit balance, verbatim, in the order the exchange actually sent it. `KRW` is a prefix
     # of every KRW market, so the cash line matched `KRW-ENSO` and reconciliation filed 27,986 won as

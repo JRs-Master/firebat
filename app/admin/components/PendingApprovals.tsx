@@ -121,8 +121,8 @@ export function PendingApprovals() {
             className="fixed z-50 w-[340px] max-h-[60vh] overflow-y-auto scrollbar-thin rounded-xl border border-slate-200 bg-white p-2 shadow-xl"
             style={{ left: coords.left, bottom: coords.bottom }}
           >
-            <p className="px-1.5 pb-1.5 text-[10px] text-slate-400">
-              채팅 밖에서 만들어진 것도 여기 모입니다
+            <p className="px-1.5 pb-1.5 text-[11px] font-bold text-slate-600">
+              외부 승인 요청
             </p>
             {cards.map(c => (
               <div key={c.planId} className="rounded-lg border border-slate-200 p-2 mb-1.5 last:mb-0">

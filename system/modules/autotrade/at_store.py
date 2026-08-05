@@ -462,8 +462,27 @@ def orders_awaiting_fills(conn, since_ms):
         "ORDER BY ts_ms", (since_ms,))]
 
 
+def booked_qty(conn, order_key_):
+    """How much of this order the **ledger** has actually absorbed.
+
+    `orders.filled_qty` is not the same thing: it is written after the ledger write and so it is
+    only right when that write succeeded. Measured 2026-08-05 — a fill was committed to `fills`,
+    the ledger write then raised, and the fill stayed booked-but-unapplied forever because the
+    duplicate check on the next pass saw its own orphan row. The ledger is the record of what was
+    applied, so it is what "already" has to mean.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(SUM(qty),0) q FROM ledger WHERE ref_order_key=?", (order_key_,)).fetchone()
+    return float(row["q"] if row else 0.0)
+
+
 def record_fill(conn, *, order_key_, qty, price, fee=0.0, tax=0.0, broker_exec_id=None, raw=None):
-    """Register a broker-confirmed execution. Returns False if this execution id was already seen."""
+    """Register a broker-confirmed execution. Returns False if this execution id was already seen.
+
+    **Does not commit** — the caller pairs this with `apply_fill`, whose commit closes both. They
+    have to land together: a committed fill with no ledger row is invisible to the position and
+    permanently suppressed by its own duplicate check.
+    """
     try:
         conn.execute(
             "INSERT INTO fills(order_key,ts_ms,qty,price,fee,tax,broker_exec_id,raw) "
@@ -471,7 +490,6 @@ def record_fill(conn, *, order_key_, qty, price, fee=0.0, tax=0.0, broker_exec_i
             (order_key_, now_ms(), qty, price, fee, tax, broker_exec_id,
              json.dumps(raw, ensure_ascii=False) if raw is not None else None),
         )
-        conn.commit()
         return True
     except sqlite3.IntegrityError:
         return False
