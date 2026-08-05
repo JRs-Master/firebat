@@ -2702,7 +2702,10 @@ def action_selftest():
                    "ok": _cum[0]["cumulative"] is True and _exe[0]["cumulative"] is False})
 
     # The whole 000270 sequence, against a real ledger: a partial restatement then the full one.
-    _c2 = store.connect("dryrun2")
+    # Isolated by DATA_DIR, never by inventing a store name: `db_path` knows two books and a
+    # third name is not a third book (it used to land in live.db).
+    _c2_dir, store.DATA_DIR = store.DATA_DIR, tempfile.mkdtemp()
+    _c2 = store.connect("dryrun")
     _a2 = dict(strategy_id="s9", broker="b", account="a", symbol="000270")
     store.apply_fill(_c2, **_a2, side="buy", qty=3, price=132500, source="test")
     _c2.execute("INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,"
@@ -2744,6 +2747,7 @@ def action_selftest():
                    "want": 0.0, "got": store.booked_qty(_c2, "K2"),
                    "ok": store.booked_qty(_c2, "K2") == 0.0})
     _c2.close()
+    store.DATA_DIR = _c2_dir
 
     # The real upbit balance, verbatim, in the order the exchange actually sent it. `KRW` is a prefix
     # of every KRW market, so the cash line matched `KRW-ENSO` and reconciliation filed 27,986 won as
@@ -2814,7 +2818,8 @@ def action_selftest():
     # under the same account number, so the KR pass's balance legitimately has no AMZN in it and
     # walking every claimed symbol reads that silence as a sale — `kis-AMZN` degraded at 12:10 on
     # 2026-08-05 while three KR names in the same account reconciled clean.
-    _c3 = store.connect("dryrun3")
+    _c3_dir, store.DATA_DIR = store.DATA_DIR, tempfile.mkdtemp()
+    _c3 = store.connect("dryrun")
     for _sid, _sym in (("kis-AMZN", "AMZN"), ("kis-035420", "035420"), ("orphan-s", "999999")):
         store.apply_fill(_c3, strategy_id=_sid, broker="kis", account="모의", symbol=_sym,
                          side="buy", qty=1, price=100, source="test")
@@ -2852,6 +2857,7 @@ def action_selftest():
                    "want": None, "got": store.broker_qty_of(_c3, "kis", "모의", "NEVER"),
                    "ok": store.broker_qty_of(_c3, "kis", "모의", "NEVER") is None})
     _c3.close()
+    store.DATA_DIR = _c3_dir
 
     # The schedules are wired by hand, so a step can be given a value its source never produces.
     # Measured 2026-08-05: `market` was added to every reconcile step at once, and upbit — which
@@ -3031,6 +3037,25 @@ def action_selftest():
         _clean.close()
     finally:
         store.DATA_DIR = _saved_dir
+
+    # An unknown store name is refused rather than routed to the live book. It used to fall through
+    # to live.db, so a typo — or a caller inventing a name to get an isolated store, which is what I
+    # did — wrote to the real ledger.
+    _bad_store = None
+    try:
+        store.db_path("dryrun2")
+    except ValueError as e:
+        _bad_store = str(e)
+    checks.append({"name": "an unknown store name is refused, not sent to the live book",
+                   "want": "거부", "got": (_bad_store or "allowed")[:52],
+                   "ok": bool(_bad_store) and "unknown store" in _bad_store})
+    checks.append({"name": "and the two books each answer to their own names",
+                   "want": ["paper.db", "paper.db", "live.db", "live.db", "live.db"],
+                   "got": [_os.path.basename(store.db_path(m))
+                           for m in ("dryrun", "paper", "live", "mock", "real")],
+                   "ok": [_os.path.basename(store.db_path(m))
+                          for m in ("dryrun", "paper", "live", "mock", "real")]
+                        == ["paper.db", "paper.db", "live.db", "live.db", "live.db"]})
 
     checks.append({"name": "a strategy that exists is accepted",
                    "want": None, "got": unknown_strategy(_sset, "ondo"),

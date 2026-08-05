@@ -39,9 +39,31 @@ def now_ms():
     return int(time.time() * 1000)
 
 
+# Two books, and the split is what it looks like: paper holds runs where no order left the machine,
+# live holds runs where one reached a venue — mock and real alike, told apart by the `mode` column.
+# Mixing them would put fills the exchange never saw into the same reconciliation as the ones it did.
+STORES = {"dryrun": "paper.db", "paper": "paper.db",
+          "live": "live.db", "mock": "live.db", "real": "live.db"}
+
+
 def db_path(mode):
-    """`dryrun` writes to paper.db, everything else to live.db (mode is a column there too)."""
-    name = "paper.db" if mode == "dryrun" else "live.db"
+    """Which book this mode writes to. Unknown names are refused, not defaulted.
+
+    It used to be `"paper.db" if mode == "dryrun" else "live.db"` — so every name that was not
+    exactly `dryrun` landed in the **live** ledger. A typo wrote to the real book, and so did a
+    caller inventing a store name to get an isolated one: I passed `dryrun2`/`dryrun3` for that
+    reason on 2026-08-06 and they were all live.db, which the tests did not notice because they
+    happened not to collide. Defaulting the *unrecognised* case to the *most consequential* file is
+    backwards — the fallback should be the refusal.
+    """
+    key = str(mode or "").strip().lower()
+    name = STORES.get(key)
+    if name is None:
+        raise ValueError(
+            "unknown store %r — one of: %s. Two books exist (paper = nothing left the machine, "
+            "live = an order reached a venue); a new name does not make a third."
+            % (mode, ", ".join(sorted(STORES)))
+        )
     return os.path.join(DATA_DIR, name)
 
 
