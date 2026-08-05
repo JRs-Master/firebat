@@ -270,6 +270,27 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
     return picked
 
 
+def unknown_strategy(settings, strategy_id):
+    """None when this strategy exists, else the refusal to send back.
+
+    A strategy id that does not exist is worse than leaving shares unassigned: the bucket at least
+    reads as "needs attention", while a position filed under a name nobody runs is simply never
+    managed again. Measured 2026-08-05 — `onde` for `ondo`, one letter, and 11.09 ONDO went
+    somewhere no cycle would ever look.
+
+    Near-misses go in the message. A refusal that only says no makes the caller guess twice.
+    """
+    want = str(strategy_id or "").strip()
+    known = {s.get("id") for s in pick_strategies(settings) if isinstance(s, dict)}
+    if want in known:
+        return None
+    near = sorted(k for k in known
+                  if k and (str(k).startswith(want[:3]) or want.startswith(str(k)[:3])))
+    return ("'%s' 라는 전략이 없습니다%s. 실제로 도는 전략에만 넣을 수 있습니다 — 없는 이름에 "
+            "넣으면 아무도 그 물량을 관리하지 않습니다."
+            % (want, (" — 혹시 %s?" % ", ".join(near)) if near else ""))
+
+
 def market_map(settings):
     """`{strategy id: market}` for everything eligible to trade — what tells a ledger row its currency.
 
@@ -2864,6 +2885,18 @@ def action_selftest():
     # The bucket has to be *findable*, with the account it lives in — a quantity on its own cannot
     # be acted on, and the first real call failed asking for exactly what this row already holds.
     _u = store.read_unassigned(_cc, "KRW-X")
+    # One letter put 11.09 ONDO under `onde` on 2026-08-05. Filing a holding under a name nobody
+    # runs is worse than leaving it in the bucket — the bucket reads as unfinished business, a
+    # position under a dead name reads as managed and never is.
+    _sset = {"strategies": [{"id": "ondo"}, {"id": "btc"}]}
+    checks.append({"name": "a strategy that exists is accepted",
+                   "want": None, "got": unknown_strategy(_sset, "ondo"),
+                   "ok": unknown_strategy(_sset, "ondo") is None})
+    _typo = unknown_strategy(_sset, "onde")
+    checks.append({"name": "and a name nobody runs is refused, with the near miss named",
+                   "want": "onde 거부 + ondo 제안",
+                   "got": (_typo or "")[:44],
+                   "ok": bool(_typo) and "ondo" in _typo})
     checks.append({"name": "the bucket answers with where it lives, not just how much",
                    "want": ["broker", "account", "qty"],
                    "got": sorted(_u[0]) if _u else [],
@@ -4904,6 +4937,12 @@ def main():
             need = [k for k in ("symbol", "strategyId") if not str(inp.get(k) or "").strip()]
             if need:
                 return fail("resolve_unassigned 에 %s 가 필요합니다." % ", ".join(need))
+            # A strategy id that does not exist is worse than leaving the shares unassigned: the
+            # bucket at least reads as "needs attention", while a position under a name nobody runs
+            # is simply never managed again. Measured 2026-08-05 — `onde` for `ondo`, one letter.
+            bad = unknown_strategy(settings, inp["strategyId"])
+            if bad:
+                return fail(bad)
             conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
             try:
                 symbol = str(inp["symbol"])
@@ -4936,6 +4975,63 @@ def main():
                 "assigned": out_,
                 "note": ("원장에 append 했습니다 — 미배정에서 빼고 전략이 그 평단으로 받았습니다. "
                          "총량(Σ전략 + 미배정 = 브로커)은 그대로입니다.")}})
+        if action == "move_position":
+            # The way back from a misplaced assignment, and the only one that keeps the ledger
+            # append-only: an internal transfer, which already exists for the case where two
+            # strategies swap the same shares at the same price. At the position's own average the
+            # realised P&L is zero, so a correction cannot invent a gain.
+            if unattended():
+                return fail("move_position 은 사람이 부르는 정정입니다 — 스케줄에서는 동작하지 "
+                            "않습니다.")
+            need = [k for k in ("symbol", "fromStrategyId", "toStrategyId")
+                    if not str(inp.get(k) or "").strip()]
+            if need:
+                return fail("move_position 에 %s 가 필요합니다." % ", ".join(need))
+            src, dst = str(inp["fromStrategyId"]).strip(), str(inp["toStrategyId"]).strip()
+            if src == dst:
+                return fail("보내는 전략과 받는 전략이 같습니다.")
+            bad = unknown_strategy(settings, dst)
+            if bad:
+                return fail(bad)
+            conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+            try:
+                symbol = str(inp["symbol"])
+                broker = str(inp.get("broker") or "").strip()
+                account = str(inp.get("account") or "").strip()
+                # Where it is, is something the position table knows. Same reason as
+                # resolve_unassigned: ask only when the answer is genuinely ambiguous.
+                if not broker:
+                    rows = [dict(r) for r in conn.execute(
+                        "SELECT broker, account, qty FROM strategy_position WHERE strategy_id=? "
+                        "AND symbol=? AND qty>0", (src, symbol))]
+                    if not rows:
+                        return fail("%s 는 %s 를 들고 있지 않습니다." % (src, symbol))
+                    if len(rows) > 1:
+                        return fail("%s 의 %s 가 여러 계좌에 있습니다 — broker·account 를 "
+                                    "지정하십시오: %s" % (src, symbol, ", ".join(
+                                        "%s/%s %g" % (r["broker"], r["account"] or "-", r["qty"])
+                                        for r in rows)))
+                    broker, account = rows[0]["broker"], rows[0]["account"] or ""
+                pos = store.position_of(conn, src, broker, account, symbol)
+                held = float(pos.get("qty") or 0)
+                if held <= 0:
+                    return fail("%s 는 %s 를 들고 있지 않습니다." % (src, symbol))
+                qty = float(inp.get("qty") or held)
+                if qty <= 0 or qty > held + 1e-9:
+                    return fail("%s 는 %s 를 %g 만 들고 있습니다." % (src, symbol, held))
+                moved = store.record_transfer(
+                    conn, cycle_id="manual:move_position", from_strategy=src, to_strategy=dst,
+                    broker=broker, account=account, symbol=symbol, qty=qty,
+                    price=float(pos.get("avg_price") or 0),
+                    fee_in_cost=settings.get("feeInCost", True))
+            except ValueError as e:
+                return fail(str(e))
+            finally:
+                conn.close()
+            return out({"success": True, "data": {
+                "moved": moved, "from": src, "to": dst, "symbol": symbol, "qty": qty,
+                "note": ("내부이전으로 옮겼습니다 — 주문 0, 수수료 0, 평단 그대로라 실현손익도 "
+                         "0 입니다. 원장에는 양쪽 행이 남습니다.")}})
         if action in ("liquidate_all", "cancel_all", "import_position"):
             return fail(f"{action} 은 주문 경로가 들어온 뒤 동작합니다(현재 슬라이스는 판단·원장까지).")
         return fail(f"알 수 없는 action: {action}")

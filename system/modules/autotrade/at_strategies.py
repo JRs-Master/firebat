@@ -367,7 +367,7 @@ def _store_adopted(conn, sid, cid, args, row, target, runs, results, costs):
               {"candidateId": cid, "stage": stage, "measured": row,
                "previousStage": existing["stage"] if existing else None})
     return {"adopted": sid, "candidateId": cid, "stage": stage, "measured": row,
-            "note": ("채택은 종이거래부터입니다 — 실전 성적이 백테스트를 따라올 때만 올라갑니다."
+            "note": ("채택은 장부거래부터입니다 — 실전 성적이 백테스트를 따라올 때만 올라갑니다."
                      if not existing else
                      "규칙이 바뀌었으므로 사다리를 다시 시작합니다 — 옛 단계를 벌어들인 건 다른 규칙입니다.")}
 
@@ -778,6 +778,6 @@ def adopt_fits(conn, fits, runs, target, results=None, min_trades=MIN_SYMBOL_TRA
         "adopted": adopted,
         "refused": refused,
         "adoptedCount": len(adopted),
-        "note": (f"{len(adopted)} 개 종목에 규칙이 붙었습니다 — 전부 종이거래부터 시작합니다. "
+        "note": (f"{len(adopted)} 개 종목에 규칙이 붙었습니다 — 전부 장부거래부터 시작합니다. "
                  f"{len(refused)} 개는 거부됐고 사유는 `refused` 에 있습니다."),
     }

@@ -17,17 +17,17 @@
     },
     "mode": {
       "label": "실행 모드",
-      "description": "dryrun = 주문 없이 장부만 · mock = 모의계좌 실주문 · real = 실계좌. 채팅에서 부르면 어떤 설정이든 dryrun 으로 낮춰집니다.",
+      "description": "dryrun = 주문 없이 장부만 · mock = 모의투자 계좌에 실주문 · real = 실계좌. 채팅에서 부르면 어떤 설정이든 dryrun 으로 낮춰집니다.",
       "group": "모드",
       "options": [
-        "종이거래 (dryrun)",
-        "모의계좌 (mock)",
-        "실계좌 (real)"
+        "장부거래 (dryrun)",
+        "모의투자 (mock)",
+        "실거래 (real)"
       ]
     },
     "realArmed": {
       "label": "실계좌 무장",
-      "description": "real 모드라도 이것이 꺼져 있으면 모의까지만 나갑니다. 마지막 잠금장치입니다.",
+      "description": "real 모드라도 이것이 꺼져 있으면 모의투자까지만 나갑니다. 마지막 잠금장치입니다.",
       "group": "모드"
     },
     "killSwitch": {
