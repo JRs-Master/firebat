@@ -309,6 +309,10 @@
           "type": "number"
         },
         "description": "reach_cone — containment levels, 0-1 (default [0.5,0.8,0.95]). Each becomes one band: that share of past windows stayed inside it."
+      },
+      "futureBars": {
+        "type": "integer",
+        "description": "reach_cone — how many bars to project the cone past the last one (default max(10, horizonBars/4) intraday, the whole horizon otherwise). A display choice: horizonBars is how far the width was measured, this is how far it is drawn."
       }
     }
   },

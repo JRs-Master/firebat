@@ -2773,7 +2773,11 @@ def main():
         anchor = bars[anchor_idx]["open"] if intraday else bars[-1]["close"]
         atr_now = a_ser[-1]
         elapsed = len(bars) - 1 - anchor_idx
-        ahead = max(3, horizon - elapsed) if intraday else horizon
+        # 미래로 얼마나 뻗을지는 **표시 선택**이지 지평에서 나오는 값이 아니다. `horizon - elapsed`
+        # 로 두면 장이 반쯤 지난 순간 원뿔이 3칸으로 쪼그라들어 정작 볼 게 없어진다 — 지평은
+        # "얼마나 멀리까지 재나"고, 이건 "얼마나 앞까지 그리나"다.
+        ahead = (horizon if not intraday
+                 else max(3, int(_num_or(inp.get("futureBars"), max(10, horizon // 4)))))
 
         # 이미 지나간 구간도 같은 곡선으로 그린다 — 오늘 시작부터 이어져야 "여기까지 왔다"가 보인다.
         step = max(1, (elapsed + ahead) // 30)
@@ -2792,7 +2796,9 @@ def main():
                 for t in range(0, elapsed + 1, step):
                     pts.append({"i": bars[anchor_idx + t]["i"],
                                 "price": _px(sign * c * (max(t, 0.25) ** 0.5) * atr_now)})
-                for t in range(step, ahead + 1, step):
+                # 마지막 칸을 반드시 찍는다 — 간격으로 나눠떨어지지 않으면 선이 오른쪽 끝
+                # 못 미쳐 끊기고, 라벨이 거기 달려 있어 같이 안쪽으로 끌려온다.
+                for t in list(range(step, ahead + 1, step)) + ([ahead] if ahead % step else []):
                     pts.append({"barsAhead": t,
                                 "price": _px(sign * c * ((elapsed + t) ** 0.5) * atr_now)})
                 if len(pts) < 2:

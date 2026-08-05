@@ -213,6 +213,18 @@ async function resolveDerived(
     // 선언(seed/derive)은 덮지 않는다. `data` 는 **덮는다** — 파생 모듈이 봉을 돌려줬다면
     // "내가 분석한 구간이 이것" 이라는 뜻이고, 차트가 다른 구간을 보여 주면 표와 어긋난다.
     if (k === 'seed' || k === 'derive') continue;
+    // 주석은 **쌓는다**. 여러 단계를 두는 이유가 두 모듈의 그림을 한 봉 위에 겹치는 것인데,
+    // 덮어쓰면 마지막 단계만 남는다. 지금까지 안 드러난 건 signals 가 `buyPoints` 를 내서 키가
+    // 안 겹쳤기 때문이고, 같은 키를 내는 분석 둘을 붙이는 순간 앞엣것이 조용히 사라진다.
+    if (k === 'annotations' && Array.isArray(v) && Array.isArray(props[k])) {
+      props[k] = [...(props[k] as unknown[]), ...v];
+      continue;
+    }
+    // 미래 칸은 제일 멀리 보는 단계에 맞춘다 — 짧은 쪽으로 줄이면 긴 쪽 선이 잘린다.
+    if (k === 'futureSlots' && typeof v === 'number' && typeof props[k] === 'number') {
+      props[k] = Math.max(props[k] as number, v);
+      continue;
+    }
     props[k] = v;
   }
   // 첫 블록 뒤에 더 있으면 **차트 아래에 그대로 얹는다**(호출자가 단계별로 모아 붙인다) — 신호 모듈이 체결 표·지표 카드를
