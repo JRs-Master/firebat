@@ -187,7 +187,9 @@
     },
     "cache": {
       "expired_or_missing": "Cache key={{key}} expired or missing.",
-      "aggregate_unsupported": "Aggregate operation not supported: {{op}} (supported: count/sum/avg/min/max)"
+      "aggregate_unsupported": "Aggregate operation not supported: {{op}} (supported: count/sum/avg/min/max)",
+      "expired": "Cache key={{key}} expired {{ago}}s ago (TTL {{ttl}} min). Run the same query again for a fresh key, and finish the arithmetic before writing the answer — an analysis that takes several rounds outlives its cache.",
+      "never_stored": "Nothing is stored under cache key={{key}}. Either the key was copied wrong or it was evicted past the {{cap}}-key limit. Run the original query again."
     },
     "ai": {
       "agent_prompt_empty": "agentPrompt is empty.",

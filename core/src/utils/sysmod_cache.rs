@@ -132,11 +132,28 @@ impl SysmodCacheAdapter {
 
     fn read_records(&self, key: &str) -> InfraResult<Vec<serde_json::Value>> {
         if !self.is_valid(key) {
-            return Err(crate::i18n::t(
-                "core.error.cache.expired_or_missing",
-                None,
-                &[("key", key)],
-            ));
+            // "Expired" and "never existed" call for different next moves — the first means fetch
+            // it again and compute before narrating, the second means the key is wrong. Saying
+            // only "expired or missing" made a model narrow its analysis window instead of
+            // re-fetching (2026-08-05: a long daily series died mid-analysis and the answer came
+            // back quietly shortened to six months).
+            let detail = match self.deadline_ms(key) {
+                Some(dl) => crate::i18n::t(
+                    "core.error.cache.expired",
+                    None,
+                    &[
+                        ("key", key),
+                        ("ago", &(((now_ms() - dl).max(0)) / 1000).to_string()),
+                        ("ttl", &(TTL_MS / 60_000).to_string()),
+                    ],
+                ),
+                None => crate::i18n::t(
+                    "core.error.cache.never_stored",
+                    None,
+                    &[("key", key), ("cap", &LRU_CAPACITY.to_string())],
+                ),
+            };
+            return Err(detail);
         }
         let raw = std::fs::read_to_string(self.jsonl_path(key))
             .map_err(|e| format!("cache jsonl read 실패: {e}"))?;
@@ -164,6 +181,16 @@ impl SysmodCacheAdapter {
 
     fn is_valid(&self, key: &str) -> bool {
         self.meta(key).is_some()
+    }
+
+    /// When this key dies, **whether or not it already has**. `meta()` deliberately answers only
+    /// for live keys, which is right for reading records and wrong for saying how long there is:
+    /// "already gone" and "never existed" are different facts and a caller acts differently on
+    /// each. Returns the deadline in epoch ms, or None when nothing was ever written under it.
+    pub fn deadline_ms(&self, key: &str) -> Option<i64> {
+        let raw = std::fs::read_to_string(self.meta_path(key)).ok()?;
+        let meta: CacheMeta = serde_json::from_str(&raw).ok()?;
+        Some(meta.expires_at)
     }
 
     pub fn read(
@@ -450,6 +477,15 @@ mod tests {
         // The message is an i18n key now, and asserting on the Korean text would break whenever
         // the wording changed — or, as here, whenever the translation file is not loadable.
         let err = result.unwrap_err();
-        assert!(err.contains("cache.expired_or_missing") || err.contains("만료"), "got {err}");
+        assert!(err.contains("cache.expired") || err.contains("만료"), "got {err}");
+        // Expired and never-stored are different facts calling for different next moves, so they
+        // must not arrive as one message. The deadline survives expiry on purpose — "gone 40
+        // seconds ago" is what tells a caller to re-fetch rather than to doubt the key.
+        assert!(c.deadline_ms(&key).is_some(), "an expired key still knows when it died");
+        let unknown = c.read("test-list-deadbeef-1", 0, 10).unwrap_err();
+        assert!(c.deadline_ms("test-list-deadbeef-1").is_none());
+        assert_ne!(err, unknown, "expired and never-stored must not read the same");
+        assert!(unknown.contains("never_stored") || unknown.contains("저장된 것이 없"),
+                "got {unknown}");
     }
 }

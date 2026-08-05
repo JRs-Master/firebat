@@ -589,6 +589,18 @@ impl ProcessSandboxAdapter {
     }
 
     /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 큰 필드 1개를 SysmodCacheAdapter 로
+    /// How long this cached key has left, as fields the model can act on.
+    ///
+    /// The TTL was invisible: a multi-round analysis fetched a long series, spent rounds on
+    /// discovery and arithmetic, and the cache died in between — the answer came back quietly
+    /// narrowed to a shorter period rather than re-fetched (2026-08-05 실측). Knowing the deadline
+    /// changes the order of work: compute first, narrate second.
+    fn expiry_fields(cache: &SysmodCacheAdapter, key: &str) -> Option<(i64, i64)> {
+        let dl = cache.deadline_ms(key)?;
+        let left = (dl - firebat_core::utils::time::now_ms()) / 1000;
+        Some((dl, left.max(0)))
+    }
+
     /// 저장 + in-place 프리뷰 축약 + `_cacheKey` / `_cacheMeta` 형제 필드 주입 (메타는 항상 data 최상위).
     ///
     /// 모든 sysmod 응답이 거치는 단일 choke point — 도구별 코드 0 으로 현재·미래 도구 자동 적용.
@@ -683,6 +695,10 @@ impl ProcessSandboxAdapter {
                         "truncatedTo": if truncated { AUTO_CACHE_PREVIEW } else { total_count },
                         "autoCached": true,
                     });
+                    if let Some((at, left)) = Self::expiry_fields(cache, &key) {
+                        meta["expiresAt"] = serde_json::json!(at);
+                        meta["expiresInSec"] = serde_json::json!(left);
+                    }
                     // Next-step pointer — without it a model re-calls the module with a larger
                     // `limit` expecting more inline rows (the preview stays truncated) and burns
                     // rounds hunting for the hidden data (07-11 날씨 cron 실측: limit 30→50 재호출
@@ -771,6 +787,10 @@ impl ProcessSandboxAdapter {
                         "previewChars": if truncated { TEXT_PREVIEW_CHARS.min(total_chars) } else { total_chars },
                         "autoCached": true,
                     });
+                    if let Some((at, left)) = Self::expiry_fields(cache, &key) {
+                        meta["expiresAt"] = serde_json::json!(at);
+                        meta["expiresInSec"] = serde_json::json!(left);
+                    }
                     if truncated {
                         meta["next"] = serde_json::Value::String(
                             "Only a preview of the text is inline. The FULL text is cached as {line, text} rows — search it with cache_grep({cacheKey, field:\"text\", op:\"contains\", value}) or page it with cache_read({cacheKey}). Do NOT re-call the module — the inline preview stays truncated.".to_string(),
@@ -822,13 +842,20 @@ impl ProcessSandboxAdapter {
                 );
                 obj.insert(
                     "_cacheMeta".to_string(),
-                    serde_json::json!({
-                        "sysmod": module_name,
-                        "action": action_label,
-                        "kind": "scalar",
-                        "truncated": false,
-                        "autoCached": true,
-                    }),
+                    {
+                        let mut m = serde_json::json!({
+                            "sysmod": module_name,
+                            "action": action_label,
+                            "kind": "scalar",
+                            "truncated": false,
+                            "autoCached": true,
+                        });
+                        if let Some((at, left)) = Self::expiry_fields(cache, &key) {
+                            m["expiresAt"] = serde_json::json!(at);
+                            m["expiresInSec"] = serde_json::json!(left);
+                        }
+                        m
+                    },
                 );
                 tracing::info!(
                     target: "sandbox",
