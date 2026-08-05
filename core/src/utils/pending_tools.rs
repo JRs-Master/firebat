@@ -407,6 +407,9 @@ pub fn create_pending_in(
     hub_scope: Option<String>,
     conversation_id: Option<String>,
 ) -> String {
+    let args_name = args.name();
+    let hub_dbg = hub_scope.clone();
+    let conv_dbg = conversation_id.clone();
     let mut map = match store_lock().lock() {
         Ok(g) => g,
         Err(_) => return String::new(),
@@ -442,7 +445,53 @@ pub fn create_pending_in(
         },
     );
     flush(&map);
+    // Which bucket this card landed in, said at the moment it is decided. The classification is
+    // invisible afterwards: an approved card is consumed, so by the time anyone asks why it showed
+    // up in the external list the record is gone — 2026-08-06, a card made in a chat appeared there
+    // and reading the route, the gRPC handler and the serde naming all said it should not have.
+    // Guessing twice is worse than one line of evidence.
+    tracing::info!(
+        target: "pending",
+        plan_id = %plan_id,
+        tool = args_name,
+        conversation = conv_dbg.as_deref().unwrap_or("(none — listed as external)"),
+        hub = hub_dbg.as_deref().unwrap_or("admin"),
+        "pending card created"
+    );
     plan_id
+}
+
+/// Record after the fact which conversation a card belongs to.
+///
+/// `create_pending_in` only works for cards the chat turn itself creates. A turn driven by a CLI
+/// model creates them somewhere else entirely — the model calls our MCP server, and that handler
+/// (`pending_or_passthrough`, `SysmodHandler`) has no idea a conversation exists. Measured
+/// 2026-08-06: a card made by asking in a chat was listed as external, because the only path taught
+/// about conversations was the one the user does not use.
+///
+/// The turn does know, though: the CLI adapters lift `{pending, planId}` out of the MCP result into
+/// `pending_actions`, so the id arrives back where the conversation id is in scope. So the party
+/// that knows writes it, rather than four creation sites each growing an argument they cannot fill.
+///
+/// Does not overwrite: a card already claimed by a conversation keeps it, and a card that never
+/// surfaces in a chat turn (an editor's MCP client, a script) is never claimed at all — which is
+/// exactly the cards the external list is for.
+pub fn attach_conversation(plan_id: &str, conversation_id: &str) -> bool {
+    if plan_id.is_empty() || conversation_id.is_empty() {
+        return false;
+    }
+    let mut map = match store_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    match map.get_mut(plan_id) {
+        Some(p) if p.conversation_id.is_none() => {
+            p.conversation_id = Some(conversation_id.to_string());
+            flush(&map);
+            true
+        }
+        _ => false,
+    }
 }
 
 /// 옛 TS `getPending` 1:1 — 메모리 → 파일 폴백.
@@ -808,5 +857,33 @@ mod tests {
         assert_eq!(
             get_pending(&inside).and_then(|p| p.conversation_id),
             Some("conv-1".to_string()));
+    }
+
+    #[test]
+    fn a_card_a_cli_turn_made_is_claimed_by_that_conversation() {
+        // The path a CLI model takes cannot pass a conversation: it calls our MCP server, and that
+        // handler only sees a tool call. So the card is born homeless and the chat that asked for it
+        // saw it in the "created outside a chat" list (2026-08-06). The turn claims it afterwards,
+        // which is the first moment planId and conversation are in the same place.
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        fresh_state(dir.path());
+
+        // create_pending_scoped = what mcp_server.rs calls. No conversation to give.
+        let id = create_pending_scoped(run_module_args(), "실행 승인: autotrade · resume", None);
+        assert!(list_pending(None).iter().any(|p| p.plan_id == id), "homeless until claimed");
+
+        assert!(attach_conversation(&id, "conv-1"));
+        assert!(!list_pending(None).iter().any(|p| p.plan_id == id), "claimed — the chat shows it");
+
+        // Claiming is once: a second turn cannot move a card into its own conversation.
+        assert!(!attach_conversation(&id, "conv-2"));
+        assert_eq!(get_pending(&id).and_then(|p| p.conversation_id), Some("conv-1".to_string()));
+
+        // An unknown id and an empty conversation change nothing rather than erasing a home.
+        assert!(!attach_conversation("plan-nope", "conv-1"));
+        let outside = create_pending_scoped(run_module_args(), "from an editor", None);
+        assert!(!attach_conversation(&outside, ""));
+        assert!(list_pending(None).iter().any(|p| p.plan_id == outside));
     }
 }

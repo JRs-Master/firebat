@@ -3091,6 +3091,18 @@ impl AiManager {
                 blocks.extend(response.rendered_blocks.iter().cloned());
             }
             if !response.pending_actions.is_empty() {
+                // Claim these cards for this conversation. The CLI model created them through our
+                // MCP server, which cannot know a conversation is on the other end of the model it
+                // is answering — so the card was stored with no home and the "created outside a
+                // chat" list showed a card the user had just asked for in a chat (2026-08-06).
+                // Here the planId and the conversation are in the same scope for the first time.
+                if let Some(conv) = ai_opts.conversation_id.as_deref().filter(|c| !c.is_empty()) {
+                    for a in &response.pending_actions {
+                        if let Some(pid) = a.get("planId").and_then(|v| v.as_str()) {
+                            crate::utils::pending_tools::attach_conversation(pid, conv);
+                        }
+                    }
+                }
                 pending_actions.extend(response.pending_actions.iter().cloned());
             }
             if !response.suggestions.is_empty() {
