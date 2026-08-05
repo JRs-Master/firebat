@@ -1386,24 +1386,40 @@ def action_cycle(inp, settings):
     tripped = store.kv_get(conn, "tripped") == "1"
     settings = {**settings, "_tripped": tripped}
 
-    # Daily loss limit trips before anything is decided, so one bad day cannot keep trading. Each
-    # currency is measured against its own limit: the day's realised result is won on one market and
-    # dollars on another, and one summed number made a dollar count for a won.
+    # The daily loss limit is measured per currency: the day's realised result is won on one market
+    # and dollars on another, and one summed number made a dollar count for a won.
+    #
+    # Evaluated every cycle, per currency, in both directions. The old version set one global flag
+    # and never looked again: a dollar loss stopped won trading, and nothing reopened either until a
+    # person pressed resume. But the limit is a statement about the day's realised result, and that
+    # result moves — closing a winner can put it back inside the limit, at which point the reason
+    # for the halt is gone. So the halt is per currency and it lifts itself.
+    #
+    # No hysteresis on purpose: the number this is compared against is realised P&L, which only
+    # changes when a trade closes, so it cannot flicker on a tick. What it can do is re-trip after
+    # reopening, and that is the correct behaviour — each trip is a real loss that crossed the line.
     markets = market_map(settings)
-    if not tripped:
-        limits = eng.daily_loss_limits(settings)
-        for cur, pnl in sorted(store.realized_today(conn, day_start_ms(), markets).items()):
-            limit = limits.get(cur)
-            if limit and pnl <= -limit:
-                store.kv_set(conn, "tripped", "1")
+    halted = set(store.kv_get(conn, "trippedCurrencies", "").split(",")) - {""}
+    limits = eng.daily_loss_limits(settings)
+    for cur, pnl in sorted(store.realized_today(conn, day_start_ms(), markets).items()):
+        limit = limits.get(cur)
+        if limit and pnl <= -limit:
+            if cur not in halted:
+                halted.add(cur)
                 store.log_event(conn, "halt", {"reason": "daily loss limit reached",
-                                              "currency": cur, "limit": limit, "realized": pnl})
-                settings["_tripped"] = tripped = True
-                break
-            if not limit and pnl < 0:
-                # Losing in a currency nobody set a limit for. Said out loud, because the stop that
-                # is supposed to be watching this money is not watching it.
-                store.log_event(conn, "ungated_loss", {"currency": cur, "realized": pnl})
+                                               "currency": cur, "limit": limit, "realized": pnl,
+                                               "note": "new buys stop in this currency; exits and "
+                                                       "other currencies keep running"})
+        elif cur in halted:
+            halted.discard(cur)
+            store.log_event(conn, "resume", {"reason": "realised result back inside the limit",
+                                             "currency": cur, "limit": limit, "realized": pnl})
+        if not limit and pnl < 0:
+            # Losing in a currency nobody set a limit for. Said out loud, because the stop that is
+            # supposed to be watching this money is not watching it.
+            store.log_event(conn, "ungated_loss", {"currency": cur, "realized": pnl})
+    store.kv_set(conn, "trippedCurrencies", ",".join(sorted(halted)))
+    settings["_trippedCurrencies"] = sorted(halted)
 
     now = store.now_ms()
     sides = eng.fired_sides(signal)
@@ -1504,6 +1520,10 @@ def action_cycle(inp, settings):
             s_sides = set(sides) | ({"buy"} if float(pos.get("qty") or 0) <= 0 else set())
         ctx = {
             "position": pos, "price": s_price, "sides": s_sides, "signal": sig,
+            # Which currency this strategy's money is in — the loss halt is per currency, so the
+            # guard has to know which bucket this order would land in. Read the same way ledger
+            # rows are labelled, from one place.
+            "currency": store.currency_of(broker, sym, markets, s["id"]),
             "quote": inp.get("quote") or {}, "settings": settings, "strategy": s,
             "mode": mode, "account_exposure": 0.0,
             "vi_halted": store.kv_get(conn, f"vi:{sym}") == "1",
@@ -2258,7 +2278,13 @@ def action_read(inp, settings, which):
                 ucon.close()
         except Exception as e:
             data["watchlistError"] = str(e)
+        # Two different halts, said separately. `tripped` = the books disagree or a person pressed
+        # halt: global, and only a person clears it. `haltedCurrencies` = today's realised loss in
+        # that currency crossed its limit: buys stop there, exits and other currencies keep running,
+        # and it lifts itself when the result comes back inside.
         data["tripped"] = store.kv_get(conn, "tripped") == "1"
+        data["haltedCurrencies"] = sorted(
+            set(store.kv_get(conn, "trippedCurrencies", "").split(",")) - {""})
         # A page renders the closed round trips with the existing paper_trades component.
         data["blocks"] = [{"type": "paper_trades", "props": {
             "title": "자동매매 원장", "records": _round_trips(store.read_ledger(conn, 500))}}]

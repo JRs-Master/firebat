@@ -115,7 +115,10 @@ def effective_mode(settings, strategy, account_is_mock, unattended):
             MODE_RANK.get(strategy.get("mode", "real"), 2))
     if not unattended:
         m = 0
-    if settings.get("killSwitch") or settings.get("_tripped"):
+    # The kill switch means "nothing leaves this machine", so it caps the mode. A loss halt does
+    # not: it blocks new buys and lets exits through (see `apply_guards`), and capping the mode here
+    # would send those exits to the paper book while the real position stayed open.
+    if settings.get("killSwitch"):
         m = 0
     if m == 2 and not settings.get("realArmed"):
         m = 1
@@ -714,9 +717,31 @@ def risk_gates(intents, ctx):
 
     if settings.get("killSwitch"):
         return [], [{**i, "dropReason": "kill switch is on"} for i in intents]
-    if settings.get("_tripped"):
-        return [], [{**i, "dropReason": "trading is halted (loss limit or unresolved order)"}
-                    for i in intents]
+    # A daily-loss halt stops **new risk**, not the exits. Dropping every intent shut the door a
+    # position leaves by, so the loss that tripped the limit could keep growing with the stop
+    # sitting right there unable to fire — the halt made the thing it exists to limit worse.
+    # `degraded` next door has said "selling only" all along; this is the same rule.
+    #
+    # Scoped to the currency that tripped. The limits are per currency because a won is not a
+    # dollar, so a dollar halt has nothing to say about trading in won. `_tripped` (no currency)
+    # stays global for the other reason it is set — an unresolved order, which is about the books
+    # rather than about a market.
+    halted_cur = settings.get("_trippedCurrencies") or []
+    if settings.get("_tripped") or halted_cur:
+        cur = str(ctx.get("currency") or "")
+        stopped = bool(settings.get("_tripped")) or (cur and cur in halted_cur)
+        if stopped:
+            keep = []
+            for i in intents:
+                if i["side"] == "sell":
+                    keep.append(i)
+                else:
+                    why = ("trading is halted (unresolved order)" if settings.get("_tripped")
+                           else f"daily loss limit reached in {cur} — selling only")
+                    dropped.append({**i, "dropReason": why})
+            intents = keep
+            if not intents:
+                return [], dropped
     if (ctx["position"].get("state") or "active") == "degraded":
         # The broker reports fewer shares than we think we own. Selling down is still safe (it is
         # clamped to what is actually held); buying more would compound a discrepancy nobody has

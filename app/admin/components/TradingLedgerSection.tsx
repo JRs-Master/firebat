@@ -23,6 +23,10 @@ interface Report {
   mode?: string;
   store?: string;
   tripped?: boolean;
+  /** Currencies whose daily loss limit is currently reached. Separate from `tripped`: this one
+   *  stops new buys in that currency only, exits keep running, and it lifts itself when the day's
+   *  realised result comes back inside the limit. */
+  haltedCurrencies?: string[];
   positions?: Row[];
   orders?: Row[];
   ledger?: Row[];
@@ -188,7 +192,11 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   const screenEvents = data?.screenEvents ?? [];
 
   return (
-    <div className="flex flex-col gap-3">
+    // `min-w-0` on the column and on each section, or the tables never scroll: a flex item's
+    // `min-width` defaults to `auto`, so the box grows to fit the widest row instead of letting
+    // `overflow-x-auto` do its job, and the whole panel is what ends up cut off. The event detail
+    // column is the one that reaches — it carries up to 200 characters of JSON on one nowrap line.
+    <div className="flex min-w-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1">
           {(['live', 'dryrun'] as const).map(s => (
@@ -215,12 +223,26 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
         </button>
       </div>
 
+      {/* Two halts with different consequences, so they are two banners. Saying "trading is
+          stopped — loss limit or ledger mismatch, go find out which" made the reader do the
+          triage, and it was wrong besides: a loss halt does not stop selling and does not need
+          anybody to clear it. */}
       {data?.tripped && (
         <div className="flex items-start gap-1.5 rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] text-rose-700">
           <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
           <span>
-            매매가 정지돼 있습니다 — 일일 손실 한도에 걸렸거나 원장 대조가 어긋났습니다.
-            아래 이벤트에서 사유를 확인한 뒤 해제하십시오.
+            매매가 멈춰 있습니다 — 원장 대조가 어긋났거나 사람이 정지시켰습니다.
+            아래 이벤트에서 사유를 확인하고 설정에서 해제하십시오.
+          </span>
+        </div>
+      )}
+      {(data?.haltedCurrencies?.length ?? 0) > 0 && (
+        <div className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700">
+          <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+          <span>
+            {data!.haltedCurrencies!.join(' · ')} 의 하루 손실 한도에 닿아 <b>그 통화의 신규 매수만</b>{' '}
+            멈췄습니다. 손절·익절과 다른 통화는 그대로 돌고, 실현손익이 한도 안으로 돌아오면{' '}
+            <b>스스로 풀립니다</b> — 해제 조작이 필요하지 않습니다.
           </span>
         </div>
       )}
@@ -409,7 +431,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
 
 function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-1.5">
         <span className="text-xs font-bold text-slate-700">{title}</span>
         <span className="text-[10px] text-slate-400">{count}</span>
