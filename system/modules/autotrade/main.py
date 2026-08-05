@@ -1445,6 +1445,18 @@ def action_cycle(inp, settings):
         # strategy's rows belong to.
         sconn = store_for(mode)
         pos = store.position_of(sconn, s["id"], broker, account, sym)
+        # `degraded` already promises "no new buys, sells only up to what is really held" — and the
+        # second half was never kept. The broker's number was written to `reconcile_log` and then
+        # dropped, so sizing used the ledger's and asked for shares the account did not have.
+        # Measured 2026-08-05: 000270 sold 2 against a holding of 0, once every five minutes, 23
+        # times, each one rejected with the broker spelling out the reason.
+        #
+        # Capped here rather than at each intent: stops, take-profits and rule sells all read the
+        # same held quantity, and a guard on one of the three leaks through the other two.
+        if pos.get("state") == store.DEGRADED:
+            real = store.broker_qty_of(sconn, broker, account, sym)
+            if real is not None and real < float(pos.get("qty") or 0):
+                pos = {**pos, "qty": max(0.0, real), "ledgerQty": float(pos.get("qty") or 0)}
         if float(pos.get("qty") or 0) > 0:
             # What the ladders measure against: the size this position reached (the exit rungs are
             # cumulative on it), the price it opened at (the entry rungs measure the dip from
@@ -2703,6 +2715,26 @@ def action_selftest():
                    "want": True,
                    "got": store.symbol_in_market(_c3, "kis", "모의", "999999", "kr", _mkt),
                    "ok": store.symbol_in_market(_c3, "kis", "모의", "999999", "kr", _mkt) is True})
+
+    # A degraded position sells only up to what the broker says is there. The number is already in
+    # `reconcile_log`; sizing used to read the ledger's instead and ask for shares that were gone.
+    store.reconcile_symbol(_c3, "kis", "모의", "035420", 0.0, 0.0)
+    checks.append({"name": "the broker's own number is what a shortfall is measured against",
+                   "want": 0.0, "got": store.broker_qty_of(_c3, "kis", "모의", "035420"),
+                   "ok": store.broker_qty_of(_c3, "kis", "모의", "035420") == 0.0})
+    _pos = store.position_of(_c3, "kis-035420", "kis", "모의", "035420")
+    checks.append({"name": "and the shortfall put the position on hold",
+                   "want": store.DEGRADED, "got": _pos.get("state"),
+                   "ok": _pos.get("state") == store.DEGRADED})
+    _real = store.broker_qty_of(_c3, "kis", "모의", "035420")
+    _capped = min(float(_pos["qty"]), _real if _real is not None else float(_pos["qty"]))
+    checks.append({"name": "so nothing is offered for sale that the account does not hold",
+                   "want": (1.0, 0.0), "got": (float(_pos["qty"]), _capped),
+                   "ok": float(_pos["qty"]) == 1.0 and _capped == 0.0})
+    # A symbol the broker never spoke about is not capped to zero by silence.
+    checks.append({"name": "a holding never reconciled is not capped by silence",
+                   "want": None, "got": store.broker_qty_of(_c3, "kis", "모의", "NEVER"),
+                   "ok": store.broker_qty_of(_c3, "kis", "모의", "NEVER") is None})
     _c3.close()
 
     _found, _row = orders.read_position(_bal, "KRW-ENSO")

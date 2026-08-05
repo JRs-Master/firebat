@@ -261,6 +261,20 @@ def set_position_state(conn, strategy_id, broker, account, symbol, state):
     conn.commit()
 
 
+def broker_qty_of(conn, broker, account, symbol):
+    """The last quantity the broker itself stated for this holding, or None if it never has.
+
+    Read from `reconcile_log` rather than kept on the position: that is already the authoritative
+    record of what the balance said and when, and a second copy would be one more thing to keep in
+    step. Only meaningful next to a `degraded` state, which the same pass writes — the two agree by
+    construction because one produced the other.
+    """
+    row = conn.execute(
+        "SELECT broker_qty FROM reconcile_log WHERE broker=? AND account=? AND symbol=? "
+        "ORDER BY id DESC LIMIT 1", (broker, account, symbol)).fetchone()
+    return float(row["broker_qty"]) if row and row["broker_qty"] is not None else None
+
+
 def lift_hold(conn, strategy_id, broker, account, symbol):
     """Release a degraded position. True if it was released.
 
