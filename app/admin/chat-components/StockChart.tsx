@@ -13,7 +13,21 @@ export type OhlcvBar = {
 };
 
 /** 차트 위 주석의 한 점. `i` = 캔들 인덱스 / `barsAhead` = 마지막 봉 기준 미래 오프셋(둘 중 하나). */
-export type ChartAnnotationPoint = { i?: number; barsAhead?: number; price: number; label?: string };
+export type ChartAnnotationPoint = {
+  i?: number;
+  barsAhead?: number;
+  price: number;
+  label?: string;
+  /**
+   * Distance from the last close in ATR, when this point is anchored to volatility rather than to a
+   * price. A probability is a historical frequency and moves slowly; the price it hangs on moves
+   * every tick. Freezing both server-side is why such a line only followed after a reload — with the
+   * offset carried, a live chart re-anchors it on each bar.
+   */
+  atrOffset?: number;
+  /** Label with `{price}` substituted at draw time, for points whose price is recomputed. */
+  labelFmt?: string;
+};
 
 /**
  * 차트 주석 — 좌표를 가진 선·구간·수평선·라벨. **특정 분석 기법 전용이 아니다**:

@@ -270,6 +270,23 @@ function saveLiveTail(topic: string, ivSec: number, bars: OhlcvBar[]): void {
 
 /** 틱마다 다시 계산하는 전광판 지표 — 서버 카드는 방문마다라 정지 화면처럼 보인다.
  *  표시 전용이고 매매 판정은 서버(signals)가 그대로 한다. 공식은 모듈과 같은 표준식. */
+/** ATR over the last `n` bars of what is on screen — the live twin of the server's period-20 ATR.
+ *  Only the anchor moves; the probability attached to a level is not recomputed here. */
+function atrOf(bars: OhlcvBar[], n = 20): number | null {
+  if (bars.length < n + 1) return null;
+  const tr: number[] = [];
+  for (let i = 1; i < bars.length; i++) {
+    const pc = bars[i - 1].close;
+    const h = bars[i].high ?? bars[i].close;
+    const l = bars[i].low ?? bars[i].close;
+    if (![pc, h, l].every(Number.isFinite)) continue;
+    tr.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  if (tr.length < n) return null;
+  const last = tr.slice(-n);
+  return last.reduce((s, v) => s + v, 0) / n;
+}
+
 function liveStats(bars: OhlcvBar[]) {
   const c = bars.map(b => b.close).filter(Number.isFinite);
   if (c.length < 2) return null;
@@ -646,10 +663,24 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
   // 버린다. 남은 점이 1개뿐이면 선이 될 수 없으니 그 주석 자체를 뺀다.
   const shifted = (() => {
     const drop = droppedRef.current;
-    if (!annotations || drop <= 0) return annotations;
+    if (!annotations) return annotations;
+    // Volatility-anchored points are re-priced from the bars on screen. The server sends the
+    // probability (a historical frequency, slow) and the offset in ATR; the price it hangs on moves
+    // every tick, so holding both server-side meant the line only caught up on reload.
+    const a = atrOf(candles);
+    const lastClose = candles.length ? candles[candles.length - 1].close : null;
+    const reprice = (pt: typeof annotations[number]['points'][number]) => {
+      if (pt.atrOffset == null || a == null || lastClose == null) return pt;
+      const price = lastClose + pt.atrOffset * a;
+      const label = pt.labelFmt
+        ? pt.labelFmt.replace('{price}', Math.round(price).toLocaleString('ko-KR'))
+        : pt.label;
+      return { ...pt, price, label };
+    };
     return annotations.flatMap(an => {
-      const pts = an.points.flatMap(pt => {
-        if (pt.i == null) return [pt];
+      const pts = an.points.flatMap(raw => {
+        const pt = reprice(raw);
+        if (pt.i == null || drop <= 0) return [pt];
         const i = pt.i - drop;
         return i >= 0 ? [{ ...pt, i }] : [];
       });

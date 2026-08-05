@@ -2673,20 +2673,95 @@ def main():
         # 위아래를 같이 센다. 위만 세면 이 화면은 "얼마나 팔아 놓을까" 에만 답하고 매수 사다리를
         # 놓을 때는 아무 말도 안 한다 — 떨어지면 사는 전략에 정작 하락 확률이 없는 것이다.
         # 아래쪽은 저가로 재고 부호만 뒤집는다(하락 폭도 양수로 센다).
-        samples, paths = [], []
+        # 하루 안 어디쯤인지를 같이 들고 간다. 지금 확률은 아침 9시나 마감 10분 전이나 같은 숫자를
+        # 내는데, 실측으로 그건 틀렸다 — 장중 25% 지점의 추가 확장률이 43~47%인데 75% 지점에서는
+        # 3~26%까지 떨어진다(6종목·355세션). 남은 폭은 남은 거래량을 따라가므로 **몇 시인가**가
+        # 확률의 조건이어야 한다.
+        #
+        # 그리고 지평이 밤을 넘으면 안 된다. 마감 10분 전에 60봉을 세면 그중 50봉이 **다음 날 아침**
+        # 이고, 갭이 목표를 대신 찍어 준다. 그래서 "오늘 안에 체결되나"를 묻는 사람에게 후하게 답한다.
+        def _day(b):
+            return str(b.get("date") or "")[:10]
+
+        days = [_day(b) for b in bars]
+        intraday = len(set(days)) > 1 and len(bars) > len(set(days)) * 3
+        # 세션마다 (시작 인덱스, 길이) — 진행률과 세션 끝을 여기서 읽는다
+        span = {}
+        for i, d in enumerate(days):
+            s, e = span.get(d, (i, i))
+            span[d] = (min(s, i), max(e, i))
+
+        # 세션 길이는 **끝난 날들**에서 잰다. 오늘 날짜로 재면 마지막 봉이 언제나 "그날의 끝"이라
+        # 진행률이 늘 100%로 나온다 — 장중에 물어보는 쪽에서 항상 틀리는 값이고, 하필 그 값이
+        # 이 조건의 전부다.
+        done_days = sorted(span)[:-1] if len(span) > 1 else []
+        lens = sorted(span[d][1] - span[d][0] + 1 for d in done_days)
+        typical = lens[len(lens) // 2] if lens else 0
+
+        def _progress(t):
+            if not intraday or typical < 3:
+                return None
+            s, _ = span[days[t]]
+            return min(1.0, (t - s) / (typical - 1))
+
+        def _limit(t):
+            """지평의 끝 — 일중이면 그 세션이 끝나는 자리를 넘지 않는다.
+
+            마감 10분 전에 60봉을 세면 그중 50봉이 다음 날 아침이고, 갭이 목표를 대신 찍어 준다.
+            "오늘 안에 체결되나" 를 묻는 사람에게 그건 후한 답이다. 아직 안 끝난 오늘은 지난
+            세션들의 길이로 끝자리를 가늠한다.
+            """
+            cap = t + horizon
+            if intraday:
+                s, e = span[days[t]]
+                end_of_day = e if days[t] in done_days else s + max(typical, 1) - 1
+                cap = min(cap, end_of_day)
+            return cap
+
+        samples, paths, progs = [], [], []
         dn_samples, dn_paths = [], []
-        for t in range(len(bars) - horizon - 1):
+        for t in range(len(bars) - 1):
             a, c = a_ser[t], bars[t]["close"]
             if not a or not c:
                 continue
+            end = _limit(t)
+            # 남은 봉이 지평의 1/4 도 안 되면 표본으로 못 쓴다 — 창이 너무 짧아 "안 닿았다"가
+            # 시장이 아니라 창 때문이 된다. 다만 일중이 아니면 원래대로 지평을 다 요구한다.
+            need = max(2, horizon // 4) if intraday else horizon
+            if end - t < need:
+                continue
             # 경로를 ATR 단위로 그대로 들고 간다 — 조건부 확률은 "먼저 닿은 시점 이후"만 봐야 해서
             # 최고값 하나로는 못 센다. 남은 시간이 줄어든다는 게 그 조건의 핵심이다.
-            walk = [(h - c) / a for h in highs[t + 1:t + 1 + horizon]]
+            walk = [(h - c) / a for h in highs[t + 1:end + 1]]
             samples.append(max(walk))
             paths.append(walk)
-            dwalk = [(c - l) / a for l in lows[t + 1:t + 1 + horizon]]
+            dwalk = [(c - l) / a for l in lows[t + 1:end + 1]]
             dn_samples.append(max(dwalk))
             dn_paths.append(dwalk)
+            progs.append(_progress(t))
+
+        # 지금과 비슷한 시각의 표본만 남긴다. 너무 적으면 창을 넓히고, 그래도 모자라면 전체를
+        # 쓰되 **무엇을 썼는지 고지한다** — 조건부인 척하는 무조건부가 제일 나쁘다.
+        #
+        # 표본 수만으로 조건을 켜면 안 된다. 하루가 360봉이면 7세션만 있어도 시각 구간마다 봉
+        # 수백 개가 모이는데, 그건 서로 다른 관측 500개가 아니라 **같은 7일을 500조각으로 자른 것**
+        # 이다. 실측(2026-08-05, 삼성 1분봉 7세션): 오전 ▲68%·▼90% 가 오후엔 ▲90%·▼55% 로 갈렸다.
+        # ATR 은 그 사이 U자로 움직여 설명이 안 되고, 위아래 비대칭은 이미 추세의 그림자로 판명난
+        # 것이라 — 남는 해석은 "그 7일의 오후가 올랐다"뿐이다. 그래서 게이트는 **세션 수**로 건다.
+        MIN_SESSIONS = 30
+        now_prog = _progress(len(bars) - 1)
+        prog_band = None
+        enough_sessions = len(done_days) >= MIN_SESSIONS
+        if intraday and now_prog is not None and enough_sessions:
+            for band in (0.12, 0.2, 0.35):
+                keep = [i for i, p in enumerate(progs) if p is not None and abs(p - now_prog) <= band]
+                if len(keep) >= 60:
+                    samples = [samples[i] for i in keep]
+                    paths = [paths[i] for i in keep]
+                    dn_samples = [dn_samples[i] for i in keep]
+                    dn_paths = [dn_paths[i] for i in keep]
+                    prog_band = band
+                    break
         last, last_atr = bars[-1], a_ser[-1]
         if not samples or not last_atr:
             print(json.dumps({"success": True, "data": {
@@ -2761,21 +2836,51 @@ def main():
         last_i = last["i"]
         ahead = max(3, round(horizon * 0.15))
         ann = []
-        # 지평만큼 뒤로 ±1ATR 띠를 얇게 깐다 — 확률이 어디서 나온 숫자인지 눈으로 보이라고.
-        # 60봉 안에 닿을 확률이라면 지난 60봉 동안 그 띠가 어디 있었고 가격이 몇 번 뚫었는지가
-        # 그 확률의 재료다. 선을 앞으로만 그으면 값의 출처가 화면에 없다.
-        back = min(horizon, len(bars) - 1)
-        if back >= 5:
-            for sign in (1, -1):
-                pts = []
-                step = max(1, back // 30)
-                for t in range(len(bars) - back, len(bars), step):
+        # 지난 봉들의 **1ATR 목표가 실제로 달성됐는지**를 색으로 이어 붙인다.
+        #
+        # 앞으로만 선을 그으면 "77%" 가 어디서 나온 숫자인지 화면에 없다. 그렇다고 ±1ATR 띠만
+        # 깔면 위치만 말하고 **맞았는지는 여전히 안 보인다**. 봉마다 그때의 목표를 그리고 그 뒤
+        # 지평 안에 닿았으면 진하게, 못 닿았으면 회색으로 칠하면, 예측이 이어진 자국이 그대로
+        # 성적표가 된다. 아직 지평이 안 지난 최근 봉은 **판정 보류**라 옅은 점선으로 남긴다 —
+        # 안 닿은 것과 아직 모르는 것은 다른 상태다.
+        track = max(0, min(600, int(_num_or(inp.get("trackBars"), horizon * 2))))
+        hit_n = res_n = 0
+        if track >= 10:
+            start = max(n_atr + 1, len(bars) - track)
+            for sign, hit_col in ((1, "#059669"), (-1, "#0891b2")):
+                runs, cur_state, cur = [], None, []
+                for t in range(start, len(bars)):
                     a, c = a_ser[t], bars[t]["close"]
                     if not a or not c:
                         continue
-                    pts.append({"i": bars[t]["i"], "price": round(c + sign * a, 4)})
-                if len(pts) >= 2:
-                    ann.append({"kind": "path", "color": "#cbd5e1", "width": 1, "dashed": True,
+                    lvl = c + sign * a
+                    end = t + horizon
+                    if end < len(bars):
+                        window = bars[t + 1:end + 1]
+                        reached = (max(b["high"] for b in window) >= lvl if sign > 0
+                                   else min(b["low"] for b in window) <= lvl)
+                        state = "hit" if reached else "miss"
+                        if sign > 0:            # 집계는 한 방향만 세면 된다 — 위아래 각각 위 표에 있다
+                            res_n += 1
+                            hit_n += 1 if reached else 0
+                    else:
+                        state = "open"
+                    pt = {"i": bars[t]["i"], "price": round(lvl, 4)}
+                    if state != cur_state and cur:
+                        runs.append((cur_state, cur + [pt]))   # 이어 붙게 경계 점을 공유한다
+                        cur = []
+                    cur_state = state
+                    cur.append(pt)
+                if cur:
+                    runs.append((cur_state, cur))
+                style = {"hit": (hit_col, 1.5, False, 1),
+                         "miss": ("#cbd5e1", 1, False, 1),
+                         "open": ("#94a3b8", 1, True, 1)}
+                for state, pts in runs:
+                    if len(pts) < 2:
+                        continue
+                    col, w, dash, _ = style[state]
+                    ann.append({"kind": "path", "color": col, "width": w, "dashed": dash,
                                 "points": pts})
         for idx, row in enumerate(levels):
             color, width = _shade(row["probability"])
@@ -2783,17 +2888,22 @@ def main():
             # (2026-08-04 사용자: "보기가 어렵노"). 조건부는 화살표 하나로 줄이고, 무슨 뜻인지는
             # 표(levels)와 페이지 본문이 말한다.
             arrow = "▲" if row["direction"] == "up" else "▼"
-            text = "%s%gATR %s · %s%%" % (arrow, row["atrMultiple"], _fmt_price(row["price"]),
-                                          round(row["probability"]))
+            # `{price}` 자리를 비워 둔 판본을 같이 보낸다. 라이브 차트는 새 봉마다 ATR 로 가격을
+            # 다시 잡는데, 라벨에 가격이 굳어 있으면 선은 움직이고 글자만 옛 값으로 남는다.
+            fmt = "%s%gATR {price} · %s%%" % (arrow, row["atrMultiple"],
+                                              round(row["probability"]))
             if row.get("nextProbability") is not None:
-                text += " → %s%%" % round(row["nextProbability"])
+                fmt += " → %s%%" % round(row["nextProbability"])
+            text = fmt.replace("{price}", _fmt_price(row["price"]))
             # 라벨이 전부 같은 x 에 모이면 여섯 줄이 한 자리에 겹쳐 읽을 수가 없다. 칸마다 선 길이를
             # 달리해 라벨을 계단처럼 흩는다 — 위 칸은 짧게, 아래 칸은 길게.
             span = max(2, ahead - (idx % len(mults)) * max(1, ahead // (len(mults) + 1)))
             ann.append({
                 "kind": "path", "color": color, "width": width, "label": text,
-                "points": [{"i": last_i, "price": row["price"]},
-                           {"i": last_i + span, "price": row["price"], "label": text}],
+                "points": [{"i": last_i, "price": row["price"],
+                            "atrOffset": row["atrOffset"]},
+                           {"i": last_i + span, "price": row["price"], "label": text,
+                            "atrOffset": row["atrOffset"], "labelFmt": fmt}],
             })
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart",
@@ -2804,6 +2914,24 @@ def main():
                 "atrPct": round(last_atr / px * 100, 3) if px else None,
                 "horizonBars": horizon, "atrPeriod": n_atr,
                 "samples": len(samples),
+                # 화면에 그린 구간의 **실측 달성률** — 모델이 말한 확률 옆에 나란히 두라고 낸다.
+                # 예측만 있고 채점이 없으면 그 숫자가 맞는지 아무도 모른다. 둘이 크게 어긋나면
+                # 최근 성격이 과거 표본과 달라졌다는 뜻이다.
+                "trackResolved": res_n,
+                "trackHits": hit_n,
+                "trackHitRate": round(100.0 * hit_n / res_n, 1) if res_n else None,
+                # 이 확률이 하루 중 어느 시각의 것인지. 조건을 못 걸었으면 그 사실을 적는다 —
+                # 조건부인 척하는 무조건부가 제일 나쁘다.
+                "intraday": intraday,
+                "progress": round(now_prog, 3) if now_prog is not None else None,
+                "sessions": len(done_days) if intraday else None,
+                "conditionedOn": (
+                    ("하루 진행률 ±%.0f%% 구간의 봉만" % (prog_band * 100)) if prog_band
+                    else ("전 구간 — 완결 세션 %d개로는 시각별로 가를 수 없습니다(%d개 필요). "
+                          "세션이 쌓이면 자동으로 켜집니다." % (len(done_days), MIN_SESSIONS)
+                          if intraday and not enough_sessions
+                          else ("전 구간 — 비슷한 시각 표본이 모자랍니다" if intraday else None))),
+                "sessionBounded": intraday,
                 # 겹치는 창을 정직하게 고지한다 — 이 숫자가 실제 독립 관측 수다.
                 "independentSamples": max(1, len(samples) // horizon),
                 "note": ("확률은 이 봉들 자신의 과거에서 센 빈도입니다. 표본이 겹치므로 "
