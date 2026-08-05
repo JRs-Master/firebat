@@ -2206,6 +2206,9 @@ def action_read(inp, settings, which):
     data = {"mode": settings.get("mode"), "store": which_store}
     if which in ("positions", "report"):
         data["positions"] = store.read_positions(conn, markets=market_map(settings))
+        # The other half of the same invariant. Leaving it out made the bucket something people
+        # were told about and could not look up — and `resolve_unassigned` then sent them here.
+        data["unassigned"] = store.read_unassigned(conn)
     if which in ("pnl", "report"):
         # Carried inside `report` as well, so the screen gets the numbers in the call it already
         # makes. `marks` is optional and comes from whoever already has prices — this action does
@@ -2858,6 +2861,13 @@ def action_selftest():
                              "symbol='KRW-X'").fetchone()["q"])
     checks.append({"name": "the invariant survives the move", "want": 30.0,
                    "got": round(_sum + _buk, 6), "ok": abs(_sum + _buk - 30.0) < 1e-9})
+    # The bucket has to be *findable*, with the account it lives in — a quantity on its own cannot
+    # be acted on, and the first real call failed asking for exactly what this row already holds.
+    _u = store.read_unassigned(_cc, "KRW-X")
+    checks.append({"name": "the bucket answers with where it lives, not just how much",
+                   "want": ["broker", "account", "qty"],
+                   "got": sorted(_u[0]) if _u else [],
+                   "ok": bool(_u) and {"broker", "account", "qty", "avgPrice"} <= set(_u[0])})
     _cc.close()
 
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
@@ -4891,16 +4901,33 @@ def main():
             if unattended():
                 return fail("resolve_unassigned 은 사람이 부르는 정정입니다 — 스케줄에서는 "
                             "동작하지 않습니다.")
-            need = [k for k in ("broker", "symbol", "strategyId") if not str(inp.get(k) or "").strip()]
+            need = [k for k in ("symbol", "strategyId") if not str(inp.get(k) or "").strip()]
             if need:
-                return fail("resolve_unassigned 에 %s 가 필요합니다. `positions` 로 무주 목록을 "
-                            "먼저 확인하십시오." % ", ".join(need))
+                return fail("resolve_unassigned 에 %s 가 필요합니다." % ", ".join(need))
             conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
             try:
+                symbol = str(inp["symbol"])
+                broker = str(inp.get("broker") or "").strip()
+                account = str(inp.get("account") or "").strip()
+                # Where it lives is something the table knows. Asking the caller to restate it
+                # turns one unambiguous row into a question, and the answer to that question is
+                # sitting one SELECT away — 2026-08-05, the first real call failed on exactly this
+                # for a symbol that had a single bucket row. Only ambiguity is worth a refusal, and
+                # then the candidates go in the message so the next call can be right.
+                if not broker:
+                    rows = store.read_unassigned(conn, symbol)
+                    if not rows:
+                        return fail("무주에 %s 가 없습니다." % symbol)
+                    if len(rows) > 1:
+                        return fail("%s 무주가 여러 계좌에 있습니다 — broker 와 account 를 "
+                                    "지정하십시오: %s" % (symbol, ", ".join(
+                                        "%s/%s %g" % (r["broker"], r["account"] or "-", r["qty"])
+                                        for r in rows)))
+                    broker, account = rows[0]["broker"], rows[0]["account"] or ""
                 out_ = store.assign_unassigned(
-                    conn, broker=str(inp["broker"]), account=str(inp.get("account") or ""),
-                    symbol=str(inp["symbol"]), strategy_id=str(inp["strategyId"]),
-                    qty=inp.get("qty"), note=inp.get("note"))
+                    conn, broker=broker, account=account, symbol=symbol,
+                    strategy_id=str(inp["strategyId"]), qty=inp.get("qty"), note=inp.get("note"))
+                out_["broker"], out_["account"] = broker, account
             except ValueError as e:
                 return fail(str(e))
             finally:

@@ -556,6 +556,25 @@ def symbol_in_market(conn, broker, account, symbol, market, market_of):
     return market in declared
 
 
+def read_unassigned(conn, symbol=None):
+    """The bucket, as rows a caller can act on — broker and account included.
+
+    They have to be: the invariant is per (broker, account, symbol), so a quantity on its own does
+    not say where it lives, and whoever assigns it would have to be told what the table already
+    knows. `positions` used to answer with strategies only, which made the bucket a number people
+    heard about and could not look up.
+    """
+    sql = "SELECT broker, account, symbol, qty, avg_price, updated_ms FROM unassigned WHERE qty > 0"
+    args = ()
+    if symbol:
+        sql += " AND symbol=?"
+        args = (symbol,)
+    return [{"broker": r["broker"], "account": r["account"], "symbol": r["symbol"],
+             "qty": float(r["qty"]), "avgPrice": float(r["avg_price"] or 0.0),
+             "updatedMs": r["updated_ms"]}
+            for r in conn.execute(sql + " ORDER BY symbol", args)]
+
+
 def assign_unassigned(conn, *, broker, account, symbol, strategy_id, qty=None, note=None):
     """Move shares out of the unassigned bucket and into a strategy's book.
 
