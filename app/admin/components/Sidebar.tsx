@@ -668,13 +668,14 @@ export function Sidebar({
         orphanPages.push(pg);
       }
     }
-    const result = Array.from(map.values());
-    for (const pg of orphanPages) {
-      result.push({ name: pg.slug, paths: [], pages: [pg] });
-    }
-    // ABC 정렬 (생성·수정 시 순서 변경 방지) — 앱 전체가 쓰는 같은 순서.
-    result.sort((a, b) => compareName(a.name, b.name));
-    return result;
+    // Projects above single pages, each tier in the app-wide name order. Sorted as one list,
+    // a Korean-named project lands below every Latin-named page — a container filed under
+    // its initial instead of with its kind.
+    const groups = Array.from(map.values());
+    groups.sort((a, b) => compareName(a.name, b.name));
+    const singles = orphanPages.map(pg => ({ name: pg.slug, paths: [], pages: [pg] }));
+    singles.sort((a, b) => compareName(a.name, b.name));
+    return [...groups, ...singles];
   })();
 
   // ── 오버레이 body 스크롤 방지 ──
