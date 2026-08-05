@@ -1729,6 +1729,57 @@ impl ModuleManager {
     /// How discovery surfaces describe the `account` parameter: one line naming every registered
     /// alias, so picking an account never needs a lookup round trip. None when the module declares
     /// no accounts, or declares them but has none registered yet (nothing to choose between).
+    /// Every registered account, across every module that declares `accounts`.
+    ///
+    /// The per-module registry was reachable one broker at a time through `get_module_config`, so
+    /// "what accounts do I have" could only be answered by knowing which modules to ask — and
+    /// which modules those are is itself not something a caller can see. This answers it in one
+    /// call, and filters on the attributes that actually decide which account a request means:
+    /// nobody wants "모의국내" by name, they want the mock account that trades kr.
+    ///
+    /// Filtered rather than searched on purpose. The aliases are short opaque labels, not prose —
+    /// `모의국내` and `모의해외` embed almost identically, so semantic search cannot separate the
+    /// two things a caller is actually choosing between, while `mode` and `market` are enumerable
+    /// and separate them exactly. No filter = all of them.
+    pub async fn list_registered_accounts(
+        &self,
+        module: Option<&str>,
+        mode: Option<&str>,
+        market: Option<&str>,
+    ) -> Vec<serde_json::Value> {
+        let mut out = Vec::new();
+        for entry in self.list_system_modules().await {
+            if let Some(m) = module {
+                if entry.name != m {
+                    continue;
+                }
+            }
+            let Some(config) = self.module_config(&entry.name).await else {
+                continue;
+            };
+            if config.get("accounts").is_none() {
+                continue;
+            }
+            let reg = self.account_registry_effective(&entry.name).await;
+            let primary = reg.primary_entry().map(|p| p.id.clone());
+            for a in &reg.accounts {
+                if !a.matches(mode, market) {
+                    continue;
+                }
+                out.push(serde_json::json!({
+                    "module": entry.name,
+                    "account": a.id,
+                    "mode": a.mode,
+                    "markets": a.markets,
+                    "accountNo": a.digits(),
+                    "isPrimary": primary.as_deref() == Some(a.id.as_str()),
+                    "describe": a.describe(),
+                }));
+            }
+        }
+        out
+    }
+
     pub async fn account_param_doc(&self, module: &str) -> Option<String> {
         let config = self.module_config(module).await?;
         config.get("accounts")?;

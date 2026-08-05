@@ -2774,6 +2774,51 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
+    // list_accounts — every registered brokerage account, across every module that has any.
+    //
+    // The registry was reachable one module at a time through `get_module_config`, which answers
+    // "what accounts does kiwoom-trade have" but not "what accounts do I have" — and knowing which
+    // modules to ask is itself not visible. Balances, deposits and returns are per-account, so a
+    // question about the wrong one is answered confidently and wrongly.
+    tools.register(ToolDefinition {
+        name: "list_accounts".to_string(),
+        description: "등록된 증권사 계좌 전체 — 모듈을 가로질러 한 번에. 잔고·예수금·수익률은 \
+                      계좌마다 다르므로 그런 질문에는 먼저 이것으로 계좌를 확인하고 그 별칭을 \
+                      `account` 로 넘기십시오(생략하면 주계좌로 갑니다). `mode`(real|mock) 와 \
+                      `market`(kr|us…) 로 좁힐 수 있고, 아무것도 주지 않으면 전체입니다. \
+                      자격증명은 반환하지 않습니다 — 별칭·모드·시장·계좌번호뿐."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "module": {"type": "string", "description": "이 모듈의 계좌만 (예: kiwoom-trade)."},
+                "mode": {"type": "string", "description": "real 또는 mock."},
+                "market": {"type": "string", "description": "그 시장을 취급하는 계좌만 (kr / us …)."}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    let module = h.module.clone();
+    tools.register_handler(
+        "list_accounts",
+        make_handler(move |args| {
+            let module = module.clone();
+            async move {
+                let pick = |k: &str| {
+                    args.get(k)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                };
+                let (m, mode, market) = (pick("module"), pick("mode"), pick("market"));
+                let rows = module
+                    .list_registered_accounts(m.as_deref(), mode.as_deref(), market.as_deref())
+                    .await;
+                Ok(serde_json::json!({"count": rows.len(), "accounts": rows}))
+            }
+        }),
+    );
+
     // list_user_modules
     tools.register(ToolDefinition {
         name: "list_user_modules".to_string(),

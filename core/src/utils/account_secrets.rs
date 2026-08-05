@@ -119,6 +119,25 @@ impl AccountEntry {
                 .any(|m| m.trim().eq_ignore_ascii_case(want))
     }
 
+    /// Does this account match a "which accounts" request? `None` means "do not care".
+    ///
+    /// The six shapes a person actually asks in are the cross product of these two: every broker's
+    /// every account, one broker's every account, every broker's domestic accounts, one broker's
+    /// domestic accounts, and the same two for overseas. Filtering answers all six; searching
+    /// answers none of them, because `모의국내` and `모의해외` are near-identical short labels and
+    /// the thing being chosen between is the market, which is enumerable.
+    pub fn matches(&self, mode: Option<&str>, market: Option<&str>) -> bool {
+        if let Some(want) = mode {
+            if !self.mode.eq_ignore_ascii_case(want.trim()) {
+                return false;
+            }
+        }
+        match market {
+            Some(m) if !m.trim().is_empty() => self.serves(m),
+            _ => true,
+        }
+    }
+
     /// `별칭 (계좌번호, 모의, kr/us)` — the one-line form the settings UI and the model both read.
     pub fn describe(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
@@ -475,6 +494,42 @@ mod registry_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(id: &str, mode: &str, markets: &[&str]) -> AccountEntry {
+        AccountEntry {
+            id: id.to_string(),
+            mode: mode.to_string(),
+            markets: markets.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn account_filter_answers_the_six_shapes_people_ask_in() {
+        // 전체/특정 증권사 × 전체/국내/해외 — the cross product, which is why this is a filter and
+        // not a search: the alias is a short opaque label, the market is the thing being chosen.
+        let kr = entry("모의국내", "mock", &["kr"]);
+        let us = entry("모의해외", "mock", &["us"]);
+        let both = entry("키움토스", "real", &["kr", "us"]);
+        let all = [&kr, &us, &both];
+
+        let pick = |mode: Option<&str>, market: Option<&str>| -> Vec<String> {
+            all.iter()
+                .filter(|a| a.matches(mode, market))
+                .map(|a| a.id.clone())
+                .collect()
+        };
+        assert_eq!(pick(None, None).len(), 3, "no filter = every account");
+        assert_eq!(pick(None, Some("kr")), vec!["모의국내", "키움토스"],
+                   "domestic includes the account that serves both");
+        assert_eq!(pick(None, Some("us")), vec!["모의해외", "키움토스"]);
+        assert_eq!(pick(Some("mock"), None), vec!["모의국내", "모의해외"]);
+        assert_eq!(pick(Some("mock"), Some("us")), vec!["모의해외"]);
+        assert_eq!(pick(Some("real"), Some("kr")), vec!["키움토스"]);
+        // An empty string is not a filter — it is a caller that had nothing to say.
+        assert_eq!(pick(None, Some("   ")).len(), 3);
+    }
+
 
     #[test]
     fn unscoped_keys_are_unchanged() {
