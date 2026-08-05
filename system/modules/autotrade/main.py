@@ -15,6 +15,7 @@ bar), so paper results and backtest results are comparable. It is also optimisti
 order may not fill at all, which is what the mock-account slice exists to find out.
 """
 import json
+import re
 import os
 import sys
 import time
@@ -2817,6 +2818,42 @@ def action_selftest():
                                    _ref))
     checks.append({"name": "no schedule reads a scope its own gate never sets",
                    "want": [], "got": _bad, "ok": not _bad})
+
+    # An action that moves shares in the book has to be declared in `requiresApproval`, and the
+    # declaration is a separate file from the implementation — so writing one and forgetting the
+    # other executes a correction with no card. Measured 2026-08-05: `move_position` moved 11.09
+    # ONDO between strategies the moment it was asked, because only `resolve_unassigned` next to it
+    # was declared. Same shape as upbit's cancel, one day apart: implemented, not declared.
+    #
+    # Found from the source rather than from a list kept by hand — a list is one more thing to
+    # forget. Each `if action == "x"` block is scanned for the calls that write to the ledger.
+    _MUTATORS = ("apply_fill", "record_transfer", "assign_unassigned", "record_fill",
+                 "reconcile_symbol")
+    # These mutate on purpose every cycle and must NOT be gated: the cron has no one to ask.
+    _CYCLE_PATH = {"cycle", "record_orders", "reconcile", "on_stream_event", "adopt", "retire",
+                   "review", "next_revision", "bind_condition", "store_context"}
+    with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.json"),
+              encoding="utf-8") as _cf:
+        _cfg = json.load(_cf)
+    _gated = set(_cfg.get("requiresApproval") or [])
+    # The enum is the authority on what is a module action. Without it the scan also catches the
+    # broker-call names compared inside a body — `cancel_order` is upbit's, not ours.
+    _declared = set(((_cfg.get("input") or {}).get("properties") or {})
+                    .get("action", {}).get("enum") or [])
+    _src = open(_os.path.abspath(__file__), encoding="utf-8").read()
+    _blocks = re.split(r'\n        if action (?:==|in) ', _src)
+    _ungated = []
+    for _b in _blocks[1:]:
+        _names = re.findall(r'"([a-z_]+)"', _b.split("\n")[0])
+        _body = _b.split('\n        if action ')[0]
+        if not any(m in _body for m in _MUTATORS):
+            continue
+        for _n in _names:
+            if _n not in _declared or _n in _CYCLE_PATH or _n in _gated:
+                continue
+            _ungated.append(_n)
+    checks.append({"name": "an action that writes to the ledger is declared approval-gated",
+                   "want": [], "got": sorted(set(_ungated)), "ok": not _ungated})
 
     # A refused cancel says nothing about whether the order exists, and must not be written onto it
     # as a rejection — least of all by erasing the number a fill needs to find its way home.
