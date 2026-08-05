@@ -271,7 +271,9 @@ function saveLiveTail(topic: string, ivSec: number, bars: OhlcvBar[]): void {
 /** 틱마다 다시 계산하는 전광판 지표 — 서버 카드는 방문마다라 정지 화면처럼 보인다.
  *  표시 전용이고 매매 판정은 서버(signals)가 그대로 한다. 공식은 모듈과 같은 표준식. */
 /** ATR over the last `n` bars of what is on screen — the live twin of the server's period-20 ATR.
- *  Only the anchor moves; the probability attached to a level is not recomputed here. */
+ *  Only the anchor moves; the probability attached to a level is not recomputed here.
+ *  Feed this closed bars only — a forming bar's range is incomplete, so its true range grows through
+ *  the bar and drops at the close, which shows up as the whole level set breathing. */
 function atrOf(bars: OhlcvBar[], n = 20): number | null {
   if (bars.length < n + 1) return null;
   const tr: number[] = [];
@@ -666,12 +668,19 @@ function LiveStockChartComp({ topic, symbol, title, data, indicators, valueField
     if (!annotations) return annotations;
     // Volatility-anchored points are re-priced from the bars on screen. The server sends the
     // probability (a historical frequency, slow) and the offset in ATR; the price it hangs on moves
-    // every tick, so holding both server-side meant the line only caught up on reload.
-    const a = atrOf(candles);
-    const lastClose = candles.length ? candles[candles.length - 1].close : null;
+    // as the series does, so holding both server-side meant the line only caught up on reload.
+    //
+    // Both the ATR and the anchor come from the last CLOSED bar, never the one being built. That bar
+    // has an incomplete range: its true range grows through the minute and collapses when it closes,
+    // and the anchor slides with every tick — with them in, all six lines breathe continuously and
+    // the chart is unreadable. Stepping once per bar is also the honest object, since the probability
+    // hanging on the line was measured on closed bars.
+    const closed = candles.length > 1 ? candles.slice(0, -1) : candles;
+    const a = atrOf(closed);
+    const anchor = closed.length ? closed[closed.length - 1].close : null;
     const reprice = (pt: typeof annotations[number]['points'][number]) => {
-      if (pt.atrOffset == null || a == null || lastClose == null) return pt;
-      const price = lastClose + pt.atrOffset * a;
+      if (pt.atrOffset == null || a == null || anchor == null) return pt;
+      const price = anchor + pt.atrOffset * a;
       const label = pt.labelFmt
         ? pt.labelFmt.replace('{price}', Math.round(price).toLocaleString('ko-KR'))
         : pt.label;
