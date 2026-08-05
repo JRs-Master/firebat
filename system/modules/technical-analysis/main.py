@@ -2743,12 +2743,19 @@ def main():
         # 지금과 비슷한 시각의 표본만 남긴다. 너무 적으면 창을 넓히고, 그래도 모자라면 전체를
         # 쓰되 **무엇을 썼는지 고지한다** — 조건부인 척하는 무조건부가 제일 나쁘다.
         #
-        # 표본 수만으로 조건을 켜면 안 된다. 하루가 360봉이면 7세션만 있어도 시각 구간마다 봉
-        # 수백 개가 모이는데, 그건 서로 다른 관측 500개가 아니라 **같은 7일을 500조각으로 자른 것**
-        # 이다. 실측(2026-08-05, 삼성 1분봉 7세션): 오전 ▲68%·▼90% 가 오후엔 ▲90%·▼55% 로 갈렸다.
-        # ATR 은 그 사이 U자로 움직여 설명이 안 되고, 위아래 비대칭은 이미 추세의 그림자로 판명난
-        # 것이라 — 남는 해석은 "그 7일의 오후가 올랐다"뿐이다. 그래서 게이트는 **세션 수**로 건다.
-        MIN_SESSIONS = 30
+        # 조건은 **폭에만** 건다 — 방향에 걸면 그 기간의 추세를 시각의 성질로 착각한다.
+        #
+        # 실측(2026-08-05, 삼성 1분봉 8세션 · 07-28 −7.3% · 07-29 −8.6% 가 든 주). 세션을 홀짝으로
+        # 갈라 재보니 60~80% 구간의 위아래 격차가 한쪽 **+26**, 다른 쪽 **−28** 로 부호까지 뒤집혔다.
+        # 반면 두 방향의 평균(=폭)은 두 반쪽이 최대 6%p 차이로 같았고 2ATR 은 양쪽 다 마감으로
+        # 갈수록 줄었다. 폭은 분산 추정이라 며칠이면 수렴하고 방향은 평균 추정이라 한 주로는 그
+        # 주의 드리프트밖에 못 잰다. (세션 드리프트를 직선으로 빼는 것도 답이 아니다 — 장중 모양이
+        # 직선이 아니라 비대칭이 오히려 커졌다.)
+        #
+        # 그래서 시각 조건은 두 방향의 **평균**에만 적용하고, 위아래 격차는 전 구간에서 가져온다.
+        # 게이트도 그만큼 낮다 — 폭은 4세션에서 이미 재현됐다.
+        MIN_SESSIONS = 5
+        all_samples, all_dn = samples, dn_samples   # 격차는 여기서 — 조건 필터 앞의 전 구간
         now_prog = _progress(len(bars) - 1)
         prog_band = None
         enough_sessions = len(done_days) >= MIN_SESSIONS
@@ -2814,6 +2821,22 @@ def main():
 
         ups = _rungs(samples, paths, 1)
         downs = _rungs(dn_samples, dn_paths, -1)
+
+        # 시각 조건을 폭에만 남긴다 — 두 방향의 평균은 조건부에서, 격차는 전 구간에서.
+        # 이걸 안 하면 화면이 "오후엔 위로 갈 확률이 높다"고 말하는데, 그건 표본 기간이 오후에
+        # 올랐다는 뜻일 뿐이고 반쪽으로 갈라 재면 부호가 뒤집힌다.
+        if prog_band is not None and all_samples and all_dn:
+            def _rate(seq, m):
+                return 100.0 * sum(1 for v in seq if v >= m) / len(seq)
+
+            for u, d in zip(ups, downs):
+                m = u["atrMultiple"]
+                sym = (u["probability"] + d["probability"]) / 2.0
+                gap = _rate(all_samples, m) - _rate(all_dn, m)
+                u["widthProbability"] = d["widthProbability"] = round(sym, 1)
+                u["probability"] = round(min(100.0, max(0.0, sym + gap / 2)), 1)
+                d["probability"] = round(min(100.0, max(0.0, sym - gap / 2)), 1)
+
         levels = ups + downs
         # 누적은 **봉당 한 줄** — 칸마다 한 줄이면 같은 시각이 다섯 번이라 키가 겹친다. 그리고
         # 여기 적히는 값이 **예측을 기록 시점에 못 박는 것**이다. 나중에 실제로 닿았는지 채점할
@@ -2926,8 +2949,9 @@ def main():
                 "progress": round(now_prog, 3) if now_prog is not None else None,
                 "sessions": len(done_days) if intraday else None,
                 "conditionedOn": (
-                    ("하루 진행률 ±%.0f%% 구간의 봉만" % (prog_band * 100)) if prog_band
-                    else ("전 구간 — 완결 세션 %d개로는 시각별로 가를 수 없습니다(%d개 필요). "
+                    ("폭은 하루 진행률 ±%.0f%% 구간의 봉만 · 위아래 격차는 전 구간"
+                     % (prog_band * 100)) if prog_band
+                    else ("전 구간 — 완결 세션 %d개로는 시각을 가를 수 없습니다(%d개 필요). "
                           "세션이 쌓이면 자동으로 켜집니다." % (len(done_days), MIN_SESSIONS)
                           if intraday and not enough_sessions
                           else ("전 구간 — 비슷한 시각 표본이 모자랍니다" if intraday else None))),
