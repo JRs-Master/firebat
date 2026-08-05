@@ -14,6 +14,7 @@ use crate::proto::{
     AiCancelTurnRequest, AiCancelTurnResponse, AiChunkEventPb, AiCodeAssistRequest, AiCodeAssistResponse, AiConsumePendingRequest,
     AiConsumePendingResponse, AiCreatePendingRequest, AiCreatePendingResponse,
     AiErrorEventPb, AiGetPendingRequest, AiGetPendingResponse, AiIsSubAgentEnabledRequest,
+    AiListPendingRequest, AiListPendingResponse,
     AiIsSubAgentEnabledResponse, AiProcessRequest, AiProcessResponse, AiRejectPendingRequest,
     AiRejectPendingResponse, AiRequestActionWithToolsRequest, AiRequestActionWithToolsResponse,
     AiResolveCallTargetRequest, AiResolveCallTargetResponse, AiResultEventPb,
@@ -403,6 +404,21 @@ impl AiService for AiServiceImpl {
         let result = crate::utils::pending_tools::get_pending(&plan_id);
         Ok(Response::new(AiGetPendingResponse {
             raw_json: to_raw_json(&result),
+        }))
+    }
+
+    /// Cards still waiting, for the screen that lets a person find them. A card created outside a
+    /// chat — an editor's MCP client, the CLI — was written to the store and then had nowhere to be
+    /// seen, because the only handle on it was a `planId` that lived in the chat message.
+    async fn list_pending(
+        &self,
+        req: Request<AiListPendingRequest>,
+    ) -> Result<Response<AiListPendingResponse>, TonicStatus> {
+        let scope = req.into_inner().hub_scope;
+        let scope = if scope.trim().is_empty() { None } else { Some(scope) };
+        let items = crate::utils::pending_tools::list_pending(scope.as_deref());
+        Ok(Response::new(AiListPendingResponse {
+            raw_json: to_raw_json(&items),
         }))
     }
 

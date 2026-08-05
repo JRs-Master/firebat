@@ -188,6 +188,12 @@ message AiCreatePendingRequest {
 }
 message AiCreatePendingResponse { string plan_id = 1; }
 
+// Cards still waiting. `hub_scope` empty = admin (unscoped cards only) — the same filter approval
+// uses, so listing cannot read across tenants.
+message AiListPendingRequest { string hub_scope = 1; }
+// PendingTool[] JSON, newest first.
+message AiListPendingResponse { string raw_json = 1; }
+
 message AiGetPendingRequest { string plan_id = 1; }
 // PendingTool|null JSON. raw_json="null" 이면 미존재.
 message AiGetPendingResponse { string raw_json = 1; }
@@ -226,6 +232,7 @@ service AiService {
 
   // Pending tools — 승인 대기 도구 (옛 TS lib/pending-tools.ts 통합)
   rpc CreatePending(AiCreatePendingRequest) returns (AiCreatePendingResponse);
+  rpc ListPending(AiListPendingRequest) returns (AiListPendingResponse);
   rpc GetPending(AiGetPendingRequest) returns (AiGetPendingResponse);
   rpc ConsumePending(AiConsumePendingRequest) returns (AiConsumePendingResponse);
   rpc RejectPending(AiRejectPendingRequest) returns (AiRejectPendingResponse);

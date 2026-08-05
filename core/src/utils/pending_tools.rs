@@ -445,6 +445,46 @@ pub fn get_pending(plan_id: &str) -> Option<PendingTool> {
     found
 }
 
+/// Every card still waiting, newest first.
+///
+/// Until this existed a card could only be acted on by someone who already held its `planId`, and
+/// the only place a `planId` ever appeared was the chat message that produced it. A card created
+/// from anywhere else — an editor's MCP client, the CLI, a script — was written to the store
+/// correctly and then had no surface: nothing listed it, so nothing could approve it. Measured
+/// 2026-08-05: three `save_page` cards sat in `data/pending-tools.json` for an hour while the
+/// caller was told the call had succeeded and the admin screen showed nothing.
+///
+/// `hub_scope` filters the same way approval does — a visitor sees their own cards, admin sees the
+/// ones with no scope. Passing `None` for `scope` means admin and returns only unscoped cards, so
+/// this cannot become a way to read across tenants.
+pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
+    // Through `get_pending` semantics: the file is the durable copy, memory is a cache. Load it so
+    // a process that never created a card still sees the ones another process left.
+    let mut map = match store_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return Vec::new(),
+    };
+    cleanup_expired(&mut map);
+    let now = now_ms();
+    if let Ok(raw) = std::fs::read_to_string(store_file_path()) {
+        if let Ok(arr) = serde_json::from_str::<Vec<PendingTool>>(&raw) {
+            for p in arr {
+                if p.plan_id.is_empty() || p.is_expired(now) {
+                    continue;
+                }
+                map.entry(p.plan_id.clone()).or_insert(p);
+            }
+        }
+    }
+    let mut out: Vec<PendingTool> = map
+        .values()
+        .filter(|p| p.hub_scope.as_deref() == scope)
+        .cloned()
+        .collect();
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    out
+}
+
 /// 옛 TS `consumePending` 1:1 — 사용자 ✓승인 시 호출. 메모리 + 파일 정리.
 pub fn consume_pending(plan_id: &str) -> Option<PendingTool> {
     // 파일 폴백 거치는 get_pending 통해 메모리에 복원시킨 뒤 삭제

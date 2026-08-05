@@ -10,6 +10,7 @@ import {
   AiConsumePendingRequestSchema,
   AiCreatePendingRequestSchema,
   AiGetPendingRequestSchema,
+  AiListPendingRequestSchema,
   AiProcessRequestSchema,
   AiRejectPendingRequestSchema,
   AiRequestActionWithToolsRequestSchema,
@@ -113,6 +114,15 @@ export async function createPending(args: MessageInitShape<typeof AiCreatePendin
   try {
       const response = await aiClient.createPending(args ?? {});
       return { ok: true, data: unBigInt(response.planId) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function listPending(args: MessageInitShape<typeof AiListPendingRequestSchema>): Promise<RpcResult<unknown>> {
+  try {
+      const response = await aiClient.listPending(args ?? {});
+      return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);
   }
