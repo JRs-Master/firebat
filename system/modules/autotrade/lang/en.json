@@ -32,7 +32,7 @@
     },
     "killSwitch": {
       "label": "Emergency stop",
-      "description": "Halts all new orders. Trips by itself when the daily loss limit is reached.",
+      "description": "Halts every new order and drops the mode to ledger-only — nothing reaches an exchange. **A person turns this on and off; nothing else does.** The daily loss limit does not touch it: that stops new buys in one currency, lets exits through, and lifts itself when the realised result recovers.",
       "group": "Mode"
     },
     "realMaxNotionalKrw": {

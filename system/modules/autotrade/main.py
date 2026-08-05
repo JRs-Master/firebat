@@ -2331,9 +2331,51 @@ def action_halt(settings):
     store.kv_set(conn, "tripped", "1")
     store.log_event(conn, "halt", {"reason": "halt requested"})
     conn.close()
-    # Clearing it is a settings change on purpose — the switch only moves one way from here.
     return {"success": True, "data": {"tripped": True,
-            "note": "설정 화면에서 해제하실 수 있습니다."}}
+            "note": "`resume` 으로 풉니다. 원장 대조가 어긋난 상태면 풀리지 않습니다."}}
+
+
+def action_resume(settings):
+    """Clear the global halt — after checking that the thing it was raised for is over.
+
+    Nothing cleared it before. It was set in two places (a ledger replay that disagrees with the
+    positions, and a person calling `halt`) and there was no way down: `halt` told the caller to
+    clear it "in the settings screen", but it lives in the module's own kv and no setting touches
+    it. A drift halt was therefore permanent.
+
+    The check is the point. An alarm is not something you switch off — you fix what it is telling
+    you and it goes quiet. So this re-runs the replay and refuses while the books still disagree,
+    naming the rows, rather than handing back a system that trades on numbers that do not add up.
+    """
+    if unattended():
+        return fail("resume 은 사람이 부르는 해제입니다 — 스케줄에서는 동작하지 않습니다.")
+    conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+    try:
+        ok, detail = try_resume(conn)
+    finally:
+        conn.close()
+    if not ok:
+        return fail(detail)
+    return {"success": True, "data": {"tripped": False, "note": detail}}
+
+
+def try_resume(conn):
+    """`(cleared?, message)` — the decision, without the output helpers.
+
+    Split out because `fail()` writes the module's one line of stdout, so an action that uses it
+    cannot be called from the selftest. The rule being tested is the whole point of this action and
+    is not something to leave unchecked.
+    """
+    if store.kv_get(conn, "tripped") != "1":
+        return True, "이미 풀려 있습니다."
+    drift = store.replay_positions(conn)
+    if drift:
+        return False, ("원장을 다시 접어 보니 아직 포지션과 어긋납니다 — 먼저 이걸 맞춰야 "
+                       "풀립니다: %s" % json.dumps(drift[:5], ensure_ascii=False))
+    store.kv_set(conn, "tripped", "0")
+    store.log_event(conn, "resume", {"reason": "resume requested — ledger replay agrees"})
+    return True, ("풀었습니다. 통화별 손실 한도는 이것과 별개로 스스로 걸리고 스스로 풀립니다 — "
+                  "긴급 정지 스위치도 사람만 움직입니다.")
 
 
 def action_selftest():
@@ -2952,6 +2994,44 @@ def action_selftest():
     # runs is worse than leaving it in the bucket — the bucket reads as unfinished business, a
     # position under a dead name reads as managed and never is.
     _sset = {"strategies": [{"id": "ondo"}, {"id": "btc"}]}
+    # Nothing used to clear the global halt: it was set in two places and had no way down, so a
+    # drift halt was permanent while `halt` claimed a settings screen could clear it. And the way
+    # down has to check — an alarm is quieted by fixing what it reports, not by switching it off.
+    #
+    # ⚠️ Isolated by DATA_DIR, not by store name: `db_path` maps `dryrun` to paper.db and
+    # **everything else to live.db**, so two different names are the same file. `replay_positions`
+    # folds the whole ledger, so this test needs a database of its own — and the ledger is
+    # append-only by trigger, so a fixture cannot un-drift itself in place either.
+    _saved_dir = store.DATA_DIR
+    try:
+        store.DATA_DIR = tempfile.mkdtemp()
+        _drifted = store.connect("live")
+        store.kv_set(_drifted, "tripped", "1")
+        store.apply_fill(_drifted, strategy_id="drifter", broker="b", account="a", symbol="DRIFT",
+                         side="buy", qty=5, price=100, source="test")
+        _drifted.execute("UPDATE strategy_position SET qty=99 WHERE strategy_id='drifter'")
+        _drifted.commit()
+        _blocked, _why = try_resume(_drifted)
+        checks.append({"name": "resume refuses while the ledger still disagrees with the positions",
+                       "want": False, "got": (_blocked, _why[:40]),
+                       "ok": _blocked is False and "어긋" in _why})
+        checks.append({"name": "and the halt is still standing afterwards",
+                       "want": "1", "got": store.kv_get(_drifted, "tripped"),
+                       "ok": store.kv_get(_drifted, "tripped") == "1"})
+        _drifted.close()
+
+        store.DATA_DIR = tempfile.mkdtemp()
+        _clean = store.connect("live")
+        store.kv_set(_clean, "tripped", "1")
+        store.apply_fill(_clean, strategy_id="tidy", broker="b", account="a", symbol="OK",
+                         side="buy", qty=5, price=100, source="test")
+        _cleared, _ = try_resume(_clean)
+        checks.append({"name": "and clears it once they agree", "want": True, "got": _cleared,
+                       "ok": _cleared is True and store.kv_get(_clean, "tripped") == "0"})
+        _clean.close()
+    finally:
+        store.DATA_DIR = _saved_dir
+
     checks.append({"name": "a strategy that exists is accepted",
                    "want": None, "got": unknown_strategy(_sset, "ondo"),
                    "ok": unknown_strategy(_sset, "ondo") is None})
@@ -4956,6 +5036,8 @@ def main():
             return out(action_record_orders(inp, settings))
         if action in ("report", "positions", "orders", "ledger", "pnl"):
             return out(action_read(inp, settings, action))
+        if action == "resume":
+            return out(action_resume(settings))
         if action == "halt":
             return out(action_halt(settings))
         if action == "on_stream_event":
