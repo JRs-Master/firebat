@@ -1813,21 +1813,44 @@ def action_record_orders(inp, settings):
         if not key:
             continue
         read = orders.read_ack(ack)
+        action = str(((call.get("input") or {}).get("action")) or "place_order")
         # Kept verbatim, every time: this is the only place the acknowledgement schema can be
         # learned from, and it is not documented for any of these brokers.
-        store.log_api(conn, call.get("module"), "place_order", read["accepted"], 0,
+        store.log_api(conn, call.get("module"), action, read["accepted"], 0,
                       call.get("input"), ack)
+        # A cancel is not a placement, and its answer says nothing about whether the order exists.
+        # Both were read as placement acks. Measured 2026-08-05: upbit's cancel was refused by a
+        # schema gap, and that refusal was written onto the order as `rejected` **and erased its
+        # broker order number** — so three live ONDO orders read as dead, and the fills they
+        # produced could not be attributed to anything and fell to the unassigned bucket.
+        if action == "cancel_order":
+            if read["accepted"]:
+                store.update_order(conn, key, state="canceled",
+                                   ack_raw=json.dumps(ack, ensure_ascii=False)[:4000],
+                                   last_checked_ms=store.now_ms())
+            else:
+                # The venue would not take the cancel, so the order is most likely still resting.
+                # Leave it in `canceling` for the open-orders pass to settle and say why here.
+                store.log_event(conn, "cancel_failed",
+                                {"orderKey": key, "why": read["error"]})
+            recorded.append({"orderKey": key, "state": "canceled" if read["accepted"] else
+                             "cancel_failed", "error": read["error"]})
+            continue
         if read["accepted"]:
             state = "acked"
         elif read["error"]:
             state = "rejected"
         else:
             state = "unknown"
-        store.update_order(conn, key, state=state,
-                           broker_order_no=read["brokerOrderNo"],
-                           ack_raw=json.dumps(ack, ensure_ascii=False)[:4000],
-                           error=read["error"],
-                           last_checked_ms=store.now_ms())
+        fields = {"state": state,
+                  "ack_raw": json.dumps(ack, ensure_ascii=False)[:4000],
+                  "error": read["error"],
+                  "last_checked_ms": store.now_ms()}
+        # Never write an absent number over one we already hold — the number is how a fill finds
+        # its order, and a later answer that omits it is silence, not a correction.
+        if read["brokerOrderNo"]:
+            fields["broker_order_no"] = read["brokerOrderNo"]
+        store.update_order(conn, key, **fields)
         if state == "rejected":
             store.log_event(conn, "order_rejected", {"orderKey": key, "why": read["error"]})
         recorded.append({"orderKey": key, "state": state,
@@ -2770,6 +2793,42 @@ def action_selftest():
                                    _ref))
     checks.append({"name": "no schedule reads a scope its own gate never sets",
                    "want": [], "got": _bad, "ok": not _bad})
+
+    # A refused cancel says nothing about whether the order exists, and must not be written onto it
+    # as a rejection — least of all by erasing the number a fill needs to find its way home.
+    # `action_record_orders` opens the store itself from `mode`, so the fixture has to live in the
+    # same one — an earlier draft put it in a private store and all three checks passed by doing
+    # nothing at all.
+    _cc = store.connect("dryrun")
+    _cc.execute("INSERT INTO orders(order_key,ts_ms,cycle_id,strategy_id,broker,account,symbol,"
+                "side,req_qty,req_price,ord_type,mode,state,broker_order_no) "
+                "VALUES('C1',0,'c','s','upbit','a','KRW-ONDO','buy',11,540,'limit','real',"
+                "'canceling','71823202')")
+    _cc.commit()
+    # Through the real entry point, on the store that action opens for this mode.
+    action_record_orders(
+        {"calls": [{"module": "upbit-trade", "orderKey": "C1",
+                    "input": {"action": "cancel_order", "symbol": "KRW-ONDO",
+                              "brokerOrderNo": "71823202"}}],
+         "results": [{"success": False,
+                      "error": "입력 검증 실패: Additional properties ('brokerOrderNo')"}]},
+        {"mode": "dryrun"})
+    _row = dict(_cc.execute("SELECT state, broker_order_no FROM orders WHERE order_key='C1'")
+                .fetchone())
+    checks.append({"name": "a refused cancel leaves the order pending, not rejected",
+                   "want": "canceling", "got": _row["state"], "ok": _row["state"] == "canceling"})
+    checks.append({"name": "and does not erase the number a fill needs to find its order",
+                   "want": "71823202", "got": _row["broker_order_no"],
+                   "ok": _row["broker_order_no"] == "71823202"})
+    action_record_orders(
+        {"calls": [{"module": "upbit-trade", "orderKey": "C1",
+                    "input": {"action": "cancel_order", "symbol": "KRW-ONDO"}}],
+         "results": [{"success": True, "data": {"uuid": "71823202"}}]}, {"mode": "dryrun"})
+    _row = dict(_cc.execute("SELECT state, broker_order_no FROM orders WHERE order_key='C1'")
+                .fetchone())
+    checks.append({"name": "a cancel the venue took does close the order",
+                   "want": "canceled", "got": _row["state"], "ok": _row["state"] == "canceled"})
+    _cc.close()
 
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
     checks.append({"name": "cash is never read as a holding of the market it prices",
