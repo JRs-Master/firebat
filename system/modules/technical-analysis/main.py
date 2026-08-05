@@ -2666,9 +2666,15 @@ def main():
             return
         a_ser = atr(bars, n_atr)
         highs = [b["high"] for b in bars]
+        lows = [b["low"] for b in bars]
         # 표본은 겹친다(하루씩 밀며 같은 미래를 본다) — 점추정에는 쓰되 **유효 표본은 지평으로
         # 나눈 값**이라 그 숫자를 같이 내보낸다. 오늘 이 함정으로 +8%p 짜리 결과가 한 번 증발했다.
+        #
+        # 위아래를 같이 센다. 위만 세면 이 화면은 "얼마나 팔아 놓을까" 에만 답하고 매수 사다리를
+        # 놓을 때는 아무 말도 안 한다 — 떨어지면 사는 전략에 정작 하락 확률이 없는 것이다.
+        # 아래쪽은 저가로 재고 부호만 뒤집는다(하락 폭도 양수로 센다).
         samples, paths = [], []
+        dn_samples, dn_paths = [], []
         for t in range(len(bars) - horizon - 1):
             a, c = a_ser[t], bars[t]["close"]
             if not a or not c:
@@ -2678,6 +2684,9 @@ def main():
             walk = [(h - c) / a for h in highs[t + 1:t + 1 + horizon]]
             samples.append(max(walk))
             paths.append(walk)
+            dwalk = [(c - l) / a for l in lows[t + 1:t + 1 + horizon]]
+            dn_samples.append(max(dwalk))
+            dn_paths.append(dwalk)
         last, last_atr = bars[-1], a_ser[-1]
         if not samples or not last_atr:
             print(json.dumps({"success": True, "data": {
@@ -2692,39 +2701,53 @@ def main():
         px = last["close"]
         at_ms = int(_num_or(inp.get("asOfMs"), 0)) or None
         levels, records = [], []
-        prev_m = None
-        for m in mults:
-            hit = sum(1 for v in samples if v >= m)
-            # 돌파 후 다음 칸 — **앞 칸에 닿은 그 시점부터** 남은 봉만 보고 센다. 무조건부 확률의
-            # 비율로 구하면 남은 시간이 줄어든 걸 안 세서 실제보다 후하게 나온다.
-            nxt = None
-            if prev_m is not None:
-                reach = after = 0
-                for walk in paths:
-                    at = next((i for i, v in enumerate(walk) if v >= prev_m), None)
-                    if at is None:
-                        continue
-                    reach += 1
-                    if any(v >= m for v in walk[at + 1:]):
-                        after += 1
-                if reach >= 20:
-                    nxt = round(100.0 * after / reach, 1)
-            target = px + m * last_atr
-            row = {"atrMultiple": m, "price": round(target, 4),
-                   "gainPct": round((target / px - 1) * 100, 3) if px else None,
-                   "probability": round(100.0 * hit / len(samples), 1)}
-            if nxt is not None:
-                row["nextProbability"] = nxt
-                row["nextFrom"] = prev_m
-            levels.append(row)
-            prev_m = m
+
+        def _rungs(sample_set, path_set, sign):
+            """한 방향의 칸들. sign=+1 위(고가로 잼) / −1 아래(저가로 잼)."""
+            out, prev = [], None
+            for m in mults:
+                hit = sum(1 for v in sample_set if v >= m)
+                # 돌파 후 다음 칸 — **앞 칸에 닿은 그 시점부터** 남은 봉만 보고 센다. 무조건부
+                # 확률의 비율로 구하면 남은 시간이 줄어든 걸 안 세서 실제보다 후하게 나온다.
+                nxt = None
+                if prev is not None:
+                    reach = after = 0
+                    for walk in path_set:
+                        at = next((i for i, v in enumerate(walk) if v >= prev), None)
+                        if at is None:
+                            continue
+                        reach += 1
+                        if any(v >= m for v in walk[at + 1:]):
+                            after += 1
+                    if reach >= 20:
+                        nxt = round(100.0 * after / reach, 1)
+                target = px + sign * m * last_atr
+                row = {"atrMultiple": m, "direction": "up" if sign > 0 else "down",
+                       # 브라우저가 새 봉마다 가격을 다시 잡을 수 있게 **오프셋도 같이** 낸다.
+                       # 확률은 과거 빈도라 천천히 변하지만 가격은 매 틱 움직인다 — 둘을 같이
+                       # 서버에서 굳히면 F5 를 눌러야만 선이 따라온다.
+                       "atrOffset": round(sign * m, 3),
+                       "price": round(target, 4),
+                       "gainPct": round((target / px - 1) * 100, 3) if px else None,
+                       "probability": round(100.0 * hit / len(sample_set), 1)}
+                if nxt is not None:
+                    row["nextProbability"] = nxt
+                    row["nextFrom"] = prev
+                out.append(row)
+                prev = m
+            return out
+
+        ups = _rungs(samples, paths, 1)
+        downs = _rungs(dn_samples, dn_paths, -1)
+        levels = ups + downs
         # 누적은 **봉당 한 줄** — 칸마다 한 줄이면 같은 시각이 다섯 번이라 키가 겹친다. 그리고
         # 여기 적히는 값이 **예측을 기록 시점에 못 박는 것**이다. 나중에 실제로 닿았는지 채점할
         # 수 있어야 이 화면이 의견이 아니라 기록이 된다.
         records.append({
             "at": last["date"], "asOfMs": at_ms, "close": px, "atr": round(last_atr, 4),
-            "levels": " · ".join("%gATR %s %s%%" % (r["atrMultiple"], _fmt_price(r["price"]),
-                                                    r["probability"]) for r in levels),
+            "levels": " · ".join("%s%gATR %s %s%%" % ("▲" if r["direction"] == "up" else "▼",
+                                                      r["atrMultiple"], _fmt_price(r["price"]),
+                                                      r["probability"]) for r in levels),
         })
         # 확률이 낮을수록 옅게 — 선 하나하나가 "여기까지 올 가능성"이라 굵기·색이 곧 값이다.
         def _shade(p):
@@ -2738,19 +2761,39 @@ def main():
         last_i = last["i"]
         ahead = max(3, round(horizon * 0.15))
         ann = []
-        for row in levels:
+        # 지평만큼 뒤로 ±1ATR 띠를 얇게 깐다 — 확률이 어디서 나온 숫자인지 눈으로 보이라고.
+        # 60봉 안에 닿을 확률이라면 지난 60봉 동안 그 띠가 어디 있었고 가격이 몇 번 뚫었는지가
+        # 그 확률의 재료다. 선을 앞으로만 그으면 값의 출처가 화면에 없다.
+        back = min(horizon, len(bars) - 1)
+        if back >= 5:
+            for sign in (1, -1):
+                pts = []
+                step = max(1, back // 30)
+                for t in range(len(bars) - back, len(bars), step):
+                    a, c = a_ser[t], bars[t]["close"]
+                    if not a or not c:
+                        continue
+                    pts.append({"i": bars[t]["i"], "price": round(c + sign * a, 4)})
+                if len(pts) >= 2:
+                    ann.append({"kind": "path", "color": "#cbd5e1", "width": 1, "dashed": True,
+                                "points": pts})
+        for idx, row in enumerate(levels):
             color, width = _shade(row["probability"])
             # 짧게 — 칸이 셋만 되어도 긴 문장 셋이 캔들 위에 쌓이면 차트가 안 보인다
             # (2026-08-04 사용자: "보기가 어렵노"). 조건부는 화살표 하나로 줄이고, 무슨 뜻인지는
             # 표(levels)와 페이지 본문이 말한다.
-            text = "%gATR %s · %s%%" % (row["atrMultiple"], _fmt_price(row["price"]),
-                                        round(row["probability"]))
+            arrow = "▲" if row["direction"] == "up" else "▼"
+            text = "%s%gATR %s · %s%%" % (arrow, row["atrMultiple"], _fmt_price(row["price"]),
+                                          round(row["probability"]))
             if row.get("nextProbability") is not None:
                 text += " → %s%%" % round(row["nextProbability"])
+            # 라벨이 전부 같은 x 에 모이면 여섯 줄이 한 자리에 겹쳐 읽을 수가 없다. 칸마다 선 길이를
+            # 달리해 라벨을 계단처럼 흩는다 — 위 칸은 짧게, 아래 칸은 길게.
+            span = max(2, ahead - (idx % len(mults)) * max(1, ahead // (len(mults) + 1)))
             ann.append({
                 "kind": "path", "color": color, "width": width, "label": text,
                 "points": [{"i": last_i, "price": row["price"]},
-                           {"i": last_i + ahead, "price": row["price"], "label": text}],
+                           {"i": last_i + span, "price": row["price"], "label": text}],
             })
         print(json.dumps({"success": True, "data": {
             "blocks": [{"type": "stock_chart",
