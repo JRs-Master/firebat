@@ -2021,6 +2021,15 @@ def action_reconcile(inp, settings):
     reconciled = [verdict] if verdict else []
     unreadable_positions = []
     balance_rows = inp.get("balanceRows")
+    # The number every verdict below is decided against, on the record. `place_order` has been
+    # logged since the ledger existed; the balance never was, so a `degraded` could not be told
+    # apart from a query that came back short — 133 rows in `api_log` on 2026-08-05 and not one of
+    # them a balance. The rows arrive as pipeline data rather than through a call this module makes,
+    # which is exactly why nothing logged them.
+    store.log_api(conn, broker, "balance", isinstance(balance_rows, list), 0,
+                  {"account": account, "market": inp.get("market"), "symbol": symbol},
+                  balance_rows if isinstance(balance_rows, list) else
+                  {"received": type(balance_rows).__name__})
     if isinstance(balance_rows, list):
         consumed, seen = set(), set()
         if symbol:
@@ -2031,9 +2040,22 @@ def action_reconcile(inp, settings):
         # An empty balance is not proof of an empty account. One short or failed page would
         # otherwise read as "everything was sold" and degrade every position at once, which is a
         # far worse mistake than missing a hand-made sale for one cycle.
+        # A balance answers for one market, and one account can hold two. Korea Investment's
+        # domestic and overseas holdings live under the same account number but behind different
+        # endpoints, so the KR cycle's balance legitimately has no AMZN row in it. Walking every
+        # symbol the ledger claims then reads that silence as a sale: measured 2026-08-05, `kis-AMZN`
+        # was degraded at 12:10 while 035420·051910·068270 in the same account reconciled clean.
+        # Only the market being answered for is walked; the other market's own cycle walks its own.
+        # A position whose market cannot be told is still walked — not checking is the lesser of the
+        # two errors, but not checking *ever* is not.
+        market = str(inp.get("market") or "").strip().lower()
+        mkt_of = market_map(settings)
         if balance_rows:
             for sym in store.claimed_symbols(conn, broker, account):
                 if not sym or sym in seen:
+                    continue
+                if market and not store.symbol_in_market(conn, broker, account, sym,
+                                                         market, mkt_of):
                     continue
                 seen.add(sym)
                 found, row = orders.read_position(balance_rows, sym)
@@ -2659,6 +2681,29 @@ def action_selftest():
     checks.append({"name": "nothing locked adds nothing", "want": 4.47093889,
                    "got": (_f or {}).get("qty"),
                    "ok": bool(_f) and abs(_f["qty"] - 4.47093889) < 1e-9})
+
+    # One account, two markets, two balance endpoints. Korea Investment holds domestic and overseas
+    # under the same account number, so the KR pass's balance legitimately has no AMZN in it and
+    # walking every claimed symbol reads that silence as a sale — `kis-AMZN` degraded at 12:10 on
+    # 2026-08-05 while three KR names in the same account reconciled clean.
+    _c3 = store.connect("dryrun3")
+    for _sid, _sym in (("kis-AMZN", "AMZN"), ("kis-035420", "035420"), ("orphan-s", "999999")):
+        store.apply_fill(_c3, strategy_id=_sid, broker="kis", account="모의", symbol=_sym,
+                         side="buy", qty=1, price=100, source="test")
+    _mkt = {"kis-AMZN": "us", "kis-035420": "kr"}
+    _walk = lambda m: [s for s in store.claimed_symbols(_c3, "kis", "모의")
+                       if store.symbol_in_market(_c3, "kis", "모의", s, m, _mkt)]
+    checks.append({"name": "the domestic pass leaves the overseas holding to its own cycle",
+                   "want": ["035420", "999999"], "got": sorted(_walk("kr")),
+                   "ok": sorted(_walk("kr")) == ["035420", "999999"]})
+    checks.append({"name": "and the overseas pass takes the overseas one",
+                   "want": ["999999", "AMZN"], "got": sorted(_walk("us")),
+                   "ok": sorted(_walk("us")) == ["999999", "AMZN"]})
+    checks.append({"name": "a holding whose market nobody declared is always walked",
+                   "want": True,
+                   "got": store.symbol_in_market(_c3, "kis", "모의", "999999", "kr", _mkt),
+                   "ok": store.symbol_in_market(_c3, "kis", "모의", "999999", "kr", _mkt) is True})
+    _c3.close()
 
     _found, _row = orders.read_position(_bal, "KRW-ENSO")
     checks.append({"name": "cash is never read as a holding of the market it prices",

@@ -524,6 +524,24 @@ def record_transfer(conn, *, cycle_id, from_strategy, to_strategy, broker, accou
 
 
 # ── reconciliation ───────────────────────────────────────────────────────────────────────────
+def symbol_in_market(conn, broker, account, symbol, market, market_of):
+    """Does this holding belong to the market the balance just answered for?
+
+    Answered from the strategies that hold it — they declared their market, and that declaration is
+    what routed the order in the first place. An unassigned-only holding, or one held by a strategy
+    that declared nothing, returns True: leaving it out of every pass would be worse than checking
+    it against a balance that may not cover it. Only a positive mismatch skips.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT strategy_id FROM strategy_position "
+        "WHERE broker=? AND account=? AND symbol=? AND qty > 0", (broker, account, symbol))
+    known = [str(market_of.get(r["strategy_id"]) or "").strip().lower() for r in rows]
+    declared = [m for m in known if m]
+    if not declared:
+        return True
+    return market in declared
+
+
 def claimed_symbols(conn, broker, account):
     """Every instrument this account's ledger says it is holding — strategies and the unassigned
     bucket alike.
