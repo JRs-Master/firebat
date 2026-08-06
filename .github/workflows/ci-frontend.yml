@@ -19,6 +19,8 @@ on:
       - 'next.config.mjs'
       - 'tsconfig.json'
       - 'proxy.ts'
+      - 'core/src/managers/ai/components.json'
+      - 'scripts/check-component-join.mjs'
       - '.github/workflows/ci-frontend.yml'
   pull_request:
     branches: [main]
@@ -31,6 +33,8 @@ on:
       - 'next.config.mjs'
       - 'tsconfig.json'
       - 'proxy.ts'
+      - 'core/src/managers/ai/components.json'
+      - 'scripts/check-component-join.mjs'
       - '.github/workflows/ci-frontend.yml'
   workflow_dispatch:
 
@@ -63,3 +67,9 @@ jobs:
 
       - name: typecheck
         run: npm run typecheck
+
+      # The registry and the renderer are joined by name strings, by hand — the header/Header
+      # incident was this join breaking by one letter of case. A registry type with no renderer
+      # case renders as silence, which no typecheck sees.
+      - name: component registry ↔ renderer join
+        run: node scripts/check-component-join.mjs
