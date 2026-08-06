@@ -1972,7 +1972,12 @@ def action_record_orders(inp, settings):
                          "not finish; leave the rows alone and run reconcile. "
                          f"받은 results = {_shape(inp.get('results'))}, "
                          f"calls = {_shape(inp.get('calls'))}"}
-    conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+    # The screen's liquidation places orders on the book the person was reading, so the recording
+    # has to land on the same one. Without this a live-tab liquidation confirmed while the module
+    # sits in dryrun mode would place real orders and write them into the paper book — the two
+    # halves of one action in two different ledgers. The cycle path passes no `store` and keeps
+    # following the mode, as before.
+    conn = store.connect(_book_of(inp, settings))
     recorded = []
     for call, ack in zip(calls, results):
         key = call.get("orderKey")

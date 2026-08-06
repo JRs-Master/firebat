@@ -149,6 +149,12 @@ impl ModuleActionSource {
                     "paramNames": param_names,
                     "requiresApproval": approval,
                 });
+                // See the note in `derive_entries_from_input` — discovery names the screen actions.
+                if let Some(ui_decl) = config.get("uiOnly") {
+                    if crate::utils::pending_tools::is_ui_only_value(ui_decl, &id) {
+                        extra["uiOnly"] = serde_json::Value::Bool(true);
+                    }
+                }
                 // Ride every declared field along (params/example/method/path/trId/domain …) —
                 // get_action_schema returns them verbatim, so richer actions.json = richer detail
                 // with zero loader changes.
@@ -509,6 +515,14 @@ fn derive_entries_from_input(
             "requiresApproval": requires_approval_value(approval_decl, action_id),
             "derived": true,
         });
+        // A screen action is refused on every surface a model can reach, so discovery has to say
+        // so — otherwise the model finds it, calls it, reads the refusal and has spent a round
+        // learning what the catalog already knew. Joined from the module config, same as approval.
+        if let Some(ui_decl) = config.get("uiOnly") {
+            if crate::utils::pending_tools::is_ui_only_value(ui_decl, action_id) {
+                extra["uiOnly"] = serde_json::Value::Bool(true);
+            }
+        }
         if !required.is_empty() {
             extra["required"] = serde_json::json!(required);
         }
@@ -924,6 +938,13 @@ impl ModuleActionCatalog {
                 }
                 if let Some(req) = m.extra.get("required") {
                     row["required"] = req.clone();
+                }
+                if m.extra.get("uiOnly").and_then(|v| v.as_bool()) == Some(true) {
+                    row["uiOnly"] = serde_json::Value::Bool(true);
+                    row["uiOnlyNote"] = serde_json::Value::String(
+                        "screen action — not callable here. Tell the user to run it from the module's settings screen; use the read-only actions to explain the situation."
+                            .to_string(),
+                    );
                 }
                 // Only surface the flag when true — a `false` on every other row is noise.
                 if m.extra.get("pageBinding").and_then(|v| v.as_bool()) == Some(true) {

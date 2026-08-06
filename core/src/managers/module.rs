@@ -719,7 +719,15 @@ impl ModuleManager {
                 // it, so every scheduled cycle looked interactive, demoted itself to paper, and
                 // booked fills nobody placed — the exchange had no record of a single order
                 // while the ledger showed two (2026-08-02).
-                if crate::utils::cron_context::is_cron_context_active() {
+                // ...unless a person is the one waiting. The cron flag is process-wide, so a
+                // screen action confirmed while any scheduled pipeline happened to be mid-flight
+                // was handed FIREBAT_UNATTENDED=1 and refused with "스케줄에서는 동작하지
+                // 않습니다" — measured 2026-08-07 by a probe that collided with the 5-minute
+                // autotrade cron. The person-only actions would have refused a real click perhaps
+                // one time in five, and the message would have named the wrong reason.
+                if crate::utils::cron_context::is_cron_context_active()
+                    && !crate::utils::pending_tools::ui_confirmed()
+                {
                     exec_opts
                         .env
                         .insert("FIREBAT_UNATTENDED".to_string(), "1".to_string());

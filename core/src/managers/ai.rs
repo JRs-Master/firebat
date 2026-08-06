@@ -4691,6 +4691,16 @@ impl AiManager {
             .any(|b| b.get("type").and_then(|v| v.as_str()) == Some("text"))
         {
             let promoted = round_text_buffer.clone();
+            // After the corrective round also came back empty, this narration is NOT an answer —
+            // it is what the model said to itself while working, and handing it over unlabelled
+            // reads as a broken reply (2026-08-06: seven "…해볼게요" lines where the analysis
+            // should have been). Say what happened, then show the trail.
+            if empty_final_nudge_used && !promoted.is_empty() {
+                push_text_block_dedup(
+                    &mut blocks,
+                    &crate::i18n::t("core.error.ai.empty_final", None, &[]),
+                );
+            }
             for t in &promoted {
                 push_text_block_dedup(&mut blocks, t);
             }

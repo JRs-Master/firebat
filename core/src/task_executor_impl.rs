@@ -112,6 +112,18 @@ impl RealTaskExecutor {
         let Some(cfg) = mm.get_module_config(scope, name).await else {
             return Ok(());
         };
+        // A screen action is refused here too. This gate guards EXECUTE, which addresses a module
+        // by PATH and skips `ModuleManager.run` entirely — the one door into a sysmod that the
+        // TOOL_CALL gate never sees. Leaving it out would mean the boundary held on three surfaces
+        // and the fourth answered a different way for the same call.
+        if let Some(ui_decl) = cfg.get("uiOnly") {
+            let act = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            if crate::utils::pending_tools::is_ui_only_value(ui_decl, act)
+                && !crate::utils::pending_tools::ui_confirmed()
+            {
+                return Err(crate::utils::pending_tools::ui_only_refusal(name, act));
+            }
+        }
         let Some(decl) = cfg.get("requiresApproval") else {
             return Ok(());
         };

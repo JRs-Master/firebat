@@ -337,6 +337,9 @@ impl Core {
                     "action": "record_orders",
                     "calls": calls,
                     "results": results,
+                    // The same book the decision was made on — the caller named it and both halves
+                    // of one action must land in one ledger.
+                    "store": args.get("store").cloned().unwrap_or(serde_json::Value::Null),
                 }),
             )
             .await?;
