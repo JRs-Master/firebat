@@ -171,11 +171,22 @@ impl RealTaskExecutor {
         let Some(cfg) = mm.get_module_config("system", module_name).await else {
             return Ok(());
         };
+        let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        // uiOnly — a screen action. The one pipeline allowed to carry it is the one the screen
+        // itself started (UI_CONFIRMED), which is how the manual liquidation reaches the broker
+        // through the SAME ordering path as the cron instead of growing a second one.
+        if let Some(ui_decl) = cfg.get("uiOnly") {
+            if crate::utils::pending_tools::is_ui_only_value(ui_decl, action)
+                && !crate::utils::pending_tools::ui_confirmed()
+            {
+                return Err(crate::utils::pending_tools::ui_only_refusal(module_name, action));
+            }
+        }
         let Some(decl) = cfg.get("requiresApproval") else {
             return Ok(());
         };
-        let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
         if crate::utils::pending_tools::requires_approval_value(decl, action)
+            && !crate::utils::pending_tools::ui_confirmed()
             && !crate::utils::cron_context::is_cron_context_active()
         {
             return Err(format!(

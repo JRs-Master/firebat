@@ -834,6 +834,36 @@ impl McpToolHandler for SysmodToolHandler {
         // 담긴 액션(실주문 포함) 승인으로 간주 — 사용자 확정 2026-07-07, destructive 빌트인
         // passthrough 와 동일 철학) / hub = 차단(root 계좌).
         let action_name = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        // uiOnly — refused on every surface including cron, because a schedule calling it is the
+        // machine deciding after all (the module already refuses unattended; this stops the call
+        // one layer earlier and says where the action lives).
+        if !action_name.is_empty() {
+            let cfg = match self
+                .module_manager
+                .get_module_config("user", &self.module_name)
+                .await
+            {
+                Some(c) => Some(c),
+                None => {
+                    self.module_manager
+                        .get_module_config("system", &self.module_name)
+                        .await
+                }
+            };
+            let ui_decl = cfg
+                .as_ref()
+                .and_then(|c| c.get("uiOnly"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            if firebat_core::utils::pending_tools::is_ui_only_value(&ui_decl, action_name) {
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "error": firebat_core::utils::pending_tools::ui_only_refusal(
+                        &self.module_name, action_name),
+                    "uiOnly": true,
+                }));
+            }
+        }
         if !action_name.is_empty()
             && !firebat_core::utils::cron_context::is_cron_context_active()
         {

@@ -23,6 +23,17 @@ tokio::task_local! {
     /// hub turn token). The MCP handler sets it; card creation reads it — which is how a card can
     /// know at birth that a conversation will come for it, in a handler that cannot know which.
     pub static BORN_OF_TURN: bool;
+
+    /// True while serving a request a person initiated from the admin screen and confirmed in a
+    /// warning dialog. It is the authorisation itself — the dialog names the strategy, the
+    /// quantity and whether the order is real, which is more than an approval card can show. Set
+    /// by the admin route handler only; a model turn can never enter this scope.
+    pub static UI_CONFIRMED: bool;
+}
+
+/// Whether this task is a screen action a person already confirmed.
+pub fn ui_confirmed() -> bool {
+    UI_CONFIRMED.try_with(|b| *b).unwrap_or(false)
 }
 
 /// Whether the current task is a model turn's tool call. False outside any scope — an external
@@ -180,6 +191,30 @@ pub fn requires_approval_value(decl: &serde_json::Value, action: &str) -> bool {
             .any(|s| s == action),
         _ => false,
     }
+}
+
+/// config `uiOnly` declaration check — same shape as `requiresApproval` (`true`, or an array of
+/// action ids).
+///
+/// An approval card asks "shall I?" and a model that wants to act will keep asking; some actions
+/// should not be reachable by asking at all. Liquidating a book, writing off a phantom quantity or
+/// reassigning a position are decisions a person makes in the screen that shows the numbers — the
+/// click there IS the authorisation, and it carries the context an approval card cannot (which
+/// strategy holds what, at what average). Declared here, refused identically on every surface a
+/// model can reach: chat function-calling, MCP, and pipeline steps.
+pub fn is_ui_only_value(decl: &serde_json::Value, action: &str) -> bool {
+    requires_approval_value(decl, action)
+}
+
+/// The refusal a model gets, naming where the action actually lives. i18n-free on purpose: this
+/// text is read by a model, not shown in the UI (the UI never hits this path).
+pub fn ui_only_refusal(module: &str, action: &str) -> String {
+    format!(
+        "'{module}.{action}' is not callable by a model — it is a screen action. Tell the user to \
+         run it from the module's settings screen, where the numbers it acts on are visible and \
+         the confirmation carries them. Read-only actions (status/report/ledger) are available \
+         here; use those to explain the situation instead."
+    )
 }
 
 impl PendingActionArgs {

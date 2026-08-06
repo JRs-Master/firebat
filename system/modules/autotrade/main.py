@@ -3319,6 +3319,40 @@ def action_selftest():
     checks.append({"name": "an action that writes to the ledger is declared approval-gated",
                    "want": [], "got": sorted(set(_ungated)), "ok": not _ungated})
 
+    # Screen actions are declared twice on purpose — `uiOnly` is what keeps a model from calling
+    # them at all, `requiresApproval` is the belt for any surface that predates the uiOnly gate.
+    # Declaring one without the other is the same class of drift the check above exists for.
+    _ui_only = set(_cfg.get("uiOnly") or [])
+    _ui_undeclared = sorted(_ui_only - _declared)
+    checks.append({"name": "every uiOnly action exists in the action enum",
+                   "want": [], "got": _ui_undeclared, "ok": not _ui_undeclared})
+    _ui_ungated = sorted(_ui_only - _gated)
+    checks.append({"name": "every uiOnly action is also approval-gated",
+                   "want": [], "got": _ui_ungated, "ok": not _ui_ungated})
+    # A uiOnly action must also refuse an unattended run in its own body. The core gate and
+    # the module ship separately (a Rust build vs a git pull), so for one deploy the module's
+    # own refusal is the only thing standing there. Bodies live in two shapes — an
+    # `action_x` function or an inline dispatch block — and the first version of this check
+    # only knew the first, which reported two guarded actions as unguarded.
+    _no_unattended = []
+    _funcs = {}
+    for _chunk in _src.split('\ndef '):
+        _funcs[_chunk.split("(")[0].strip()] = _chunk
+    _dispatch = _src.split('\n        if action ')
+    for _n in sorted(_ui_only):
+        _body = _funcs.get("action_" + _n, "")
+        for _blk in _dispatch[1:]:
+            if ('"' + _n + '"') in _blk.split("\n")[0]:
+                _body += _blk
+                # A dispatch line that delegates hides the guard one hop away.
+                for _fn, _c in _funcs.items():
+                    if _fn.startswith("action_") and (_fn + "(") in _blk:
+                        _body += _c
+        if "unattended()" not in _body:
+            _no_unattended.append(_n)
+    checks.append({"name": "every uiOnly action refuses an unattended run itself",
+                   "want": [], "got": _no_unattended, "ok": not _no_unattended})
+
     # A refused cancel says nothing about whether the order exists, and must not be written onto it
     # as a rejection — least of all by erasing the number a fill needs to find its way home.
     # `action_record_orders` opens the store itself from `mode`, so the fixture has to live in the

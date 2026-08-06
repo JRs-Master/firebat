@@ -3512,6 +3512,28 @@ impl AiManager {
                 } else {
                     None
                 };
+                // uiOnly gate — actions that are not model-callable at all (screen actions).
+                // Checked BEFORE the approval gate on purpose: an approval card for one of these
+                // would still be the model doing it, one click removed, and the card cannot show
+                // the numbers the decision needs (2026-08-06 정책 확정: 자동매매 청산·정정은
+                // 설정 화면에서 사람이 직접).
+                let ui_only_reject: Option<String> = if let Some(reg) = &self.dynamic_tools {
+                    match reg.ui_only_for(&effective_call.name).await {
+                        Some((module_name, decl)) => {
+                            let act = effective_call
+                                .arguments
+                                .get("action")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            crate::utils::pending_tools::is_ui_only_value(&decl, act).then(|| {
+                                crate::utils::pending_tools::ui_only_refusal(&module_name, act)
+                            })
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
                 // requiresApproval gate (#1-9b slice 1) — config-declared real-money/destructive
                 // actions. Interactive turn = approval card (pending). cron = ALLOWED — 스케줄 등록
                 // 승인 카드 통과 = 잡에 담긴 액션(실주문 포함) 승인으로 간주(사용자 확정 2026-07-07,
@@ -3792,6 +3814,24 @@ impl AiManager {
                         result,
                         success: pending,
                         error: if pending { None } else { Some("approval blocked".to_string()) },
+                        arguments: call.arguments.clone(),
+                    }
+                } else if let Some(why) = ui_only_reject {
+                    self.log.info(&format!(
+                        "[AiManager] uiOnly refuse (FC): {} — screen action, not model-callable",
+                        effective_call.name
+                    ));
+                    turn_call_set.insert(cache_key.clone());
+                    ToolResult {
+                        call_id: call.id.clone(),
+                        name: call.name.clone(),
+                        result: serde_json::json!({
+                            "success": false,
+                            "error": why,
+                            "uiOnly": true,
+                        }),
+                        success: false,
+                        error: Some("ui-only action".to_string()),
                         arguments: call.arguments.clone(),
                     }
                 } else if let Some(hint) = grounding_reject {

@@ -46,6 +46,13 @@
     "close_position",
     "write_off"
   ],
+  "uiOnly": [
+    "close_position",
+    "liquidate_all",
+    "write_off",
+    "resolve_unassigned",
+    "move_position"
+  ],
   "_schedules": [
     "The cron declarations live in this module's folder: registered when the module is enabled,",
     "withdrawn when it is disabled. Each file is scoped to one (broker, market) pair, because a",
