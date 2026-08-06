@@ -17,6 +17,7 @@ import { LogPanel } from './LogPanel';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
+import { zoneClock } from '../hooks/use-admin-timezone';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
@@ -988,6 +989,23 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     <option key={opt.value} value={opt.value}>{timezoneLabel(opt, uiLang)}</option>
                   ))}
                 </select>
+                {/* What the chosen zone is doing right now. A name is not a time: pick a zone that
+                    observes summer time and every schedule written in it moves an hour twice a
+                    year against one that does not. Said here, at the moment of choosing. */}
+                {(() => {
+                  const clock = zoneClock(userTimezone);
+                  if (!clock) return null;
+                  return (
+                    <p className="text-[10px] sm:text-xs font-medium text-slate-500">
+                      지금 <b>{clock.abbr || clock.zone}</b> (UTC{clock.offset})
+                      {clock.observesDst
+                        ? clock.dstActive
+                          ? ' · 서머타임 적용 중 — 겨울에는 한 시간 물러납니다.'
+                          : ' · 서머타임을 쓰는 지역입니다 — 여름에는 한 시간 당겨집니다.'
+                        : ' · 연중 고정 (서머타임 없음)'}
+                    </p>
+                  );
+                })()}
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
                   {t('settings_modal.timezone_help')}
                 </p>

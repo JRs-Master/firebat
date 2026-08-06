@@ -19,6 +19,7 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { useAdminTimezone } from '../hooks/use-admin-timezone';
+import { ZoneBadge } from './ZoneBadge';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { ScheduleModal, type CronJob } from './CronPanel';
 import { useEvents } from '../hooks/events-manager';
@@ -402,6 +403,9 @@ export function CalendarPanel({
     <div className="flex flex-col h-full overflow-hidden">
       {/* 상단 네비 — 월 이동 / year·month picker / 오늘 / 추가 */}
       <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1 relative" ref={pickerRef}>
+        {/* Which clock these cells are drawn in. Invisible until it matters — a zone that never
+            shifts shows only its name, and a zone on summer time says so. */}
+        <ZoneBadge zone={adminTz} className="absolute left-2 top-1" />
         <Tooltip label={t('calendar.previous_month')}>
           <button onClick={goPrevMonth} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md">
             <ChevronLeft size={13} />

@@ -15,6 +15,7 @@ import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
 import { useAdminTimezone } from '../hooks/use-admin-timezone';
+import { ZoneBadge } from './ZoneBadge';
 import { hubFetch } from '../../../lib/hub-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
@@ -315,6 +316,9 @@ export function CronPanel({
     <div className="border-t border-slate-200/80">
       <div className="px-3 py-2 text-[10px] font-extrabold tracking-widest text-slate-400 flex items-center gap-1.5">
         <Clock size={11} /> SCHEDULER
+        {/* The clock these fire times are read in. A cron expression is evaluated in a zone, so
+            the reader needs to know which one — and whether it is on summer time today. */}
+        <ZoneBadge zone={adminTz} className="ml-auto font-normal tracking-normal" />
       </div>
 
       {jobs.length === 0 ? (
