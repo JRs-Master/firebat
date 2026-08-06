@@ -456,14 +456,10 @@
     {
       "key": "tradingState",
       "type": "select",
-      "defaultValue": "",
+      "defaultValue": "off",
       "tab": "전역",
       "group": "스위치",
       "options": [
-        {
-          "value": "",
-          "label": "legacy"
-        },
         {
           "value": "on",
           "label": "on"

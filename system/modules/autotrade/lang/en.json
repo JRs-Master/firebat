@@ -2,10 +2,9 @@
   "settings": {
     "tradingState": {
       "label": "Trading state",
-      "description": "on = running · pauseEntries = entries paused, exits continue · off = fully stopped. legacy = follow the old toggles.",
+      "description": "on = running · pauseEntries = entries paused, exits continue · off = fully stopped.",
       "group": "Switches",
       "options": [
-        "Follow old toggles",
         "Running",
         "Entries paused",
         "Fully stopped"

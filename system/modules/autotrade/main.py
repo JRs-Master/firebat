@@ -2647,7 +2647,10 @@ def action_write_off(inp, settings):
         symbol = str(inp.get("symbol") or "").strip()
         if not sid or not symbol:
             return _afail("write_off 에 strategyId 와 symbol 이 필요합니다.")
-        reason = str(inp.get("reason") or "").strip()
+        # `note` counts as the reason too: the requirement is that a why exists in the ledger,
+        # not that it arrived under one particular key — the first real call put it in `note`
+        # and was refused after approval, which is the worst moment to be pedantic.
+        reason = str(inp.get("reason") or inp.get("note") or "").strip()
         if not reason:
             return _afail("write_off 에 reason 이 필요합니다 — 원장에 왜가 남아야 나중에 "
                         "읽힙니다.")

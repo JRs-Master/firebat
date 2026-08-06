@@ -2,10 +2,9 @@
   "settings": {
     "tradingState": {
       "label": "매매 상태",
-      "description": "on = 가동 · pauseEntries = 신규 진입만 중지(청산은 계속) · off = 전량 중지. legacy = 이전 스위치 값을 따릅니다.",
+      "description": "on = 가동 · pauseEntries = 신규 진입만 중지(청산은 계속) · off = 전량 중지.",
       "group": "스위치",
       "options": [
-        "이전 스위치 따름",
         "가동",
         "신규 진입 중지",
         "전량 중지"
