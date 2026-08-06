@@ -2541,6 +2541,20 @@ def _afail(msg):
     return {"success": False, "error": msg}
 
 
+def _book_of(inp, settings):
+    """Which book this call acts on — the one the caller named, else the mode's own.
+
+    The screen shows two books side by side and the buttons sit inside whichever tab is open, so a
+    correction confirmed while reading the paper book must not land on the live one. `report`
+    already took `store` for exactly this reason; the actions that CHANGE something did not, which
+    made the tab a lie the moment a button appeared next to it.
+    """
+    named = str(inp.get("store") or "").strip().lower()
+    if named in ("live", "dryrun"):
+        return named
+    return "dryrun" if settings.get("mode") == "dryrun" else "live"
+
+
 def action_close_position(action, inp, settings):
         # A person closing positions by hand — one trade's symbol, one trade, or everything.
         # Human-only for the same reason the assignment corrections are: a schedule calling
@@ -2556,7 +2570,7 @@ def action_close_position(action, inp, settings):
         price_in = eng._num(inp.get("price"), 0.0)
         if order_type != "market" and price_in <= 0:
             return _afail("지정가 청산에는 price 가 필요합니다.")
-        book = "dryrun" if settings.get("mode") == "dryrun" else "live"
+        book = _book_of(inp, settings)
         conn = store.connect(book)
         try:
             q = "SELECT * FROM strategy_position WHERE qty>0"
@@ -2679,7 +2693,7 @@ def action_write_off(inp, settings):
         if not reason:
             return _afail("write_off 에 reason 이 필요합니다 — 원장에 왜가 남아야 나중에 "
                         "읽힙니다.")
-        book = "dryrun" if settings.get("mode") == "dryrun" else "live"
+        book = _book_of(inp, settings)
         conn = store.connect(book)
         try:
             broker = str(inp.get("broker") or "").strip()
@@ -3352,6 +3366,23 @@ def action_selftest():
             _no_unattended.append(_n)
     checks.append({"name": "every uiOnly action refuses an unattended run itself",
                    "want": [], "got": _no_unattended, "ok": not _no_unattended})
+
+    # ...and it must act on the book the screen was showing. The buttons live inside a live/paper
+    # tab, so a correction confirmed while reading the paper book landing on the live one would be
+    # the worst kind of quiet mistake — the tab said one thing and the ledger did another.
+    _wrong_book = []
+    for _n in sorted(_ui_only):
+        _body = _funcs.get("action_" + _n, "")
+        for _blk in _dispatch[1:]:
+            if ('"' + _n + '"') in _blk.split("\n")[0]:
+                _body += _blk
+                for _fn, _c in _funcs.items():
+                    if _fn.startswith("action_") and (_fn + "(") in _blk:
+                        _body += _c
+        if "store.connect(" in _body and "_book_of(" not in _body:
+            _wrong_book.append(_n)
+    checks.append({"name": "every uiOnly action acts on the book it was given",
+                   "want": [], "got": _wrong_book, "ok": not _wrong_book})
 
     # A refused cancel says nothing about whether the order exists, and must not be written onto it
     # as a rejection — least of all by erasing the number a fill needs to find its way home.
@@ -5837,7 +5868,7 @@ def main():
             bad = unknown_strategy(settings, inp["strategyId"])
             if bad:
                 return fail(bad)
-            conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+            conn = store.connect(_book_of(inp, settings))
             try:
                 symbol = str(inp["symbol"])
                 broker = str(inp.get("broker") or "").strip()
@@ -5887,7 +5918,7 @@ def main():
             bad = unknown_strategy(settings, dst)
             if bad:
                 return fail(bad)
-            conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
+            conn = store.connect(_book_of(inp, settings))
             try:
                 symbol = str(inp["symbol"])
                 broker = str(inp.get("broker") or "").strip()

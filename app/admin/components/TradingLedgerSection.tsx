@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { apiPost } from '../../../lib/api-fetch';
 import { useAdminTimezone, formatInTz } from '../hooks/use-admin-timezone';
+import { ScreenActionDialog, type ScreenActionSpec } from './ScreenActionDialog';
 import { logger } from '../../../lib/util/logger';
 
 type Row = Record<string, any>;
@@ -152,12 +153,32 @@ function Badge({ text }: { text: string }) {
   );
 }
 
+/** A row's own action button — small, and red only when a real order is behind it. */
+function RowAction({
+  label, onClick, danger,
+}: { label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition-colors ${
+        danger
+          ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   const adminTz = useAdminTimezone();
   const when = (ms: any) => formatInTz(Number(ms), adminTz);
   const [store, setStore] = useState<'live' | 'dryrun'>('live');
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
+  // The screen is where these decisions are made (module `uiOnly`), so the dialog lives here.
+  const [pending, setPending] = useState<ScreenActionSpec | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,6 +212,14 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
   const screened: Row[] = watchlists.flatMap(([trade, rows]) =>
     (rows ?? []).map(r => ({ ...r, trade })));
   const screenEvents = data?.screenEvents ?? [];
+  // Whether a confirmation here sends an order to an exchange. The paper book never does; the
+  // live book does unless the module is running in ledger mode. Mock accounts still count as
+  // real orders — they reach the broker, which is the part a person needs warned about.
+  const realOrders = store === 'live' && data?.mode !== 'ledger' && data?.mode !== 'dryrun';
+  const strategyIds = Array.from(new Set((data?.positions ?? [])
+    .map(p => String(p.strategy_id ?? ''))
+    .filter(Boolean)));
+  const scope = (p: Row) => [p.broker, p.account].filter(Boolean).join('/') || '-';
 
   return (
     // `min-w-0` on the column and on each section, or the tables never scroll: a flex item's
@@ -267,15 +296,63 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
             <div className="mb-1 font-bold text-amber-700">주의 필요</div>
             <ul className="space-y-0.5">
               {unassigned.map((r, i) => (
-                <li key={`u${i}`}>
-                  미배정 {r.symbol} {num(r.qty)} ({r.broker}/{r.account || '-'}) —
-                  전략에 넣으려면 resolve_unassigned
+                <li key={`u${i}`} className="flex flex-wrap items-center gap-1.5">
+                  <span>미배정 {r.symbol} {num(r.qty)} ({r.broker}/{r.account || '-'})</span>
+                  <RowAction
+                    label="전략에 배정"
+                    onClick={() => setPending({
+                      module: moduleName,
+                      action: 'resolve_unassigned',
+                      title: '미배정 수량을 전략에 배정합니다',
+                      facts: [
+                        `종목 ${r.symbol} · 수량 ${num(r.qty)}`,
+                        `계좌 ${r.broker}/${r.account || '-'}`,
+                      ],
+                      consequence: '원장에 배정 행이 추가됩니다. 주문은 나가지 않습니다.',
+                      args: { symbol: r.symbol, broker: r.broker, account: r.account, store },
+                      fields: [{
+                        name: 'strategyId',
+                        label: '받을 전략 id',
+                        required: true,
+                        options: strategyIds,
+                        placeholder: '예: up-btc',
+                      }],
+                      confirmLabel: '배정',
+                    })}
+                  />
                 </li>
               ))}
               {degraded.map((p, i) => (
-                <li key={`d${i}`}>
-                  {p.strategy_id} · {p.symbol} {num(p.qty)} — 브로커가 더 적게 보고합니다.
-                  유령 수량이면 write_off 로 정정
+                <li key={`d${i}`} className="flex flex-wrap items-center gap-1.5">
+                  <span>
+                    {p.strategy_id} · {p.symbol} {num(p.qty)} — 브로커가 더 적게 보고합니다.
+                  </span>
+                  <RowAction
+                    label="유령 수량 정정"
+                    onClick={() => setPending({
+                      module: moduleName,
+                      action: 'write_off',
+                      title: '원장 수량을 실보유까지 내립니다',
+                      facts: [
+                        `전략 ${p.strategy_id} · 종목 ${p.symbol}`,
+                        `원장 수량 ${num(p.qty)} · 평단 ${num(p.avg_price)}`,
+                        `계좌 ${scope(p)}`,
+                      ],
+                      consequence:
+                        '원장에 정정 행이 추가됩니다(기본값 = 평단이라 손익을 만들지 않습니다). 주문은 나가지 않습니다.',
+                      args: {
+                        strategyId: p.strategy_id, symbol: p.symbol,
+                        broker: p.broker, account: p.account, store,
+                      },
+                      fields: [{
+                        name: 'reason',
+                        label: '사유 (원장에 남습니다)',
+                        required: true,
+                        placeholder: '예: 키움 누적 재진술 중복 계상',
+                      }],
+                      confirmLabel: '정정',
+                    })}
+                  />
                 </li>
               ))}
               {worries.slice(0, 5).map((e, i) => (
@@ -376,7 +453,7 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           있는 것에 대한 답은 '이번 구간' 쪽이다. */}
       <Section title="보유" count={holdings.length}>
         <Table
-          head={['전략', '종목', '수량', '평단', '이번 구간', '누적 실현', '상태']}
+          head={['전략', '종목', '수량', '평단', '이번 구간', '누적 실현', '상태', '']}
           empty="보유 중인 포지션이 없습니다."
           rows={holdings.map(p => [
             String(p.strategy_id ?? ''),
@@ -390,8 +467,59 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
               {money(p.realized_pnl, String(p.currency ?? ""))}
             </span> as any,
             <Badge key="s" text={String(p.state ?? '')} /> as any,
+            // Per position, because that is the unit a person decides on. The sell is capped at
+            // what the broker actually holds — a degraded row's remainder is a phantom and
+            // write_off's job, which is why both buttons exist and neither substitutes.
+            <RowAction
+              key="x"
+              label="청산"
+              danger={realOrders}
+              onClick={() => setPending({
+                module: moduleName,
+                action: 'close_position',
+                title: `${p.symbol} 를 시장가로 청산합니다`,
+                facts: [
+                  `전략 ${p.strategy_id} · 종목 ${p.symbol}`,
+                  `수량 ${num(p.qty)} · 평단 ${num(p.avg_price)}`,
+                  `계좌 ${scope(p)}`,
+                ],
+                consequence: realOrders
+                  ? '시장가 매도 주문을 냅니다.'
+                  : '장부에서 즉시 체결로 처리합니다.',
+                real: realOrders,
+                args: {
+                  strategyId: p.strategy_id, symbol: p.symbol,
+                  broker: p.broker, account: p.account,
+                  orderType: 'market', store,
+                },
+                confirmLabel: '청산',
+              })}
+            /> as any,
           ])}
         />
+        {holdings.length > 1 && (
+          <div className="mt-1.5 flex justify-end">
+            <RowAction
+              label={`이 목록 전부 청산 (${holdings.length}건)`}
+              danger={realOrders}
+              onClick={() => setPending({
+                module: moduleName,
+                action: 'liquidate_all',
+                title: '보유 전부를 시장가로 청산합니다',
+                facts: [
+                  `대상 ${holdings.length}건 — ${holdings.map(h => String(h.symbol)).join(', ')}`,
+                  `계좌 ${Array.from(new Set(holdings.map(scope))).join(' · ')}`,
+                ],
+                consequence: realOrders
+                  ? '각 종목에 시장가 매도 주문을 냅니다.'
+                  : '장부에서 전부 즉시 체결로 처리합니다.',
+                real: realOrders,
+                args: { orderType: 'market', store },
+                confirmLabel: '전부 청산',
+              })}
+            />
+          </div>
+        )}
       </Section>
 
       {/* Sold out, and the row stays because it is where that strategy's realised profit lives.
@@ -491,6 +619,13 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           ])}
         />
       </Section>
+      {pending && (
+        <ScreenActionDialog
+          spec={pending}
+          onClose={() => setPending(null)}
+          onDone={load}
+        />
+      )}
     </div>
   );
 }

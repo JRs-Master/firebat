@@ -411,7 +411,7 @@
           "live",
           "dryrun"
         ],
-        "description": "Which ledger to read — live (mock and real accounts) or dryrun (paper). Omit to follow the current mode. Only positions, orders, ledger and report use it."
+        "description": "Which ledger this call acts on — live (mock and real accounts) or dryrun (paper). Omit to follow the current mode. Read actions (positions/orders/ledger/report) and the screen actions (close_position/liquidate_all/write_off/resolve_unassigned/move_position) both honour it; the cycle path always follows the mode."
       },
       "trade": {
         "type": "string",
