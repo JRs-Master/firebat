@@ -461,6 +461,25 @@ impl ModuleManager {
                                 out.insert("accountNo".to_string(), serde_json::json!(digits));
                             }
                         }
+                        // The market too, when the account settles it — one registered market
+                        // means no ambiguity, so the account decides (same rule as `mock`). A
+                        // call naming no market used to fall to the module's own guess: a
+                        // KR-registered mock account's balance read went out on the US endpoint
+                        // and answered "no holdings" (2026-08-06 실측).
+                        if cfg.pointer("/input/properties/market").is_some()
+                            && obj
+                                .get("market")
+                                .and_then(|v| v.as_str())
+                                .map(str::trim)
+                                .filter(|m| !m.is_empty())
+                                .is_none()
+                            && entry.markets.len() == 1
+                        {
+                            out.insert(
+                                "market".to_string(),
+                                serde_json::json!(entry.markets[0].clone()),
+                            );
+                        }
                         Some(serde_json::Value::Object(out))
                     }
                     _ => None,
@@ -588,6 +607,22 @@ impl ModuleManager {
                             if !digits.is_empty() {
                                 out.insert("accountNo".to_string(), serde_json::json!(digits));
                             }
+                        }
+                        // Same as the borrow path above: one registered market = the account
+                        // decides; without this a market-less call fell to the module's guess.
+                        if cfg.pointer("/input/properties/market").is_some()
+                            && obj
+                                .get("market")
+                                .and_then(|v| v.as_str())
+                                .map(str::trim)
+                                .filter(|m| !m.is_empty())
+                                .is_none()
+                            && e.markets.len() == 1
+                        {
+                            out.insert(
+                                "market".to_string(),
+                                serde_json::json!(e.markets[0].clone()),
+                            );
                         }
                         tracing::info!(
                             target: "module",
