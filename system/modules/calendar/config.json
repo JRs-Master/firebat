@@ -10,11 +10,20 @@
   "secrets": [],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["list-upcoming", "list-range", "add", "update", "delete", "find"],
+        "enum": [
+          "list-upcoming",
+          "list-range",
+          "add",
+          "update",
+          "delete",
+          "find"
+        ],
         "description": "list-upcoming=next N days from today (default 7), list-range=fromTm~toTm range, add=new event (id auto-generated), update=patch fields by id, delete=soft-delete by id (records deletedAt), find=search title/description/tags"
       },
       "id": {
@@ -28,6 +37,10 @@
       "startAt": {
         "type": "string",
         "description": "[add/update] Start time ISO 8601 (e.g., 2026-05-04T09:00:00+09:00)"
+      },
+      "zone": {
+        "type": "string",
+        "description": "[add/update] 이 일정이 어느 시계를 쓰나. 생략(기본) = 등록 시점 시간대로 고정 — 설정 시간대를 바꿔도 일정은 그대로이고 표시만 바뀝니다. \"auto\" = 설정 시간대를 따름 — 설정을 바꾸면 이 일정의 시각도 같이 움직입니다(\"내가 어디 있든 오전 9시\"). update 에서 \"\" 를 주면 고정으로 되돌립니다."
       },
       "endAt": {
         "type": "string",
@@ -43,7 +56,9 @@
       },
       "tags": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[add/update] Tags (free-form strings). Used by find filters"
       },
       "linkedJobId": {
@@ -87,9 +102,18 @@
   "output": {
     "type": "object",
     "properties": {
-      "items": { "type": "array", "description": "Results of list-* / find (id, title, startAt, endAt, tags, linkedJobId, ...)" },
-      "event": { "type": "object", "description": "Single event returned by add/update" },
-      "deleted": { "type": "boolean", "description": "Result of delete" }
+      "items": {
+        "type": "array",
+        "description": "Results of list-* / find (id, title, startAt, endAt, tags, linkedJobId, ...)"
+      },
+      "event": {
+        "type": "object",
+        "description": "Single event returned by add/update"
+      },
+      "deleted": {
+        "type": "boolean",
+        "description": "Result of delete"
+      }
     }
   }
 }

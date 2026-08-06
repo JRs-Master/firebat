@@ -18,7 +18,8 @@
 
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseInstantMs, parseDayMs, dayEndMs } from '../_runtime/tz.mjs';
+import { parseInstantMs, parseDayMs, dayEndMs, renderWallClock, renderPinned,
+         ZONE_FOLLOWS_SETTING } from '../_runtime/tz.mjs';
 
 /** calendar 데이터 디렉토리 — input._hubScope 가 있으면 hub-scoped path 분기.
  *  - admin: `data/calendar/`
@@ -90,6 +91,21 @@ function appendEvent(ev) {
   appendFileSync(EVENTS_FILE, JSON.stringify(ev) + '\n', 'utf-8');
 }
 
+/**
+ * An entry's time, stored in the shape its rule needs.
+ *
+ * Pinned (the default) keeps an offset, so the instant survives a setting change untouched.
+ * Following stores a bare wall clock, so every later read resolves it in whatever zone is in
+ * force then — which is the whole request. Nothing else in the module has to know the difference:
+ * `parseInstantMs` already reads an offset-bearing string at its word and a bare one in the
+ * owner's zone, so both shapes compare and sort correctly with no branch.
+ */
+function storedTime(value, follows) {
+  const at = parseInstantMs(value);
+  if (at == null) return value;            // unreadable: keep what the caller wrote
+  return follows ? renderWallClock(at) : renderPinned(at);
+}
+
 function isInRange(ev, fromMs, toMs) {
   // Instants, not text. The stored events carry an offset (`Z` or `+09:00`) and the bounds used to
   // be built as plain strings, so the comparison sorted by punctuation: `+` is 0x2B and `Z` is
@@ -141,8 +157,11 @@ async function main() {
       const ev = {
         id: genId(),
         title: data.title,
-        startAt: data.startAt,
-        endAt: data.endAt || null,
+        // The rule and the exception — see `storedTime`. Declared per entry so a recurring
+        // "09:00 wherever I am" and a fixed "09:00 in Seoul" can sit in the same calendar.
+        zone: data.zone === ZONE_FOLLOWS_SETTING ? ZONE_FOLLOWS_SETTING : null,
+        startAt: storedTime(data.startAt, data.zone === ZONE_FOLLOWS_SETTING),
+        endAt: data.endAt ? storedTime(data.endAt, data.zone === ZONE_FOLLOWS_SETTING) : null,
         location: data.location || null,
         description: data.description || null,
         tags: Array.isArray(data.tags) ? data.tags : [],
@@ -160,11 +179,20 @@ async function main() {
       const ev = events.get(data.id);
       if (!ev || ev.deletedAt) return outErr('error.event_not_found', { id: data.id });
       const now = new Date().toISOString();
+      const nextZone = data.zone === undefined
+        ? (ev.zone ?? null)
+        : (data.zone === ZONE_FOLLOWS_SETTING ? ZONE_FOLLOWS_SETTING : null);
+      const follows = nextZone === ZONE_FOLLOWS_SETTING;
       const updated = {
         ...ev,
         title: data.title ?? ev.title,
-        startAt: data.startAt ?? ev.startAt,
-        endAt: data.endAt !== undefined ? data.endAt : ev.endAt,
+        zone: nextZone,
+        // Re-stored in the shape the (possibly just changed) rule needs — ticking the box on an
+        // existing entry has to convert what is already there, not only govern the next write.
+        startAt: storedTime(data.startAt ?? ev.startAt, follows),
+        endAt: (data.endAt !== undefined ? data.endAt : ev.endAt)
+          ? storedTime(data.endAt !== undefined ? data.endAt : ev.endAt, follows)
+          : null,
         location: data.location !== undefined ? data.location : ev.location,
         description: data.description !== undefined ? data.description : ev.description,
         tags: Array.isArray(data.tags) ? data.tags : ev.tags,

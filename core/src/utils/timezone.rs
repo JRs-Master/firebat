@@ -28,6 +28,19 @@ use std::sync::Arc;
 use crate::ports::IVaultPort;
 use crate::vault_keys::VK_SYSTEM_TIMEZONE;
 
+/// The rule, stated once: **a time is pinned to the clock it was written in.** Changing the
+/// display setting changes what is drawn, never when anything happens — a market schedule
+/// re-timed by a display change is the accident that made this a rule.
+///
+/// The exception is opt-in and this is its name. A cron job or a calendar entry whose zone is
+/// `auto` is asking the opposite: "whatever clock I am on", re-read at every evaluation rather
+/// than resolved once. Two intentions that look identical on a form — "09:00 at the exchange" and
+/// "09:00 wherever I am" — and only the second one moves.
+///
+/// The same literal is used by the module runtime (`system/modules/_runtime/tz.mjs`), which cannot
+/// import this; the two are kept in step by the name being this obvious.
+pub const ZONE_FOLLOWS_SETTING: &str = "auto";
+
 /// The fallback of last resort. Only reached when nothing is configured at all.
 const DEFAULT_TZ: Tz = Tz::Asia__Seoul;
 

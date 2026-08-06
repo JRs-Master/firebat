@@ -20,6 +20,29 @@
  * for any zone with daylight saving a stored offset is wrong half the year.
  */
 
+/**
+ * The rule, stated once: **a time is pinned to the clock it was written in.** Changing the display
+ * setting changes what is drawn, never when anything happens.
+ *
+ * The exception is opt-in and this is its name. An entry whose zone is `auto` is asking the
+ * opposite — "whatever clock I am on" — and is stored as a bare wall clock so that every read
+ * resolves it in the zone in force then. The Rust side holds the same constant
+ * (`core/src/utils/timezone.rs`); neither can import the other, so the name is deliberately plain.
+ */
+export const ZONE_FOLLOWS_SETTING = 'auto';
+
+/** A wall clock in the owner's zone, with no offset — what a following entry stores. */
+export function renderWallClock(ms = Date.now()) {
+  const p = parts(ms);
+  return `${p.ymd}T${p.hh}:${p.mm}:${p.ss}`;
+}
+
+/** The same instant with its offset spelled out — what a pinned entry stores. */
+export function renderPinned(ms = Date.now()) {
+  const p = parts(ms);
+  return `${p.ymd}T${p.hh}:${p.mm}:${p.ss}${offset(ms)}`;
+}
+
 const DEFAULT_TZ = 'Asia/Seoul';
 
 /** The zone the framework said to use. */

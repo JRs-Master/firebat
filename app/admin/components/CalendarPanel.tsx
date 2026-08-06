@@ -34,6 +34,7 @@ interface CalEvent {
   description?: string;
   tags?: string[];
   linkedJobId?: string;
+  zone?: string | null;   // 'auto' = 설정 시간대를 따름 (기본 = 등록 시점 고정)
 }
 
 /** cron 잡의 캘린더 투영 — 예약 발화 시각(occursAt) 1건. cron 이 진실원천, 캘린더는 read-only 표시. */
@@ -754,6 +755,9 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
   const [location, setLocation] = useState(existing?.location ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
   const [tagsRaw, setTagsRaw] = useState((existing?.tags ?? []).join(', '));
+  // Same rule as a schedule: pinned by default, following is the opt-in. Defaulted from the
+  // entry being edited so the earlier answer carries forward.
+  const [followZone, setFollowZone] = useState(existing?.zone === 'auto');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -774,6 +778,9 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
         ...(location.trim() ? { location: location.trim() } : {}),
         ...(description.trim() ? { description } : {}),
         ...(tags.length > 0 ? { tags } : {}),
+        // '' rather than omitted: on an edit, omitting means "leave it as it was", and
+        // unticking the box has to be able to say pinned.
+        zone: followZone ? 'auto' : '',
       };
       if (existing) data.id = existing.id;
       await callCalendar(action, data, hubContext);
@@ -818,6 +825,19 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={tagsRawId}>태그 (콤마 분리)</label>
             <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="태그 (콤마, 선택)" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId} />
+          </div>
+          <div>
+            {/* 기본은 등록 시점 시간대로 고정 — 표시 시간대를 바꿨다고 약속이 옮겨지면 안 되니까.
+                따라가는 쪽이 opt-in 이고, 크론 스케줄과 같은 규칙·같은 문구를 쓴다. */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={followZone} onChange={e => setFollowZone(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-slate-300" name="followZone" autoComplete="off"
+                aria-label="설정 시간대를 따름" />
+              <span className="text-[11px] text-slate-600">
+                설정 시간대를 따름{' '}
+                <span className="text-slate-400">— 체크하면 설정 시간대를 바꿀 때 이 일정의 시각도 같이 움직입니다.</span>
+              </span>
+            </label>
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
         </div>
