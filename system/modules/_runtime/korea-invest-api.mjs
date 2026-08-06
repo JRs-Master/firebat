@@ -530,7 +530,28 @@ async function main(data) {
       }
     }
     applyLatestDefaults(action, query);
-    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
+    // The sheet's tr_id can be a SENTENCE covering both sides — "(매도) VTTC0011U (매수) …". The
+    // neutral path has resolved that with the side it knows since the first order ever refused;
+    // a raw call pushed the sentence straight into the HTTP header, where fetch dies on the first
+    // Korean byte (measured 2026-08-06: four sell cards in a row, "ByteString … 47588" — that
+    // code point is 매). Resolve it the same way here, or say in words what is missing.
+    let rawTrId = '';
+    const metaRaw = API_TABLE[action];
+    if (metaRaw) {
+      const candidate = isMock && metaRaw.trIdMock ? metaRaw.trIdMock : metaRaw.trIdReal;
+      if (/[^ -~]/.test(String(candidate ?? ''))) {
+        const side = String(data.side ?? '').toLowerCase();
+        const hint = data.hint || (side === 'buy' ? '매수' : side === 'sell' ? '매도' : '');
+        if (!hint) {
+          console.log(JSON.stringify({ success: false, error:
+            `${action} 의 tr_id 는 매수/매도로 갈립니다 — side: "buy" 또는 "sell" 을 함께 보내거나, `
+            + '중립 계약 place_order 를 사용하세요.' }));
+          return;
+        }
+        rawTrId = pickTrId(metaRaw, isMock, hint);
+      }
+    }
+    const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock, 3, rawTrId);
     normalizeCandles(result);
     const meta = API_TABLE[action];
     // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
