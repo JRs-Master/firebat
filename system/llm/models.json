@@ -997,9 +997,9 @@
       "category": "api-openai"
     },
     {
-      "id": "solar-pro3",
-      "maxOutput": 32000,
-      "displayName": "Solar Pro 3 (Upstage)",
+      "id": "solar-pro4",
+      "maxOutput": 128000,
+      "displayName": "Solar Pro 4 (Upstage)",
       "provider": "Upstage",
       "format": "openai-chat",
       "endpoint": "https://api.upstage.ai/v1/chat/completions",
@@ -1015,17 +1015,24 @@
         "kind": "reasoning",
         "levels": [
           {
+            "value": "none",
+            "labels": {
+              "ko": "None (추론 끔)",
+              "en": "None (reasoning off)"
+            }
+          },
+          {
             "value": "low",
             "labels": {
-              "ko": "Low (추론 OFF)",
-              "en": "Low (reasoning off)"
+              "ko": "Low",
+              "en": "Low"
             }
           },
           {
             "value": "medium",
             "labels": {
-              "ko": "Medium (기본)",
-              "en": "Medium (default)"
+              "ko": "Medium",
+              "en": "Medium"
             }
           },
           {
@@ -1034,13 +1041,27 @@
               "ko": "High",
               "en": "High"
             }
+          },
+          {
+            "value": "xhigh",
+            "labels": {
+              "ko": "XHigh",
+              "en": "XHigh"
+            }
+          },
+          {
+            "value": "max",
+            "labels": {
+              "ko": "Max",
+              "en": "Max"
+            }
           }
         ]
       },
       "pricing": {
-        "input": 0.15,
-        "output": 0.6,
-        "cachedInput": 0.015
+        "input": 0.3,
+        "output": 1.2,
+        "cachedInput": 0.06
       },
       "execMode": "api",
       "category": "api-upstage"

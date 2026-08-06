@@ -240,18 +240,33 @@ impl OpenAiChatHandler {
         (text, tool_calls, tokens_in, tokens_out, cached_tokens)
     }
 
-    /// thinking_level → `reasoning_effort` (Solar Pro 3 / OpenAI-compat hybrid-reasoning models).
-    /// Solar semantics: low = reasoning OFF, medium (default) = ON, high = ON deeper. Only emitted
-    /// when features.reasoning is on; otherwise None (param omitted → model's own default).
-    fn reasoning_effort(config: &LlmModelConfig, opts: &LlmCallOpts) -> Option<&'static str> {
+    /// thinking_level → `reasoning_effort` (OpenAI-compat hybrid-reasoning models).
+    ///
+    /// The declaration is the vocabulary: a level listed in the model's own `thinking.levels`
+    /// passes through verbatim, because what a value *means* differs per model — on solar-pro3
+    /// `low` turned reasoning OFF, on solar-pro4 `low` turns it ON and only `none`/`minimal` turn
+    /// it off. The old hardcoded collapse encoded pro3's semantics and would have quietly enabled
+    /// reasoning for a user who chose "off" on pro4. Off-list values collapse conservatively for
+    /// models whose declaration predates the wider vocabulary. Unset emits nothing — the model's
+    /// own default stands (pro4 reasons by default; that is its design, not ours to override).
+    fn reasoning_effort(config: &LlmModelConfig, opts: &LlmCallOpts) -> Option<String> {
         if !config.features.reasoning {
             return None;
         }
-        Some(match opts.thinking_level.as_deref() {
-            Some("none") | Some("minimal") | Some("low") => "low", // Solar low = reasoning OFF
-            Some("high") | Some("xhigh") | Some("max") => "high",
-            _ => "medium", // medium / unset → balanced reasoning ON (default)
-        })
+        let lvl = opts.thinking_level.as_deref()?;
+        if let Some(t) = &config.thinking {
+            if t.levels.iter().any(|l| l.value == lvl) {
+                return Some(lvl.to_string());
+            }
+        }
+        Some(
+            match lvl {
+                "none" | "minimal" | "low" => "low",
+                "high" | "xhigh" | "max" => "high",
+                _ => "medium",
+            }
+            .to_string(),
+        )
     }
 
     /// Parse the `reasoning` field a hybrid-reasoning model returns alongside `content`
