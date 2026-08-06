@@ -50,7 +50,7 @@ export async function loadSettings(owner?: string) {
     memoryAutoSaveRes,
   ] = await Promise.all([
     getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
-    getTimezone(),
+    getTimezone({}),
     getAiModel(),
     getAiThinkingLevel(),
     getAiAssistantModel(),
@@ -81,7 +81,13 @@ export async function loadSettings(owner?: string) {
   const interfaceLang = uiLangRaw === 'en' ? 'en' : 'ko';
   return {
     success: true,
-    timezone: timezoneRes.ok ? timezoneRes.data : '',
+    // `.timezone` off the message. It used to be a bare string because the response had exactly
+    // one field and the generator unwrapped it — adding `clock` ended that, and assigning the
+    // whole message here would have handed every panel an object where a zone name goes, which
+    // Intl rejects, which each panel catches by falling back to the browser clock. Silent, and
+    // invisible to tsc because the value crosses an HTTP boundary before anyone reads it.
+    timezone: timezoneRes.ok ? timezoneRes.data.timezone : '',
+    timezoneClock: timezoneRes.ok ? (timezoneRes.data.clock ?? null) : null,
     aiModel: aiModelRes.ok ? aiModelRes.data : '',
     aiThinkingLevel: aiThinkingLevelRes.ok ? aiThinkingLevelRes.data : '',
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',

@@ -318,7 +318,7 @@ export function CronPanel({
         <Clock size={11} /> SCHEDULER
         {/* The clock these fire times are read in. A cron expression is evaluated in a zone, so
             the reader needs to know which one — and whether it is on summer time today. */}
-        <ZoneBadge zone={adminTz} className="ml-auto font-normal tracking-normal" />
+        <ZoneBadge className="ml-auto font-normal tracking-normal" />
       </div>
 
       {jobs.length === 0 ? (

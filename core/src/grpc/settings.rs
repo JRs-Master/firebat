@@ -27,7 +27,7 @@ use crate::proto::{
     SettingsSetAnthropicCacheEnabledResponse, SettingsSetLastModelByCategoryRequest,
     SettingsSetLastModelByCategoryResponse, SettingsSetTimezoneRequest,
     SettingsSetTimezoneResponse, SettingsSetUserPromptRequest, SettingsSetUserPromptResponse,
-    ThinkingConfigPb, ThinkingLevelPb,
+    ThinkingConfigPb, ThinkingLevelPb, ZoneClockPb,
 };
 use crate::vault_keys::{
     DEFAULT_LLM_MODEL_FALLBACK, DEFAULT_THINKING_LEVEL, USER_PROMPT_MAX_CHARS,
@@ -66,11 +66,28 @@ impl SettingsServiceImpl {
 impl SettingsService for SettingsServiceImpl {
     async fn get_timezone(
         &self,
-        _req: Request<SettingsGetTimezoneRequest>,
+        req: Request<SettingsGetTimezoneRequest>,
     ) -> Result<Response<SettingsGetTimezoneResponse>, TonicStatus> {
-        Ok(Response::new(SettingsGetTimezoneResponse {
-            timezone: self.get_or_default(VK_SYSTEM_TIMEZONE, "Asia/Seoul"),
-        }))
+        let asked = req.into_inner().zone.filter(|z| !z.trim().is_empty());
+        let timezone = self.get_or_default(VK_SYSTEM_TIMEZONE, "Asia/Seoul");
+        // A screen offering a choice needs to describe the zone being considered, not the one
+        // already saved — same answer, asked about a different zone.
+        let describe = asked.clone().unwrap_or_else(|| timezone.clone());
+        // What that zone is doing right now travels with its name. A screen cannot work it out
+        // from the name, and working it out a second time in the browser would be a second answer
+        // that can disagree with the one the scheduler uses.
+        let clock = describe.parse::<chrono_tz::Tz>().ok().map(|tz| {
+            let c = crate::utils::timezone::zone_clock(tz, chrono::Utc::now());
+            ZoneClockPb {
+                zone: c.zone,
+                observes_dst: c.observes_dst,
+                dst_active: c.dst_active,
+                abbr: c.abbr,
+                offset_minutes: c.offset_minutes,
+                offset: c.offset,
+            }
+        });
+        Ok(Response::new(SettingsGetTimezoneResponse { timezone, clock }))
     }
 
     async fn set_timezone(

@@ -7,6 +7,8 @@
 import {
   AiAssistantModelPb,
   AvailableAiModelPb,
+  SettingsGetTimezoneRequestSchema,
+  SettingsGetTimezoneResponse,
   SettingsGetUserPromptRequestSchema,
   SettingsService,
   SettingsSetAiAssistantModelRequestSchema,
@@ -25,10 +27,10 @@ import { unBigInt } from './_unbigint';
 
 const settingsClient = createClient(SettingsService, transport);
 
-export async function getTimezone(): Promise<RpcResult<string>> {
+export async function getTimezone(args: MessageInitShape<typeof SettingsGetTimezoneRequestSchema>): Promise<RpcResult<SettingsGetTimezoneResponse>> {
   try {
-      const response = await settingsClient.getTimezone({});
-      return { ok: true, data: unBigInt(response.timezone) };
+      const response = await settingsClient.getTimezone(args ?? {});
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

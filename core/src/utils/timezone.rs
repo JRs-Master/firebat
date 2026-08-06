@@ -21,7 +21,7 @@
 //!
 //! Vault key single source — `vault_keys.rs::VK_SYSTEM_TIMEZONE`.
 
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 use std::sync::Arc;
 
@@ -199,5 +199,103 @@ mod tests {
         };
         assert_eq!(off(winter), "-05:00");
         assert_eq!(off(summer), "-04:00");
+    }
+}
+
+/// What a zone is doing right now — the answer a screen needs to name the clock it is drawing.
+///
+/// A zone name is not a time. `America/New_York` is UTC−5 in January and UTC−4 in July, so a
+/// schedule written against it moves an hour twice a year relative to a zone that never shifts,
+/// and Seoul never shifts. A reader looking at a fire time cannot tell any of that from the name.
+///
+/// This lives here because it is a fact about time, not about a panel: the same zone rules the
+/// scheduler evaluates against decide it, and a second implementation somewhere else is a second
+/// answer waiting to disagree. Screens render what this returns.
+///
+/// Daylight saving moves the clock forward, so the standard offset is the smaller of the year's
+/// two — which is why this reads January and July and takes the minimum rather than assuming the
+/// northern hemisphere. Sydney is on summer time in January, and the same line gets it right.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZoneClock {
+    pub zone: String,
+    /// Does this zone shift at some point in the year.
+    pub observes_dst: bool,
+    /// Is the shift in force at this instant.
+    pub dst_active: bool,
+    /// `EDT`, `KST` — whatever the zone database calls it right now.
+    pub abbr: String,
+    /// Minutes east of UTC at this instant: `540` for Seoul, `-240` for New York in summer.
+    pub offset_minutes: i32,
+    /// `+09:00` — the same offset, spelled for a reader.
+    pub offset: String,
+}
+
+pub fn zone_clock(zone: Tz, at: DateTime<Utc>) -> ZoneClock {
+    let offset_at = |ms: DateTime<Utc>| -> i32 {
+        ms.with_timezone(&zone).offset().fix().local_minus_utc() / 60
+    };
+    let year = at.with_timezone(&zone).year();
+    // Mid-month on purpose: a transition never lands there, so neither sample is ambiguous.
+    let sample = |month: u32| -> DateTime<Utc> {
+        NaiveDate::from_ymd_opt(year, month, 15)
+            .and_then(|d| d.and_hms_opt(12, 0, 0))
+            .map(|dt| Utc.from_utc_datetime(&dt))
+            .unwrap_or(at)
+    };
+    let jan = offset_at(sample(1));
+    let jul = offset_at(sample(7));
+    let now = offset_at(at);
+    let standard = jan.min(jul);
+    let sign = if now < 0 { '-' } else { '+' };
+    let abs = now.abs();
+    ZoneClock {
+        zone: zone.name().to_string(),
+        observes_dst: jan != jul,
+        dst_active: now > standard,
+        abbr: at.with_timezone(&zone).format("%Z").to_string(),
+        offset_minutes: now,
+        offset: format!("{sign}{:02}:{:02}", abs / 60, abs % 60),
+    }
+}
+
+#[cfg(test)]
+mod zone_clock_tests {
+    use super::*;
+
+    fn at(y: i32, m: u32, d: u32) -> DateTime<Utc> {
+        Utc.from_utc_datetime(
+            &NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(12, 0, 0).unwrap(),
+        )
+    }
+
+    #[test]
+    fn a_zone_that_never_shifts_says_so() {
+        for month in [1u32, 7] {
+            let c = zone_clock(Tz::Asia__Seoul, at(2026, month, 15));
+            assert!(!c.observes_dst, "Seoul does not observe DST");
+            assert!(!c.dst_active);
+            assert_eq!(c.offset, "+09:00");
+        }
+    }
+
+    #[test]
+    fn new_york_shifts_and_the_badge_follows_the_season() {
+        let winter = zone_clock(Tz::America__New_York, at(2026, 1, 15));
+        let summer = zone_clock(Tz::America__New_York, at(2026, 7, 15));
+        assert!(winter.observes_dst && summer.observes_dst);
+        assert!(!winter.dst_active, "January is standard time");
+        assert!(summer.dst_active, "July is daylight time");
+        assert_eq!(winter.offset, "-05:00");
+        assert_eq!(summer.offset, "-04:00");
+    }
+
+    #[test]
+    fn the_southern_hemisphere_is_not_assumed_away() {
+        // The whole reason the standard offset is the year's minimum rather than January's.
+        let jan = zone_clock(Tz::Australia__Sydney, at(2026, 1, 15));
+        let jul = zone_clock(Tz::Australia__Sydney, at(2026, 7, 15));
+        assert!(jan.dst_active, "Sydney is on summer time in January");
+        assert!(!jul.dst_active, "and off it in July");
     }
 }

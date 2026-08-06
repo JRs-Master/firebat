@@ -24,7 +24,7 @@ fn service() -> (SettingsServiceImpl, tempfile::TempDir) {
 async fn timezone_default_and_set() {
     let (svc, _dir) = service();
     let resp = svc
-        .get_timezone(Request::new(SettingsGetTimezoneRequest {}))
+        .get_timezone(Request::new(SettingsGetTimezoneRequest { zone: None }))
         .await
         .unwrap();
     assert_eq!(resp.into_inner().timezone, "Asia/Seoul");
@@ -35,7 +35,7 @@ async fn timezone_default_and_set() {
     .await
     .unwrap();
     let resp = svc
-        .get_timezone(Request::new(SettingsGetTimezoneRequest {}))
+        .get_timezone(Request::new(SettingsGetTimezoneRequest { zone: None }))
         .await
         .unwrap();
     assert_eq!(resp.into_inner().timezone, "UTC");

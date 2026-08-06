@@ -405,7 +405,7 @@ export function CalendarPanel({
       <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1 relative" ref={pickerRef}>
         {/* Which clock these cells are drawn in. Invisible until it matters — a zone that never
             shifts shows only its name, and a zone on summer time says so. */}
-        <ZoneBadge zone={adminTz} className="absolute left-2 top-1" />
+        <ZoneBadge className="absolute left-2 top-1" />
         <Tooltip label={t('calendar.previous_month')}>
           <button onClick={goPrevMonth} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md">
             <ChevronLeft size={13} />

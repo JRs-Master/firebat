@@ -1,6 +1,6 @@
 'use client';
 
-import { zoneClock } from '../hooks/use-admin-timezone';
+import { useZoneClock } from '../hooks/use-admin-timezone';
 
 /**
  * Which clock the times on this panel are drawn in, and whether it is on summer time right now.
@@ -13,8 +13,8 @@ import { zoneClock } from '../hooks/use-admin-timezone';
  * Nothing is drawn for a zone that never shifts beyond its name, and nothing at all when the zone
  * is unknown — a header is no place to raise an error.
  */
-export function ZoneBadge({ zone, className = '' }: { zone: string | null; className?: string }) {
-  const clock = zoneClock(zone);
+export function ZoneBadge({ className = '' }: { className?: string }) {
+  const clock = useZoneClock();
   if (!clock) return null;
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] ${className}`}>

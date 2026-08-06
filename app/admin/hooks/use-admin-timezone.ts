@@ -16,35 +16,63 @@
 import { useEffect, useState } from 'react';
 import { apiGet } from '../../../lib/api-fetch';
 
-let cachedTz: string | null | undefined; // undefined = never asked, null = asked and unset
-let inflight: Promise<string | null> | null = null;
-const listeners = new Set<(tz: string | null) => void>();
+/** What the configured zone is doing — computed by core, never here. */
+export type ZoneClock = {
+  zone: string;
+  observesDst: boolean;
+  dstActive: boolean;
+  abbr: string;
+  offsetMinutes: number;
+  offset: string;
+};
 
-async function fetchTz(): Promise<string | null> {
+type TzSnapshot = { tz: string | null; clock: ZoneClock | null };
+
+let cached: TzSnapshot | undefined; // undefined = never asked
+let inflight: Promise<TzSnapshot> | null = null;
+const listeners = new Set<(s: TzSnapshot) => void>();
+
+async function fetchTz(): Promise<TzSnapshot> {
   try {
-    const s = await apiGet<{ timezone?: string }>('/api/settings', { category: 'settings' });
-    return s?.timezone || null;
+    const s = await apiGet<{ timezone?: string; timezoneClock?: ZoneClock | null }>(
+      '/api/settings', { category: 'settings' });
+    return { tz: s?.timezone || null, clock: s?.timezoneClock ?? null };
   } catch {
-    return null;
+    return { tz: null, clock: null };
   }
 }
 
-export function useAdminTimezone(): string | null {
-  const [tz, setTz] = useState<string | null>(cachedTz ?? null);
+function useTzSnapshot(): TzSnapshot {
+  const [snap, setSnap] = useState<TzSnapshot>(cached ?? { tz: null, clock: null });
   useEffect(() => {
-    if (cachedTz !== undefined) { setTz(cachedTz); return; }
-    listeners.add(setTz);
+    if (cached !== undefined) { setSnap(cached); return; }
+    listeners.add(setSnap);
     if (!inflight) {
       inflight = fetchTz().then(v => {
-        cachedTz = v;
+        cached = v;
         listeners.forEach(l => l(v));
         listeners.clear();
         return v;
       });
     }
-    return () => { listeners.delete(setTz); };
+    return () => { listeners.delete(setSnap); };
   }, []);
-  return tz;
+  return snap;
+}
+
+export function useAdminTimezone(): string | null {
+  return useTzSnapshot().tz;
+}
+
+/**
+ * What the configured zone is doing right now, as core reported it.
+ *
+ * Not computed here on purpose: whether a zone is on summer time is a fact about time, decided by
+ * the same zone rules the scheduler evaluates against. A second implementation in the browser is a
+ * second answer waiting to disagree with the first.
+ */
+export function useZoneClock(): ZoneClock | null {
+  return useTzSnapshot().clock;
 }
 
 /** Epoch ms → `MM/DD HH:mm` in the given zone (browser zone when null). */
@@ -62,67 +90,5 @@ export function formatInTz(ms: number, tz: string | null): string {
     const d = new Date(ms);
     const p = (v: number) => String(v).padStart(2, '0');
     return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  }
-}
-
-/**
- * What clock a zone is on right now — whether it observes daylight saving at all, whether it is
- * in it at this moment, and how to say so.
- *
- * Worth showing because a zone name alone does not tell you what time it is: `America/New_York`
- * is UTC−5 in January and UTC−4 in July, so a schedule written against it moves an hour relative
- * to any zone that does not (Seoul does not). Firebat's US market jobs are written in Seoul time
- * today, which is exactly the mismatch this badge exists to make visible.
- *
- * Daylight saving moves the clock forward, so the standard offset is the smaller of the year's
- * two — true in both hemispheres, where only the season differs.
- */
-export type ZoneClock = {
-  zone: string;
-  /** Does this zone shift at some point in the year. */
-  observesDst: boolean;
-  /** Is the shift in force right now. */
-  dstActive: boolean;
-  /** `EDT`, `GMT+9` — whatever the runtime calls it. */
-  abbr: string;
-  /** `-04:00` */
-  offset: string;
-};
-
-function offsetMinutes(zone: string, at: number): number {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: zone,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  }).formatToParts(new Date(at));
-  const get = (t: string) => Number(parts.find(p => p.type === t)?.value ?? '0');
-  const hour = get('hour') === 24 ? 0 : get('hour');
-  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
-  return Math.round((asUtc - Math.floor(at / 1000) * 1000) / 60000);
-}
-
-export function zoneClock(zone: string | null, at: number = Date.now()): ZoneClock | null {
-  if (!zone) return null;
-  try {
-    const year = new Date(at).getUTCFullYear();
-    const jan = offsetMinutes(zone, Date.UTC(year, 0, 15));
-    const jul = offsetMinutes(zone, Date.UTC(year, 6, 15));
-    const now = offsetMinutes(zone, at);
-    const standard = Math.min(jan, jul);
-    const sign = now < 0 ? '-' : '+';
-    const abs = Math.abs(now);
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const abbr = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' })
-      .formatToParts(new Date(at)).find(p => p.type === 'timeZoneName')?.value ?? '';
-    return {
-      zone,
-      observesDst: jan !== jul,
-      dstActive: now > standard,
-      abbr,
-      offset: `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`,
-    };
-  } catch {
-    // An unknown zone name must not break a panel header.
-    return null;
   }
 }

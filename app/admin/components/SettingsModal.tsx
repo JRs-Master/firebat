@@ -17,7 +17,7 @@ import { LogPanel } from './LogPanel';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
-import { zoneClock } from '../hooks/use-admin-timezone';
+import type { ZoneClock } from '../hooks/use-admin-timezone';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
@@ -269,6 +269,18 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
+  // What the zone being considered is doing — answered by core, because whether a zone is on
+  // summer time is a fact about time and the scheduler decides it with the same rules. Asked per
+  // selection so the line describes the choice, not the setting already saved.
+  const [tzPreview, setTzPreview] = useState<ZoneClock | null>(null);
+  useEffect(() => {
+    let alive = true;
+    apiGet<{ clock?: ZoneClock | null }>(
+      `/api/settings/zone?zone=${encodeURIComponent(userTimezone)}`, { category: 'settings' })
+      .then(r => { if (alive) setTzPreview(r?.clock ?? null); })
+      .catch(() => { if (alive) setTzPreview(null); });
+    return () => { alive = false; };
+  }, [userTimezone]);
   const [thinkingLevel, setThinkingLevel] = useState('low');
 
   // draft 모델 변경 시 그 모델에 기억된 thinking 복원(탭 전환 시 그 카테고리 직전 thinking 미리보기).
@@ -993,7 +1005,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     observes summer time and every schedule written in it moves an hour twice a
                     year against one that does not. Said here, at the moment of choosing. */}
                 {(() => {
-                  const clock = zoneClock(userTimezone);
+                  const clock = tzPreview;
                   if (!clock) return null;
                   return (
                     <p className="text-[10px] sm:text-xs font-medium text-slate-500">
