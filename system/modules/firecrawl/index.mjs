@@ -69,8 +69,11 @@ async function handleScrape(apiKey, data) {
   if (data.mobile !== undefined) body.mobile = data.mobile;
   if (data.skipTlsVerification !== undefined) body.skipTlsVerification = data.skipTlsVerification;
 
-  // 캐시
-  if (data.maxAge !== undefined) body.maxAge = data.maxAge;
+  // Cache: Firecrawl's own default is a TWO-DAY cache (maxAge 172800000) — a "real-time
+  // trends" scrape came back as a stale snapshot and the model quoted the old page's clock
+  // as the current time (2026-08-06 실측). Unstated = fresh; a caller that wants the cache
+  // says so in ms.
+  body.maxAge = data.maxAge !== undefined ? data.maxAge : 0;
 
   // 위치/언어
   if (data.location) body.location = data.location;
