@@ -146,6 +146,51 @@ export function addDaysYmd(days, ms = Date.now()) {
 }
 
 /**
+ * A timestamp → the instant it names, as epoch ms. `null` if unreadable.
+ *
+ * The point is the string WITHOUT an offset. `2026-08-07T01:00:00` is a wall clock, and a wall
+ * clock only means something once you say whose — so it is read in the owner's zone, the same rule
+ * `parseDayMs` follows for a bare date. A string that carries `Z` or `+09:00` already names an
+ * instant and is taken at its word.
+ *
+ * This exists because comparing these as TEXT looks like it works and does not: `+09:00` and `Z`
+ * sort by their punctuation (`+` is 0x2B, `Z` is 0x5A), so the same moment written two ways
+ * compares unequal in the wrong direction. Measured 2026-08-06 in the calendar module, where the
+ * stored events are UTC and the range bounds were built as naive local text — a day's worth of
+ * events fell in or out of "이번 주" by nine hours.
+ */
+export function parseInstantMs(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  // Offset spelled out (Z, +09:00, +0900) — unambiguous, and Date.parse handles all three.
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/.test(raw)) {
+    const ms = Date.parse(raw);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  const m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/.exec(raw);
+  if (!m) {
+    const ms = Date.parse(raw);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  return wallTimeMs(
+    zoneName(),
+    Number(m[1]), Number(m[2]), Number(m[3]),
+    Number(m[4] ?? 0), Number(m[5] ?? 0), Number(m[6] ?? 0),
+  );
+}
+
+/** The last millisecond of a calendar day in the owner's zone — the inclusive end of a range. */
+export function dayEndMs(text) {
+  const start = parseDayMs(text);
+  if (start == null) return null;
+  // Tomorrow's midnight minus one, computed as a date rather than +24h: a day is 23 or 25 hours
+  // long twice a year, and this is exactly the boundary that would be off by an hour.
+  const p = rawParts(zoneName(), start + 12 * 3600000);
+  const next = dayStartOf(zoneName(), p.year, p.month, p.day + 1);
+  return next - 1;
+}
+
+/**
  * Midnight for a calendar date in the owner's zone.
  *
  * Solved by correction rather than by a table: guess the instant as if the wall clock were UTC,
@@ -153,12 +198,18 @@ export function addDaysYmd(days, ms = Date.now()) {
  * is what gets a date right when the offset itself changes that day (a clock going forward).
  */
 function dayStartOf(zone, year, month, day) {
-  let guess = Date.UTC(year, month - 1, day, 0, 0, 0);
+  return wallTimeMs(zone, year, month, day, 0, 0, 0);
+}
+
+/** The same correction, for any wall-clock time and not just midnight. */
+function wallTimeMs(zone, year, month, day, hour, minute, second) {
+  const target = Date.UTC(year, month - 1, day, hour, minute, second);
+  let guess = target;
   for (let i = 0; i < 2; i += 1) {
     const p = rawParts(zone, guess);
     const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
     const shift = asUtc - guess;                       // the offset in force at `guess`
-    const next = Date.UTC(year, month - 1, day, 0, 0, 0) - shift;
+    const next = target - shift;
     if (next === guess) break;
     guess = next;
   }

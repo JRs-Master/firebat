@@ -18,6 +18,7 @@ import { RowActions, InteractiveRow } from './InteractiveRow';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
+import { useAdminTimezone } from '../hooks/use-admin-timezone';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { ScheduleModal, type CronJob } from './CronPanel';
 import { useEvents } from '../hooks/events-manager';
@@ -94,11 +95,39 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function formatTime(iso: string): string {
+function formatTime(iso: string, tz?: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // The configured zone, like every other admin surface. `getHours()` reads the browser's clock,
+  // so an operator abroad saw the 22:00 job at 09:00 and the events drifted a day in the grid.
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz ?? undefined,
+    }).format(d);
+  } catch {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+}
+
+/**
+ * Which calendar day an instant falls on, in the configured zone.
+ *
+ * This is the display half of the same rule the calendar module now follows: a day is a property
+ * of somebody's calendar, and the stored events are UTC. Bucketing them with `getDate()` puts a
+ * 09:00 Seoul event in the previous cell for anyone whose browser is west of it.
+ */
+function ymdIn(iso: string, tz?: string | null): string | null {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  try {
+    // en-CA renders as YYYY-MM-DD, which is the key format these maps already use.
+    return new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz ?? undefined,
+    }).format(d);
+  } catch {
+    return ymd(d);
+  }
 }
 
 function formatDateTime(iso: string, tz?: string | null): string {
@@ -121,6 +150,8 @@ export function CalendarPanel({
   hubContext?: CalendarHubContext;
 } = {}) {
   const t = useTranslations();
+  // Every timestamp on this panel reads in the configured zone, like the ledger and cron panels.
+  const adminTz = useAdminTimezone();
   const today = useMemo(() => new Date(), []);
   const [cursorYear, setCursorYear] = useState(today.getFullYear());
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
@@ -210,9 +241,8 @@ export function CalendarPanel({
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
       if (isExecRecord(e)) continue; // 실행기록은 일정과 분리(execByDate) — 스케줄 섹션에만 표시.
-      const d = new Date(e.startAt);
-      if (isNaN(d.getTime())) continue;
-      const key = ymd(d);
+      const key = ymdIn(e.startAt, adminTz);
+      if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
@@ -221,16 +251,15 @@ export function CalendarPanel({
       arr.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
     }
     return map;
-  }, [events]);
+  }, [events, adminTz]);
 
   // cron 실행 이력 = '실행기록' 태그 캘린더 이벤트(영속). 날짜 버킷, 최신순.
   const execByDate = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
       if (!isExecRecord(e)) continue;
-      const d = new Date(e.startAt);
-      if (isNaN(d.getTime())) continue;
-      const key = ymd(d);
+      const key = ymdIn(e.startAt, adminTz);
+      if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
@@ -238,15 +267,14 @@ export function CalendarPanel({
       arr.sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
     }
     return map;
-  }, [events]);
+  }, [events, adminTz]);
 
   // cron 발화 시각 → 날짜 버킷 (예약 표시).
   const cronByDate = useMemo(() => {
     const map = new Map<string, CronOcc[]>();
     for (const o of cronOccs) {
-      const d = new Date(o.occursAt);
-      if (isNaN(d.getTime())) continue;
-      const key = ymd(d);
+      const key = ymdIn(o.occursAt, adminTz);
+      if (!key) continue;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(o);
     }
@@ -254,7 +282,7 @@ export function CalendarPanel({
       arr.sort((a, b) => new Date(a.occursAt).getTime() - new Date(b.occursAt).getTime());
     }
     return map;
-  }, [cronOccs]);
+  }, [cronOccs, adminTz]);
 
   // 그리드 셀 — 6주 × 7일 = 42 cells
   const gridCells = useMemo(() => {
@@ -559,11 +587,11 @@ export function CalendarPanel({
                     </>
                   }
                 >
-                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(e.startAt)}</span>
+                  <span className="mt-0.5 shrink-0 text-[10px] font-bold text-violet-600 tabular-nums">{formatTime(e.startAt, adminTz)}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-bold text-slate-700 truncate">{e.title}</div>
                     {e.endAt && (
-                      <div className="text-[10px] text-slate-500 tabular-nums">~ {formatTime(e.endAt)}</div>
+                      <div className="text-[10px] text-slate-500 tabular-nums">~ {formatTime(e.endAt, adminTz)}</div>
                     )}
                     {e.location && (
                       <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
@@ -616,7 +644,7 @@ export function CalendarPanel({
                       </>
                     }
                   >
-                    <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(o.occursAt)}</span>
+                    <span className="mt-0.5 shrink-0 text-[10px] font-bold text-blue-600 tabular-nums">{formatTime(o.occursAt, adminTz)}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] font-bold text-slate-700 truncate">{o.title || o.jobId}</div>
                       {isCronRunning(o.jobId)
@@ -644,7 +672,7 @@ export function CalendarPanel({
                     <span className="mt-0.5 shrink-0">{failed ? <XCircle size={11} className="text-red-600" /> : <CheckCircle2 size={11} className="text-green-600" />}</span>
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] text-slate-700 truncate">{l.title}</div>
-                      <div className="text-[10px] text-slate-400 tabular-nums">{formatTime(l.startAt)} · {failed ? '실패' : '완료'}</div>
+                      <div className="text-[10px] text-slate-400 tabular-nums">{formatTime(l.startAt, adminTz)} · {failed ? '실패' : '완료'}</div>
                       {failed && l.description && <div className="text-[10px] text-red-500 line-clamp-1 break-words">{l.description}</div>}
                     </div>
                   </InteractiveRow>

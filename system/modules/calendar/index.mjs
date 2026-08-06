@@ -18,6 +18,7 @@
 
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseInstantMs, parseDayMs, dayEndMs } from '../_runtime/tz.mjs';
 
 /** calendar 데이터 디렉토리 — input._hubScope 가 있으면 hub-scoped path 분기.
  *  - admin: `data/calendar/`
@@ -89,11 +90,29 @@ function appendEvent(ev) {
   appendFileSync(EVENTS_FILE, JSON.stringify(ev) + '\n', 'utf-8');
 }
 
-function isInRange(ev, fromIso, toIso) {
-  // startAt 이 [from, to] 안에 있으면 true (단순 비교 — ISO 8601 lexicographic 가능)
-  if (fromIso && ev.startAt < fromIso) return false;
-  if (toIso && ev.startAt > toIso) return false;
+function isInRange(ev, fromMs, toMs) {
+  // Instants, not text. The stored events carry an offset (`Z` or `+09:00`) and the bounds used to
+  // be built as plain strings, so the comparison sorted by punctuation: `+` is 0x2B and `Z` is
+  // 0x5A, which puts the same moment written two ways on the wrong sides of a boundary. Measured
+  // 2026-08-06 — every stored event is UTC while a day range means Seoul, so a range query was off
+  // by nine hours at both ends.
+  const at = parseInstantMs(ev.startAt);
+  // Unreadable rather than out of range: dropping it silently would answer "no events" for a
+  // calendar that has one, which is the worse of the two wrong answers.
+  if (at == null) return true;
+  if (fromMs != null && at < fromMs) return false;
+  if (toMs != null && at > toMs) return false;
   return true;
+}
+
+/** Chronological, with an unreadable timestamp sorted last rather than pretending to be 1970. */
+function byStart(a, b) {
+  const am = parseInstantMs(a.startAt);
+  const bm = parseInstantMs(b.startAt);
+  if (am == null && bm == null) return 0;
+  if (am == null) return 1;
+  if (bm == null) return -1;
+  return am - bm;
 }
 
 function matchesTag(ev, tag) {
@@ -172,33 +191,38 @@ async function main() {
       // "the next N days" is a span of instants, not a calendar boundary, so it is arithmetic on
       // the epoch and no zone is involved. Doing it with setDate/getDate would read the host's
       // clock for an answer that does not depend on it.
-      const fromIso = new Date().toISOString();
-      const toIso = new Date(Date.now() + days * 86400000).toISOString();
+      const fromMs = Date.now();
+      const toMs = fromMs + days * 86400000;
       const events = loadEvents();
       const items = [];
       for (const ev of events.values()) {
         if (!includeDeleted && ev.deletedAt) continue;
-        if (!isInRange(ev, fromIso, toIso)) continue;
+        if (!isInRange(ev, fromMs, toMs)) continue;
         if (!matchesTag(ev, data.tag)) continue;
         items.push(ev);
       }
-      items.sort((a, b) => a.startAt.localeCompare(b.startAt));
+      items.sort(byStart);
       return out(true, { items: items.slice(0, data.limit || 50), total: items.length });
     }
 
     if (action === 'list-range') {
       if (!data.fromTm || !data.toTm) return outErr('error.list_range_required', {});
-      const fromIso = `${data.fromTm}T00:00:00`;
-      const toIso = `${data.toTm}T23:59:59`;
+      // A date a person types is midnight where they are, and the end of that day is its last
+      // millisecond — computed as a date, because two days a year are 23 or 25 hours long.
+      const fromMs = parseDayMs(data.fromTm);
+      const toMs = dayEndMs(data.toTm);
+      if (fromMs == null || toMs == null) {
+        return outErr('error.list_range_required', {});
+      }
       const events = loadEvents();
       const items = [];
       for (const ev of events.values()) {
         if (!includeDeleted && ev.deletedAt) continue;
-        if (!isInRange(ev, fromIso, toIso)) continue;
+        if (!isInRange(ev, fromMs, toMs)) continue;
         if (!matchesTag(ev, data.tag)) continue;
         items.push(ev);
       }
-      items.sort((a, b) => a.startAt.localeCompare(b.startAt));
+      items.sort(byStart);
       return out(true, { items: items.slice(0, data.limit || 50), total: items.length });
     }
 
@@ -216,7 +240,7 @@ async function main() {
         }
         items.push(ev);
       }
-      items.sort((a, b) => a.startAt.localeCompare(b.startAt));
+      items.sort(byStart);
       return out(true, { items: items.slice(0, data.limit || 50), total: items.length });
     }
 
