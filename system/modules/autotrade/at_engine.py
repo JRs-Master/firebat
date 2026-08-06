@@ -650,6 +650,46 @@ STRATEGY_KINDS = {
 }
 
 
+def fee_decl(settings, broker, account, market=None):
+    """The declared fee schedule for this account and market, or None.
+
+    Fees are the account's fact, not the module's: the same broker charges a negotiated rate on
+    one account and the standard one on another, and the same Korea Investment account pays Seoul
+    tax on one market and none on the other. Keys, most specific first: `"<broker>|<account>"`,
+    then `"<broker>"`, then `"default"`; inside, a market key (`kr`/`us`/`crypto`) or a flat
+    `{buyPct, sellPct, taxPct}`. Percent of notional, as a person reads a fee table — 0.05 means
+    five hundredths of a percent, not five percent of nothing.
+
+    Declared rates are the middle authority: a broker-stated fee on a real fill wins over them,
+    and they win over the global fallback knobs.
+    """
+    fees = settings.get("fees") or {}
+    if not isinstance(fees, dict):
+        return None
+    m = str(market or "").strip().lower()
+    for key in (f"{broker}|{account}", str(broker or ""), "default"):
+        spec = fees.get(key)
+        if not isinstance(spec, dict):
+            continue
+        sub = spec.get(m) if m else None
+        if isinstance(sub, dict):
+            return sub
+        if any(str(k).endswith("Pct") for k in spec):
+            return spec
+    return None
+
+
+def fee_amount(decl, side, qty, price):
+    """`(fee, tax)` in the quote currency for one fill under a declared schedule."""
+    if not isinstance(decl, dict):
+        return 0.0, 0.0
+    notional = _num(qty) * _num(price)
+    pct = _num(decl.get("buyPct" if side == "buy" else "sellPct"))
+    fee = notional * pct / 100.0
+    tax = notional * _num(decl.get("taxPct")) / 100.0 if side == "sell" else 0.0
+    return fee, tax
+
+
 def holding_exit(strategy, ctx):
     """Why the holding window closes this position now, or None.
 

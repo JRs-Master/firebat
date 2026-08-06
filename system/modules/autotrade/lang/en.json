@@ -61,6 +61,11 @@
       "description": "Include the buy commission in the average price.",
       "group": "Cost basis"
     },
+    "fees": {
+      "label": "Account fees",
+      "description": "Fee rates (%) per account and market. A broker-stated fee wins; this fills the silence.",
+      "group": "Limits"
+    },
     "trades": {
       "label": "Trades",
       "description": "What runs where. One entry per trade — the same symbol in two accounts is two trades with separate ledgers. Rules do not go here; the model fills those in.",

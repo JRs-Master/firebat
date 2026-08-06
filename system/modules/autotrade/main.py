@@ -164,6 +164,11 @@ def load_settings():
         # `매매1 = 증권사1·계좌1`, `매매3 = 증권사2·계좌1` are two entries, and the model fills each
         # with a rule of its own. Which rule that is, is not written here; where it runs is.
         "trades": env_json("MODULE_TRADES", [], "trades"),
+        # Per-account fee schedules — the account's fact, not the module's. Resolution order at
+        # the point of use: broker-stated fee on a real fill > this declaration > the blanket
+        # pipeline knobs. Shape: {"<broker>|<account>" | "<broker>" | "default":
+        # {"kr"|"us"|"crypto": {buyPct, sellPct, taxPct}} or a flat {buyPct, ...}}.
+        "fees": env_json("MODULE_FEES", {}, "fees"),
         # When each market may be ordered into, in the venue's own clock. A human setting for the
         # same reason the switches are: which hours real money is exposed for is not the model's
         # call. `{}` would mean "no window declared", and a market that names no window is refused,
@@ -1385,7 +1390,15 @@ def action_bind_bars(inp, settings):
         if not key and not rows:
             missing.append(t.get("symbol"))
             continue
-        args = {"action": "signals", "rules": t.get("rules"), **costs}
+        # The account's declared schedule outranks the pipeline's blanket knobs — grading a Seoul
+        # trade at a crypto fee (or the reverse) misprices every round trip the ranker reads.
+        run_costs = dict(costs)
+        _decl = eng.fee_decl(settings, t.get("broker"), t.get("account"), t.get("market"))
+        if _decl:
+            run_costs["feeRate"] = (eng._num(_decl.get("buyPct"))
+                                    + eng._num(_decl.get("sellPct"))) / 2.0 / 100.0
+            run_costs["taxRate"] = eng._num(_decl.get("taxPct")) / 100.0
+        args = {"action": "signals", "rules": t.get("rules"), **run_costs}
         higher = context.get(t.get("tradeId"))
         if higher:
             args["higher"] = higher
@@ -1729,11 +1742,19 @@ def action_cycle(inp, settings):
             if ctx["mode"] == "dryrun":
                 # Paper fill at the intent price. Optimistic on purpose and labelled as such: a
                 # real limit order may not fill at all, which is what the mock account is for.
+                # Costs are charged from the declared schedule — a paper book that trades for
+                # free grades a strategy the live book would fail, and the adoption bar reads
+                # both.
+                _fee, _tax = eng.fee_amount(
+                    eng.fee_decl(settings, intent["broker"], intent["account"],
+                                 s.get("market")),
+                    intent["side"], intent["qty"], intent["price"])
                 store.update_order(wconn, key, state="filled", filled_qty=intent["qty"],
                                    filled_avg=intent["price"], sent_ms=store.now_ms())
                 store.apply_fill(wconn, strategy_id=s["id"], broker=intent["broker"],
                                  account=intent["account"], symbol=intent["symbol"],
                                  side=intent["side"], qty=intent["qty"], price=intent["price"],
+                                 fee=_fee, tax=_tax,
                                  source="dryrun", ref_order_key=key,
                                  fee_in_cost=settings.get("feeInCost", True))
             else:
@@ -2021,6 +2042,10 @@ def action_reconcile(inp, settings):
     if account is None:
         account = (strategies[0].get("account") if strategies else None) or ""
     report = {"applied": [], "unattributed": [], "unreadable": [], "aged": []}
+    # For the fee estimate: which market an order's strategy trades on lives on the strategy row.
+    strategies_by_id = {}
+    for _s in strategies:
+        strategies_by_id.setdefault(_s["id"], _s)
 
     # 1. Fills → ledger, attributed through the order row that produced them.
     fills, unreadable = orders.read_fills(inp.get("fills"))
@@ -2053,9 +2078,23 @@ def action_reconcile(inp, settings):
                 continue  # nothing new in this restatement
         else:
             inc = f["qty"]
+        # The broker's own number wins; a declared schedule fills the silence. Kiwoom and Korea
+        # Investment report fills without a fee figure, so those rows booked zero cost while the
+        # backtest charged full — an asymmetry that inflates exactly the strategies the adoption
+        # bar is trying to grade. An estimate is labelled as one in the ledger row.
+        fee_stated = f.get("fee") or 0.0
+        fee_note = None
+        est_tax = 0.0
+        if not fee_stated:
+            _decl = eng.fee_decl(settings, order["broker"], order["account"],
+                                 (strategies_by_id.get(order["strategy_id"]) or {}).get("market"))
+            if _decl:
+                fee_stated, est_tax = eng.fee_amount(_decl, order["side"], inc, f["price"])
+                if fee_stated or est_tax:
+                    fee_note = "fee estimated from the declared schedule"
         try:
             fresh = store.record_fill(conn, order_key_=order["order_key"], qty=inc,
-                                      price=f["price"], fee=f.get("fee") or 0.0,
+                                      price=f["price"], fee=fee_stated,
                                       broker_exec_id=f["execId"], raw=f["raw"])
             # For a per-execution row the id is the only guard against double-booking. For a
             # restatement the ledger is, and its audit row may well already be there.
@@ -2064,8 +2103,8 @@ def action_reconcile(inp, settings):
                 continue
             store.apply_fill(conn, strategy_id=order["strategy_id"], broker=order["broker"],
                              account=order["account"], symbol=order["symbol"], side=order["side"],
-                             qty=inc, price=f["price"], fee=f.get("fee") or 0.0, source="order",
-                             ref_order_key=order["order_key"],
+                             qty=inc, price=f["price"], fee=fee_stated, tax=est_tax,
+                             source="order", ref_order_key=order["order_key"], note=fee_note,
                              fee_in_cost=settings.get("feeInCost", True))
         except Exception as e:  # noqa: BLE001 — one unbookable fill must not stop settlement
             # Rolling back drops the `fills` row with it, so the next pass sees the execution as
@@ -2541,13 +2580,19 @@ def action_close_position(action, inp, settings):
                 if book == "dryrun":
                     # Paper positions close on paper: a simulated fill at the stated price,
                     # or at the position's own average when none was given (a correction
-                    # cannot invent a gain).
+                    # cannot invent a gain). Costs still apply — the paper book charges what
+                    # the declared schedule says a real close would have cost.
                     px = price_in or float(r["avg_price"] or 0)
+                    _fee, _tax = eng.fee_amount(
+                        eng.fee_decl(settings, broker, account,
+                                     (strategies_by_id.get(r["strategy_id"]) or {}).get("market")),
+                        "sell", qty, px)
                     store.update_order(conn, key, state="filled", filled_qty=qty,
                                        filled_avg=px, sent_ms=store.now_ms())
                     store.apply_fill(conn, strategy_id=r["strategy_id"], broker=broker,
                                      account=account, symbol=sym, side="sell", qty=qty,
-                                     price=px, source="manual_close", ref_order_key=key,
+                                     price=px, fee=_fee, tax=_tax,
+                                     source="manual_close", ref_order_key=key,
                                      fee_in_cost=settings.get("feeInCost", True))
                     placed.append({"strategyId": r["strategy_id"], "symbol": sym,
                                    "qty": qty, "filled": px, "book": "paper"})
@@ -4442,6 +4487,35 @@ def action_selftest():
     checks.append({"name": "a fixed universe fills the symbols the trade did not pin",
                    "want": ["KRW-X", "KRW-Y"], "got": got_uni,
                    "ok": got_uni == ["KRW-X", "KRW-Y"]})
+
+    # --- fees: the account's fact, resolved most-specific first --------------------------------
+    _fs = {"fees": {
+        "kis-trade|모의": {"kr": {"buyPct": 0.015, "sellPct": 0.015, "taxPct": 0.18},
+                          "us": {"buyPct": 0.07, "sellPct": 0.07}},
+        "upbit-trade": {"buyPct": 0.05, "sellPct": 0.05},
+        "default": {"buyPct": 0.1, "sellPct": 0.1}}}
+    checks.append({"name": "the account+market key wins over broker and default",
+                   "want": 0.18,
+                   "got": (eng.fee_decl(_fs, "kis-trade", "모의", "kr") or {}).get("taxPct"),
+                   "ok": (eng.fee_decl(_fs, "kis-trade", "모의", "kr") or {}).get("taxPct") == 0.18})
+    checks.append({"name": "a flat broker schedule answers for any market", "want": 0.05,
+                   "got": (eng.fee_decl(_fs, "upbit-trade", "", "crypto") or {}).get("sellPct"),
+                   "ok": (eng.fee_decl(_fs, "upbit-trade", "", "crypto")
+                          or {}).get("sellPct") == 0.05})
+    checks.append({"name": "an undeclared broker falls to default, none at all to None",
+                   "want": (0.1, None),
+                   "got": ((eng.fee_decl(_fs, "toss", "", None) or {}).get("buyPct"),
+                           eng.fee_decl({"fees": {}}, "toss", "", None)),
+                   "ok": (eng.fee_decl(_fs, "toss", "", None) or {}).get("buyPct") == 0.1
+                   and eng.fee_decl({"fees": {}}, "toss", "", None) is None})
+    _f, _t = eng.fee_amount({"buyPct": 0.015, "sellPct": 0.015, "taxPct": 0.18},
+                            "sell", 10, 70000)
+    checks.append({"name": "a sell pays fee and tax; percent means percent", "want": (105.0, 1260.0),
+                   "got": (_f, _t), "ok": abs(_f - 105.0) < 1e-9 and abs(_t - 1260.0) < 1e-9})
+    _fb, _tb = eng.fee_amount({"buyPct": 0.015, "sellPct": 0.015, "taxPct": 0.18},
+                              "buy", 10, 70000)
+    checks.append({"name": "a buy pays no tax", "want": 0.0, "got": _tb,
+                   "ok": abs(_fb - 105.0) < 1e-9 and _tb == 0.0})
 
     # --- the holding window: a style is a clock ------------------------------------------------
     def _kst(y, mo, d, h, mi):
