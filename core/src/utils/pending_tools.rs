@@ -18,6 +18,19 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+tokio::task_local! {
+    /// True while serving a request authenticated as a model turn (the internal LLM token or a
+    /// hub turn token). The MCP handler sets it; card creation reads it — which is how a card can
+    /// know at birth that a conversation will come for it, in a handler that cannot know which.
+    pub static BORN_OF_TURN: bool;
+}
+
+/// Whether the current task is a model turn's tool call. False outside any scope — an external
+/// client, the stdio path, a script.
+pub fn born_of_turn() -> bool {
+    BORN_OF_TURN.try_with(|b| *b).unwrap_or(false)
+}
+
 use serde::{Deserialize, Serialize};
 
 use crate::managers::task::PipelineStep;
@@ -296,6 +309,11 @@ pub struct PendingTool {
     /// on the record next to `hub_scope`, which is here for the same reason.
     #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
+    /// Where the card was born: `Some("turn")` = a model turn made it (a conversation will claim
+    /// it, or the grace net catches a crashed turn); `None` = an external client — the external
+    /// list's actual audience, shown immediately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 impl PendingTool {
@@ -427,6 +445,13 @@ pub fn create_pending_in(
         }
     }
 
+    // Born of a turn when the caller could say so (the FC path passes the conversation), or when
+    // the task itself is a model turn (the MCP path, which cannot pass one).
+    let origin = if conversation_id.is_some() || born_of_turn() {
+        Some("turn".to_string())
+    } else {
+        None
+    };
     let now = now_ms();
     // base36(now) 흉내 — Rust std 에 base36 없어 `format!("{:x}", now)` (16진) 사용.
     // planId 자체는 unique 만 되면 되므로 base36 vs base16 차이 무관 (옛 TS planId 와 호환 X 는 의도적).
@@ -442,6 +467,7 @@ pub fn create_pending_in(
             expires_at: Some(expires_at),
             hub_scope,
             conversation_id,
+            origin,
         },
     );
     flush(&map);
@@ -541,6 +567,18 @@ pub fn get_pending(plan_id: &str) -> Option<PendingTool> {
 /// message to live in — and because that no longer depends on which conversation is open, those
 /// cards stay visible in every one of them until they are approved or rejected.
 pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
+    list_pending_at(scope, now_ms())
+}
+
+/// The crash net for turn-born cards. A card born of a model turn never belongs in the external
+/// list — its conversation claims it at the end of the turn (observed flashing there for exactly
+/// that window, 2026-08-06, a write_off card). But a turn that dies between creating the card and
+/// claiming it would leave the card invisible everywhere, so an unclaimed turn-born card older
+/// than this surfaces after all. External-born cards are listed immediately; this touches only
+/// the turn-born.
+const CLAIM_GRACE_MS: u64 = 60_000;
+
+fn list_pending_at(scope: Option<&str>, now: u64) -> Vec<PendingTool> {
     // Through `get_pending` semantics: the file is the durable copy, memory is a cache. Load it so
     // a process that never created a card still sees the ones another process left.
     let mut map = match store_lock().lock() {
@@ -548,7 +586,6 @@ pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
         Err(_) => return Vec::new(),
     };
     cleanup_expired(&mut map);
-    let now = now_ms();
     if let Ok(raw) = std::fs::read_to_string(store_file_path()) {
         if let Ok(arr) = serde_json::from_str::<Vec<PendingTool>>(&raw) {
             for p in arr {
@@ -561,7 +598,12 @@ pub fn list_pending(scope: Option<&str>) -> Vec<PendingTool> {
     }
     let mut out: Vec<PendingTool> = map
         .values()
-        .filter(|p| p.hub_scope.as_deref() == scope && p.conversation_id.is_none())
+        .filter(|p| {
+            p.hub_scope.as_deref() == scope
+                && p.conversation_id.is_none()
+                && (p.origin.as_deref() != Some("turn")
+                    || now.saturating_sub(p.created_at) >= CLAIM_GRACE_MS)
+        })
         .cloned()
         .collect();
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -785,6 +827,7 @@ mod tests {
             expires_at: None,
             hub_scope: None,
             conversation_id: None,
+            origin: None,
         };
         std::fs::write(dir.path().join("pending-tools.json"),
                        serde_json::to_string(&vec![&legacy]).unwrap()).unwrap();
@@ -848,7 +891,9 @@ mod tests {
         let inside = create_pending_in(
             run_module_args(), "from a chat", None, Some("conv-1".to_string()));
 
-        let listed: Vec<String> = list_pending(None).into_iter().map(|p| p.plan_id).collect();
+        // Past the claim grace: the steady state, not the flash window.
+        let listed: Vec<String> = list_pending_at(None, now_ms() + CLAIM_GRACE_MS)
+            .into_iter().map(|p| p.plan_id).collect();
         assert!(listed.contains(&outside), "a card with nowhere else to appear must be listed");
         assert!(!listed.contains(&inside), "a card the conversation shows must not be listed");
 
@@ -869,12 +914,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fresh_state(dir.path());
 
-        // create_pending_scoped = what mcp_server.rs calls. No conversation to give.
-        let id = create_pending_scoped(run_module_args(), "실행 승인: autotrade · resume", None);
-        assert!(list_pending(None).iter().any(|p| p.plan_id == id), "homeless until claimed");
+        // create_pending_scoped under BORN_OF_TURN = what mcp_server.rs does for a model turn's
+        // tool call. Born turn-origin: never in the external list while fresh (no flash), caught
+        // by the grace net if the turn dies before claiming, gone from it once claimed.
+        let id = BORN_OF_TURN.sync_scope(true, || {
+            create_pending_scoped(run_module_args(), "실행 승인: autotrade · resume", None)
+        });
+        assert!(!list_pending(None).iter().any(|p| p.plan_id == id),
+                "a turn-born card must not flash as external while its turn is still running");
+        assert!(list_pending_at(None, now_ms() + CLAIM_GRACE_MS).iter().any(|p| p.plan_id == id),
+                "a crashed turn's card surfaces after the grace net");
 
         assert!(attach_conversation(&id, "conv-1"));
-        assert!(!list_pending(None).iter().any(|p| p.plan_id == id), "claimed — the chat shows it");
+        assert!(!list_pending_at(None, now_ms() + CLAIM_GRACE_MS).iter().any(|p| p.plan_id == id),
+                "claimed — the chat shows it");
 
         // Claiming is once: a second turn cannot move a card into its own conversation.
         assert!(!attach_conversation(&id, "conv-2"));
@@ -884,6 +937,8 @@ mod tests {
         assert!(!attach_conversation("plan-nope", "conv-1"));
         let outside = create_pending_scoped(run_module_args(), "from an editor", None);
         assert!(!attach_conversation(&outside, ""));
-        assert!(list_pending(None).iter().any(|p| p.plan_id == outside));
+        // External-born (no turn scope): the list's actual audience, shown immediately.
+        assert!(list_pending(None).iter().any(|p| p.plan_id == outside),
+                "an external card must be listed at once — no one else will ever show it");
     }
 }

@@ -277,11 +277,14 @@ pub struct TokenQuery {
 ///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
 /// 검증 성공 시 검증된 토큰 문자열 반환 — handle_rpc 가 이 토큰으로 hub 컨텍스트를 lookup 해 격리.
 /// `query_token` = `?token=` fallback (헤더 우선; Claude.ai 웹 커넥터는 헤더 칸이 없어 URL 로 실음).
+/// `(token, is_model_turn)` — the second half says who is calling: the internal LLM token and a
+/// hub turn token are a model turn's own tool loop; an API token is an external client. Card
+/// creation uses this to tell, at birth, whether a conversation will come to claim the card.
 fn verify_token(
     state: &Arc<McpServerState>,
     headers: &HeaderMap,
     query_token: Option<&str>,
-) -> Result<String, StatusCode> {
+) -> Result<(String, bool), StatusCode> {
     let header_token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -305,18 +308,18 @@ fn verify_token(
         let eq: bool =
             subtle::ConstantTimeEq::ct_eq(token.as_bytes(), stored.as_bytes()).into();
         if eq {
-            return Ok(token.to_string());
+            return Ok((token.to_string(), true));
         }
     }
     // 1.5. hub 턴별 토큰 — ai.rs 가 턴마다 발급·등록한 토큰. 등록돼 있으면 valid(동시 visitor 격리).
     //      handle_rpc 가 이 토큰으로 hub 컨텍스트를 찾아 CURRENT_HUB 에 주입한다.
     if firebat_core::utils::hub_context::is_registered_token(token) {
-        return Ok(token.to_string());
+        return Ok((token.to_string(), true));
     }
     // 2. 외부 사용자 API token 매칭 (AuthManager.validate_api_token).
     if let Some(auth_mgr) = &state.auth {
         if auth_mgr.validate_api_token(token).is_some() {
-            return Ok(token.to_string());
+            return Ok((token.to_string(), false));
         }
     }
     Err(StatusCode::UNAUTHORIZED)
@@ -328,7 +331,7 @@ async fn handle_rpc(
     headers: HeaderMap,
     Json(req): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
-    let token = match verify_token(&state, &headers, q.token.as_deref()) {
+    let (token, is_turn) = match verify_token(&state, &headers, q.token.as_deref()) {
         Ok(t) => t,
         Err(status) => {
             return (status, Json(serde_json::json!({"error": "unauthorized"}))).into_response()
@@ -342,7 +345,8 @@ async fn handle_rpc(
     // active_* (inject_hub_owner / hub_blocks_tool / is_tool_visible / SearchLibraryHandler 등)는
     // 전역이 아니라 이 CURRENT_HUB 만 읽으므로 동시 요청이 서로 격리된다.
     let hub_ctx = firebat_core::utils::hub_context::lookup(&token);
-    firebat_core::utils::hub_context::CURRENT_HUB
+    firebat_core::utils::pending_tools::BORN_OF_TURN
+        .scope(is_turn, firebat_core::utils::hub_context::CURRENT_HUB
         .scope(hub_ctx, async move {
     match req.method.as_str() {
         "initialize" => {
@@ -450,7 +454,7 @@ async fn handle_rpc(
             &format!("method not found: {}", other),
         ),
     }
-        })
+        }))
         .await
 }
 
