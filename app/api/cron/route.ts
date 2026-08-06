@@ -92,6 +92,7 @@ export const PUT = withAuth(async (req: NextRequest) => {
   const {
     jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline,
     title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt, showInCalendar,
+    zone,
   } = body;
   if (!jobId) {
     return NextResponse.json({ error: 'jobId 필수' }, { status: 400 });
@@ -117,6 +118,8 @@ export const PUT = withAuth(async (req: NextRequest) => {
     executionMode,
     agentPrompt,
     showInCalendar,
+    // 'auto' = follow the setting; omitted = the adapter pins the current zone.
+    zone,
   });
   if (!res.ok) {
     const status = res.code === 'INVALID_ARGUMENT' ? 400 : 500;

@@ -842,6 +842,9 @@ message CronJobPb {
   optional bool system = 21;
   optional string builtin_kind = 22;       // "consolidation" | "retention"
   optional bool show_in_calendar = 23;     // 사용자 크론 캘린더 표시 opt-in (시스템=항상 false)
+  // 이 잡의 시계. 생략 = 등록 시점의 설정 시간대로 박제(기본). "auto" = 설정 시간대를
+  // 따름(설정을 바꾸면 발화 시각도 같이 움직인다 — 등록·편집에서 사람이 고른다).
+  optional string zone = 24;
 }
 
 message CronJobListPb {
@@ -919,6 +922,9 @@ message ScheduleCronRequest {
   optional string execution_mode = 17;
   optional string agent_prompt = 18;
   optional bool show_in_calendar = 19;     // 캘린더 표시 opt-in (사용자 크론)
+  // 이 잡의 시계. 생략 = 등록 시점의 설정 시간대로 박제(기본). "auto" = 설정 시간대를
+  // 따름(설정을 바꾸면 발화 시각도 같이 움직인다 — 등록·편집에서 사람이 고른다).
+  optional string zone = 20;
 }
 message ScheduleCronResponse {}
 message CancelCronRequest {
@@ -949,6 +955,9 @@ message UpdateCronRequest {
   optional string agent_prompt = 18;
   optional bool show_in_calendar = 19;     // 캘린더 표시 opt-in (편집 시 보존/변경)
   optional string owner = 20;              // hub 편집 owner-scope 검사용 (admin=omit/무검사). 잡 owner 자체는 update 가 기존값 보존.
+  // 이 잡의 시계. 생략 = 등록 시점의 설정 시간대로 박제(기본). "auto" = 설정 시간대를
+  // 따름(설정을 바꾸면 발화 시각도 같이 움직인다 — 등록·편집에서 사람이 고른다).
+  optional string zone = 21;
 }
 message UpdateCronResponse {}
 message ListCronRequest {}

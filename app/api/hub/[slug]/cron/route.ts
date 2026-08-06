@@ -94,7 +94,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         // 스케줄 편집 — owner scoping = Rust core(ScheduleService.updateCron → update_owned)가 강제(불일치 거부).
         // 잡 owner 자체는 update 가 기존값 보존(편집이 owner 안 바꿈). admin /api/cron PUT 과 동일 인자.
         const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline,
-          title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt, showInCalendar } = body;
+          title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt, showInCalendar,
+          zone } = body;
         if (!jobId) return NextResponse.json({ success: false, error: 'jobId 가 필요합니다.' }, { status: 400 });
         const res = await updateCron({
           jobId,
@@ -108,6 +109,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           retryJson: retry !== undefined ? JSON.stringify(retry) : undefined,
           notifyJson: notify !== undefined ? JSON.stringify(notify) : undefined,
           executionMode, agentPrompt, showInCalendar,
+          // 'auto' = follow the setting; omitted = the adapter pins the current zone.
+          zone,
           owner: expectedOwner,
         } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });

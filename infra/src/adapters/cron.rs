@@ -55,6 +55,15 @@ pub struct TokioCronAdapter {
     timezone: Mutex<String>,
 }
 
+/// A job whose zone is this follows the setting instead of the zone it was written in.
+///
+/// Two intentions look identical on a form and are not: "09:00 at the exchange" must never move,
+/// and "09:00 wherever I am" must move when I move. Everything is the first by default — a market
+/// schedule re-timed by a display change is the accident that made zones get pinned in the first
+/// place — and this is how a person opts a job into the second, at registration or later by
+/// editing it.
+pub const ZONE_FOLLOWS_SETTING: &str = "auto";
+
 impl TokioCronAdapter {
     pub fn new(
         jobs_file: PathBuf,
@@ -84,6 +93,8 @@ impl TokioCronAdapter {
         // change of the display timezone can never silently re-time a market schedule.
         let mut stamped = false;
         for j in jobs.values_mut() {
+            // A job that asked to follow the setting is left alone; only an unstamped one gets
+            // the zone it was written in.
             if j.options.zone.is_none() {
                 j.options.zone = Some(default_timezone.to_string());
                 stamped = true;
@@ -352,9 +363,12 @@ impl TokioCronAdapter {
                 };
                 // The job's own zone; the global one only serves jobs that somehow predate the
                 // load-time stamping.
-                let tz_name = job.options.zone.clone().unwrap_or_else(|| {
-                    strong.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone()
-                });
+                let global_now = || strong.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                let tz_name = match job.options.zone.as_deref() {
+                    // Read at every firing, not once: that is the whole point of following.
+                    Some(ZONE_FOLLOWS_SETTING) | None => global_now(),
+                    Some(z) => z.to_string(),
+                };
 
                 // 다음 발화 시각 계산
                 let (next_fire, trigger_type, is_one_shot) = match job.mode {
@@ -444,7 +458,13 @@ impl ICronPort for TokioCronAdapter {
         if opts.zone.is_none() {
             opts.zone = Some(self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone());
         }
-        let tz_name = opts.zone.clone().unwrap_or_default();
+        // `auto` stays `auto` — pinning it here would freeze the very thing it asked not to be.
+        let tz_name = match opts.zone.as_deref() {
+            Some(ZONE_FOLLOWS_SETTING) | None => {
+                self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone()
+            }
+            Some(z) => z.to_string(),
+        };
         let mode = TokioCronAdapter::determine_mode(&opts, &tz_name)?;
 
         // 기존 task abort
@@ -589,7 +609,10 @@ impl ICronPort for TokioCronAdapter {
             }
             // Each job expands in its own pinned zone — the calendar asks "when does this job
             // fire", and that question belongs to the job's clock, not the viewer's.
-            let job_tz_name = job.options.zone.clone().unwrap_or_else(|| tz_name.clone());
+            let job_tz_name = match job.options.zone.as_deref() {
+                Some(ZONE_FOLLOWS_SETTING) | None => tz_name.clone(),
+                Some(z) => z.to_string(),
+            };
             let job_tz: Tz = job_tz_name.parse().unwrap_or(tz);
             // 발화 시각만 먼저 모으고(차용 단순화) 이후 CronOccurrence 로 매핑.
             let mut fires: Vec<DateTime<Utc>> = Vec::new();

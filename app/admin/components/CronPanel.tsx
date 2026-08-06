@@ -47,6 +47,7 @@ export interface CronJob {
   system?: boolean;            // 시스템 스케줄 (인프라 관리, 삭제 잠금)
   builtinKind?: string;        // "consolidation" | "retention"
   showInCalendar?: boolean;    // 캘린더 표시 opt-in
+  zone?: string;               // 이 잡의 시계. 'auto' = 설정 시간대를 따름
 }
 
 interface CronLog {
@@ -546,6 +547,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
     agentPrompt?: string;
     system?: boolean;
     showInCalendar?: boolean;
+    zone?: string;
   } | null;
   hubContext?: CronHubContext;   // 있으면 hub op-dispatch(owner-scope) 로 저장, 없으면 admin apiPut.
   onClose: () => void;
@@ -591,6 +593,9 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
   const [endAt, setEndAt] = useState(job?.endAt ? toLocalInput(job.endAt) : '');
   const [permanent, setPermanent] = useState(!job?.endAt);
   const [showInCalendar, setShowInCalendar] = useState<boolean>(!!job?.showInCalendar);
+  // Whether this job follows the setting instead of the clock it was written in. Offered
+  // at registration and on every later edit — the choice carries forward and stays editable.
+  const [followZone, setFollowZone] = useState<boolean>(job?.zone === 'auto');
   const [saving, setSaving] = useState(false);
   const [savedTick, setSavedTick] = useState(false); // 저장 완료 순간 표시 (모달이 안 닫히므로 피드백 필요)
   const [error, setError] = useState('');
@@ -702,6 +707,8 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
 
       // 캘린더 표시 opt-in (시스템 스케줄은 항상 false).
       body.showInCalendar = showInCalendar;
+      // Unset means "pin it", which the adapter does with the zone configured right now.
+      body.zone = followZone ? 'auto' : undefined;
 
       try {
         // owner-injected save — hub 면 op-dispatch(owner-scope, Rust update_owned 강제) / admin 이면 REST PUT.
@@ -945,6 +952,21 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
             <input type="checkbox" checked={showInCalendar} onChange={e => setShowInCalendar(e.target.checked)}
               className="w-3.5 h-3.5 rounded border-slate-300" name="showInCalendar" autoComplete="off" aria-label="캘린더에 표시" />
             <span className="text-[11px] text-slate-600">캘린더에 표시 <span className="text-slate-400">— 이 스케줄의 일정·실행기록을 캘린더에 표시</span></span>
+          </label>
+
+          {/* 이 잡이 어느 시계를 쓰나. 기본은 등록 시점의 설정 시간대로 박제 — 표시 시간대를
+              바꿨다고 장중 스케줄이 재해석되면 안 되기 때문이고, 그래서 따라가는 쪽이 opt-in 이다. */}
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={followZone} onChange={e => setFollowZone(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-slate-300" name="followZone" autoComplete="off"
+              aria-label="설정 시간대를 따름" />
+            <span className="text-[11px] text-slate-600">
+              설정 시간대를 따름{' '}
+              <span className="text-slate-400">
+                — 체크하면 설정 시간대를 바꿀 때 이 스케줄의 시각도 같이 움직입니다.
+                {job?.zone && job.zone !== 'auto' ? ` 지금은 ${job.zone} 로 고정입니다.` : ' 기본은 등록 시점 고정입니다.'}
+              </span>
+            </span>
           </label>
 
           {/* 실행 모드 + 고급 — 시스템 스케줄은 숨김(주기만 편집) */}
