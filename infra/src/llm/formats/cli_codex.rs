@@ -889,7 +889,9 @@ impl CodexCliHandler {
         // 자식 reap + stderr 회수 (스트리밍 전환으로 wait_with_output 폐기).
         let status = child.wait().await.ok();
         // Rotated tokens go home — see sync_auth_back. Runs on every exit, success or not.
-        sync_auth_back(&codex_home);
+        if let Some(h) = codex_home.as_ref() {
+            sync_auth_back(h);
+        }
         let stderr_buf = stderr_task.await.unwrap_or_default();
 
         if errored {
