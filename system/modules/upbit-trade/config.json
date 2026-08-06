@@ -420,7 +420,9 @@
     "withdraw-krw",
     "withdraw-cancel",
     "deposit-krw",
-    "deposit-create-address"
+    "deposit-create-address",
+    "place_order",
+    "cancel_order"
   ],
   "ws": {
     "endpoint": "wss://api.upbit.com/websocket/v1/private",
