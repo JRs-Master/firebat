@@ -2389,10 +2389,28 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         input_schema: schema_object(serde_json::json!({"suggestions": {"type":"array"}})),
         handler: Arc::new(SuggestHandler),
     }).await;
+    // The schema comes from the core registry, not a hand-typed summary. The trimmed copy here
+    // said `steps: array` with no item type, so a model reading the machine schema — Codex —
+    // sent `steps: ["sentence"]` as a perfectly schema-valid shape and was refused by the parser
+    // (2026-08-06, twice in one afternoon). The prose said the item shape; the schema is what a
+    // model believes. One source, no second drift.
+    let plan_def = deps
+        .tool_manager
+        .list(&ToolListFilter {
+            source: Some("core".to_string()),
+            name_prefix: Some("propose_plan".to_string()),
+        })
+        .into_iter()
+        .next();
     state.register(McpTool {
         name: "propose_plan".into(),
-        description: "복합 작업 계획 제안 + plan store 저장. inputSchema: {title, steps[] (각 {title, description?, tool?, args?}), estimatedTime?, risks?}. args = 이번 턴에 검증한 정확한 호출 인자 — tool+args 를 채운 스텝은 승인 시 재발견 없이 기계 실행. 미검증·이전 스텝 의존이면 args 생략.".into(),
-        input_schema: schema_object(serde_json::json!({"title": {"type":"string"}, "steps": {"type":"array"}})),
+        description: plan_def
+            .as_ref()
+            .map(|d| d.description.clone())
+            .unwrap_or_else(|| "복합 작업 계획 제안 + plan store 저장.".into()),
+        input_schema: plan_def
+            .map(|d| d.parameters)
+            .unwrap_or_else(|| schema_object(serde_json::json!({"title": {"type":"string"}, "steps": {"type":"array"}}))),
         handler: Arc::new(ProposePlanHandler),
     }).await;
     state.register(McpTool {

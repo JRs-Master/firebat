@@ -1409,14 +1409,21 @@ fn register_meta_render_tools(tools: &Arc<ToolManager>, _h: &CoreToolHandlers) {
                     "steps": {
                         "type": "array",
                         "items": {
-                            "type": "object",
-                            "properties": {
-                                "title": { "type": "string" },
-                                "description": { "type": "string" },
-                                "tool": { "type": "string" },
-                                "args": { "type": "object", "description": "verified call arguments (from this turn's get_action_schema / lookups) — filled = mechanically replayed on approval" }
-                            },
-                            "required": ["title"]
+                            // A bare string is a step with that title — the parser accepts it,
+                            // so the schema says so too (the schema is what a model believes).
+                            "anyOf": [
+                                { "type": "string" },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": { "type": "string" },
+                                        "description": { "type": "string" },
+                                        "tool": { "type": "string" },
+                                        "args": { "type": "object", "description": "verified call arguments (from this turn's get_action_schema / lookups) — filled = mechanically replayed on approval" }
+                                    },
+                                    "required": ["title"]
+                                }
+                            ]
                         }
                     },
                     "estimatedTime": { "type": "string" },
