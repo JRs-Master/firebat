@@ -16,6 +16,7 @@ Two invariants hold the whole thing together:
 import math
 import os
 import sys
+import time
 
 # The shared shelf, found the same way `main.py` finds it — this file is imported by name from the
 # module's own directory and must stand on its own, or a session check depends on whoever imported
@@ -649,6 +650,46 @@ STRATEGY_KINDS = {
 }
 
 
+def holding_exit(strategy, ctx):
+    """Why the holding window closes this position now, or None.
+
+    The style is the clock: a scalp is a trade of minutes, a day trade must not carry a position
+    into the night. `maxHoldMinutes` measures from the position's own anchor (its first entry, the
+    same instant the ladders measure from); `closeBeforeEndMin` measures to the venue's regular
+    close, in the venue's own zone — the same discipline as the session window, which constrains
+    entries while this one forces the exit.
+
+    `closeBeforeEndMin` without a named market (or a declared window) is inert rather than fatal:
+    a 24-hour venue has no close to be before.
+    """
+    h = strategy.get("holding") or {}
+    if not isinstance(h, dict) or not h:
+        return None
+    pos = ctx.get("position") or {}
+    if _num(pos.get("qty")) <= 0:
+        return None
+    now_ms = _num(ctx.get("now_ms")) or time.time() * 1000.0
+    mh = _num(h.get("maxHoldMinutes"))
+    if mh > 0:
+        opened = _num(pos.get("anchor_ms"))
+        if opened > 0 and now_ms - opened >= mh * 60000.0:
+            return f"held past {int(mh)}m — the holding window closes this position"
+    cb = _num(h.get("closeBeforeEndMin"))
+    if cb > 0:
+        market = str(strategy.get("market") or "").strip().lower()
+        spec = ((ctx.get("settings") or {}).get("tradingHours") or {}).get(market)
+        if market and isinstance(spec, dict):
+            zone = str(spec.get("zone") or "").strip()
+            shuts = _hhmm(spec.get("close"))
+            if zone and clock.has_zone(zone) and shuts is not None:
+                at = clock.local_in(zone, now_ms)
+                left = shuts - (at.hour * 60 + at.minute)
+                if 0 <= left <= cb:
+                    return (f"{market} closes in {left}m — a day trade does not carry a "
+                            f"position overnight")
+    return None
+
+
 def decide(strategy, ctx):
     kind = strategy.get("kind") or "rules"
     fn = STRATEGY_KINDS.get(kind)
@@ -668,6 +709,14 @@ def decide(strategy, ctx):
         # A ladder names its rung, and that is the number the order key has to carry: two rungs
         # reaching their targets in the same bar are two orders, not one placed twice.
         out.append({**intent, "strategyId": strategy["id"], "seq": intent.get("seq", i)})
+    # The holding window outranks the rule's own silence, never its voice: it only speaks when no
+    # exit is already on its way, so a stop and a window expiry cannot sell the same shares twice.
+    if not any(i.get("side") == "sell" for i in out):
+        why = holding_exit(strategy, ctx)
+        if why:
+            out.append({"side": "sell", "qty": _num((ctx.get("position") or {}).get("qty")),
+                        "price": _num(ctx.get("price")), "reason": why,
+                        "strategyId": strategy["id"], "seq": len(out)})
     return out
 
 

@@ -1593,6 +1593,7 @@ def action_cycle(inp, settings):
             # there, not from the moving average), and when it opened (a rung can be timed).
             a = store.position_anchor(sconn, s["id"], broker, account, sym)
             pos = {**pos, "peak_qty": a["peakQty"], "anchor_price": a["firstPrice"],
+                   "anchor_ms": a["firstMs"],
                    "age_days": ((now - a["firstMs"]) / 86400000.0
                                 if a["firstMs"] else None)}
         # The window guard stops a second entry, not a second look. While a position is open its
@@ -4441,6 +4442,53 @@ def action_selftest():
     checks.append({"name": "a fixed universe fills the symbols the trade did not pin",
                    "want": ["KRW-X", "KRW-Y"], "got": got_uni,
                    "ok": got_uni == ["KRW-X", "KRW-Y"]})
+
+    # --- the holding window: a style is a clock ------------------------------------------------
+    def _kst(y, mo, d, h, mi):
+        import datetime as _d
+        return int(_d.datetime(y, mo, d, h, mi, tzinfo=_d.timezone(_d.timedelta(hours=9)))
+                   .timestamp() * 1000)
+    _hold_now = _kst(2026, 8, 5, 15, 25)
+    _scalp = {"id": "hw", "holding": {"maxHoldMinutes": 30}}
+    _hctx = {"position": {"qty": 1, "anchor_ms": _hold_now - 31 * 60000}, "price": 100.0,
+             "settings": {}, "now_ms": _hold_now}
+    checks.append({"name": "a scalp held past its window is closed", "want": "expired",
+                   "got": eng.holding_exit(_scalp, _hctx),
+                   "ok": bool(eng.holding_exit(_scalp, _hctx))})
+    _fresh = {**_hctx, "position": {"qty": 1, "anchor_ms": _hold_now - 5 * 60000}}
+    checks.append({"name": "a scalp inside its window is left alone", "want": None,
+                   "got": eng.holding_exit(_scalp, _fresh),
+                   "ok": eng.holding_exit(_scalp, _fresh) is None})
+    _day = {"id": "dw", "market": "kr", "holding": {"closeBeforeEndMin": 10}}
+    _hours = {"kr": {"zone": "Asia/Seoul", "open": "09:00", "close": "15:30"}}
+    _near = {"position": {"qty": 2, "anchor_ms": _hold_now}, "price": 100.0,
+             "settings": {"tradingHours": _hours}, "now_ms": _hold_now}
+    checks.append({"name": "a day trade closes before the bell", "want": "closes in 5m",
+                   "got": eng.holding_exit(_day, _near),
+                   "ok": bool(eng.holding_exit(_day, _near))})
+    _noon = {**_near, "now_ms": _kst(2026, 8, 5, 13, 0)}
+    checks.append({"name": "and not at lunch", "want": None,
+                   "got": eng.holding_exit(_day, _noon),
+                   "ok": eng.holding_exit(_day, _noon) is None})
+    _no_mkt = {"id": "nm", "holding": {"closeBeforeEndMin": 10}}
+    checks.append({"name": "no market means no close to be before — inert, not fatal",
+                   "want": None, "got": eng.holding_exit(_no_mkt, _near),
+                   "ok": eng.holding_exit(_no_mkt, _near) is None})
+    # Through decide: the window speaks only when no exit is already on its way.
+    _hw_strat = {"id": "hw2", "kind": "rules", "rules": [],
+                 "money": {"perOrderKrw": 10000}, "exits": {},
+                 "holding": {"maxHoldMinutes": 30}}
+    _hw_ctx = {"position": {"qty": 3, "avg_price": 100, "state": "active",
+                            "anchor_ms": _hold_now - 60 * 60000},
+               "price": 100.0, "sides": set(), "signal": {}, "quote": {},
+               "settings": {"tradingState": "on"}, "strategy": _hw_strat,
+               "mode": "dryrun", "account_exposure": 0.0, "vi_halted": False,
+               "now_ms": _hold_now}
+    _hw_out = eng.decide(_hw_strat, _hw_ctx)
+    checks.append({"name": "decide adds the window exit when the rule stays silent",
+                   "want": [("sell", 3.0)],
+                   "got": [(i["side"], i["qty"]) for i in _hw_out],
+                   "ok": [(i["side"], float(i["qty"])) for i in _hw_out] == [("sell", 3.0)]})
 
     # --- write_off and manual close, on a throwaway book ---------------------------------------
     _wo_dir = store.DATA_DIR
