@@ -202,6 +202,12 @@ impl ImageFormatHandler for CliCodexImageFormat {
         };
         // child kill — 파일을 먼저 건졌으면 아직 살아 있다(그게 정상 경로).
         let _ = child.kill().await;
+        // Rotated tokens go home — the image home refreshing a copied token is exactly how the
+        // two lineages burned each other (2026-08-06, "refresh token was already used" → every
+        // image sat on a silent 401 to the 420s timeout). Success or timeout, push back.
+        if let Some(h) = codex_home.as_ref() {
+            crate::llm::formats::cli_codex::sync_auth_back(h);
+        }
 
         // 종료·타임아웃으로 끝난 경우엔 여기서 한 번 더 훑는다. 타임아웃이어도 수확을 시도하는
         // 이유 = 이미 떨어진 산출물을 버릴 이유가 없어서.

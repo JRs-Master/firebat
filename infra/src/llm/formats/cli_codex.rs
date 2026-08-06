@@ -62,6 +62,37 @@ pub(crate) fn copy_auth_json(codex_home: &Path) {
     }
 }
 
+/// The other half of the auth story, run AFTER each codex child exits: if this home's copy
+/// rotated during the run (codex refreshed and rewrote it), push it back to the real
+/// `~/.codex/auth.json`. ChatGPT refresh tokens are single-use — two homes rotating
+/// independent copies burn each other's lineage. Measured 2026-08-06: the image home died
+/// with "refresh token was already used", every image call sat on a silent 401 until the
+/// 420s timeout, and mtime comparison alone could never see it (a newer file can hold an
+/// already-spent token). With the write-back, the real file is the hub every home converges
+/// through.
+pub(crate) fn sync_auth_back(codex_home: &Path) {
+    let Some(home) = resolve_home_dir() else {
+        return;
+    };
+    let real_auth = home.join(".codex").join("auth.json");
+    let tmp_auth = codex_home.join("auth.json");
+    let copy_newer = match (
+        std::fs::metadata(&real_auth).and_then(|m| m.modified()),
+        std::fs::metadata(&tmp_auth).and_then(|m| m.modified()),
+    ) {
+        (Ok(r), Ok(t)) => t > r,
+        // 실물이 없고 사본만 있으면 사본이 곧 진실.
+        (Err(_), Ok(_)) => true,
+        _ => false,
+    };
+    if copy_newer {
+        if let Some(parent) = real_auth.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::copy(&tmp_auth, &real_auth);
+    }
+}
+
 /// codex 이미지 확장자 allowlist — 수확 대상 판별.
 const CODEX_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 
@@ -857,6 +888,8 @@ impl CodexCliHandler {
         cleanup_temp_file(tmp_image_path);
         // 자식 reap + stderr 회수 (스트리밍 전환으로 wait_with_output 폐기).
         let status = child.wait().await.ok();
+        // Rotated tokens go home — see sync_auth_back. Runs on every exit, success or not.
+        sync_auth_back(&codex_home);
         let stderr_buf = stderr_task.await.unwrap_or_default();
 
         if errored {
