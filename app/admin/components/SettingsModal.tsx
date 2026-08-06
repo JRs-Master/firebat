@@ -1009,12 +1009,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   if (!clock) return null;
                   return (
                     <p className="text-[10px] sm:text-xs font-medium text-slate-500">
-                      지금 <b>{clock.abbr || clock.zone}</b> (UTC{clock.offset})
-                      {clock.observesDst
-                        ? clock.dstActive
-                          ? ' · 서머타임 적용 중 — 겨울에는 한 시간 물러납니다.'
-                          : ' · 서머타임을 쓰는 지역입니다 — 여름에는 한 시간 당겨집니다.'
-                        : ' · 연중 고정 (서머타임 없음)'}
+                      <b>{clock.abbr || clock.zone}</b> · UTC{clock.offset}
+                      {clock.observesDst ? (clock.dstActive ? ' · 서머타임' : ' · 서머타임 지역') : ''}
                     </p>
                   );
                 })()}

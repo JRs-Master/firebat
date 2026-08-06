@@ -834,8 +834,7 @@ function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: 
                 className="w-3.5 h-3.5 rounded border-slate-300" name="followZone" autoComplete="off"
                 aria-label="설정 시간대를 따름" />
               <span className="text-[11px] text-slate-600">
-                설정 시간대를 따름{' '}
-                <span className="text-slate-400">— 체크하면 설정 시간대를 바꿀 때 이 일정의 시각도 같이 움직입니다.</span>
+                설정 시간대를 따름 <span className="text-slate-400">— 설정한 시간대로 변경됩니다</span>
               </span>
             </label>
           </div>

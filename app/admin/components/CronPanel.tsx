@@ -962,10 +962,7 @@ export function ScheduleModal({ job, hubContext, onClose, onSaved, onDelete }: {
               aria-label="설정 시간대를 따름" />
             <span className="text-[11px] text-slate-600">
               설정 시간대를 따름{' '}
-              <span className="text-slate-400">
-                — 체크하면 설정 시간대를 바꿀 때 이 스케줄의 시각도 같이 움직입니다.
-                {job?.zone && job.zone !== 'auto' ? ` 지금은 ${job.zone} 로 고정입니다.` : ' 기본은 등록 시점 고정입니다.'}
-              </span>
+              <span className="text-slate-400">— 설정한 시간대로 변경됩니다</span>
             </span>
           </label>
 
