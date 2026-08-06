@@ -183,6 +183,11 @@ impl ModuleActionSource {
                         extra["resolveFirst"] = serde_json::Value::Object(resolve);
                     }
                 }
+                // Row prose = the action's own description; the embedded document also carries
+                // the domain and every param blurb, which reads as run-on text in a list.
+                if !desc.trim().is_empty() {
+                    extra["display"] = serde_json::Value::String(desc.trim().to_string());
+                }
                 Some(CatalogEntry {
                     id: format!("{}:{}", name, id),
                     name: a_name,
@@ -531,6 +536,22 @@ fn derive_entries_from_input(
                 // Enum values of THIS action's params are the sharpest declared signal for what it
                 // covers — `search` carries type=[webkr, blog, news, image, shop, …], which is what
                 // actually connects a news query to it. Declared data, no per-module wiring.
+                // What a person reads is not what the index matches on. The enum soup below is
+                // excellent retrieval signal and unreadable prose: a search row for upbit's
+                // candle-days came back "업비트 **공개 시세** GET POST DELETE limit best
+                // cancel_maker…" — the module blurb plus every enum any param declares, identical
+                // in spirit across days/weeks/months, so the row could not tell them apart
+                // (2026-08-06 실측). Keep the soup in `description` (the embedded document) and
+                // hand the row a clean `display`.
+                let display = if sem.trim().is_empty() {
+                    first_clause(&module_blurb)
+                } else {
+                    sem.trim().to_string()
+                };
+                let mut extra = extra;
+                if !display.is_empty() {
+                    extra["display"] = serde_json::Value::String(display);
+                }
                 let vals = param_enum_values(&extra);
                 if !vals.is_empty() {
                     sem.push(' ');
@@ -866,9 +887,43 @@ impl ModuleActionCatalog {
                     "requiresApproval": m.extra.get("requiresApproval").cloned().unwrap_or(serde_json::Value::Bool(false)),
                     "score": score,
                 });
-                let desc = clip_row_desc(&m.description);
+                // `display` when the entry has one — see the note where it is built. Falls back to
+                // the embedded document for entries that predate it.
+                let source = m
+                    .extra
+                    .get("display")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&m.description);
+                let desc = clip_row_desc(source);
                 if !desc.is_empty() && desc != m.name {
                     row["desc"] = serde_json::Value::String(desc);
+                }
+                // Param names + what is required, in the row. A search hit that names neither
+                // leaves the model no choice but a get_action_schema round for every candidate
+                // it is weighing — and the round budget is what ran out on 2026-08-06 (13 calls,
+                // no answer). Names only: the descriptions stay behind get_action_schema, which
+                // keeps the disclosure progressive without making discovery a guessing game.
+                let param_names: Vec<String> = m
+                    .extra
+                    .get("params")
+                    .and_then(|p| p.as_object())
+                    .map(|o| o.keys().cloned().collect())
+                    .or_else(|| {
+                        m.extra.get("paramNames").and_then(|v| v.as_array()).map(|a| {
+                            a.iter().filter_map(|x| x.as_str().map(String::from)).collect()
+                        })
+                    })
+                    .unwrap_or_default();
+                if !param_names.is_empty() {
+                    const PARAM_CAP: usize = 12;
+                    let shown: Vec<String> = param_names.iter().take(PARAM_CAP).cloned().collect();
+                    row["params"] = serde_json::json!(shown);
+                    if param_names.len() > PARAM_CAP {
+                        row["paramsMore"] = serde_json::json!(param_names.len() - PARAM_CAP);
+                    }
+                }
+                if let Some(req) = m.extra.get("required") {
+                    row["required"] = req.clone();
                 }
                 // Only surface the flag when true — a `false` on every other row is noise.
                 if m.extra.get("pageBinding").and_then(|v| v.as_bool()) == Some(true) {
@@ -1190,5 +1245,53 @@ mod action_fragment_tests {
         assert!(clipped.chars().count() <= 141);
         assert!(clipped.ends_with('…'));
         assert_eq!(clip_row_desc("  짧은 설명  "), "짧은 설명");
+    }
+}
+
+#[cfg(test)]
+mod display_vs_document_tests {
+    use super::*;
+
+    /// The upbit shape of 2026-08-06: a module blurb, several candle actions with no per-action
+    /// fragment, and params whose enums have nothing to do with telling them apart.
+    fn upbit_like() -> serde_json::Value {
+        serde_json::json!({
+            "description": "업비트 Open API 중 **공개 시세** — 캔들·체결·호가·티커.",
+            "input": {
+                "properties": {
+                    "action": { "type": "string", "enum": ["candle-days", "candle-weeks"] },
+                    "market": { "type": "string", "description": "마켓 코드 (예: KRW-BTC)" },
+                    "count":  { "type": "integer", "description": "조회 개수" },
+                    "method": { "type": "string", "enum": ["GET", "POST", "DELETE"] },
+                    "ord_type": { "type": "string", "enum": ["limit", "best", "cancel_maker"] }
+                },
+                "required": ["action"]
+            }
+        })
+    }
+
+    #[test]
+    fn the_row_prose_drops_the_enum_soup_the_index_keeps() {
+        let cfg = upbit_like();
+        let entries = derive_entries_from_input("upbit", &cfg, &serde_json::Value::Null);
+        let e = entries.iter().find(|e| e.name == "candle-days").expect("candle-days entry");
+        // The embedded document keeps every retrieval signal, enum values included.
+        assert!(e.description.contains("GET"), "index doc keeps enums: {}", e.description);
+        // What a reader sees does not.
+        let display = e.extra.get("display").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(!display.is_empty(), "an entry must have display prose");
+        for noise in ["GET", "POST", "DELETE", "cancel_maker"] {
+            assert!(!display.contains(noise), "display leaked {noise}: {display}");
+        }
+    }
+
+    #[test]
+    fn params_travel_with_the_entry_so_a_row_can_show_them() {
+        let cfg = upbit_like();
+        let entries = derive_entries_from_input("upbit", &cfg, &serde_json::Value::Null);
+        let e = entries.first().expect("at least one entry");
+        let params = e.extra.get("params").and_then(|p| p.as_object()).expect("params map");
+        assert!(params.contains_key("market"), "param names must reach the row");
+        assert!(!params.contains_key("action"), "the selector is not a param");
     }
 }
