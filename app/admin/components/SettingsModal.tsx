@@ -1044,9 +1044,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               general: ['anthropic', 'google', 'openai', 'upstage'],
               vertex: ['google'],
             };
-            // upstage(Solar) = 메인 LLM 공급자로는 당분간 비활성 (Solar 졸업, 2026-07-13 —
-            // 성능 좋아지면 이 셋에서 빼기만 하면 재활성). 키·임베딩·파싱(assistant 탭)은 계속 사용.
-            const disabledProviders = new Set(['upstage']);
+            // upstage(Solar) 재활성 (2026-08-06) — Solar Pro 4 출시로 졸업(7/13) 해제.
+            // 다시 재우려면 여기 'upstage' 를 넣기만 하면 된다.
+            const disabledProviders = new Set<string>([]);
             const activeProviders = providersByMode[aiMode];
             const effectiveProvider = activeProviders.includes(aiProvider) ? aiProvider : activeProviders[0];
             const cliProviderPrefix: Record<CliProvider, string> = {

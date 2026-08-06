@@ -516,6 +516,19 @@ async function main(data) {
 
     const query = data.query || {};
     const body = data.body || {};
+    // The account digits are already resolved — the framework injected `accountNo` alongside the
+    // credentials. A raw call that omits CANO/ACNT_PRDT_CD gets them filled here instead of being
+    // refused with "INPUT_FIELD_NAME CANO" (measured 2026-08-06: the model hand-built a balance
+    // query and dropped the one field only the registry knows). Explicit values still win.
+    if (data.accountNo) {
+      const acct = accountParts(data);
+      for (const target of [query, body]) {
+        if (target && typeof target === 'object' && Object.keys(target).length > 0) {
+          if (!target.CANO && acct.CANO) target.CANO = acct.CANO;
+          if (!target.ACNT_PRDT_CD && acct.ACNT_PRDT_CD) target.ACNT_PRDT_CD = acct.ACNT_PRDT_CD;
+        }
+      }
+    }
     applyLatestDefaults(action, query);
     const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock);
     normalizeCandles(result);

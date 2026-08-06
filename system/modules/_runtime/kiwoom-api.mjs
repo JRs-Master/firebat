@@ -502,6 +502,14 @@ async function main(data) {
       params = mapped.params;
     }
     if (URL_CATEGORY[apiId] === 'dostk/chart' && !params.base_dt) params.base_dt = kstToday();
+    // The practice host routes to KRX and nothing else. The neutral order path has forced this
+    // since 2026-08-04, but a raw call carries its own params and sailed past that guard with
+    // dmst_stex_tp: "SOR" — refused as RC9000 (measured 2026-08-06, the liquidation pass). The
+    // guard belongs to the venue fact, not to one entry path.
+    if (isMock && typeof params.dmst_stex_tp === 'string'
+        && params.dmst_stex_tp.toUpperCase() !== 'KRX') {
+      params = { ...params, dmst_stex_tp: 'KRX' };
+    }
     const result = action === 'get_candles'
       ? await fetchCandles(base, token, apiId, params, data.bars)
       : await callApi(base, token, apiId, params);
