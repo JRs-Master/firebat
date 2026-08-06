@@ -207,6 +207,65 @@ def day_start_ms():
     return clock.day_start_ms()
 
 
+def _trade_instances(settings, taken):
+    """Trades that point at a strategy by name — each becomes a runnable instance.
+
+    The v2 split: a strategy is the rule and nothing else, a trade is where it runs and with whose
+    money. The instance keeps the **trade's** id, because that id is the ledger key — the same rule
+    on two accounts must be two books, or a practice record pollutes a real one.
+
+    Money and limits overlay from the trade: they are the person's side of the boundary, and a rule
+    reused across accounts must not carry the first account's budget with it. A fixed universe on
+    the strategy supplies the symbols when the trade pins none; the trade's `maxSymbols` caps it
+    either way, so a growing universe cannot outgrow the row's own ceiling.
+
+    Returns `(instances, unknown_refs)` — a reference to a strategy that does not exist is worse
+    than a missing one (the trade looks configured and never runs), so the caller says it out loud.
+    """
+    lib = {s.get("id"): s for s in (settings.get("strategies") or []) if isinstance(s, dict)}
+    out, bad = [], []
+    for t in (settings.get("trades") or []):
+        if not isinstance(t, dict):
+            continue
+        ref = str(t.get("strategy") or "").strip()
+        tid = t.get("id")
+        if not ref or not tid or tid in taken:
+            continue
+        base = lib.get(ref)
+        if base is None:
+            bad.append({"tradeId": tid, "strategy": ref})
+            continue
+        inst = {**base, "id": tid, "strategyRef": ref}
+        inst.pop("symbol", None)  # a library rule owns no symbol; the trade decides below
+        for k in ("broker", "account", "market", "mode", "state", "money", "limits",
+                  "exits", "orders", "trigger", "enabled"):
+            v = t.get(k)
+            if v is not None and v != "":
+                inst[k] = v
+        symbols = None
+        if isinstance(t.get("symbols"), list) and t.get("symbols"):
+            symbols = list(t["symbols"])
+        elif t.get("symbol"):
+            inst["symbol"] = t["symbol"]
+        elif (isinstance(base.get("universe"), dict)
+              and str(base["universe"].get("type") or "") == "fixed"):
+            symbols = list(base["universe"].get("symbols") or [])
+        cap = t.get("maxSymbols")
+        if symbols and cap:
+            symbols = symbols[:max(0, int(eng._num(cap)))]
+        if symbols:
+            out.extend({**inst, "symbol": sym} for sym in symbols)
+        else:
+            out.append(inst)
+    return out, bad
+
+
+def unknown_trade_refs(settings):
+    """Trades whose `strategy` names nothing in the library — for the gate to report."""
+    taken = {s.get("id") for s in (settings.get("strategies") or []) if isinstance(s, dict)}
+    return _trade_instances(settings, taken)[1]
+
+
 def pick_strategies(settings, symbol=None, strategy_id=None):
     """Everything eligible to run: what a person declared, plus what the model has adopted.
 
@@ -216,6 +275,11 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
     """
     declared = list(settings.get("strategies") or [])
     names = {s.get("id") for s in declared if isinstance(s, dict)}
+    # v2 rows: a trade that references a library rule becomes its own instance. It joins the
+    # declared pool — it came off the same settings surface — and its id shadows an adopted one.
+    instances, _ = _trade_instances(settings, names)
+    declared = declared + instances
+    names |= {s.get("id") for s in instances}
     try:
         conn = strat.connect()
         adopted = [a for a in strat.rows_to_strategies(conn) if a["id"] not in names]
@@ -238,6 +302,10 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
                  "account": s.get("account") or trade.get("account"),
                  "market": s.get("market") or trade.get("market")}
         if s.get("symbol") or not (trade and (trade.get("conditionName") or trade.get("screen"))):
+            # A library rule — no symbol, no venue, no trade of its own — never runs bare. It
+            # exists to be referenced; running it would book fills under a name with no account.
+            if not s.get("symbol") and not s.get("broker") and not trade:
+                continue
             expanded.append(s)
             continue
         try:
@@ -832,6 +900,15 @@ def action_gate(inp, settings):
         reasons.append("trading is tripped (unresolved order) — resume clears it after a ledger "
                        "replay agrees")
     strategies = pick_strategies(settings)
+    # A trade pointing at a strategy that does not exist looks configured and never runs — worse
+    # than absent. A warning, not a reason: one typo must not stop every other trade, but it must
+    # not be silent either, so it lands in the events the attention surface reads.
+    warnings = []
+    for b in unknown_trade_refs(settings):
+        msg = (f"trade '{b['tradeId']}' references strategy '{b['strategy']}' which is not "
+               f"declared — it will never run")
+        warnings.append(msg)
+        store.log_event(conn, "unknown_strategy", {"why": msg}, strategy_id=b["tradeId"])
     conn.close()
     screened = [t for t in declared_trades(settings)
                 if t.get("conditionName") or t.get("screen")]
@@ -852,6 +929,7 @@ def action_gate(inp, settings):
     return {"success": True, "data": {
         "active": not reasons,
         "why": reasons or None,
+        "warnings": warnings or None,
         # The global switch state and the legacy cap, not a per-strategy verdict — that needs the
         # account and is decided in `cycle`. `unattended` is reported alongside because an
         # interactive call is demoted to paper regardless of the setting, and a gate that hid that
@@ -3028,7 +3106,10 @@ def action_selftest():
     # One letter put 11.09 ONDO under `onde` on 2026-08-05. Filing a holding under a name nobody
     # runs is worse than leaving it in the bucket — the bucket reads as unfinished business, a
     # position under a dead name reads as managed and never is.
-    _sset = {"strategies": [{"id": "ondo"}, {"id": "btc"}]}
+    # Runnable shapes: a bare `{"id"}` is a library rule now, and a library rule is not an
+    # assignment target — positions belong to trades, which have a venue.
+    _sset = {"strategies": [{"id": "ondo", "symbol": "KRW-ONDO", "broker": "upbit-trade"},
+                            {"id": "btc", "symbol": "KRW-BTC", "broker": "upbit-trade"}]}
     # Nothing used to clear the global halt: it was set in two places and had no way down, so a
     # drift halt was permanent while `halt` claimed a settings screen could clear it. And the way
     # down has to check — an alarm is quieted by fixing what it reports, not by switching it off.
@@ -4113,6 +4194,62 @@ def action_selftest():
                             "strategy": {**coin, "state": "paused"}})
     checks.append({"name": "an unreadable trade state reads as off", "want": [],
                    "got": [i["side"] for i in a5], "ok": a5 == []})
+
+    # --- a trade that references a library rule -----------------------------------------------
+    # The v2 split: the strategy is the rule and nothing else; the trade is where it runs and with
+    # whose money. The instance keeps the trade's id — that id is the ledger key.
+    lib_rule = {"id": "ema-lib", "kind": "rules", "interval": "1h",
+                "money": {"perOrderKrw": 999}, "rules": [
+                    {"side": "buy", "when": [{"a": "ema3", "op": "crossUp", "b": "ema60"}]}]}
+    ref_settings = {
+        "tradingState": "on",
+        "strategies": [lib_rule],
+        "trades": [
+            {"id": "t-one", "strategy": "ema-lib", "symbol": "KRW-AAA",
+             "broker": "upbit-trade", "account": "", "mode": "ledger",
+             "money": {"perOrderKrw": 5000}},
+            {"id": "t-two", "strategy": "ema-lib", "symbols": ["005930", "000660", "005380"],
+             "broker": "kiwoom-trade", "account": "모의국내", "maxSymbols": 2},
+            {"id": "t-bad", "strategy": "no-such-rule", "symbol": "KRW-BBB",
+             "broker": "upbit-trade"},
+        ],
+    }
+    got_inst = pick_strategies(ref_settings)
+    by_id = {}
+    for s in got_inst:
+        by_id.setdefault(s["id"], []).append(s)
+    one = (by_id.get("t-one") or [{}])[0]
+    checks.append({"name": "an instance keeps the trade's id and the trade's money",
+                   "want": {"id": "t-one", "perOrderKrw": 5000},
+                   "got": {"id": one.get("id"),
+                           "perOrderKrw": (one.get("money") or {}).get("perOrderKrw")},
+                   "ok": one.get("id") == "t-one" and one.get("strategyRef") == "ema-lib"
+                   and (one.get("money") or {}).get("perOrderKrw") == 5000
+                   and one.get("broker") == "upbit-trade" and one.get("symbol") == "KRW-AAA"
+                   and bool(one.get("rules"))})
+    checks.append({"name": "a symbols list expands one instance per symbol, capped",
+                   "want": ["000660", "005930"],
+                   "got": sorted(s.get("symbol") for s in by_id.get("t-two") or []),
+                   "ok": sorted(s.get("symbol") for s in (by_id.get("t-two") or [])) ==
+                   ["000660", "005930"]})
+    checks.append({"name": "the library rule itself never runs bare", "want": None,
+                   "got": by_id.get("ema-lib"), "ok": "ema-lib" not in by_id})
+    checks.append({"name": "an unknown reference is reported, not silently skipped",
+                   "want": [{"tradeId": "t-bad", "strategy": "no-such-rule"}],
+                   "got": unknown_trade_refs(ref_settings),
+                   "ok": unknown_trade_refs(ref_settings) ==
+                   [{"tradeId": "t-bad", "strategy": "no-such-rule"}]})
+    # A fixed universe on the strategy supplies symbols when the trade pins none.
+    uni_rule = {**lib_rule, "id": "uni-lib",
+                "universe": {"type": "fixed", "symbols": ["KRW-X", "KRW-Y"]}}
+    uni_settings = {"tradingState": "on", "strategies": [uni_rule],
+                    "trades": [{"id": "t-uni", "strategy": "uni-lib",
+                                "broker": "upbit-trade", "account": ""}]}
+    got_uni = sorted(s.get("symbol") for s in pick_strategies(uni_settings)
+                     if s.get("id") == "t-uni")
+    checks.append({"name": "a fixed universe fills the symbols the trade did not pin",
+                   "want": ["KRW-X", "KRW-Y"], "got": got_uni,
+                   "ok": got_uni == ["KRW-X", "KRW-Y"]})
 
     # --- a freshly installed module is not an empty shell ----------------------------------
     # Settings only reach the sandbox once someone has pressed save, so before that the module
