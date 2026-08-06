@@ -2534,6 +2534,9 @@ impl AiManager {
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
         let mut tool_results_summary: Vec<crate::ports::ToolResultSummary> = Vec::new();
         let mut blocks: Vec<serde_json::Value> = Vec::new();
+        // Mid-round narration ("좌표를 받았으니 다시 시도해볼게요…") parked here instead of going
+        // straight into blocks — see the round loop and the promotion pass before final assembly.
+        let mut round_text_buffer: Vec<String> = Vec::new();
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
         // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 에 포함.
         let mut cli_suggestions: Vec<serde_json::Value> = Vec::new();
@@ -4250,13 +4253,20 @@ impl AiManager {
                 });
             }
 
-            // 중간 turn text → blocks push (옛 TS Core 동작 복원, 2026-05-20).
-            // 옛 commit e9c66c6 안 폐기 영역 = 답변 N번 반복 issue. 다만 폐기 후 사용자 보고 =
-            // "답변 길이 짧음" — multi-turn AI 의 reasoning text 영역 답변 안 사라짐.
-            // push_text_block_dedup 의 70% similarity 매칭 안 옛 turn text 영역 final turn 안 자동
-            // 중복 차단. final turn 에 같은 내용이 있으면 skip — 옛 중복 issue 영역 자동 가드.
+            // Mid-round text is narration until proven otherwise (2026-08-06). Pushing every
+            // round's text as a block (the 2026-05-20 restoration for "answers got short") worked
+            // while models stayed quiet between tool calls — Solar Pro 4 says one line per round,
+            // and eleven rounds of "…해볼게요" pasted themselves above the real answer. Only text
+            // carrying a render fence keeps its place in blocks (fences are content and their
+            // position among rendered blocks matters); plain text waits in the buffer and is
+            // promoted before final assembly ONLY when the turn produced no other text block —
+            // which is exactly the case the 2026-05-20 restoration existed for.
             if !last_text.trim().is_empty() {
-                push_text_block_dedup(&mut blocks, &last_text);
+                if last_text.contains("firebat-render") {
+                    push_text_block_dedup(&mut blocks, &last_text);
+                } else {
+                    round_text_buffer.push(last_text.clone());
+                }
             }
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
@@ -4584,6 +4594,20 @@ impl AiManager {
                 cache_key: None,
                 rows: None,
             });
+        }
+
+        // Buffered mid-round narration — promote only when the turn ended with no text block at
+        // all: the model put its whole answer in mid-round text (the 2026-05-20 "short answer"
+        // class) or the tool budget ran out mid-flight. When a final text exists the narration
+        // stays out of the answer; it is still visible in the thinking channel and reasoning_trace.
+        if !blocks
+            .iter()
+            .any(|b| b.get("type").and_then(|v| v.as_str()) == Some("text"))
+        {
+            let promoted = round_text_buffer.clone();
+            for t in &promoted {
+                push_text_block_dedup(&mut blocks, t);
+            }
         }
 
         // 누적된 blocks (도구 결과 render_*) 와 markdown segments 변환 결과 병합.
