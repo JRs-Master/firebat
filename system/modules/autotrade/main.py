@@ -130,11 +130,17 @@ def env_bool(name, default=False):
 
 def load_settings():
     return {
-        "mode": os.environ.get("MODULE_MODE") or "dryrun",
+        # Legacy global mode. v2 puts the mode on each trade (`ledger`/`live` — the account decides
+        # whether live is practice or real money), so this is only a cap for vaults that predate
+        # the change. Absent means "no global cap", not "paper": the per-trade word stands alone.
+        "mode": os.environ.get("MODULE_MODE") or "",
+        # The human switch, one field with three states: on / pauseEntries / off. The two legacy
+        # toggles below are read only while this is unset, so an old vault keeps meaning what it
+        # meant. Separate from the module's own enabled flag: that one blocks every path including
+        # reading the ledger, and would make the scheduled pipeline fail once a minute rather
+        # than skip.
+        "tradingState": os.environ.get("MODULE_TRADINGSTATE") or "",
         "killSwitch": env_bool("MODULE_KILLSWITCH"),
-        # The human switch. Separate from the module's own enabled flag: that one blocks every
-        # path including reading the ledger, and would make the scheduled pipeline fail once a
-        # minute rather than skip.
         "tradingEnabled": env_bool("MODULE_TRADINGENABLED"),
         "activeFrom": os.environ.get("MODULE_ACTIVEFROM") or "",
         "activeUntil": os.environ.get("MODULE_ACTIVEUNTIL") or "",
@@ -805,7 +811,7 @@ def action_gate(inp, settings):
     # trades Seoul and New York, on different endpoints and at different hours, so the two are two
     # schedules sharing one account.
     only_market = str(inp.get("market") or "").strip().lower()
-    if not settings.get("tradingEnabled"):
+    if eng.global_state(settings) == "off":
         reasons.append("trading is switched off in the module settings")
     start, end = settings.get("activeFrom"), settings.get("activeUntil")
     # Seconds, like `now` — the old names said `_ms` while holding seconds, next to a comparison
@@ -823,9 +829,8 @@ def action_gate(inp, settings):
         reasons.append(f"the active period ended {end}")
     conn = store.connect("dryrun" if settings.get("mode") == "dryrun" else "live")
     if store.kv_get(conn, "tripped") == "1":
-        reasons.append("the kill switch is tripped — clear it in the settings")
-    if settings.get("killSwitch"):
-        reasons.append("killSwitch is on")
+        reasons.append("trading is tripped (unresolved order) — resume clears it after a ledger "
+                       "replay agrees")
     strategies = pick_strategies(settings)
     conn.close()
     screened = [t for t in declared_trades(settings)
@@ -847,11 +852,12 @@ def action_gate(inp, settings):
     return {"success": True, "data": {
         "active": not reasons,
         "why": reasons or None,
-        # The declared mode, not a per-strategy verdict — that needs the account and is decided
-        # in `cycle`. `unattended` is reported alongside because an interactive call is demoted to
-        # paper regardless of the setting, and a gate that hid that would read as live when it
-        # is not.
-        "mode": settings.get("mode", "dryrun"),
+        # The global switch state and the legacy cap, not a per-strategy verdict — that needs the
+        # account and is decided in `cycle`. `unattended` is reported alongside because an
+        # interactive call is demoted to paper regardless of the setting, and a gate that hid that
+        # would read as live when it is not.
+        "state": eng.global_state(settings),
+        "mode": settings.get("mode") or None,
         "unattended": unattended(),
         "strategies": len(strategies),
         "activeFrom": start or None,
@@ -1478,7 +1484,15 @@ def action_cycle(inp, settings):
         # injected on a scoped call, and through the gate's `scopedTo` on the steps behind it.
         account_is_mock = (bool(inp.get("mock")) or bool(scoped_mock)
                            or str(s.get("mode")) == "mock")
-        mode = eng.effective_mode(settings, s, account_is_mock, unattended())
+        mode, mode_refusal = eng.resolve_mode(settings, s, account_is_mock, unattended())
+        if mode_refusal:
+            # A constraint only a different account could satisfy. Refused by name rather than
+            # demoted: the old cap changed the label and kept the credentials, which is how a
+            # disarmed real-account trade could still reach the exchange.
+            store.log_event(conn, "refused", {"why": mode_refusal},
+                            strategy_id=s["id"], symbol=sym)
+            results.append({"strategyId": s["id"], "symbol": sym, "refused": mode_refusal})
+            continue
         # Resolved before anything is read or written, because it decides which ledger this
         # strategy's rows belong to.
         sconn = store_for(mode)
@@ -2488,15 +2502,30 @@ def action_selftest():
                    "got": [len(transfers), len(rest)],
                    "ok": len(transfers) == 1 and transfers[0]["qty"] == 2 and len(rest) == 2})
 
-    mode = eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "real"}, False, False)
+    mode = eng.effective_mode({"realArmed": True}, {"mode": "live"}, False, False)
     checks.append({"name": "an interactive call stays on paper", "want": "dryrun",
                    "got": mode, "ok": mode == "dryrun"})
-    mode2 = eng.effective_mode({"mode": "real", "realArmed": False}, {"mode": "real"}, False, True)
-    checks.append({"name": "live trading needs arming", "want": "mock",
-                   "got": mode2, "ok": mode2 == "mock"})
-    mode3 = eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "real"}, True, True)
+    # Disarmed live-on-a-real-account is refused, not relabelled: the old `real → mock` demotion
+    # kept the trade's own credentials, so orders left the machine wearing a mock label.
+    mode2, why2 = eng.resolve_mode({"realArmed": False}, {"mode": "live"}, False, True)
+    checks.append({"name": "disarmed real-account trading is refused, not demoted",
+                   "want": "refusal", "got": why2 or mode2,
+                   "ok": mode2 == "dryrun" and bool(why2)})
+    mode3, why3 = eng.resolve_mode({"realArmed": True}, {"mode": "live"}, True, True)
     checks.append({"name": "a mock account stays mock", "want": "mock",
-                   "got": mode3, "ok": mode3 == "mock"})
+                   "got": mode3, "ok": mode3 == "mock" and why3 is None})
+    # A legacy global cap to mock cannot change which credentials a real-account trade would
+    # use, so it refuses too instead of relabelling.
+    mode4, why4 = eng.resolve_mode({"mode": "mock", "realArmed": True}, {"mode": "live"},
+                                   False, True)
+    checks.append({"name": "a mock cap on a real account refuses rather than relabels",
+                   "want": "refusal", "got": why4 or mode4,
+                   "ok": mode4 == "dryrun" and bool(why4)})
+    # The ledger half of the split: a ledger trade never leaves the machine and never needs
+    # arming — it is the strategy-test mode, whatever accounts exist.
+    mode5, why5 = eng.resolve_mode({"realArmed": False}, {"mode": "ledger"}, False, True)
+    checks.append({"name": "a ledger trade is paper and needs no arming", "want": "dryrun",
+                   "got": mode5, "ok": mode5 == "dryrun" and why5 is None})
 
     # --- profit, as the ledger states it -------------------------------------------------------
     # Nothing reported profit before this: `realized_today` existed for the daily loss limit only,
@@ -3386,6 +3415,20 @@ def action_selftest():
     checks.append({"name": "switched off means no cycle", "want": False,
                    "got": gate(tradingEnabled=False)["active"],
                    "ok": gate(tradingEnabled=False)["active"] is False})
+    # The three-state switch outranks the legacy toggles when set, in both directions: `off`
+    # silences a vault that still says enabled, and `on` revives one that predates the field.
+    checks.append({"name": "tradingState off wins over a legacy enabled", "want": False,
+                   "got": gate(tradingState="off")["active"],
+                   "ok": gate(tradingState="off")["active"] is False})
+    checks.append({"name": "tradingState on wins over legacy toggles", "want": True,
+                   "got": gate(tradingState="on", tradingEnabled=False, killSwitch=True)["active"],
+                   "ok": gate(tradingState="on", tradingEnabled=False,
+                              killSwitch=True)["active"] is True})
+    # pauseEntries still cycles — exits and bookkeeping must keep running; only entries stop,
+    # and that verdict belongs to risk_gates.
+    checks.append({"name": "pauseEntries keeps the cycle alive", "want": True,
+                   "got": gate(tradingState="pauseEntries")["active"],
+                   "ok": gate(tradingState="pauseEntries")["active"] is True})
     checks.append({"name": "switched on with a strategy runs", "want": True,
                    "got": gate()["active"], "ok": gate()["active"] is True})
     checks.append({"name": "no strategy is not a run", "want": False,
@@ -3428,7 +3471,8 @@ def action_selftest():
     checks.append({"name": "an unreadable end date holds instead of removing the deadline",
                    "want": False, "got": typo["why"],
                    "ok": typo["active"] is False and "activeUntil" in str(typo["why"])})
-    checks.append({"name": "the kill switch is a reason of its own", "want": False,
+    # The legacy kill switch reads as `off` through the state mapping — same silence, one rule.
+    checks.append({"name": "a legacy kill switch still stops the cycle", "want": False,
                    "got": gate(killSwitch=True)["active"],
                    "ok": gate(killSwitch=True)["active"] is False})
     # An interactive call is paper whatever the setting says, and the gate must not hide it.
@@ -4005,7 +4049,8 @@ def action_selftest():
             "limits": {"maxPositionKrw": 10000}, "exits": {}}
     def coin_ctx(**over):
         base = {"position": {"qty": 0, "avg_price": 0, "state": "active"}, "price": 4200000.0,
-                "sides": {"buy"}, "signal": {}, "quote": {}, "settings": {}, "strategy": coin,
+                "sides": {"buy"}, "signal": {}, "quote": {},
+                "settings": {"tradingState": "on"}, "strategy": coin,
                 "mode": "dryrun", "account_exposure": 0.0, "vi_halted": False}
         base.update(over)
         return base
@@ -4031,6 +4076,43 @@ def action_selftest():
     checks.append({"name": "a budget below one unit is refused out loud, not silently",
                    "want": "최소 거래단위", "got": (why[0].get("dropReason") if why else None),
                    "ok": bool(why) and "최소 거래단위" in str(why[0].get("dropReason"))})
+
+    # --- the three-state switch at the order gate -------------------------------------------
+    # `pauseEntries` is the loss halt's rule made a setting: no new risk, exits keep their door.
+    # `off` drops everything — a state someone chose, since it leaves positions untended. The
+    # per-trade state and the global one combine strictest-wins, wherever the strictness came from.
+    both = [{"strategyId": "c", "side": "buy", "qty": 1, "price": 100},
+            {"strategyId": "c", "side": "sell", "qty": 1, "price": 100}]
+    held_ctx = coin_ctx(position={"qty": 1, "avg_price": 100, "state": "active"})
+    a1, d1 = eng.risk_gates([dict(i) for i in both],
+                            {**held_ctx, "settings": {"tradingState": "pauseEntries"}})
+    checks.append({"name": "paused entries drop the buy and keep the sell",
+                   "want": ["sell"], "got": [i["side"] for i in a1],
+                   "ok": [i["side"] for i in a1] == ["sell"] and len(d1) == 1})
+    a2, d2 = eng.risk_gates([dict(i) for i in both],
+                            {**held_ctx, "settings": {"tradingState": "off"}})
+    checks.append({"name": "off drops everything, exits included",
+                   "want": [], "got": [i["side"] for i in a2],
+                   "ok": a2 == [] and len(d2) == 2})
+    paused_trade = {**coin, "state": "pauseEntries"}
+    a3, _ = eng.risk_gates([dict(i) for i in both],
+                           {**held_ctx, "settings": {"tradingState": "on"},
+                            "strategy": paused_trade})
+    checks.append({"name": "a trade's own state pauses it while the rest run",
+                   "want": ["sell"], "got": [i["side"] for i in a3],
+                   "ok": [i["side"] for i in a3] == ["sell"]})
+    a4, _ = eng.risk_gates([dict(i) for i in both],
+                           {**held_ctx, "settings": {"tradingState": "pauseEntries"},
+                            "strategy": {**coin, "state": "on"}})
+    checks.append({"name": "the stricter of global and trade wins",
+                   "want": ["sell"], "got": [i["side"] for i in a4],
+                   "ok": [i["side"] for i in a4] == ["sell"]})
+    # An unreadable state is off, not quietly on.
+    a5, _ = eng.risk_gates([dict(i) for i in both],
+                           {**held_ctx, "settings": {"tradingState": "on"},
+                            "strategy": {**coin, "state": "paused"}})
+    checks.append({"name": "an unreadable trade state reads as off", "want": [],
+                   "got": [i["side"] for i in a5], "ok": a5 == []})
 
     # --- a freshly installed module is not an empty shell ----------------------------------
     # Settings only reach the sandbox once someone has pressed save, so before that the module

@@ -29,6 +29,34 @@ import tz as clock  # noqa: E402
 MODE_RANK = {"dryrun": 0, "mock": 1, "real": 2}
 MODE_NAME = ["dryrun", "mock", "real"]
 
+# Trading states are ordered the same way, and combining the global switch with a trade's own is
+# again a minimum: the stricter of the two wins, wherever the strictness came from.
+STATE_RANK = {"off": 0, "pauseEntries": 1, "on": 2}
+STATE_NAME = ["off", "pauseEntries", "on"]
+
+
+def global_state(settings):
+    """The one global switch: `on` / `pauseEntries` / `off`.
+
+    Replaces two toggles that overlapped (`tradingEnabled`, `killSwitch`) without saying how they
+    combined. Both are still read when the new field is unset, so a vault that predates the switch
+    keeps meaning what it meant — an upgrade must not silently stop live trading, and just as much
+    must not silently start it.
+    """
+    raw = str(settings.get("tradingState") or "").strip()
+    if raw in STATE_RANK:
+        return raw
+    if settings.get("killSwitch"):
+        return "off"
+    return "on" if settings.get("tradingEnabled") else "off"
+
+
+def trade_state(settings, strategy):
+    """The stricter of the global switch and this trade's own three-state."""
+    own = str((strategy or {}).get("state") or "on").strip()
+    own_rank = STATE_RANK.get(own, 0)  # an unreadable state is off, not quietly on
+    return STATE_NAME[min(STATE_RANK[global_state(settings)], own_rank)]
+
 
 def _hhmm(text):
     """`"15:30"` → 930 minutes. None if it is not a time."""
@@ -102,29 +130,53 @@ def session_refusal(market, hours, real, ms=None):
     return None
 
 
-def effective_mode(settings, strategy, account_is_mock, unattended):
-    """The one place real money becomes reachable.
+def resolve_mode(settings, strategy, account_is_mock, unattended):
+    """The one place real money becomes reachable. Returns `(mode, refusal)`.
 
-    Read it as a series of demotions, never promotions: the global setting and the strategy each
-    cap the other, an interactive call is always paper (a chat message must not be able to place a
-    live order — the scheduled run is the thing that was approved), the kill switch overrides
-    everything, live trading needs its own arming toggle, and a mock account stays mock no matter
-    what the settings say because its credentials only work on the mock host anyway.
+    Two words describe a trade now: **ledger** (fills are simulated, nothing leaves the machine)
+    and **live** (real orders through the trade's account). Whether live means a practice house or
+    real money is not a mode — the account decides, because its credentials only work on one host.
+    The legacy names (`dryrun`/`mock`/`real`) are still read: adopted strategies carry their ladder
+    stage in that vocabulary, and an old vault still says `mode: real`.
+
+    Demotions that stay demotions: an interactive call is always paper (a chat message must not be
+    able to place a live order — the scheduled run is the thing that was approved), and a mock
+    account caps live at mock. But a constraint that would need a *different account* to satisfy is
+    a **refusal**, never a demotion: `real → mock` used to keep the trade's own account, so with a
+    real account and the arming switch off, orders left the machine wearing a mock label. The cap
+    protected the name of the mode and not the money. A loss halt touches neither — it blocks new
+    buys and lets exits through (`risk_gates`), and capping the mode here would send those exits to
+    the paper book while the real position stayed open.
     """
-    m = min(MODE_RANK.get(settings.get("mode", "dryrun"), 0),
-            MODE_RANK.get(strategy.get("mode", "real"), 2))
+    raw = str(strategy.get("mode") or "").strip()
+    if raw in ("ledger", "paper"):
+        m = 0
+    elif raw == "live":
+        m = 2
+    else:
+        m = MODE_RANK.get(raw, 2) if raw else 2
+    # A legacy global mode still caps everything under it. Absent (the field left the settings
+    # screen in v2), there is no global cap and the trade's own word stands.
+    g = str(settings.get("mode") or "").strip()
+    if g:
+        m = min(m, MODE_RANK.get(g, 0))
     if not unattended:
         m = 0
-    # The kill switch means "nothing leaves this machine", so it caps the mode. A loss halt does
-    # not: it blocks new buys and lets exits through (see `apply_guards`), and capping the mode here
-    # would send those exits to the paper book while the real position stayed open.
-    if settings.get("killSwitch"):
-        m = 0
-    if m == 2 and not settings.get("realArmed"):
-        m = 1
     if m == 2 and account_is_mock:
         m = 1
-    return MODE_NAME[m]
+    if m == 2 and not settings.get("realArmed"):
+        return MODE_NAME[0], ("realArmed is off — this trade points at a real account, so it is "
+                              "refused rather than quietly relabelled")
+    if m == 1 and not account_is_mock and str(strategy.get("mode") or "") != "mock":
+        return MODE_NAME[0], ("capped to mock but the account is not a mock account — a mock cap "
+                              "cannot change which credentials the order would use")
+    return MODE_NAME[m], None
+
+
+def effective_mode(settings, strategy, account_is_mock, unattended):
+    """`resolve_mode` for callers that only want the book — a refusal reads as paper."""
+    mode, refusal = resolve_mode(settings, strategy, account_is_mock, unattended)
+    return MODE_NAME[0] if refusal else mode
 
 
 def signal_payload(signal):
@@ -715,8 +767,23 @@ def risk_gates(intents, ctx):
         if not intents:
             return [], dropped
 
-    if settings.get("killSwitch"):
-        return [], [{**i, "dropReason": "kill switch is on"} for i in intents]
+    # The three-state switch, global and per-trade combined, strictest wins. `off` means nothing
+    # leaves — and therefore leaves positions untended, which is why it is a state someone chose,
+    # not a safety default. `pauseEntries` is the same rule the loss halt and `degraded` already
+    # follow: no new risk, the exits keep their door.
+    state = trade_state(settings, strategy)
+    if state == "off":
+        return [], [{**i, "dropReason": "trading state is off"} for i in intents]
+    if state == "pauseEntries":
+        keep = []
+        for i in intents:
+            if i["side"] == "sell":
+                keep.append(i)
+            else:
+                dropped.append({**i, "dropReason": "entries are paused — selling only"})
+        intents = keep
+        if not intents:
+            return [], dropped
     # A daily-loss halt stops **new risk**, not the exits. Dropping every intent shut the door a
     # position leaves by, so the loss that tripped the limit could keep growing with the stop
     # sitting right there unable to fire — the halt made the thing it exists to limit worse.

@@ -1,9 +1,15 @@
 {
   "settings": {
-    "tradingEnabled": {
-      "label": "Enable trading",
-      "description": "Trading runs only while this is on. Only a person can change it — the model has no way to.",
-      "group": "Switch"
+    "tradingState": {
+      "label": "Trading state",
+      "description": "on = running · pauseEntries = entries paused, exits continue · off = fully stopped. legacy = follow the old toggles.",
+      "group": "Switches",
+      "options": [
+        "Follow old toggles",
+        "Running",
+        "Entries paused",
+        "Fully stopped"
+      ]
     },
     "activeFrom": {
       "label": "Start date",
@@ -15,24 +21,9 @@
       "description": "Inclusive of this day. Empty runs indefinitely. An unreadable date halts trading rather than removing the deadline.",
       "group": "Switch"
     },
-    "mode": {
-      "label": "Mode",
-      "description": "dryrun = ledger only, no orders · mock = real orders on a mock account · real = live. An interactive call is demoted to dryrun whatever this says.",
-      "group": "Mode",
-      "options": [
-        "Paper (dryrun)",
-        "Mock account",
-        "Live account"
-      ]
-    },
     "realArmed": {
-      "label": "Arm real money",
-      "description": "Even in real mode, orders stop at mock while this is off. The last lock.",
-      "group": "Mode"
-    },
-    "killSwitch": {
-      "label": "Emergency stop",
-      "description": "Halts every new order and drops the mode to ledger-only — nothing reaches an exchange. **A person turns this on and off; nothing else does.** The daily loss limit does not touch it: that stops new buys in one currency, lets exits through, and lifts itself when the realised result recovers.",
+      "label": "Real accounts armed",
+      "description": "While off, real-account trades are refused.",
       "group": "Mode"
     },
     "realMaxNotionalKrw": {
@@ -42,7 +33,7 @@
     },
     "dailyLossLimitKrw": {
       "label": "Daily loss limit (KRW)",
-      "description": "Realised loss reaching this trips the emergency stop.",
+      "description": "Reaching this daily realised loss pauses new entries. Exits continue; trading resumes once back inside the limit.",
       "group": "Limits"
     },
     "accountMaxNotionalKrw": {
