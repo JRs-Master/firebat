@@ -8,7 +8,8 @@
 //! - `grep` — eq/ne/gt/gte/lt/lte/contains/in
 //! - `aggregate` — count/sum/avg/min/max
 //! - `drop_key` — remove one key
-//! - TTL 30 minutes; LRU 100 keys (the oldest is dropped past capacity)
+//! - TTL 30 minutes; per-(sysmod+action) LRU of 20 keys + global backstop 1000 — one
+//!   producer (a cron) must not evict another's (a chat) keys
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -18,7 +19,14 @@ use std::sync::Mutex;
 use crate::ports::InfraResult;
 
 const TTL_MS: i64 = 30 * 60 * 1000; // 30분 — drill-in 후속 질문 + 긴 본문 재참조 여유
-const LRU_CAPACITY: usize = 100;
+/// Per-group (sysmod+action) key cap. The cap used to be one global LRU of 100 keys — and the
+/// autotrade crons write ~900 keys per half hour, so a chart series a chat had just fetched was
+/// evicted minutes later, mid-turn, by `autotrade-gate:trades` churn (2026-08-06 실측: render 가
+/// "저장된 것이 없습니다"). One producer must not evict another's keys: each sysmod+action group
+/// now buries only its own old keys.
+const LRU_PER_GROUP: usize = 20;
+/// Backstop so the sum of groups stays bounded (files are small; TTL already bounds lifetime).
+const LRU_GLOBAL_CAP: usize = 1000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,8 +46,11 @@ pub struct CacheMeta {
 
 pub struct SysmodCacheAdapter {
     cache_dir: PathBuf,
-    /// In-memory LRU: key -> last access time. Past capacity the oldest entry is evicted.
-    lru: Mutex<HashMap<String, i64>>,
+    /// In-memory LRU: key -> (last access time, group). Group = "{sysmod}-{action}"; eviction is
+    /// per group (see LRU_PER_GROUP). After a restart the map is empty while files survive on
+    /// disk — a key touched by a read then re-enters with an empty group, counted only against
+    /// the global backstop.
+    lru: Mutex<HashMap<String, (i64, String)>>,
 }
 
 fn now_ms() -> i64 {
@@ -64,17 +75,46 @@ impl SysmodCacheAdapter {
         self.cache_dir.join(format!("{key}.meta.json"))
     }
 
-    fn touch(&self, key: &str) {
-        let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
-        lru.insert(key.to_string(), now_ms());
-        // Past capacity: evict the oldest.
-        if lru.len() > LRU_CAPACITY {
-            if let Some((oldest_key, _)) = lru.iter().min_by_key(|(_, t)| **t) {
+    fn touch(&self, key: &str, group: Option<&str>) {
+        let mut evicted: Vec<String> = Vec::new();
+        {
+            let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
+            // A read-path touch (group unknown) must not erase the group a data() stamp set.
+            let g = group
+                .map(str::to_string)
+                .or_else(|| lru.get(key).map(|(_, g)| g.clone()))
+                .unwrap_or_default();
+            lru.insert(key.to_string(), (now_ms(), g.clone()));
+            // Group cap — the producer buries only its own old keys.
+            if !g.is_empty() {
+                let mut members: Vec<(String, i64)> = lru
+                    .iter()
+                    .filter(|(_, (_, mg))| *mg == g)
+                    .map(|(k, (t, _))| (k.clone(), *t))
+                    .collect();
+                if members.len() > LRU_PER_GROUP {
+                    members.sort_by_key(|(_, t)| *t);
+                    for (k, _) in members.into_iter().take(
+                        // len > cap here, so this is at least 1.
+                        lru.iter().filter(|(_, (_, mg))| *mg == g).count() - LRU_PER_GROUP,
+                    ) {
+                        lru.remove(&k);
+                        evicted.push(k);
+                    }
+                }
+            }
+            // Global backstop.
+            while lru.len() > LRU_GLOBAL_CAP {
+                let Some((oldest_key, _)) = lru.iter().min_by_key(|(_, (t, _))| *t) else {
+                    break;
+                };
                 let oldest = oldest_key.clone();
                 lru.remove(&oldest);
-                drop(lru);
-                let _ = self.drop_key(&oldest);
+                evicted.push(oldest);
             }
+        }
+        for k in evicted {
+            let _ = self.drop_key(&k);
         }
     }
 
@@ -126,7 +166,7 @@ impl SysmodCacheAdapter {
         std::fs::write(self.meta_path(&key), meta_raw)
             .map_err(|e| format!("cache meta write 실패: {e}"))?;
 
-        self.touch(&key);
+        self.touch(&key, Some(&format!("{sysmod}-{action}")));
         Ok(key)
     }
 
@@ -150,7 +190,7 @@ impl SysmodCacheAdapter {
                 None => crate::i18n::t(
                     "core.error.cache.never_stored",
                     None,
-                    &[("key", key), ("cap", &LRU_CAPACITY.to_string())],
+                    &[("key", key), ("cap", &LRU_PER_GROUP.to_string())],
                 ),
             };
             return Err(detail);
@@ -166,7 +206,7 @@ impl SysmodCacheAdapter {
                 .map_err(|e| format!("cache line 파싱: {e}"))?;
             out.push(v);
         }
-        self.touch(key);
+        self.touch(key, None);
         Ok(out)
     }
 
@@ -458,6 +498,30 @@ mod tests {
         c.drop_key(&key).unwrap();
         let result = c.read(&key, 0, 10);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn group_churn_does_not_evict_other_groups() {
+        // The 2026-08-06 incident: cron churn (autotrade-gate) evicted a chat's chart series
+        // under the old global cap. A flood in one sysmod+action group must bury only its own
+        // old keys.
+        let (c, _dir) = cache();
+        let chat_key = c
+            .data("kiwoom", "ka10081", serde_json::json!({"stk_cd": "005930"}),
+                  vec![serde_json::json!({"close": 1})], None)
+            .unwrap();
+        for i in 0..(LRU_PER_GROUP + 15) {
+            let _ = c
+                .data("autotrade", "gate", serde_json::json!({"i": i}),
+                      vec![serde_json::json!({"i": i})], None)
+                .unwrap();
+        }
+        // The chat key survives the flood…
+        assert!(c.read(&chat_key, 0, 1).is_ok(), "chat key must survive cron churn");
+        // …and the flooding group stays at its own cap.
+        let lru = c.lru.lock().unwrap();
+        let gate_count = lru.values().filter(|(_, g)| g == "autotrade-gate").count();
+        assert!(gate_count <= LRU_PER_GROUP, "gate group exceeded its cap: {gate_count}");
     }
 
     #[test]
