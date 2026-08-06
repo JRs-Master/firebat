@@ -4593,6 +4593,20 @@ impl AiManager {
             final_blocks.push(b);
         }
 
+        // PlanCard goes AFTER the prose, not above it. Blocks accumulate in tool-call order and
+        // the final text lands last, so a CLI turn that proposed a plan read as [PlanCard, text]
+        // — the card floated above the sentence explaining it, and the approval card (its own
+        // section below the blocks) ended up two cards away from its plan (2026-08-06 실측).
+        // The card is action UI: it belongs at the bottom with the ✓실행 chips and the approval
+        // card. Stable partition — everything else keeps its order.
+        let (plan_cards, rest): (Vec<serde_json::Value>, Vec<serde_json::Value>) =
+            final_blocks.into_iter().partition(|b| {
+                b.get("type").and_then(|v| v.as_str()) == Some("component")
+                    && b.get("name").and_then(|v| v.as_str()) == Some("PlanCard")
+            });
+        let mut final_blocks = rest;
+        final_blocks.extend(plan_cards);
+
         // Text blocks were pushed RAW during the round loop (before fence processing) — the
         // frontend renders THESE, not clean_reply. For ordinary fences raw ≈ sanitized so it
         // never mattered, but server-side transforms (dataCacheKey injection) only existed in
