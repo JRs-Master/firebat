@@ -548,7 +548,17 @@ def action_next_revision(inp, settings):
 
     conn = strat.connect()
     try:
-        target = strat.next_revision(conn, ledger_for, min_closed_trips=int(inp.get("minClosedTrips") or settings.get("minClosedTrips") or strat.MIN_CLOSED_TRIPS))
+        min_trips = int(inp.get("minClosedTrips") or settings.get("minClosedTrips")
+                        or strat.MIN_CLOSED_TRIPS)
+        target = strat.next_revision(conn, ledger_for, min_closed_trips=min_trips)
+        # An empty store is not "nothing to do" — it is the loop reviewing nobody while the
+        # declared strategies trade unread. Seed a challenger for the busiest human rule and make
+        # tonight's revision about it, with the parent's live record as the evidence.
+        if not target or not target.get("strategyId"):
+            seeded = strat.seed_challenger(conn, ledger_for, pick_strategies(settings),
+                                           min_closed_trips=min_trips)
+            if seeded:
+                target = seeded
     finally:
         conn.close()
         for c in conns.values():
@@ -4563,6 +4573,47 @@ def action_selftest():
                    "want": [("sell", 3.0)],
                    "got": [(i["side"], i["qty"]) for i in _hw_out],
                    "ok": [(i["side"], float(i["qty"])) for i in _hw_out] == [("sell", 3.0)]})
+
+    # --- the challenger: an empty store is not "nothing to review" -----------------------------
+    _ch_dir = store.DATA_DIR
+    try:
+        store.DATA_DIR = tempfile.mkdtemp()
+        _chl = store.connect("live")
+        for _i in range(8):
+            store.apply_fill(_chl, strategy_id="ch-p", broker="b", account="a", symbol="CH",
+                             side="buy", qty=1, price=100, source="test")
+            store.apply_fill(_chl, strategy_id="ch-p", broker="b", account="a", symbol="CH",
+                             side="sell", qty=1, price=99, source="test")
+        _chs = strat.connect()
+        _insts = [{"id": "ch-p", "symbol": "CH", "broker": "b", "account": "a",
+                   "kind": "rules", "interval": "1h",
+                   "rules": [{"side": "buy", "when": [{"a": "ema3", "op": "crossUp",
+                                                       "b": "ema60"}]}]}]
+        _led_for = lambda mode: _chl  # noqa: E731 — every stage reads the same test book
+        _seeded = strat.seed_challenger(_chs, _led_for, _insts, min_closed_trips=8)
+        checks.append({"name": "a busy human rule gets a challenger, evidence attached",
+                       "want": "ch-p@rev",
+                       "got": (_seeded or {}).get("strategyId"),
+                       "ok": bool(_seeded) and _seeded.get("strategyId") == "ch-p@rev"
+                       and _seeded.get("challengerOf") == "ch-p"
+                       and (_seeded.get("live") or {}).get("trades") == 8
+                       and _seeded.get("stage") == "paper"})
+        _row = _chs.execute("SELECT stage FROM ai_strategy WHERE id='ch-p@rev'").fetchone()
+        checks.append({"name": "the challenger is a stored paper strategy", "want": "paper",
+                       "got": _row["stage"] if _row else None,
+                       "ok": bool(_row) and _row["stage"] == "paper"})
+        checks.append({"name": "one challenger per parent at a time", "want": None,
+                       "got": strat.seed_challenger(_chs, _led_for, _insts, 8),
+                       "ok": strat.seed_challenger(_chs, _led_for, _insts, 8) is None})
+        _few = [{"id": "ch-q", "symbol": "CH", "broker": "b", "account": "a", "kind": "rules",
+                 "rules": [{"side": "buy", "when": []}]}]
+        checks.append({"name": "too few round trips seeds nothing", "want": None,
+                       "got": strat.seed_challenger(_chs, _led_for, _few, 8),
+                       "ok": strat.seed_challenger(_chs, _led_for, _few, 8) is None})
+        _chs.close()
+        _chl.close()
+    finally:
+        store.DATA_DIR = _ch_dir
 
     # --- write_off and manual close, on a throwaway book ---------------------------------------
     _wo_dir = store.DATA_DIR

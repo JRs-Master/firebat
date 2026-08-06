@@ -700,6 +700,82 @@ def next_revision(conn, ledger_for, limit_events=8, min_closed_trips=MIN_CLOSED_
     }
 
 
+CHALLENGER_SUFFIX = "@rev"
+
+
+def seed_challenger(conn, ledger_for, instances, min_closed_trips=MIN_CLOSED_TRIPS):
+    """When the store has nothing to revise, adopt a challenger for the busiest human rule.
+
+    The nightly loop only ever improved its own adoptions, and it had none — so the strategies
+    actually trading were the ones nobody reviewed (measured 2026-08-06: dozens of round trips
+    overnight, reviewed by no one). A person's entry stays taken as written; improvement happens
+    on a **copy**: `<tradeId>@rev`, AI-owned, starting at paper. It shadow-trades the same rule on
+    the paper book, tonight's revision searches around it with the parent's live record as the
+    evidence, and replacing the parent is a person editing the trade's strategy reference — the
+    ladder never promotes a challenger over a human head.
+
+    Eligibility is the parent's own closed round trips on the live book — the same clock every
+    other revision uses. One challenger per parent at a time; a retired one may be replaced.
+    """
+    led = ledger_for("real")
+    best = None
+    for s in instances or []:
+        sid = str(s.get("id") or "")
+        if not sid or CHALLENGER_SUFFIX in sid:
+            continue
+        if not (s.get("rules") or []):
+            continue  # only rule strategies have a neighbourhood to search
+        cid = sid + CHALLENGER_SUFFIX
+        if conn.execute("SELECT 1 FROM ai_strategy WHERE id=? AND stage != 'retired'",
+                        (cid,)).fetchone():
+            continue
+        trips = closed_round_trips(led, sid, 0)
+        if trips < min_closed_trips:
+            continue
+        rec = live_record(led, sid, 0)
+        # Worst first, then most evidence: the rule losing the most has the most to gain from
+        # being challenged, and among equals the one with the largest sample is the fairest fight.
+        key = (rec.get("realized") or 0.0, -trips)
+        if best is None or key < best[0]:
+            best = (key, s, trips, rec)
+    if not best:
+        return None
+    _, parent, trips, rec = best
+    sid = parent["id"]
+    cid = sid + CHALLENGER_SUFFIX
+    spec = {k: parent[k] for k in ("kind", "rules", "exits", "orders", "money", "limits",
+                                   "interval", "market", "holding") if parent.get(k) is not None}
+    now = store.now_ms()
+    conn.execute(
+        "INSERT INTO ai_strategy(id, symbol, broker, account, spec_json, stage, stage_since_ms,"
+        " measured_json, created_ms, updated_ms) VALUES(?,?,?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(id) DO UPDATE SET spec_json=excluded.spec_json, stage=excluded.stage,"
+        " stage_since_ms=excluded.stage_since_ms, updated_ms=excluded.updated_ms",
+        (cid, parent.get("symbol") or "", parent.get("broker") or "",
+         parent.get("account") or "", json.dumps(spec, ensure_ascii=False), "paper", now,
+         json.dumps({}, ensure_ascii=False), now, now))
+    conn.commit()
+    log_event(conn, cid, "challenger_seeded",
+              {"parent": sid, "parentClosedRoundTrips": trips, "parentLive": rec})
+    return {
+        "strategyId": cid, "symbol": parent.get("symbol"), "broker": parent.get("broker"),
+        "account": parent.get("account"), "stage": "paper",
+        "currentRules": spec.get("rules") or [],
+        "currentExits": spec.get("exits") or {},
+        "measured": {},
+        # The parent's realised record is the evidence — the challenger has none yet, and the
+        # whole point is that the parent's has gone unread.
+        "live": rec,
+        "closedRoundTrips": trips,
+        "challengerOf": sid,
+        "tradedSymbols": traded_symbols(led, sid, 0),
+        "searchSpace": sweep.space_vocabulary(),
+        "note": (f"'{sid}' 의 도전자입니다 — 사람 전략 원본은 그대로 두고, 이 사본의 규칙 주변을 "
+                 "탐색하세요. 채택되면 사본이 장부거래로 성적을 쌓고, 원본 교체는 사람이 "
+                 "매매 행의 전략 참조를 바꾸는 행위입니다."),
+    }
+
+
 def verdict_fact(symbol, candidate_id, why, row, adopted):
     """One night's verdict, in a sentence the next night can read.
 
