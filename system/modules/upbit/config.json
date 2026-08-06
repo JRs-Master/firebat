@@ -52,7 +52,7 @@
       },
       "market": {
         "type": "string",
-        "description": "마켓 코드 (예: KRW-BTC, KRW-ETH, BTC-XRP)"
+        "description": "마켓 코드 (예: KRW-BTC, KRW-ETH, BTC-XRP) — `symbol` 과 같은 뜻입니다."
       },
       "markets": {
         "type": "string",
@@ -316,7 +316,7 @@
       },
       "symbol": {
         "type": "string",
-        "description": "get_candles 마켓 코드 (예: KRW-BTC)."
+        "description": "마켓 코드 (예: KRW-BTC) — `market` 과 같은 뜻이며 둘 중 아무거나 씁니다."
       },
       "interval": {
         "type": "string",

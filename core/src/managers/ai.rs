@@ -2663,6 +2663,9 @@ impl AiManager {
         // ledger) are untouched.
         let mut no_action_nudge_used = false;
         let mut nudge_this_round = false;
+        // Sibling of the pair above for the opposite failure: tools ran, answer never came.
+        let mut empty_final_nudge_used = false;
+        let mut empty_final_nudge_this_round = false;
         // Accepted no-action finish (banner-stamped below) — must also fail the unattended
         // (cron) verdict: an action-task run that executed nothing is a missed run.
         let mut no_action_final = false;
@@ -2885,7 +2888,23 @@ impl AiManager {
             //      answering (r11 re-call after strip, 실측).
             let force_final_prompt: String;
             let nudge_prompt: String;
-            let llm_prompt: &str = if !force_final && std::mem::take(&mut nudge_this_round) {
+            let empty_final_prompt: String;
+            let llm_prompt: &str = if !force_final
+                && std::mem::take(&mut empty_final_nudge_this_round)
+            {
+                // Tools ran, the model returned nothing. Reasoning gets pulled down to `low` for
+                // this round: an empty answer after a looping CoT means the output budget went
+                // into thinking, and what is needed now is prose, not more deliberation.
+                turn_opts.thinking_level = Some("low".to_string());
+                empty_final_prompt = format!(
+                    "{llm_prompt}\n\n[system] Your last round returned no answer text at all. \
+                     The tool results below are already in hand — do NOT call more tools and do \
+                     NOT re-plan. Write the answer for the user now, in their language, using \
+                     only what the results below actually show.{}",
+                    ledger_note(&turn_ledger)
+                );
+                &empty_final_prompt
+            } else if !force_final && std::mem::take(&mut nudge_this_round) {
                 // No-silent-exit corrective round (19차): the model tried to end the turn with
                 // a text-only "plan" after pure discovery. One firm instruction + the ledger.
                 nudge_prompt = format!(
@@ -3159,6 +3178,26 @@ impl AiManager {
                     nudge_this_round = true;
                     self.log.warn(
                         "[AiManager] natural finish after discovery with ZERO executed actions — one corrective round (no silent exit)",
+                    );
+                    continue;
+                }
+                // The mirror case: work DID happen and the model still said nothing. Solar Pro 4
+                // looped its reasoning three times over and returned an empty round — thirteen
+                // successful tool calls and not one character of answer (2026-08-06 "비트코인
+                // 필승 전략", 실측). The turn then ended as a success and the buffered mid-round
+                // narration got promoted into the answer slot, so the reader saw the model's
+                // muttering where the analysis should be. Silence after real work is a failure
+                // to answer, not an answer: one corrective round that asks for the write-up.
+                if !force_final
+                    && !empty_final_nudge_used
+                    && last_text.trim().is_empty()
+                    && blocks.is_empty()
+                    && !turn_ledger.is_empty()
+                {
+                    empty_final_nudge_used = true;
+                    empty_final_nudge_this_round = true;
+                    self.log.warn(
+                        "[AiManager] tools ran but the final round returned no text — one corrective round (write the answer)",
                     );
                     continue;
                 }

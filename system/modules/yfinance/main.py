@@ -104,7 +104,10 @@ def main():
 
     # action='download' — 다종목 batch
     if action == 'download':
-        symbols = data.get('symbols') or []
+        # `symbols` is the batch word, but a caller naming one ticker says `symbol` — refusing
+        # that was a contradiction with the schema, which requires `symbol` at the top level
+        # (2026-08-06 실측: download + symbols[] → "symbol is a required property").
+        symbols = data.get('symbols') or ([symbol] if symbol else [])
         if not symbols:
             return out_err('error.download_symbols_required')
         period = data.get('period', '1mo')

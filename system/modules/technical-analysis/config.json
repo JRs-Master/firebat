@@ -129,8 +129,21 @@
         "description": "chart_annotations 전용 — confidence 내림차순에서 몇 번째 후보를 그릴지(기본 0 = 1위). 다른 카운트를 보려면 올리세요."
       },
       "which": {
-        "type": "array",
-        "description": "[indicators] 계산할 지표 — macd/rsi/bollinger/stochastic/ichimoku 중 일부. 생략 = 전부."
+        "type": [
+          "array",
+          "string"
+        ],
+        "description": "[indicators] 계산할 지표 목록 — [\"macd\",\"rsi\",\"bollinger\",\"stochastic\",\"ichimoku\"] 중 일부를 배열로. 쉼표로 이은 문자열도 됩니다(\"macd,rsi\"). 생략 = 전부.",
+        "items": {
+          "type": "string",
+          "enum": [
+            "macd",
+            "rsi",
+            "bollinger",
+            "stochastic",
+            "ichimoku"
+          ]
+        }
       },
       "seriesTail": {
         "type": "integer",

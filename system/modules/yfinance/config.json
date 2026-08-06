@@ -59,8 +59,7 @@
   "input": {
     "type": "object",
     "required": [
-      "action",
-      "symbol"
+      "action"
     ],
     "properties": {
       "action": {
@@ -83,14 +82,14 @@
       },
       "symbol": {
         "type": "string",
-        "description": "Symbol code (e.g., AAPL, 005930.KS, ^GSPC, BTC-USD). Ignored when action='download' (use the symbols array instead)."
+        "description": "Symbol code (e.g., AAPL, 005930.KS, ^GSPC, BTC-USD). Required by every action except 'download', which takes either this or the symbols array."
       },
       "symbols": {
         "type": "array",
         "items": {
           "type": "string"
         },
-        "description": "Multiple symbols (only used with action='download'). Example: ['AAPL', 'MSFT', '005930.KS']"
+        "description": "Multiple symbols for action='download' (batch). Example: ['AAPL', 'MSFT', '005930.KS']. A single ticker may be passed as `symbol` instead."
       },
       "period": {
         "type": "string",

@@ -2435,8 +2435,22 @@ def main():
         # "그래서 사야 하나"는 전략(선언 데이터)과 사람 몫이다. 값과 판단을 섞지 않는 것이
         # 엘리엇 쪽과 같은 원칙이고, 섞으면 모듈이 조용히 투자 의견을 갖게 된다.
         closes = [b["close"] for b in bars]
+        ALL_INDICATORS = ["macd", "rsi", "bollinger", "stochastic", "ichimoku"]
         want = inp.get("which")
-        want = [str(w) for w in want] if isinstance(want, list) and want else                ["macd", "rsi", "bollinger", "stochastic", "ichimoku"]
+        # A comma-separated string is accepted because the parameter's own description lists the
+        # names with slashes, which reads as one string — and the model wrote it that way
+        # (2026-08-06 실측: "macd,rsi,bollinger,..." → is not of type "array", round wasted).
+        if isinstance(want, str):
+            want = [w.strip() for w in want.replace("/", ",").split(",") if w.strip()]
+        want = [str(w).strip().lower() for w in want] if isinstance(want, list) and want else list(ALL_INDICATORS)
+        unknown = [w for w in want if w not in ALL_INDICATORS]
+        if unknown:
+            # Naming the stray beats computing the rest: a typo would otherwise return a result
+            # that silently lacks the one indicator the caller asked about.
+            print(json.dumps({"success": False, "error":
+                "which 에 모르는 지표가 있습니다: %s — 가능한 값 = %s"
+                % (", ".join(unknown), ", ".join(ALL_INDICATORS))}, ensure_ascii=False))
+            return
         keep = int(inp.get("seriesTail") or 120)
         out, latest = {}, {}
         if "macd" in want:

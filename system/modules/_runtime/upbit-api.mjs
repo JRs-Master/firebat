@@ -82,6 +82,14 @@ const ACTION_MAP = {
 // ─── 액션별 파라미터 빌드 ───
 function buildParams(action, input) {
   const p = {};
+  // `symbol` is the house word for a market code and the schema advertises it, but only the
+  // neutral `get_candles` ever read it — a dialect call built its params from `market` alone and
+  // Upbit answered "Missing request parameter" for a request the caller filled in correctly
+  // (2026-08-06 실측: candle-days symbol=KRW-BTC → 400, two wasted rounds). One synonym, read
+  // once, before any action looks at it.
+  if (!input.market && input.symbol) {
+    input = { ...input, market: input.symbol };
+  }
 
   switch (action) {
     // ── 주문 ──
