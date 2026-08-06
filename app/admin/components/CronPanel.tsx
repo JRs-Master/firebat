@@ -14,6 +14,7 @@ import { useTranslations } from '../../../lib/i18n';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
+import { useAdminTimezone } from '../hooks/use-admin-timezone';
 import { hubFetch } from '../../../lib/hub-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
@@ -243,9 +244,16 @@ export function CronPanel({
     return parts_out.join(' ') || expr;
   };
 
+  const adminTz = useAdminTimezone();
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    // The configured zone, not the browser's — the same zone the cron expression is evaluated in.
+    try {
+      return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit',
+        minute: '2-digit', timeZone: adminTz ?? undefined });
+    } catch {
+      return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
   };
 
   const modeIcon = (mode: string) => {

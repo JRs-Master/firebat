@@ -101,10 +101,16 @@ function formatTime(iso: string): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function formatDateTime(iso: string): string {
+function formatDateTime(iso: string, tz?: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  // The configured zone, not the browser's — same clock the schedule inputs resolve against.
+  try {
+    return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit',
+      minute: '2-digit', timeZone: tz ?? undefined });
+  } catch {
+    return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
 }
 
 export function CalendarPanel({

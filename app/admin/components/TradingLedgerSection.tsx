@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { apiPost } from '../../../lib/api-fetch';
+import { useAdminTimezone, formatInTz } from '../hooks/use-admin-timezone';
 import { logger } from '../../../lib/util/logger';
 
 type Row = Record<string, any>;
@@ -22,6 +23,10 @@ type Row = Record<string, any>;
 interface Report {
   mode?: string;
   store?: string;
+  /** The one switch as the engine reads it: on / pauseEntries / off. */
+  state?: string;
+  /** The bucket for holdings no strategy owns — hand trades, lost order numbers. */
+  unassigned?: Row[];
   tripped?: boolean;
   /** Currencies whose daily loss limit is currently reached. Separate from `tripped`: this one
    *  stops new buys in that currency only, exits keep running, and it lifts itself when the day's
@@ -56,14 +61,8 @@ interface Report {
 
 interface Leg { pnl?: number; fee?: number; tax?: number; count?: number }
 
-/** Epoch ms → local wall clock, minutes resolution. Seconds add noise at this density. */
-function when(ms: any): string {
-  const n = Number(ms);
-  if (!Number.isFinite(n) || n <= 0) return '—';
-  const d = new Date(n);
-  const p = (v: number) => String(v).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+// Timestamps render in the configured zone (`use-admin-timezone`) — the same zone the inputs
+// resolve against — not the browser's. `when` is created inside the component with that zone.
 
 /** Quantities run from eight-decimal coins to whole shares, so significant digits, not fixed. */
 function num(v: any, max = 8): string {
@@ -154,6 +153,8 @@ function Badge({ text }: { text: string }) {
 }
 
 export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
+  const adminTz = useAdminTimezone();
+  const when = (ms: any) => formatInTz(Number(ms), adminTz);
   const [store, setStore] = useState<'live' | 'dryrun'>('live');
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
@@ -222,6 +223,71 @@ export function TradingLedgerSection({ moduleName }: { moduleName: string }) {
           {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} 새로고침
         </button>
       </div>
+
+      {/* The switchboard, before the numbers: which state the machine is in, in one glance.
+          The emergency-toggle confusion of 2026-08-05 was exactly this being spread over three
+          places — a toggle, a kv flag and an event log — with no one surface saying the verdict. */}
+      {data && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className={`rounded-md px-2 py-0.5 font-bold ${
+            data.state === 'off' ? 'bg-rose-100 text-rose-700'
+              : data.state === 'pauseEntries' ? 'bg-amber-100 text-amber-700'
+                : 'bg-emerald-100 text-emerald-700'}`}>
+            {data.state === 'off' ? '전체 중지'
+              : data.state === 'pauseEntries' ? '신규 진입 중지' : '가동 중'}
+          </span>
+          {(data.unassigned?.length ?? 0) > 0 && (
+            <span className="rounded-md bg-amber-50 px-2 py-0.5 font-bold text-amber-700">
+              미배정 {data.unassigned!.length}건
+            </span>
+          )}
+          {(data.positions ?? []).some(p => p.state === 'degraded' && Number(p.qty) !== 0) && (
+            <span className="rounded-md bg-rose-50 px-2 py-0.5 font-bold text-rose-700">
+              degraded {(data.positions ?? []).filter(p => p.state === 'degraded' && Number(p.qty) !== 0).length}건
+            </span>
+          )}
+          {!!data.events?.length && (
+            <span className="text-slate-400">마지막 활동 {when(data.events[0]?.ts_ms)}</span>
+          )}
+        </div>
+      )}
+
+      {/* Needs a person: the rows nobody else will resolve. Everything here was findable only by
+          opening the sqlite on the server until now. */}
+      {data && (() => {
+        const degraded = (data.positions ?? []).filter(p => p.state === 'degraded' && Number(p.qty) !== 0);
+        const unassigned = data.unassigned ?? [];
+        const dayAgo = Date.now() - 86400000;
+        const worries = (data.events ?? []).filter(e =>
+          ['refused', 'unknown_strategy', 'order_unknown', 'write_off'].includes(String(e.kind))
+          && Number(e.ts_ms) >= dayAgo);
+        if (!degraded.length && !unassigned.length && !worries.length) return null;
+        return (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[11px] text-slate-700">
+            <div className="mb-1 font-bold text-amber-700">주의 필요</div>
+            <ul className="space-y-0.5">
+              {unassigned.map((r, i) => (
+                <li key={`u${i}`}>
+                  미배정 {r.symbol} {num(r.qty)} ({r.broker}/{r.account || '-'}) —
+                  전략에 넣으려면 resolve_unassigned
+                </li>
+              ))}
+              {degraded.map((p, i) => (
+                <li key={`d${i}`}>
+                  {p.strategy_id} · {p.symbol} {num(p.qty)} — 브로커가 더 적게 보고합니다.
+                  유령 수량이면 write_off 로 정정
+                </li>
+              ))}
+              {worries.slice(0, 5).map((e, i) => (
+                <li key={`w${i}`}>
+                  {when(e.ts_ms)} {String(e.kind)} {e.strategy_id ? `· ${e.strategy_id}` : ''}{' '}
+                  {String(e.detail ?? '').slice(0, 80)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {/* Two halts with different consequences, so they are two banners. Saying "trading is
           stopped — loss limit or ledger mismatch, go find out which" made the reader do the

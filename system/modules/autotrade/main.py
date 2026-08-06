@@ -2387,7 +2387,9 @@ def action_read(inp, settings, which):
         which_store = "dryrun" if settings.get("mode") == "dryrun" else "live"
     conn = store.connect(which_store)
     limit = int(inp.get("limit") or 50)
-    data = {"mode": settings.get("mode"), "store": which_store}
+    data = {"mode": settings.get("mode"), "store": which_store,
+            # The one switch, as the engine reads it — legacy toggles already folded in.
+            "state": eng.global_state(settings)}
     if which in ("positions", "report"):
         data["positions"] = store.read_positions(conn, markets=market_map(settings))
         # The other half of the same invariant. Leaving it out made the bucket something people
