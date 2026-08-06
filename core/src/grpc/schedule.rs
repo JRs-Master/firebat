@@ -133,6 +133,8 @@ fn parse_schedule_args(args: ScheduleArgs) -> Result<(String, String, CronSchedu
         notify: parse_typed::<CronNotify>(args.notify_json, "notify")?,
         execution_mode: args.execution_mode,
         agent_prompt: args.agent_prompt,
+        // Registration pins the zone at the adapter; a caller never names one over gRPC.
+        zone: None,
         // admin RPC 호출 = owner None. hub 익명 endpoint 가 직접 owner='hub:<id>' 주입.
         owner: None,
         // 시스템 스케줄은 이 RPC 로 만들지 않음(인프라가 직접 생성). 사용자 크론은 캘린더 opt-in 만 전달.

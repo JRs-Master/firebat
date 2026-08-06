@@ -2696,6 +2696,11 @@ pub struct CronScheduleOptions {
     pub execution_mode: Option<String>,
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
     pub agent_prompt: Option<String>,
+    /// The zone this job's wall-clock times mean. Stamped at registration with the timezone that
+    /// was configured then, and never reinterpreted: "9-15" on a Seoul-market job means Seoul
+    /// forever, however the display timezone moves. A job predating the field is stamped at load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
     /// 데이터 격리 — None = admin (default), Some("hub:<id>") = 해당 hub visitor 소유.
     /// visitor 가 chat 안에서 자기 cron 을 만들 때 AI 가 자동 주입. admin endpoint 는 owner=None,
     /// 익명 hub endpoint 는 owner='hub:<instance.id>' 강제.

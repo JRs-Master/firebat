@@ -68,7 +68,7 @@ impl TokioCronAdapter {
         }
 
         // 영속 파일에서 로드
-        let jobs: HashMap<String, CronJobInfo> = if jobs_file.exists() {
+        let mut jobs: HashMap<String, CronJobInfo> = if jobs_file.exists() {
             match std::fs::read_to_string(&jobs_file) {
                 Ok(raw) => match serde_json::from_str::<Vec<CronJobInfo>>(&raw) {
                     Ok(list) => list.into_iter().map(|j| (j.job_id.clone(), j)).collect(),
@@ -79,6 +79,22 @@ impl TokioCronAdapter {
         } else {
             HashMap::new()
         };
+        // A job's wall-clock times mean the zone that was configured when it was written. Jobs
+        // from before the field existed get stamped with the boot default once, here — so a later
+        // change of the display timezone can never silently re-time a market schedule.
+        let mut stamped = false;
+        for j in jobs.values_mut() {
+            if j.options.zone.is_none() {
+                j.options.zone = Some(default_timezone.to_string());
+                stamped = true;
+            }
+        }
+        if stamped {
+            let list: Vec<&CronJobInfo> = jobs.values().collect();
+            if let Ok(raw) = serde_json::to_string_pretty(&list) {
+                let _ = std::fs::write(&jobs_file, raw);
+            }
+        }
 
         let logs: Vec<CronLogEntry> = if logs_file.exists() {
             std::fs::read_to_string(&logs_file)
@@ -334,7 +350,11 @@ impl TokioCronAdapter {
                     Some(j) => j,
                     None => return, // 잡 삭제됨
                 };
-                let tz_name = strong.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                // The job's own zone; the global one only serves jobs that somehow predate the
+                // load-time stamping.
+                let tz_name = job.options.zone.clone().unwrap_or_else(|| {
+                    strong.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone()
+                });
 
                 // 다음 발화 시각 계산
                 let (next_fire, trigger_type, is_one_shot) = match job.mode {
@@ -418,7 +438,13 @@ impl ICronPort for TokioCronAdapter {
                 return Err(format!("이미 등록된 잡 ID입니다: {}", job_id));
             }
         }
-        let tz_name = self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        // Pin the job to the zone configured right now. From here on the global setting only
+        // decides how times are *displayed* and what future jobs default to.
+        let mut opts = opts;
+        if opts.zone.is_none() {
+            opts.zone = Some(self.timezone.lock().unwrap_or_else(|p| p.into_inner()).clone());
+        }
+        let tz_name = opts.zone.clone().unwrap_or_default();
         let mode = TokioCronAdapter::determine_mode(&opts, &tz_name)?;
 
         // 기존 task abort
@@ -561,6 +587,10 @@ impl ICronPort for TokioCronAdapter {
             if job.options.owner.as_deref() != owner {
                 continue;
             }
+            // Each job expands in its own pinned zone — the calendar asks "when does this job
+            // fire", and that question belongs to the job's clock, not the viewer's.
+            let job_tz_name = job.options.zone.clone().unwrap_or_else(|| tz_name.clone());
+            let job_tz: Tz = job_tz_name.parse().unwrap_or(tz);
             // 발화 시각만 먼저 모으고(차용 단순화) 이후 CronOccurrence 로 매핑.
             let mut fires: Vec<DateTime<Utc>> = Vec::new();
             match job.mode {
@@ -570,17 +600,17 @@ impl ICronPort for TokioCronAdapter {
                             .options
                             .start_at
                             .as_deref()
-                            .and_then(|s| Self::parse_in_timezone(s, &tz_name));
+                            .and_then(|s| Self::parse_in_timezone(s, &job_tz_name));
                         let end_w = job
                             .options
                             .end_at
                             .as_deref()
-                            .and_then(|e| Self::parse_in_timezone(e, &tz_name));
+                            .and_then(|e| Self::parse_in_timezone(e, &job_tz_name));
                         // schedule.after 는 strictly after — anchor 직후부터. 예정은 미래만이라 하한을
                         // now 로 막음 (과거 발화는 log 로 표시; 미래 달 조회는 from_dt 가 더 커 그대로).
                         let occ_from = if from_dt > now_utc { from_dt } else { now_utc };
                         let anchor =
-                            (occ_from - chrono::Duration::seconds(1)).with_timezone(&tz);
+                            (occ_from - chrono::Duration::seconds(1)).with_timezone(&job_tz);
                         // 복수 표현식(`|`) — 각 표현식 전개 후 병합·정렬·dedup (한 잡의 여러 시각).
                         for expr in Self::split_cron_exprs(cron_time) {
                             let Ok(schedule) = Schedule::from_str(&Self::normalize_cron(expr))
@@ -614,7 +644,7 @@ impl ICronPort for TokioCronAdapter {
                         .options
                         .run_at
                         .as_deref()
-                        .and_then(|r| Self::parse_in_timezone(r, &tz_name))
+                        .and_then(|r| Self::parse_in_timezone(r, &job_tz_name))
                     {
                         if target >= from_dt && target <= to_dt {
                             fires.push(target);
