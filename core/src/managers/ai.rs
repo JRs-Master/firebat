@@ -3040,8 +3040,15 @@ impl AiManager {
                 }
             }
             if !last_text.trim().is_empty() {
+                // Text in a round that goes on to call tools is the model thinking aloud
+                // ("긁어보자", "DNS 가 안 잡히네") — the user called it thinking content and
+                // was right. The server-side block fix alone left the LIVE bubble dirty:
+                // every round's text streamed on the answer channel and accumulated above
+                // the real answer (2026-08-06, Solar 4). Route mid-round text to the
+                // thinking channel; only a round that ends the turn speaks in the answer.
+                let channel = if response.tool_calls.is_empty() { "text" } else { "thinking" };
                 emit_event(AiStreamEvent::Chunk {
-                    event_type: "text".to_string(),
+                    event_type: channel.to_string(),
                     content: last_text.clone(),
                 });
             }
@@ -4607,6 +4614,14 @@ impl AiManager {
             let promoted = round_text_buffer.clone();
             for t in &promoted {
                 push_text_block_dedup(&mut blocks, t);
+            }
+            // Mid-round text streamed on the thinking channel live; a promotion means it
+            // turned out to BE the answer, so the live bubble has nothing — say it there too.
+            if !promoted.is_empty() {
+                emit_event(AiStreamEvent::Chunk {
+                    event_type: "text".to_string(),
+                    content: promoted.join("\n\n"),
+                });
             }
         }
 
