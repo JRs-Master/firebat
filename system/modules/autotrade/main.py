@@ -2564,6 +2564,15 @@ def action_close_position(action, inp, settings):
             if sid:
                 q += " AND strategy_id=?"
                 args.append(sid)
+            # Scope by venue: "close everything on upbit" and "close the mock-KR account" are
+            # the reset's real units — an unscoped liquidate_all would also sweep positions whose
+            # market is closed right now, spraying refusals.
+            if str(inp.get("broker") or "").strip():
+                q += " AND broker=?"
+                args.append(str(inp["broker"]).strip())
+            if str(inp.get("account") or "").strip():
+                q += " AND account=?"
+                args.append(str(inp["account"]).strip())
             if want_symbol:
                 q += " AND symbol=?"
                 args.append(want_symbol)
