@@ -503,13 +503,20 @@ sysmod 가 stdout 에 다음 envelope 를 출력하면 sandbox 가 자동으로 
 | field | 영역 |
 |---|---|
 | `key` | settings 객체의 field 이름 |
-| `type` | `text` / `number` / `toggle` / `textarea` / `oauth` / `secret` / `select` / `widget-list` / `verifications` / `color-presets` / `color-overrides` |
-| `tab` | 탭 그룹 (없으면 기본 탭) |
+| `type` | `text` / `number` / `toggle` / `textarea` / `oauth` / `secret` / `select` / `widget-list` / `verifications` / `color-presets` / `color-overrides` / `structured-list` |
+| `tab` | 탭 그룹 (없으면 기본 탭). **탭 순서 = 필드 선언 순서** |
 | `group` | 탭 안 sub-section heading |
 | `secretName` | secret type 전용 — Vault 키 이름 |
 | `oauthUrl` / `oauthSecrets` | oauth type 전용 |
 | `options` | select type 전용 |
 | `defaultValue` | 미설정 시 자동 적용 값 |
+| `editor` | structured-list 전용 — 카드 편집기 종류 (`trades` / `strategies`) |
+
+**`structured-list`** (2026-08-06): JSON 배열 설정을 카드 폼 ↔ JSON 이중 뷰로 편집한다
+(`StructuredListEditor`). 값 저장 형식은 textarea 와 동일한 JSON 문자열이라 **모듈 쪽 계약은 그대로**
+— 화면만 바뀐다. 폼은 자기가 아는 키만 고쳐 쓰고 모르는 키는 보존하며(reconciler 원칙), 깨진 JSON
+은 저장 경로에 도달하지 못한다(마지막 유효 상태 유지). 새 카드 종류가 필요하면 `editor` 값과 카드
+컴포넌트를 추가한다 — 기존 두 종은 autotrade 의 매매·전략 행.
 
 ---
 
