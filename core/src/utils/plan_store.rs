@@ -165,18 +165,38 @@ pub fn build_propose_plan_result(args: &serde_json::Value) -> serde_json::Value 
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    // A step that arrives as a bare string means exactly one thing — a step with that title.
+    // Codex's natural first shape is `steps: ["문장", ...]`, and refusing it cost a wasted round
+    // in every planning turn (measured 2026-08-06, twice in one afternoon, same shape both
+    // times) while the refusal claimed "an empty call" about a call that plainly was not.
     let steps: Vec<PlanStep> = args
         .get("steps")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| match item {
+                    serde_json::Value::String(s) if !s.trim().is_empty() => {
+                        serde_json::from_value(serde_json::json!({ "title": s.trim() })).ok()
+                    }
+                    other => serde_json::from_value::<PlanStep>(other.clone()).ok(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
     // Empty-args guard — a `propose_plan {}` call used to mint a planId and render a BLANK
     // card whose ✓실행 replays nothing (14차 실측: Solar 가 빈 인자로 호출 → 유령 플랜 카드).
-    // A plan without a title and at least one step is not a plan; reject with the shape hint
-    // so the model retries with real content or acts directly.
+    // A plan without a title and at least one step is not a plan; reject with the shape hint.
+    // Say what arrived — "empty call" about a non-empty call sends the reader hunting in the
+    // wrong direction.
     if title.trim().is_empty() || steps.is_empty() {
+        let got = format!(
+            "title={}, steps={}",
+            if title.trim().is_empty() { "missing" } else { "ok" },
+            args.get("steps").map(|v| v.to_string()).unwrap_or_else(|| "missing".into())
+        );
         return serde_json::json!({
             "success": false,
-            "error": "propose_plan needs {\"title\": \"...\", \"steps\": [{\"title\": \"...\", \"description\"?, \"tool\"?, \"args\"?}, ...]} — an empty call renders a blank card that executes nothing. If the task doesn't need a multi-step plan, skip propose_plan and act directly.",
+            "error": format!("propose_plan needs {{\"title\": \"...\", \"steps\": [\"...\" or {{\"title\": \"...\", \"description\"?, \"tool\"?, \"args\"?}}, ...]}} — received {}. A blank card executes nothing; if the task doesn't need a multi-step plan, skip propose_plan and act directly.", got),
         });
     }
     let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
