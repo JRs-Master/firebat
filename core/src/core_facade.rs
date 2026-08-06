@@ -247,6 +247,107 @@ impl Core {
             "errors": report.errors,
         }))
     }
+
+    /// A screen action a person confirmed — the whole round trip, server side.
+    ///
+    /// Some of these end at the module (a write-off appends a ledger row and is done). The
+    /// liquidations do not: the module decides and hands back `calls[]`, because a module never
+    /// reaches a broker itself. Someone has to walk that list and report back, and the cron
+    /// pipeline is the only thing that ever has. Doing it in the browser would put the ordering
+    /// loop in the frontend and give the book a second way to be written; doing it here keeps one
+    /// path, the same `ModuleManager.run` choke with its gates and validation.
+    ///
+    /// Runs under `UI_CONFIRMED`, which is what lets the gated actions through: the warning dialog
+    /// the person clicked named the strategy, the quantity and whether the order is real, which is
+    /// strictly more than an approval card can show.
+    pub async fn run_ui_action(
+        &self,
+        module: &str,
+        action: &str,
+        args: &serde_json::Value,
+    ) -> InfraResult<serde_json::Value> {
+        crate::utils::pending_tools::UI_CONFIRMED
+            .scope(true, self.run_ui_action_inner(module, action, args))
+            .await
+    }
+
+    async fn run_ui_action_inner(
+        &self,
+        module: &str,
+        action: &str,
+        args: &serde_json::Value,
+    ) -> InfraResult<serde_json::Value> {
+        let mut input = args.clone();
+        if let Some(obj) = input.as_object_mut() {
+            obj.insert("action".to_string(), serde_json::json!(action));
+        } else {
+            input = serde_json::json!({ "action": action });
+        }
+        let decided = self.module.run(module, &input).await?;
+        if !decided.success {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": decided.error,
+                "stage": "decide",
+            }));
+        }
+        let calls = decided
+            .data
+            .get("calls")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if calls.is_empty() {
+            // Nothing to place — a correction, or a liquidation that found only phantoms.
+            return Ok(serde_json::json!({
+                "success": true,
+                "decided": decided.data,
+                "placed": 0,
+            }));
+        }
+        // One result per call, in the same positions: `record_orders` pairs them by index, and a
+        // hole in the middle would attach a broker's answer to someone else's order.
+        let mut results: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
+        for c in &calls {
+            let Some(target) = c.get("module").and_then(|v| v.as_str()) else {
+                results.push(serde_json::json!({
+                    "success": false,
+                    "error": "call has no module",
+                }));
+                continue;
+            };
+            let call_input = c.get("input").cloned().unwrap_or(serde_json::json!({}));
+            match self.module.run(target, &call_input).await {
+                Ok(r) if r.success => results.push(r.data),
+                Ok(r) => results.push(serde_json::json!({
+                    "success": false,
+                    "error": r.error.unwrap_or_else(|| "broker refused".to_string()),
+                })),
+                Err(e) => results.push(serde_json::json!({ "success": false, "error": e })),
+            }
+        }
+        // The book learns what the broker said. Fills are confirmed by reconciliation, not by an
+        // acknowledgement — `record_orders` is careful about that distinction and this is not the
+        // place to second-guess it.
+        let record = self
+            .module
+            .run(
+                module,
+                &serde_json::json!({
+                    "action": "record_orders",
+                    "calls": calls,
+                    "results": results,
+                }),
+            )
+            .await?;
+        Ok(serde_json::json!({
+            "success": record.success,
+            "decided": decided.data,
+            "placed": calls.len(),
+            "recorded": record.data,
+            "error": record.error,
+        }))
+    }
 }
 
 /// Is what the module declares still what is on the clock?

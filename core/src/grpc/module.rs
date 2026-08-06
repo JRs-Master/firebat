@@ -24,6 +24,7 @@ use crate::proto::{
     ModuleIsEnabledRequest, ModuleIsEnabledResponse, ModuleListSystemRequest,
     ModuleListSystemResponse, ModuleListUserRequest, ModuleListUserResponse, ModuleOutputPb,
     ModuleRunRequest, ModuleSaveAccountRequest, ModuleSaveAccountResponse,
+    ModuleRunUiActionRequest, ModuleRunUiActionResponse,
     ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
     ModuleSetSettingsResponse, PackageStatusPb,
 };
@@ -312,6 +313,38 @@ impl ModuleService for ModuleServiceImpl {
         Ok(Response::new(ModuleIsEnabledResponse {
             enabled: self.manager.is_enabled(&name),
         }))
+    }
+
+    /// A screen action a person confirmed. Core owns the round trip (decide → broker calls →
+    /// record) so the browser never holds an ordering loop; this is the thin adapter.
+    async fn run_ui_action(
+        &self,
+        req: Request<ModuleRunUiActionRequest>,
+    ) -> Result<Response<ModuleRunUiActionResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let Some(core) = self.core.as_ref() else {
+            return Err(TonicStatus::failed_precondition(
+                "screen actions need the Core facade — this server was built without it",
+            ));
+        };
+        let parsed: serde_json::Value = if args.args_json.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str(&args.args_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("args_json: {e}")))?
+        };
+        match core.run_ui_action(&args.module, &args.action, &parsed).await {
+            Ok(v) => Ok(Response::new(ModuleRunUiActionResponse {
+                success: v.get("success").and_then(|b| b.as_bool()).unwrap_or(true),
+                data_json: serde_json::to_string(&v).ok(),
+                error: v.get("error").and_then(|e| e.as_str()).map(String::from),
+            })),
+            Err(e) => Ok(Response::new(ModuleRunUiActionResponse {
+                success: false,
+                data_json: None,
+                error: Some(e),
+            })),
+        }
     }
 
     async fn set_enabled(

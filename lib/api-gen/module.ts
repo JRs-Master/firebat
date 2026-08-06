@@ -17,6 +17,8 @@ import {
   ModuleIsEnabledRequestSchema,
   ModuleOutputPb,
   ModuleRunRequestSchema,
+  ModuleRunUiActionRequestSchema,
+  ModuleRunUiActionResponse,
   ModuleSaveAccountRequestSchema,
   ModuleService,
   ModuleSetEnabledRequestSchema,
@@ -107,6 +109,15 @@ export async function setEnabled(args: MessageInitShape<typeof ModuleSetEnabledR
   try {
       await moduleClient.setEnabled(args ?? {});
       return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function runUiAction(args: MessageInitShape<typeof ModuleRunUiActionRequestSchema>): Promise<RpcResult<ModuleRunUiActionResponse>> {
+  try {
+      const response = await moduleClient.runUiAction(args ?? {});
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
