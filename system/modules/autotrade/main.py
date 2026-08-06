@@ -2523,6 +2523,19 @@ def try_resume(conn):
 
 
 
+def _holders_of(conn, symbol):
+    """Who actually holds this symbol — the correction a typo'd strategy id needs.
+
+    `w-105560` went onto an approval card and was only refused after the click, with an error
+    that said "not held" and nothing else. The symbol was right there; the position table knows
+    whose it is. A refusal that names the holder turns a second guess into a correction.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT strategy_id FROM strategy_position WHERE symbol=? AND qty>0",
+        (str(symbol),)).fetchall()
+    return [r["strategy_id"] for r in rows]
+
+
 def _afail(msg):
     """A refusal in the shape every action returns."""
     return {"success": False, "error": msg}
@@ -2556,7 +2569,10 @@ def action_close_position(action, inp, settings):
                 args.append(want_symbol)
             rows = [dict(r) for r in conn.execute(q + " ORDER BY strategy_id, symbol", args)]
             if not rows:
-                return _afail("청산할 포지션이 없습니다%s." % (f" ({sid})" if sid else ""))
+                who = _holders_of(conn, want_symbol) if want_symbol else []
+                return _afail("청산할 포지션이 없습니다%s.%s" % (
+                    f" ({sid})" if sid else "",
+                    " %s 를 들고 있는 전략: %s" % (want_symbol, ", ".join(who)) if who else ""))
             strategies_by_id = {}
             for s in pick_strategies(settings):
                 strategies_by_id.setdefault(s["id"], s)
@@ -2664,7 +2680,10 @@ def action_write_off(inp, settings):
                     "SELECT broker, account, qty FROM strategy_position WHERE strategy_id=? "
                     "AND symbol=? AND qty>0", (sid, symbol))]
                 if not rows:
-                    return _afail("%s 는 %s 를 들고 있지 않습니다." % (sid, symbol))
+                    return _afail("%s 는 %s 를 들고 있지 않습니다.%s" % (
+                    sid, symbol,
+                    " %s 를 들고 있는 전략: %s" % (symbol, ", ".join(_holders_of(conn, symbol)))
+                    if _holders_of(conn, symbol) else ""))
                 if len(rows) > 1:
                     return _afail("%s 의 %s 가 여러 계좌에 있습니다 — broker·account 를 "
                                 "지정하십시오: %s" % (sid, symbol, ", ".join(
@@ -2674,7 +2693,10 @@ def action_write_off(inp, settings):
             pos = store.position_of(conn, sid, broker, account, symbol)
             held = float(pos.get("qty") or 0)
             if held <= 0:
-                return _afail("%s 는 %s 를 들고 있지 않습니다." % (sid, symbol))
+                return _afail("%s 는 %s 를 들고 있지 않습니다.%s" % (
+                    sid, symbol,
+                    " %s 를 들고 있는 전략: %s" % (symbol, ", ".join(_holders_of(conn, symbol)))
+                    if _holders_of(conn, symbol) else ""))
             # Default: exactly the phantom part — what the ledger claims beyond what the
             # broker last stated. Explicit qty may write off less, never more than held.
             real = store.broker_qty_of(conn, broker, account, symbol)
@@ -4667,6 +4689,13 @@ def action_selftest():
         _none = action_close_position("close_position", {"strategyId": "wo-s"}, _dry)
         checks.append({"name": "closing a flat strategy says so", "want": "거부",
                        "got": (_none.get("error") or "")[:30], "ok": not _none.get("success")})
+        # The typo that reached an approval card: the refusal must name who actually holds it.
+        store.apply_fill(_wc, strategy_id="kw-x", broker="b", account="a", symbol="TYPO",
+                         side="buy", qty=1, price=100, source="test")
+        _typo = action_write_off({"strategyId": "w-x", "symbol": "TYPO", "reason": "r"}, _dry)
+        checks.append({"name": "a typo'd strategy id is answered with the holder's name",
+                       "want": "kw-x", "got": (_typo.get("error") or "")[:80],
+                       "ok": not _typo.get("success") and "kw-x" in str(_typo.get("error"))})
         # A schedule may call neither — a machine deciding "sell it all" is what the human gate
         # exists to prevent.
         os.environ["FIREBAT_UNATTENDED"] = "1"
