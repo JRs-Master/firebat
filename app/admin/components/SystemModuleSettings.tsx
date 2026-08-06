@@ -6,6 +6,7 @@ import { SaveButton, type SaveButtonState } from './SaveButton';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { TradingLedgerSection } from './TradingLedgerSection';
+import { StructuredListEditor } from './StructuredListEditor';
 import { HubPanel } from './HubPanel';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
@@ -17,7 +18,7 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
@@ -34,6 +35,7 @@ interface SettingField {
   vaultKey?: string;        // shared-secret 전용: 값이 사는 시스템 키 (`system:...`)
   options?: SelectOption[]; // select 타입 전용: dropdown 옵션
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
+  editor?: 'trades' | 'strategies'; // structured-list 전용: 카드 편집기 종류
 }
 
 /**
@@ -67,6 +69,7 @@ interface ConfigSettingField {
   secretName?: string;
   options?: SelectOption[];
   widgetArea?: 'header' | 'sidebar' | 'footer';
+  editor?: 'trades' | 'strategies';
   i18n?: Partial<Record<Lang, ConfigI18nText>>;
 }
 
@@ -136,6 +139,7 @@ function resolveConfigField(
     secretName: cf.secretName,
     options: resolvedOptions,
     widgetArea: cf.widgetArea,
+    editor: cf.editor,
   };
 }
 
@@ -1044,7 +1048,13 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 ) : (
                   <>
                     <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>
-                    {field.type === 'textarea' ? (
+                    {field.type === 'structured-list' ? (
+                      <StructuredListEditor
+                        value={settings[field.key] ?? '[]'}
+                        onChange={v => handleChange(field.key, v)}
+                        kind={field.editor ?? 'trades'}
+                      />
+                    ) : field.type === 'textarea' ? (
                       <textarea
                         value={settings[field.key] ?? ''}
                         onChange={e => handleChange(field.key, e.target.value)}
