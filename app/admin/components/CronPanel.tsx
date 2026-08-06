@@ -3,7 +3,7 @@
 import { useState, useCallback, useId, useMemo } from 'react';
 import { compareName } from '../../../lib/util/sort-name';
 import { createPortal } from 'react-dom';
-import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock } from 'lucide-react';
+import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Pencil, Play, Lock, Boxes } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
@@ -82,6 +82,8 @@ export function CronPanel({
   const [editing, setEditing] = useState<CronJob | null>(null);
   // 모바일 select-to-show 패턴 — Sidebar 와 동일. PC 에선 무시 (group-hover 가 처리).
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  // Module-owned jobs fold into one row per module; which of those are open.
+  const [openOwners, setOpenOwners] = useState<Set<string>>(new Set());
 
   // owner-injected backend — admin REST vs hub op(GET/DELETE/POST) 가 각 메서드 안에서만 갈림.
   // (cron 은 GET 목록·DELETE 취소·POST{op:run} 이라 공유 hubFetch 의 {op} shape 와 달라 raw fetch 캡슐화.)
@@ -319,12 +321,23 @@ export function CronPanel({
         <p className="px-3 pb-2 text-[11px] text-slate-400 italic">등록된 잡 없음</p>
       ) : (
         <div className="pb-2 px-2 space-y-0.5">
-          {[...jobs]
-            .sort((a, b) => {
+          {(() => {
+            const sorted = [...jobs].sort((a, b) => {
               const d = jobOrigin(a).rank - jobOrigin(b).rank;
               return d !== 0 ? d : compareName(a.title || a.jobId, b.title || b.jobId);
-            })
-            .map(job => {
+            });
+            // One sidebar row per owning module. Nine autotrade schedules told the panel's reader
+            // nothing nine times; the module's name with a count says the same thing once, and the
+            // members are one click away. Grouping is derived from targetPath — no hand label to
+            // forget — and only kicks in at two or more, since a lone job gains nothing by hiding.
+            const ownerOf = (job: CronJob) =>
+              (job.targetPath || '').match(/^module:([^:]+)/)?.[1] ?? null;
+            const ownerCount = new Map<string, number>();
+            for (const j of sorted) {
+              const o = ownerOf(j);
+              if (o) ownerCount.set(o, (ownerCount.get(o) ?? 0) + 1);
+            }
+            const renderRow = (job: CronJob) => {
             const jobSelected = selectedJobId === job.jobId;
             // consolidation 시스템 스케줄은 AI 토글 OFF 면 회색(비활성) — retention 은 항상 활성.
             const gatedOff = job.builtinKind === 'consolidation' && !aiRouterEnabled;
@@ -381,7 +394,51 @@ export function CronPanel({
               </span>
             </div>
             );
-          })}
+            };
+            const rendered: React.ReactNode[] = [];
+            const grouped = new Set<string>();
+            for (const job of sorted) {
+              const o = ownerOf(job);
+              if (!o || (ownerCount.get(o) ?? 0) < 2) { rendered.push(renderRow(job)); continue; }
+              if (grouped.has(o)) continue;
+              grouped.add(o);
+              const members = sorted.filter(j => ownerOf(j) === o);
+              const openGrp = openOwners.has(o);
+              const anyRunning = members.some(j => running === j.jobId || isCronRunning(j.jobId));
+              rendered.push(
+                <div key={`grp-${o}`}>
+                  <div
+                    onClick={() => setOpenOwners(prev => {
+                      const next = new Set(prev);
+                      next.has(o) ? next.delete(o) : next.add(o);
+                      return next;
+                    })}
+                    className="group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors hover:bg-slate-100"
+                  >
+                    {anyRunning
+                      ? <Loader2 size={14} className="animate-spin text-emerald-600 shrink-0" />
+                      : <Boxes size={14} className="text-slate-400 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold text-slate-700 truncate flex items-center gap-1">
+                        <span className="truncate">{o}</span>
+                        <span className="shrink-0 px-1 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">
+                          {members.length}
+                        </span>
+                      </p>
+                    </div>
+                    {openGrp ? <ChevronDown size={12} className="text-slate-400 shrink-0" />
+                      : <ChevronRight size={12} className="text-slate-400 shrink-0" />}
+                  </div>
+                  {openGrp && (
+                    <div className="ml-3 border-l border-slate-200 pl-1 space-y-0.5">
+                      {members.map(renderRow)}
+                    </div>
+                  )}
+                </div>,
+              );
+            }
+            return rendered;
+          })()}
         </div>
       )}
 

@@ -37,11 +37,21 @@ use crate::vault_keys::{
 
 pub struct SettingsServiceImpl {
     vault: Arc<dyn IVaultPort>,
+    /// The live scheduler, so a timezone change reaches running cron evaluation without a
+    /// restart. The vault write alone only informed the *next* boot: modules re-resolve the zone
+    /// on every spawn, but the scheduler read it once — two surfaces of one setting drifted
+    /// until the process was bounced.
+    cron: Option<Arc<dyn crate::ports::ICronPort>>,
 }
 
 impl SettingsServiceImpl {
     pub fn new(vault: Arc<dyn IVaultPort>) -> Self {
-        Self { vault }
+        Self { vault, cron: None }
+    }
+
+    pub fn with_cron(mut self, cron: Arc<dyn crate::ports::ICronPort>) -> Self {
+        self.cron = Some(cron);
+        self
     }
 
     fn get_or_default(&self, key: &str, default: &str) -> String {
@@ -69,6 +79,11 @@ impl SettingsService for SettingsServiceImpl {
     ) -> Result<Response<SettingsSetTimezoneResponse>, TonicStatus> {
         let tz = req.into_inner().timezone;
         let ok = self.vault.set_secret(VK_SYSTEM_TIMEZONE, &tz);
+        if ok && !tz.is_empty() {
+            if let Some(c) = &self.cron {
+                c.set_timezone(&tz);
+            }
+        }
         Ok(Response::new(SettingsSetTimezoneResponse { ok }))
     }
 

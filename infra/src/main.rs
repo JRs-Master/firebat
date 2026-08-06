@@ -1297,7 +1297,8 @@ async fn main() -> Result<()> {
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
     // Phase B-post audit A5 (2026-05-06): INetworkPort — 위 register_core_tools 앞에서 생성한 인스턴스 공유.
     let storage_service = grpc::storage::StorageServiceImpl::new(storage.clone());
-    let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone());
+    let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone())
+        .with_cron(cron_adapter.clone());
     let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());
     // Phase B-17.5b — Cache / Telegram / Database 추가.
     // cache_adapter 는 sandbox 생성 시점에 만들어 있음 (L325). 같은 인스턴스 공유 — gRPC CacheService
