@@ -664,7 +664,7 @@ impl ModuleManager {
             None
         };
 
-        let result = match ws_result {
+        let mut result = match ws_result {
             Some(r) => r,
             None => {
                 let target = format!("{}/{}", dir_path, entry);
@@ -714,6 +714,26 @@ impl ModuleManager {
                 self.sandbox.execute(&target, input_data, &exec_opts).await?
             }
         };
+
+        // The answer names the account it is for. The registry resolves an unnamed call to the
+        // designated primary — a deliberate convenience — but a caller reasoning about one account
+        // can then read another's numbers without any visible seam: measured 2026-08-06, a
+        // "close the mock-KR account" turn read the primary (real) account's empty stock list and
+        // concluded there was nothing to sell. The injected input already knows the resolution;
+        // stamping it on the reply lets the reader see the mismatch instead of trusting the
+        // question it asked.
+        if let Some(scoped) = account_scoped.as_ref() {
+            if let Some(data) = result.data.as_object_mut() {
+                if !data.contains_key("account") {
+                    if let Some(alias) = scoped.get("account") {
+                        data.insert("account".to_string(), alias.clone());
+                    }
+                    if let Some(mock) = scoped.get("mock") {
+                        data.entry("mock".to_string()).or_insert_with(|| mock.clone());
+                    }
+                }
+            }
+        }
 
         // Approval-gated actions get their response logged in full, once, here.
         //

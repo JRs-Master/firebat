@@ -66,7 +66,16 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     const errText = await resp.text().catch(() => '');
     try {
       const j = JSON.parse(errText);
-      if (j && (j.rt_cd !== undefined || j.msg_cd !== undefined)) return j;
+      if (j && (j.rt_cd !== undefined || j.msg_cd !== undefined)) {
+        // The venue refuses on rate over this path too — same lie, different HTTP status. The
+        // HTTP-200 retry below never saw these, so a throttled read escaped as an error the
+        // caller then misread as an empty account (measured 2026-08-06, the liquidation check).
+        if (retry > 0 && String(j.msg1 || '').includes('초당 거래건수')) {
+          await new Promise(r => setTimeout(r, WINDOW_MS * (3 - retry) + 200));
+          return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1, trIdOverride);
+        }
+        return j;
+      }
     } catch { /* JSON 아님 — 아래 throw */ }
     throw new Error(`KIS API ${resp.status}: ${resp.statusText} ${errText}`.trim());
   }
