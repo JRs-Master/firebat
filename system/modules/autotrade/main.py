@@ -2470,6 +2470,190 @@ def try_resume(conn):
                   "긴급 정지 스위치도 사람만 움직입니다.")
 
 
+
+def _afail(msg):
+    """A refusal in the shape every action returns."""
+    return {"success": False, "error": msg}
+
+
+def action_close_position(action, inp, settings):
+        # A person closing positions by hand — one trade's symbol, one trade, or everything.
+        # Human-only for the same reason the assignment corrections are: a schedule calling
+        # "sell it all" is the machine deciding after all.
+        if unattended():
+            return _afail(f"{action} 은 사람이 부르는 청산입니다 — 스케줄에서는 동작하지 않습니다.")
+        sid = str(inp.get("strategyId") or "").strip()
+        if action == "close_position" and not sid:
+            return _afail("close_position 에 strategyId 가 필요합니다 — 전부 청산하려면 "
+                        "liquidate_all 을 쓰십시오.")
+        want_symbol = str(inp.get("symbol") or "").strip()
+        order_type = str(inp.get("orderType") or "market").strip()
+        price_in = eng._num(inp.get("price"), 0.0)
+        if order_type != "market" and price_in <= 0:
+            return _afail("지정가 청산에는 price 가 필요합니다.")
+        book = "dryrun" if settings.get("mode") == "dryrun" else "live"
+        conn = store.connect(book)
+        try:
+            q = "SELECT * FROM strategy_position WHERE qty>0"
+            args = []
+            if sid:
+                q += " AND strategy_id=?"
+                args.append(sid)
+            if want_symbol:
+                q += " AND symbol=?"
+                args.append(want_symbol)
+            rows = [dict(r) for r in conn.execute(q + " ORDER BY strategy_id, symbol", args)]
+            if not rows:
+                return _afail("청산할 포지션이 없습니다%s." % (f" ({sid})" if sid else ""))
+            strategies_by_id = {}
+            for s in pick_strategies(settings):
+                strategies_by_id.setdefault(s["id"], s)
+            cycle_id = f"manual:{store.now_ms()}"
+            calls, placed, skipped = [], [], []
+            for r in rows:
+                held = float(r["qty"] or 0)
+                broker, account, sym = r["broker"], r["account"] or "", r["symbol"]
+                # The sell is capped at what the broker actually holds — the same clamp the
+                # cycle applies to a degraded position. The remainder is a phantom, and a
+                # phantom is `write_off`'s job, not an order the venue will only refuse.
+                real = store.broker_qty_of(conn, broker, account, sym)
+                qty = min(held, real) if real is not None else held
+                if want_symbol and eng._num(inp.get("qty")) > 0:
+                    qty = min(qty, eng._num(inp.get("qty")))
+                if qty <= 0:
+                    skipped.append({"strategyId": r["strategy_id"], "symbol": sym,
+                                    "why": "실보유 0 — 남은 것은 유령 수량이라 write_off 대상입니다"})
+                    continue
+                key = store.order_key(r["strategy_id"], sym, "sell", cycle_id,
+                                      broker=broker, account=account)
+                order = {
+                    "order_key": key, "cycle_id": cycle_id,
+                    "strategy_id": r["strategy_id"], "broker": broker, "account": account,
+                    "symbol": sym, "side": "sell", "req_qty": qty,
+                    "req_price": price_in or None, "ord_type": order_type,
+                    "mode": "manual", "state": "intent", "reason": "manual close",
+                }
+                if not store.insert_order(conn, order):
+                    skipped.append({"strategyId": r["strategy_id"], "symbol": sym,
+                                    "why": "이미 이 창에 같은 주문이 있습니다"})
+                    continue
+                if book == "dryrun":
+                    # Paper positions close on paper: a simulated fill at the stated price,
+                    # or at the position's own average when none was given (a correction
+                    # cannot invent a gain).
+                    px = price_in or float(r["avg_price"] or 0)
+                    store.update_order(conn, key, state="filled", filled_qty=qty,
+                                       filled_avg=px, sent_ms=store.now_ms())
+                    store.apply_fill(conn, strategy_id=r["strategy_id"], broker=broker,
+                                     account=account, symbol=sym, side="sell", qty=qty,
+                                     price=px, source="manual_close", ref_order_key=key,
+                                     fee_in_cost=settings.get("feeInCost", True))
+                    placed.append({"strategyId": r["strategy_id"], "symbol": sym,
+                                   "qty": qty, "filled": px, "book": "paper"})
+                    continue
+                store.update_order(conn, key, state="sent", sent_ms=store.now_ms())
+                strat_cfg = strategies_by_id.get(r["strategy_id"]) or {
+                    "id": r["strategy_id"], "market": None}
+                calls.append({**orders.broker_call({**order, "order_key": key}, strat_cfg),
+                              "orderKey": key})
+                placed.append({"strategyId": r["strategy_id"], "symbol": sym, "qty": qty,
+                               "orderType": order_type, "orderKey": key})
+            store.log_event(conn, "manual_close",
+                            {"action": action, "strategyId": sid or None,
+                             "symbol": want_symbol or None, "orders": len(placed),
+                             "skipped": len(skipped)}, strategy_id=sid or None,
+                            symbol=want_symbol or None)
+        finally:
+            conn.close()
+        return {"success": True, "data": {
+            "placed": placed, "skipped": skipped or None, "calls": calls,
+            "next": ("Run each entry in `calls` against its broker module "
+                     "(tool: sysmod_<module>, input as given), then call autotrade "
+                     "record_orders with `calls` and the results — fills are confirmed by "
+                     "reconcile, not by the ack." if calls else None),
+            "note": ("시장가 기본입니다. 브로커가 시장가를 안 받는 곳(한투 해외)은 price 를 "
+                     "지정하십시오. 체결 확정은 정산이 합니다.")}}
+
+
+def action_write_off(inp, settings):
+        # The way down for a quantity the broker has never heard of. Restatement heals an
+        # under-count, but an over-count — a phantom booked by a bug, like the Kiwoom
+        # cumulative restatement double-count of 2026-08-05 — can neither be re-read away nor
+        # sold (sells clamp to the real holding, which is what makes it a deadlock). The only
+        # honest correction is an appended ledger row, priced at the position's own average by
+        # default so the write-off invents no gain and books no loss unless a person names a
+        # price on purpose.
+        if unattended():
+            return _afail("write_off 은 사람이 부르는 정정입니다 — 스케줄에서는 동작하지 않습니다.")
+        sid = str(inp.get("strategyId") or "").strip()
+        symbol = str(inp.get("symbol") or "").strip()
+        if not sid or not symbol:
+            return _afail("write_off 에 strategyId 와 symbol 이 필요합니다.")
+        reason = str(inp.get("reason") or "").strip()
+        if not reason:
+            return _afail("write_off 에 reason 이 필요합니다 — 원장에 왜가 남아야 나중에 "
+                        "읽힙니다.")
+        book = "dryrun" if settings.get("mode") == "dryrun" else "live"
+        conn = store.connect(book)
+        try:
+            broker = str(inp.get("broker") or "").strip()
+            account = str(inp.get("account") or "").strip()
+            if not broker:
+                rows = [dict(r) for r in conn.execute(
+                    "SELECT broker, account, qty FROM strategy_position WHERE strategy_id=? "
+                    "AND symbol=? AND qty>0", (sid, symbol))]
+                if not rows:
+                    return _afail("%s 는 %s 를 들고 있지 않습니다." % (sid, symbol))
+                if len(rows) > 1:
+                    return _afail("%s 의 %s 가 여러 계좌에 있습니다 — broker·account 를 "
+                                "지정하십시오: %s" % (sid, symbol, ", ".join(
+                                    "%s/%s %g" % (r["broker"], r["account"] or "-", r["qty"])
+                                    for r in rows)))
+                broker, account = rows[0]["broker"], rows[0]["account"] or ""
+            pos = store.position_of(conn, sid, broker, account, symbol)
+            held = float(pos.get("qty") or 0)
+            if held <= 0:
+                return _afail("%s 는 %s 를 들고 있지 않습니다." % (sid, symbol))
+            # Default: exactly the phantom part — what the ledger claims beyond what the
+            # broker last stated. Explicit qty may write off less, never more than held.
+            real = store.broker_qty_of(conn, broker, account, symbol)
+            default_qty = max(0.0, held - real) if real is not None else 0.0
+            qty = eng._num(inp.get("qty"), default_qty)
+            if qty <= 0:
+                return _afail("정리할 수량이 없습니다 — 브로커 실보유(%s)와 원장(%g)이 이미 "
+                            "일치하거나, qty 를 지정하십시오."
+                            % ("미확인" if real is None else f"{real:g}", held))
+            if qty > held + 1e-9:
+                return _afail("%s 는 %s 를 %g 만 들고 있습니다." % (sid, symbol, held))
+            avg = float(pos.get("avg_price") or 0)
+            price = eng._num(inp.get("price"), avg)
+            store.apply_fill(conn, strategy_id=sid, broker=broker, account=account,
+                             symbol=symbol, side="sell", qty=qty, price=price,
+                             source="adjustment", ref_order_key=None,
+                             fee_in_cost=settings.get("feeInCost", True),
+                             note=f"write_off: {reason}")
+            after = store.position_of(conn, sid, broker, account, symbol)
+            # The books may agree now — if they do, the degraded hold has done its job.
+            lifted = False
+            if real is not None and abs(float(after.get("qty") or 0) - real) < 1e-9:
+                store.lift_hold(conn, sid, broker, account, symbol)
+                lifted = True
+            store.log_event(conn, "write_off",
+                            {"qty": qty, "price": price, "avg": avg, "reason": reason,
+                             "lifted": lifted}, strategy_id=sid, symbol=symbol)
+        except (ValueError, TypeError) as e:
+            return _afail(str(e))
+        finally:
+            conn.close()
+        realized = (price - avg) * qty
+        return {"success": True, "data": {
+            "writtenOff": qty, "price": price, "avgPrice": avg,
+            "realized": realized, "remaining": float(after.get("qty") or 0),
+            "degradedLifted": lifted,
+            "note": ("원장에 정정 행을 append 했습니다. 기본 가격 = 평단이라 실현손익 0 — "
+                     "손실로 확정하려면 price 를 지정하십시오.")}}
+
+
 def action_selftest():
     """Golden fixtures over the parts that must never drift: cost basis, transfers, idempotency."""
     import tempfile
@@ -3011,8 +3195,9 @@ def action_selftest():
     _MUTATORS = ("apply_fill", "record_transfer", "assign_unassigned", "record_fill",
                  "reconcile_symbol")
     # These mutate on purpose every cycle and must NOT be gated: the cron has no one to ask.
+    # `selftest` writes to throwaway databases by design — gating it would gate CI.
     _CYCLE_PATH = {"cycle", "record_orders", "reconcile", "on_stream_event", "adopt", "retire",
-                   "review", "next_revision", "bind_condition", "store_context"}
+                   "review", "next_revision", "bind_condition", "store_context", "selftest"}
     with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "config.json"),
               encoding="utf-8") as _cf:
         _cfg = json.load(_cf)
@@ -3027,6 +3212,12 @@ def action_selftest():
     for _b in _blocks[1:]:
         _names = re.findall(r'"([a-z_]+)"', _b.split("\n")[0])
         _body = _b.split('\n        if action ')[0]
+        # A dispatch line that just calls `action_x(...)` hides the mutators one hop away, and the
+        # tripwire must not go blind to a refactor — follow the call into the function's source.
+        for _fn in re.findall(r'\b(action_[a-z_]+)\(', _body):
+            _m = re.search(r'\ndef %s\(.*?(?=\ndef |\Z)' % _fn, _src, re.S)
+            if _m:
+                _body += _m.group(0)
         if not any(m in _body for m in _MUTATORS):
             continue
         for _n in _names:
@@ -4251,6 +4442,70 @@ def action_selftest():
                    "want": ["KRW-X", "KRW-Y"], "got": got_uni,
                    "ok": got_uni == ["KRW-X", "KRW-Y"]})
 
+    # --- write_off and manual close, on a throwaway book ---------------------------------------
+    _wo_dir = store.DATA_DIR
+    _wo_env = os.environ.pop("FIREBAT_UNATTENDED", None)
+    try:
+        store.DATA_DIR = tempfile.mkdtemp()
+        _dry = {"mode": "dryrun", "tradingState": "on"}
+        _wc = store.connect("dryrun")
+        # A phantom: the ledger booked 3, the broker has only ever stated 2.
+        store.apply_fill(_wc, strategy_id="wo-s", broker="b", account="a", symbol="WO",
+                         side="buy", qty=3, price=100, source="test")
+        store.reconcile_symbol(_wc, "b", "a", "WO", broker_qty=2)
+        _held0 = store.position_of(_wc, "wo-s", "b", "a", "WO")
+        checks.append({"name": "the phantom part reads as degraded first", "want": "degraded",
+                       "got": _held0.get("state"), "ok": _held0.get("state") == "degraded"})
+        _no_reason = action_write_off({"strategyId": "wo-s", "symbol": "WO"}, _dry)
+        checks.append({"name": "a write-off without a reason is refused", "want": "거부",
+                       "got": (_no_reason.get("error") or "")[:30],
+                       "ok": not _no_reason.get("success") and "reason" in str(_no_reason)})
+        _wo = action_write_off({"strategyId": "wo-s", "symbol": "WO", "reason": "phantom test"},
+                               _dry)
+        _wd = (_wo.get("data") or {})
+        checks.append({"name": "write_off defaults to exactly the phantom part, at the average",
+                       "want": {"qty": 1.0, "realized": 0.0, "remaining": 2.0, "lifted": True},
+                       "got": {"qty": _wd.get("writtenOff"), "realized": _wd.get("realized"),
+                               "remaining": _wd.get("remaining"),
+                               "lifted": _wd.get("degradedLifted")},
+                       "ok": _wo.get("success") and _wd.get("writtenOff") == 1.0
+                       and _wd.get("realized") == 0 and _wd.get("remaining") == 2.0
+                       and _wd.get("degradedLifted") is True})
+        _again = action_write_off({"strategyId": "wo-s", "symbol": "WO", "reason": "again"}, _dry)
+        checks.append({"name": "a second write-off finds nothing left to correct", "want": "거부",
+                       "got": (_again.get("error") or "")[:30], "ok": not _again.get("success")})
+        # Manual close on the paper book: fills at the average when no price is named, so the
+        # close corrects the book without inventing a result.
+        _cp = action_close_position("close_position", {"strategyId": "wo-s", "symbol": "WO"},
+                                    _dry)
+        _cpd = (_cp.get("data") or {})
+        _after_cp = store.position_of(_wc, "wo-s", "b", "a", "WO")
+        # `or -1` here once turned a correct 0.0 into a failure — zero is the wanted answer.
+        _cp_qty = _after_cp.get("qty")
+        _cp_qty = float(_cp_qty) if _cp_qty is not None else -1.0
+        checks.append({"name": "a paper close books the fill and empties the position",
+                       "want": 0.0, "got": _cp_qty,
+                       "ok": _cp.get("success") and _cp_qty == 0.0 and not _cpd.get("calls")})
+        _none = action_close_position("close_position", {"strategyId": "wo-s"}, _dry)
+        checks.append({"name": "closing a flat strategy says so", "want": "거부",
+                       "got": (_none.get("error") or "")[:30], "ok": not _none.get("success")})
+        # A schedule may call neither — a machine deciding "sell it all" is what the human gate
+        # exists to prevent.
+        os.environ["FIREBAT_UNATTENDED"] = "1"
+        _sched = action_write_off({"strategyId": "wo-s", "symbol": "WO", "reason": "x"}, _dry)
+        _sched2 = action_close_position("liquidate_all", {}, _dry)
+        checks.append({"name": "neither correction answers to a schedule", "want": "거부 둘",
+                       "got": [bool(_sched.get("success")), bool(_sched2.get("success"))],
+                       "ok": not _sched.get("success") and not _sched2.get("success")})
+        del os.environ["FIREBAT_UNATTENDED"]
+        _wc.close()
+    finally:
+        store.DATA_DIR = _wo_dir
+        if _wo_env is not None:
+            os.environ["FIREBAT_UNATTENDED"] = _wo_env
+        else:
+            os.environ.pop("FIREBAT_UNATTENDED", None)
+
     # --- a freshly installed module is not an empty shell ----------------------------------
     # Settings only reach the sandbox once someone has pressed save, so before that the module
     # saw nothing and reported "no enabled strategy" while the settings screen displayed an
@@ -5421,7 +5676,11 @@ def main():
                 "moved": moved, "from": src, "to": dst, "symbol": symbol, "qty": qty,
                 "note": ("내부이전으로 옮겼습니다 — 주문 0, 수수료 0, 평단 그대로라 실현손익도 "
                          "0 입니다. 원장에는 양쪽 행이 남습니다.")}})
-        if action in ("liquidate_all", "cancel_all", "import_position"):
+        if action in ("close_position", "liquidate_all"):
+            return out(action_close_position(action, inp, settings))
+        if action == "write_off":
+            return out(action_write_off(inp, settings))
+        if action in ("cancel_all", "import_position"):
             return fail(f"{action} 은 주문 경로가 들어온 뒤 동작합니다(현재 슬라이스는 판단·원장까지).")
         return fail(f"알 수 없는 action: {action}")
     except Exception as e:  # noqa: BLE001 — the sandbox needs one JSON line, never a traceback
