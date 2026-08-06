@@ -8,8 +8,9 @@
 //! - `grep` — eq/ne/gt/gte/lt/lte/contains/in
 //! - `aggregate` — count/sum/avg/min/max
 //! - `drop_key` — remove one key
-//! - TTL 30 minutes; per-(sysmod+action) LRU of 20 keys + global backstop 1000 — one
-//!   producer (a cron) must not evict another's (a chat) keys
+//! - TTL 30 minutes; one file pair per key, deleted by expiry (sweeper), never by count —
+//!   a live key cannot be evicted by someone else's churn. A large count backstop guards
+//!   against runaway production only.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,14 +20,15 @@ use std::sync::Mutex;
 use crate::ports::InfraResult;
 
 const TTL_MS: i64 = 30 * 60 * 1000; // 30분 — drill-in 후속 질문 + 긴 본문 재참조 여유
-/// Per-group (sysmod+action) key cap. The cap used to be one global LRU of 100 keys — and the
-/// autotrade crons write ~900 keys per half hour, so a chart series a chat had just fetched was
-/// evicted minutes later, mid-turn, by `autotrade-gate:trades` churn (2026-08-06 실측: render 가
-/// "저장된 것이 없습니다"). One producer must not evict another's keys: each sysmod+action group
-/// now buries only its own old keys.
-const LRU_PER_GROUP: usize = 20;
-/// Backstop so the sum of groups stays bounded (files are small; TTL already bounds lifetime).
-const LRU_GLOBAL_CAP: usize = 1000;
+/// Live keys are never evicted by count (the old global LRU of 100 meant the autotrade crons'
+/// ~900 keys per half hour buried a chat's chart series mid-turn — 2026-08-06 실측). Deletion is
+/// by expiry: a sweep removes pairs whose TTL ran out more than SWEEP_GRACE_MS ago. The grace
+/// keeps the meta around long enough that a late reader still hears "expired Ns ago — re-fetch"
+/// instead of "never stored" (the two answers call for different next moves, 2026-08-05).
+const SWEEP_INTERVAL_MS: i64 = 60_000;
+const SWEEP_GRACE_MS: i64 = 60 * 60 * 1000;
+/// Runaway backstop only — orders of magnitude above steady state (~30 keys/min × 1.5h ≈ 2,700).
+const LRU_GLOBAL_CAP: usize = 10_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,11 +48,10 @@ pub struct CacheMeta {
 
 pub struct SysmodCacheAdapter {
     cache_dir: PathBuf,
-    /// In-memory LRU: key -> (last access time, group). Group = "{sysmod}-{action}"; eviction is
-    /// per group (see LRU_PER_GROUP). After a restart the map is empty while files survive on
-    /// disk — a key touched by a read then re-enters with an empty group, counted only against
-    /// the global backstop.
-    lru: Mutex<HashMap<String, (i64, String)>>,
+    /// key -> last access time. Used only by the runaway backstop; expiry is what deletes.
+    lru: Mutex<HashMap<String, i64>>,
+    /// Last expiry sweep, epoch ms — the sweep runs at most once per SWEEP_INTERVAL_MS.
+    last_sweep: Mutex<i64>,
 }
 
 fn now_ms() -> i64 {
@@ -64,6 +65,7 @@ impl SysmodCacheAdapter {
         Ok(Self {
             cache_dir,
             lru: Mutex::new(HashMap::new()),
+            last_sweep: Mutex::new(0),
         })
     }
 
@@ -75,37 +77,15 @@ impl SysmodCacheAdapter {
         self.cache_dir.join(format!("{key}.meta.json"))
     }
 
-    fn touch(&self, key: &str, group: Option<&str>) {
+    fn touch(&self, key: &str) {
         let mut evicted: Vec<String> = Vec::new();
         {
             let mut lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
-            // A read-path touch (group unknown) must not erase the group a data() stamp set.
-            let g = group
-                .map(str::to_string)
-                .or_else(|| lru.get(key).map(|(_, g)| g.clone()))
-                .unwrap_or_default();
-            lru.insert(key.to_string(), (now_ms(), g.clone()));
-            // Group cap — the producer buries only its own old keys.
-            if !g.is_empty() {
-                let mut members: Vec<(String, i64)> = lru
-                    .iter()
-                    .filter(|(_, (_, mg))| *mg == g)
-                    .map(|(k, (t, _))| (k.clone(), *t))
-                    .collect();
-                if members.len() > LRU_PER_GROUP {
-                    members.sort_by_key(|(_, t)| *t);
-                    for (k, _) in members.into_iter().take(
-                        // len > cap here, so this is at least 1.
-                        lru.iter().filter(|(_, (_, mg))| *mg == g).count() - LRU_PER_GROUP,
-                    ) {
-                        lru.remove(&k);
-                        evicted.push(k);
-                    }
-                }
-            }
-            // Global backstop.
+            lru.insert(key.to_string(), now_ms());
+            // Runaway backstop only — under normal production the sweeper keeps the map far
+            // below this and no live key is ever evicted by count.
             while lru.len() > LRU_GLOBAL_CAP {
-                let Some((oldest_key, _)) = lru.iter().min_by_key(|(_, (t, _))| *t) else {
+                let Some((oldest_key, _)) = lru.iter().min_by_key(|(_, t)| **t) else {
                     break;
                 };
                 let oldest = oldest_key.clone();
@@ -116,6 +96,37 @@ impl SysmodCacheAdapter {
         for k in evicted {
             let _ = self.drop_key(&k);
         }
+    }
+
+    /// Delete pairs whose TTL ran out more than SWEEP_GRACE_MS ago. Within the grace the files
+    /// stay so an expired key still answers "expired Ns ago" rather than "never stored".
+    fn sweep_expired(&self) {
+        let now = now_ms();
+        let Ok(entries) = std::fs::read_dir(&self.cache_dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let name = e.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(key) = name.strip_suffix(".meta.json") else { continue };
+            let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
+            let Ok(meta) = serde_json::from_str::<CacheMeta>(&raw) else { continue };
+            if now > meta.expires_at + SWEEP_GRACE_MS {
+                let _ = self.drop_key(key);
+            }
+        }
+    }
+
+    fn maybe_sweep(&self) {
+        {
+            let mut last = self.last_sweep.lock().unwrap_or_else(|p| p.into_inner());
+            let now = now_ms();
+            if now - *last < SWEEP_INTERVAL_MS {
+                return;
+            }
+            *last = now;
+        }
+        self.sweep_expired();
     }
 
     pub fn data(
@@ -166,7 +177,8 @@ impl SysmodCacheAdapter {
         std::fs::write(self.meta_path(&key), meta_raw)
             .map_err(|e| format!("cache meta write 실패: {e}"))?;
 
-        self.touch(&key, Some(&format!("{sysmod}-{action}")));
+        self.maybe_sweep();
+        self.touch(&key);
         Ok(key)
     }
 
@@ -190,7 +202,7 @@ impl SysmodCacheAdapter {
                 None => crate::i18n::t(
                     "core.error.cache.never_stored",
                     None,
-                    &[("key", key), ("cap", &LRU_PER_GROUP.to_string())],
+                    &[("key", key), ("cap", &LRU_GLOBAL_CAP.to_string())],
                 ),
             };
             return Err(detail);
@@ -206,7 +218,7 @@ impl SysmodCacheAdapter {
                 .map_err(|e| format!("cache line 파싱: {e}"))?;
             out.push(v);
         }
-        self.touch(key, None);
+        self.touch(key);
         Ok(out)
     }
 
@@ -501,27 +513,42 @@ mod tests {
     }
 
     #[test]
-    fn group_churn_does_not_evict_other_groups() {
-        // The 2026-08-06 incident: cron churn (autotrade-gate) evicted a chat's chart series
-        // under the old global cap. A flood in one sysmod+action group must bury only its own
-        // old keys.
+    fn churn_does_not_evict_live_keys() {
+        // The 2026-08-06 incident: cron churn evicted a chat's chart series under a count cap.
+        // Deletion is by expiry now — no amount of foreign production may bury a live key.
         let (c, _dir) = cache();
         let chat_key = c
             .data("kiwoom", "ka10081", serde_json::json!({"stk_cd": "005930"}),
                   vec![serde_json::json!({"close": 1})], None)
             .unwrap();
-        for i in 0..(LRU_PER_GROUP + 15) {
+        for i in 0..300 {
             let _ = c
                 .data("autotrade", "gate", serde_json::json!({"i": i}),
                       vec![serde_json::json!({"i": i})], None)
                 .unwrap();
         }
-        // The chat key survives the flood…
         assert!(c.read(&chat_key, 0, 1).is_ok(), "chat key must survive cron churn");
-        // …and the flooding group stays at its own cap.
-        let lru = c.lru.lock().unwrap();
-        let gate_count = lru.values().filter(|(_, g)| g == "autotrade-gate").count();
-        assert!(gate_count <= LRU_PER_GROUP, "gate group exceeded its cap: {gate_count}");
+    }
+
+    #[test]
+    fn sweep_deletes_long_expired_but_keeps_the_grace_window() {
+        let (c, _dir) = cache();
+        // Dead for well over the grace — swept, and afterwards it reads as never-stored.
+        let long_dead = c
+            .data("test", "old", serde_json::json!({}),
+                  vec![serde_json::json!({"x": 1})],
+                  Some(-(SWEEP_GRACE_MS / 1000 + 60)))
+            .unwrap();
+        // Freshly expired — inside the grace, must survive the sweep and still say "expired".
+        let just_dead = c
+            .data("test", "recent", serde_json::json!({}),
+                  vec![serde_json::json!({"x": 1})], Some(-1))
+            .unwrap();
+        c.sweep_expired();
+        assert!(c.deadline_ms(&long_dead).is_none(), "swept key loses its files");
+        assert!(c.deadline_ms(&just_dead).is_some(), "grace keeps the expired-ago answer");
+        let err = c.read(&just_dead, 0, 1).unwrap_err();
+        assert!(err.contains("expired") || err.contains("만료"), "got {err}");
     }
 
     #[test]
