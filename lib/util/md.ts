@@ -161,9 +161,29 @@ function escapeCurrencyDollars(s: string): string {
   return out;
 }
 
+/** `\(...\)` / `\[...\]` → `$...$` / `$$...$$`. Models write the standard LaTeX delimiters in
+ *  plain chat (Solar emitted `\(\theta\)` and a `\[...\]` display block, 2026-08-08) but
+ *  remark-math parses only the dollar forms, so the raw markup reached the screen as text.
+ *  Normalizing the delimiter is a display concern, so it lives here and not in a prompt rule —
+ *  every model does this, and a prompt cannot stop it. Code fences and inline code pass through
+ *  untouched (a backslash there is content). */
+function normalizeLatexDelimiters(s: string): string {
+  if (!s.includes('\\(') && !s.includes('\\[')) return s;
+  return s
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) => {
+      if (i % 2 === 1) return part;
+      return part
+        .replace(/\\\[([\s\S]+?)\\\]/g, (_m, inner) => `$$${String(inner).trim()}$$`)
+        .replace(/\\\(([^\n]+?)\\\)/g, (_m, inner) => `$${String(inner).trim()}$`);
+    })
+    .join('');
+}
+
 export function maskMath(s: string): { masked: string; restore: (t: string) => string } {
   const identity = (t: string) => t;
   if (!s) return { masked: s, restore: identity };
+  s = normalizeLatexDelimiters(s);
   s = escapeCurrencyDollars(s);
   const store: string[] = [];
   const masked = s.replace(/\$\$[\s\S]+?\$\$|\$(?![\s\d])[^$\n]*?(?<!\s)\$/g, (m) => {
