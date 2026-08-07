@@ -4373,10 +4373,18 @@ impl AiManager {
                 let tool_names: Vec<String> =
                     turn_calls.iter().map(|c| c.name.clone()).collect();
                 let any_failed = turn_action_results.iter().any(|r| !r.success);
+                // The round's TEXT rides along (capped). Mid-round text goes to the buffer and,
+                // when a final text exists, never reaches the answer — which is correct for
+                // narration but unmeasurable for anything else: without this field there is no
+                // way to audit afterwards whether a model put part of the real answer in a
+                // mid-round line (2026-08-08, asked directly by the operator). The trace is the
+                // audit surface, so the text belongs here.
+                let round_text: String = last_text.trim().chars().take(2000).collect();
                 reasoning_trace.push(serde_json::json!({
                     "round": reasoning_trace.len() + 1,
                     "model": response.model_id.clone(),
                     "reasoning": round_reasoning,
+                    "text": round_text,
                     "tools": tool_names,
                     "failed": any_failed,
                 }));
