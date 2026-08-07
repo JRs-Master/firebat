@@ -31,10 +31,6 @@ use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraR
 /// 추론 지연까지 덮는 여유분.
 const CODEX_TIMEOUT: Duration = Duration::from_secs(420);
 
-/// 이미지 전용 CODEX_HOME — LLM 채팅 경로(`firebat-codex-home`)와 분리.
-/// 분리 이유: 수확 워터마크가 채팅 턴의 산출물과 섞이지 않게(경로별 독립).
-const IMAGE_CODEX_HOME_DIR: &str = "firebat-codex-image-home";
-
 /// 산출 파일 폴링 주기 / 크기 안정 확인 간격(쓰는 중 truncated read 방지).
 const HARVEST_POLL: Duration = Duration::from_millis(1000);
 const HARVEST_SETTLE: Duration = Duration::from_millis(700);
