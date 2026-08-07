@@ -366,7 +366,7 @@
       },
       "price": {
         "type": "number",
-        "description": "[중립] 지정가. 국내 시장가에는 불필요하고, 해외는 시장가 주문이 없어 항상 필요합니다."
+        "description": "[중립] 지정가. 시장가에는 불필요합니다 — 국내는 ORD_UNPR, 해외는 OVRS_ORD_UNPR 이 \"0\" 으로 나갑니다."
       },
       "orderType": {
         "type": "string",
@@ -374,11 +374,11 @@
           "limit",
           "market"
         ],
-        "description": "[중립] 지정가(limit) 기본. 해외의 market 은 price 를 marketableLimitPct 만큼 넘긴 지정가로 나갑니다 — 이 거래소에 일반 시장가가 없습니다."
+        "description": "[중립] 지정가(limit) 기본. market 은 국내·해외 모두 진짜 시장가로 나갑니다(해외는 단가 \"0\" 이 시장가 — 2026-08-08 실측)."
       },
       "marketableLimitPct": {
         "type": "number",
-        "description": "[중립] 해외 시장가를 흉내 낼 때 호가를 넘길 폭(%). 기본 2."
+        "description": "[중립] 해외 market 을 \"호가를 이만큼 넘긴 지정가\"로 바꿉니다(미끄러짐 한도). 안 주면 시장가."
       },
       "exchange": {
         "type": "string",

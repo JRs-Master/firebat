@@ -287,19 +287,32 @@ function standardCall(action, data) {
         ORD_QTY: qty, ORD_UNPR: market ? '0' : String(roundToKrxTick(price, data.side)),
       }};
     }
-    // The US side has no plain market order here — only limit and the open/close variants. So a
-    // market intent becomes a limit priced through the spread, which is what a market order is
-    // for (getting out now), with the slip bounded and stated rather than unlimited.
-    if (!(price > 0)) throw new Error('place_order: 해외 주문에는 price 가 필요합니다.');
-    const slip = Number(data.marketableLimitPct ?? 2) / 100;
+    // ORD_DVSN has no 시장가 code here (00 지정가 · 32 LOO · 34 LOC · 35 TWAP · 36 VWAP), which read
+    // as "this venue has no market order". It is the PRICE field that carries it — the sheet says
+    // of OVRS_ORD_UNPR: "시장가의 경우 1주당 가격을 공란으로 비우지 않음 '0'으로 입력". Measured
+    // 2026-08-08 on the mock account: 00 + "0" is accepted and fills at the touch every time
+    // (MSFT 4 @502.55 · AMZN 14 @276.725 · TSLA 6 @330.695, all sent with unit price 0).
+    // So a market intent goes out as a market order. `marketableLimitPct` is now what an explicit
+    // *bounded* one asks for — a limit priced through the spread — rather than the only shape.
+    const market = type === 'market';
+    const bounded = market && data.marketableLimitPct != null;
+    if ((!market || bounded) && !(price > 0)) {
+      throw new Error('place_order: 해외 지정가 주문에는 price 가 필요합니다'
+                      + (market ? ' (marketableLimitPct 는 price 를 넘긴 지정가입니다).' : '.'));
+    }
     const buying = String(data.side ?? '').toLowerCase() === 'buy';
-    const px = type === 'market' ? price * (buying ? 1 + slip : 1 - slip) : price;
+    const slip = bounded ? Number(data.marketableLimitPct) / 100 : 0;
+    // `toFixed(2)` was legal but rounds in whichever direction is nearer — which can push a buy
+    // further across the spread than asked — and truncates a sub-dollar price to two decimals
+    // where four are allowed. Same helper as kiwoom now: one venue, one rule.
+    const unpr = market && !bounded ? '0'
+      : usOrderPrice(bounded ? price * (buying ? 1 + slip : 1 - slip) : price, data.side);
     return { apiId: 'v1_해외주식-001', hint: sideHint(data, false), body: {
       ...acct, OVRS_EXCG_CD: usExchange(data), PDNO: symbol, ORD_QTY: qty,
-      // `toFixed(2)` was legal but rounds in whichever direction is nearer — which can push a buy
-      // further across the spread than asked — and truncates a sub-dollar price to two decimals
-      // where four are allowed. Same helper as kiwoom now: one venue, one rule.
-      OVRS_ORD_UNPR: usOrderPrice(px, data.side), ORD_SVR_DVSN_CD: '0', ORD_DVSN: '00',
+      OVRS_ORD_UNPR: unpr, ORD_SVR_DVSN_CD: '0', ORD_DVSN: '00',
+      // 제거 = 매수 / "00" = 매도 (sheet). It was missing because the neutral path had never placed
+      // a US sell — every US order until today was a buy, where the field must be absent.
+      ...(buying ? {} : { SLL_TYPE: '00' }),
     }};
   }
 
