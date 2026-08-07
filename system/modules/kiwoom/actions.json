@@ -3331,5 +3331,19 @@
    "etf_cat1": "ETF카테고리코드1 — ETF 대카테고리코드 (ETF이고 대분류일 경우 사용), usa10105 cate1 속성 참고",
    "etf_cat2": "ETF카테고리코드2 — ETF 중카테고리코드 (ETF이고 중분류일 경우 사용), usa10105 cate2 속성 참고"
   }
+ },
+ {
+  "id": "get_candles",
+  "name": "캔들 조회 get_candles (중립 계약)",
+  "description": "[중립 계약] OHLCV candles — every timeframe is its own API here and the dialect routes it: minute bars (1m/3m/5m/10m/15m/...) via tic_scope, plus 1d/1w/1M. Auto-paging, response carries _cacheKey for charting. 캔들 분봉 일봉 주봉 월봉 차트 시세 히스토리 OHLCV",
+  "domain": "[중립 계약] 기본시세",
+  "params": {
+   "symbol": "종목코드 — 필수",
+   "interval": "1m/3m/5m/10m/15m/30m/45m/60m/1d(기본)/1w/1M",
+   "bars": "원하는 봉 수 (기본 200)",
+   "baseDate": "조회 종료일 YYYYMMDD (기본 오늘)",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
  }
 ]

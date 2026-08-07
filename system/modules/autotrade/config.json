@@ -4,6 +4,10 @@
   "scope": "system",
   "version": "1.0.0",
   "runtime": "python",
+  "actionCatalog": {
+    "file": "actions.json",
+    "envelope": "{ \"action\": \"<id>\", <params flat at top level> }"
+  },
   "providerType": "compute",
   "capability": "auto-trading",
   "accountFrom": "broker",

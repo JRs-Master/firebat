@@ -1425,5 +1425,66 @@
    "query.BOND_ORD_UNPR": "채권주문단가 (필수)",
    "query.SAMT_MKET_PTCI_YN": "소액시장참여여부 (필수) — Y(소액시장) N (일반시장)"
   }
+ },
+ {
+  "id": "place_order",
+  "name": "주문 전송 place_order (중립 계약)",
+  "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect resolves the tr_id sentence, CANO split, tick rounding and SLL_TYPE. Params are FLAT (no query/body wrapper). market decides kr|us; a US market order sends unit price \"0\" (measured 2026-08-08). 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "symbol": "종목코드 6자리(kr) 또는 ticker(us) — 필수",
+   "side": "buy | sell — 필수",
+   "qty": "주문 수량 — 필수",
+   "orderType": "limit(기본) | market. market = 진짜 시장가(해외는 단가 \"0\" 으로 나감)",
+   "price": "지정가. market 이면 생략 — 단 marketableLimitPct 를 쓰면 필수",
+   "marketableLimitPct": "해외 한정: market 을 \"호가를 이만큼 넘긴 지정가\"로 (미끄러짐 한도 %)",
+   "market": "kr | us — 생략 시 종목 모양으로 추론",
+   "account": "등록 계좌 별칭 (실전/모의는 계좌가 결정)",
+   "exchange": "해외 거래소 NASD(기본)/NYSE/AMEX",
+   "clientOrderId": "호출자 멱등 id — 주문 기록에 함께 남음"
+  }
+ },
+ {
+  "id": "cancel_order",
+  "name": "주문 취소 cancel_order (중립 계약)",
+  "description": "[중립 계약] Cancel a resting order by broker order number. Use THIS, not the raw 정정취소 API — the raw path derives its tr_id hint from side and dies on the sheet label. Mock cancels same-day orders only (measured 2026-08-08: older ones answer 원주문번호가 존재하지 않습니다). 주문취소 미체결 취소",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "brokerOrderNo": "취소할 주문번호(ODNO) — 필수",
+   "symbol": "해외 취소에 필수",
+   "qty": "해외 취소에 필수 (남은 수량)",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "list_open_orders",
+  "name": "미체결 조회 list_open_orders (중립 계약)",
+  "description": "[중립 계약] Resting (unfilled) orders. Mock quirk: rows from PAST sessions can linger although the venue already expired them — a day order dies with its session. 미체결 주문 조회 대기 주문",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "list_fills",
+  "name": "체결 내역 list_fills (중립 계약)",
+  "description": "[중립 계약] Executed fills (체결). 체결 내역 조회 거래 내역 execution history",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "get_balance",
+  "name": "잔고 조회 get_balance (중립 계약)",
+  "description": "[중립 계약] Holdings + cash. Answers ONE market per call — this broker keeps kr and us on different endpoints under the same account number. 잔고 보유 종목 예수금 balance holdings",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us — 시장마다 따로 물어야 함",
+   "account": "등록 계좌 별칭"
+  }
  }
 ]

@@ -14,7 +14,7 @@ const apis = JSON.parse(readFileSync(resolve(MODULE_DIR, '_apis.json'), 'utf8'))
 // entries (survives regeneration). Shape: { "<actionId>": { description?, params?: {name: desc} } }.
 // Params merge per-key (override wins); other keys replace. Why: the source API docs can be
 // ambiguous — e.g. chart base_dt is the query END date (returns ~600 candles going BACKWARD),
-// which a model read as a start date (2026-07-07 실측: 3개월 차트가 4/7 종료 600봉).
+// which a model read as a start date (measured 2026-07-07: a 3-month chart came back as 600 candles ending April 7).
 let overrides = {};
 try {
   overrides = JSON.parse(readFileSync(resolve(MODULE_DIR, 'actions-overrides.json'), 'utf8'));
@@ -58,6 +58,22 @@ const actions = apis
     }
     return entry;
   });
+
+
+// The sheet only knows raw API ids. The neutral contract (place_order, get_candles, ...) is the
+// module's own declaration, so an override whose id the sheet does not carry becomes a catalog
+// entry of its own instead of being silently dropped. Without this, get_action_schema answered
+// "place_order does not exist — do not invent IDs" while the module description advertised it
+// as the standard call (measured 2026-08-08). writeSplit still filters by each half's enum, so
+// a neutral entry lands only in the half that actually runs it.
+{
+  const known = new Set(actions.map((a) => a.id));
+  for (const [id, ov] of Object.entries(overrides)) {
+    if (known.has(id)) continue;
+    actions.push({ id, name: ov.name || id, description: ov.description || id,
+                   domain: ov.domain || '', params: ov.params || {} });
+  }
+}
 
 // One sheet, two catalogs. The account/quotes split is expressed by each module's action enum, so
 // that is what decides where an entry goes — a catalog listing an action its module cannot run

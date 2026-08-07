@@ -1059,5 +1059,65 @@
    "stk_cd": "종목코드 (필수)",
    "uv": "매수가격 (필수)"
   }
+ },
+ {
+  "id": "place_order",
+  "name": "주문 전송 place_order (중립 계약)",
+  "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect maps order types (kr: limit/market/conditional/best/priority · us: limit/market/loc/moc), rounds to the tick grid and picks the endpoint family by market. Params are FLAT. The credential IS the account here — no account number param. 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "symbol": "종목코드 6자리(kr, 접미사 없이) 또는 ticker(us) — 필수",
+   "side": "buy | sell — 필수",
+   "qty": "주문 수량 — 필수",
+   "orderType": "kr: limit(기본)/market/conditional/best/priority · us: limit/market/loc/moc",
+   "price": "지정가 (market 이면 생략 — us 시장가는 빈 단가로 나감)",
+   "market": "kr | us — 생략 시 종목 모양으로 추론",
+   "account": "등록 계좌 별칭 (모의국내/모의해외/실전)",
+   "exchange": "us 거래소 ND(기본)/NY/NA",
+   "clientOrderId": "호출자 멱등 id"
+  }
+ },
+ {
+  "id": "cancel_order",
+  "name": "주문 취소 cancel_order (중립 계약)",
+  "description": "[중립 계약] Cancel a resting order by broker order number. 주문취소 미체결 취소",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "brokerOrderNo": "취소할 주문번호 — 필수",
+   "symbol": "종목",
+   "qty": "남은 수량",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "list_open_orders",
+  "name": "미체결 조회 list_open_orders (중립 계약)",
+  "description": "[중립 계약] Resting (unfilled) orders. 미체결 주문 조회 대기 주문",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "list_fills",
+  "name": "체결 내역 list_fills (중립 계약)",
+  "description": "[중립 계약] Executed fills (체결). 체결 내역 조회 거래 내역 execution history",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ {
+  "id": "get_balance",
+  "name": "잔고 조회 get_balance (중립 계약)",
+  "description": "[중립 계약] Holdings + cash for the named account. Answers one market per call (kr and us are different endpoint families). 잔고 보유 종목 예수금 balance holdings",
+  "domain": "[중립 계약] 주문/계좌",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
  }
 ]

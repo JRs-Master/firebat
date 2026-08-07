@@ -17,7 +17,7 @@ const apis = JSON.parse(readFileSync(resolve(MODULE_DIR, '_apis.json'), 'utf8'))
 // entries (survives regeneration; kiwoom gen-actions mirror). Shape:
 // { "<actionId>": { description?, params?: {name: desc} } }. Params merge per-key
 // (override wins); other keys replace. Used to seed search synonyms on confusion clusters
-// (차트/일봉/시세 — 2026-07-12 실측: 대상명 오염 쿼리에서 정답 액션이 top-K 밖).
+// (chart/daily/quote cluster — measured 2026-07-12: a subject-name-polluted query pushed the right action out of top-K).
 let overrides = {};
 try {
   overrides = JSON.parse(readFileSync(resolve(MODULE_DIR, 'actions-overrides.json'), 'utf8'));
@@ -64,6 +64,22 @@ const actions = apis
     return entry;
   });
 
+
+
+// The sheet only knows raw API ids. The neutral contract (place_order, get_candles, ...) is the
+// module's own declaration, so an override whose id the sheet does not carry becomes a catalog
+// entry of its own instead of being silently dropped. Without this, get_action_schema answered
+// "place_order does not exist — do not invent IDs" while the module description advertised it
+// as the standard call (measured 2026-08-08). writeSplit still filters by each half's enum, so
+// a neutral entry lands only in the half that actually runs it.
+{
+  const known = new Set(actions.map((a) => a.id));
+  for (const [id, ov] of Object.entries(overrides)) {
+    if (known.has(id)) continue;
+    actions.push({ id, name: ov.name || id, description: ov.description || id,
+                   domain: ov.domain || '', params: ov.params || {} });
+  }
+}
 
 // One sheet, two catalogs. The account/quotes split is expressed by each module's action enum, so
 // that is what decides where an entry goes — a catalog listing an action its module cannot run

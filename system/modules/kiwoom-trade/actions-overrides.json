@@ -1,19 +1,155 @@
 {
-  "ka10001": { "description": "주식기본정보요청 — 종목 기본정보·현재가 스냅샷 조회" },
-  "ka10004": { "description": "주식호가요청 — 종목 호가창 스냅샷 (매수/매도 호가·잔량) 조회" },
-  "ka10079": { "description": "주식틱차트조회요청 — 종목 틱 차트 (체결 단위 가격 캔들) 조회" },
-  "ka10080": { "description": "주식분봉차트조회요청 — 종목 분봉 캔들 차트 (분 단위 시세·가격 히스토리 OHLCV) 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka10081": { "description": "주식일봉차트조회요청 — 종목 일봉(데일리) 캔들 차트, 일별 시세·가격 히스토리 OHLCV·종가 조회. '최근 N개월 일봉 차트'의 기본 액션", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 최대 600봉 반환 (시작일 아님). 최신 차트 = 오늘 날짜. '최근 N개월'은 base_dt=오늘 + 렌더 시 dataLimit/dataRange 로 기간 슬라이스" } },
-  "ka10082": { "description": "주식주봉차트조회요청 — 종목 주봉 캔들 차트 (주 단위 시세 히스토리) 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka10083": { "description": "주식월봉차트조회요청 — 종목 월봉 캔들 차트 (월 단위 시세 히스토리) 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka10086": { "description": "일별주가요청 — 종목 일별 주가 표 (날짜별 종가·거래량) 조회" },
-  "ka10094": { "description": "주식년봉차트조회요청 — 종목 년봉 캔들 차트 (연 단위 시세 히스토리) 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka20005": { "description": "업종분봉조회요청 — 업종 지수 분봉 캔들 차트 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka20006": { "description": "업종일봉조회요청 — 업종 지수 일봉 캔들 차트 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka20007": { "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka20008": { "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka20019": { "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka50081": { "description": "금현물일봉차트조회요청 — 금현물 일봉 캔들 차트 조회", "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka50082": { "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } },
-  "ka50083": { "params": { "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜" } }
+ "ka10001": {
+  "description": "주식기본정보요청 — 종목 기본정보·현재가 스냅샷 조회"
+ },
+ "ka10004": {
+  "description": "주식호가요청 — 종목 호가창 스냅샷 (매수/매도 호가·잔량) 조회"
+ },
+ "ka10079": {
+  "description": "주식틱차트조회요청 — 종목 틱 차트 (체결 단위 가격 캔들) 조회"
+ },
+ "ka10080": {
+  "description": "주식분봉차트조회요청 — 종목 분봉 캔들 차트 (분 단위 시세·가격 히스토리 OHLCV) 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka10081": {
+  "description": "주식일봉차트조회요청 — 종목 일봉(데일리) 캔들 차트, 일별 시세·가격 히스토리 OHLCV·종가 조회. '최근 N개월 일봉 차트'의 기본 액션",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 최대 600봉 반환 (시작일 아님). 최신 차트 = 오늘 날짜. '최근 N개월'은 base_dt=오늘 + 렌더 시 dataLimit/dataRange 로 기간 슬라이스"
+  }
+ },
+ "ka10082": {
+  "description": "주식주봉차트조회요청 — 종목 주봉 캔들 차트 (주 단위 시세 히스토리) 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka10083": {
+  "description": "주식월봉차트조회요청 — 종목 월봉 캔들 차트 (월 단위 시세 히스토리) 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka10086": {
+  "description": "일별주가요청 — 종목 일별 주가 표 (날짜별 종가·거래량) 조회"
+ },
+ "ka10094": {
+  "description": "주식년봉차트조회요청 — 종목 년봉 캔들 차트 (연 단위 시세 히스토리) 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka20005": {
+  "description": "업종분봉조회요청 — 업종 지수 분봉 캔들 차트 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka20006": {
+  "description": "업종일봉조회요청 — 업종 지수 일봉 캔들 차트 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka20007": {
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka20008": {
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka20019": {
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka50081": {
+  "description": "금현물일봉차트조회요청 — 금현물 일봉 캔들 차트 조회",
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka50082": {
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "ka50083": {
+  "params": {
+   "base_dt": "기준일자 (필수) — YYYYMMDD. 조회 종료일: 이 날짜부터 과거 방향으로 봉을 반환한다 (시작일 아님). 최신 차트 = 오늘 날짜"
+  }
+ },
+ "place_order": {
+  "name": "주문 전송 place_order (중립 계약)",
+  "domain": "[중립 계약] 주문/계좌",
+  "description": "[중립 계약] Buy or sell one symbol without knowing this broker's raw API ids — the dialect maps order types (kr: limit/market/conditional/best/priority · us: limit/market/loc/moc), rounds to the tick grid and picks the endpoint family by market. Params are FLAT. The credential IS the account here — no account number param. 매수 매도 주문 지정가 시장가 주문전송 buy sell order",
+  "params": {
+   "symbol": "종목코드 6자리(kr, 접미사 없이) 또는 ticker(us) — 필수",
+   "side": "buy | sell — 필수",
+   "qty": "주문 수량 — 필수",
+   "orderType": "kr: limit(기본)/market/conditional/best/priority · us: limit/market/loc/moc",
+   "price": "지정가 (market 이면 생략 — us 시장가는 빈 단가로 나감)",
+   "market": "kr | us — 생략 시 종목 모양으로 추론",
+   "account": "등록 계좌 별칭 (모의국내/모의해외/실전)",
+   "exchange": "us 거래소 ND(기본)/NY/NA",
+   "clientOrderId": "호출자 멱등 id"
+  }
+ },
+ "cancel_order": {
+  "name": "주문 취소 cancel_order (중립 계약)",
+  "domain": "[중립 계약] 주문/계좌",
+  "description": "[중립 계약] Cancel a resting order by broker order number. 주문취소 미체결 취소",
+  "params": {
+   "brokerOrderNo": "취소할 주문번호 — 필수",
+   "symbol": "종목",
+   "qty": "남은 수량",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ "list_open_orders": {
+  "name": "미체결 조회 list_open_orders (중립 계약)",
+  "domain": "[중립 계약] 주문/계좌",
+  "description": "[중립 계약] Resting (unfilled) orders. 미체결 주문 조회 대기 주문",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ "list_fills": {
+  "name": "체결 내역 list_fills (중립 계약)",
+  "domain": "[중립 계약] 주문/계좌",
+  "description": "[중립 계약] Executed fills (체결). 체결 내역 조회 거래 내역 execution history",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ "get_balance": {
+  "name": "잔고 조회 get_balance (중립 계약)",
+  "domain": "[중립 계약] 주문/계좌",
+  "description": "[중립 계약] Holdings + cash for the named account. Answers one market per call (kr and us are different endpoint families). 잔고 보유 종목 예수금 balance holdings",
+  "params": {
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ },
+ "get_candles": {
+  "name": "캔들 조회 get_candles (중립 계약)",
+  "domain": "[중립 계약] 기본시세",
+  "description": "[중립 계약] OHLCV candles — every timeframe is its own API here and the dialect routes it: minute bars (1m/3m/5m/10m/15m/...) via tic_scope, plus 1d/1w/1M. Auto-paging, response carries _cacheKey for charting. 캔들 분봉 일봉 주봉 월봉 차트 시세 히스토리 OHLCV",
+  "params": {
+   "symbol": "종목코드 — 필수",
+   "interval": "1m/3m/5m/10m/15m/30m/45m/60m/1d(기본)/1w/1M",
+   "bars": "원하는 봉 수 (기본 200)",
+   "baseDate": "조회 종료일 YYYYMMDD (기본 오늘)",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭"
+  }
+ }
 }

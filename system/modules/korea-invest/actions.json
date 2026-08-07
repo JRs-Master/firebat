@@ -3357,5 +3357,20 @@
    "query.PDNO": "상품번호 (필수) — 상품번호",
    "query.PRDT_TYPE_CD": "상품유형코드 (필수) — Unique key(302)"
   }
+ },
+ {
+  "id": "get_candles",
+  "name": "캔들 조회 get_candles (중립 계약)",
+  "description": "[중립 계약] OHLCV candles with auto-paging (~100/page) and a _cacheKey for charting (stock_chart dataCacheKey). Intervals: kr 1d/1w/1M/1y · us 1d/1w/1M — this broker's period endpoint has NO minute bars. 캔들 일봉 주봉 월봉 차트 시세 히스토리 OHLCV",
+  "domain": "[중립 계약] 기본시세",
+  "params": {
+   "symbol": "종목코드/ticker — 필수",
+   "interval": "1d(기본)/1w/1M/1y(kr만)",
+   "bars": "원하는 봉 수 (기본 200)",
+   "baseDate": "조회 종료일 YYYYMMDD (기본 오늘)",
+   "market": "kr | us",
+   "account": "등록 계좌 별칭",
+   "adjusted": "수정주가 여부"
+  }
  }
 ]
