@@ -337,6 +337,60 @@ export function parseFenceJson(body: string): any | undefined {
  * Note: bare component-JSON dumps WITHOUT this fence stay in the md segments → cleanMarkdown still
  * strips them as hallucinations (intended vs accidental render disambiguated by the explicit fence).
  */
+/** Item-level salvage for a fence body that defeated parseFenceJson — TS mirror of Rust
+ *  render_exec::salvage_fence_items, for messages already stored with the broken fence (the
+ *  server repair only touches new turns). One missing `}` in one block used to render a
+ *  14-block reply as a raw JSON wall (measured 2026-08-08): the bracket-balance repair appends
+ *  closers at end-of-document, the wrong place for a mid-document gap — but cut the array into
+ *  items first and the same repair lands the closer exactly where it was missing. Boundaries are
+ *  findable because the block shape is a fixed contract ({"type"/"name": ...}). Openers are
+ *  accepted at depth 1 or 2 (one missing closer shifts everything after it by one level) and
+ *  each accepted opener re-anchors the depth. Returns null when nothing was recovered. */
+function salvageFenceItems(body: string): { blocks: any[]; brokenRaw: string[] } | null {
+  const s = body.trim();
+  if (!s.startsWith('[')) return null;
+  let inStr = false, esc = false, depth = 0, lastSig = ' ';
+  const starts: number[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; lastSig = c; continue; }
+    if (c === '{') {
+      if ((depth === 1 || depth === 2) && (lastSig === ',' || lastSig === '[')) {
+        let j = i + 1;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        const peek = s.slice(j, j + 7);
+        if (peek.startsWith('"type"') || peek.startsWith('"name"')) {
+          starts.push(i);
+          depth = 1;
+        }
+      }
+      depth++; lastSig = c; continue;
+    }
+    if (c === '[') { depth++; lastSig = c; continue; }
+    if (c === '}' || c === ']') { depth--; lastSig = c; continue; }
+    if (!/\s/.test(c)) lastSig = c;
+  }
+  if (starts.length < 2) return null;
+  const blocks: any[] = [];
+  const brokenRaw: string[] = [];
+  for (let i = 0; i < starts.length; i++) {
+    let slice = s.slice(starts[i], starts[i + 1] ?? s.length).trimEnd();
+    // strip the array's joinery — trailing commas and the final `]` belong to the array, and
+    // the item's own missing closers are the repair's job
+    while (slice.endsWith(',') || slice.endsWith(']')) slice = slice.slice(0, -1).trimEnd();
+    const parsed = parseFenceJson(slice);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) blocks.push(parsed);
+    else brokenRaw.push(slice);
+  }
+  return blocks.length ? { blocks, brokenRaw } : null;
+}
+
 export function splitFirebatRender(text: string): MdSegment[] {
   if (!text || !text.includes('firebat-render')) return [{ md: text }];
   const out: MdSegment[] = [];
@@ -362,7 +416,24 @@ export function splitFirebatRender(text: string): MdSegment[] {
       if (blocks.length) out.push({ blocks });
       else out.push({ md: m[0] }); // empty/invalid → keep raw so it's visible
     } else {
-      out.push({ md: m[0] }); // parse failure → keep raw (debuggable, not silently dropped)
+      // Whole-fence parse failure → salvage the items individually before falling back to raw.
+      // Recovered blocks render; an unrecoverable item stays visible as a small json fence of
+      // its own text — excluded by name, never the whole answer, never silently.
+      const salvaged = salvageFenceItems(m[1] ?? m[2] ?? '');
+      if (salvaged) {
+        const blocks = salvaged.blocks
+          .map((b: any) =>
+            b.type === 'component'
+              ? { type: String(b.name ?? ''), props: b.props ?? {} }
+              : { type: String(b.type ?? b.name ?? ''), props: b.props ?? {} },
+          )
+          .filter((b) => b.type);
+        if (blocks.length) out.push({ blocks });
+        for (const raw of salvaged.brokenRaw) out.push({ md: '```json\n' + raw + '\n```' });
+        if (!blocks.length && !salvaged.brokenRaw.length) out.push({ md: m[0] });
+      } else {
+        out.push({ md: m[0] }); // nothing recovered → keep raw (debuggable, not silently dropped)
+      }
     }
     last = re.lastIndex;
   }

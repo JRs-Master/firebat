@@ -773,9 +773,133 @@ pub fn strip_wrapping_fence(s: &str) -> String {
 /// Validate/normalize a fence body (a JSON array of blocks, or `{blocks:[...]}`) via `render_blocks`.
 /// Returns `(json_string, blocks_value)`. On parse/validation failure, returns the trimmed original
 /// string + `Null` blocks so the frontend renders it raw (visible + debuggable, never silently dropped).
+/// Item-level salvage for a fence whose WHOLE body defeated the tolerant chain.
+///
+/// One missing `}` in one block used to cost the entire answer: the bracket-balance repair
+/// appends missing closers at end-of-document, which is the wrong place when the gap is in the
+/// middle, so a 14-block reply rendered as a four-thousand-character raw JSON wall (measured
+/// 2026-08-08, the BTC report — one table's `props` never closed). Cutting the array into its
+/// items first makes the SAME repair land right: a closer appended at the end of the broken
+/// item's own slice is exactly where it was missing. The block shape is a fixed contract
+/// (`{"type"/"name": ...}`), which is what makes the item boundaries findable at all.
+///
+/// Only runs after the whole-document chain has failed, so it cannot degrade a valid fence.
+/// Returns `(good_blocks, parse_failed)` — a slice that still refuses to parse is returned as a
+/// failed entry (idx + error + its raw text) rather than dropped, same rule as the validation
+/// badge. `None` = shape not salvageable (not an array / fewer than two items found).
+fn salvage_fence_items(body: &str) -> Option<(Vec<Value>, Vec<Value>)> {
+    let s = body.trim();
+    if !s.starts_with('[') {
+        return None;
+    }
+    // String-aware scan for item openers: a `{` whose next token is `"type"` or `"name"`,
+    // preceded by `,` or `[`, at nesting depth 1 — or 2, because one missing closer upstream
+    // shifts everything after it by exactly one level (the measured failure). Each accepted
+    // opener re-anchors the depth, so a single broken item cannot poison the boundaries behind it.
+    let chars: Vec<(usize, char)> = s.char_indices().collect();
+    let mut in_str = false;
+    let mut esc = false;
+    let mut depth: i32 = 0;
+    let mut last_sig = ' ';
+    let mut starts: Vec<usize> = Vec::new();
+    for (k, &(_, c)) in chars.iter().enumerate() {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                in_str = true;
+                last_sig = c;
+            }
+            '{' => {
+                if (depth == 1 || depth == 2) && (last_sig == ',' || last_sig == '[') {
+                    let mut j = k + 1;
+                    while j < chars.len() && chars[j].1.is_whitespace() {
+                        j += 1;
+                    }
+                    let peek: String = chars[j..chars.len().min(j + 7)].iter().map(|&(_, ch)| ch).collect();
+                    if peek.starts_with("\"type\"") || peek.starts_with("\"name\"") {
+                        starts.push(chars[k].0);
+                        depth = 1;
+                    }
+                }
+                depth += 1;
+                last_sig = c;
+            }
+            '[' => {
+                depth += 1;
+                last_sig = c;
+            }
+            '}' | ']' => {
+                depth -= 1;
+                last_sig = c;
+            }
+            _ => {
+                if !c.is_whitespace() {
+                    last_sig = c;
+                }
+            }
+        }
+    }
+    if starts.len() < 2 {
+        return None; // a single item has nothing to be cut apart from
+    }
+    let mut good: Vec<Value> = Vec::new();
+    let mut failed: Vec<Value> = Vec::new();
+    for (i, &from) in starts.iter().enumerate() {
+        let to = starts.get(i + 1).copied().unwrap_or(s.len());
+        let mut slice = &s[from..to];
+        // Strip the joinery that belongs to the array, not the item: trailing commas, the final
+        // `]`, whitespace. The item's own missing closers are the repair's job, not ours.
+        slice = slice.trim_end();
+        while let Some(t) = slice.strip_suffix(',').or_else(|| slice.strip_suffix(']')) {
+            slice = t.trim_end();
+        }
+        let cleaned = escape_control_chars_in_strings(&tolerant_json_cleanup(slice));
+        let candidate = balance_json_brackets(cleaned.trim());
+        match serde_json::from_str::<Value>(candidate.trim()) {
+            Ok(v) if v.is_object() => good.push(v),
+            _ => {
+                let snippet: String = slice.chars().take(400).collect();
+                failed.push(serde_json::json!({
+                    "idx": i,
+                    "type": "?",
+                    "error": "이 블록의 JSON 은 복구되지 않았습니다 — 이 항목만 제외했습니다",
+                    "raw": snippet,
+                }));
+            }
+        }
+    }
+    if good.is_empty() {
+        return None;
+    }
+    Some((good, failed))
+}
+
 fn sanitize_fence_body(body: &str, resolver: Option<FenceDataResolver>) -> (String, Value, Value) {
     let trimmed = body.trim();
     let Some(parsed) = parse_fence_json(trimmed) else {
+        // The whole document is beyond the tolerant chain — salvage the items individually
+        // before giving up (and before ai.rs spends an LLM repair round on it).
+        if let Some((good, parse_failed)) = salvage_fence_items(trimmed) {
+            let args = serde_json::json!({ "blocks": good });
+            if let Ok(result) = render_blocks(&args, false, resolver) {
+                let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));
+                let mut failed = result.get("failed").cloned().unwrap_or_else(|| serde_json::json!([]));
+                if let Some(arr) = failed.as_array_mut() {
+                    arr.extend(parse_failed);
+                }
+                let s = serde_json::to_string(&blocks).unwrap_or_else(|_| trimmed.to_string());
+                return (s, blocks, failed);
+            }
+        }
         return (trimmed.to_string(), Value::Null, Value::Null);
     };
     let args = if parsed.is_array() {
@@ -867,6 +991,59 @@ fn collect_text_values(v: &Value, key: &str, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The measured 2026-08-08 shape: a middle block whose `props` object never closes. The
+    /// whole-document chain fails (the balance repair appends the closer at end-of-document),
+    /// but per-item the same repair lands the closer where it was missing.
+    #[test]
+    fn salvage_recovers_items_around_a_missing_brace() {
+        let body = r#"[
+  { "type": "header", "props": { "text": "요약", "level": 2 } },
+  { "type": "table", "props": { "headers": ["a"], "rows": [["x"]] },
+  { "type": "divider" },
+  { "type": "text", "props": { "content": "끝" } }
+]"#;
+        assert!(parse_fence_json(body).is_none(), "the fixture must defeat the whole-doc chain");
+        let (good, failed) = salvage_fence_items(body).expect("salvageable");
+        assert_eq!(good.len(), 4, "every item recovers — the broken one heals per-slice");
+        assert!(failed.is_empty());
+        assert_eq!(good[1]["type"], "table");
+        assert_eq!(good[2]["type"], "divider");
+    }
+
+    /// An item that is broken beyond repair is returned as a failed entry with its raw text —
+    /// excluded by name, never silently dropped — while its neighbours still render.
+    #[test]
+    fn salvage_names_the_unrecoverable_item() {
+        let body = "[\n  { \"type\": \"header\", \"props\": { \"text\": \"a\" } },\n  { \"type\": \"chart\", \"props\": { \"data\": ::: } },\n  { \"type\": \"text\", \"props\": { \"content\": \"b\" } }\n]";
+        assert!(parse_fence_json(body).is_none());
+        let (good, failed) = salvage_fence_items(body).expect("salvageable");
+        assert_eq!(good.len(), 2);
+        assert_eq!(failed.len(), 1);
+        assert!(failed[0]["raw"].as_str().unwrap().contains(":::"));
+    }
+
+    /// A valid fence never reaches salvage — the whole-document parse wins first.
+    #[test]
+    fn salvage_is_unreachable_for_a_valid_fence() {
+        let body = r#"[{ "type": "divider" }, { "type": "header", "props": { "text": "t" } }]"#;
+        assert!(parse_fence_json(body).is_some());
+    }
+
+    /// The salvage path flows through sanitize_fence_body: blocks come back renderable and the
+    /// stored canonical fence is the serialized good blocks.
+    #[test]
+    fn sanitize_fence_body_salvages_the_broken_document() {
+        let body = r#"[
+  { "type": "header", "props": { "text": "요약", "level": 2 } },
+  { "type": "table", "props": { "headers": ["a"], "rows": [["x"]] },
+  { "type": "text", "props": { "content": "끝" } }
+]"#;
+        let (stored, blocks, _failed) = sanitize_fence_body(body, None);
+        let arr = blocks.as_array().expect("blocks array");
+        assert_eq!(arr.len(), 3);
+        assert!(stored.starts_with('['), "canonical fence is the rebuilt array");
+    }
 
     fn ohlcv_rows(n: usize) -> Vec<Value> {
         (0..n)
