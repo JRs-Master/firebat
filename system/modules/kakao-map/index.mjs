@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * 카카오 지도 통합 sysmod — REST API.
+ * Kakao Map integration sysmod — REST API.
  *
  * actions:
- *   geocoding         — 주소 → 좌표 (search/address)
- *   reverse-geocoding — 좌표 → 주소 (geo/coord2address)
- *   search-address    — 주소 자동완성·검색 (search/address)
- *   search-keyword    — 장소 키워드 검색 (search/keyword)
+ *   geocoding         — address → coordinates (search/address)
+ *   reverse-geocoding — coordinates → address (geo/coord2address)
+ *   search-address    — address autocomplete/search (search/address)
+ *   search-keyword    — place keyword search (search/keyword)
  *
- * 인증: Authorization: KakaoAK ${KAKAO_REST_API_KEY}
+ * Auth: Authorization: KakaoAK ${KAKAO_REST_API_KEY}
  *
- * JS SDK 키 (KAKAO_MAP_JS_KEY) 는 이 모듈에서 사용 X — Core 가 sysmod settings 읽어
- * SSR 시 사용자 사이트 head 에 inject. render_map 컴포넌트가 활용.
+ * The JS SDK key (KAKAO_MAP_JS_KEY) is NOT used by this module — Core reads it from the sysmod
+ * settings and injects it into the user site's head at SSR time; the render_map component uses it.
  *
- * REST API 키는 sysmod_kakao-talk 와 같은 키 그룹 — 카카오 디벨로퍼스 1 앱 안.
+ * The REST key shares a key group with sysmod_kakao-talk — one app on Kakao Developers.
  */
 
 const BASE = 'https://dapi.kakao.com/v2/local';
@@ -59,7 +59,7 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(result));
 }
 
-/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.kakao-map.{key} 로 변환. */
+/** i18n error envelope — errorKey + errorParams; resolve_sysmod_error maps it to module.kakao-map.{key}. */
 function outErr(key, params) {
   const r = { success: false, errorKey: key };
   if (params && Object.keys(params).length > 0) r.errorParams = params;
@@ -84,7 +84,8 @@ async function main() {
   try {
     if (action === 'geocoding' || action === 'search-address') {
       // Batch mode — `addresses` array (multi-marker maps: N places → one call instead of
-      // N tool rounds. 2026-07-18 실측: 13개 단지 지오코딩이 13콜 순차로 돌던 것). Cap 30.
+      // N tool rounds. Measured 2026-07-18: geocoding 13 apartment complexes ran as 13
+      // sequential calls). Cap 30.
       const batch = Array.isArray(data.addresses) ? data.addresses.filter((a) => typeof a === 'string' && a.trim()) : null;
       if (batch && batch.length > 0) {
         const results = [];
@@ -100,6 +101,14 @@ async function main() {
         size: safeLimit,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
+      // Kakao's address endpoint resolves ADDRESSES, not place names — "서울시청" comes back as
+      // an empty success, which reads like "no such place" and dead-ends the caller (measured
+      // 2026-08-08). An empty result names the next step instead: the same query one action over.
+      if (r.items.length === 0) {
+        return out(true, { items: [], total: 0,
+          note: `'${address}' 는 주소로 해석되지 않았습니다 — 장소·건물 이름이면 같은 질의를 `
+              + `search-keyword 로 호출하세요 (주소 검색은 도로명·지번만 받습니다).` });
+      }
       return out(true, { items: r.items, total: r.total });
     }
 
@@ -108,7 +117,7 @@ async function main() {
         return outErr('error.reverse_lat_lon_required', {});
       }
       const r = await callApi(restKey, '/geo/coord2address.json', {
-        x: lon,  // 카카오 API: x=경도, y=위도
+        x: lon,  // Kakao API: x = longitude, y = latitude
         y: lat,
       });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
@@ -116,9 +125,10 @@ async function main() {
     }
 
     if (action === 'search-keyword') {
-      // Batch mode — `keywords` array (multi-marker maps: N places → one call. 2026-07-19 실측:
-      // 여의도 17개 단지명 좌표 찾기가 17콜 순차로 돌던 것 — 단지명 검색 = keyword 쪽이라
-      // geocoding 배치와 별개로 여기도 필요). Cap 30. 공통 옵션(중심·반경·카테고리) 공유.
+      // Batch mode — `keywords` array (multi-marker maps: N places → one call. Measured
+      // 2026-07-19: locating 17 Yeouido complexes by name ran as 17 sequential calls — a
+      // complex NAME is a keyword search, so the geocoding batch alone did not cover it).
+      // Cap 30. Shared options (center/radius/category) apply to every keyword.
       const kwBatch = Array.isArray(data.keywords) ? data.keywords.filter((k) => typeof k === 'string' && k.trim()) : null;
       const baseParams = {};
       if (categoryGroupCode) baseParams.category_group_code = categoryGroupCode;

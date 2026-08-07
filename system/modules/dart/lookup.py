@@ -1,18 +1,18 @@
 """
-DART corp_code 매핑 utility.
+DART corp_code mapping utility.
 
-회사명 / 종목코드 / corp_code → corp_code 변환.
+Company name / stock code / corp_code → corp_code resolution.
 
-전략:
-1. data/cache/dart-corp-codes.json (Firebat data 영역) 에 매핑 cache.
-2. TTL 7일 — 만료 시 미리 refresh.
-3. lookup 실패 + cache 1일+ 면 신규 상장 의심 → 강제 refresh + 재시도.
+Strategy:
+1. Mapping cached at data/cache/dart-corp-codes.json (the Firebat data area).
+2. TTL 7 days — refreshed ahead of expiry.
+3. Lookup miss + cache 1 day old → suspect a new listing → force refresh + retry.
 
 DART corpCode.xml.zip:
   https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=<API_KEY>
-  → zip 안에 CORPCODE.xml (전체 회사 list, ~1만+ records).
-  → 파싱: <list><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name>
-          <stock_code>005930</stock_code><modify_date>20250101</modify_date></list>
+  → CORPCODE.xml inside the zip (every registered company, ~100k+ records).
+  → parsed: <list><corp_code>00126380</corp_code><corp_name>삼성전자</corp_name>
+            <stock_code>005930</stock_code><modify_date>20250101</modify_date></list>
 """
 import os
 import json
@@ -22,13 +22,13 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 
-# Firebat data 영역 (sandbox 가 read/write 허용)
-# 모듈이 실행되는 cwd 가 보통 firebat root 이므로 상대경로 사용.
+# The Firebat data area (sandbox allows read/write here).
+# Modules run with cwd = the firebat root, so a relative path works.
 CACHE_DIR = os.path.join(os.getcwd(), 'data', 'cache')
 CACHE_PATH = os.path.join(CACHE_DIR, 'dart-corp-codes.json')
 
-TTL_SEC = 7 * 86400      # 7일 — 평소 cache TTL
-REFRESH_FLOOR_SEC = 86400  # 1일 — lookup 실패 시 cache 가 이 이상 됐으면 강제 refresh
+TTL_SEC = 7 * 86400      # 7 days — the ordinary cache TTL
+REFRESH_FLOOR_SEC = 86400  # 1 day — a lookup miss forces a refresh once the cache is older than this
 
 
 def _ensure_cache_dir():
@@ -59,25 +59,25 @@ def _save_cache(data):
 
 
 def _fetch_corp_code_xml(api_key):
-    """DART API 에서 corpCode.xml.zip 다운로드 + 파싱."""
+    """Download and parse corpCode.xml.zip from the DART API."""
     import requests
     url = 'https://opendart.fss.or.kr/api/corpCode.xml'
     res = requests.get(url, params={'crtfc_key': api_key}, timeout=30)
     res.raise_for_status()
-    # zip 또는 XML(에러 응답) 분기
+    # branch: zip payload vs bare XML (an error response)
     if res.headers.get('Content-Type', '').startswith('application/x-msdownload') or res.content[:2] == b'PK':
         # zip
         with zipfile.ZipFile(io.BytesIO(res.content)) as z:
             xml_name = next((n for n in z.namelist() if n.lower().endswith('.xml')), None)
             if not xml_name:
-                raise RuntimeError('corpCode zip 안에 XML 없음')
+                raise RuntimeError('corpCode zip contains no XML')
             with z.open(xml_name) as xf:
                 xml_content = xf.read()
     else:
-        # 직접 XML (에러 응답일 가능성)
+        # bare XML (likely an error response)
         xml_content = res.content
     root = ET.fromstring(xml_content)
-    # status/message 에러 응답 처리
+    # handle status/message error responses
     status_el = root.find('status')
     if status_el is not None and status_el.text not in ('000', None):
         msg_el = root.find('message')
@@ -103,7 +103,7 @@ def _refresh_cache(api_key):
 
 
 def _ensure_cache(api_key, force_refresh=False):
-    """필요 시 refresh. cache list 반환."""
+    """Refresh when needed; returns the cached record list."""
     age = _cache_age_sec()
     if force_refresh or age > TTL_SEC:
         return _refresh_cache(api_key)
@@ -114,64 +114,69 @@ def _ensure_cache(api_key, force_refresh=False):
 
 
 def _match(records, query):
-    """query → 매칭 record. 매칭 우선순위:
-       1. corp_code 정확 일치 (8자리 숫자)
-       2. stock_code 정확 일치 (6자리, 영문/숫자)
-       3. corp_name 정확 일치
-       4. corp_name 부분 일치 (가장 짧은 매칭 우선)
+    """query → matching record. Match ladder:
+       1. corp_code exact (8 digits)
+       2. stock_code exact (6 chars, alphanumeric)
+       3. corp_name exact (listed record wins a name tie)
+       4. corp_name partial (shortest name first)
     """
     q = query.strip()
     if not q:
         return None
 
-    # 1) corp_code 정확 일치 (8자리 숫자)
+    # 1) corp_code exact (8 digits)
     if q.isdigit() and len(q) == 8:
         for r in records:
             if r['corp_code'] == q:
                 return r
 
-    # 2) stock_code 정확 일치 (6자리, 숫자 또는 영문 포함)
+    # 2) stock_code exact (6 chars, digits or alphanumeric)
     if len(q) == 6:
         for r in records:
             if r['stock_code'] and r['stock_code'].upper() == q.upper():
                 return r
 
-    # 3) corp_name 정확 일치
-    for r in records:
-        if r['corp_name'] == q:
-            return r
+    # 3) corp_name exact match. DART's registry holds every filer, listed or not, and several can
+    # share one name — "카카오" resolved to an unlisted 2017 shell (empty stock_code) while the
+    # listed Kakao sat further down (measured 2026-08-08). A name query is almost always about the
+    # listed company, so a listed record wins the tie; the unlisted one is still reachable by its
+    # corp_code.
+    exact = [r for r in records if r['corp_name'] == q]
+    if exact:
+        exact.sort(key=lambda r: (not r['stock_code'], r['corp_code']))
+        return exact[0]
 
-    # 4) corp_name 부분 일치 — 가장 짧은 매칭 (정밀 우선)
+    # 4) corp_name partial match — shortest name first (most precise), listed first on a tie.
     candidates = [r for r in records if q in r['corp_name']]
     if candidates:
-        candidates.sort(key=lambda r: len(r['corp_name']))
+        candidates.sort(key=lambda r: (len(r['corp_name']), not r['stock_code']))
         return candidates[0]
 
     return None
 
 
 def lookup_query(query, api_key):
-    """공개 API — query 매칭 + 신규 상장 자동 fallback.
+    """Public API — query matching with an automatic new-listing fallback.
 
-    1. cache load (TTL 7일 만료 시 미리 refresh)
-    2. 매칭 시도
-    3. 매칭 실패 + cache 1일+ → 강제 refresh + 재시도 (신규 상장 cover)
-    4. 그래도 실패 → None
+    1. Load the cache (refreshed ahead of the 7-day TTL).
+    2. Try to match.
+    3. Miss + cache 1 day old → force refresh + retry (covers new listings).
+    4. Still nothing → None.
     """
     cache = _ensure_cache(api_key)
     result = _match(cache, query)
     if result is not None:
         return result
-    # 매칭 실패 — cache 신선도 확인
+    # miss — check how fresh the cache is
     age = _cache_age_sec()
     if age > REFRESH_FLOOR_SEC:
-        # 1일+ 됐으면 신규 상장 의심 → 강제 refresh + 재시도
+        # a day old or more: suspect a new listing → force refresh + retry
         cache = _refresh_cache(api_key)
         result = _match(cache, query)
     return result
 
 
 def resolve_corp_code(query, api_key):
-    """단순 wrapper — corp_code 만 반환 (다른 sysmod·액션에서 빠른 사용)."""
+    """Thin wrapper — returns only the corp_code (for quick use by other sysmods/actions)."""
     result = lookup_query(query, api_key)
     return result['corp_code'] if result else None
