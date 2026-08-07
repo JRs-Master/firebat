@@ -892,6 +892,7 @@
     "universe_condition": "조건검색",
     "universe_symbols": "종목 목록 (JSON 배열)",
     "universe_top": "상위 N",
-    "universe_name": "조건식 이름"
+    "universe_name": "조건식 이름",
+    "interval_measured": "측정 봉"
   }
 }

@@ -260,10 +260,12 @@ function StrategyCard({ item, onSet, t }: {
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <TextField item={item} k="id" label="id" onSet={onSet} />
-        {/* No `interval` here: the timeframe belongs to the trade, which is what the module reads
-            (`t.get("interval")`, default 1d). A strategy is a rule library — the same rules can be
-            traded on two timeframes by two trades — so a box here would accept a value that
-            nothing acts on, which is worse than not offering it. */}
+        {/* The timeframe these rules were measured on. The trade still decides what runs — but a
+            trade that names none inherits this, and one that names a different bar gets a gate
+            warning, because rules measured on 4h bars and traded on 5m bars were measured on
+            something else. */}
+        <TextField item={item} k="interval" label={t('structured.interval_measured')} onSet={onSet}
+          placeholder="5m / 1h / 4h / 1d" />
         <TextField item={item} k="note" label={t('structured.note')} onSet={onSet} />
         <NumField item={item} k="exits.stopLossPct" label={t('structured.stop_loss')} onSet={onSet} />
         <NumField item={item} k="exits.takeProfitPct" label={t('structured.take_profit')} onSet={onSet} />

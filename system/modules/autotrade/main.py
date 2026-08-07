@@ -639,6 +639,8 @@ def declared_trades(settings):
     defaults to the placement rather than to the rule.
     """
     out = []
+    _lib = {s.get("id"): s for s in (settings.get("strategies") or []) if isinstance(s, dict)}
+    _iv_warn = []
     for t in settings.get("trades") or []:
         if not isinstance(t, dict):
             continue
@@ -653,17 +655,46 @@ def declared_trades(settings):
             continue
         out.append({"id": str(t.get("id") or f"{broker}-{account}-{symbol or condition}").strip(),
                     "symbol": symbol, "conditionName": condition, "screen": screen,
-                    # The timeframe is part of the trade, not of the schedule. A rule measured on
-                    # daily bars and traded on one-minute bars was measured on something else, so
-                    # the same value has to reach the candle fetch and the nightly re-measurement.
-                    "interval": str(t.get("interval") or "1d").strip(),
+                    # The timeframe is part of the trade, not of the schedule — the same value has
+                    # to reach the candle fetch and the nightly re-measurement. A strategy that
+                    # declares the timeframe its rules were measured on supplies the default; see
+                    # `resolve_interval`, which also reports a disagreement.
+                    "interval": resolve_interval(
+                        t, _lib.get(str(t.get("strategy") or "").strip()), _iv_warn),
                     "broker": broker, "account": account,
                     # Which market this symbol trades in. Some brokers front both and need telling
                     # (one broker's domestic order call is a different endpoint from its overseas
                     # one); the rest ignore it. Left unset it is the broker's own inference.
                     "market": str(t.get("market") or "").strip().lower() or None,
                     "template": t.get("template") if isinstance(t.get("template"), dict) else None})
+    for w in _iv_warn:
+        # Carried on the row so the gate's own warning list picks it up without a second channel.
+        for row in out:
+            if row["id"] == w["tradeId"]:
+                row["intervalMismatch"] = w
     return out
+
+
+def resolve_interval(trade, strategy, warn=None):
+    """Which bars this trade runs on.
+
+    The trade decides, because the trade is the placement. But a strategy may declare the
+    timeframe its rules were measured on, and then it is not decoration: rules measured on daily
+    bars and traded on one-minute bars were measured on something else. So the strategy's value
+    is the default when the trade names none, and when the two disagree the disagreement is said
+    out loud rather than resolved silently — the trade still wins, and the operator learns the
+    rules are being run somewhere they were never checked.
+    """
+    t_iv = str((trade or {}).get("interval") or "").strip()
+    s_iv = str((strategy or {}).get("interval") or "").strip()
+    if t_iv and s_iv and t_iv != s_iv and warn is not None:
+        warn.append({
+            "tradeId": (trade or {}).get("id"),
+            "strategy": (strategy or {}).get("id"),
+            "tradeInterval": t_iv, "strategyInterval": s_iv,
+            "why": "전략이 선언한 봉과 매매가 쓰는 봉이 다릅니다 — 측정한 것과 다른 봉에서 돕니다.",
+        })
+    return t_iv or s_iv or "1d"
 
 
 def scope_trades(trades, inp):
@@ -924,6 +955,18 @@ def action_gate(inp, settings):
                f"declared — it will never run")
         warnings.append(msg)
         store.log_event(conn, "unknown_strategy", {"why": msg}, strategy_id=b["tradeId"])
+    # A trade running its rules on a timeframe the strategy says it was not measured on. Not a
+    # reason to stop — the trade decides — but the operator has to learn that what is running was
+    # checked somewhere else.
+    for t in declared_trades(settings):
+        mm = t.get("intervalMismatch")
+        if not mm:
+            continue
+        msg = ("trade '%s' runs on %s but strategy '%s' declares %s — the rules were measured on "
+               "a different timeframe" % (mm["tradeId"], mm["tradeInterval"],
+                                          mm["strategy"], mm["strategyInterval"]))
+        warnings.append(msg)
+        store.log_event(conn, "interval_mismatch", {"why": msg}, strategy_id=mm["tradeId"])
     conn.close()
     screened = [t for t in declared_trades(settings)
                 if t.get("conditionName") or t.get("screen")]
@@ -3369,6 +3412,24 @@ def action_selftest():
                         _body += _c
         if "unattended()" not in _body:
             _no_unattended.append(_n)
+    # A strategy may declare the timeframe its rules were measured on. The trade still decides,
+    # but the declaration has to reach the candle fetch when the trade names none — otherwise the
+    # box on the settings screen accepts a value nothing acts on.
+    _s = {"id": "s1", "interval": "4h"}
+    _t_inherit = resolve_interval({"id": "t1"}, _s)
+    _t_own = resolve_interval({"id": "t1", "interval": "1d"}, _s)
+    _t_none = resolve_interval({"id": "t1"}, {"id": "s1"})
+    checks.append({"name": "a trade with no timeframe inherits the strategy's",
+                   "want": "4h", "got": _t_inherit, "ok": _t_inherit == "4h"})
+    checks.append({"name": "and the trade still wins when it names one",
+                   "want": "1d", "got": _t_own, "ok": _t_own == "1d"})
+    checks.append({"name": "neither declared falls back to the daily bar",
+                   "want": "1d", "got": _t_none, "ok": _t_none == "1d"})
+    _w = []
+    resolve_interval({"id": "t1", "interval": "5m"}, _s, _w)
+    checks.append({"name": "a timeframe disagreement is reported, not resolved in silence",
+                   "want": 1, "got": len(_w), "ok": len(_w) == 1})
+
     checks.append({"name": "every uiOnly action refuses an unattended run itself",
                    "want": [], "got": _no_unattended, "ok": not _no_unattended})
 

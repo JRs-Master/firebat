@@ -892,6 +892,7 @@
     "universe_condition": "Condition",
     "universe_symbols": "Symbols (JSON array)",
     "universe_top": "Top N",
-    "universe_name": "Condition name"
+    "universe_name": "Condition name",
+    "interval_measured": "measured on"
   }
 }
