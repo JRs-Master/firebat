@@ -577,8 +577,8 @@ def action_next_revision(inp, settings):
         "strategyId": None,
         "note": "고칠 전략이 없습니다 — 신규 발굴은 별도 실행입니다(새 매매를 시작할 때).",
     }
-    # 이미 내려진 판정을 브리핑에 싣는다 — 없으면 매일 밤 같은 격자를 제안하고, 같은 거부를
-    # 배우고, 또 적는다.
+    # Carry verdicts already handed down into the briefing — without it, every night proposes the
+    # same grid, learns the same refusal, and writes it down again.
     past = _past_verdicts(inp)
     if past:
         data = {**data, "alreadyDecided": past}
@@ -2151,8 +2151,8 @@ def action_reconcile(inp, settings):
     report["unreadable"] = unreadable
     if unreadable:
         store.log_api(conn, broker, "fills:unreadable", False, 0, {"symbol": symbol}, unreadable[:5])
-    # 하루 안에 우리가 닫아 버린 주문까지 대조 대상에 남긴다 — 종결 상태는 **우리가 내린 결론**
-    # 이지 거래소가 보낸 사실이 아니다. 뒤늦은 체결이 그 결론을 뒤집을 수 있어야 한다.
+    # Keep orders WE closed today in the reconciliation set — a terminal state here is a conclusion
+    # we drew, not a fact the venue sent, and a late fill must be able to overturn it.
     by_no = {orders.norm_order_no(o["broker_order_no"]): o
              for o in store.orders_awaiting_fills(conn, store.now_ms() - 86400000)
              if o.get("broker_order_no")}
@@ -2368,10 +2368,10 @@ def action_reconcile(inp, settings):
                 seen.add(sym)
                 found, row = orders.read_position(balance_rows, sym)
                 if row is not None and id(row) in consumed:
-                    # 같은 잔고 행을 이미 다른 이름으로 정산했다 — 한 보유를 두 이름으로 들고
-                    # 있는 것(브로커가 `A114800`, 원장이 `114800_AL`). 두 번 세면 장부가 실제
-                    # 보유의 두 배가 된다. 이 이름 밑에는 아무것도 없는 게 맞으므로 0으로
-                    # 정산해 미배정 잔재가 빠져나가게 한다.
+                    # This balance row was already settled under another name — one holding held under two
+                    # spellings (broker `A114800`, ledger `114800_AL`). Counting it twice doubles the book, and
+                    # nothing should live under THIS name, so it settles to zero and the unassigned residue
+                    # drains out.
                     reconciled.append(store.reconcile_symbol(conn, broker, account, sym, 0.0, 0.0))
                     continue
                 if row is not None:
@@ -2388,7 +2388,7 @@ def action_reconcile(inp, settings):
             if not isinstance(row, dict) or id(row) in consumed:
                 continue
             if orders.is_cash_row(row):
-                continue          # 현금은 보유가 아니다 — 미배정 버킷에 원화가 들어가면 안 된다
+                continue          # cash is not a holding — KRW must not enter the unassigned bucket
             sym = orders.position_symbol(row)
             if not sym:
                 unreadable_positions.append(row)
@@ -3873,9 +3873,10 @@ def action_selftest():
                    "got": ((us or {}).get("qty"), (us or {}).get("avgPrice")),
                    "ok": bool(us) and us["qty"] == 3.0 and us["avgPrice"] == 210.5})
 
-    # 같은 보유를 두 이름으로 세던 자리 — 원장은 `114800_AL`, 잔고는 `A114800`. 한쪽만 장식이
-    # 붙었다고 본 대조가 이걸 "판 주식"으로 읽어 포지션을 degraded 로 떨어뜨리면서 동시에 같은
-    # 수량을 미배정 버킷에 넣었다(2026-08-04 실측, 260주가 체결된 직후).
+    # Where one holding was counted under two names — ledger `114800_AL`, balance `A114800`.
+    # A reconcile that saw only one side dressed read it as a SOLD position: degraded the row and
+    # put the same quantity in the unassigned bucket (measured 2026-08-04, right after a 260-share
+    # fill).
     both, brow = orders.read_position([{"stk_cd": "A114800", "rmnd_qty": "260"}], "114800_AL")
     checks.append({"name": "접두사와 접미사가 동시에 붙어도 같은 종목이다",
                    "want": 260.0, "got": (both or {}).get("qty"),
@@ -3917,7 +3918,7 @@ def action_selftest():
                    "got": [skipped["reconcile"], skipped["unreadablePosition"] is not None],
                    "ok": skipped["reconcile"] is None and skipped["unreadablePosition"] is not None})
 
-    # 현금 행은 보유가 아니다 — 업비트 잔고엔 원화도 한 줄로 온다.
+    # A cash row is not a holding — upbit's balance lists KRW as a row too.
     cash = action_reconcile({"broker": "b4", "account": "a4", "openOrders": [], "fills": [],
                              "balanceRows": [{"currency": "KRW", "balance": "33998",
                                               "unit_currency": "KRW"},
@@ -3928,10 +3929,10 @@ def action_selftest():
     checks.append({"name": "잔고의 현금 행은 미배정 보유가 되지 않는다",
                    "want": ["BTC"], "got": syms, "ok": syms == ["BTC"]})
 
-    # --- 사라진 주문이 취소인지 체결인지 -------------------------------------------------
-    # 체결된 주문도 미체결 목록에서 사라진다. 잔고에 아무도 장부에 안 올린 수량이 남아 있으면
-    # 그 주문이 그것일 수 있으므로 취소로 적지 않는다(2026-08-04 실측: 비트코인 매수와 쌍둥이
-    # 한 짝이 체결됐는데 둘 다 canceled 로 기록됐다).
+    # --- is a vanished order cancelled or filled ----------------------------------------
+    # A FILLED order also leaves the open list. If the balance holds quantity nobody booked,
+    # this order may be it, so it is not written off as cancelled (measured 2026-08-04: a
+    # Bitcoin buy and one of a twin pair both filled, both recorded cancelled).
     conn4 = store.connect("dryrun")
     store.insert_order(conn4, {"order_key": "ghost", "cycle_id": "c", "strategy_id": "gh",
                                "broker": "b3", "account": "a3", "symbol": "GHOST", "side": "buy",
@@ -3949,10 +3950,11 @@ def action_selftest():
     conn4.close()
     checks.append({"name": "장부에 없는 보유가 남아 있으면 취소로 적지 않는다",
                    "want": "acked", "got": ghost["state"], "ok": ghost["state"] == "acked"})
-    # 반대로 잔고가 깨끗하면 사라진 주문은 취소가 맞다 — 단 **미체결 목록이 답을 했을 때만**이다.
-    # 이 케이스는 원래 빈 목록으로 재고 있었는데, 빈 목록은 "이 주문이 없다"가 아니라 "이 계좌의
-    # 미체결을 못 알려준다"와 구분이 안 된다(2026-08-05 한투 실측). 목록에 남의 주문이 들어 있으면
-    # 그건 진짜 답이고, 그 답에 우리 것이 없으면 끝난 것이다.
+    # Conversely a clean balance does mean cancelled — but only when the open list actually
+    # ANSWERED. This used to be judged against an empty list, and an empty list cannot
+    # distinguish "this order is gone" from "I cannot tell you this account's open orders"
+    # (measured 2026-08-05, KIS). A list holding someone else's orders is a real answer, and
+    # ours missing from it means finished.
     action_reconcile({"broker": "b3", "account": "a3", "openOrders": [{"ord_no": "OTHER-1"}],
                       "fills": [], "balanceRows": [{"stk_cd": "OTHER", "rmnd_qty": "1"}]},
                      settings_g)
@@ -5702,8 +5704,8 @@ def action_selftest():
                    "ok": len(paired) == 2
                          and all(t["strategyId"] == t["tradeId"] for t in paired)})
 
-    # 판정이 recall 로 나가고, 다음 밤에 브리핑으로 돌아온다 — 그 왕복이 안 되면 매일 밤 같은
-    # 격자를 뒤진다.
+    # The verdict leaves through recall and comes back as the next night's briefing — without
+    # that round trip, every night digs the same grid.
     vf = strat.verdict_fact("KRW-BTC", "rsi30/70-sl8", ["과반 아님"],
                             {"beatBuyHoldIn": 2, "symbols": 8, "medianVsBuyHoldPct": -61.8},
                             False)
@@ -5719,9 +5721,10 @@ def action_selftest():
     checks.append({"name": "a module handed no record briefs nothing extra", "want": None,
                    "got": _past_verdicts({}), "ok": _past_verdicts({}) is None})
 
-    # 야간 수정 루프는 모델에게 "어디를 뒤질지" 를 묻는데, 고를 수 있는 목록을 스케줄 파일에
-    # 적어 두면 가족이 늘어난 날 조용히 뒤처진다 — 실제로 정배열 가족이 크립토 측정 1등을 하고도
-    # 그 루프에선 이름을 댈 수 없었다. 목록은 스윕 코드에서 나와야 한다.
+    # The nightly revision loop asks the model WHERE to search, and writing the choices into the
+    # schedule file means a newly added family silently falls behind — the aligned-MA family
+    # topped the crypto measurement and still could not be named in that loop. The list has to
+    # come from the sweep code itself.
     vocab = sweep.space_vocabulary()
     checks.append({"name": "the nightly search is offered every family the sweep can run",
                    "want": sorted(sweep.FAMILIES), "got": vocab["families"],
@@ -5741,9 +5744,10 @@ def action_selftest():
                    "ok": "searchSpace" in _instr
                          and not any(f in _instr for f in ("ma-cross,", "ema-cross,"))})
 
-    # ── 분할청산 사다리 ──────────────────────────────────────────────────────────────────
-    # 익절 목표가 하나뿐이면 폭을 넓힐수록 승률이 떨어지고 좁힐수록 추세를 못 먹는다. 사다리는
-    # 그 타협을 없애는 대신, 어디까지 팔았는지를 틀리면 두 번 팔거나 영영 안 판다.
+    # -- scale-out ladder -----------------------------------------------------------------
+    # A single take-profit target trades win rate against trend capture whichever way it is set.
+    # A ladder removes that trade-off — at the price that getting "how much is already sold"
+    # wrong sells twice or never sells.
     def _lad_strategy(scale_out):
         return {"id": "L", "enabled": True, "kind": "rules", "symbol": "X", "broker": "b",
                 "account": "a", "money": {"perOrder": 1000, "lotSize": 1},
@@ -5784,15 +5788,17 @@ def action_selftest():
                    "got": [(i["qty"], i.get("partial")) for i in lad_whole],
                    "ok": len(lad_whole) == 1 and lad_whole[0]["qty"] == 10
                          and lad_whole[0]["partial"] is False})
-    # 읽을 수 없는 선언은 추측하지 않는다 — 아무도 시키지 않은 수량을 파느니 안 파는 게 낫다.
+    # An unreadable declaration is not guessed at — better to not sell than to sell an amount
+    # nobody asked for.
     lad_broken = _lad_strategy({"scaleOut": [{"gainPct": 8, "sellPct": 50},
                                             {"gainPct": 3, "sellPct": 100}]})
     checks.append({"name": "an unreadable ladder sells nothing rather than guessing", "want": [],
                    "got": [i["qty"] for i in _lad_at(lad_broken, 10, 10, 112.0)],
                    "ok": not _lad_at(lad_broken, 10, 10, 112.0)})
 
-    # 나눠 파는 중에 또 사면 도달규모가 갱신되면서 이미 판 몫이 "안 판 것"으로 되살아난다 —
-    # 사고 팔고 사고 팔고, 수수료만 내는 고리. 청산이 시작된 포지션은 줄기만 한다.
+    # Buying again mid-scale-out refreshes the reached size, resurrecting the already-sold share
+    # as "unsold" — buy, sell, buy, sell, paying fees forever. A position that started
+    # liquidating only shrinks.
     lad_mid = eng.decide(lad_two, {"position": {"qty": 15, "avg_price": 100.0, "peak_qty": 30},
                                    "price": 103.0, "sides": {"buy"}})
     checks.append({"name": "a position being distributed does not accumulate", "want": 0,
@@ -5805,16 +5811,17 @@ def action_selftest():
                    "got": [i["qty"] for i in lad_flat],
                    "ok": bool(lad_flat) and lad_flat[0]["qty"] > 0})
 
-    # 같은 봉 안에서 두 칸이 차례로 나가야 할 때 — 주문키가 (전략,종목,side,창,순번) 이라
-    # 순번이 없으면 두 번째 칸이 첫 번째와 부딪혀 조용히 사라진다.
+    # When two rungs must leave inside one bar: the order key is (strategy, symbol, side, window,
+    # rung), and without the rung the second order collides with the first and silently vanishes.
     lad_seq = [i.get("seq") for i in _lad_at(lad_two, 10, 10, 103.5)]
     lad_seq2 = [i.get("seq") for i in _lad_at(lad_two, 5, 10, 109.0)]
     checks.append({"name": "each rung carries its own place in the window",
                    "want": [[1], [2]], "got": [lad_seq, lad_seq2],
                    "ok": lad_seq == [1] and lad_seq2 == [2]})
 
-    # 사다리 진행도는 원장에서 접는다 — 컬럼으로 두면 원장과 갈라질 수 있다. 원장은 append-only
-    # 라 지울 수도 없으므로, 이 검사는 실제 장부가 아니라 같은 스키마의 임시 DB 에서 돈다.
+    # Ladder progress is folded from the ledger — a column could diverge from it, and the ledger
+    # is append-only so it could not be corrected. This check therefore runs on a scratch DB of
+    # the same schema, never the real book.
     import sqlite3 as _sq
     lad_conn = _sq.connect(":memory:")
     lad_conn.row_factory = _sq.Row

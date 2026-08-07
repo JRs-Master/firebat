@@ -293,9 +293,10 @@ def fired_sides(signal, use="firedOnLastClosedBar"):
             sides.add(declared.lower())
             continue
         # Fallback for responses from before the side travelled with the point. Reading the
-        # direction out of prose is not something to rely on — the default labels are 매수/매도,
-        # which contain neither word, so a strategy whose analyser predates this simply never
-        # traded. Kept only so an old cached response degrades instead of misfiring.
+        # direction out of prose is not something to rely on — the default labels are the
+        # Korean words for buy/sell, which contain neither English word, so a strategy whose
+        # analyser predates this simply never traded. Kept only so an old cached response
+        # degrades instead of misfiring.
         label = (f or {}).get("label")
         if isinstance(label, str):
             low = label.lower()
@@ -416,9 +417,10 @@ def _parse_rungs(spec, move_key, size_key):
     """
     if not isinstance(spec, list) or not spec:
         return []
-    # ATR 단위는 백테스트(ta)엔 있고 여기엔 아직 없다. 조용히 무시하면 **측정과 거래가 갈린다** —
-    # 같은 선언이 한쪽에선 변동성 폭으로, 다른 쪽에선 사다리 없음으로 읽힌다. 진입 시점 ATR 을
-    # 원장에 기억시키기 전까지는 거부한다.
+    # The ATR unit exists in the backtester (ta) but not here yet. Ignoring it silently would
+    # split measurement from trading — the same declaration would read as a volatility band on
+    # one side and as "no ladder" on the other. Refused by name until the entry-time ATR is
+    # remembered on the ledger.
     atr_key = (move_key[:-3] if move_key.endswith("Pct") else move_key) + "Atr"
     for r in spec:
         if isinstance(r, dict) and r.get(atr_key) is not None:

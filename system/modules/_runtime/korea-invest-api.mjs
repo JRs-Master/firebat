@@ -1,5 +1,5 @@
 /**
- * 한국투자증권 dialect — shared by the two modules that speak it.
+ * Korea Investment & Securities dialect — shared by the two modules that speak it.
  *
  * The split is not about code. It is about which actions a caller can reach and which credentials
  * the process is handed. Lives outside both because neither owns it; `_runtime` has no
@@ -15,8 +15,8 @@ import { acquireSlot as acquireShared } from './rate-window.mjs';
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
 
-// 토큰 발급·갱신은 인프라 TokenProvider 가 config.json 의 oauth 스펙으로 처리한다.
-// sysmod 는 env 로 주입된 raw 토큰(KIS_ACCESS_TOKEN)을 받아쓰기만 한다 — 토큰 코드 0.
+// Token issuance/refresh is the infra TokenProvider's job, driven by config.json's oauth
+// spec. The sysmod only consumes the raw env-injected token (KIS_ACCESS_TOKEN) — zero token code.
 
 // The two domains do not allow the same rate, and the tighter one is the rung of the ladder every
 // strategy has to pass through: paper trading on the practice account hit "초당 거래건수를
@@ -61,8 +61,9 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     return callApi(base, token, appKey, appSecret, action, query, body, isMock, retry - 1, trIdOverride);
   }
   if (!resp.ok) {
-    // KIS 는 토큰 만료(EGW00123) 등 일부 오류를 HTTP 500 + JSON 바디(rt_cd/msg1/msg_cd)로 준다.
-    // 바디가 KIS 에러 envelope 면 throw 말고 반환 → 상위 rt_cd 검사(인프라 reactive)가 토큰 무효를 감지.
+    // KIS reports some errors (token expiry EGW00123, ...) as HTTP 500 with a JSON body
+    // (rt_cd/msg1/msg_cd). If the body is a KIS error envelope, return it instead of throwing —
+    // the rt_cd check downstream (infra's reactive path) is what detects an invalid token.
     const errText = await resp.text().catch(() => '');
     try {
       const j = JSON.parse(errText);
@@ -107,7 +108,7 @@ function kisDate8(s) {
   return /^\d{8}$/.test(s) ? s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8) : s;
 }
 function normalizeCandleRow(row) {
-  // 해외 기간별시세 (HHDFS76240000 류): xymd + clos (+open/high/low/tvol)
+  // Overseas period quotes (HHDFS76240000 family): xymd + clos (+open/high/low/tvol)
   if ('xymd' in row && 'clos' in row) {
     row.date = kisDate8(row.xymd); delete row.xymd;
     row.close = kisNum(row.clos); delete row.clos;
@@ -117,7 +118,7 @@ function normalizeCandleRow(row) {
     if ('tvol' in row) { row.volume = kisNum(row.tvol); delete row.tvol; }
     return;
   }
-  // 국내: stck_bsop_date + (stck_clpr 일/주/월 | stck_prpr 분봉)
+  // Domestic: stck_bsop_date + (stck_clpr for day/week/month | stck_prpr for minute bars)
   if ('stck_bsop_date' in row && ('stck_clpr' in row || 'stck_prpr' in row)) {
     const day = kisDate8(row.stck_bsop_date); delete row.stck_bsop_date;
     if ('stck_cntg_hour' in row) {
@@ -484,8 +485,9 @@ async function main(data) {
       console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
       return;
     }
-    // 토큰 = 인프라(TokenProvider)가 발급·선제갱신해 env 로 주입한 raw 토큰. 무효 시엔 인프라가
-    // 응답의 rt_cd/msg1 을 보고 재발급 후 1회 재시도하므로, sysmod 는 받아쓰기만 한다 (토큰 코드 0).
+    // Token = the raw one the infra TokenProvider issued, proactively refreshed and injected
+    // via env. On invalidation the infra reads rt_cd/msg1 off the response, reissues and
+    // retries once — the sysmod only consumes it (zero token code).
     const token = process.env['KIS_ACCESS_TOKEN'];
     if (!token) {
       console.log(JSON.stringify({ success: false, error: 'KIS 접근 토큰 미발급 — 인프라 토큰 발급 실패 또는 앱키 미설정.' }));
@@ -567,8 +569,9 @@ async function main(data) {
     const result = await callApi(base, token, appKey, appSecret, action, query, body, isMock, 3, rawTrId);
     normalizeCandles(result);
     const meta = API_TABLE[action];
-    // KIS rt_cd: "0"=정상, 그 외=오류. HTTP 200 이라 envelope success:true 로 가려졌던 것 →
-    // "0" 만 success (kiwoom return_code 와 동일 의도 — AI 가 실패를 모르고 fabricate 차단).
+    // KIS rt_cd: "0" = ok, anything else = error. It rides an HTTP 200, so the envelope used
+    // to mask it as success:true → only "0" is success now (same intent as kiwoom's
+    // return_code — stops the AI fabricating over a failure it never saw).
     const rtCd = result?.rt_cd;
     const ok = rtCd === undefined || rtCd === null || rtCd === '0';
     const output = { success: ok, data: { apiId: action, trId: isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal, name: meta.name, ...result } };
