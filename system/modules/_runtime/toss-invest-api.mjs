@@ -1,55 +1,59 @@
 /**
-import { acquireSlot as acquireShared } from './rate-window.mjs';
- * 토스증권 dialect — shared by the two modules that speak it.
+ * Toss Securities dialect — shared by the two modules that speak it.
  *
  * The split is not about code. It is about which actions a caller can reach and which credentials
  * the process is handed. Lives outside both because neither owns it; `_runtime` has no
  * config.json, so the module scan skips it.
  */
+// This import sat INSIDE the docblock above (an insert-at-line-2 slip), so the file parsed and
+// every call died at the first rate slot with "acquireShared is not defined" — but only once
+// credentials existed, which is why the module looked fine locally and in a keyless dry run.
+// Found 2026-08-08 by the all-services sweep; nothing routinely calls Toss, so it sat latent.
+import { acquireSlot as acquireShared } from './rate-window.mjs';
 const BASE = 'https://openapi.tossinvest.com';
 
 // action → { method, path, query[], pathParams[], body[], needsAccount, name }
-// path 의 {x} 는 pathParams 로 치환. query 는 GET 쿼리스트링, body 는 POST JSON 본문(필드명 = data 키).
-// needsAccount=true 면 accountSeq(data) → X-Tossinvest-Account 헤더.
+// {x} in path is filled from pathParams. query = GET query string, body = POST JSON body
+// (field names = data keys). needsAccount=true sends accountSeq(data) as X-Tossinvest-Account.
 const API_TABLE = {
-  // ── Market Data ── (토큰만)
+  // ── Market Data ── (token only)
   'orderbook':      { method: 'GET', path: '/api/v1/orderbook',    query: ['symbol'], name: '호가 조회' },
   'prices':         { method: 'GET', path: '/api/v1/prices',       query: ['symbols'], name: '현재가 조회' },
   'trades':         { method: 'GET', path: '/api/v1/trades',       query: ['symbol', 'count'], name: '최근 체결 내역' },
   'price-limits':   { method: 'GET', path: '/api/v1/price-limits', query: ['symbol'], name: '상/하한가' },
   'candles':        { method: 'GET', path: '/api/v1/candles',      query: ['symbol', 'interval', 'count', 'before', 'adjusted'], name: '캔들 차트' },
-  // ── Stock Info ── (토큰만)
+  // ── Stock Info ── (token only)
   'stocks':         { method: 'GET', path: '/api/v1/stocks',       query: ['symbols'], name: '종목 기본 정보' },
   'stock-warnings': { method: 'GET', path: '/api/v1/stocks/{symbol}/warnings', pathParams: ['symbol'], name: '매수 유의사항' },
-  // ── Market Info ── (토큰만)
+  // ── Market Info ── (token only)
   'exchange-rate':  { method: 'GET', path: '/api/v1/exchange-rate', query: ['baseCurrency', 'quoteCurrency', 'dateTime'], name: '환율' },
   'market-calendar':{ method: 'GET', path: '/api/v1/market-calendar/{market}', pathParams: ['market'], query: ['date'], name: '장 운영 정보' },
-  // ── Account ── (토큰만 — accountSeq 진입점)
+  // ── Account ── (token only — the accountSeq entry point)
   'accounts':       { method: 'GET', path: '/api/v1/accounts', name: '계좌 목록' },
-  // ── Asset ── (accountSeq 필요)
+  // ── Asset ── (needs accountSeq)
   'holdings':       { method: 'GET', path: '/api/v1/holdings', query: ['symbol'], needsAccount: true, name: '보유 주식' },
-  // ── Order History ── (accountSeq 필요)
+  // ── Order History ── (needs accountSeq)
   'list-orders':    { method: 'GET', path: '/api/v1/orders', query: ['status', 'symbol', 'from', 'to', 'cursor', 'limit'], needsAccount: true, name: '주문 목록' },
   'order-detail':   { method: 'GET', path: '/api/v1/orders/{orderId}', pathParams: ['orderId'], needsAccount: true, name: '주문 상세' },
-  // ── Order Info ── (accountSeq 필요)
+  // ── Order Info ── (needs accountSeq)
   'buying-power':       { method: 'GET', path: '/api/v1/buying-power', query: ['currency'], needsAccount: true, name: '매수 가능 금액' },
   'sellable-quantity':  { method: 'GET', path: '/api/v1/sellable-quantity', query: ['symbol'], needsAccount: true, name: '판매 가능 수량' },
   'commissions':        { method: 'GET', path: '/api/v1/commissions', needsAccount: true, name: '매매 수수료' },
-  // ── Order (실매매 — 즉시 전송) ── (accountSeq 필요)
+  // ── Order (REAL trades — sent immediately) ── (needs accountSeq)
   'create-order':   { method: 'POST', path: '/api/v1/orders', body: ['clientOrderId', 'symbol', 'side', 'orderType', 'quantity', 'orderAmount', 'price', 'timeInForce', 'confirmHighValueOrder'], needsAccount: true, name: '주문 생성' },
   'modify-order':   { method: 'POST', path: '/api/v1/orders/{orderId}/modify', pathParams: ['orderId'], body: ['orderType', 'quantity', 'price', 'confirmHighValueOrder'], needsAccount: true, name: '주문 정정' },
   'cancel-order':   { method: 'POST', path: '/api/v1/orders/{orderId}/cancel', pathParams: ['orderId'], body: [], needsAccount: true, name: '주문 취소' },
-  // ── Ranking ── (토큰만)
+  // ── Ranking ── (token only)
   'rankings':       { method: 'GET', path: '/api/v1/rankings', query: ['type', 'marketCountry', 'duration', 'excludeInvestmentCaution', 'count'], name: '주식 랭킹' },
-  // ── Market Indicators ── (토큰만 — 심볼 8종 고정: KOSPI/KOSDAQ/KR_BOND_2Y~30Y)
+  // ── Market Indicators ── (token only — fixed 8 symbols: KOSPI/KOSDAQ/KR_BOND_2Y~30Y)
   'market-indicator-prices':  { method: 'GET', path: '/api/v1/market-indicators/prices', query: ['symbols'], name: '시장 지표 현재가' },
   'market-indicator-candles': { method: 'GET', path: '/api/v1/market-indicators/{symbol}/candles', pathParams: ['symbol'], query: ['interval', 'count', 'before'], name: '시장 지표 캔들' },
   'investor-trading':         { method: 'GET', path: '/api/v1/market-indicators/{symbol}/investor-trading', pathParams: ['symbol'], query: ['interval', 'count', 'until'], name: '투자자별 매매대금' },
-  // ── Conditional Order (실매매 예약 — 브로커 서버가 가격 감시, 등록 즉시 감시 시작) ── (accountSeq 필요)
+  // ── Conditional Order (REAL reserved trades — the broker's server watches the price, watching starts at registration) ── (needs accountSeq)
   'create-conditional-order': { method: 'POST', path: '/api/v1/conditional-orders', body: ['symbol', 'type', 'quantity', 'orderType', 'expireDate', 'first', 'second', 'clientOrderId', 'confirmHighValueOrder'], needsAccount: true, name: '조건주문 생성' },
   'modify-conditional-order': { method: 'POST', path: '/api/v1/conditional-orders/{conditionalOrderId}/modify', pathParams: ['conditionalOrderId'], body: ['type', 'quantity', 'orderType', 'expireDate', 'first', 'second', 'confirmHighValueOrder'], needsAccount: true, name: '조건주문 수정' },
   'cancel-conditional-order': { method: 'DELETE', path: '/api/v1/conditional-orders/{conditionalOrderId}', pathParams: ['conditionalOrderId'], needsAccount: true, name: '조건주문 취소' },
-  // ── Conditional Order History ── (accountSeq 필요)
+  // ── Conditional Order History ── (needs accountSeq)
   'list-conditional-orders':  { method: 'GET', path: '/api/v1/conditional-orders', query: ['status', 'symbol', 'cursor', 'limit'], needsAccount: true, name: '조건주문 목록' },
   'conditional-order-detail': { method: 'GET', path: '/api/v1/conditional-orders/{conditionalOrderId}', pathParams: ['conditionalOrderId'], needsAccount: true, name: '조건주문 상세' },
 };
@@ -66,7 +70,7 @@ async function callApi(token, action, data, retry = 2) {
   const meta = API_TABLE[action];
   if (!meta) throw new Error(`알 수 없는 action: ${action}. 토스증권 Open API 문서 참조.`);
 
-  // path param 치환
+  // fill path params
   let path = meta.path;
   for (const pp of meta.pathParams || []) {
     const v = data[pp];
@@ -94,7 +98,7 @@ async function callApi(token, action, data, retry = 2) {
 
   await acquireSlot();
   const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
-  // POST — body 필드를 data 에서 모아 JSON 전송 (body:[] 면 빈 객체). decimal/문자열 그대로 전달.
+  // POST — collect body fields from data into JSON (body:[] sends an empty object); decimals and strings pass through untouched.
   if (meta.method !== 'GET' && meta.body !== undefined) {
     const bodyObj = {};
     for (const f of meta.body) {
@@ -116,7 +120,7 @@ async function callApi(token, action, data, retry = 2) {
 
   const json = await resp.json().catch(() => null);
   if (!resp.ok) {
-    // 토스 에러 envelope: API = {error:{requestId,code,message,data}} / OAuth = {error, error_description}.
+    // Toss error envelopes: API = {error:{requestId,code,message,data}} / OAuth = {error, error_description}.
     const e = json && json.error;
     let code, msg;
     if (e && typeof e === 'object') { code = e.code; msg = e.message || e.code || `HTTP ${resp.status}`; }
@@ -124,7 +128,7 @@ async function callApi(token, action, data, retry = 2) {
     else msg = `HTTP ${resp.status} ${resp.statusText}`;
     return { _ok: false, _status: resp.status, _code: code, _error: msg };
   }
-  // 성공 envelope: {result: ...}
+  // success envelope: {result: ...}
   return { _ok: true, result: json && json.result !== undefined ? json.result : json };
 }
 
@@ -141,7 +145,7 @@ async function main(data) {
       console.log(JSON.stringify({ success: false, error: 'TOSS_API_KEY / TOSS_SECRET_KEY 미설정. 설정 > 시스템 모듈 > toss-invest 에서 등록하세요.' }));
       return;
     }
-    // 인프라 TokenProvider 가 발급·선제 갱신해 env 로 주입한 raw 토큰. 모듈은 받아쓰기만.
+    // Raw token issued and proactively refreshed by the infra TokenProvider, injected via env — the module only consumes it.
     const token = process.env['TOSS_ACCESS_TOKEN'];
     if (!token) {
       console.log(JSON.stringify({ success: false, error: '토스 액세스 토큰 미발급 — 인프라 토큰 발급 실패 또는 API Key/Secret Key 오류.' }));
