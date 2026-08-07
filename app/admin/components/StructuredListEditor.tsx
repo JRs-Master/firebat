@@ -102,6 +102,19 @@ function NumField({ item, k, label, onSet }: {
   );
 }
 
+function BoolField({ item, k, label, onSet }: {
+  item: Item; k: string; label: string; onSet: (k: string, v: any) => void;
+}) {
+  const v = getKey(item, k);
+  return (
+    <label className="flex items-end gap-1.5 pb-1.5 cursor-pointer">
+      <input type="checkbox" checked={v !== false} onChange={e => onSet(k, e.target.checked)}
+        className="w-3.5 h-3.5 rounded border-slate-300" />
+      <span className="text-[11px] text-slate-600">{label}</span>
+    </label>
+  );
+}
+
 function SelectField({ item, k, label, onSet, options }: {
   item: Item; k: string; label: string; onSet: (k: string, v: any) => void;
   options: Array<{ value: string; label: string }>;
@@ -260,18 +273,26 @@ function StrategyCard({ item, onSet, t }: {
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <TextField item={item} k="id" label="id" onSet={onSet} />
+        <BoolField item={item} k="enabled" label={t('structured.enabled')} onSet={onSet} />
         {/* The timeframe these rules were measured on. The trade still decides what runs — but a
             trade that names none inherits this, and one that names a different bar gets a gate
             warning, because rules measured on 4h bars and traded on 5m bars were measured on
             something else. */}
         <TextField item={item} k="interval" label={t('structured.interval_measured')} onSet={onSet}
           placeholder="5m / 1h / 4h / 1d" />
+        <TextField item={item} k="symbol" label={t('structured.symbol')} onSet={onSet} />
+        <TextField item={item} k="broker" label={t('structured.broker')} onSet={onSet} />
+        <TextField item={item} k="account" label={t('structured.account')} onSet={onSet} />
+        <NumField item={item} k="money.perOrderKrw" label={t('structured.per_order')} onSet={onSet} />
+        <NumField item={item} k="limits.maxPositionKrw" label={t('structured.max_position')} onSet={onSet} />
+        <NumField item={item} k="money.lotSize" label={t('structured.lot_size')} onSet={onSet} />
         <TextField item={item} k="note" label={t('structured.note')} onSet={onSet} />
         <NumField item={item} k="exits.stopLossPct" label={t('structured.stop_loss')} onSet={onSet} />
         <NumField item={item} k="exits.takeProfitPct" label={t('structured.take_profit')} onSet={onSet} />
         <SelectField item={item} k="orders.type" label={t('structured.order_type')} onSet={onSet}
           options={[{ value: '', label: '—' }, { value: 'limit', label: 'limit' },
             { value: 'market', label: 'market' }]} />
+        <NumField item={item} k="orders.limitOffsetPct" label={t('structured.limit_offset')} onSet={onSet} />
         <NumField item={item} k="holding.maxHoldMinutes" label={t('structured.max_hold')} onSet={onSet} />
         <NumField item={item} k="holding.closeBeforeEndMin" label={t('structured.close_before_end')} onSet={onSet} />
         <SelectField item={item} k="universe.type" label={t('structured.universe')} onSet={onSet}
@@ -293,9 +314,16 @@ function StrategyCard({ item, onSet, t }: {
       </div>
       <RulesEditor rules={item.rules ?? []} onChange={r => onSet('rules', r)} t={t} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <JsonSubField item={item} k="orders.marketWhen" label={t('structured.market_when')} onSet={onSet} />
         <JsonSubField item={item} k="exits.scaleOut" label="scaleOut" onSet={onSet} />
         <JsonSubField item={item} k="exits.scaleIn" label="scaleIn" onSet={onSet} />
       </div>
+      {item._measured != null && (
+        <div className="rounded-md bg-slate-50 px-2 py-1.5 text-[10px] text-slate-500">
+          <span className="font-bold">{t('structured.measured')}</span>{' '}
+          {String((item._measured as any)?.note ?? JSON.stringify(item._measured)).slice(0, 300)}
+        </div>
+      )}
     </div>
   );
 }

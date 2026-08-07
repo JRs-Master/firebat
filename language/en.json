@@ -877,7 +877,7 @@
     "market": "Market",
     "max_symbols": "Max symbols",
     "per_order": "Per order (KRW)",
-    "max_position": "Position cap (KRW)",
+    "max_position": "Max position (KRW)",
     "symbols_list": "Symbols (JSON array)",
     "note": "Note",
     "stop_loss": "Stop loss %",
@@ -893,6 +893,11 @@
     "universe_symbols": "Symbols (JSON array)",
     "universe_top": "Top N",
     "universe_name": "Condition name",
-    "interval_measured": "measured on"
+    "interval_measured": "measured on",
+    "enabled": "Enabled",
+    "lot_size": "Lot size",
+    "limit_offset": "Limit offset %",
+    "market_when": "Market when",
+    "measured": "Measured"
   }
 }

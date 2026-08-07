@@ -876,8 +876,8 @@
     "state_off": "전체 중지",
     "market": "시장",
     "max_symbols": "종목 수 상한",
-    "per_order": "1회 주문 (원)",
-    "max_position": "보유 한도 (원)",
+    "per_order": "1회 매수(원)",
+    "max_position": "최대 보유(원)",
     "symbols_list": "종목 목록 (JSON 배열)",
     "note": "메모",
     "stop_loss": "손절 %",
@@ -893,6 +893,11 @@
     "universe_symbols": "종목 목록 (JSON 배열)",
     "universe_top": "상위 N",
     "universe_name": "조건식 이름",
-    "interval_measured": "측정 봉"
+    "interval_measured": "측정 봉",
+    "enabled": "사용",
+    "lot_size": "최소 단위",
+    "limit_offset": "지정가 오프셋 %",
+    "market_when": "시장가 전환",
+    "measured": "측정"
   }
 }
