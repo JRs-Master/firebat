@@ -604,7 +604,7 @@
       "key": "trades",
       "type": "structured-list",
       "editor": "trades",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"ledger\"}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\"}]",
       "tab": "매매",
       "group": "매매",
       "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom-trade\",\"account\":\"모의국내\",\"market\":\"kr\",\"interval\":\"1d\"}]"

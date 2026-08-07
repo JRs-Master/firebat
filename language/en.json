@@ -898,6 +898,7 @@
     "lot_size": "Lot size",
     "limit_offset": "Limit offset %",
     "market_when": "Market when",
-    "measured": "Measured"
+    "measured": "Measured",
+    "mode_required": "Trade {ids} has no mode — nothing is saved until ledger or live is chosen"
   }
 }

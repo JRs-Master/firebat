@@ -232,6 +232,17 @@ function JsonSubField({ item, k, label, onSet }: {
 
 // ── item cards ───────────────────────────────────────────────────────────────────────────────
 
+// The two words a trade may use for its book. A trade carrying anything else — including nothing
+// — is stopped by the engine, so the editor refuses to write one.
+const MODES = ['ledger', 'live'];
+
+/** Trades that cannot be saved, by id (or position when unnamed). */
+function missingMode(items: Item[], kind: Kind): string[] {
+  if (kind !== 'trades') return [];
+  return items.flatMap((it, i) =>
+    MODES.includes(String(it.mode ?? '')) ? [] : [String(it.id || `#${i + 1}`)]);
+}
+
 function TradeCard({ item, onSet, t }: {
   item: Item; onSet: (k: string, v: any) => void; t: (k: string, p?: any) => string;
 }) {
@@ -243,8 +254,11 @@ function TradeCard({ item, onSet, t }: {
       <TextField item={item} k="broker" label={t('structured.broker')} onSet={onSet} />
       <TextField item={item} k="account" label={t('structured.account')} onSet={onSet} />
       <TextField item={item} k="interval" label={t('structured.interval')} onSet={onSet} placeholder="5m / 1h / 1d" />
+      {/* No blank option: this is the field that decides whether real money moves, so "unset" is
+          not one of the answers. A row that arrives without one is caught by `missingMode` below
+          and cannot be saved. */}
       <SelectField item={item} k="mode" label={t('structured.mode')} onSet={onSet}
-        options={[{ value: '', label: '—' },
+        options={[...(MODES.includes(String(item.mode ?? '')) ? [] : [{ value: '', label: '—' }]),
           { value: 'ledger', label: t('structured.mode_ledger') },
           { value: 'live', label: t('structured.mode_live') }]} />
       <SelectField item={item} k="state" label={t('structured.state')} onSet={onSet}
@@ -368,11 +382,18 @@ export function StructuredListEditor({ value, onChange, kind }: {
   const items = useMemo(() => parseItems(jsonBad ? lastPropagated.current : jsonText) ?? [],
     [jsonText, jsonBad]);
 
+  // Rows the parent must not be told about yet. Same shape as a broken JSON document: the edit
+  // stays on screen so it can be finished, and the value the save button writes is the last one
+  // that was whole. A trade with no mode used to save fine and then place live orders off the
+  // engine's blank default (measured 2026-08-08) — this is the door that should have been shut.
+  const blocked = useMemo(() => missingMode(items, kind), [items, kind]);
+
   const propagate = (next: Item[]) => {
     const text = ser(next);
-    lastPropagated.current = text;
     setJsonText(text);
     setJsonBad(false);
+    if (missingMode(next, kind).length > 0) return;
+    lastPropagated.current = text;
     onChange(text);
   };
 
@@ -400,6 +421,11 @@ export function StructuredListEditor({ value, onChange, kind }: {
         {jsonBad && (
           <span className="text-[11px] text-red-500 font-bold">{t('structured.json_invalid')}</span>
         )}
+        {!jsonBad && blocked.length > 0 && (
+          <span className="text-[11px] text-red-500 font-bold">
+            {t('structured.mode_required', { ids: blocked.join(', ') })}
+          </span>
+        )}
       </div>
 
       {view === 'json' ? (
@@ -409,8 +435,12 @@ export function StructuredListEditor({ value, onChange, kind }: {
             const parsed = parseItems(e.target.value);
             if (parsed) {
               setJsonBad(false);
-              lastPropagated.current = e.target.value;
-              onChange(e.target.value);
+              // Hand-edited JSON is the other way a trade loses its mode, so it meets the same
+              // gate as the form — otherwise the strict card is a door next to an open window.
+              if (missingMode(parsed, kind).length === 0) {
+                lastPropagated.current = e.target.value;
+                onChange(e.target.value);
+              }
             } else {
               setJsonBad(true);
             }

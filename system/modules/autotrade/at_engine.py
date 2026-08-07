@@ -131,6 +131,42 @@ def session_refusal(market, hours, real, ms=None):
     return None
 
 
+def day_order_expired(market, hours, sent_ms, now_ms):
+    """True when a resting order was placed in an earlier session, so it no longer exists.
+
+    A stock order is a day order: whatever has not filled when the venue closes is withdrawn by
+    the venue, and nothing we do can revive or cancel it. The broker's enquiry does not always
+    agree — measured 2026-08-08 on 한투 모의, three orders from 08-04 and 08-05 were still printed
+    by `list_open_orders` while every cancel came back `모의투자 원주문번호가 존재하지 않습니다`.
+    Read as live, that is a cancel retried every cycle forever; read by the calendar, it is simply
+    an order that ended with its session.
+
+    Our own `sent_ms` decides, not the broker's row: it is broker-neutral and we wrote it. The day
+    is the **venue's** day — an order sent at 23:30 in Seoul for a US market belongs to that US
+    session, not to the Korean date it was typed on.
+
+    A venue with no session calendar (crypto) has no close to expire against — the same fact as
+    `session_refusal` leaving a market-less strategy unconstrained. And a market whose zone this
+    host cannot resolve expires nothing: not knowing which day it was is a reason to leave the
+    order alone, never to declare it gone.
+    """
+    name = str(market or "").strip().lower()
+    if not name or not sent_ms:
+        return False
+    spec = (hours or {}).get(name)
+    if not isinstance(spec, dict):
+        return False
+    zone = str(spec.get("zone") or "").strip()
+    if not zone or not clock.has_zone(zone):
+        return False
+    try:
+        then = clock.local_in(zone, int(sent_ms))
+        now = clock.local_in(zone, int(now_ms))
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return then.date() != now.date()
+
+
 def resolve_mode(settings, strategy, account_is_mock, unattended):
     """The one place real money becomes reachable. Returns `(mode, refusal)`.
 
@@ -150,12 +186,27 @@ def resolve_mode(settings, strategy, account_is_mock, unattended):
     the paper book while the real position stayed open.
     """
     raw = str(strategy.get("mode") or "").strip()
+    if not raw:
+        # A blank used to mean live. That is the wrong direction for a default to fall: the field
+        # is how someone says "real money", so its absence has to mean "nobody said", and nobody
+        # said is not consent. The settings screen refuses to save a trade without one, so a blank
+        # here is a row that lost it some other way (an old vault, a hand-edited JSON, a partial
+        # write) — exactly the case where guessing is worst. Stopped by name, and it resumes by
+        # itself the moment the mode is set.
+        return MODE_NAME[0], ("mode 가 비어 있습니다 — 이 매매는 중지됩니다. 설정 > 자동매매 > "
+                              "매매 에서 장부거래/실주문 중 하나를 고르세요")
     if raw in ("ledger", "paper"):
         m = 0
     elif raw == "live":
         m = 2
+    elif raw in MODE_RANK:
+        m = MODE_RANK[raw]                     # the legacy ladder vocabulary an adopted rule carries
     else:
-        m = MODE_RANK.get(raw, 2) if raw else 2
+        # A word nobody defined is not a mode. `trade_state` has read an unreadable state as off
+        # all along; the same rule has to hold here, or a typo in the one field that reaches real
+        # money reads as the most permissive value there is.
+        return MODE_NAME[0], (f"mode '{raw}' 를 읽을 수 없습니다 — 이 매매는 중지됩니다"
+                              " (ledger 또는 live)")
     # A legacy global mode still caps everything under it. Absent (the field left the settings
     # screen in v2), there is no global cap and the trade's own word stands.
     g = str(settings.get("mode") or "").strip()

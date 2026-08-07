@@ -306,6 +306,16 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             s = {**s, "broker": s.get("broker") or trade.get("broker"),
                  "account": s.get("account") or trade.get("account"),
                  "market": s.get("market") or trade.get("market")}
+            # Which book, and whether it runs at all: these OVERWRITE rather than fill a blank,
+            # because they describe the placement and not the rule — the same shape
+            # `_trade_instances` already uses for a trade that references a strategy by name.
+            # Measured 2026-08-08: `btc-trend` matched a trade by id instead of by reference, so
+            # this path ran and copied only the three venue fields. Its trade said `ledger`, the
+            # rule said nothing, and the engine placed **live** orders off the blank default.
+            for k in ("mode", "state"):
+                v = trade.get(k)
+                if v is not None and v != "":
+                    s[k] = v
         if s.get("symbol") or not (trade and (trade.get("conditionName") or trade.get("screen"))):
             # A library rule — no symbol, no venue, no trade of its own — never runs bare. It
             # exists to be referenced; running it would book fills under a name with no account.
@@ -662,6 +672,11 @@ def declared_trades(settings):
                     "interval": resolve_interval(
                         t, _lib.get(str(t.get("strategy") or "").strip()), _iv_warn),
                     "broker": broker, "account": account,
+                    # Which book the fills go in, and whether this placement runs at all. Both are
+                    # the trade's own words — a rule is reusable, a placement is not — and both
+                    # were missing from this row, so the id-matched path below had nothing to read.
+                    "mode": str(t.get("mode") or "").strip() or None,
+                    "state": str(t.get("state") or "").strip() or None,
                     # Which market this symbol trades in. Some brokers front both and need telling
                     # (one broker's domestic order call is a different endpoint from its overseas
                     # one); the rest ignore it. Left unset it is the broker's own inference.
@@ -967,6 +982,17 @@ def action_gate(inp, settings):
                                           mm["strategy"], mm["strategyInterval"]))
         warnings.append(msg)
         store.log_event(conn, "interval_mismatch", {"why": msg}, strategy_id=mm["tradeId"])
+    # A trade whose mode is blank or unreadable is stopped by `resolve_mode`, one refusal per
+    # cycle in the events. Said once here too, because "why is nothing happening" is answered at
+    # the gate and the operator should not have to read the event log to find a missing field.
+    for t in declared_trades(settings):
+        m = str(t.get("mode") or "").strip()
+        if m in ("ledger", "paper", "live") or m in eng.MODE_RANK:
+            continue
+        msg = (f"trade '{t['id']}' 의 mode 가 " + (f"'{m}' 라 읽히지 않습니다" if m else "비어 있습니다")
+               + " — 이 매매는 중지됩니다 (장부거래/실주문 중 하나를 고르세요)")
+        warnings.append(msg)
+        store.log_event(conn, "mode_missing", {"why": msg}, strategy_id=t["id"])
     conn.close()
     screened = [t for t in declared_trades(settings)
                 if t.get("conditionName") or t.get("screen")]
@@ -1929,6 +1955,22 @@ def _abandon_stale_orders(conn, settings, strategies, open_rows, calls, marks=No
     now = store.now_ms()
     gone = []
     for o in store.open_orders(conn):
+        strategy = by_strategy.get(o["strategy_id"]) or {}
+        # The session ended and took the order with it. Closed here rather than cancelled: there
+        # is nothing at the venue to cancel, and the enquiry that still lists it is the one source
+        # that is wrong. Without this the row stays open and every cycle sends a cancel the venue
+        # answers "원주문번호가 존재하지 않습니다" — a loop with no exit.
+        if eng.day_order_expired(strategy.get("market"), settings.get("tradingHours"),
+                                 o.get("sent_ms"), now):
+            store.update_order(conn, o["order_key"], state="canceled", last_checked_ms=now)
+            detail = {"orderKey": o["order_key"], "why": "session",
+                      "sentMs": o.get("sent_ms"), "market": strategy.get("market")}
+            store.log_event(conn, "order_expired", detail,
+                            strategy_id=o["strategy_id"], symbol=o.get("symbol"))
+            gone.append({"orderKey": o["order_key"], "symbol": o.get("symbol"), "why": "session",
+                         "waitedSec": round((now - int(o.get("sent_ms") or now)) / 1000.0),
+                         "driftPct": 0.0, "partial": float(o.get("filled_qty") or 0) > 0})
+            continue
         no = orders.norm_order_no(o.get("broker_order_no"))
         if not no or no not in still_open:
             continue
@@ -1938,7 +1980,6 @@ def _abandon_stale_orders(conn, settings, strategies, open_rows, calls, marks=No
         # not undo a fill — the venue keeps the executed volume and releases only the remainder,
         # which is the whole point of taking what filled and giving up the rest.
         partial = float(o.get("filled_qty") or 0) > 0
-        strategy = by_strategy.get(o["strategy_id"]) or {}
         opts = strategy.get("orders") or {}
 
         def knob(name, fallback):
@@ -2942,6 +2983,70 @@ def action_selftest():
     mode5, why5 = eng.resolve_mode({"realArmed": False}, {"mode": "ledger"}, False, True)
     checks.append({"name": "a ledger trade is paper and needs no arming", "want": "dryrun",
                    "got": mode5, "ok": mode5 == "dryrun" and why5 is None})
+    # The blank used to be live. Nobody-said is not consent, and an armed real account is exactly
+    # the setting where the old default did the most damage.
+    mode6, why6 = eng.resolve_mode({"mode": "real", "realArmed": True}, {}, False, True)
+    checks.append({"name": "a blank mode stops the trade instead of meaning live",
+                   "want": "refusal", "got": why6 or mode6,
+                   "ok": mode6 == "dryrun" and bool(why6) and "mode" in (why6 or "")})
+    mode7, why7 = eng.resolve_mode({"mode": "real", "realArmed": True}, {"mode": "lvie"},
+                                   False, True)
+    checks.append({"name": "and a word nobody defined stops it too", "want": "refusal",
+                   "got": why7 or mode7, "ok": mode7 == "dryrun" and bool(why7)})
+
+    # A day order does not survive its own close, whatever the broker's enquiry still prints.
+    _day = 86400000
+    # Seoul rather than New York: `has_zone` refuses a zone this host cannot resolve, and a
+    # bare Windows box has only the default one — a test that passes or fails on tzdata being
+    # installed measures the host, not the rule.
+    _hours = {"kr": {"zone": "Asia/Seoul", "open": "09:00", "close": "15:30"}}
+    _now = store.now_ms()
+    checks.append({"name": "an order from an earlier session has already ended", "want": True,
+                   "got": eng.day_order_expired("kr", _hours, _now - 2 * _day, _now),
+                   "ok": eng.day_order_expired("kr", _hours, _now - 2 * _day, _now) is True})
+    checks.append({"name": "one from this session has not", "want": False,
+                   "got": eng.day_order_expired("kr", _hours, _now - 60000, _now),
+                   "ok": eng.day_order_expired("kr", _hours, _now - 60000, _now) is False})
+    checks.append({"name": "a venue with no session calendar expires nothing", "want": False,
+                   "got": eng.day_order_expired("", _hours, _now - 9 * _day, _now),
+                   "ok": eng.day_order_expired("", _hours, _now - 9 * _day, _now) is False})
+    checks.append({"name": "and an unreadable zone expires nothing either", "want": False,
+                   "got": eng.day_order_expired("kr", {"kr": {"zone": "Mars/Olympus"}},
+                                                _now - 9 * _day, _now),
+                   "ok": eng.day_order_expired("kr", {"kr": {"zone": "Mars/Olympus"}},
+                                               _now - 9 * _day, _now) is False})
+
+    # The wiring, not just the rule. A trade matched by id — no `strategy` reference — is the
+    # shape `btc-trend` has, and it was the shape that lost its mode on the way in.
+    _idset = {"tradingEnabled": True,
+              "trades": [{"id": "m1", "symbol": "AAA", "broker": "b", "account": "",
+                          "mode": "live", "state": "pauseEntries"}],
+              "strategies": [{"id": "m1", "enabled": True, "kind": "rules", "symbol": "AAA",
+                              "broker": "b", "account": "", "rules": []}]}
+    _picked = [s for s in pick_strategies(_idset) if s.get("id") == "m1"]
+    checks.append({"name": "a trade matched by id hands over its mode and state",
+                   "want": ["live", "pauseEntries"],
+                   "got": [(_picked or [{}])[0].get("mode"), (_picked or [{}])[0].get("state")],
+                   "ok": bool(_picked) and _picked[0].get("mode") == "live"
+                         and _picked[0].get("state") == "pauseEntries"})
+
+    # And end to end: the row closes itself without asking the venue to cancel something the
+    # venue already withdrew — the loop that measured `원주문번호가 존재하지 않습니다` forever.
+    _econ = store.connect("dryrun")
+    store.insert_order(_econ, {
+        "order_key": "stale-day", "cycle_id": "c0", "strategy_id": "sd", "broker": "b",
+        "account": "", "symbol": "AAA", "side": "buy", "req_qty": 1.0, "req_price": 10.0,
+        "ord_type": "limit", "mode": "dryrun", "state": "acked"})
+    store.update_order(_econ, "stale-day", broker_order_no="OLD1", state="acked",
+                       sent_ms=_now - 3 * _day)
+    _calls = []
+    _abandon_stale_orders(_econ, {"tradingHours": _hours},
+                          [{"id": "sd", "market": "kr"}], [{"ord_no": "OLD1"}], _calls)
+    _sd = _econ.execute("SELECT state FROM orders WHERE order_key='stale-day'").fetchone()["state"]
+    _econ.close()
+    checks.append({"name": "a resting order from a past session is closed, not cancelled again",
+                   "want": ["canceled", 0], "got": [_sd, len(_calls)],
+                   "ok": _sd == "canceled" and len(_calls) == 0})
 
     # --- profit, as the ledger states it -------------------------------------------------------
     # Nothing reported profit before this: `realized_today` existed for the daily loss limit only,
@@ -4913,8 +5018,10 @@ def action_selftest():
     def mrule(tag):
         return [{"side": "buy", "label": tag, "when": [{"a": "ma5", "op": ">", "b": "ma20"}]}]
     mset = {
-        "trades": [{"id": "a", "symbol": "AAA", "broker": "b", "account": "", "interval": "1h"},
-                   {"id": "z", "symbol": "ZZZ", "broker": "b", "account": "", "interval": "5m"}],
+        "trades": [{"id": "a", "symbol": "AAA", "broker": "b", "account": "", "interval": "1h",
+                    "mode": "ledger"},
+                   {"id": "z", "symbol": "ZZZ", "broker": "b", "account": "", "interval": "5m",
+                    "mode": "ledger"}],
         "strategies": [
             {"id": "a", "enabled": True, "kind": "rules", "symbol": "AAA", "broker": "b",
              "account": "", "money": {"perOrderKrw": 6000}, "limits": {}, "rules": mrule("a")},
@@ -5230,12 +5337,12 @@ def action_selftest():
     # while the exchange had no record of an order.
     checks.append({"name": "an interactive call is paper however the module is set", "want":
                    "dryrun",
-                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False, False),
-                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False,
+                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "live"}, False, False),
+                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "live"}, False,
                                             False) == "dryrun"})
     checks.append({"name": "and unattended with arming is the only way to real", "want": "real",
-                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False, True),
-                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {}, False,
+                   "got": eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "live"}, False, True),
+                   "ok": eng.effective_mode({"mode": "real", "realArmed": True}, {"mode": "live"}, False,
                                             True) == "real"})
     # A practice account outranks every setting above it. Its keys only work on the practice host,
     # so a run booked as live would be recording fills the live venue never saw — and the promotion
@@ -5332,7 +5439,7 @@ def action_selftest():
     routed = []
     real_settings = {"mode": "real", "realArmed": True, "tradingEnabled": True,
                      "strategies": [{"id": "r", "enabled": True, "kind": "rules", "symbol": "AAA",
-                                     "broker": "b", "account": "",
+                                     "broker": "b", "account": "", "mode": "live",
                                      "money": {"perOrderKrw": 6000}, "limits": {}, "rules": []}]}
     rc = action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "buy", "price": 10.0}],
                                   "lastClosedBarDate": "d1"},
@@ -5424,7 +5531,7 @@ def action_selftest():
     econ.close()
     exit_settings = {"mode": "dryrun", "tradingEnabled": True,
                      "strategies": [{"id": "x", "enabled": True, "kind": "rules", "symbol": "AAA",
-                                     "broker": "b", "account": "",
+                                     "broker": "b", "account": "", "mode": "ledger",
                                      "money": {"perOrderKrw": 6000}, "limits": {}, "rules": []}]}
     ex = action_cycle({"signal": {"firedOnLastClosedBar": [{"side": "sell", "price": 9.0}],
                                   "lastClosedBarDate": "d9"},
@@ -5519,10 +5626,10 @@ def action_selftest():
                        "interval": "1h"}],
            "strategies": [
                {"id": "p-slow", "enabled": True, "kind": "rules", "symbol": "PPP", "broker": "b",
-                "account": "", "money": {"perOrderKrw": 6000}, "limits": {},
+                "account": "", "mode": "ledger", "money": {"perOrderKrw": 6000}, "limits": {},
                 "rules": [{"side": "buy", "when": [{"a": "ma5", "op": ">", "b": "ma20"}]}]},
                {"id": "p-fast", "enabled": True, "kind": "rules", "symbol": "PPP", "broker": "b",
-                "account": "", "money": {"perOrderKrw": 6000}, "limits": {},
+                "account": "", "mode": "ledger", "money": {"perOrderKrw": 6000}, "limits": {},
                 "rules": [{"side": "buy", "when": [{"a": "rsi", "op": "<", "b": 30}]}]}],
            "tradingEnabled": True, "mode": "dryrun"}
     tg = action_gate({}, two)["data"]
