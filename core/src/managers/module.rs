@@ -640,14 +640,28 @@ impl ModuleManager {
         };
         let input_data: &serde_json::Value = account_scoped.as_ref().unwrap_or(input_data);
 
+        // Scalar coercion used to be validation-only — "the module runtime coerces strings in
+        // arithmetic" — and that assumption failed the first module that checks its types instead
+        // of doing arithmetic on them: kma-weather reads `typeof lat === 'number'`, so a
+        // "37.5665" that PASSED validation as a number arrived as a string, the grid conversion
+        // silently skipped, and a caller who did send coordinates was told to send coordinates
+        // (measured 2026-08-08 over MCP, where the reduced discovery schema makes string-typed
+        // numbers routine). If validation needed the coerced value to pass, the module receives
+        // the coerced value: the declared type is the contract, not a hint.
+        let coerced: Option<serde_json::Value> = config
+            .as_ref()
+            .and_then(|c| c.get("input"))
+            .map(|schema| coerce_for_validation(input_data, schema))
+            .filter(|c| c != input_data);
+        let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
+
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
         // uniform tool procedure). The error hint = next-step pointer: every module is now
         // discoverable (explicit actionCatalog OR derived from the input schema), so the hint
         // uniformly points back to search_module_actions → get_action_schema.
         if let Some(config) = &config {
             if let Some(input_schema) = config.get("input") {
-                let for_val =
-                    coerce_for_validation(&input_for_validation(input_data, input_schema), input_schema);
+                let for_val = input_for_validation(input_data, input_schema);
                 if let Err(detail) = validate_value(&for_val, input_schema) {
                     // 도구↔액션 짝 어긋남이면 소유 모듈을 짚어준다 — 실측 2026-07-27:
                     // `("kakao_map","v1_국내주식-008")` 처럼 한 라운드에 여러 도구를 병렬 호출하다
