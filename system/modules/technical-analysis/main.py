@@ -2439,20 +2439,36 @@ def main():
         want = inp.get("which")
         # A comma-separated string is accepted because the parameter's own description lists the
         # names with slashes, which reads as one string — and the model wrote it that way
-        # (2026-08-06 실측: "macd,rsi,bollinger,..." → is not of type "array", round wasted).
+        # (measured 2026-08-06: "macd,rsi,bollinger,..." → is not of type "array", round wasted).
         if isinstance(want, str):
             want = [w.strip() for w in want.replace("/", ",").split(",") if w.strip()]
         want = [str(w).strip().lower() for w in want] if isinstance(want, list) and want else list(ALL_INDICATORS)
-        unknown = [w for w in want if w not in ALL_INDICATORS]
+        # Moving averages ride the same vocabulary the rules engine already speaks — ma<n>/ema<n>,
+        # any period. The closed five-name list sent "MA20 값" back to mental arithmetic, which is
+        # exactly what this module's own description forbids (measured 2026-08-08; same class as
+        # the chart's closed MA enum that could show neither 120 nor a 50/200 cross).
+        ma_want = [w for w in want if _MA_REF.match(w)]
+        unknown = [w for w in want if w not in ALL_INDICATORS and not _MA_REF.match(w)]
         if unknown:
             # Naming the stray beats computing the rest: a typo would otherwise return a result
             # that silently lacks the one indicator the caller asked about.
             print(json.dumps({"success": False, "error":
-                "which 에 모르는 지표가 있습니다: %s — 가능한 값 = %s"
+                "which 에 모르는 지표가 있습니다: %s — 가능한 값 = %s, ma<n>, ema<n> (예: ma20, ema9)"
                 % (", ".join(unknown), ", ".join(ALL_INDICATORS))}, ensure_ascii=False))
             return
         keep = int(inp.get("seriesTail") or 120)
         out, latest = {}, {}
+        for ref in ma_want:
+            ma_kind, period = _MA_REF.match(ref).groups()
+            n = int(period)
+            if n < 1 or n > len(closes):
+                print(json.dumps({"success": False, "error":
+                    "%s 는 봉 %d개로 계산할 수 없습니다 — 기간보다 긴 시리즈를 주세요"
+                    % (ref, len(closes))}, ensure_ascii=False))
+                return
+            series = _ema(closes, n) if ma_kind == "ema" else _sma(closes, n)
+            out[ref] = _tail(series, keep)
+            latest[ref] = series[-1] if series and series[-1] is not None else None
         if "macd" in want:
             m = macd(closes, int(inp.get("macdFast") or 12), int(inp.get("macdSlow") or 26),
                      int(inp.get("macdSignal") or 9))

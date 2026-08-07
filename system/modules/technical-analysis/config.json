@@ -133,16 +133,10 @@
           "array",
           "string"
         ],
-        "description": "[indicators] 계산할 지표 목록 — [\"macd\",\"rsi\",\"bollinger\",\"stochastic\",\"ichimoku\"] 중 일부를 배열로. 쉼표로 이은 문자열도 됩니다(\"macd,rsi\"). 생략 = 전부.",
+        "description": "[indicators] Which values to compute — any of macd, rsi, bollinger, stochastic, ichimoku, plus moving averages as ma<n>/ema<n> (e.g. ma20, ema9 — same vocabulary as rules operands). Array, or a comma-joined string. Omit = the classic five.",
         "items": {
           "type": "string",
-          "enum": [
-            "macd",
-            "rsi",
-            "bollinger",
-            "stochastic",
-            "ichimoku"
-          ]
+          "pattern": "^(macd|rsi|bollinger|stochastic|ichimoku|ma[0-9]+|ema[0-9]+)$"
         }
       },
       "seriesTail": {
