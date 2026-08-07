@@ -161,12 +161,19 @@ function escapeCurrencyDollars(s: string): string {
   return out;
 }
 
-/** `\(...\)` / `\[...\]` → `$...$` / `$$...$$`. Models write the standard LaTeX delimiters in
- *  plain chat (Solar emitted `\(\theta\)` and a `\[...\]` display block, 2026-08-08) but
+/** `\(...\)` / `\[...\]` → `$...$` / block `$$`. Models write the standard LaTeX delimiters in
+ *  plain chat (Solar emitted `\(\theta\)` and `\[...\]` display blocks, 2026-08-08) but
  *  remark-math parses only the dollar forms, so the raw markup reached the screen as text.
  *  Normalizing the delimiter is a display concern, so it lives here and not in a prompt rule —
  *  every model does this, and a prompt cannot stop it. Code fences and inline code pass through
- *  untouched (a backslash there is content). */
+ *  untouched (a backslash there is content).
+ *
+ *  Display math MUST come out as flow form — `$$` on its own line. The first version jammed the
+ *  content into an inline `$$...$$` run, and a multi-line body (`\quad` breaks, `aligned` rows)
+ *  makes remark-math open a math node on the SECOND line and swallow the closing `$$` into it,
+ *  flipping the pairing for the rest of the document — one long red KaTeX error wall (measured
+ *  2026-08-08, the trigonometry answer: section ① single-line survived, ② onward died).
+ *  The lookbehinds keep `\\[4pt]`-style aligned spacing from reading as a `\[` opener. */
 function normalizeLatexDelimiters(s: string): string {
   if (!s.includes('\\(') && !s.includes('\\[')) return s;
   return s
@@ -174,8 +181,11 @@ function normalizeLatexDelimiters(s: string): string {
     .map((part, i) => {
       if (i % 2 === 1) return part;
       return part
-        .replace(/\\\[([\s\S]+?)\\\]/g, (_m, inner) => `$$${String(inner).trim()}$$`)
-        .replace(/\\\(([^\n]+?)\\\)/g, (_m, inner) => `$${String(inner).trim()}$`);
+        .replace(
+          /(?<!\\)\\\[([\s\S]+?)(?<!\\)\\\]/g,
+          (_m, inner) => `\n\n$$\n${String(inner).trim()}\n$$\n\n`,
+        )
+        .replace(/(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)/g, (_m, inner) => `$${String(inner).trim()}$`);
     })
     .join('');
 }
