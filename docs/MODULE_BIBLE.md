@@ -350,7 +350,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
-| `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
+| `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — `items`/`values` 생략 = 프레임 자체가 아이템(업비트). `signedVolume` = 필드명(부호 내장, 키움) 또는 `{field, negateWhen:{field,equals}}`(무부호 수량 + 매도 플래그, 업비트 `ask_bid:"ASK"`). 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
 | `settings_fields[].editorSchema` | structured-list 카드 폼을 config 선언으로 렌더 (`fields[]` = text/number/toggle/select/**ref**/json/rules · `required` = 저장 게이트 · `showWhen` · `summary` · `newItem`). 필드 추가 = config 수정 + pull 로 끝 | 프론트 `StructuredListEditor` (legacy 하드코딩 카드는 스키마 없는 config 의 폴백) |
 
 ---

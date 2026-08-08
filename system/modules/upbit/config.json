@@ -23,6 +23,34 @@
       ]
     }
   },
+  "ws": {
+    "endpoint": "wss://api.upbit.com/websocket/v1",
+    "matchField": "type",
+    "shareConnection": true,
+    "streams": {
+      "trade": {
+        "subscribe": {
+          "frame": [
+            { "ticket": "{ticket:firebat}" },
+            { "type": "trade", "codes": ["{code}"], "isOnlyRealtime": true },
+            { "format": "DEFAULT" }
+          ]
+        },
+        "realtimeMatch": "trade",
+        "tick1s": {
+          "type": { "field": "type", "equals": "trade" },
+          "symbol": "code",
+          "map": {
+            "price": "trade_price",
+            "signedVolume": {
+              "field": "trade_volume",
+              "negateWhen": { "field": "ask_bid", "equals": "ASK" }
+            }
+          }
+        }
+      }
+    }
+  },
   "input": {
     "type": "object",
     "required": [

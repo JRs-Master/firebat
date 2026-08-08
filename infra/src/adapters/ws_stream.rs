@@ -908,13 +908,31 @@ async fn run_session(
                 frames_seen += 1;
                 let text = match msg {
                     Message::Text(t) => t,
+                    // Upbit ships every frame as a Binary websocket message whose payload is plain
+                    // UTF-8 JSON — decode it into the same text path instead of dropping it. The
+                    // 2026-07-29 change only *named* this drop; this opens the door (2026-08-09,
+                    // tick collection for the live KRW-BTC trade).
+                    Message::Binary(b) => match String::from_utf8(b.to_vec()) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            let seen =
+                                skipped_seen.entry("<binary-non-utf8>".to_string()).or_insert(0);
+                            *seen += 1;
+                            if *seen <= 3 {
+                                tracing::info!(
+                                    target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
+                                    "frame dropped: binary payload is not UTF-8"
+                                );
+                            }
+                            continue;
+                        }
+                    },
                     Message::Close(_) => return SessionEnd::Dropped("server closed".to_string()),
-                    // Third silent path: Binary / Ping / Pong were dropped with no log at all, so a
-                    // broker pushing binary payloads looked identical to a broker pushing nothing
+                    // Silent path: Ping / Pong / other were dropped with no log at all, so a broker
+                    // pushing them looked identical to a broker pushing nothing
                     // (2026-07-29: both brokers silent, zero log lines of any kind). Name the type.
                     other => {
                         let kind = match other {
-                            Message::Binary(_) => "binary",
                             Message::Ping(_) => "ping",
                             Message::Pong(_) => "pong",
                             _ => "other",
@@ -1084,6 +1102,11 @@ where
             .map_err(|e| format!("read failed: {e}"))?;
         let text = match msg {
             Message::Text(t) => t,
+            // Binary-framed venues (upbit) send their handshake replies the same way.
+            Message::Binary(b) => match String::from_utf8(b.to_vec()) {
+                Ok(s) => s,
+                Err(_) => continue,
+            },
             Message::Close(_) => return Err(format!("closed while waiting for {expected}")),
             _ => continue,
         };

@@ -24,6 +24,15 @@ use std::sync::{Arc, Mutex};
 
 use firebat_core::ports::ITimeseriesStorePort;
 
+/// How a stream states buy/sell volume. Kiwoom signs the number itself (`"15": "-3"`); upbit
+/// sends an unsigned `trade_volume` next to a side flag (`ask_bid: "ASK"|"BID"`), so the sign
+/// lives in a different field. Declared as either a plain field name (already signed) or
+/// `{field, negateWhen: {field, equals}}` — when the side flag matches, the volume is a sell.
+struct SignedVolumeDecl {
+    field: String,
+    negate_when: Option<(String, String)>,
+}
+
 /// Resolved per-watch declaration (`ws.streams.<key>.tick1s`).
 struct TickDecl {
     items_path: Option<String>,
@@ -31,7 +40,7 @@ struct TickDecl {
     symbol_field: String,
     values_field: Option<String>,
     price_field: Option<String>,
-    signed_volume_field: Option<String>,
+    signed_volume: Option<SignedVolumeDecl>,
     /// Everything else in `map` — stored last-value under its semantic name.
     extra_fields: Vec<(String, String)>,
 }
@@ -42,11 +51,24 @@ fn parse_decl(cfg: &serde_json::Value) -> Option<TickDecl> {
     let mut signed = None;
     let mut extra = Vec::new();
     for (k, v) in map {
-        let field = v.as_str()?.to_string();
         match k.as_str() {
-            "price" => price = Some(field),
-            "signedVolume" => signed = Some(field),
-            _ => extra.push((k.clone(), field)),
+            "price" => price = Some(v.as_str()?.to_string()),
+            "signedVolume" => {
+                signed = if let Some(f) = v.as_str() {
+                    Some(SignedVolumeDecl { field: f.to_string(), negate_when: None })
+                } else {
+                    Some(SignedVolumeDecl {
+                        field: v.get("field")?.as_str()?.to_string(),
+                        negate_when: v.get("negateWhen").and_then(|n| {
+                            Some((
+                                n.get("field")?.as_str()?.to_string(),
+                                n.get("equals")?.as_str()?.to_string(),
+                            ))
+                        }),
+                    })
+                };
+            }
+            _ => extra.push((k.clone(), v.as_str()?.to_string())),
         }
     }
     Some(TickDecl {
@@ -60,7 +82,7 @@ fn parse_decl(cfg: &serde_json::Value) -> Option<TickDecl> {
         symbol_field: cfg.get("symbol").and_then(|v| v.as_str()).unwrap_or("item").to_string(),
         values_field: cfg.get("values").and_then(|v| v.as_str()).map(String::from),
         price_field: price,
-        signed_volume_field: signed,
+        signed_volume: signed,
         extra_fields: extra,
     })
 }
@@ -188,11 +210,20 @@ impl TickAggregator {
                 .and_then(|f| values.get(f))
                 .and_then(num_of)
                 .map(f64::abs); // brokers sign the price by tick direction; magnitude is the price
-            let signed = decl
-                .signed_volume_field
-                .as_ref()
-                .and_then(|f| values.get(f))
-                .and_then(num_of);
+            let signed = decl.signed_volume.as_ref().and_then(|sv| {
+                let n = values.get(&sv.field).and_then(num_of)?;
+                Some(match &sv.negate_when {
+                    // Side-flag venues (upbit): the number is a magnitude; the flag is the sign.
+                    Some((f, want)) => {
+                        if values.get(f).and_then(|v| v.as_str()) == Some(want.as_str()) {
+                            -n.abs()
+                        } else {
+                            n.abs()
+                        }
+                    }
+                    None => n,
+                })
+            });
             let ks = state.entry(Self::series_key(module, mock, symbol)).or_default();
             // Roll the second.
             if ks.cur.as_ref().map(|c| c.sec_key) != Some(now_key) {
@@ -308,7 +339,36 @@ mod tests {
         });
         let d = parse_decl(&cfg).unwrap();
         assert_eq!(d.price_field.as_deref(), Some("10"));
-        assert_eq!(d.signed_volume_field.as_deref(), Some("15"));
+        let sv = d.signed_volume.expect("signed volume declared");
+        assert_eq!(sv.field, "15");
+        assert!(sv.negate_when.is_none(), "kiwoom signs the number itself");
         assert_eq!(d.extra_fields, vec![("strength".to_string(), "228".to_string())]);
+    }
+
+    /// The upbit shape: unsigned volume + a side flag in a sibling field. `negateWhen` makes the
+    /// flag the sign; the frame itself is the item (no `items`, no `values`).
+    #[test]
+    fn a_side_flag_signs_an_unsigned_volume() {
+        let cfg = serde_json::json!({
+            "type": {"field": "type", "equals": "trade"},
+            "symbol": "code",
+            "map": {
+                "price": "trade_price",
+                "signedVolume": {
+                    "field": "trade_volume",
+                    "negateWhen": {"field": "ask_bid", "equals": "ASK"}
+                }
+            }
+        });
+        let d = parse_decl(&cfg).unwrap();
+        assert!(d.items_path.is_none());
+        assert!(d.values_field.is_none());
+        assert_eq!(d.symbol_field, "code");
+        let sv = d.signed_volume.expect("signed volume declared");
+        assert_eq!(sv.field, "trade_volume");
+        assert_eq!(
+            sv.negate_when,
+            Some(("ask_bid".to_string(), "ASK".to_string()))
+        );
     }
 }
