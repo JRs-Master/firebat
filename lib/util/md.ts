@@ -207,9 +207,32 @@ export function normalizeLatexDelimiters(s: string): string {
 export function maskMath(s: string): { masked: string; restore: (t: string) => string } {
   const identity = (t: string) => t;
   if (!s) return { masked: s, restore: identity };
+  const store: string[] = [];
+  // 0) Explicit LaTeX delimiters are math BY DECLARATION — mask them before any heuristic can
+  //    misread a digit-leading body. "\( 4 \)" used to be normalized to "$4$" first, and the
+  //    currency escape then killed the opener ("4" carries no LaTeX marker), orphaning the
+  //    closer and shifting every later pair — "(at" rendered as math (2026-08-09, the cubic
+  //    answer line). Conversion to the $-form happens straight into the store, so the escape
+  //    never sees these spans at all. Code fences / inline code pass through untouched.
+  if (s.includes('\\(') || s.includes('\\[')) {
+    s = s
+      .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+      .map((part, i) => {
+        if (i % 2 === 1) return part;
+        return part
+          .replace(/(?<!\\)\\\[([\s\S]+?)(?<!\\)\\\]/g, (_m, inner) => {
+            store.push(`\n\n$$\n${String(inner).trim()}\n$$\n\n`);
+            return '@@FBMATH' + (store.length - 1) + '@@';
+          })
+          .replace(/(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)/g, (_m, inner) => {
+            store.push(`$${String(inner).trim()}$`);
+            return '@@FBMATH' + (store.length - 1) + '@@';
+          });
+      })
+      .join('');
+  }
   s = normalizeLatexDelimiters(s);
   s = escapeCurrencyDollars(s);
-  const store: string[] = [];
   // The third alternative mirrors escapeCurrencyDollars' exception: digit-leading spans are
   // masked as math only when they carry a LaTeX marker, so `$30^\circ$` is protected while a
   // stray "$30" that survived escaping still is not.

@@ -17,7 +17,7 @@ import { formatCompactNumber } from '../../../lib/util/number';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript, normalizeLatexDelimiters } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../../lib/util/md';
 import { compileExpression, sampleFunction, fitYRange, niceTicks, tickLabel, viewSegments } from '../../../lib/util/function-plot';
 import { loadCdn } from '@/lib/util/load-cdn';
 import { CodeComp } from '@/app/components/CodeBlock';
@@ -2471,10 +2471,11 @@ function TextComp({ content }: { content: string }) {
   // raw <strong> 등은 literal 텍스트로 보이고(번짐 차단), 한국어 인접 **bold** 는 <strong> 렌더.
   // firebat-render fence(= 텍스트 채널 render) 는 ComponentRenderer 직접 렌더(마크다운 변환 우회).
   const segments = splitFirebatRender(content);
-  // normalizeLatexDelimiters: the model writes \( \) / \[ \] in component text the same way it
-  // does in prose, and remark-math only reads the dollar forms (same fix as the chat pipeline).
+  // \( \) / \[ \] handling lives INSIDE mdReady's maskMath — do not pre-normalize here: converting
+  // to $-form before maskMath discards the "this is math by declaration" signal, and the currency
+  // escape then breaks digit-leading spans like \( 4 \) (2026-08-09 cubic-answer pairing shift).
   const md = (s: string) => (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(normalizeLatexDelimiters(s))}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(s)}</ReactMarkdown>
   );
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
@@ -2537,28 +2538,66 @@ function ImageComp({
     return () => { cancelled = true; };
   }, [blurhash]);
 
-  // 생성 중 스왑 — image_gen 은 URL 을 먼저 말하고 파일은 나중에 착지한다(비동기 생성).
-  // 파일이 아직 없으면 <img> 가 404 로 깨진 회색이 되고, 완료돼도 아무도 다시 안 그렸다
-  // (2026-08-09 실측: 갤러리는 notify_gallery SSE 로 살았는데 채팅은 F5 전까지 회색).
-  // 로드 "실패 시에만" 생성 중 카드로 바꾸고 백오프로 재시도 — 발행 페이지의 정상(구운)
-  // 이미지는 에러가 없어 이 경로에 아예 안 들어오고, SSE 없는 표면(공개 페이지·hub)에서도
-  // 같은 코드로 동작한다. 재시도가 바닥나면 실패를 이름 대고 보인다(영원한 스피너 금지).
+  // 생성 중 스왑 — image_gen 은 회색 placeholder PNG 를 "실제 URL 에" 먼저 저장한다(200 OK).
+  // 그래서 로드 성공/실패로는 생성 중임을 알 수 없다 — 2026-08-09 로고 실측: onError 는 영영
+  // 침묵했고, 채팅의 회색은 깨진 이미지가 아니라 성공적으로 로드된 placeholder 였다. 진실은
+  // 미디어 record 의 status: 같은 경로의 <slug>.meta.json 을 bare-src(변형·블러해시 없는 채팅
+  // 임베드)일 때만 조회해서, rendering 이면 생성 중 카드 + 3초 폴링, done 이면 bytes 를 버전
+  // 쿼리로 붙여 과거에 immutable 로 캐시된 placeholder 까지 자가 치유한다. 로드 실패(404류)는
+  // 백오프 재시도가 따로 받고, 어느 쪽이든 바닥나면 실패를 이름 대고 보인다(영원한 스피너 금지).
   const RETRY_DELAYS_S = [2, 3, 5, 8, 13, 21, 30, 30, 30, 30, 30, 30, 60, 60, 60, 60]; // ≈7.5분 — 생성 타임아웃(420s) 커버
   const [retryTick, setRetryTick] = useState(0);
-  const [phase, setPhase] = useState<'ok' | 'waiting' | 'dead'>('ok');
+  const [phase, setPhase] = useState<'ok' | 'probe-wait' | 'meta-wait' | 'dead'>('ok');
+  const [ver, setVer] = useState<string | null>(null);
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(() => {
+    if ((variants && variants.length > 0) || blurhash) return; // 완성 산출물 — 조회 불필요
+    const m = /^(\/user\/media\/[^/?#]+)\.(png|jpg|jpeg|webp|gif)$/i.exec(src ?? '');
+    if (!m) return;
+    let stop = false;
+    const metaUrl = `${m[1]}.meta.json`;
+    const started = Date.now();
+    const check = async () => {
+      try {
+        const r = await fetch(metaUrl, { cache: 'no-store' });
+        if (!r.ok || stop) return; // meta 없는 옛 이미지 — 평범한 <img> 로
+        const rec = await r.json();
+        if (stop) return;
+        const st = rec?.status;
+        if (st === 'error') { setPhase('dead'); return; }
+        if (!st || st === 'done') {
+          setVer(String(rec?.bytes ?? rec?.createdAt ?? '1'));
+          setPhase('ok');
+          return;
+        }
+        setPhase('meta-wait');
+        if (Date.now() - started < 8 * 60 * 1000) {
+          timerRef.current = setTimeout(check, 3000);
+        } else {
+          setPhase('dead');
+        }
+      } catch { /* 네트워크 잡음 — 이미지 로드 경로가 알아서 */ }
+    };
+    check();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
   const onImgError = () => {
+    if (phaseRef.current === 'meta-wait') return; // meta 폴링이 이 대기의 주인
     const n = attemptRef.current;
     if (n >= RETRY_DELAYS_S.length) { setPhase('dead'); return; }
     attemptRef.current = n + 1;
-    setPhase('waiting');
+    setPhase('probe-wait');
     timerRef.current = setTimeout(() => setRetryTick(t => t + 1), RETRY_DELAYS_S[n] * 1000);
   };
   const onImgLoad = () => { setLoaded(true); setPhase('ok'); };
+  const verSrc = ver ? `${src}${src.includes('?') ? '&' : '?'}v=${ver}` : src;
   // 캐시버스터 — 404 응답이 캐시돼 재시도가 헛돌지 않게.
-  const probeSrc = retryTick > 0 ? `${src}${src.includes('?') ? '&' : '?'}r=${retryTick}` : src;
+  const probeSrc = retryTick > 0 ? `${verSrc}${verSrc.includes('?') ? '&' : '?'}r=${retryTick}` : verSrc;
 
   // variants 를 포맷별 srcset 으로 그룹핑
   const srcsetFor = (fmt: string) => {
@@ -2574,6 +2613,7 @@ function ImageComp({
   const sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1024px';
   const hasVariants = Boolean(avifSrcset || webpSrcset);
 
+  const waiting = phase === 'probe-wait' || phase === 'meta-wait';
   const imgCls = phase === 'ok'
     ? `block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`
     // 재시도 프로브 — display:none 이면 lazy 로더가 로드를 아예 안 하므로 1px 투명으로 유지.
@@ -2607,7 +2647,7 @@ function ImageComp({
             style={{ filter: 'blur(8px)' }}
           />
         )}
-        {phase === 'waiting' && (
+        {waiting && (
           <div className="flex flex-col items-center justify-center gap-3 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-500">
             <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
             <span className="text-sm">이미지를 생성하고 있습니다…</span>
@@ -2619,7 +2659,9 @@ function ImageComp({
             {alt && <span className="text-xs">{alt}</span>}
           </div>
         )}
-        {phase !== 'dead' && (hasVariants && phase === 'ok' ? (
+        {/* meta-wait 는 placeholder 파일이 "정상 로드"되는 상태라 프로브도 띄우지 않는다 —
+            완료(done) 판정이 오면 버전 쿼리가 붙은 src 로 새로 마운트된다. */}
+        {(phase === 'ok' || phase === 'probe-wait') && (hasVariants && phase === 'ok' ? (
           <picture>
             {avifSrcset && <source type="image/avif" srcSet={avifSrcset} sizes={sizes} />}
             {webpSrcset && <source type="image/webp" srcSet={webpSrcset} sizes={sizes} />}
@@ -3633,11 +3675,11 @@ const inlineMdComponents = {
 function InlineMd({ text }: { text: string | number | null | undefined }) {
   const s = cleanPlainText(text);
   if (!s) return null;
-  // normalizeLatexDelimiters: \( \) → $ so remark-math sees it — list items and table cells get
-  // the same treatment prose does (the model writes math identically everywhere).
+  // \( \) handling lives inside mdReady's maskMath — pre-normalizing here would discard the
+  // math-by-declaration signal (2026-08-09 digit-leading span break).
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={inlineMdComponents}>
-      {mdReady(normalizeLatexDelimiters(s))}
+      {mdReady(s)}
     </ReactMarkdown>
   );
 }
@@ -3670,11 +3712,11 @@ function AlertComp({ message, type = 'info', title, action }: {
       <div className="min-w-0 flex-1">
         {normTitle && (
           <div className={`font-bold text-sm mb-1 ${s.text}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(normalizeLatexDelimiters(title ?? ''))}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(title ?? '')}</ReactMarkdown>
           </div>
         )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(normalizeLatexDelimiters(message))}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(message)}</ReactMarkdown>
         </div>
         {action?.label && action?.href && (
           <a

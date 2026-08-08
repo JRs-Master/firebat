@@ -25,8 +25,13 @@ export async function GET(
     const { slug: segments } = await params;
     const filename = segments?.[segments.length - 1] ?? '';
     if (!filename) return new NextResponse('Not found', { status: 404 });
-    const dotIdx = filename.lastIndexOf('.');
-    const slug = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
+    // <slug>.meta.json — 생성 상태 조회(status: rendering/done/error). ImageComp 가 "생성 중"
+    // 카드와 완료 스왑을 이걸로 판정한다 (async image_gen 은 placeholder 를 실제 URL 에 먼저
+    // 저장하므로 이미지 로드 성공/실패로는 생성 중임을 알 수 없다 — 2026-08-09 실측).
+    const isMeta = filename.endsWith('.meta.json');
+    const base = isMeta ? filename.slice(0, -'.meta.json'.length) : filename;
+    const dotIdx = base.lastIndexOf('.');
+    const slug = dotIdx > 0 ? base.slice(0, dotIdx) : base;
 
     const res = await readMedia({ slug: slug });
     if (!res.ok) return new NextResponse(res.message || '서버 오류', { status: 500 });
@@ -36,6 +41,12 @@ export async function GET(
     if (payload.record?.scope && payload.record.scope !== 'user') {
       return new NextResponse('Not found', { status: 404 });
     }
+    const status = (payload.record as { status?: string } | undefined)?.status;
+    if (isMeta) {
+      return NextResponse.json(payload.record ?? { slug }, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
 
     const binary = Buffer.from(payload.binaryBase64, 'base64');
     const uint8 = new Uint8Array(binary);
@@ -43,7 +54,12 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': payload.contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        // 생성 중 placeholder 를 immutable 로 내보내면 브라우저가 회색을 1년짜리로 캐시해
+        // 완료 스왑이 영영 안 보인다 — done 전에는 no-store.
+        'Cache-Control':
+          status && status !== 'done'
+            ? 'no-store'
+            : 'public, max-age=31536000, immutable',
         'Content-Length': String(binary.length),
       },
     });
