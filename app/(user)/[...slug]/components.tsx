@@ -17,7 +17,7 @@ import { formatCompactNumber } from '../../../lib/util/number';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
-import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../../lib/util/md';
+import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript, normalizeLatexDelimiters } from '../../../lib/util/md';
 import { compileExpression, sampleFunction, fitYRange, niceTicks, tickLabel, viewSegments } from '../../../lib/util/function-plot';
 import { loadCdn } from '@/lib/util/load-cdn';
 import { CodeComp } from '@/app/components/CodeBlock';
@@ -2389,7 +2389,7 @@ function HeaderComp({ text, level = 1, align }: { text: string; level?: number; 
   };
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   const cls = `${weights[clampedLevel] ?? weights[1]} ${sizes[clampedLevel] ?? sizes[1]} ${alignCls}`;
-  const clean = cleanPlainText(text);
+  const clean = renderInlineMath(text);
   if (clampedLevel === 1) return <h1 className={cls}>{clean}</h1>;
   if (clampedLevel === 2) return <h2 className={cls}>{clean}</h2>;
   if (clampedLevel === 3) return <h3 className={cls}>{clean}</h3>;
@@ -2413,6 +2413,35 @@ function normalizeEscapes(s: string): string {
  *  실제 정제·포맷 로직 없음. */
 function cleanPlainText(s: string | number | null | undefined): string {
   return s == null ? '' : String(s);
+}
+
+/**
+ * Inline math inside PLAIN-TEXT props (header text, key_value keys/values). The model writes
+ * \( \Delta = 0 \) into a header the same way it writes prose, but these fields never pass
+ * through the markdown pipeline, so the markup reached the screen raw (measured 2026-08-09,
+ * the cubic-formula answer). Math spans render through MathComp (KaTeX); everything else stays
+ * the plain string it was. A $-span only counts as math when it carries a LaTeX marker
+ * (a backslash command or ^) — "가격 $30, 목표 $40" is money, same rule as the prose escape.
+ */
+function renderInlineMath(text: string): React.ReactNode {
+  const s = cleanPlainText(text);
+  if (!s.includes('\\(') && !s.includes('$')) return s;
+  const re = /\\\(([\s\S]+?)\\\)|\$((?:\\.|[^$\n])+?)\$/g;
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = re.exec(s)) !== null) {
+    const expr = m[1] ?? m[2] ?? '';
+    const isMath = m[1] !== undefined || /\\[a-zA-Z]|\^/.test(expr);
+    if (!isMath) continue; // leave the dollars where they are
+    if (m.index > last) out.push(s.slice(last, m.index));
+    out.push(<MathComp key={`m${key++}`} expression={expr.trim()} block={false} />);
+    last = m.index + m[0].length;
+  }
+  if (out.length === 0) return s;
+  if (last < s.length) out.push(s.slice(last));
+  return <>{out}</>;
 }
 
 /** display-time 값 변환 — AI 가 이미 포맷팅한 값을 그대로 렌더.
@@ -2442,8 +2471,10 @@ function TextComp({ content }: { content: string }) {
   // raw <strong> 등은 literal 텍스트로 보이고(번짐 차단), 한국어 인접 **bold** 는 <strong> 렌더.
   // firebat-render fence(= 텍스트 채널 render) 는 ComponentRenderer 직접 렌더(마크다운 변환 우회).
   const segments = splitFirebatRender(content);
+  // normalizeLatexDelimiters: the model writes \( \) / \[ \] in component text the same way it
+  // does in prose, and remark-math only reads the dollar forms (same fix as the chat pipeline).
   const md = (s: string) => (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(s)}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(normalizeLatexDelimiters(s))}</ReactMarkdown>
   );
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
@@ -4534,9 +4565,9 @@ function KeyValueComp({ title, items, columns = 2 }: {
           const rowCls = `flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3 py-2 sm:py-2.5 border-b border-gray-100 ${item.href ? 'hover:opacity-70 transition-opacity cursor-pointer no-underline' : ''}`;
           const inner = (
             <>
-              <span className="text-[13px] text-gray-500 shrink-0">{cleanPlainText(item.key || item.label || '')}</span>
+              <span className="text-[13px] text-gray-500 shrink-0">{renderInlineMath(item.key || item.label || '')}</span>
               <span className={`text-sm text-left sm:text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'font-medium text-gray-800'}`}>
-                {formatNumberString(item.value)}
+                {renderInlineMath(formatNumberString(item.value))}
               </span>
             </>
           );
@@ -5698,7 +5729,9 @@ function FunctionPlotComp({ expressions, xMin, xMax, yMin, yMax, title, xLabel, 
   const showLegend = paths.length > 1 || paths.some(c => typeof c.label === 'string' && c.label !== c.src);
 
   return (
-    <div className="w-full rounded-xl border border-slate-200 bg-white p-3">
+    // max-w: on a desktop chat column a full-width 640×400 frame reads as a poster — cap at a
+    // "standard chart" width and let mobile keep the full column (측정 2026-08-09, 사용자 지적).
+    <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-3">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
         aria-label={title || paths.map(c => c.label).join(', ')}>
         {title && (

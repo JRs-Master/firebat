@@ -204,7 +204,16 @@ impl SkillFileManager {
                 return Ok(parse_entry(stem, &raw, "system"));
             }
         }
-        let raw = self.storage.read(&sys_path).await?;
+        // A missing slug used to surface as the storage adapter's raw error ("read 실패
+        // (system/skills/math.md): No such file or directory") — an OS detail where the model
+        // needs its next move (measured 2026-08-09: a guessed 'math' slug). Name the refusal
+        // and point at the discovery surface instead.
+        let raw = self.storage.read(&sys_path).await.map_err(|_| {
+            format!(
+                "skill '{stem}' does not exist — do not invent slugs. Use a slug listed in \
+                 <SKILLS_AVAILABLE>, or find one with search_skills(query)."
+            )
+        })?;
         Ok(parse_entry(stem, &raw, "system"))
     }
 

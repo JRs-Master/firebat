@@ -188,7 +188,7 @@ function escapeCurrencyDollars(s: string): string {
  *  flipping the pairing for the rest of the document — one long red KaTeX error wall (measured
  *  2026-08-08, the trigonometry answer: section ① single-line survived, ② onward died).
  *  The lookbehinds keep `\\[4pt]`-style aligned spacing from reading as a `\[` opener. */
-function normalizeLatexDelimiters(s: string): string {
+export function normalizeLatexDelimiters(s: string): string {
   if (!s.includes('\\(') && !s.includes('\\[')) return s;
   return s
     .split(/(```[\s\S]*?```|`[^`\n]*`)/)

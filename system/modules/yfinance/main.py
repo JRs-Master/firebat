@@ -71,6 +71,24 @@ def df_to_records(df):
     return records
 
 
+def all_null_series(records):
+    """Rows exist but every close is None — Yahoo's throttle shape, not a real series.
+
+    When the unofficial API rate-limits (HTTP 429 measured from this host, 2026-08-09), yfinance
+    still hands back date-indexed rows with NaN everywhere, and this module reported that as
+    success. A caller then "analyzed" 31 days of nothing (measured: a hub turn concluded the
+    symbols were unfetchable). Garbage must fail by name, not succeed quietly.
+    """
+    return bool(records) and all(r.get('close') is None for r in records)
+
+
+NULL_SERIES_MSG = (
+    "Yahoo returned rows with every value null — that is their rate-limit/deny shape, not real "
+    "data (this host has measured HTTP 429 from Yahoo). Wait a minute and retry with FEWER "
+    "symbols per call, or use another quote source (upbit/kiwoom/korea-invest) for this symbol."
+)
+
+
 def history_records(df, limit):
     """yfinance Ticker.history() DataFrame → 표준 OHLCV records. limit 마지막 N개 cut."""
     import pandas as pd
@@ -126,6 +144,16 @@ def main():
                     result[sym] = history_records(sub, limit)
                 except (KeyError, AttributeError):
                     result[sym] = []
+        null_syms = [s for s, recs in result.items() if all_null_series(recs)]
+        if null_syms and len(null_syms) == len([s for s in result if result[s]]):
+            # Every symbol that returned rows returned nothing — the throttle, named.
+            return out(False, None, error=NULL_SERIES_MSG + f" (symbols: {', '.join(null_syms)})")
+        if null_syms:
+            # Partial throttle: keep the good series, but say which ones are hollow.
+            for s in null_syms:
+                result[s] = []
+            result['_nullSeries'] = null_syms
+            result['_nullSeriesNote'] = NULL_SERIES_MSG
         return out(True, result)
 
     if not symbol:
@@ -206,6 +234,8 @@ def main():
         # limit 명시 — 마지막 N개 cut
         if isinstance(limit, int) and limit > 0 and len(records) > limit:
             records = records[-limit:]
+        if all_null_series(records):
+            return out(False, None, error=NULL_SERIES_MSG + f" (symbol: {symbol})")
         # 캐시는 인프라 몫 — sandbox auto-cache 가 크기와 무관하게 _cacheKey 를 붙이고 큰 응답만
         # 잘라 보낸다. 모듈이 50행 임계로 스스로 records 를 빼던 옛 분기는 폐기: 응답 shape 이
         # 크기에 따라 달라져(작으면 records, 크면 없음) 소비 절차가 갈렸고, 페이지 선언형 바인딩도
