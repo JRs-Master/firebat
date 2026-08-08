@@ -145,12 +145,6 @@ impl CatalogSource for MediaCatalogSource {
         };
         items
             .into_iter()
-            // A failed generation has nothing to show — surfacing it in search only produces
-            // dead embeds (2026-08-09 실측: a gallery pull rendered failure cards for images
-            // that never existed). The gallery panel still lists failures; that is the
-            // management surface. Rendering (in-flight) items stay searchable — the embed
-            // shows the generating card and swaps itself.
-            .filter(|m| m.status.as_deref() != Some("error"))
             .map(|m| {
                 let name = m
                     .filename_hint
@@ -167,9 +161,12 @@ impl CatalogSource for MediaCatalogSource {
                 // slug/prompt only, and the model, having searched, wrote image blocks with no
                 // src at all (2026-08-09 실측: "이전 로고 두 버전" — the step's next move was
                 // not in the step's answer). System-scope files are not served under
-                // /user/media/, so only user-scope rows carry a url.
-                let url = match m.scope {
-                    Some(crate::ports::MediaScope::System) => serde_json::Value::Null,
+                // /user/media/, and a failed generation has no file at all — those rows carry
+                // no url (a dead address is worse than none).
+                let status = m.status.clone().unwrap_or_else(|| "done".to_string());
+                let url = match (&m.scope, status.as_str()) {
+                    (Some(crate::ports::MediaScope::System), _) => serde_json::Value::Null,
+                    (_, "error") => serde_json::Value::Null,
                     _ => serde_json::json!(format!("/user/media/{}.{}", m.slug, m.ext)),
                 };
                 CatalogEntry {
@@ -181,6 +178,7 @@ impl CatalogSource for MediaCatalogSource {
                         "contentType": m.content_type,
                         "createdAt": m.created_at,
                         "url": url,
+                        "status": status,
                     }),
                 }
             })

@@ -1491,9 +1491,22 @@ impl AiManager {
             let cat = mc.clone();
             async move {
                 let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
-                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                // Failed generations have nothing to show — excluded by default so "show me X"
+                // never embeds a dead address (2026-08-09 실측: a gallery pull rendered failure
+                // cards for images that never existed). `includeFailed: true` is the OTHER use:
+                // "list my failures" / "regenerate the failed one" — those rows carry status
+                // "error", no url, and regenerate_image takes their slug.
+                let include_failed = args.get("includeFailed").and_then(|v| v.as_bool()).unwrap_or(false);
+                let lim = lim_of(&args);
+                // Over-fetch, then filter: failures must not silently eat the top-k slots.
+                let hits = cat.query(&q_of(&args), lim + 8, Some(&scopes)).await?;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
+                    .filter(|m| {
+                        include_failed
+                            || m.extra.get("status").and_then(|v| v.as_str()) != Some("error")
+                    })
+                    .take(lim)
                     .map(|m| serde_json::json!({
                         "slug": m.extra.get("slug").cloned().unwrap_or_default(),
                         "name": m.name,
@@ -1502,25 +1515,27 @@ impl AiManager {
                         // The next move rides with the hit — without it the model searched,
                         // found, and then wrote image blocks with no address (2026-08-09).
                         "url": m.extra.get("url").cloned().unwrap_or_default(),
+                        "status": m.extra.get("status").cloned().unwrap_or_default(),
                         "score": m.score,
                     }))
                     .collect();
                 Ok(serde_json::json!({
                     "media": rows,
                     "count": rows.len(),
-                    "next": "To show one in chat, embed its `url` as an image block's src in a firebat-render fence."
+                    "next": "To show one in chat, embed its `url` as an image block's src in a firebat-render fence. Rows with status \"error\" have no url — never embed them; offer regenerate_image with the slug instead."
                 }))
             }
         });
         self.tools.register_handler("search_media", handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_media".to_string(),
-            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one. Each hit carries its embeddable `url` — to SHOW a found image in chat, put that url in an image block's src.".to_string(),
+            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one. Each hit carries its embeddable `url` — to SHOW a found image in chat, put that url in an image block's src. Failed generations are excluded by default; pass includeFailed:true only to LIST failures or regenerate one (their rows carry status \"error\", no url — regenerate via regenerate_image with the slug, never embed them).".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "what the image is about" },
-                    "limit": { "type": "integer", "description": "max results (default 5)" }
+                    "limit": { "type": "integer", "description": "max results (default 5)" },
+                    "includeFailed": { "type": "boolean", "description": "include failed generations (status \"error\", no url) — for listing failures or picking one to regenerate; default false" }
                 },
                 "required": ["query"],
             }),
