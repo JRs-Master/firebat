@@ -264,9 +264,11 @@ fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             ('-' extends the previous syllable across pitches, a melisma), note is a pitch name \
             like 'G4', beats counts quarter notes; chords[] = {root, beats} drives the bass line \
             (e.g. C3/G3/A3/F3). Keep it short: 8-32 notes, one verse. Returns { url } — put it \
-            in a `listening` component's audioUrl so it plays in chat. Compose ORIGINAL melodies \
-            only — do not reproduce real copyrighted songs' melodies or lyrics. The voice is \
-            deliberately robotic-cute (TTS retuned to pitch); tell the user that is the charm."
+            in a `listening` component's audioUrl so it plays in chat. Honesty: you cannot \
+            recall a real song's melody accurately — if asked for an existing song, say your \
+            melody is a NEW composition inspired by it, never claim it is the original tune. \
+            The voice is deliberately robotic-cute (TTS retuned to pitch); tell the user that \
+            is the charm."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
