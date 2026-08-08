@@ -1,5 +1,5 @@
 {
-  "title": "autotrade (해외주식/키움) — 전 종목 사이클",
+  "title": "자동매매 · 키움 미국 — 장중 루프 (5분)",
   "cronTime": "0 */5 22-23 * * 1-5 | 0 */5 0-5 * * 2-6",
   "executionMode": "pipeline",
   "pipeline": [

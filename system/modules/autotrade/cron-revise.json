@@ -1,5 +1,5 @@
 {
-  "title": "autotrade — when trades have accumulated: review the ladder, then revise one rule",
+  "title": "자동매매 — 복기·도전자 갱신 (매시 :20)",
   "cronTime": "0 20 * * * *",
   "executionMode": "pipeline",
   "pipeline": [

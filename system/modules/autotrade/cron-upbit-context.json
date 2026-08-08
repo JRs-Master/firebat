@@ -1,5 +1,5 @@
 {
-  "title": "autotrade — 상위 주기 컨텍스트 (하루 한 번)",
+  "title": "자동매매 · 업비트 — 상위 주기 봉 캐시 (매일 00:10)",
   "cronTime": "0 10 0 * * *",
   "executionMode": "pipeline",
   "pipeline": [
