@@ -284,28 +284,37 @@ export function parseFenceJson(body: string): any | undefined {
     }
     out += c;
   }
-  // pass 3: escape raw control chars INSIDE string literals (multi-line string values —
-  // never valid JSON, so escaping cannot change a valid document's meaning). Mirrors Rust
-  // render_exec `escape_control_chars_in_strings` (2026-07-12 Solar 실측 클래스).
+  // pass 3: repair string literals — raw control chars get escaped, and backslashes that begin
+  // an ILLEGAL escape get doubled (`\(`, `\quad` = LaTeX written into a JSON string without
+  // doubling the backslash; 2026-08-09 실측: the two math-bearing text blocks were the only
+  // casualties of a fence). Neither exists in valid JSON, so this cannot change a valid
+  // document's meaning. Mirrors Rust render_exec `escape_control_chars_in_strings` +
+  // `escape_invalid_escapes_in_strings`.
   let fixed = '';
-  inStr = false; esc = false;
-  for (const c of out) {
-    if (inStr) {
-      if (esc) { fixed += c; esc = false; continue; }
-      if (c === '\\') { fixed += c; esc = true; continue; }
-      if (c === '"') { fixed += c; inStr = false; continue; }
-      const code = c.charCodeAt(0);
-      if (code < 0x20) {
-        if (c === '\n') fixed += '\\n';
-        else if (c === '\r') fixed += '\\r';
-        else if (c === '\t') fixed += '\\t';
-        else fixed += '\\u' + code.toString(16).padStart(4, '0');
-        continue;
-      }
+  inStr = false;
+  for (let i = 0; i < out.length; i++) {
+    const c = out[i];
+    if (!inStr) {
+      if (c === '"') inStr = true;
       fixed += c;
       continue;
     }
-    if (c === '"') inStr = true;
+    if (c === '"') { fixed += c; inStr = false; continue; }
+    if (c === '\\') {
+      const n = out[i + 1];
+      if (n !== undefined && '"\\/bfnrt'.includes(n)) { fixed += c + n; i++; continue; }
+      if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(out.slice(i + 2, i + 6))) { fixed += '\\u'; i++; continue; }
+      fixed += '\\\\'; // illegal escape — the backslash was content (LaTeX 딜리미터류)
+      continue;
+    }
+    const code = c.charCodeAt(0);
+    if (code < 0x20) {
+      if (c === '\n') fixed += '\\n';
+      else if (c === '\r') fixed += '\\r';
+      else if (c === '\t') fixed += '\\t';
+      else fixed += '\\u' + code.toString(16).padStart(4, '0');
+      continue;
+    }
     fixed += c;
   }
   try { return JSON.parse(fixed.trim()); } catch { /* bracket-balance retry below */ }

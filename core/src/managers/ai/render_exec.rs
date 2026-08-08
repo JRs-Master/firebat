@@ -667,6 +667,69 @@ pub fn escape_control_chars_in_strings(body: &str) -> String {
     out
 }
 
+/// Escape backslashes that begin an ILLEGAL escape sequence inside JSON string literals.
+/// `\(`, `\)`, `\q`… are exactly what a model writes when it puts LaTeX (`\(f(x)\)`, `\quad`)
+/// into a fence string without doubling the backslash (2026-08-08 실측: cubic-problem fence —
+/// the two math-bearing text blocks were the only casualties; every other repair stage passes
+/// illegal escapes through untouched). A valid JSON document contains no illegal escape, so
+/// doubling those backslashes cannot change the meaning of valid input. `\uXXXX` survives only
+/// when its four hex digits are actually attached.
+///
+/// Runs BEFORE `escape_control_chars_in_strings`: a backslash followed by a raw newline becomes
+/// `\\` + newline here, and the control-char pass then turns the newline into `\n` — the other
+/// order would leave the raw newline hidden behind the escape flag.
+pub fn escape_invalid_escapes_in_strings(body: &str) -> String {
+    let chars: Vec<char> = body.chars().collect();
+    let mut out = String::with_capacity(body.len() + 16);
+    let mut in_str = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if !in_str {
+            if c == '"' {
+                in_str = true;
+            }
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_str = false;
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        if c != '\\' {
+            out.push(c);
+            i += 1;
+            continue;
+        }
+        match chars.get(i + 1) {
+            Some(&n) if matches!(n, '"' | '\\' | '/' | 'b' | 'f' | 'n' | 'r' | 't') => {
+                out.push('\\');
+                out.push(n);
+                i += 2;
+            }
+            Some(&'u')
+                if chars
+                    .get(i + 2..i + 6)
+                    .is_some_and(|h| h.iter().all(|c| c.is_ascii_hexdigit())) =>
+            {
+                out.push('\\');
+                out.push('u');
+                i += 2;
+            }
+            _ => {
+                // Illegal escape (or a trailing backslash) — the backslash was content.
+                out.push('\\');
+                out.push('\\');
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
 /// Repair unbalanced brackets/braces outside string literals — a weak-model emission slip
 /// (2026-07-12 실측: a 1,625-char propose_plan arg ended `}}]}]}]}` — surplus closers — so
 /// strict AND tolerant parses both died at the tail and the whole plan collapsed to `{}`).
@@ -735,7 +798,9 @@ pub fn balance_json_brackets(body: &str) -> String {
 fn parse_fence_json(body: &str) -> Option<Value> {
     let trimmed = body.trim();
     serde_json::from_str(trimmed).ok().or_else(|| {
-        let cleaned = escape_control_chars_in_strings(&tolerant_json_cleanup(trimmed));
+        let cleaned = escape_control_chars_in_strings(&escape_invalid_escapes_in_strings(
+            &tolerant_json_cleanup(trimmed),
+        ));
         serde_json::from_str(cleaned.trim())
             .ok()
             .or_else(|| serde_json::from_str(balance_json_brackets(&cleaned).trim()).ok())
@@ -867,7 +932,9 @@ fn salvage_fence_items(body: &str) -> Option<(Vec<Value>, Vec<Value>)> {
         while let Some(t) = slice.strip_suffix(',').or_else(|| slice.strip_suffix(']')) {
             slice = t.trim_end();
         }
-        let cleaned = escape_control_chars_in_strings(&tolerant_json_cleanup(slice));
+        let cleaned = escape_control_chars_in_strings(&escape_invalid_escapes_in_strings(
+            &tolerant_json_cleanup(slice),
+        ));
         let candidate = balance_json_brackets(cleaned.trim());
         match serde_json::from_str::<Value>(candidate.trim()) {
             Ok(v) if v.is_object() => good.push(v),
@@ -1026,6 +1093,32 @@ mod tests {
         assert_eq!(good.len(), 2);
         assert_eq!(failed.len(), 1);
         assert!(failed[0]["raw"].as_str().unwrap().contains(":::"));
+    }
+
+    /// The measured 2026-08-09 shape: LaTeX delimiters written into a JSON string without
+    /// doubling the backslash — `\(`, `\)` are illegal escapes, and before this stage both the
+    /// whole-document chain and item salvage excluded exactly the math-bearing blocks.
+    #[test]
+    fn illegal_latex_escapes_are_repaired_not_excluded() {
+        let body = r#"[
+  { "type": "header", "props": { "text": "문제" } },
+  { "type": "text", "props": { "content": "함수 \( f(x) = x^3 \) 에 대하여 \quad 답하시오." } }
+]"#;
+        let parsed = parse_fence_json(body).expect("the illegal-escape repair must land");
+        let content = parsed[1]["props"]["content"].as_str().unwrap();
+        assert!(content.contains("\\( f(x) = x^3 \\)"), "LaTeX survives as literal text");
+        assert!(content.contains("\\quad"));
+    }
+
+    /// Legal escapes and complete \uXXXX pass through untouched; a \u without its hex digits
+    /// is content and gets its backslash doubled.
+    #[test]
+    fn legal_escapes_survive_the_illegal_escape_repair() {
+        let s = r#"{"a": "line\nbreak \"q\" \\ slash\/ 가 \uzz"}"#;
+        let fixed = escape_invalid_escapes_in_strings(s);
+        assert_eq!(fixed, r#"{"a": "line\nbreak \"q\" \\ slash\/ 가 \\uzz"}"#);
+        let v: Value = serde_json::from_str(&fixed).expect("repaired string parses");
+        assert_eq!(v["a"].as_str().unwrap(), "line\nbreak \"q\" \\ slash/ 가 \\uzz");
     }
 
     /// A valid fence never reaches salvage — the whole-document parse wins first.
