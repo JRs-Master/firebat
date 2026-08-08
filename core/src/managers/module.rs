@@ -115,6 +115,11 @@ pub struct StreamWatchMeta {
     pub label: Option<String>,
     #[serde(default)]
     pub mock: bool,
+    /// The stream's `tick1s` declaration, resolved from config at registration — the event sink
+    /// feeds matching frames to the 1-second aggregator (core collects; a module-private tick
+    /// sqlite would be the fourth one). None = this watch collects nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tick1s: Option<serde_json::Value>,
     pub created_ms: i64,
 }
 
@@ -1156,6 +1161,12 @@ impl ModuleManager {
             stream_key,
             &uuid::Uuid::new_v4().simple().to_string()[..8]
         );
+        // Collection is declared on the stream, not chosen by the caller — resolved once here so
+        // the sink (a sync closure) reads it off the meta without touching config.
+        let tick1s = self
+            .module_config(module_name)
+            .await
+            .and_then(|c| c.pointer(&format!("/ws/streams/{stream_key}/tick1s")).cloned());
         let meta = StreamWatchMeta {
             topic: format!("ws-stream:{watch_id}"),
             watch_id,
@@ -1168,6 +1179,7 @@ impl ModuleManager {
             notify_job: notify.job,
             label,
             mock,
+            tick1s,
             created_ms: chrono::Utc::now().timestamp_millis(),
         };
         self.launch_stream(meta.clone()).await?;

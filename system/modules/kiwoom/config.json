@@ -748,7 +748,21 @@
         "routeItemArg": "item",
         "routeTypeArg": "type",
         "chartTimeField": "20",
-        "chartDayVolumeField": "13"
+        "chartDayVolumeField": "13",
+        "tick1s": {
+          "items": "data",
+          "type": {
+            "field": "type",
+            "equals": "0B"
+          },
+          "symbol": "item",
+          "values": "values",
+          "map": {
+            "price": "10",
+            "signedVolume": "15",
+            "strength": "228"
+          }
+        }
       },
       "us-quotes": {
         "endpoint": "wss://api.kiwoom.com:10000/api/us/websocket",
@@ -832,7 +846,21 @@
         },
         "chartTimeField": "20",
         "chartDateField": "22",
-        "chartDayVolumeField": "13"
+        "chartDayVolumeField": "13",
+        "tick1s": {
+          "items": "data",
+          "type": {
+            "field": "type",
+            "equals": "0B"
+          },
+          "symbol": "item",
+          "values": "values",
+          "map": {
+            "price": "10",
+            "signedVolume": "15",
+            "strength": "228"
+          }
+        }
       },
       "condition": {
         "preFrames": [

@@ -463,11 +463,18 @@ async fn main() -> Result<()> {
     // The cron port is created above, so an event-driven watch can wake a registered pipeline
     // rather than waiting for its next scheduled minute.
     let cron_for_sink = cron_adapter.clone();
+    // 1-second tick collector — a watch whose stream declares `tick1s` writes pre-candle rows
+    // (OHLC + buy/sell split per second) into the shared timeseries store. Core aggregates;
+    // no module grows a fourth private sqlite for it.
+    let tick_agg = timeseries_store
+        .clone()
+        .map(firebat_infra::adapters::tick_agg::TickAggregator::new);
     // Stream sink — realtime frames → event bus(SSE /api/events) + per-watch notify.
     // (adapter 생성 뒤에 배선하는 이유 = closure 가 module_manager 를 잡아야 notify 라우팅 가능.)
     {
         let event_manager = event_manager.clone();
         let mm = module_manager.clone();
+        let tick_agg_sink = tick_agg.clone();
         // Per-watch coalescing state for `module:` sinks.
         #[derive(Default)]
         struct SinkSlot {
@@ -484,6 +491,9 @@ async fn main() -> Result<()> {
                 data: frame.clone(),
             });
             if let Some(meta) = mm.stream_watch_meta(&spec.watch_id) {
+                if let (Some(agg), Some(cfg)) = (&tick_agg_sink, &meta.tick1s) {
+                    agg.ingest(&meta.module, meta.mock, cfg, &frame);
+                }
                 if let Some(module) = meta
                     .notify
                     .as_deref()
@@ -970,6 +980,74 @@ async fn main() -> Result<()> {
             tts: tts_adapter.clone(),
         },
     );
+
+    // read_ticks — the tick collector's read half. Registered here rather than in the core
+    // registry because the timeseries store is an infra adapter core never holds (the same
+    // post-hoc pattern as spawn_subagent). ToolManager registration mirrors into MCP.
+    if let Some(store) = &timeseries_store {
+        let store = store.clone();
+        tool_manager.register_tool(
+            firebat_core::managers::tool::ToolDefinition {
+                name: "read_ticks".to_string(),
+                description: "Read collected 1-second tick bars (pre-candle order flow: OHLC, \
+                    buy/sell volume split, per-second trade count and any stream-declared extras \
+                    like strength). Rows exist only for symbols a running stream watch collects \
+                    (the stream's config declares `tick1s`). Args: module (broker module that \
+                    owns the stream, e.g. kiwoom), symbol, mock (practice host stream, default \
+                    false), count (newest N rows, default 600, max 3600), before (14-digit UTC \
+                    datetime key to page into the past). Keys `t` are 14-digit UTC."
+                    .to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "required": ["module", "symbol"],
+                    "properties": {
+                        "module": {"type": "string"},
+                        "symbol": {"type": "string"},
+                        "mock": {"type": "boolean"},
+                        "count": {"type": "number"},
+                        "before": {"type": "number"}
+                    }
+                }),
+                source: "core".to_string(),
+            },
+            move |args| {
+                let store = store.clone();
+                async move {
+                    let module = args.get("module").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    let symbol = args.get("symbol").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                    if module.is_empty() || symbol.is_empty() {
+                        return Err("module 과 symbol 이 필요합니다".to_string());
+                    }
+                    let mock = args.get("mock").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let count = args
+                        .get("count")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(600)
+                        .clamp(1, 3600) as usize;
+                    let before = args
+                        .get("before")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(99_999_999_999_999);
+                    let key = format!(
+                        "tick1s:{}:{}:{}",
+                        module,
+                        if mock { "mock" } else { "real" },
+                        symbol
+                    );
+                    let rows = store.read_before(&key, before, count);
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "key": key,
+                        "count": rows.len(),
+                        "rows": rows,
+                        "note": if rows.is_empty() {
+                            "행이 없습니다 — 그 종목을 걷는 watch 가 돌고 있는지 stream_watch_list 로 확인하세요 (스트림 config 에 tick1s 선언 + watch 등록이 수집의 전부입니다)"
+                        } else { "" },
+                    }))
+                }
+            },
+        );
+    }
 
     // ScheduleManager 에 hooks 저장 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
     // + runWhen 평가 + retry loop + notify hook + oneShot 자동 취소 활성.
