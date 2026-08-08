@@ -32,7 +32,7 @@ pub struct ComponentDef {
     pub props_schema: serde_json::Value,
 }
 
-/// 35개 component 정의 (components.json) — 27 + quiz/quiz_group(exam-prep)
+/// component 정의 전체 (components.json — 개수의 진실은 loads_all_components 테스트)
 /// + 인터랙티브 6 (form/button/slider/tabs/accordion/carousel).
 /// 첫 호출 시 lazy init. 이후 cached.
 pub fn components() -> &'static Vec<ComponentDef> {
@@ -434,8 +434,8 @@ mod tests {
     #[test]
     fn loads_all_components() {
         let comps = components();
-        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept + listening(LC) + live_feed/live_chart(WS 2b) + live_stock_chart(S7) = 43.
-        assert_eq!(comps.len(), 43, "components.json 의 43개 컴포넌트 모두 설정되어야");
+        // components.json 전체 — 27 + quiz/quiz_group + 인터랙티브 6 + sentence + vocab + passage + concept + listening(LC) + live_feed/live_chart(WS 2b) + live_stock_chart(S7) + function_plot = 44.
+        assert_eq!(comps.len(), 44, "components.json 의 44개 컴포넌트 모두 설정되어야");
     }
 
     #[test]

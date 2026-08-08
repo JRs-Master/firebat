@@ -2338,6 +2338,89 @@
     }
   },
   {
+    "name": "function_plot",
+    "componentType": "FunctionPlot",
+    "description": "Mathematical function graph — y = f(x) curves (parabola, cubic, trig, exp/log). Declare ONLY the formula and the x range; the client samples and draws the curve, so never hand-compute coordinate points. Grammar: variable x, operators + - * / ^, implicit multiplication (2x, 3sin(x)), functions sin cos tan asin acos atan sinh cosh tanh sqrt abs exp ln log log10 floor ceil round sign, constants pi e tau. Multiple curves compare in one frame via expressions[]. For measured/data series (prices, statistics) use chart or stock_chart instead — this component is for formulas.",
+    "semanticText": "함수 그래프 수학 이차함수 삼차함수 다항식 포물선 삼각함수 사인 코사인 탄젠트 지수함수 로그함수 무리함수 곡선 개형 y=f(x) 플롯 그리기 미분 적분 방정식 근 함수식 수학그래프",
+    "propsSchema": {
+      "type": "object",
+      "required": [
+        "expressions"
+      ],
+      "additionalProperties": false,
+      "synonyms": {
+        "expr": "expressions",
+        "functions": "expressions",
+        "formulas": "expressions",
+        "curves": "expressions"
+      },
+      "properties": {
+        "expressions": {
+          "type": "array",
+          "description": "Curves to draw. Each item {expr, label?, color?} — expr is a formula in x, e.g. \"x^2\", \"x^3 - 3x\", \"sin(x)\", \"2sin(x) + cos(2x)\", \"e^(-x^2)\". A bare string item is accepted as the expr. Do NOT send sampled points.",
+          "items": {
+            "type": [
+              "object",
+              "string"
+            ]
+          }
+        },
+        "xMin": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Left edge of the x range (default -10). Use decimals for pi multiples, e.g. -6.283 for -2pi"
+        },
+        "xMax": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Right edge of the x range (default 10)"
+        },
+        "yMin": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Optional — omitted means the y window fits the sampled values (recommended)"
+        },
+        "yMax": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "xLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "yLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "showGrid": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "default true"
+        }
+      }
+    }
+  },
+  {
     "name": "code",
     "componentType": "Code",
     "description": "Code snippet — automatic highlight.js syntax highlighting. Accurate when language is set. Common in blogs, docs, READMEs.",

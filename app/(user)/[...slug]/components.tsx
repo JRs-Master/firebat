@@ -18,6 +18,7 @@ import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { TIME } from '../../../lib/util/time';
 import { inlineFormatTagsToMarkdown, maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript } from '../../../lib/util/md';
+import { compileExpression, sampleFunction, fitYRange, niceTicks, tickLabel, viewSegments } from '../../../lib/util/function-plot';
 import { loadCdn } from '@/lib/util/load-cdn';
 import { CodeComp } from '@/app/components/CodeBlock';
 
@@ -67,6 +68,7 @@ const TYPE_ALIAS: Record<string, string> = {
   listening: 'Listening', lc: 'Listening',
   live_feed: 'LiveFeed', livefeed: 'LiveFeed', live_chart: 'LiveChart', livechart: 'LiveChart',
   live_stock_chart: 'LiveStockChart', livestockchart: 'LiveStockChart',
+  function_plot: 'FunctionPlot', functionplot: 'FunctionPlot', fplot: 'FunctionPlot',
   module: 'Module',
 };
 
@@ -798,6 +800,7 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
     case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} cone={p.cone} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
     case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
+    case 'FunctionPlot':  return <FunctionPlotComp expressions={p.expressions ?? p.expr ?? p.functions ?? []} xMin={p.xMin} xMax={p.xMax} yMin={p.yMin} yMax={p.yMax} title={p.title} xLabel={p.xLabel} yLabel={p.yLabel} showGrid={p.showGrid} />;
     case 'Code':          return <CodeComp code={p.code ?? ''} language={p.language ?? 'plaintext'} showLineNumbers={p.showLineNumbers !== false} title={p.title} />;
     case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
     case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
@@ -5644,6 +5647,107 @@ function DiagramComp({ code, theme }: { code: string; theme?: string | null }) {
 }
 
 // ── Math (KaTeX) ────────────────────────────────────────────────────────────
+/**
+ * FunctionPlot — y = f(x) curves from a declared formula. The model writes the expression and
+ * the range; every coordinate is sampled here (lib/util/function-plot), so a parabola never
+ * depends on hand-computed points. SVG like every other chart in this file.
+ */
+function FunctionPlotComp({ expressions, xMin, xMax, yMin, yMax, title, xLabel, yLabel, showGrid }: {
+  expressions: Array<{ expr?: string; label?: string; color?: string } | string>;
+  xMin?: number; xMax?: number; yMin?: number | null; yMax?: number | null;
+  title?: string; xLabel?: string; yLabel?: string; showGrid?: boolean;
+}) {
+  const PALETTE = ['#2563eb', '#dc2626', '#059669', '#d97706', '#0891b2'];
+  const x0 = Number.isFinite(Number(xMin)) ? Number(xMin) : -10;
+  const x1raw = Number.isFinite(Number(xMax)) ? Number(xMax) : 10;
+  const x1 = x1raw > x0 ? x1raw : x0 + 20;
+
+  // A bare string ("sin(x)") and a single object both mean one curve.
+  const list = Array.isArray(expressions) ? expressions : expressions ? [expressions] : [];
+  const curves = list
+    .map((e, i) => {
+      const src = typeof e === 'string' ? e : String(e?.expr ?? '');
+      const label = typeof e === 'object' && e?.label ? e.label : src;
+      const color = (typeof e === 'object' && e?.color) || PALETTE[i % PALETTE.length];
+      const { fn, error } = compileExpression(src);
+      return { src, label, color, fn, error };
+    })
+    .filter(c => c.src);
+  const errors = curves.filter(c => c.error);
+  const drawn = curves.filter(c => c.fn).map(c => ({ ...c, sampled: sampleFunction(c.fn!, x0, x1) }));
+
+  const allY = drawn.flatMap(c => c.sampled.yValues);
+  const { lo, hi } = fitYRange(allY, yMin, yMax);
+
+  const W = 640, H = 400, mL = 46, mR = 14, mT = title ? 30 : 12, mB = 34;
+  const iw = W - mL - mR, ih = H - mT - mB;
+  const sx = (x: number) => mL + ((x - x0) / (x1 - x0)) * iw;
+  const sy = (y: number) => mT + ((hi - y) / (hi - lo)) * ih;
+
+  const paths = drawn.map(c => {
+    const d = viewSegments(c.sampled, lo, hi)
+      .map(seg => seg
+        .map((pt, i) => `${i === 0 ? 'M' : 'L'}${sx(pt.x).toFixed(1)},${sy(pt.y).toFixed(1)}`)
+        .join(' '))
+      .join(' ');
+    return { ...c, d };
+  });
+
+  const xTicks = niceTicks(x0, x1);
+  const yTicks = niceTicks(lo, hi, 7);
+  const showLegend = paths.length > 1 || paths.some(c => typeof c.label === 'string' && c.label !== c.src);
+
+  return (
+    <div className="w-full rounded-xl border border-slate-200 bg-white p-3">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
+        aria-label={title || paths.map(c => c.label).join(', ')}>
+        {title && (
+          <text x={W / 2} y={18} textAnchor="middle" className="fill-slate-700"
+            fontSize="14" fontWeight="bold">{title}</text>
+        )}
+        {showGrid !== false && (
+          <g stroke="#e2e8f0" strokeWidth="1">
+            {xTicks.map(v => <line key={`gx${v}`} x1={sx(v)} y1={mT} x2={sx(v)} y2={mT + ih} />)}
+            {yTicks.map(v => <line key={`gy${v}`} x1={mL} y1={sy(v)} x2={mL + iw} y2={sy(v)} />)}
+          </g>
+        )}
+        {/* The zero axes, when they are in frame — the anchor a math reader looks for. */}
+        {lo < 0 && hi > 0 && <line x1={mL} y1={sy(0)} x2={mL + iw} y2={sy(0)} stroke="#94a3b8" strokeWidth="1.5" />}
+        {x0 < 0 && x1 > 0 && <line x1={sx(0)} y1={mT} x2={sx(0)} y2={mT + ih} stroke="#94a3b8" strokeWidth="1.5" />}
+        <g fontSize="10" className="fill-slate-500">
+          {xTicks.map(v => (
+            <text key={`tx${v}`} x={sx(v)} y={mT + ih + 14} textAnchor="middle">{tickLabel(v)}</text>
+          ))}
+          {yTicks.map(v => (
+            <text key={`ty${v}`} x={mL - 6} y={sy(v) + 3} textAnchor="end">{tickLabel(v)}</text>
+          ))}
+        </g>
+        {xLabel && <text x={mL + iw} y={mT + ih + 28} textAnchor="end" fontSize="11" className="fill-slate-500">{xLabel}</text>}
+        {yLabel && <text x={mL + 4} y={mT - 2} fontSize="11" className="fill-slate-500">{yLabel}</text>}
+        {paths.map(c => (
+          <path key={c.src + c.color} d={c.d} fill="none" stroke={c.color} strokeWidth="2"
+            strokeLinejoin="round" strokeLinecap="round" />
+        ))}
+      </svg>
+      {showLegend && (
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 px-1">
+          {paths.map(c => (
+            <span key={c.src + c.color} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+              <span className="inline-block w-3 h-0.5 rounded" style={{ background: c.color }} />
+              {c.label}
+            </span>
+          ))}
+        </div>
+      )}
+      {errors.length > 0 && (
+        <div className="mt-1.5 px-1 text-[11px] text-red-500">
+          {errors.map(c => <div key={c.src}>{c.src}: {c.error}</div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MathComp({ expression, block }: { expression: string; block: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
