@@ -48,6 +48,7 @@ export function GalleryPanel({
   hubContext?: GalleryHubContext;
 } = {}) {
   const searchId = useId();
+  const t = useTranslations();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -79,7 +80,7 @@ export function GalleryPanel({
       if (hubContext) {
         return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?slug=${encodeURIComponent(slug)}`, {
           method: 'DELETE', headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
-        }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }));
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
       }
       return apiDelete<{ success: boolean; error?: string }>(`/api/media/list?slug=${encodeURIComponent(slug)}`, { category: 'gallery' });
     },
@@ -89,11 +90,11 @@ export function GalleryPanel({
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
           body: JSON.stringify({ op: 'regenerate', slug }),
-        }).then(r => r.json()).catch(() => ({ success: false, error: '네트워크 오류' }));
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
       }
       return apiPost<{ success: boolean; error?: string }>(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, undefined, { category: 'gallery' });
     },
-  }), [hubContext]);
+  }), [hubContext, t]);
 
   const fetchList = useCallback(async (reset: boolean) => {
     setLoading(true);
@@ -151,9 +152,9 @@ export function GalleryPanel({
     // 사용처 차등 confirm — 페이지에 설정된 이미지면 빨간 경고 + 페이지 목록.
     const usage = selectedUsage;
     const msg = usage.length > 0
-      ? `이 이미지는 ${usage.length}개 페이지에 사용 중입니다:\n\n${usage.map(u => `  • /${u.pageSlug}`).join('\n')}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?`
-      : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
-    if (!await confirmDialog({ title: '이미지 삭제', message: msg, danger: true, okLabel: '삭제' })) return;
+      ? t('gallery.delete_in_use', { count: usage.length, pages: usage.map(u => `  • /${u.pageSlug}`).join('\n') })
+      : t('gallery.delete_confirm');
+    if (!await confirmDialog({ title: t('gallery.delete_title'), message: msg, danger: true, okLabel: t('gallery.delete_ok') })) return;
     try {
       const data = await backend.remove(slug);
       if (data.success) {
@@ -161,10 +162,10 @@ export function GalleryPanel({
         setTotal(prev => Math.max(0, prev - 1));
         setSelectedIndex(null);
       } else {
-        await alertDialog({ title: '삭제 실패', message: data.error || 'unknown', danger: true });
+        await alertDialog({ title: t('gallery.delete_failed'), message: data.error || 'unknown', danger: true });
       }
     } catch (err: any) {
-      await alertDialog({ title: '삭제 실패', message: err.message, danger: true });
+      await alertDialog({ title: t('gallery.delete_failed'), message: err.message, danger: true });
     }
   };
 
@@ -174,12 +175,12 @@ export function GalleryPanel({
     try {
       const data = await backend.regenerate(slug);
       if (!data.success) {
-        await alertDialog({ title: '재생성 실패', message: data.error || 'unknown', danger: true });
+        await alertDialog({ title: t('gallery.regen_failed'), message: data.error || 'unknown', danger: true });
       }
       // 성공/실패 모두 SSE gallery:refresh 가 자동 갱신. 모달은 닫음.
       setSelectedIndex(null);
     } catch (err: any) {
-      await alertDialog({ title: '재생성 실패', message: err.message, danger: true });
+      await alertDialog({ title: t('gallery.regen_failed'), message: err.message, danger: true });
     } finally {
       setRegenerating(false);
     }
@@ -191,13 +192,13 @@ export function GalleryPanel({
       <div className="shrink-0 flex flex-col gap-2 px-3 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <label htmlFor={searchId} className="sr-only">갤러리 검색</label>
+          <label htmlFor={searchId} className="sr-only">{t('gallery.search_label')}</label>
           <input
             type="text"
-            placeholder="프롬프트·파일명·모델로 검색"
+            placeholder={t('gallery.search_placeholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
-            aria-label="갤러리 검색"
+            aria-label={t('gallery.search_label')}
             className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="gallerySearch" autoComplete="off" id={searchId}
           />
         </div>
@@ -210,12 +211,14 @@ export function GalleryPanel({
                 scope === s ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
               }`}
             >
-              {s === 'user' ? '사용자' : s === 'system' ? '시스템' : '전체'}
+              {s === 'user' ? t('gallery.scope_user') : s === 'system' ? t('gallery.scope_system') : t('gallery.scope_all')}
             </button>
           ))}
         </div>
         <div className="text-[10px] text-slate-400">
-          {total > 0 ? `총 ${total}개${items.length < total ? ` (${items.length} 로드됨)` : ''}` : loading ? '로딩 중…' : '이미지 없음'}
+          {total > 0
+            ? `${t('gallery.total_count', { total })}${items.length < total ? t('gallery.loaded_suffix', { loaded: items.length }) : ''}`
+            : loading ? t('gallery.loading') : t('gallery.empty')}
         </div>
       </div>
 
@@ -224,8 +227,8 @@ export function GalleryPanel({
         {items.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
             <ImageIcon size={32} strokeWidth={1.5} />
-            <p className="text-[12px]">이미지가 없어요</p>
-            <p className="text-[10px] text-slate-300">채팅에서 "이미지 만들어줘" 로 생성하세요</p>
+            <p className="text-[12px]">{t('gallery.empty_title')}</p>
+            <p className="text-[10px] text-slate-300">{t('gallery.empty_hint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
@@ -234,7 +237,7 @@ export function GalleryPanel({
               const isRendering = item.status === 'rendering';
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               const tooltipLabel = isError
-                ? `생성 실패: ${item.errorMsg?.slice(0, 80) ?? 'unknown'}`
+                ? t('gallery.failed_tooltip', { msg: item.errorMsg?.slice(0, 80) ?? 'unknown' })
                 : (item.filenameHint || item.slug);
               return (
                 <Tooltip key={`${item.scope}-${item.slug}`} label={tooltipLabel}>
@@ -251,12 +254,12 @@ export function GalleryPanel({
                   {isError ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-red-500">
                       <AlertTriangle size={20} />
-                      <span className="text-[9px] font-bold">생성 실패</span>
+                      <span className="text-[9px] font-bold">{t('gallery.failed_badge')}</span>
                     </div>
                   ) : isRendering ? (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-blue-500">
                       <Loader2 size={20} className="animate-spin" />
-                      <span className="text-[9px] font-bold">생성 중</span>
+                      <span className="text-[9px] font-bold">{t('gallery.generating_badge')}</span>
                     </div>
                   ) : (
                     <img
@@ -284,7 +287,7 @@ export function GalleryPanel({
             disabled={loading}
             className="w-full mt-2 py-2 text-[11px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors disabled:opacity-50"
           >
-            {loading ? <Loader2 size={12} className="animate-spin inline" /> : `더 보기 (${total - items.length})`}
+            {loading ? <Loader2 size={12} className="animate-spin inline" /> : t('gallery.load_more', { count: total - items.length })}
           </button>
         )}
       </div>
@@ -377,7 +380,7 @@ function MediaDetailModal({
                 onClick={onPrev}
                 disabled={!hasPrev}
                 className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
-                aria-label="이전"
+                aria-label={t('gallery.aria_prev')}
               >
                 <ChevronLeft size={18} />
               </button>
@@ -387,12 +390,12 @@ function MediaDetailModal({
                 onClick={onNext}
                 disabled={!hasNext}
                 className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
-                aria-label="다음"
+                aria-label={t('gallery.aria_next')}
               >
                 <ChevronRight size={18} />
               </button>
             </Tooltip>
-            <button onClick={onClose} className="md:ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label="닫기">
+            <button onClick={onClose} className="md:ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label={t('gallery.aria_close')}>
               <X size={18} />
             </button>
           </div>
@@ -415,19 +418,19 @@ function MediaDetailModal({
             {isError ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6">
                 <AlertTriangle size={32} className="text-red-500" />
-                <div className="text-sm font-bold text-red-700">이미지 생성 실패</div>
+                <div className="text-sm font-bold text-red-700">{t('gallery.gen_failed_title')}</div>
                 {item.errorMsg && (
                   <p className="text-[11px] text-red-600 break-words leading-relaxed max-w-xs">{item.errorMsg}</p>
                 )}
                 {item.prompt && (
-                  <p className="text-[10px] text-slate-500 italic mt-1">위 프롬프트로 재생성을 시도할 수 있습니다.</p>
+                  <p className="text-[10px] text-slate-500 italic mt-1">{t('gallery.gen_failed_retry_hint')}</p>
                 )}
               </div>
             ) : item.status === 'rendering' ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6 text-blue-600">
                 <Loader2 size={32} className="animate-spin" />
-                <div className="text-sm font-bold">이미지 생성 중…</div>
-                <p className="text-[11px] text-slate-500 italic mt-1">완료 후 자동으로 표시됩니다.</p>
+                <div className="text-sm font-bold">{t('gallery.generating_title')}</div>
+                <p className="text-[11px] text-slate-500 italic mt-1">{t('gallery.generating_hint')}</p>
               </div>
             ) : (
               <img
@@ -442,7 +445,7 @@ function MediaDetailModal({
               onClick={onPrev}
               disabled={!hasPrev}
               className="md:hidden absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
-              aria-label="이전"
+              aria-label={t('gallery.aria_prev')}
             >
               <ChevronLeft size={20} />
             </button>
@@ -450,7 +453,7 @@ function MediaDetailModal({
               onClick={onNext}
               disabled={!hasNext}
               className="md:hidden absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
-              aria-label="다음"
+              aria-label={t('gallery.aria_next')}
             >
               <ChevronRight size={20} />
             </button>
@@ -462,45 +465,45 @@ function MediaDetailModal({
             <div className="md:flex-1 md:min-h-[60px] md:overflow-y-auto pr-1 border-b border-slate-100 pb-2">
               {item.prompt && (
                 <div className="mb-2">
-                  <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> 프롬프트</div>
+                  <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> {t('gallery.prompt')}</div>
                   <p className="text-slate-700 break-words leading-relaxed">{item.prompt}</p>
                 </div>
               )}
               {item.revisedPrompt && item.revisedPrompt !== item.prompt && (
                 <div>
-                  <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">AI 수정본</div>
+                  <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">{t('gallery.revised_prompt')}</div>
                   <p className="text-slate-600 break-words italic leading-relaxed">{item.revisedPrompt}</p>
                 </div>
               )}
               {!item.prompt && !item.revisedPrompt && (
-                <p className="text-slate-400 italic text-[11px]">프롬프트 정보 없음</p>
+                <p className="text-slate-400 italic text-[11px]">{t('gallery.no_prompt')}</p>
               )}
             </div>
 
             {/* 메타 정보 — 항상 같은 행 수 (누락은 "—" placeholder). 위치 완전 고정 */}
             <div className="shrink-0 flex flex-col gap-1.5">
-              <MetaRow icon={<Calendar size={10} />} label="생성" value={createdStr} />
-              <MetaRow label="모델" value={item.model || '—'} />
-              <MetaRow label="사이즈" value={item.size || '—'} />
-              <MetaRow label="품질" value={item.quality || '—'} />
-              <MetaRow icon={<Ruler size={10} />} label="해상도" value={(item.width && item.height) ? `${item.width} × ${item.height}` : '—'} />
+              <MetaRow icon={<Calendar size={10} />} label={t('gallery.meta_created')} value={createdStr} />
+              <MetaRow label={t('gallery.meta_model')} value={item.model || '—'} />
+              <MetaRow label={t('gallery.meta_size')} value={item.size || '—'} />
+              <MetaRow label={t('gallery.meta_quality')} value={item.quality || '—'} />
+              <MetaRow icon={<Ruler size={10} />} label={t('gallery.meta_resolution')} value={(item.width && item.height) ? `${item.width} × ${item.height}` : '—'} />
               <MetaRow
                 icon={<Crop size={10} />}
-                label="비율"
+                label={t('gallery.meta_ratio')}
                 value={item.aspectRatio
                   ? `${item.aspectRatio}${item.focusPoint ? ` (${typeof item.focusPoint === 'string' ? item.focusPoint : 'xy'})` : ''}`
                   : '—'}
               />
-              <MetaRow label="원본" value={`${sizeKb} KB · ${item.ext.toUpperCase()}`} />
+              <MetaRow label={t('gallery.meta_original')} value={`${sizeKb} KB · ${item.ext.toUpperCase()}`} />
               <MetaRow label="Variants" value={item.variants && item.variants.length > 0
-                ? `${item.variants.length}개 (${[...new Set(item.variants.map(v => v.format))].join('/')})`
-                : '없음'} />
-              <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
+                ? t('gallery.variants_value', { count: item.variants.length, formats: [...new Set(item.variants.map(v => v.format))].join('/') })
+                : t('gallery.none')} />
+              <MetaRow label="Blurhash" value={item.blurhash ? t('gallery.blurhash_yes') : '✗'} />
               {/* 사용처 — 페이지 PageSpec 안 설정된 곳. 빈 배열 = '사용 안 됨'. */}
               <div className="flex items-start gap-1.5 text-[11px]">
-                <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">사용처</span>
+                <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">{t('gallery.usage')}</span>
                 {usage.length === 0 ? (
-                  <span className="text-slate-400 italic">사용 안 됨</span>
+                  <span className="text-slate-400 italic">{t('gallery.usage_none')}</span>
                 ) : (
                   <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                     {usage.slice(0, 5).map(u => (
@@ -515,7 +518,7 @@ function MediaDetailModal({
                       </a>
                     ))}
                     {usage.length > 5 && (
-                      <span className="text-slate-400 text-[10px]">+{usage.length - 5}개 더</span>
+                      <span className="text-slate-400 text-[10px]">{t('gallery.usage_more', { count: usage.length - 5 })}</span>
                     )}
                   </div>
                 )}
@@ -540,8 +543,8 @@ function MediaDetailModal({
                   }`}
                 >
                   {regenerating
-                    ? <><Loader2 size={12} className="animate-spin" /> 재생성 중…</>
-                    : <><RefreshCw size={12} /> {isError ? '같은 프롬프트로 재시도' : '재생성'}</>}
+                    ? <><Loader2 size={12} className="animate-spin" /> {t('gallery.regenerating')}</>
+                    : <><RefreshCw size={12} /> {isError ? t('gallery.retry_same_prompt') : t('gallery.regenerate')}</>}
                 </button>
               )}
               {!isError && (
@@ -550,9 +553,9 @@ function MediaDetailModal({
                     onClick={() => copy(url, 'url')}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                   >
-                    <Copy size={12} /> URL 복사
+                    <Copy size={12} /> {t('gallery.copy_url')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel="복사됨" absolute />
+                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel={t('gallery.copied')} absolute />
                 </div>
               )}
               {!isError && (
@@ -561,16 +564,16 @@ function MediaDetailModal({
                     onClick={() => copy(`![${item.filenameHint || ''}](${url})`, 'md')}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                   >
-                    <Copy size={12} /> 마크다운 복사
+                    <Copy size={12} /> {t('gallery.copy_md')}
                   </button>
-                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel="복사됨" absolute />
+                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel={t('gallery.copied')} absolute />
                 </div>
               )}
               <button
                 onClick={onDelete}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors"
               >
-                <Trash2 size={12} /> 삭제
+                <Trash2 size={12} /> {t('gallery.delete')}
               </button>
             </div>
           </div>
