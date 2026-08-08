@@ -3597,9 +3597,11 @@ const inlineMdComponents = {
 function InlineMd({ text }: { text: string | number | null | undefined }) {
   const s = cleanPlainText(text);
   if (!s) return null;
+  // normalizeLatexDelimiters: \( \) → $ so remark-math sees it — list items and table cells get
+  // the same treatment prose does (the model writes math identically everywhere).
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={inlineMdComponents}>
-      {mdReady(s)}
+      {mdReady(normalizeLatexDelimiters(s))}
     </ReactMarkdown>
   );
 }
@@ -3632,11 +3634,11 @@ function AlertComp({ message, type = 'info', title, action }: {
       <div className="min-w-0 flex-1">
         {normTitle && (
           <div className={`font-bold text-sm mb-1 ${s.text}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(title ?? '')}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(normalizeLatexDelimiters(title ?? ''))}</ReactMarkdown>
           </div>
         )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(message)}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={alertMdComponents}>{mdReady(normalizeLatexDelimiters(message))}</ReactMarkdown>
         </div>
         {action?.label && action?.href && (
           <a
@@ -4556,7 +4558,7 @@ function KeyValueComp({ title, items, columns = 2 }: {
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden my-1">
       {title && (
         <div className="px-3 sm:px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-800">
-          {cleanPlainText(title)}
+          {renderInlineMath(title)}
         </div>
       )}
       <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-6 px-3 sm:px-4 py-1`}>
@@ -5729,10 +5731,12 @@ function FunctionPlotComp({ expressions, xMin, xMax, yMin, yMax, title, xLabel, 
   const showLegend = paths.length > 1 || paths.some(c => typeof c.label === 'string' && c.label !== c.src);
 
   return (
-    // max-w: on a desktop chat column a full-width 640×400 frame reads as a poster — cap at a
-    // "standard chart" width and let mobile keep the full column (측정 2026-08-09, 사용자 지적).
-    <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
+    // The map's standard frame: full column width, fixed height (PC 480 / mobile 320 — the same
+    // viewport cap MapComp uses). The viewBox scales inside with the aspect kept; the white card
+    // absorbs the letterboxing. A width cap made it half-size, a bare w-full made it a poster —
+    // both measured 2026-08-09.
+    <div className="w-full rounded-xl border border-slate-200 bg-white p-3">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[320px] sm:h-[480px]" role="img"
         aria-label={title || paths.map(c => c.label).join(', ')}>
         {title && (
           <text x={W / 2} y={18} textAnchor="middle" className="fill-slate-700"

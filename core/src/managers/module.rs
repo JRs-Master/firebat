@@ -2775,24 +2775,94 @@ pub fn validate_value(
 ) -> Result<(), String> {
     let compiled = compiled_schema_cached(schema)?;
     if let Err(errors) = compiled.validate(value) {
+        let mut suggestion: Option<String> = None;
         let first = errors
             .into_iter()
             .next()
-            .map(|e| format!("{} (path: {})", e, e.instance_path))
+            .map(|e| {
+                // A wrong enum value is usually a NEAR MISS of a right one — the model composed
+                // "forecast_short" out of a domain word and the real "short" (measured
+                // 2026-08-09), then spent three rounds on search→schema→retry. Naming the
+                // nearest legal value turns that into one corrected retry. Only clear winners
+                // are suggested; a vague guess would steer worse than the discovery ladder.
+                if let jsonschema::error::ValidationErrorKind::Enum { options } = &e.kind {
+                    let got = e
+                        .instance
+                        .as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| e.instance.to_string());
+                    suggestion = options.as_array().and_then(|arr| nearest_enum_value(&got, arr));
+                }
+                format!("{} (path: {})", e, e.instance_path)
+            })
             .unwrap_or_else(|| {
                 crate::i18n::t("core.error.module.unknown_validation", None, &[])
             });
         // 거대 enum 오류 캡 — "is not one of [275개 전체]" 가 도구 결과로 그대로 가면
         // 컨텍스트 폭탄 + 약한 모델이 목록에서 아무거나 집는 유도(2026-07-06 실측: 한투 275
         // 액션 덤프를 보고 주문 API 를 시세용으로 선택). 앞부분만 남기고 char-경계 안전 절단.
+        // The did-you-mean is appended AFTER the cap so it always survives the truncation.
         const MAX_ERR_CHARS: usize = 400;
-        if first.chars().count() > MAX_ERR_CHARS {
+        let mut msg = if first.chars().count() > MAX_ERR_CHARS {
             let capped: String = first.chars().take(MAX_ERR_CHARS).collect();
-            return Err(format!("{capped}… (truncated)"));
+            format!("{capped}… (truncated)")
+        } else {
+            first
+        };
+        if let Some(s) = suggestion {
+            msg.push_str(&format!(" — did you mean \"{s}\"?"));
         }
-        return Err(first);
+        return Err(msg);
     }
     Ok(())
+}
+
+/// The closest legal enum value to a wrong one — only when it is a clear winner.
+/// Containment ("forecast_short" ⊃ "short") wins outright; otherwise a small edit distance
+/// relative to length. No match = no suggestion, and the discovery hint stands alone.
+fn nearest_enum_value(got: &str, options: &[serde_json::Value]) -> Option<String> {
+    fn norm(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_ascii_lowercase()
+    }
+    fn edit_distance(a: &str, b: &str) -> usize {
+        let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+        let mut prev: Vec<usize> = (0..=b.len()).collect();
+        for (i, ca) in a.iter().enumerate() {
+            let mut cur = vec![i + 1];
+            for (j, cb) in b.iter().enumerate() {
+                let cost = usize::from(ca != cb);
+                cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
+            }
+            prev = cur;
+        }
+        prev[b.len()]
+    }
+    let g = norm(got);
+    if g.len() < 2 {
+        return None;
+    }
+    let mut best: Option<(usize, String)> = None;
+    for opt in options {
+        let Some(o) = opt.as_str() else { continue };
+        let on = norm(o);
+        if on.len() < 2 {
+            continue;
+        }
+        // Containment either way is the strongest signal a compound guess carries.
+        if (on.len() >= 3 && g.contains(&on)) || (g.len() >= 3 && on.contains(&g)) {
+            return Some(o.to_string());
+        }
+        let d = edit_distance(&g, &on);
+        if d <= (g.len().max(on.len()) / 3).max(1)
+            && best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true)
+        {
+            best = Some((d, o.to_string()));
+        }
+    }
+    best.map(|(_, s)| s)
 }
 
 /// 모듈 config 자체 well-formedness 검증 — 등록 시점 (또는 dry-run) 호출용.
