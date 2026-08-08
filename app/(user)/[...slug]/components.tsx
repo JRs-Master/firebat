@@ -2591,7 +2591,7 @@ export function MdImg({ src, alt }: { src?: string; alt?: string }) {
   if (!s) return null;
   if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
     return (
-      <span className="flex flex-col items-center justify-center gap-3 px-12 py-10 my-4 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
+      <span className="flex flex-col items-center justify-center gap-3 px-6 py-10 my-4 mx-auto w-80 max-w-full rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
         <span className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
         <span className="text-sm">{t('media_view.generating')}</span>
       </span>
@@ -2599,7 +2599,7 @@ export function MdImg({ src, alt }: { src?: string; alt?: string }) {
   }
   if (media.phase === 'dead') {
     return (
-      <span className="flex flex-col items-center justify-center gap-1 px-12 py-10 my-4 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-400">
+      <span className="flex flex-col items-center justify-center gap-1 px-6 py-10 my-4 mx-auto w-80 max-w-full rounded-xl border border-gray-100 bg-gray-50 text-gray-400">
         <span className="text-sm">{t('media_view.load_failed')}</span>
         {alt && <span className="text-xs">{alt}</span>}
       </span>
@@ -2700,7 +2700,7 @@ function ImageComp({
     // The caption sits BELOW as a figcaption, same place as on a healthy image.
     return (
       <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
-        <div className="flex items-center justify-center px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
+        <div className="flex items-center justify-center px-6 py-10 w-80 max-w-full bg-gray-50 text-gray-400">
           <span className="text-sm">{t('media_view.no_address')}</span>
         </div>
         {(caption || alt) && (
@@ -2749,13 +2749,13 @@ function ImageComp({
           />
         )}
         {waiting && (
-          <div className="flex flex-col items-center justify-center gap-3 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-500">
+          <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 w-80 max-w-full bg-gray-50 text-gray-500">
             <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
             <span className="text-sm">{t('media_view.generating')}</span>
           </div>
         )}
         {phase === 'dead' && (
-          <div className="flex flex-col items-center justify-center gap-1 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
+          <div className="flex flex-col items-center justify-center gap-1 px-6 py-10 w-80 max-w-full bg-gray-50 text-gray-400">
             <span className="text-sm">{t('media_view.load_failed')}</span>
             {alt && <span className="text-xs">{alt}</span>}
           </div>
