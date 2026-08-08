@@ -68,14 +68,22 @@ impl Core {
     /// prevent — but crossing two managers is the only thing it does.
     pub async fn sync_module_schedules(&self, name: &str) -> (Vec<String>, Vec<String>) {
         let jobs = self.module.declared_schedule_jobs(name).await;
-        if jobs.is_empty() {
+        // The record matters even when nothing is declared anymore: a module whose last
+        // declaration was removed still has jobs on the clock to withdraw.
+        if jobs.is_empty() && self.module.registered_schedules(name).is_empty() {
             return (vec![], vec![]);
         }
         let job_id = |file: &str| format!("module:{}:{}", name, file.trim_end_matches(".json"));
 
         if !self.module.is_enabled(name) {
             let mut removed = vec![];
-            for (file, _) in &jobs {
+            let mut names: Vec<String> = jobs.iter().map(|(f, _)| f.clone()).collect();
+            for f in self.module.registered_schedules(name) {
+                if !names.contains(&f) {
+                    names.push(f);
+                }
+            }
+            for file in &names {
                 if self.schedule.cancel(&job_id(file)).await.unwrap_or(false) {
                     removed.push(file.clone());
                 }
@@ -88,6 +96,8 @@ impl Core {
             return (vec![], removed);
         }
 
+        let declared: std::collections::HashSet<String> =
+            jobs.iter().map(|(f, _)| f.clone()).collect();
         let mut already = self.module.registered_schedules(name);
         // The panel reads what a job is off its target's prefix — `builtin:`, `rebake:`, a path.
         // A module-declared job had none of those and fell through to "an ordinary pipeline
@@ -145,10 +155,52 @@ impl Core {
                     error = %e, "declared schedule was refused by the scheduler"),
             }
         }
-        if !added.is_empty() {
+        // The other half of "a changed declaration re-registers": a declaration that left the
+        // list leaves the clock with it. Candidates are the record plus anything live under this
+        // module's own id namespace (jobs registered before the record existed) — minus what is
+        // declared right now. Idempotence still holds for the owner: a job they deleted is not
+        // live and not re-added, so this pass never resurrects it. Measured 2026-08-08: the
+        // autotrade reset trimmed the fleet to one venue, and six broker schedules kept polling
+        // empty accounts because removal never took effect without a full module toggle.
+        let ns = format!("module:{}:", name);
+        let mut orphans: Vec<String> = already
+            .iter()
+            .filter(|f| !declared.contains(*f))
+            .cloned()
+            .collect();
+        for id in live.keys() {
+            if let Some(stem) = id.strip_prefix(&ns) {
+                let file = format!("{}.json", stem);
+                if !declared.contains(&file) && !orphans.contains(&file) {
+                    orphans.push(file);
+                }
+            }
+        }
+        let mut removed = vec![];
+        for file in orphans {
+            match self.schedule.cancel(&job_id(&file)).await {
+                Ok(cancelled) => {
+                    if cancelled {
+                        tracing::info!(target: "module_schedule", module = %name,
+                            job = %job_id(&file),
+                            "withdrew a schedule the module no longer declares");
+                    }
+                    removed.push(file);
+                }
+                Err(e) => tracing::warn!(target: "module_schedule", module = %name,
+                    job = %job_id(&file), error = %e,
+                    "could not withdraw the undeclared schedule — leaving it"),
+            }
+        }
+        let record_changed = !removed.is_empty() && {
+            let before = already.len();
+            already.retain(|f| declared.contains(f));
+            already.len() != before
+        };
+        if !added.is_empty() || record_changed {
             self.module.set_registered_schedules(name, &already);
         }
-        (added, vec![])
+        (added, removed)
     }
 
     /// Every module's declared schedules, reconciled at boot. Because a changed declaration now
