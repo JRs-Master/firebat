@@ -505,6 +505,7 @@ systemctl restart firebat firebat-frontend
 
 - **system/-only change** (module config/code, prompts, skills, templates) = `git pull` + `systemctl restart firebat`. No build, no rsync — the dir is symlinked. (`components.json` is the exception: Rust `include_str!`-embeds it, so it needs a Rust rebuild.)
 - **What triggers a Rust rebuild**: anything under `core/` `infra/` `proto/` `Cargo.*`. Module `.mjs`/`.py`/config/prompts are read at runtime (no rebuild).
+- **Module `packages` after deploy**: a module that declares python `packages` (yfinance, sing, …) installs them from its settings screen — 설정 > 모듈 > (모듈) > 패키지 상태 > [설치]. One click per new module, survives restarts.
 
 **Notes**
 - `python3` runs the sysmods (yfinance / playwright / …); `pip` installs their packages via `pip install --target python_modules` — no venv (isolation is per-directory; `python3-pip` pulls `python3` as a dependency).
