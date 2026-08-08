@@ -754,7 +754,9 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
   switch (type) {
     case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} align={p.align} />;
     case 'Text':          return <TextComp content={p.content ?? ''} />;
-    case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} variants={p.variants} blurhash={p.blurhash} thumbnailUrl={p.thumbnailUrl} />;
+    // url/caption 도 전달 — 방언 수용은 ImageComp 에 있는데 여기서 이름 집어 넘기며 떨궈
+    // 무력화됐었다 (2026-08-09: 블록엔 url 이 멀쩡한데 "주소 없음" 카드).
+    case 'Image':         return <ImageComp src={p.src} url={p.url ?? p.href} alt={p.alt} caption={p.caption} width={p.width} height={p.height} variants={p.variants} blurhash={p.blurhash} thumbnailUrl={p.thumbnailUrl} />;
     case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? p.fields ?? []} submitText={p.submitText ?? p.submitLabel} />;
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? p.label ?? p.title ?? ''} href={p.href} variant={p.variant} />;
@@ -2619,12 +2621,17 @@ function ImageComp({
 
   if (!src) {
     // No address in either dialect — name the failure instead of a bare broken icon.
+    // The caption sits BELOW as a figcaption, same place as on a healthy image.
     return (
       <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
-        <div className="flex flex-col items-center justify-center gap-1 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
+        <div className="flex items-center justify-center px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
           <span className="text-sm">이미지 주소가 없습니다</span>
-          {(caption || alt) && <span className="text-xs">{caption || alt}</span>}
         </div>
+        {(caption || alt) && (
+          <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50 w-0 min-w-full border-t border-gray-100">
+            {caption || alt}
+          </figcaption>
+        )}
       </figure>
     );
   }
