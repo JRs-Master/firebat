@@ -2537,6 +2537,29 @@ function ImageComp({
     return () => { cancelled = true; };
   }, [blurhash]);
 
+  // 생성 중 스왑 — image_gen 은 URL 을 먼저 말하고 파일은 나중에 착지한다(비동기 생성).
+  // 파일이 아직 없으면 <img> 가 404 로 깨진 회색이 되고, 완료돼도 아무도 다시 안 그렸다
+  // (2026-08-09 실측: 갤러리는 notify_gallery SSE 로 살았는데 채팅은 F5 전까지 회색).
+  // 로드 "실패 시에만" 생성 중 카드로 바꾸고 백오프로 재시도 — 발행 페이지의 정상(구운)
+  // 이미지는 에러가 없어 이 경로에 아예 안 들어오고, SSE 없는 표면(공개 페이지·hub)에서도
+  // 같은 코드로 동작한다. 재시도가 바닥나면 실패를 이름 대고 보인다(영원한 스피너 금지).
+  const RETRY_DELAYS_S = [2, 3, 5, 8, 13, 21, 30, 30, 30, 30, 30, 30, 60, 60, 60, 60]; // ≈7.5분 — 생성 타임아웃(420s) 커버
+  const [retryTick, setRetryTick] = useState(0);
+  const [phase, setPhase] = useState<'ok' | 'waiting' | 'dead'>('ok');
+  const attemptRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const onImgError = () => {
+    const n = attemptRef.current;
+    if (n >= RETRY_DELAYS_S.length) { setPhase('dead'); return; }
+    attemptRef.current = n + 1;
+    setPhase('waiting');
+    timerRef.current = setTimeout(() => setRetryTick(t => t + 1), RETRY_DELAYS_S[n] * 1000);
+  };
+  const onImgLoad = () => { setLoaded(true); setPhase('ok'); };
+  // 캐시버스터 — 404 응답이 캐시돼 재시도가 헛돌지 않게.
+  const probeSrc = retryTick > 0 ? `${src}${src.includes('?') ? '&' : '?'}r=${retryTick}` : src;
+
   // variants 를 포맷별 srcset 으로 그룹핑
   const srcsetFor = (fmt: string) => {
     if (!variants || variants.length === 0) return '';
@@ -2551,11 +2574,30 @@ function ImageComp({
   const sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1024px';
   const hasVariants = Boolean(avifSrcset || webpSrcset);
 
+  const imgCls = phase === 'ok'
+    ? `block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`
+    // 재시도 프로브 — display:none 이면 lazy 로더가 로드를 아예 안 하므로 1px 투명으로 유지.
+    : 'absolute h-px w-px opacity-0 pointer-events-none';
+  const img = (
+    <img
+      key={retryTick}
+      src={probeSrc}
+      alt={alt}
+      width={phase === 'ok' ? width : undefined}
+      height={phase === 'ok' ? height : undefined}
+      onLoad={onImgLoad}
+      onError={onImgError}
+      className={imgCls}
+      loading={retryTick > 0 ? 'eager' : 'lazy'}
+      decoding="async"
+    />
+  );
+
   return (
     <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
       <div className="relative">
         {/* blurhash 캔버스 — 이미지 로드 전까지만 보임 */}
-        {blurhash && !loaded && (
+        {blurhash && !loaded && phase === 'ok' && (
           <canvas
             ref={canvasRef}
             width={32}
@@ -2565,35 +2607,29 @@ function ImageComp({
             style={{ filter: 'blur(8px)' }}
           />
         )}
-        {hasVariants ? (
+        {phase === 'waiting' && (
+          <div className="flex flex-col items-center justify-center gap-3 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-500">
+            <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
+            <span className="text-sm">이미지를 생성하고 있습니다…</span>
+          </div>
+        )}
+        {phase === 'dead' && (
+          <div className="flex flex-col items-center justify-center gap-1 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
+            <span className="text-sm">이미지를 불러오지 못했습니다</span>
+            {alt && <span className="text-xs">{alt}</span>}
+          </div>
+        )}
+        {phase !== 'dead' && (hasVariants && phase === 'ok' ? (
           <picture>
             {avifSrcset && <source type="image/avif" srcSet={avifSrcset} sizes={sizes} />}
             {webpSrcset && <source type="image/webp" srcSet={webpSrcset} sizes={sizes} />}
-            <img
-              src={src}
-              alt={alt}
-              width={width}
-              height={height}
-              onLoad={() => setLoaded(true)}
-              className={`block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`}
-              loading="lazy"
-              decoding="async"
-            />
+            {img}
           </picture>
         ) : (
-          <img
-            src={src}
-            alt={alt}
-            width={width}
-            height={height}
-            onLoad={() => setLoaded(true)}
-            className={`block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`}
-            loading="lazy"
-            decoding="async"
-          />
-        )}
+          img
+        ))}
       </div>
-      {alt && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
+      {alt && phase === 'ok' && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
     </figure>
   );
 }
