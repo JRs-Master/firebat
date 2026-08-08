@@ -2672,7 +2672,9 @@ function ImageComp({
           img
         ))}
       </div>
-      {alt && phase === 'ok' && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
+      {/* w-0 + min-w-full: 캡션이 figure 의 고유 폭 계산에 안 끼어들어 상자 폭은 이미지가 정하고,
+          캡션은 그 폭 안에서 줄바꿈한다 (긴 캡션이 상자를 무한정 넓히던 자리). */}
+      {alt && phase === 'ok' && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50 w-0 min-w-full">{alt}</figcaption>}
     </figure>
   );
 }
