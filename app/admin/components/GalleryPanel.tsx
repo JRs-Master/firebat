@@ -32,7 +32,7 @@ interface MediaItem {
   blurhash?: string;
   aspectRatio?: string;
   focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
-  /** 미설정(legacy) = 'done' 으로 간주 */
+  /** Unset (legacy) is treated as 'done'. */
   status?: 'rendering' | 'done' | 'error';
   errorMsg?: string;
 }
@@ -55,12 +55,12 @@ export function GalleryPanel({
   const [scope, setScope] = useState<'all' | 'user' | 'system'>('user');
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
-  // selected 를 index 로 추적 — prev/next 탐색 가능
+  // Track the selection by index so prev/next navigation works.
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const selected = selectedIndex !== null && selectedIndex < items.length ? items[selectedIndex] : null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // owner-injected backend — admin REST(/api/media/*) vs hub op(GET/DELETE/POST{op}) 가 각 메서드 안에서만 갈림.
+  // Owner-injected backend — admin REST (/api/media/*) vs hub op (GET/DELETE/POST{op}) diverge inside each method only.
   const backend = useMemo(() => ({
     async list(opts: { offset: number; search: string; scope: string }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
       const params = new URLSearchParams();
@@ -111,7 +111,7 @@ export function GalleryPanel({
     }
   }, [backend, offset, search, scope]);
 
-  // scope/search 변경 시 리셋 — debounced for search
+  // Reset on scope/search change — debounced for search.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -122,8 +122,8 @@ export function GalleryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, search]);
 
-  // SSE `gallery:refresh` 구독 — image_gen 완료·미디어 삭제·재생성 시 자동 갱신.
-  // 현재 scope/search 그대로 유지하면서 첫 페이지로 리셋해 새 이미지 즉시 노출.
+  // SSE `gallery:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
+  // Keeps the current scope/search and resets to page one so a new image shows immediately.
   useEvents(['gallery:refresh'], () => {
     setOffset(0);
     fetchList(true);
@@ -132,11 +132,11 @@ export function GalleryPanel({
   const handleLoadMore = () => {
     const newOffset = offset + PAGE_SIZE;
     setOffset(newOffset);
-    // offset 변경 후 fetchList 를 리셋없이 호출 — 다음 useEffect 대신 직접
+    // Call fetchList without reset after the offset change — directly, not via the next useEffect.
     setTimeout(() => fetchList(false), 0);
   };
 
-  // 선택된 미디어의 사용처 — React Query 로 캐시 + 자동 refetch.
+  // Where the selected media is used — cached + auto-refetched via React Query.
   const { data: usageData } = useQuery({
     queryKey: ['media-usage', selected?.slug],
     queryFn: () =>
@@ -144,12 +144,12 @@ export function GalleryPanel({
         `/api/media/usage?slug=${encodeURIComponent(selected!.slug)}`,
         { category: 'gallery' },
       ),
-    enabled: !!selected && !hubContext, // usage = admin analytics (hub 백엔드 op 없음) → hub 에선 skip(401 회피)
+    enabled: !!selected && !hubContext, // usage = admin analytics (no hub backend op) — skipped on hub to avoid a 401
   });
   const selectedUsage = usageData?.success ? (usageData.data ?? []) : [];
 
   const handleDelete = async (slug: string) => {
-    // 사용처 차등 confirm — 페이지에 설정된 이미지면 빨간 경고 + 페이지 목록.
+    // Usage-aware confirm — an image set on pages gets the red warning plus the page list.
     const usage = selectedUsage;
     const msg = usage.length > 0
       ? t('gallery.delete_in_use', { count: usage.length, pages: usage.map(u => `  • /${u.pageSlug}`).join('\n') })
@@ -177,7 +177,7 @@ export function GalleryPanel({
       if (!data.success) {
         await alertDialog({ title: t('gallery.regen_failed'), message: data.error || 'unknown', danger: true });
       }
-      // 성공/실패 모두 SSE gallery:refresh 가 자동 갱신. 모달은 닫음.
+      // Success or failure, SSE gallery:refresh refreshes the grid. Close the modal either way.
       setSelectedIndex(null);
     } catch (err: any) {
       await alertDialog({ title: t('gallery.regen_failed'), message: err.message, danger: true });
@@ -188,7 +188,7 @@ export function GalleryPanel({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* 필터 바 */}
+      {/* filter bar */}
       <div className="shrink-0 flex flex-col gap-2 px-3 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -222,7 +222,7 @@ export function GalleryPanel({
         </div>
       </div>
 
-      {/* 그리드 */}
+      {/* grid */}
       <div className="flex-1 overflow-y-auto overscroll-contain p-2">
         {items.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
@@ -280,7 +280,7 @@ export function GalleryPanel({
           </div>
         )}
 
-        {/* 더 보기 */}
+        {/* load more */}
         {items.length < total && (
           <button
             onClick={handleLoadMore}
@@ -292,7 +292,7 @@ export function GalleryPanel({
         )}
       </div>
 
-      {/* 상세 모달 — Portal 로 document.body 직접 렌더링 (sidebar/parent 의 containing block 회피) */}
+      {/* detail modal — rendered into document.body via Portal (escapes the sidebar/parent containing block) */}
       {selected && selectedIndex !== null && (
         <MediaDetailModal
           item={selected}
@@ -327,18 +327,18 @@ function MediaDetailModal({
   onDelete: () => void;
   onRegenerate: () => void;
   regenerating: boolean;
-  /** 페이지 사용처 — 비어있으면 '사용 안 됨' 표시. PageManager 인덱스에서 자동 갱신. */
+  /** Pages using this media — empty shows the not-used label. Auto-refreshed from the PageManager index. */
   usage: Array<{ pageSlug: string; usedAt: number }>;
 }) {
   const t = useTranslations();
   const isError = item.status === 'error';
-  const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
+  const canRegenerate = !!item.prompt; // a prompt is required to re-run
   const [copiedField, setCopiedField] = useState<string | null>(null);
-  // viewport quirk 우회 — iOS toolbar 변동 시 박스 흔들림 차단. md(768px+) 는 max-h-full 유지.
+  // Viewport quirk workaround — stops the box jumping when the iOS toolbar moves. md(768px+) keeps max-h-full.
   const { vw, vh } = useViewportSize();
   const isMobile = vw != null && vw < 768;
   const previewMaxH = isMobile && vh != null ? Math.floor(vh * 0.45) : null;
-  // 키보드 ← → 로 이전/다음, Esc 로 닫기
+  // Keyboard: arrows for prev/next, Esc to close.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' && hasPrev) onPrev();
@@ -363,7 +363,7 @@ function MediaDetailModal({
 
   return (
     <Modal onClose={onClose}>
-        {/* 헤더 — N/total 인디케이터 + prev/next + 닫기. safe-area-inset-top 으로 status bar 침범 방지 */}
+        {/* header — N/total indicator + prev/next + close. safe-area-inset-top keeps it off the status bar */}
         <div
           className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0 gap-2"
           style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)' }}
@@ -374,7 +374,7 @@ function MediaDetailModal({
           </h3>
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[11px] text-slate-400 tabular-nums px-1">{index + 1} / {total}</span>
-            {/* 헤더 화살표 — PC 전용 (모바일은 이미지 좌우 floating 버튼으로 대체, 중복 회피) */}
+            {/* header arrows — desktop only (mobile uses the floating buttons over the image; no duplicates) */}
             <Tooltip label={t('gallery_modal.previous_image')}>
               <button
                 onClick={onPrev}
@@ -401,14 +401,14 @@ function MediaDetailModal({
           </div>
         </div>
 
-        {/* 본문 — 모바일 flex-col / PC flex-row.
-            모바일: 본문 자체 overflow-y-auto → 메타·버튼이 viewport 부족 시 잘리지 않고 스크롤로 접근 가능.
-            PC: overflow-hidden 유지 (좌우 컬럼 각자 안에서만 스크롤). */}
+        {/* body — mobile flex-col / desktop flex-row.
+            Mobile: the body itself scrolls, so meta rows and buttons stay reachable on short viewports.
+            Desktop: overflow-hidden — each column scrolls on its own. */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-y-auto md:overflow-hidden">
-          {/* 프리뷰 — 모바일: viewport 45% (px 단위 — toolbar 변동 무관), PC: 좌측 컬럼 전체.
-              status='error' / 'rendering' / 'done' 3 분기. 그리드와 동일 패턴.
-              cache busting (?v=bytes) — 모바일 브라우저가 placeholder 단계의 회색 응답을
-              cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 설정 방지. */}
+          {/* preview — mobile: 45% of the viewport (in px, immune to toolbar moves); desktop: the whole left column.
+              Three-way branch on status = error / rendering / done, same pattern as the grid.
+              Cache busting (?v=bytes) — mobile browsers cache the grey placeholder response, and the done
+              swap re-requests the same URL, so without the version the cache hit keeps it grey. */}
           <div
             className={`relative shrink-0 md:flex-1 md:min-w-0 md:max-h-full md:h-auto rounded-lg p-2 flex items-center justify-center overflow-hidden ${
               isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
@@ -439,8 +439,8 @@ function MediaDetailModal({
                 className="max-w-full max-h-full object-contain rounded"
               />
             )}
-            {/* 모바일 prev/next floating — 모바일 전용 (헤더 화살표는 PC 전용, 중복 회피).
-                hasPrev/Next 항상 렌더해서 위치 안정 — disabled 시 opacity 만 낮춤 (cursor 모양 변경 X) */}
+            {/* mobile floating prev/next — mobile only (header arrows are desktop only; no duplicates).
+                Always rendered for stable placement — disabled just lowers opacity (no cursor change). */}
             <button
               onClick={onPrev}
               disabled={!hasPrev}
@@ -459,9 +459,9 @@ function MediaDetailModal({
             </button>
           </div>
 
-          {/* 우측 컬럼 — PC 만 프롬프트 스크롤, 모바일은 자연 흐름 (전체 본문 스크롤로 위임) */}
+          {/* right column — only desktop scrolls the prompt; mobile flows naturally (body scroll owns it) */}
           <div className="md:flex-none md:w-64 md:shrink-0 md:min-h-0 flex flex-col gap-2 text-[12px]">
-            {/* 프롬프트 — 항상 렌더(prompt 없을 때 placeholder). PC 만 flex-1 + 자체 스크롤 */}
+            {/* prompt — always rendered (placeholder when absent). Desktop only: flex-1 + own scroll */}
             <div className="md:flex-1 md:min-h-[60px] md:overflow-y-auto pr-1 border-b border-slate-100 pb-2">
               {item.prompt && (
                 <div className="mb-2">
@@ -480,7 +480,7 @@ function MediaDetailModal({
               )}
             </div>
 
-            {/* 메타 정보 — 항상 같은 행 수 (누락은 "—" placeholder). 위치 완전 고정 */}
+            {/* meta — always the same row count (missing values show "—") so positions never shift */}
             <div className="shrink-0 flex flex-col gap-1.5">
               <MetaRow icon={<Calendar size={10} />} label={t('gallery.meta_created')} value={createdStr} />
               <MetaRow label={t('gallery.meta_model')} value={item.model || '—'} />
@@ -499,7 +499,7 @@ function MediaDetailModal({
                 ? t('gallery.variants_value', { count: item.variants.length, formats: [...new Set(item.variants.map(v => v.format))].join('/') })
                 : t('gallery.none')} />
               <MetaRow label="Blurhash" value={item.blurhash ? t('gallery.blurhash_yes') : '✗'} />
-              {/* 사용처 — 페이지 PageSpec 안 설정된 곳. 빈 배열 = '사용 안 됨'. */}
+              {/* usage — pages whose PageSpec references this media. Empty array shows the not-used label. */}
               <div className="flex items-start gap-1.5 text-[11px]">
                 <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">{t('gallery.usage')}</span>
                 {usage.length === 0 ? (
@@ -525,9 +525,9 @@ function MediaDetailModal({
               </div>
             </div>
 
-            {/* 버튼 — 위치 고정 (하단). safe-area-inset-bottom 으로 브라우저 하단 툴바·home indicator 침범 방지.
-                재생성 버튼은 prompt 있을 때만 — 에러 상태면 강조(빨강), 정상 상태면 보조(파랑).
-                URL/마크다운 복사는 실제 파일이 있을 때만 (status!='error'). */}
+            {/* buttons — pinned to the bottom. safe-area-inset-bottom keeps them off the browser toolbar / home indicator.
+                Regenerate shows only with a prompt — emphasized (red) on error, secondary (blue) otherwise.
+                URL/Markdown copy only when a real file exists (status != 'error'). */}
             <div
               className="shrink-0 flex flex-col gap-1.5 pt-1"
               style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}

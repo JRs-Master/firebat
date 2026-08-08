@@ -25,9 +25,10 @@ export async function GET(
     const { slug: segments } = await params;
     const filename = segments?.[segments.length - 1] ?? '';
     if (!filename) return new NextResponse('Not found', { status: 404 });
-    // <slug>.meta.json — 생성 상태 조회(status: rendering/done/error). ImageComp 가 "생성 중"
-    // 카드와 완료 스왑을 이걸로 판정한다 (async image_gen 은 placeholder 를 실제 URL 에 먼저
-    // 저장하므로 이미지 로드 성공/실패로는 생성 중임을 알 수 없다 — 2026-08-09 실측).
+    // <slug>.meta.json — generation status lookup (status: rendering/done/error). ImageComp
+    // decides the generating card and the completion swap with this: async image_gen saves the
+    // placeholder at the real URL first, so image load success/failure cannot tell "generating"
+    // apart (measured 2026-08-09).
     const isMeta = filename.endsWith('.meta.json');
     const base = isMeta ? filename.slice(0, -'.meta.json'.length) : filename;
     const dotIdx = base.lastIndexOf('.');
@@ -54,8 +55,8 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': payload.contentType,
-        // 생성 중 placeholder 를 immutable 로 내보내면 브라우저가 회색을 1년짜리로 캐시해
-        // 완료 스왑이 영영 안 보인다 — done 전에는 no-store.
+        // Serving the mid-generation placeholder as immutable lets the browser cache the grey
+        // for a year and the completion swap never shows — no-store until done.
         'Cache-Control':
           status && status !== 'done'
             ? 'no-store'

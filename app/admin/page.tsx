@@ -82,9 +82,10 @@ const mdComponents = {
   th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,
   td: (props: any) => <td className="px-3 py-1.5 text-slate-600 border-b border-slate-100 min-w-[120px] align-top break-words" {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />,
-  // 마크다운 ![]() 이미지 — image 블록과 같은 규격(세로 표준 캡·가운데·생성중 감지·자동 스왑).
-  // 모델이 render 블록 대신 마크다운으로 이미지를 넣는 턴이 실재한다(2026-08-09: 프로즈 전폭
-  // 회색 placeholder — 이 문만 감지가 없었다).
+  // Markdown images — same norms as the image block (standard height cap, centered,
+  // generating detection, self-swap). Turns where the model embeds via markdown instead of a
+  // render block are real (2026-08-09: a full-width grey placeholder — this was the one door
+  // with no detection).
   img: (props: any) => <MdImg src={props.src} alt={props.alt} />,
 };
 

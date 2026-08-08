@@ -327,7 +327,7 @@ export function parseFenceJson(body: string): any | undefined {
       const n = out[i + 1];
       if (n !== undefined && '"\\/bfnrt'.includes(n)) { fixed += c + n; i++; continue; }
       if (n === 'u' && /^[0-9a-fA-F]{4}$/.test(out.slice(i + 2, i + 6))) { fixed += '\\u'; i++; continue; }
-      fixed += '\\\\'; // illegal escape — the backslash was content (LaTeX 딜리미터류)
+      fixed += '\\\\'; // illegal escape — the backslash was content (LaTeX delimiters and friends)
       continue;
     }
     const code = c.charCodeAt(0);

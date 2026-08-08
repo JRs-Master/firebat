@@ -754,8 +754,9 @@ function ComponentSwitch({ comp, standalone }: { comp: ComponentDef; standalone?
   switch (type) {
     case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} align={p.align} />;
     case 'Text':          return <TextComp content={p.content ?? ''} />;
-    // url/caption 도 전달 — 방언 수용은 ImageComp 에 있는데 여기서 이름 집어 넘기며 떨궈
-    // 무력화됐었다 (2026-08-09: 블록엔 url 이 멀쩡한데 "주소 없음" 카드).
+    // Forward url/caption too — the dialect tolerance lives in ImageComp, and cherry-picking
+    // props here used to drop them (2026-08-09: the block carried a fine url, the card said
+    // it had no address).
     case 'Image':         return <ImageComp src={p.src} url={p.url ?? p.href} alt={p.alt} caption={p.caption} width={p.width} height={p.height} variants={p.variants} blurhash={p.blurhash} thumbnailUrl={p.thumbnailUrl} />;
     case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? p.fields ?? []} submitText={p.submitText ?? p.submitLabel} />;
     case 'ResultDisplay': return null;
@@ -2497,13 +2498,15 @@ function TextComp({ content }: { content: string }) {
   );
 }
 
-// ── 미디어 생성중 감지 공용 훅 ────────────────────────────────────────────────
-// image_gen 은 회색 placeholder PNG 를 "실제 URL 에" 먼저 저장한다(200 OK) — 로드 성공/실패로는
-// 생성 중임을 알 수 없다. 진실은 미디어 record 의 status: 같은 경로의 <slug>.meta.json 을 물어
-// rendering 이면 3초 폴링, done 이면 bytes 버전 쿼리(?v=)로 과거 immutable 캐시까지 자가 치유.
-// 이미지가 지나는 문이 셋이라(image 블록 · slideshow 슬라이드 · 마크다운 ![]()) 감지를 한 문에만
-// 달면 나머지가 회색으로 남는다(2026-08-09 실측 — 마크다운 경로가 정확히 그랬다). 로드 실패
-// (404류)는 백오프 재시도, 바닥나면 dead — 영원한 스피너 금지.
+// ── shared media generating-detection hook ──────────────────────────────────
+// image_gen saves a grey placeholder PNG at the REAL url first (200 OK), so load success/failure
+// cannot tell "generating" apart. The truth is the media record's status: ask the sibling
+// <slug>.meta.json — poll every 3s while rendering, and on done attach a bytes version query
+// (?v=) that also self-heals placeholders cached under the old immutable header. Images enter
+// through three doors (image block / slideshow slide / markdown image); detection behind one
+// door leaves the others grey (measured 2026-08-09 — the markdown door did exactly that).
+// Load failures (404 class) get backoff retries; when they run dry the phase is dead — never
+// an eternal spinner.
 type MediaPhase = 'ok' | 'probe-wait' | 'meta-wait' | 'dead';
 const MEDIA_RETRY_DELAYS_S = [2, 3, 5, 8, 13, 21, 30, 30, 30, 30, 30, 30, 60, 60, 60, 60]; // ≈7.5분 — 생성 타임아웃(420s) 커버
 function useMediaPhase(src: string, skip: boolean) {
@@ -2525,7 +2528,7 @@ function useMediaPhase(src: string, skip: boolean) {
     const check = async () => {
       try {
         const r = await fetch(metaUrl, { cache: 'no-store' });
-        if (!r.ok || stop) return; // meta 없는 옛 이미지 — 평범한 <img> 로
+        if (!r.ok || stop) return; // old image with no meta — behave as a plain <img>
         const rec = await r.json();
         if (stop) return;
         const st = rec?.status;
@@ -2535,9 +2538,9 @@ function useMediaPhase(src: string, skip: boolean) {
           setPhase('ok');
           return;
         }
-        // 죽은 생성의 박제 — 프로세스가 finalize 전에 죽으면 meta 가 'rendering' 인 채 영영
-        // 남는다(2026-08-09 실측: 옛 실패 이미지 하나가 갤러리 불러오기에서 스피너를 돌았다).
-        // 생성 타임아웃(420s)보다 훨씬 오래된 rendering 은 실패로 읽는다.
+        // A generation that died before finalize leaves meta 'rendering' forever (measured
+        // 2026-08-09: one long-dead image spun a generating card when pulled from the gallery).
+        // A rendering far older than the 420s generation timeout reads as failed.
         if (rec?.createdAt && Date.now() - Number(rec.createdAt) > 15 * 60 * 1000) {
           setPhase('dead');
           return;
@@ -2548,14 +2551,14 @@ function useMediaPhase(src: string, skip: boolean) {
         } else {
           setPhase('dead');
         }
-      } catch { /* 네트워크 잡음 — 이미지 로드 경로가 알아서 */ }
+      } catch { /* network noise — the image load path handles itself */ }
     };
     check();
     return () => { stop = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src, skip]);
   const onError = () => {
-    if (phaseRef.current === 'meta-wait') return; // meta 폴링이 이 대기의 주인
+    if (phaseRef.current === 'meta-wait') return; // the meta poll owns this wait
     const n = attemptRef.current;
     if (n >= MEDIA_RETRY_DELAYS_S.length) { setPhase('dead'); return; }
     attemptRef.current = n + 1;
@@ -2564,14 +2567,14 @@ function useMediaPhase(src: string, skip: boolean) {
   };
   const onLoad = () => setPhase('ok');
   const verSrc = ver ? `${src}${src.includes('?') ? '&' : '?'}v=${ver}` : src;
-  // 캐시버스터 — 404 응답이 캐시돼 재시도가 헛돌지 않게.
+  // Cache buster — so a cached 404 cannot make the retries spin in place.
   const probeSrc = retryTick > 0 ? `${verSrc}${verSrc.includes('?') ? '&' : '?'}r=${retryTick}` : verSrc;
   return { phase, probeSrc, retryTick, onLoad, onError };
 }
 
-/** 마크다운 `![]()` 이미지 — 채팅 프로즈 안에서도 image 블록과 같은 규격으로:
- *  세로 표준 캡(모바일 320 / PC 480) + 비율 유지 + 가운데 정렬 + 생성중 감지·자동 스왑.
- *  <p> 안에 들어가므로 전부 span 으로(figure 는 p 안에서 invalid nesting). */
+/** Markdown image — same norms as the image block, inside chat prose: standard height cap
+ *  (mobile 320 / desktop 480), ratio preserved, centered, plus the generating detection and
+ *  self-swap. Lives inside a <p>, so spans only (a figure inside a p is invalid nesting). */
 export function MdImg({ src, alt }: { src?: string; alt?: string }) {
   const s = String(src ?? '');
   const media = useMediaPhase(s, false);
@@ -2602,7 +2605,7 @@ export function MdImg({ src, alt }: { src?: string; alt?: string }) {
       alt={alt ?? ''}
       onLoad={media.onLoad}
       onError={media.onError}
-      // my-4: fence 경로(세그먼트 gap-6)와 눈높이가 맞는 간격 — md 이미지만 좁아 보이던 자리.
+      // my-4: spacing that lines up with the fence path (segment gap-6) — md images used to sit tighter.
       className="block mx-auto my-4 max-w-full h-auto object-contain rounded-xl border border-gray-100 shadow-sm"
       style={maxH ? { maxHeight: maxH } : undefined}
       loading="lazy"
@@ -2659,14 +2662,15 @@ function ImageComp({
     return () => { cancelled = true; };
   }, [blurhash]);
 
-  // 생성 중 감지·스왑·재시도 = 공용 훅 (useMediaPhase — image 블록·slideshow·마크다운 img 가
-  // 같은 문을 지난다). 여기는 figure/blurhash/캡션 표현만 소유.
+  // Generating detection / swap / retry live in the shared hook (useMediaPhase — the image
+  // block, slideshow and markdown img all pass the same door). This component owns only the
+  // figure/blurhash/caption presentation.
   const { phase, probeSrc, retryTick, onLoad: mediaLoad, onError: onImgError } = useMediaPhase(
     src,
-    Boolean((variants && variants.length > 0) || blurhash), // 완성 산출물 — meta 조회 불필요
+    Boolean((variants && variants.length > 0) || blurhash), // finished artifact — no meta lookup needed
   );
   const onImgLoad = () => { setLoaded(true); mediaLoad(); };
-  // 세로 표준 캡 — 지도/그래프/슬라이드와 같은 규격(모바일 320 / PC 480). 가로는 비율 따라.
+  // Standard height cap — same frame as maps/plots/slides (mobile 320 / desktop 480); width follows the ratio.
   const imgMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
 
   // variants 를 포맷별 srcset 으로 그룹핑
@@ -2703,7 +2707,7 @@ function ImageComp({
   const waiting = phase === 'probe-wait' || phase === 'meta-wait';
   const imgCls = phase === 'ok'
     ? `block relative max-w-full h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`
-    // 재시도 프로브 — display:none 이면 lazy 로더가 로드를 아예 안 하므로 1px 투명으로 유지.
+    // Retry probe — display:none would stop the lazy loader from loading at all, so keep a 1px transparent img.
     : 'absolute h-px w-px opacity-0 pointer-events-none';
   const img = (
     <img
@@ -2723,7 +2727,7 @@ function ImageComp({
 
   return (
     <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
-      {/* 긴 캡션이 figure 를 이미지보다 넓히면 이미지가 왼쪽에 붙는다 — 상자 안 가운데로 */}
+      {/* if a long caption ever widens the figure past the image, keep the image centered */}
       <div className="relative flex justify-center">
         {/* blurhash 캔버스 — 이미지 로드 전까지만 보임 */}
         {blurhash && !loaded && phase === 'ok' && (
@@ -2748,8 +2752,8 @@ function ImageComp({
             {alt && <span className="text-xs">{alt}</span>}
           </div>
         )}
-        {/* meta-wait 는 placeholder 파일이 "정상 로드"되는 상태라 프로브도 띄우지 않는다 —
-            완료(done) 판정이 오면 버전 쿼리가 붙은 src 로 새로 마운트된다. */}
+        {/* meta-wait means the placeholder file LOADS fine, so no probe is mounted —
+            when the done verdict arrives the img remounts with the versioned src. */}
         {(phase === 'ok' || phase === 'probe-wait') && (hasVariants && phase === 'ok' ? (
           <picture>
             {avifSrcset && <source type="image/avif" srcSet={avifSrcset} sizes={sizes} />}
@@ -2760,8 +2764,8 @@ function ImageComp({
           img
         ))}
       </div>
-      {/* w-0 + min-w-full: 캡션이 figure 의 고유 폭 계산에 안 끼어들어 상자 폭은 이미지가 정하고,
-          캡션은 그 폭 안에서 줄바꿈한다 (긴 캡션이 상자를 무한정 넓히던 자리). */}
+      {/* w-0 + min-w-full: the caption stays out of the figure's intrinsic width, so the image
+          decides the box and the caption wraps inside it (a long caption used to widen the box). */}
       {(caption || alt) && phase === 'ok' && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50 w-0 min-w-full">{caption || alt}</figcaption>}
     </figure>
   );
@@ -6014,9 +6018,10 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   }, [images, autoplay, autoplayDelay]);
 
   return (
-    // fb-slideshow: 화살표 스타일(회색 반투명 원, PC hover 시 표시 / 터치 기기 숨김 — 스와이프+
-    // 도트가 모바일 표준)은 globals.css 가 소유. max-w + mx-auto: 상자가 본문 폭을 넘어 화살표가
-    // 잘리던 자리(2026-08-09 실측 — 로고 3장 캐러셀).
+    // fb-slideshow: arrow styling (translucent grey circles, hover-reveal on desktop, hidden on
+    // touch devices — swipe + dots is the mobile standard) is owned by globals.css. max-w +
+    // mx-auto: the box used to outgrow the prose column and clip the right arrow (2026-08-09,
+    // the three-logo carousel).
     <div ref={ref} className="swiper fb-slideshow my-3 w-full max-w-2xl mx-auto rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
       <div className="swiper-wrapper">
         {images.map((img, i) => (
@@ -6035,7 +6040,7 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   );
 }
 
-/** Slideshow 슬라이드 한 장 — 생성중 감지·자동 스왑은 공용 훅(useMediaPhase)이 소유. */
+/** One slideshow slide — generating detection and self-swap are owned by the shared hook. */
 function SlideImg({ src, alt }: { src: string; alt?: string }) {
   const media = useMediaPhase(src, false);
   const t = usePublicTranslations();

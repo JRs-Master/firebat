@@ -624,9 +624,9 @@ mark[class^="fbhl-"] {
   .fbwx-typ { transform-box: fill-box; transform-origin: center; animation: fbwx-ccw 3.6s linear infinite; }
 }
 
-/* Slideshow(swiper) 화살표 — swiper 기본은 파란 대형 셰브론이라 콘텐츠를 이긴다.
-   표준 UX: 회색 반투명 원 + 흰 셰브론, PC(hover 가능 기기)는 상자에 올렸을 때만 표시,
-   터치 기기는 화살표 숨김(스와이프 + 하단 도트가 모바일 표준 — swiper 가 둘 다 기본 제공). */
+/* Slideshow (swiper) arrows — swiper's default is big blue chevrons that outshout the content.
+   Standard UX: translucent grey circle + white chevron, shown on hover where hover exists (PC),
+   hidden on touch devices (swipe + bottom dots are the mobile standard — swiper provides both). */
 .fb-slideshow .swiper-button-prev,
 .fb-slideshow .swiper-button-next {
   width: 36px;
