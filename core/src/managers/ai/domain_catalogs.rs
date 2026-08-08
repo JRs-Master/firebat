@@ -145,6 +145,12 @@ impl CatalogSource for MediaCatalogSource {
         };
         items
             .into_iter()
+            // A failed generation has nothing to show — surfacing it in search only produces
+            // dead embeds (2026-08-09 실측: a gallery pull rendered failure cards for images
+            // that never existed). The gallery panel still lists failures; that is the
+            // management surface. Rendering (in-flight) items stay searchable — the embed
+            // shows the generating card and swaps itself.
+            .filter(|m| m.status.as_deref() != Some("error"))
             .map(|m| {
                 let name = m
                     .filename_hint
