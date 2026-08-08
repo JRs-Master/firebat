@@ -2477,7 +2477,7 @@ function TextComp({ content }: { content: string }) {
   // to $-form before maskMath discards the "this is math by declaration" signal, and the currency
   // escape then breaks digit-leading spans like \( 4 \) (2026-08-09 cubic-answer pairing shift).
   const md = (s: string) => (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]}>{mdReady(s)}</ReactMarkdown>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeRaw, rehypeKatex]} components={{ img: (p: any) => <MdImg src={p.src} alt={p.alt} /> }}>{mdReady(s)}</ReactMarkdown>
   );
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
@@ -2494,6 +2494,111 @@ function TextComp({ content }: { content: string }) {
           </div>
         )}
     </div>
+  );
+}
+
+// ── 미디어 생성중 감지 공용 훅 ────────────────────────────────────────────────
+// image_gen 은 회색 placeholder PNG 를 "실제 URL 에" 먼저 저장한다(200 OK) — 로드 성공/실패로는
+// 생성 중임을 알 수 없다. 진실은 미디어 record 의 status: 같은 경로의 <slug>.meta.json 을 물어
+// rendering 이면 3초 폴링, done 이면 bytes 버전 쿼리(?v=)로 과거 immutable 캐시까지 자가 치유.
+// 이미지가 지나는 문이 셋이라(image 블록 · slideshow 슬라이드 · 마크다운 ![]()) 감지를 한 문에만
+// 달면 나머지가 회색으로 남는다(2026-08-09 실측 — 마크다운 경로가 정확히 그랬다). 로드 실패
+// (404류)는 백오프 재시도, 바닥나면 dead — 영원한 스피너 금지.
+type MediaPhase = 'ok' | 'probe-wait' | 'meta-wait' | 'dead';
+const MEDIA_RETRY_DELAYS_S = [2, 3, 5, 8, 13, 21, 30, 30, 30, 30, 30, 30, 60, 60, 60, 60]; // ≈7.5분 — 생성 타임아웃(420s) 커버
+function useMediaPhase(src: string, skip: boolean) {
+  const [retryTick, setRetryTick] = useState(0);
+  const [phase, setPhase] = useState<MediaPhase>('ok');
+  const [ver, setVer] = useState<string | null>(null);
+  const attemptRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(() => {
+    if (skip) return;
+    const m = /^(\/user\/media\/[^/?#]+)\.(png|jpg|jpeg|webp|gif)$/i.exec(src ?? '');
+    if (!m) return;
+    let stop = false;
+    const metaUrl = `${m[1]}.meta.json`;
+    const started = Date.now();
+    const check = async () => {
+      try {
+        const r = await fetch(metaUrl, { cache: 'no-store' });
+        if (!r.ok || stop) return; // meta 없는 옛 이미지 — 평범한 <img> 로
+        const rec = await r.json();
+        if (stop) return;
+        const st = rec?.status;
+        if (st === 'error') { setPhase('dead'); return; }
+        if (!st || st === 'done') {
+          setVer(String(rec?.bytes ?? rec?.createdAt ?? '1'));
+          setPhase('ok');
+          return;
+        }
+        setPhase('meta-wait');
+        if (Date.now() - started < 8 * 60 * 1000) {
+          timerRef.current = setTimeout(check, 3000);
+        } else {
+          setPhase('dead');
+        }
+      } catch { /* 네트워크 잡음 — 이미지 로드 경로가 알아서 */ }
+    };
+    check();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, skip]);
+  const onError = () => {
+    if (phaseRef.current === 'meta-wait') return; // meta 폴링이 이 대기의 주인
+    const n = attemptRef.current;
+    if (n >= MEDIA_RETRY_DELAYS_S.length) { setPhase('dead'); return; }
+    attemptRef.current = n + 1;
+    setPhase('probe-wait');
+    timerRef.current = setTimeout(() => setRetryTick(t => t + 1), MEDIA_RETRY_DELAYS_S[n] * 1000);
+  };
+  const onLoad = () => setPhase('ok');
+  const verSrc = ver ? `${src}${src.includes('?') ? '&' : '?'}v=${ver}` : src;
+  // 캐시버스터 — 404 응답이 캐시돼 재시도가 헛돌지 않게.
+  const probeSrc = retryTick > 0 ? `${verSrc}${verSrc.includes('?') ? '&' : '?'}r=${retryTick}` : verSrc;
+  return { phase, probeSrc, retryTick, onLoad, onError };
+}
+
+/** 마크다운 `![]()` 이미지 — 채팅 프로즈 안에서도 image 블록과 같은 규격으로:
+ *  세로 표준 캡(모바일 320 / PC 480) + 비율 유지 + 가운데 정렬 + 생성중 감지·자동 스왑.
+ *  <p> 안에 들어가므로 전부 span 으로(figure 는 p 안에서 invalid nesting). */
+export function MdImg({ src, alt }: { src?: string; alt?: string }) {
+  const s = String(src ?? '');
+  const media = useMediaPhase(s, false);
+  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  if (!s) return null;
+  if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
+    return (
+      <span className="flex flex-col items-center justify-center gap-3 px-12 py-10 my-2 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
+        <span className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
+        <span className="text-sm">이미지를 생성하고 있습니다…</span>
+      </span>
+    );
+  }
+  if (media.phase === 'dead') {
+    return (
+      <span className="flex flex-col items-center justify-center gap-1 px-12 py-10 my-2 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-400">
+        <span className="text-sm">이미지를 불러오지 못했습니다</span>
+        {alt && <span className="text-xs">{alt}</span>}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      key={media.retryTick}
+      src={media.probeSrc}
+      alt={alt ?? ''}
+      onLoad={media.onLoad}
+      onError={media.onError}
+      className="block mx-auto my-2 max-w-full h-auto object-contain rounded-xl border border-gray-100 shadow-sm"
+      style={maxH ? { maxHeight: maxH } : undefined}
+      loading="lazy"
+      decoding="async"
+    />
   );
 }
 
@@ -2544,66 +2649,15 @@ function ImageComp({
     return () => { cancelled = true; };
   }, [blurhash]);
 
-  // 생성 중 스왑 — image_gen 은 회색 placeholder PNG 를 "실제 URL 에" 먼저 저장한다(200 OK).
-  // 그래서 로드 성공/실패로는 생성 중임을 알 수 없다 — 2026-08-09 로고 실측: onError 는 영영
-  // 침묵했고, 채팅의 회색은 깨진 이미지가 아니라 성공적으로 로드된 placeholder 였다. 진실은
-  // 미디어 record 의 status: 같은 경로의 <slug>.meta.json 을 bare-src(변형·블러해시 없는 채팅
-  // 임베드)일 때만 조회해서, rendering 이면 생성 중 카드 + 3초 폴링, done 이면 bytes 를 버전
-  // 쿼리로 붙여 과거에 immutable 로 캐시된 placeholder 까지 자가 치유한다. 로드 실패(404류)는
-  // 백오프 재시도가 따로 받고, 어느 쪽이든 바닥나면 실패를 이름 대고 보인다(영원한 스피너 금지).
-  const RETRY_DELAYS_S = [2, 3, 5, 8, 13, 21, 30, 30, 30, 30, 30, 30, 60, 60, 60, 60]; // ≈7.5분 — 생성 타임아웃(420s) 커버
-  const [retryTick, setRetryTick] = useState(0);
-  const [phase, setPhase] = useState<'ok' | 'probe-wait' | 'meta-wait' | 'dead'>('ok');
-  const [ver, setVer] = useState<string | null>(null);
-  const attemptRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
-  useEffect(() => {
-    if ((variants && variants.length > 0) || blurhash) return; // 완성 산출물 — 조회 불필요
-    const m = /^(\/user\/media\/[^/?#]+)\.(png|jpg|jpeg|webp|gif)$/i.exec(src ?? '');
-    if (!m) return;
-    let stop = false;
-    const metaUrl = `${m[1]}.meta.json`;
-    const started = Date.now();
-    const check = async () => {
-      try {
-        const r = await fetch(metaUrl, { cache: 'no-store' });
-        if (!r.ok || stop) return; // meta 없는 옛 이미지 — 평범한 <img> 로
-        const rec = await r.json();
-        if (stop) return;
-        const st = rec?.status;
-        if (st === 'error') { setPhase('dead'); return; }
-        if (!st || st === 'done') {
-          setVer(String(rec?.bytes ?? rec?.createdAt ?? '1'));
-          setPhase('ok');
-          return;
-        }
-        setPhase('meta-wait');
-        if (Date.now() - started < 8 * 60 * 1000) {
-          timerRef.current = setTimeout(check, 3000);
-        } else {
-          setPhase('dead');
-        }
-      } catch { /* 네트워크 잡음 — 이미지 로드 경로가 알아서 */ }
-    };
-    check();
-    return () => { stop = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
-  const onImgError = () => {
-    if (phaseRef.current === 'meta-wait') return; // meta 폴링이 이 대기의 주인
-    const n = attemptRef.current;
-    if (n >= RETRY_DELAYS_S.length) { setPhase('dead'); return; }
-    attemptRef.current = n + 1;
-    setPhase('probe-wait');
-    timerRef.current = setTimeout(() => setRetryTick(t => t + 1), RETRY_DELAYS_S[n] * 1000);
-  };
-  const onImgLoad = () => { setLoaded(true); setPhase('ok'); };
-  const verSrc = ver ? `${src}${src.includes('?') ? '&' : '?'}v=${ver}` : src;
-  // 캐시버스터 — 404 응답이 캐시돼 재시도가 헛돌지 않게.
-  const probeSrc = retryTick > 0 ? `${verSrc}${verSrc.includes('?') ? '&' : '?'}r=${retryTick}` : verSrc;
+  // 생성 중 감지·스왑·재시도 = 공용 훅 (useMediaPhase — image 블록·slideshow·마크다운 img 가
+  // 같은 문을 지난다). 여기는 figure/blurhash/캡션 표현만 소유.
+  const { phase, probeSrc, retryTick, onLoad: mediaLoad, onError: onImgError } = useMediaPhase(
+    src,
+    Boolean((variants && variants.length > 0) || blurhash), // 완성 산출물 — meta 조회 불필요
+  );
+  const onImgLoad = () => { setLoaded(true); mediaLoad(); };
+  // 세로 표준 캡 — 지도/그래프/슬라이드와 같은 규격(모바일 320 / PC 480). 가로는 비율 따라.
+  const imgMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
 
   // variants 를 포맷별 srcset 으로 그룹핑
   const srcsetFor = (fmt: string) => {
@@ -2638,7 +2692,7 @@ function ImageComp({
 
   const waiting = phase === 'probe-wait' || phase === 'meta-wait';
   const imgCls = phase === 'ok'
-    ? `block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`
+    ? `block relative max-w-full h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`
     // 재시도 프로브 — display:none 이면 lazy 로더가 로드를 아예 안 하므로 1px 투명으로 유지.
     : 'absolute h-px w-px opacity-0 pointer-events-none';
   const img = (
@@ -2651,6 +2705,7 @@ function ImageComp({
       onLoad={onImgLoad}
       onError={onImgError}
       className={imgCls}
+      style={phase === 'ok' && imgMaxH ? { maxHeight: imgMaxH } : undefined}
       loading={retryTick > 0 ? 'eager' : 'lazy'}
       decoding="async"
     />
@@ -5949,12 +6004,14 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   }, [images, autoplay, autoplayDelay]);
 
   return (
-    <div ref={ref} className="swiper my-3 rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
+    // fb-slideshow: 화살표 스타일(회색 반투명 원, PC hover 시 표시 / 터치 기기 숨김 — 스와이프+
+    // 도트가 모바일 표준)은 globals.css 가 소유. max-w + mx-auto: 상자가 본문 폭을 넘어 화살표가
+    // 잘리던 자리(2026-08-09 실측 — 로고 3장 캐러셀).
+    <div ref={ref} className="swiper fb-slideshow my-3 w-full max-w-2xl mx-auto rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
       <div className="swiper-wrapper">
         {images.map((img, i) => (
           <div key={i} className="swiper-slide flex items-center justify-center bg-gray-50 relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.src ?? (img as any).url ?? ''} alt={img.alt ?? ''} className="max-w-full max-h-full object-contain" />
+            <SlideImg src={img.src ?? (img as any).url ?? ''} alt={img.alt ?? ''} />
             {img.caption && (
               <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white p-3 text-sm">{img.caption}</div>
             )}
@@ -5965,6 +6022,39 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
       <div className="swiper-button-next" />
       <div className="swiper-button-prev" />
     </div>
+  );
+}
+
+/** Slideshow 슬라이드 한 장 — 생성중 감지·자동 스왑은 공용 훅(useMediaPhase)이 소유. */
+function SlideImg({ src, alt }: { src: string; alt?: string }) {
+  const media = useMediaPhase(src, false);
+  if (!src) return <div className="text-sm text-gray-400">이미지 주소가 없습니다</div>;
+  if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 text-gray-500">
+        <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
+        <span className="text-sm">이미지를 생성하고 있습니다…</span>
+      </div>
+    );
+  }
+  if (media.phase === 'dead') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-1 text-gray-400">
+        <span className="text-sm">이미지를 불러오지 못했습니다</span>
+        {alt && <span className="text-xs">{alt}</span>}
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      key={media.retryTick}
+      src={media.probeSrc}
+      alt={alt ?? ''}
+      onLoad={media.onLoad}
+      onError={media.onError}
+      className="max-w-full max-h-full object-contain"
+    />
   );
 }
 

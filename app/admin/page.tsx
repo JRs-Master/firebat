@@ -22,7 +22,7 @@ import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
 import { PendingApprovals } from './components/PendingApprovals';
 import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { SourceTags } from './components/SourceTags';
-import { ComponentRenderer } from '../(user)/[...slug]/components';
+import { ComponentRenderer, MdImg } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting, setSettingsKeyPrefix } from './hooks/settings-manager';
 import { useTranslations } from '../../lib/i18n';
@@ -82,6 +82,10 @@ const mdComponents = {
   th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,
   td: (props: any) => <td className="px-3 py-1.5 text-slate-600 border-b border-slate-100 min-w-[120px] align-top break-words" {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />,
+  // 마크다운 ![]() 이미지 — image 블록과 같은 규격(세로 표준 캡·가운데·생성중 감지·자동 스왑).
+  // 모델이 render 블록 대신 마크다운으로 이미지를 넣는 턴이 실재한다(2026-08-09: 프로즈 전폭
+  // 회색 placeholder — 이 문만 감지가 없었다).
+  img: (props: any) => <MdImg src={props.src} alt={props.alt} />,
 };
 
 
