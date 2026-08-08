@@ -109,12 +109,13 @@ impl TtsAdapter {
         input: &str,
         voice: &str,
         style: Option<&str>,
+        wav: bool,
     ) -> InfraResult<Vec<u8>> {
         let mut body = serde_json::json!({
             "model": model,
             "input": input,
             "voice": voice,
-            "response_format": "mp3",
+            "response_format": if wav { "wav" } else { "mp3" },
         });
         if let Some(s) = style {
             if !s.trim().is_empty() {
@@ -149,7 +150,7 @@ impl TtsAdapter {
         // OpenAI = 단일 voice. 멀티스피커는 화자별 voice 로 줄별 생성 후 mp3 byte-concat
         // (같은 model/format 라 플레이어가 연속 재생). 단일 화자면 통째 1회.
         let audio = if req.speakers.is_empty() {
-            self.openai_one(&key, &req.model, &req.text, &req.voice, req.style.as_deref())
+            self.openai_one(&key, &req.model, &req.text, &req.voice, req.style.as_deref(), req.wav)
                 .await?
         } else {
             let mut out: Vec<u8> = Vec::new();
@@ -169,7 +170,9 @@ impl TtsAdapter {
                 let voice = sp.map(|s| s.voice.as_str()).unwrap_or(req.voice.as_str());
                 let style = sp.and_then(|s| s.style.as_deref()).or(req.style.as_deref());
                 let utter = if utter.is_empty() { line } else { utter };
-                let mp3 = self.openai_one(&key, &req.model, utter, voice, style).await?;
+                // Always mp3 here: raw WAV segments cannot be byte-concatenated (each carries its
+                // own header). The wav flag is a single-voice contract (the sing pipeline).
+                let mp3 = self.openai_one(&key, &req.model, utter, voice, style, false).await?;
                 out.extend_from_slice(&mp3);
             }
             if out.is_empty() {

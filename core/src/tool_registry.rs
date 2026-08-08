@@ -100,6 +100,7 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_infra_parity_tools(tools, &h);
     register_template_tools(tools, &h);
     register_tts_tool(tools, &h);
+    register_sing_tool(tools, &h);
     register_build_tools(tools);
 }
 
@@ -233,6 +234,7 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     speakers,
                     style,
                     align: true, // listening 오디오 — LRC 정렬(노래방·단어 seek)
+                    wav: false,
                 };
                 let result = tts.synthesize(&req).await?;
                 let url = media.save_conv_attachment(&conv, &name, &result.audio).await?;
@@ -245,6 +247,154 @@ fn register_tts_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     }
                 }
                 Ok(serde_json::json!({ "url": url, "cached": false }))
+            }
+        }),
+    );
+}
+
+/// sing — compose-and-sing. Core owns the round trip (TTS take → sing module DSP → media URL),
+/// the module owns the work: the same split as run_ui_action. The vocal is a TTS take retuned
+/// to the score, so the delivery is deliberately autotune-robot over a synthesized band.
+fn register_sing_tool(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    tools.register(ToolDefinition {
+        name: "sing".to_string(),
+        description: "Compose and SING a short song (autotune-robot vocal over a synthesized \
+            band). YOU write the score: bpm (60-160 fits most), style (trot|ballad|march|none — \
+            picks the drum pattern), notes[] = {syl, note, beats} where syl is ONE sung syllable \
+            ('-' extends the previous syllable across pitches, a melisma), note is a pitch name \
+            like 'G4', beats counts quarter notes; chords[] = {root, beats} drives the bass line \
+            (e.g. C3/G3/A3/F3). Keep it short: 8-32 notes, one verse. Returns { url } — put it \
+            in a `listening` component's audioUrl so it plays in chat. Compose ORIGINAL melodies \
+            only — do not reproduce real copyrighted songs' melodies or lyrics. The voice is \
+            deliberately robotic-cute (TTS retuned to pitch); tell the user that is the charm."
+            .to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "required": ["bpm", "notes"],
+            "properties": {
+                "title": {"type": "string"},
+                "bpm": {"type": "number"},
+                "style": {"type": "string", "enum": ["trot", "ballad", "march", "none"]},
+                "notes": {"type": "array", "items": {"type": "object", "properties": {
+                    "syl": {"type": "string"}, "note": {"type": "string"},
+                    "beats": {"type": "number"}}, "required": ["syl", "note", "beats"]}},
+                "chords": {"type": "array", "items": {"type": "object", "properties": {
+                    "root": {"type": "string"}, "beats": {"type": "number"}}}}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    let tts = h.tts.clone();
+    let media = h.media.clone();
+    let module = h.module.clone();
+    tools.register_handler(
+        "sing",
+        make_handler(move |args| {
+            let tts = tts.clone();
+            let media = media.clone();
+            let module = module.clone();
+            async move {
+                use std::hash::{Hash, Hasher};
+                let notes = args
+                    .get("notes")
+                    .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
+                    .ok_or_else(|| {
+                        crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "notes")])
+                    })?;
+                if notes.len() > 64 {
+                    return Err(format!(
+                        "{} notes — keep a song to 64 notes or fewer (one verse)",
+                        notes.len()
+                    ));
+                }
+                // The spoken take: syllables separated by spaces so the TTS articulates each one
+                // — which is exactly what the module's equal-split segmentation assumes.
+                let lyrics: String = notes
+                    .iter()
+                    .filter_map(|n| n.get("syl").and_then(|v| v.as_str()))
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && *s != "-")
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if lyrics.is_empty() {
+                    return Err("모든 음표의 syl 이 비어 있습니다 — 부를 가사가 없습니다".to_string());
+                }
+                let score = serde_json::json!({
+                    "bpm": args.get("bpm").cloned().unwrap_or(serde_json::json!(100)),
+                    "style": args.get("style").cloned().unwrap_or(serde_json::json!("trot")),
+                    "notes": notes,
+                    "chords": args.get("chords").cloned().unwrap_or(serde_json::json!([])),
+                });
+                let conv = args
+                    .get("convId")
+                    .or_else(|| args.get("currentConvId"))
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("_shared")
+                    .to_string();
+                let (provider, model) = tts.effective_config();
+                if provider == "browser" {
+                    return Err("노래 합성에는 서버 TTS(OpenAI 또는 Gemini 키)가 필요합니다 — \
+                                browser TTS 로는 목소리 파일을 만들 수 없습니다"
+                        .to_string());
+                }
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                provider.hash(&mut hasher);
+                score.to_string().hash(&mut hasher);
+                let id = format!("{:016x}", hasher.finish());
+                let out_name = format!("song-{id}.wav");
+                if let Some(url) = media.conv_attachment_url(&conv, &out_name).await? {
+                    return Ok(serde_json::json!({ "url": url, "cached": true }));
+                }
+                let req = crate::ports::TtsRequest {
+                    provider,
+                    model,
+                    text: lyrics,
+                    voice: String::new(),
+                    speakers: Vec::new(),
+                    style: Some(
+                        "또박또박, 음절 하나하나를 또렷하게, 일정한 속도로 읽어 주세요.".to_string(),
+                    ),
+                    align: false,
+                    wav: true, // the DSP reads via libsndfile — mp3 does not decode there
+                };
+                let take = tts.synthesize(&req).await?;
+                let dir = std::path::Path::new("data/sing");
+                let _ = std::fs::create_dir_all(dir);
+                let vocal_path = format!("data/sing/vocal-{id}.wav");
+                let out_path = format!("data/sing/song-{id}.wav");
+                std::fs::write(&vocal_path, &take.audio)
+                    .map_err(|e| format!("vocal take write failed: {e}"))?;
+                let run = module
+                    .run(
+                        "sing",
+                        &serde_json::json!({
+                            "action": "render",
+                            "score": score,
+                            "vocalPath": vocal_path,
+                            "outPath": out_path,
+                        }),
+                    )
+                    .await?;
+                if !run.success {
+                    let _ = std::fs::remove_file(&vocal_path);
+                    return Err(run
+                        .error
+                        .unwrap_or_else(|| "sing module refused the score".to_string()));
+                }
+                let bytes = std::fs::read(&out_path)
+                    .map_err(|e| format!("rendered song read failed ({out_path}): {e}"))?;
+                let url = media.save_conv_attachment(&conv, &out_name, &bytes).await?;
+                // media holds the durable copy — the working files are scratch.
+                let _ = std::fs::remove_file(&vocal_path);
+                let _ = std::fs::remove_file(&out_path);
+                Ok(serde_json::json!({
+                    "url": url,
+                    "cached": false,
+                    "seconds": run.data.get("seconds").cloned().unwrap_or(serde_json::Value::Null),
+                    "backend": run.data.get("backend").cloned().unwrap_or(serde_json::Value::Null),
+                }))
             }
         }),
     );

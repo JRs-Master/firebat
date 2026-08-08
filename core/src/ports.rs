@@ -3190,6 +3190,9 @@ pub struct TtsRequest {
     pub style: Option<String>,
     /// LRC 정렬(STT 타임스탬프) 수행 여부 — listening 오디오=true(노래방·단어 seek), 샘플 미리듣기=false(낭비 회피).
     pub align: bool,
+    /// WAV output instead of mp3 (single-voice OpenAI only; Gemini is wav natively). The sing
+    /// pipeline needs it: its DSP reads via libsndfile, which does not decode mp3.
+    pub wav: bool,
 }
 
 /// 멀티스피커 화자 설정 — 토익 등 화자별 억양·성별 다름.

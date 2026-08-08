@@ -216,10 +216,11 @@ async fn registered_tool_count() {
     // template: 3 (list/get/save_template) + build: 3 (start_build/advance_build/cancel_build) +
     // memory_file: 5 (memory_save/read/list/delete/grep) +
     // skill_file: 4 (get/list/save/delete_skill — search_skills 는 AiManager 시맨틱 판) + tts: 1 +
+    // sing: 1 (compose-and-sing — TTS take retuned to a score over a synthesized band) +
     // stream_watch: 3 (start/stop/list — 실시간 감시) +
-    // accounts: 1 (list_accounts — every registered account, across modules) = 66
-    assert_eq!(stats.total, 66);
-    assert_eq!(stats.by_source.get("core").copied(), Some(66));
+    // accounts: 1 (list_accounts — every registered account, across modules) = 67
+    assert_eq!(stats.total, 67);
+    assert_eq!(stats.by_source.get("core").copied(), Some(67));
 }
 
 #[tokio::test]
