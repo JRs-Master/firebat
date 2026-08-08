@@ -969,3 +969,18 @@ def realized_today(conn, day_start_ms, markets=None):
             or UNKNOWN_CURRENCY
         out[cur] = out.get(cur, 0.0) + float(row["realized"] or 0.0)
     return out
+
+
+def realized_today_by_strategy(conn, day_start_ms):
+    """Today's realised result per strategy id — what a trade's own daily loss limit reads.
+
+    No currency conversion on purpose: one trade lives on one venue, so its rows share a currency
+    and its limit is stated in that same money. Mixing trades is the currency map's job above.
+    """
+    out = {}
+    for row in conn.execute(
+            "SELECT strategy_id, realized FROM ledger WHERE ts_ms >= ? AND side='sell'",
+            (day_start_ms,)):
+        sid = str(row["strategy_id"] or "")
+        out[sid] = out.get(sid, 0.0) + float(row["realized"] or 0.0)
+    return out

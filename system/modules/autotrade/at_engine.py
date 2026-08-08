@@ -59,6 +59,33 @@ def trade_state(settings, strategy):
     return STATE_NAME[min(STATE_RANK[global_state(settings)], own_rank)]
 
 
+def stricter_state(a, b):
+    """The stricter of two three-state values — unreadable counts as off, same as everywhere."""
+    ra = STATE_RANK.get(str(a or "on").strip(), 0)
+    rb = STATE_RANK.get(str(b or "on").strip(), 0)
+    return STATE_NAME[min(ra, rb)]
+
+
+def trade_daily_limits(settings):
+    """`{trade id: limit}` for rows that name their own daily loss stop.
+
+    A trade's limit is compared against that trade's own realised result for the day, in whatever
+    currency its ledger keeps — one row's bad day says nothing about another's. The currency-wide
+    limits above keep working unchanged; this is the per-row refinement the trade card declares.
+    """
+    out = {}
+    for t in (settings.get("trades") or []):
+        if not isinstance(t, dict) or not t.get("id"):
+            continue
+        raw = t.get("dailyLossLimit")
+        if raw is None or raw == "":
+            raw = t.get("dailyLossLimitKrw")
+        amount = _num(raw)
+        if amount > 0:
+            out[str(t["id"])] = amount
+    return out
+
+
 def _hhmm(text):
     """`"15:30"` → 930 minutes. None if it is not a time."""
     try:

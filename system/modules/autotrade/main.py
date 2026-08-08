@@ -212,6 +212,23 @@ def day_start_ms():
     return clock.day_start_ms()
 
 
+def _overlay_trade_knobs(inst, trade):
+    """The execution knobs a trade row owns, folded onto a merged instance — both merge paths.
+
+    `stopLossPct` on the trade is a scalar override of the rule's own `exits.stopLossPct`: the
+    rule keeps its measured default, a row that names a different pain threshold wins. The window
+    and the per-row daily loss limit simply ride along so the cycle can read them off the
+    instance — they describe the placement, never the rule.
+    """
+    slp = eng._num(trade.get("stopLossPct"))
+    if slp > 0:
+        inst["exits"] = {**(inst.get("exits") or {}), "stopLossPct": slp}
+    for k in ("activeFrom", "activeUntil", "dailyLossLimit", "dailyLossLimitKrw"):
+        v = trade.get(k)
+        if v is not None and v != "":
+            inst[k] = v
+
+
 def _trade_instances(settings, taken):
     """Trades that point at a strategy by name — each becomes a runnable instance.
 
@@ -247,6 +264,7 @@ def _trade_instances(settings, taken):
             v = t.get(k)
             if v is not None and v != "":
                 inst[k] = v
+        _overlay_trade_knobs(inst, t)
         symbols = None
         if isinstance(t.get("symbols"), list) and t.get("symbols"):
             symbols = list(t["symbols"])
@@ -305,17 +323,21 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             # would otherwise carry the first account with it and place orders in the wrong one.
             s = {**s, "broker": s.get("broker") or trade.get("broker"),
                  "account": s.get("account") or trade.get("account"),
-                 "market": s.get("market") or trade.get("market")}
+                 "market": s.get("market") or trade.get("market"),
+                 "symbol": s.get("symbol") or trade.get("symbol")}
             # Which book, and whether it runs at all: these OVERWRITE rather than fill a blank,
             # because they describe the placement and not the rule — the same shape
             # `_trade_instances` already uses for a trade that references a strategy by name.
             # Measured 2026-08-08: `btc-trend` matched a trade by id instead of by reference, so
             # this path ran and copied only the three venue fields. Its trade said `ledger`, the
             # rule said nothing, and the engine placed **live** orders off the blank default.
-            for k in ("mode", "state"):
+            # Money and limits joined the overwrite set with the v2 recut: they are the person's
+            # side of the boundary, and a rule stripped of its budget must read the row's.
+            for k in ("mode", "state", "money", "limits"):
                 v = trade.get(k)
                 if v is not None and v != "":
                     s[k] = v
+            _overlay_trade_knobs(s, trade)
         if s.get("symbol") or not (trade and (trade.get("conditionName") or trade.get("screen"))):
             # A library rule — no symbol, no venue, no trade of its own — never runs bare. It
             # exists to be referenced; running it would book fills under a name with no account.
@@ -356,8 +378,37 @@ def pick_strategies(settings, symbol=None, strategy_id=None):
             continue
         if s.get("enabled") is False:
             continue
+        w = _window_verdict(s)
+        if w:
+            s = {**s, "state": eng.stricter_state(s.get("state"), w)}
         picked.append(s)
     return picked
+
+
+def _window_verdict(row, now_s=None):
+    """What a trade's own active window says about it right now — None inside the window.
+
+    Before `activeFrom` there is nothing to tend → off. After `activeUntil` the row may place no
+    NEW risk, but a position opened inside the window still needs its exit → pauseEntries, never
+    off (off drops the sells too, and an expired window that strands a position would turn the
+    deadline itself into the risk). A date that does not read as one also pauses entries — an
+    unreadable window is not permission to keep buying. End date inclusive, like the global gate.
+    """
+    start, end = row.get("activeFrom"), row.get("activeUntil")
+    if not start and not end:
+        return None
+    now_s = time.time() if now_s is None else now_s
+    if end:
+        es = day_epoch(end)
+        if es is None or now_s >= es + 86400:
+            return "pauseEntries"
+    if start:
+        ss = day_epoch(start)
+        if ss is None:
+            return "pauseEntries"
+        if now_s < ss:
+            return "off"
+    return None
 
 
 def unknown_strategy(settings, strategy_id):
@@ -681,6 +732,17 @@ def declared_trades(settings):
                     # (one broker's domestic order call is a different endpoint from its overseas
                     # one); the rest ignore it. Left unset it is the broker's own inference.
                     "market": str(t.get("market") or "").strip().lower() or None,
+                    # The execution knobs the v2 recut put on the row: budget, per-row stop and
+                    # daily limit, active window. Carried through normalisation explicitly —
+                    # this fixed key list is exactly the door mode and state once went missing at.
+                    "money": t.get("money") if isinstance(t.get("money"), dict) else None,
+                    "limits": t.get("limits") if isinstance(t.get("limits"), dict) else None,
+                    "stopLossPct": t.get("stopLossPct"),
+                    "dailyLossLimit": (t.get("dailyLossLimit")
+                                       if t.get("dailyLossLimit") not in (None, "")
+                                       else t.get("dailyLossLimitKrw")),
+                    "activeFrom": str(t.get("activeFrom") or "").strip() or None,
+                    "activeUntil": str(t.get("activeUntil") or "").strip() or None,
                     "template": t.get("template") if isinstance(t.get("template"), dict) else None})
     for w in _iv_warn:
         # Carried on the row so the gate's own warning list picks it up without a second channel.
@@ -1597,6 +1659,30 @@ def action_cycle(inp, settings):
     store.kv_set(conn, "trippedCurrencies", ",".join(sorted(halted)))
     settings["_trippedCurrencies"] = sorted(halted)
 
+    # The same statement per row: a trade that names its own daily loss limit pauses its own
+    # entries when its realised result for the day crosses it, and lifts itself the same way the
+    # currency halt does. Scoped to the row — one trade's bad day says nothing about another's.
+    tripped_trades = set()
+    trade_limits = eng.trade_daily_limits(settings)
+    if trade_limits:
+        prev_tt = set(store.kv_get(conn, "trippedTrades", "").split(",")) - {""}
+        by_sid = store.realized_today_by_strategy(conn, day_start_ms())
+        for tid, limit in sorted(trade_limits.items()):
+            pnl = by_sid.get(tid, 0.0)
+            if pnl <= -limit:
+                tripped_trades.add(tid)
+                if tid not in prev_tt:
+                    store.log_event(conn, "halt", {"reason": "trade daily loss limit reached",
+                                                   "limit": limit, "realized": pnl,
+                                                   "note": "this trade stops entering; its exits "
+                                                           "and every other trade keep running"},
+                                    strategy_id=tid)
+            elif tid in prev_tt:
+                store.log_event(conn, "resume",
+                                {"reason": "realised result back inside the limit",
+                                 "limit": limit, "realized": pnl}, strategy_id=tid)
+        store.kv_set(conn, "trippedTrades", ",".join(sorted(tripped_trades)))
+
     now = store.now_ms()
     sides = eng.fired_sides(signal)
     # One cycle can carry several symbols, each analysed on its own bars against its own rule.
@@ -1624,6 +1710,8 @@ def action_cycle(inp, settings):
     results, all_intents, ctxs = [], [], {}
 
     for s in strategies:
+        if s.get("id") in tripped_trades:
+            s = {**s, "state": eng.stricter_state(s.get("state"), "pauseEntries")}
         broker = s.get("broker") or "unknown"
         account = s.get("account") or ""
         sym = s.get("symbol") or symbol or ""
@@ -3030,6 +3118,67 @@ def action_selftest():
                    "ok": bool(_picked) and _picked[0].get("mode") == "live"
                          and _picked[0].get("state") == "pauseEntries"})
 
+    # --- v2 recut: the execution knobs the trade row owns --------------------------------------
+    # By reference: the trade's scalar stop overrides the rule's, the rest of `exits` survives,
+    # and the per-row daily limit rides the instance.
+    _v2 = {"tradingEnabled": True,
+           "trades": [{"id": "v2", "strategy": "v2r", "symbol": "AAA", "broker": "b",
+                       "mode": "ledger", "stopLossPct": 7.5, "dailyLossLimit": 30000,
+                       "money": {"perOrderKrw": 5000}}],
+           "strategies": [{"id": "v2r", "kind": "rules", "rules": [],
+                           "exits": {"stopLossPct": 12.0, "takeProfitPct": 4.0}}]}
+    _vp = [s for s in pick_strategies(_v2) if s.get("id") == "v2"]
+    checks.append({"name": "the trade's stop loss overrides the rule's, the rest survives",
+                   "want": [7.5, 4.0, 30000],
+                   "got": [((_vp or [{}])[0].get("exits") or {}).get("stopLossPct"),
+                           ((_vp or [{}])[0].get("exits") or {}).get("takeProfitPct"),
+                           (_vp or [{}])[0].get("dailyLossLimit")],
+                   "ok": bool(_vp) and (_vp[0].get("exits") or {}).get("stopLossPct") == 7.5
+                         and (_vp[0].get("exits") or {}).get("takeProfitPct") == 4.0
+                         and _vp[0].get("dailyLossLimit") == 30000})
+    # By id: same knobs through the other merge path — a rule stripped of venue and budget reads
+    # the row's symbol and money.
+    _v2i = {"tradingEnabled": True,
+            "trades": [{"id": "v2i", "symbol": "BBB", "broker": "b", "mode": "ledger",
+                        "money": {"perOrderKrw": 4000}, "stopLossPct": 5.0}],
+            "strategies": [{"id": "v2i", "kind": "rules", "rules": [],
+                            "exits": {"stopLossPct": 9.0}}]}
+    _vpi = [s for s in pick_strategies(_v2i) if s.get("id") == "v2i"]
+    checks.append({"name": "id-matched trades hand over symbol, money and the stop too",
+                   "want": ["BBB", 4000, 5.0],
+                   "got": [(_vpi or [{}])[0].get("symbol"),
+                           ((_vpi or [{}])[0].get("money") or {}).get("perOrderKrw"),
+                           ((_vpi or [{}])[0].get("exits") or {}).get("stopLossPct")],
+                   "ok": bool(_vpi) and _vpi[0].get("symbol") == "BBB"
+                         and (_vpi[0].get("money") or {}).get("perOrderKrw") == 4000
+                         and (_vpi[0].get("exits") or {}).get("stopLossPct") == 5.0})
+    # The trade's own window. Expired pauses entries — never off, which would drop the exit a
+    # position still needs. Not yet started is off: nothing exists to tend.
+    checks.append({"name": "a trade past its window pauses entries, never off",
+                   "want": "pauseEntries", "got": _window_verdict({"activeUntil": "2020-01-01"}),
+                   "ok": _window_verdict({"activeUntil": "2020-01-01"}) == "pauseEntries"})
+    checks.append({"name": "a trade before its window is off",
+                   "want": "off", "got": _window_verdict({"activeFrom": "2099-01-01"}),
+                   "ok": _window_verdict({"activeFrom": "2099-01-01"}) == "off"})
+    checks.append({"name": "no window, no verdict", "want": None,
+                   "got": _window_verdict({}), "ok": _window_verdict({}) is None})
+    checks.append({"name": "an unreadable window pauses entries rather than trusting it",
+                   "want": "pauseEntries", "got": _window_verdict({"activeUntil": "8월5일"}),
+                   "ok": _window_verdict({"activeUntil": "8월5일"}) == "pauseEntries"})
+    checks.append({"name": "the stricter of two states wins", "want": ["pauseEntries", "off"],
+                   "got": [eng.stricter_state("on", "pauseEntries"),
+                           eng.stricter_state("off", "pauseEntries")],
+                   "ok": eng.stricter_state("on", "pauseEntries") == "pauseEntries"
+                         and eng.stricter_state("off", "pauseEntries") == "off"})
+    _vw = {"tradingEnabled": True,
+           "trades": [{"id": "vw", "symbol": "CCC", "broker": "b", "mode": "ledger",
+                       "activeUntil": "2020-01-01"}],
+           "strategies": [{"id": "vw", "kind": "rules", "rules": []}]}
+    _vwp = [s for s in pick_strategies(_vw) if s.get("id") == "vw"]
+    checks.append({"name": "the window folds into the picked state",
+                   "want": "pauseEntries", "got": (_vwp or [{}])[0].get("state"),
+                   "ok": bool(_vwp) and _vwp[0].get("state") == "pauseEntries"})
+
     # And end to end: the row closes itself without asking the venue to cancel something the
     # venue already withdrew — the loop that measured `원주문번호가 존재하지 않습니다` forever.
     _econ = store.connect("dryrun")
@@ -3110,6 +3259,20 @@ def action_selftest():
                    "want": None, "got": eng.daily_loss_limits(
                        {"dailyLossLimitKrw": 50000}).get("USD"),
                    "ok": eng.daily_loss_limits({"dailyLossLimitKrw": 50000}).get("USD") is None})
+    # The per-row refinement: a trade that names its own daily loss stop reads its own realised
+    # result, in its own currency — one row's bad day says nothing about another's.
+    _bys = store.realized_today_by_strategy(pcon, 0)
+    checks.append({"name": "realised-today answers per trade, for the row's own limit",
+                   "want": -20.0, "got": _bys.get("pnus"),
+                   "ok": abs((_bys.get("pnus") or 0) - (-20.0)) < 1e-6})
+    checks.append({"name": "a trade row's own limit is collected by id",
+                   "want": {"tl": 30000.0},
+                   "got": eng.trade_daily_limits(
+                       {"trades": [{"id": "tl", "dailyLossLimit": 30000},
+                                   {"id": "no-limit"}]}),
+                   "ok": eng.trade_daily_limits(
+                       {"trades": [{"id": "tl", "dailyLossLimit": 30000},
+                                   {"id": "no-limit"}]}) == {"tl": 30000.0}})
     # A pair states its own quote currency, so a coin needs no market declared to be labelled.
     store.apply_fill(pcon, strategy_id="unlisted", broker="upbit-trade", account="",
                      symbol="BTC-ETH", side="buy", qty=1, price=0.03, source="test")

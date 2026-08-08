@@ -65,13 +65,7 @@
   "schedules": [
     "cron-upbit.json",
     "cron-upbit-context.json",
-    "cron-revise.json",
-    "cron-kiwoom-kr.json",
-    "cron-kiwoom-us.json",
-    "cron-kis-kr.json",
-    "cron-kis-us.json",
-    "cron-kiwoom-universe.json",
-    "cron-kiwoom-screen.json"
+    "cron-revise.json"
   ],
   "input": {
     "type": "object",
@@ -608,10 +602,171 @@
       "key": "trades",
       "type": "structured-list",
       "editor": "trades",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\"}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"strategy\": \"btc-trend\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"interval\": \"4h\", \"mode\": \"live\", \"stopLossPct\": 12.0, \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}}]",
       "tab": "매매",
       "group": "매매",
-      "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom-trade\",\"account\":\"모의국내\",\"market\":\"kr\",\"interval\":\"1d\"}]"
+      "placeholder": "[{\"symbol\":\"005930\",\"broker\":\"kiwoom-trade\",\"account\":\"모의국내\",\"market\":\"kr\",\"interval\":\"1d\"}]",
+      "editorSchema": {
+        "summary": [
+          "symbol",
+          "broker",
+          "account",
+          "interval",
+          "mode",
+          "state",
+          "strategy"
+        ],
+        "newItem": {
+          "id": "",
+          "strategy": "",
+          "broker": "",
+          "account": "",
+          "mode": "ledger"
+        },
+        "fields": [
+          {
+            "key": "id",
+            "label": "id",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "state",
+            "label": "상태",
+            "type": "select",
+            "options": [
+              {
+                "value": "",
+                "label": "가동"
+              },
+              {
+                "value": "pauseEntries",
+                "label": "신규진입 중지"
+              },
+              {
+                "value": "off",
+                "label": "전체 중지"
+              }
+            ]
+          },
+          {
+            "key": "mode",
+            "label": "장부/실주문",
+            "type": "select",
+            "required": true,
+            "options": [
+              {
+                "value": "ledger",
+                "label": "장부거래"
+              },
+              {
+                "value": "live",
+                "label": "실주문"
+              }
+            ]
+          },
+          {
+            "key": "strategy",
+            "label": "전략 (라이브러리 참조)",
+            "type": "ref",
+            "source": "strategies"
+          },
+          {
+            "key": "broker",
+            "label": "증권사 모듈",
+            "type": "text",
+            "required": true,
+            "placeholder": "upbit-trade / kiwoom-trade"
+          },
+          {
+            "key": "account",
+            "label": "계좌 별칭",
+            "type": "text"
+          },
+          {
+            "key": "market",
+            "label": "시장",
+            "type": "select",
+            "options": [
+              {
+                "value": "",
+                "label": "—"
+              },
+              {
+                "value": "kr",
+                "label": "kr"
+              },
+              {
+                "value": "us",
+                "label": "us"
+              },
+              {
+                "value": "crypto",
+                "label": "crypto"
+              }
+            ]
+          },
+          {
+            "key": "symbol",
+            "label": "종목",
+            "type": "text"
+          },
+          {
+            "key": "interval",
+            "label": "봉 (빈칸 = 전략 상속)",
+            "type": "text",
+            "placeholder": "5m / 1h / 4h / 1d"
+          },
+          {
+            "key": "money.perOrderKrw",
+            "label": "1회 주문한도 (원)",
+            "type": "number"
+          },
+          {
+            "key": "limits.maxPositionKrw",
+            "label": "전체 보유 한도 (원)",
+            "type": "number"
+          },
+          {
+            "key": "money.lotSize",
+            "label": "주문 단위 (코인 1e-8)",
+            "type": "number"
+          },
+          {
+            "key": "stopLossPct",
+            "label": "손절 % (빈칸 = 전략 값)",
+            "type": "number"
+          },
+          {
+            "key": "dailyLossLimit",
+            "label": "1일 손실한도 (이 매매만)",
+            "type": "number"
+          },
+          {
+            "key": "activeFrom",
+            "label": "실행 시작일",
+            "type": "text",
+            "placeholder": "YYYY-MM-DD"
+          },
+          {
+            "key": "activeUntil",
+            "label": "실행 종료일 (그날 포함)",
+            "type": "text",
+            "placeholder": "YYYY-MM-DD"
+          },
+          {
+            "key": "maxSymbols",
+            "label": "최대 종목 수",
+            "type": "number"
+          },
+          {
+            "key": "symbols",
+            "label": "종목 목록 (JSON)",
+            "type": "json",
+            "span": 2
+          }
+        ]
+      }
     },
     {
       "key": "universe",
@@ -640,10 +795,161 @@
       "key": "strategies",
       "type": "structured-list",
       "editor": "strategies",
-      "defaultValue": "[{\"id\": \"btc-trend\", \"enabled\": true, \"kind\": \"rules\", \"symbol\": \"KRW-BTC\", \"broker\": \"upbit-trade\", \"account\": \"\", \"money\": {\"perOrderKrw\": 10000, \"lotSize\": 1e-08}, \"limits\": {\"maxPositionKrw\": 10000}, \"exits\": {\"stopLossPct\": 12.0}, \"orders\": {\"type\": \"limit\", \"marketWhen\": [\"stop\"], \"limitOffsetPct\": 0.1}, \"rules\": [{\"side\": \"buy\", \"label\": \"ema9x21 (60일선 위)\", \"when\": [{\"a\": \"ema9\", \"op\": \"crossUp\", \"b\": \"ema21\"}, {\"a\": \"close\", \"op\": \">\", \"b\": \"ma360\"}]}, {\"side\": \"sell\", \"label\": \"10일선 하향\", \"when\": [{\"a\": \"close\", \"op\": \"crossDown\", \"b\": \"ma60\"}]}], \"_measured\": {\"family\": \"ema-cross + regime filter, 4h\", \"cell\": \"ema9x21-above-ma360-exit-ma60-sl12\", \"bars\": \"KRW-BTC 4시간봉 9000 (2022-06~2026-08)\", \"costs\": \"수수료 0.05% 양쪽 + 슬리피지 0.05%\", \"scale\": \"4시간봉이라 ma360=60일선, ma60=10일선, ema9/21=1.5일/3.5일\", \"trainReturnPct\": 236.1, \"trainTrades\": 47, \"trainMaxDrawdownPct\": -8.0, \"holdoutReturnPct\": 11.5, \"holdoutTrades\": 13, \"holdoutMaxDrawdownPct\": -6.4, \"buyHoldTrainPct\": 449.4, \"buyHoldHoldoutPct\": -37.5, \"segments\": \"학습전반 +30.2 / 학습후반 +134.4 / 검증전반 +0.5 / 검증후반 +10.9 — 네 구간 모두 플러스\", \"gridTried\": 24, \"note\": \"청산 속도를 재서 고른 값이다. 20일선 하향은 느려서 되돌림을 다 맞고(검증 +9.8), 5일선은 너무 빨라 추세를 놓친다(+4.0). 10일선이 최적점(+11.5). 강세장에선 매수보유에 크게 진다(학습전반 +30 vs +125) — 값은 하락장에서 나온다. 연 10~16회 거래.\"}, \"note\": \"4h · 60일선 위에서만 진입, 10일선 하향에 청산. 값은 하락장 방어에서 나옴(검증 +11.5% / 매수보유 -37.5%)\", \"interval\": \"4h\"}]",
+      "defaultValue": "[{\"id\": \"btc-trend\", \"kind\": \"rules\", \"exits\": {\"stopLossPct\": 12.0}, \"orders\": {\"type\": \"limit\", \"marketWhen\": [\"stop\"], \"limitOffsetPct\": 0.1}, \"rules\": [{\"side\": \"buy\", \"label\": \"ema9x21 (60일선 위)\", \"when\": [{\"a\": \"ema9\", \"op\": \"crossUp\", \"b\": \"ema21\"}, {\"a\": \"close\", \"op\": \">\", \"b\": \"ma360\"}]}, {\"side\": \"sell\", \"label\": \"10일선 하향\", \"when\": [{\"a\": \"close\", \"op\": \"crossDown\", \"b\": \"ma60\"}]}], \"_measured\": {\"family\": \"ema-cross + regime filter, 4h\", \"cell\": \"ema9x21-above-ma360-exit-ma60-sl12\", \"bars\": \"KRW-BTC 4시간봉 9000 (2022-06~2026-08)\", \"costs\": \"수수료 0.05% 양쪽 + 슬리피지 0.05%\", \"scale\": \"4시간봉이라 ma360=60일선, ma60=10일선, ema9/21=1.5일/3.5일\", \"trainReturnPct\": 236.1, \"trainTrades\": 47, \"trainMaxDrawdownPct\": -8.0, \"holdoutReturnPct\": 11.5, \"holdoutTrades\": 13, \"holdoutMaxDrawdownPct\": -6.4, \"buyHoldTrainPct\": 449.4, \"buyHoldHoldoutPct\": -37.5, \"segments\": \"학습전반 +30.2 / 학습후반 +134.4 / 검증전반 +0.5 / 검증후반 +10.9 — 네 구간 모두 플러스\", \"gridTried\": 24, \"note\": \"청산 속도를 재서 고른 값이다. 20일선 하향은 느려서 되돌림을 다 맞고(검증 +9.8), 5일선은 너무 빨라 추세를 놓친다(+4.0). 10일선이 최적점(+11.5). 강세장에선 매수보유에 크게 진다(학습전반 +30 vs +125) — 값은 하락장에서 나온다. 연 10~16회 거래.\"}, \"note\": \"4h · 60일선 위에서만 진입, 10일선 하향에 청산. 값은 하락장 방어에서 나옴(검증 +11.5% / 매수보유 -37.5%)\", \"interval\": \"4h\"}]",
       "tab": "전략",
       "group": "직접 선언",
-      "placeholder": "[]"
+      "placeholder": "[]",
+      "editorSchema": {
+        "summary": [
+          "interval",
+          "note"
+        ],
+        "newItem": {
+          "id": "",
+          "kind": "rules",
+          "rules": []
+        },
+        "fields": [
+          {
+            "key": "id",
+            "label": "id",
+            "type": "text",
+            "required": true
+          },
+          {
+            "key": "interval",
+            "label": "측정 봉 (규칙을 잰 봉)",
+            "type": "text",
+            "placeholder": "5m / 1h / 4h / 1d"
+          },
+          {
+            "key": "note",
+            "label": "메모",
+            "type": "text"
+          },
+          {
+            "key": "exits.stopLossPct",
+            "label": "손절 % (기본값 — 매매가 덮어씀)",
+            "type": "number"
+          },
+          {
+            "key": "exits.takeProfitPct",
+            "label": "익절 %",
+            "type": "number"
+          },
+          {
+            "key": "orders.type",
+            "label": "주문 방식",
+            "type": "select",
+            "options": [
+              {
+                "value": "",
+                "label": "—"
+              },
+              {
+                "value": "limit",
+                "label": "limit"
+              },
+              {
+                "value": "market",
+                "label": "market"
+              }
+            ]
+          },
+          {
+            "key": "orders.limitOffsetPct",
+            "label": "지정가 오프셋 %",
+            "type": "number"
+          },
+          {
+            "key": "holding.maxHoldMinutes",
+            "label": "최대 보유 (분)",
+            "type": "number"
+          },
+          {
+            "key": "holding.closeBeforeEndMin",
+            "label": "마감 전 청산 (분)",
+            "type": "number"
+          },
+          {
+            "key": "universe.type",
+            "label": "유니버스",
+            "type": "select",
+            "options": [
+              {
+                "value": "",
+                "label": "없음 (매매가 종목 지정)"
+              },
+              {
+                "value": "fixed",
+                "label": "고정 목록"
+              },
+              {
+                "value": "rank",
+                "label": "거래대금 상위"
+              },
+              {
+                "value": "condition",
+                "label": "조건검색"
+              }
+            ]
+          },
+          {
+            "key": "universe.symbols",
+            "label": "유니버스 종목 (JSON)",
+            "type": "json",
+            "span": 2,
+            "showWhen": {
+              "key": "universe.type",
+              "in": [
+                "fixed"
+              ]
+            }
+          },
+          {
+            "key": "universe.top",
+            "label": "상위 N",
+            "type": "number",
+            "showWhen": {
+              "key": "universe.type",
+              "in": [
+                "rank"
+              ]
+            }
+          },
+          {
+            "key": "universe.name",
+            "label": "조건검색 이름",
+            "type": "text",
+            "showWhen": {
+              "key": "universe.type",
+              "in": [
+                "condition"
+              ]
+            }
+          },
+          {
+            "key": "rules",
+            "label": "규칙",
+            "type": "rules"
+          },
+          {
+            "key": "orders.marketWhen",
+            "label": "시장가 전환 (JSON)",
+            "type": "json"
+          },
+          {
+            "key": "exits.scaleOut",
+            "label": "scaleOut (JSON)",
+            "type": "json"
+          },
+          {
+            "key": "exits.scaleIn",
+            "label": "scaleIn (JSON)",
+            "type": "json"
+          }
+        ]
+      }
     },
     {
       "key": "feeInCost",
