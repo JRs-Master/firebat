@@ -2428,7 +2428,7 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     }).await;
     state.register(McpTool {
         name: "image_gen".into(),
-        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환, 백그라운드 완성. inputSchema: GenerateImageInput.".into(),
+        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환, 백그라운드 완성. NOT for mathematical function graphs — the `function_plot` render component draws those exactly and instantly. inputSchema: GenerateImageInput.".into(),
         input_schema: core_schema("image_gen", schema_object(serde_json::json!({
             "prompt": {"type":"string"},
             "size": {"type":"string"},

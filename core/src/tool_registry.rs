@@ -2135,9 +2135,12 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                       it whenever the user asks for a picture/photo/illustration, not only for pages.** \
                       Returns immediately with a placeholder URL that is swapped for the finished \
                       image, so you can emit the component or save the page in the same turn without \
-                      waiting. Set `referenceImage` (slug/url/base64) for image-to-image. If image \
-                      generation is not configured the call returns an error — report that you could \
-                      not produce the image rather than describing one you did not create."
+                      waiting. Set `referenceImage` (slug/url/base64) for image-to-image. NOT for \
+                      mathematical function graphs (y=x², sin x, cubic curves…): the `function_plot` \
+                      render component draws those exactly and instantly — generated images of graphs \
+                      are slow and often mathematically wrong. If image generation is not configured \
+                      the call returns an error — report that you could not produce the image rather \
+                      than describing one you did not create."
             .to_string(),
         parameters: serde_json::json!({
             "type": "object",
