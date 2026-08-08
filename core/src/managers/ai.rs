@@ -1499,16 +1499,23 @@ impl AiManager {
                         "name": m.name,
                         "prompt": m.description.chars().take(160).collect::<String>(),
                         "contentType": m.extra.get("contentType").cloned().unwrap_or_default(),
+                        // The next move rides with the hit — without it the model searched,
+                        // found, and then wrote image blocks with no address (2026-08-09).
+                        "url": m.extra.get("url").cloned().unwrap_or_default(),
                         "score": m.score,
                     }))
                     .collect();
-                Ok(serde_json::json!({ "media": rows, "count": rows.len() }))
+                Ok(serde_json::json!({
+                    "media": rows,
+                    "count": rows.len(),
+                    "next": "To show one in chat, embed its `url` as an image block's src in a firebat-render fence."
+                }))
             }
         });
         self.tools.register_handler("search_media", handler);
         self.tools.register(crate::managers::tool::ToolDefinition {
             name: "search_media".to_string(),
-            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one.".to_string(),
+            description: "Semantic search over the media gallery by generation prompt / filename (meaning-based — a description of the image works, exact words not required). Use to find an existing image before generating a new one. Each hit carries its embeddable `url` — to SHOW a found image in chat, put that url in an image block's src.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

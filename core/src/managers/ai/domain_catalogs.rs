@@ -157,6 +157,15 @@ impl CatalogSource for MediaCatalogSource {
                 )
                 .trim()
                 .to_string();
+                // The embeddable address rides WITH the hit — search_media used to answer with
+                // slug/prompt only, and the model, having searched, wrote image blocks with no
+                // src at all (2026-08-09 실측: "이전 로고 두 버전" — the step's next move was
+                // not in the step's answer). System-scope files are not served under
+                // /user/media/, so only user-scope rows carry a url.
+                let url = match m.scope {
+                    Some(crate::ports::MediaScope::System) => serde_json::Value::Null,
+                    _ => serde_json::json!(format!("/user/media/{}.{}", m.slug, m.ext)),
+                };
                 CatalogEntry {
                     id: format!("admin:{}", m.slug),
                     name,
@@ -165,6 +174,7 @@ impl CatalogSource for MediaCatalogSource {
                         "slug": m.slug,
                         "contentType": m.content_type,
                         "createdAt": m.created_at,
+                        "url": url,
                     }),
                 }
             })
