@@ -286,13 +286,14 @@ impl AiService for AiServiceImpl {
             model: args.model,
             ..Default::default()
         };
-        // Cron context 활성 — MCP server destructive handler 가 검사 → 우회 후 직접 실행.
-        // 옛 TS globalThis.__firebatCronAgentJobId 패턴 Rust port (commit 262bc78).
-        let _cron_guard = crate::utils::cron_context::CronContextGuard::enter();
-        match self
-            .manager
-            .process_with_tools_opts(&args.agent_prompt, &[], &llm_opts, &ai_opts)
-            .await
+        // "Run now" from the panel runs with the JOB's identity, scoped to this execution —
+        // the standing the schedule's approval gave it, and nothing beyond this future.
+        match crate::utils::cron_context::scope(
+            args.job_id.clone(),
+            self.manager
+                .process_with_tools_opts(&args.agent_prompt, &[], &llm_opts, &ai_opts),
+        )
+        .await
         {
             Ok(res) => Ok(Response::new(AiRunAgentJobResponse {
                 raw_json: to_raw_json(&serde_json::json!({

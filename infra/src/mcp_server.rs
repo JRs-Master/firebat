@@ -316,6 +316,12 @@ fn verify_token(
     if firebat_core::utils::hub_context::is_registered_token(token) {
         return Ok((token.to_string(), true));
     }
+    // 1.6. cron 턴별 토큰 — a turn a schedule is running. handle_rpc wraps the request in that
+    //      job's cron scope, which is what lets ITS tool calls bypass approval while a chat turn
+    //      on the shared internal token, at the same moment, still gets a card.
+    if firebat_core::utils::cron_context::job_of_turn_token(token).is_some() {
+        return Ok((token.to_string(), true));
+    }
     // 2. 외부 사용자 API token 매칭 (AuthManager.validate_api_token).
     if let Some(auth_mgr) = &state.auth {
         if auth_mgr.validate_api_token(token).is_some() {
@@ -345,9 +351,14 @@ async fn handle_rpc(
     // active_* (inject_hub_owner / hub_blocks_tool / is_tool_visible / SearchLibraryHandler 등)는
     // 전역이 아니라 이 CURRENT_HUB 만 읽으므로 동시 요청이 서로 격리된다.
     let hub_ctx = firebat_core::utils::hub_context::lookup(&token);
+    // A cron turn token resolves back to its job; the request runs inside that job's cron scope.
+    // Everything else — internal token, hub token, API token — carries None, so the approval
+    // gates read "interactive" no matter what the scheduler is doing right now.
+    let cron_job = firebat_core::utils::cron_context::job_of_turn_token(&token);
     firebat_core::utils::pending_tools::BORN_OF_TURN
         .scope(is_turn, firebat_core::utils::hub_context::CURRENT_HUB
-        .scope(hub_ctx, async move {
+        .scope(hub_ctx, firebat_core::utils::cron_context::CRON_JOB
+        .scope(cron_job, async move {
     match req.method.as_str() {
         "initialize" => {
             let id = req.id.unwrap_or(Value::Null);
@@ -454,7 +465,7 @@ async fn handle_rpc(
             &format!("method not found: {}", other),
         ),
     }
-        }))
+        })))
         .await
 }
 
@@ -1158,7 +1169,7 @@ impl McpToolHandler for GetPageHandler {
 /// 옛 TS commit 262bc78 의 `globalThis.__firebatCronAgentJobId` 분기 Rust port. CLI 모델의 자체
 /// MCP loop 가 destructive 도구 (save_page / delete_* / schedule_task / cancel_cron_job) 호출 시
 /// 본 helper 통과 — admin chat 호출이면 pending action 생성 → 사용자 ✓ 승인해야 실행. cron 자동
-/// 실행 (CronContextGuard 활성) 이면 우회 후 직접 실행.
+/// 실행 (요청이 그 잡의 cron scope 안 — 턴 토큰이 증명) 이면 우회 후 직접 실행.
 fn pending_or_passthrough(
     args: &Value,
     tool_name: &str,

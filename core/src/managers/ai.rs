@@ -1849,6 +1849,15 @@ impl AiManager {
         // 자동주입 SourceTags 노이즈 제거 → 라이브러리 사용은 search_library 도구 액션뱃지로만 표시.
         let retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
 
+        // A cron agent turn authenticates its CLI's MCP loop with its OWN per-turn token, so the
+        // server can tell "a turn this job is running" from "a chat turn that happens to overlap"
+        // — identity instead of time, which is what retired the process-wide counter. The guard
+        // lives to the end of this function (= the turn); drop unregisters the token.
+        let _cron_turn_guard = ai_opts.cron_agent.as_ref().map(|cj| {
+            let (guard, token) = crate::utils::cron_context::CronTurnGuard::enter(&cj.job_id);
+            effective_opts.mcp_token = Some(token);
+            guard
+        });
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
         // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
@@ -3548,7 +3557,13 @@ impl AiManager {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("");
                             if crate::utils::pending_tools::requires_approval_value(&decl, act) {
-                                if crate::utils::cron_context::is_cron_context_active() {
+                                // The turn's own standing, not a process-wide flag: this turn is a
+                                // scheduled run only when IT was started as one. A chat turn that
+                                // merely overlaps a firing schedule reads interactive (the counter
+                                // let it read cron — measured 2026-08-06, four cardless sells).
+                                if ai_opts.cron_agent.is_some()
+                                    || crate::utils::cron_context::is_cron_context_active()
+                                {
                                     // 승인된 예약 실행 — 게이트 없이 정상 dispatch.
                                     None
                                 } else if effective_call

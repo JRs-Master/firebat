@@ -437,12 +437,6 @@ impl ScheduleManager {
                     info.trigger,
                     prompt.len()
                 ));
-                // Cron context 활성 — CLI 모델의 자체 MCP loop 안에서 destructive 도구
-                // (schedule_task / save_page / delete_*) 호출 시 mcp_server.rs handler 가
-                // is_cron_context_active() 검사 → 우회 후 직접 실행. 옛 TS commit 262bc78 의
-                // globalThis.__firebatCronAgentJobId 패턴 Rust port. Guard drop = 자동 unset.
-                let _cron_guard = crate::utils::cron_context::CronContextGuard::enter();
-
                 // cron_agent 컨텍스트 명시 — AiManager 가 (1) MAX_TOOL_TURNS 25 적용,
                 // (2) approval gate 우회 (server-side 자율 실행),
                 // (3) PromptBuilder 가 cron 전용 system_prompt 적용 (system/prompts/cron_agent).
@@ -456,7 +450,15 @@ impl ScheduleManager {
                     }),
                     ..Default::default()
                 };
-                match core.run_cron_agent(&prompt, &ai_opts).await
+                // The job's identity rides the execution future (task-local), not a process-wide
+                // flag — a chat turn running at the same moment must not inherit this job's
+                // approval bypass. The CLI's own MCP loop gets the same identity via a per-turn
+                // token (issued in ai.rs when `cron_agent` is set).
+                match crate::utils::cron_context::scope(
+                    info.job_id.clone(),
+                    core.run_cron_agent(&prompt, &ai_opts),
+                )
+                .await
                 {
                     Ok(res) => {
                         // An exhausted OR forced-final tool loop is a FAILURE for unattended runs:
@@ -516,12 +518,15 @@ impl ScheduleManager {
                     "[Cron] pipeline run: {} ({} steps, {:?})",
                     info.job_id, total, info.trigger
                 ));
-                // Cron context 활성 — 스케줄 등록 승인 = 잡에 담긴 액션(실주문 포함) 승인으로 간주
-                // (사용자 확정 2026-07-07). unattended_module_gate 가 이 guard 로 "승인된 예약 실행"과
-                // "인터랙티브 run_task 우회"를 구분한다(agent 분기의 guard 와 대칭 — 옛엔 pipeline
-                // 분기만 guard 가 없어 예약 매매가 차단됐음).
-                let _cron_guard = crate::utils::cron_context::CronContextGuard::enter();
-                let pipe_result = core.run_cron_pipeline(steps).await;
+                // Schedule approval = the actions the job carries (orders included) are approved
+                // (사용자 확정 2026-07-07). The identity is scoped to THIS job's execution future
+                // — the unattended gates read it off the await chain, and a chat turn running at
+                // the same moment inherits nothing (the process-wide counter's measured hole).
+                let pipe_result = crate::utils::cron_context::scope(
+                    info.job_id.clone(),
+                    core.run_cron_pipeline(steps),
+                )
+                .await;
                 success = pipe_result.success;
                 if !success {
                     error = pipe_result.error.clone();
@@ -581,11 +586,12 @@ impl ScheduleManager {
                 // Same standing as the agent and pipeline modes: approving the schedule approved
                 // what the job does. This mode was the one without the guard, so a module that
                 // needed an approval-gated action here got a card nobody was present to answer.
-                let _cron = crate::utils::cron_context::CronContextGuard::enter();
-                match h
-                    .sandbox
-                    .execute(&info.target_path, &input, &SandboxExecuteOpts::default())
-                    .await
+                match crate::utils::cron_context::scope(
+                    info.job_id.clone(),
+                    h.sandbox
+                        .execute(&info.target_path, &input, &SandboxExecuteOpts::default()),
+                )
+                .await
                 {
                     Ok(res) => {
                         success = res.success;
