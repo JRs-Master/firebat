@@ -899,6 +899,7 @@
     "limit_offset": "지정가 오프셋 %",
     "market_when": "시장가 전환",
     "measured": "측정",
-    "mode_required": "매매 {ids} 에 모드가 없습니다 — 장부거래/실주문을 고르기 전에는 저장되지 않습니다"
+    "mode_required": "매매 {ids} 에 모드가 없습니다 — 장부거래/실주문을 고르기 전에는 저장되지 않습니다",
+    "required_missing": "{ids} — 필수 칸이 채워지기 전에는 저장되지 않습니다"
   }
 }

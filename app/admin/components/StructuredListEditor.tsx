@@ -23,6 +23,29 @@ import { useTranslations } from '../../../lib/i18n';
 type Item = Record<string, any>;
 type Kind = 'trades' | 'strategies';
 
+/**
+ * A config-declared card layout. When a module ships one (`settings_fields[].editorSchema`),
+ * the cards render from it and the hardcoded TradeCard/StrategyCard below become the fallback
+ * for configs that predate the declaration — adding a field to a module's data shape becomes a
+ * config edit, not a frontend build.
+ */
+export interface EditorFieldDef {
+  key: string;                       // dotted (one level) reaches nested objects
+  label: string;                     // human-facing, written in the module's config
+  type: 'text' | 'number' | 'toggle' | 'select' | 'ref' | 'json' | 'rules';
+  options?: Array<{ value: string; label: string }>;
+  required?: boolean;                // empty — or outside `options` — blocks the save path
+  placeholder?: string;
+  span?: number;                     // grid columns (1..3); `rules` always takes the full row
+  showWhen?: { key: string; in: string[] };
+  source?: string;                   // ref only: sibling settings field whose item ids feed the dropdown
+}
+export interface EditorSchema {
+  fields: EditorFieldDef[];
+  summary?: string[];                // keys whose values compose the collapsed row line
+  newItem?: Item;
+}
+
 const OPS = ['crossUp', 'crossDown', '>', '<', '>=', '<='];
 const OPERAND_HINTS = ['close', 'open', 'high', 'low', 'volume', 'rsi', 'ma5', 'ma10', 'ma20',
   'ma60', 'ema3', 'ema10', 'ema60', 'macd.line', 'macd.signal', 'bollinger.upper',
@@ -243,6 +266,112 @@ function missingMode(items: Item[], kind: Kind): string[] {
     MODES.includes(String(it.mode ?? '')) ? [] : [String(it.id || `#${i + 1}`)]);
 }
 
+/**
+ * Rows the save path must refuse, named with the fields that block them. The generalisation of
+ * `missingMode`: a schema field marked `required` blocks when empty, and when it declares a
+ * closed vocabulary, a value outside it blocks too — the same gate that kept a blank trade mode
+ * from quietly meaning live, now available to any declared field.
+ */
+function blockedByRequired(items: Item[], schema: EditorSchema): string[] {
+  const required = (schema.fields ?? []).filter(f => f.required);
+  if (required.length === 0) return [];
+  return items.flatMap((it, i) => {
+    const bad = required.filter(f => {
+      const v = getKey(it, f.key);
+      const s = v === undefined || v === null ? '' : String(v);
+      if (s === '') return true;
+      return Array.isArray(f.options) && f.options.length > 0
+        && !f.options.some(o => o.value === s);
+    });
+    return bad.length
+      ? [`${String(it.id || `#${i + 1}`)} (${bad.map(f => f.label).join(', ')})`]
+      : [];
+  });
+}
+
+/** The one save gate, schema-aware: declared `required` fields when a schema exists,
+ *  the legacy mode check otherwise. */
+function blockedItems(items: Item[], kind: Kind, schema?: EditorSchema | null): string[] {
+  if (schema?.fields?.length) return blockedByRequired(items, schema);
+  return missingMode(items, kind);
+}
+
+function MeasuredNote({ item, t }: { item: Item; t: (k: string, p?: any) => string }) {
+  if (item._measured == null) return null;
+  return (
+    <div className="rounded-md bg-slate-50 px-2 py-1.5 text-[10px] text-slate-500">
+      <span className="font-bold">{t('structured.measured')}</span>{' '}
+      {String((item._measured as any)?.note ?? JSON.stringify(item._measured)).slice(0, 300)}
+    </div>
+  );
+}
+
+function SchemaCard({ item, onSet, schema, refIds, t }: {
+  item: Item; onSet: (k: string, v: any) => void; schema: EditorSchema;
+  refIds: (source: string) => string[]; t: (k: string, p?: any) => string;
+}) {
+  const visible = (schema.fields ?? []).filter(f =>
+    !f.showWhen || f.showWhen.in.includes(String(getKey(item, f.showWhen.key) ?? '')));
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {visible.map(f => {
+          const span = f.type === 'rules' || f.span === 3 ? 'col-span-2 sm:col-span-3'
+            : f.span === 2 ? 'col-span-2' : '';
+          if (f.type === 'rules') {
+            return (
+              <div key={f.key} className="col-span-2 sm:col-span-3">
+                <RulesEditor rules={getKey(item, f.key) ?? []}
+                  onChange={r => onSet(f.key, r)} t={t} />
+              </div>
+            );
+          }
+          if (f.type === 'json') {
+            return (
+              <div key={f.key} className={span}>
+                <JsonSubField item={item} k={f.key} label={f.label} onSet={onSet} />
+              </div>
+            );
+          }
+          if (f.type === 'toggle') {
+            return (
+              <div key={f.key} className={span}>
+                <BoolField item={item} k={f.key} label={f.label} onSet={onSet} />
+              </div>
+            );
+          }
+          if (f.type === 'number') {
+            return (
+              <div key={f.key} className={span}>
+                <NumField item={item} k={f.key} label={f.label} onSet={onSet} />
+              </div>
+            );
+          }
+          if (f.type === 'select' || f.type === 'ref') {
+            const options = f.type === 'ref'
+              ? [{ value: '', label: '—' },
+                 ...refIds(f.source ?? '').map(id => ({ value: id, label: id }))]
+              : (f.options ?? []);
+            return (
+              <div key={f.key} className={span}>
+                <SelectField item={item} k={f.key} label={f.label} onSet={onSet}
+                  options={options} />
+              </div>
+            );
+          }
+          return (
+            <div key={f.key} className={span}>
+              <TextField item={item} k={f.key} label={f.label} onSet={onSet}
+                placeholder={f.placeholder} />
+            </div>
+          );
+        })}
+      </div>
+      <MeasuredNote item={item} t={t} />
+    </div>
+  );
+}
+
 function TradeCard({ item, onSet, t }: {
   item: Item; onSet: (k: string, v: any) => void; t: (k: string, p?: any) => string;
 }) {
@@ -332,17 +461,24 @@ function StrategyCard({ item, onSet, t }: {
         <JsonSubField item={item} k="exits.scaleOut" label="scaleOut" onSet={onSet} />
         <JsonSubField item={item} k="exits.scaleIn" label="scaleIn" onSet={onSet} />
       </div>
-      {item._measured != null && (
-        <div className="rounded-md bg-slate-50 px-2 py-1.5 text-[10px] text-slate-500">
-          <span className="font-bold">{t('structured.measured')}</span>{' '}
-          {String((item._measured as any)?.note ?? JSON.stringify(item._measured)).slice(0, 300)}
-        </div>
-      )}
+      <MeasuredNote item={item} t={t} />
     </div>
   );
 }
 
-function summaryOf(item: Item, kind: Kind, t: (k: string, p?: any) => string): string {
+function summaryOf(
+  item: Item, kind: Kind, t: (k: string, p?: any) => string, schema?: EditorSchema | null,
+): string {
+  if (schema?.summary?.length) {
+    return schema.summary.map(k => {
+      const v = getKey(item, k);
+      if (v === undefined || v === null || v === '') return null;
+      const opt = schema.fields?.find(f => f.key === k)?.options
+        ?.find(o => o.value === String(v));
+      if (opt) return opt.label;
+      return Array.isArray(v) ? v.join(',') : String(v);
+    }).filter(Boolean).join(' · ');
+  }
   if (kind === 'trades') {
     const parts = [item.symbol ?? (Array.isArray(item.symbols) ? item.symbols.join(',') : ''),
       item.broker, item.account || null, item.interval,
@@ -360,8 +496,12 @@ function summaryOf(item: Item, kind: Kind, t: (k: string, p?: any) => string): s
 
 // ── main ─────────────────────────────────────────────────────────────────────────────────────
 
-export function StructuredListEditor({ value, onChange, kind }: {
+export function StructuredListEditor({ value, onChange, kind, schema, siblings }: {
   value: string; onChange: (text: string) => void; kind: Kind;
+  /** Config-declared card layout (`settings_fields[].editorSchema`) — wins over `kind`. */
+  schema?: EditorSchema | null;
+  /** The sibling settings values, for `ref` fields that pick from another list's ids. */
+  siblings?: Record<string, any>;
 }) {
   const t = useTranslations();
   const [view, setView] = useState<'form' | 'json'>('form');
@@ -386,13 +526,20 @@ export function StructuredListEditor({ value, onChange, kind }: {
   // stays on screen so it can be finished, and the value the save button writes is the last one
   // that was whole. A trade with no mode used to save fine and then place live orders off the
   // engine's blank default (measured 2026-08-08) — this is the door that should have been shut.
-  const blocked = useMemo(() => missingMode(items, kind), [items, kind]);
+  const blocked = useMemo(() => blockedItems(items, kind, schema), [items, kind, schema]);
+
+  // `ref` fields pick from another settings list's ids — the trade card's strategy dropdown.
+  const refIds = (source: string): string[] => {
+    const raw = siblings?.[source];
+    const arr = typeof raw === 'string' ? parseItems(raw) : Array.isArray(raw) ? raw : null;
+    return (arr ?? []).map(x => String((x as Item)?.id ?? '')).filter(Boolean);
+  };
 
   const propagate = (next: Item[]) => {
     const text = ser(next);
     setJsonText(text);
     setJsonBad(false);
-    if (missingMode(next, kind).length > 0) return;
+    if (blockedItems(next, kind, schema).length > 0) return;
     lastPropagated.current = text;
     onChange(text);
   };
@@ -423,7 +570,9 @@ export function StructuredListEditor({ value, onChange, kind }: {
         )}
         {!jsonBad && blocked.length > 0 && (
           <span className="text-[11px] text-red-500 font-bold">
-            {t('structured.mode_required', { ids: blocked.join(', ') })}
+            {schema?.fields?.length
+              ? t('structured.required_missing', { ids: blocked.join(', ') })
+              : t('structured.mode_required', { ids: blocked.join(', ') })}
           </span>
         )}
       </div>
@@ -435,9 +584,9 @@ export function StructuredListEditor({ value, onChange, kind }: {
             const parsed = parseItems(e.target.value);
             if (parsed) {
               setJsonBad(false);
-              // Hand-edited JSON is the other way a trade loses its mode, so it meets the same
-              // gate as the form — otherwise the strict card is a door next to an open window.
-              if (missingMode(parsed, kind).length === 0) {
+              // Hand-edited JSON is the other way a row loses a required field, so it meets the
+              // same gate as the form — otherwise the strict card is a door next to an open window.
+              if (blockedItems(parsed, kind, schema).length === 0) {
                 lastPropagated.current = e.target.value;
                 onChange(e.target.value);
               }
@@ -466,7 +615,7 @@ export function StructuredListEditor({ value, onChange, kind }: {
                       {item.id || t('structured.unnamed')}
                     </span>
                     <span className="text-[11px] text-slate-400 truncate">
-                      {summaryOf(item, kind, t)}
+                      {summaryOf(item, kind, t, schema)}
                     </span>
                   </button>
                   <button type="button" aria-label={t('structured.duplicate')}
@@ -479,9 +628,12 @@ export function StructuredListEditor({ value, onChange, kind }: {
                 </div>
                 {expanded && (
                   <div className="border-t border-slate-100 p-2.5">
-                    {kind === 'trades'
-                      ? <TradeCard item={item} onSet={(k, v) => setItem(i, withKey(item, k, v))} t={t} />
-                      : <StrategyCard item={item} onSet={(k, v) => setItem(i, withKey(item, k, v))} t={t} />}
+                    {schema?.fields?.length
+                      ? <SchemaCard item={item} onSet={(k, v) => setItem(i, withKey(item, k, v))}
+                          schema={schema} refIds={refIds} t={t} />
+                      : kind === 'trades'
+                        ? <TradeCard item={item} onSet={(k, v) => setItem(i, withKey(item, k, v))} t={t} />
+                        : <StrategyCard item={item} onSet={(k, v) => setItem(i, withKey(item, k, v))} t={t} />}
                   </div>
                 )}
               </div>
@@ -489,9 +641,11 @@ export function StructuredListEditor({ value, onChange, kind }: {
           })}
           <button type="button"
             onClick={() => {
-              propagate([...items, kind === 'trades'
-                ? { id: '', broker: '', account: '', mode: 'ledger' }
-                : { id: '', kind: 'rules', rules: [] }]);
+              propagate([...items, schema?.newItem
+                ? JSON.parse(JSON.stringify(schema.newItem))
+                : kind === 'trades'
+                  ? { id: '', broker: '', account: '', mode: 'ledger' }
+                  : { id: '', kind: 'rules', rules: [] }]);
               setOpen(prev => new Set(prev).add(items.length));
             }}
             className="flex items-center gap-1 self-start px-2.5 py-1.5 rounded-lg border border-dashed border-slate-300 text-[11px] font-bold text-slate-500 hover:border-blue-400 hover:text-blue-600">

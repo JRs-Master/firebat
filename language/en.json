@@ -899,6 +899,7 @@
     "limit_offset": "Limit offset %",
     "market_when": "Market when",
     "measured": "Measured",
-    "mode_required": "Trade {ids} has no mode — nothing is saved until ledger or live is chosen"
+    "mode_required": "Trade {ids} has no mode — nothing is saved until ledger or live is chosen",
+    "required_missing": "{ids} — not saved until the required fields are filled"
   }
 }

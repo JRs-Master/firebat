@@ -6,7 +6,7 @@ import { SaveButton, type SaveButtonState } from './SaveButton';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { TradingLedgerSection } from './TradingLedgerSection';
-import { StructuredListEditor } from './StructuredListEditor';
+import { StructuredListEditor, type EditorSchema } from './StructuredListEditor';
 import { HubPanel } from './HubPanel';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
@@ -35,7 +35,8 @@ interface SettingField {
   vaultKey?: string;        // shared-secret 전용: 값이 사는 시스템 키 (`system:...`)
   options?: SelectOption[]; // select 타입 전용: dropdown 옵션
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
-  editor?: 'trades' | 'strategies'; // structured-list 전용: 카드 편집기 종류
+  editor?: 'trades' | 'strategies'; // structured-list 전용: 카드 편집기 종류 (editorSchema 없을 때의 폴백)
+  editorSchema?: EditorSchema;      // structured-list 전용: config 선언형 카드 레이아웃 — 있으면 이것이 이긴다
 }
 
 /**
@@ -70,6 +71,7 @@ interface ConfigSettingField {
   options?: SelectOption[];
   widgetArea?: 'header' | 'sidebar' | 'footer';
   editor?: 'trades' | 'strategies';
+  editorSchema?: EditorSchema;
   i18n?: Partial<Record<Lang, ConfigI18nText>>;
 }
 
@@ -140,6 +142,7 @@ function resolveConfigField(
     options: resolvedOptions,
     widgetArea: cf.widgetArea,
     editor: cf.editor,
+    editorSchema: cf.editorSchema,
   };
 }
 
@@ -1053,6 +1056,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         value={settings[field.key] ?? '[]'}
                         onChange={v => handleChange(field.key, v)}
                         kind={field.editor ?? 'trades'}
+                        schema={field.editorSchema}
+                        siblings={settings}
                       />
                     ) : field.type === 'textarea' ? (
                       <textarea
