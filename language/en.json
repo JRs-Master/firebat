@@ -901,5 +901,10 @@
     "measured": "Measured",
     "mode_required": "Trade {ids} has no mode — nothing is saved until ledger or live is chosen",
     "required_missing": "{ids} — not saved until the required fields are filled"
+  },
+  "media_view": {
+    "generating": "Generating image…",
+    "load_failed": "Could not load this image",
+    "no_address": "This image has no address"
   }
 }

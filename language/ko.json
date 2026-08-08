@@ -901,5 +901,10 @@
     "measured": "측정",
     "mode_required": "매매 {ids} 에 모드가 없습니다 — 장부거래/실주문을 고르기 전에는 저장되지 않습니다",
     "required_missing": "{ids} — 필수 칸이 채워지기 전에는 저장되지 않습니다"
+  },
+  "media_view": {
+    "generating": "이미지를 생성하고 있습니다…",
+    "load_failed": "이미지를 불러오지 못했습니다",
+    "no_address": "이미지 주소가 없습니다"
   }
 }

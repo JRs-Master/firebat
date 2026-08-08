@@ -2535,6 +2535,13 @@ function useMediaPhase(src: string, skip: boolean) {
           setPhase('ok');
           return;
         }
+        // 죽은 생성의 박제 — 프로세스가 finalize 전에 죽으면 meta 가 'rendering' 인 채 영영
+        // 남는다(2026-08-09 실측: 옛 실패 이미지 하나가 갤러리 불러오기에서 스피너를 돌았다).
+        // 생성 타임아웃(420s)보다 훨씬 오래된 rendering 은 실패로 읽는다.
+        if (rec?.createdAt && Date.now() - Number(rec.createdAt) > 15 * 60 * 1000) {
+          setPhase('dead');
+          return;
+        }
         setPhase('meta-wait');
         if (Date.now() - started < 8 * 60 * 1000) {
           timerRef.current = setTimeout(check, 3000);
@@ -2568,20 +2575,21 @@ function useMediaPhase(src: string, skip: boolean) {
 export function MdImg({ src, alt }: { src?: string; alt?: string }) {
   const s = String(src ?? '');
   const media = useMediaPhase(s, false);
+  const t = usePublicTranslations();
   const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   if (!s) return null;
   if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
     return (
-      <span className="flex flex-col items-center justify-center gap-3 px-12 py-10 my-2 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
+      <span className="flex flex-col items-center justify-center gap-3 px-12 py-10 my-4 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-500">
         <span className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
-        <span className="text-sm">이미지를 생성하고 있습니다…</span>
+        <span className="text-sm">{t('media_view.generating')}</span>
       </span>
     );
   }
   if (media.phase === 'dead') {
     return (
-      <span className="flex flex-col items-center justify-center gap-1 px-12 py-10 my-2 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-400">
-        <span className="text-sm">이미지를 불러오지 못했습니다</span>
+      <span className="flex flex-col items-center justify-center gap-1 px-12 py-10 my-4 mx-auto w-fit min-w-[240px] rounded-xl border border-gray-100 bg-gray-50 text-gray-400">
+        <span className="text-sm">{t('media_view.load_failed')}</span>
         {alt && <span className="text-xs">{alt}</span>}
       </span>
     );
@@ -2594,7 +2602,8 @@ export function MdImg({ src, alt }: { src?: string; alt?: string }) {
       alt={alt ?? ''}
       onLoad={media.onLoad}
       onError={media.onError}
-      className="block mx-auto my-2 max-w-full h-auto object-contain rounded-xl border border-gray-100 shadow-sm"
+      // my-4: fence 경로(세그먼트 gap-6)와 눈높이가 맞는 간격 — md 이미지만 좁아 보이던 자리.
+      className="block mx-auto my-4 max-w-full h-auto object-contain rounded-xl border border-gray-100 shadow-sm"
       style={maxH ? { maxHeight: maxH } : undefined}
       loading="lazy"
       decoding="async"
@@ -2625,6 +2634,7 @@ function ImageComp({
   // (2026-08-09 logo fence: {"url": ..., "caption": ...} rendered as a broken icon because only
   // `src` was read). Same policy as the fence parser: accept the dialect at the boundary.
   const src = srcProp || url || '';
+  const t = usePublicTranslations();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -2679,7 +2689,7 @@ function ImageComp({
     return (
       <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
         <div className="flex items-center justify-center px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
-          <span className="text-sm">이미지 주소가 없습니다</span>
+          <span className="text-sm">{t('media_view.no_address')}</span>
         </div>
         {(caption || alt) && (
           <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50 w-0 min-w-full border-t border-gray-100">
@@ -2729,12 +2739,12 @@ function ImageComp({
         {waiting && (
           <div className="flex flex-col items-center justify-center gap-3 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-500">
             <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
-            <span className="text-sm">이미지를 생성하고 있습니다…</span>
+            <span className="text-sm">{t('media_view.generating')}</span>
           </div>
         )}
         {phase === 'dead' && (
           <div className="flex flex-col items-center justify-center gap-1 px-12 py-10 min-w-[240px] bg-gray-50 text-gray-400">
-            <span className="text-sm">이미지를 불러오지 못했습니다</span>
+            <span className="text-sm">{t('media_view.load_failed')}</span>
             {alt && <span className="text-xs">{alt}</span>}
           </div>
         )}
@@ -6028,19 +6038,20 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
 /** Slideshow 슬라이드 한 장 — 생성중 감지·자동 스왑은 공용 훅(useMediaPhase)이 소유. */
 function SlideImg({ src, alt }: { src: string; alt?: string }) {
   const media = useMediaPhase(src, false);
-  if (!src) return <div className="text-sm text-gray-400">이미지 주소가 없습니다</div>;
+  const t = usePublicTranslations();
+  if (!src) return <div className="text-sm text-gray-400">{t('media_view.no_address')}</div>;
   if (media.phase === 'meta-wait' || media.phase === 'probe-wait') {
     return (
       <div className="flex flex-col items-center justify-center gap-3 text-gray-500">
         <div className="w-6 h-6 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" aria-hidden="true" />
-        <span className="text-sm">이미지를 생성하고 있습니다…</span>
+        <span className="text-sm">{t('media_view.generating')}</span>
       </div>
     );
   }
   if (media.phase === 'dead') {
     return (
       <div className="flex flex-col items-center justify-center gap-1 text-gray-400">
-        <span className="text-sm">이미지를 불러오지 못했습니다</span>
+        <span className="text-sm">{t('media_view.load_failed')}</span>
         {alt && <span className="text-xs">{alt}</span>}
       </div>
     );
