@@ -27,7 +27,14 @@ pub const MESSAGE_COLUMN_KEYS: &[&str] = &["id", "role", "content"];
 /// Message Value → (id, role, content, created_at[for sort], data_json). data_json = message ∖ {id,role,content}.
 pub fn split_message(msg: &serde_json::Value) -> (String, String, String, i64, String) {
     let id = msg.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    // The storage word for the answering side is 'assistant'. The admin UI's internal state
+    // still says 'system' for that bubble (its first naming), and this boundary translates so
+    // no caller has to — rows written as 'system' made the assistant invisible to recall
+    // extraction and role-filtered search (repaired 2026-08-08, one-shot UPDATE in database.rs).
+    let role = match msg.get("role").and_then(|v| v.as_str()).unwrap_or_default() {
+        "system" => "assistant".to_string(),
+        r => r.to_string(),
+    };
     let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or_default().to_string();
     let created_at = msg.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
     let mut rich = msg.clone();

@@ -883,7 +883,11 @@ fn format_transcript(messages: &[serde_json::Value]) -> String {
         let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
         let role_label = match role {
             "user" => "사용자",
-            "assistant" => "AI",
+            // 'system' is the pre-repair spelling of the answer rows (the admin UI's bubble-side
+            // naming leaked into storage until 2026-08-08). Kept accepted so a transcript built
+            // from an unmigrated copy still shows the AI's half — dropping it silently fed the
+            // extractor user-only conversations for months.
+            "assistant" | "system" => "AI",
             _ => continue,
         };
         let raw = m.get("content").and_then(|v| v.as_str()).unwrap_or("");

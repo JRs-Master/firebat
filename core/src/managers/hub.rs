@@ -536,7 +536,7 @@ impl HubManager {
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_else(|| serde_json::json!({}));
         let mut msg = serde_json::json!({
-            "id": id, "role": "system", "content": content.clone().unwrap_or_default(), "createdAt": Self::now_ms(),
+            "id": id, "role": "assistant", "content": content.clone().unwrap_or_default(), "createdAt": Self::now_ms(),
         });
         if let Some(o) = msg.as_object_mut() {
             for k in ["executedActions", "toolResults", "suggestions", "pendingActions", "libraryHits"] {

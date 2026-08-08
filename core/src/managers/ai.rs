@@ -1672,7 +1672,7 @@ impl AiManager {
         conv.append(owner, conv_id, &msg);
     }
 
-    /// Persist the AI (system) message for this chat turn — single point (admin & hub), canonical
+    /// Persist the AI (assistant) message for this chat turn — single point (admin & hub), canonical
     /// `message_data_json`. No-op without conversation / conversation_id / ai_msg_id. Pass the redacted
     /// response (via `finalize`) so secrets are never stored. Detached server-side → survives disconnect.
     fn persist_system_msg(&self, ai_opts: &AiRequestOpts, response: &AiResponse) {
@@ -1686,7 +1686,7 @@ impl AiManager {
         let owner = ai_opts.owner.as_deref().unwrap_or("admin");
         let payload = response.message_data_json();
         let mut msg = serde_json::json!({
-            "id": aid, "role": "system", "content": response.reply,
+            "id": aid, "role": "assistant", "content": response.reply,
             "createdAt": crate::utils::time::now_ms(),
         });
         if let Some(o) = msg.as_object_mut() {
@@ -1734,7 +1734,7 @@ impl AiManager {
         };
         let owner = ai_opts.owner.as_deref().unwrap_or("admin");
         let mut msg = serde_json::json!({
-            "id": aid, "role": "system", "content": err, "error": err,
+            "id": aid, "role": "assistant", "content": err, "error": err,
             "createdAt": crate::utils::time::now_ms(),
         });
         if !reasoning_trace.is_empty() {

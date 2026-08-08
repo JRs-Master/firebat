@@ -173,6 +173,20 @@ impl SqliteDatabaseAdapter {
             "ALTER TABLE conversations ADD COLUMN last_consolidated_at INTEGER",
             [],
         );
+        // One-shot role repair. The first chat UI named its bubble sides user/system, and that
+        // word leaked into storage: every AI answer row said role='system' (audited 2026-08-08:
+        // 593 'system' rows, all of them answers, zero genuine system notices, zero 'assistant').
+        // Recall extraction skips non user/assistant roles, so every answer was invisible to it,
+        // and role-filtered searches missed the assistant entirely. Idempotent: after the first
+        // boot both UPDATEs match nothing.
+        let _ = conn.execute(
+            "UPDATE conversation_messages SET role='assistant' WHERE role='system'",
+            [],
+        );
+        let _ = conn.execute(
+            "UPDATE conversation_embeddings SET role='assistant' WHERE role='system'",
+            [],
+        );
         Ok(())
     }
 
