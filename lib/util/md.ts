@@ -153,6 +153,20 @@ function escapeCurrencyDollars(s: string): string {
     }
     const next = s[i + 1] ?? '';
     if (!fence && !code && c === '$' && next >= '0' && next <= '9' && s[i - 1] !== '\\' && s[i - 1] !== '$') {
+      // A digit after `$` usually means money — but `$30^\circ$` and `$2\pi$` are math that
+      // happens to start with a digit, and this escape was killing every one of them (measured
+      // 2026-08-08: the trigonometry answer's degree headers and periods all rendered as raw
+      // text while the backslash-leading fractions next to them survived). A span that closes
+      // on the same line and carries a LaTeX marker — a backslash command or `^` — is math;
+      // only the rest is money. `_` is deliberately not a marker: `$30 file_name … $40` is
+      // prose about money, not a formula.
+      const close = s.indexOf('$', i + 1);
+      const nl = s.indexOf('\n', i + 1);
+      const inner = close > i && (nl === -1 || close < nl) ? s.slice(i + 1, close) : '';
+      if (inner && /\\[a-zA-Z]|\^/.test(inner)) {
+        out += c;
+        continue;
+      }
       out += '\\$';
       continue;
     }
@@ -196,7 +210,12 @@ export function maskMath(s: string): { masked: string; restore: (t: string) => s
   s = normalizeLatexDelimiters(s);
   s = escapeCurrencyDollars(s);
   const store: string[] = [];
-  const masked = s.replace(/\$\$[\s\S]+?\$\$|\$(?![\s\d])[^$\n]*?(?<!\s)\$/g, (m) => {
+  // The third alternative mirrors escapeCurrencyDollars' exception: digit-leading spans are
+  // masked as math only when they carry a LaTeX marker, so `$30^\circ$` is protected while a
+  // stray "$30" that survived escaping still is not.
+  const masked = s.replace(
+    /\$\$[\s\S]+?\$\$|\$(?![\s\d])[^$\n]*?(?<!\s)\$|\$(?=\d)(?=[^$\n]*(?:\\[a-zA-Z]|\^))[^$\n]*?(?<!\s)\$/g,
+    (m) => {
     store.push(m);
     return '@@FBMATH' + (store.length - 1) + '@@';
   });
