@@ -2516,6 +2516,9 @@ function useMediaPhase(src: string, skip: boolean) {
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phaseRef = useRef(phase);
+  // Meta answered 404 = the media record itself is gone — the file is never coming, so the
+  // load-failure retries fail fast instead of spinning the full 7.5-minute budget.
+  const metaMissingRef = useRef(false);
   phaseRef.current = phase;
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
   useEffect(() => {
@@ -2528,7 +2531,11 @@ function useMediaPhase(src: string, skip: boolean) {
     const check = async () => {
       try {
         const r = await fetch(metaUrl, { cache: 'no-store' });
-        if (!r.ok || stop) return; // old image with no meta — behave as a plain <img>
+        if (!r.ok) {
+          if (r.status === 404) metaMissingRef.current = true;
+          return; // no meta — behave as a plain <img> (with the fast-fail budget above)
+        }
+        if (stop) return;
         const rec = await r.json();
         if (stop) return;
         const st = rec?.status;
@@ -2560,7 +2567,8 @@ function useMediaPhase(src: string, skip: boolean) {
   const onError = () => {
     if (phaseRef.current === 'meta-wait') return; // the meta poll owns this wait
     const n = attemptRef.current;
-    if (n >= MEDIA_RETRY_DELAYS_S.length) { setPhase('dead'); return; }
+    const budget = metaMissingRef.current ? 2 : MEDIA_RETRY_DELAYS_S.length;
+    if (n >= budget) { setPhase('dead'); return; }
     attemptRef.current = n + 1;
     setPhase('probe-wait');
     timerRef.current = setTimeout(() => setRetryTick(t => t + 1), MEDIA_RETRY_DELAYS_S[n] * 1000);

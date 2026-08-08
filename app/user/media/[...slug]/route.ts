@@ -37,17 +37,22 @@ export async function GET(
     const res = await readMedia({ slug: slug });
     if (!res.ok) return new NextResponse(res.message || '서버 오류', { status: 500 });
     const payload = res.data;
-    if (!payload || !payload.binaryBase64) return new NextResponse('Not found', { status: 404 });
+    if (!payload) return new NextResponse('Not found', { status: 404 });
     // scope 검증 — /user/media/ URL 로 system scope 파일 요청 시 404
     if (payload.record?.scope && payload.record.scope !== 'user') {
       return new NextResponse('Not found', { status: 404 });
     }
     const status = (payload.record as { status?: string } | undefined)?.status;
     if (isMeta) {
-      return NextResponse.json(payload.record ?? { slug }, {
+      // Meta must not require the binary: a failed generation can have a record and NO file
+      // (measured 2026-08-09 — three error records whose meta 404'd here, so the client could
+      // never learn "failed" and spun its retry loop instead).
+      if (!payload.record) return new NextResponse('Not found', { status: 404 });
+      return NextResponse.json(payload.record, {
         headers: { 'Cache-Control': 'no-store' },
       });
     }
+    if (!payload.binaryBase64) return new NextResponse('Not found', { status: 404 });
 
     const binary = Buffer.from(payload.binaryBase64, 'base64');
     const uint8 = new Uint8Array(binary);
