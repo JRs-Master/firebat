@@ -4802,6 +4802,73 @@ impl AiManager {
             b["text"] = serde_json::Value::String(restored);
         }
 
+        // Image-embed fallback — the model owns placement, the framework owns delivery. A turn
+        // that generated an image but never referenced its url in the visible answer would ship
+        // the picture nowhere the user looks (2026-08-09 로고 실측: the embed step is the one
+        // fragile link left — repeat calls, prop dialects, or simply forgetting it). Deterministic
+        // backstop: append a canonical image block, and NAME the repair — a red badge in
+        // toolResults plus a journal line — so the model's miss stays observable and steerable
+        // instead of silently papered over.
+        {
+            let mut missing: Vec<(String, String)> = Vec::new();
+            for ex in &tool_exchanges {
+                for (tc, tr) in ex.tool_calls.iter().zip(ex.tool_results.iter()) {
+                    if tc.name != "image_gen" || !tr.success {
+                        continue;
+                    }
+                    let Some(url) = tr.result.get("url").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    let referenced = clean_reply.contains(url)
+                        || final_blocks.iter().any(|b| b.to_string().contains(url));
+                    if referenced || missing.iter().any(|(u, _)| u == url) {
+                        continue;
+                    }
+                    let alt: String = tc
+                        .arguments
+                        .get("prompt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("생성 이미지")
+                        .chars()
+                        .take(80)
+                        .collect();
+                    missing.push((url.to_string(), alt));
+                }
+            }
+            if !missing.is_empty() {
+                let img_blocks: Vec<serde_json::Value> = missing
+                    .iter()
+                    .map(|(u, a)| serde_json::json!({"type": "image", "props": {"src": u, "alt": a}}))
+                    .collect();
+                let fence = format!(
+                    "\n\n```firebat-render\n{}\n```",
+                    serde_json::to_string(&img_blocks).unwrap_or_default()
+                );
+                clean_reply.push_str(&fence);
+                final_blocks.push(serde_json::json!({"type": "text", "text": fence}));
+                tracing::warn!(
+                    target: "ai",
+                    count = missing.len(),
+                    urls = %missing.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>().join(","),
+                    "image embed fallback — generated image never referenced in the answer; system appended the block"
+                );
+                tool_results_summary.push(crate::ports::ToolResultSummary {
+                    name: "image_embed_fallback".to_string(),
+                    // Red badge on purpose: the repair worked, but the miss itself must stay
+                    // visible — this is the LLM-guidance channel.
+                    success: false,
+                    error: Some(
+                        "모델이 생성된 이미지를 답변에 넣지 않아 시스템이 대신 붙였습니다".to_string(),
+                    ),
+                    input: Some(serde_json::json!({
+                        "urls": missing.iter().map(|(u, _)| u.clone()).collect::<Vec<String>>()
+                    })),
+                    cache_key: None,
+                    rows: None,
+                });
+            }
+        }
+
         // Honest failure fallback — a turn that produced literally NOTHING visible (no reply,
         // no blocks, no pending card, no suggestion chips) used to persist an empty system row:
         // the UI showed the "응답이 비어있습니다" invariant, DB-poll recovery reloaded the same
