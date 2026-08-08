@@ -346,10 +346,15 @@ pub fn render_blocks(
             .iter()
             .all(|f| f.get("useFence").and_then(|v| v.as_bool()).unwrap_or(false));
         if all_fence {
+            // The last sentence exists because this hint used to leak into the answer's voice:
+            // models translated "emit in your reply" into telling the USER "이제 렌더링해 줄게"
+            // (measured 2026-08-09, the cubic answer's opener). Rendering is plumbing, not news.
             return Err(
                 "render: emit these components as a ```firebat-render``` fenced block in your \
                  reply TEXT — do NOT call the render tool again for them (tool args corrupt \
-                 non-ASCII spelling). The render tool handles only code/math/diagram."
+                 non-ASCII spelling). The render tool handles only code/math/diagram. Write the \
+                 reply as a normal answer about the topic — never announce rendering to the user \
+                 (no \"렌더링해 줄게\"); the fence itself is the rendering."
                     .to_string(),
             );
         }

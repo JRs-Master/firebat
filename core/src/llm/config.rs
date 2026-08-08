@@ -92,6 +92,13 @@ pub struct ThinkingConfig {
     /// 미지정 = 상한 없음.
     #[serde(rename = "disableMaxEffort", default, skip_serializing_if = "Option::is_none")]
     pub disable_max_effort: Option<String>,
+    /// The level to SEND when the caller picked none. Needed where the model's own default is
+    /// the wrong one for us: solar-pro4 with tools present reasons ZERO unless asked (measured
+    /// 2026-08-09 — every FC round's trace came back empty and the word-chain turns replayed
+    /// templates without a thought), while `low` alongside tools costs ~a hundred tokens and
+    /// records WHY an action was picked. A user-chosen level always wins over this.
+    #[serde(rename = "defaultLevel", default, skip_serializing_if = "Option::is_none")]
+    pub default_level: Option<String>,
 }
 
 fn default_true() -> bool {

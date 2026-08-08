@@ -253,7 +253,15 @@ impl OpenAiChatHandler {
         if !config.features.reasoning {
             return None;
         }
-        let lvl = opts.thinking_level.as_deref()?;
+        // The declaration's defaultLevel fills an unset caller choice — solar-pro4's own default
+        // with tools present is ZERO reasoning (measured 2026-08-09: empty traces all along),
+        // so "emit nothing, let the model decide" silently meant "never think in tool rounds".
+        let chosen = opts
+            .thinking_level
+            .clone()
+            .or_else(|| config.thinking.as_ref().and_then(|t| t.default_level.clone()));
+        let lvl_owned = chosen?;
+        let lvl = lvl_owned.as_str();
         if let Some(t) = &config.thinking {
             if t.levels.iter().any(|l| l.value == lvl) {
                 return Some(lvl.to_string());

@@ -1056,7 +1056,8 @@
               "en": "Max"
             }
           }
-        ]
+        ],
+        "defaultLevel": "low"
       },
       "pricing": {
         "input": 0.3,
