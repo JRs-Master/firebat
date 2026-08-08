@@ -1849,6 +1849,24 @@ impl AiManager {
         // 자동주입 SourceTags 노이즈 제거 → 라이브러리 사용은 search_library 도구 액션뱃지로만 표시.
         let retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
 
+        // The settings knob finally reaches the turn. `system:llm:thinking-level` was written by
+        // the settings screen and read by NOTHING on this path — a user's "max" changed only the
+        // code-assist surface while every chat round went out with no level at all (found
+        // 2026-08-09, asking why a max setting produced zero solar-pro4 reasoning). An explicit
+        // per-request level still wins; the adapter snaps the value onto each model's declared
+        // set; the declaration's defaultLevel stays as the floor for models whose own default
+        // is silence.
+        if effective_opts.thinking_level.is_none() {
+            if let Some(vault) = &self.vault {
+                if let Some(lvl) = vault
+                    .get_secret(crate::vault_keys::VK_SYSTEM_AI_THINKING_LEVEL)
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                {
+                    effective_opts.thinking_level = Some(lvl);
+                }
+            }
+        }
         // A cron agent turn authenticates its CLI's MCP loop with its OWN per-turn token, so the
         // server can tell "a turn this job is running" from "a chat turn that happens to overlap"
         // — identity instead of time, which is what retired the process-wide counter. The guard
