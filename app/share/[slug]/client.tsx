@@ -343,7 +343,9 @@ export function SharedMessageList({ messages }: { messages: unknown[] }) {
   const msgs = (messages as ShareMessage[]).filter(m => {
     if (!m) return false;
     if (m.id === 'system-init') return false;
-    if (m.role !== 'user' && m.role !== 'system') return false;
+    // 'assistant' is the storage spelling of the answer rows since the 2026-08-08 role repair;
+    // 'system' is the pre-repair spelling kept in old share snapshots. Both are the AI side.
+    if (m.role !== 'user' && m.role !== 'system' && m.role !== 'assistant') return false;
     // 버튼 클릭 흔적 user 말풍선 (✓실행 등) 은 읽기 전용 공유 페이지에서 불필요 — 실제 실행 버튼처럼 보이는 착시 유발
     if (isSuggestionClickUserMessage(m)) return false;
     return true;

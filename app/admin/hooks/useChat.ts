@@ -80,7 +80,10 @@ function mapHubMessages(
   hubMsgs: Array<{ id: string; role: string; content?: string; dataJson?: string }>,
 ): Message[] {
   return hubMsgs.map(m => {
-    const role = m.role === 'system' ? ('system' as const) : ('user' as const);
+    // Storage says 'assistant' for the answering side (normalised 2026-08-08); the UI's internal
+    // word for that bubble is still 'system'. Anything that is not the user is the AI side —
+    // mapping the other way around turned every migrated answer into a user bubble.
+    const role = m.role === 'user' ? ('user' as const) : ('system' as const);
     const rich = safeJsonParse<Record<string, unknown>>(m.dataJson ?? '', {});
     return {
       ...(rich && typeof rich === 'object' ? rich : {}),
@@ -289,7 +292,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       },
       async listMessages(id: string): Promise<Message[]> {
         const r = await apiGet<{ success?: boolean; conversation?: { messages?: Message[] } }>(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => null);
-        return r?.success && r.conversation ? (r.conversation.messages ?? []) : [];
+        const rows = r?.success && r.conversation ? (r.conversation.messages ?? []) : [];
+        // Same translation as mapHubMessages: storage rows say 'assistant' for the answering
+        // side, the UI's internal state says 'system'. Translate at the load boundary so every
+        // internal comparison keeps working whichever era wrote the row.
+        return rows.map(m => (m.role === 'user' ? m : { ...m, role: 'system' as const }));
       },
       async createConversation(): Promise<Conversation | null> {
         return makeConv();
