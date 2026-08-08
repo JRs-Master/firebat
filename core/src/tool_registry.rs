@@ -2173,11 +2173,16 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             async move {
                 let input = parse_generate_image_input(&args)?;
                 let (slug, url) = media.start_generate(input).await?;
+                // The `next` line is consumption-point steering: solar-pro4 answered a successful
+                // start by calling image_gen AGAIN with the identical prompt (2026-08-09 logo turn,
+                // two generations billed for one request) — the result itself has to say the job
+                // is done and what the one remaining step is.
                 Ok(serde_json::json!({
                     "slug": slug,
                     "url": url,
                     "status": "rendering",
-                    "message": "이미지 생성 시작됨 — placeholder URL 반환. 페이지 reload 시 실제 이미지로 자동 swap."
+                    "message": "이미지 생성 시작됨 — placeholder URL 반환. 페이지 reload 시 실제 이미지로 자동 swap.",
+                    "next": "Generation has ALREADY started — do NOT call image_gen again for this request (a second call bills a second image). Embed this exact url in an image block now; the UI shows a generating card and swaps in the finished image by itself."
                 }))
             }
         }),

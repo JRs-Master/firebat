@@ -1961,7 +1961,10 @@ impl McpToolHandler for ImageGenHandler {
             serde_json::from_value(args).map_err(|e| format!("image_gen args: {e}"))?;
         match self.media.start_generate(input).await {
             Ok((slug, url)) => Ok(serde_json::json!({
-                "success": true, "slug": slug, "url": url, "status": "rendering"
+                "success": true, "slug": slug, "url": url, "status": "rendering",
+                // Same steering as the FC handler: solar-pro4 re-called image_gen on success
+                // (2026-08-09 logo turn — two generations billed for one request).
+                "next": "Generation has ALREADY started — do NOT call image_gen again for this request (a second call bills a second image). Embed this exact url in an image block now; the UI shows a generating card and swaps in the finished image by itself."
             })),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }
