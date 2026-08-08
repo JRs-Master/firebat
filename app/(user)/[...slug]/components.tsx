@@ -2635,7 +2635,8 @@ function ImageComp({
 
   return (
     <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full mx-auto">
-      <div className="relative">
+      {/* 긴 캡션이 figure 를 이미지보다 넓히면 이미지가 왼쪽에 붙는다 — 상자 안 가운데로 */}
+      <div className="relative flex justify-center">
         {/* blurhash 캔버스 — 이미지 로드 전까지만 보임 */}
         {blurhash && !loaded && phase === 'ok' && (
           <canvas
