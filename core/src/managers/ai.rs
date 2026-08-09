@@ -5111,7 +5111,11 @@ impl AiManager {
                 user_prompt: prompt.to_string(),
                 system_prompt: effective_opts.system_prompt.clone().unwrap_or_default(),
                 history: effective_opts.history.clone(),
-                tools: tools.iter().map(|t| t.name.clone()).collect(),
+                // The tools the model was ACTUALLY offered, which is not the argument: the FC
+                // path resolves dynamic sysmod tools after this call is made, so recording the
+                // parameter archived an empty list on every turn — the readback axis that answers
+                // "could it even have called that" was blank (2026-08-10, first row caught it).
+                tools: effective_tools.iter().map(|t| t.name.clone()).collect(),
                 rounds: reasoning_trace.clone(),
                 final_reasoning: final_reasoning.clone().unwrap_or_default(),
                 reply: clean_reply.clone(),
