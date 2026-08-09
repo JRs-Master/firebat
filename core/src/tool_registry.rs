@@ -1633,13 +1633,13 @@ fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // cache_read — pagination 으로 records 가져오기
     tools.register(ToolDefinition {
         name: "cache_read".to_string(),
-        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 응답에서 일부만 가져올 때 사용. offset/limit 으로 자르기.".to_string(),
+        description: "Read the records behind a sysmod `_cacheKey`, one PAGE at a time. It returns 50 rows unless you ask for more, and the response says `total`, `hasMore` and the exact next call — a series is not fully read until `hasMore` is false. For a whole series pass a `limit` that covers `total`; to answer a question about it without carrying it, use cache_grep (filter) or cache_aggregate (summarise) instead of paging through.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
                 "cacheKey": {"type": "string", "description": "sysmod 응답의 `_cacheKey` 값"},
-                "offset": {"type": "integer", "description": "시작 인덱스 (기본 0)"},
-                "limit": {"type": "integer", "description": "최대 행 수 (기본 50)"}
+                "offset": {"type": "integer", "description": "Row to start at (default 0) — the previous response's `nextOffset`."},
+                "limit": {"type": "integer", "description": "Rows to return (default 50). Pass one that covers `total` to read a series in one call."}
             },
             "required": ["cacheKey"]
         }),

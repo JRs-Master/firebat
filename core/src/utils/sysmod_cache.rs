@@ -270,13 +270,31 @@ impl SysmodCacheAdapter {
         let slice: Vec<serde_json::Value> = records.into_iter().skip(offset).take(limit).collect();
         // success: true 명시 — CLI(cli_claude_code) 가 tool_result 의 success 필드로 done/error 판정.
         // 없으면 false 로 간주돼 빨간 에러 뱃지로 오인됨(실제론 성공). 다른 도구 컨벤션과 일치.
-        Ok(serde_json::json!({
+        // A page has to say that it IS a page. `total` alone did not: a caller that asked for a
+        // 180-bar series, got 50 rows and a number, read the rows and moved on — the truncation is
+        // invisible in the data itself, and re-deriving the next call from three integers is work
+        // nobody does mid-turn. So the response carries the next call, spelled out, and stays
+        // silent when there is nothing left to fetch (2026-08-10).
+        let end = offset + slice.len();
+        let has_more = end < total;
+        let mut out = serde_json::json!({
             "success": true,
             "records": slice,
             "total": total,
             "offset": offset,
             "limit": limit,
-        }))
+            "returned": end - offset,
+            "hasMore": has_more,
+        });
+        if has_more {
+            out["nextOffset"] = serde_json::json!(end);
+            out["next"] = serde_json::json!(format!(
+                "{} of {} rows — the rest is cache_read(cacheKey, offset={}, limit={}). \
+                 Filtering instead of paging: cache_grep. Aggregating: cache_aggregate.",
+                end, total, end, limit
+            ));
+        }
+        Ok(out)
     }
 
     pub fn grep(
