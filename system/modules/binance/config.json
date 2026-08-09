@@ -30,100 +30,111 @@
       {
         "id": "get_candles",
         "name": "Candles (OHLCV)",
-        "description": "Broker-neutral candles for a symbol: date, open, high, low, close, volume, quote volume, trade count. Pages automatically past the venue's 1000-bar limit, up to 20,000 bars, so a multi-year study is one call. Feed the result to technical-analysis by cache key.",
+        "description": "바이낸스 binance 캔들 OHLCV 봉 차트 데이터 — 일봉·시간봉·분봉·월봉. Broker-neutral candles: date, open, high, low, close, volume, quote volume, trade count. 1000봉 상한을 넘어 최대 20,000봉까지 자동 페이징하므로 다년치 분석이 한 번에 끝납니다. technical-analysis 에 캐시키로 넘기십시오.",
         "params": {
           "symbol": "Pair or base asset — BTCUSDT, BTC, BTC/USDT all resolve",
           "interval": "1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M — CASE SENSITIVE, 1m is a minute and 1M is a month",
           "limit": "How many bars (default 500, up to 20000 via paging)",
           "start": "Oldest bar, YYYY-MM-DD or epoch ms (optional)",
           "end": "Newest bar, YYYY-MM-DD or epoch ms (optional)"
-        }
+        },
+        "domain": "시세"
       },
       {
         "id": "ticker",
         "name": "Last price",
-        "description": "The most recent traded price for one pair. Cheapest way to answer 'what is X worth right now'.",
+        "description": "바이낸스 binance 현재가 가격 시세 조회 — 마지막 체결가 한 줄. Latest traded price for one pair, the cheapest way to answer what a coin is worth right now.",
         "params": {
           "symbol": "Pair or base asset"
-        }
+        },
+        "domain": "시세"
       },
       {
         "id": "ticker_24h",
         "name": "24h statistics",
-        "description": "Rolling 24-hour open, high, low, last, percent change, base volume and quote volume for one pair — or every pair when symbol is omitted.",
+        "description": "바이낸스 binance 24시간 통계 등락률 고가 저가 거래량 거래대금. Rolling 24-hour open, high, low, last, percent change and volume for one pair, or every pair when the symbol is omitted.",
         "params": {
           "symbol": "Pair or base asset; omit for all pairs (heavy)"
-        }
+        },
+        "domain": "시세"
       },
       {
         "id": "book_ticker",
         "name": "Best bid and ask",
-        "description": "Top of the order book with the quantities sitting there, plus the spread as a percentage. Use it to judge whether a quoted price is actually tradable.",
+        "description": "바이낸스 binance 최우선 호가 매수호가 매도호가 스프레드. Top of the order book with the resting quantities and the spread as a percentage — whether a quoted price is actually tradable.",
         "params": {
           "symbol": "Pair or base asset"
-        }
+        },
+        "domain": "호가"
       },
       {
         "id": "avg_price",
         "name": "Recent average price",
-        "description": "The venue's own 5-minute average price — steadier than the last trade when the book is thin.",
+        "description": "바이낸스 binance 평균가 5분 평균 가격. The venue's own 5-minute average price, steadier than the last trade when the book is thin.",
         "params": {
           "symbol": "Pair or base asset"
-        }
+        },
+        "domain": "시세"
       },
       {
         "id": "orderbook",
         "name": "Order book depth",
-        "description": "Bid and ask levels with quantities. Costs more of the rate allowance the deeper it goes, so ask for the depth actually needed.",
+        "description": "바이낸스 binance 호가창 심도 매수잔량 매도잔량 오더북. Bid and ask levels with quantities; deeper requests cost more of the rate allowance.",
         "params": {
           "symbol": "Pair or base asset",
           "limit": "Levels per side, 1-5000 (default 100)"
-        }
+        },
+        "domain": "호가"
       },
       {
         "id": "trades",
         "name": "Recent trades",
-        "description": "The latest individual trades with price, quantity, time, and which side was the taker (the side that moved the price).",
+        "description": "바이낸스 binance 체결 내역 최근 거래 체결가 체결량 매수매도. Recent individual trades with price, quantity, time, and which side was the taker — the side that moved the price.",
         "params": {
           "symbol": "Pair or base asset",
           "limit": "1-1000 (default 500)"
-        }
+        },
+        "domain": "체결"
       },
       {
         "id": "agg_trades",
         "name": "Aggregated trades",
-        "description": "Trades filled by one taker order at one price, merged into a single row. Cheaper and less noisy than raw trades, and accepts a time range.",
+        "description": "바이낸스 binance 집계 체결 내역 기간 지정. Trades filled by one taker order at one price merged into a single row — cheaper and less noisy than raw trades, and it accepts a time range.",
         "params": {
           "symbol": "Pair or base asset",
           "limit": "1-1000 (default 500)",
           "start": "From, YYYY-MM-DD or epoch ms",
           "end": "Until, YYYY-MM-DD or epoch ms"
-        }
+        },
+        "domain": "체결"
       },
       {
         "id": "screen",
         "name": "Turnover ranking",
-        "description": "Every pair of one quote asset ranked by 24-hour turnover — the screen for 'what is moving right now'.",
+        "description": "바이낸스 binance 거래대금 순위 급등 코인 종목 화면 스크리닝 랭킹. Every pair of one quote asset ranked by 24-hour turnover — the screen for what is moving right now.",
         "params": {
           "quote": "Quote asset to rank within (default USDT)",
           "top": "How many rows, 1-200 (default 30)",
           "minTurnover": "Drop pairs under this 24h quote volume",
           "includeStable": "Keep stablecoin-vs-stablecoin pairs (excluded by default)"
-        }
+        },
+        "domain": "종목발굴"
       },
       {
         "id": "symbols",
         "name": "Tradable pairs",
-        "description": "Every spot pair currently trading, with its base and quote asset. Use it to confirm a coin is listed before quoting it.",
+        "description": "바이낸스 binance 상장 종목 목록 페어 마켓 조회. Every spot pair currently trading with its base and quote asset — confirm a coin is listed before quoting it.",
         "params": {
           "quote": "Only pairs with this quote asset (optional)"
-        }
+        },
+        "domain": "시세"
       },
       {
         "id": "server_time",
         "name": "Exchange clock",
-        "description": "The venue's current time. Useful when a timestamp disagreement is suspected.",
-        "params": {}
+        "description": "바이낸스 binance 거래소 서버 시각. The venue's current time, for when a timestamp disagreement is suspected.",
+        "params": {},
+        "domain": "시세"
       }
     ]
   },
@@ -233,5 +244,51 @@
     "spot market data",
     "klines",
     "orderbook"
-  ]
+  ],
+  "ws": {
+    "endpoint": "wss://data-stream.binance.vision/ws",
+    "matchField": "e",
+    "shareConnection": true,
+    "streams": {
+      "trade": {
+        "subscribe": {
+          "frame": {
+            "method": "SUBSCRIBE",
+            "params": [
+              "{code}@trade"
+            ],
+            "id": 1
+          }
+        },
+        "unsubscribe": {
+          "frame": {
+            "method": "UNSUBSCRIBE",
+            "params": [
+              "{code}@trade"
+            ],
+            "id": 2
+          }
+        },
+        "realtimeMatch": "trade",
+        "description": "바이낸스 binance 실시간 체결 스트림 — 틱 단위 체결가·체결량이 밀려옵니다. Live trade ticks. The stream name must be LOWERCASE (btcusdt@trade); pass `code` in lowercase.",
+        "tick1s": {
+          "type": {
+            "field": "e",
+            "equals": "trade"
+          },
+          "symbol": "s",
+          "map": {
+            "price": "p",
+            "signedVolume": {
+              "field": "q",
+              "negateWhen": {
+                "field": "m",
+                "equals": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
