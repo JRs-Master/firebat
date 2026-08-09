@@ -69,6 +69,8 @@ export type Message = {
   /// 지워진다. content 에는 이 원문의 '펜스 안전' 투영만 들어간다 — 렌더 블록이 반쯤
   /// 열린 상태로 흐르면 사용자가 JSON 이 타이핑되는 걸 보게 되므로.
   draftRaw?: string;
+  /// 생각 영역에 이미 확정된 부분 — 초안이 라운드마다 새로 시작해도 앞 내용이 안 지워지게.
+  thinkingCommitted?: string;
   liveBuildStep?: string; // Project Builder — advance_build 가 턴 도중 올린 라이브 빌드 step (스트리밍 카드 stepper/로더용)
   suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[]; single?: boolean })[];
   pickedSuggestion?: string; // 칩 픽 시 그 텍스트 — 잠금 강조 + 과거 빌드 슬라이드 표시용 (consumeSuggestions 대신 lockSuggestion 이 설정)

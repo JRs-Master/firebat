@@ -290,28 +290,40 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             isThinking: false,
             streaming: true,
             statusText: undefined,
-            content: m.draftRaw ? action.content : (m.content || '') + action.content,
+            content: (m.content || '') + action.content,
             draftRaw: undefined,
+            thinkingCommitted: m.draftRaw
+              ? (m.thinkingCommitted || '') + draftDisplay(m.draftRaw) + '\n'
+              : m.thinkingCommitted,
           }
         : m);
 
     case 'CHUNK_DRAFT':
+      // 초안은 **생각 영역**에 흐른다, 답변 칸이 아니라.
+      //
+      // 답변 칸에 그렸더니 세 가지가 한꺼번에 나빴다(2026-08-10 사용자 관측): 도구 라운드로
+      // 판명된 초안이 지워지며 **글이 나왔다 사라지고**, 초안과 최종 답변이 같은 칸이라
+      // **어디가 끝인지 모르겠고**, 흐르는 동안 답변이 완성된 것처럼 보였다. 초안은 그 정체가
+      // 혼잣말이므로 혼잣말이 사는 곳에 두고, **답변 칸은 완성될 때 한 번에** 채운다.
       return state.map(m => {
         if (m.id !== action.id) return m;
         const raw = (m.draftRaw || '') + action.content;
         return {
           ...m,
-          isThinking: false,
-          streaming: true,
+          isThinking: true,
+          streaming: false,
           statusText: undefined,
           draftRaw: raw,
-          content: draftDisplay(raw),
+          // 펜스가 열린 구간은 감춘다 — 안 그러면 렌더 JSON 이 타이핑된다.
+          thinkingText: (m.thinkingCommitted || '') + draftDisplay(raw),
         };
       });
 
     case 'DROP_DRAFT':
+      // 지우지 않는다 — 이미 생각 영역에 있고, 거기가 맞는 자리다. 다음 초안이 이 위에
+      // 덮어쓰지 않도록 지금까지를 확정분으로 넘기기만 한다.
       return state.map(m => (m.id === action.id && m.draftRaw)
-        ? { ...m, content: '', draftRaw: undefined, isThinking: true, streaming: false }
+        ? { ...m, thinkingCommitted: (m.thinkingCommitted || '') + draftDisplay(m.draftRaw) + '\n', draftRaw: undefined }
         : m);
 
     case 'STILL_RUNNING':
