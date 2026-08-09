@@ -49,6 +49,15 @@ pub struct CatalogEntry {
     pub name: String,
     pub description: String,
     pub extra: serde_json::Value,
+    /// Words that must SURVIVE the OOV gate without steering the ranking.
+    ///
+    /// One string used to do both jobs, and the jobs pull opposite ways: the gate asks "does this
+    /// word exist in our world at all" — a membership test, where more words is strictly better —
+    /// while the ranker asks "how close is this row", where every extra word blurs the vector.
+    /// Fused, the only way to teach the gate a word was to dilute the ranker (2026-08-10: the
+    /// token `binance` was deleted from queries because the module's own name appeared in no
+    /// row's text). Same source, two derivations: `entry_text` embeds, `vocab_text` gates.
+    pub vocab: Vec<String>,
 }
 
 /// Search hit — entry + cosine score.
@@ -171,6 +180,16 @@ fn sha1_hash(version: &str, s: &str) -> String {
 
 fn entry_text(e: &CatalogEntry) -> String {
     format!("Name: {}\nDesc: {}", e.name, e.description)
+}
+
+/// The gate's vocabulary for one entry — everything the ranker sees, plus the words the entry
+/// declared purely so a query containing them is not thrown away. Never embedded, so a long
+/// vocabulary costs nothing but a longer substring haystack.
+fn vocab_text(e: &CatalogEntry) -> String {
+    if e.vocab.is_empty() {
+        return entry_text(e);
+    }
+    format!("{}\n{}", entry_text(e), e.vocab.join(" "))
 }
 
 /// Normalized-vector cosine = dot product (component_search_index mirror).
@@ -360,7 +379,7 @@ impl SemanticCatalog {
         );
         let mut corpus = String::new();
         for e in &entries {
-            corpus.push_str(&entry_text(e).to_lowercase());
+            corpus.push_str(&vocab_text(e).to_lowercase());
             corpus.push('\n');
         }
         let mut state = self.state.write().await;
@@ -774,6 +793,32 @@ mod tests {
     }
 
     #[test]
+    /// The gate and the ranker read the same entry but must not read the same text: a word can
+    /// be added to the vocabulary — so a query carrying it is not thrown away — without ever
+    /// entering the embedded document, where it would pull the vector around.
+    fn vocab_widens_the_gate_without_touching_the_embedding() {
+        let e = CatalogEntry {
+            id: "binance:get_candles".into(),
+            name: "Candles".into(),
+            description: "binance OHLCV bars".into(),
+            extra: serde_json::Value::Null,
+            vocab: vec!["암호화폐".into(), "코인".into()],
+        };
+        // What gets embedded is unchanged by the vocabulary.
+        assert!(!entry_text(&e).contains("코인"));
+        assert_eq!(entry_text(&e), "Name: Candles\nDesc: binance OHLCV bars");
+        // What the gate tests against is wider.
+        let corpus = vocab_text(&e).to_lowercase();
+        assert!(corpus.contains("코인"));
+        let (cleaned, dropped) = clean_query("코인 binance", &corpus);
+        assert_eq!(cleaned, "코인 binance");
+        assert!(dropped.is_empty());
+        // An entry that declares nothing keeps the old behaviour exactly.
+        let bare = CatalogEntry { vocab: Vec::new(), ..e };
+        assert_eq!(vocab_text(&bare), entry_text(&bare));
+    }
+
+    #[test]
     fn clean_query_drops_oov_keeps_vocab() {
         let corpus = "name: 주식일봉차트조회요청\ndesc: 국내주식/차트 기준일자 시세 조회\n".to_lowercase();
         // subject name = OOV → dropped; informative tokens kept
@@ -806,6 +851,7 @@ mod tests {
             name: "일봉차트".into(),
             description: "주식 일봉".into(),
             extra: serde_json::json!({}),
+                    vocab: Vec::new(),
         };
         let h1 = sha1_hash("e5-small-v1", &entry_text(&e));
         let h2 = sha1_hash("e5-small-v1", &entry_text(&e));

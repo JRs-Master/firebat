@@ -33,6 +33,36 @@ use crate::utils::pending_tools::requires_approval_value;
 /// rebuild only re-reads JSON (re-embeds nothing when unchanged).
 const REBUILD_TTL: Duration = Duration::from_secs(300);
 
+/// What a module is actually CALLED — its name plus whatever people call it instead.
+///
+/// Recall solved this already: `entity_passage_text` embeds an entity's name together with its
+/// aliases, which is why "삼성" and "SAMSUNG" both land on one company. A module needs the same
+/// list and cannot derive it — "한투" is not a function of "korea-invest". It goes in the RANKER
+/// text because naming the venue IS the routing signal, and it is safe there because it is short
+/// and identical across that module's rows: it moves them together against OTHER modules without
+/// separating them from each other.
+fn module_identity(name: &str, config: &serde_json::Value) -> Vec<String> {
+    let mut out = vec![name.to_string()];
+    if let Some(list) = config.get("aliases").and_then(|v| v.as_array()) {
+        out.extend(list.iter().filter_map(|v| v.as_str()).map(String::from));
+    }
+    out
+}
+
+/// Declared capability words — GATE ONLY.
+///
+/// `tags` is a word list, not prose, and repeating it on every row of a 233-action module would
+/// blur rows that differ only by which action they are. In the gate it costs nothing: that is a
+/// membership test, so a longer vocabulary is strictly better. Until now these were read only by
+/// the module-selection index, so a declared tag never once helped an action search.
+fn module_tags(config: &serde_json::Value) -> Vec<String> {
+    config
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str()).map(String::from).collect())
+        .unwrap_or_default()
+}
+
 struct ModuleActionSource {
     module: Arc<ModuleManager>,
 }
@@ -98,6 +128,8 @@ impl ModuleActionSource {
         // the discovery surface said HOW to turn a name into the code; the hint existed but
         // only fired after a rejected call it never made. Declarative — no per-module logic.
         let grounded = crate::utils::grounding::parse_grounding(config);
+        let ident = module_identity(name, config);
+        let tag_words = module_tags(config);
         let actions: Vec<serde_json::Value> = if let Some(arr) = decl.as_array() {
             // The documented shape is `{"actions": [...]}`, but writing the list itself is the
             // obvious mistake to make, and it used to cost the whole module: no `actions` key
@@ -135,7 +167,8 @@ impl ModuleActionSource {
                     .map(|o| o.keys().cloned().collect())
                     .unwrap_or_default();
                 let sem = format!(
-                    "{} {} {}",
+                    "{} {} {} {}",
+                    ident.join(" "),
                     domain,
                     desc,
                     a.get("params")
@@ -205,6 +238,11 @@ impl ModuleActionSource {
                     name: a_name,
                     description: sem.trim().to_string(),
                     extra,
+                    vocab: tag_words
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(id.clone()))
+                        .collect(),
                 })
             })
             .collect::<Vec<_>>();
@@ -267,6 +305,8 @@ fn stream_arg_names(decl: &serde_json::Value) -> Vec<(String, Option<String>)> {
 }
 
 fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogEntry> {
+    let ident = module_identity(name, config);
+    let tag_words = module_tags(config);
     let Some(streams) = config
         .get("ws")
         .and_then(|w| w.get("streams"))
@@ -345,8 +385,13 @@ fn derive_stream_entries(name: &str, config: &serde_json::Value) -> Vec<CatalogE
                 // `stream:` keeps the id namespace disjoint from action ids.
                 id: format!("{}:stream:{}", name, key),
                 name: key.clone(),
-                description: sem.trim().to_string(),
+                description: format!("{} {}", ident.join(" "), sem.trim()),
                 extra,
+                vocab: tag_words
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(key.clone()))
+                    .collect(),
             }
         })
         .collect()
@@ -486,6 +531,8 @@ fn derive_entries_from_input(
         .take(120)
         .collect();
     let module_blurb = module_blurb.trim().to_string();
+    let ident = module_identity(name, config);
+    let tag_words = module_tags(config);
 
     let action_prop = props.and_then(|p| p.get("action"));
     let action_enum = action_prop.and_then(|a| a.get("enum")).and_then(|e| e.as_array());
@@ -596,16 +643,22 @@ fn derive_entries_from_input(
                 CatalogEntry {
                     id: format!("{}:{}", name, act),
                     name: act.to_string(),
-                    description: sem.trim().to_string(),
+                    description: format!("{} {}", ident.join(" "), sem.trim()),
                     extra,
+                    vocab: tag_words
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(act.to_string()))
+                        .collect(),
                 }
             })
             .collect(),
         None => vec![CatalogEntry {
             id: format!("{}:{}", name, name),
             name: name.to_string(),
-            description: module_blurb,
+            description: format!("{} {}", ident.join(" "), module_blurb),
             extra: make_extra(name),
+            vocab: tag_words.clone(),
         }],
     }
 }

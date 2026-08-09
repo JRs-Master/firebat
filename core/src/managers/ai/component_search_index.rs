@@ -49,6 +49,7 @@ fn component_entries() -> Vec<CatalogEntry> {
             extra: serde_json::json!({
                 "displayDescription": c.description,
             }),
+                    vocab: Vec::new(),
         })
         .collect()
 }

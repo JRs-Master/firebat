@@ -44,6 +44,7 @@ impl CatalogSource for SkillCatalogSource {
                         "kind": e.kind,
                         "source": e.source,
                     }),
+                                    vocab: Vec::new(),
                 }
             })
             .collect()
@@ -75,6 +76,7 @@ impl CatalogSource for TemplateCatalogSource {
                         "tags": t.tags,
                         "source": t.source,
                     }),
+                                    vocab: Vec::new(),
                 }
             })
             .collect()
@@ -113,6 +115,7 @@ impl CatalogSource for PageCatalogSource {
                         "status": p.status,
                         "updatedAt": p.updated_at,
                     }),
+                                    vocab: Vec::new(),
                 }
             })
             .collect()
@@ -180,6 +183,7 @@ impl CatalogSource for MediaCatalogSource {
                         "url": url,
                         "status": status,
                     }),
+                                    vocab: Vec::new(),
                 }
             })
             .collect()
