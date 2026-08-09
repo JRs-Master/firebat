@@ -151,13 +151,14 @@ fn recover_arg_token_dialect(text: &str) -> (String, Vec<ToolCall>) {
         }
     }
     if calls.is_empty() {
-        tracing::warn!(target: "llm", "arg-token tool-call markup stripped from content");
+        tracing::warn!(target: "dialect", surface = "llm", kind = "tool-call-leak",
+            variant = "arg-token", recovered = 0, "markup stripped from content");
     } else {
         tracing::warn!(
-            target: "llm",
-            "arg-token tool-call markup recovered as {} real call(s): {:?}",
-            calls.len(),
-            calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+            target: "dialect", surface = "llm", kind = "tool-call-leak", variant = "arg-token",
+            recovered = calls.len(),
+            tools = ?calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            "leaked markup recovered as real calls"
         );
     }
     (cleaned, calls)
@@ -236,17 +237,15 @@ fn recover_leaked_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
     }
     if !calls.is_empty() {
         tracing::warn!(
-            target: "llm",
-            "leaked tool-call markup recovered as {} real call(s): {:?}",
-            calls.len(),
-            calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+            target: "dialect", surface = "llm", kind = "tool-call-leak", variant = "begin-args",
+            recovered = calls.len(),
+            tools = ?calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            "leaked markup recovered as real calls"
         );
     } else if cleaned.trim() != text.trim() {
         tracing::warn!(
-            target: "llm",
-            "leaked tool-call markup stripped from content ({} -> {} chars)",
-            text.len(),
-            cleaned.len()
+            target: "dialect", surface = "llm", kind = "tool-call-leak", variant = "begin-args",
+            recovered = 0, "markup stripped from content"
         );
     }
     (cleaned, calls)

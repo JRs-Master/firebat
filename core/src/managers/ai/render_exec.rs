@@ -797,14 +797,25 @@ pub fn balance_json_brackets(body: &str) -> String {
 /// sanitize and plaintext paths so both accept the same dialects.
 fn parse_fence_json(body: &str) -> Option<Value> {
     let trimmed = body.trim();
-    serde_json::from_str(trimmed).ok().or_else(|| {
-        let cleaned = escape_control_chars_in_strings(&escape_invalid_escapes_in_strings(
-            &tolerant_json_cleanup(trimmed),
-        ));
-        serde_json::from_str(cleaned.trim())
-            .ok()
-            .or_else(|| serde_json::from_str(balance_json_brackets(&cleaned).trim()).ok())
-    })
+    if let Ok(v) = serde_json::from_str(trimmed) {
+        return Some(v);
+    }
+    // Which rung saved it is the interesting part — one `target=dialect` door for every absorber
+    // so the shapes models actually send can be counted instead of guessed (2026-08-09).
+    let cleaned = escape_control_chars_in_strings(&escape_invalid_escapes_in_strings(
+        &tolerant_json_cleanup(trimmed),
+    ));
+    if let Ok(v) = serde_json::from_str(cleaned.trim()) {
+        tracing::info!(target: "dialect", surface = "fence", kind = "json-cleanup",
+            "fence recovered by comment/comma/control-char/escape repair");
+        return Some(v);
+    }
+    if let Ok(v) = serde_json::from_str(balance_json_brackets(&cleaned).trim()) {
+        tracing::info!(target: "dialect", surface = "fence", kind = "bracket-balance",
+            "fence recovered by bracket balancing");
+        return Some(v);
+    }
+    None
 }
 
 // ── L5 fence-repair round helpers (ai.rs) — 관대 체인 전패 fence 를 문법 수리 전용 LLM 1콜로
@@ -961,6 +972,9 @@ fn sanitize_fence_body(body: &str, resolver: Option<FenceDataResolver>) -> (Stri
         // The whole document is beyond the tolerant chain — salvage the items individually
         // before giving up (and before ai.rs spends an LLM repair round on it).
         if let Some((good, parse_failed)) = salvage_fence_items(trimmed) {
+            tracing::info!(target: "dialect", surface = "fence", kind = "item-salvage",
+                good = good.len(), failed = parse_failed.len(),
+                "whole-document parse failed — recovered per item");
             let args = serde_json::json!({ "blocks": good });
             if let Ok(result) = render_blocks(&args, false, resolver) {
                 let blocks = result.get("blocks").cloned().unwrap_or_else(|| serde_json::json!([]));

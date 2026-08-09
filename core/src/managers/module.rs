@@ -332,11 +332,7 @@ impl ModuleManager {
             Some(serde_json::Value::Object(out))
         })();
         if normalized.is_some() {
-            tracing::info!(
-                target: "module",
-                module = %module_name,
-                "input dialect absorbed — inputData envelope normalized"
-            );
+            dialect_absorbed(module_name, "envelope", "inputData wrapper spread to the top level");
         }
         let input_data: &serde_json::Value = normalized.as_ref().unwrap_or(input_data);
 
@@ -381,11 +377,16 @@ impl ModuleManager {
             }
             out.map(serde_json::Value::Object)
         })();
-        if unwrapped.is_some() {
-            tracing::info!(
-                target: "module",
-                module = %module_name,
-                "input dialect absorbed — undeclared params envelope unwrapped"
+        if let Some(v) = &unwrapped {
+            let keys: Vec<&str> = ENVELOPE_KEYS
+                .iter()
+                .copied()
+                .filter(|k| input_data.get(*k).is_some() && v.get(*k).is_none())
+                .collect();
+            dialect_absorbed(
+                module_name,
+                "envelope",
+                &format!("undeclared wrapper {:?} spread to the top level", keys),
             );
         }
         let input_data: &serde_json::Value = unwrapped.as_ref().unwrap_or(input_data);
@@ -426,11 +427,16 @@ impl ModuleManager {
             }
             out.map(serde_json::Value::Object)
         })();
-        if unstrung.is_some() {
-            tracing::info!(
-                target: "module",
-                module = %module_name,
-                "input dialect absorbed — stringified JSON field parsed"
+        if let Some(v) = &unstrung {
+            let keys: Vec<&String> = v
+                .as_object()
+                .map(|o| o.keys().filter(|k| input_data.get(*k).map(|x| x.is_string()).unwrap_or(false)
+                        && !v.get(*k).map(|x| x.is_string()).unwrap_or(true)).collect())
+                .unwrap_or_default();
+            dialect_absorbed(
+                module_name,
+                "stringified-json",
+                &format!("fields parsed from JSON text: {:?}", keys),
             );
         }
         let input_data: &serde_json::Value = unstrung.as_ref().unwrap_or(input_data);
@@ -703,11 +709,15 @@ impl ModuleManager {
         // (measured 2026-08-08 over MCP, where the reduced discovery schema makes string-typed
         // numbers routine). If validation needed the coerced value to pass, the module receives
         // the coerced value: the declared type is the contract, not a hint.
+        let mut coerce_notes: Vec<String> = Vec::new();
         let coerced: Option<serde_json::Value> = config
             .as_ref()
             .and_then(|c| c.get("input"))
-            .map(|schema| coerce_for_validation(input_data, schema))
+            .map(|schema| coerce_for_validation(input_data, schema, &mut coerce_notes))
             .filter(|c| c != input_data);
+        if !coerce_notes.is_empty() {
+            dialect_absorbed(module_name, "coerce", &coerce_notes.join(", "));
+        }
         let input_data: &serde_json::Value = coerced.as_ref().unwrap_or(input_data);
 
         // Pre-spawn input validation — against config.json's input schema (this is L4 of the
@@ -2719,59 +2729,134 @@ fn input_for_validation<'a>(
 /// rejected the call. Coerce numeric strings to numbers *for validation only* (the sandbox still
 /// receives the original input). Schema-driven, no per-module hardcoding — "LLM judges, framework
 /// tolerates the type".
+/// One door for every absorbed dialect — grep `target=dialect` to see what the models are
+/// actually sending. Absorbing silently is how a dialect becomes permanent: the call succeeds,
+/// nobody learns the shape was wrong, and the same class shows up again somewhere with no
+/// absorber (2026-08-09, the operator asked for exactly this after four such fixes in a day).
+fn dialect_absorbed(module: &str, kind: &str, detail: &str) {
+    tracing::info!(target: "dialect", module = %module, kind = %kind, detail = %detail,
+        "input dialect absorbed");
+}
+
+/// Make a value conform to its DECLARED schema wherever the conversion is lossless and has one
+/// possible reading — recursively, so a nested object or an array item gets the same treatment.
+///
+/// This replaced a hand-enumerated match table. The table was the defect: `boolean` was simply
+/// missing from it, so `"lastSessionOnly": "true"` was refused four times in a row and burned a
+/// turn's tool budget (2026-08-09 실측). A table has to be extended per type-pair forever; a
+/// schema walk closes the whole class.
+///
+/// Every change is recorded in `notes` (`path: from → to`) so the absorption is visible rather
+/// than silent.
 fn coerce_for_validation(
     value: &serde_json::Value,
     schema: &serde_json::Value,
+    notes: &mut Vec<String>,
 ) -> serde_json::Value {
-    let (Some(obj), Some(props)) = (
-        value.as_object(),
-        schema.get("properties").and_then(|p| p.as_object()),
-    ) else {
-        return value.clone();
-    };
-    let mut out = obj.clone();
-    for (k, v) in obj {
-        let Some(ty) = props.get(k).and_then(|p| p.get("type")).and_then(|t| t.as_str()) else {
-            continue;
-        };
-        match (ty, v) {
-            ("integer", serde_json::Value::String(s)) => {
-                if let Ok(n) = s.trim().parse::<i64>() {
-                    out.insert(k.clone(), serde_json::json!(n));
-                }
-            }
-            ("number", serde_json::Value::String(s)) => {
-                if let Ok(n) = s.trim().parse::<f64>() {
-                    if let Some(num) = serde_json::Number::from_f64(n) {
-                        out.insert(k.clone(), serde_json::Value::Number(num));
-                    }
-                }
-            }
-            // 역방향 — 스키마가 string 인데 모델이 스칼라를 따옴표 없이 보낸 경우.
-            // 옛 구현은 string→number 한 방향뿐이라 `typhoonNo: 13` 이 그대로 400 이었다
-            // (2026-07-27 실측: 태풍 조회가 한 라운드 낭비). 모델의 JSON 스칼라 타입 흔들림은
-            // 양방향으로 나오므로 대칭으로 받는다. 값 자체는 따옴표만 붙는 것이라 손실 0이고,
-            // enum·pattern 제약은 뒤 검증이 그대로 잡는다.
-            ("string", serde_json::Value::Number(n)) => {
-                out.insert(k.clone(), serde_json::Value::String(n.to_string()));
-            }
-            ("string", serde_json::Value::Bool(b)) => {
-                out.insert(k.clone(), serde_json::Value::String(b.to_string()));
-            }
-            // boolean 은 이 표에서 통째로 빠져 있었다 — 모델이 `"lastSessionOnly": "true"` 를
-            // 보내면 네 번 연속 거부되고 per-turn cap 을 태웠다(2026-08-09 실측, BTC 턴).
-            // 문자열 "true"/"false" 가 boolean 자리에 오는 건 의미가 한 가지뿐이라 손실 0이고,
-            // 그 외 문자열은 그대로 둬 검증이 정직하게 거부한다.
-            ("boolean", serde_json::Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
-                "true" => { out.insert(k.clone(), serde_json::Value::Bool(true)); }
-                "false" => { out.insert(k.clone(), serde_json::Value::Bool(false)); }
-                _ => {}
-            },
-            // 역방향 — 스키마가 문자열인데 모델이 진짜 bool 을 보낸 경우는 위에서 처리된다.
-            _ => {}
-        }
+    coerce_node(value, schema, "", notes)
+}
+
+fn schema_type(schema: &serde_json::Value) -> Option<&str> {
+    match schema.get("type") {
+        Some(serde_json::Value::String(s)) => Some(s.as_str()),
+        // A union type means more than one reading is legal — leave the value alone.
+        _ => None,
     }
-    serde_json::Value::Object(out)
+}
+
+fn coerce_node(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+    path: &str,
+    notes: &mut Vec<String>,
+) -> serde_json::Value {
+    use serde_json::Value as V;
+    let ty = schema_type(schema);
+    match (ty, value) {
+        // object → walk declared properties
+        (Some("object"), V::Object(obj)) | (None, V::Object(obj)) => {
+            let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
+                return value.clone();
+            };
+            let mut out = obj.clone();
+            for (k, v) in obj {
+                let Some(sub) = props.get(k) else { continue };
+                let child = coerce_node(v, sub, &format!("{path}/{k}"), notes);
+                if &child != v {
+                    out.insert(k.clone(), child);
+                }
+            }
+            V::Object(out)
+        }
+        // array → walk items
+        (Some("array"), V::Array(arr)) => {
+            let Some(items) = schema.get("items") else { return value.clone() };
+            let out: Vec<V> = arr
+                .iter()
+                .enumerate()
+                .map(|(i, v)| coerce_node(v, items, &format!("{path}[{i}]"), notes))
+                .collect();
+            V::Array(out)
+        }
+        // A scalar where a list is declared. Wrapping is lossless; splitting is a guess, so it
+        // happens ONLY when the whole string fails the declared enum and every comma-part passes
+        // it — then the reading is unambiguous (measured: ta `which` arriving as "macd,rsi").
+        (Some("array"), V::String(s)) => {
+            let enum_vals: Vec<&str> = schema
+                .get("items")
+                .and_then(|i| i.get("enum"))
+                .and_then(|e| e.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            let whole_ok = enum_vals.is_empty() || enum_vals.contains(&s.trim());
+            if !whole_ok && s.contains(',') {
+                let parts: Vec<&str> = s.split(',').map(|p| p.trim()).collect();
+                if parts.iter().all(|p| !p.is_empty() && enum_vals.contains(p)) {
+                    notes.push(format!("{path}: \"{s}\" → list of {}", parts.len()));
+                    return V::Array(parts.into_iter().map(|p| V::String(p.to_string())).collect());
+                }
+            }
+            notes.push(format!("{path}: scalar → single-item list"));
+            V::Array(vec![value.clone()])
+        }
+        (Some("integer"), V::String(s)) => match s.trim().parse::<i64>() {
+            Ok(n) => { notes.push(format!("{path}: string → integer")); serde_json::json!(n) }
+            Err(_) => value.clone(),
+        },
+        // 3.0 for an integer slot is the same number, not a different one.
+        (Some("integer"), V::Number(n)) if n.is_f64() => match n.as_f64() {
+            Some(f) if f.fract() == 0.0 => {
+                notes.push(format!("{path}: float → integer"));
+                serde_json::json!(f as i64)
+            }
+            _ => value.clone(),
+        },
+        (Some("number"), V::String(s)) => match s.trim().parse::<f64>() {
+            Ok(f) => match serde_json::Number::from_f64(f) {
+                Some(num) => { notes.push(format!("{path}: string → number")); V::Number(num) }
+                None => value.clone(),
+            },
+            Err(_) => value.clone(),
+        },
+        // "true"/"false" in a boolean slot has exactly one reading. Any other string stays put so
+        // validation refuses it honestly.
+        (Some("boolean"), V::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" => { notes.push(format!("{path}: string → boolean")); V::Bool(true) }
+            "false" => { notes.push(format!("{path}: string → boolean")); V::Bool(false) }
+            _ => value.clone(),
+        },
+        // 역방향 — 스키마가 string 인데 모델이 스칼라를 따옴표 없이 보낸 경우. 값 자체는 따옴표만
+        // 붙는 것이라 손실 0이고, enum·pattern 제약은 뒤 검증이 그대로 잡는다.
+        (Some("string"), V::Number(n)) => {
+            notes.push(format!("{path}: number → string"));
+            V::String(n.to_string())
+        }
+        (Some("string"), V::Bool(b)) => {
+            notes.push(format!("{path}: boolean → string"));
+            V::String(b.to_string())
+        }
+        _ => value.clone(),
+    }
 }
 
 /// 컴파일 스키마 캐시 — validate_value 가 호출마다 재컴파일하던 것(키움 313-enum 급 스키마가
@@ -3021,7 +3106,8 @@ mod coercion_tests {
             "flag": true,           // bool → string
             "note": "그대로"        // 이미 맞는 타입 = 무변
         });
-        let out = coerce_for_validation(&input, &schema());
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &schema(), &mut notes);
         assert_eq!(out["typhoonNo"], serde_json::json!("13"));
         assert_eq!(out["count"], serde_json::json!(7));
         assert_eq!(out["ratio"], serde_json::json!(1.5));
@@ -3035,7 +3121,8 @@ mod coercion_tests {
     #[test]
     fn leaves_undeclared_untouched() {
         let input = serde_json::json!({ "unknown": 5, "typhoonNo": "13" });
-        let out = coerce_for_validation(&input, &schema());
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &schema(), &mut notes);
         assert_eq!(out["unknown"], serde_json::json!(5));
         assert_eq!(out["typhoonNo"], serde_json::json!("13"));
     }
@@ -3047,9 +3134,56 @@ mod coercion_tests {
             "type": "object",
             "properties": { "action": { "type": "string", "enum": ["quote", "history"] } }
         });
-        let out = coerce_for_validation(&serde_json::json!({ "action": 7 }), &sch);
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&serde_json::json!({ "action": 7 }), &sch, &mut notes);
         assert_eq!(out["action"], serde_json::json!("7"));
         assert!(validate_value(&out, &sch).is_err(), "enum 밖 값은 여전히 거부");
+    }
+
+    /// The gap the hand-written table had: `boolean` was simply absent, so `"true"` was refused
+    /// four times in a row and burned a turn's tool budget (2026-08-09 실측). A schema WALK has
+    /// no per-pair table to forget, and it reaches nested values too.
+    #[test]
+    fn coerces_boolean_and_nested_values() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "lastSessionOnly": { "type": "boolean" },
+                "opts": { "type": "object", "properties": { "depth": { "type": "integer" } } },
+                "rows": { "type": "array", "items": { "type": "object",
+                          "properties": { "qty": { "type": "number" } } } }
+            }
+        });
+        let input = serde_json::json!({
+            "lastSessionOnly": "true",
+            "opts": { "depth": "3" },
+            "rows": [{ "qty": "1.5" }]
+        });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &sch, &mut notes);
+        assert_eq!(out["lastSessionOnly"], serde_json::json!(true));
+        assert_eq!(out["opts"]["depth"], serde_json::json!(3));
+        assert_eq!(out["rows"][0]["qty"], serde_json::json!(1.5));
+        assert!(validate_value(&out, &sch).is_ok());
+        assert_eq!(notes.len(), 3, "every change is reported: {notes:?}");
+    }
+
+    /// A scalar in a list slot wraps (lossless). It only SPLITS when the whole string fails the
+    /// declared enum and every comma-part passes it — otherwise a legitimate comma inside one
+    /// value would be mangled.
+    #[test]
+    fn list_slot_wraps_but_splits_only_when_unambiguous() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": { "which": { "type": "array",
+                            "items": { "type": "string", "enum": ["macd", "rsi"] } },
+                            "tags": { "type": "array", "items": { "type": "string" } } }
+        });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(
+            &serde_json::json!({ "which": "macd,rsi", "tags": "a,b" }), &sch, &mut notes);
+        assert_eq!(out["which"], serde_json::json!(["macd", "rsi"]), "enum 로 확인되면 분리");
+        assert_eq!(out["tags"], serde_json::json!(["a,b"]), "확인할 enum 이 없으면 통째로 감싼다");
     }
 }
 
