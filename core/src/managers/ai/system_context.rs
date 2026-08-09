@@ -20,6 +20,29 @@ pub struct SystemContextGatherer {
     mcp: Arc<McpManager>,
 }
 
+/// A module description's first clause — enough to pick it, not to use it.
+fn first_clause(desc: &str) -> String {
+    let d = desc.trim();
+    if d.is_empty() {
+        return "(설명 없음)".to_string();
+    }
+    let cut = d
+        .find(['.', '\u{2014}', '\n', '\u{ff0e}'])
+        .map(|i| i + 1)
+        .unwrap_or(d.len());
+    let head = d[..cut.min(d.len())].trim_end_matches(['.', ' ', '\u{2014}']).trim();
+    let head = if head.chars().count() > 110 {
+        head.chars().take(110).collect::<String>() + "\u{2026}"
+    } else {
+        head.to_string()
+    };
+    if head.is_empty() {
+        d.chars().take(110).collect()
+    } else {
+        head
+    }
+}
+
 impl SystemContextGatherer {
     pub fn new(module: Arc<ModuleManager>, mcp: Arc<McpManager>) -> Self {
         Self { module, mcp }
@@ -44,11 +67,12 @@ impl SystemContextGatherer {
                     .and_then(|cfg| cfg.get("capability").and_then(|v| v.as_str()).map(String::from))
                     .map(|c| format!(" [capability: {}]", c))
                     .unwrap_or_default();
-                let desc = if entry.description.is_empty() {
-                    "(설명 없음)".to_string()
-                } else {
-                    entry.description.clone()
-                };
+                // Enough to PICK a module, not to use one. Measured 2026-08-10: the full
+                // descriptions made this the second-largest section of the assembled prompt
+                // (14,064 chars of 73,612) — a catalog sitting resident behind a search tool
+                // that exists precisely so it does not have to. Same surgery as the component
+                // catalog: names and one clause here, the rest through search_module_actions.
+                let desc = first_clause(&entry.description);
                 s.push_str(&format!(
                     "- **sysmod_{}**{}: {}\n",
                     entry.name.replace('-', "_"),
