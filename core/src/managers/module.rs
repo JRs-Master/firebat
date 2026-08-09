@@ -340,6 +340,56 @@ impl ModuleManager {
         }
         let input_data: &serde_json::Value = normalized.as_ref().unwrap_or(input_data);
 
+        // Undeclared-envelope absorber — the model wraps every argument in `params` (or `args` /
+        // `input` / `arguments`) even when the schema is flat, and the wrapper is often a JSON
+        // *string*. Measured 2026-08-09 (the BTC turn): technical-analysis takes flat
+        // `{action, bars|barsCacheKey, …}`, the model sent `{action, params:"{\"barsCacheKey\":…}"}`,
+        // so the cache key was invisible to the expander and validation refused on the missing
+        // `bars`. Four refusals, then the per-turn cap, then the model gave up on the tool and did
+        // the analysis in its head. Intent is unambiguous → absorb. Guarded: only when the schema
+        // does NOT declare that key (a module with a real `params` field is untouched) and only
+        // for fields the wrapper's owner has not already set at the top level.
+        const ENVELOPE_KEYS: [&str; 4] = ["params", "args", "input", "arguments"];
+        let unwrapped: Option<serde_json::Value> = (|| {
+            let obj = input_data.as_object()?;
+            let schema_props = config.as_ref()?.get("input")?.get("properties")?.as_object()?;
+            let mut out: Option<serde_json::Map<String, serde_json::Value>> = None;
+            for key in ENVELOPE_KEYS {
+                if schema_props.contains_key(key) {
+                    continue; // a declared field of that name is the module's own
+                }
+                let Some(raw) = obj.get(key) else { continue };
+                let inner = match raw {
+                    serde_json::Value::Object(m) => m.clone(),
+                    serde_json::Value::String(s) => {
+                        let t = s.trim();
+                        if !t.starts_with('{') {
+                            continue;
+                        }
+                        match serde_json::from_str::<serde_json::Value>(t) {
+                            Ok(serde_json::Value::Object(m)) => m,
+                            _ => continue,
+                        }
+                    }
+                    _ => continue,
+                };
+                let target = out.get_or_insert_with(|| obj.clone());
+                target.remove(key);
+                for (k, v) in inner {
+                    target.entry(k).or_insert(v);
+                }
+            }
+            out.map(serde_json::Value::Object)
+        })();
+        if unwrapped.is_some() {
+            tracing::info!(
+                target: "module",
+                module = %module_name,
+                "input dialect absorbed — undeclared params envelope unwrapped"
+            );
+        }
+        let input_data: &serde_json::Value = unwrapped.as_ref().unwrap_or(input_data);
+
         // Stringified-JSON dialect absorber — models sometimes send a nested field as a JSON
         // *string* ({"params": "{\"stk_cd\": ...}"}) instead of an object (2026-07-13 실측:
         // Claude CLI/MCP 경로 kiwoom 호출). Schema-guarded: only when the schema declares the
