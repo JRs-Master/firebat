@@ -132,6 +132,30 @@ impl AnthropicMessagesHandler {
     /// declaration said these models take images (`imageInput: true`) while this adapter sent
     /// none, so the attachment was dropped in silence (2026-08-09 실측). Anthropic wants base64
     /// in a `source` block rather than a URL.
+    /// Prior turns as real messages, ahead of the turn being answered. Anthropic requires
+    /// alternating roles starting with user, so a leading assistant row is dropped.
+    fn history_messages(opts: &LlmCallOpts) -> Vec<serde_json::Value> {
+        let mut out: Vec<serde_json::Value> = Vec::new();
+        for h in &opts.history {
+            let role = if h.role == "assistant" { "assistant" } else { "user" };
+            if out.is_empty() && role == "assistant" {
+                continue;
+            }
+            let text = match &h.content {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            out.push(serde_json::json!({
+                "role": role,
+                "content": [{"type": "text", "text": text}],
+            }));
+        }
+        out
+    }
+
     fn user_content(prompt: &str, opts: &LlmCallOpts) -> serde_json::Value {
         let mut blocks = vec![serde_json::json!({"type": "text", "text": prompt})];
         if let Some(img) = opts.image.as_deref().filter(|s| !s.is_empty()) {
@@ -260,10 +284,14 @@ impl FormatHandler for AnthropicMessagesHandler {
         let headers = Self::build_headers(config, &key)?;
 
         let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
+        let mut text_messages = Self::history_messages(opts);
+        text_messages.push(
+            serde_json::json!({"role": "user", "content": Self::user_content(prompt, opts)}),
+        );
         let mut body = serde_json::json!({
             "model": config.id,
             "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),
-            "messages": [{"role": "user", "content": Self::user_content(prompt, opts)}],
+            "messages": text_messages,
         });
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
         // 형식 사용. OFF 시 단순 string. 옛 TS anthropic-messages.ts 1:1.
@@ -363,10 +391,11 @@ impl FormatHandler for AnthropicMessagesHandler {
         // 멀티턴 messages — user prompt + (assistant tool_use + user tool_result) loop.
         // Phase B-17 minimum: prior_results 가 있으면 단순화 — 첫 user message 에 user prompt,
         // 그 다음 assistant tool_use blocks (id 매칭), user tool_result blocks.
-        let mut messages: Vec<serde_json::Value> = vec![serde_json::json!({
+        let mut messages: Vec<serde_json::Value> = Self::history_messages(opts);
+        messages.push(serde_json::json!({
             "role": "user",
             "content": Self::user_content(prompt, opts)
-        })];
+        }));
         if !prior_results.is_empty() {
             // Assistant tool_use reconstruction — call_id + REAL input (ToolResult.arguments,
             // populated by the dispatcher). Sending input:{} erased what the model actually

@@ -2124,6 +2124,12 @@ pub trait ILlmPort: Send + Sync {
     /// model answered "I don't know what you mean" about a picture it was never shown
     /// (2026-08-09 실측). Default true: the CLI adapters have carried images all along.
     fn supports_image(&self, _opts: &LlmCallOpts) -> bool { true }
+    /// Does this model's format take conversation history as REAL turns (`opts.history`) rather
+    /// than as prose pasted into the system prompt? The blob form makes the previous answer look
+    /// like text to continue, and a weak-ish model answers a new question by reproducing that
+    /// answer verbatim — measured 2026-08-09, two different questions, byte-identical 94-char
+    /// replies (the same feedback loop as the 끝말잇기 turn). Default false = today's blob.
+    fn wants_structured_history(&self, _opts: &LlmCallOpts) -> bool { false }
     async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<LlmTextResponse>;
     async fn ask_with_tools(
         &self,

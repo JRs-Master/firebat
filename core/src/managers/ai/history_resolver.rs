@@ -205,6 +205,51 @@ impl HistoryResolver {
     /// 옛 TS compressHistoryWithSearch 의 fallback 모드 — 벡터 검색 결과 없을 때 사용.
     ///
     /// owner 와 conv_id 설정되어 있으면 그 대화의 recent N 메시지 추출. 미설정 시 None.
+    /// The same recent-N window as `resolve`, but as REAL turns for formats that take a
+    /// multi-turn request. Pasting the transcript into the system prompt makes the previous
+    /// answer read as text to continue, and the model reproduced it verbatim for a different
+    /// question (2026-08-09 실측). As turns, "my last reply" is structurally the past.
+    ///
+    /// Storage says `system` for an AI reply on older rows; the wire word is `assistant`.
+    /// Empty content and tool rows are skipped — an empty turn is a shape some APIs reject.
+    pub fn recent_turns(
+        &self,
+        owner: &str,
+        conv_id: Option<&str>,
+    ) -> Vec<crate::ports::ChatMessage> {
+        let Some(conv_id) = conv_id else { return Vec::new() };
+        let Some(conv) = self.conversation.get(owner, conv_id) else { return Vec::new() };
+        let Some(messages) = conv.messages.as_array() else { return Vec::new() };
+        let start = messages.len().saturating_sub(RECENT_MESSAGE_LIMIT);
+        let mut out: Vec<crate::ports::ChatMessage> = Vec::new();
+        for msg in &messages[start..] {
+            let role = match msg.get("role").and_then(|v| v.as_str()) {
+                Some("user") => "user",
+                Some("assistant") | Some("system") => "assistant",
+                _ => continue,
+            };
+            let content = super::render_exec::fence_to_plaintext(
+                msg.get("content").and_then(|v| v.as_str()).unwrap_or(""),
+            );
+            let trimmed: String = content.chars().take(RECENT_FULL_MAX).collect();
+            if trimmed.trim().is_empty() {
+                continue;
+            }
+            out.push(crate::ports::ChatMessage {
+                role: role.to_string(),
+                content: serde_json::Value::String(trimmed),
+                image: None,
+                image_mime_type: None,
+            });
+        }
+        // The turn being answered is sent separately as the final user message, so a trailing
+        // user row here would duplicate it.
+        if out.last().map(|m| m.role == "user").unwrap_or(false) {
+            out.pop();
+        }
+        out
+    }
+
     pub fn resolve(&self, owner: &str, conv_id: Option<&str>) -> Option<String> {
         let conv_id = conv_id?;
         let conv = self.conversation.get(owner, conv_id)?;

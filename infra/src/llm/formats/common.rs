@@ -85,15 +85,28 @@ pub fn build_messages(opts: &LlmCallOpts, user_prompt: &str) -> serde_json::Valu
         ]),
         None => serde_json::Value::String(user_prompt.to_string()),
     };
+    let mut messages: Vec<serde_json::Value> = Vec::with_capacity(opts.history.len() + 2);
     if let Some(sp) = opts.system_prompt.as_deref() {
         if !sp.is_empty() {
-            return serde_json::json!([
-                {"role": "system", "content": sp},
-                {"role": "user", "content": user_content},
-            ]);
+            messages.push(serde_json::json!({"role": "system", "content": sp}));
         }
     }
-    serde_json::json!([{"role": "user", "content": user_content}])
+    // Prior turns as real messages. Until 2026-08-09 the caller pasted them into the system
+    // prompt instead, which read as text to continue — the model answered a new question by
+    // reproducing its own previous reply word for word.
+    for h in &opts.history {
+        let role = if h.role == "assistant" { "assistant" } else { "user" };
+        let text = match &h.content {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        messages.push(serde_json::json!({"role": role, "content": text}));
+    }
+    messages.push(serde_json::json!({"role": "user", "content": user_content}));
+    serde_json::Value::Array(messages)
 }
 
 /// Normalize an image argument to a `data:` URL. ai.rs already converts slug URLs to base64, so

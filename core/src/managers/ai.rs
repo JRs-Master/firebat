@@ -1874,6 +1874,9 @@ impl AiManager {
         // The turn still runs: the notice rides the system prompt so the answer is an honest
         // refusal instead of a blind guess, and the image is dropped rather than sent to an
         // endpoint that would reject the request.
+        // Resolved once, before the system prompt is assembled: whether this model's format takes
+        // history as real turns (then the recent-N blob is skipped) or as prose.
+        let structured_history = self.llm.wants_structured_history(&effective_opts);
         let mut image_unsupported = false;
         if effective_opts.image.is_some() && !self.llm.supports_image(&effective_opts) {
             image_unsupported = true;
@@ -2168,7 +2171,21 @@ impl AiManager {
                         .as_deref()
                         .or(ai_opts.conversation_id.as_deref());
                     // 직전 연속성 — recent N턴 (현재 대화, owner-keyed 단일 스토어).
-                    if let Some(hist) = hr.resolve(owner, conv_id) {
+                    // Formats that take a real multi-turn request get turns, not prose: the blob
+                    // put the model's own last answer in the system prompt as text to continue,
+                    // and it reproduced that answer verbatim for a different question
+                    // (2026-08-09 실측). Structured history also stabilises the system prompt
+                    // across a conversation, which is what the prefix cache wants.
+                    if structured_history {
+                        let turns = hr.recent_turns(owner, conv_id);
+                        history_chars = turns
+                            .iter()
+                            .map(|t| t.content.as_str().map(|s| s.chars().count()).unwrap_or(0))
+                            .sum();
+                        if !turns.is_empty() {
+                            effective_opts.history = turns;
+                        }
+                    } else if let Some(hist) = hr.resolve(owner, conv_id) {
                         // 0 = 대화 첫 턴(기댈 맥락 없음) / >0 = 모델이 맥락을 보고 움직일 수 있었다.
                         history_chars = hist.chars().count();
                         extra_parts.push(hist);

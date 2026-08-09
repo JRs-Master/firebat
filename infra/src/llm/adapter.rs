@@ -231,6 +231,20 @@ impl ILlmPort for ConfigDrivenAdapter {
             )
     }
 
+    /// The API formats that build a real multi-turn request. CLI formats keep the prose blob:
+    /// they resume their own session, so structured turns would be a second copy of what the
+    /// session already holds.
+    fn wants_structured_history(&self, opts: &LlmCallOpts) -> bool {
+        self.select_config(opts)
+            .map(|c| {
+                matches!(
+                    c.format.as_str(),
+                    "gemini-native" | "vertex-gemini" | "openai-chat" | "anthropic-messages"
+                )
+            })
+            .unwrap_or(false)
+    }
+
     async fn ask_text(
         &self,
         prompt: &str,
