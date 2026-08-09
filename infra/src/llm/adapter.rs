@@ -215,6 +215,22 @@ impl ILlmPort for ConfigDrivenAdapter {
             .unwrap_or(false)
     }
 
+    /// The declaration (`features.imageInput`) AND the format actually carrying the image. CLI
+    /// formats always carry one; among the API formats only those listed here build image parts.
+    /// A model whose declaration says yes but whose adapter drops the bytes must answer NO here,
+    /// or the honest "I cannot see it" notice never fires and the user is answered blind.
+    fn supports_image(&self, opts: &LlmCallOpts) -> bool {
+        let Ok(c) = self.select_config(opts) else { return false };
+        if c.format.starts_with("cli-") {
+            return true;
+        }
+        c.features.image_input
+            && matches!(
+                c.format.as_str(),
+                "gemini-native" | "vertex-gemini" | "openai-chat" | "anthropic-messages"
+            )
+    }
+
     async fn ask_text(
         &self,
         prompt: &str,

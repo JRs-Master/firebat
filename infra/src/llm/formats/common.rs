@@ -72,14 +72,47 @@ pub fn compute_cost(config: &LlmModelConfig, tokens_in: i64, tokens_out: i64) ->
 
 /// system prompt + user prompt → 단일 messages 배열.
 /// 옛 TS 의 `LlmCallOpts.systemPrompt` 가 설정되어 있으면 system role 으로 분리, 없으면 user only.
+///
+/// An attached image rides in the user turn as OpenAI-style content parts. It used to ride
+/// nowhere: ai.rs resolved the attachment to a data URL and this function dropped it, so every
+/// openai-chat model was answered about a picture it never saw (2026-08-09 실측). The caller
+/// gates on `ILlmPort::supports_image`, so an image reaching here is one the model can read.
 pub fn build_messages(opts: &LlmCallOpts, user_prompt: &str) -> serde_json::Value {
+    let user_content = match opts.image.as_deref().filter(|s| !s.is_empty()) {
+        Some(img) => serde_json::json!([
+            {"type": "text", "text": user_prompt},
+            {"type": "image_url", "image_url": {"url": image_data_url(img, opts.image_mime_type.as_deref())}},
+        ]),
+        None => serde_json::Value::String(user_prompt.to_string()),
+    };
     if let Some(sp) = opts.system_prompt.as_deref() {
         if !sp.is_empty() {
             return serde_json::json!([
                 {"role": "system", "content": sp},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": user_content},
             ]);
         }
     }
-    serde_json::json!([{"role": "user", "content": user_prompt}])
+    serde_json::json!([{"role": "user", "content": user_content}])
+}
+
+/// Normalize an image argument to a `data:` URL. ai.rs already converts slug URLs to base64, so
+/// this only has to pass a data URL through and wrap bare base64 (the older opts shape).
+pub fn image_data_url(image: &str, mime: Option<&str>) -> String {
+    if image.starts_with("data:") || image.starts_with("http://") || image.starts_with("https://") {
+        return image.to_string();
+    }
+    format!("data:{};base64,{}", mime.unwrap_or("image/png"), image)
+}
+
+/// Split a `data:<mime>;base64,<payload>` URL into its parts — the shape Anthropic wants
+/// (`source: {type:"base64", media_type, data}`) rather than a URL.
+pub fn image_media_and_data(image: &str, mime: Option<&str>) -> (String, String) {
+    if let Some(rest) = image.strip_prefix("data:") {
+        if let Some((meta, payload)) = rest.split_once(',') {
+            let media = meta.split(';').next().unwrap_or("image/png");
+            return (media.to_string(), payload.to_string());
+        }
+    }
+    (mime.unwrap_or("image/png").to_string(), image.to_string())
 }

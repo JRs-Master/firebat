@@ -1867,6 +1867,23 @@ impl AiManager {
             }
         }
 
+        // A model that cannot read the attachment must SAY so. The image was resolved, logged as
+        // converted, and then dropped by adapters that never built image parts — the turn came
+        // back "I don't know what you mean" about a picture the model was never shown, and
+        // nothing on the screen said why (2026-08-09 실측, solar-pro4 declares imageInput:false).
+        // The turn still runs: the notice rides the system prompt so the answer is an honest
+        // refusal instead of a blind guess, and the image is dropped rather than sent to an
+        // endpoint that would reject the request.
+        let mut image_unsupported = false;
+        if effective_opts.image.is_some() && !self.llm.supports_image(&effective_opts) {
+            image_unsupported = true;
+            effective_opts.image = None;
+            self.log.warn(&format!(
+                "[AiManager] model cannot read images — attachment dropped and the turn told to say so (model={})",
+                effective_opts.model.as_deref().unwrap_or("<default>")
+            ));
+        }
+
         // library_hits(SourceTags) — library 자동주입 비활성 후 항상 빈 채로 노출(2026-06-27).
         // 자동주입 SourceTags 노이즈 제거 → 라이브러리 사용은 search_library 도구 액션뱃지로만 표시.
         let retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
@@ -2096,6 +2113,14 @@ impl AiManager {
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
                 let mut extra_parts: Vec<String> = Vec::new();
+                if image_unsupported {
+                    extra_parts.push(
+                        "## 첨부 이미지\n사용자가 이미지를 첨부했지만 지금 모델은 이미지를 읽지 못합니다. \
+                         본 적 없는 그림을 추측하지 말고, 이미지를 볼 수 없다는 사실을 먼저 밝힌 뒤 \
+                         이미지를 읽는 모델로 바꾸거나 내용을 글로 설명해 달라고 요청하세요."
+                            .to_string(),
+                    );
+                }
                 if let Some(g) = &self.context_gatherer {
                     let ctx = g.gather().await;
                     if !ctx.is_empty() {

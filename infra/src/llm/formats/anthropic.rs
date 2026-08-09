@@ -12,7 +12,7 @@
 use crate::llm::adapter::FormatHandler;
 use firebat_core::llm::config::LlmModelConfig;
 use crate::llm::formats::common::{
-    compute_cost, http_client, map_reqwest_error, require_api_key,
+    compute_cost, http_client, image_media_and_data, map_reqwest_error, require_api_key,
 };
 use firebat_core::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolCall, ToolDefinition,
@@ -126,6 +126,22 @@ impl AnthropicMessagesHandler {
         if let Some(obj) = body.as_object_mut() {
             obj.remove("temperature");
         }
+    }
+
+    /// The user turn's content blocks — text, plus the attached image when there is one. The
+    /// declaration said these models take images (`imageInput: true`) while this adapter sent
+    /// none, so the attachment was dropped in silence (2026-08-09 실측). Anthropic wants base64
+    /// in a `source` block rather than a URL.
+    fn user_content(prompt: &str, opts: &LlmCallOpts) -> serde_json::Value {
+        let mut blocks = vec![serde_json::json!({"type": "text", "text": prompt})];
+        if let Some(img) = opts.image.as_deref().filter(|s| !s.is_empty()) {
+            let (media_type, data) = image_media_and_data(img, opts.image_mime_type.as_deref());
+            blocks.push(serde_json::json!({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": data},
+            }));
+        }
+        serde_json::Value::Array(blocks)
     }
 
     /// Anthropic 표준 헤더 빌드 — x-api-key + anthropic-version + extra (config.extra_headers).
@@ -247,7 +263,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         let mut body = serde_json::json!({
             "model": config.id,
             "max_tokens": opts.max_tokens.or(config.max_output).unwrap_or(8192),
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": Self::user_content(prompt, opts)}],
         });
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
         // 형식 사용. OFF 시 단순 string. 옛 TS anthropic-messages.ts 1:1.
@@ -349,7 +365,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         // 그 다음 assistant tool_use blocks (id 매칭), user tool_result blocks.
         let mut messages: Vec<serde_json::Value> = vec![serde_json::json!({
             "role": "user",
-            "content": [{"type": "text", "text": prompt}]
+            "content": Self::user_content(prompt, opts)
         })];
         if !prior_results.is_empty() {
             // Assistant tool_use reconstruction — call_id + REAL input (ToolResult.arguments,

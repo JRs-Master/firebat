@@ -2117,6 +2117,13 @@ pub trait ILlmPort: Send + Sync {
     /// opts.model 이 있으면 그 모델 기준, 없으면 current default 기준.
     /// 미구현 implementor 는 default false (안전한 쪽).
     fn supports_hosted_mcp(&self, _opts: &LlmCallOpts) -> bool { false }
+    /// Can the resolved model actually read an attached image? Declared per model
+    /// (`features.imageInput`) and, for API formats, gated on the adapter really sending the
+    /// image. Text-only models exist (solar-pro4 declares imageInput:false), and until this
+    /// existed the attachment was resolved, logged as converted, then dropped in silence — the
+    /// model answered "I don't know what you mean" about a picture it was never shown
+    /// (2026-08-09 실측). Default true: the CLI adapters have carried images all along.
+    fn supports_image(&self, _opts: &LlmCallOpts) -> bool { true }
     async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<LlmTextResponse>;
     async fn ask_with_tools(
         &self,
