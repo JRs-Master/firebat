@@ -96,6 +96,73 @@ fn repair_tool_args(raw: &str) -> (serde_json::Value, String) {
     (flagged, echo)
 }
 
+const TOOL_CALL_START: &str = "<|tool_call:start|>";
+const TOOL_ARG_START: &str = "<|tool_arg:start|>";
+const TOOL_ARG_VALUE: &str = "<|tool_arg:value|>";
+const TOOL_ARG_END: &str = "<|tool_arg:end|>";
+
+/// The `<|tool_call:start|>name <|tool_arg:start|>k<|tool_arg:value|>v<|tool_arg:end|>` variant.
+/// Values arrive as bare text (no JSON quoting), so each is kept as a string and the module
+/// layer's coercion turns "20" into 20 and "true" into true against the declared schema.
+fn recover_arg_token_dialect(text: &str) -> (String, Vec<ToolCall>) {
+    let mut out = String::with_capacity(text.len());
+    let mut calls: Vec<ToolCall> = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(TOOL_CALL_START) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + TOOL_CALL_START.len()..];
+        // The call runs until the next call starts (this dialect has no end marker).
+        let (block, tail) = match after.find(TOOL_CALL_START) {
+            Some(next) => (&after[..next], &after[next..]),
+            None => (after, ""),
+        };
+        let name_end = block.find(TOOL_ARG_START).unwrap_or(block.len());
+        let name = block[..name_end].trim();
+        let mut args = serde_json::Map::new();
+        let mut cursor = &block[name_end..];
+        while let Some(s) = cursor.find(TOOL_ARG_START) {
+            let seg = &cursor[s + TOOL_ARG_START.len()..];
+            let Some(v) = seg.find(TOOL_ARG_VALUE) else { break };
+            let key = seg[..v].trim();
+            let val_seg = &seg[v + TOOL_ARG_VALUE.len()..];
+            let (val, next) = match val_seg.find(TOOL_ARG_END) {
+                Some(e) => (&val_seg[..e], &val_seg[e + TOOL_ARG_END.len()..]),
+                None => (val_seg, ""),
+            };
+            if !key.is_empty() {
+                args.insert(key.to_string(), serde_json::Value::String(val.trim().to_string()));
+            }
+            cursor = next;
+        }
+        if !name.is_empty() {
+            calls.push(ToolCall {
+                id: format!("leaked-{}", calls.len() + 1),
+                name: name.to_string(),
+                arguments: serde_json::Value::Object(args),
+            });
+        }
+        rest = tail;
+    }
+    out.push_str(rest);
+    let mut cleaned = out;
+    for marker in [TOOL_ARG_START, TOOL_ARG_VALUE, TOOL_ARG_END, TOOL_CALL_START] {
+        if cleaned.contains(marker) {
+            cleaned = cleaned.replace(marker, "");
+        }
+    }
+    if calls.is_empty() {
+        tracing::warn!(target: "llm", "arg-token tool-call markup stripped from content");
+    } else {
+        tracing::warn!(
+            target: "llm",
+            "arg-token tool-call markup recovered as {} real call(s): {:?}",
+            calls.len(),
+            calls.iter().map(|c| c.name.as_str()).collect::<Vec<_>>()
+        );
+    }
+    (cleaned, calls)
+}
+
 /// Recover serving-format tool-call tokens a hybrid model leaks into the CONTENT channel.
 /// Observed (Upstage Solar, 2026-07-11/12 실측): when the request carries no `tools` (the
 /// forced-final round) but the model still wants to call one, it emits its internal
@@ -114,6 +181,14 @@ fn recover_leaked_tool_calls(text: &str) -> (String, Vec<ToolCall>) {
     const END: &str = "<|tool_call:end|>";
     if !text.contains("<|tool_call") {
         return (text.to_string(), Vec::new());
+    }
+    // Second dialect, same model: `<|tool_call:start|>name` followed by repeated
+    // `<|tool_arg:start|>key<|tool_arg:value|>value<|tool_arg:end|>`, with no call-end marker —
+    // the next `<|tool_call:start|>` ends the previous call. The begin/name/args parser below
+    // does not match it, so the whole thing reached the user as raw markup where the answer
+    // should have been (2026-08-09 실측, the BTC turn: the reply WAS the markup).
+    if text.contains(TOOL_CALL_START) {
+        return recover_arg_token_dialect(text);
     }
     let mut out = String::with_capacity(text.len());
     let mut calls: Vec<ToolCall> = Vec::new();

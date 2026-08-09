@@ -2758,6 +2758,16 @@ fn coerce_for_validation(
             ("string", serde_json::Value::Bool(b)) => {
                 out.insert(k.clone(), serde_json::Value::String(b.to_string()));
             }
+            // boolean 은 이 표에서 통째로 빠져 있었다 — 모델이 `"lastSessionOnly": "true"` 를
+            // 보내면 네 번 연속 거부되고 per-turn cap 을 태웠다(2026-08-09 실측, BTC 턴).
+            // 문자열 "true"/"false" 가 boolean 자리에 오는 건 의미가 한 가지뿐이라 손실 0이고,
+            // 그 외 문자열은 그대로 둬 검증이 정직하게 거부한다.
+            ("boolean", serde_json::Value::String(s)) => match s.trim().to_ascii_lowercase().as_str() {
+                "true" => { out.insert(k.clone(), serde_json::Value::Bool(true)); }
+                "false" => { out.insert(k.clone(), serde_json::Value::Bool(false)); }
+                _ => {}
+            },
+            // 역방향 — 스키마가 문자열인데 모델이 진짜 bool 을 보낸 경우는 위에서 처리된다.
             _ => {}
         }
     }
