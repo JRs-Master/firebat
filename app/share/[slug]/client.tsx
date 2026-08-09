@@ -11,7 +11,7 @@ import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
 import { usePublicTranslations } from '../../../lib/i18n';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
-import { maskMath, splitFirebatRender, highlightMarksToHtml, closeStrayScript, cleanMarkdown } from '../../../lib/util/md';
+import { maskMath, splitFirebatRender, highlightMarksToHtml, closeStrayScript, cleanMarkdown, groupMetricRuns } from '../../../lib/util/md';
 
 /** 공유 페이지 텍스트 준비 — 수식($...$) 보호 → HTML escape + **bold** 주입 → 형광펜/용어칩 → 복원
  *  (admin renderMarkdown 과 동일 취지). 옛엔 highlightMarksToHtml 누락이라 공유에선 ==형광펜== / [[칩]] 미렌더. */
@@ -286,7 +286,18 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
       </div>
       <div className="flex flex-col gap-3 flex-1 min-w-0 sm:pt-3">
         {Array.isArray(blocks) && blocks.length > 0 ? (
-          blocks.map((b, i) => {
+          groupMetricRuns(blocks).map((run: any) => {
+            if (run.metricRow && run.items.length > 1) {
+              // KPI row — one renderer for the run so the metrics lay out responsively.
+              return (
+                <ComponentRenderer
+                  key={run.key}
+                  components={run.items.map((m: any) => ({ type: m.name ?? m.type, props: m.props || {} }))}
+                />
+              );
+            }
+            const b: any = run.metricRow ? run.items[0] : run.block;
+            const i: number = run.key;
             // 섹션 경계 (Header / Divider) 앞에 추가 여백 — admin 대화창과 동일 규칙 (chat-manager.isSectionStartBlock)
             const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
             if (b.type === 'text' && b.text) {

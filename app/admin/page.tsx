@@ -10,7 +10,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeRaw from 'rehype-raw';
 import rehypeKatex from 'rehype-katex';
-import { maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript, cleanMarkdown } from '../../lib/util/md';
+import { maskMath, highlightMarksToHtml, splitFirebatRender, closeStrayScript, cleanMarkdown, groupMetricRuns } from '../../lib/util/md';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -1343,7 +1343,18 @@ function MessageBubble({ msg, loading, onSuggestion, onLockSuggestion, onApprove
               {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}
               {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
                 <div className="flex flex-col gap-3">
-                  {msg.data.blocks.map((b: any, i: number) => {
+                  {groupMetricRuns(msg.data.blocks).map((run: any) => {
+                    if (run.metricRow && run.items.length > 1) {
+                      // A KPI row — one ComponentRenderer for the whole run so it lays them out
+                      // responsively instead of one full-width card each.
+                      return (
+                        <BlockErrorBoundary key={run.key} label={`Metric x${run.items.length}`}>
+                          <ComponentRenderer components={run.items.map((m: any) => ({ type: m.name ?? m.type, props: m.props || {} }))} />
+                        </BlockErrorBoundary>
+                      );
+                    }
+                    const b: any = run.metricRow ? run.items[0] : run.block;
+                    const i: number = run.key;
                     // 섹션 경계 (Header / Divider) 앞에 추가 여백 — chat-manager 의 공통 규칙 (share 페이지와 동일)
                     const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
                     // BlockErrorBoundary — 한 block 의 invalid props 가 admin 전역 죽이는 케이스 격리.

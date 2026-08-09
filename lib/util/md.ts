@@ -521,3 +521,25 @@ export function cleanMarkdown(text: string): string {
   cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']symbol["']\s*:[\s\S]*?["']data["']\s*:\s*\[[\s\S]*?["'](open|close|high|low)["'][\s\S]*?```/g, '');
   return cleaned;
 }
+
+/** Adjacent `metric` component blocks are one KPI row, not N stacked cards. The chat and share
+ *  renderers walk a message's blocks one at a time (each gets its own ComponentRenderer, for
+ *  per-block error isolation and section spacing), so ComponentRenderer's own grouping never
+ *  sees them as siblings — the run has to be collapsed before the walk (2026-08-10 실측: the
+ *  typhoon card still stacked four full-width metrics after the renderer-side fix shipped).
+ *  Returns the same list with each run of 2+ metrics replaced by one `metricRow` entry. */
+export type BlockRun = { metricRow: true; items: any[]; key: number } | { metricRow: false; block: any; key: number };
+export function groupMetricRuns(blocks: any[]): BlockRun[] {
+  const out: BlockRun[] = [];
+  (blocks || []).forEach((b, i) => {
+    const name = String((b?.type === 'component' ? b?.name : b?.type) ?? '').toLowerCase();
+    const prev = out[out.length - 1];
+    if (name === 'metric') {
+      if (prev && prev.metricRow) { prev.items.push(b); return; }
+      out.push({ metricRow: true, items: [b], key: i });
+      return;
+    }
+    out.push({ metricRow: false, block: b, key: i });
+  });
+  return out;
+}
