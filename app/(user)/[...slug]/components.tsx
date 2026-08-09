@@ -57,7 +57,10 @@ export function ComponentRenderer({ components, fullHeight }: ComponentRendererP
       {groups.map(g => (
         // 블록 하나가 throw 해도 페이지 전체가 죽지 않게 격리 — 그 블록만 inline 에러, 나머지 정상 렌더.
         g.metrics && g.items.length > 1 ? (
-          <div key={g.at} className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+          // auto-fit by the CONTAINER's width, not the viewport's: a chat column is narrower
+          // than the window, so viewport breakpoints put two cards in a row that had space for
+          // four (2026-08-10). minmax lets as many fit as the actual width allows.
+          <div key={g.at} className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
             {g.items.map((comp, k) => (
               <BlockErrorBoundary key={k} label={comp?.type}>
                 <ComponentSwitch comp={comp} standalone={false} />
