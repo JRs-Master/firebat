@@ -98,9 +98,15 @@ impl ModuleActionSource {
         // the discovery surface said HOW to turn a name into the code; the hint existed but
         // only fired after a rejected call it never made. Declarative — no per-module logic.
         let grounded = crate::utils::grounding::parse_grounding(config);
-        let actions: Vec<serde_json::Value> = if let Some(arr) =
-            decl.get("actions").and_then(|v| v.as_array())
-        {
+        let actions: Vec<serde_json::Value> = if let Some(arr) = decl.as_array() {
+            // The documented shape is `{"actions": [...]}`, but writing the list itself is the
+            // obvious mistake to make, and it used to cost the whole module: no `actions` key
+            // meant zero entries, and the key's mere presence skipped the derive-from-input
+            // fallback below, so the module vanished from search_module_actions entirely
+            // (2026-08-10 — binance shipped that way and answered 0 of 11 actions). Accept the
+            // bare list; it says exactly the same thing.
+            arr.clone()
+        } else if let Some(arr) = decl.get("actions").and_then(|v| v.as_array()) {
             arr.clone()
         } else if let Some(file) = decl.get("file").and_then(|v| v.as_str()) {
             match self.module.read_module_file(scope, name, file).await {
@@ -110,7 +116,7 @@ impl ModuleActionSource {
         } else {
             Vec::new()
         };
-        actions
+        let entries: Vec<CatalogEntry> = actions
             .into_iter()
             .filter_map(|a| {
                 let id = a.get("id").and_then(|v| v.as_str())?.to_string();
@@ -201,7 +207,23 @@ impl ModuleActionSource {
                     extra,
                 })
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        // A declared catalog that produces nothing is a broken declaration, not a module with no
+        // actions — and the cost of believing it is total: the module disappears from discovery
+        // while every other surface still works, so it looks installed and is unreachable. Fall
+        // back to the input schema (which every module ships) and say the module's name, because
+        // a silent zero is the one outcome nobody goes looking for.
+        if entries.is_empty() {
+            tracing::warn!(
+                target: "action_catalog",
+                module = %name,
+                "actionCatalog declared but yielded no actions — falling back to the input schema. \
+                 Expected {{\"actions\": [...]}} or a bare [...] list, each item with an `id`."
+            );
+            return derive_entries_from_input(name, config, approval_decl);
+        }
+        entries
     }
 }
 
