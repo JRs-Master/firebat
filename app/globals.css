@@ -624,9 +624,20 @@ mark[class^="fbhl-"] {
   .fbwx-typ { transform-box: fill-box; transform-origin: center; animation: fbwx-ccw 3.6s linear infinite; }
 }
 
-/* Slideshow (swiper) arrows — swiper's default is big blue chevrons that outshout the content.
-   Standard UX: translucent grey circle + white chevron, shown on hover where hover exists (PC),
-   hidden on touch devices (swipe + bottom dots are the mobile standard — swiper provides both). */
+/* Slideshow (swiper) chrome. The CDN bundle loads at runtime, so its rules land LAST in the
+   cascade and beat equal-specificity utility classes — the slide's flex centering has to be
+   restated here or the image sits left-aligned in a wider box (measured 2026-08-09).
+   Arrows: swiper's default is big blue chevrons that outshout the content. Standard UX is a
+   translucent grey circle revealed on hover, and NO arrows on mobile — swipe plus dots is the
+   phone convention. Hidden by width as well as by hover: phones that report hover:hover (and
+   desktop emulation) were still showing them.
+   Dots: a coloured active dot disappears on images that share its colour (a blue dot on the
+   dark logo), so they are white with a dark halo — legible on any image. */
+.fb-slideshow .swiper-slide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .fb-slideshow .swiper-button-prev,
 .fb-slideshow .swiper-button-next {
   width: 36px;
@@ -651,9 +662,16 @@ mark[class^="fbhl-"] {
   .fb-slideshow:hover .swiper-button-prev,
   .fb-slideshow:hover .swiper-button-next { opacity: 1; }
 }
-@media (hover: none) {
+@media (hover: none), (max-width: 767px) {
   .fb-slideshow .swiper-button-prev,
   .fb-slideshow .swiper-button-next { display: none; }
 }
-.fb-slideshow .swiper-pagination-bullet { background: rgba(15, 23, 42, 0.35); opacity: 1; }
-.fb-slideshow .swiper-pagination-bullet-active { background: #2563eb; }
+.fb-slideshow .swiper-pagination-bullet {
+  background: #fff;
+  opacity: 0.55;
+  box-shadow: 0 0 3px rgba(15, 23, 42, 0.7);
+}
+.fb-slideshow .swiper-pagination-bullet-active {
+  background: #fff;
+  opacity: 1;
+}

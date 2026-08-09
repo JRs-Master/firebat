@@ -6001,35 +6001,49 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   images: SlideImage[]; autoplay?: boolean | null; autoplayDelay?: number | null; height?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  // 모바일 320px / PC 480px 캡 + 비율 보호.
+  // Mobile 320px / desktop 480px cap, ratio preserved.
   const slideMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   const finalHeight = height || (slideMaxH ? `${slideMaxH}px` : '320px');
+  // `images` is a fresh array on every render, so an effect keyed on it re-ran constantly and
+  // constructed a NEW Swiper over the same DOM each time — several instances fighting for one
+  // container, which is why arrow navigation stopped matching the dots (2026-08-09 mobile
+  // report). Key on the slide identities instead, and destroy the instance on cleanup.
+  const slideKey = images.map(i => `${i.src ?? (i as any).url ?? ''}|${i.alt ?? ''}`).join('');
   useEffect(() => {
     if (!ref.current || images.length === 0) return;
     const container = ref.current;
+    let instance: { destroy?: (a?: boolean, b?: boolean) => void } | null = null;
+    let disposed = false;
     loadCdn({
       js: ['https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'],
       css: ['https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css'],
       globalCheck: () => !!(window as any).Swiper,
     }).then(() => {
       const w = window as any;
-      if (!w.Swiper) return;
+      if (!w.Swiper || disposed) return;
       try {
-        new w.Swiper(container, {
+        instance = new w.Swiper(container, {
           loop: images.length > 1,
           autoplay: autoplay ? { delay: autoplayDelay || 3000, disableOnInteraction: false } : false,
           pagination: { el: container.querySelector('.swiper-pagination'), clickable: true },
           navigation: { nextEl: container.querySelector('.swiper-button-next'), prevEl: container.querySelector('.swiper-button-prev') },
         });
+        if (disposed) instance?.destroy?.(true, true);
       } catch { /* ignore */ }
     });
-  }, [images, autoplay, autoplayDelay]);
+    return () => {
+      disposed = true;
+      try { instance?.destroy?.(true, true); } catch { /* ignore */ }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideKey, autoplay, autoplayDelay]);
 
   return (
-    // fb-slideshow: arrow styling (translucent grey circles, hover-reveal on desktop, hidden on
-    // touch devices — swipe + dots is the mobile standard) is owned by globals.css. max-w +
-    // mx-auto: the box used to outgrow the prose column and clip the right arrow (2026-08-09,
-    // the three-logo carousel).
+    // fb-slideshow: slide centering, arrow styling (translucent grey circles, hover-reveal on
+    // desktop, none on mobile — swipe + dots is the phone standard) and dot colours live in
+    // globals.css, because the swiper CDN bundle loads last and wins over utility classes.
+    // max-w + mx-auto: the box used to outgrow the prose column and clip the right arrow
+    // (2026-08-09, the three-logo carousel).
     <div ref={ref} className="swiper fb-slideshow my-3 w-full max-w-2xl mx-auto rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
       <div className="swiper-wrapper">
         {images.map((img, i) => (
