@@ -1,0 +1,115 @@
+{
+  "name": "market-calendar",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Is a market open on a given date, and between which hours. Needs no credential and no install: US sessions come from the exchange's own rules (fixed dates, the weekend shift, Good Friday, and the three early closes), computed exactly in pure Python. Korea's 설날 and 추석 are LUNAR, so there is no honest offline answer — for KR it reports open:null (unknown, NOT open) and points at a broker calendar (toss market-calendar, KIS 국내주식-040). `exchange_calendars` is used when installed, covering overseas venues too, but is not required.",
+  "aliases": [
+    "휴장일",
+    "영업일",
+    "장 캘린더",
+    "market calendar",
+    "trading day"
+  ],
+  "runtime": "python",
+  "capability": "market-data",
+  "providerType": "library",
+  "hubSafe": true,
+  "actionCatalog": {
+    "envelope": "{ \"action\": \"<id>\", ...params at top level }",
+    "actions": [
+      {
+        "id": "is_trading_day",
+        "name": "휴장일 · 영업일 판정",
+        "domain": "시장정보",
+        "description": "휴장일 영업일 개장 여부 판정 — 그 시장이 그날 여는지, 정규장이 몇 시부터 몇 시까지인지, 닫혔다면 주말인지 공휴일인지, 그리고 직전·다음 영업일. Whether a market trades on a date, its regular session bounds, why it is closed when it is, and the surrounding trading days. 설날·추석·독립기념일·Good Friday 처럼 요일로는 안 잡히는 날이 여기서 닫힌다.",
+        "params": {
+          "market": "kr · us · jp · hk · cn · uk · de, 또는 XKRX·XNYS·XNAS 같은 MIC 코드",
+          "date": "판정할 날짜 YYYY-MM-DD (생략 = 오늘)"
+        }
+      },
+      {
+        "id": "sessions",
+        "name": "기간 캘린더 조회",
+        "domain": "시장정보",
+        "description": "기간 캘린더 조회 — 시작일부터 종료일까지 하루씩, 개장 여부와 정규장 시각. 백테스트 구간에서 실제 거래일 수를 세거나, 다음 달 휴장일을 미리 볼 때. Day-by-day sessions over a range, with the trading-day count.",
+        "params": {
+          "market": "시장 또는 MIC 코드",
+          "start": "시작일 YYYY-MM-DD",
+          "end": "종료일 YYYY-MM-DD (생략 = start + 30일)"
+        }
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action",
+      "market"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "is_trading_day",
+          "sessions"
+        ],
+        "description": "is_trading_day = one date; sessions = a range, day by day."
+      },
+      "market": {
+        "type": "string",
+        "description": "Market alias (kr, us, jp, hk, cn, uk, de) or an MIC code (XKRX, XNYS, XNAS). An unknown name is refused with the list of known ones."
+      },
+      "date": {
+        "type": "string",
+        "description": "YYYY-MM-DD. Defaults to today in the server's timezone."
+      },
+      "start": {
+        "type": "string",
+        "description": "sessions: range start, YYYY-MM-DD."
+      },
+      "end": {
+        "type": "string",
+        "description": "sessions: range end, YYYY-MM-DD (defaults to start + 30 days, capped at 400 rows)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "The action that ran"
+      },
+      "data": {
+        "type": "object",
+        "description": "Verdict or range; shape depends on the action"
+      }
+    },
+    "additionalProperties": true
+  },
+  "tags": [
+    "휴장일",
+    "영업일",
+    "개장",
+    "폐장",
+    "장 운영",
+    "거래일",
+    "반휴장",
+    "조기마감",
+    "시장 캘린더",
+    "증시 일정",
+    "설날",
+    "추석",
+    "공휴일",
+    "trading day",
+    "market holiday",
+    "exchange calendar",
+    "session hours",
+    "키 불요"
+  ]
+}
