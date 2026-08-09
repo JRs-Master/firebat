@@ -1,6 +1,7 @@
 {
   "title": "자동매매 · 키움 미국 — 장중 루프 (5분)",
-  "cronTime": "0 */5 22-23 * * 1-5 | 0 */5 0-5 * * 2-6",
+  "cronTime": "0 */5 8-16 * * 1-5",
+  "zone": "America/New_York",
   "executionMode": "pipeline",
   "pipeline": [
     {
