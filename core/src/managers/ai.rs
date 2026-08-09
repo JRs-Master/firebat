@@ -1321,6 +1321,37 @@ impl AiManager {
         fn lim_of(args: &serde_json::Value) -> usize {
             (args.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize).clamp(1, 20)
         }
+        /// A zero-signal query answered by name instead of by an empty list.
+        ///
+        /// The engine drops query tokens that appear nowhere in the catalog, and when EVERY token
+        /// drops it refuses to search at all — junk top-K was feeding a re-search death spiral
+        /// (2026-07-11/12/28 실측). `search_module_actions` already explains that verdict;
+        /// the other four catalogs returned a bare `count: 0`, which reads as "this does not
+        /// exist" when the truth is "your words are not in this index". Measured 2026-08-09: a
+        /// Korean query against the gallery, whose text is the English generation prompts, came
+        /// back empty while the same search in the prompts' own words returned five.
+        ///
+        /// No domain examples in the message — this path is reached from every catalog.
+        fn oov_answer(
+            outcome: &crate::managers::ai::semantic_catalog::CatalogQueryOutcome,
+            indexed_on: &str,
+        ) -> Option<serde_json::Value> {
+            if !outcome.all_oov {
+                return None;
+            }
+            Some(serde_json::json!({
+                "success": false,
+                "count": 0,
+                "error": format!(
+                    "None of these words appear anywhere in this catalog, so there was too little \
+                     signal to search with: {:?}. This is NOT proof the thing is absent.",
+                    outcome.dropped_tokens.join(" ")
+                ),
+                "indexedOn": indexed_on,
+                "next": "Re-search with words of the kind this catalog is indexed on — including \
+                         its language, which may differ from the question's.",
+            }))
+        }
 
         // ── search_skills (semantic 승격 — 옛 substring 판 오버라이드) ──
         let skills_mgr = skills.clone();
@@ -1345,7 +1376,13 @@ impl AiManager {
                     None => None,
                 };
                 let scopes: Vec<String> = vec!["system:".into(), "admin:".into()];
-                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let outcome = cat
+                    .query_analyzed(&q_of(&args), lim_of(&args), Some(&scopes))
+                    .await?;
+                if let Some(answer) = oov_answer(&outcome, "each skill's name and what case it covers") {
+                    return Ok(answer);
+                }
+                let hits = outcome.matches;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
                     .filter(|m| match &hub_shared {
@@ -1403,7 +1440,13 @@ impl AiManager {
                     None => None,
                 };
                 let scopes: Vec<String> = vec!["system:".into(), "admin:".into()];
-                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let outcome = cat
+                    .query_analyzed(&q_of(&args), lim_of(&args), Some(&scopes))
+                    .await?;
+                if let Some(answer) = oov_answer(&outcome, "each template's name, description and tags") {
+                    return Ok(answer);
+                }
+                let hits = outcome.matches;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
                     .filter(|m| match &hub_shared {
@@ -1453,7 +1496,13 @@ impl AiManager {
             let cat = pc.clone();
             async move {
                 let scopes: Vec<String> = if is_hub_call(&args) { vec![] } else { vec!["admin:".into()] };
-                let hits = cat.query(&q_of(&args), lim_of(&args), Some(&scopes)).await?;
+                let outcome = cat
+                    .query_analyzed(&q_of(&args), lim_of(&args), Some(&scopes))
+                    .await?;
+                if let Some(answer) = oov_answer(&outcome, "each page's title and summary") {
+                    return Ok(answer);
+                }
+                let hits = outcome.matches;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
                     .map(|m| serde_json::json!({
@@ -1503,7 +1552,16 @@ impl AiManager {
                 let include_failed = args.get("includeFailed").and_then(|v| v.as_bool()).unwrap_or(false);
                 let lim = lim_of(&args);
                 // Over-fetch, then filter: failures must not silently eat the top-k slots.
-                let hits = cat.query(&q_of(&args), lim + 8, Some(&scopes)).await?;
+                let outcome = cat
+                    .query_analyzed(&q_of(&args), lim + 8, Some(&scopes))
+                    .await?;
+                if let Some(answer) = oov_answer(
+                    &outcome,
+                    "the text each image was generated from (its prompt), plus its filename",
+                ) {
+                    return Ok(answer);
+                }
+                let hits = outcome.matches;
                 let rows: Vec<serde_json::Value> = hits
                     .into_iter()
                     .filter(|m| {
