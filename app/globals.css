@@ -666,18 +666,25 @@ mark[class^="fbhl-"] {
   .fb-slideshow .swiper-button-prev,
   .fb-slideshow .swiper-button-next { display: none; }
 }
-/* Dots sit on a scrim, not bare on the picture. White dots with a halo still wash out on a
-   light image and dark dots vanish on a dark one — there is no single colour that survives both,
-   so the strip they sit on supplies the contrast instead (the gallery convention). */
-.fb-slideshow .swiper-pagination {
-  padding: 6px 0 4px;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.42), rgba(15, 23, 42, 0));
-  pointer-events: none;
+/* Dots need their own contrast: white washes out on a light image, dark vanishes on a dark one.
+   The backing is a pill hugging the bullets — NOT a full-width strip, which painted a dark band
+   across the frame's light gutters (measured 2026-08-09). swiper's own rule sets the pagination
+   to width:100%;left:0, so the shrink-to-fit is restated with the class the bundle uses. */
+.fb-slideshow .swiper-pagination.swiper-pagination-bullets {
+  width: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 9999px;
+  background: rgba(15, 23, 42, 0.38);
 }
 .fb-slideshow .swiper-pagination-bullet {
   background: #fff;
   opacity: 0.5;
-  pointer-events: auto;
+  margin: 0 !important;
 }
 .fb-slideshow .swiper-pagination-bullet-active {
   background: #fff;
