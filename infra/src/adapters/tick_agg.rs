@@ -45,6 +45,23 @@ struct TickDecl {
     extra_fields: Vec<(String, String)>,
 }
 
+/// A declared `equals` value, and the frame field it is compared against, need not be a string.
+/// Upbit names its side `"ASK"`; Binance flags the maker side with the boolean `true`. Reading
+/// only `as_str()` silently dropped the whole `negateWhen` clause on a boolean venue, which does
+/// not fail — it counts every sell as a buy, so the tick series looks healthy and the order flow
+/// it reports is fiction. Compare on the scalar's text instead, whatever JSON type carried it.
+fn scalar_text(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) => Some(v.to_string()),
+        _ => None,
+    }
+}
+
+fn scalar_eq(v: Option<&serde_json::Value>, want: &str) -> bool {
+    v.and_then(scalar_text).is_some_and(|got| got == want)
+}
+
 fn parse_decl(cfg: &serde_json::Value) -> Option<TickDecl> {
     let map = cfg.get("map")?.as_object()?;
     let mut price = None;
@@ -62,7 +79,7 @@ fn parse_decl(cfg: &serde_json::Value) -> Option<TickDecl> {
                         negate_when: v.get("negateWhen").and_then(|n| {
                             Some((
                                 n.get("field")?.as_str()?.to_string(),
-                                n.get("equals")?.as_str()?.to_string(),
+                                scalar_text(n.get("equals")?)?,
                             ))
                         }),
                     })
@@ -76,7 +93,7 @@ fn parse_decl(cfg: &serde_json::Value) -> Option<TickDecl> {
         type_field: cfg.get("type").and_then(|t| {
             Some((
                 t.get("field")?.as_str()?.to_string(),
-                t.get("equals")?.as_str()?.to_string(),
+                scalar_text(t.get("equals")?)?,
             ))
         }),
         symbol_field: cfg.get("symbol").and_then(|v| v.as_str()).unwrap_or("item").to_string(),
@@ -190,7 +207,7 @@ impl TickAggregator {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         for item in items {
             if let Some((f, want)) = &decl.type_field {
-                if item.get(f).and_then(|v| v.as_str()) != Some(want.as_str()) {
+                if !scalar_eq(item.get(f), want) {
                     continue;
                 }
             }
@@ -215,7 +232,7 @@ impl TickAggregator {
                 Some(match &sv.negate_when {
                     // Side-flag venues (upbit): the number is a magnitude; the flag is the sign.
                     Some((f, want)) => {
-                        if values.get(f).and_then(|v| v.as_str()) == Some(want.as_str()) {
+                        if scalar_eq(values.get(f), want) {
                             -n.abs()
                         } else {
                             n.abs()
@@ -370,5 +387,32 @@ mod tests {
             sv.negate_when,
             Some(("ask_bid".to_string(), "ASK".to_string()))
         );
+    }
+
+    /// The binance shape: the side is a BOOLEAN (`m` — was the buyer the maker), not a word.
+    /// Reading `equals` as a string dropped the clause and left every sell counted as a buy —
+    /// a tick series that looks fine and reports invented order flow. Both the parse and the
+    /// comparison have to travel on the scalar's text.
+    #[test]
+    fn a_boolean_side_flag_still_signs_the_volume() {
+        let cfg = serde_json::json!({
+            "type": {"field": "e", "equals": "trade"},
+            "symbol": "s",
+            "map": {
+                "price": "p",
+                "signedVolume": {
+                    "field": "q",
+                    "negateWhen": {"field": "m", "equals": true}
+                }
+            }
+        });
+        let d = parse_decl(&cfg).expect("boolean equals must parse");
+        assert_eq!(d.type_field, Some(("e".to_string(), "trade".to_string())));
+        let sv = d.signed_volume.expect("signed volume declared");
+        assert_eq!(sv.negate_when, Some(("m".to_string(), "true".to_string())));
+        // And the comparison agrees with the parse, which is the half that actually signs a row.
+        assert!(scalar_eq(Some(&serde_json::json!(true)), "true"));
+        assert!(!scalar_eq(Some(&serde_json::json!(false)), "true"));
+        assert!(scalar_eq(Some(&serde_json::json!("trade")), "trade"));
     }
 }
