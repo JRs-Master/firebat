@@ -175,6 +175,15 @@ message AiCancelTurnResponse {
   bool cancelled = 1;
 }
 
+message AiTurnStatusRequest {
+  // 프론트가 발급한 턴 id (aiMsgId).
+  string turn_id = 1;
+}
+message AiTurnStatusResponse {
+  // 그 턴이 아직 이 프로세스에서 돌고 있나. false = 끝났거나(답은 DB 에) 프로세스가 재시작됐다.
+  bool running = 1;
+}
+
 message AiIsSubAgentEnabledRequest {}
 message AiIsSubAgentEnabledResponse { bool enabled = 1; }
 
@@ -227,6 +236,7 @@ service AiService {
   // 진행 중인 채팅 턴 취소 — 중지 버튼 전용. SSE 끊김(탭 닫기·네트워크)과 구분되는 명시적 신호다:
   // 끊김은 백그라운드 재개를 위해 턴을 살려 두지만, 중지는 턴 future 를 drop 해 CLI 자식까지 끊는다.
   rpc CancelTurn(AiCancelTurnRequest) returns (AiCancelTurnResponse);
+  rpc TurnStatus(AiTurnStatusRequest) returns (AiTurnStatusResponse);
   rpc IsSubAgentEnabled(AiIsSubAgentEnabledRequest) returns (AiIsSubAgentEnabledResponse);
   rpc SetSubAgentEnabled(AiSetSubAgentEnabledRequest) returns (AiSetSubAgentEnabledResponse);
 

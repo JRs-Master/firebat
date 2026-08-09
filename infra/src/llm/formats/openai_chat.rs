@@ -9,8 +9,8 @@ use crate::llm::formats::common::{
     require_api_key,
 };
 use firebat_core::ports::{
-    InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolCall, ToolDefinition,
-    ToolResult,
+    InfraResult, LlmCallOpts, LlmStreamEvent, LlmStreamSink, LlmTextResponse, LlmToolResponse,
+    ToolCall, ToolDefinition, ToolResult,
 };
 
 /// 스트림 청크 간 최대 무데이터 허용 — 이걸 넘기면 행(hang)으로 판정.
@@ -381,6 +381,7 @@ impl OpenAiChatHandler {
         key: &str,
         mut body: serde_json::Value,
         stream: bool,
+        sink: Option<&LlmStreamSink>,
     ) -> InfraResult<(reqwest::StatusCode, serde_json::Value)> {
         if !stream {
             let response = http_client()
@@ -483,9 +484,17 @@ impl OpenAiChatHandler {
                 let Some(delta) = choice.get("delta") else { continue };
                 if let Some(s) = delta.get("content").and_then(|v| v.as_str()) {
                     content.push_str(s);
+                    if let Some(tx) = sink {
+                        // try_send, never await: back-pressure on the display must not stall the
+                        // read loop, or a slow client would look like a hung venue.
+                        let _ = tx.try_send(LlmStreamEvent::Text(s.to_string()));
+                    }
                 }
                 if let Some(s) = delta.get("reasoning").and_then(|v| v.as_str()) {
                     reasoning.push_str(s);
+                    if let Some(tx) = sink {
+                        let _ = tx.try_send(LlmStreamEvent::Thinking(s.to_string()));
+                    }
                 }
                 if let Some(arr) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                     for tc in arr {
@@ -580,81 +589,8 @@ impl OpenAiChatHandler {
             "tool_calls": tool_calls,
         }))
     }
-}
-
-#[async_trait::async_trait]
-impl FormatHandler for OpenAiChatHandler {
-    async fn ask_text(
-        &self,
-        config: &LlmModelConfig,
-        api_key: Option<&str>,
-        prompt: &str,
-        opts: &LlmCallOpts,
-    ) -> InfraResult<LlmTextResponse> {
-        let key = require_api_key(config, api_key)?;
-        let mut body = serde_json::json!({
-            "model": config.id,
-            "messages": build_messages(opts, prompt),
-        });
-        if let Some(t) = opts.temperature {
-            body["temperature"] = serde_json::Value::from(t);
-        }
-        // max_tokens = 명시 요청 시에만. chat-completions 는 completion 예산이 컨텍스트 창에
-        // **선차감**된다 — maxOutput(32000) 상시 전송은 메시지 100K+ 턴에서 400
-        // context_length_exceeded 를 냈다(실측 회귀). 생략 = 서버가 남은 공간 자동 맞춤(정답).
-        // (gemini maxOutputTokens/anthropic max_tokens 는 의미론이 달라 미러 부적절.
-        //  추출 JSON 잘림 방어는 structured outputs 가 담당.)
-        if let Some(m) = opts.max_tokens {
-            body["max_tokens"] = serde_json::Value::from(m);
-        }
-        if let Some(effort) = Self::reasoning_effort(config, opts) {
-            body["reasoning_effort"] = serde_json::Value::from(effort);
-        }
-        // Structured output — hard-constrains the response to the caller's JSON Schema
-        // (live-verified on solar-pro3 incl. nullable unions). Makes JSON extraction robust
-        // on weak models instead of assuming a strong one.
-        if let Some(schema) = &opts.json_schema {
-            body["response_format"] = serde_json::json!({
-                "type": "json_schema",
-                "json_schema": { "name": "response", "strict": true, "schema": schema },
-            });
-        }
-        // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
-        // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends
-        // the whole prompt + tool defs every round, so this matters a lot for multi-tool turns.
-        if let Some(cid) = opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
-            body["prompt_cache_key"] = serde_json::Value::from(cid);
-        }
-
-        // json_schema(structured outputs) 조합만 비스트리밍 유지 — stream+response_format 은
-        // 라이브 미검증(worker/cron 경로라 행 리스크도 낮음). 그 외 = 스트리밍(행 조기 감지).
-        let (status, body_json) =
-            Self::send_chat(config, &key, body, opts.json_schema.is_none()).await?;
-        if !status.is_success() {
-            // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 모델 표시명 + 호환 계열 표기.
-            return Err(firebat_core::i18n::t(
-                "core.error.llm.api_error_compat",
-                None,
-                &[
-                    ("name", &config.display_name),
-                    ("status", &status.to_string()),
-                    ("detail", &body_json.to_string()),
-                ],
-            ));
-        }
-        let (text, _calls, tokens_in, tokens_out, cached_tokens) = Self::parse_response(&body_json);
-        let cost = compute_cost(config, tokens_in, tokens_out);
-        Ok(LlmTextResponse {
-            text,
-            model_id: config.id.clone(),
-            cost_usd: Some(cost),
-            tokens_in: Some(tokens_in),
-            tokens_out: Some(tokens_out),
-            cached_tokens: Some(cached_tokens),
-        })
-    }
-
-    async fn ask_with_tools(
+    /// The real implementation. `sink`, when present, receives the venue's deltas as they land.
+    async fn ask_with_tools_inner(
         &self,
         config: &LlmModelConfig,
         api_key: Option<&str>,
@@ -662,6 +598,7 @@ impl FormatHandler for OpenAiChatHandler {
         tools: &[ToolDefinition],
         prior_results: &[ToolResult],
         opts: &LlmCallOpts,
+        sink: Option<LlmStreamSink>,
     ) -> InfraResult<LlmToolResponse> {
         let key = require_api_key(config, api_key)?;
 
@@ -804,7 +741,7 @@ impl FormatHandler for OpenAiChatHandler {
         // FC 라운드 = 스트리밍(행 조기 감지 — 2026-07-06 upstage 행 2회의 주 피해 경로).
         // json_schema 조합만 비스트리밍(stream+response_format 라이브 미검증).
         let (status, body_json) =
-            Self::send_chat(config, &key, body, opts.json_schema.is_none()).await?;
+            Self::send_chat(config, &key, body, opts.json_schema.is_none(), sink.as_ref()).await?;
         if !status.is_success() {
             // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 모델 표시명 + 호환 계열 표기.
             return Err(firebat_core::i18n::t(
@@ -835,6 +772,111 @@ impl FormatHandler for OpenAiChatHandler {
             raw_model_parts: Self::sanitized_assistant_message(&body_json),
             ..Default::default()
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl FormatHandler for OpenAiChatHandler {
+    async fn ask_text(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        opts: &LlmCallOpts,
+    ) -> InfraResult<LlmTextResponse> {
+        let key = require_api_key(config, api_key)?;
+        let mut body = serde_json::json!({
+            "model": config.id,
+            "messages": build_messages(opts, prompt),
+        });
+        if let Some(t) = opts.temperature {
+            body["temperature"] = serde_json::Value::from(t);
+        }
+        // max_tokens = 명시 요청 시에만. chat-completions 는 completion 예산이 컨텍스트 창에
+        // **선차감**된다 — maxOutput(32000) 상시 전송은 메시지 100K+ 턴에서 400
+        // context_length_exceeded 를 냈다(실측 회귀). 생략 = 서버가 남은 공간 자동 맞춤(정답).
+        // (gemini maxOutputTokens/anthropic max_tokens 는 의미론이 달라 미러 부적절.
+        //  추출 JSON 잘림 방어는 structured outputs 가 담당.)
+        if let Some(m) = opts.max_tokens {
+            body["max_tokens"] = serde_json::Value::from(m);
+        }
+        if let Some(effort) = Self::reasoning_effort(config, opts) {
+            body["reasoning_effort"] = serde_json::Value::from(effort);
+        }
+        // Structured output — hard-constrains the response to the caller's JSON Schema
+        // (live-verified on solar-pro3 incl. nullable unions). Makes JSON extraction robust
+        // on weak models instead of assuming a strong one.
+        if let Some(schema) = &opts.json_schema {
+            body["response_format"] = serde_json::json!({
+                "type": "json_schema",
+                "json_schema": { "name": "response", "strict": true, "schema": schema },
+            });
+        }
+        // Prompt caching — a stable per-conversation key lets Upstage cache the large system-prompt
+        // prefix across the FC tool-loop rounds (cached input ≈ 10× cheaper). The FC path re-sends
+        // the whole prompt + tool defs every round, so this matters a lot for multi-tool turns.
+        if let Some(cid) = opts.conversation_id.as_deref().filter(|s| !s.is_empty()) {
+            body["prompt_cache_key"] = serde_json::Value::from(cid);
+        }
+
+        // json_schema(structured outputs) 조합만 비스트리밍 유지 — stream+response_format 은
+        // 라이브 미검증(worker/cron 경로라 행 리스크도 낮음). 그 외 = 스트리밍(행 조기 감지).
+        let (status, body_json) =
+            Self::send_chat(config, &key, body, opts.json_schema.is_none(), None).await?;
+        if !status.is_success() {
+            // 공유 핸들러(Upstage/Ollama/OpenRouter 등 OpenAI-호환) — 모델 표시명 + 호환 계열 표기.
+            return Err(firebat_core::i18n::t(
+                "core.error.llm.api_error_compat",
+                None,
+                &[
+                    ("name", &config.display_name),
+                    ("status", &status.to_string()),
+                    ("detail", &body_json.to_string()),
+                ],
+            ));
+        }
+        let (text, _calls, tokens_in, tokens_out, cached_tokens) = Self::parse_response(&body_json);
+        let cost = compute_cost(config, tokens_in, tokens_out);
+        Ok(LlmTextResponse {
+            text,
+            model_id: config.id.clone(),
+            cost_usd: Some(cost),
+            tokens_in: Some(tokens_in),
+            tokens_out: Some(tokens_out),
+            cached_tokens: Some(cached_tokens),
+        })
+    }
+
+    async fn ask_with_tools(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+    ) -> InfraResult<LlmToolResponse> {
+        self.ask_with_tools_inner(config, api_key, prompt, tools, prior_results, opts, None)
+            .await
+    }
+
+    /// The venue has been streaming this whole time — we asked for `stream: true` back when a
+    /// non-streaming call made a slow round indistinguishable from a hung one. The deltas were
+    /// parsed and thrown away, so an API turn said nothing at all until it was completely
+    /// finished, which is why a long answer looked like a frozen screen while a CLI turn on the
+    /// same screen looked alive (2026-08-10). Forward what we already receive.
+    async fn ask_with_tools_streaming(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
+    ) -> InfraResult<LlmToolResponse> {
+        self.ask_with_tools_inner(config, api_key, prompt, tools, prior_results, opts, emit)
+            .await
     }
 }
 

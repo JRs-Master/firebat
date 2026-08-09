@@ -20,6 +20,7 @@ import {
   AiSetSubAgentEnabledRequestSchema,
   AiSpawnSubAgentRequestSchema,
   AiStorePlanRequestSchema,
+  AiTurnStatusRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -87,6 +88,15 @@ export async function cancelTurn(args: MessageInitShape<typeof AiCancelTurnReque
   try {
       const response = await aiClient.cancelTurn(args ?? {});
       return { ok: true, data: unBigInt(response.cancelled) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function turnStatus(args: MessageInitShape<typeof AiTurnStatusRequestSchema>): Promise<RpcResult<boolean>> {
+  try {
+      const response = await aiClient.turnStatus(args ?? {});
+      return { ok: true, data: unBigInt(response.running) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -20,7 +20,8 @@ use crate::proto::{
     AiResolveCallTargetRequest, AiResolveCallTargetResponse, AiResultEventPb,
     AiRunAgentJobRequest, AiRunAgentJobResponse, AiSetSubAgentEnabledRequest,
     AiSetSubAgentEnabledResponse, AiSpawnSubAgentRequest, AiSpawnSubAgentResponse,
-    AiStepEventPb, AiStorePlanRequest, AiStorePlanResponse, AiStreamEventPb,
+    AiStepEventPb, AiStorePlanRequest, AiStorePlanResponse, AiStreamEventPb, AiTurnStatusRequest,
+    AiTurnStatusResponse,
     AiStreamRequestActionWithToolsRequest,
 };
 use std::pin::Pin;
@@ -334,6 +335,15 @@ impl AiService for AiServiceImpl {
         let turn_id = req.into_inner().turn_id;
         let cancelled = !turn_id.is_empty() && self.manager.cancel_turn(&turn_id);
         Ok(Response::new(AiCancelTurnResponse { cancelled }))
+    }
+
+    async fn turn_status(
+        &self,
+        req: Request<AiTurnStatusRequest>,
+    ) -> Result<Response<AiTurnStatusResponse>, TonicStatus> {
+        let turn_id = req.into_inner().turn_id;
+        let running = !turn_id.is_empty() && self.manager.is_turn_running(&turn_id);
+        Ok(Response::new(AiTurnStatusResponse { running }))
     }
 
     async fn spawn_sub_agent(

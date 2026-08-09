@@ -2112,6 +2112,13 @@ pub struct CronAgentOpts {
 pub enum LlmStreamEvent {
     /// extended thinking / reasoning 본문 조각.
     Thinking(String),
+    /// Answer text as it is generated — a DRAFT, not the answer.
+    ///
+    /// A round that goes on to call tools speaks its text as thinking aloud ("긁어보자"), and we
+    /// only learn which kind of round it was when it ends. So live text can never be committed to
+    /// the answer as it arrives (that regression is 2026-08-06). It rides its own channel, the
+    /// client shows it provisionally, and the round-end text or the final result replaces it.
+    Text(String),
     /// 도구 호출 진행 — status: "start" | "done" | "error".
     ToolStep { name: String, status: String },
 }

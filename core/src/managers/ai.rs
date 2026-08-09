@@ -400,6 +400,18 @@ impl AiManager {
         }
     }
 
+    /// Is this turn still running?
+    ///
+    /// The same registry the stop button targets already answers it, so a client that lost its
+    /// stream can ask instead of guessing. That matters because the answer is the SERVER's: the
+    /// turn is written to the database by a detached task whether or not anyone is listening, so
+    /// a dropped connection never needs the tokens replayed — only the question "is it still
+    /// coming, or is it already saved". False here plus no row means the process restarted mid
+    /// turn, which is a real loss and should be said, not polled for ten minutes.
+    pub fn is_turn_running(&self, turn_id: &str) -> bool {
+        self.cancels.lock().map(|m| m.contains_key(turn_id)).unwrap_or(false)
+    }
+
     /// 진행 중인 턴을 취소한다. 반환 = 그런 턴이 있었나(없으면 이미 끝났다는 뜻).
     pub fn cancel_turn(&self, turn_id: &str) -> bool {
         let tx = self.cancels.lock().ok().and_then(|m| m.get(turn_id).cloned());
@@ -1863,16 +1875,35 @@ impl AiManager {
         // 매핑해 emit 채널로 포워딩. CLI 가 stdout 파싱하며 try_send → 사용자가 "생각중" 옆에 추론·도구
         // 진행 실시간 표시. emit 채널 없으면 sink None (어댑터는 batch 동작). ToolStep 의 한글 라벨은
         // core 의 tool_label 로 매핑.
+        // Did the adapter ACTUALLY stream this turn — measured on the channel, not declared by
+        // model id. The round-end re-emit below has to be skipped for an adapter that already
+        // spoke, and the old test asked "is this CLI", which was true only because CLI adapters
+        // happened to be the only ones wired. The moment another adapter streams, an identity
+        // test answers the wrong question and the user reads everything twice. Ask the channel.
+        let streamed_live = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let llm_sink: Option<crate::ports::LlmStreamSink> = if let Some(out_tx) = emit.clone() {
             let (llm_tx, mut llm_rx) =
                 tokio::sync::mpsc::channel::<crate::ports::LlmStreamEvent>(64);
+            let saw_stream = streamed_live.clone();
             tokio::spawn(async move {
                 while let Some(ev) = llm_rx.recv().await {
                     let mapped = match ev {
-                        crate::ports::LlmStreamEvent::Thinking(t) => AiStreamEvent::Chunk {
-                            event_type: "thinking".to_string(),
-                            content: t,
-                        },
+                        crate::ports::LlmStreamEvent::Thinking(t) => {
+                            saw_stream.store(true, std::sync::atomic::Ordering::Relaxed);
+                            AiStreamEvent::Chunk {
+                                event_type: "thinking".to_string(),
+                                content: t,
+                            }
+                        }
+                        // Provisional — see `LlmStreamEvent::Text`. The client shows it while it
+                        // arrives and drops it when the round-end text or the result commits.
+                        crate::ports::LlmStreamEvent::Text(t) => {
+                            saw_stream.store(true, std::sync::atomic::Ordering::Relaxed);
+                            AiStreamEvent::Chunk {
+                                event_type: "draft".to_string(),
+                                content: t,
+                            }
+                        }
                         crate::ports::LlmStreamEvent::ToolStep { name, status } => {
                             let description = Some(tool_label(&name));
                             AiStreamEvent::Step { name, status, description, error_message: None }
@@ -3216,10 +3247,14 @@ impl AiManager {
             // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.
             // thinking 먼저 (있을 때만) → text 다음. frontend ThinkingBlock 가 thinking content
             // bodyText 영역 표시 + text 는 답변 본문 영역 표시 (옛 TS Core 1:1 흐름).
-            // CLI 어댑터(claude/codex/gemini)는 turn 중 thinking 을 이미 live emit 했다 → 재emit 시
-            // 이중표시. thinking_text 는 persist(reasoningTrace/finalReasoning)용으로 유지하되, 여기
-            // display 재emit 은 CLI 가 아닐 때만(FC: openai/gemini/vertex 는 여기서 처음 흘림).
-            if response.cli_session_id.is_none() {
+            // An adapter that already streamed its thinking must not have it re-emitted here, or
+            // the user reads it twice. `thinking_text` is still kept for persistence
+            // (reasoningTrace / finalReasoning) — only the display re-emit is skipped, and the
+            // test is whether anything actually came through the channel this turn rather than
+            // which family the model belongs to.
+            if response.cli_session_id.is_none()
+                && !streamed_live.load(std::sync::atomic::Ordering::Relaxed)
+            {
                 if let Some(thinking) = response.thinking_text.as_deref() {
                     if !thinking.trim().is_empty() {
                         emit_event(AiStreamEvent::Chunk {
