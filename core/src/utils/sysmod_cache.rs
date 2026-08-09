@@ -199,11 +199,25 @@ impl SysmodCacheAdapter {
                         ("ttl", &(TTL_MS / 60_000).to_string()),
                     ],
                 ),
-                None => crate::i18n::t(
-                    "core.error.cache.never_stored",
-                    None,
-                    &[("key", key), ("cap", &LRU_GLOBAL_CAP.to_string())],
-                ),
+                None => {
+                    // Say what is true, not what is likely. This used to assert the cause —
+                    // copied wrong, or evicted past the key limit — and the model believed it:
+                    // on 2026-08-10 it announced the cache had overflowed and re-fetched, while
+                    // the cache held THREE files. We do not know why a key is absent; we do know
+                    // which keys exist, and that is the more useful sentence anyway, because it
+                    // turns a dead end into the next move.
+                    let live = {
+                        let lru = self.lru.lock().unwrap_or_else(|p| p.into_inner());
+                        let mut keys: Vec<String> = lru.keys().cloned().collect();
+                        keys.sort();
+                        if keys.is_empty() { "(none)".to_string() } else { keys.into_iter().take(12).collect::<Vec<_>>().join(", ") }
+                    };
+                    crate::i18n::t(
+                        "core.error.cache.never_stored",
+                        None,
+                        &[("key", key), ("live", &live)],
+                    )
+                }
             };
             return Err(detail);
         }

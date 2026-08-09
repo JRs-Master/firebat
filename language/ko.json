@@ -199,7 +199,7 @@
       "expired_or_missing": "cache key={{key}} 가 만료되었거나 존재하지 않습니다.",
       "aggregate_unsupported": "aggregate 연산이 지원되지 않습니다: {{op}} (지원: count/sum/avg/min/max)",
       "expired": "cache key={{key}} 가 {{ago}}초 전에 만료되었습니다(TTL {{ttl}}분). 같은 조회를 다시 실행해 새 키를 받고, 서술하기 전에 계산을 먼저 끝내십시오 — 여러 라운드를 도는 분석은 그 사이에 캐시가 죽습니다.",
-      "never_stored": "cache key={{key}} 로 저장된 것이 없습니다. 키를 잘못 옮겼거나 용량 한도({{cap}}개)로 밀려났습니다. 원래 조회를 다시 실행하십시오."
+      "never_stored": "cache key={{key}} 로 저장된 것이 없습니다. 지금 살아 있는 키: {{live}}. 이 중에 찾던 것이 있으면 그 키로 읽고, 없으면 원래 조회를 다시 실행하십시오."
     },
     "ai": {
       "agent_prompt_empty": "agentPrompt 가 비어 있습니다.",
