@@ -928,12 +928,38 @@ async fn run_session(
                         }
                     },
                     Message::Close(_) => return SessionEnd::Dropped("server closed".to_string()),
-                    // Silent path: Ping / Pong / other were dropped with no log at all, so a broker
+                    // A protocol ping is answered here, immediately, with the same payload.
+                    //
+                    // This is NOT a venue dialect and so it is not declarable: RFC 6455 says every
+                    // websocket answers a ping with a pong carrying the payload back, and a config
+                    // knob for it would be a knob nobody could ever correctly turn off. The
+                    // app-level keepalives that ARE dialect — Kiwoom's `{"trnm":"PING"}` — stay
+                    // declarative in `echoValues`, one layer up.
+                    //
+                    // We used to log it and drop it, trusting the library's implicit pong. That
+                    // pong is only queued, and a read-only stream almost never writes, so on a
+                    // venue that enforces the deadline it may never leave (Binance: ping every 20s,
+                    // disconnect if no pong inside a minute — which would have shown up as this
+                    // watch reconnecting forever on a ~60s cadence, data arriving in sawtooth).
+                    Message::Ping(payload) => {
+                        let seen = skipped_seen.entry("<ping>".to_string()).or_insert(0);
+                        *seen += 1;
+                        if *seen <= 3 {
+                            tracing::info!(
+                                target: "ws_stream", watch_id = %spec.watch_id, seen = *seen,
+                                "protocol ping answered with pong"
+                            );
+                        }
+                        if ws.send(Message::Pong(payload)).await.is_err() {
+                            return SessionEnd::Dropped("pong failed".to_string());
+                        }
+                        continue;
+                    }
+                    // Silent path: Pong / other were dropped with no log at all, so a broker
                     // pushing them looked identical to a broker pushing nothing
                     // (2026-07-29: both brokers silent, zero log lines of any kind). Name the type.
                     other => {
                         let kind = match other {
-                            Message::Ping(_) => "ping",
                             Message::Pong(_) => "pong",
                             _ => "other",
                         };
