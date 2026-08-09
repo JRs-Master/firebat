@@ -1,0 +1,234 @@
+{
+  "name": "binance",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Binance spot market data — candles, price, order book, trades, and a 24h turnover screen. Read-only: it holds no API key and declares no account or order action. Covers thousands of pairs, so it is the venue to use for a coin Upbit does not list. Prices are quoted in USDT (or another quote asset), never in KRW; converting to KRW needs a separate exchange-rate lookup. For a coin that trades on Upbit, prefer Upbit — that is where the orders actually execute.",
+  "runtime": "node",
+  "capability": "crypto-data",
+  "providerType": "api",
+  "hubSafe": true,
+  "timeseries": {
+    "get_candles": {
+      "idParams": {
+        "symbol": "",
+        "interval": "1d"
+      },
+      "startParam": "start",
+      "endParam": "end",
+      "paramFormat": "YYYY-MM-DD",
+      "dateField": "date",
+      "rows": [
+        "records",
+        "_cache.records"
+      ]
+    }
+  },
+  "actionCatalog": [
+    {
+      "id": "get_candles",
+      "name": "Candles (OHLCV)",
+      "description": "Broker-neutral candles for a symbol: date, open, high, low, close, volume, quote volume, trade count. Pages automatically past the venue's 1000-bar limit, up to 20,000 bars, so a multi-year study is one call. Feed the result to technical-analysis by cache key.",
+      "params": {
+        "symbol": "Pair or base asset — BTCUSDT, BTC, BTC/USDT all resolve",
+        "interval": "1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M — CASE SENSITIVE, 1m is a minute and 1M is a month",
+        "limit": "How many bars (default 500, up to 20000 via paging)",
+        "start": "Oldest bar, YYYY-MM-DD or epoch ms (optional)",
+        "end": "Newest bar, YYYY-MM-DD or epoch ms (optional)"
+      }
+    },
+    {
+      "id": "ticker",
+      "name": "Last price",
+      "description": "The most recent traded price for one pair. Cheapest way to answer 'what is X worth right now'.",
+      "params": {
+        "symbol": "Pair or base asset"
+      }
+    },
+    {
+      "id": "ticker_24h",
+      "name": "24h statistics",
+      "description": "Rolling 24-hour open, high, low, last, percent change, base volume and quote volume for one pair — or every pair when symbol is omitted.",
+      "params": {
+        "symbol": "Pair or base asset; omit for all pairs (heavy)"
+      }
+    },
+    {
+      "id": "book_ticker",
+      "name": "Best bid and ask",
+      "description": "Top of the order book with the quantities sitting there, plus the spread as a percentage. Use it to judge whether a quoted price is actually tradable.",
+      "params": {
+        "symbol": "Pair or base asset"
+      }
+    },
+    {
+      "id": "avg_price",
+      "name": "Recent average price",
+      "description": "The venue's own 5-minute average price — steadier than the last trade when the book is thin.",
+      "params": {
+        "symbol": "Pair or base asset"
+      }
+    },
+    {
+      "id": "orderbook",
+      "name": "Order book depth",
+      "description": "Bid and ask levels with quantities. Costs more of the rate allowance the deeper it goes, so ask for the depth actually needed.",
+      "params": {
+        "symbol": "Pair or base asset",
+        "limit": "Levels per side, 1-5000 (default 100)"
+      }
+    },
+    {
+      "id": "trades",
+      "name": "Recent trades",
+      "description": "The latest individual trades with price, quantity, time, and which side was the taker (the side that moved the price).",
+      "params": {
+        "symbol": "Pair or base asset",
+        "limit": "1-1000 (default 500)"
+      }
+    },
+    {
+      "id": "agg_trades",
+      "name": "Aggregated trades",
+      "description": "Trades filled by one taker order at one price, merged into a single row. Cheaper and less noisy than raw trades, and accepts a time range.",
+      "params": {
+        "symbol": "Pair or base asset",
+        "limit": "1-1000 (default 500)",
+        "start": "From, YYYY-MM-DD or epoch ms",
+        "end": "Until, YYYY-MM-DD or epoch ms"
+      }
+    },
+    {
+      "id": "screen",
+      "name": "Turnover ranking",
+      "description": "Every pair of one quote asset ranked by 24-hour turnover — the screen for 'what is moving right now'.",
+      "params": {
+        "quote": "Quote asset to rank within (default USDT)",
+        "top": "How many rows, 1-200 (default 30)",
+        "minTurnover": "Drop pairs under this 24h quote volume",
+        "includeStable": "Keep stablecoin-vs-stablecoin pairs (excluded by default)"
+      }
+    },
+    {
+      "id": "symbols",
+      "name": "Tradable pairs",
+      "description": "Every spot pair currently trading, with its base and quote asset. Use it to confirm a coin is listed before quoting it.",
+      "params": {
+        "quote": "Only pairs with this quote asset (optional)"
+      }
+    },
+    {
+      "id": "server_time",
+      "name": "Exchange clock",
+      "description": "The venue's current time. Useful when a timestamp disagreement is suspected.",
+      "params": {}
+    }
+  ],
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "get_candles",
+          "ticker",
+          "ticker_24h",
+          "book_ticker",
+          "avg_price",
+          "orderbook",
+          "trades",
+          "agg_trades",
+          "screen",
+          "symbols",
+          "server_time"
+        ],
+        "description": "Binance public market-data action. get_candles is the broker-neutral candle contract. screen ranks a quote asset's pairs by 24h turnover. No account or order action exists here."
+      },
+      "symbol": {
+        "type": "string",
+        "description": "Pair or base asset. BTCUSDT, BTC, btc/usdt and BTC-USDT all resolve to BTCUSDT; a bare base asset takes the quote parameter (USDT by default)."
+      },
+      "quote": {
+        "type": "string",
+        "description": "Quote asset — completes a bare base asset, and selects which pairs screen and symbols return. Default USDT. Binance has no KRW pairs."
+      },
+      "interval": {
+        "type": "string",
+        "description": "Candle interval, CASE SENSITIVE: 1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M. '1m' is one minute and '1M' is one month. Default 1d."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "How many rows. Candles page past the venue's 1000 cap up to 20000; order book allows 5000; trades allow 1000."
+      },
+      "start": {
+        "type": "string",
+        "description": "Range start — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
+      },
+      "end": {
+        "type": "string",
+        "description": "Range end — YYYY-MM-DD or epoch milliseconds. Interpreted as UTC."
+      },
+      "top": {
+        "type": "integer",
+        "description": "screen: how many ranked rows to return (1-200, default 30)."
+      },
+      "minTurnover": {
+        "type": "number",
+        "description": "screen: drop pairs whose 24h turnover in the quote asset is below this."
+      },
+      "includeStable": {
+        "type": "boolean",
+        "description": "screen: keep stablecoin-against-stablecoin pairs (USDC/USDT and the like). They top every turnover ranking without moving, so they are excluded by default."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "The action that ran"
+      },
+      "endpoint": {
+        "type": "string",
+        "description": "The venue path that answered"
+      },
+      "data": {
+        "type": "object",
+        "description": "Response payload; shape depends on the action"
+      }
+    },
+    "additionalProperties": true
+  },
+  "tags": [
+    "바이낸스",
+    "binance",
+    "암호화폐",
+    "가상자산",
+    "코인",
+    "시세",
+    "현재가",
+    "캔들",
+    "차트",
+    "호가",
+    "체결",
+    "거래대금 순위",
+    "알트코인",
+    "USDT",
+    "해외 거래소",
+    "글로벌 시세",
+    "업비트에 없는 코인",
+    "키 불요",
+    "crypto",
+    "spot market data",
+    "klines",
+    "orderbook"
+  ]
+}

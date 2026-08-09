@@ -31,9 +31,14 @@ function slotFile(name) {
  * `name` identifies the bucket — the venue plus whichever account the limit is counted against,
  * since a practice account and a live one are separate allowances.
  */
-export async function acquireSlot(name, limit, windowMs = WINDOW_MS) {
+export async function acquireSlot(name, limit, windowMs = WINDOW_MS, weight = 1) {
   const file = slotFile(name);
   const cap = Math.max(1, Number(limit) || 1);
+  // Some venues price a call by WEIGHT rather than by count — one deep order book can cost as much
+  // as fifty quotes, and Binance bans an IP for spending past the allowance. Such a call spends
+  // that many slots at once. A single call heavier than the whole allowance still goes (clamped):
+  // refusing it forever would be worse than one overrun.
+  const cost = Math.min(Math.max(1, Math.floor(Number(weight) || 1)), cap);
   for (let waits = 0; ; waits += 1) {
     const now = Date.now();
     let recent = [];
@@ -41,11 +46,12 @@ export async function acquireSlot(name, limit, windowMs = WINDOW_MS) {
       recent = fs.readFileSync(file, 'utf-8').split('\n')
         .map(Number).filter(t => t > 0 && now - t < windowMs);
     } catch { /* first call — no file yet */ }
-    if (recent.length < cap) {
-      fs.appendFileSync(file, now + '\n');
+    if (recent.length + cost <= cap) {
+      const stamps = new Array(cost).fill(now);
+      fs.appendFileSync(file, stamps.join('\n') + '\n');
       // Keep it from growing without bound; only the tail is ever read.
       if (Math.random() < 0.02) {
-        try { fs.writeFileSync(file, recent.concat(now).join('\n') + '\n'); } catch { /* fine */ }
+        try { fs.writeFileSync(file, recent.concat(stamps).join('\n') + '\n'); } catch { /* fine */ }
       }
       return;
     }
