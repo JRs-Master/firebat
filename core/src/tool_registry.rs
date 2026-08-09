@@ -946,10 +946,12 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 
     let module_stream = h.module.clone();
+    let page_for_watches = h.page.clone();
+    let schedule_for_watches = h.schedule.clone();
     tools.register_tool(
         ToolDefinition {
             name: "stream_watch_list".to_string(),
-            description: "List active realtime watches with live status (state/lastEvent/eventCount).".to_string(),
+            description: "List active realtime watches with live status (state/lastEvent/eventCount) AND who consumes each one: the published pages whose spec carries its topic, and whether its notifyJob is a job that actually exists.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {}
@@ -958,8 +960,46 @@ fn register_infra_parity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         },
         move |_args| {
             let module = module_stream.clone();
+            let page = page_for_watches.clone();
+            let schedule = schedule_for_watches.clone();
             async move {
-                Ok(serde_json::json!({"success": true, "watches": module.list_streams()}))
+                // A watch row used to say how it was doing and never who needed it, so deciding
+                // whether one was abandoned meant guessing from its label. It is a bad guess:
+                // acting on it stopped a watch two published pages were reading, and nothing
+                // anywhere said they were (2026-08-10). The answer is derivable — a page bakes the
+                // topic into its spec, and a notifyJob either names a registered job or does not —
+                // so the list states it instead of leaving it to be inferred.
+                let mut watches = module.list_streams();
+                let slugs: Vec<String> = page.list().into_iter().map(|p| p.slug).collect();
+                let specs: Vec<(String, String)> = slugs
+                    .into_iter()
+                    .filter_map(|slug| {
+                        page.get(&slug)
+                            .map(|rec| (slug, serde_json::to_string(&rec.spec).unwrap_or_default()))
+                    })
+                    .collect();
+                let jobs: Vec<String> = schedule.list().into_iter().map(|j| j.job_id).collect();
+                for w in watches.iter_mut() {
+                    let Some(obj) = w.as_object_mut() else { continue };
+                    let topic = obj.get("topic").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if !topic.is_empty() {
+                        let used: Vec<&str> = specs
+                            .iter()
+                            .filter(|(_, spec)| spec.contains(&topic))
+                            .map(|(slug, _)| slug.as_str())
+                            .collect();
+                        obj.insert("usedByPages".to_string(), serde_json::json!(used));
+                    }
+                    if let Some(job) = obj.get("notifyJob").and_then(|v| v.as_str()).map(String::from) {
+                        if !job.is_empty() {
+                            obj.insert(
+                                "notifyJobRegistered".to_string(),
+                                serde_json::json!(jobs.iter().any(|j| *j == job)),
+                            );
+                        }
+                    }
+                }
+                Ok(serde_json::json!({"success": true, "watches": watches}))
             }
         },
     );

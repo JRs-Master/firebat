@@ -1215,12 +1215,24 @@ impl ModuleManager {
                 }));
             }
         }
-        let watch_id = format!(
-            "ws-{}-{}-{}",
-            module_name,
-            stream_key,
-            &uuid::Uuid::new_v4().simple().to_string()[..8]
-        );
+        // The id is DERIVED from the intent, not drawn fresh.
+        //
+        // A random suffix made the documented idempotency a half-truth: the same
+        // module+stream+args returned the existing watch only while that watch was alive. Stop it
+        // and start it again — a restart, a cleanup, a mistake — and the same intent produced a
+        // NEW id, so the topic changed and every page that had baked the old topic into its spec
+        // went silently dead (2026-08-10: two published Samsung pages, and nothing said so).
+        // Hashing the intent makes the promise true across restarts, so a watch can be recreated
+        // without hunting down its consumers.
+        let watch_id = {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            module_name.hash(&mut h);
+            stream_key.hash(&mut h);
+            args_norm.hash(&mut h);
+            format!("ws-{}-{}-{:08x}", module_name, stream_key, h.finish() as u32)
+        };
         // Collection is declared on the stream, not chosen by the caller — resolved once here so
         // the sink (a sync closure) reads it off the meta without touching config.
         let tick1s = self
