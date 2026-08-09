@@ -4,6 +4,12 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "한국투자증권 **시세·차트** — 국내주식·해외주식·선물옵션·채권·ELW 의 현재가·호가·차트·순위·시세분석과 실시간 스트림. **주문·잔고·체결내역·예수금은 이 모듈에 없습니다 — `korea-invest-trade` 입니다.** 시세에도 증권사 토큰이 필요해 자격증명은 선언하지만, 계좌 등록은 `korea-invest-trade` 것을 빌려 쓰고 경계는 액션 선언이 집니다 — 계좌·주문 액션이 이 모듈의 enum 에 없습니다. action 으로 API ID 직접 호출, search_module_actions → get_action_schema 로 발견.",
+  "aliases": [
+    "한투",
+    "한국투자증권",
+    "한국투자",
+    "KIS"
+  ],
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",

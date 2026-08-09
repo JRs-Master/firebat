@@ -4,10 +4,19 @@
   "scope": "system",
   "version": "1.1.0",
   "description": "Telegram bot — bidirectional (webhook + AI responses) and one-way (message and media delivery). Sending needs NO chatId — omitted = the configured default chat (TELEGRAM_CHAT_ID); never ask the user for a chat ID unless they want a DIFFERENT recipient. For 24/7 bot notifications, event alerts, server status pushes, and mobile remote control. Setup: get a token from BotFather → obtain a chat ID (@get_id_bot or getUpdates after /start) → save to Vault → activate via the 'Register webhook' button. Commands are processed only for owners on the whitelist (for security).",
+  "aliases": [
+    "텔레그램",
+    "Telegram"
+  ],
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",
-  "secrets": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_OWNER_IDS", "TELEGRAM_WEBHOOK_SECRET"],
+  "secrets": [
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+    "TELEGRAM_OWNER_IDS",
+    "TELEGRAM_WEBHOOK_SECRET"
+  ],
   "settings_fields": [
     {
       "key": "bruteForceAlert",
@@ -20,7 +29,12 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["send-message", "send-photo", "send-document", "send-location"],
+        "enum": [
+          "send-message",
+          "send-photo",
+          "send-document",
+          "send-location"
+        ],
         "default": "send-message",
         "description": "send-message=텔레그램 메시지 보내기·전송, 알림 발송, send telegram text message notification / send-photo=사진·이미지 전송, send photo image / send-document=문서·파일 전송, send document file / send-location=위치 전송, send location"
       },
@@ -31,7 +45,11 @@
       },
       "parseMode": {
         "type": "string",
-        "enum": ["MarkdownV2", "HTML", "Markdown"],
+        "enum": [
+          "MarkdownV2",
+          "HTML",
+          "Markdown"
+        ],
         "description": "[send-message/send-photo/send-document] Text format. Defaults to plain if omitted. MarkdownV2 requires escaping special characters."
       },
       "photoUrl": {
@@ -60,6 +78,8 @@
         "description": "If true, sends a silent push notification."
       }
     },
-    "required": ["action"]
+    "required": [
+      "action"
+    ]
   }
 }

@@ -4,32 +4,68 @@
   "scope": "system",
   "version": "2.0.0",
   "description": "카카오톡 메시지 + 소셜 + 채널 API. send-me(나에게 보내기, 5종 템플릿: text/feed/list/location/commerce), send-me-scrap(스크랩 메시지), send-friends(친구에게 보내기), profile(내 프로필), friends(친구 목록+UUID), channels(채널 관계).",
+  "aliases": [
+    "카카오톡",
+    "카톡",
+    "Kakao"
+  ],
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",
   "secrets": [
-    { "name": "KAKAO_REST_API_KEY",   "type": "key" },
-    { "name": "KAKAO_CLIENT_SECRET",  "type": "key" },
     {
-      "name": "KAKAO_ACCESS_TOKEN", "type": "token", "lifetimeSec": 21000, "refreshFrom": "KAKAO_REFRESH_TOKEN",
+      "name": "KAKAO_REST_API_KEY",
+      "type": "key"
+    },
+    {
+      "name": "KAKAO_CLIENT_SECRET",
+      "type": "key"
+    },
+    {
+      "name": "KAKAO_ACCESS_TOKEN",
+      "type": "token",
+      "lifetimeSec": 21000,
+      "refreshFrom": "KAKAO_REFRESH_TOKEN",
       "oauth": {
         "base": "https://kauth.kakao.com",
-        "path": "/oauth/token", "method": "POST", "contentType": "application/x-www-form-urlencoded",
-        "body": { "grant_type": "refresh_token", "client_id": "${KAKAO_REST_API_KEY}", "refresh_token": "${KAKAO_REFRESH_TOKEN}", "client_secret": "${KAKAO_CLIENT_SECRET}" },
+        "path": "/oauth/token",
+        "method": "POST",
+        "contentType": "application/x-www-form-urlencoded",
+        "body": {
+          "grant_type": "refresh_token",
+          "client_id": "${KAKAO_REST_API_KEY}",
+          "refresh_token": "${KAKAO_REFRESH_TOKEN}",
+          "client_secret": "${KAKAO_CLIENT_SECRET}"
+        },
         "tokenField": "access_token",
         "refreshTokenField": "refresh_token",
         "refreshTokenSecret": "KAKAO_REFRESH_TOKEN",
-        "invalidWhen": { "match": "any", "conditions": [ { "field": "_apiStatus", "equals": 401 } ] }
+        "invalidWhen": {
+          "match": "any",
+          "conditions": [
+            {
+              "field": "_apiStatus",
+              "equals": 401
+            }
+          ]
+        }
       }
     },
-    { "name": "KAKAO_REFRESH_TOKEN",  "type": "token", "lifetimeSec": 5184000 }
+    {
+      "name": "KAKAO_REFRESH_TOKEN",
+      "type": "token",
+      "lifetimeSec": 5184000
+    }
   ],
   "settings_fields": [
     {
       "key": "kakaoOAuth",
       "type": "oauth",
       "oauthUrl": "/api/auth/oauth/kakao",
-      "oauthSecrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN"]
+      "oauthSecrets": [
+        "KAKAO_ACCESS_TOKEN",
+        "KAKAO_REFRESH_TOKEN"
+      ]
     },
     {
       "key": "defaultType",
@@ -43,13 +79,26 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["send-me", "send-me-scrap", "send-friends", "profile", "friends", "channels"],
+        "enum": [
+          "send-me",
+          "send-me-scrap",
+          "send-friends",
+          "profile",
+          "friends",
+          "channels"
+        ],
         "default": "send-me",
         "description": "API 액션"
       },
       "type": {
         "type": "string",
-        "enum": ["text", "feed", "list", "location", "commerce"],
+        "enum": [
+          "text",
+          "feed",
+          "list",
+          "location",
+          "commerce"
+        ],
         "default": "text",
         "description": "[send-me/send-friends] 메시지 템플릿 타입. text=텍스트, feed=카드형, list=목록형(최소2항목), location=위치(address필수), commerce=상품(regularPrice필수)"
       },
@@ -98,10 +147,20 @@
         "maxItems": 2,
         "items": {
           "type": "object",
-          "required": ["title", "link"],
+          "required": [
+            "title",
+            "link"
+          ],
           "properties": {
-            "title": { "type": "string", "description": "버튼 텍스트" },
-            "link": { "type": "string", "format": "uri", "description": "버튼 URL" }
+            "title": {
+              "type": "string",
+              "description": "버튼 텍스트"
+            },
+            "link": {
+              "type": "string",
+              "format": "uri",
+              "description": "버튼 URL"
+            }
           }
         },
         "description": "[send-me/send-friends] 커스텀 버튼 (최대 2개)"
@@ -115,12 +174,28 @@
         "maxItems": 3,
         "items": {
           "type": "object",
-          "required": ["title"],
+          "required": [
+            "title"
+          ],
           "properties": {
-            "title": { "type": "string", "description": "항목 제목" },
-            "description": { "type": "string", "description": "항목 설명" },
-            "imageUrl": { "type": "string", "format": "uri", "description": "항목 이미지" },
-            "link": { "type": "string", "format": "uri", "description": "항목 클릭 URL" }
+            "title": {
+              "type": "string",
+              "description": "항목 제목"
+            },
+            "description": {
+              "type": "string",
+              "description": "항목 설명"
+            },
+            "imageUrl": {
+              "type": "string",
+              "format": "uri",
+              "description": "항목 이미지"
+            },
+            "link": {
+              "type": "string",
+              "format": "uri",
+              "description": "항목 클릭 URL"
+            }
           }
         },
         "description": "[send-me/send-friends:list] 목록 항목 (최대 3개, 최소 2개 자동 패딩)"
@@ -167,7 +242,10 @@
       },
       "currencyUnitPosition": {
         "type": "string",
-        "enum": ["0", "1"],
+        "enum": [
+          "0",
+          "1"
+        ],
         "description": "[send-me/send-friends:commerce] 통화 위치 (0=뒤, 1=앞)"
       },
       "requestUrl": {
@@ -186,7 +264,9 @@
       "receiverUuids": {
         "type": "array",
         "maxItems": 5,
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[send-friends] 수신자 UUID 배열 (최대 5명, friends 액션으로 조회)"
       },
       "offset": {
@@ -200,17 +280,25 @@
       },
       "order": {
         "type": "string",
-        "enum": ["asc", "desc"],
+        "enum": [
+          "asc",
+          "desc"
+        ],
         "description": "[friends] 정렬 순서"
       },
       "friendOrder": {
         "type": "string",
-        "enum": ["nickname", "favorite"],
+        "enum": [
+          "nickname",
+          "favorite"
+        ],
         "description": "[friends] 정렬 기준 (nickname=이름순, favorite=즐겨찾기)"
       },
       "channelIds": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[channels] 조회할 채널 ID 배열 (미지정 시 전체)"
       }
     },
@@ -219,13 +307,34 @@
   "output": {
     "type": "object",
     "properties": {
-      "resultCode": { "type": "integer", "description": "[send-me/send-me-scrap] 카카오 응답 코드 (0=성공)" },
-      "successfulReceiverUuids": { "type": "array", "description": "[send-friends] 발송 성공 UUID 목록" },
-      "failureInfo": { "type": "array", "description": "[send-friends] 발송 실패 정보" },
-      "nickName": { "type": "string", "description": "[profile] 닉네임" },
-      "profileImageUrl": { "type": "string", "description": "[profile] 프로필 이미지" },
-      "totalCount": { "type": "integer", "description": "[friends] 전체 친구 수" },
-      "friends": { "type": "array", "description": "[friends] 친구 목록 (uuid, nickname, thumbnail, favorite)" }
+      "resultCode": {
+        "type": "integer",
+        "description": "[send-me/send-me-scrap] 카카오 응답 코드 (0=성공)"
+      },
+      "successfulReceiverUuids": {
+        "type": "array",
+        "description": "[send-friends] 발송 성공 UUID 목록"
+      },
+      "failureInfo": {
+        "type": "array",
+        "description": "[send-friends] 발송 실패 정보"
+      },
+      "nickName": {
+        "type": "string",
+        "description": "[profile] 닉네임"
+      },
+      "profileImageUrl": {
+        "type": "string",
+        "description": "[profile] 프로필 이미지"
+      },
+      "totalCount": {
+        "type": "integer",
+        "description": "[friends] 전체 친구 수"
+      },
+      "friends": {
+        "type": "array",
+        "description": "[friends] 친구 목록 (uuid, nickname, thumbnail, favorite)"
+      }
     },
     "description": "action별 응답 구조가 다름. send-me=resultCode, send-friends=successfulReceiverUuids+failureInfo, profile=닉네임+이미지, friends=친구목록+UUID, channels=카카오 원본 응답"
   }

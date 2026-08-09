@@ -4,17 +4,32 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "카카오 지도 통합 — REST API (geocoding·역지오코딩·주소 검색·키워드 검색) + JavaScript SDK 키 (render_map 컴포넌트가 사용). South Korea 전용. South Korea 외 지역은 render_map 의 Leaflet 폴백.",
+  "aliases": [
+    "카카오",
+    "카카오맵",
+    "Kakao"
+  ],
   "runtime": "node",
   "capability": "map",
   "providerType": "api",
-  "secrets": ["KAKAO_REST_API_KEY", "KAKAO_MAP_JS_KEY"],
+  "secrets": [
+    "KAKAO_REST_API_KEY",
+    "KAKAO_MAP_JS_KEY"
+  ],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["geocoding", "reverse-geocoding", "search-address", "search-keyword"],
+        "enum": [
+          "geocoding",
+          "reverse-geocoding",
+          "search-address",
+          "search-keyword"
+        ],
         "description": "geocoding=주소→좌표, reverse-geocoding=좌표→주소, search-address=주소 자동완성·검색, search-keyword=장소 키워드 검색 (음식점·은행·병원 등)"
       },
       "address": {
@@ -23,7 +38,9 @@
       },
       "addresses": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[geocoding] batch mode — multiple addresses in ONE call (max 30). Use this instead of N single calls when placing many markers (e.g. apartment complexes). Returns results[] with {query, items} per address."
       },
       "lat": {
@@ -40,7 +57,9 @@
       },
       "keywords": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[search-keyword] batch mode — multiple place keywords in ONE call (max 30). Use this instead of N single calls when locating many places (e.g. apartment complex names for map markers). Shares lat_center/lon_center/radius/categoryGroupCode. Returns results[] with {query, items} per keyword."
       },
       "categoryGroupCode": {
@@ -74,7 +93,9 @@
         "type": "array",
         "description": "결과 목록. action 별 다름. geocoding/search-address: address_name·road_address_name·x(경도)·y(위도). search-keyword: place_name·category_name·road_address_name·phone·x·y·distance"
       },
-      "total": { "type": "integer" }
+      "total": {
+        "type": "integer"
+      }
     }
   }
 }

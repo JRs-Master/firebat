@@ -4,6 +4,11 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "토스증권 **계좌·주문** — 국내(KRX/NXT)·미국 주식의 주문(현금·조건주문·정정·취소)·계좌·보유종목·매수가능금액·매도가능수량·수수료·주문내역. **시세·캔들·종목검색은 이 모듈에 없습니다 — `toss-invest` 입니다.** OAuth2 client_credentials (액세스 토큰 24h, 인프라가 자동 발급·갱신). 미국 소수점·금액 주문 지원. hub 인스턴스에는 이 모듈을 허용하지 마십시오.",
+  "aliases": [
+    "토스",
+    "토스증권",
+    "Toss"
+  ],
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",

@@ -4,6 +4,10 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "문서(영수증·명함·청구서·계약서 등) → 구조화 JSON 추출. URL 또는 base64 로 넘긴 PDF·이미지를 스키마대로 뽑는다(Upstage Information Extraction). 스키마 미지정 = 문서에서 자동 생성. 라이브러리에 업로드된 문서는 library_extract_structured 를 쓸 것 — 이 모듈은 라이브러리 밖 일회성 문서용. 태그: 영수증 가계부 명함 청구서 문서 구조화 추출 receipt invoice document extraction OCR 구조화",
+  "aliases": [
+    "업스테이지",
+    "Upstage"
+  ],
   "runtime": "node",
   "capability": "document-extraction",
   "secrets": [

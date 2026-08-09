@@ -4,6 +4,10 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "업비트 **공개 시세** — 캔들(초·분·일·주·월·년)·체결·호가·티커·마켓 목록·호가단위·거래대금 상위 종목 화면. **자격증명을 선언하지 않습니다**: 업비트는 시세가 공개 엔드포인트라 키가 필요 없고, 그래서 이 모듈은 키를 받지도 못합니다. **계좌·주문·입출금은 `upbit-trade` 입니다.**",
+  "aliases": [
+    "업비트",
+    "Upbit"
+  ],
   "runtime": "node",
   "capability": "crypto-trading",
   "providerType": "api",
@@ -31,20 +35,36 @@
       "trade": {
         "subscribe": {
           "frame": [
-            { "ticket": "{ticket:firebat}" },
-            { "type": "trade", "codes": ["{code}"], "isOnlyRealtime": true },
-            { "format": "DEFAULT" }
+            {
+              "ticket": "{ticket:firebat}"
+            },
+            {
+              "type": "trade",
+              "codes": [
+                "{code}"
+              ],
+              "isOnlyRealtime": true
+            },
+            {
+              "format": "DEFAULT"
+            }
           ]
         },
         "realtimeMatch": "trade",
         "tick1s": {
-          "type": { "field": "type", "equals": "trade" },
+          "type": {
+            "field": "type",
+            "equals": "trade"
+          },
           "symbol": "code",
           "map": {
             "price": "trade_price",
             "signedVolume": {
               "field": "trade_volume",
-              "negateWhen": { "field": "ask_bid", "equals": "ASK" }
+              "negateWhen": {
+                "field": "ask_bid",
+                "equals": "ASK"
+              }
             }
           }
         }

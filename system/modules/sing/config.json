@@ -7,33 +7,84 @@
   "providerType": "compute",
   "capability": "audio-synthesis",
   "description": "노래 합성 DSP — 악보(음표+가사 음절)와 말한 목소리(wav)를 받아 음정·박자를 악보대로 재합성하고(오토튠 창법), 드럼·베이스 반주를 합성해 믹스한 노래 wav 를 만듭니다. S1 = DSP 엔진(파일 경로 in/out). 채팅에서 부르는 표면(TTS→이 모듈→media 저장을 잇는 sing 코어 도구)은 후속 브리지 — 모델이 이 모듈을 직접 부를 일은 아직 없습니다. 반주만 필요하면 vocalPath 없이 render 를 부르면 됩니다.",
-  "tags": ["노래", "작곡", "합성", "오토튠", "반주", "드럼", "베이스", "뽕짝", "트로트", "speech-to-singing"],
-  "packages": ["numpy", "soundfile", "pyworld"],
+  "aliases": [
+    "노래",
+    "보컬",
+    "sing"
+  ],
+  "tags": [
+    "노래",
+    "작곡",
+    "합성",
+    "오토튠",
+    "반주",
+    "드럼",
+    "베이스",
+    "뽕짝",
+    "트로트",
+    "speech-to-singing"
+  ],
+  "packages": [
+    "numpy",
+    "soundfile",
+    "pyworld"
+  ],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["render", "selftest"],
+        "enum": [
+          "render",
+          "selftest"
+        ],
         "description": "render = score (+ optional spoken vocal wav) -> song wav on disk. selftest = self-checks, no files needed."
       },
       "score": {
         "type": "object",
         "description": "The song. {bpm, notes:[{syl, note, beats}], chords?:[{root, beats}], style?} — note/root are pitch names like 'G4'/'C3'; beats are quarter-note counts; syl is the syllable sung on that note ('-' extends the previous one). style picks the drum pattern: trot | ballad | march | none.",
         "properties": {
-          "bpm": {"type": "number"},
-          "notes": {"type": "array", "items": {"type": "object"}},
-          "chords": {"type": ["array", "null"], "items": {"type": "object"}},
-          "style": {"type": ["string", "null"]}
+          "bpm": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "chords": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            }
+          },
+          "style": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       },
       "vocalPath": {
-        "type": ["string", "null"],
+        "type": [
+          "string",
+          "null"
+        ],
         "description": "Workspace-relative path of the spoken vocal wav (the TTS output, one take of all lyrics in note order). Omitted = instrumental only."
       },
       "outPath": {
-        "type": ["string", "null"],
+        "type": [
+          "string",
+          "null"
+        ],
         "description": "Workspace-relative output wav path. Default data/sing/out-<hash>.wav"
       }
     }
@@ -41,8 +92,12 @@
   "output": {
     "type": "object",
     "properties": {
-      "success": {"type": "boolean"},
-      "data": {"type": "object"}
+      "success": {
+        "type": "boolean"
+      },
+      "data": {
+        "type": "object"
+      }
     }
   }
 }

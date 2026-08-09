@@ -4,6 +4,10 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "Binance spot market data — candles, price, order book, trades, and a 24h turnover screen. Read-only: it holds no API key and declares no account or order action. Covers thousands of pairs, so it is the venue to use for a coin Upbit does not list. Prices are quoted in USDT (or another quote asset), never in KRW; converting to KRW needs a separate exchange-rate lookup. For a coin that trades on Upbit, prefer Upbit — that is where the orders actually execute.",
+  "aliases": [
+    "바이낸스",
+    "Binance"
+  ],
   "runtime": "node",
   "capability": "crypto-data",
   "providerType": "api",

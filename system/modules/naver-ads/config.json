@@ -4,20 +4,42 @@
   "scope": "system",
   "version": "2.0.0",
   "description": "네이버 검색광고 API. keyword-tool(키워드 검색량/CPC/경쟁도+연관키워드), stats(캠페인/광고그룹/키워드 성과 통계), estimate(입찰가 시뮬레이션), bizmoney(잔액/충전/소진 내역), managed-keywords(키워드 관리상태), list-campaigns/adgroups/keywords/ads(관리), raw(직접 API 호출).",
+  "aliases": [
+    "네이버",
+    "네이버광고",
+    "Naver"
+  ],
   "runtime": "node",
   "capability": "keyword-analytics",
   "providerType": "api",
-  "secrets": ["NAVER_AD_ACCESS_LICENSE_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"],
+  "secrets": [
+    "NAVER_AD_ACCESS_LICENSE_KEY",
+    "NAVER_AD_SECRET_KEY",
+    "NAVER_AD_CUSTOMER_ID"
+  ],
   "input": {
     "type": "object",
     "properties": {
       "action": {
         "type": "string",
         "enum": [
-          "keyword-tool", "stats", "estimate", "bizmoney", "managed-keywords",
-          "list-campaigns", "get-campaign", "list-adgroups", "get-adgroup",
-          "list-keywords", "get-keyword", "list-ads", "get-ad",
-          "list-channels", "list-extensions", "list-labels", "list-shared-budgets",
+          "keyword-tool",
+          "stats",
+          "estimate",
+          "bizmoney",
+          "managed-keywords",
+          "list-campaigns",
+          "get-campaign",
+          "list-adgroups",
+          "get-adgroup",
+          "list-keywords",
+          "get-keyword",
+          "list-ads",
+          "get-ad",
+          "list-channels",
+          "list-extensions",
+          "list-labels",
+          "list-shared-budgets",
           "raw"
         ],
         "default": "keyword-tool",
@@ -25,7 +47,9 @@
       },
       "keywords": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "maxItems": 5,
         "description": "[keyword-tool/managed-keywords] 키워드 목록 (최대 5개)"
       },
@@ -61,38 +85,77 @@
       },
       "ids": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[stats/list-*] 복수 ID 배열"
       },
       "fields": {
         "type": "array",
         "items": {
           "type": "string",
-          "enum": ["impCnt", "clkCnt", "salesAmt", "ctr", "cpc", "avgRnk", "ccnt", "recentAvgRnk", "recentAvgCpc", "pcNxAvgRnk", "mblNxAvgRnk", "crto", "convAmt", "ror", "cpConv", "viewCnt"]
+          "enum": [
+            "impCnt",
+            "clkCnt",
+            "salesAmt",
+            "ctr",
+            "cpc",
+            "avgRnk",
+            "ccnt",
+            "recentAvgRnk",
+            "recentAvgCpc",
+            "pcNxAvgRnk",
+            "mblNxAvgRnk",
+            "crto",
+            "convAmt",
+            "ror",
+            "cpConv",
+            "viewCnt"
+          ]
         },
         "description": "[stats] 조회할 지표. impCnt=노출, clkCnt=클릭, salesAmt=비용, ctr=클릭률, cpc=클릭당비용, avgRnk=평균순위, ccnt=전환수"
       },
       "timeRange": {
         "type": "object",
         "properties": {
-          "since": { "type": "string", "description": "시작일 YYYY-MM-DD" },
-          "until": { "type": "string", "description": "종료일 YYYY-MM-DD" }
+          "since": {
+            "type": "string",
+            "description": "시작일 YYYY-MM-DD"
+          },
+          "until": {
+            "type": "string",
+            "description": "종료일 YYYY-MM-DD"
+          }
         },
         "description": "[stats] 조회 기간"
       },
       "datePreset": {
         "type": "string",
-        "enum": ["today", "yesterday", "last7days", "last30days", "lastweek", "lastmonth", "lastquarter"],
+        "enum": [
+          "today",
+          "yesterday",
+          "last7days",
+          "last30days",
+          "lastweek",
+          "lastmonth",
+          "lastquarter"
+        ],
         "description": "[stats] 프리셋 기간 (timeRange 대신 사용)"
       },
       "timeIncrement": {
         "type": "string",
-        "enum": ["1", "allDays"],
+        "enum": [
+          "1",
+          "allDays"
+        ],
         "description": "[stats] 1=일별, allDays=합산"
       },
       "breakdown": {
         "type": "string",
-        "enum": ["pcMblTp", "dayw"],
+        "enum": [
+          "pcMblTp",
+          "dayw"
+        ],
         "description": "[stats] 분류. pcMblTp=PC/모바일, dayw=요일별"
       },
       "statType": {
@@ -101,13 +164,22 @@
       },
       "estimateType": {
         "type": "string",
-        "enum": ["performance", "performance-bulk", "average-position-bid", "median-bid", "exposure-minimum-bid"],
+        "enum": [
+          "performance",
+          "performance-bulk",
+          "average-position-bid",
+          "median-bid",
+          "exposure-minimum-bid"
+        ],
         "default": "performance",
         "description": "[estimate] 시뮬레이션 유형. performance=예상 성과, average-position-bid=평균순위 입찰가, median-bid=중위 입찰가, exposure-minimum-bid=보장노출 최소 입찰가"
       },
       "keyType": {
         "type": "string",
-        "enum": ["id", "keyword"],
+        "enum": [
+          "id",
+          "keyword"
+        ],
         "default": "keyword",
         "description": "[estimate] id=키워드ID로 조회, keyword=키워드 문자열로 조회"
       },
@@ -121,7 +193,10 @@
       },
       "device": {
         "type": "string",
-        "enum": ["PC", "MOBILE"],
+        "enum": [
+          "PC",
+          "MOBILE"
+        ],
         "description": "[estimate] 디바이스"
       },
       "keywordplus": {
@@ -134,10 +209,26 @@
         "items": {
           "type": "object",
           "properties": {
-            "key": { "type": "string", "description": "키워드 또는 소재 ID" },
-            "device": { "type": "string", "enum": ["PC", "MOBILE"], "description": "디바이스" },
-            "bid": { "type": "integer", "description": "입찰가" },
-            "keywordplus": { "type": "boolean", "description": "키워드 확장 여부" }
+            "key": {
+              "type": "string",
+              "description": "키워드 또는 소재 ID"
+            },
+            "device": {
+              "type": "string",
+              "enum": [
+                "PC",
+                "MOBILE"
+              ],
+              "description": "디바이스"
+            },
+            "bid": {
+              "type": "integer",
+              "description": "입찰가"
+            },
+            "keywordplus": {
+              "type": "boolean",
+              "description": "키워드 확장 여부"
+            }
           }
         }
       },
@@ -147,7 +238,12 @@
       },
       "subAction": {
         "type": "string",
-        "enum": ["balance", "charge-history", "exhaust-history", "period-history"],
+        "enum": [
+          "balance",
+          "charge-history",
+          "exhaust-history",
+          "period-history"
+        ],
         "default": "balance",
         "description": "[bizmoney] balance=잔액, charge-history=충전내역, exhaust-history=소진내역, period-history=일별현황"
       },
@@ -193,7 +289,12 @@
       },
       "method": {
         "type": "string",
-        "enum": ["GET", "POST", "PUT", "DELETE"],
+        "enum": [
+          "GET",
+          "POST",
+          "PUT",
+          "DELETE"
+        ],
         "default": "GET",
         "description": "[raw] HTTP 메서드"
       },
@@ -215,8 +316,14 @@
   "output": {
     "type": "object",
     "properties": {
-      "keywords": { "type": "array", "description": "[keyword-tool] 입력 키워드 분석 결과" },
-      "relatedKeywords": { "type": "array", "description": "[keyword-tool] 연관 키워드 (최대 20)" }
+      "keywords": {
+        "type": "array",
+        "description": "[keyword-tool] 입력 키워드 분석 결과"
+      },
+      "relatedKeywords": {
+        "type": "array",
+        "description": "[keyword-tool] 연관 키워드 (최대 20)"
+      }
     },
     "description": "action별 응답 구조가 다름. keyword-tool={keywords,relatedKeywords}, stats=통계 배열, estimate=시뮬레이션 결과, bizmoney=잔액/내역"
   }

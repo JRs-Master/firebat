@@ -4,10 +4,16 @@
   "scope": "system",
   "version": "2.0.0",
   "description": "Web scraper based on Firecrawl API v1. Four actions: scrape (single URL), crawl (entire site), map (collect URL list), extract (LLM-structured data extraction). Supports JS rendering, browser actions (click/write/press/scroll/wait/screenshot), LLM JSON extraction, and location-based scraping.",
+  "aliases": [
+    "파이어크롤",
+    "Firecrawl"
+  ],
   "runtime": "node",
   "capability": "web-scrape",
   "providerType": "api",
-  "secrets": ["FIRECRAWL_API_KEY"],
+  "secrets": [
+    "FIRECRAWL_API_KEY"
+  ],
   "settings_fields": [
     {
       "key": "maxTextLength",
@@ -21,7 +27,12 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["scrape", "crawl", "map", "extract"],
+        "enum": [
+          "scrape",
+          "crawl",
+          "map",
+          "extract"
+        ],
         "default": "scrape",
         "description": "scrape=single URL scrape, crawl=full site crawl, map=collect URL list (no scraping), extract=LLM-structured data extraction"
       },
@@ -31,7 +42,9 @@
       },
       "urls": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[extract] Target URL array. Supports wildcards (example.com/*)"
       },
       "keyword": {
@@ -40,8 +53,21 @@
       },
       "formats": {
         "type": "array",
-        "items": { "type": "string", "enum": ["markdown", "html", "rawHtml", "json", "links", "screenshot", "screenshot@fullPage"] },
-        "default": ["markdown"],
+        "items": {
+          "type": "string",
+          "enum": [
+            "markdown",
+            "html",
+            "rawHtml",
+            "json",
+            "links",
+            "screenshot",
+            "screenshot@fullPage"
+          ]
+        },
+        "default": [
+          "markdown"
+        ],
         "description": "[scrape] Return formats. json=LLM-structured extraction (requires jsonOptions)"
       },
       "onlyMainContent": {
@@ -51,17 +77,23 @@
       },
       "includeTags": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[scrape] HTML tags to include"
       },
       "excludeTags": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[scrape] HTML tags to exclude"
       },
       "headers": {
         "type": "object",
-        "additionalProperties": { "type": "string" },
+        "additionalProperties": {
+          "type": "string"
+        },
         "description": "[scrape] Custom HTTP headers"
       },
       "waitFor": {
@@ -96,8 +128,17 @@
       "location": {
         "type": "object",
         "properties": {
-          "country": { "type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g., US, KR)" },
-          "languages": { "type": "array", "items": { "type": "string" }, "description": "Preferred language array (e.g., ko, en)" }
+          "country": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code (e.g., US, KR)"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preferred language array (e.g., ko, en)"
+          }
         },
         "description": "[scrape/map] Location/language-based scraping"
       },
@@ -106,15 +147,56 @@
         "items": {
           "type": "object",
           "properties": {
-            "type": { "type": "string", "enum": ["click", "write", "press", "scroll", "wait", "screenshot", "scrape", "executeJavaScript"], "description": "Action type" },
-            "selector": { "type": "string", "description": "[click/write] CSS selector" },
-            "text": { "type": "string", "description": "[write] Text to type" },
-            "key": { "type": "string", "description": "[press] Keyboard key (Enter, Tab, etc.)" },
-            "milliseconds": { "type": "integer", "description": "[wait] Wait time (ms)" },
-            "fullPage": { "type": "boolean", "description": "[screenshot] Capture full page" },
-            "direction": { "type": "string", "enum": ["up", "down"], "description": "[scroll] Scroll direction" },
-            "amount": { "type": "integer", "description": "[scroll] Scroll amount (px)" },
-            "script": { "type": "string", "description": "[executeJavaScript] JS code" }
+            "type": {
+              "type": "string",
+              "enum": [
+                "click",
+                "write",
+                "press",
+                "scroll",
+                "wait",
+                "screenshot",
+                "scrape",
+                "executeJavaScript"
+              ],
+              "description": "Action type"
+            },
+            "selector": {
+              "type": "string",
+              "description": "[click/write] CSS selector"
+            },
+            "text": {
+              "type": "string",
+              "description": "[write] Text to type"
+            },
+            "key": {
+              "type": "string",
+              "description": "[press] Keyboard key (Enter, Tab, etc.)"
+            },
+            "milliseconds": {
+              "type": "integer",
+              "description": "[wait] Wait time (ms)"
+            },
+            "fullPage": {
+              "type": "boolean",
+              "description": "[screenshot] Capture full page"
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ],
+              "description": "[scroll] Scroll direction"
+            },
+            "amount": {
+              "type": "integer",
+              "description": "[scroll] Scroll amount (px)"
+            },
+            "script": {
+              "type": "string",
+              "description": "[executeJavaScript] JS code"
+            }
           }
         },
         "description": "[scrape] Browser actions to run before scraping. Login, button clicks, infinite scroll, etc."
@@ -122,9 +204,18 @@
       "jsonOptions": {
         "type": "object",
         "properties": {
-          "schema": { "type": "object", "description": "Data structure to extract, defined as a JSON Schema" },
-          "prompt": { "type": "string", "description": "Natural-language description of the data to extract" },
-          "systemPrompt": { "type": "string", "description": "LLM system prompt" }
+          "schema": {
+            "type": "object",
+            "description": "Data structure to extract, defined as a JSON Schema"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Natural-language description of the data to extract"
+          },
+          "systemPrompt": {
+            "type": "string",
+            "description": "LLM system prompt"
+          }
         },
         "description": "[scrape] Options for LLM-based structured extraction when formats includes 'json'"
       },
@@ -138,12 +229,16 @@
       },
       "includePaths": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[crawl] Regex patterns for URL paths to include"
       },
       "excludePaths": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "description": "[crawl] Regex patterns for URL paths to exclude"
       },
       "crawlEntireDomain": {
@@ -163,7 +258,11 @@
       },
       "sitemap": {
         "type": "string",
-        "enum": ["include", "skip", "only"],
+        "enum": [
+          "include",
+          "skip",
+          "only"
+        ],
         "description": "[crawl] Sitemap handling. include=include, skip=ignore, only=sitemap only"
       },
       "ignoreQueryParameters": {
@@ -223,16 +322,46 @@
   "output": {
     "type": "object",
     "properties": {
-      "url": { "type": "string", "description": "[scrape] Final URL" },
-      "title": { "type": "string", "description": "[scrape] Page title" },
-      "text": { "type": "string", "description": "[scrape] Markdown body" },
-      "html": { "type": "string", "description": "[scrape] HTML (when formats includes html)" },
-      "links": { "type": "array", "description": "[scrape/map] List of links" },
-      "screenshot": { "type": "string", "description": "[scrape] Screenshot URL" },
-      "json": { "type": "object", "description": "[scrape] LLM-extracted JSON (when formats includes json)" },
-      "pages": { "type": "array", "description": "[crawl] Array of crawled pages [{url, title, text}]" },
-      "crawlId": { "type": "string", "description": "[crawl] Crawl job ID" },
-      "total": { "type": "integer", "description": "[crawl] Total number of crawled pages" }
+      "url": {
+        "type": "string",
+        "description": "[scrape] Final URL"
+      },
+      "title": {
+        "type": "string",
+        "description": "[scrape] Page title"
+      },
+      "text": {
+        "type": "string",
+        "description": "[scrape] Markdown body"
+      },
+      "html": {
+        "type": "string",
+        "description": "[scrape] HTML (when formats includes html)"
+      },
+      "links": {
+        "type": "array",
+        "description": "[scrape/map] List of links"
+      },
+      "screenshot": {
+        "type": "string",
+        "description": "[scrape] Screenshot URL"
+      },
+      "json": {
+        "type": "object",
+        "description": "[scrape] LLM-extracted JSON (when formats includes json)"
+      },
+      "pages": {
+        "type": "array",
+        "description": "[crawl] Array of crawled pages [{url, title, text}]"
+      },
+      "crawlId": {
+        "type": "string",
+        "description": "[crawl] Crawl job ID"
+      },
+      "total": {
+        "type": "integer",
+        "description": "[crawl] Total number of crawled pages"
+      }
     },
     "description": "scrape→{url,title,text,...}, crawl→{crawlId,total,pages[]}, map→{links[]}, extract→extracted data"
   }

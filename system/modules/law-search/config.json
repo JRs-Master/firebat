@@ -4,23 +4,56 @@
   "scope": "system",
   "version": "2.0.0",
   "description": "국가법령정보 Open API (open.law.go.kr). 3가지 액션: search(목록 검색), detail(본문 조회), article(조항호목 조회). 8가지 target: law(법령), prec(판례), admrul(행정규칙), ordin(자치법규), detc(헌재결정례), expc(법령해석례), trty(조약), lsHistory(연혁법령). 법률 자문 시 검색→본문 조회로 조문/판결문 기반 답변 가능. 조항호목 조회로 특정 조문만 정밀 조회 가능.",
+  "aliases": [
+    "법제처",
+    "국가법령정보"
+  ],
   "runtime": "node",
   "capability": "law-search",
   "providerType": "api",
-  "tags": ["법령", "법률", "판례", "헌법", "행정규칙", "자치법규", "조례", "헌재결정례", "법령해석례", "조약", "법률 자문"],
-  "secrets": ["LAW_API_OC"],
+  "tags": [
+    "법령",
+    "법률",
+    "판례",
+    "헌법",
+    "행정규칙",
+    "자치법규",
+    "조례",
+    "헌재결정례",
+    "법령해석례",
+    "조약",
+    "법률 자문"
+  ],
+  "secrets": [
+    "LAW_API_OC"
+  ],
   "input": {
     "type": "object",
-    "required": ["action"],
+    "required": [
+      "action"
+    ],
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["search", "detail", "article"],
+        "enum": [
+          "search",
+          "detail",
+          "article"
+        ],
         "description": "search=목록 검색(lawSearch.do), detail=본문 조회(lawService.do), article=조항호목 조회(lawjosub)"
       },
       "target": {
         "type": "string",
-        "enum": ["law", "prec", "admrul", "ordin", "detc", "expc", "trty", "lsHistory"],
+        "enum": [
+          "law",
+          "prec",
+          "admrul",
+          "ordin",
+          "detc",
+          "expc",
+          "trty",
+          "lsHistory"
+        ],
         "default": "law",
         "description": "대상. law=법령, prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약, lsHistory=연혁법령"
       },
@@ -42,7 +75,10 @@
       },
       "search": {
         "type": "string",
-        "enum": ["1", "2"],
+        "enum": [
+          "1",
+          "2"
+        ],
         "default": "1",
         "description": "[search] 검색범위. 1=제목(기본), 2=본문"
       },
@@ -61,7 +97,18 @@
       },
       "sort": {
         "type": "string",
-        "enum": ["lasc", "ldes", "dasc", "ddes", "nasc", "ndes", "efasc", "efdes", "rasc", "rdes"],
+        "enum": [
+          "lasc",
+          "ldes",
+          "dasc",
+          "ddes",
+          "nasc",
+          "ndes",
+          "efasc",
+          "efdes",
+          "rasc",
+          "rdes"
+        ],
         "description": "[search] 정렬. lasc/ldes=이름순, dasc/ddes=공포일/선고일, efasc/efdes=시행일, nasc/ndes=번호순"
       },
       "date": {
@@ -134,7 +181,10 @@
       },
       "nw": {
         "type": "string",
-        "enum": ["1", "2"],
+        "enum": [
+          "1",
+          "2"
+        ],
         "description": "[search:admrul/ordin] 1=현행(기본), 2=연혁"
       },
       "lsChapNo": {
@@ -155,7 +205,10 @@
       },
       "cls": {
         "type": "string",
-        "enum": ["1", "2"],
+        "enum": [
+          "1",
+          "2"
+        ],
         "description": "[search:trty] 1=양자조약, 2=다자조약"
       },
       "natCd": {
@@ -192,7 +245,10 @@
       },
       "LANG": {
         "type": "string",
-        "enum": ["KO", "ORI"],
+        "enum": [
+          "KO",
+          "ORI"
+        ],
         "description": "[detail:law] KO=한글(기본), ORI=원문"
       },
       "LID": {
@@ -209,7 +265,10 @@
       },
       "chrClsCd": {
         "type": "string",
-        "enum": ["010202", "010203"],
+        "enum": [
+          "010202",
+          "010203"
+        ],
         "description": "[detail:trty] 언어 코드. 010202=한글(기본), 010203=영문"
       },
       "datSrcNm": {
@@ -222,12 +281,20 @@
   "output": {
     "type": "object",
     "properties": {
-      "totalCnt": { "type": "integer", "description": "[search] 검색 총 건수" },
-      "page": { "type": "integer", "description": "[search] 현재 페이지" },
+      "totalCnt": {
+        "type": "integer",
+        "description": "[search] 검색 총 건수"
+      },
+      "page": {
+        "type": "integer",
+        "description": "[search] 현재 페이지"
+      },
       "items": {
         "type": "array",
         "description": "[search] 검색 결과 목록",
-        "items": { "type": "object" }
+        "items": {
+          "type": "object"
+        }
       }
     },
     "description": "search → {totalCnt, page, items[]}, detail → target별 본문 객체, article → 조항호목 객체"
