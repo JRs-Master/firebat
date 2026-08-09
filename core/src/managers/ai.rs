@@ -2120,13 +2120,14 @@ impl AiManager {
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
                 let mut extra_parts: Vec<String> = Vec::new();
+                // Prompt text belongs in system/prompts, never inline here — same store the cron
+                // prelude and the plan-mode blocks read from, so the wording is editable without
+                // a rebuild and there is one copy of it.
                 if image_unsupported {
-                    extra_parts.push(
-                        "## 첨부 이미지\n사용자가 이미지를 첨부했지만 지금 모델은 이미지를 읽지 못합니다. \
-                         본 적 없는 그림을 추측하지 말고, 이미지를 볼 수 없다는 사실을 먼저 밝힌 뒤 \
-                         이미지를 읽는 모델로 바꾸거나 내용을 글로 설명해 달라고 요청하세요."
-                            .to_string(),
-                    );
+                    let notice = crate::prompt_store::get("image_unsupported");
+                    if !notice.trim().is_empty() {
+                        extra_parts.push(notice);
+                    }
                 }
                 if let Some(g) = &self.context_gatherer {
                     let ctx = g.gather().await;
@@ -2218,7 +2219,12 @@ impl AiManager {
                     .and_then(|c| c.instance_directive.as_deref())
                     .filter(|d| !d.trim().is_empty())
                 {
-                    extra_parts.push(format!("## 이 어시스턴트의 추가 지침\n{}", directive));
+                    // Header is AI-facing text, so English like the rest of the prompt; the
+                    // directive itself is the operator's own words and passes through verbatim.
+                    extra_parts.push(format!(
+                        "## Additional instructions for this assistant\n{}",
+                        directive
+                    ));
                 }
 
                 // RetrievalEngine 자동 prepend (Recall 회상) — **토글 무관 항상** (Phase C split, 2026-06-14).
