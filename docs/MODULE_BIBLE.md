@@ -1,6 +1,6 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-08-09 (`ws.streams.*.tick1s` 틱 수집 선언 + `settings_fields[].editorSchema` 선언형 카드 폼)
+> 최종 개정: 2026-08-10 (`aliases` 선언 · `actionCatalog` 두 형태와 0-산출 폴백 · `tags` = 게이트 어휘 · `negateWhen.equals` 는 스칼라 아무 타입)
 
 ## 전문(前文)
 
@@ -258,6 +258,10 @@ node scripts/gen.mjs             # _apis.json → config + index
 **모든 sysmod·usermod 는 동일한 4단 절차로 호출된다** — 큰 모듈이든 작은 모듈이든: ① 도구 설명·`tags` 로 모듈 선택 → ② `search_module_actions(query)` 로 액션 발견 → ③ `get_action_schema(module, action)` 으로 정확한 파라미터·봉투 획득 → ④ 호출(`module.rs` 가 input 스키마로 검증, 틀리면 힌트 재전송 = i18n `input_validation_failed_catalog`). **도구 설명엔 파라미터가 없다** — `dynamic_tools.rs`/`mcp_server.rs` 가 sysmod 도구 `parameters` 를 얇게(`{additionalProperties:true}` + "발견하라" 안내) 등록해 직접호출 우회를 구조로 차단한다(판단은 모델, 절차는 프레임워크 — "빨간불이면 차단봉").
 - **액션 카탈로그 소스 = 3단 폴백** (하드코딩 0, `action_catalog.rs`):
   1. `actionCatalog`(위 예시, file/inline) → rich per-action(한투 275·키움 208·toss 28).
+     - **받는 형태 두 가지**: `{"actions": [...]}` 또는 **배열 그 자체** `[...]`. 둘은 같은 뜻이다.
+     - ⚠️ **선언이 0개를 내면 깨진 선언으로 보고 input 파생으로 폴백 + 모듈 이름을 대며 WARN.**
+       (2026-08-10: 배열로 선언했더니 `actions` 키가 없어 0개 산출인데, 키 존재만으로 폴백을
+       건너뛰어 **모듈이 발견에서 통째로 사라졌다** — 실행·설정은 멀쩡해서 아무도 안 찾아볼 0.)
   2. 없으면 **`input` 스키마에서 자동 파생** — `input.properties.action.enum` 의 값마다 엔트리(설명 = `action.description` blob 조각, params = 나머지 input properties). **작은 모듈·usermod 는 별도 authoring 0** — 이미 있는 input 스키마가 곧 카탈로그.
   3. action enum 도 없으면(단일 목적 모듈) → 모듈 1엔트리(`get_action_schema` = input 스키마 통째).
 - `actions.json` 엔트리 = `{ id, name, description, domain?, params?: {이름: 설명}, example? }` — `file`(모듈 dir 상대) 또는 inline `actions`. `requiresApproval` 은 재선언 안 함(로더가 config 선언에서 join). `envelope` = 호출 봉투 형태(flat vs `params` 중첩 — 모듈 방언). API 명세가 `_apis.json` 류면 `scripts/gen-actions.mjs` 로 생성 — **desc 보강은 `actions-overrides.json` 병합**(regen 생존, 생성 파일 직접 수정 금지).
@@ -345,12 +349,13 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `ws` | WebSocket 스냅샷·상시 감시 라우팅 | ModuleManager.run → IWsApiPort/IWsStreamPort |
 | `timeseries` | 시계열 영구 store (증분 fetch) | sandbox choke-point |
 | `actionCatalog` | 액션 시맨틱 검색·스키마 (`search_module_actions`, 없으면 input 스키마에서 자동 파생) | AI 도구 (E5 카탈로그) |
-| `tags` | 모듈 선택 신호 (얇은 도구 설명에 append) | 도구 등록 (dynamic_tools/mcp_server) |
+| `tags` | 모듈 선택 신호(얇은 도구 설명에 append) **+ 액션 검색의 게이트 어휘**. 랭커 문서에는 안 들어간다 — 같은 태그를 233행에 이면 액션끼리 흐려진다 | 도구 등록 + `vocab_text` |
+| `aliases` | **그 모듈을 사람들이 실제로 부르는 이름**(`한투`·`한국투자증권`·`KIS`). 모듈 이름과 함께 **랭커 문서**에 들어간다 — 거래소를 대는 게 곧 라우팅 신호다. 파생 불가라 선언이 유일한 소스. recall 의 `entity_passage_text`(name+aliases)와 같은 패턴 | 액션 카탈로그 (`module_identity`) |
 | `accounts` | 계좌별 앱키 등록·주계좌 지정 (`account` 로 선택, `mock` 은 계좌가 결정) | `ModuleManager.run` + sandbox/WS 시크릿 해석 (`account_secrets.rs`) |
 | `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
-| `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — `items`/`values` 생략 = 프레임 자체가 아이템(업비트). `signedVolume` = 필드명(부호 내장, 키움) 또는 `{field, negateWhen:{field,equals}}`(무부호 수량 + 매도 플래그, 업비트 `ask_bid:"ASK"`). 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
+| `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — `items`/`values` 생략 = 프레임 자체가 아이템(업비트). `signedVolume` = 필드명(부호 내장, 키움) 또는 `{field, negateWhen:{field,equals}}`(무부호 수량 + 매도 플래그, 업비트 `ask_bid:"ASK"`). **`equals` 는 문자열·불리언·숫자 아무 스칼라**(바이낸스 `m: true`) — 예전엔 문자열만 읽어 불리언 venue 에서 절이 통째로 무시되고 **매도가 전부 매수로 집계**됐다(실패 신호 없음). 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
 | `settings_fields[].editorSchema` | structured-list 카드 폼을 config 선언으로 렌더 (`fields[]` = text/number/toggle/select/**ref**/json/rules · `required` = 저장 게이트 · `showWhen` · `summary` · `newItem`). 필드 추가 = config 수정 + pull 로 끝 | 프론트 `StructuredListEditor` (legacy 하드코딩 카드는 스키마 없는 config 의 폴백) |
 
 ---
