@@ -187,6 +187,19 @@ export type ResultPayload = {
   pendingActions?: PendingAction[];
 };
 
+/**
+ * 초안에서 화면에 내보내도 되는 부분.
+ *
+ * 우리 답변은 상당수가 렌더 펜스라, 토큰을 그대로 흘리면 사용자가 JSON 이 타이핑되는 걸 본다.
+ * 펜스가 열린 채면 그 지점부터 감춘다 — 닫히는 순간 다시 드러나고, 어차피 커밋 때 렌더된
+ * 블록으로 통째 대체된다.
+ */
+export function draftDisplay(raw: string): string {
+  const fences = raw.split('```').length - 1;
+  if (fences % 2 === 0) return raw;
+  return raw.slice(0, raw.lastIndexOf('```')).trimEnd();
+}
+
 export type ChatAction =
   // 대화 로드·전환
   | { type: 'LOAD'; messages: Message[] }
@@ -196,6 +209,13 @@ export type ChatAction =
   | { type: 'SEND_SUGGESTION'; systemId: string }
   // SSE 이벤트 (Function Calling 모드. 레거시 'plan' 이벤트는 v0.1, 2026-04-22 삭제됨)
   | { type: 'CHUNK_TEXT'; id: string; content: string }
+  // 답변이 쓰이는 중 — 아직 답변이 아니다. 도구를 부를 라운드의 텍스트는 혼잣말이고, 어느
+  // 쪽이었는지는 라운드가 끝나야 안다. 그래서 초안은 따로 이고 있다가 커밋 때 대체된다.
+  | { type: 'CHUNK_DRAFT'; id: string; content: string }
+  // 그 라운드가 도구 라운드로 판명 — 초안은 혼잣말이었으므로 버린다.
+  | { type: 'DROP_DRAFT'; id: string }
+  // 스트림은 잃었는데 서버는 계속 돌고 있다 — 실패가 아니라 대기.
+  | { type: 'STILL_RUNNING'; id: string; note: string }
   | { type: 'CHUNK_THINKING'; id: string; content: string }
   | { type: 'BUILD_STEP'; id: string; step: string }
   | { type: 'STEP'; id: string; step: StepStatus; isLast: boolean }
@@ -263,7 +283,40 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
 
     case 'CHUNK_TEXT':
       return state.map(m => m.id === action.id
-        ? { ...m, isThinking: false, streaming: true, statusText: undefined, content: (m.content || '') + action.content }
+        // A draft of this round is the SAME text arriving twice — the live tokens, then the
+        // round's text at its end. Committing replaces; appending would print it doubled.
+        ? {
+            ...m,
+            isThinking: false,
+            streaming: true,
+            statusText: undefined,
+            content: m.draftRaw ? action.content : (m.content || '') + action.content,
+            draftRaw: undefined,
+          }
+        : m);
+
+    case 'CHUNK_DRAFT':
+      return state.map(m => {
+        if (m.id !== action.id) return m;
+        const raw = (m.draftRaw || '') + action.content;
+        return {
+          ...m,
+          isThinking: false,
+          streaming: true,
+          statusText: undefined,
+          draftRaw: raw,
+          content: draftDisplay(raw),
+        };
+      });
+
+    case 'DROP_DRAFT':
+      return state.map(m => (m.id === action.id && m.draftRaw)
+        ? { ...m, content: '', draftRaw: undefined, isThinking: true, streaming: false }
+        : m);
+
+    case 'STILL_RUNNING':
+      return state.map(m => m.id === action.id
+        ? { ...m, isThinking: true, streaming: false, statusText: action.note }
         : m);
 
     case 'CHUNK_THINKING': {

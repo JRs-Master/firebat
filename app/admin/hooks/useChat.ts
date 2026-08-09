@@ -377,6 +377,31 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const cancelChunkAnim = () => {
     if (chunkAnimRef.current) { clearInterval(chunkAnimRef.current); chunkAnimRef.current = null; }
   };
+  // Draft tokens buffered between frames — see CHUNK_DRAFT.
+  const draftBufRef = useRef<{ id: string; text: string } | null>(null);
+  const draftFrameRef = useRef<number | null>(null);
+  const flushDraft = useCallback(() => {
+    if (draftFrameRef.current !== null) {
+      cancelAnimationFrame(draftFrameRef.current);
+      draftFrameRef.current = null;
+    }
+    const buf = draftBufRef.current;
+    draftBufRef.current = null;
+    if (buf && buf.text) dispatch({ type: 'CHUNK_DRAFT', id: buf.id, content: buf.text });
+  }, []);
+  const queueDraft = useCallback((id: string, text: string) => {
+    const buf = draftBufRef.current;
+    draftBufRef.current = buf && buf.id === id ? { id, text: buf.text + text } : { id, text };
+    if (draftFrameRef.current === null) {
+      draftFrameRef.current = requestAnimationFrame(() => {
+        draftFrameRef.current = null;
+        const b = draftBufRef.current;
+        draftBufRef.current = null;
+        if (b && b.text) dispatch({ type: 'CHUNK_DRAFT', id: b.id, content: b.text });
+      });
+    }
+  }, []);
+
   // 요청 중단용 AbortController
   const abortRef = useRef<AbortController | null>(null);
   /// 진행 중인 턴 id(=systemId). 중지 버튼이 **서버에 이 턴을 지목해** 끊기 위해 필요하다 —
@@ -928,10 +953,44 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       cancelWatchdog();
       // onFire 핸들러 등록 — SSE 이벤트 올 때마다 resetWatchdog 가 이걸로 재스케줄
       watchdogOnFireRef.current = () => {
+        // Silence is not failure. The answer is the server's — a detached task writes it whether
+        // or not anyone is listening — so before printing TIMEOUT at a turn that is very likely
+        // still working, ask. Three outcomes, and they are genuinely different: still running
+        // (wait and say so), finished (it is in the database, load it), or unreachable (the old
+        // behaviour). A restart mid-turn shows up as finished-but-absent, which the poll below
+        // gives up on instead of grinding for ten minutes.
         ctrl.abort();
         cancelChunkAnim();
-        dispatch({ type: 'TIMEOUT', id: systemId });
-        setLoading(false);
+        flushDraft();
+        void (async () => {
+          const ask = async (): Promise<boolean | null> => {
+            try {
+              const r = await fetch(`/api/chat/status?turnId=${encodeURIComponent(systemId)}`);
+              const j = (await r.json()) as { running?: boolean | null };
+              return j?.running ?? null;
+            } catch { return null; }
+          };
+          let running = await ask();
+          if (running === null) {
+            dispatch({ type: 'TIMEOUT', id: systemId });
+            setLoading(false);
+            return;
+          }
+          dispatch({
+            type: 'STILL_RUNNING',
+            id: systemId,
+            note: running ? '연결이 끊겼지만 서버에서 계속 진행 중입니다…' : '답변을 불러오는 중입니다…',
+          });
+          // 5s × 120 = 10분 — CLI 플랜 실행이 그만큼 걸린 실측이 있다.
+          for (let i = 0; i < 120; i++) {
+            await new Promise(r => setTimeout(r, 5000));
+            await refreshConversations();
+            if (!running) break;
+            running = await ask();
+            if (running !== true) { await refreshConversations(); break; }
+          }
+          setLoading(false);
+        })();
       };
       resetWatchdog();
 
@@ -997,7 +1056,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
         for (const ev of parsed.events) {
           if (ev.event === 'chunk') {
-            const chunkType = ev.data.type as 'text' | 'thinking' | 'build_step';
+            const chunkType = ev.data.type as 'text' | 'thinking' | 'build_step' | 'draft';
             const chunkContent = (ev.data.content as string) ?? '';
             if (!chunkContent) continue;
             if (chunkType === 'build_step') {
@@ -1010,9 +1069,15 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
               continue;
             }
             if (chunkType === 'thinking') dispatch({ type: 'CHUNK_THINKING', id: systemId, content: chunkContent });
+            // Draft tokens arrive far faster than a screen refreshes; queue them and paint once
+            // per frame. The old per-chunk render is why a typing animation had to be removed.
+            else if (chunkType === 'draft') queueDraft(systemId, chunkContent);
             else dispatch({ type: 'CHUNK_TEXT', id: systemId, content: chunkContent });
           } else if (ev.event === 'step') {
             const stepStart = ev.data.status === 'start';
+            // A tool is starting, so whatever text this round produced was the model thinking
+            // aloud, not the answer. Drop it rather than leave it stacked above the real one.
+            if (stepStart) { flushDraft(); dispatch({ type: 'DROP_DRAFT', id: systemId }); }
             dispatch({ type: 'STEP', id: systemId, step: ev.data, isLast: !stepStart });
           } else if (ev.event === 'result') {
             const pendingActions = (ev.data.data?.pendingActions as PendingAction[] | undefined)
