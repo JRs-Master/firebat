@@ -6039,12 +6039,14 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   }, [slideKey, autoplay, autoplayDelay]);
 
   return (
-    // fb-slideshow: slide centering, arrow styling (translucent grey circles, hover-reveal on
-    // desktop, none on mobile — swipe + dots is the phone standard) and dot colours live in
-    // globals.css, because the swiper CDN bundle loads last and wins over utility classes.
-    // max-w + mx-auto: the box used to outgrow the prose column and clip the right arrow
-    // (2026-08-09, the three-logo carousel).
-    <div ref={ref} className="swiper fb-slideshow my-3 w-full max-w-2xl mx-auto rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
+    // One fixed frame: width = the prose column (so the carousel lines up with the text around
+    // it), height = the standard cap (mobile 320 / desktop 480). The image is fitted inside by
+    // ratio. Deliberately NOT sized to its content — slides differ in aspect, and a box that
+    // resized per slide would shove the rest of the message up and down on every swipe.
+    // Slide centering, arrow styling (translucent grey circles, hover-reveal on desktop, none on
+    // mobile — swipe + dots is the phone standard) and the dot scrim live in globals.css, because
+    // the swiper CDN bundle loads last and wins over utility classes.
+    <div ref={ref} className="swiper fb-slideshow my-3 w-full max-w-full rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
       <div className="swiper-wrapper">
         {images.map((img, i) => (
           <div key={i} className="swiper-slide flex items-center justify-center bg-gray-50 relative">
