@@ -286,6 +286,8 @@ pub struct AiManager {
     /// 자동 조회해 LlmCallOpts.mcp_token 주입. CLI 모델 (Claude Code / Codex / Gemini) 이
     /// 자체 MCP loop 에서 Firebat MCP server 인증할 때 사용. 미설정 시 토큰 주입 없음.
     vault: Option<Arc<dyn IVaultPort>>,
+    /// Development turn archive — the full prompt + reasoning of each turn.
+    turn_archive: Option<Arc<dyn crate::ports::ITurnArchivePort>>,
     /// IConfigPort (옵션) — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
     /// FIREBAT_MCP_BASE_URL 등 env 영역 read. 미설정 시 env 조회 안 함 (Vault / hardcoded fallback 동작).
     config_port: Option<Arc<dyn crate::ports::IConfigPort>>,
@@ -345,6 +347,7 @@ impl AiManager {
             prompt_builder: None,
             context_gatherer: None,
             history_resolver: None,
+            turn_archive: None,
             cost: None,
             dispatcher: None,
             conversation: None,
@@ -585,6 +588,15 @@ impl AiManager {
     /// FIREBAT_MCP_BASE_URL 등 env 영역 read. 미설정 시 env 무관 (Vault / hardcoded fallback 만 동작).
     pub fn with_config_port(mut self, config: Arc<dyn crate::ports::IConfigPort>) -> Self {
         self.config_port = Some(config);
+        self
+    }
+
+    /// Turn archive — optional; absent means readback falls back to the journal.
+    pub fn with_turn_archive(
+        mut self,
+        archive: Option<Arc<dyn crate::ports::ITurnArchivePort>>,
+    ) -> Self {
+        self.turn_archive = archive;
         self
     }
 
@@ -5047,6 +5059,31 @@ impl AiManager {
         // contents 형식: user → model(functionCall) → user(functionResponse) → ... → model(text).
         // logger.info("[USER_AI_TRAINING] {...}") 출력 시 log adapter 가 별도 JSONL 파일로 분기.
         self.training_log_contents(prompt, &tool_exchanges, &clean_reply);
+
+        // Turn archive — the whole turn, kept for readback: the exact system prompt (with its
+        // `## ` headers intact, so section presence and size stay measurable in bulk), the
+        // history as real turns, the tool names that were on offer, and every round's reasoning.
+        // Two jobs from one row — guiding the reasoning needs to know what the model SAW, and
+        // improving the prompt needs those same rows compared across turns that went well and
+        // turns that did not. Best-effort: an archive problem must never touch the answer.
+        if let Some(archive) = &self.turn_archive {
+            let rec = crate::ports::TurnArchiveRecord {
+                conversation_id: ai_opts.conversation_id.clone().unwrap_or_default(),
+                message_id: ai_opts.ai_msg_id.clone().unwrap_or_default(),
+                owner: ai_opts.owner.clone().unwrap_or_else(|| "admin".to_string()),
+                model: last_model_id.clone(),
+                thinking_level: effective_opts.thinking_level.clone().unwrap_or_default(),
+                user_prompt: prompt.to_string(),
+                system_prompt: effective_opts.system_prompt.clone().unwrap_or_default(),
+                history: effective_opts.history.clone(),
+                tools: tools.iter().map(|t| t.name.clone()).collect(),
+                rounds: reasoning_trace.clone(),
+                final_reasoning: final_reasoning.clone().unwrap_or_default(),
+                reply: clean_reply.clone(),
+                created_at: crate::utils::time::now_ms(),
+            };
+            archive.save_turn(&rec);
+        }
 
         // 시크릿 / 토큰 redaction — 외부 API 응답 본문 안 api-key / customer-id / Bearer / JWT 등이
         // 도구 결과 / 에러 메시지 / 응답 텍스트 안에 그대로 흘러가 사용자 채팅 화면 노출되는 사고

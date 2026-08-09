@@ -415,6 +415,18 @@ async fn main() -> Result<()> {
                 None
             }
         };
+    // Turn archive — the full prompt + reasoning of each turn, for readback. Development
+    // instrument: its own file, capped, best-effort. Failure here never affects a turn.
+    let turn_archive: Option<Arc<dyn firebat_core::ports::ITurnArchivePort>> =
+        match firebat_infra::adapters::turn_archive::TurnArchiveAdapter::new(
+            &workspace_root.join("data/turn-archive.db"),
+        ) {
+            Ok(a) => Some(Arc::new(a)),
+            Err(e) => {
+                tracing::warn!(error = %e, "turn archive init failed — readback falls back to the journal");
+                None
+            }
+        };
     let sandbox: Arc<dyn ISandboxPort> = Arc::new({
         let mut adapter = ProcessSandboxAdapter::new(workspace_root.clone())
             .with_vault(vault.clone())
@@ -827,6 +839,7 @@ async fn main() -> Result<()> {
             // cli_session_id (get_cli_session / set_cli_session). Without this the resume + persist gates both
             // skip silently → --resume never fires (0/N sessions stored) → multi-turn continuity breaks for CLI.
             .with_conversation_manager(conversation_manager.clone())
+            .with_turn_archive(turn_archive.clone())
             .with_cost_manager(cost_manager.clone())
             .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())

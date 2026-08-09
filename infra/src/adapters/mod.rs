@@ -12,6 +12,7 @@ pub mod token_provider;
 pub mod ws_api;
 pub mod ws_stream;
 pub mod timeseries;
+pub mod turn_archive;
 pub mod tick_agg;
 pub mod library;
 pub mod hub;

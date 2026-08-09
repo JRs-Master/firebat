@@ -964,6 +964,47 @@ pub struct TsSpec {
 
 /// 시계열 영구 store (range-coverage) — 덮인 구간 집합 + rows upsert.
 /// 어댑터: infra/adapters/timeseries.rs (SQLite data/timeseries.db).
+/// One turn, kept whole for readback — the exact input the model saw AND everything it produced.
+///
+/// Two jobs, one record. **Guiding the reasoning** needs the input: when a turn goes wrong the
+/// first question is always "what did it actually see", and until now that had to be inferred
+/// (the journal's reconstruction is trimmed to the context window, capped per line, and rotates
+/// — 2.2 GB of it on this host). **Improving the prompt** needs the same rows in bulk: the stored
+/// system prompt still carries its `## ` headers, so section presence and size are measurable
+/// after the fact, against turns that succeeded and turns that did not.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnArchiveRecord {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub owner: String,
+    pub model: String,
+    /// Thinking / reasoning level actually sent (empty = none).
+    pub thinking_level: String,
+    /// The user message this turn answered.
+    pub user_prompt: String,
+    /// The assembled system prompt, in full — not a summary. Section stats are derived from it.
+    pub system_prompt: String,
+    /// Conversation history exactly as handed to the model: `[{role, content}]` for the formats
+    /// that take real turns, empty when the history rode inside the system prompt instead.
+    pub history: Vec<ChatMessage>,
+    /// Tool names offered this turn (the schemas are large and derivable; the NAMES are what
+    /// answers "was it even offered?").
+    pub tools: Vec<String>,
+    /// Per-round record: reasoning, the tools called, and the round's text.
+    pub rounds: Vec<serde_json::Value>,
+    /// Reasoning behind the final answer, and the answer itself.
+    pub final_reasoning: String,
+    pub reply: String,
+    pub created_at: i64,
+}
+
+/// Development-time turn archive. Optional everywhere — absent means readback falls back to the
+/// journal, exactly as before.
+pub trait ITurnArchivePort: Send + Sync {
+    fn save_turn(&self, record: &TurnArchiveRecord);
+}
+
 pub trait ITimeseriesStorePort: Send + Sync {
     /// [start, end) 중 커버 안 된 구간들 (시간순).
     fn uncovered(&self, key: &str, start: i64, end: i64) -> Vec<(i64, i64)>;
