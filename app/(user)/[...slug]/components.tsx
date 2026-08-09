@@ -36,13 +36,39 @@ interface ComponentRendererProps {
 export function ComponentRenderer({ components, fullHeight }: ComponentRendererProps & { fullHeight?: boolean }) {
   // Html 단독 블록 = standalone 앱(페이지 전체) → HtmlComp 가 auto-height(단일 스크롤). 다른 블록과 섞이면 embedded(고정).
   const htmlStandalone = components.length === 1 && ((TYPE_ALIAS[(components[0]?.type || '').toLowerCase()] ?? components[0]?.type) === 'Html');
+  // Layout is the renderer's job, not the model's. A run of adjacent `metric` blocks is a KPI
+  // row — the prompt asks for them inside a `grid`, but a model that emits them as siblings is
+  // not wrong about the CONTENT, and four full-width cards stacked down the page is the result
+  // (2026-08-09 실측, the typhoon card: 4 metrics, 0 grids). Consecutive metrics flow into a
+  // responsive row here; a lone metric keeps its own full-width card.
+  const groups: Array<{ metrics: true; items: ComponentDef[]; at: number } | { metrics: false; item: ComponentDef; at: number }> = [];
+  components.forEach((comp, i) => {
+    const kind = TYPE_ALIAS[(comp?.type || '').toLowerCase()] ?? comp?.type;
+    const prev = groups[groups.length - 1];
+    if (kind === 'Metric') {
+      if (prev && prev.metrics) { prev.items.push(comp); return; }
+      groups.push({ metrics: true, items: [comp], at: i });
+      return;
+    }
+    groups.push({ metrics: false, item: comp, at: i });
+  });
   return (
     <div className={fullHeight ? 'h-full' : 'flex flex-col gap-6'}>
-      {components.map((comp, i) => (
+      {groups.map(g => (
         // 블록 하나가 throw 해도 페이지 전체가 죽지 않게 격리 — 그 블록만 inline 에러, 나머지 정상 렌더.
-        <BlockErrorBoundary key={i} label={comp?.type}>
-          <ComponentSwitch comp={comp} standalone={htmlStandalone} />
-        </BlockErrorBoundary>
+        g.metrics && g.items.length > 1 ? (
+          <div key={g.at} className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+            {g.items.map((comp, k) => (
+              <BlockErrorBoundary key={k} label={comp?.type}>
+                <ComponentSwitch comp={comp} standalone={false} />
+              </BlockErrorBoundary>
+            ))}
+          </div>
+        ) : (
+          <BlockErrorBoundary key={g.at} label={(g.metrics ? g.items[0] : g.item)?.type}>
+            <ComponentSwitch comp={g.metrics ? g.items[0] : g.item} standalone={htmlStandalone} />
+          </BlockErrorBoundary>
+        )
       ))}
     </div>
   );
