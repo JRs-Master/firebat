@@ -432,7 +432,8 @@
           "description": "opt-in: columns holding LARGE raw numbers (money amounts, trade volumes) to abbreviate — header names or 0-based indices. Adds a compact/exact toggle above the table; cells like 2,450,000,000,000 render as 2,450억 (ko) / 2.45T (en), hover shows the exact value. Put the RAW full number in the cell and let the toggle handle display. NEVER mark years, codes/IDs, percentages, or already-abbreviated values."
         }
       }
-    }
+    },
+    "guide": "Many rows + any orderable column (values with a natural order) → set `sortable`; long or mobile → `filterable` (row search) / `columnToggle`. Numeric cells are auto-colored +/−. Cells are plain text: no markdown markers (`**bold**`, `*italic*`, backticks) and no HTML tags. A markdown `|---|` table written in body text is auto-converted to this component."
   },
   {
     "name": "badge",
@@ -600,7 +601,8 @@
           "description": "default 2"
         }
       }
-    }
+    },
+    "guide": "**Required props only**: `text` (string) + `level` (integer 1-6). Extra props like `title` / `subtitle` are forbidden (schema validation rejects).\nExample: `{type:\"header\", props:{text:\"Analysis result\", level:2}}`\nFor title+subtitle use two header blocks at different levels: `[{type:\"header\", props:{text:\"<title>\", level:1}}, {type:\"header\", props:{text:\"<subtitle>\", level:3}}]`\nOne heading per section — a component that renders its own `title` (compare, card…) must not also get a header block with the same text."
   },
   {
     "name": "text",
@@ -870,7 +872,8 @@
           }
         }
       }
-    }
+    },
+    "guide": "**Required props**: `columns` + `children` (each item `{type, props}`). Missing children triggers validation rejection — that enforces the pattern of placing N components (e.g. metric) inside.\nExample: `{type:\"grid\", props:{columns:3, children:[{type:\"metric\", props:{label:\"<label>\", value:0, unit:\"<unit>\"}}, {type:\"metric\", props:{label:\"<label>\", value:0}}]}}`"
   },
   {
     "name": "metric",
@@ -955,7 +958,8 @@
           }
         }
       }
-    }
+    },
+    "guide": "Prefer for **a single number**. Do not cram two or more equal data points into one metric: `value` is one main number and `subLabel` is only a short auxiliary description. For 2+ equal items, expand grid slots and place metrics in parallel, or use `table` / `key_value`. Never render an invented number — a guessed score, mastery %, or progress value is a fabrication; if you have no real figure, omit the metric."
   },
   {
     "name": "timeline",
@@ -1097,7 +1101,8 @@
           }
         }
       }
-    }
+    },
+    "guide": "Shape: `{left:{label, items:[{key,value}]}, right:{label, items:[{key,value}]}, title?}` — left/right are separate objects. The flat form `{leftLabel,rightLabel,rows}` is rejected."
   },
   {
     "name": "quiz",
@@ -2100,7 +2105,8 @@
           "description": "answers / full / interactive (default interactive)"
         }
       }
-    }
+    },
+    "guide": "The `listening` component plays an `audioUrl` (adding speed / A-B repeat / dictation / tap-a-line-to-replay on top). To create that audio call the `tts` tool with the script — for dialogues pass `speakers: [{ name, accent, gender }]` (infer each speaker's gender from the dialogue so the voice matches) and write the script as `Name: line` per turn. It returns `{ url }` → put it in the listening component's `audioUrl`. (If no TTS API key is set the tool returns `{ browser: true }` instead — then set the listening component's `browserTts: true` and the browser reads the script aloud, no file.) You choose only the script + per-speaker accents; concrete voices come from settings (auto-varied per exercise so learners hear different speakers). For general/non-test audio, a single natural American-accent voice is the default. **Unless the user or a skill says otherwise, default to at most 2 distinct voices so the whole script synthesizes in ONE call (faster, cheaper, avoids rate limits). The `speakers` array must contain ONLY the actual dialogue voices — NEVER add a `Directions` / `Narrator` / `Announcer` speaker to it. The directions/narration line is read by one of those dialogue voices — prefix it with whichever declared speaker should read it (keep it consistent across an exam so the \"announcer\" voice is stable). EVERY line you pass to `tts` (the directions line included) MUST begin with a valid declared-speaker prefix (`Name: ...`) — the system does NOT auto-assign a voice, so any unlabeled or wrongly-labeled line is not voiced correctly. `guide:true` is only a render flag (it excludes the line from dictation/karaoke); it does NOT create a voice. Adding a narrator to `speakers` makes a 3rd distinct voice → slow multi-call synthesis and rate-limit (429) errors. Use 3+ voices only when the content genuinely needs them (e.g. a real 3-person discussion) or the user/skill explicitly asks.** For a specific exam/listening test you can use multiple speakers and set each speaker's accent to match that exam's real accent distribution (some tests are single-accent, others deliberately mix several in known proportions) — match the actual test rather than defaulting everything to one accent. Write each accent **descriptively** for a better result (e.g. \"British English accent as heard in London\" rather than just \"British accent\"; \"General American accent\"). The audio is cached and lives with the conversation. The component's `script` must hold the **full spoken content** and be **identical, line-for-line, to the text you pass to `tts`** — every speaker turn and any answer-option label (e.g. the labels that prefix each spoken choice) present in one must be present in the other, so the audio matches the on-screen transcript exactly; never leave it empty: for photo-description the spoken statements go in `script` AND as the question's choices; for talks/dialogues the whole passage goes in `script`. Exam-style listening should **open with that section's standard spoken direction** (the instruction read aloud before the content) as a `script` item with `guide:true` — it IS part of the real test audio. To add a silent gap in the audio (e.g. marking time between timed items, or a repeat-after-me pause), put `[pause: N]` on its own line in the `tts` script — N seconds of silence (the exact gap length per exam belongs in that exam's skill, not here). Put the direction line in BOTH the `script` (guide:true) AND the text you pass to `tts` so it is spoken; guide lines render as instructions but are auto-excluded from dictation grading and the karaoke current-position highlight (directions aren't dictated). Put the comprehension question(s) **inside the listening component's own `questions` array** — one self-contained block (the player, dictation, transcript and questions belong together), not a separate quiz/accordion block. Even when the question itself is spoken (the learner HEARS the question and the page shows only the choices), still give each quiz item a `question` prompt that states the task so the learner knows what to do — never leave the question empty. For picture-based listening (describing a photo), also set the listening component's `image` to a photo URL — generated with `image_gen` (same as any other image you produce) — call it and use the URL it returns; if image generation is not configured the call errors, and then you say the photo could not be produced rather than shipping the card as if it had one. Default to **study mode** (speed/repeat/dictation/script for self-study) for ordinary practice — including exam-style practice questions made in chat. Use `mode:\"exam\"` **only** when the user explicitly asks for real test conditions (e.g. \"한 번만 듣기\", \"모의고사/실전 모드\") or a published test page — in exam mode the audio is heard once with no repeat/speed and the script stays hidden until answers are checked. Do not put a plain \"make a problem\" request into exam mode."
   },
   {
     "name": "key_value",
@@ -2979,7 +2985,8 @@
           "description": "auto (default — Korea→Kakao / outside Korea→Leaflet) / leaflet (outside Korea only, or forced) / kakao (force Korea)"
         }
       }
-    }
+    },
+    "guide": "**Coordinates come from a tool, never from memory.** Fill markers[].lat AND lon strictly from sysmod results — call the appropriate geocoding sysmod and use the returned coordinates verbatim. Never invent coordinates from training memory, never fill only lat while leaving lon empty, never use alternate names like lng. Any marker missing lat or lon fails schema validation → that map block is dropped (the rest still render)."
   },
   {
     "name": "form",

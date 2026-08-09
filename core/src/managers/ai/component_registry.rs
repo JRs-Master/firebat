@@ -30,6 +30,13 @@ pub struct ComponentDef {
     /// JSON Schema — AI 가 props 조립에 사용. serde_json::Value 그대로 보존.
     #[serde(rename = "propsSchema")]
     pub props_schema: serde_json::Value,
+    /// Long-form authoring manual for THIS component — returned by `get_component_schema` only,
+    /// never by `search_components` (a search row must stay a trigger). This is where a
+    /// component's operating rules live instead of the always-resident system prompt: the
+    /// listening card's TTS contract alone was 4,964 characters riding on every turn, for a
+    /// component most turns never emit (2026-08-09 측정). Optional — most components need none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guide: Option<String>,
 }
 
 /// component 정의 전체 (components.json — 개수의 진실은 loads_all_components 테스트)
@@ -446,6 +453,30 @@ mod tests {
             assert!(!c.description.is_empty(), "{} description 비어있음", c.name);
             assert!(!c.semantic_text.is_empty(), "{} semantic_text 비어있음", c.name);
             assert!(c.props_schema.is_object(), "{} props_schema 가 object 가 아님", c.name);
+        }
+    }
+
+    /// The prompt diet moved per-component manuals here (2026-08-09). The listening card's TTS
+    /// contract is the big one — if it ever goes missing the model loses the rules that used to
+    /// ride the system prompt, silently.
+    #[test]
+    fn component_guides_carry_the_moved_manuals() {
+        let listening = find_component("listening").expect("listening");
+        let guide = listening.guide.as_deref().expect("listening guide moved out of the prompt");
+        assert!(guide.len() > 3000, "listening guide truncated: {} chars", guide.len());
+        for needle in ["speakers", "[pause:", "guide:true", "mode:\"exam\""] {
+            assert!(guide.contains(needle), "listening guide lost `{needle}`");
+        }
+        let map = find_component("map").expect("map");
+        assert!(
+            map.guide.as_deref().unwrap_or_default().contains("Never invent coordinates"),
+            "map guide lost the coordinate rule"
+        );
+        // A guide is on-demand material: it must never be empty when present.
+        for c in components() {
+            if let Some(g) = &c.guide {
+                assert!(!g.trim().is_empty(), "{} has an empty guide", c.name);
+            }
         }
     }
 
