@@ -616,28 +616,41 @@ function ThinkingBlock({
   // 상태줄(label: 도구 호출 중)로만. CLI 스트림은 reducer 가 이미 라우팅하지만, API batch·reload 로
   // 들어온 thinkingText 안 마커도 여기서 정리 (실제 추론 텍스트만 본문에 남김).
   const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
-  // 도구 호출/계획 마커 줄 제외 후 한 줄로 합침(개행=공백). 스트림 누적 시 최신(끝) 내용이 흐르듯
-  // 계속 갱신되되 화면 높이는 한 줄 고정 — 끝을 보여주려고 rtl 방향 truncate(앞에 …) + <bdi dir=ltr>
-  // 로 실제 글자 순서 보존. (옛 줄바꿈 누적 = 화면 높이 왔다갔다 → 단일 라인 ticker.)
-  const bodyLine = rawBody
+  // 마커 줄만 걷어내고 **줄은 줄로 남긴다**.
+  //
+  // 예전엔 개행을 공백으로 이어 붙여 한 줄 ticker 로 흘렸다 — 높이가 들썩이는 걸 막으려던
+  // 것인데(rtl + truncate 로 끝을 보여줌), 글자가 오른쪽에서 왼쪽으로 지나가 **읽을 수가
+  // 없었다**(2026-08-10 사용자). 높이 문제는 줄을 없애서가 아니라 **상자를 고정**해서 푼다:
+  // 컨텐츠 폭으로 접히고, 새 줄은 아래에 붙고, 넘치면 위로 스크롤된다.
+  const bodyLines = rawBody
     ? rawBody
         .split('\n')
         .map((l) => stripInlineMd(l.trim()))
         .filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
-        .join('  ')
-    : '';
+    : [];
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // 늘 바닥을 보여준다 = 최신 줄이 아래에 있고 지난 줄이 위로 밀린다.
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [bodyLines.length, rawBody]);
   return (
-    <div className="flex items-center gap-2 text-slate-400 min-w-0">
-      {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
-      {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
-      {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
-      {bodyLine && (
-        <span
-          className="text-[12px] text-slate-400 flex-1 min-w-0 truncate text-left"
-          style={{ direction: 'rtl' }}
+    <div className="flex flex-col gap-1 text-slate-400 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
+        {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
+        {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
+      </div>
+      {bodyLines.length > 0 && (
+        <div
+          ref={bodyRef}
+          className="text-[12px] text-slate-400 leading-relaxed max-h-[7.5em] overflow-y-auto pl-[21px] pr-1"
+          style={{ wordBreak: 'break-all' }}
         >
-          <bdi style={{ direction: 'ltr' }}>{bodyLine}</bdi>
-        </span>
+          {bodyLines.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </div>
       )}
     </div>
   );
