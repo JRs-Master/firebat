@@ -297,6 +297,9 @@ def _wrap_lines(text, width_in, chars_per_in=PPTX_CHARS_PER_IN):
 
 def make_pptx_file(blocks, title, master_path, out_path):
     from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.enum.text import PP_ALIGN
     from pptx.util import Inches, Pt
 
     prs = Presentation(master_path) if master_path else Presentation()
@@ -305,26 +308,55 @@ def make_pptx_file(blocks, title, master_path, out_path):
     sw_in = sw / 914400
     sh_in = sh / 914400
 
+    # Default design ONLY when there is no master — a master carries the corporate look and we
+    # must not paint over it. Firebat palette: blue-600 accent on slate type, banded tables,
+    # a quiet page number (2026-08-10 사용자: 서식 없이 쓰는 경우의 기본 디자인).
+    styled = master_path is None
+    BLUE = RGBColor(0x25, 0x63, 0xEB)      # blue-600
+    SLATE_D = RGBColor(0x1E, 0x29, 0x3B)   # slate-800 — headings
+    SLATE_B = RGBColor(0x33, 0x41, 0x55)   # slate-700 — body
+    SLATE_L = RGBColor(0xF1, 0xF5, 0xF9)   # slate-100 — banded rows
+    SLATE_M = RGBColor(0x94, 0xA3, 0xB8)   # slate-400 — footer
+    WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+    def accent_bar(slide, x_in, y_in, w_in, h_in=0.05):
+        bar = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(x_in), Inches(y_in), Inches(w_in), Inches(h_in))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = BLUE
+        bar.line.fill.background()
+        bar.shadow.inherit = False
+        return bar
+
     if title:
         layout = prs.slide_layouts[0]
         slide = prs.slides.add_slide(layout)
-        placed = False
+        placed = None
         for ph in slide.placeholders:
             if ph.placeholder_format.idx == 0:
                 ph.text = str(title)
-                placed = True
+                placed = ph
                 break
         # Unfilled placeholders render as dashed "click to add" boxes (the subtitle ghost on
         # the first live deck) — remove every placeholder we did not fill.
         for ph in list(slide.placeholders):
-            if placed and ph.placeholder_format.idx == 0:
+            if placed is not None and ph.placeholder_format.idx == 0:
                 continue
             el = ph._element
             el.getparent().remove(el)
-        if not placed:
+        if placed is not None:
+            if styled:
+                for para in placed.text_frame.paragraphs:
+                    para.font.color.rgb = SLATE_D
+                accent_bar(slide, placed.left / 914400,
+                           (placed.top + placed.height) / 914400 + 0.15, 2.2)
+        else:
             tb = slide.shapes.add_textbox(Inches(0.8), Inches(2.5), sw - Inches(1.6), Inches(1.5))
             tb.text_frame.text = str(title)
             tb.text_frame.paragraphs[0].font.size = Pt(40)
+            if styled:
+                tb.text_frame.paragraphs[0].font.color.rgb = SLATE_D
+                accent_bar(slide, 0.8, 4.1, 2.2)
 
     state = {"count": 1 if title else 0, "slide": None, "y": 0.0}
 
@@ -332,6 +364,14 @@ def make_pptx_file(blocks, title, master_path, out_path):
         state["slide"] = prs.slides.add_slide(blank)
         state["count"] += 1
         state["y"] = 0.4
+        if styled:
+            ft = state["slide"].shapes.add_textbox(
+                Inches(sw_in - 1.05), Inches(sh_in - 0.38), Inches(0.75), Inches(0.28))
+            para = ft.text_frame.paragraphs[0]
+            para.text = str(state["count"])
+            para.font.size = Pt(10)
+            para.font.color.rgb = SLATE_M
+            para.alignment = PP_ALIGN.RIGHT
 
     def ensure_room(height_in):
         # Content that will not fit CONTINUES on a fresh slide — the old behavior silently
@@ -339,20 +379,52 @@ def make_pptx_file(blocks, title, master_path, out_path):
         if state["slide"] is None or state["y"] + height_in > sh_in - 0.4:
             new_slide()
 
+    def set_cell(cell, text, bold, fill=None, color=None):
+        cell.text = text
+        if fill is not None:
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = fill
+        for para in cell.text_frame.paragraphs:
+            para.font.size = Pt(PPTX_TABLE_PT)
+            para.font.bold = bold
+            if color is not None:
+                para.font.color.rgb = color
+
+    def place_table(headers, seg_rows, height_in, col_count):
+        ensure_room(height_in + 0.2)
+        slide, y = state["slide"], state["y"]
+        shape = slide.shapes.add_table(
+            len(seg_rows) + 1, col_count, Inches(PPTX_MARGIN_IN), Inches(y),
+            sw - Inches(PPTX_MARGIN_IN * 2), Inches(height_in))
+        table = shape.table
+        for c, h in enumerate(headers):
+            set_cell(table.cell(0, c), str(h), True,
+                     fill=BLUE if styled else None, color=WHITE if styled else None)
+        for r, row in enumerate(seg_rows):
+            band = SLATE_L if (styled and r % 2 == 1) else (WHITE if styled else None)
+            for c in range(col_count):
+                val = row[c] if c < len(row) else ""
+                set_cell(table.cell(r + 1, c), "" if val is None else str(val), False,
+                         fill=band, color=SLATE_B if styled else None)
+        state["y"] = y + height_in + 0.25
+
     for chunk in _split_slides(blocks):
         state["slide"] = None  # each chunk starts its own slide
         for b in chunk:
             t, p = str(b.get("type") or ""), b.get("props") or {}
             if t == "header":
-                ensure_room(0.9)
+                ensure_room(0.95)
                 slide, y = state["slide"], state["y"]
                 tb = slide.shapes.add_textbox(Inches(PPTX_MARGIN_IN), Inches(y),
-                                              sw - Inches(PPTX_MARGIN_IN * 2), Inches(0.8))
+                                              sw - Inches(PPTX_MARGIN_IN * 2), Inches(0.7))
                 tf = tb.text_frame
                 tf.text = str(p.get("text") or "")
                 tf.paragraphs[0].font.size = Pt(28 if int(p.get("level") or 2) == 1 else 20)
                 tf.paragraphs[0].font.bold = True
-                state["y"] = y + 0.9
+                if styled:
+                    tf.paragraphs[0].font.color.rgb = SLATE_D
+                    accent_bar(slide, PPTX_MARGIN_IN, y + 0.66, 1.4, 0.045)
+                state["y"] = y + 0.95
             elif t == "table":
                 headers = [str(h) for h in (p.get("headers") or [])]
                 rows = p.get("rows") or []
@@ -361,33 +433,33 @@ def make_pptx_file(blocks, title, master_path, out_path):
                     rows = rows[1:]
                 if not headers:
                     continue
-                n_rows, n_cols = len(rows) + 1, len(headers)
+                n_cols = len(headers)
                 col_w_in = (sw_in - PPTX_MARGIN_IN * 2) / n_cols
                 # Wrap-aware height: each row is as tall as its most-wrapped cell.
                 def row_h(cells):
                     lines = max(_wrap_lines("" if c is None else c, col_w_in) for c in cells)
                     return 0.14 + 0.21 * lines
-                height_in = row_h(headers) + sum(
-                    row_h([row[c] if c < len(row) else "" for c in range(n_cols)])
-                    for row in rows)
-                ensure_room(height_in + 0.2)
-                slide, y = state["slide"], state["y"]
-                shape = slide.shapes.add_table(
-                    n_rows, n_cols, Inches(PPTX_MARGIN_IN), Inches(y),
-                    sw - Inches(PPTX_MARGIN_IN * 2), Inches(height_in))
-                table = shape.table
-                def set_cell(cell, text, bold):
-                    cell.text = text
-                    for para in cell.text_frame.paragraphs:
-                        para.font.size = Pt(PPTX_TABLE_PT)
-                        para.font.bold = bold
-                for c, h in enumerate(headers):
-                    set_cell(table.cell(0, c), str(h), True)
-                for r, row in enumerate(rows):
-                    for c in range(n_cols):
-                        val = row[c] if c < len(row) else ""
-                        set_cell(table.cell(r + 1, c), "" if val is None else str(val), False)
-                state["y"] = y + height_in + 0.25
+                header_h = row_h(headers)
+                row_hs = [row_h([row[c] if c < len(row) else "" for c in range(n_cols)])
+                          for row in rows]
+                # A table taller than a slide SPLITS across slides with the header repeated —
+                # one connected table, not a truncated one (2026-08-10 사용자 질문이 이 계약).
+                usable = sh_in - 0.9
+                segments = []
+                if header_h + sum(row_hs) + 0.2 > usable:
+                    seg, seg_h = [], header_h
+                    for row, rh in zip(rows, row_hs):
+                        if seg and seg_h + rh + 0.2 > usable:
+                            segments.append((seg, seg_h))
+                            seg, seg_h = [], header_h
+                        seg.append(row)
+                        seg_h += rh
+                    if seg:
+                        segments.append((seg, seg_h))
+                else:
+                    segments = [(rows, header_h + sum(row_hs))]
+                for seg_rows, seg_h in segments:
+                    place_table(headers, seg_rows, seg_h, n_cols)
             elif t == "image":
                 src = str(p.get("src") or "")
                 img_path, _ = resolve_path(src)
@@ -417,6 +489,8 @@ def make_pptx_file(blocks, title, master_path, out_path):
                     para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                     para.text = line
                     para.font.size = Pt(PPTX_BODY_PT)
+                    if styled:
+                        para.font.color.rgb = SLATE_B
                 state["y"] = y + height_in + 0.15
         if state["slide"] is None:
             new_slide()  # an empty chunk (e.g. lone divider) still turns the page
@@ -747,8 +821,18 @@ def action_selftest():
         # The first live deck's two defects, pinned: the empty subtitle placeholder ghost on
         # the title slide, and overflow silently dropping content instead of turning the page.
         from pptx import Presentation as _P
-        ck("pptx: title slide keeps only the filled title (no placeholder ghost)",
-           len(_P(p).slides[0].shapes) == 1)
+        ck("pptx: title slide = title + accent bar only (no placeholder ghost)",
+           len(_P(p).slides[0].shapes) == 2)
+        # A table taller than a slide splits across slides, header repeated, no row lost.
+        p_tbl = f"{OUT_DIR}/selftest-tblsplit.pptx"
+        tmp.append(p_tbl)
+        big = [{"type": "table", "props": {"headers": ["번호", "값"],
+                                           "rows": [[i, f"행{i}"] for i in range(60)]}}]
+        n_tbl = make_pptx_file(big, None, None, p_tbl)
+        got_tbl = read_pptx(p_tbl)
+        total_rows = sum(len(t["rows"]) for t in got_tbl["tables"])
+        ck("pptx: a huge table splits across slides", n_tbl >= 2)
+        ck("pptx: every row survives the split", total_rows == 60)
         p_spill = f"{OUT_DIR}/selftest-spill.pptx"
         tmp.append(p_spill)
         many = ([{"type": "header", "props": {"text": "긴 장", "level": 1}}]
