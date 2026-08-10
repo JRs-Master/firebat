@@ -138,10 +138,7 @@ function MdMediaLink({ href, children, ...props }: any) {
           <FileText size={15} />
           <span className="text-[8px] font-black tracking-wide leading-none mt-0.5">{ext.toUpperCase()}</span>
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold text-slate-800 truncate">{name}.{ext}</span>
-          <span className="block text-[11px] text-slate-400">클릭해서 다운로드</span>
-        </span>
+        <span className="min-w-0 flex-1 text-[13px] font-semibold text-slate-800 truncate">{name}.{ext}</span>
         <Download size={16} className="shrink-0 text-slate-300 group-hover:text-blue-500 transition-colors" />
       </a>
     );
