@@ -520,9 +520,11 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             sw - Inches(PPTX_MARGIN_IN * 2), Inches(height_in))
         table = shape.table
         for c, h in enumerate(headers):
+            # Header row centers regardless of column alignment — the convention is
+            # centered headers over right-aligned numbers (2026-08-11 사용자).
             set_cell(table.cell(0, c), str(h), True,
                      fill=BLUE if styled else None, color=WHITE if styled else None,
-                     align=aligns[c] if aligns else None)
+                     align=PP_ALIGN.CENTER)
         for r, row in enumerate(seg_rows):
             band = SLATE_L if (styled and r % 2 == 1) else (WHITE if styled else None)
             for c in range(col_count):
