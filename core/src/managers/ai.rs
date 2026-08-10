@@ -3264,14 +3264,34 @@ impl AiManager {
                     }
                 }
             }
+            // A no-tool round is only the ANSWER if the loop actually ENDS there. The two
+            // corrective nudges below re-enter the loop after a no-tool round, and emitting that
+            // round's text on the answer channel painted the model's mid-turn muttering into the
+            // reply bubble while thinking went on (2026-08-10 스크린샷 실측 — "필수 입력…" 진단
+            // 산문이 답변 칸에 새어 나옴). Same predicates as the nudge sites below, hoisted so
+            // the emit and the nudges read one truth.
+            let no_tools_round = response.tool_calls.is_empty();
+            let will_nudge_no_action = no_tools_round
+                && !force_final
+                && !no_action_nudge_used
+                && !turn_grounded_success
+                && !turn_ledger.is_empty();
+            let will_nudge_empty_final = no_tools_round
+                && !force_final
+                && !empty_final_nudge_used
+                && last_text.trim().is_empty()
+                && blocks.is_empty()
+                && !turn_ledger.is_empty();
+            let round_ends_turn =
+                no_tools_round && !will_nudge_no_action && !will_nudge_empty_final;
             if !last_text.trim().is_empty() {
                 // Text in a round that goes on to call tools is the model thinking aloud
                 // ("긁어보자", "DNS 가 안 잡히네") — the user called it thinking content and
                 // was right. The server-side block fix alone left the LIVE bubble dirty:
                 // every round's text streamed on the answer channel and accumulated above
                 // the real answer (2026-08-06, Solar 4). Route mid-round text to the
-                // thinking channel; only a round that ends the turn speaks in the answer.
-                let channel = if response.tool_calls.is_empty() { "text" } else { "thinking" };
+                // thinking channel; only a round that truly ends the turn speaks in the answer.
+                let channel = if round_ends_turn { "text" } else { "thinking" };
                 // Same rule as the thinking re-emit above: an adapter that already streamed
                 // this round's text live (the draft channel) must not have it re-said here —
                 // the client commits the draft into the thinking area on round end, so this
@@ -3385,11 +3405,9 @@ impl AiManager {
                 // No-silent-exit: discovery happened, nothing executed, model wants to stop.
                 // Give it ONE corrective round (see nudge_prompt above). Second attempt with
                 // the same shape is accepted — but banner-stamped below.
-                if !force_final
-                    && !no_action_nudge_used
-                    && !turn_grounded_success
-                    && !turn_ledger.is_empty()
-                {
+                // Predicate hoisted above the emit (will_nudge_no_action) — the emit must know
+                // this round does NOT end the turn, or its text leaks onto the answer channel.
+                if will_nudge_no_action {
                     no_action_nudge_used = true;
                     nudge_this_round = true;
                     self.log.warn(
@@ -3404,12 +3422,7 @@ impl AiManager {
                 // narration got promoted into the answer slot, so the reader saw the model's
                 // muttering where the analysis should be. Silence after real work is a failure
                 // to answer, not an answer: one corrective round that asks for the write-up.
-                if !force_final
-                    && !empty_final_nudge_used
-                    && last_text.trim().is_empty()
-                    && blocks.is_empty()
-                    && !turn_ledger.is_empty()
-                {
+                if will_nudge_empty_final {
                     empty_final_nudge_used = true;
                     empty_final_nudge_this_round = true;
                     self.log.warn(
