@@ -313,6 +313,8 @@ _NUMERIC_RE = re.compile(r"^[+\-]?\d{1,3}(,\d{3})*(\.\d+)?$|^[+\-]?\d+(\.\d+)?$"
 # Looser shape for ALIGNMENT decisions only: a number plus a short unit tail still reads
 # as a number to the eye, and number columns right-align.
 _NUMLIKE_RE = re.compile(r"^[+\-±]?[\d,]+(\.\d+)?\s*\S{0,3}$")
+# Titles that read as points on a schedule — they pull item groups onto a timeline.
+_STEPISH_RE = re.compile(r"(\d{4}|\d+\s*년|\d+\s*월|[1-4]\s*Q|분기|단계|Phase|Step)", re.I)
 
 
 def parse_number(v):
@@ -356,6 +358,25 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
     SLATE_L = (_hex_rgb(theme.get("band")) or RGBColor(0xF1, 0xF5, 0xF9))
     SLATE_M = RGBColor(0x94, 0xA3, 0xB8)   # footer — always quiet
     WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+    # One typeface across the deck (styled path only — a master's fonts rule there).
+    # Korean needs BOTH the latin and eastAsian slots set, or ascii runs fall back to
+    # a different face mid-sentence. theme.font swaps the whole deck (e.g. Pretendard).
+    FONT_EA = str(theme.get("font") or "맑은 고딕")
+
+    def apply_font(para):
+        if not styled:
+            return
+        para.font.name = FONT_EA
+        rpr = para.font._rPr
+        if rpr is not None:
+            latin = rpr.find(qn("a:latin"))
+            ea = rpr.find(qn("a:ea"))
+            if ea is None and latin is not None:
+                ea = rpr.makeelement(qn("a:ea"), {})
+                latin.addnext(ea)
+            if ea is not None:
+                ea.set("typeface", FONT_EA)
 
     # Slide transition — python-pptx has no API for it, but <p:transition> is one well-formed
     # element per slide (unlike object-animation timing XML, which stays out of scope). Injected
@@ -415,6 +436,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                 para.font.color.rgb = color
             if align is not None:
                 para.alignment = align
+            apply_font(para)
         return tb
 
     if title:
@@ -492,6 +514,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             para.font.size = Pt(10)
             para.font.color.rgb = SLATE_M
             para.alignment = PP_ALIGN.RIGHT
+            apply_font(para)
 
     def ensure_room(height_in):
         # Content that will not fit CONTINUES on a fresh slide — the old behavior silently
@@ -511,6 +534,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                 para.font.color.rgb = color
             if align is not None:
                 para.alignment = align
+            apply_font(para)
 
     def place_table(headers, seg_rows, height_in, col_count, aligns=None):
         ensure_room(height_in + 0.2)
@@ -659,7 +683,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                     i += 1
                 groups.append(("metrics", ms))
             elif t == "list":
-                groups.append(("text", [f"• {it}" for it in (p.get("items") or [])]))
+                groups.append(("list", [str(it) for it in (p.get("items") or [])]))
                 i += 1
             elif t == "text":
                 groups.append(("text", [str(p.get("content") or "")]))
@@ -688,6 +712,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         rp.font.bold = True
         rp.font.color.rgb = BLUE
         rp.alignment = PP_ALIGN.CENTER
+        apply_font(rp)
         runs = [(g["title"], 13.5, True, SLATE_D)]
         runs += [(l, 11, False, SLATE_B) for l in g["body"]]
         add_text(slide, ITEM_X, y, text_w, h, runs)
@@ -715,6 +740,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             pp.font.bold = True
             pp.font.color.rgb = WHITE
             pp.alignment = PP_ALIGN.CENTER
+            apply_font(pp)
             add_text(slide, x, y + 0.59, col_w, body_h,
                      [(l, 10.5, False, SLATE_B) for l in g["body"]], align=PP_ALIGN.CENTER)
         state["y"] = y + 0.59 + body_h + 0.15
@@ -763,6 +789,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             bp.font.bold = True
             bp.font.color.rgb = WHITE
             bp.alignment = PP_ALIGN.CENTER
+            apply_font(bp)
             align = PP_ALIGN.RIGHT if i in (1, 3) else PP_ALIGN.LEFT
             runs = [(g["title"], 15, True, colors[i])]
             runs += [(l, 10.5, False, SLATE_B) for l in g["body"]]
@@ -801,6 +828,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                     para.font.bold = bold
                     para.font.color.rgb = color
                     para.alignment = al
+                    apply_font(para)
             state["y"] = y + 1.3
 
     def text_par(lines):
@@ -819,6 +847,56 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         add_text(slide, sw_in * 0.3, y + 0.1, sw_in * 0.7 - PPTX_MARGIN_IN, 0.55,
                  [(text, 15.5, True, BLUE)], align=PP_ALIGN.RIGHT)
         state["y"] = y + 0.75
+
+    def chevron_strip(steps):
+        # A short list whose items are labels, not sentences, reads as a process —
+        # drawn as an arrow flow, light to accent, left to right.
+        n = len(steps)
+        gap = 0.12
+        w = (sw_in - PPTX_MARGIN_IN * 2 - gap * (n - 1)) / n
+        h = 0.72
+        ensure_room(h + 0.25)
+        slide, y = state["slide"], state["y"]
+        for i, txt in enumerate(steps):
+            f = 0.5 * (n - 1 - i) / max(n - 1, 1)
+            shp = add_box(slide, MSO_SHAPE.CHEVRON, PPTX_MARGIN_IN + i * (w + gap), y,
+                          w, h, fill=_mix(BLUE, 255, f))
+            cp = shp.text_frame.paragraphs[0]
+            cp.text = txt
+            cp.font.size = Pt(11.5)
+            cp.font.bold = True
+            cp.font.color.rgb = WHITE
+            cp.alignment = PP_ALIGN.CENTER
+            apply_font(cp)
+        state["y"] = y + h + 0.25
+
+    def timeline(items):
+        # Milestone titles ride a horizontal axis, texts zigzag above and below —
+        # the genre's curve-with-dots slide in straight-line form.
+        ensure_room(3.4)
+        slide, y = state["slide"], state["y"]
+        cy = y + (sh_in - BODY_BOTTOM - y) / 2
+        x0 = PPTX_MARGIN_IN + 0.4
+        x1 = sw_in - PPTX_MARGIN_IN - 0.4
+        add_box(slide, MSO_SHAPE.RECTANGLE, x0 - 0.2, cy - 0.02, x1 - x0 + 0.4, 0.04,
+                fill=_mix(BLUE, 255, 0.75))
+        n = len(items)
+        step = (x1 - x0) / max(n - 1, 1)
+        for i, g in enumerate(items):
+            cx_i = x0 + step * i
+            add_box(slide, MSO_SHAPE.OVAL, cx_i - 0.17, cy - 0.17, 0.34, 0.34,
+                    fill=WHITE, line=BLUE, line_w=2.0)
+            add_box(slide, MSO_SHAPE.OVAL, cx_i - 0.07, cy - 0.07, 0.14, 0.14, fill=BLUE)
+            col_w = min(step * 1.9, 2.7) if n > 1 else 3.0
+            tx = min(max(cx_i - col_w / 2, PPTX_MARGIN_IN), sw_in - PPTX_MARGIN_IN - col_w)
+            above = i % 2 == 0
+            box_h = (cy - y - 0.45) if above else (sh_in - BODY_BOTTOM - cy - 0.45)
+            ty = y + 0.1 if above else cy + 0.35
+            runs = [(g["title"], 12.5, True, BLUE)]
+            runs += [(l, 10, False, SLATE_B) for l in g["body"]]
+            add_text(slide, tx, ty, col_w, max(box_h, 0.5), runs, align=PP_ALIGN.CENTER,
+                     anchor=MSO_ANCHOR.BOTTOM if above else MSO_ANCHOR.TOP)
+        state["y"] = sh_in  # the axis owns the body — next content turns the page
 
     sec_counter = {"n": 0}
 
@@ -848,7 +926,13 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         items = [g for k, g in groups if k == "item"]
         only_items = bool(groups) and all(k == "item" for k, _ in groups)
         short = all(sum(len(l) for l in g["body"]) <= 220 for g in items)
-        if only_items and len(items) == 4 and short:
+        # Timeline outranks the donut: four year-titled groups are a schedule, not a SWOT.
+        timeline_fit = (only_items and 3 <= len(items) <= 6 and short
+                        and sum(1 for g in items if _STEPISH_RE.search(g["title"]))
+                        >= max(2, len(items) - 1))
+        if timeline_fit:
+            timeline(items)
+        elif only_items and len(items) == 4 and short:
             quad(items)
         elif only_items and 2 <= len(items) <= 3 and short:
             pill_columns(items)
@@ -864,6 +948,11 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                     render_table(val)
                 elif kind == "image":
                     render_image(val)
+                elif kind == "list":
+                    if 3 <= len(val) <= 6 and all(len(v) <= 22 for v in val):
+                        chevron_strip(val)
+                    else:
+                        text_par([f"• {v}" for v in val])
                 else:
                     text_par(val)
         if stmt:
@@ -1233,6 +1322,22 @@ def action_selftest():
         ck("pptx: four short groups become the quadrant donut (all texts land)",
            all(t_ in got_quad["text"]
                for t_ in ("Strength", "Weakness", "Opportunity", "Threat")))
+        p_tl = f"{OUT_DIR}/selftest-timeline.pptx"
+        tmp.append(p_tl)
+        tl = [{"type": "header", "props": {"text": "추진 일정", "level": 1}}]
+        for yr in ("2024", "2025", "2026", "2027"):
+            tl.append({"type": "header", "props": {"text": f"{yr}년", "level": 2}})
+            tl.append({"type": "text", "props": {"content": f"{yr} 마일스톤"}})
+        make_pptx_file(tl, None, None, p_tl)
+        ck("pptx: year titles take the timeline (texts land)",
+           "2027 마일스톤" in read_pptx(p_tl)["text"])
+        p_cv = f"{OUT_DIR}/selftest-chevron.pptx"
+        tmp.append(p_cv)
+        cv = [{"type": "header", "props": {"text": "절차", "level": 1}},
+              {"type": "list", "props": {"items": ["발굴", "검증", "계약", "운영"]}}]
+        make_pptx_file(cv, None, None, p_cv)
+        ck("pptx: a short label list flows as chevron arrows",
+           all(s in read_pptx(p_cv)["text"] for s in ("발굴", "검증", "계약", "운영")))
         # A table taller than a slide splits across slides, header repeated, no row lost.
         p_tbl = f"{OUT_DIR}/selftest-tblsplit.pptx"
         tmp.append(p_tbl)
