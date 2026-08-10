@@ -34,6 +34,8 @@ export const POST = withAuth(async (req: NextRequest) => {
   const binaryBase64 = m ? m[2] : '';
   const opts: Record<string, unknown> = {
     scope: body.scope === 'system' ? 'system' : 'user',
+    // 어댑터 기본값이 'ai-generated' 라 업로드 표시가 없으면 생성물로 기록된다 — 여기가 업로드 문.
+    source: 'upload',
   };
   if (typeof body.filenameHint === 'string' && body.filenameHint) opts.filenameHint = body.filenameHint;
 

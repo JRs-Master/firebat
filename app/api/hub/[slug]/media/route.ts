@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listMedia, removeMedia, regenerate as regenerateMedia } from '../../../../../lib/api-gen/media';
+import { listMedia, removeMedia, regenerate as regenerateMedia, saveUpload } from '../../../../../lib/api-gen/media';
 import { resolvePrincipal, isPrincipalError } from '../../../../../lib/principal';
 import { logger } from '../../../../../lib/util/logger';
 
 /**
  * /api/hub/[slug]/media — 익명 hub 방문자의 갤러리 dispatcher.
  *
- * GET ?limit=50&offset=0&search=...  — hub-scoped 미디어 목록 (user/hub/<id>/media/)
+ * GET ?limit=50&offset=0&search=&kind=&sort=  — hub-scoped 미디어 목록 (user/hub/<id>/media/)
  * DELETE ?slug=...                    — hub-scoped 미디어 삭제 (소유 확인 후)
  * POST   op='regenerate'             — hub-scoped 미디어 재생성 (소유 확인 후, 결과도 같은 scope)
+ * POST   op='upload'                 — hub-scoped 파일 업로드 (admin /api/media/upload 미러,
+ *                                      저장은 hubOwner 영역 — Rust save 가 magic byte 게이트 수행)
  *
  * 인증: X-Api-Token + X-Session-Id. hub_owner = `<instance_id>:<session_id>` 강제.
  */
@@ -34,13 +36,15 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
   const search = url.searchParams.get('search') || undefined;
+  const kind = url.searchParams.get('kind') || undefined;
+  const sort = url.searchParams.get('sort') || undefined;
 
   // visitor 별 격리 — hubOwner = `<instance_id>:<session_id>`.
   const sessionId = req.headers.get('x-session-id') ?? '';
   const scopeId = `${auth.instanceId}:${sessionId}`;
 
   try {
-    const result = await listMedia({ optsJson: JSON.stringify({ limit, offset, search, hubOwner: scopeId }) });
+    const result = await listMedia({ optsJson: JSON.stringify({ limit, offset, search, kind, sort, hubOwner: scopeId }) });
     if (!result.ok) return NextResponse.json({ success: false, error: result.message }, { status: 500 });
     return NextResponse.json({ success: true, items: result.data?.items ?? [], total: result.data?.total ?? 0 });
   } catch (err) {
@@ -88,6 +92,22 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const res = await regenerateMedia({ slug: mediaSlug, hubOwner: scopeId } as any);
         if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
         return NextResponse.json({ success: true });
+      }
+      case 'upload': {
+        // admin /api/media/upload 미러 — 파싱·검증 로직 동일, 저장만 hubOwner 영역.
+        // magic byte 게이트(이미지·오디오·문서)는 Rust MediaManager.save 가 수행.
+        const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl : '';
+        if (!dataUrl.startsWith('data:')) {
+          return NextResponse.json({ success: false, error: 'dataUrl 가 data URL 형식이 아닙니다.' }, { status: 400 });
+        }
+        const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        const contentType = m ? m[1] : 'application/octet-stream';
+        const binaryBase64 = m ? m[2] : '';
+        const opts: Record<string, unknown> = { hubOwner: scopeId, source: 'upload' };
+        if (typeof body.filenameHint === 'string' && body.filenameHint) opts.filenameHint = body.filenameHint;
+        const res = await saveUpload({ binaryBase64, contentType, optsJson: JSON.stringify(opts) } as any);
+        if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+        return NextResponse.json({ success: true, data: res.data });
       }
       default:
         return NextResponse.json({ success: false, error: `지원되지 않는 op: ${op}` }, { status: 400 });

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { listMedia, removeMedia } from '../../../../lib/api-gen/media';
 import { withAuth } from '../../../../lib/with-api-error';
 
-/** GET /api/media/list?scope=user|system|all&limit=50&offset=0&search=foo
- *  갤러리용 미디어 목록 — 관리자 인증 필수.
+/** GET /api/media/list?scope=user|system|all&limit=50&offset=0&search=foo&kind=image&sort=newest
+ *  미디어 패널용 목록 — 관리자 인증 필수. kind/sort 는 Rust list 가 페이지네이션 앞에서 처리.
  */
 export const GET = withAuth(async (req: NextRequest) => {
   const url = req.nextUrl;
@@ -13,8 +13,10 @@ export const GET = withAuth(async (req: NextRequest) => {
   const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
   const search = url.searchParams.get('search') || undefined;
+  const kind = url.searchParams.get('kind') || undefined;
+  const sort = url.searchParams.get('sort') || undefined;
 
-  const result = await listMedia({ optsJson: JSON.stringify({ scope, limit, offset, search }) });
+  const result = await listMedia({ optsJson: JSON.stringify({ scope, limit, offset, search, kind, sort }) });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
