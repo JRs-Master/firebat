@@ -3,7 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import { compareName } from '../../../lib/util/sort-name';
 import { useQueryClient } from '@tanstack/react-query';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, FolderOpen, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, BookText } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { AnchoredMenu } from './Menu';
 import { CronPanel, ScheduleModal } from './CronPanel';
@@ -46,7 +46,8 @@ type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'skills' | 'entit
 const TABS: { id: TabId; Icon: typeof FolderTree }[] = [
   { id: 'workspace', Icon: FolderTree },
   { id: 'chats', Icon: MessageSquare },
-  { id: 'gallery', Icon: ImageIcon },
+  // 'gallery' id 는 내부 식별자로 유지(탭 상태·i18n 키) — 라벨은 sidebar.gallery = "미디어".
+  { id: 'gallery', Icon: FolderOpen },
   { id: 'templates', Icon: LayoutTemplate },
   { id: 'skills', Icon: BookText },
   { id: 'library', Icon: BookOpen },

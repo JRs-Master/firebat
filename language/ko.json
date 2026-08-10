@@ -158,7 +158,8 @@
       "image_processor_missing": "image_processor 가 설정되지 않아 placeholder 를 생성할 수 없습니다.",
       "image_gen_missing": "image_gen 이 설정되지 않아 이미지를 생성할 수 없습니다.",
       "image_processor_missing_postprocess": "image_processor 가 설정되지 않아 후처리할 수 없습니다.",
-      "audio_magic_mismatch": "오디오로 선언된 파일({{type}})인데 내용이 아는 오디오 형식(mp3·wav·ogg·m4a·flac·webm·mid)이 아닙니다. 파일이 손상됐거나 형식 선언이 잘못됐습니다."
+      "audio_magic_mismatch": "오디오로 선언된 파일({{type}})인데 내용이 아는 오디오 형식(mp3·wav·ogg·m4a·flac·webm·mid)이 아닙니다. 파일이 손상됐거나 형식 선언이 잘못됐습니다.",
+      "document_magic_mismatch": "문서로 선언된 파일({{type}})인데 내용이 그 형식이 아닙니다. PDF 는 %PDF 로 시작해야 하고 docx·xlsx·pptx·hwpx 는 ZIP 컨테이너여야 합니다."
     },
     "auth": {
       "password_too_short": "비밀번호는 8자 이상이어야 합니다.",
@@ -416,7 +417,7 @@
   "sidebar": {
     "workspace": "워크스페이스",
     "chats": "대화",
-    "gallery": "갤러리",
+    "gallery": "미디어",
     "templates": "템플릿",
     "skills": "스킬",
     "library": "라이브러리",
@@ -915,7 +916,7 @@
     "no_address": "이미지 주소가 없습니다"
   },
   "gallery": {
-    "search_label": "갤러리 검색",
+    "search_label": "미디어 검색",
     "search_placeholder": "프롬프트·파일명·모델로 검색",
     "scope_user": "사용자",
     "scope_system": "시스템",
@@ -923,16 +924,16 @@
     "total_count": "총 {total}개",
     "loaded_suffix": " ({loaded} 로드됨)",
     "loading": "로딩 중…",
-    "empty": "이미지 없음",
-    "empty_title": "이미지가 없어요",
-    "empty_hint": "채팅에서 \"이미지 만들어줘\" 로 생성하세요",
+    "empty": "파일 없음",
+    "empty_title": "저장된 파일이 없습니다",
+    "empty_hint": "생성 이미지·녹음·업로드 파일이 여기에 모입니다",
     "failed_badge": "생성 실패",
     "generating_badge": "생성 중",
     "failed_tooltip": "생성 실패: {msg}",
     "load_more": "더 보기 ({count})",
-    "delete_title": "이미지 삭제",
-    "delete_in_use": "이 이미지는 {count}개 페이지에 사용 중입니다:\n\n{pages}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?",
-    "delete_confirm": "이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)",
+    "delete_title": "미디어 삭제",
+    "delete_in_use": "이 파일은 {count}개 페이지에 사용 중입니다:\n\n{pages}\n\n삭제하면 해당 페이지에서 깨집니다. 정말 삭제하시겠습니까?",
+    "delete_confirm": "이 파일을 삭제하시겠습니까? (원본 + 모든 변환본·썸네일 일괄 삭제)",
     "delete_ok": "삭제",
     "delete_failed": "삭제 실패",
     "regen_failed": "재생성 실패",
@@ -966,7 +967,23 @@
     "copy_url": "URL 복사",
     "copy_md": "마크다운 복사",
     "copied": "복사됨",
-    "delete": "삭제"
+    "delete": "삭제",
+    "kind_all": "전체",
+    "kind_image": "이미지",
+    "kind_audio": "오디오",
+    "kind_document": "문서",
+    "kind_other": "기타",
+    "sort_label": "정렬",
+    "sort_newest": "최신순",
+    "sort_oldest": "오래된순",
+    "sort_name": "이름순",
+    "sort_size": "크기순",
+    "upload": "업로드",
+    "uploading": "업로드 중…",
+    "upload_failed": "업로드에 실패했습니다",
+    "upload_too_large": "파일이 너무 큽니다 (최대 {max}MB).",
+    "download": "다운로드",
+    "no_preview": "미리보기를 지원하지 않는 형식입니다"
   },
   "module_settings": {
     "file_pick": "파일 선택"

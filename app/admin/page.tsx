@@ -2370,6 +2370,30 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const [recordError, setRecordError] = useState('');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordChunksRef = useRef<Blob[]>([]);
+  // One upload door, owner-injected — admin posts to /api/media/upload, hub posts the same
+  // payload to its own media route (op:'upload') so storage lands in the hub session's scope.
+  // Record button and attached-image save both go through here; no per-surface forks.
+  const uploadMediaDataUrl = useCallback(async (
+    dataUrl: string,
+    filenameHint?: string,
+  ): Promise<{ success?: boolean; data?: { slug: string; url: string }; error?: string }> => {
+    const res = hubChatContext
+      ? await fetch(`/api/hub/${encodeURIComponent(hubChatContext.slug)}/media`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubChatContext.apiToken,
+            'X-Session-Id': hubChatContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'upload', dataUrl, filenameHint }),
+        })
+      : await fetch('/api/media/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl, filenameHint }),
+        });
+    return res.json().catch(() => ({ success: false, error: 'upload failed' }));
+  }, [hubChatContext]);
   const stopRecording = useCallback(() => {
     recorderRef.current?.stop();
   }, []);
@@ -2415,15 +2439,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
       }).catch(() => '');
       if (!dataUrl) { setRecordError(t('chat_input.record_failed')); setTimeout(() => setRecordError(''), 5000); return; }
       try {
-        const res = await fetch('/api/media/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataUrl, filenameHint: 'voice-recording' }),
-        });
-        const j = await res.json();
+        const j = await uploadMediaDataUrl(dataUrl, 'voice-recording');
         if (!j?.success || !j?.data?.url) throw new Error(j?.error || 'upload failed');
         // URL 을 입력창에 붙인다 — 어떤 일을 시킬지는 사용자가 문장으로 정한다.
-        setInput(prev => (prev ? prev + '\n' : '') + j.data.url + ' ');
+        setInput(prev => (prev ? prev + '\n' : '') + j.data!.url + ' ');
       } catch {
         setRecordError(t('chat_input.record_failed'));
         setTimeout(() => setRecordError(''), 5000);
@@ -2432,7 +2451,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     rec.start();
     recorderRef.current = rec;
     setRecording(true);
-  }, [recording, stopRecording]);
+  }, [recording, stopRecording, uploadMediaDataUrl]);
 
 
   const handleImageSelect = useCallback((file: File) => {
@@ -2455,11 +2474,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     setAttachedSaveState('saving');
     setAttachedSaveError('');
     try {
-      const json = await apiPost<{ success: boolean; error?: string }>(
-        '/api/media/upload',
-        { dataUrl: attachedImage },
-        { category: 'media-upload' },
-      );
+      // Shared owner-injected door — in hub mode this lands in the hub session's own gallery
+      // (the admin route would just 401 there).
+      const json = await uploadMediaDataUrl(attachedImage);
       if (json.success) {
         setAttachedSaveState('saved');
       } else {
@@ -2470,7 +2487,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
       setAttachedSaveState('error');
       setAttachedSaveError(e instanceof Error ? e.message : '네트워크 오류');
     }
-  }, [attachedImage, attachedSaveState]);
+  }, [attachedImage, attachedSaveState, uploadMediaDataUrl]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -2771,10 +2788,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                     {/* 갤러리 저장 — 사용자 명시 클릭 시에만. 메시지 전송과 독립. */}
                     <Tooltip
                       label={
-                        attachedSaveState === 'saved' ? '갤러리에 저장됨'
+                        attachedSaveState === 'saved' ? '미디어에 저장됨'
                         : attachedSaveState === 'error' ? `저장 실패: ${attachedSaveError}`
                         : attachedSaveState === 'saving' ? '저장 중...'
-                        : '이 이미지를 갤러리에 저장 (선택)'
+                        : '이 이미지를 미디어에 저장 (선택)'
                       }
                     >
                       <button
@@ -2792,7 +2809,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                           {attachedSaveState === 'saved' ? '저장됨 ✓'
                           : attachedSaveState === 'error' ? '재시도'
                           : attachedSaveState === 'saving' ? '저장 중'
-                          : '갤러리 저장'}
+                          : '미디어 저장'}
                         </span>
                       </button>
                     </Tooltip>
@@ -2925,31 +2942,31 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   </div>
                   {/* One button, three states — the shape other chat UIs trained everyone on:
                       empty input shows the microphone, typing morphs it into send, loading is
-                      stop. While recording it goes red and stops the take. */}
+                      stop. While recording it goes red and stops the take. Admin and hub share
+                      this logic verbatim — the upload door is owner-injected upstream. */}
                   <Tooltip label={
                     loading ? t('chat_input.stop_generation')
                     : recording ? t('chat_input.record_stop')
-                    : (input.trim() || hubContext) ? t('chat_input.send')
+                    : input.trim() ? t('chat_input.send')
                     : t('chat_input.record_audio')
                   }>
                   <button
                     onClick={() =>
                       loading ? handleStop()
                       : recording ? stopRecording()
-                      : (input.trim() || hubContext) ? handleSubmit()
+                      : input.trim() ? handleSubmit()
                       : void startRecording()
                     }
-                    disabled={!!hubContext && !loading && !input.trim()}
                     className={`${recording
                       ? 'bg-red-500 hover:bg-red-600 border border-red-400 text-white'
-                      : 'bg-slate-800 hover:bg-slate-900 border border-slate-700 text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-300 disabled:cursor-not-allowed'}
+                      : 'bg-slate-800 hover:bg-slate-900 border border-slate-700 text-white'}
                       h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]`}
                   >
                     {loading
                       ? <><Square size={12} fill="currentColor" className="sm:hidden" /><Square size={16} fill="currentColor" className="hidden sm:block" /></>
                       : recording
                         ? <><Square size={12} fill="currentColor" className="sm:hidden animate-pulse" /><Square size={16} fill="currentColor" className="hidden sm:block animate-pulse" /></>
-                        : (input.trim() || hubContext)
+                        : input.trim()
                           ? <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
                           : <><Mic size={14} className="sm:hidden" /><Mic size={18} className="hidden sm:block" /></>
                     }

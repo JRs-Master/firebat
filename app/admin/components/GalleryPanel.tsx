@@ -3,7 +3,7 @@
 import { useId, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Modal } from './Modal';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw, Upload, Music, FileText, File as FileIcon, FolderOpen, Download } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { useTranslations } from '../../../lib/i18n';
 import { FeedbackBadge } from './FeedbackBadge';
@@ -39,6 +39,45 @@ interface MediaItem {
 
 const PAGE_SIZE = 48;
 
+/** Content type → panel kind. Same vocabulary as the Rust list filter (media_kind). */
+type MediaKind = 'image' | 'audio' | 'document' | 'other';
+const DOC_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.hancom.hwpx',
+  'application/haansofthwpx',
+  'application/hwp+zip',
+]);
+function kindOf(contentType: string): MediaKind {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.startsWith('image/')) return 'image';
+  if (ct.startsWith('audio/') || ct === 'application/ogg') return 'audio';
+  if (DOC_CONTENT_TYPES.has(ct)) return 'document';
+  return 'other';
+}
+const KIND_ICON: Record<MediaKind, typeof ImageIcon> = {
+  image: ImageIcon, audio: Music, document: FileText, other: FileIcon,
+};
+
+// Browsers leave file.type empty for extensions the OS never registered (hwpx above all) —
+// the picker fills the claim from the extension so the server gate has something to verify.
+const EXT_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  hwpx: 'application/vnd.hancom.hwpx',
+  mid: 'audio/midi', midi: 'audio/midi',
+};
+const UPLOAD_ACCEPT = 'image/*,audio/*,.mid,.midi,.pdf,.docx,.xlsx,.pptx,.hwpx';
+const UPLOAD_MAX_MB = 25;
+
+const KINDS: Array<MediaKind | 'all'> = ['all', 'image', 'audio', 'document', 'other'];
+const SORTS = ['newest', 'oldest', 'name', 'size'] as const;
+type SortKey = typeof SORTS[number];
+
 export type GalleryHubContext = { slug: string; apiToken: string; sessionId: string };
 
 export function GalleryPanel({
@@ -53,8 +92,12 @@ export function GalleryPanel({
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [scope, setScope] = useState<'all' | 'user' | 'system'>('user');
+  const [kind, setKind] = useState<MediaKind | 'all'>('all');
+  const [sort, setSort] = useState<SortKey>('newest');
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Track the selection by index so prev/next navigation works.
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const selected = selectedIndex !== null && selectedIndex < items.length ? items[selectedIndex] : null;
@@ -62,11 +105,13 @@ export function GalleryPanel({
 
   // Owner-injected backend — admin REST (/api/media/*) vs hub op (GET/DELETE/POST{op}) diverge inside each method only.
   const backend = useMemo(() => ({
-    async list(opts: { offset: number; search: string; scope: string }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
+    async list(opts: { offset: number; search: string; scope: string; kind: string; sort: string }): Promise<{ success: boolean; items: MediaItem[]; total?: number } | null> {
       const params = new URLSearchParams();
       params.set('limit', String(PAGE_SIZE));
       params.set('offset', String(opts.offset));
       if (opts.search) params.set('search', opts.search);
+      if (opts.kind !== 'all') params.set('kind', opts.kind);
+      if (opts.sort !== 'newest') params.set('sort', opts.sort);
       if (hubContext) {
         const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?${params.toString()}`, {
           headers: { 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
@@ -75,6 +120,17 @@ export function GalleryPanel({
       }
       params.set('scope', opts.scope);
       return apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(`/api/media/list?${params.toString()}`, { category: 'gallery' }).catch(() => null);
+    },
+    async upload(dataUrl: string, filenameHint: string): Promise<{ success?: boolean; error?: string }> {
+      // Owner-injected door — same shape as the chat record button: admin REST vs hub op.
+      if (hubContext) {
+        return fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Token': hubContext.apiToken, 'X-Session-Id': hubContext.sessionId },
+          body: JSON.stringify({ op: 'upload', dataUrl, filenameHint }),
+        }).then(r => r.json()).catch(() => ({ success: false, error: t('gallery.network_error') }));
+      }
+      return apiPost<{ success: boolean; error?: string }>('/api/media/upload', { dataUrl, filenameHint }, { category: 'gallery' });
     },
     async remove(slug: string): Promise<{ success: boolean; error?: string }> {
       if (hubContext) {
@@ -99,7 +155,7 @@ export function GalleryPanel({
   const fetchList = useCallback(async (reset: boolean) => {
     setLoading(true);
     try {
-      const data = await backend.list({ offset: reset ? 0 : offset, search, scope });
+      const data = await backend.list({ offset: reset ? 0 : offset, search, scope, kind, sort });
       if (data?.success) {
         setItems(prev => reset ? data!.items : [...prev, ...data!.items]);
         setTotal(data.total || 0);
@@ -109,9 +165,9 @@ export function GalleryPanel({
     } finally {
       setLoading(false);
     }
-  }, [backend, offset, search, scope]);
+  }, [backend, offset, search, scope, kind, sort]);
 
-  // Reset on scope/search change — debounced for search.
+  // Reset on filter change — debounced for search.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -120,7 +176,41 @@ export function GalleryPanel({
     }, 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, search]);
+  }, [scope, search, kind, sort]);
+
+  // Upload — dataUrl through the owner-injected door; the server gate (magic bytes) is the
+  // real validator, this side only fills a missing MIME claim from the extension.
+  const handleUploadFile = useCallback(async (file: File) => {
+    if (file.size > UPLOAD_MAX_MB * 1024 * 1024) {
+      await alertDialog({ title: t('gallery.upload_failed'), message: t('gallery.upload_too_large', { max: UPLOAD_MAX_MB }), danger: true });
+      return;
+    }
+    setUploading(true);
+    try {
+      let dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
+      if (!file.type) {
+        const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+        const mime = EXT_MIME[ext];
+        if (mime) dataUrl = dataUrl.replace(/^data:[^;]*;/, `data:${mime};`);
+      }
+      const hint = file.name.replace(/\.[^.]+$/, '');
+      const res = await backend.upload(dataUrl, hint);
+      if (!res?.success) {
+        await alertDialog({ title: t('gallery.upload_failed'), message: res?.error || 'unknown', danger: true });
+        return;
+      }
+      // Hub has no SSE gallery:refresh — refetch directly (harmless double on admin).
+      setOffset(0);
+      fetchList(true);
+    } finally {
+      setUploading(false);
+    }
+  }, [backend, fetchList, t]);
 
   // SSE `gallery:refresh` subscription — auto-refresh on image_gen completion, media delete, regenerate.
   // Keeps the current scope/search and resets to page one so a new image shows immediately.
@@ -215,6 +305,49 @@ export function GalleryPanel({
             </button>
           ))}
         </div>
+        {/* kind chips — same vocabulary as the server filter, so pagination stays honest */}
+        <div className="flex gap-1">
+          {KINDS.map(k => (
+            <button
+              key={k}
+              onClick={() => setKind(k)}
+              className={`flex-1 px-1 py-1 text-[10px] font-bold rounded-md transition-colors ${
+                kind === k ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {t(`gallery.kind_${k}`)}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value as SortKey)}
+            aria-label={t('gallery.sort_label')}
+            className="flex-1 px-1.5 py-1 text-[11px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-slate-600"
+          >
+            {SORTS.map(s => <option key={s} value={s}>{t(`gallery.sort_${s}`)}</option>)}
+          </select>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={UPLOAD_ACCEPT}
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              e.target.value = ''; // allow re-picking the same file
+              if (f) void handleUploadFile(f);
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-md bg-slate-800 hover:bg-slate-900 text-white transition-colors disabled:opacity-50"
+          >
+            {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+            {uploading ? t('gallery.uploading') : t('gallery.upload')}
+          </button>
+        </div>
         <div className="text-[10px] text-slate-400">
           {total > 0
             ? `${t('gallery.total_count', { total })}${items.length < total ? t('gallery.loaded_suffix', { loaded: items.length }) : ''}`
@@ -226,7 +359,7 @@ export function GalleryPanel({
       <div className="flex-1 overflow-y-auto overscroll-contain p-2">
         {items.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
-            <ImageIcon size={32} strokeWidth={1.5} />
+            <FolderOpen size={32} strokeWidth={1.5} />
             <p className="text-[12px]">{t('gallery.empty_title')}</p>
             <p className="text-[10px] text-slate-300">{t('gallery.empty_hint')}</p>
           </div>
@@ -235,6 +368,8 @@ export function GalleryPanel({
             {items.map((item, idx) => {
               const isError = item.status === 'error';
               const isRendering = item.status === 'rendering';
+              const itemKind = kindOf(item.contentType);
+              const KindIcon = KIND_ICON[itemKind];
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               const tooltipLabel = isError
                 ? t('gallery.failed_tooltip', { msg: item.errorMsg?.slice(0, 80) ?? 'unknown' })
@@ -260,6 +395,13 @@ export function GalleryPanel({
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-blue-500">
                       <Loader2 size={20} className="animate-spin" />
                       <span className="text-[9px] font-bold">{t('gallery.generating_badge')}</span>
+                    </div>
+                  ) : itemKind !== 'image' ? (
+                    /* non-image — no pixels to show, so the card says what the file IS:
+                       kind icon + extension, the two things a person scans a store by */
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 bg-slate-50 text-slate-500">
+                      <KindIcon size={22} strokeWidth={1.5} />
+                      <span className="text-[10px] font-black tracking-wider text-slate-600 uppercase">{item.ext}</span>
                     </div>
                   ) : (
                     <img
@@ -332,6 +474,8 @@ function MediaDetailModal({
 }) {
   const t = useTranslations();
   const isError = item.status === 'error';
+  const itemKind = kindOf(item.contentType);
+  const HeaderIcon = KIND_ICON[itemKind];
   const canRegenerate = !!item.prompt; // a prompt is required to re-run
   const [copiedField, setCopiedField] = useState<string | null>(null);
   // Viewport quirk workaround — stops the box jumping when the iOS toolbar moves. md(768px+) keeps max-h-full.
@@ -369,7 +513,7 @@ function MediaDetailModal({
           style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)' }}
         >
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate min-w-0 flex-1">
-            <ImageIcon size={14} className="text-blue-500 shrink-0" />
+            <HeaderIcon size={14} className="text-blue-500 shrink-0" />
             <span className="truncate">{item.filenameHint || item.slug}</span>
           </h3>
           <div className="flex items-center gap-1 shrink-0">
@@ -431,6 +575,17 @@ function MediaDetailModal({
                 <Loader2 size={32} className="animate-spin" />
                 <div className="text-sm font-bold">{t('gallery.generating_title')}</div>
                 <p className="text-[11px] text-slate-500 italic mt-1">{t('gallery.generating_hint')}</p>
+              </div>
+            ) : itemKind === 'audio' ? (
+              <div className="flex flex-col items-center gap-3 w-full px-4 py-6 text-slate-600">
+                <Music size={32} strokeWidth={1.5} />
+                <audio controls src={`${url}?v=${item.bytes || item.createdAt}`} className="w-full max-w-sm" />
+              </div>
+            ) : itemKind !== 'image' ? (
+              <div className="flex flex-col items-center gap-2 text-center px-4 py-8 text-slate-500">
+                <HeaderIcon size={40} strokeWidth={1.5} />
+                <span className="text-sm font-black tracking-wider uppercase text-slate-600">{item.ext}</span>
+                <p className="text-[11px] text-slate-400">{t('gallery.no_preview')}</p>
               </div>
             ) : (
               <img
@@ -547,6 +702,16 @@ function MediaDetailModal({
                     : <><RefreshCw size={12} /> {isError ? t('gallery.retry_same_prompt') : t('gallery.regenerate')}</>}
                 </button>
               )}
+              {!isError && itemKind !== 'image' && (
+                /* non-image — a file you mostly take elsewhere (open the deck, feed the module) */
+                <a
+                  href={url}
+                  download={`${item.filenameHint || item.slug}.${item.ext}`}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors"
+                >
+                  <Download size={12} /> {t('gallery.download')}
+                </a>
+              )}
               {!isError && (
                 <div className="relative">
                   <button
@@ -561,7 +726,13 @@ function MediaDetailModal({
               {!isError && (
                 <div className="relative">
                   <button
-                    onClick={() => copy(`![${item.filenameHint || ''}](${url})`, 'md')}
+                    onClick={() => copy(
+                      // ![..] embeds only render pixels — non-image files copy as a plain link.
+                      itemKind === 'image'
+                        ? `![${item.filenameHint || ''}](${url})`
+                        : `[${item.filenameHint || item.slug}](${url})`,
+                      'md',
+                    )}
                     className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                   >
                     <Copy size={12} /> {t('gallery.copy_md')}
