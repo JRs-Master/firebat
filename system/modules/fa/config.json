@@ -1,0 +1,113 @@
+{
+  "name": "fa",
+  "type": "module",
+  "scope": "system",
+  "version": "0.1.0",
+  "runtime": "python",
+  "providerType": "compute",
+  "capability": "fundamental-analysis",
+  "description": "기본적분석 계산기 — DART 재무제표(dart financial/financialAll 결과)를 받아 수익성·안정성·성장성 비율과 (시총을 주면) PER·PBR·PSR 밸류에이션을 계산합니다. ta 가 봉을 받아 지표를 내듯, fa 는 재무 rows 를 받아 비율을 냅니다. 데이터 수집은 dart 모듈, 계산은 여기 — 없는 값은 지어내지 않고 null 로 표시합니다.",
+  "aliases": [
+    "기본적분석",
+    "재무분석",
+    "재무비율",
+    "펀더멘털",
+    "fundamental"
+  ],
+  "tags": [
+    "재무제표",
+    "PER",
+    "PBR",
+    "ROE",
+    "부채비율",
+    "유동비율",
+    "성장률",
+    "영업이익률",
+    "밸류에이션",
+    "재무지표"
+  ],
+  "cacheInputs": [
+    "statements"
+  ],
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "ratios",
+        "name": "재무비율 계산 (수익성·안정성·성장성·밸류에이션)",
+        "description": "DART statement rows in -> profitability (margins, ROE, ROA), stability (debt ratio, current ratio, equity ratio), growth (YoY revenue/profit/assets), and with marketCap also PER/PBR/PSR (+EPS/BPS with shares). Missing accounts come back null with a note, never invented.",
+        "params": {
+          "statements": "DART fnlttSinglAcnt/All rows (or statementsCacheKey from the dart call)",
+          "marketCap": "market capitalization in KRW for valuation ratios",
+          "shares": "listed share count for per-share figures"
+        }
+      },
+      {
+        "id": "selftest",
+        "name": "셀프테스트",
+        "description": "Offline checks against synthetic DART-shaped rows with known answers.",
+        "params": {}
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "ratios",
+          "selftest"
+        ],
+        "description": "ratios = DART statement rows -> financial ratios. selftest = offline checks."
+      },
+      "statements": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "Rows exactly as the dart module returns them (financial / financialAll): account_nm + thstrm_amount / frmtrm_amount / bfefrmtrm_amount, optional fs_div. CFS (연결) is preferred when both appear."
+      },
+      "statementsCacheKey": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "The `_cacheKey` from the dart financial call — hands the rows over without re-inlining them. One of statements / statementsCacheKey is required."
+      },
+      "marketCap": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "Market capitalization in KRW (current price x listed shares). Enables PER/PBR/PSR. Get the price from a broker/quote tool — this module does not fetch."
+      },
+      "shares": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "Listed share count — enables EPS/BPS/SPS per-share figures."
+      }
+    }
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "action": {
+        "type": "string"
+      },
+      "data": {
+        "type": "object"
+      }
+    }
+  }
+}
