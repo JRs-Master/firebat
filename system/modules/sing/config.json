@@ -99,5 +99,14 @@
         "type": "object"
       }
     }
-  }
+  },
+  "settings_fields": [
+    {
+      "key": "scoreMediaUrl",
+      "type": "file",
+      "accept": "audio/*,.mid,.midi",
+      "label": "악보 올리기 (MIDI · 오디오)",
+      "description": "노래방 MIDI 나 흥얼거림 녹음을 올려 두면, 채팅에서 \"올려 둔 악보로 불러줘\"라고 시킬 수 있습니다. 파일은 미디어 보관함에 저장되고 여기에는 주소만 남습니다."
+    }
+  ]
 }

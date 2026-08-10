@@ -18,12 +18,14 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'shared-secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list' | 'structured-list' | 'file';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
   label: string;
   type: FieldType;
+  /// file 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터.
+  accept?: string;
   placeholder?: string;
   description?: string;
   defaultValue?: any;
@@ -61,6 +63,8 @@ interface ConfigI18nText {
 interface ConfigSettingField {
   key: string;
   type: FieldType;
+  /** file 필드: input accept 문자열 (예: 'audio/*,.mid'). 선언이 곧 필터. */
+  accept?: string;
   placeholder?: string;
   defaultValue?: any;
   tab?: string;
@@ -129,6 +133,7 @@ function resolveConfigField(
   return {
     key: cf.key,
     type: cf.type,
+    accept: cf.accept,
     placeholder:
       langField.placeholder ?? primary.placeholder ?? fallback.placeholder ?? cf.placeholder,
     defaultValue: cf.defaultValue,
@@ -1003,6 +1008,18 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     presetKey={settings.themePreset ?? 'slate-pro'}
                     onChange={(k, v) => handleChange(k, v)}
                     langData={langData}
+                  />
+                ) : field.type === 'file' ? (
+                  /* 파일 반입 문의 모듈 설정 표면 — 업로드는 미디어 스토리지(문 하나), 설정에는
+                     URL 만 남는다. 모듈은 그 URL/미디어 id 로 소비한다("모듈은 선언하고
+                     프레임워크가 준다"). accept 는 config 선언이 정한다. */
+                  <FileField
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
+                    accept={field.accept || '*/*'}
+                    value={typeof settings[field.key] === 'string' ? settings[field.key] : ''}
+                    onChange={(url) => handleChange(field.key, url)}
+                    t={t}
                   />
                 ) : field.type === 'widget-list' ? (
                   <WidgetListField
@@ -1965,5 +1982,76 @@ export function PackageStatusSection({ moduleName }: { moduleName: string }) {
         <p className="text-[11px] text-slate-500 italic mt-2">{feedback}</p>
       )}
     </div>
+  );
+}
+
+/** file 필드 — 고르면 미디어 스토리지로 올리고, 설정 값에는 URL 만 남긴다. */
+function FileField({ label, description, accept, value, onChange, t }: {
+  label: string; description?: string; accept: string; value: string;
+  onChange: (url: string) => void; t: (k: string) => string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const pick = async (f: File) => {
+    setBusy(true); setErr('');
+    try {
+      const dataUrl = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result));
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(f);
+      });
+      const resp = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl, filenameHint: f.name }),
+      });
+      const j = await resp.json();
+      if (!j?.success || !j?.data?.url) throw new Error(j?.error || 'upload failed');
+      onChange(j.data.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const fileName = value ? value.split('/').pop() : '';
+  return (
+    <>
+      <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+          className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+        >
+          {busy ? t('common.loading') : t('module_settings.file_pick')}
+        </button>
+        {value && (
+          <>
+            <a href={value} target="_blank" rel="noreferrer" className="text-[12px] text-blue-600 hover:underline truncate max-w-[220px]">{fileName}</a>
+            <button
+              type="button"
+              onClick={() => onChange('')}
+              className="text-[12px] text-slate-400 hover:text-red-500"
+              aria-label={t('common.delete')}
+            >
+              ×
+            </button>
+          </>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }}
+      />
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
+      {description && <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>}
+    </>
   );
 }
