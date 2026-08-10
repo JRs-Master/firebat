@@ -137,11 +137,13 @@ def action_selftest():
 
 
 def main():
-    raw = sys.stdin.read()
+    # Bytes, decoded as UTF-8 explicitly — the locale default turns Korean into lone
+    # surrogates on some hosts (measured on Windows), and the envelope is UTF-8 by contract.
+    raw = sys.stdin.buffer.read().decode("utf-8", "replace")
     try:
         envelope = json.loads(raw or "{}")
     except json.JSONDecodeError as e:
-        print(json.dumps({"success": False, "action": "", "error": f"input JSON: {e}"}))
+        sys.stdout.buffer.write((json.dumps({"success": False, "action": "", "error": f"input JSON: {e}"})).encode("utf-8"))
         return
     inp = envelope.get("data") or envelope
     action = str(inp.get("action") or "").strip()
@@ -152,7 +154,9 @@ def main():
     else:
         out = {"success": False, "action": action,
                "error": f"unknown action {action!r} — one of: transcribe, selftest"}
-    print(json.dumps(out, ensure_ascii=False))
+    # UTF-8 bytes out, explicitly — print() writes the console codepage on some hosts,
+    # and the envelope is UTF-8 by contract on both ends.
+    sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False)).encode("utf-8"))
 
 
 if __name__ == "__main__":

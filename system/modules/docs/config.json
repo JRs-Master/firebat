@@ -1,0 +1,183 @@
+{
+  "name": "docs",
+  "type": "module",
+  "scope": "system",
+  "version": "0.1.0",
+  "runtime": "python",
+  "providerType": "compute",
+  "capability": "document-io",
+  "description": "오피스 문서 읽기·만들기 — pptx·xlsx·docx·hwpx·pdf 를 읽어 텍스트와 표를 뽑고, 렌더 블록(IR)으로 pptx·xlsx·docx 를 만듭니다. 만든 파일은 미디어 보관함에 저장되어 바로 내려받을 수 있습니다. 회사 마스터 .pptx 를 올려 두면 그 서식 위에 만듭니다.",
+  "aliases": [
+    "문서",
+    "피피티",
+    "엑셀",
+    "워드",
+    "한글파일",
+    "office",
+    "document"
+  ],
+  "tags": [
+    "pptx",
+    "xlsx",
+    "docx",
+    "hwpx",
+    "pdf",
+    "보고서",
+    "발표자료",
+    "스프레드시트",
+    "문서변환",
+    "읽기"
+  ],
+  "packages": [
+    "python-pptx",
+    "openpyxl",
+    "python-docx",
+    "pypdf"
+  ],
+  "actionCatalog": {
+    "actions": [
+      {
+        "id": "read",
+        "name": "문서 읽기 (pptx·xlsx·docx·hwpx·pdf)",
+        "description": "Extract text and tables from an uploaded document — a media URL or workspace path in, {text, tables, meta} out. Works on pptx, xlsx, docx, hwpx, pdf.",
+        "params": {
+          "path": "media URL (/user/media/<slug>.<ext>) or workspace-relative path"
+        }
+      },
+      {
+        "id": "make_pptx",
+        "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
+        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store.",
+        "params": {
+          "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image",
+          "title": "deck title (title slide + filename)",
+          "masterMediaPath": "media URL of a master .pptx to build on (falls back to the module's uploaded master setting)"
+        }
+      },
+      {
+        "id": "make_xlsx",
+        "name": "XLSX 만들기 (표 → 시트)",
+        "description": "Build a .xlsx: pass sheets [{name, headers, rows}] or render blocks (each table block becomes a sheet named by the preceding header). The file lands in the media store.",
+        "params": {
+          "sheets": "[{name, headers?, rows}]",
+          "blocks": "render-block array (table blocks are taken)"
+        }
+      },
+      {
+        "id": "make_docx",
+        "name": "DOCX 만들기 (렌더 블록 → 문서)",
+        "description": "Build a .docx from render blocks: headers become heading levels, lists become bullets, tables become real tables. The file lands in the media store.",
+        "params": {
+          "blocks": "render-block array [{type, props}]",
+          "title": "document title (heading + filename)"
+        }
+      },
+      {
+        "id": "selftest",
+        "name": "셀프테스트",
+        "description": "Offline round-trip checks: make each format, read it back, compare. No key, no network.",
+        "params": {}
+      }
+    ]
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "read",
+          "make_pptx",
+          "make_xlsx",
+          "make_docx",
+          "selftest"
+        ],
+        "description": "read = document -> {text, tables, meta}. make_* = render blocks -> file in the media store. selftest = offline round-trips."
+      },
+      "path": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "For read: the document — a media URL (/user/media/<slug>.<ext>) or workspace-relative path. Extension decides the parser (pptx/xlsx/docx/hwpx/pdf)."
+      },
+      "title": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "For make_*: title of the deck/document — first slide/heading and the stored filename."
+      },
+      "blocks": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide."
+      },
+      "blocksCacheKey": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Cache key holding the blocks array (from a previous tool result) instead of inlining it."
+      },
+      "sheets": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "object"
+        },
+        "description": "For make_xlsx: explicit [{name, headers?, rows}] — wins over blocks."
+      },
+      "masterMediaPath": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "For make_pptx: media URL of a master/template .pptx whose theme and layouts the new deck inherits. Omitted = the module's uploaded master setting, else a plain default deck."
+      },
+      "maxChars": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "description": "For read: cap on returned text length (default unlimited — large text is auto-cached)."
+      }
+    }
+  },
+  "cacheInputs": [
+    "blocks"
+  ],
+  "output": {
+    "type": "object",
+    "properties": {
+      "success": {
+        "type": "boolean"
+      },
+      "action": {
+        "type": "string"
+      },
+      "data": {
+        "type": "object"
+      }
+    }
+  },
+  "settings_fields": [
+    {
+      "key": "masterPptxUrl",
+      "type": "file",
+      "accept": ".pptx",
+      "label": "마스터 PPTX 올리기",
+      "description": "회사 표준 서식(.pptx)을 올려 두면, 채팅에서 만든 발표자료가 그 서식(표지·폰트·로고) 위에 만들어집니다. 파일은 미디어 보관함에 저장되고 여기에는 주소만 남습니다."
+    }
+  ]
+}
