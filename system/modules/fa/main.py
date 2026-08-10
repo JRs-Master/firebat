@@ -89,6 +89,58 @@ def growth(cur, prev):
     return round((cur - prev) / abs(prev) * 100, 2)
 
 
+def parse_estimates(raw):
+    """KIS 국내주식-187 (estimate-perform) response -> normalized analyst estimates.
+
+    Live-measured dialect (2026-08-10, 005930): output4 = period columns, 'E' suffix marks a
+    forecast; output2 = six rows in pairs (revenue, YoY, op income, YoY, net income, YoY),
+    amounts in 억원 as-is, rates carried x10; output3 = indicator rows also x10 — only the rows
+    verified against known figures are labeled (row1 EPS 21310->2131, row3 PER 368->36.8,
+    row5 ROE 41->4.1); the rest are dropped, not guessed.
+    """
+    if not isinstance(raw, dict):
+        return None, None
+    data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+    o1 = data.get("output1") or {}
+    o2 = data.get("output2") or []
+    o3 = data.get("output3") or []
+    o4 = data.get("output4") or []
+    periods = [str(p.get("dt") or "").strip() for p in o4 if isinstance(p, dict)]
+    if not periods or len(o2) < 6:
+        return None, "estimates: not the KIS estimate-perform shape (need output2 x6 + output4)"
+
+    def row(rows, idx, scale=1.0):
+        if idx >= len(rows) or not isinstance(rows[idx], dict):
+            return [None] * len(periods)
+        out = []
+        for i in range(len(periods)):
+            v = parse_amount(rows[idx].get(f"data{i + 1}"))
+            out.append(round(v * scale, 2) if v is not None else None)
+        return out
+
+    series = {
+        "revenue": row(o2, 0), "revenueYoYPct": row(o2, 1, 0.1),
+        "opIncome": row(o2, 2), "opYoYPct": row(o2, 3, 0.1),
+        "netIncome": row(o2, 4), "netYoYPct": row(o2, 5, 0.1),
+        "eps": row(o3, 1, 0.1), "per": row(o3, 3, 0.1), "roePct": row(o3, 5, 0.1),
+    }
+    cols = []
+    for i, p in enumerate(periods):
+        entry = {"period": p.rstrip("E"), "isEstimate": p.endswith("E")}
+        for k, vals in series.items():
+            entry[k] = vals[i]
+        cols.append(entry)
+    return {
+        "symbol": str(o1.get("sht_cd") or "").lstrip("A"),
+        "name": str(o1.get("item_kor_nm") or ""),
+        "analyst": str(o1.get("name1") or ""),
+        "opinion": str(o1.get("rcmd_name") or ""),
+        "asOf": str(o1.get("estdate") or ""),
+        "unit": "억원 (amounts) / % · 배 (rates, x10 convention undone)",
+        "periods": cols,
+    }, None
+
+
 def action_ratios(inp):
     rows = inp.get("statements")
     if not isinstance(rows, list) or not rows:
@@ -164,6 +216,16 @@ def action_ratios(inp):
         data["valuation"] = valuation
     if per_share:
         data["perShare"] = per_share
+    if inp.get("estimates") is not None:
+        est, est_err = parse_estimates(inp.get("estimates"))
+        if est_err:
+            notes.append(est_err)
+        elif est and not est["periods"]:
+            notes.append("estimates: no coverage for this symbol (empty consensus)")
+        elif est:
+            data["estimates"] = est
+            notes.append("estimates = broker consensus via KIS estimate-perform — "
+                         "forecasts, not facts; periods flagged isEstimate")
     if notes:
         data["notes"] = notes
     return {"success": True, "action": "ratios", "data": data}
@@ -204,6 +266,35 @@ def action_selftest():
        d["stability"]["interestCoverage"])
     ck("parenthesis negatives parse", -1234.0, parse_amount("(1,234)"))
     ck("dash means missing, not zero", None, parse_amount("-"))
+
+    # KIS estimate-perform dialect — the live-measured 005930 shape, x10 rates undone.
+    est_raw = {
+        "output1": {"item_kor_nm": "삼성전자", "sht_cd": "A005930", "name1": "채민숙",
+                    "rcmd_name": "매수", "estdate": "20260630"},
+        "output2": [
+            {"data1": "2589355.0", "data2": "3008709.0"}, {"data1": "-143.0", "data2": "162.0"},
+            {"data1": "65670.0", "data2": "327260.0"}, {"data1": "-849.0", "data2": "3983.0"},
+            {"data1": "144734.0", "data2": "336214.0"}, {"data1": "-736.0", "data2": "1323.0"},
+        ],
+        "output3": [
+            {"data1": "452335.0", "data2": "753568.0"}, {"data1": "21310.0", "data2": "49500.0"},
+            {"data1": "-736.0", "data2": "1323.0"}, {"data1": "368.0", "data2": "107.0"},
+            {"data1": "100.0", "data2": "36.0"}, {"data1": "41.0", "data2": "90.0"},
+            {"data1": "254.0", "data2": "279.0"}, {"data1": "71.0", "data2": "362.0"},
+        ],
+        "output4": [{"dt": "2023.12"}, {"dt": "2026.12E"}],
+    }
+    est, est_err = parse_estimates(est_raw)
+    ck("estimates parse", None, est_err)
+    if est:
+        ck("estimate flag from the E suffix", True, est["periods"][1]["isEstimate"])
+        ck("first column is history", False, est["periods"][0]["isEstimate"])
+        ck("revenue stays in 억원", 2589355.0, est["periods"][0]["revenue"])
+        ck("YoY undoes the x10", -14.3, est["periods"][0]["revenueYoYPct"])
+        ck("EPS undoes the x10", 2131.0, est["periods"][0]["eps"])
+        ck("PER undoes the x10", 36.8, est["periods"][0]["per"])
+        ck("ROE undoes the x10", 4.1, est["periods"][0]["roePct"])
+        ck("opinion rides along", "매수", est["opinion"])
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed, "action": "selftest",
