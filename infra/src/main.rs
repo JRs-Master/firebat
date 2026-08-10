@@ -653,6 +653,12 @@ async fn main() -> Result<()> {
             .with_status(status_manager.clone())
             .with_event(event_manager.clone()),
     );
+    // A module's declared output file (`data._mediaImport`) is carried into the media store
+    // through the same gated save uploads use. Post-construction: MediaManager is built after
+    // ModuleManager, so this is a setter, not a builder arm.
+    module_manager.set_media_intake(Arc::new(
+        firebat_core::managers::media::MediaIntake(media_manager.clone()),
+    ));
     // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 설정된 채로:
     // - 시스템 프롬프트 자동 주입
     // - sysmod/MCP 동적 description

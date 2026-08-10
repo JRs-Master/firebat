@@ -109,6 +109,34 @@ pub trait IImageImportPort: Send + Sync {
     ) -> InfraResult<GenerateImageResult>;
 }
 
+/// 모듈 산출 파일의 미디어 편입 — ModuleManager(leaf)가 MediaManager(leaf)를 통째로 잡지 않게
+/// 끼우는 좁은 포트. `IImageImportPort` 와 같은 이유, 반대 방향(들어오는 업로드가 아니라
+/// 나가는 산출물). save 를 경유하므로 magic byte 게이트가 모듈 산출물에도 똑같이 적용된다.
+#[async_trait::async_trait]
+pub trait IMediaIntakePort: Send + Sync {
+    async fn intake(
+        &self,
+        binary: Vec<u8>,
+        content_type: &str,
+        opts: MediaSaveOptions,
+    ) -> InfraResult<MediaSaveResult>;
+}
+
+/// `Arc<MediaManager>` → `IMediaIntakePort` 어댑터.
+pub struct MediaIntake(pub Arc<MediaManager>);
+
+#[async_trait::async_trait]
+impl IMediaIntakePort for MediaIntake {
+    async fn intake(
+        &self,
+        binary: Vec<u8>,
+        content_type: &str,
+        opts: MediaSaveOptions,
+    ) -> InfraResult<MediaSaveResult> {
+        self.0.save(&binary, content_type, opts).await
+    }
+}
+
 /// `Arc<MediaManager>` → `IImageImportPort` 어댑터.
 /// (MediaManager 의 이미지 메서드가 `self: &Arc<Self>` 라 trait 을 직접 impl 할 수 없다.)
 pub struct MediaImageImporter(pub Arc<MediaManager>);

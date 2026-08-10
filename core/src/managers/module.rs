@@ -42,6 +42,18 @@ fn is_safe_name(name: &str) -> bool {
     !name.is_empty() && !name.contains("..") && !name.contains('/') && !name.contains('\\')
 }
 
+/// `_mediaImport.path` confinement — workspace-relative, under `data/` or `user/` only.
+/// Returns the normalized (forward-slash) path, or None for anything that points elsewhere.
+fn media_export_path(path: &str) -> Option<String> {
+    let norm = path.replace('\\', "/");
+    let ok = !norm.is_empty()
+        && !norm.starts_with('/')
+        && !norm.contains(':')
+        && !norm.split('/').any(|seg| seg == "..")
+        && (norm.starts_with("data/") || norm.starts_with("user/"));
+    ok.then_some(norm)
+}
+
 pub struct ModuleManager {
     sandbox: Arc<dyn ISandboxPort>,
     storage: Arc<dyn IStoragePort>,
@@ -59,6 +71,11 @@ pub struct ModuleManager {
     /// shape consolidation uses to reach recall without one leaf calling another. None = not
     /// wired (tests), and a declaration then reports that it went nowhere instead of vanishing.
     recall: Option<Arc<dyn IMemoryFacadePort>>,
+    /// Where a module's `_mediaImport` file lands — the media store, through the same gated save
+    /// uploads use. Mutex-held because MediaManager is constructed after this manager in main.rs
+    /// (set_media_intake, not a builder). None = not wired (tests); the declaration then reports
+    /// it went nowhere.
+    media_intake: Mutex<Option<Arc<dyn crate::managers::media::IMediaIntakePort>>>,
 }
 
 /// Alias length cap. The alias is the account's name everywhere it appears — settings rows,
@@ -138,6 +155,7 @@ impl ModuleManager {
             stream_watches: Mutex::new(HashMap::new()),
             sysmod_cache: None,
             recall: None,
+            media_intake: Mutex::new(None),
         }
     }
 
@@ -156,6 +174,12 @@ impl ModuleManager {
     pub fn with_recall(mut self, recall: Arc<dyn IMemoryFacadePort>) -> Self {
         self.recall = Some(recall);
         self
+    }
+
+    /// Wire the media store a module's `_mediaImport` output file is carried into.
+    /// Post-construction (`&self`) because MediaManager is built after this manager.
+    pub fn set_media_intake(&self, intake: Arc<dyn crate::managers::media::IMediaIntakePort>) {
+        *self.media_intake.lock().unwrap() = Some(intake);
     }
 
     pub fn with_ws_api(mut self, ws_api: Arc<dyn IWsApiPort>) -> Self {
@@ -911,7 +935,94 @@ impl ModuleManager {
             self.remember_declared(module_name, &result).await;
         }
 
+        // A file the module made walks OUT through the media door — same gated save uploads
+        // walk in through, so a lying extension is refused here too. The module stays dumb:
+        // it writes to its own data/ scratch and declares `_mediaImport`; the framework carries.
+        if result.success {
+            self.export_declared_media(module_name, &mut result).await;
+        }
+
         Ok(result)
+    }
+
+    /// `data._mediaImport = {path, contentType?, filenameHint?}` → media store → `data.media`.
+    ///
+    /// Failure never fails the module run — the work product exists on disk either way — but it
+    /// is never silent: the declaration is replaced by `data.mediaExportError` and a WARN. The
+    /// source file is removed after a successful import only when it sits in `data/` (module
+    /// scratch); anything under `user/` is the user's and stays.
+    async fn export_declared_media(&self, module_name: &str, result: &mut ModuleOutput) {
+        let Some(obj) = result.data.as_object_mut() else { return };
+        let Some(decl) = obj.remove("_mediaImport") else { return };
+
+        let mut fail = |obj: &mut serde_json::Map<String, serde_json::Value>, msg: String| {
+            tracing::warn!(module = module_name, error = %msg, "[ModuleManager] media export failed");
+            obj.insert("mediaExportError".to_string(), serde_json::Value::String(msg));
+        };
+
+        let path = decl.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let Some(norm) = media_export_path(&path) else {
+            return fail(obj, format!(
+                "_mediaImport.path must be workspace-relative under data/ or user/ (got {path:?})"
+            ));
+        };
+        let Some(intake) = self.media_intake.lock().unwrap().clone() else {
+            return fail(obj, "_mediaImport declared but no media store is wired".to_string());
+        };
+
+        let bin = match self.storage.read_binary(&norm).await {
+            Ok(b) => b,
+            Err(e) => return fail(obj, format!("_mediaImport read failed for {norm}: {e}")),
+        };
+        const MAX_EXPORT_BYTES: usize = 50 * 1024 * 1024;
+        if bin.size > MAX_EXPORT_BYTES {
+            return fail(obj, format!(
+                "_mediaImport file too large ({} bytes > {MAX_EXPORT_BYTES})", bin.size
+            ));
+        }
+        use base64::Engine as _;
+        let binary = match base64::engine::general_purpose::STANDARD.decode(&bin.base64) {
+            Ok(b) => b,
+            Err(e) => return fail(obj, format!("_mediaImport decode failed: {e}")),
+        };
+
+        // The declared type wins; the storage adapter's sniff is the fallback. Either way the
+        // media gate re-verifies the bytes, so a wrong claim is refused, not stored.
+        let content_type = decl
+            .get("contentType")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or(bin.mime_type);
+        let opts = crate::ports::MediaSaveOptions {
+            filename_hint: decl
+                .get("filenameHint")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .or_else(|| {
+                    norm.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(stem, _)| stem.to_string())
+                }),
+            source: Some(format!("module:{module_name}")),
+            ..Default::default()
+        };
+        match intake.intake(binary, &content_type, opts).await {
+            Ok(saved) => {
+                if norm.starts_with("data/") {
+                    let _ = self.storage.delete(&norm).await;
+                }
+                obj.insert(
+                    "media".to_string(),
+                    serde_json::json!({
+                        "slug": saved.slug,
+                        "url": saved.url,
+                        "bytes": bin.size,
+                        "contentType": content_type,
+                    }),
+                );
+            }
+            Err(e) => fail(obj, format!("media import refused: {e}")),
+        }
     }
 
     /// The module's own record, for an action its config named in `recall.actions`.
@@ -3090,6 +3201,25 @@ impl ModuleManager {
 // Tests 이관 — `infra/tests/module_manager_test.rs` (integration test).
 
 // 순수 함수 단위 테스트만 여기 — ModuleManager 통합 테스트는 위 주석의 integration 파일.
+#[cfg(test)]
+mod media_export_path_tests {
+    use super::media_export_path;
+
+    /// The export door only carries files a module could legitimately have written —
+    /// its own data/ scratch or the user zone. Everything else is a refusal, not a fallback.
+    #[test]
+    fn only_workspace_data_and_user_paths_pass() {
+        assert_eq!(media_export_path("data/docs/out.pptx"), Some("data/docs/out.pptx".into()));
+        assert_eq!(media_export_path("user/media/x.wav"), Some("user/media/x.wav".into()));
+        assert_eq!(media_export_path("data\\docs\\out.pptx"), Some("data/docs/out.pptx".into()));
+        assert_eq!(media_export_path("/etc/passwd"), None);
+        assert_eq!(media_export_path("data/../system/prompts/x.md"), None);
+        assert_eq!(media_export_path("C:/windows/system32"), None);
+        assert_eq!(media_export_path("system/modules/sing/main.py"), None);
+        assert_eq!(media_export_path(""), None);
+    }
+}
+
 #[cfg(test)]
 mod coercion_tests {
     use super::*;
