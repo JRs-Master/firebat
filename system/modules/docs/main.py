@@ -295,11 +295,24 @@ def _wrap_lines(text, width_in, chars_per_in=PPTX_CHARS_PER_IN):
     return total
 
 
-def make_pptx_file(blocks, title, master_path, out_path):
+def _hex_rgb(value):
+    """'#2563EB' / '2563EB' -> RGBColor, None for anything unreadable (never a guess)."""
+    from pptx.dml.color import RGBColor
+    s = str(value or "").strip().lstrip("#")
+    if len(s) == 6:
+        try:
+            return RGBColor(int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16))
+        except ValueError:
+            return None
+    return None
+
+
+def make_pptx_file(blocks, title, master_path, out_path, transition="fade", theme=None):
     from pptx import Presentation
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE
     from pptx.enum.text import PP_ALIGN
+    from pptx.oxml.ns import qn
     from pptx.util import Inches, Pt
 
     prs = Presentation(master_path) if master_path else Presentation()
@@ -308,16 +321,35 @@ def make_pptx_file(blocks, title, master_path, out_path):
     sw_in = sw / 914400
     sh_in = sh / 914400
 
-    # Default design ONLY when there is no master — a master carries the corporate look and we
-    # must not paint over it. Firebat palette: blue-600 accent on slate type, banded tables,
-    # a quiet page number (2026-08-10 사용자: 서식 없이 쓰는 경우의 기본 디자인).
+    # Design has THREE layers, strongest first: a master .pptx (corporate look — never painted
+    # over), then caller theme tokens (the palette the AI chose when it designed the page —
+    # blocks are meaning, tokens are the look, so the look rides along as data), then the
+    # Firebat default (blue-600 accent on slate, banded tables, quiet page number).
     styled = master_path is None
-    BLUE = RGBColor(0x25, 0x63, 0xEB)      # blue-600
-    SLATE_D = RGBColor(0x1E, 0x29, 0x3B)   # slate-800 — headings
-    SLATE_B = RGBColor(0x33, 0x41, 0x55)   # slate-700 — body
-    SLATE_L = RGBColor(0xF1, 0xF5, 0xF9)   # slate-100 — banded rows
-    SLATE_M = RGBColor(0x94, 0xA3, 0xB8)   # slate-400 — footer
+    theme = theme if isinstance(theme, dict) else {}
+    BLUE = (_hex_rgb(theme.get("accent")) or RGBColor(0x25, 0x63, 0xEB))
+    SLATE_D = (_hex_rgb(theme.get("heading")) or RGBColor(0x1E, 0x29, 0x3B))
+    SLATE_B = (_hex_rgb(theme.get("body")) or RGBColor(0x33, 0x41, 0x55))
+    SLATE_L = (_hex_rgb(theme.get("band")) or RGBColor(0xF1, 0xF5, 0xF9))
+    SLATE_M = RGBColor(0x94, 0xA3, 0xB8)   # footer — always quiet
     WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+    # Slide transition — python-pptx has no API for it, but <p:transition> is one well-formed
+    # element per slide (unlike object-animation timing XML, which stays out of scope). Injected
+    # for every slide at save time; "none" disables.
+    def apply_transition(slide):
+        if transition not in ("fade", "wipe", "push"):
+            return
+        sld = slide._element
+        if sld.find(qn("p:transition")) is not None:
+            return
+        tr = sld.makeelement(qn("p:transition"), {"spd": "med"})
+        tr.append(sld.makeelement(qn(f"p:{transition}"), {}))
+        timing = sld.find(qn("p:timing"))
+        if timing is not None:
+            timing.addprevious(tr)
+        else:
+            sld.append(tr)
 
     def accent_bar(slide, x_in, y_in, w_in, h_in=0.05):
         bar = slide.shapes.add_shape(
@@ -494,6 +526,8 @@ def make_pptx_file(blocks, title, master_path, out_path):
                 state["y"] = y + height_in + 0.15
         if state["slide"] is None:
             new_slide()  # an empty chunk (e.g. lone divider) still turns the page
+    for slide in prs.slides:
+        apply_transition(slide)
     prs.save(out_path)
     return state["count"]
 
@@ -516,7 +550,10 @@ def action_make_pptx(inp):
                     "error": f"master must be .pptx (got {master_path})"}
     out_path, stem = out_file(title or "deck", "pptx", {"t": title, "b": blocks})
     try:
-        slides = make_pptx_file(blocks, title, master_path, out_path)
+        transition = str(inp.get("transition") or "fade").strip().lower()
+        theme = inp.get("theme") if isinstance(inp.get("theme"), dict) else None
+        slides = make_pptx_file(blocks, title, master_path, out_path,
+                                transition=transition, theme=theme)
     except Exception as e:  # noqa: BLE001
         return {"success": False, "action": "make_pptx", "error": f"pptx build failed: {e}"}
     return {"success": True, "action": "make_pptx", "data": {
@@ -833,6 +870,21 @@ def action_selftest():
         total_rows = sum(len(t["rows"]) for t in got_tbl["tables"])
         ck("pptx: a huge table splits across slides", n_tbl >= 2)
         ck("pptx: every row survives the split", total_rows == 60)
+        from pptx.oxml.ns import qn as _qn
+        ck("pptx: slides carry the fade transition",
+           _P(p).slides[0]._element.find(_qn("p:transition")) is not None)
+        p_theme = f"{OUT_DIR}/selftest-theme.pptx"
+        tmp.append(p_theme)
+        make_pptx_file([{"type": "header", "props": {"text": "장", "level": 1}}], "테마",
+                       None, p_theme, transition="none", theme={"accent": "#FF0000"})
+        prs_t = _P(p_theme)
+        ck("pptx: transition='none' really means none",
+           prs_t.slides[0]._element.find(_qn("p:transition")) is None)
+        reds = [sh for sl in prs_t.slides for sh in sl.shapes
+                if sh.shape_type == 1 and sh.fill.type is not None
+                and getattr(sh.fill.fore_color, "rgb", None) is not None
+                and str(sh.fill.fore_color.rgb) == "FF0000"]
+        ck("pptx: theme accent recolors the bars", len(reds) >= 1)
         p_spill = f"{OUT_DIR}/selftest-spill.pptx"
         tmp.append(p_spill)
         many = ([{"type": "header", "props": {"text": "긴 장", "level": 1}}]

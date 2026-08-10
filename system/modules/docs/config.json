@@ -52,7 +52,9 @@
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image",
           "title": "deck title (title slide + filename)",
-          "masterMediaPath": "media URL of a master .pptx to build on (falls back to the module's uploaded master setting)"
+          "masterMediaPath": "media URL of a master .pptx to build on (falls back to the module's uploaded master setting)",
+          "transition": "fade (default) | wipe | push | none",
+          "theme": "{accent, heading, body, band} hex tokens — the page palette rides along (ignored when a master is given)"
         }
       },
       {
@@ -162,6 +164,20 @@
           "null"
         ],
         "description": "For read: cap on returned text length (default unlimited — large text is auto-cached)."
+      },
+      "transition": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "make_pptx slide transition: fade (default) | wipe | push | none."
+      },
+      "theme": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "make_pptx design tokens when no master is given — {accent, heading, body, band} as hex colors. Use the palette you designed the page with; blocks carry meaning, these carry the look. A master .pptx always wins over this."
       }
     }
   },
