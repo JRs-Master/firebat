@@ -44,7 +44,9 @@ US_CODES = ('XNYS', 'XNAS')
 
 
 def _fail(msg, **extra):
-    print(json.dumps({'success': False, 'error': msg, **extra}, ensure_ascii=False))
+    # The output contract requires `action` on every reply, including refusals — an error that
+    # also violates the schema becomes two errors (same class caught live on binance).
+    print(json.dumps({'success': False, 'action': extra.pop('action', 'unknown'), 'error': msg, **extra}, ensure_ascii=False))
     sys.exit(1)
 
 
@@ -245,5 +247,5 @@ if __name__ == '__main__':
     except SystemExit:
         raise
     except Exception as err:  # noqa: BLE001
-        print(json.dumps({'success': False, 'error': str(err)}, ensure_ascii=False))
+        print(json.dumps({'success': False, 'action': 'unknown', 'error': str(err)}, ensure_ascii=False))
         sys.exit(1)

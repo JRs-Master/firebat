@@ -410,7 +410,10 @@ export async function main(input) {
     const out = await dispatch(input || {});
     console.log(JSON.stringify({ success: true, action: input.action, ...out }));
   } catch (err) {
-    console.log(JSON.stringify({ success: false, action: input && input.action, error: err.message }));
+    // The output contract requires `action`, and JSON.stringify silently DROPS an undefined
+    // key — so a call that failed before naming its action also failed the output schema and
+    // turned one error into two (2026-08-10, hub turn). Every path names a string.
+    console.log(JSON.stringify({ success: false, action: String((input && input.action) || 'unknown'), error: err.message }));
     process.exitCode = 1;
   }
 }
@@ -423,7 +426,7 @@ process.stdin.on('end', async () => {
     const parsed = JSON.parse(raw);
     await main(parsed.data ?? parsed);
   } catch (err) {
-    console.log(JSON.stringify({ success: false, error: `입력을 읽지 못했습니다: ${err.message}` }));
+    console.log(JSON.stringify({ success: false, action: 'unknown', error: `입력을 읽지 못했습니다: ${err.message}` }));
     process.exit(1);
   }
 });
