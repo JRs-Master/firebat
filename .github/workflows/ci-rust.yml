@@ -10,12 +10,6 @@
 name: CI Rust
 
 on:
-  # Manual trigger — for the case just hit (2026-08-10): the clock-discipline test in cargo
-  # scans system/modules/**, so a MODULE commit can flip the Rust verdict both ways, yet module
-  # paths deliberately do not trigger this workflow (a 10-minute build per module edit would be
-  # the wrong trade). When a module-only commit fixes a red Rust test, dispatch this by hand
-  # instead of touching a core file to fake a trigger.
-  workflow_dispatch:
   push:
     branches: [main]
     paths:
