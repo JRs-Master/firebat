@@ -2375,6 +2375,15 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   }, []);
   const startRecording = useCallback(async () => {
     if (recording) { stopRecording(); return; }
+    // Plain HTTP has no microphone to ask for: browsers gate getUserMedia behind a secure
+    // context, so on this server navigator.mediaDevices is simply undefined. "Permission denied"
+    // would be a lie — there was no prompt to answer. Say the real condition and what unlocks it
+    // (the TLS/domain move already on the roadmap).
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setRecordError(t('chat_input.mic_insecure'));
+      setTimeout(() => setRecordError(''), 8000);
+      return;
+    }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -2837,13 +2846,6 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                               <ImagePlus size={16} className="text-slate-400" />
                               {t('chat_input.attach_image')}
                             </button>
-                            <button
-                              onClick={() => { void startRecording(); setShowPlusMenu(false); }}
-                              className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                            >
-                              <Mic size={16} className="text-slate-400" />
-                              {t('chat_input.record_audio')}
-                            </button>
                           </div>
                         </>
                       )}
@@ -2917,15 +2919,35 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                         was thrown to the login screen. */}
                     {!hubContext && <PendingApprovals />}
                   </div>
-                  <Tooltip label={loading ? t('chat_input.stop_generation') : t('chat_input.send')}>
+                  {/* One button, three states — the shape other chat UIs trained everyone on:
+                      empty input shows the microphone, typing morphs it into send, loading is
+                      stop. While recording it goes red and stops the take. */}
+                  <Tooltip label={
+                    loading ? t('chat_input.stop_generation')
+                    : recording ? t('chat_input.record_stop')
+                    : (input.trim() || hubContext) ? t('chat_input.send')
+                    : t('chat_input.record_audio')
+                  }>
                   <button
-                    onClick={() => loading ? handleStop() : handleSubmit()}
-                    disabled={!loading && !input.trim()}
-                    className="bg-slate-800 hover:bg-slate-900 border border-slate-700 text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-300 disabled:cursor-not-allowed h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
+                    onClick={() =>
+                      loading ? handleStop()
+                      : recording ? stopRecording()
+                      : (input.trim() || hubContext) ? handleSubmit()
+                      : void startRecording()
+                    }
+                    disabled={!!hubContext && !loading && !input.trim()}
+                    className={`${recording
+                      ? 'bg-red-500 hover:bg-red-600 border border-red-400 text-white'
+                      : 'bg-slate-800 hover:bg-slate-900 border border-slate-700 text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-300 disabled:cursor-not-allowed'}
+                      h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]`}
                   >
                     {loading
                       ? <><Square size={12} fill="currentColor" className="sm:hidden" /><Square size={16} fill="currentColor" className="hidden sm:block" /></>
-                      : <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
+                      : recording
+                        ? <><Square size={12} fill="currentColor" className="sm:hidden animate-pulse" /><Square size={16} fill="currentColor" className="hidden sm:block animate-pulse" /></>
+                        : (input.trim() || hubContext)
+                          ? <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
+                          : <><Mic size={14} className="sm:hidden" /><Mic size={18} className="hidden sm:block" /></>
                     }
                   </button>
                   </Tooltip>
