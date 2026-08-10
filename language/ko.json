@@ -966,5 +966,8 @@
     "copy_md": "마크다운 복사",
     "copied": "복사됨",
     "delete": "삭제"
+  },
+  "module_settings": {
+    "file_pick": "파일 선택"
   }
 }

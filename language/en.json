@@ -966,5 +966,8 @@
     "copy_md": "Copy Markdown",
     "copied": "Copied",
     "delete": "Delete"
+  },
+  "module_settings": {
+    "file_pick": "Choose file"
   }
 }
