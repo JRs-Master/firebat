@@ -48,7 +48,7 @@
       {
         "id": "make_pptx",
         "name": "PPTX 만들기 (렌더 블록 → 슬라이드)",
-        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store.",
+        "description": "Build a .pptx from render blocks: header level 1 or divider starts a new slide; tables become native editable tables. Optional master pptx (media URL) carries the corporate theme. The file lands in the media store. IMPORTANT: pass the blocks as this tool's arguments (or blocksCacheKey) — blocks pasted into the chat reply render a page and make NO file.",
         "params": {
           "blocks": "render-block array [{type, props}] — header/text/list/table/metric/image",
           "title": "deck title (title slide + filename)",
@@ -130,7 +130,7 @@
         "items": {
           "type": "object"
         },
-        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide."
+        "description": "For make_*: render-block IR [{type, props}] — the same blocks pages render. header{text,level} / text{content} / list{items,ordered} / table{headers,rows} / metric{label,value,unit,delta} / image{src} / divider. In make_pptx, header level 1 or divider starts a new slide. Render-fence dialect ({name:'Header',type:'component'}) is absorbed."
       },
       "blocksCacheKey": {
         "type": [

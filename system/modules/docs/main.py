@@ -223,6 +223,24 @@ def action_read(inp):
 # ── make ───────────────────────────────────────────────────────────────────────────────────────
 
 
+def normalize_blocks(blocks):
+    """Absorb the render-fence dialect: {"name":"Header","type":"component","props":...} is what
+    a model living in chat fences writes (measured on the first live ppt request — it built the
+    deck in that shape). Intent is unambiguous, so absorb instead of teach: name becomes type.
+    Props already share their vocabulary (text/level/content/headers/rows)."""
+    out = []
+    for b in blocks or []:
+        if not isinstance(b, dict):
+            continue
+        t = str(b.get("type") or "").strip()
+        name = str(b.get("name") or "").strip()
+        if name and (t == "component" or not t):
+            b = dict(b)
+            b["type"] = name.lower()
+        out.append(b)
+    return out
+
+
 def _split_slides(blocks):
     """header level 1 or divider starts a new slide — the boundary rule from the design."""
     slides, cur = [], []
@@ -343,7 +361,7 @@ def make_pptx_file(blocks, title, master_path, out_path):
 
 
 def action_make_pptx(inp):
-    blocks = inp.get("blocks") or []
+    blocks = normalize_blocks(inp.get("blocks"))
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_pptx",
@@ -396,7 +414,7 @@ def make_xlsx_file(sheets, out_path):
 def action_make_xlsx(inp):
     sheets = inp.get("sheets")
     if not sheets:
-        blocks = inp.get("blocks") or []
+        blocks = normalize_blocks(inp.get("blocks"))
         sheets, last_header = [], None
         for b in blocks:
             t, p = str(b.get("type") or ""), b.get("props") or {}
@@ -552,7 +570,7 @@ def make_pdf_file(blocks, title, out_path):
 
 
 def action_make_pdf(inp):
-    blocks = inp.get("blocks") or []
+    blocks = normalize_blocks(inp.get("blocks"))
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_pdf",
@@ -569,7 +587,7 @@ def action_make_pdf(inp):
 
 
 def action_make_docx(inp):
-    blocks = inp.get("blocks") or []
+    blocks = normalize_blocks(inp.get("blocks"))
     title = str(inp.get("title") or "").strip()
     if not blocks and not title:
         return {"success": False, "action": "make_docx",
@@ -643,6 +661,14 @@ def action_selftest():
     ]
 
     ck("slide boundary splits on header level 1", len(_split_slides(blocks)) == 2)
+
+    fence = normalize_blocks([
+        {"name": "Header", "type": "component", "props": {"text": "장", "level": 1}},
+        {"name": "Divider", "type": "component", "props": {}},
+        {"name": "Table", "type": "component", "props": {"headers": ["a"], "rows": [["1"]]}},
+    ])
+    ck("render-fence dialect is absorbed (name -> type)",
+       [b["type"] for b in fence] == ["header", "divider", "table"])
 
     # pptx round-trip
     p = f"{OUT_DIR}/selftest.pptx"
