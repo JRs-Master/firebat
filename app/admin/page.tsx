@@ -608,16 +608,14 @@ function ThinkingBlock({
   isActive?: boolean;
   isComplete?: boolean;
 }) {
-  if (!isActive && !isComplete && !thinkingText) return null;
   const sentinelValues = Object.values(THINKING_STATUS);
   const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
-  const label = statusText || (isActive ? '생각중...' : (isComplete ? '답변완료' : ''));
   // "[도구 호출: ...]" / "[계획 정리]" 마커 줄은 표시하지 않는다 — 그 진행은 상태줄(label)로만.
   const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
-  // 한 줄 · 한 문장 티커 (2026-08-10 사용자 두 번째 정정) — 여러 줄 상자는 "생각중 옆 한 줄"이
-  // 아니라 문단이 됐다. 문장 단위로 끊어 **마지막 문장 하나만** 라벨 옆에 두고, 새 문장이
-  // 완성될 때 아래에서 위로 올라온다(문장 index 를 key 로 — 진행 중인 문장이 자라는 동안은
-  // 재애니메이션 없음). 전문은 어차피 턴 아카이브가 들고 있다.
+  // 한 줄 · 한 문장 티커 (2026-08-10 사용자 정정 2회) — 여러 줄 상자는 문단이 됐고, "마지막
+  // 문장만"은 몰아서 온 문장을 건너뛰었다. 그래서 **큐**: 문장은 전부 순서대로 지나가되 화면엔
+  // 늘 한 줄 — 이전 문장이 위로 밀려나가고 다음 문장이 아래서 올라온다. 뒤가 밀리면 빨리
+  // 넘긴다(전문은 어차피 턴 아카이브가 들고 있다).
   const sentences = rawBody
     ? rawBody
         .split('\n')
@@ -625,19 +623,43 @@ function ThinkingBlock({
         .map((s) => s.trim())
         .filter((s) => s && !/^\[(도구 호출:|계획 정리)/.test(s))
     : [];
-  const current = isActive ? sentences[sentences.length - 1] : undefined;
+  // Hooks BEFORE the early return — this component flips between null and rendered every turn,
+  // and hooks below a conditional return change count across that flip, which React answers by
+  // killing the subtree (the 2026-08-10 vanishing robot).
+  const [shownIdx, setShownIdx] = useState(0);
+  const backlog = sentences.length - 1 - shownIdx;
+  useEffect(() => {
+    // 새 턴에서 thinkingText 가 초기화되면 인덱스도 따라 내려온다.
+    if (shownIdx > 0 && shownIdx > sentences.length - 1) {
+      setShownIdx(Math.max(0, sentences.length - 1));
+    }
+  }, [shownIdx, sentences.length]);
+  useEffect(() => {
+    if (!isActive || backlog <= 0) return;
+    // 문장당 잠깐 머무르고 다음으로 — 밀려 있으면 빨리 소화 (추론이 화면보다 빠른 게 정상).
+    const hold = backlog > 4 ? 350 : 900;
+    const t = setTimeout(() => setShownIdx((i) => i + 1), hold);
+    return () => clearTimeout(t);
+  }, [backlog, isActive, shownIdx]);
+  if (!isActive && !isComplete && !thinkingText) return null;
+  const label = statusText || (isActive ? '생각중...' : (isComplete ? '답변완료' : ''));
+  const idx = Math.min(shownIdx, Math.max(0, sentences.length - 1));
+  const prev = idx > 0 ? sentences[idx - 1] : undefined;
+  const cur = isActive ? sentences[idx] : undefined;
   return (
     <div className="flex items-center gap-2 text-slate-400 min-w-0">
       {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
       {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
-      {current && (
+      {cur && (
         <div className="relative flex-1 min-w-0 h-[1.4em] overflow-hidden">
-          <div
-            key={sentences.length}
-            className="thinking-rise text-[12px] text-slate-400 truncate leading-[1.4em]"
-          >
-            {current}
+          {/* prev+cur 를 세로로 쌓고 mount 시 한 줄만큼 올린다 = 이전 문장이 밀려 나가는 그림.
+              key 가 문장 index 라 진행 중인 문장이 자라는 동안은 재애니메이션이 없다. */}
+          <div key={idx} className={prev != null ? 'thinking-roll' : 'thinking-rise'}>
+            {prev != null && (
+              <div className="text-[12px] text-slate-400 truncate leading-[1.4em]">{prev}</div>
+            )}
+            <div className="text-[12px] text-slate-400 truncate leading-[1.4em]">{cur}</div>
           </div>
         </div>
       )}
