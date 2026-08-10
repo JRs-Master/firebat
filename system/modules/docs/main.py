@@ -307,11 +307,34 @@ def _hex_rgb(value):
     return None
 
 
+# Pure numerics ("1,234", "-3.1") become real numbers; unit-bearing text ("48억", "3.1%p")
+# cannot carry its unit into a number, so it stays text.
+_NUMERIC_RE = re.compile(r"^[+\-]?\d{1,3}(,\d{3})*(\.\d+)?$|^[+\-]?\d+(\.\d+)?$")
+# Looser shape for ALIGNMENT decisions only: a number plus a short unit tail still reads
+# as a number to the eye, and number columns right-align.
+_NUMLIKE_RE = re.compile(r"^[+\-±]?[\d,]+(\.\d+)?\s*\S{0,3}$")
+
+
+def parse_number(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    s = str(v or "").strip()
+    if not s or not _NUMERIC_RE.match(s):
+        return None
+    try:
+        f = float(s.replace(",", ""))
+    except ValueError:
+        return None
+    return int(f) if f.is_integer() and "." not in s else f
+
+
 def make_pptx_file(blocks, title, master_path, out_path, transition="fade", theme=None):
     from pptx import Presentation
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE
-    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
     from pptx.oxml.ns import qn
     from pptx.util import Inches, Pt
 
@@ -376,11 +399,13 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         box.shadow.inherit = False
         return box
 
-    def add_text(slide, x, y, w, h, runs, align=None, wrap=True):
+    def add_text(slide, x, y, w, h, runs, align=None, wrap=True, anchor=None):
         # runs = [(text, size_pt, bold, color), ...] — one paragraph per run.
         tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
         tf = tb.text_frame
         tf.word_wrap = wrap
+        if anchor is not None:
+            tf.vertical_anchor = anchor
         for i, (text, size, bold, color) in enumerate(runs):
             para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
             para.text = text
@@ -435,18 +460,19 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         # The genre's spine: dark number+title band, then (first slide of the section only)
         # a light band carrying the slide's one-line message behind a small accent bar.
         add_box(slide, MSO_SHAPE.RECTANGLE, 0, 0, sw_in, BAND_H, fill=SLATE_D)
-        add_text(slide, 0.55, 0.13, sw_in - 2.6, 0.38,
+        add_text(slide, 0.55, 0, sw_in - 2.6, BAND_H,
                  [(f"{state['sec_no']:02d}. {state['sec_title']}", 16, True, WHITE)],
-                 wrap=False)
+                 wrap=False, anchor=MSO_ANCHOR.MIDDLE)
         if title:
-            add_text(slide, sw_in - 2.05, 0.19, 1.55, 0.26,
-                     [(str(title), 8.5, False, SLATE_M)], align=PP_ALIGN.RIGHT, wrap=False)
+            add_text(slide, sw_in - 2.05, 0, 1.55, BAND_H,
+                     [(str(title), 8.5, False, SLATE_M)], align=PP_ALIGN.RIGHT, wrap=False,
+                     anchor=MSO_ANCHOR.MIDDLE)
         if statement:
             add_box(slide, MSO_SHAPE.RECTANGLE, 0, BAND_H, sw_in, STMT_H, fill=SLATE_L)
             add_box(slide, MSO_SHAPE.RECTANGLE, 0.55, BAND_H + 0.15, 0.07, STMT_H - 0.3,
                     fill=BLUE)
-            add_text(slide, 0.8, BAND_H + 0.12, sw_in - 1.7, STMT_H - 0.2,
-                     [(statement, 13, True, SLATE_D)])
+            add_text(slide, 0.8, BAND_H, sw_in - 1.7, STMT_H,
+                     [(statement, 13, True, SLATE_D)], anchor=MSO_ANCHOR.MIDDLE)
             return BAND_H + STMT_H + 0.3
         return BAND_H + 0.35
 
@@ -473,7 +499,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         if state["slide"] is None or state["y"] + height_in > sh_in - BODY_BOTTOM:
             new_slide()
 
-    def set_cell(cell, text, bold, fill=None, color=None):
+    def set_cell(cell, text, bold, fill=None, color=None, align=None):
         cell.text = text
         if fill is not None:
             cell.fill.solid()
@@ -483,8 +509,10 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
             para.font.bold = bold
             if color is not None:
                 para.font.color.rgb = color
+            if align is not None:
+                para.alignment = align
 
-    def place_table(headers, seg_rows, height_in, col_count):
+    def place_table(headers, seg_rows, height_in, col_count, aligns=None):
         ensure_room(height_in + 0.2)
         slide, y = state["slide"], state["y"]
         shape = slide.shapes.add_table(
@@ -493,13 +521,15 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         table = shape.table
         for c, h in enumerate(headers):
             set_cell(table.cell(0, c), str(h), True,
-                     fill=BLUE if styled else None, color=WHITE if styled else None)
+                     fill=BLUE if styled else None, color=WHITE if styled else None,
+                     align=aligns[c] if aligns else None)
         for r, row in enumerate(seg_rows):
             band = SLATE_L if (styled and r % 2 == 1) else (WHITE if styled else None)
             for c in range(col_count):
                 val = row[c] if c < len(row) else ""
                 set_cell(table.cell(r + 1, c), "" if val is None else str(val), False,
-                         fill=band, color=SLATE_B if styled else None)
+                         fill=band, color=SLATE_B if styled else None,
+                         align=aligns[c] if aligns else None)
         state["y"] = y + height_in + 0.25
 
     def render_table(p):
@@ -537,8 +567,15 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                 segments.append((seg, seg_h))
         else:
             segments = [(rows, header_h + sum(row_hs))]
+        # Number columns read right-aligned (decided on the WHOLE table, so every split
+        # segment aligns the same way).
+        def col_numeric(ci):
+            vals = [str(row[ci]).strip() for row in rows
+                    if ci < len(row) and row[ci] not in (None, "")]
+            return bool(vals) and all(_NUMLIKE_RE.match(v) for v in vals)
+        aligns = [PP_ALIGN.RIGHT if col_numeric(ci) else None for ci in range(n_cols)]
         for seg_rows, seg_h in segments:
-            place_table(headers, seg_rows, seg_h, n_cols)
+            place_table(headers, seg_rows, seg_h, n_cols, aligns=aligns)
 
     def render_image(p):
         src = str(p.get("src") or "")
@@ -747,17 +784,21 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                     pass
                 tf = card.text_frame
                 tf.word_wrap = True
+                tf.vertical_anchor = MSO_ANCHOR.MIDDLE
                 value = f"{m.get('value', '')}{m.get('unit') or ''}"
-                rows = [(str(m.get("label") or ""), 10, False, SLATE_B),
-                        (value, 20, True, BLUE)]
+                # Dashboard-card reading order: label anchors left, numbers set right
+                # (2026-08-11 사용자 — autoshape default centering scattered the three lines).
+                rows = [(str(m.get("label") or ""), 10, False, SLATE_B, PP_ALIGN.LEFT),
+                        (value, 20, True, BLUE, PP_ALIGN.RIGHT)]
                 if m.get("delta") not in (None, ""):
-                    rows.append((str(m.get("delta")), 9.5, False, SLATE_B))
-                for i, (text, size, bold, color) in enumerate(rows):
+                    rows.append((str(m.get("delta")), 9.5, False, SLATE_B, PP_ALIGN.RIGHT))
+                for i, (text, size, bold, color, al) in enumerate(rows):
                     para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                     para.text = text
                     para.font.size = Pt(size)
                     para.font.bold = bold
                     para.font.color.rgb = color
+                    para.alignment = al
             state["y"] = y + 1.3
 
     def text_par(lines):
@@ -888,8 +929,13 @@ def make_xlsx_file(sheets, out_path):
             for c in ws[1]:
                 c.font = Font(bold=True)
         for row in sh.get("rows") or []:
-            ws.append([v if isinstance(v, (int, float)) else ("" if v is None else str(v))
-                       for v in row])
+            # "1,234" must land as the number 1234, not text — text numbers kill SUM and
+            # charts on the receiving end (2026-08-11 사용자 실측).
+            cells = []
+            for v in row:
+                num = parse_number(v)
+                cells.append(num if num is not None else ("" if v is None else str(v)))
+            ws.append(cells)
     wb.save(out_path)
     return len(sheets)
 
@@ -1231,6 +1277,14 @@ def action_selftest():
         got = read_xlsx(p)
         ck("xlsx: sheet and rows survive", got["tables"]
            and got["tables"][0]["rows"] == [[1, "x"], [2, "y"]])
+        p_num = f"{OUT_DIR}/selftest-num.xlsx"
+        tmp.append(p_num)
+        make_xlsx_file([{"name": "n", "headers": ["v"],
+                         "rows": [["1,234"], ["-3.1"], ["48억"]]}], p_num)
+        got_n = read_xlsx(p_num)
+        vals = [r[0] for r in got_n["tables"][0]["rows"]]
+        ck("xlsx: numeric-looking text lands as real numbers (units stay text)",
+           vals == [1234, -3.1, "48억"])
     except Exception as e:  # noqa: BLE001
         ck(f"xlsx round trip crashed: {e}", False)
 
