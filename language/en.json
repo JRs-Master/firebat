@@ -553,7 +553,7 @@
     "record_saved": "Recording saved to media. Say what to do with it and send.",
     "record_failed": "Failed to save the recording.",
     "mic_denied": "Microphone permission denied. Allow it in the browser settings.",
-    "mic_insecure": "This server is still plain HTTP, so the browser locks the microphone. Recording unlocks once TLS is set up."
+    "mic_insecure": "Recording is not available right now."
   },
   "file_tree": {
     "open_in_browser": "Open in browser"

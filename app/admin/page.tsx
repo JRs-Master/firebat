@@ -2380,8 +2380,12 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     // would be a lie — there was no prompt to answer. Say the real condition and what unlocks it
     // (the TLS/domain move already on the roadmap).
     if (!navigator.mediaDevices?.getUserMedia) {
+      // The user-facing line stays short; the WHY goes to the console, where whoever is
+      // debugging actually looks. (Plain HTTP: browsers gate getUserMedia behind a secure
+      // context, so there is no permission to even ask for — unlocks with the TLS move.)
+      console.warn('[record] mediaDevices unavailable — insecure context (plain HTTP). Recording unlocks once TLS lands.');
       setRecordError(t('chat_input.mic_insecure'));
-      setTimeout(() => setRecordError(''), 8000);
+      setTimeout(() => setRecordError(''), 5000);
       return;
     }
     let stream: MediaStream;
