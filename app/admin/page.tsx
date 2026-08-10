@@ -625,10 +625,9 @@ function ThinkingBlock({
     : [];
   if (!isActive && !isComplete && !thinkingText) return null;
   const label = statusText || (isActive ? '생각중...' : (isComplete ? '답변완료' : ''));
-  // 마지막 문장 하나만 (2026-08-10 사용자 최종 결정 — 큐로 다 흘리니 정신없고, 쌓인 두 줄이
-  // 라벨과 어긋났다). 새 문장이 완성될 때만 아래서 위로 한 번 올라온다: key = 문장 개수라
-  // 진행 중인 문장이 자라는 동안은 재애니메이션이 없다. 고정 높이 없이 라벨과 같은 줄에
-  // 앉힌다(어긋남의 원인이 em 고정 높이 + 두 줄 스택이었다). 전문은 턴 아카이브 몫.
+  // 마지막 문장 하나만, 애니메이션 없이 **제자리 교체** (2026-08-10 사용자 최종 — 올라오는
+  // 모션조차 "흐르는 느낌"이라 산만했다). 문장이 바뀌면 그 줄의 글자만 바뀐다. 전문은 턴
+  // 아카이브 몫.
   const cur = isActive ? sentences[sentences.length - 1] : undefined;
   return (
     <div className="flex items-center gap-2 text-slate-400 min-w-0">
@@ -636,11 +635,7 @@ function ThinkingBlock({
       {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {cur && (
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <div key={sentences.length} className="thinking-rise text-[12px] text-slate-400 truncate">
-            {cur}
-          </div>
-        </div>
+        <div className="flex-1 min-w-0 text-[12px] text-slate-400 truncate">{cur}</div>
       )}
     </div>
   );

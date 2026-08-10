@@ -691,12 +691,3 @@ mark[class^="fbhl-"] {
   opacity: 1;
 }
 
-/* Thinking ticker — one sentence beside the "생각중" label; a newly completed sentence
-   rises from below into the single visible line (ThinkingBlock keys on sentence index). */
-@keyframes thinking-rise {
-  from { transform: translateY(120%); opacity: 0.2; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
-.thinking-rise {
-  animation: thinking-rise 260ms ease-out;
-}
