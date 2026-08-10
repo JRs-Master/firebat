@@ -3110,6 +3110,13 @@ pub struct MediaListOpts {
     /// None = admin 영역 (`user/media` + `system/media`).
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "hubOwner")]
     pub hub_owner: Option<String>,
+    /// Kind filter — "image" | "audio" | "document" | "other". None / "all" = everything.
+    /// Classified from the stored content type, server-side so pagination stays correct.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Sort order — "newest" (default) | "oldest" | "name" | "size".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

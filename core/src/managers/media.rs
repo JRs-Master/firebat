@@ -298,6 +298,40 @@ fn is_audio_content_type(content_type: &str) -> bool {
     ct.starts_with("audio/") || ct == "application/ogg"
 }
 
+/// Document family the media door accepts — declared content type → canonical extension.
+///
+/// PDF announces itself in its own bytes; the OOXML trio and HWPX are all ZIP containers,
+/// indistinguishable by magic alone, so for those the declared type picks the extension and the
+/// gate below only verifies the container is really a ZIP.
+fn document_ext_for_content_type(content_type: &str) -> Option<&'static str> {
+    match content_type.to_ascii_lowercase().as_str() {
+        "application/pdf" => Some("pdf"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            Some("pptx")
+        }
+        // Hancom never settled on one registered type; these are the ones seen in the wild.
+        "application/vnd.hancom.hwpx" | "application/haansofthwpx" | "application/hwp+zip" => {
+            Some("hwpx")
+        }
+        _ => None,
+    }
+}
+
+/// Document magic check — same reason as `detect_audio_ext`: the declared type is a claim, and
+/// the store serves these bytes back to browsers and modules.
+fn document_magic_ok(binary: &[u8], ext: &str) -> bool {
+    if binary.len() < 4 {
+        return false;
+    }
+    match ext {
+        "pdf" => binary.starts_with(b"%PDF"),
+        // docx / xlsx / pptx / hwpx — all ZIP (OOXML / OCF): PK\x03\x04
+        _ => binary.starts_with(b"PK\x03\x04"),
+    }
+}
+
 /// 이미지 magic byte 검증 — JPEG / PNG / WebP / GIF 만 허용.
 /// SVG / HTML / SWF 등 XSS 위험 형식 차단. 응답: 확장자 (jpg / png / webp / gif).
 fn detect_image_ext(binary: &[u8]) -> Option<&'static str> {
@@ -611,6 +645,18 @@ impl MediaManager {
                         &[("type", content_type)],
                     ));
                 }
+            }
+        } else if let Some(doc_ext) = document_ext_for_content_type(content_type) {
+            // Same gate, document shape: a declared document must BE that document family.
+            if !document_magic_ok(binary, doc_ext) {
+                return Err(crate::i18n::t(
+                    "core.error.media.document_magic_mismatch",
+                    None,
+                    &[("type", content_type)],
+                ));
+            }
+            if opts.ext.as_deref().unwrap_or("").is_empty() {
+                opts.ext = Some(doc_ext.to_string());
             }
         }
         self.media.save(binary, content_type, &opts).await
@@ -1576,6 +1622,29 @@ mod tests {
         assert!(super::is_audio_content_type("audio/mpeg"));
         assert!(super::is_audio_content_type("application/ogg"));
         assert!(!super::is_audio_content_type("image/png"));
+    }
+
+    // The document gate: PDF must open with %PDF, the ZIP-container family must be a ZIP —
+    // and a declared PDF carrying a ZIP is refused (a claim cannot pick a lying extension).
+    #[test]
+    fn document_magic_bytes_guard_the_claim() {
+        assert_eq!(super::document_ext_for_content_type("application/pdf"), Some("pdf"));
+        assert_eq!(
+            super::document_ext_for_content_type(
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            ),
+            Some("pptx")
+        );
+        assert_eq!(super::document_ext_for_content_type("application/vnd.hancom.hwpx"), Some("hwpx"));
+        assert_eq!(super::document_ext_for_content_type("text/plain"), None);
+
+        assert!(super::document_magic_ok(b"%PDF-1.7\n%\xe2\xe3", "pdf"));
+        assert!(super::document_magic_ok(b"PK\x03\x04\x14\x00\x06\x00", "docx"));
+        assert!(super::document_magic_ok(b"PK\x03\x04\x14\x00\x06\x00", "hwpx"));
+        // Mismatches: ZIP claiming to be PDF, PDF claiming to be OOXML, junk claiming anything.
+        assert!(!super::document_magic_ok(b"PK\x03\x04\x14\x00\x06\x00", "pdf"));
+        assert!(!super::document_magic_ok(b"%PDF-1.7\n", "docx"));
+        assert!(!super::document_magic_ok(b"hello world", "pdf"));
     }
 
 

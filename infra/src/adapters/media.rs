@@ -89,7 +89,41 @@ impl LocalMediaAdapter {
             "audio/mp4" | "audio/x-m4a" | "audio/aac" => "m4a",
             "audio/flac" | "audio/x-flac" => "flac",
             "audio/midi" | "audio/x-midi" | "audio/mid" => "mid",
+            // Documents — the same intake door again (office decks, sheets, HWPX, PDF).
+            // The manager's magic-byte gate has already verified the container by the time
+            // save() reaches here; this map only keeps the stored name honest.
+            "application/pdf" => "pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => "pptx",
+            "application/vnd.hancom.hwpx" | "application/haansofthwpx" | "application/hwp+zip" => {
+                "hwpx"
+            }
             _ => "bin",
+        }
+    }
+
+    /// Content type → gallery kind ("image" | "audio" | "document" | "other").
+    /// The list filter and the panel chips speak this one vocabulary.
+    fn media_kind(content_type: &str) -> &'static str {
+        let ct = content_type.to_ascii_lowercase();
+        if ct.starts_with("image/") {
+            "image"
+        } else if ct.starts_with("audio/") || ct == "application/ogg" {
+            "audio"
+        } else if matches!(
+            ct.as_str(),
+            "application/pdf"
+                | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                | "application/vnd.hancom.hwpx"
+                | "application/haansofthwpx"
+                | "application/hwp+zip"
+        ) {
+            "document"
+        } else {
+            "other"
         }
     }
 
@@ -467,8 +501,21 @@ impl IMediaPort for LocalMediaAdapter {
                 });
             }
         }
-        // 최신순 정렬
-        all.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        // 종류 필터 — content_type 분류. 페이지네이션 앞에서 걸러야 offset/total 이 맞는다.
+        if let Some(kind) = opts.kind.as_deref().filter(|k| !k.is_empty() && *k != "all") {
+            all.retain(|r| Self::media_kind(&r.content_type) == kind);
+        }
+        // 정렬 — 기본 최신순. name 은 표시 이름(filenameHint 우선) 기준, size 는 큰 것부터.
+        match opts.sort.as_deref().unwrap_or("newest") {
+            "oldest" => all.sort_by(|a, b| a.created_at.cmp(&b.created_at)),
+            "name" => all.sort_by(|a, b| {
+                let an = a.filename_hint.as_deref().unwrap_or(&a.slug).to_lowercase();
+                let bn = b.filename_hint.as_deref().unwrap_or(&b.slug).to_lowercase();
+                an.cmp(&bn)
+            }),
+            "size" => all.sort_by(|a, b| b.bytes.cmp(&a.bytes)),
+            _ => all.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+        }
         let total = all.len();
         let offset = opts.offset.unwrap_or(0);
         let limit = opts.limit.unwrap_or(50).min(500);

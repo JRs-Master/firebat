@@ -140,6 +140,8 @@ impl CatalogSource for MediaCatalogSource {
                 offset: None,
                 search: None,
                 hub_owner: None,
+                kind: None,
+                sort: None,
             })
             .await
         {
