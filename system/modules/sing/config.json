@@ -27,7 +27,8 @@
   "packages": [
     "numpy",
     "soundfile",
-    "pyworld"
+    "pyworld",
+    "mido"
   ],
   "input": {
     "type": "object",
@@ -79,6 +80,27 @@
           "null"
         ],
         "description": "Workspace-relative path of the spoken vocal wav (the TTS output, one take of all lyrics in note order). Omitted = instrumental only."
+      },
+      "scoreMediaPath": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "MIDI file to use as the score when `score` is omitted — a media URL (/user/media/<slug>.mid) or workspace-relative path. Omitted too = the module's own scoreMediaUrl setting (the '악보 올리기' upload). Karaoke MIDIs bring their own lyrics; the parsed score comes back in data.score for correction."
+      },
+      "lyrics": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Syllable string to lay onto MIDI notes in order (used only when the MIDI has no lyric events). Whitespace ignored; extra notes become melisma '-'."
+      },
+      "style": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Drum style override when the score comes from MIDI: trot | ballad | march | none."
       },
       "outPath": {
         "type": [

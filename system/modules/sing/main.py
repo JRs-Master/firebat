@@ -305,6 +305,181 @@ def render_vocal(vocal, events, spb):
     return np.concatenate(out) if out else np.zeros(0)
 
 
+# ── MIDI -> score ──────────────────────────────────────────────────────────────────────────────
+
+MIDI_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _midi_name(n):
+    return f"{MIDI_NAMES[n % 12]}{n // 12 - 1}"
+
+
+def _fix_lyric_text(s):
+    """mido decodes meta text as latin-1; Korean karaoke MIDIs carry CP949 bytes, so the
+    round-trip through latin-1 yields mojibake we can reverse exactly. Real unicode (a file
+    saved with a proper charset) fails the latin-1 re-encode and passes through untouched."""
+    try:
+        raw = s.encode("latin-1")
+    except UnicodeEncodeError:
+        return s
+    for enc in ("cp949", "utf-8"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return s
+
+
+def _track_events(track):
+    """One track -> [[note, start_tick, dur_tick], ...] sorted by start."""
+    events, t, on = [], 0, {}
+    for msg in track:
+        t += msg.time
+        if msg.type == "note_on" and msg.velocity > 0:
+            on[msg.note] = t
+        elif (msg.type == "note_off" or (msg.type == "note_on" and msg.velocity == 0)) \
+                and msg.note in on:
+            start = on.pop(msg.note)
+            events.append([msg.note, start, t - start])
+    events.sort(key=lambda e: e[1])
+    return events
+
+
+def midi_to_score(path, lyrics=None):
+    """Karaoke/simple MIDI file -> {bpm, notes[], chords?} or (None, err).
+
+    Melody pick: the track carrying lyric meta events wins; otherwise the busiest
+    mostly-monophonic non-drum track. Syllables come from the file's own lyric events when
+    present (karaoke MIDIs stamp one per note), else from the `lyrics` string in note order,
+    else '라'. Chords are read off the lowest-pitched track, lowest note per 2-beat window —
+    the anthem prototype's exact recipe, generalized.
+    """
+    import mido
+    try:
+        mf = mido.MidiFile(path)
+    except Exception as e:  # noqa: BLE001 — a broken upload should name itself, not crash
+        return None, f"MIDI parse failed: {e}"
+    tpb = mf.ticks_per_beat or 480
+
+    bpm = 120.0
+    for tr in mf.tracks:
+        for msg in tr:
+            if msg.type == "set_tempo":
+                bpm = round(mido.tempo2bpm(msg.tempo), 1)
+                break
+        else:
+            continue
+        break
+
+    # Lyric events: absolute tick -> text, per track (so we can prefer the lyric-bearing track).
+    lyric_by_track = []
+    for tr in mf.tracks:
+        t, out = 0, []
+        for msg in tr:
+            t += msg.time
+            if msg.type in ("lyrics", "text"):
+                txt = _fix_lyric_text(msg.text or "").strip()
+                if txt and txt not in ("\\", "/", "\r", "\n"):
+                    out.append((t, txt))
+        lyric_by_track.append(out)
+
+    # Candidate tracks: enough notes, not the drum channel, mostly monophonic.
+    cands = []
+    for idx, tr in enumerate(mf.tracks):
+        ev = _track_events(tr)
+        if len(ev) < 8:
+            continue
+        channels = {m.channel for m in tr if hasattr(m, "channel")}
+        if channels and channels <= {9}:  # GM drums
+            continue
+        overlap = sum(
+            1 for i in range(len(ev) - 1) if ev[i + 1][1] < ev[i][1] + ev[i][2] * 0.5
+        ) / max(1, len(ev) - 1)
+        mean_pitch = sum(e[0] for e in ev) / len(ev)
+        cands.append({"idx": idx, "ev": ev, "overlap": overlap, "mean": mean_pitch,
+                      "lyrics": len(lyric_by_track[idx])})
+    if not cands:
+        return None, "no playable track found in the MIDI (need >= 8 notes on a non-drum track)"
+
+    with_lyrics = [c for c in cands if c["lyrics"] >= 8]
+    mono = [c for c in cands if c["overlap"] < 0.3]
+    melody = max(with_lyrics, key=lambda c: c["lyrics"]) if with_lyrics \
+        else max(mono or cands, key=lambda c: (len(c["ev"]), c["mean"]))
+
+    # Monophonize (karaoke files sometimes double a note) and quantize beats.
+    mel = []
+    for e in melody["ev"]:
+        if mel and e[1] < mel[-1][1] + 2:  # same-start double: keep the higher note
+            if e[0] > mel[-1][0]:
+                mel[-1] = e
+            continue
+        mel.append(e)
+    seq = []
+    for i, (note, start, dur) in enumerate(mel):
+        span = (mel[i + 1][1] - start) if i + 1 < len(mel) else dur
+        beats = max(0.25, round(span / tpb * 4) / 4)
+        seq.append({"note": _midi_name(note), "beats": beats, "tick": start})
+
+    # Syllables: file lyric events matched to note starts, else the caller's string, else 라.
+    file_lyrics = lyric_by_track[melody["idx"]]
+    notes = []
+    if file_lyrics:
+        li = 0
+        for s in seq:
+            syl = "-"
+            while li < len(file_lyrics) and file_lyrics[li][0] <= s["tick"] + tpb // 8:
+                syl = file_lyrics[li][1]
+                li += 1
+            notes.append({"syl": syl if notes or syl != "-" else "라",
+                          "note": s["note"], "beats": s["beats"]})
+    else:
+        syls = [ch for ch in str(lyrics or "") if not ch.isspace()]
+        for i, s in enumerate(seq):
+            syl = syls[i] if i < len(syls) else ("-" if syls else "라")
+            notes.append({"syl": syl, "note": s["note"], "beats": s["beats"]})
+
+    # Chords off the lowest track (if any candidate besides the melody).
+    chords = []
+    others = [c for c in cands if c["idx"] != melody["idx"]]
+    if others:
+        bass = min(others, key=lambda c: c["mean"])["ev"]
+        total_beats = sum(n["beats"] for n in notes)
+        w = 0.0
+        while w < total_beats:
+            lo, hi = w * tpb, (w + 2) * tpb
+            window = [n for n, s, d in bass if lo <= s < hi]
+            if window:
+                chords.append({"root": _midi_name(min(window)), "beats": 2})
+            elif chords:
+                chords[-1]["beats"] += 2
+            w += 2
+
+    score = {"bpm": bpm, "notes": notes}
+    if chords:
+        score["chords"] = chords
+    return score, None
+
+
+def resolve_score_media(inp):
+    """scoreMediaPath input, falling back to the module's own scoreMediaUrl setting.
+
+    The setting stores a media URL (/user/media/<slug>.<ext>); the sandbox runs at workspace
+    root, so stripping the leading slash (and any scheme+host) yields the readable path.
+    """
+    raw = str(inp.get("scoreMediaPath") or os.environ.get("MODULE_SCOREMEDIAURL") or "").strip()
+    if not raw:
+        return None, None
+    path = raw
+    if "://" in path:
+        path = "/" + path.split("://", 1)[1].split("/", 1)[1] if "/" in path.split("://", 1)[1] else ""
+    path = path.lstrip("/")
+    if ".." in path.split("/"):
+        return None, f"scoreMediaPath escapes the workspace: {raw}"
+    if not os.path.isfile(path):
+        return None, f"score file not found: {path} (workspace-relative)"
+    return path, None
+
+
 # ── file IO + top-level actions ────────────────────────────────────────────────────────────────
 
 
@@ -325,7 +500,30 @@ def write_wav(path, x):
 
 
 def action_render(inp):
-    spb, events, chords, style, err = parse_score(inp.get("score"))
+    score = inp.get("score")
+    parsed_from = None
+    if not score:
+        # No inline score — the uploaded one (input path or the module's own setting) steps in.
+        media_path, err = resolve_score_media(inp)
+        if err:
+            return {"success": False, "error": err}
+        if not media_path:
+            return {"success": False,
+                    "error": "no score: pass `score`, or `scoreMediaPath`, or upload one in the "
+                             "module settings (scoreMediaUrl)"}
+        ext = media_path.rsplit(".", 1)[-1].lower()
+        if ext in ("mid", "midi"):
+            score, err = midi_to_score(media_path, lyrics=inp.get("lyrics"))
+            if err:
+                return {"success": False, "error": err}
+            if isinstance(inp.get("style"), str):
+                score["style"] = inp["style"]
+            parsed_from = media_path
+        else:
+            return {"success": False,
+                    "error": f"score media must be MIDI for now (.mid/.midi, got .{ext}) — "
+                             "hum-to-score is a later slice"}
+    spb, events, chords, style, err = parse_score(score)
     if err:
         return {"success": False, "error": err}
     total_beats = sum(b for ev in events for _, b in ev["segments"])
@@ -343,17 +541,23 @@ def action_render(inp):
         mix = np.pad(mix, (0, n - len(mix))) + np.pad(vocal, (0, n - len(vocal))) * 0.9
     out_path = str(inp.get("outPath") or "").strip()
     if not out_path:
-        h = hashlib.sha1(json.dumps(inp.get("score"), sort_keys=True).encode()).hexdigest()[:12]
+        h = hashlib.sha1(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
         out_path = f"data/sing/out-{h}.wav"
     write_wav(out_path, mix)
-    return {"success": True, "data": {
+    data = {
         "outPath": out_path,
         "seconds": round(len(mix) / SR, 2),
         "events": len(events),
         "style": style,
         "vocal": bool(vocal_path),
         "backend": "pyworld" if (vocal_path and try_pyworld()) else "numpy",
-    }}
+    }
+    if parsed_from:
+        # The caller composed nothing — show what the MIDI became so the bridge (TTS lyric
+        # order) and the user can see and correct the parse.
+        data["scoreSource"] = parsed_from
+        data["score"] = score
+    return {"success": True, "data": data}
 
 
 def action_selftest():
@@ -404,6 +608,40 @@ def action_selftest():
     want_len = int(SR * spb * 4)
     ck("a sung take covers every note of the score", want_len, len(sung),
        abs(len(sung) - want_len) <= SR // 10)
+
+    # MIDI parser — build a two-track file in memory and read it back as a score.
+    try:
+        import mido
+        # charset='cp949' writes the lyrics as the bytes a Korean karaoke MIDI really carries;
+        # reading back with mido's latin-1 default then exercises _fix_lyric_text for real.
+        mf = mido.MidiFile(ticks_per_beat=480, charset="cp949")
+        mel = mido.MidiTrack()
+        mel.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(100), time=0))
+        for i, (n, syl) in enumerate(zip((60, 64, 67, 72, 67, 64, 60, 64), "가나다라마바사아")):
+            mel.append(mido.MetaMessage("lyrics", text=syl, time=0))
+            mel.append(mido.Message("note_on", note=n, velocity=80, time=0))
+            mel.append(mido.Message("note_off", note=n, velocity=0, time=480))
+        mf.tracks.append(mel)
+        bass = mido.MidiTrack()
+        for n in (36, 43, 36, 43, 36, 43, 36, 43):  # >= 8 notes — the candidate floor
+            bass.append(mido.Message("note_on", note=n, velocity=80, time=0))
+            bass.append(mido.Message("note_off", note=n, velocity=0, time=480))
+        mf.tracks.append(bass)
+        tmp = "data/sing/selftest.mid"
+        os.makedirs("data/sing", exist_ok=True)
+        mf.save(tmp)
+        parsed, perr = midi_to_score(tmp)
+        os.remove(tmp)
+        ck("midi parses to a score", None, perr, perr is None)
+        if parsed:
+            ck("midi melody keeps its 8 notes", 8, len(parsed["notes"]), len(parsed["notes"]) == 8)
+            ck("midi lyric events become syllables", "가", parsed["notes"][0]["syl"],
+               parsed["notes"][0]["syl"] == "가")
+            ck("midi tempo survives", 100.0, parsed["bpm"], abs(parsed["bpm"] - 100.0) < 0.5)
+            ck("bass track becomes chords", True, bool(parsed.get("chords")),
+               bool(parsed.get("chords")))
+    except ImportError:
+        ck("midi parser (mido not installed — skipped)", "mido", None, True)
 
     failed = [c for c in checks if not c["ok"]]
     return {"success": not failed, "data": {"checks": checks, "total": len(checks),
