@@ -251,6 +251,53 @@ fn parse_focus_point(v: &serde_json::Value) -> crate::ports::CropPosition {
     CropPosition::Attention
 }
 
+/// Audio / MIDI magic bytes — the intake gate for the non-image half of the media door.
+///
+/// Mirrors `detect_image_ext` in shape and in reason: the declared content type is the
+/// uploader's CLAIM, and a claim that lets any bytes into a store that pages, modules and the
+/// gallery all read from needs the file to actually be what it says. Returns the canonical
+/// extension so the claim cannot ride in with a lying one.
+fn detect_audio_ext(binary: &[u8]) -> Option<&'static str> {
+    if binary.len() < 12 {
+        return None;
+    }
+    // MIDI — "MThd"
+    if binary.starts_with(b"MThd") {
+        return Some("mid");
+    }
+    // WAV — RIFF....WAVE
+    if binary.starts_with(b"RIFF") && &binary[8..12] == b"WAVE" {
+        return Some("wav");
+    }
+    // OGG — "OggS"
+    if binary.starts_with(b"OggS") {
+        return Some("ogg");
+    }
+    // FLAC — "fLaC"
+    if binary.starts_with(b"fLaC") {
+        return Some("flac");
+    }
+    // M4A / MP4 audio — "ftyp" at offset 4 (M4A , mp42, isom …)
+    if &binary[4..8] == b"ftyp" {
+        return Some("m4a");
+    }
+    // WebM — EBML header 1A 45 DF A3
+    if binary.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        return Some("webm");
+    }
+    // MP3 — ID3 tag, or a bare MPEG frame sync (0xFFEx)
+    if binary.starts_with(b"ID3") || (binary[0] == 0xFF && (binary[1] & 0xE0) == 0xE0) {
+        return Some("mp3");
+    }
+    None
+}
+
+/// Is this declared content type in the audio/MIDI family this gate covers?
+fn is_audio_content_type(content_type: &str) -> bool {
+    let ct = content_type.to_ascii_lowercase();
+    ct.starts_with("audio/") || ct == "application/ogg"
+}
+
 /// 이미지 magic byte 검증 — JPEG / PNG / WebP / GIF 만 허용.
 /// SVG / HTML / SWF 등 XSS 위험 형식 차단. 응답: 확장자 (jpg / png / webp / gif).
 fn detect_image_ext(binary: &[u8]) -> Option<&'static str> {
@@ -543,6 +590,29 @@ impl MediaManager {
         content_type: &str,
         opts: MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult> {
+        // A declared audio type must BE audio. The image paths carry their own guard
+        // (detect_image_ext on the data-url door); audio arrives through this one, and without a
+        // check the declared type would be the only truth in the record — every later consumer
+        // (the player, a MIDI parser, the sing module) would inherit an unverified claim. The
+        // sniffed extension also overrides the declared one, so "audio/mpeg" carrying a WAV is
+        // stored as the WAV it is rather than the mp3 it claimed.
+        let mut opts = opts;
+        if is_audio_content_type(content_type) {
+            match detect_audio_ext(binary) {
+                Some(ext) => {
+                    if opts.ext.as_deref().unwrap_or("").is_empty() {
+                        opts.ext = Some(ext.to_string());
+                    }
+                }
+                None => {
+                    return Err(crate::i18n::t(
+                        "core.error.media.audio_magic_mismatch",
+                        None,
+                        &[("type", content_type)],
+                    ));
+                }
+            }
+        }
         self.media.save(binary, content_type, &opts).await
     }
 
@@ -1490,6 +1560,26 @@ fn format_to_string(format: &ImageFormat) -> &'static str {
 // `compute_crop_dims` / `parse_media_url` / `ext_from_content_type` (module-private fns).
 #[cfg(test)]
 mod tests {
+    /// The audio gate mirrors the image gate: the declared type is a claim, the bytes decide.
+    #[test]
+    fn audio_magic_bytes_decide_the_extension() {
+        assert_eq!(super::detect_audio_ext(b"MThd\x00\x00\x00\x06\x00\x01\x00\x02"), Some("mid"));
+        assert_eq!(super::detect_audio_ext(b"RIFF\x24\x08\x00\x00WAVEfmt "), Some("wav"));
+        assert_eq!(super::detect_audio_ext(b"OggS\x00\x02\x00\x00\x00\x00\x00\x00"), Some("ogg"));
+        assert_eq!(super::detect_audio_ext(b"ID3\x04\x00\x00\x00\x00\x00\x00mp3"), Some("mp3"));
+        assert_eq!(
+            super::detect_audio_ext(b"\x00\x00\x00\x20ftypM4A \x00\x00\x00\x00"),
+            Some("m4a")
+        );
+        // A PNG declared as audio is refused, not renamed.
+        assert_eq!(super::detect_audio_ext(b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0D"), None);
+        assert!(super::is_audio_content_type("audio/mpeg"));
+        assert!(super::is_audio_content_type("application/ogg"));
+        assert!(!super::is_audio_content_type("image/png"));
+    }
+
+
+    
     use super::*;
 
     #[test]

@@ -157,7 +157,8 @@
       "prompt_missing": "프롬프트 정보가 없어 재생성할 수 없습니다.",
       "image_processor_missing": "image_processor 가 설정되지 않아 placeholder 를 생성할 수 없습니다.",
       "image_gen_missing": "image_gen 이 설정되지 않아 이미지를 생성할 수 없습니다.",
-      "image_processor_missing_postprocess": "image_processor 가 설정되지 않아 후처리할 수 없습니다."
+      "image_processor_missing_postprocess": "image_processor 가 설정되지 않아 후처리할 수 없습니다.",
+      "audio_magic_mismatch": "오디오로 선언된 파일({{type}})인데 내용이 아는 오디오 형식(mp3·wav·ogg·m4a·flac·webm·mid)이 아닙니다. 파일이 손상됐거나 형식 선언이 잘못됐습니다."
     },
     "auth": {
       "password_too_short": "비밀번호는 8자 이상이어야 합니다.",

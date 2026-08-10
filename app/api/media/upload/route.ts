@@ -5,8 +5,9 @@ import { withAuth } from '../../../../lib/with-api-error';
 /**
  * POST /api/media/upload
  *
- * 사용자가 채팅창에 첨부한 이미지 → 갤러리에 저장 (사용자 토글 ON 시).
- * 자동 저장 아님 — UI 토글 명시 활성 시에만 호출.
+ * 사용자가 올린 파일 → 미디어 스토리지에 저장. 이미지(채팅 첨부 토글 ON)와 **오디오·MIDI**
+ * (sing 악보 올리기·채팅 녹음 버튼)가 같은 문을 쓴다 — 반입 문은 하나, 모듈은 미디어 id 로 소비.
+ * 오디오로 선언된 파일은 core 가 magic byte 로 검증하고, 내용이 말하는 확장자로 저장한다.
  *
  * Body:
  *   { dataUrl: 'data:image/png;base64,...', filenameHint?: string, scope?: 'user' | 'system' }

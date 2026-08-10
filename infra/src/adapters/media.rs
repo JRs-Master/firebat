@@ -78,6 +78,17 @@ impl LocalMediaAdapter {
             "image/avif" => "avif",
             "image/gif" => "gif",
             "image/svg+xml" => "svg",
+            // The media store is the ONE intake door for files a module consumes (the sing
+            // track's scores, hums, coach recordings — and the office master decks later).
+            // Audio and MIDI were falling through to ".bin", which stores fine and then loses
+            // the one thing a player and a MIDI parser key on: what the file is.
+            "audio/mpeg" | "audio/mp3" => "mp3",
+            "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
+            "audio/ogg" | "application/ogg" => "ogg",
+            "audio/webm" => "webm",
+            "audio/mp4" | "audio/x-m4a" | "audio/aac" => "m4a",
+            "audio/flac" | "audio/x-flac" => "flac",
+            "audio/midi" | "audio/x-midi" | "audio/mid" => "mid",
             _ => "bin",
         }
     }
