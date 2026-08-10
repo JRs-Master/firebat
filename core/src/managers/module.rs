@@ -2912,6 +2912,17 @@ fn coerce_node(
     use serde_json::Value as V;
     let ty = schema_type(schema);
     match (ty, value) {
+        // A string that IS a JSON object where an object is declared — same class as the
+        // array case below, same lossless reading.
+        (Some("object"), V::String(s)) if s.trim_start().starts_with('{') => {
+            match serde_json::from_str::<V>(s.trim()) {
+                Ok(parsed @ V::Object(_)) => {
+                    notes.push(format!("{path}: JSON string → object"));
+                    coerce_node(&parsed, schema, path, notes)
+                }
+                _ => value.clone(),
+            }
+        }
         // object → walk declared properties
         (Some("object"), V::Object(obj)) | (None, V::Object(obj)) => {
             let Some(props) = schema.get("properties").and_then(|p| p.as_object()) else {
@@ -2937,10 +2948,22 @@ fn coerce_node(
                 .collect();
             V::Array(out)
         }
-        // A scalar where a list is declared. Wrapping is lossless; splitting is a guess, so it
-        // happens ONLY when the whole string fails the declared enum and every comma-part passes
-        // it — then the reading is unambiguous (measured: ta `which` arriving as "macd,rsi").
+        // A scalar where a list is declared. A string that IS a JSON array parses first —
+        // models serialize structured params as strings under load (measured 2026-08-10:
+        // docs `blocks` arrived as "[{\"type\":\"header\",...}]" and was refused; the model
+        // had the right value in the wrong channel). Parsing is lossless and unambiguous;
+        // the parsed value then walks the same item coercion as a native array.
+        // Otherwise: wrapping is lossless; splitting is a guess, so it happens ONLY when the
+        // whole string fails the declared enum and every comma-part passes it (measured: ta
+        // `which` arriving as "macd,rsi").
         (Some("array"), V::String(s)) => {
+            let t = s.trim();
+            if t.starts_with('[') {
+                if let Ok(parsed @ V::Array(_)) = serde_json::from_str::<V>(t) {
+                    notes.push(format!("{path}: JSON string → array"));
+                    return coerce_node(&parsed, schema, path, notes);
+                }
+            }
             let enum_vals: Vec<&str> = schema
                 .get("items")
                 .and_then(|i| i.get("enum"))
@@ -3353,6 +3376,32 @@ mod coercion_tests {
         assert_eq!(out["shares"], serde_json::Value::Null);
         assert_eq!(out["label"], serde_json::json!("7"));
         assert_eq!(out["either"], serde_json::json!("5"), "two non-null readings = left alone");
+        assert!(validate_value(&out, &sch).is_ok());
+    }
+
+    /// A string that IS JSON parses into the declared array/object — models serialize
+    /// structured params as strings under load. Regression target: docs `blocks` arriving as
+    /// "[{\"type\":\"header\",...}]" was refused with the right value in hand (2026-08-10).
+    #[test]
+    fn json_strings_parse_into_declared_containers() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "blocks": { "type": ["array", "null"], "items": { "type": "object" } },
+                "opts":   { "type": "object", "properties": { "depth": { "type": "integer" } } },
+                "plain":  { "type": "string" }
+            }
+        });
+        let input = serde_json::json!({
+            "blocks": "[{\"type\": \"header\", \"props\": {\"level\": \"1\"}}]",
+            "opts": "{\"depth\": \"3\"}",
+            "plain": "[not json"
+        });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &sch, &mut notes);
+        assert_eq!(out["blocks"][0]["type"], serde_json::json!("header"));
+        assert_eq!(out["opts"]["depth"], serde_json::json!(3), "nested coercion runs after parse");
+        assert_eq!(out["plain"], serde_json::json!("[not json"), "string slots stay strings");
         assert!(validate_value(&out, &sch).is_ok());
     }
 
