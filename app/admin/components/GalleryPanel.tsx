@@ -61,6 +61,18 @@ const KIND_ICON: Record<MediaKind, typeof ImageIcon> = {
   image: ImageIcon, audio: Music, document: FileText, other: FileIcon,
 };
 
+/** Format badge colors — the same vocabulary as the chat file cards (format colors are
+ *  semantics: green IS excel to every reader). Unknown extensions fall back to slate. */
+const EXT_BADGE: Record<string, string> = {
+  pptx: 'text-orange-700 bg-orange-50 border-orange-200',
+  xlsx: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+  docx: 'text-blue-700 bg-blue-50 border-blue-200',
+  pdf: 'text-red-700 bg-red-50 border-red-200',
+  hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
+  mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+};
+const EXT_BADGE_DEFAULT = 'text-slate-700 bg-slate-100 border-slate-300';
+
 // Browsers leave file.type empty for extensions the OS never registered (hwpx above all) —
 // the picker fills the claim from the extension so the server gate has something to verify.
 const EXT_MIME: Record<string, string> = {
@@ -398,10 +410,16 @@ export function GalleryPanel({
                     </div>
                   ) : itemKind !== 'image' ? (
                     /* non-image — no pixels to show, so the card says what the file IS:
-                       kind icon + extension, the two things a person scans a store by */
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 bg-slate-50 text-slate-500">
-                      <KindIcon size={22} strokeWidth={1.5} />
-                      <span className="text-[10px] font-black tracking-wider text-slate-600 uppercase">{item.ext}</span>
+                       a format-colored badge + the FILENAME (ext alone told nobody which
+                       deck was which — 2026-08-10 사용자). */
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-1.5 bg-white text-slate-500">
+                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-black tracking-wider uppercase ${EXT_BADGE[item.ext] ?? EXT_BADGE_DEFAULT}`}>
+                        <KindIcon size={10} strokeWidth={2.2} />
+                        {item.ext}
+                      </span>
+                      <span className="text-[10px] leading-tight text-slate-600 text-center break-all line-clamp-3 px-0.5">
+                        {item.filenameHint || item.slug}
+                      </span>
                     </div>
                   ) : (
                     <img
