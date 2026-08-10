@@ -2882,7 +2882,23 @@ fn coerce_for_validation(
 fn schema_type(schema: &serde_json::Value) -> Option<&str> {
     match schema.get("type") {
         Some(serde_json::Value::String(s)) => Some(s.as_str()),
-        // A union type means more than one reading is legal — leave the value alone.
+        // ["number","null"] is the NULLABLE CONVENTION, not ambiguity — a non-null value has
+        // exactly one legal reading, so it deserves the same coercion as a plain "number".
+        // Treating every union as ambiguous refused fa's marketCap ("2092836983600" as a string)
+        // FIVE times in one measured turn (2026-08-10) — the model even diagnosed the type
+        // itself and still could not land the call, then did the math by hand and got the
+        // market cap wrong by 10x. Only a union with two or more non-null readings is truly
+        // ambiguous and left alone.
+        Some(serde_json::Value::Array(arr)) => {
+            let mut non_null = arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .filter(|s| *s != "null");
+            match (non_null.next(), non_null.next()) {
+                (Some(one), None) => Some(one),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -3308,6 +3324,36 @@ mod coercion_tests {
         assert_eq!(out["rows"][0]["qty"], serde_json::json!(1.5));
         assert!(validate_value(&out, &sch).is_ok());
         assert_eq!(notes.len(), 3, "every change is reported: {notes:?}");
+    }
+
+    /// ["number","null"] is the nullable convention every module config uses — a non-null value
+    /// there has ONE legal reading and must coerce like a plain "number". Regression target:
+    /// fa marketCap "2092836983600" refused five times in one turn (2026-08-10), after which the
+    /// model did the arithmetic by hand and published a market cap 10x off.
+    #[test]
+    fn nullable_union_coerces_like_its_single_type() {
+        let sch = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "marketCap": { "type": ["number", "null"] },
+                "shares":    { "type": ["number", "null"] },
+                "label":     { "type": ["string", "null"] },
+                "either":    { "type": ["string", "number"] }   // genuinely ambiguous — untouched
+            }
+        });
+        let input = serde_json::json!({
+            "marketCap": "2092836983600",
+            "shares": serde_json::Value::Null,   // null side of the union stays null
+            "label": 7,
+            "either": "5"
+        });
+        let mut notes = Vec::new();
+        let out = coerce_for_validation(&input, &sch, &mut notes);
+        assert_eq!(out["marketCap"], serde_json::json!(2092836983600.0));
+        assert_eq!(out["shares"], serde_json::Value::Null);
+        assert_eq!(out["label"], serde_json::json!("7"));
+        assert_eq!(out["either"], serde_json::json!("5"), "two non-null readings = left alone");
+        assert!(validate_value(&out, &sch).is_ok());
     }
 
     /// A scalar in a list slot wraps (lossless). It only SPLITS when the whole string fails the
