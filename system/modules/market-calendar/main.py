@@ -23,8 +23,17 @@ required — it pulls pandas and numpy, which this box does not carry for a cale
 federal holiday and the NYSE closes; Columbus Day and Veterans Day are, and it does not.
 """
 import json
+import os
 import sys
 from datetime import date as _date, datetime, timedelta
+
+# Time is the framework's to tell, never the host's to leak: a "no date given" default read off
+# the host clock would judge "is the market open TODAY" in whatever zone the box happens to run
+# in — one hour off across a midnight boundary flips the verdict. FIREBAT_TZ via the shared tz
+# helper is the owner's wall clock, the same one every other module reads.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_runtime'))
+import tz as clock  # noqa: E402
 
 MARKETS = {
     'kr': 'XKRX', 'krx': 'XKRX', 'kospi': 'XKRX', 'kosdaq': 'XKRX', '한국': 'XKRX',
@@ -47,7 +56,7 @@ def _resolve(market):
 
 def _parse_date(v):
     if not v:
-        return _date.today()
+        return datetime.strptime(clock.today_ymd(), '%Y-%m-%d').date()
     try:
         return datetime.strptime(str(v).strip()[:10], '%Y-%m-%d').date()
     except ValueError:

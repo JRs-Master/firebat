@@ -608,6 +608,17 @@ function ThinkingBlock({
   isActive?: boolean;
   isComplete?: boolean;
 }) {
+  // Hooks BEFORE the early return — this component flips between "render nothing" and
+  // "render the thinking box" on every turn, and hooks below a conditional return change count
+  // across that flip, which React answers by killing the subtree. That was the vanishing robot
+  // (2026-08-10: a bare "하이" turn crashed the indicator the moment thinking started).
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyText = thinkingText ?? '';
+  useEffect(() => {
+    // 늘 바닥을 보여준다 = 최신 줄이 아래에 있고 지난 줄이 위로 밀린다.
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [bodyText]);
   if (!isActive && !isComplete && !thinkingText) return null;
   const sentinelValues = Object.values(THINKING_STATUS);
   const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
@@ -628,12 +639,6 @@ function ThinkingBlock({
         .map((l) => stripInlineMd(l.trim()))
         .filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
     : [];
-  const bodyRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // 늘 바닥을 보여준다 = 최신 줄이 아래에 있고 지난 줄이 위로 밀린다.
-    const el = bodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [bodyLines.length, rawBody]);
   return (
     <div className="flex flex-col gap-1 text-slate-400 min-w-0">
       <div className="flex items-center gap-2 min-w-0">

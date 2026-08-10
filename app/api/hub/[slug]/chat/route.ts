@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@connectrpc/connect';
 import { HubService } from '../../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../../lib/api-gen/_transport';
-import { relayChatStream } from '../../../../../lib/util/chat-stream-relay';
+import { relayChatStream, isCancelledStream } from '../../../../../lib/util/chat-stream-relay';
 import { logger } from '../../../../../lib/util/logger';
 
 // AI 응답 대기 시간 고려 (CLI 모드 멀티턴 도구 호출 포함 가능). admin chat 과 동일.
@@ -138,6 +138,10 @@ function streamResponse(args: {
         await relayChatStream(aiStream, send);
       } catch (err) {
         const msg = (err as Error)?.message ?? '알 수 없는 오류';
+        // Deliberate cancellation is silence, not an error bubble (stop button → h2 CANCEL).
+        if (isCancelledStream(err)) {
+          return;
+        }
         // 인증 단계(streaming RPC 시작 전) UNAUTHORIZED_ORIGIN: sentinel — 무단 임베드 시 403 대신
         // Firebat 광고 응답으로 트래픽화. (Rust authenticate 가 permission_denied 로 던짐 → 여기 catch.)
         if (msg.includes('UNAUTHORIZED_ORIGIN:')) {

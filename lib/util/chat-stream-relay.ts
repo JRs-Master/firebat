@@ -1,5 +1,19 @@
 import { unBigInt } from '../api-gen/_unbigint';
 
+/**
+ * Was this stream torn down on purpose?
+ *
+ * The stop button (Ai.CancelTurn) ends the gRPC stream with h2 CANCEL, and the relay's iterator
+ * surfaces that as a ConnectError reading "[canceled] http/2 stream closed with error code
+ * CANCEL (0x8)" — transport plumbing, shown verbatim in a red chat bubble (2026-08-10, user).
+ * A cancellation the user asked for is not an error and deserves silence: the client already
+ * painted its own "stopped" state the moment the button was pressed.
+ */
+export function isCancelledStream(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\[canceled\]|CANCEL \(0x8\)|code.*canceled/i.test(msg);
+}
+
 export type SseSend = (event: string, data: unknown) => void;
 
 /** Parsed final AiResponse from the gRPC result event (mirrors the AiResponse wire shape). */

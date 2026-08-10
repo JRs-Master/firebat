@@ -3,7 +3,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 import { createClient } from '@connectrpc/connect';
 import { AiService } from '../../../../lib/proto-gen/firebat_pb';
 import { transport } from '../../../../lib/api-gen/_transport';
-import { relayChatStream } from '../../../../lib/util/chat-stream-relay';
+import { relayChatStream, isCancelledStream } from '../../../../lib/util/chat-stream-relay';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
 // Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.
@@ -124,7 +124,11 @@ function handleToolsMode(
         // when the client navigated away, so the answer was lost. The relay only drives the live SSE display.
         await relayChatStream(aiStream, send);
       } catch (err: any) {
-        send('error', { error: err?.message || '알 수 없는 오류' });
+        // A cancel the user asked for (stop button) is not an error — say nothing; the client
+        // already painted its stopped state. Everything else still surfaces.
+        if (!isCancelledStream(err)) {
+          send('error', { error: err?.message || '알 수 없는 오류' });
+        }
       }
       clearInterval(keepAlive);
       try { abortSignal?.removeEventListener('abort', onAbort); } catch {}
