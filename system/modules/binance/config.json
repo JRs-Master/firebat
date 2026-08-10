@@ -152,6 +152,7 @@
         "type": "string",
         "enum": [
           "get_candles",
+          "klines",
           "ticker",
           "ticker_24h",
           "book_ticker",
@@ -163,7 +164,7 @@
           "symbols",
           "server_time"
         ],
-        "description": "Binance public market-data action. get_candles is the broker-neutral candle contract. screen ranks a quote asset's pairs by 24h turnover. No account or order action exists here."
+        "description": "Binance public market-data action. get_candles is the broker-neutral candle contract. screen ranks a quote asset's pairs by 24h turnover. No account or order action exists here. klines is accepted as an alias of get_candles — it is the venue's own word."
       },
       "symbol": {
         "type": "string",
