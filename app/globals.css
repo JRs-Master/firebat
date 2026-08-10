@@ -700,12 +700,3 @@ mark[class^="fbhl-"] {
 .thinking-rise {
   animation: thinking-rise 260ms ease-out;
 }
-/* Queue roll — prev+cur stacked; mounting shifts up one line, so the previous sentence
-   visibly leaves upward while the next arrives from below. */
-@keyframes thinking-roll {
-  from { transform: translateY(0); }
-  to   { transform: translateY(-1.4em); }
-}
-.thinking-roll {
-  animation: thinking-roll 260ms ease-out forwards;
-}

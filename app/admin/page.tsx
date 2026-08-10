@@ -623,43 +623,22 @@ function ThinkingBlock({
         .map((s) => s.trim())
         .filter((s) => s && !/^\[(도구 호출:|계획 정리)/.test(s))
     : [];
-  // Hooks BEFORE the early return — this component flips between null and rendered every turn,
-  // and hooks below a conditional return change count across that flip, which React answers by
-  // killing the subtree (the 2026-08-10 vanishing robot).
-  const [shownIdx, setShownIdx] = useState(0);
-  const backlog = sentences.length - 1 - shownIdx;
-  useEffect(() => {
-    // 새 턴에서 thinkingText 가 초기화되면 인덱스도 따라 내려온다.
-    if (shownIdx > 0 && shownIdx > sentences.length - 1) {
-      setShownIdx(Math.max(0, sentences.length - 1));
-    }
-  }, [shownIdx, sentences.length]);
-  useEffect(() => {
-    if (!isActive || backlog <= 0) return;
-    // 문장당 잠깐 머무르고 다음으로 — 밀려 있으면 빨리 소화 (추론이 화면보다 빠른 게 정상).
-    const hold = backlog > 4 ? 350 : 900;
-    const t = setTimeout(() => setShownIdx((i) => i + 1), hold);
-    return () => clearTimeout(t);
-  }, [backlog, isActive, shownIdx]);
   if (!isActive && !isComplete && !thinkingText) return null;
   const label = statusText || (isActive ? '생각중...' : (isComplete ? '답변완료' : ''));
-  const idx = Math.min(shownIdx, Math.max(0, sentences.length - 1));
-  const prev = idx > 0 ? sentences[idx - 1] : undefined;
-  const cur = isActive ? sentences[idx] : undefined;
+  // 마지막 문장 하나만 (2026-08-10 사용자 최종 결정 — 큐로 다 흘리니 정신없고, 쌓인 두 줄이
+  // 라벨과 어긋났다). 새 문장이 완성될 때만 아래서 위로 한 번 올라온다: key = 문장 개수라
+  // 진행 중인 문장이 자라는 동안은 재애니메이션이 없다. 고정 높이 없이 라벨과 같은 줄에
+  // 앉힌다(어긋남의 원인이 em 고정 높이 + 두 줄 스택이었다). 전문은 턴 아카이브 몫.
+  const cur = isActive ? sentences[sentences.length - 1] : undefined;
   return (
     <div className="flex items-center gap-2 text-slate-400 min-w-0">
       {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
       {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {cur && (
-        <div className="relative flex-1 min-w-0 h-[1.4em] overflow-hidden">
-          {/* prev+cur 를 세로로 쌓고 mount 시 한 줄만큼 올린다 = 이전 문장이 밀려 나가는 그림.
-              key 가 문장 index 라 진행 중인 문장이 자라는 동안은 재애니메이션이 없다. */}
-          <div key={idx} className={prev != null ? 'thinking-roll' : 'thinking-rise'}>
-            {prev != null && (
-              <div className="text-[12px] text-slate-400 truncate leading-[1.4em]">{prev}</div>
-            )}
-            <div className="text-[12px] text-slate-400 truncate leading-[1.4em]">{cur}</div>
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <div key={sentences.length} className="thinking-rise text-[12px] text-slate-400 truncate">
+            {cur}
           </div>
         </div>
       )}
