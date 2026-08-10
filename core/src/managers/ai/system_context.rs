@@ -26,11 +26,16 @@ fn first_clause(desc: &str) -> String {
     if d.is_empty() {
         return "(설명 없음)".to_string();
     }
+    // `find` returns a BYTE index, and two of these delimiters are multi-byte — `+ 1` lands
+    // inside the character and the slice PANICS. Every module description carrying an em-dash
+    // killed every chat turn on the deployed binary (2026-08-10). The clause ends the
+    // delimiter's own byte length past its index, never a bare +1.
     let cut = d
-        .find(['.', '\u{2014}', '\n', '\u{ff0e}'])
-        .map(|i| i + 1)
+        .char_indices()
+        .find(|(_, ch)| matches!(ch, '.' | '\u{2014}' | '\n' | '\u{ff0e}'))
+        .map(|(i, ch)| i + ch.len_utf8())
         .unwrap_or(d.len());
-    let head = d[..cut.min(d.len())].trim_end_matches(['.', ' ', '\u{2014}']).trim();
+    let head = d[..cut].trim_end_matches(['.', ' ', '\u{2014}']).trim();
     let head = if head.chars().count() > 110 {
         head.chars().take(110).collect::<String>() + "\u{2026}"
     } else {
@@ -116,6 +121,22 @@ impl SystemContextGatherer {
         }
 
         sections.join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// The delimiters include multi-byte characters; the cut must land on a char boundary.
+    /// A bare `find() + 1` panicked on every description carrying an em-dash — which is most
+    /// of them — and took every chat turn down with it (2026-08-10, deployed).
+    #[test]
+    fn first_clause_survives_multibyte_delimiters() {
+        assert_eq!(super::first_clause("바이낸스 시세 — 캔들과 호가"), "바이낸스 시세");
+        assert_eq!(super::first_clause("Binance spot data. Read-only."), "Binance spot data");
+        assert_eq!(super::first_clause("한 줄 설명\n둘째 줄"), "한 줄 설명");
+        assert_eq!(super::first_clause(""), "(설명 없음)");
+        // No delimiter at all — the whole (capped) text comes back, uncut.
+        assert_eq!(super::first_clause("구분자 없음"), "구분자 없음");
     }
 }
 
