@@ -360,42 +360,104 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
         bar.shadow.inherit = False
         return bar
 
-    if title:
-        layout = prs.slide_layouts[0]
-        slide = prs.slides.add_slide(layout)
-        placed = None
-        for ph in slide.placeholders:
-            if ph.placeholder_format.idx == 0:
-                ph.text = str(title)
-                placed = ph
-                break
-        # Unfilled placeholders render as dashed "click to add" boxes (the subtitle ghost on
-        # the first live deck) — remove every placeholder we did not fill.
-        for ph in list(slide.placeholders):
-            if placed is not None and ph.placeholder_format.idx == 0:
-                continue
-            el = ph._element
-            el.getparent().remove(el)
-        if placed is not None:
-            if styled:
-                for para in placed.text_frame.paragraphs:
-                    para.font.color.rgb = SLATE_D
-                accent_bar(slide, placed.left / 914400,
-                           (placed.top + placed.height) / 914400 + 0.15, 2.2)
+    def add_box(slide, shape_id, x, y, w, h, fill=None, line=None, line_w=None):
+        box = slide.shapes.add_shape(shape_id, Inches(x), Inches(y), Inches(w), Inches(h))
+        if fill is None:
+            box.fill.background()
         else:
-            tb = slide.shapes.add_textbox(Inches(0.8), Inches(2.5), sw - Inches(1.6), Inches(1.5))
-            tb.text_frame.text = str(title)
-            tb.text_frame.paragraphs[0].font.size = Pt(40)
-            if styled:
-                tb.text_frame.paragraphs[0].font.color.rgb = SLATE_D
-                accent_bar(slide, 0.8, 4.1, 2.2)
+            box.fill.solid()
+            box.fill.fore_color.rgb = fill
+        if line is None:
+            box.line.fill.background()
+        else:
+            box.line.color.rgb = line
+            if line_w:
+                box.line.width = Pt(line_w)
+        box.shadow.inherit = False
+        return box
 
-    state = {"count": 1 if title else 0, "slide": None, "y": 0.0}
+    def add_text(slide, x, y, w, h, runs, align=None, wrap=True):
+        # runs = [(text, size_pt, bold, color), ...] — one paragraph per run.
+        tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+        tf = tb.text_frame
+        tf.word_wrap = wrap
+        for i, (text, size, bold, color) in enumerate(runs):
+            para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            para.text = text
+            para.font.size = Pt(size)
+            para.font.bold = bold
+            if color is not None:
+                para.font.color.rgb = color
+            if align is not None:
+                para.alignment = align
+        return tb
 
-    def new_slide():
+    if title:
+        if styled:
+            # Cover, proposal-deck shape: big heading upper-left, accent bar, a quiet band
+            # strip along the bottom. No layout placeholders — nothing to ghost.
+            slide = prs.slides.add_slide(blank)
+            t_lines = _wrap_lines(str(title), sw_in - 1.7, chars_per_in=3.4)
+            add_text(slide, 0.85, 2.0, sw_in - 1.7, 0.65 * t_lines,
+                     [(str(title), 32, True, SLATE_D)])
+            accent_bar(slide, 0.88, 2.12 + 0.65 * t_lines, 2.4, 0.07)
+            add_box(slide, MSO_SHAPE.RECTANGLE, 0, sh_in - 0.9, sw_in, 0.9, fill=SLATE_L)
+            add_box(slide, MSO_SHAPE.RECTANGLE, 0, sh_in - 0.95, sw_in, 0.05, fill=BLUE)
+        else:
+            layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(layout)
+            placed = None
+            for ph in slide.placeholders:
+                if ph.placeholder_format.idx == 0:
+                    ph.text = str(title)
+                    placed = ph
+                    break
+            # Unfilled placeholders render as dashed "click to add" boxes (the subtitle ghost
+            # on the first live deck) — remove every placeholder we did not fill.
+            for ph in list(slide.placeholders):
+                if placed is not None and ph.placeholder_format.idx == 0:
+                    continue
+                el = ph._element
+                el.getparent().remove(el)
+            if placed is None:
+                tb = slide.shapes.add_textbox(Inches(0.8), Inches(2.5),
+                                              sw - Inches(1.6), Inches(1.5))
+                tb.text_frame.text = str(title)
+                tb.text_frame.paragraphs[0].font.size = Pt(40)
+
+    state = {"count": 1 if title else 0, "slide": None, "y": 0.0,
+             "sec_no": 0, "sec_title": None, "sec_stmt": None}
+    BAND_H = 0.62          # navy section band
+    STMT_H = 0.78          # light statement band under it
+    BODY_BOTTOM = 0.5      # keep-out at the slide foot
+
+    def draw_band(slide, statement):
+        # The genre's spine: dark number+title band, then (first slide of the section only)
+        # a light band carrying the slide's one-line message behind a small accent bar.
+        add_box(slide, MSO_SHAPE.RECTANGLE, 0, 0, sw_in, BAND_H, fill=SLATE_D)
+        add_text(slide, 0.55, 0.13, sw_in - 2.6, 0.38,
+                 [(f"{state['sec_no']:02d}. {state['sec_title']}", 16, True, WHITE)],
+                 wrap=False)
+        if title:
+            add_text(slide, sw_in - 2.05, 0.19, 1.55, 0.26,
+                     [(str(title), 8.5, False, SLATE_M)], align=PP_ALIGN.RIGHT, wrap=False)
+        if statement:
+            add_box(slide, MSO_SHAPE.RECTANGLE, 0, BAND_H, sw_in, STMT_H, fill=SLATE_L)
+            add_box(slide, MSO_SHAPE.RECTANGLE, 0.55, BAND_H + 0.15, 0.07, STMT_H - 0.3,
+                    fill=BLUE)
+            add_text(slide, 0.8, BAND_H + 0.12, sw_in - 1.7, STMT_H - 0.2,
+                     [(statement, 13, True, SLATE_D)])
+            return BAND_H + STMT_H + 0.3
+        return BAND_H + 0.35
+
+    def new_slide(continuation=True):
         state["slide"] = prs.slides.add_slide(blank)
         state["count"] += 1
-        state["y"] = 0.4
+        if styled and state["sec_title"]:
+            state["y"] = draw_band(state["slide"],
+                                   None if continuation else state["sec_stmt"])
+        else:
+            state["y"] = 0.55 if styled else 0.4
         if styled:
             ft = state["slide"].shapes.add_textbox(
                 Inches(sw_in - 1.05), Inches(sh_in - 0.38), Inches(0.75), Inches(0.28))
@@ -408,7 +470,7 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
     def ensure_room(height_in):
         # Content that will not fit CONTINUES on a fresh slide — the old behavior silently
         # dropped the rest of the chunk once the cursor passed the bottom.
-        if state["slide"] is None or state["y"] + height_in > sh_in - 0.4:
+        if state["slide"] is None or state["y"] + height_in > sh_in - BODY_BOTTOM:
             new_slide()
 
     def set_cell(cell, text, bold, fill=None, color=None):
@@ -440,8 +502,60 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                          fill=band, color=SLATE_B if styled else None)
         state["y"] = y + height_in + 0.25
 
-    for chunk in _split_slides(blocks):
-        state["slide"] = None  # each chunk starts its own slide
+    def render_table(p):
+        headers = [str(h) for h in (p.get("headers") or [])]
+        rows = p.get("rows") or []
+        if not headers and rows:
+            headers = [str(c) for c in rows[0]]
+            rows = rows[1:]
+        if not headers:
+            return
+        n_cols = len(headers)
+        col_w_in = (sw_in - PPTX_MARGIN_IN * 2) / n_cols
+
+        # Wrap-aware height: each row is as tall as its most-wrapped cell.
+        def row_h(cells):
+            lines = max(_wrap_lines("" if c is None else c, col_w_in) for c in cells)
+            return 0.14 + 0.21 * lines
+
+        header_h = row_h(headers)
+        row_hs = [row_h([row[c] if c < len(row) else "" for c in range(n_cols)])
+                  for row in rows]
+        # A table taller than a slide SPLITS across slides with the header repeated —
+        # one connected table, not a truncated one (2026-08-10 사용자 질문이 이 계약).
+        usable = sh_in - (1.6 if styled else 0.9)
+        segments = []
+        if header_h + sum(row_hs) + 0.2 > usable:
+            seg, seg_h = [], header_h
+            for row, rh in zip(rows, row_hs):
+                if seg and seg_h + rh + 0.2 > usable:
+                    segments.append((seg, seg_h))
+                    seg, seg_h = [], header_h
+                seg.append(row)
+                seg_h += rh
+            if seg:
+                segments.append((seg, seg_h))
+        else:
+            segments = [(rows, header_h + sum(row_hs))]
+        for seg_rows, seg_h in segments:
+            place_table(headers, seg_rows, seg_h, n_cols)
+
+    def render_image(p):
+        src = str(p.get("src") or "")
+        img_path, _ = resolve_path(src)
+        if img_path:
+            ensure_room(2.7)
+            slide, y = state["slide"], state["y"]
+            try:
+                slide.shapes.add_picture(img_path, Inches(PPTX_MARGIN_IN), Inches(y),
+                                         height=Inches(2.5))
+                state["y"] = y + 2.7
+            except Exception:  # noqa: BLE001 — a bad image loses itself, not the deck
+                pass
+
+    # ---- plain path (master decks): a quiet document flow the master's look carries ----
+
+    def render_chunk_plain(chunk):
         for b in chunk:
             t, p = str(b.get("type") or ""), b.get("props") or {}
             if t == "header":
@@ -453,57 +567,11 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                 tf.text = str(p.get("text") or "")
                 tf.paragraphs[0].font.size = Pt(28 if int(p.get("level") or 2) == 1 else 20)
                 tf.paragraphs[0].font.bold = True
-                if styled:
-                    tf.paragraphs[0].font.color.rgb = SLATE_D
-                    accent_bar(slide, PPTX_MARGIN_IN, y + 0.66, 1.4, 0.045)
                 state["y"] = y + 0.95
             elif t == "table":
-                headers = [str(h) for h in (p.get("headers") or [])]
-                rows = p.get("rows") or []
-                if not headers and rows:
-                    headers = [str(c) for c in rows[0]]
-                    rows = rows[1:]
-                if not headers:
-                    continue
-                n_cols = len(headers)
-                col_w_in = (sw_in - PPTX_MARGIN_IN * 2) / n_cols
-                # Wrap-aware height: each row is as tall as its most-wrapped cell.
-                def row_h(cells):
-                    lines = max(_wrap_lines("" if c is None else c, col_w_in) for c in cells)
-                    return 0.14 + 0.21 * lines
-                header_h = row_h(headers)
-                row_hs = [row_h([row[c] if c < len(row) else "" for c in range(n_cols)])
-                          for row in rows]
-                # A table taller than a slide SPLITS across slides with the header repeated —
-                # one connected table, not a truncated one (2026-08-10 사용자 질문이 이 계약).
-                usable = sh_in - 0.9
-                segments = []
-                if header_h + sum(row_hs) + 0.2 > usable:
-                    seg, seg_h = [], header_h
-                    for row, rh in zip(rows, row_hs):
-                        if seg and seg_h + rh + 0.2 > usable:
-                            segments.append((seg, seg_h))
-                            seg, seg_h = [], header_h
-                        seg.append(row)
-                        seg_h += rh
-                    if seg:
-                        segments.append((seg, seg_h))
-                else:
-                    segments = [(rows, header_h + sum(row_hs))]
-                for seg_rows, seg_h in segments:
-                    place_table(headers, seg_rows, seg_h, n_cols)
+                render_table(p)
             elif t == "image":
-                src = str(p.get("src") or "")
-                img_path, _ = resolve_path(src)
-                if img_path:
-                    ensure_room(2.7)
-                    slide, y = state["slide"], state["y"]
-                    try:
-                        slide.shapes.add_picture(img_path, Inches(PPTX_MARGIN_IN), Inches(y),
-                                                 height=Inches(2.5))
-                        state["y"] = y + 2.7
-                    except Exception:  # noqa: BLE001 — a bad image loses itself, not the deck
-                        pass
+                render_image(p)
             else:
                 lines = _block_lines(b)
                 if not lines:
@@ -513,19 +581,259 @@ def make_pptx_file(blocks, title, master_path, out_path, transition="fade", them
                 height_in = 0.1 + 0.26 * visual
                 ensure_room(height_in + 0.15)
                 slide, y = state["slide"], state["y"]
-                tb = slide.shapes.add_textbox(Inches(0.7), Inches(y),
-                                              sw - Inches(1.4), Inches(height_in))
-                tf = tb.text_frame
-                tf.word_wrap = True
-                for i, line in enumerate(lines):
-                    para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-                    para.text = line
-                    para.font.size = Pt(PPTX_BODY_PT)
-                    if styled:
-                        para.font.color.rgb = SLATE_B
+                add_text(slide, 0.7, y, body_w_in, height_in,
+                         [(line, PPTX_BODY_PT, False, None) for line in lines])
                 state["y"] = y + height_in + 0.15
-        if state["slide"] is None:
-            new_slide()  # an empty chunk (e.g. lone divider) still turns the page
+
+    # ---- styled path: the proposal-deck layout system (2026-08-11 사용자 예시 장르) ----
+    # Content is poured into archetypes instead of flowed like a document: numbered ring
+    # rows, 2-3 pill columns, a 4-quadrant donut, metric cards, and a takeaway statement.
+
+    def _mix(color, target, f):
+        s = str(color)
+        return RGBColor(*(round(int(s[k:k + 2], 16) + (target - int(s[k:k + 2], 16)) * f)
+                          for k in (0, 2, 4)))
+
+    def collect_groups(rest):
+        groups, i = [], 0
+        while i < len(rest):
+            b = rest[i]
+            t, p = str(b.get("type") or ""), b.get("props") or {}
+            if t == "header":
+                g = {"title": str(p.get("text") or ""), "body": []}
+                i += 1
+                while i < len(rest):
+                    nb = rest[i]
+                    nt, np_ = str(nb.get("type") or ""), nb.get("props") or {}
+                    if nt == "text":
+                        g["body"].append(str(np_.get("content") or ""))
+                    elif nt == "list":
+                        g["body"].extend(f"• {it}" for it in (np_.get("items") or []))
+                    else:
+                        break
+                    i += 1
+                groups.append(("item", g))
+            elif t == "metric":
+                ms = []
+                while i < len(rest) and str(rest[i].get("type") or "") == "metric":
+                    ms.append(rest[i].get("props") or {})
+                    i += 1
+                groups.append(("metrics", ms))
+            elif t == "list":
+                groups.append(("text", [f"• {it}" for it in (p.get("items") or [])]))
+                i += 1
+            elif t == "text":
+                groups.append(("text", [str(p.get("content") or "")]))
+                i += 1
+            elif t in ("table", "image"):
+                groups.append((t, p))
+                i += 1
+            else:
+                i += 1
+        return groups
+
+    ITEM_X = PPTX_MARGIN_IN + 0.95
+
+    def item_row(no, g):
+        text_w = sw_in - ITEM_X - PPTX_MARGIN_IN
+        t_lines = _wrap_lines(g["title"], text_w, chars_per_in=4.5)
+        b_lines = sum(_wrap_lines(l, text_w) for l in g["body"])
+        h = max(0.68, 0.3 * t_lines + 0.22 * b_lines + 0.16)
+        ensure_room(h + 0.1)
+        slide, y = state["slide"], state["y"]
+        ring = add_box(slide, MSO_SHAPE.OVAL, PPTX_MARGIN_IN + 0.02, y + 0.02, 0.6, 0.6,
+                       fill=WHITE, line=BLUE, line_w=2.25)
+        rp = ring.text_frame.paragraphs[0]
+        rp.text = f"{no:02d}"
+        rp.font.size = Pt(14)
+        rp.font.bold = True
+        rp.font.color.rgb = BLUE
+        rp.alignment = PP_ALIGN.CENTER
+        runs = [(g["title"], 13.5, True, SLATE_D)]
+        runs += [(l, 11, False, SLATE_B) for l in g["body"]]
+        add_text(slide, ITEM_X, y, text_w, h, runs)
+        state["y"] = y + h + 0.12
+
+    def pill_columns(items):
+        n = len(items)
+        gap = 0.35
+        col_w = (sw_in - PPTX_MARGIN_IN * 2 - gap * (n - 1)) / n
+        body_h = 0.2 + 0.22 * max(
+            sum(_wrap_lines(l, col_w - 0.2) for l in g["body"]) or 1 for g in items)
+        ensure_room(0.44 + 0.15 + body_h + 0.1)
+        slide, y = state["slide"], state["y"]
+        for idx, g in enumerate(items):
+            x = PPTX_MARGIN_IN + idx * (col_w + gap)
+            pill = add_box(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x + 0.25, y,
+                           col_w - 0.5, 0.44, fill=BLUE)
+            try:
+                pill.adjustments[0] = 0.5
+            except Exception:  # noqa: BLE001 — a squarer pill, not a lost slide
+                pass
+            pp = pill.text_frame.paragraphs[0]
+            pp.text = g["title"]
+            pp.font.size = Pt(12.5)
+            pp.font.bold = True
+            pp.font.color.rgb = WHITE
+            pp.alignment = PP_ALIGN.CENTER
+            add_text(slide, x, y + 0.59, col_w, body_h,
+                     [(l, 10.5, False, SLATE_B) for l in g["body"]], align=PP_ALIGN.CENTER)
+        state["y"] = y + 0.59 + body_h + 0.15
+
+    def add_pie(slide, x, y, d, start_deg, end_deg, fill):
+        pie = add_box(slide, MSO_SHAPE.PIE, x, y, d, d, fill=fill)
+        try:
+            # PIE adjustments are angles: raw XML is 1/60000 deg, python-pptx divides by
+            # 100000 — so degrees x 0.6. 0 = 3 o'clock, clockwise.
+            pie.adjustments[0] = start_deg * 0.6
+            pie.adjustments[1] = end_deg * 0.6
+        except Exception:  # noqa: BLE001 — a full circle beats a crashed deck
+            pass
+        return pie
+
+    def quad(items):
+        # SWOT-shape: a four-color donut (pie quarters under a white core) with corner
+        # badges, one text block per quadrant (2026-08-11 사용자 예시).
+        ensure_room(3.8)
+        slide, y = state["slide"], state["y"]
+        cx = sw_in / 2
+        cy = y + (sh_in - BODY_BOTTOM - y) / 2
+        colors = [BLUE, _mix(BLUE, 255, 0.45), _mix(BLUE, 0, 0.3), _mix(BLUE, 255, 0.2)]
+        R = 1.55
+        angles = [(180, 270), (270, 360), (90, 180), (0, 90)]      # NW NE SW SE
+        offs = [(-1.1, -1.1), (1.1, -1.1), (-1.1, 1.1), (1.1, 1.1)]
+        for i in range(min(4, len(items))):
+            add_pie(slide, cx - R, cy - R, R * 2, angles[i][0], angles[i][1], colors[i])
+        add_box(slide, MSO_SHAPE.OVAL, cx - 1.0, cy - 1.0, 2.0, 2.0,
+                fill=WHITE, line=SLATE_L, line_w=1.0)
+        label = state["sec_title"] or ""
+        if label:
+            add_text(slide, cx - 0.95, cy - 0.3, 1.9, 0.6,
+                     [(label, 11.5, True, SLATE_D)], align=PP_ALIGN.CENTER)
+        col_w = cx - R - 0.55 - PPTX_MARGIN_IN
+        xs = [PPTX_MARGIN_IN, cx + R + 0.55, PPTX_MARGIN_IN, cx + R + 0.55]
+        ys = [y + 0.15, y + 0.15, cy + 0.55, cy + 0.55]
+        for i, g in enumerate(items[:4]):
+            badge = add_box(slide, MSO_SHAPE.OVAL, cx + offs[i][0] - 0.31,
+                            cy + offs[i][1] - 0.31, 0.62, 0.62,
+                            fill=colors[i], line=WHITE, line_w=2.0)
+            first = g["title"].strip()[:1]
+            bp = badge.text_frame.paragraphs[0]
+            bp.text = first.upper() if first.isascii() and first.isalpha() else str(i + 1)
+            bp.font.size = Pt(15)
+            bp.font.bold = True
+            bp.font.color.rgb = WHITE
+            bp.alignment = PP_ALIGN.CENTER
+            align = PP_ALIGN.RIGHT if i in (1, 3) else PP_ALIGN.LEFT
+            runs = [(g["title"], 15, True, colors[i])]
+            runs += [(l, 10.5, False, SLATE_B) for l in g["body"]]
+            add_text(slide, xs[i], ys[i], col_w, cy - y - 0.7, runs, align=align)
+        state["y"] = sh_in  # the quadrant owns the body — next content turns the page
+
+    def metric_strip(ms):
+        per_row = 4 if len(ms) > 3 else max(1, len(ms))
+        gap = 0.25
+        card_w = (sw_in - PPTX_MARGIN_IN * 2 - gap * (per_row - 1)) / per_row
+        for start in range(0, len(ms), per_row):
+            ensure_room(1.3)
+            slide, y = state["slide"], state["y"]
+            for j, m in enumerate(ms[start:start + per_row]):
+                x = PPTX_MARGIN_IN + j * (card_w + gap)
+                card = add_box(slide, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, card_w, 1.15,
+                               fill=SLATE_L)
+                try:
+                    card.adjustments[0] = 0.12
+                except Exception:  # noqa: BLE001
+                    pass
+                tf = card.text_frame
+                tf.word_wrap = True
+                value = f"{m.get('value', '')}{m.get('unit') or ''}"
+                rows = [(str(m.get("label") or ""), 10, False, SLATE_B),
+                        (value, 20, True, BLUE)]
+                if m.get("delta") not in (None, ""):
+                    rows.append((str(m.get("delta")), 9.5, False, SLATE_B))
+                for i, (text, size, bold, color) in enumerate(rows):
+                    para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                    para.text = text
+                    para.font.size = Pt(size)
+                    para.font.bold = bold
+                    para.font.color.rgb = color
+            state["y"] = y + 1.3
+
+    def text_par(lines):
+        body_w_in = sw_in - 1.4
+        visual = sum(_wrap_lines(l, body_w_in) for l in lines)
+        h = 0.1 + 0.24 * visual
+        ensure_room(h + 0.15)
+        add_text(state["slide"], 0.7, state["y"], body_w_in, h,
+                 [(l, 11.5, False, SLATE_B) for l in lines])
+        state["y"] += h + 0.15
+
+    def statement_line(text):
+        # The genre's closing move: one bold accent-colored line, set to the right.
+        ensure_room(0.75)
+        slide, y = state["slide"], state["y"]
+        add_text(slide, sw_in * 0.3, y + 0.1, sw_in * 0.7 - PPTX_MARGIN_IN, 0.55,
+                 [(text, 15.5, True, BLUE)], align=PP_ALIGN.RIGHT)
+        state["y"] = y + 0.75
+
+    sec_counter = {"n": 0}
+
+    def render_chunk_styled(chunk):
+        rest = list(chunk)
+        state["sec_title"], state["sec_stmt"] = None, None
+        if rest and str(rest[0].get("type") or "") == "header" \
+                and int((rest[0].get("props") or {}).get("level") or 2) == 1:
+            sec_counter["n"] += 1
+            state["sec_no"] = sec_counter["n"]
+            state["sec_title"] = str((rest[0].get("props") or {}).get("text") or "")
+            rest = rest[1:]
+            # A short first paragraph is the slide's one-line message — it moves into the
+            # statement band instead of sitting in the body as a stray paragraph.
+            if rest and str(rest[0].get("type") or "") == "text":
+                c = str((rest[0].get("props") or {}).get("content") or "")
+                if 0 < len(c) <= 130:
+                    state["sec_stmt"] = c
+                    rest = rest[1:]
+        new_slide(continuation=False)
+        groups = collect_groups(rest)
+        stmt = None
+        if len(groups) >= 2 and groups[-1][0] == "text" and len(groups[-1][1]) == 1 \
+                and 0 < len(groups[-1][1][0]) <= 70:
+            stmt = groups[-1][1][0]
+            groups = groups[:-1]
+        items = [g for k, g in groups if k == "item"]
+        only_items = bool(groups) and all(k == "item" for k, _ in groups)
+        short = all(sum(len(l) for l in g["body"]) <= 220 for g in items)
+        if only_items and len(items) == 4 and short:
+            quad(items)
+        elif only_items and 2 <= len(items) <= 3 and short:
+            pill_columns(items)
+        else:
+            no = 0
+            for kind, val in groups:
+                if kind == "item":
+                    no += 1
+                    item_row(no, val)
+                elif kind == "metrics":
+                    metric_strip(val)
+                elif kind == "table":
+                    render_table(val)
+                elif kind == "image":
+                    render_image(val)
+                else:
+                    text_par(val)
+        if stmt:
+            statement_line(stmt)
+
+    for chunk in _split_slides(blocks):
+        state["slide"] = None  # each chunk starts its own slide
+        if styled:
+            render_chunk_styled(chunk)
+        else:
+            render_chunk_plain(chunk)
+            if state["slide"] is None:
+                new_slide()  # an empty chunk (e.g. lone divider) still turns the page
     for slide in prs.slides:
         apply_transition(slide)
     prs.save(out_path)
@@ -858,8 +1166,25 @@ def action_selftest():
         # The first live deck's two defects, pinned: the empty subtitle placeholder ghost on
         # the title slide, and overflow silently dropping content instead of turning the page.
         from pptx import Presentation as _P
-        ck("pptx: title slide = title + accent bar only (no placeholder ghost)",
-           len(_P(p).slides[0].shapes) == 2)
+        cov = _P(p).slides[0]
+        ck("pptx: cover has no placeholder ghosts",
+           len(list(cov.placeholders)) == 0 and len(cov.shapes) >= 2)
+        # 2026-08-11 proposal-genre system: navy section band on every content slide,
+        # and four short groups arrange as the quadrant donut.
+        band = [sh for sh in _P(p).slides[1].shapes
+                if sh.top == 0 and abs(sh.width - _P(p).slide_width) < 20000]
+        ck("pptx: content slides carry the section band", len(band) >= 1)
+        p_quad = f"{OUT_DIR}/selftest-quad.pptx"
+        tmp.append(p_quad)
+        four = [{"type": "header", "props": {"text": "SWOT", "level": 1}}]
+        for t_ in ("Strength", "Weakness", "Opportunity", "Threat"):
+            four.append({"type": "header", "props": {"text": t_, "level": 2}})
+            four.append({"type": "text", "props": {"content": f"{t_} 설명"}})
+        make_pptx_file(four, None, None, p_quad)
+        got_quad = read_pptx(p_quad)
+        ck("pptx: four short groups become the quadrant donut (all texts land)",
+           all(t_ in got_quad["text"]
+               for t_ in ("Strength", "Weakness", "Opportunity", "Threat")))
         # A table taller than a slide splits across slides, header repeated, no row lost.
         p_tbl = f"{OUT_DIR}/selftest-tblsplit.pptx"
         tmp.append(p_tbl)
