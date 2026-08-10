@@ -595,7 +595,7 @@ function stripInlineMd(line: string): string {
     .trim();
 }
 
-// ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 표시.
+// ─── Thinking 블록 — spinner + "생각중" 라벨 + 그 옆에 **문장 하나짜리 티커**.
 // 완료 후엔 spinner 끄고 "답변완료" 라벨 유지 (옛 동작 — 응답 끝났는지 사용자가 즉시 인지).
 function ThinkingBlock({
   statusText,
@@ -608,53 +608,37 @@ function ThinkingBlock({
   isActive?: boolean;
   isComplete?: boolean;
 }) {
-  // Hooks BEFORE the early return — this component flips between "render nothing" and
-  // "render the thinking box" on every turn, and hooks below a conditional return change count
-  // across that flip, which React answers by killing the subtree. That was the vanishing robot
-  // (2026-08-10: a bare "하이" turn crashed the indicator the moment thinking started).
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const bodyText = thinkingText ?? '';
-  useEffect(() => {
-    // 늘 바닥을 보여준다 = 최신 줄이 아래에 있고 지난 줄이 위로 밀린다.
-    const el = bodyRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [bodyText]);
   if (!isActive && !isComplete && !thinkingText) return null;
   const sentinelValues = Object.values(THINKING_STATUS);
   const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
   const label = statusText || (isActive ? '생각중...' : (isComplete ? '답변완료' : ''));
-  // "[도구 호출: ...]" / "[계획 정리]" 마커 줄은 본문에 표시하지 않는다 — 도구 호출 진행은 위 단일
-  // 상태줄(label: 도구 호출 중)로만. CLI 스트림은 reducer 가 이미 라우팅하지만, API batch·reload 로
-  // 들어온 thinkingText 안 마커도 여기서 정리 (실제 추론 텍스트만 본문에 남김).
+  // "[도구 호출: ...]" / "[계획 정리]" 마커 줄은 표시하지 않는다 — 그 진행은 상태줄(label)로만.
   const rawBody = (!isSentinel && thinkingText) ? thinkingText : '';
-  // 마커 줄만 걷어내고 **줄은 줄로 남긴다**.
-  //
-  // 예전엔 개행을 공백으로 이어 붙여 한 줄 ticker 로 흘렸다 — 높이가 들썩이는 걸 막으려던
-  // 것인데(rtl + truncate 로 끝을 보여줌), 글자가 오른쪽에서 왼쪽으로 지나가 **읽을 수가
-  // 없었다**(2026-08-10 사용자). 높이 문제는 줄을 없애서가 아니라 **상자를 고정**해서 푼다:
-  // 컨텐츠 폭으로 접히고, 새 줄은 아래에 붙고, 넘치면 위로 스크롤된다.
-  const bodyLines = rawBody
+  // 한 줄 · 한 문장 티커 (2026-08-10 사용자 두 번째 정정) — 여러 줄 상자는 "생각중 옆 한 줄"이
+  // 아니라 문단이 됐다. 문장 단위로 끊어 **마지막 문장 하나만** 라벨 옆에 두고, 새 문장이
+  // 완성될 때 아래에서 위로 올라온다(문장 index 를 key 로 — 진행 중인 문장이 자라는 동안은
+  // 재애니메이션 없음). 전문은 어차피 턴 아카이브가 들고 있다.
+  const sentences = rawBody
     ? rawBody
         .split('\n')
-        .map((l) => stripInlineMd(l.trim()))
-        .filter((l) => l && !/^\[(도구 호출:|계획 정리)/.test(l))
+        .flatMap((l) => stripInlineMd(l.trim()).match(/[^.!?…]*[.!?…]+["')\]]*|[^.!?…]+$/g) ?? [])
+        .map((s) => s.trim())
+        .filter((s) => s && !/^\[(도구 호출:|계획 정리)/.test(s))
     : [];
+  const current = isActive ? sentences[sentences.length - 1] : undefined;
   return (
-    <div className="flex flex-col gap-1 text-slate-400 min-w-0">
-      <div className="flex items-center gap-2 min-w-0">
-        {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
-        {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
-        {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
-      </div>
-      {bodyLines.length > 0 && (
-        <div
-          ref={bodyRef}
-          className="text-[12px] text-slate-400 leading-relaxed max-h-[7.5em] overflow-y-auto pl-[21px] pr-1"
-          style={{ wordBreak: 'break-all' }}
-        >
-          {bodyLines.map((l, i) => (
-            <div key={i}>{l}</div>
-          ))}
+    <div className="flex items-center gap-2 text-slate-400 min-w-0">
+      {isActive && <div className="animate-spin shrink-0"><Cpu size={13} /></div>}
+      {!isActive && isComplete && <div className="shrink-0"><Cpu size={13} /></div>}
+      {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
+      {current && (
+        <div className="relative flex-1 min-w-0 h-[1.4em] overflow-hidden">
+          <div
+            key={sentences.length}
+            className="thinking-rise text-[12px] text-slate-400 truncate leading-[1.4em]"
+          >
+            {current}
+          </div>
         </div>
       )}
     </div>

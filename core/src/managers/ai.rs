@@ -3272,10 +3272,20 @@ impl AiManager {
                 // the real answer (2026-08-06, Solar 4). Route mid-round text to the
                 // thinking channel; only a round that ends the turn speaks in the answer.
                 let channel = if response.tool_calls.is_empty() { "text" } else { "thinking" };
-                emit_event(AiStreamEvent::Chunk {
-                    event_type: channel.to_string(),
-                    content: last_text.clone(),
-                });
+                // Same rule as the thinking re-emit above: an adapter that already streamed
+                // this round's text live (the draft channel) must not have it re-said here —
+                // the client commits the draft into the thinking area on round end, so this
+                // re-emit printed every sentence twice (2026-08-10, user screenshot). The
+                // ANSWER channel still always emits: its client contract is replace, not
+                // append, so the final text stays server-owned either way.
+                if channel == "text"
+                    || !streamed_live.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    emit_event(AiStreamEvent::Chunk {
+                        event_type: channel.to_string(),
+                        content: last_text.clone(),
+                    });
+                }
             }
             if let Some(c) = response.cost_usd {
                 total_cost += c;

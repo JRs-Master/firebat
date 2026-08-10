@@ -312,6 +312,17 @@ node scripts/gen.mjs             # _apis.json → config + index
 - **보안**: `requiresApproval` 액션은 선언해도 전면 거부(page-form 게이트 미러) / hub-scope 저장 = bake skip(inert 저장) / `_baked` 캡 = 블록 50 · 256KB · 스펙당 바인딩 20. 게이트 로직 = Rust `page_binding.rs` ↔ TS `lib/page-binding-gate.ts` 미러(단일 정책).
 - **`alias`** (선택) = 템플릿 텍스트 sugar — text 블록의 `{stock symbol="005930.KS"}` 가 `get_template` 시 module 블록으로 컴파일(등록 alias 만, 미등록 `{word}` = 리터럴 유지).
 
+#### `_mediaImport` — 모듈 산출 파일의 미디어 반출 (2026-08-10)
+```json
+{ "success": true, "data": { "_mediaImport": {
+    "path": "data/docs/report-a1b2c3.pptx",
+    "contentType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "filenameHint": "report" } } }
+```
+- config 필드가 아니라 **출력 선언** — 모듈이 자기 `data/` 스크래치에 파일을 쓰고 `data._mediaImport` 로 선언하면, 프레임워크가 그 파일을 **업로드와 같은 게이트 저장**(magic byte 검증 포함)으로 미디어 스토리지에 편입하고 선언을 `data.media = {slug, url, bytes, contentType}` 로 치환한다. 모듈은 서빙·URL·갤러리를 모른다.
+- 경로 confinement = `data/`·`user/` 아래 상대경로만(단위테스트). 성공 시 `data/` 원본은 삭제(이동이지 복사가 아님), `user/` 는 사용자 것이라 보존. 실패 = 실행은 성공 유지 + `data.mediaExportError` + WARN(조용히 사라지지 않는다).
+- 구현 = `ModuleManager::export_declared_media` + `IMediaIntakePort`(`IImageImportPort` 미러 — leaf↔leaf 를 포트로 끊는 선례). 첫 소비자 = docs 모듈(pptx·xlsx·docx 산출).
+
 #### 모듈 내장 이미지 — `assets/` 디렉토리 (2026-07-18)
 모듈 디렉토리의 `assets/` 에 둔 이미지는 `/module-assets/<module>/<file>` 로 공개 서빙된다(system·user 공통, Rust axum route → next.config rewrite). 확장자 allowlist(png/jpg/jpeg/webp/gif/svg/ico) + 세그먼트 charset 가드 + CSP/nosniff(svg XSS 완화) + `Cache-Control: public,max-age=3600`. 페이지·render 블록에서 안정 URL 로 참조 — base64 인라인·외부 URL 의존이 필요 없어진다.
 
@@ -355,6 +366,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 | `cacheInputs` | 배열 파라미터를 `<param>CacheKey` 로 수용 (검증 전 확장) | `ModuleManager.run` (`cache_inputs.rs`) |
 | `pageBinding` | 페이지↔모듈 바인딩 opt-in (발행 bake · 방문 SSR · rebake 크론 · shortcode alias) | 저장 경로 bake (`page_binding.rs`) + 발행 SSR (`page-binding-gate.ts`) |
 | `assets/` (디렉토리) | 모듈 내장 이미지 공개 서빙 (`/module-assets/<m>/<file>`) | Rust axum route + next rewrite |
+| `_mediaImport` (출력 선언) | 모듈이 만든 파일을 미디어 스토리지로 반출 (게이트 저장 → `data.media`) | `ModuleManager.run` (`IMediaIntakePort`) |
 | `ws.streams.<k>.tick1s` | 실시간 프레임 → 코어 1초 집계 → 시계열 store (`tick1s:<모듈>:<real|mock>:<종목>`, `read_ticks` 로 조회). 선언 = `{items, type:{field,equals}, symbol, values, map:{price,signedVolume,…}}` — `items`/`values` 생략 = 프레임 자체가 아이템(업비트). `signedVolume` = 필드명(부호 내장, 키움) 또는 `{field, negateWhen:{field,equals}}`(무부호 수량 + 매도 플래그, 업비트 `ask_bid:"ASK"`). **`equals` 는 문자열·불리언·숫자 아무 스칼라**(바이낸스 `m: true`) — 예전엔 문자열만 읽어 불리언 venue 에서 절이 통째로 무시되고 **매도가 전부 매수로 집계**됐다(실패 신호 없음). 집계기는 브로커 지식 0 | 이벤트 sink (`tick_agg.rs`) — watch 등록 시 meta 에 해석 |
 | `settings_fields[].editorSchema` | structured-list 카드 폼을 config 선언으로 렌더 (`fields[]` = text/number/toggle/select/**ref**/json/rules · `required` = 저장 게이트 · `showWhen` · `summary` · `newItem`). 필드 추가 = config 수정 + pull 로 끝 | 프론트 `StructuredListEditor` (legacy 하드코딩 카드는 스키마 없는 config 의 폴백) |
 
