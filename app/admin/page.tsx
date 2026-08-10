@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
 import { useRouter } from 'next/navigation';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Mic, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Mic, Plus, Square, ListChecks, Share2, ChevronDown, ChevronUp, Image as ImageIcon, Download, FileText, Music } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CodeComp } from '@/app/components/CodeBlock';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
@@ -59,7 +59,9 @@ const mdComponents = {
   ol: (props: any) => <ol className="list-decimal list-outside ml-5 mb-2 space-y-1" {...props} />,
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
-  a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  a: ({ href, children, ...props }: any) => (
+    <MdMediaLink href={href} {...props}>{children}</MdMediaLink>
+  ),
   code: ({ className, children, ...props }: any) => {
     const text = String(children).replace(/\n$/, '');
     // react-markdown v10 은 inline prop 을 안 넘김 → language- 클래스 또는 줄바꿈 유무로 블록 판별
@@ -89,6 +91,67 @@ const mdComponents = {
   img: (props: any) => <MdImg src={props.src} alt={props.alt} />,
 };
 
+
+// ── 미디어 파일 링크 → 카드 승격 ────────────────────────────────────────────────
+// The docs module hands back a bare markdown link and it read as an afterthought (2026-08-10
+// 사용자: "다운로드가 허접"). A DISPLAY-layer upgrade beats teaching the model a component:
+// any /user|system/media (hub 포함) link whose extension we know becomes a file card — office
+// files get a typed badge + download, audio gets an inline player. Retroactive for old
+// messages, zero model cooperation needed. Office-format colors are semantics, not decoration
+// (green IS excel to every reader), so they stand outside the blue/slate palette rule.
+const FILE_CARD_EXTS: Record<string, string> = {
+  pptx: 'text-orange-700 bg-orange-50 border-orange-200',
+  xlsx: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+  docx: 'text-blue-700 bg-blue-50 border-blue-200',
+  pdf: 'text-red-700 bg-red-50 border-red-200',
+  hwpx: 'text-sky-700 bg-sky-50 border-sky-200',
+  mid: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+};
+const AUDIO_PLAYER_EXTS = new Set(['mp3', 'wav', 'ogg', 'm4a', 'webm', 'flac']);
+const MEDIA_LINK_RE = /^\/(?:user|system)\/(?:hub\/[^?#]+\/)?media\/([^/?#]+)\.([a-z0-9]+)(?:[?#].*)?$/i;
+
+function MdMediaLink({ href, children, ...props }: any) {
+  const m = typeof href === 'string' ? href.match(MEDIA_LINK_RE) : null;
+  const ext = m?.[2]?.toLowerCase() ?? '';
+  if (m && (FILE_CARD_EXTS[ext] || AUDIO_PLAYER_EXTS.has(ext))) {
+    const name = (() => {
+      try { return decodeURIComponent(m[1]); } catch { return m[1]; }
+    })();
+    if (AUDIO_PLAYER_EXTS.has(ext)) {
+      return (
+        <span className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <span className="shrink-0 w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500"><Music size={16} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12px] font-semibold text-slate-700 truncate">{name}.{ext}</span>
+            <audio controls preload="none" src={href} className="mt-1 w-full h-8" />
+          </span>
+        </span>
+      );
+    }
+    return (
+      <a
+        href={href}
+        download={`${name}.${ext}`}
+        className="not-prose my-1.5 flex items-center gap-2.5 max-w-md px-3 py-2.5 rounded-xl border border-slate-200 bg-white shadow-sm hover:border-blue-300 hover:shadow transition-all group no-underline"
+      >
+        <span className={`shrink-0 w-10 h-10 rounded-lg border flex flex-col items-center justify-center ${FILE_CARD_EXTS[ext]}`}>
+          <FileText size={15} />
+          <span className="text-[8px] font-black tracking-wide leading-none mt-0.5">{ext.toUpperCase()}</span>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-semibold text-slate-800 truncate">{name}.{ext}</span>
+          <span className="block text-[11px] text-slate-400">클릭해서 다운로드</span>
+        </span>
+        <Download size={16} className="shrink-0 text-slate-300 group-hover:text-blue-500 transition-colors" />
+      </a>
+    );
+  }
+  return (
+    <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" href={href} {...props}>
+      {children}
+    </a>
+  );
+}
 
 function renderMarkdownInner(text: string) {
   // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
