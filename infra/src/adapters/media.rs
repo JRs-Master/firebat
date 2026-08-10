@@ -8,6 +8,7 @@
 //!   <root>/system/media/...
 //!
 //! Slug 네이밍: YYYY-MM-DD-<hint-slug>-<rand4>. 한국어 hint 허용 (UTF-8).
+//! 날짜 = 설정 시간대의 달력(owner 우선, `system:timezone` 폴백) — UTC 호스트 시계가 아니다.
 //!
 //! Phase B-15+ 후속:
 //! - saveVariant / updateMeta 의 variants 처리 — IImageProcessorPort 설정된 후
@@ -16,21 +17,32 @@
 use chrono::Utc;
 use rand::Rng;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use firebat_core::ports::{
-    IMediaPort, InfraResult, MediaFileRecord, MediaListOpts, MediaListResult, MediaSaveOptions,
-    MediaSaveResult, MediaScope, MediaVariantMeta,
+    IMediaPort, IVaultPort, InfraResult, MediaFileRecord, MediaListOpts, MediaListResult,
+    MediaSaveOptions, MediaSaveResult, MediaScope, MediaVariantMeta,
 };
+use firebat_core::utils::timezone::resolve_tz;
 
 pub struct LocalMediaAdapter {
     root: PathBuf,
+    /// Slug dates are a calendar concept, so they resolve in the configured zone — without this
+    /// (unit tests) they fall back to UTC, which is the pre-wiring behavior.
+    vault: Option<Arc<dyn IVaultPort>>,
 }
 
 impl LocalMediaAdapter {
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
+            vault: None,
         }
+    }
+
+    pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
+        self.vault = Some(vault);
+        self
     }
 
     fn scope_dir(&self, scope: MediaScope) -> PathBuf {
@@ -127,8 +139,18 @@ impl LocalMediaAdapter {
         }
     }
 
-    fn make_slug(filename_hint: Option<&str>) -> String {
-        let date = Utc::now().format("%Y-%m-%d").to_string();
+    fn make_slug(&self, filename_hint: Option<&str>, hub_owner: Option<&str>) -> String {
+        // The date is the OWNER's calendar day, not the host clock's — a file saved at 08:00 KST
+        // must not carry yesterday's name. `hub:` prefix = the vault key shape hub-scoped
+        // settings already use; admin/global falls through to `system:timezone`.
+        let date = match &self.vault {
+            Some(v) => {
+                let owner = hub_owner.map(|h| format!("hub:{h}"));
+                let tz = resolve_tz(v, owner.as_deref());
+                Utc::now().with_timezone(&tz).format("%Y-%m-%d").to_string()
+            }
+            None => Utc::now().format("%Y-%m-%d").to_string(),
+        };
         let mut rng = rand::thread_rng();
         let rand4: u32 = rng.gen_range(0..0xFFFF);
         let hint = filename_hint
@@ -293,7 +315,7 @@ impl IMediaPort for LocalMediaAdapter {
             .ext
             .clone()
             .unwrap_or_else(|| Self::ext_from_content_type(content_type).to_string());
-        let slug = Self::make_slug(opts.filename_hint.as_deref());
+        let slug = self.make_slug(opts.filename_hint.as_deref(), hub_owner);
 
         let bin_path = self.binary_path_hub(scope, hub_owner, &slug, &ext);
         if let Some(parent) = bin_path.parent() {
@@ -363,7 +385,10 @@ impl IMediaPort for LocalMediaAdapter {
         error_msg: &str,
     ) -> InfraResult<String> {
         let scope = opts.scope.unwrap_or(MediaScope::User);
-        let slug = Self::make_slug(opts.filename_hint.as_deref());
+        let slug = self.make_slug(
+            opts.filename_hint.as_deref(),
+            opts.hub_owner.as_deref().filter(|s| !s.is_empty()),
+        );
         let record = MediaFileRecord {
             slug: slug.clone(),
             ext: "png".to_string(),
@@ -622,7 +647,7 @@ impl IMediaPort for LocalMediaAdapter {
     /// 채팅 첨부 이미지 임시 저장 — sharp 0, raw. 별도 디렉토리 `<root>/user/attachments/`.
     /// 갤러리와 분리 — 30일 후 cleanup_old_attachments 가 자동 삭제.
     async fn save_temp_attachment(&self, binary: &[u8], ext: &str) -> InfraResult<String> {
-        let slug = Self::make_slug(None);
+        let slug = self.make_slug(None, None);
         let attachments_dir = self.root.join("user").join("attachments");
         tokio::fs::create_dir_all(&attachments_dir)
             .await

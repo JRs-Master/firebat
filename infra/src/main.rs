@@ -294,7 +294,8 @@ async fn main() -> Result<()> {
     )
     .map_err(anyhow::Error::msg)
     .context("Cron 어댑터 초기화 실패")?;
-    let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
+    let media: Arc<dyn IMediaPort> =
+        Arc::new(LocalMediaAdapter::new(&workspace_root).with_vault(vault.clone()));
 
     // Phase B-18 Step 2 — IImageProcessorPort + IImageGenPort.
     // env `FIREBAT_IMAGE_PROCESSOR`:
