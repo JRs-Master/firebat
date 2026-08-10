@@ -408,10 +408,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       if (data.success) setSysModules(sortByName(data.modules ?? [], m => m.name));
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
-  // 모듈별 패키지 업그레이드 가용 여부 — 리스트에 뱃지 표시용. sysModules 로드 후 병렬 fetch.
+  // 모듈별 패키지 상태 — 리스트에 뱃지 표시용(업그레이드 가용 + **미설치**). sysModules 로드 후 병렬 fetch.
   // PyPI 결과는 sandbox 어댑터에서 1시간 캐시되므로 매 시스템 탭 진입에 PyPI 호출 부담 0.
-  // 모듈별 업그레이드 정보 — 값이 있으면 업그레이드 가능(현재→최신 버전 표시용), 없으면 최신.
-  const [moduleUpgradeMap, setModuleUpgradeMap] = useState<Record<string, { installed?: string; latest?: string }>>({});
+  // 업그레이드 값이 있으면 현재→최신 표시, missing > 0 이면 "설치 필요" 뱃지 — 새 모듈이 첫
+  // 호출에서야 "패키지 없음"으로 알려지는 걸 목록에서 미리 보이게 (2026-08-10 docs 실측).
+  const [moduleUpgradeMap, setModuleUpgradeMap] = useState<Record<string, { installed?: string; latest?: string; missing?: number }>>({});
   useEffect(() => {
     if (sysModules.length === 0) return;
     let cancelled = false;
@@ -424,13 +425,17 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           try {
             // API route 경유 — typed gRPC client(`lib/api-gen/module`) 는 node:http2 의존이라
             // browser bundle 에 못 들어감 (build error). server-side route 가 typed client 호출 + JSON 반환.
-            const res = await apiGet<{ success: boolean; packages?: Array<{ upgradeAvailable?: boolean; installedVersion?: string; latestVersion?: string }> }>(
+            const res = await apiGet<{ success: boolean; packages?: Array<{ status?: string; upgradeAvailable?: boolean; installedVersion?: string; latestVersion?: string }> }>(
               `/api/settings/modules/packages?module=${encodeURIComponent(name)}`,
               { category: 'settings' },
             );
             if (res.success && Array.isArray(res.packages)) {
               const up = res.packages.find(p => p.upgradeAvailable === true);
-              return [name, up ? { installed: up.installedVersion, latest: up.latestVersion } : null] as const;
+              const missing = res.packages.filter(p => p.status === 'missing').length;
+              const entry = (up || missing > 0)
+                ? { installed: up?.installedVersion, latest: up?.latestVersion, missing: missing || undefined }
+                : null;
+              return [name, entry] as const;
             }
           } catch (e) {
             logger.debug('settings', `package status fetch 실패 (${name})`, { error: e });
@@ -2356,7 +2361,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
-                              {moduleUpgradeMap[m.name] && (
+                              {(moduleUpgradeMap[m.name]?.missing ?? 0) > 0 && (
+                                <span className="text-[10px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-1.5 py-0.5 rounded shrink-0">
+                                  {t('settings_modal.packages_missing_badge', { count: moduleUpgradeMap[m.name].missing! })}
+                                </span>
+                              )}
+                              {moduleUpgradeMap[m.name]?.latest && (
                                 <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
                                   {t('settings_modal.upgrade_available_badge')}
                                   {moduleUpgradeMap[m.name].installed && moduleUpgradeMap[m.name].latest && (
