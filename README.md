@@ -473,16 +473,40 @@ EOF
 
 systemctl daemon-reload && systemctl enable --now firebat firebat-frontend
 
-# 10. Caddy — IP first (plain HTTP)
+# 10. Caddy — IP first (plain HTTP). Media binaries are served straight from disk:
+#     the Next media route does a gRPC(base64) round trip per image (~0.7s for 1.7MB,
+#     measured) and exists as a dev fallback, not a production path. *.meta.json stays
+#     no-store — it is the generation-status poll, and a cached "rendering" would hide
+#     the finished image. The hub matcher is segment-exact so nothing else in a hub
+#     workspace (modules, session files) is ever exposed.
 cat > /etc/caddy/Caddyfile <<'EOF'
+(media_serve) {
+	root * /opt/firebat
+	@meta path *.meta.json
+	header @meta Cache-Control "no-store"
+	header ?Cache-Control "public, max-age=300"
+	file_server
+}
+
 :80 {
-    reverse_proxy 127.0.0.1:3000
+	@media path /user/media/* /system/media/*
+	handle @media {
+		import media_serve
+	}
+
+	@hubmedia path_regexp ^/user/hub/[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)?/media/[A-Za-z0-9._-]+$
+	handle @hubmedia {
+		import media_serve
+	}
+
+	reverse_proxy 127.0.0.1:3000
 }
 EOF
+caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-Open `http://SERVER_IP` and finish the **SetupWizard** (admin password + timezone). **With a domain** (DNS A record → SERVER_IP): replace `:80` with `your-domain.com` in the Caddyfile and `systemctl reload caddy` — Caddy auto-issues + renews Let's Encrypt.
+Open `http://SERVER_IP` and finish the **SetupWizard** (admin password + timezone). **With a domain** (DNS A record → SERVER_IP): replace `:80` with `your-domain.com` in the Caddyfile (keep the `media_serve` blocks) and `systemctl reload caddy` — Caddy auto-issues + renews Let's Encrypt.
 
 **Verify** — `systemctl status firebat firebat-frontend caddy --no-pager` + `journalctl -u firebat -n 50 --no-pager`. After `reboot`, all three should be `enabled` + `active (running)`.
 
